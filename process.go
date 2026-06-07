@@ -72,12 +72,6 @@ func (p *managedProc) emit(f streamFrame) {
 	}
 }
 
-func (p *managedProc) attach(c *conn) {
-	p.mu.Lock()
-	p.subs[c] = struct{}{}
-	p.mu.Unlock()
-}
-
 // spawn starts a child process in its own process group and begins streaming.
 func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string) error {
 	cmd := exec.Command(command, args...)

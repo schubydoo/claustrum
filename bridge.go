@@ -21,8 +21,8 @@ func runBridge(socket string) error {
 	}
 	defer nc.Close()
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(nc, os.Stdin); done <- struct{}{} }()
-	go func() { io.Copy(os.Stdout, nc); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(nc, os.Stdin); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(os.Stdout, nc); done <- struct{}{} }()
 	<-done
 	return nil
 }
@@ -39,11 +39,11 @@ func runStop(socket string) error {
 	}
 	defer nc.Close()
 	tok := os.Getenv("CLAUDE_RPC_TOKEN")
-	fmt.Fprintf(nc, `{"jsonrpc":"2.0","id":1,"method":"server.shutdown","auth":%q}`+"\n", tok)
+	_, _ = fmt.Fprintf(nc, `{"jsonrpc":"2.0","id":1,"method":"server.shutdown","auth":%q}`+"\n", tok)
 	buf := make([]byte, 4096)
 	n, _ := nc.Read(buf)
 	if n > 0 {
-		os.Stdout.Write(buf[:n])
+		_, _ = os.Stdout.Write(buf[:n])
 	}
 	return nil
 }

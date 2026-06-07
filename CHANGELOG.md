@@ -30,6 +30,10 @@ All notable changes to claustrum are documented here. The format is based on
   an advisory, read-only `repo-config-drift` workflow; branch/tag protection
   `.github/rulesets/` (squash-only PRs, linear history, required checks,
   immutable `v*` tags); `CODEOWNERS` and a pull-request template.
+- `golangci-lint` (`.golangci.yml`, v2) wired into the CI `lint` job — the
+  standard set (errcheck, govet, ineffassign, staticcheck, unused) plus misspell
+  and unconvert. Cleared its findings: removed an unused method and made a few
+  intentionally-ignored errors explicit; `Close()` is excluded from errcheck.
 - `renovate.json` — automated dependency updates (Go modules + SHA-pinned
   GitHub Actions, keeping the pins via `helpers:pinGitHubActionDigestsToSemver`),
   grouped minor/patch PRs with Conventional-Commits titles, `gomodTidy`
