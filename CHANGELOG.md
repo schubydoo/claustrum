@@ -28,8 +28,15 @@ All notable changes to claustrum are documented here. The format is based on
 - Repository governance config (mirrors the sibling project, adapted for a Go
   daemon): declarative `.github/repo-config/` baselines (settings + labels) with
   an advisory, read-only `repo-config-drift` workflow; branch/tag protection
-  `.github/rulesets/` (squash-only PRs, linear history, `build` required check,
+  `.github/rulesets/` (squash-only PRs, linear history, required checks,
   immutable `v*` tags); `CODEOWNERS` and a pull-request template.
+- Expanded CI: `ci.yml` split into `lint` (gofmt + vet + `go mod tidy` clean),
+  a `test` matrix (ubuntu + macos, `-race`), 6-target cross-build, and a 50%
+  `coverage` floor, gated by a single `ci required checks passed` aggregator.
+  New `security.yml` (CodeQL, gitleaks, trivy-fs, zizmor workflow-audit,
+  dependency-review), `pr-title.yml` (Conventional-Commits check), and
+  `scorecard.yml` (OSSF Scorecard). All actions SHA-pinned. The required checks
+  are now the CI + security aggregators and the conventional-title check.
 - Apache-2.0 license; independence & trademark `NOTICE`.
 
 [Unreleased]: https://github.com/schubydoo/claustrum/commits/main

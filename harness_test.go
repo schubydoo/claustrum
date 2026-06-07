@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -23,7 +24,15 @@ var updateGolden = flag.Bool("update", false, "update golden fixtures in testdat
 // `go test`. The returned socket path is ready to Dial.
 func startSocketServer(t *testing.T) string {
 	t.Helper()
-	sock := filepath.Join(t.TempDir(), "rpc.sock")
+	// A short socket path on purpose: t.TempDir() embeds the (long) test name,
+	// and the full AF_UNIX path must stay under the macOS sun_path limit
+	// (~104 bytes) or net.Listen fails with "invalid argument".
+	dir, err := os.MkdirTemp("", "cl")
+	if err != nil {
+		t.Fatalf("tempdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatalf("listen %s: %v", sock, err)
