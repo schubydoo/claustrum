@@ -1,0 +1,65 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigestsToSemver"
+  ],
+  "timezone": "America/New_York",
+  "schedule": ["before 7am on Monday"],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 10,
+  "labels": ["dependencies"],
+  "rebaseWhen": "behind-base-branch",
+  "postUpdateOptions": ["gomodTidy"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 7am on Monday"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "minimumReleaseAge": null,
+    "schedule": ["at any time"]
+  },
+  "packageRules": [
+    {
+      "description": "GitHub Actions — group all non-major bumps into one weekly PR. helpers:pinGitHubActionDigestsToSemver keeps the SHA pin + '# vX.Y.Z' trailer comment that the workflows rely on.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "github-actions (minor + patch)",
+      "commitMessagePrefix": "chore(ci):",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "ci"
+    },
+    {
+      "description": "GitHub Actions major bumps stay individual — breaking changes need judgment.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "commitMessagePrefix": "chore(ci):",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "ci"
+    },
+    {
+      "description": "Go modules — group minor + patch (klauspost/compress and any transitive deps land in one PR).",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "gomod (minor + patch)",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Go module major bumps individual — a major version migration needs judgment.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"],
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Indirect gomod deps still get bumped — Go's transitive graph is part of the supply chain.",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["indirect"],
+      "enabled": true
+    }
+  ]
+}
