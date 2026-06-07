@@ -30,6 +30,10 @@ All notable changes to claustrum are documented here. The format is based on
   an advisory, read-only `repo-config-drift` workflow; branch/tag protection
   `.github/rulesets/` (squash-only PRs, linear history, required checks,
   immutable `v*` tags); `CODEOWNERS` and a pull-request template.
+- `renovate.json` — automated dependency updates (Go modules + SHA-pinned
+  GitHub Actions, keeping the pins via `helpers:pinGitHubActionDigestsToSemver`),
+  grouped minor/patch PRs with Conventional-Commits titles, `gomodTidy`
+  post-update, weekly schedule, and a dependency dashboard.
 - Expanded CI: `ci.yml` split into `lint` (gofmt + vet + `go mod tidy` clean),
   a `test` matrix (ubuntu + macos, `-race`), 6-target cross-build, and a 50%
   `coverage` floor, gated by a single `ci required checks passed` aggregator.
