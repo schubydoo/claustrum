@@ -39,7 +39,7 @@ func extractLoginPATH() {
 		}
 		path := strings.TrimSpace(line[i+len(pathSentinel):])
 		if path != "" {
-			os.Setenv("PATH", path)
+			_ = os.Setenv("PATH", path)
 			fmt.Printf("[shellenv] Extracted shell PATH (%d chars)\n", len(path))
 		}
 		return

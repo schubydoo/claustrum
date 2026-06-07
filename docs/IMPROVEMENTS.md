@@ -18,7 +18,7 @@ codes, or frame formats unless explicitly noted as protocol-safe). Ranked by
 | 4 | **Atomic `-install` extract** | M | L | Decompress to `cliPath.tmp` then `rename()` into place, so an interrupted install never leaves a half-written/partially-runnable CLI. Behavior-compatible (same facts on success). |
 | 5 | **Timeouts on `git`/`exec` calls** | M | L | `git.*` shells out with no deadline; a wedged git can hang a request goroutine. Wrap in `exec.CommandContext` with a generous timeout (as `isRunnable` already does). Results unchanged on the happy path. |
 | 6 | **pre-commit + `gofmt`/`vet` hooks** | M | L | Keeps contributors green locally; same tools as CI. |
-| 7 | **`go vet`-clean + `staticcheck`** in CI | M | L | Cheap correctness net. |
+| 7 | ~~**`go vet`-clean + `staticcheck`** in CI~~ ✅ **done** | M | L | Shipped via `golangci-lint` (`.golangci.yml`, standard set incl. staticcheck + govet + errcheck + ineffassign + unused, plus misspell/unconvert), wired into the CI `lint` job. |
 
 ## Tier 2 — medium
 

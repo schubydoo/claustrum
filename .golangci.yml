@@ -1,0 +1,21 @@
+# golangci-lint v2 config. The standard linter set (errcheck, govet,
+# ineffassign, staticcheck, unused) plus a couple of low-noise extras. Run
+# locally with `golangci-lint run ./...`; CI gates on the same.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - misspell # typos in comments/strings
+    - unconvert # redundant type conversions
+  settings:
+    errcheck:
+      # Ignoring a Close() error — almost always on a defer — is idiomatic and
+      # not worth wrapping every call site in a closure. Every other unchecked
+      # error is made explicit at the call site with `_ =`.
+      exclude-functions:
+        - (io.Closer).Close
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
