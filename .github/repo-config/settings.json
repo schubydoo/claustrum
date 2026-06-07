@@ -1,0 +1,25 @@
+{
+  "allow_merge_commit": false,
+  "allow_rebase_merge": false,
+  "allow_squash_merge": true,
+  "delete_branch_on_merge": true,
+  "description": "A tiny, dependency-light Go daemon that hosts a remote Claude Code session over SSH: CLI-version manager + process supervisor + JSON-RPC multiplexer (with a replay buffer) over an AF_UNIX socket. Clean-room, cross-platform, no telemetry.",
+  "has_issues": true,
+  "has_projects": false,
+  "has_wiki": false,
+  "homepage": "https://github.com/schubydoo/claustrum",
+  "topics": [
+    "af-unix",
+    "anthropic",
+    "claude",
+    "claude-code",
+    "daemon",
+    "developer-tools",
+    "go",
+    "golang",
+    "json-rpc",
+    "remote-control",
+    "self-hosted",
+    "ssh"
+  ]
+}

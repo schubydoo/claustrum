@@ -1,0 +1,12 @@
+[
+  { "name": "bug", "color": "d73a4a", "description": "Something isn't working" },
+  { "name": "enhancement", "color": "a2eeef", "description": "New feature or request" },
+  { "name": "documentation", "color": "0075ca", "description": "Improvements or additions to documentation" },
+  { "name": "question", "color": "d876e3", "description": "Further information is requested" },
+  { "name": "good first issue", "color": "7057ff", "description": "Good for newcomers" },
+  { "name": "help wanted", "color": "008672", "description": "Extra attention is needed" },
+  { "name": "breaking", "color": "b60205", "description": "Backwards-incompatible change — protocol/wire surface affected" },
+  { "name": "wire-surface", "color": "fbca04", "description": "Touches the JSON-RPC frame contract (rpc/methods/results/process) — needs the validation battery" },
+  { "name": "security", "color": "d93f0b", "description": "Security-related" },
+  { "name": "dependencies", "color": "ededed", "description": "Dependency update PRs" }
+]
