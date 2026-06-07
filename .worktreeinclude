@@ -1,0 +1,16 @@
+# .worktreeinclude — gitignored files Claude Code copies into each new worktree.
+#
+# A worktree is a fresh checkout, so gitignored local files (agent guardrails,
+# working notes) are absent unless listed here. Uses .gitignore syntax; only
+# files that match AND are gitignored AND present get copied — tracked files are
+# never duplicated, and a public clone (which has none of these) is unaffected.
+#
+# Note: SYMLINKS are not copied, so AGENTS.md (→ CLAUDE.md) won't appear in a
+# worktree — but tools that read AGENTS.md fall back to CLAUDE.md, which IS
+# tracked and therefore present. So it's intentionally not listed here.
+
+# Host-local agent guardrails (host safety + context-mode routing)
+CLAUDE.local.md
+
+# Reverse-engineering working notes + the validation battery
+scratch/

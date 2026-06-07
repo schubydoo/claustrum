@@ -1,0 +1,135 @@
+package main
+
+import (
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+func (s *server) handleGit(req *request) response {
+	var fn func(*request) response
+	switch req.Method {
+	case "git.info":
+		fn = gitInfo
+	case "git.status":
+		fn = gitStatus
+	case "git.list_branches":
+		fn = gitListBranches
+	case "git.worktree_create":
+		fn = gitWorktreeCreate
+	case "git.worktree_remove":
+		fn = gitWorktreeRemove
+	default:
+		return unknownMethod(req)
+	}
+	if bad := needParams(req); bad != nil {
+		return *bad
+	}
+	return fn(req)
+}
+
+type gitParams struct {
+	Path         string `json:"path"`
+	BaseRepo     string `json:"baseRepo"`
+	BranchName   string `json:"branchName"`
+	WorktreePath string `json:"worktreePath"`
+	SourceBranch string `json:"sourceBranch"`
+}
+
+// repoDir is the repo a worktree op runs against: baseRepo, or the daemon's cwd
+// (".") when absent. (worktree_* use baseRepo, NOT path — probe-verified.)
+func (p *gitParams) repoDir() string {
+	if p.BaseRepo != "" {
+		return p.BaseRepo
+	}
+	return "."
+}
+
+// git runs git -C <dir> <args...> and returns combined output + ok.
+func git(dir string, args ...string) (string, bool) {
+	full := append([]string{"-C", dir}, args...)
+	out, err := exec.Command("git", full...).CombinedOutput()
+	return strings.TrimRight(string(out), "\n"), err == nil
+}
+
+func isRepo(dir string) bool {
+	out, ok := git(dir, "rev-parse", "--is-inside-work-tree")
+	return ok && out == "true"
+}
+
+func gitInfo(req *request) response {
+	var p gitParams
+	_ = decodeParams(req, &p)
+	if !isRepo(p.Path) {
+		return okResult(req.ID, notRepoResult{})
+	}
+	top, _ := git(p.Path, "rev-parse", "--show-toplevel")
+	branch, _ := git(p.Path, "rev-parse", "--abbrev-ref", "HEAD")
+	return okResult(req.ID, gitInfoResult{IsRepo: true, Repo: filepath.Base(top), Branch: branch})
+}
+
+func gitStatus(req *request) response {
+	var p gitParams
+	_ = decodeParams(req, &p)
+	if !isRepo(p.Path) {
+		return okResult(req.ID, notRepoResult{})
+	}
+	out, _ := git(p.Path, "status", "--porcelain")
+	if out == "" {
+		return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: true})
+	}
+	var changes []string
+	for _, line := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			changes = append(changes, t)
+		}
+	}
+	return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: false, Changes: changes})
+}
+
+func gitListBranches(req *request) response {
+	var p gitParams
+	_ = decodeParams(req, &p)
+	if !isRepo(p.Path) {
+		return okResult(req.ID, notRepoResult{})
+	}
+	out, _ := git(p.Path, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	branches := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			branches = append(branches, t)
+		}
+	}
+	sort.Strings(branches)
+	return okResult(req.ID, branchesResult{IsRepo: true, Branches: branches})
+}
+
+func gitWorktreeCreate(req *request) response {
+	var p gitParams
+	_ = decodeParams(req, &p)
+	if p.BranchName == "" {
+		return errResult(req.ID, codeInvalidParam, "branchName is required")
+	}
+	repo := p.repoDir()
+	source := p.SourceBranch
+	if source == "" {
+		source, _ = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+	}
+	out, ok := git(repo, "worktree", "add", "-b", p.BranchName, p.WorktreePath, source)
+	if !ok {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     "git worktree add failed: " + out,
+			ErrorCode: "worktree_add_failed",
+		})
+	}
+	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source})
+}
+
+func gitWorktreeRemove(req *request) response {
+	var p gitParams
+	_ = decodeParams(req, &p)
+	git(p.repoDir(), "worktree", "remove", "--force", p.WorktreePath)
+	return okResult(req.ID, successResult{Success: true})
+}

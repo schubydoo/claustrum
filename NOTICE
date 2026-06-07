@@ -1,0 +1,23 @@
+claustrum
+Copyright 2026 Schuby
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at http://www.apache.org/licenses/LICENSE-2.0
+
+---------------------------------------------------------------------------
+Independence & trademark notice
+---------------------------------------------------------------------------
+
+claustrum is an independent, clean-room implementation. It is NOT affiliated
+with, authorized, sponsored, or endorsed by Anthropic, PBC.
+
+"Anthropic", "Claude", "Claude Code", and "Claude Desktop" are trademarks of
+Anthropic, PBC. They are used in this project's documentation only nominatively —
+to describe interoperability and the protocol claustrum speaks — and no
+affiliation or endorsement is implied.
+
+claustrum was written from a behavioral specification of a JSON-RPC-over-Unix-
+socket protocol observed at the wire/black-box level. It contains no source code,
+disassembly, or decompilation derived from any Anthropic binary, and no Anthropic
+proprietary material is included in this repository.

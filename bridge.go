@@ -1,0 +1,49 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+)
+
+// runBridge is a dumb stdio<->unix-socket relay. It does NOT inject auth; the
+// stream it relays must already carry "auth" per request. This is what an SSH
+// session attaches to.
+func runBridge(socket string) error {
+	if socket == "" {
+		return errors.New("-socket is required")
+	}
+	nc, err := net.Dial("unix", socket)
+	if err != nil {
+		return err
+	}
+	defer nc.Close()
+	done := make(chan struct{}, 2)
+	go func() { io.Copy(nc, os.Stdin); done <- struct{}{} }()
+	go func() { io.Copy(os.Stdout, nc); done <- struct{}{} }()
+	<-done
+	return nil
+}
+
+// runStop sends a server.shutdown RPC (authenticated with CLAUDE_RPC_TOKEN) to a
+// running daemon. ⚠️ this stops the daemon and drops its sessions.
+func runStop(socket string) error {
+	if socket == "" {
+		return errors.New("-socket is required")
+	}
+	nc, err := net.Dial("unix", socket)
+	if err != nil {
+		return err
+	}
+	defer nc.Close()
+	tok := os.Getenv("CLAUDE_RPC_TOKEN")
+	fmt.Fprintf(nc, `{"jsonrpc":"2.0","id":1,"method":"server.shutdown","auth":%q}`+"\n", tok)
+	buf := make([]byte, 4096)
+	n, _ := nc.Read(buf)
+	if n > 0 {
+		os.Stdout.Write(buf[:n])
+	}
+	return nil
+}

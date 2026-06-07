@@ -1,0 +1,15 @@
+scratch/
+/dist/
+/claustrum
+
+# Host-local agent guardrails (host specifics + context-mode routing; never committed)
+CLAUDE.local.md
+
+# Go build & test artifacts
+*.test
+*.out
+coverage.*
+
+# OS / editor cruft
+.DS_Store
+.nfs*

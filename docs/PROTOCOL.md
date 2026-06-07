@@ -1,0 +1,135 @@
+# claustrum protocol reference
+
+claustrum speaks newline-delimited **JSON-RPC 2.0** over an `AF_UNIX`
+`SOCK_STREAM` socket. This document is the complete wire contract; it is also the
+contract the validation battery checks byte-for-byte.
+
+## Transport
+
+- One JSON object per line (NDJSON). No length prefix, no binary framing.
+- `AF_UNIX` stream socket, created mode `0600` (owner only).
+- The connection is **persistent**: it stays open after a response, and id-less
+  stream notifications arrive on it asynchronously.
+- A connection's requests are dispatched **concurrently** — responses may arrive
+  out of request order; match them by `id`.
+
+## Authentication
+
+Every request carries a top-level `"auth":"<token>"`. The server's expected token
+comes from `-token-file` (read once at startup, then **unlinked**) or the
+`CLAUDE_RPC_TOKEN` environment variable. A bad or missing token →
+`-32001 Unauthorized: invalid or missing auth token` (also logged
+`[Server] Unauthorized request: method=…, id=…`).
+
+The `-bridge` relay does **not** inject auth — whatever speaks through it must
+include `"auth"` itself.
+
+## Message shapes
+
+```jsonc
+// request
+{"jsonrpc":"2.0","id":<n>,"method":"<ns>.<method>","params":{…},"auth":"<token>"}
+// success
+{"jsonrpc":"2.0","id":<n>,"result":{…}}
+// error
+{"jsonrpc":"2.0","id":<n>,"error":{"code":<c>,"message":"…"}}
+// id-less stream notification (server -> client)
+{"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>}
+```
+
+### Error codes
+
+| code | meaning |
+|---|---|
+| `-32700` | parse error — malformed JSON line (response `id` is `null`) |
+| `-32600` | `Invalid JSON-RPC version` — `jsonrpc` absent or != `"2.0"` |
+| `-32601` | `Unknown method: <ns>.<m>` / `Unknown namespace: <ns>` |
+| `-32602` | invalid params (see per-method messages) |
+| `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
+| `-32001` | unauthorized |
+
+**Params presence:** every `files.*` / `git.*` / `process.*` method requires a
+`params` object to be present. An absent `params` → `-32602 Invalid params`,
+checked *after* method existence (so an unknown method is `-32601` regardless). An
+empty `{}` is accepted and runs the method's own validation.
+
+## Methods (18)
+
+`server.capabilities` self-describes the set. Order as returned:
+
+```
+server.ping  server.version  server.capabilities  server.shutdown
+files.list   files.validate  files.stat  files.read  files.extract_tar
+git.info     git.status      git.list_branches  git.worktree_create  git.worktree_remove
+process.spawn  process.stdin  process.kill  process.reattach
+```
+
+### server.*
+
+| method | params | result |
+|---|---|---|
+| `server.ping` | — | `{"pong":true}` |
+| `server.version` | — | `{"version":"<id>","platform":"<goos>","arch":"<goarch>"}` |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…18…]}` |
+| `server.shutdown` | — | *no response* — the daemon stops and the connection closes |
+
+### files.* (param: `path`)
+
+| method | result / notes |
+|---|---|
+| `files.stat{path}` | `{"exists","isDir","size","mode":"-rw-r--r--"}`; missing → `{exists:false,isDir:false,size:0,mode:""}` |
+| `files.list{path}` | `{"entries":[{"name","path","isDir"},…]}` (name-sorted); missing dir → `-32603 open …: no such file or directory` |
+| `files.read{path[,maxBytes]}` | `{"content":"<raw text>","exists":true}`; missing file → `{content:"",exists:false}` (not an error); a directory → `-32602 files.read: path is a directory`; size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`. `content` is **raw text**, not base64. |
+| `files.validate{path}` | `{"valid":bool,"isDir":bool[,"error"]}`; missing path → `{valid:false,isDir:false,error:"Path does not exist"}` |
+| `files.extract_tar{archivePath,destDir}` | extracts a **gzip** tar → `{"success":true,"fileCount":<n>}`; missing params → `-32602 archivePath and destDir are required`; non-absolute/root `destDir` → `{success:false,error:"destDir must be an absolute, non-root path: …"}`; bad gzip → `{success:false,fileCount:0,error:"gzip: …"}` |
+
+### git.* (param: `path` = repo dir; worktree ops use `baseRepo`)
+
+| method | result / notes |
+|---|---|
+| `git.info{path}` | repo → `{"isRepo":true,"repo":"<dir>","branch":"<b>"}`; else `{"isRepo":false}` |
+| `git.status{path}` | clean → `{"isRepo":true,"clean":true}`; dirty → `{…,"clean":false,"changes":["M a.txt","?? new"]}` (porcelain lines) |
+| `git.list_branches{path}` | `{"isRepo":true,"branches":[…sorted…]}` |
+| `git.worktree_create{baseRepo,branchName,worktreePath[,sourceBranch]}` | `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`; missing `branchName` → `-32602 branchName is required`; failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`. The repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo. |
+| `git.worktree_remove{baseRepo,worktreePath}` | `{"success":true}` (lenient) |
+
+### process.* (the agent/MCP-hosting core)
+
+The client supplies its own `id` (any string). Output is delivered as id-less
+stream notifications, **buffered** for later replay.
+
+| method | params | result / notes |
+|---|---|---|
+| `process.spawn` | `{id,command[,args][,cwd][,env]}` | `{"success":true}`, then stream frames. `args`: string[]. `env`: `{KEY:VAL}` merged over the daemon environment. Missing `id` → `-32602 Process ID is required`; missing `command` → `-32602 Command is required`. |
+| `process.stdin` | `{id,data}` | `{"success":true}`. `data` is **base64** written to the child's stdin. Unknown id → `-32602 Process not found`. |
+| `process.kill` | `{id[,signal]}` | `{"success":true}` (best-effort; signals the process group on Unix). |
+| `process.reattach` | `{id,fromSeq}` | replays buffered frames with **seq > fromSeq** (exclusive) to this connection, (re)subscribes it for future frames, then returns `{"found","running","firstSeq","lastSeq"}`. Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0}`. |
+
+### Stream notifications
+
+```jsonc
+{"type":"stream","processId":"<id>","stream":"stdout","seq":1,"data":"<base64>"}
+{"type":"stream","processId":"<id>","stream":"stderr","seq":2,"data":"<base64>"}
+{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":0}
+```
+
+- `seq` is **per-process**, starts at 1, monotonic across stdout/stderr/exit.
+- `data` is base64 for stdout/stderr; the `exit` frame carries `exitCode` and no
+  `data`. A signal-terminated child reports `exitCode: -1`.
+- The replay buffer retains all frames for the life of the process (so
+  `reattach{fromSeq:0}` replays everything). A process **survives** the
+  disconnect of the connection that spawned it; another connection can pick it up
+  via `reattach`. This is the multi-attach / reconnect mechanism.
+
+## Daemon lifecycle (flags)
+
+| flag(s) | role |
+|---|---|
+| `-serve -socket <p> -token-file <p>` | self-daemonize (reparent to init / detached), extract login-shell PATH (Unix), run the RPC server |
+| `-bridge -socket <p>` | dumb stdio↔socket relay (no auth injection) — what an SSH session attaches to |
+| `-stop -socket <p>` | send `server.shutdown` (auth from `CLAUDE_RPC_TOKEN`) |
+| `-version` | print `claustrum <id> (built <time>)` |
+| `-install -cli-dir <d> -cli-version <v> [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]` | ensure the CLI is present (download/verify/extract/prune), print `__INSTALL_RESULT__<json>` facts |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
+deployment lifecycle, and [EXAMPLES.md](EXAMPLES.md) for runnable snippets.
