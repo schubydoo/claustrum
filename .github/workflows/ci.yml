@@ -1,42 +1,165 @@
-# Minimal CI: format, vet, cross-build all 6 targets, test.
-# (Action refs use version tags for readability; pin to commit SHAs if you adopt
-#  OpenSSF Scorecard.)
 name: CI
+
+# Format, vet, module hygiene, race tests (ubuntu + macos — the integration
+# suite spawns sh/cat/git and binds AF_UNIX, which the Windows runner can't),
+# cross-build of all 6 release targets, and a coverage floor. A single
+# aggregator job (`ci required checks passed`) is what branch protection gates
+# on — extend it by adding jobs to its `needs`.
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  lint:
+    name: lint (gofmt + vet + tidy)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          go-version: '1.23'
-          check-latest: true
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: gofmt
         run: |
-          out="$(gofmt -l .)"
-          if [ -n "$out" ]; then echo "unformatted files:"; echo "$out"; exit 1; fi
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: go vet
         run: go vet ./...
 
-      - name: test
-        run: go test ./...
+      - name: go mod tidy is clean
+        run: |
+          go mod tidy
+          if ! git diff --exit-code -- go.mod go.sum; then
+            echo "::error::go.mod/go.sum drifted; run 'go mod tidy' locally and commit"
+            exit 1
+          fi
 
-      - name: cross-build all targets
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go test
+        run: go test -race -count=1 ./...
+
+  cross-build:
+    name: cross-build (6 targets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build all targets (CGO off, trimpath, stripped)
         run: |
           set -e
           for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             echo "build $t"
-            CGO_ENABLED=0 GOOS=${t%/*} GOARCH=${t#*/} go build -trimpath -ldflags="-s -w" -o /tmp/claustrum-${t%/*}-${t#*/} .
+            CGO_ENABLED=0 GOOS=${t%/*} GOARCH=${t#*/} \
+              go build -trimpath -ldflags="-s -w" -o "/tmp/claustrum-${t%/*}-${t#*/}" .
           done
+
+  coverage:
+    # Single Ubuntu run with cross-package attribution (-coverpkg=./...) so
+    # socket-driven hits count against every package. Floor is one notch below
+    # the current number so new commits don't immediately fail; raise it as the
+    # suite grows.
+    name: coverage (>= 50%)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COVERAGE_MIN: "50.0"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests with coverage
+        run: |
+          go test -race -count=1 \
+            -coverprofile=coverage.out \
+            -covermode=atomic \
+            -coverpkg=./... \
+            ./...
+
+      - name: Enforce minimum coverage
+        run: |
+          set -euo pipefail
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          echo "Total coverage: ${total}%"
+          if awk -v t="$total" -v m="$COVERAGE_MIN" 'BEGIN { exit !(t < m) }'; then
+            echo "::error::coverage ${total}% is below the ${COVERAGE_MIN}% floor"
+            echo "::group::Uncovered functions"
+            go tool cover -func=coverage.out | grep -v '100.0%' | grep -v '^total:'
+            echo "::endgroup::"
+            exit 1
+          fi
+
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-profile
+          path: coverage.out
+          retention-days: 7
+
+  ci-required-checks:
+    # Single check for branch protection to gate on. Aggregates every job whose
+    # failure should block merging. Add new required jobs by extending `needs`.
+    name: ci required checks passed
+    if: always()
+    needs: [lint, test, cross-build, coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check required jobs passed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          failing=$(echo "$NEEDS_JSON" | jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key): \(.value.result)"
+          ')
+          if [ -n "$failing" ]; then
+            echo "Failed or cancelled jobs:"
+            echo "$failing"
+            exit 1
+          fi
+          echo "All required jobs passed."

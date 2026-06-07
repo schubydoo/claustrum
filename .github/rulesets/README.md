@@ -5,8 +5,9 @@ file maps to one GitHub ruleset:
 
 - `main.json` → ruleset **`main`** (branch). Protects the default branch:
   no deletion, no force-push, linear history, changes land via squash-only PRs
-  with all review threads resolved, and the `build` CI check must pass
-  (`strict` — the branch must be up to date first).
+  with all review threads resolved, and three checks must pass (`strict` — the
+  branch must be up to date first): `ci required checks passed`,
+  `security required checks passed`, and `conventional PR title`.
 - `tags.json` → ruleset **`protect-version-tags`** (tag). Makes `v*` release
   tags immutable: no deletion, no force-update.
 
@@ -22,9 +23,13 @@ it **only after the default branch already exists on GitHub** (i.e. after the
 first `git push`). Activating it on an empty repo blocks the very push that
 would create `main`. Push first, then apply.
 
-The required check is `build` (the job name in [`ci.yml`](../workflows/ci.yml),
-integration `15368` = GitHub Actions). If you rename that job, update
-`main.json` to match or PRs can never go green.
+The required checks are the aggregator jobs `ci required checks passed`
+([`ci.yml`](../workflows/ci.yml)) and `security required checks passed`
+([`security.yml`](../workflows/security.yml)), plus `conventional PR title`
+([`pr-title.yml`](../workflows/pr-title.yml)) — all integration `15368`
+(GitHub Actions). Scorecard is deliberately not required (it never runs on
+`pull_request`). If you rename an aggregator job, update `main.json` to match
+or PRs can never go green.
 
 ## Applying
 
