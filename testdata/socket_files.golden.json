@@ -1,0 +1,68 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "exists": true,
+      "isDir": false,
+      "size": 3,
+      "mode": "-rw-r--r--"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "entries": [
+        {
+          "name": "a.txt",
+          "path": "<DIR>/fdir/a.txt",
+          "isDir": false
+        },
+        {
+          "name": "b.txt",
+          "path": "<DIR>/fdir/b.txt",
+          "isDir": false
+        },
+        {
+          "name": "sub",
+          "path": "<DIR>/fdir/sub",
+          "isDir": true
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "content": "hi\n",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "valid": true,
+      "isDir": false
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "valid": false,
+      "isDir": false,
+      "error": "Path does not exist"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "result": {
+      "success": true,
+      "fileCount": 2
+    }
+  }
+]

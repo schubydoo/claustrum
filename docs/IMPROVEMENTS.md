@@ -12,9 +12,9 @@ codes, or frame formats unless explicitly noted as protocol-safe). Ranked by
 
 | # | Improvement | Impact | Cost | Why / compatibility |
 |---|---|---|---|---|
-| 1 | **CI workflow** (`go vet`, `gofmt -l`, `make all`, `go test`) | H | L | Gates every PR; catches cross-compile + format regressions. Pure additive. |
-| 2 | **In-repo Go test suite** | H | M | Today the only validation lives in `scratch/` (private, needs the reference binary). Add table-driven tests that boot the daemon on a temp socket and assert each method's frames. Lets CI gate compatibility without the reference. |
-| 3 | **Golden-frame fixtures** | H | M | Commit sanitized reference frames as `testdata/*.json`; assert byte-equality in tests. Locks the contract so refactors can't drift silently. |
+| 1 | ~~**CI workflow** (`go vet`, `gofmt -l`, `make all`, `go test`)~~ ✅ **done** | H | L | Gates every PR; catches cross-compile + format regressions. Pure additive. Shipped as `.github/workflows/ci.yml`. |
+| 2 | ~~**In-repo Go test suite**~~ ✅ **done** | H | M | Shipped: `harness_test.go` + `integration_test.go` + `integration_fs_git_test.go` boot the daemon on a temp socket and assert each method's frames over the real wire path — CI now gates compatibility without the reference binary. |
+| 3 | ~~**Golden-frame fixtures**~~ ✅ **done** | H | M | Shipped: `testdata/socket_*.golden.json` (responses/errors, `files.*`, `git.*`), asserted byte-equal; regenerate with `go test -run Socket -update`. Locks the contract so refactors can't drift silently. |
 | 4 | **Atomic `-install` extract** | M | L | Decompress to `cliPath.tmp` then `rename()` into place, so an interrupted install never leaves a half-written/partially-runnable CLI. Behavior-compatible (same facts on success). |
 | 5 | **Timeouts on `git`/`exec` calls** | M | L | `git.*` shells out with no deadline; a wedged git can hang a request goroutine. Wrap in `exec.CommandContext` with a generous timeout (as `isRunnable` already does). Results unchanged on the happy path. |
 | 6 | **pre-commit + `gofmt`/`vet` hooks** | M | L | Keeps contributors green locally; same tools as CI. |
