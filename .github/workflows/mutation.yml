@@ -101,21 +101,20 @@ jobs:
           {
             echo "## Mutation testing results"
             jq -r '
-              "**Test efficacy:** \(.testEfficacy)%",
-              "**Mutator coverage:** \(.mutationsCoverage)%",
+              "**Test efficacy:** \(.test_efficacy)%",
+              "**Mutation coverage:** \(.mutations_coverage)%",
               "",
               "| Status | Count |",
               "|---|---|",
-              "| KILLED | \(.killed)  |",
-              "| LIVED | \(.lived)  |",
-              "| NOT COVERED | \(.notCovered)  |",
-              "| TIMED OUT | \(.timedOut)  |",
-              "| NOT VIABLE | \(.notViable)  |",
-              "| SKIPPED | \(.skipped)  |"
+              "| Total (covered) | \(.mutants_total) |",
+              "| KILLED | \(.mutants_killed) |",
+              "| LIVED | \(.mutants_lived) |",
+              "| NOT COVERED | \(.mutants_not_covered) |",
+              "| NOT VIABLE | \(.mutants_not_viable) |"
             ' gremlins.json
             echo ""
             echo "### Lived mutants (likely weak assertions)"
-            jq -r '.files[]?.mutants[]? | select(.status == "LIVED") | "- `\(.type)` at \(.fileName):\(.lineNumber):\(.columnNumber)"' gremlins.json || true
+            jq -r '.files[] | .file_name as $f | .mutations[]? | select(.status == "LIVED") | "- `\(.type)` at \($f):\(.line):\(.column)"' gremlins.json || true
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload mutation report
