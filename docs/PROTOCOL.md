@@ -158,5 +158,14 @@ stream notifications, **buffered** for later replay.
   is required` on stderr, exit `2` (no usage dump). An *unknown flag* still gets
   the stdlib `flag` error + usage and exit `2`.
 
+**`-install` checksum + error framing (probe-verified):** `-cli-checksum` is
+verified **only on the download (`-cli-url`) path, and there unconditionally** — an
+empty `-cli-checksum` still fails (`checksum mismatch: expected=, actual=<sha>`).
+The local `-cli-zst` (SFTP-upload) path is **not** checksum-verified at all: the
+blob arrives over an already-authenticated channel, so a wrong/empty checksum is
+ignored and it installs. Input/decompress failures surface as `cliError` strings
+`opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob);
+`-install` itself always exits `0` and prints the facts.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
 deployment lifecycle, and [EXAMPLES.md](EXAMPLES.md) for runnable snippets.

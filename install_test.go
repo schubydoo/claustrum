@@ -257,15 +257,62 @@ func TestEnsureCLIFromURL(t *testing.T) {
 	}
 }
 
-func TestEnsureCLIChecksumMismatch(t *testing.T) {
+// The reference does NOT verify -cli-checksum on the -cli-zst (SFTP) path: a
+// wrong checksum is ignored and the blob installs anyway.
+func TestEnsureCLIZstIgnoresChecksum(t *testing.T) {
 	dir := t.TempDir()
 	zstFile := filepath.Join(dir, "cli.zst")
 	if err := os.WriteFile(zstFile, zstdOf(t, []byte(runnableScript)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	o := installOpts{cliZst: zstFile, cliChecksum: "deadbeef"}
-	if err := ensureCLI(o, filepath.Join(dir, "out")); err == nil {
-		t.Error("a checksum mismatch should error")
+	cliPath := filepath.Join(dir, "out")
+	o := installOpts{cliZst: zstFile, cliChecksum: "deadbeef"} // wrong on purpose
+	if err := ensureCLI(o, cliPath); err != nil {
+		t.Fatalf("zst path must ignore -cli-checksum, got: %v", err)
+	}
+	if !isRunnable(cliPath) {
+		t.Error("the CLI should still be installed despite the wrong checksum")
+	}
+}
+
+// The -cli-url (download) path verifies UNCONDITIONALLY: a wrong checksum and an
+// empty checksum both fail (the reference checks even when -cli-checksum is "").
+func TestEnsureCLIURLVerifiesUnconditionally(t *testing.T) {
+	zst := zstdOf(t, []byte(runnableScript))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(zst)
+	}))
+	defer srv.Close()
+
+	for _, tc := range []struct{ name, checksum string }{
+		{"wrong checksum", "deadbeef"},
+		{"empty checksum", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := installOpts{cliURL: srv.URL + "/claude.zst", cliChecksum: tc.checksum}
+			err := ensureCLI(o, filepath.Join(t.TempDir(), "1.0.0"))
+			if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+				t.Errorf("download with %s = %v, want a checksum-mismatch error", tc.name, err)
+			}
+		})
+	}
+}
+
+// ensureCLI wraps the input-read and decompress failures the way the reference
+// does ("opening input: …" / "decompressing: …").
+func TestEnsureCLIErrorWrapping(t *testing.T) {
+	dir := t.TempDir()
+	if err := ensureCLI(installOpts{cliZst: filepath.Join(dir, "nope.zst")}, filepath.Join(dir, "out")); err == nil ||
+		!strings.HasPrefix(err.Error(), "opening input:") {
+		t.Errorf("missing zst = %v, want an 'opening input:' error", err)
+	}
+	badZst := filepath.Join(dir, "bad.zst")
+	if err := os.WriteFile(badZst, []byte("not a zst"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureCLI(installOpts{cliZst: badZst}, filepath.Join(dir, "out2")); err == nil ||
+		!strings.HasPrefix(err.Error(), "decompressing:") {
+		t.Errorf("bad zst = %v, want a 'decompressing:' error", err)
 	}
 }
 
