@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## [1.0.1](https://github.com/schubydoo/claustrum/compare/v1.0.0...v1.0.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **ci:** reference SLSA generator by semver tag, not SHA ([#44](https://github.com/schubydoo/claustrum/issues/44)) ([e31b52f](https://github.com/schubydoo/claustrum/commit/e31b52fc7ff75df76f1256090fd1056a911b344f))
+
 ## 1.0.0 (2026-06-08)
 
 
