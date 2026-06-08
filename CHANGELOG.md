@@ -25,6 +25,10 @@ All notable changes to claustrum are documented here. The format is based on
   with committed golden fixtures (`testdata/socket_*.golden.json`, regenerate via
   `go test -run Socket -update`) locking the response/error envelopes and the
   `files.*`/`git.*` results against regression.
+- Broadened unit coverage: the `-install` pipeline (zstd decompress, checksum,
+  prune, runnable check, facts JSON — network-free via local `.zst`/httptest),
+  the `-bridge`/`-stop` clients, version resolution, and signal parsing. Total
+  statement coverage ~70% (CI floor raised 50% → 65%).
 - Repository governance config (mirrors the sibling project, adapted for a Go
   daemon): declarative `.github/repo-config/` baselines (settings + labels) with
   an advisory, read-only `repo-config-drift` workflow; branch/tag protection
