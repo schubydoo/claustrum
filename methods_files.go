@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func (s *server) handleFiles(req *request) response {
@@ -145,6 +146,15 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			return count, gzipErr{err}
 		}
 		target := filepath.Join(destDir, hdr.Name)
+		// Reject entries that would escape destDir ("zip slip"). filepath.Join
+		// has already cleaned target, so a prefix test against the cleaned
+		// destDir catches "../" traversal (an absolute or in-bounds "../" entry
+		// resolves inside and is allowed). The reference daemon rejects such an
+		// archive with this exact error and fileCount 0 — even when earlier safe
+		// entries were already written to disk.
+		if cleanDest := filepath.Clean(destDir); target != cleanDest && !strings.HasPrefix(target, cleanDest+string(os.PathSeparator)) {
+			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
+		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, os.FileMode(hdr.Mode)); err != nil {

@@ -147,6 +147,37 @@ func TestFilesExtractTarErrors(t *testing.T) {
 	}
 }
 
+// An archive entry that would escape destDir ("zip slip") is rejected with the
+// reference daemon's exact error and fileCount 0, and nothing is written outside
+// destDir. A "../" that resolves back inside destDir is still allowed.
+func TestFilesExtractTarZipSlip(t *testing.T) {
+	s := newTestServer()
+	root := t.TempDir()
+	dest := filepath.Join(root, "sub")
+
+	// Escaping entry: rejected, and the target one level up is never created.
+	archive := tarGzPath(t, map[string]string{"../escaped.txt": "pwned"})
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":false`) ||
+		!strings.Contains(got, `"fileCount":0`) ||
+		!strings.Contains(got, "unsafe path in archive: ../escaped.txt") {
+		t.Fatalf("zip-slip extract = %s, want success:false/fileCount:0/unsafe-path error", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "escaped.txt")); err == nil {
+		t.Error("zip-slip wrote a file outside destDir")
+	}
+
+	// Benign "../" that normalizes back inside destDir is permitted.
+	ok := tarGzPath(t, map[string]string{"inner/../within.txt": "fine"})
+	got = dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": ok, "destDir": filepath.Join(root, "dest2")}))
+	if !strings.Contains(got, `"success":true`) {
+		t.Errorf("benign ../ extract = %s, want success", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "dest2", "within.txt")); err != nil || string(b) != "fine" {
+		t.Errorf("within.txt = %q (err %v), want fine", b, err)
+	}
+}
+
 // repoDir returns BaseRepo when set, otherwise the daemon CWD (".").
 func TestGitRepoDir(t *testing.T) {
 	if got := (&gitParams{BaseRepo: "/some/repo"}).repoDir(); got != "/some/repo" {
