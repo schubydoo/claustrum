@@ -29,7 +29,7 @@ frames.** The wire surface *is* the product.
   + `integration*_test.go`) that boots the daemon on a temp `AF_UNIX` socket and
   asserts every method's frames against committed golden fixtures
   (`testdata/socket_*.golden.json`) — so CI gates compatibility without the
-  reference binary. ~70% statement coverage. The cross-binary battery that diffs
+  reference binary. ~79% statement coverage. The cross-binary battery that diffs
   against the reference daemon lives in `scratch/`.
 
 ## Architecture
