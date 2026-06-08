@@ -58,12 +58,19 @@ func (s *server) processStdin(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if s.procs.get(p.ID) == nil {
-		return errResult(req.ID, codeInvalidParam, "Process not found")
-	}
+	// Precedence is decode → exists → running (probe-verified against the
+	// reference): invalid base64 is rejected before the process is even looked
+	// up, so an unknown id with a bad payload still reports the decode error.
 	data, err := base64.StdEncoding.DecodeString(p.Data)
 	if err != nil {
-		return errResult(req.ID, codeInvalidParam, "Invalid params")
+		return errResult(req.ID, codeInvalidParam, "Invalid base64 data")
+	}
+	mp := s.procs.get(p.ID)
+	if mp == nil {
+		return errResult(req.ID, codeInvalidParam, "Process not found")
+	}
+	if !mp.isRunning() {
+		return errResult(req.ID, codeInvalidParam, "Process not running")
 	}
 	s.procs.writeStdin(p.ID, data)
 	return okResult(req.ID, successResult{Success: true})
