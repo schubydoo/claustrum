@@ -102,10 +102,10 @@ process.spawn  process.stdin  process.kill  process.reattach
 
 | method | result / notes |
 |---|---|
-| `git.info{path}` | repo → `{"isRepo":true,"repo":"<dir>","branch":"<b>"}`; else `{"isRepo":false}` |
+| `git.info{path}` | repo → `{"isRepo":true,"repo":"<dir>","branch":"<b>"}`; else `{"isRepo":false}`. `branch` is resolved via `symbolic-ref` so it works on an **unborn HEAD** (empty repo with no commits → the init branch name, e.g. `master`); a **detached HEAD** is reported as `branch:"detached:<short-sha>"`. |
 | `git.status{path}` | clean → `{"isRepo":true,"clean":true}`; dirty → `{…,"clean":false,"changes":["M a.txt","?? new"]}` (porcelain lines); non-repo → `{"isRepo":false,"clean":false}` (full shape, unlike `git.info`'s bare `{"isRepo":false}`) |
 | `git.list_branches{path}` | `{"isRepo":true,"branches":[…sorted…]}`; non-repo → `{"isRepo":false,"branches":[]}` |
-| `git.worktree_create{baseRepo,branchName,worktreePath[,sourceBranch]}` | `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`; missing `branchName` → `-32602 branchName is required`; resolved repo isn't a git repo → `{success:false,error:"not a git repository",errorCode:"not_a_repo"}` (checked before the add, so git's raw error isn't leaked); other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`. The repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo. |
+| `git.worktree_create{baseRepo,branchName,worktreePath[,sourceBranch]}` | `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`; missing `branchName` → `-32602 branchName is required`; resolved repo isn't a git repo → `{success:false,error:"not a git repository",errorCode:"not_a_repo"}` (checked before the add, so git's raw error isn't leaked); other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`. The repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo. When `sourceBranch` is omitted it defaults to the repo's current branch (and is echoed back); on an **unborn HEAD** (empty repo) the source resolves to empty, the add infers an orphan branch and still succeeds, and `sourceBranch` is omitted from the result. |
 | `git.worktree_remove{baseRepo,worktreePath}` | `{"success":true}` (lenient) |
 
 ### process.* (the agent/MCP-hosting core)
