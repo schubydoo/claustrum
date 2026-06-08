@@ -67,7 +67,15 @@ func gitInfo(req *request) response {
 		return okResult(req.ID, notRepoResult{})
 	}
 	top, _ := git(p.Path, "rev-parse", "--show-toplevel")
-	branch, _ := git(p.Path, "rev-parse", "--abbrev-ref", "HEAD")
+	// Resolve the branch the way the reference does: symbolic-ref reports the
+	// branch for both normal and unborn (no-commit) HEADs, where
+	// `rev-parse --abbrev-ref HEAD` would fail/return "HEAD". A detached HEAD
+	// (symbolic-ref fails) is reported as "detached:<short-sha>".
+	branch, ok := git(p.Path, "symbolic-ref", "--short", "HEAD")
+	if !ok {
+		sha, _ := git(p.Path, "rev-parse", "--short", "HEAD")
+		branch = "detached:" + sha
+	}
 	return okResult(req.ID, gitInfoResult{IsRepo: true, Repo: filepath.Base(top), Branch: branch})
 }
 
@@ -134,11 +142,21 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "not_a_repo",
 		})
 	}
+	// Default the source to the repo's current branch. On an unborn HEAD
+	// (no-commit repo) abbrev-ref fails — leave source empty rather than capturing
+	// git's error text, and let `git worktree add` infer an orphan branch (it
+	// succeeds, and the reference omits sourceBranch from the result).
 	source := p.SourceBranch
 	if source == "" {
-		source, _ = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+		if s, ok := git(repo, "rev-parse", "--abbrev-ref", "HEAD"); ok {
+			source = s
+		}
 	}
-	out, ok := git(repo, "worktree", "add", "-b", p.BranchName, p.WorktreePath, source)
+	addArgs := []string{"worktree", "add", "-b", p.BranchName, p.WorktreePath}
+	if source != "" {
+		addArgs = append(addArgs, source)
+	}
+	out, ok := git(repo, addArgs...)
 	if !ok {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,

@@ -335,6 +335,63 @@ func TestGitNonRepoResults(t *testing.T) {
 	}
 }
 
+// git.info resolves the branch via symbolic-ref, which works on an unborn HEAD
+// (empty repo → the init branch name) and lets a detached HEAD be reported as
+// "detached:<short-sha>" — where `rev-parse --abbrev-ref HEAD` would fail (and
+// previously leaked git's error text) or return "HEAD".
+func TestGitInfoBranchEdges(t *testing.T) {
+	requireGit(t)
+	s := newTestServer()
+
+	// Empty repo (no commits): the init branch name still resolves.
+	empty := filepath.Join(t.TempDir(), "empty")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, empty, "init", "-b", "trunk")
+	if got := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": empty})); !strings.Contains(got, `"branch":"trunk"`) {
+		t.Errorf("empty-repo git.info = %s, want branch=trunk", got)
+	}
+
+	// Detached HEAD → "detached:<short-sha>".
+	det := filepath.Join(t.TempDir(), "det")
+	if err := os.MkdirAll(det, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, det, "init", "-b", "trunk")
+	writeFile(t, filepath.Join(det, "a.txt"), "x", 0o644)
+	runGit(t, det, "add", "-A")
+	runGit(t, det, "commit", "-m", "init")
+	sha, _ := git(det, "rev-parse", "--short", "HEAD")
+	runGit(t, det, "-c", "advice.detachedHead=false", "checkout", sha)
+	if got := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": det})); !strings.Contains(got, `"branch":"detached:`+sha+`"`) {
+		t.Errorf("detached git.info = %s, want branch=detached:%s", got, sha)
+	}
+}
+
+// worktree_create off an empty (unborn-HEAD) repo with no sourceBranch succeeds —
+// git infers an orphan branch — and the result omits sourceBranch, rather than
+// failing on the unresolvable HEAD.
+func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
+	requireGit(t)
+	s := newTestServer()
+	base := filepath.Join(t.TempDir(), "empty")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, base, "init", "-b", "trunk")
+	wt := filepath.Join(t.TempDir(), "wt")
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+		"baseRepo": base, "branchName": "newbr", "worktreePath": wt,
+	}))
+	if !strings.Contains(got, `"success":true`) {
+		t.Errorf("worktree off empty repo = %s, want success", got)
+	}
+	if strings.Contains(got, `"sourceBranch"`) {
+		t.Errorf("worktree off empty repo should omit sourceBranch: %s", got)
+	}
+}
+
 // repoDir returns BaseRepo when set, otherwise the daemon CWD (".").
 func TestGitRepoDir(t *testing.T) {
 	if got := (&gitParams{BaseRepo: "/some/repo"}).repoDir(); got != "/some/repo" {
