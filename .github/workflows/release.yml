@@ -94,7 +94,7 @@ jobs:
     # NOTE: the SLSA reusable workflow MUST be referenced by a semver tag, not a
     # commit SHA — it derives the trusted-builder identity from its own ref.
     # (The hash-pin exception for it lives in .github/zizmor.yml.)
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.goreleaser.outputs.hashes }}
       upload-assets: true
