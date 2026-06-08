@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,14 +9,12 @@ import (
 
 // runBridge is a dumb stdio<->unix-socket relay. It does NOT inject auth; the
 // stream it relays must already carry "auth" per request. This is what an SSH
-// session attaches to.
+// session attaches to. A dial failure is a hard error (wrapped "dial server:",
+// matching the reference) — unlike best-effort -stop.
 func runBridge(socket string) error {
-	if socket == "" {
-		return errors.New("-socket is required")
-	}
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
-		return err
+		return fmt.Errorf("dial server: %w", err)
 	}
 	defer nc.Close()
 	done := make(chan struct{}, 2)
@@ -28,14 +25,13 @@ func runBridge(socket string) error {
 }
 
 // runStop sends a server.shutdown RPC (authenticated with CLAUDE_RPC_TOKEN) to a
-// running daemon. ⚠️ this stops the daemon and drops its sessions.
+// running daemon. ⚠️ this stops the daemon and drops its sessions. It is
+// best-effort (matching the reference): a missing or unreachable daemon is a
+// silent no-op, not an error.
 func runStop(socket string) error {
-	if socket == "" {
-		return errors.New("-socket is required")
-	}
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
-		return err
+		return nil
 	}
 	defer nc.Close()
 	tok := os.Getenv("CLAUDE_RPC_TOKEN")
