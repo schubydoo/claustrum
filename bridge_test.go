@@ -25,18 +25,23 @@ func TestRunStopSignalsShutdown(t *testing.T) {
 	}
 }
 
-func TestRunStopErrors(t *testing.T) {
-	if runStop("") == nil {
-		t.Error("an empty socket should error")
+// runStop is best-effort (matching the reference): an empty or unreachable
+// socket is a silent no-op (returns nil), not an error.
+func TestRunStopBestEffort(t *testing.T) {
+	if err := runStop(""); err != nil {
+		t.Errorf("empty socket should be a silent no-op, got %v", err)
 	}
-	if runStop(filepath.Join(t.TempDir(), "nope.sock")) == nil {
-		t.Error("an unreachable socket should error")
+	if err := runStop(filepath.Join(t.TempDir(), "nope.sock")); err != nil {
+		t.Errorf("unreachable socket should be a silent no-op, got %v", err)
 	}
 }
 
-func TestRunBridgeRequiresSocket(t *testing.T) {
-	if runBridge("") == nil {
-		t.Error("an empty socket should error")
+// runBridge, unlike -stop, treats a dial failure as a hard error and wraps it
+// "dial server: <err>" (the reference's framing).
+func TestRunBridgeDialError(t *testing.T) {
+	err := runBridge(filepath.Join(t.TempDir(), "nope.sock"))
+	if err == nil || !strings.Contains(err.Error(), "dial server:") {
+		t.Errorf("runBridge on a missing socket = %v, want a 'dial server:' error", err)
 	}
 }
 
