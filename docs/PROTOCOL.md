@@ -46,15 +46,27 @@ include `"auth"` itself.
 |---|---|
 | `-32700` | parse error — malformed JSON line (response `id` is `null`) |
 | `-32600` | `Invalid JSON-RPC version` — `jsonrpc` absent or != `"2.0"` |
-| `-32601` | `Unknown method: <ns>.<m>` / `Unknown namespace: <ns>` |
+| `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
 | `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
 | `-32001` | unauthorized |
 
-**Params presence:** every `files.*` / `git.*` / `process.*` method requires a
-`params` object to be present. An absent `params` → `-32602 Invalid params`,
-checked *after* method existence (so an unknown method is `-32601` regardless). An
-empty `{}` is accepted and runs the method's own validation.
+**Validation precedence (probe-verified):** a request is checked in the order
+**parse → auth → version → method → params**. Auth is validated *before* the
+`jsonrpc` version, so a request that fails both (e.g. no `auth` and a missing/wrong
+`jsonrpc`) reports `-32001 Unauthorized`, not the version error. Only once auth
+passes is `jsonrpc == "2.0"` enforced.
+
+**Params presence and typing:** every `files.*` / `git.*` / `process.*` method
+requires a `params` object to be present. An absent `params` → `-32602 Invalid
+params`, checked *after* method existence (so an unknown method is `-32601`
+regardless). An empty `{}` is accepted and runs the method's own validation.
+`params` that is present but **mistyped** — a wrong field type (e.g.
+`"maxBytes":"4"` or `"path":123`) or a non-object value (`"params":"x"` / `[…]`) —
+is also `-32602 Invalid params`; the daemon does not silently coerce or ignore the
+decode error. (Unknown extra fields *are* ignored, by both daemons.) `server.*`
+methods take no params, so a mistyped `params` on them is ignored and the call
+succeeds.
 
 ## Methods (18)
 

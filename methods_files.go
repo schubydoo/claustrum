@@ -39,7 +39,9 @@ type pathParams struct {
 
 func filesStat(req *request) response {
 	var p pathParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	fi, err := os.Stat(p.Path)
 	if err != nil {
 		return okResult(req.ID, statResult{})
@@ -51,7 +53,9 @@ func filesStat(req *request) response {
 
 func filesList(req *request) response {
 	var p pathParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	ents, err := os.ReadDir(p.Path) // returns entries sorted by name
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
@@ -73,7 +77,9 @@ func filesList(req *request) response {
 
 func filesRead(req *request) response {
 	var p pathParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	fi, err := os.Stat(p.Path)
 	if err != nil {
 		return okResult(req.ID, readResult{})
@@ -95,7 +101,9 @@ func filesValidate(req *request) response {
 	// params presence is enforced by handleFiles; an empty {} is accepted here
 	// (path defaults to "" -> "Path does not exist").
 	var p pathParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	fi, err := os.Stat(p.Path)
 	if err != nil {
 		return okResult(req.ID, validateResult{Error: "Path does not exist"})
@@ -110,7 +118,9 @@ type extractTarParams struct {
 
 func filesExtractTar(req *request) response {
 	var p extractTarParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if p.ArchivePath == "" || p.DestDir == "" {
 		return errResult(req.ID, codeInvalidParam, "archivePath and destDir are required")
 	}

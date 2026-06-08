@@ -60,7 +60,9 @@ func isRepo(dir string) bool {
 
 func gitInfo(req *request) response {
 	var p gitParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if !isRepo(p.Path) {
 		return okResult(req.ID, notRepoResult{})
 	}
@@ -71,7 +73,9 @@ func gitInfo(req *request) response {
 
 func gitStatus(req *request) response {
 	var p gitParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if !isRepo(p.Path) {
 		// The reference returns the full status shape (clean:false), not the
 		// bare notRepoResult that git.info uses.
@@ -92,7 +96,9 @@ func gitStatus(req *request) response {
 
 func gitListBranches(req *request) response {
 	var p gitParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if !isRepo(p.Path) {
 		// The reference returns the full branches shape (branches:[]), not the
 		// bare notRepoResult that git.info uses.
@@ -111,7 +117,9 @@ func gitListBranches(req *request) response {
 
 func gitWorktreeCreate(req *request) response {
 	var p gitParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if p.BranchName == "" {
 		return errResult(req.ID, codeInvalidParam, "branchName is required")
 	}
@@ -143,7 +151,9 @@ func gitWorktreeCreate(req *request) response {
 
 func gitWorktreeRemove(req *request) response {
 	var p gitParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	git(p.repoDir(), "worktree", "remove", "--force", p.WorktreePath)
 	return okResult(req.ID, successResult{Success: true})
 }

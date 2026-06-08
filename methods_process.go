@@ -33,7 +33,9 @@ type spawnParams struct {
 
 func (s *server) processSpawn(c *conn, req *request) response {
 	var p spawnParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if p.ID == "" {
 		return errResult(req.ID, codeInvalidParam, "Process ID is required")
 	}
@@ -53,7 +55,9 @@ type stdinParams struct {
 
 func (s *server) processStdin(req *request) response {
 	var p stdinParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if s.procs.get(p.ID) == nil {
 		return errResult(req.ID, codeInvalidParam, "Process not found")
 	}
@@ -72,7 +76,9 @@ type killParams struct {
 
 func (s *server) processKill(req *request) response {
 	var p killParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	s.procs.kill(p.ID, p.Signal)
 	return okResult(req.ID, successResult{Success: true})
 }
@@ -84,7 +90,9 @@ type reattachParams struct {
 
 func (s *server) processReattach(c *conn, req *request) response {
 	var p reattachParams
-	_ = decodeParams(req, &p)
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
 	if p.ID == "" {
 		return errResult(req.ID, codeInvalidParam, "Process ID is required")
 	}
