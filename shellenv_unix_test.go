@@ -3,7 +3,10 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -33,5 +36,24 @@ func TestExtractLoginPATHDefaultShell(t *testing.T) {
 
 	if os.Getenv("PATH") == "" {
 		t.Error("extractLoginPATH (default shell) left PATH empty")
+	}
+}
+
+// When the login shell produces no PATH sentinel (e.g. SHELL ignores the
+// command), extractLoginPATH logs the not-found line and leaves PATH intact.
+func TestExtractLoginPATHNoSentinel(t *testing.T) {
+	var buf bytes.Buffer
+	oldW, oldF := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+
+	t.Setenv("PATH", os.Getenv("PATH"))
+	t.Setenv("SHELL", "/bin/true") // ignores args → emits nothing
+
+	extractLoginPATH()
+
+	if !strings.Contains(buf.String(), "[shellenv] PATH sentinel not found in shell output") {
+		t.Errorf("expected sentinel-not-found log, got %q", buf.String())
 	}
 }

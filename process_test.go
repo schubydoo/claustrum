@@ -178,3 +178,92 @@ done:
 		}
 	}
 }
+
+// writeResponse logs the reference's writeResponse/Failed-to-write lines when the
+// underlying write fails (the client dropped the connection mid-reply).
+func TestWriteResponseLogsOnWriteError(t *testing.T) {
+	var buf bytes.Buffer
+	oldW, oldF := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+
+	client, server := net.Pipe()
+	client.Close() // writes now fail
+	server.Close()
+	c := &conn{nc: client}
+
+	c.writeResponse(pongResult{Pong: true})
+
+	got := buf.String()
+	if !strings.Contains(got, "[Server] writeResponse: wrote") ||
+		!strings.Contains(got, "[Server] Failed to write response") {
+		t.Errorf("writeResponse on a dead conn logged %q, want both reference lines", got)
+	}
+}
+
+// reattach detaches a conn (and logs the replay-write-failed line) when replaying
+// the buffer to it fails because its socket is already gone.
+func TestReattachDetachesOnReplayWriteError(t *testing.T) {
+	var buf bytes.Buffer
+	oldW, oldF := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+
+	m := newProcManager()
+	p := &managedProc{id: "p", subs: map[*conn]struct{}{}, running: true}
+	p.emit(streamFrame{Stream: "stdout", Data: "a"}) // buffered seq 1
+	m.procs["p"] = p
+
+	client, server := net.Pipe()
+	client.Close()
+	server.Close()
+	dead := &conn{nc: client}
+
+	found, _, _, _ := m.reattach(dead, "p", 0) // replays seq 1 → write fails → detach
+	if !found {
+		t.Fatal("reattach should find p")
+	}
+	p.mu.Lock()
+	_, still := p.subs[dead]
+	p.mu.Unlock()
+	if still {
+		t.Error("reattach kept a conn whose replay write failed; want it detached")
+	}
+	if !strings.Contains(buf.String(), "[frameSink] replay write failed, detaching") {
+		t.Errorf("missing replay-write-failed log line; got %q", buf.String())
+	}
+}
+
+// writeResponse's two remaining branches: an unmarshalable value logs
+// "Failed to write response" without attempting a write, and a closed conn
+// returns early (no write, no panic).
+func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
+	var buf bytes.Buffer
+	oldW := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(oldW) })
+
+	client, server := net.Pipe()
+	t.Cleanup(func() { client.Close(); server.Close() })
+
+	// json.Marshal fails on a channel → the marshal-error branch, no write.
+	(&conn{nc: client}).writeResponse(map[string]any{"bad": make(chan int)})
+	if !strings.Contains(buf.String(), "[Server] Failed to write response") {
+		t.Errorf("marshal error not logged: %q", buf.String())
+	}
+	// A closed conn returns before writing (would otherwise block on the pipe).
+	(&conn{nc: client, closed: true}).writeResponse(pongResult{Pong: true})
+}
+
+// writeJSON short-circuits with net.ErrClosed once the conn is marked closed,
+// rather than writing to a torn-down socket.
+func TestWriteJSONClosedConn(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { client.Close(); server.Close() })
+	c := &conn{nc: client, closed: true}
+	if err := c.writeJSON(pongResult{Pong: true}); err != net.ErrClosed {
+		t.Errorf("writeJSON on closed conn = %v, want net.ErrClosed", err)
+	}
+}
