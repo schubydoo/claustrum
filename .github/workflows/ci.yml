@@ -101,15 +101,17 @@ jobs:
 
   coverage:
     # Single Ubuntu run with cross-package attribution (-coverpkg=./...) so
-    # socket-driven hits count against every package. Floor is one notch below
-    # the current number so new commits don't immediately fail; raise it as the
-    # suite grows. (Was 50%; raised after the install/bridge/version/signal unit
-    # tests took total coverage to ~70%.)
-    name: coverage (>= 65%)
+    # socket-driven hits count against every package. Floor is a notch below the
+    # current number so new commits don't immediately fail; raise it as the suite
+    # grows. (50% → 65% after the install/bridge/version/signal unit tests took
+    # total coverage to ~70%; → 75% after the methods/process/extract-tar/
+    # shellenv unit tests took it to ~77%. The rest is fork/os.Exit daemon
+    # lifecycle, validated out-of-process by the reference battery.)
+    name: coverage (>= 75%)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      COVERAGE_MIN: "65.0"
+      COVERAGE_MIN: "75.0"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:

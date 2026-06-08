@@ -112,3 +112,22 @@ func seqs(fs []streamFrame) []int {
 	}
 	return out
 }
+
+// When a subscribed conn's write fails (its socket is gone), emit detaches that
+// conn from the proc's fan-out so a dead client doesn't accumulate frames.
+func TestEmitDetachesOnWriteError(t *testing.T) {
+	client, server := net.Pipe()
+	client.Close() // writes now fail immediately
+	server.Close()
+	dead := &conn{nc: client}
+
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{dead: {}}}
+	p.emit(streamFrame{Stream: "stdout", Data: "x"})
+
+	p.mu.Lock()
+	_, still := p.subs[dead]
+	p.mu.Unlock()
+	if still {
+		t.Error("emit kept a conn whose write failed; want it detached")
+	}
+}
