@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in claustrum isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thanks for taking the time to file a bug. **For security vulnerabilities,
+        do not open an issue** — report it privately via a
+        [GitHub Security Advisory](https://github.com/schubydoo/claustrum/security/advisories/new)
+        (see [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Ideally the exact flags and/or JSON-RPC request that triggers it.
+      placeholder: |
+        1. claustrum -serve -socket /tmp/rpc.sock ...
+        2. send {"jsonrpc":"2.0","id":1,"method":"...","auth":"..."}
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: claustrum version
+      description: Output of `claustrum -version` (e.g. `claustrum v0.1.0 (built ...)`).
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Prebuilt binary (GitHub Releases)
+        - Built from source (make build)
+        - Other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS / arch
+      description: e.g. linux/amd64, darwin/arm64, windows/amd64.
+    validations:
+      required: true
+  - type: input
+    id: method
+    attributes:
+      label: RPC method / mode involved
+      description: >
+        If it's a protocol/frame issue, which method or mode? (e.g. process.spawn,
+        files.read, -bridge, -install). Leave blank if not applicable.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / frames
+      description: >
+        Paste the daemon's stderr and/or the offending JSON-RPC frames.
+        Redact any auth tokens or secrets.
+      render: shell
