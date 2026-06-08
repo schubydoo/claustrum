@@ -117,6 +117,31 @@ func TestDetectLibc(t *testing.T) {
 	}
 }
 
+// classifyLibc covers all four branches with an injected stat, so the
+// ldd-failure + musl-marker paths are exercised on a glibc host too. exists
+// reports the musl marker present (stat error nil); missing reports it absent.
+func TestClassifyLibc(t *testing.T) {
+	exists := func(string) (os.FileInfo, error) { return nil, nil }
+	missing := func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+	cases := []struct {
+		name string
+		out  []byte
+		err  error
+		stat func(string) (os.FileInfo, error)
+		want string
+	}{
+		{"ldd ok, musl banner", []byte("musl libc (x86_64)\nVersion 1.2.3"), nil, missing, "musl"},
+		{"ldd ok, glibc banner", []byte("ldd (GNU libc) 2.31"), nil, missing, "glibc"},
+		{"ldd fails, musl marker present", nil, io.EOF, exists, "musl"},
+		{"ldd fails, no marker", nil, io.EOF, missing, "glibc"},
+	}
+	for _, tc := range cases {
+		if got := classifyLibc(tc.out, tc.err, tc.stat); got != tc.want {
+			t.Errorf("%s: classifyLibc = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestPruneCLI(t *testing.T) {
 	dir := t.TempDir()
 	// Four "version" files with strictly increasing mtimes.

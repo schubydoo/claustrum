@@ -178,13 +178,20 @@ func isRegularFile(p string) bool {
 
 func detectLibc() string {
 	out, err := exec.Command("ldd", "--version").CombinedOutput()
-	if err != nil {
-		if _, e := os.Stat("/lib/ld-musl-x86_64.so.1"); e == nil {
+	return classifyLibc(out, err, os.Stat)
+}
+
+// classifyLibc maps an `ldd --version` result to "musl" or "glibc". It is split
+// from detectLibc with an injectable stat so the ldd-failure + musl-marker
+// branches are testable on any host — a glibc box can't otherwise reach them.
+func classifyLibc(lddOut []byte, lddErr error, stat func(string) (os.FileInfo, error)) string {
+	if lddErr != nil {
+		if _, e := stat("/lib/ld-musl-x86_64.so.1"); e == nil {
 			return "musl"
 		}
 		return "glibc"
 	}
-	if strings.Contains(strings.ToLower(string(out)), "musl") {
+	if strings.Contains(strings.ToLower(string(lddOut)), "musl") {
 		return "musl"
 	}
 	return "glibc"
