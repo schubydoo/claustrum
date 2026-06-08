@@ -2,8 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"log"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -129,5 +132,49 @@ func TestEmitDetachesOnWriteError(t *testing.T) {
 	p.mu.Unlock()
 	if still {
 		t.Error("emit kept a conn whose write failed; want it detached")
+	}
+}
+
+// spawn emits the reference daemon's operational log lines: process started
+// (with PID + command), per-stream "Starting <name> streaming", and the exit
+// line. Capture the global logger to assert they fire. Receiving the exit frame
+// guarantees all three have been written (the exit log precedes the exit emit).
+func TestSpawnEmitsOperationalLogs(t *testing.T) {
+	var buf bytes.Buffer
+	oldW, oldFlags := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0) // assert on the message text, not the timestamp
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldFlags) })
+
+	m := newProcManager()
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	if err := m.spawn(c, "lg", "/bin/echo", []string{"hi"}, "", nil); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	// Wait for the exit frame so the exit log line has been emitted.
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case f := <-frames:
+			if f.Stream == "exit" {
+				goto done
+			}
+		case <-deadline:
+			t.Fatal("no exit frame")
+		}
+	}
+done:
+	got := buf.String()
+	for _, want := range []string{
+		"[process.Manager] Process lg started, PID=",
+		"command=/bin/echo",
+		"[process.Manager] Starting stdout streaming for process lg",
+		"[process.Manager] Starting stderr streaming for process lg",
+		"[process.Manager] Process lg exited with code 0",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing log line %q\n--- captured ---\n%s", want, got)
+		}
 	}
 }

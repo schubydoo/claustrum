@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -46,6 +47,28 @@ func (c *conn) writeJSON(v interface{}) error {
 	b = append(b, '\n')
 	_, err = c.nc.Write(b)
 	return err
+}
+
+// writeResponse writes a JSON-RPC response and, on a write error (e.g. the
+// client dropped the connection mid-reply), emits the reference daemon's
+// writeResponse/Failed-to-write log lines with the partial byte count.
+func (c *conn) writeResponse(v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("[Server] Failed to write response: %v", err)
+		return
+	}
+	b = append(b, '\n')
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	if c.closed {
+		return
+	}
+	n, err := c.nc.Write(b)
+	if err != nil {
+		log.Printf("[Server] writeResponse: wrote %d/%d bytes, error=%v", n, len(b), err)
+		log.Printf("[Server] Failed to write response: %v", err)
+	}
 }
 
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
@@ -132,11 +155,12 @@ func (s *server) run(socket string) {
 			case <-s.shutdown:
 				return
 			default:
-				fmt.Fprintf(os.Stderr, "[Server] accept error (retrying): %v\n", err)
+				log.Printf("[Server] accept error (retrying): %v", err)
 				continue
 			}
 		}
 		c := &conn{nc: nc}
+		log.Printf("[Server] New connection from: %s", c.nc.RemoteAddr())
 		s.mu.Lock()
 		s.conns[c] = struct{}{}
 		s.mu.Unlock()
@@ -154,6 +178,7 @@ func (s *server) serveConn(c *conn) {
 		delete(s.conns, c)
 		s.mu.Unlock()
 		s.procs.detachConn(c)
+		log.Printf("[Server] Connection closed: %s", c.nc.RemoteAddr())
 	}()
 
 	sc := bufio.NewScanner(c.nc)
@@ -169,7 +194,7 @@ func (s *server) serveConn(c *conn) {
 		// responses can return out of order; match that.
 		go func() {
 			if resp := s.dispatch(c, raw); resp != nil {
-				_ = c.writeJSON(*resp)
+				c.writeResponse(*resp)
 			}
 		}()
 	}
