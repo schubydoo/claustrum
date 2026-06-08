@@ -30,6 +30,14 @@ All notable changes to claustrum are documented here. The format is based on
   an advisory, read-only `repo-config-drift` workflow; branch/tag protection
   `.github/rulesets/` (squash-only PRs, linear history, required checks,
   immutable `v*` tags); `CODEOWNERS` and a pull-request template.
+- Release automation (`.goreleaser.yaml` + `.github/workflows/release.yml`): on
+  a `v*` tag, builds all 6 targets, archives + `checksums.txt`, a syft CycloneDX
+  **SBOM** per archive, **cosign** keyless signatures (`.sigstore.json`), and a
+  **SLSA provenance** attestation (`*.intoto.jsonl`) via slsa-github-generator —
+  satisfying OpenSSF Scorecard's SBOM (full) and Signed-Releases (10/10) checks.
+  Version/build-time are injected into the binary. `.github/zizmor.yml` allows
+  the SLSA reusable workflow's required tag ref under an otherwise hash-pin-only
+  policy.
 - `golangci-lint` (`.golangci.yml`, v2) wired into the CI `lint` job — the
   standard set (errcheck, govet, ineffassign, staticcheck, unused) plus misspell
   and unconvert. Cleared its findings: removed an unused method and made a few
