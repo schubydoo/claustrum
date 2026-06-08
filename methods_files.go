@@ -125,6 +125,11 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// The reference consumes the source archive: once opened, archivePath is
+	// removed on every outcome — success, bad gzip, or unsafe path alike
+	// (probe-verified). Declared before the Close defer so the fd closes first,
+	// keeping the unlink safe on Windows.
+	defer os.Remove(archivePath)
 	defer f.Close()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
@@ -132,8 +137,16 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		return 0, gzipErr{err}
 	}
 	defer gz.Close()
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return 0, err
+	// The reference daemon makes extraction idempotent: it wipes destDir and
+	// recreates it before unpacking. Both steps run only AFTER the gzip header
+	// validates above, so a corrupt archive leaves an existing destDir intact
+	// (probe-verified). destDir is created owner-only (0700), matching the
+	// reference's umask-077 extraction.
+	if err := os.RemoveAll(destDir); err != nil {
+		return 0, fmt.Errorf("clean destDir: %v", err)
+	}
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return 0, fmt.Errorf("mkdir destDir: %v", err)
 	}
 	tr := tar.NewReader(gz)
 	count := 0
@@ -146,25 +159,29 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			return count, gzipErr{err}
 		}
 		target := filepath.Join(destDir, hdr.Name)
-		// Reject entries that would escape destDir ("zip slip"). filepath.Join
-		// has already cleaned target, so a prefix test against the cleaned
-		// destDir catches "../" traversal (an absolute or in-bounds "../" entry
-		// resolves inside and is allowed). The reference daemon rejects such an
-		// archive with this exact error and fileCount 0 — even when earlier safe
-		// entries were already written to disk.
-		if cleanDest := filepath.Clean(destDir); target != cleanDest && !strings.HasPrefix(target, cleanDest+string(os.PathSeparator)) {
+		// Reject entries that would escape destDir ("zip slip"). filepath.Rel
+		// returns a path beginning with ".." exactly when target lands outside
+		// destDir; an in-bounds "../" (or the destDir itself, e.g. a "." entry)
+		// resolves inside and is allowed, matching the reference. The reference
+		// rejects an escaping archive with this exact error and fileCount 0 —
+		// even when earlier safe entries were already written to disk. (This Rel
+		// form is also what CodeQL recognizes as a go/zipslip sanitizer.)
+		if rel, err := filepath.Rel(destDir, target); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
+		// The reference ignores the archive's mode bits and forces owner-only
+		// fixed modes: every extracted directory is 0700 and every file 0600
+		// (an executable 0755 entry still lands 0600 — probe-verified).
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(hdr.Mode)); err != nil {
+			if err := os.MkdirAll(target, 0o700); err != nil {
 				return count, err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 				return count, err
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(hdr.Mode))
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
 				return count, err
 			}
@@ -175,6 +192,11 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			out.Close()
 			count++
 		}
+	}
+	// On success the reference drops an empty ".synced" marker at destDir root
+	// (not counted in fileCount); a write failure surfaces as this error.
+	if err := os.WriteFile(filepath.Join(destDir, ".synced"), nil, 0o600); err != nil {
+		return count, fmt.Errorf("write .synced: %v", err)
 	}
 	return count, nil
 }

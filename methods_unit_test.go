@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -144,6 +145,55 @@ func TestFilesExtractTarErrors(t *testing.T) {
 	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": bad, "destDir": abs}))
 	if !strings.Contains(got, `"success":false`) || !strings.Contains(got, "gzip: gzip:") {
 		t.Errorf("extract bad gzip = %s, want success:false + doubled gzip prefix", got)
+	}
+}
+
+// files.extract_tar carries reference side effects beyond the response frame:
+// it wipes destDir first, forces owner-only modes (files 0600 / dirs 0700),
+// drops an empty ".synced" marker at the root on success, and consumes the
+// source archive. These are invisible to a frame-only diff, so lock them here.
+func TestFilesExtractTarSideEffects(t *testing.T) {
+	s := newTestServer()
+	root := t.TempDir()
+	dest := filepath.Join(root, "dest")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "stale.txt"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive := tarGzPath(t, map[string]string{"a.txt": "alpha", "sub/b.txt": "beta"})
+
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":true`) || !strings.Contains(got, `"fileCount":2`) {
+		t.Fatalf("extract = %s, want success/fileCount:2 (.synced is not counted)", got)
+	}
+
+	// destDir was wiped: the stale file is gone.
+	if _, err := os.Stat(filepath.Join(dest, "stale.txt")); err == nil {
+		t.Error("stale file survived; destDir was not wiped")
+	}
+	// .synced marker: empty, at destDir root, NOT inside subdirs.
+	si, err := os.Stat(filepath.Join(dest, ".synced"))
+	if err != nil || si.Size() != 0 {
+		t.Errorf(".synced marker = (%v, %v), want present and empty", si, err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "sub", ".synced")); err == nil {
+		t.Error(".synced was written inside a subdir; want root only")
+	}
+	// Source archive consumed.
+	if _, err := os.Stat(archive); err == nil {
+		t.Error("source archive survived; reference consumes it")
+	}
+	// Owner-only modes (skip the numeric check on Windows, where Go's FileMode
+	// bits don't map to POSIX permissions).
+	if runtime.GOOS != "windows" {
+		if fi, _ := os.Stat(filepath.Join(dest, "a.txt")); fi != nil && fi.Mode().Perm() != 0o600 {
+			t.Errorf("file mode = %o, want 600", fi.Mode().Perm())
+		}
+		if di, _ := os.Stat(filepath.Join(dest, "sub")); di != nil && di.Mode().Perm() != 0o700 {
+			t.Errorf("dir mode = %o, want 700", di.Mode().Perm())
+		}
 	}
 }
 
