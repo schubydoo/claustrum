@@ -306,6 +306,35 @@ func TestFilesListFollowsSymlinks(t *testing.T) {
 	}
 }
 
+// On a non-repo path, git.info returns the bare {isRepo:false}, but git.status
+// and git.list_branches return their FULL shapes (clean:false / branches:[]),
+// matching the reference. git.worktree_create reports a clean not_a_repo error
+// instead of leaking git's raw "not a git repository" output.
+func TestGitNonRepoResults(t *testing.T) {
+	s := newTestServer()
+	dir := t.TempDir() // under /tmp — not a git repo
+
+	for _, tc := range []struct{ method, wantResult string }{
+		{"git.info", `"result":{"isRepo":false}}`},
+		{"git.status", `"result":{"isRepo":false,"clean":false}}`},
+		{"git.list_branches", `"result":{"isRepo":false,"branches":[]}}`},
+	} {
+		got := dispatchRaw(t, s, rpcLine(t, tc.method, map[string]any{"path": dir}))
+		if !strings.Contains(got, tc.wantResult) {
+			t.Errorf("%s on non-repo = %s, want result %s", tc.method, got, tc.wantResult)
+		}
+	}
+
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+		"baseRepo": dir, "branchName": "b", "worktreePath": filepath.Join(dir, "wt"),
+	}))
+	if !strings.Contains(got, `"success":false`) ||
+		!strings.Contains(got, `"error":"not a git repository"`) ||
+		!strings.Contains(got, `"errorCode":"not_a_repo"`) {
+		t.Errorf("worktree_create on non-repo = %s, want not_a_repo error", got)
+	}
+}
+
 // repoDir returns BaseRepo when set, otherwise the daemon CWD (".").
 func TestGitRepoDir(t *testing.T) {
 	if got := (&gitParams{BaseRepo: "/some/repo"}).repoDir(); got != "/some/repo" {

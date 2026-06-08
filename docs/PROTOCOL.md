@@ -7,6 +7,9 @@ contract the validation battery checks byte-for-byte.
 ## Transport
 
 - One JSON object per line (NDJSON). No length prefix, no binary framing.
+- A single request line is capped at **1 MiB** (`bufio` max token = `1024*1024`): a
+  line up to 1048575 bytes is served, 1048576+ closes the connection with no reply.
+  Large `process.stdin` payloads must be chunked under this.
 - `AF_UNIX` stream socket, created mode `0600` (owner only).
 - The connection is **persistent**: it stays open after a response, and id-less
   stream notifications arrive on it asynchronously.
@@ -88,9 +91,9 @@ process.spawn  process.stdin  process.kill  process.reattach
 | method | result / notes |
 |---|---|
 | `git.info{path}` | repo → `{"isRepo":true,"repo":"<dir>","branch":"<b>"}`; else `{"isRepo":false}` |
-| `git.status{path}` | clean → `{"isRepo":true,"clean":true}`; dirty → `{…,"clean":false,"changes":["M a.txt","?? new"]}` (porcelain lines) |
-| `git.list_branches{path}` | `{"isRepo":true,"branches":[…sorted…]}` |
-| `git.worktree_create{baseRepo,branchName,worktreePath[,sourceBranch]}` | `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`; missing `branchName` → `-32602 branchName is required`; failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`. The repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo. |
+| `git.status{path}` | clean → `{"isRepo":true,"clean":true}`; dirty → `{…,"clean":false,"changes":["M a.txt","?? new"]}` (porcelain lines); non-repo → `{"isRepo":false,"clean":false}` (full shape, unlike `git.info`'s bare `{"isRepo":false}`) |
+| `git.list_branches{path}` | `{"isRepo":true,"branches":[…sorted…]}`; non-repo → `{"isRepo":false,"branches":[]}` |
+| `git.worktree_create{baseRepo,branchName,worktreePath[,sourceBranch]}` | `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`; missing `branchName` → `-32602 branchName is required`; resolved repo isn't a git repo → `{success:false,error:"not a git repository",errorCode:"not_a_repo"}` (checked before the add, so git's raw error isn't leaked); other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`. The repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo. |
 | `git.worktree_remove{baseRepo,worktreePath}` | `{"success":true}` (lenient) |
 
 ### process.* (the agent/MCP-hosting core)

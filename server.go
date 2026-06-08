@@ -182,7 +182,11 @@ func (s *server) serveConn(c *conn) {
 	}()
 
 	sc := bufio.NewScanner(c.nc)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	// The reference caps a single request line at 1 MiB (bufio maxTokenSize =
+	// 1024*1024): a line up to 1048575 bytes is accepted, 1048576+ closes the
+	// connection with no reply (probe-verified to the exact byte). Clients must
+	// chunk large process.stdin payloads to stay under it.
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
