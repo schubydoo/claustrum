@@ -57,17 +57,22 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return ptr(errResult(nil, codeParse, "Parse error"))
 	}
-	if req.JSONRPC != "2.0" {
-		return ptr(errResult(req.ID, codeInvalidReq, "Invalid JSON-RPC version"))
-	}
+	// Precedence is auth → version (probe-verified): a request that fails BOTH
+	// (e.g. no auth and no/!="2.0" jsonrpc) reports Unauthorized, not the version
+	// error. Only once auth passes is the version validated.
 	if req.Auth == "" || req.Auth != s.token {
 		log.Printf("[Server] Unauthorized request: method=%s, id=%v", req.Method, string(req.ID))
 		return ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
+	if req.JSONRPC != "2.0" {
+		return ptr(errResult(req.ID, codeInvalidReq, "Invalid JSON-RPC version"))
+	}
 
 	ns, _, ok := strings.Cut(req.Method, ".")
 	if !ok {
-		return ptr(errResult(req.ID, codeMethod, "Unknown namespace: "+req.Method))
+		// A method without a "namespace.method" shape is a format error, distinct
+		// from a well-formed method naming an unknown namespace (below).
+		return ptr(errResult(req.ID, codeMethod, "Invalid method format: "+req.Method))
 	}
 
 	switch ns {
@@ -106,4 +111,17 @@ func decodeParams(req *request, v interface{}) error {
 		return nil
 	}
 	return json.Unmarshal(req.Params, v)
+}
+
+// bindParams decodes req.Params into v, returning an Invalid-params response when
+// the body is present but mistyped (e.g. a string where a number is expected, or
+// a non-object params value). The reference rejects such requests with -32602
+// even though encoding/json could partially decode them — matching that, any
+// unmarshal error becomes "Invalid params". Absent params is gated earlier by
+// needParams; unknown fields are ignored by both daemons. Returns nil on success.
+func bindParams(req *request, v interface{}) *response {
+	if err := decodeParams(req, v); err != nil {
+		return ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
+	}
+	return nil
 }
