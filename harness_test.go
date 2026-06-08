@@ -22,7 +22,7 @@ var updateGolden = flag.Bool("update", false, "update golden fixtures in testdat
 // with a test-controlled accept loop. Unlike (*server).run it installs no
 // signal handlers, and its cleanup never calls os.Exit, so it is safe under
 // `go test`. The returned socket path is ready to Dial.
-func startSocketServer(t *testing.T) string {
+func newRunningServer(t *testing.T) (*server, string) {
 	t.Helper()
 	// A short socket path on purpose: t.TempDir() embeds the (long) test name,
 	// and the full AF_UNIX path must stay under the macOS sun_path limit
@@ -57,10 +57,35 @@ func startSocketServer(t *testing.T) string {
 			go s.serveConn(c)
 		}
 	}()
+	// Mimic the real teardown's connection close on server.shutdown (minus the
+	// os.Exit) so a client that waits for EOF after sending server.shutdown
+	// (e.g. runStop) actually unblocks. Without this the harness leaves the
+	// connection open and such a client hangs forever.
+	stop := make(chan struct{})
+	go func() {
+		select {
+		case <-s.shutdown:
+			s.mu.Lock()
+			for c := range s.conns {
+				_ = c.nc.Close()
+			}
+			s.mu.Unlock()
+			_ = ln.Close()
+		case <-stop:
+		}
+	}()
 	t.Cleanup(func() {
+		close(stop)
 		ln.Close()
 		s.procs.killAll()
 	})
+	return s, sock
+}
+
+// startSocketServer is newRunningServer for tests that only need the socket path.
+func startSocketServer(t *testing.T) string {
+	t.Helper()
+	_, sock := newRunningServer(t)
 	return sock
 }
 
