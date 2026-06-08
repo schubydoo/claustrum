@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
@@ -583,5 +584,109 @@ func TestEnsureCLINotRunnable(t *testing.T) {
 	}
 	if _, statErr := os.Stat(cliPath); statErr == nil {
 		t.Error("non-runnable cli was left in place; want it removed")
+	}
+}
+
+// --- error-path coverage ---
+
+// extractTarGz: os.Open fails when the archive doesn't exist.
+func TestExtractTarGzMissingArchive(t *testing.T) {
+	_, err := extractTarGz(filepath.Join(t.TempDir(), "nonexistent.tar.gz"), t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for missing archive, got nil")
+	}
+}
+
+// extractTarGz: valid gzip wrapping non-tar content causes tr.Next() to return
+// a non-EOF error, which is wrapped with the "gzip: " prefix.
+func TestExtractTarGzCorruptTar(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "bad.tar.gz")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write([]byte("not valid tar")); err != nil {
+		t.Fatal(err)
+	}
+	gz.Close()
+	if err := os.WriteFile(archive, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := extractTarGz(archive, t.TempDir())
+	if err == nil || !strings.HasPrefix(err.Error(), "gzip: ") {
+		t.Fatalf("extractTarGz corrupt tar = %v, want gzip-prefixed error", err)
+	}
+}
+
+// process.spawn: a JSON type mismatch in params hits the bindParams error path.
+func TestProcessSpawnBindParamsError(t *testing.T) {
+	s := newTestServer()
+	got := dispatchRaw(t, s, rpcLine(t, "process.spawn", map[string]any{"id": "p1", "command": 123}))
+	if !strings.Contains(got, "Invalid params") {
+		t.Errorf("spawn with wrong command type = %s, want Invalid params", got)
+	}
+}
+
+// process.spawn: valid params but the binary doesn't exist → codeInternal error.
+func TestProcessSpawnFailed(t *testing.T) {
+	s := newTestServer()
+	got := dispatchRaw(t, s, rpcLine(t, "process.spawn", map[string]any{
+		"id": "p_err", "command": "/nonexistent_binary_xyz_claustrum",
+	}))
+	if !strings.Contains(got, `"error"`) {
+		t.Errorf("spawn nonexistent binary = %s, want error result", got)
+	}
+}
+
+// process.kill: a JSON type mismatch in params hits the bindParams error path.
+func TestProcessKillBindParamsError(t *testing.T) {
+	s := newTestServer()
+	got := dispatchRaw(t, s, rpcLine(t, "process.kill", map[string]any{"id": "p1", "signal": 123}))
+	if !strings.Contains(got, "Invalid params") {
+		t.Errorf("kill with wrong signal type = %s, want Invalid params", got)
+	}
+}
+
+// process.reattach: a JSON type mismatch in params hits the bindParams error path.
+func TestProcessReattachBindParamsError(t *testing.T) {
+	s := newTestServer()
+	got := dispatchRaw(t, s, rpcLine(t, "process.reattach", map[string]any{"id": "p1", "fromSeq": "nope"}))
+	if !strings.Contains(got, "Invalid params") {
+		t.Errorf("reattach with wrong fromSeq type = %s, want Invalid params", got)
+	}
+}
+
+// git.worktree_create: trying to create a worktree with a branch that already
+// exists causes git worktree add to fail → worktree_add_failed error code.
+func TestGitWorktreeCreateFailed(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "main", "repo")
+	if err := os.WriteFile(filepath.Join(repo, "f"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "f")
+	runGit(t, repo, "commit", "-m", "init")
+	s := newTestServer()
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+		"baseRepo": repo, "branchName": "main", "worktreePath": filepath.Join(root, "wt"),
+	}))
+	if !strings.Contains(got, "worktree_add_failed") {
+		t.Errorf("worktree_create with existing branch = %s, want worktree_add_failed", got)
+	}
+}
+
+// git.worktree_remove: a JSON type mismatch in params hits the bindParams error path.
+func TestGitWorktreeRemoveBindParamsError(t *testing.T) {
+	s := newTestServer()
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{"worktreePath": 123}))
+	if !strings.Contains(got, "Invalid params") {
+		t.Errorf("worktree_remove wrong type = %s, want Invalid params", got)
+	}
+}
+
+// zstdDecompress: os.Create fails when the destination parent directory doesn't exist.
+func TestZstdDecompressDestError(t *testing.T) {
+	err := zstdDecompress(zstdOf(t, []byte("payload")), filepath.Join(t.TempDir(), "nonexistent", "out"))
+	if err == nil {
+		t.Fatal("expected error for missing parent dir, got nil")
 	}
 }
