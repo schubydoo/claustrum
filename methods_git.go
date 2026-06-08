@@ -73,7 +73,9 @@ func gitStatus(req *request) response {
 	var p gitParams
 	_ = decodeParams(req, &p)
 	if !isRepo(p.Path) {
-		return okResult(req.ID, notRepoResult{})
+		// The reference returns the full status shape (clean:false), not the
+		// bare notRepoResult that git.info uses.
+		return okResult(req.ID, gitStatusResult{})
 	}
 	out, _ := git(p.Path, "status", "--porcelain")
 	if out == "" {
@@ -92,7 +94,9 @@ func gitListBranches(req *request) response {
 	var p gitParams
 	_ = decodeParams(req, &p)
 	if !isRepo(p.Path) {
-		return okResult(req.ID, notRepoResult{})
+		// The reference returns the full branches shape (branches:[]), not the
+		// bare notRepoResult that git.info uses.
+		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	out, _ := git(p.Path, "for-each-ref", "--format=%(refname:short)", "refs/heads")
 	branches := []string{}
@@ -112,6 +116,16 @@ func gitWorktreeCreate(req *request) response {
 		return errResult(req.ID, codeInvalidParam, "branchName is required")
 	}
 	repo := p.repoDir()
+	// The reference checks the target is a repo BEFORE attempting the worktree
+	// add, returning a clean not_a_repo error rather than leaking git's raw
+	// "fatal: not a git repository …" output as a worktree_add_failed.
+	if !isRepo(repo) {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     "not a git repository",
+			ErrorCode: "not_a_repo",
+		})
+	}
 	source := p.SourceBranch
 	if source == "" {
 		source, _ = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
