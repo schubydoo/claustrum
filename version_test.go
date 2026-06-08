@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"runtime/debug"
 	"testing"
 )
 
@@ -25,6 +26,38 @@ func TestResolveVersionFromBuildInfo(t *testing.T) {
 	resolveVersion()
 	if Version == "" {
 		t.Error("Version should be non-empty after resolveVersion")
+	}
+}
+
+// applyVCSStamp must honor an ldflags-injected version: when Version differs from
+// the dev sentinel it returns without consulting the VCS settings at all. Driving
+// it with explicit settings (rather than the test binary's absent VCS metadata)
+// makes the guard's effect observable.
+func TestApplyVCSStampKeepsInjected(t *testing.T) {
+	oldV, oldT := Version, BuildTime
+	defer func() { Version, BuildTime = oldV, oldT }()
+	Version = "v1.2.3"
+	applyVCSStamp([]debug.BuildSetting{{Key: "vcs.revision", Value: "deadbeef"}})
+	if Version != "v1.2.3" {
+		t.Errorf("applyVCSStamp overrode an ldflags-injected version: %s", Version)
+	}
+}
+
+// With the dev sentinel in place, applyVCSStamp copies vcs.revision/vcs.time into
+// Version/BuildTime.
+func TestApplyVCSStampFillsFromSettings(t *testing.T) {
+	oldV, oldT := Version, BuildTime
+	defer func() { Version, BuildTime = oldV, oldT }()
+	Version = "claustrum-dev"
+	applyVCSStamp([]debug.BuildSetting{
+		{Key: "vcs.revision", Value: "abc123"},
+		{Key: "vcs.time", Value: "2026-01-01T00:00:00Z"},
+	})
+	if Version != "abc123" {
+		t.Errorf("Version = %q, want abc123", Version)
+	}
+	if BuildTime != "2026-01-01T00:00:00Z" {
+		t.Errorf("BuildTime = %q, want the stamped vcs.time", BuildTime)
 	}
 }
 
