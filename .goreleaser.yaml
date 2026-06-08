@@ -110,8 +110,5 @@ release:
   # artifacts to an existing one (forward-compatible with release-please later,
   # which would pre-create the release from the CHANGELOG).
   mode: append
-  # Allow workflow_dispatch re-runs (e.g. to backfill a failed SLSA provenance
-  # step) to overwrite assets that already exist on the release.
-  replace_existing_artifacts: true
   draft: false
   prerelease: auto
