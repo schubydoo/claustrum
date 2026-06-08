@@ -2,8 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
+	"log"
 	"strings"
 )
 
@@ -62,7 +61,7 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 		return ptr(errResult(req.ID, codeInvalidReq, "Invalid JSON-RPC version"))
 	}
 	if req.Auth == "" || req.Auth != s.token {
-		fmt.Fprintf(os.Stderr, "[Server] Unauthorized request: method=%s, id=%v\n", req.Method, string(req.ID))
+		log.Printf("[Server] Unauthorized request: method=%s, id=%v", req.Method, string(req.ID))
 		return ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
 

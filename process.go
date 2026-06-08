@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/base64"
-	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -64,7 +64,7 @@ func (p *managedProc) emit(f streamFrame) {
 	p.mu.Unlock()
 	for _, c := range subs {
 		if err := c.writeJSON(f); err != nil {
-			fmt.Fprintf(os.Stderr, "[frameSink] replay write failed, detaching: %v\n", err)
+			log.Printf("[frameSink] write failed, detaching: %v", err)
 			p.mu.Lock()
 			delete(p.subs, c)
 			p.mu.Unlock()
@@ -94,9 +94,10 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		return err
 	}
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "[process.Manager] Failed to start process %s: %v\n", id, err)
+		log.Printf("[process.Manager] Failed to start process %s: %v", id, err)
 		return err
 	}
+	log.Printf("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 
 	p := &managedProc{
 		id:      id,
@@ -127,13 +128,14 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		p.mu.Lock()
 		p.running = false
 		p.mu.Unlock()
-		fmt.Fprintf(os.Stderr, "[process.Manager] Process %s exited with code %d\n", id, code)
+		log.Printf("[process.Manager] Process %s exited with code %d", id, code)
 		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 	}()
 	return nil
 }
 
 func pumpStream(p *managedProc, name string, r io.Reader) {
+	log.Printf("[process.Manager] Starting %s streaming for process %s", name, p.id)
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := r.Read(buf)
@@ -189,7 +191,13 @@ func (m *procManager) reattach(c *conn, id string, fromSeq int) (found, running 
 	}
 	p.mu.Unlock()
 	for _, f := range replay {
-		_ = c.writeJSON(f)
+		if err := c.writeJSON(f); err != nil {
+			log.Printf("[frameSink] replay write failed, detaching: %v", err)
+			p.mu.Lock()
+			delete(p.subs, c)
+			p.mu.Unlock()
+			break
+		}
 	}
 	return true, running, firstSeq, lastSeq
 }

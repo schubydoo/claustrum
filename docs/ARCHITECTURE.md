@@ -43,6 +43,15 @@ files differ.
    dispatch, in-band token auth, and a per-process frame buffer (`process.*`) that
    lets a late or reconnecting client catch up via `reattach`.
 
+**Operational logging** mirrors the reference daemon: the readiness banner
+(`… remote server listening on <socket>`) is printed to **stdout** without a
+prefix, while every operational/diagnostic line — `[Server]` connection
+lifecycle, `[process.Manager]` spawn/stream/exit, `[shellenv]`, `[frameSink]` —
+goes to **stderr** via the standard `log` package (a `2006/01/02 15:04:05`
+timestamp prefix). Only the banner's product name differs (rebranded). These logs
+are not part of the JSON-RPC wire contract, but they are kept byte-faithful (sans
+timestamp/PID) so anything tailing the daemon log behaves identically.
+
 `-bridge` is a fourth, trivial mode: a dumb stdio↔socket relay (what an SSH
 session attaches to). It injects no auth.
 
