@@ -147,9 +147,18 @@ stream notifications, **buffered** for later replay.
 | `-install -cli-dir <d> -cli-version <v> [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]` | ensure the CLI is present (download/verify/extract/prune), print `__INSTALL_RESULT__<json>` facts |
 
 **CLI-mode behavior (probe-verified):**
-- **Default socket.** When `-socket` is omitted, `-bridge`/`-stop` fall back to
-  `~/.claude/remote/rpc.sock`. (The deployment always passes `-socket`; this only
-  matters for bare invocations.)
+- **Default socket.** When `-socket` is omitted, `-serve`/`-bridge`/`-stop` fall
+  back to `~/.claude/remote/rpc.sock` (the daemon does **not** create the parent
+  directory, so `-serve` on a missing `~/.claude/remote` fails `claustrum: listen
+  unix: …: bind: no such file or directory`). The deployment always passes
+  `-socket`; this only matters for bare invocations.
+- **`-serve` requires `-token-file`**, checked *before* the socket
+  (`claustrum: daemonized child requires --token-file`, exit `1`). The token comes
+  **only** from the file (read once, then unlinked); the `CLAUDE_RPC_TOKEN` env is
+  **not** accepted for `-serve` (it is only for the `-bridge`/`-stop` clients), so
+  the daemon never starts unauthenticated. A bad `-token-file` →
+  `claustrum: read --token-file: <err>`, exit `1`. On success it prints
+  `Claustrum remote server listening on <socket>` to stdout.
 - **`-stop` is best-effort.** A missing or unreachable daemon is a silent no-op —
   exit `0`, no output. Only a live daemon's response (if any) is echoed to stdout.
 - **`-bridge` is strict.** A dial failure is a hard error: `claustrum: dial
