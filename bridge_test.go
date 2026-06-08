@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,57 @@ func TestRunStopErrors(t *testing.T) {
 func TestRunBridgeRequiresSocket(t *testing.T) {
 	if runBridge("") == nil {
 		t.Error("an empty socket should error")
+	}
+}
+
+// runStop echoes the server's response frame to stdout. The real daemon is silent
+// on shutdown, so we point runStop at a raw socket server that replies with a
+// known frame, swap os.Stdout for a pipe, and assert the reply is written. This
+// pins the `if n > 0` write guard: a negated guard would drop the response.
+func TestRunStopEchoesResponse(t *testing.T) {
+	// Short socket dir (macOS sun_path is ~104 bytes), mirroring the harness.
+	dir, err := os.MkdirTemp("", "cl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s.sock")
+
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	const reply = `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` + "\n"
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_, _ = bufio.NewReader(c).ReadString('\n') // consume the shutdown request
+		_, _ = io.WriteString(c, reply)
+	}()
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	t.Setenv("CLAUDE_RPC_TOKEN", "tok")
+
+	stopErr := runStop(sock)
+	_ = w.Close()
+	os.Stdout = old
+
+	if stopErr != nil {
+		t.Fatalf("runStop: %v", stopErr)
+	}
+	out, _ := io.ReadAll(r)
+	if !strings.Contains(string(out), `"result"`) {
+		t.Errorf("runStop did not echo the server reply to stdout; got %q (the n>0 write was skipped)", out)
 	}
 }
 

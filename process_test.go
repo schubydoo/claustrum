@@ -3,9 +3,11 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -255,6 +257,129 @@ func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
 	}
 	// A closed conn returns before writing (would otherwise block on the pipe).
 	(&conn{nc: client, closed: true}).writeResponse(pongResult{Pong: true})
+}
+
+// firstStdout drains frames until the first non-empty stdout frame and returns
+// its decoded, space-trimmed payload.
+func firstStdout(t *testing.T, ch <-chan streamFrame) string {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case f := <-ch:
+			if f.Stream == "stdout" && f.Data != "" {
+				b, err := base64.StdEncoding.DecodeString(f.Data)
+				if err != nil {
+					t.Fatalf("bad base64 in stdout frame: %v", err)
+				}
+				return strings.TrimSpace(string(b))
+			}
+		case <-deadline:
+			t.Fatal("no stdout frame within deadline")
+		}
+	}
+}
+
+// spawn with a non-empty cwd must set the child's working directory. Running
+// /bin/pwd -P (physical cwd, ignoring any inherited $PWD) and comparing to the
+// resolved temp dir pins the `cwd != ""` guard: a negated guard would skip
+// cmd.Dir and the child would report the test's cwd instead.
+func TestSpawnRespectsCwd(t *testing.T) {
+	tmp := t.TempDir()
+	want, err := filepath.EvalSymlinks(tmp)
+	if err != nil {
+		t.Fatalf("evalsymlinks: %v", err)
+	}
+	m := newProcManager()
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	if err := m.spawn(c, "cwd", "/bin/pwd", []string{"-P"}, tmp, nil); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if got := firstStdout(t, frames); got != want {
+		t.Errorf("child cwd = %q, want %q (cwd != \"\" must set cmd.Dir)", got, want)
+	}
+}
+
+// pumpStream must not emit a frame for a zero-length read: the `n > 0` guard
+// suppresses the trailing EOF read. A boundary mutant (`n >= 0`) would push an
+// empty-data stdout/stderr frame at EOF, which this test rejects.
+func TestPumpStreamSkipsEmptyReads(t *testing.T) {
+	m := newProcManager()
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	if err := m.spawn(c, "em", "/bin/echo", []string{"hi"}, "", nil); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case f := <-frames:
+			if f.Stream == "exit" {
+				return
+			}
+			if (f.Stream == "stdout" || f.Stream == "stderr") && f.Data == "" {
+				t.Fatalf("empty-data %s frame (seq %d): the n>0 guard regressed to n>=0", f.Stream, f.Seq)
+			}
+		case <-deadline:
+			t.Fatal("no exit frame within deadline")
+		}
+	}
+}
+
+// writeStdin reports success (err == nil) when the child's stdin pipe accepts the
+// bytes, and failure for an unknown process. Pins the `return err == nil`: a
+// negated return would report false on a healthy write.
+func TestWriteStdinReturnValue(t *testing.T) {
+	m := newProcManager()
+	t.Cleanup(m.killAll)
+	c, _ := pipeConn(t)
+	if err := m.spawn(c, "cat", "/bin/cat", nil, "", nil); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if !m.writeStdin("cat", []byte("hello\n")) {
+		t.Error("writeStdin to a live process returned false; want true")
+	}
+	if m.writeStdin("nope", []byte("x")) {
+		t.Error("writeStdin to an unknown process returned true; want false")
+	}
+}
+
+// reattach to a process whose buffer is empty must report firstSeq/lastSeq 0
+// without panicking. Pins the `len(p.buffer) > 0` guard: a boundary mutant
+// (`len >= 0`) would index p.buffer[0] on an empty slice and panic.
+func TestReattachEmptyBuffer(t *testing.T) {
+	m := newProcManager()
+	p := &managedProc{id: "eb", subs: map[*conn]struct{}{}, running: true} // no emits → empty buffer
+	m.procs["eb"] = p
+	c, _ := pipeConn(t)
+	found, running, first, last := m.reattach(c, "eb", 0)
+	if !found || !running || first != 0 || last != 0 {
+		t.Errorf("reattach(empty buffer) = (%v,%v,%d,%d), want (true,true,0,0)", found, running, first, last)
+	}
+}
+
+// killAll must signal a live managed process so it terminates. Pins the
+// `p.cmd != nil && p.cmd.Process != nil` guard: a negated sub-condition would
+// skip the signal and the process would outlive the timeout (no exit frame).
+func TestKillAllTerminatesLiveProcess(t *testing.T) {
+	m := newProcManager()
+	c, frames := pipeConn(t)
+	if err := m.spawn(c, "sl", "/bin/sleep", []string{"60"}, "", nil); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	m.killAll()
+	deadline := time.After(4 * time.Second)
+	for {
+		select {
+		case f := <-frames:
+			if f.Stream == "exit" {
+				return // signalled → process exited
+			}
+		case <-deadline:
+			t.Fatal("killAll did not terminate the live process (no exit frame)")
+		}
+	}
 }
 
 // writeJSON short-circuits with net.ErrClosed once the conn is marked closed,

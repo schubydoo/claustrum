@@ -25,14 +25,22 @@ var (
 // resolveVersion populates Version/BuildTime from embedded VCS info unless they
 // were already set at build time via -ldflags.
 func resolveVersion() {
-	if Version != "claustrum-dev" {
-		return // explicitly stamped via -ldflags
-	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return
 	}
-	for _, s := range bi.Settings {
+	applyVCSStamp(bi.Settings)
+}
+
+// applyVCSStamp fills Version/BuildTime from the embedded VCS build settings,
+// unless Version was already stamped via -ldflags (i.e. it differs from the dev
+// sentinel). Split out from resolveVersion so the stamp logic is testable
+// without depending on the test binary's own (absent) VCS metadata.
+func applyVCSStamp(settings []debug.BuildSetting) {
+	if Version != "claustrum-dev" {
+		return // explicitly stamped via -ldflags
+	}
+	for _, s := range settings {
 		switch s.Key {
 		case "vcs.revision":
 			if s.Value != "" {
