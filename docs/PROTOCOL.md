@@ -81,7 +81,7 @@ process.spawn  process.stdin  process.kill  process.reattach
 | `files.list{path}` | `{"entries":[{"name","path","isDir"},…]}` (name-sorted); missing dir → `-32603 open …: no such file or directory` |
 | `files.read{path[,maxBytes]}` | `{"content":"<raw text>","exists":true}`; missing file → `{content:"",exists:false}` (not an error); a directory → `-32602 files.read: path is a directory`; size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`. `content` is **raw text**, not base64. |
 | `files.validate{path}` | `{"valid":bool,"isDir":bool[,"error"]}`; missing path → `{valid:false,isDir:false,error:"Path does not exist"}` |
-| `files.extract_tar{archivePath,destDir}` | extracts a **gzip** tar → `{"success":true,"fileCount":<n>}`; missing params → `-32602 archivePath and destDir are required`; non-absolute/root `destDir` → `{success:false,error:"destDir must be an absolute, non-root path: …"}`; bad gzip → `{success:false,fileCount:0,error:"gzip: …"}` |
+| `files.extract_tar{archivePath,destDir}` | extracts a **gzip** tar → `{"success":true,"fileCount":<n>}`; missing params → `-32602 archivePath and destDir are required`; non-absolute/root `destDir` → `{success:false,error:"destDir must be an absolute, non-root path: …"}`; bad gzip → `{success:false,fileCount:0,error:"gzip: …"}`; an entry whose path escapes `destDir` ("zip slip") → `{success:false,fileCount:0,error:"unsafe path in archive: <entry>"}` (a `../` that resolves back inside `destDir` is allowed) |
 
 ### git.* (param: `path` = repo dir; worktree ops use `baseRepo`)
 
