@@ -105,6 +105,12 @@ All notable changes to claustrum are documented here. The format is based on
     process now returns `-32602 Process not running` instead of a false
     `{"success":true}`. (The 32 KiB stream-frame cap and the `exitCode:-1`
     signal-death code were probe-confirmed to already match.)
+  - `-serve` reads the `-token-file` as a **line**: a single trailing newline
+    (`\n`/`\r\n`) is stripped (spaces and surrounding whitespace preserved),
+    matching the reference. Previously the raw file bytes were used verbatim, so
+    an uploaded token file ending in a newline made **every** client request fail
+    auth even with the correct token — a drop-in blocker found by auditing the
+    real deployment invocation (`scratch/probe/contract_probe.sh`).
   - Daemon stderr logging matched to the reference (`log`-package timestamps).
 
 ### Security
