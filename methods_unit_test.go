@@ -197,6 +197,50 @@ func TestFilesExtractTarSideEffects(t *testing.T) {
 	}
 }
 
+// extract_tar supports only regular files and directories: any other entry
+// type (symlink, hardlink, device) aborts the whole extraction with fileCount 0
+// and the reference's "unsupported tar entry type <c>: <name>" error, writing no
+// .synced marker (earlier regular entries still land on disk).
+func TestFilesExtractTarUnsupportedEntry(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "sym.tar.gz")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	body := "data"
+	if err := tw.WriteHeader(&tar.Header{Name: "real.txt", Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: "link.txt", Linkname: "real.txt", Typeflag: tar.TypeSymlink}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []interface{ Close() error }{tw, gz, f} {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newTestServer()
+	dest := filepath.Join(t.TempDir(), "out")
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":false`) ||
+		!strings.Contains(got, `"fileCount":0`) ||
+		!strings.Contains(got, "unsupported tar entry type 2: link.txt") {
+		t.Fatalf("extract = %s, want unsupported-entry error with fileCount:0", got)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "real.txt")); err != nil {
+		t.Error("real.txt should have been written before the error")
+	}
+	if _, err := os.Stat(filepath.Join(dest, ".synced")); err == nil {
+		t.Error(".synced must not be written when extraction fails")
+	}
+}
+
 // An archive entry that would escape destDir ("zip slip") is rejected with the
 // reference daemon's exact error and fileCount 0, and nothing is written outside
 // destDir. A "../" that resolves back inside destDir is still allowed.
@@ -225,6 +269,40 @@ func TestFilesExtractTarZipSlip(t *testing.T) {
 	}
 	if b, err := os.ReadFile(filepath.Join(root, "dest2", "within.txt")); err != nil || string(b) != "fine" {
 		t.Errorf("within.txt = %q (err %v), want fine", b, err)
+	}
+}
+
+// files.list resolves isDir via Stat (following symlinks), matching the
+// reference: a symlink to a directory is isDir:true, a symlink to a file is
+// false, and a dangling symlink (Stat fails) is false.
+func TestFilesListFollowsSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	s := newTestServer()
+	dir := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.Mkdir(filepath.Join(dir, "realdir"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "realfile"), []byte("x"), 0o644))
+	must(os.Symlink("realdir", filepath.Join(dir, "to-dir")))
+	must(os.Symlink("realfile", filepath.Join(dir, "to-file")))
+	must(os.Symlink("nope", filepath.Join(dir, "dangling")))
+
+	got := dispatchRaw(t, s, rpcLine(t, "files.list", map[string]any{"path": dir}))
+	for _, want := range []string{
+		`"name":"to-dir","path":"` + filepath.Join(dir, "to-dir") + `","isDir":true`,
+		`"name":"to-file","path":"` + filepath.Join(dir, "to-file") + `","isDir":false`,
+		`"name":"dangling","path":"` + filepath.Join(dir, "dangling") + `","isDir":false`,
+		`"name":"realdir","path":"` + filepath.Join(dir, "realdir") + `","isDir":true`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("files.list missing %q\n  in %s", want, got)
+		}
 	}
 }
 

@@ -58,11 +58,15 @@ func filesList(req *request) response {
 	}
 	out := make([]listEntry, 0, len(ents))
 	for _, e := range ents {
-		out = append(out, listEntry{
-			Name:  e.Name(),
-			Path:  filepath.Join(p.Path, e.Name()),
-			IsDir: e.IsDir(),
-		})
+		full := filepath.Join(p.Path, e.Name())
+		// The reference resolves isDir via Stat (FOLLOWING symlinks), not the raw
+		// dirent type — so a symlink to a directory reports isDir:true, and a
+		// dangling symlink (Stat fails) reports isDir:false.
+		isDir := false
+		if fi, err := os.Stat(full); err == nil {
+			isDir = fi.IsDir()
+		}
+		out = append(out, listEntry{Name: e.Name(), Path: full, IsDir: isDir})
 	}
 	return okResult(req.ID, listResult{Entries: out})
 }
@@ -191,6 +195,12 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			}
 			out.Close()
 			count++
+		default:
+			// The reference supports only regular files and directories; any
+			// other entry (symlink=2, hardlink=1, device, fifo, …) aborts the
+			// whole extraction with fileCount 0. %c prints the tar typeflag as
+			// its character ("2"), matching the reference's wording.
+			return 0, fmt.Errorf("unsupported tar entry type %c: %s", hdr.Typeflag, hdr.Name)
 		}
 	}
 	// On success the reference drops an empty ".synced" marker at destDir root
