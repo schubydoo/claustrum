@@ -161,7 +161,11 @@ stream notifications, **buffered** for later replay.
   (`claustrum: daemonized child requires --token-file`, exit `1`). The token comes
   **only** from the file (read once, then unlinked); the `CLAUDE_RPC_TOKEN` env is
   **not** accepted for `-serve` (it is only for the `-bridge`/`-stop` clients), so
-  the daemon never starts unauthenticated. A bad `-token-file` →
+  the daemon never starts unauthenticated. The token is read as a **line**: a
+  single trailing newline (`\n` or `\r\n`) from the uploaded file is stripped,
+  but spaces and other surrounding whitespace are preserved verbatim
+  (probe-verified — a token file ending in a newline still authenticates). A bad
+  `-token-file` →
   `claustrum: read --token-file: <err>`, exit `1`. On success it prints
   `Claustrum remote server listening on <socket>` to stdout.
 - **`-stop` is best-effort.** A missing or unreachable daemon is a silent no-op —

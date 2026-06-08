@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -93,7 +94,7 @@ func runServe(socket, tokenFile string) {
 		fmt.Fprintf(os.Stderr, "claustrum: read --token-file: %v\n", err)
 		os.Exit(1)
 	}
-	token := string(b)
+	token := normalizeToken(b)
 	_ = os.Remove(tokenFile)
 
 	// Extract a real interactive PATH from the login shell so spawned children
@@ -119,6 +120,17 @@ func runServe(socket, tokenFile string) {
 	}
 	fmt.Printf("Claustrum remote server listening on %s\n", socket)
 	s.run(socket)
+}
+
+// normalizeToken mirrors the reference daemon's token-file handling: it reads
+// the token as a line, so a single trailing newline (`\n` or `\r\n`) from the
+// SFTP-uploaded file is stripped, while spaces and other interior/surrounding
+// whitespace are preserved verbatim (probe-verified — see
+// scratch/probe/contract_probe.sh). Without this, a token file that ends in a
+// newline would make every client request fail auth even though the client sent
+// the correct token.
+func normalizeToken(b []byte) string {
+	return strings.TrimRight(string(b), "\r\n")
 }
 
 func daemonize() {
