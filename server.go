@@ -74,8 +74,12 @@ func (c *conn) writeResponse(v interface{}) {
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with CLAUDE_SSH_DAEMON_CHILD so we re-exec exactly once.
 func runServe(socket, tokenFile string) {
-	if socket == "" {
-		fmt.Fprintln(os.Stderr, "-socket is required")
+	// -serve requires --token-file, checked BEFORE the socket (probe-verified).
+	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
+	// comes from the file (read once, then unlinked), so it never lingers in
+	// /proc/<pid>/environ. (env is only for the -bridge/-stop clients.)
+	if tokenFile == "" {
+		fmt.Fprintln(os.Stderr, "claustrum: daemonized child requires --token-file")
 		os.Exit(1)
 	}
 	if os.Getenv("CLAUDE_SSH_DAEMON_CHILD") != "1" {
@@ -83,18 +87,14 @@ func runServe(socket, tokenFile string) {
 		return
 	}
 
-	// We are the detached child. Read the token (env or -token-file) and unlink
-	// the file so the token never lingers in /proc/<pid>/environ or on disk.
-	token := os.Getenv("CLAUDE_RPC_TOKEN")
-	if tokenFile != "" {
-		b, err := os.ReadFile(tokenFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "read --token-file: %v\n", err)
-			os.Exit(1)
-		}
-		token = string(b)
-		_ = os.Remove(tokenFile)
+	// We are the detached child. Read the token from --token-file and unlink it.
+	b, err := os.ReadFile(tokenFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "claustrum: read --token-file: %v\n", err)
+		os.Exit(1)
 	}
+	token := string(b)
+	_ = os.Remove(tokenFile)
 
 	// Extract a real interactive PATH from the login shell so spawned children
 	// resolve tools the way an interactive session would.
@@ -103,11 +103,11 @@ func runServe(socket, tokenFile string) {
 	_ = os.Remove(socket) // clear a stale socket
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "listen %s: %v\n", socket, err)
+		fmt.Fprintf(os.Stderr, "claustrum: listen unix: %v\n", err)
 		os.Exit(1)
 	}
 	if err := os.Chmod(socket, 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "chmod socket: %v\n", err)
+		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
 	}
 
 	s := &server{

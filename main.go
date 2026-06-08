@@ -113,7 +113,7 @@ func main() {
 		}
 		return
 	case *serve:
-		runServe(*socket, *tokenFile)
+		runServe(resolveSocket(), *tokenFile)
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")
