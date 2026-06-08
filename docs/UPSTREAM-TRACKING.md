@@ -81,6 +81,41 @@ diff /tmp/ref.json /tmp/mine.json
 > `-token-file`; never point the harness at a live daemon's socket, and clean up
 > every probe.
 
+## Step 3b — real-session capture (highest fidelity, optional)
+
+Steps 2–3 drive the daemon with **synthetic** requests we author. The ultimate
+check is the **real** desktop client's traffic. The bridge (`server --bridge`) is
+a dumb stdio relay, so teeing its stdin/stdout captures the exact client↔daemon
+NDJSON of a live session — which can then be replayed against claustrum and
+diffed. Tooling lives in `scratch/capture/` (gitignored): a `capture-bridge`, a
+`replay.js` (order-insensitive diff: responses keyed by `id`, stream frames by
+`processId`+`seq`; masks the version SHA, token, and — with `--mask-data` — the
+nondeterministic agent payloads), and `REPLAY.md` with the capture runbook. The
+session is captured under a **throwaway** SSH user via a `ForceCommand` wrapper
+scoped to that user, so it never touches a live daemon.
+
+This was exercised against the pinned reference (`8de85faaa…`): a real Desktop
+session — 10 of the 18 methods, the full `process.*` lifecycle including a
+>32 KiB output stream and a mid-stream disconnect/reconnect that drove
+`process.reattach` — verified **byte-identical**. Concretely, on real client
+framing:
+
+- the live client uses only a subset of the 18 methods (no hidden method), and
+  every param shape it sends is one claustrum already accepts (incl.
+  `process.spawn` with and without `cwd`/`env`);
+- `server.capabilities` matches exactly (version-masked), including the 18-method
+  order;
+- the stream envelope is `{type,processId,stream,seq,data}` (and `…,exitCode` on
+  exit) in that field order, with non-zero exit codes propagated verbatim;
+- `process.reattach` is per-process with `fromSeq`; on reconnect the daemon
+  replays buffered frames with `seq > fromSeq` and the sequence stays contiguous
+  across the reconnect.
+
+Use this as a periodic spot-check or when a new build changes `process.*`
+behavior the synthetic battery can't fully model (real reconnect timing,
+multi-process reattach). The raw dumps contain the session token and host paths —
+keep them in `scratch/` (gitignored); never commit them.
+
 ## Step 4 — reconcile
 
 If the check reports drift:
