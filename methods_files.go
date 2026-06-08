@@ -159,13 +159,14 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			return count, gzipErr{err}
 		}
 		target := filepath.Join(destDir, hdr.Name)
-		// Reject entries that would escape destDir ("zip slip"). filepath.Join
-		// has already cleaned target, so a prefix test against the cleaned
-		// destDir catches "../" traversal (an absolute or in-bounds "../" entry
-		// resolves inside and is allowed). The reference daemon rejects such an
-		// archive with this exact error and fileCount 0 — even when earlier safe
-		// entries were already written to disk.
-		if cleanDest := filepath.Clean(destDir); target != cleanDest && !strings.HasPrefix(target, cleanDest+string(os.PathSeparator)) {
+		// Reject entries that would escape destDir ("zip slip"). filepath.Rel
+		// returns a path beginning with ".." exactly when target lands outside
+		// destDir; an in-bounds "../" (or the destDir itself, e.g. a "." entry)
+		// resolves inside and is allowed, matching the reference. The reference
+		// rejects an escaping archive with this exact error and fileCount 0 —
+		// even when earlier safe entries were already written to disk. (This Rel
+		// form is also what CodeQL recognizes as a go/zipslip sanitizer.)
+		if rel, err := filepath.Rel(destDir, target); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
 		// The reference ignores the archive's mode bits and forces owner-only
