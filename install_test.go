@@ -144,6 +144,54 @@ func TestPruneCLI(t *testing.T) {
 	}
 }
 
+// runInstall's prune step is gated on `o.cliKeep > 0`. With keep=0 it must NOT
+// prune (a boundary mutant `>= 0` would wipe every version); with keep>0 it must
+// prune to the newest keep (a negated guard `<= 0` would skip pruning). Driving
+// runInstall with a pre-populated, already-runnable CLI exercises the guard
+// without a download.
+func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
+	mk := func(dir, name string, ageSec int) {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(runnableScript), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Unix(int64(1000+ageSec), 0)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(dir string) int {
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(ents)
+	}
+
+	t.Run("keep0_does_not_prune", func(t *testing.T) {
+		dir := t.TempDir()
+		mk(dir, "cur", 30)
+		mk(dir, "old1", 20)
+		mk(dir, "old2", 10)
+		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "cur", cliKeep: 0})
+		if n := count(dir); n != 3 {
+			t.Errorf("keep=0 left %d files, want 3 (cliKeep>0 guard regressed to >=0, wiping versions)", n)
+		}
+	})
+
+	t.Run("keep2_prunes_to_newest", func(t *testing.T) {
+		dir := t.TempDir()
+		mk(dir, "cur", 40) // newest → kept, and it's the present CLI
+		mk(dir, "old1", 30)
+		mk(dir, "old2", 20)
+		mk(dir, "old3", 10)
+		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "cur", cliKeep: 2})
+		if n := count(dir); n != 2 {
+			t.Errorf("keep=2 left %d files, want 2 (cliKeep>0 guard regressed, skipping prune)", n)
+		}
+	})
+}
+
 func TestEnsureCLIFromZst(t *testing.T) {
 	dir := t.TempDir()
 	zst := zstdOf(t, []byte(runnableScript))
