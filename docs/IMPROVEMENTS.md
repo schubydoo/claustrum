@@ -41,6 +41,17 @@ codes, or frame formats unless explicitly noted as protocol-safe). Ranked by
 | 17 | **Duplicate-`id` spawn policy** | L | L | Decide/clarify behavior when `process.spawn` reuses a live id (today it replaces the registry entry). Document + test. |
 | 18 | **Token from fd/stdin** | L | L | Allow passing the auth token via an fd in addition to `-token-file`/env, for callers that don't want a temp file. Additive. |
 
+## Deliberate divergences (post-parity, opt-in)
+
+Unlike everything above, these **knowingly change a frame/behavior** from the
+reference. They follow the "match upstream first, then improve" plan: only
+consider them now that the harness proves parity, and document each as an
+*intentional* divergence in [`PROTOCOL.md`](PROTOCOL.md) + the PR if adopted.
+
+| # | Improvement | Impact | Cost | Why / divergence |
+|---|---|---|---|---|
+| D1 | **Re-harden `-cli-zst` checksum** | M | L | The reference verifies `-cli-checksum` only on the `-cli-url` download path, **not** on the local `-cli-zst` (SFTP) blob — so PR #29 dropped our verification there to stay 1:1 (maintainer-approved baseline). A future hardening could re-add SHA-256 verification on the `-cli-zst` path when a checksum is supplied (or reject `-cli-checksum`+`-cli-zst` together rather than silently ignoring it). **Divergence:** changes the `cliError` for a mismatched local blob from `decompressing: …` back to `checksum mismatch: …`. Maintainer flagged this to revisit. |
+
 ## Explicitly out of scope (would break compatibility)
 
 - Changing method names, params, result field order, error codes, or the
