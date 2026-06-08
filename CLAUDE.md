@@ -18,13 +18,19 @@ frames.** The wire surface *is* the product.
 | Cross-build all 6 targets | `make all` — linux/darwin/windows × amd64/arm64 → `dist/` |
 | Format | `make fmt` (`gofmt -w`); `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
-| Unit tests | `go test -race ./...` |
+| Lint | `golangci-lint run ./...` (config in `.golangci.yml`; v2) |
+| Tests | `go test -race ./...` — unit + socket-integration suites |
 | Validation battery | `scratch/probe/validate.sh` — diffs frames vs the reference (gitignored) |
 
 - Go 1.23+. Only dependency is `github.com/klauspost/compress` (zstd); `CGO_ENABLED=0`.
-- Unit tests in `*_test.go` cover the wire surface (frame encoding, dispatch /
-  auth / error routing, the replay buffer, env merging). The full cross-binary
-  battery that diffs against the reference daemon lives in `scratch/`.
+- In-repo tests (`*_test.go`) cover the wire surface two ways: fast unit tests
+  (frame encoding, dispatch / auth / error routing, replay buffer, env merging,
+  the `-install` pipeline) **and** a socket-integration suite (`harness_test.go`
+  + `integration*_test.go`) that boots the daemon on a temp `AF_UNIX` socket and
+  asserts every method's frames against committed golden fixtures
+  (`testdata/socket_*.golden.json`) — so CI gates compatibility without the
+  reference binary. ~70% statement coverage. The cross-binary battery that diffs
+  against the reference daemon lives in `scratch/`.
 
 ## Architecture
 
@@ -69,9 +75,11 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `main` directly.**
 - **Conventional Commits** for PR titles (`feat:` / `fix:` / `docs:` / `chore:`
   / `ci:` …); PRs squash-merge, so the title becomes the commit subject.
-- Before a wire-surface PR: `gofmt -l .` empty, `go vet ./...` clean,
-  `go test -race ./...` green, **and** re-run the `scratch/` validation battery
-  to confirm frames stay byte-identical.
+- Before a PR: `gofmt -l .` empty, `go vet ./...` clean, `golangci-lint run`
+  clean, `go test -race ./...` green. For a **wire-surface** change, also re-run
+  the `scratch/` validation battery to confirm frames stay byte-identical.
+- CI gates every PR on the branch ruleset's required checks: `ci required checks
+  passed` + `security required checks passed` + `conventional PR title`.
 
 ## Gotchas
 
@@ -94,6 +102,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - Keeping compatibility in sync → [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md)
 - Ideas / deferred → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
 - Host-local agent guardrails + context-mode routing → `CLAUDE.local.md` (gitignored)
+- CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
+  `ci` / `security` aggregators are the required checks); cut a release by pushing
+  a `v*` tag — signed + SBOM'd + SLSA provenance via [`.goreleaser.yaml`](.goreleaser.yaml)
 
 ## Documentation references
 

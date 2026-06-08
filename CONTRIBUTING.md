@@ -21,11 +21,15 @@ make build               # -> ./claustrum
 - **Build all targets** — `make all` must cross-compile cleanly for all six
   platforms (linux/darwin/windows × amd64/arm64). OS-specific code lives in
   `*_unix.go` / `*_windows.go`; keep the JSON-RPC surface identical across them.
-- **Format + vet** — `gofmt -l .` must be empty and `go vet ./...` clean.
-- **Tests** — `go test -race ./...`. Unit tests for the wire surface (frame
-  encoding, dispatch/error routing, the replay buffer, env merging) live in
-  `*_test.go`; the full cross-binary validation battery that diffs frames against
-  the reference daemon lives in `scratch/` (gitignored — see Compatibility below).
+- **Format, vet, lint** — `gofmt -l .` empty, `go vet ./...` clean, and
+  `golangci-lint run ./...` clean (config in `.golangci.yml`).
+- **Tests** — `go test -race ./...`. The in-repo suite (`*_test.go`) covers the
+  wire surface two ways: unit tests (frame encoding, dispatch/auth/error routing,
+  the replay buffer, env merging, the `-install` pipeline) **and** a
+  socket-integration suite that boots the daemon and asserts every method's frames
+  against golden fixtures in `testdata/` — CI gates this on every PR. The
+  cross-binary validation battery that diffs frames against the reference daemon
+  lives in `scratch/` (gitignored — see Compatibility below).
 - **Compatibility** — if you touch the wire surface (`rpc.go`, `methods_*.go`,
   `process.go`, `results.go`), re-run the validation battery in `scratch/` and
   confirm frames stay **byte-identical**. A change that intentionally diverges
