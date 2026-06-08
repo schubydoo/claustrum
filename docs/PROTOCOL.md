@@ -146,5 +146,14 @@ stream notifications, **buffered** for later replay.
 | `-version` | print `claustrum <id> (built <time>)` |
 | `-install -cli-dir <d> -cli-version <v> [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]` | ensure the CLI is present (download/verify/extract/prune), print `__INSTALL_RESULT__<json>` facts |
 
+**`-install` checksum + error framing (probe-verified):** `-cli-checksum` is
+verified **only on the download (`-cli-url`) path, and there unconditionally** — an
+empty `-cli-checksum` still fails (`checksum mismatch: expected=, actual=<sha>`).
+The local `-cli-zst` (SFTP-upload) path is **not** checksum-verified at all: the
+blob arrives over an already-authenticated channel, so a wrong/empty checksum is
+ignored and it installs. Input/decompress failures surface as `cliError` strings
+`opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob);
+`-install` itself always exits `0` and prints the facts.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
 deployment lifecycle, and [EXAMPLES.md](EXAMPLES.md) for runnable snippets.

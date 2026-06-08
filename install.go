@@ -72,27 +72,29 @@ func ensureCLI(o installOpts, cliPath string) error {
 	var err error
 	switch {
 	case o.cliZst != "":
+		// SFTP fallback: the blob arrives over an already-authenticated channel,
+		// so the reference does NOT verify -cli-checksum on this path.
 		if zst, err = os.ReadFile(o.cliZst); err != nil {
-			return err
+			return fmt.Errorf("opening input: %v", err)
 		}
 	case o.cliURL != "":
 		if zst, err = httpGet(o.cliURL); err != nil {
 			return fmt.Errorf("download failed: %v", err)
 		}
-	default:
-		return fmt.Errorf("cli %s missing and no --cli-url or --cli-zst provided", o.cliVersion)
-	}
-	if o.cliChecksum != "" {
+		// Downloads are verified UNCONDITIONALLY — an empty -cli-checksum still
+		// fails ("expected= , actual=<sha>") — matching the reference.
 		sum := sha256.Sum256(zst)
 		if got := hex.EncodeToString(sum[:]); !strings.EqualFold(got, o.cliChecksum) {
 			return fmt.Errorf("checksum mismatch: expected=%s, actual=%s", o.cliChecksum, got)
 		}
+	default:
+		return fmt.Errorf("cli %s missing and no --cli-url or --cli-zst provided", o.cliVersion)
 	}
 	if err := os.MkdirAll(filepath.Dir(cliPath), 0o755); err != nil {
 		return err
 	}
 	if err := zstdDecompress(zst, cliPath); err != nil {
-		return err
+		return fmt.Errorf("decompressing: %v", err)
 	}
 	if err := os.Chmod(cliPath, 0o755); err != nil {
 		return err
