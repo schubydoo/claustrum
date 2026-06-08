@@ -603,7 +603,9 @@ func TestExtractTarGzCorruptTar(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "bad.tar.gz")
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
-	gz.Write([]byte("not valid tar"))
+	if _, err := gz.Write([]byte("not valid tar")); err != nil {
+		t.Fatal(err)
+	}
 	gz.Close()
 	if err := os.WriteFile(archive, buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
