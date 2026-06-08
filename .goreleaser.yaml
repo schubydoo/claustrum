@@ -1,0 +1,114 @@
+# GoReleaser config — build, archive, checksum, SBOM, and sign claustrum's
+# release artifacts. https://goreleaser.com/customization/
+#
+# The release workflow (.github/workflows/release.yml) runs `goreleaser release`
+# on a v* tag, then a second job adds a SLSA provenance attestation. Together
+# they satisfy the OpenSSF Scorecard SBOM check (CycloneDX SBOM published as a
+# release asset) and Signed-Releases (cosign signatures -> 8/10, plus the
+# *.intoto.jsonl provenance -> 10/10).
+version: 2
+
+before:
+  hooks:
+    # Belt-and-suspenders against go.sum drift — the CI lint job already gates
+    # `go mod tidy`, but a release build should never depend on a dirty tree.
+    - go mod tidy
+
+builds:
+  - id: claustrum
+    binary: claustrum
+    main: .
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      # `-s -w` strips the symbol table + DWARF. Version/BuildTime are injected
+      # so the daemon self-reports the release tag instead of falling back to
+      # the embedded VCS revision (main.resolveVersion keeps these when set).
+      - -s -w
+      - -X main.Version={{ .Version }}
+      - -X main.BuildTime={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # claustrum ships all six targets (matches `make all`) — no ignores.
+
+archives:
+  - id: archives
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    # Ship the legal/security paperwork inside every archive.
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - SECURITY.md
+
+checksum:
+  # One checksums.txt for the whole release; cosign signs it (see signs:), so a
+  # verifier trusts every artifact transitively through its hash.
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+sboms:
+  # Per-archive CycloneDX-JSON SBOMs via syft, capturing Go module deps + the
+  # archive's file inventory. Recognized by Scorecard's SBOM check.
+  - id: archive-sboms
+    artifacts: archive
+    documents:
+      - "${artifact}.sbom.cdx.json"
+    cmd: syft
+    args:
+      - "$artifact"
+      - "--output"
+      - "cyclonedx-json=$document"
+
+signs:
+  # Keyless cosign signing via Sigstore: the Actions runner's OIDC token is
+  # exchanged at Fulcio for a short-lived cert; cosign emits a `.sigstore.json`
+  # bundle (signature + cert + Rekor log entry) — a self-contained proof.
+  # Recognized by Scorecard's Signed-Releases check (.sigstore.json).
+  - id: cosign-checksums
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    artifacts: checksum
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    output: true
+  - id: cosign-sboms
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    artifacts: sbom
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    output: true
+
+release:
+  github:
+    owner: schubydoo
+    name: claustrum
+  # `append`: creates the release if missing (manual-tag flow today), or adds
+  # artifacts to an existing one (forward-compatible with release-please later,
+  # which would pre-create the release from the CHANGELOG).
+  mode: append
+  draft: false
+  prerelease: auto

@@ -1,0 +1,101 @@
+name: Release
+
+# Build, SBOM, sign, and publish release artifacts on a v* tag, then attach a
+# SLSA provenance attestation. Satisfies OpenSSF Scorecard:
+#   - SBOM            — CycloneDX SBOM (syft) published as a release asset
+#   - Signed-Releases — cosign .sigstore.json signatures (8/10) + a
+#                       *.intoto.jsonl SLSA provenance file (10/10)
+#
+# Cut a release by pushing a tag: `git tag v0.1.0 && git push origin v0.1.0`.
+# (release-please can be layered on later to open version PRs and push the tag.)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish, e.g. v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Releases must NOT cancel each other — a half-uploaded release is worse than
+  # letting two runs serialize.
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  goreleaser:
+    name: goreleaser (build + SBOM + sign + upload)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the GitHub Release + upload assets
+      id-token: write # Sigstore keyless: exchange OIDC token at Fulcio for a cert
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # goreleaser walks the git log for the version, prior tag, and
+          # changelog window — depth 1 leaves it blind.
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          # Release builds are infrequent and from-scratch; a poisoned cache
+          # could influence what we sign and upload (zizmor cache-poisoning).
+          cache: false
+
+      - name: Install syft (SBOMs)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
+      - name: Install cosign (keyless signing)
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Run goreleaser
+        id: goreleaser
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Provenance subjects (base64 of checksums.txt)
+        id: hash
+        env:
+          ARTIFACTS: ${{ steps.goreleaser.outputs.artifacts }}
+        run: |
+          set -euo pipefail
+          checksum_file=$(echo "$ARTIFACTS" | jq -r '.[] | select(.type=="Checksum") | .path')
+          echo "hashes=$(base64 -w0 < "$checksum_file")" >> "$GITHUB_OUTPUT"
+
+  provenance:
+    # SLSA build provenance over the release artifact hashes, uploaded as a
+    # *.intoto.jsonl asset on the release — this is what takes Signed-Releases
+    # from 8/10 to 10/10. Only on real tag pushes (the dispatch recovery path
+    # has no tag-named release to attach to).
+    needs: goreleaser
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      actions: read # read the workflow run for provenance
+      id-token: write # keyless signing of the provenance
+      contents: write # upload the .intoto.jsonl to the release
+    # NOTE: the SLSA reusable workflow MUST be referenced by a semver tag, not a
+    # commit SHA — it derives the trusted-builder identity from its own ref.
+    # (The hash-pin exception for it lives in .github/zizmor.yml.)
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.goreleaser.outputs.hashes }}
+      upload-assets: true
+      provenance-name: claustrum.intoto.jsonl
