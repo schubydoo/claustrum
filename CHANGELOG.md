@@ -65,4 +65,31 @@ All notable changes to claustrum are documented here. The format is based on
   are now the CI + security aggregators and the conventional-title check.
 - Apache-2.0 license; independence & trademark `NOTICE`.
 
+### Fixed
+- Reference-parity corrections found by out-of-band differential probing —
+  filesystem side effects, adversarial inputs, and CLI-mode wrappers, none of
+  which the JSON-RPC frame battery alone could see:
+  - `files.extract_tar` side effects (destDir wipe, fixed `0600`/`0700` modes,
+    `.synced` marker, archive consumption); `files.list` follows symlinks for
+    `isDir`; a 1 MiB request-line cap; `git.*` non-repo response shapes.
+  - Dispatch precedence is **auth → version** (a request failing both reports
+    `-32001`, not `-32600`); present-but-**mistyped params** are rejected
+    `-32602 Invalid params`; a method with no namespace is `-32601 Invalid
+    method format`.
+  - CLI modes: `-bridge`/`-stop` default to `~/.claude/remote/rpc.sock`; `-stop`
+    is best-effort (silent exit 0); `-bridge` dial errors are wrapped
+    `dial server: …`; a no-mode invocation prints only the one-line error (no
+    `flag.Usage()` dump).
+  - `-install` verifies `-cli-checksum` only on `-cli-url` downloads (and there
+    unconditionally — an empty checksum still fails); the local `-cli-zst` blob
+    is not verified (see `docs/IMPROVEMENTS.md` D1); input/decompress failures
+    are wrapped `opening input: …` / `decompressing: …`.
+  - Daemon stderr logging matched to the reference (`log`-package timestamps).
+
+### Changed
+- `go.mod` toolchain `go 1.23` → `go 1.24`; `klauspost/compress` → `v1.18.6`.
+- Test + mutation hardening: statement coverage ~70% → ~79% (CI floor → 75%);
+  mutation efficacy to its practical maximum (96.1% — the residual surviving
+  mutants are provably equivalent/inherent).
+
 [Unreleased]: https://github.com/schubydoo/claustrum/commits/main
