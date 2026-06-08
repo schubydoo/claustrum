@@ -29,6 +29,10 @@ All notable changes to claustrum are documented here. The format is based on
   prune, runnable check, facts JSON — network-free via local `.zst`/httptest),
   the `-bridge`/`-stop` clients, version resolution, and signal parsing. Total
   statement coverage ~70% (CI floor raised 50% → 65%).
+- Fuzz targets (`fuzz_test.go`): `FuzzDispatch` (the parse/auth/version/route/
+  param-presence surface, with side-effectful methods skipped) and
+  `FuzzBindParams` (param-type binding). Seed corpora run in CI; ~1.5M executions
+  clean under active `-fuzz`.
 - Repository governance config (mirrors the sibling project, adapted for a Go
   daemon): declarative `.github/repo-config/` baselines (settings + labels) with
   an advisory, read-only `repo-config-drift` workflow; branch/tag protection
@@ -84,7 +88,22 @@ All notable changes to claustrum are documented here. The format is based on
     unconditionally — an empty checksum still fails); the local `-cli-zst` blob
     is not verified (see `docs/IMPROVEMENTS.md` D1); input/decompress failures
     are wrapped `opening input: …` / `decompressing: …`.
+  - `-serve` requires `-token-file` (checked before the socket; the
+    `CLAUDE_RPC_TOKEN` env is no longer accepted there), defaults `-socket` to
+    `~/.claude/remote/rpc.sock`, and prefixes its errors `claustrum:` with
+    `listen unix: …` / `read --token-file: …` wraps. This also closes a gap where
+    `-serve -socket S` with no token started an **unauthenticated** (empty-token)
+    daemon — it is now refused.
+  - `git.info` resolves the branch via `symbolic-ref`, so an unborn HEAD (empty
+    repo) reports the init branch and a detached HEAD reports
+    `detached:<short-sha>` (instead of leaking git's error text or `HEAD`);
+    `git.worktree_create` off an empty repo infers an orphan branch and succeeds.
   - Daemon stderr logging matched to the reference (`log`-package timestamps).
+
+### Security
+- `-serve` no longer starts an unauthenticated daemon when invoked without a
+  token: `--token-file` is mandatory and is the sole token source (read once,
+  then unlinked).
 
 ### Changed
 - `go.mod` toolchain `go 1.23` → `go 1.24`; `klauspost/compress` → `v1.18.6`.
