@@ -146,5 +146,17 @@ stream notifications, **buffered** for later replay.
 | `-version` | print `claustrum <id> (built <time>)` |
 | `-install -cli-dir <d> -cli-version <v> [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]` | ensure the CLI is present (download/verify/extract/prune), print `__INSTALL_RESULT__<json>` facts |
 
+**CLI-mode behavior (probe-verified):**
+- **Default socket.** When `-socket` is omitted, `-bridge`/`-stop` fall back to
+  `~/.claude/remote/rpc.sock`. (The deployment always passes `-socket`; this only
+  matters for bare invocations.)
+- **`-stop` is best-effort.** A missing or unreachable daemon is a silent no-op —
+  exit `0`, no output. Only a live daemon's response (if any) is echoed to stdout.
+- **`-bridge` is strict.** A dial failure is a hard error: `claustrum: dial
+  server: <err>` on stderr, exit `1`.
+- **No mode given** → `claustrum: one of --version/--install/--serve/--bridge/--stop
+  is required` on stderr, exit `2` (no usage dump). An *unknown flag* still gets
+  the stdlib `flag` error + usage and exit `2`.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
 deployment lifecycle, and [EXAMPLES.md](EXAMPLES.md) for runnable snippets.

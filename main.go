@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 )
 
@@ -76,9 +77,19 @@ func main() {
 
 	// Resolve the user's home directory up front (used for default path resolution);
 	// fatal if it can't be determined.
-	if _, err := os.UserHomeDir(); err != nil {
+	home, err := os.UserHomeDir()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: cannot resolve home directory: %v\n", err)
 		os.Exit(1)
+	}
+	// When -socket is omitted, -bridge/-stop fall back to the reference's default
+	// daemon socket. (The deployment always passes -socket explicitly; this only
+	// matters for bare invocations.)
+	resolveSocket := func() string {
+		if *socket != "" {
+			return *socket
+		}
+		return filepath.Join(home, ".claude", "remote", "rpc.sock")
 	}
 
 	switch {
@@ -92,14 +103,12 @@ func main() {
 		})
 		return
 	case *stop:
-		if err := runStop(*socket); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		// Best-effort: a missing/unreachable daemon is silently a no-op (exit 0).
+		_ = runStop(resolveSocket())
 		return
 	case *bridge:
-		if err := runBridge(*socket); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		if err := runBridge(resolveSocket()); err != nil {
+			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -108,7 +117,6 @@ func main() {
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")
-		flag.Usage()
 		os.Exit(2)
 	}
 }
