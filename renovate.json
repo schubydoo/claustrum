@@ -60,6 +60,24 @@
       "matchManagers": ["gomod"],
       "matchDepTypes": ["indirect"],
       "enabled": true
+    },
+    {
+      "description": "Gremlins (mutation testing) is pinned as GREMLINS_VERSION in the workflow file, not go.mod — keep it on the chore(ci) cadence so its PR title passes the conventional-title check.",
+      "matchPackageNames": ["go-gremlins/gremlins"],
+      "commitMessagePrefix": "chore(ci):",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "ci"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Track GREMLINS_VERSION in .github/workflows/mutation.yml — gremlins is `go install`-ed at CI runtime, so neither the gomod nor github-actions manager sees it. Renovate cross-references go-gremlins/gremlins's GitHub releases.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/mutation\\.yml$/"],
+      "matchStrings": ["GREMLINS_VERSION:\\s+(?<currentValue>v\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "go-gremlins/gremlins",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
     }
   ]
 }

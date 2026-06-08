@@ -30,6 +30,12 @@ All notable changes to claustrum are documented here. The format is based on
   an advisory, read-only `repo-config-drift` workflow; branch/tag protection
   `.github/rulesets/` (squash-only PRs, linear history, required checks,
   immutable `v*` tags); `CODEOWNERS` and a pull-request template.
+- Issue templates (`.github/ISSUE_TEMPLATE/`): structured bug-report and
+  feature-request forms (the latter flags JSON-RPC wire-surface impact), with
+  blank issues disabled and a private security-advisory contact link.
+- Mutation testing (`.github/workflows/mutation.yml`): on-demand + weekly
+  gremlins run (advisory, report-only) auditing whether the tests actually
+  assert on behavior; pinned `GREMLINS_VERSION` tracked by Renovate.
 - Release automation (`.goreleaser.yaml` + `.github/workflows/release.yml`): on
   a `v*` tag, builds all 6 targets, archives + `checksums.txt`, a syft CycloneDX
   **SBOM** per archive, **cosign** keyless signatures (`.sigstore.json`), and a
