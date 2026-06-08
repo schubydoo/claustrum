@@ -38,7 +38,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 `-version`, `-install`.
 
 - **`rpc.go`** — request/response types, error codes, `dispatch` (parse →
-  version → auth → route by namespace).
+  auth → version → route by namespace; auth is checked *before* the jsonrpc
+  version — probe-verified). Mistyped params → `-32602 Invalid params`.
 - **`server.go`** — the `-serve` daemon: AF_UNIX listener (mode `0600`),
   per-conn read loop, **concurrent** dispatch, self-daemonize, graceful shutdown.
 - **`methods_server.go` · `methods_files.go` · `methods_git.go` ·
@@ -50,8 +51,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **`process.go`** — `procManager` / `managedProc`: spawn in own process group,
   stream base64 stdout/stderr frames, per-process replay buffer, `reattach`.
 - **`bridge.go`** — `-bridge`: a dumb stdio↔socket relay (what SSH attaches to).
-- **`install.go`** — `-install`: CLI download / verify (SHA-256) / extract
-  (zstd) / prune.
+- **`install.go`** — `-install`: CLI download / verify (SHA-256, **`-cli-url`
+  downloads only** — the `-cli-zst` SFTP blob is not verified) / extract (zstd) / prune.
 - OS-specific behavior is isolated in `*_unix.go` / `*_windows.go` (daemonize,
   process groups, login-shell PATH extraction). The JSON-RPC surface is
   identical everywhere.
@@ -92,7 +93,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **A connection's requests dispatch concurrently** — replies can return out of
   order, matching the reference. Don't serialize them.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
-  SHA-256 before extracting; `-serve` makes no outbound connections.
+  SHA-256 before extracting **on that download path only** (the local `-cli-zst`
+  blob is trusted and not checksum-verified, matching the reference — see
+  [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D1); `-serve` makes no outbound connections.
 
 ## Where detail lives
 
