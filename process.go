@@ -48,6 +48,14 @@ func (m *procManager) get(id string) *managedProc {
 	return m.procs[id]
 }
 
+// isRunning reports whether the child is still alive (the exit goroutine clears
+// this under p.mu once cmd.Wait returns).
+func (p *managedProc) isRunning() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.running
+}
+
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
 // every attached client. The buffer retains all frames for later reattach.
 func (p *managedProc) emit(f streamFrame) {

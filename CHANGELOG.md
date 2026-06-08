@@ -98,6 +98,13 @@ All notable changes to claustrum are documented here. The format is based on
     repo) reports the init branch and a detached HEAD reports
     `detached:<short-sha>` (instead of leaking git's error text or `HEAD`);
     `git.worktree_create` off an empty repo infers an orphan branch and succeeds.
+  - `process.stdin` runs its checks in the reference's order **decode → exists →
+    running**: invalid base64 is rejected `-32602 Invalid base64 data` *before*
+    the process lookup (an unknown id with a bad payload still reports the decode
+    error, not `Process not found`), and writing to a known-but-**exited**
+    process now returns `-32602 Process not running` instead of a false
+    `{"success":true}`. (The 32 KiB stream-frame cap and the `exitCode:-1`
+    signal-death code were probe-confirmed to already match.)
   - Daemon stderr logging matched to the reference (`log`-package timestamps).
 
 ### Security

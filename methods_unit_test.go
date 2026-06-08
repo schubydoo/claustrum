@@ -455,18 +455,31 @@ func TestProcessSpawnValidation(t *testing.T) {
 
 func TestProcessStdinErrors(t *testing.T) {
 	s := newTestServer()
+	goodB64 := base64.StdEncoding.EncodeToString([]byte("x"))
 
-	// Unknown process id.
-	got := dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "missing", "data": base64.StdEncoding.EncodeToString([]byte("x"))}))
+	// Unknown process id (valid payload) → Process not found.
+	got := dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "missing", "data": goodB64}))
 	if !strings.Contains(got, "Process not found") {
 		t.Errorf("stdin to missing = %s, want not-found error", got)
 	}
 
-	// Registered process but invalid base64 payload.
-	s.procs.procs["p1"] = &managedProc{id: "p1", subs: map[*conn]struct{}{}}
+	// Invalid base64 is rejected BEFORE the process lookup (probe-verified
+	// precedence): even an unknown id reports the decode error, not not-found.
+	got = dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "missing", "data": "!!!not base64!!!"}))
+	if !strings.Contains(got, "Invalid base64 data") {
+		t.Errorf("stdin bad base64 (unknown id) = %s, want Invalid base64 data", got)
+	}
+
+	// Registered but NOT running (running:false) → Process not running.
+	s.procs.procs["p1"] = &managedProc{id: "p1", subs: map[*conn]struct{}{}, running: false}
+	got = dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "p1", "data": goodB64}))
+	if !strings.Contains(got, "Process not running") {
+		t.Errorf("stdin to exited = %s, want not-running error", got)
+	}
+	// ...and bad base64 still wins over the running check (decode is first).
 	got = dispatchRaw(t, s, rpcLine(t, "process.stdin", map[string]any{"id": "p1", "data": "!!!not base64!!!"}))
-	if !strings.Contains(got, "Invalid params") {
-		t.Errorf("stdin bad base64 = %s, want invalid-params error", got)
+	if !strings.Contains(got, "Invalid base64 data") {
+		t.Errorf("stdin bad base64 (not-running id) = %s, want Invalid base64 data", got)
 	}
 }
 

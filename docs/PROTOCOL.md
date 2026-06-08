@@ -116,7 +116,7 @@ stream notifications, **buffered** for later replay.
 | method | params | result / notes |
 |---|---|---|
 | `process.spawn` | `{id,command[,args][,cwd][,env]}` | `{"success":true}`, then stream frames. `args`: string[]. `env`: `{KEY:VAL}` merged over the daemon environment. Missing `id` → `-32602 Process ID is required`; missing `command` → `-32602 Command is required`. |
-| `process.stdin` | `{id,data}` | `{"success":true}`. `data` is **base64** written to the child's stdin. Unknown id → `-32602 Process not found`. |
+| `process.stdin` | `{id,data}` | `{"success":true}`. `data` is **base64** written to the child's stdin. Checks run in a fixed order (probe-verified): **decode → exists → running**. Invalid base64 → `-32602 Invalid base64 data` (returned *before* the process is even looked up, so an unknown id with a bad payload still reports the decode error); unknown id → `-32602 Process not found`; known but **exited** process → `-32602 Process not running`. |
 | `process.kill` | `{id[,signal]}` | `{"success":true}` (best-effort; signals the process group on Unix). |
 | `process.reattach` | `{id,fromSeq}` | replays buffered frames with **seq > fromSeq** (exclusive) to this connection, (re)subscribes it for future frames, then returns `{"found","running","firstSeq","lastSeq"}`. Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0}`. |
 
@@ -130,7 +130,12 @@ stream notifications, **buffered** for later replay.
 
 - `seq` is **per-process**, starts at 1, monotonic across stdout/stderr/exit.
 - `data` is base64 for stdout/stderr; the `exit` frame carries `exitCode` and no
-  `data`. A signal-terminated child reports `exitCode: -1`.
+  `data`. A signal-terminated child reports `exitCode: -1` (not `128+signo`).
+- Each stdout/stderr frame carries at most one **32 KiB** read (the streaming
+  read buffer); larger output is split across frames, so a client reassembles by
+  concatenating `data` in `seq` order. Exact frame *boundaries* depend on pipe
+  scheduling and are not stable — only the reassembled bytes are. (Both the cap
+  and the `-1` signal code are probe-verified against the reference.)
 - The replay buffer retains all frames for the life of the process (so
   `reattach{fromSeq:0}` replays everything). A process **survives** the
   disconnect of the connection that spawned it; another connection can pick it up
