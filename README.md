@@ -38,7 +38,7 @@ be used **independently** — e.g. as a building block for self-hosted tooling l
 [clauster](https://github.com/schubydoo/clauster). It is validated to produce
 **byte-identical** JSON-RPC frames for every method (see [Validation](#validation)).
 
-> **Status: pre-1.0.** The JSON-RPC/process/file/git surface is complete and validated; the
+> **Status: stable (v1.0+).** The JSON-RPC/process/file/git surface is complete and validated; the
 > CLI-version installer is implemented and behavior-checked. No telemetry, ever.
 
 ## Install / build
