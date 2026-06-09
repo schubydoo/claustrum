@@ -131,6 +131,21 @@ func TestHTTPGet(t *testing.T) {
 	if _, err := httpGet(srv.URL + "/missing"); err == nil {
 		t.Error("a non-200 response should error")
 	}
+
+	t.Run("size_limit_exceeded", func(t *testing.T) {
+		old := maxCLIBytes
+		maxCLIBytes = 5
+		defer func() { maxCLIBytes = old }()
+
+		large := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), 7)) // 7 > maxCLIBytes(5)
+		}))
+		defer large.Close()
+
+		if _, err := httpGet(large.URL); err == nil {
+			t.Error("expected error when response exceeds maxCLIBytes")
+		}
+	})
 }
 
 func TestDetectLibc(t *testing.T) {

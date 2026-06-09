@@ -148,7 +148,8 @@ func zstdDecompress(zst []byte, dest string) error {
 }
 
 func httpGet(url string) ([]byte, error) {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +157,14 @@ func httpGet(url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download %s: %s", url, resp.Status)
 	}
-	return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCLIBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxCLIBytes {
+		return nil, fmt.Errorf("response exceeds %d bytes", maxCLIBytes)
+	}
+	return body, nil
 }
 
 // pruneCLI keeps the most-recent `keep` version files under cliDir (by mtime).
