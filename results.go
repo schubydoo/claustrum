@@ -61,6 +61,10 @@ type gitInfoResult struct {
 	IsRepo bool   `json:"isRepo"`
 	Repo   string `json:"repo"`
 	Branch string `json:"branch"`
+	// Root is the absolute repo top-level (git rev-parse --show-toplevel) — the
+	// repo root even when path points at a subdirectory. Added by the reference
+	// daemon in 7cbfa471 (the 8de85faa baseline omitted it).
+	Root string `json:"root"`
 }
 
 type gitStatusResult struct {

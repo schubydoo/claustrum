@@ -44,8 +44,8 @@ func TestResultMarshalingIsByteExact(t *testing.T) {
 		{"success", successResult{Success: true}, `{"success":true}`},
 		{"notRepo", notRepoResult{}, `{"isRepo":false}`},
 
-		{"gitInfo", gitInfoResult{IsRepo: true, Repo: "claustrum", Branch: "main"},
-			`{"isRepo":true,"repo":"claustrum","branch":"main"}`},
+		{"gitInfo", gitInfoResult{IsRepo: true, Repo: "claustrum", Branch: "main", Root: "/src/claustrum"},
+			`{"isRepo":true,"repo":"claustrum","branch":"main","root":"/src/claustrum"}`},
 		{"status clean", gitStatusResult{IsRepo: true, Clean: true}, `{"isRepo":true,"clean":true}`},
 		{"status dirty", gitStatusResult{IsRepo: true, Changes: []string{"M a"}},
 			`{"isRepo":true,"clean":false,"changes":["M a"]}`},
