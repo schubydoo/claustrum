@@ -3,11 +3,18 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
+
+// loginPATHTimeout caps the time the login-shell subprocess may run.
+// A variable so tests can override it without affecting production behavior.
+var loginPATHTimeout = 10 * time.Second
 
 // pathSentinel brackets the PATH value echoed from the login shell.
 const pathSentinel = "___CLAUDE_SSH_PATH_EXTRACT___"
@@ -23,7 +30,13 @@ func extractLoginPATH() {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	cmd := exec.Command(shell, "-l", "-i", "-c", pathExtractCmd)
+	ctx, cancel := context.WithTimeout(context.Background(), loginPATHTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, shell, "-l", "-i", "-c", pathExtractCmd)
+	// Own process group so all children (e.g. tools the shell forks) are killed
+	// together when the context times out, allowing CombinedOutput to return.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.Env = append(os.Environ(),
 		"DISABLE_AUTO_UPDATE=true",
 		"ZSH_DISABLE_COMPFIX=true",
