@@ -24,11 +24,11 @@ codes, or frame formats unless explicitly noted as protocol-safe). Ranked by
 
 | # | Improvement | Impact | Cost | Why / compatibility |
 |---|---|---|---|---|
-| 8 | **Bounded replay buffer (ring)** | M-H | M | The per-process buffer is currently unbounded — a noisy long-lived process grows memory without limit. Cap by bytes/frames and advance `firstSeq` as old frames drop. **Protocol-safe**: `reattach` already returns `firstSeq`, so clients are expected to handle a moved floor. Make the cap generous + configurable. |
+| 8 | ~~**Bounded replay buffer (ring)**~~ ✅ **done** | M-H | M | Shipped in #58: each per-process buffer is capped at 50 MiB of base64 data (was unbounded — a noisy long-lived process grew memory without bound); the oldest frames drop and `firstSeq` advances past the cap. **Protocol-safe** — `reattach` returns `firstSeq`, so clients handle the moved floor. |
 | 9 | **stdin backpressure** | M | M | `process.stdin` writes synchronously; a slow child can block the caller. Add a bounded async writer with a "queue full" backpressure signal (the reference exposes a `stdin backpressure: queue full` guard). No wire change. |
 | 10 | ~~**Fuzz the JSON-RPC parser**~~ ✅ **done** | M | L-M | Shipped `fuzz_test.go`: `FuzzDispatch` (parse→auth→version→route→param-presence, side-effectful methods skipped so a coverage-guided fuzzer can't drive spawn/extract_tar/read) + `FuzzBindParams` (param-type binding, pure). Seeds run in CI; ~1.5M execs clean under active `-fuzz`. _Optional follow-up:_ a short `-fuzztime` CI job for ongoing fuzzing. |
 | 11 | ~~**Release automation**~~ ✅ **done** | H | M | Shipped `.goreleaser.yaml` + `release.yml`: 6-target builds, checksums, syft CycloneDX SBOM, cosign signing, and SLSA `*.intoto.jsonl` provenance — satisfies Scorecard SBOM + Signed-Releases (10/10). Also shipped `release-please.yml` + `pr-auto-update.yml` for automated version PRs (claustrum-ci[bot]). |
-| 12 | **Pin the Go toolchain** | M | L | Add a `toolchain`/CI matrix so release builds use a fixed Go (e.g. 1.23.x) for reproducible, verifiable binaries. |
+| 12 | **Pin the Go toolchain** | M | L | CI already pins the Go version via `go-version-file: go.mod` (`go 1.24`); the remaining win is an explicit `toolchain go1.24.x` directive for bit-for-bit reproducible release builds. |
 | 13 | **Structured/leveled logging** | M | L-M | Replace ad-hoc `fmt.Fprintf(stderr,…)` with a tiny leveled logger — **but keep the exact existing log strings** (`[Server]`, `[process.Manager]`, `[frameSink]`, `[shellenv]`) so anything that greps them still works. |
 
 ## Tier 3 — larger / lower-priority

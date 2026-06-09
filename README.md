@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/schubydoo/claustrum/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/schubydoo/claustrum/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/schubydoo/claustrum/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/go-1.23%2B-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white"></a>
   <img alt="platforms" src="https://img.shields.io/badge/platforms-linux%20%C2%B7%20macOS%20%C2%B7%20windows-555">
 </p>
 
@@ -43,7 +43,7 @@ be used **independently** — e.g. as a building block for self-hosted tooling l
 
 ## Install / build
 
-Requires Go 1.23+. The only dependency is `github.com/klauspost/compress` (zstd).
+Requires Go 1.24+. The only dependency is `github.com/klauspost/compress` (zstd).
 
 ```sh
 # build the native binary
@@ -130,7 +130,7 @@ lives in `scratch/` (local, not published).
 An **in-repo test suite** (run in CI on every PR) locks the same contract without the reference
 binary: a socket-integration battery boots the daemon and asserts every method's frames against
 committed golden fixtures, alongside unit tests for the install pipeline and the bridge/stop clients
-(~79% statement coverage). See [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md) for how
+(~82% statement coverage). See [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md) for how
 compatibility is kept in sync over time.
 
 ## Contributing
