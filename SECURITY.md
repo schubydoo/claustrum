@@ -12,8 +12,7 @@ coordinate disclosure and credit you, if you'd like.
 
 ## Supported versions
 
-claustrum is pre-1.0 and under active development; only the latest release on
-`main` receives security fixes.
+Only the latest release on `main` receives security fixes.
 
 ## Scope & threat model
 
