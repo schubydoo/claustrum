@@ -94,7 +94,7 @@ nondeterministic agent payloads), and `REPLAY.md` with the capture runbook. The
 session is captured under a **throwaway** SSH user via a `ForceCommand` wrapper
 scoped to that user, so it never touches a live daemon.
 
-This was exercised against the pinned reference (`8de85faaa…`): a real Desktop
+This was exercised against the then-pinned reference (`8de85faaa…`, since superseded by `7cbfa471`): a real Desktop
 session — 10 of the 18 methods, the full `process.*` lifecycle including a
 >32 KiB output stream and a mid-stream disconnect/reconnect that drove
 `process.reattach` — verified **byte-identical**. Concretely, on real client

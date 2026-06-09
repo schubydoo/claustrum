@@ -22,14 +22,14 @@ frames.** The wire surface *is* the product.
 | Tests | `go test -race ./...` — unit + socket-integration suites |
 | Validation battery | `scratch/probe/validate.sh` — diffs frames vs the reference (gitignored) |
 
-- Go 1.23+. Only dependency is `github.com/klauspost/compress` (zstd); `CGO_ENABLED=0`.
+- Go 1.24+. Only dependency is `github.com/klauspost/compress` (zstd); `CGO_ENABLED=0`.
 - In-repo tests (`*_test.go`) cover the wire surface two ways: fast unit tests
   (frame encoding, dispatch / auth / error routing, replay buffer, env merging,
   the `-install` pipeline) **and** a socket-integration suite (`harness_test.go`
   + `integration*_test.go`) that boots the daemon on a temp `AF_UNIX` socket and
   asserts every method's frames against committed golden fixtures
   (`testdata/socket_*.golden.json`) — so CI gates compatibility without the
-  reference binary. ~79% statement coverage. The cross-binary battery that diffs
+  reference binary. ~82% statement coverage. The cross-binary battery that diffs
   against the reference daemon lives in `scratch/`.
 
 ## Architecture

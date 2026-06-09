@@ -12,7 +12,7 @@ green (see below).
 ```sh
 git clone https://github.com/schubydoo/claustrum
 cd claustrum
-go build ./...            # Go 1.23+; only dep is github.com/klauspost/compress
+go build ./...            # Go 1.24+; only dep is github.com/klauspost/compress
 make build               # -> ./claustrum
 ```
 
