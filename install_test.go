@@ -54,6 +54,28 @@ func TestZstdDecompress(t *testing.T) {
 	}
 }
 
+// zstdDecompress must reject a blob that decompresses beyond the cap. Without
+// this guard, a tiny .zst file (e.g. 6 KB) can expand to hundreds of GB on disk
+// (zstd bomb, probe-verified against the reference binary — S6).
+func TestZstdDecompressSizeLimit(t *testing.T) {
+	old := maxCLIBytes
+	maxCLIBytes = 1024
+	defer func() { maxCLIBytes = old }()
+
+	dir := t.TempDir()
+	// 1025 bytes decompressed — one byte over the 1 KB cap.
+	bomb := zstdOf(t, bytes.Repeat([]byte("x"), 1025))
+	if err := zstdDecompress(bomb, filepath.Join(dir, "over")); err == nil {
+		t.Error("expected error for oversized zstd payload, got nil")
+	}
+
+	// Exactly at the cap (1024 bytes) must succeed.
+	ok := zstdOf(t, bytes.Repeat([]byte("x"), 1024))
+	if err := zstdDecompress(ok, filepath.Join(dir, "at")); err != nil {
+		t.Errorf("zstdDecompress at cap: %v", err)
+	}
+}
+
 func TestIsRegularFile(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "f")
