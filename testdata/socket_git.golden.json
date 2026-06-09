@@ -5,7 +5,8 @@
     "result": {
       "isRepo": true,
       "repo": "myrepo",
-      "branch": "main"
+      "branch": "main",
+      "root": "<DIR>/myrepo"
     }
   },
   {

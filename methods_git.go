@@ -76,7 +76,7 @@ func gitInfo(req *request) response {
 		sha, _ := git(p.Path, "rev-parse", "--short", "HEAD")
 		branch = "detached:" + sha
 	}
-	return okResult(req.ID, gitInfoResult{IsRepo: true, Repo: filepath.Base(top), Branch: branch})
+	return okResult(req.ID, gitInfoResult{IsRepo: true, Repo: filepath.Base(top), Branch: branch, Root: top})
 }
 
 func gitStatus(req *request) response {
