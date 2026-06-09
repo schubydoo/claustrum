@@ -87,6 +87,24 @@ func TestFilesReadDirectoryAndMissing(t *testing.T) {
 	}
 }
 
+// files.read must reject non-regular files (character devices, FIFOs, sockets)
+// without reading from them. Without this guard, os.ReadFile on /dev/urandom or
+// /dev/zero loops until the process OOMs (probe-verified against reference binary).
+func TestFilesReadRejectsNonRegular(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("character devices not applicable on Windows")
+	}
+	fi, err := os.Stat("/dev/null")
+	if err != nil || fi.Mode().IsRegular() {
+		t.Skip("/dev/null unavailable or unexpectedly regular")
+	}
+	s := newTestServer()
+	got := dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": "/dev/null"}))
+	if !strings.Contains(got, "not a regular file") {
+		t.Errorf("files.read(/dev/null) = %s, want not-a-regular-file error", got)
+	}
+}
+
 // tarGzPath builds a gzip-tar from name→content entries (reusing the shared
 // makeTarGz helper) and returns its path.
 func tarGzPath(t *testing.T, entries map[string]string) string {
@@ -270,6 +288,33 @@ func TestFilesExtractTarZipSlip(t *testing.T) {
 	}
 	if b, err := os.ReadFile(filepath.Join(root, "dest2", "within.txt")); err != nil || string(b) != "fine" {
 		t.Errorf("within.txt = %q (err %v), want fine", b, err)
+	}
+}
+
+// extractTarGz must reject archives whose total uncompressed size exceeds the cap.
+// A crafted .tar.gz can have a tiny compressed payload that expands to fill a disk;
+// the cap bounds that damage. The var is overridden to a small value here so the test
+// does not write gigabytes to disk.
+func TestFilesExtractTarSizeLimit(t *testing.T) {
+	old := maxExtractBytes
+	maxExtractBytes = 1024
+	defer func() { maxExtractBytes = old }()
+
+	// Archive with a single 1025-byte file — one byte over the 1 KB cap.
+	s := newTestServer()
+	archive := tarGzPath(t, map[string]string{"big.bin": strings.Repeat("x", 1025)})
+	dest := filepath.Join(t.TempDir(), "out")
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":false`) || !strings.Contains(got, "size limit exceeded") {
+		t.Errorf("extract over cap = %s, want success:false and size-limit error", got)
+	}
+
+	// Archive with a 1024-byte file — exactly at the cap — must succeed.
+	archive2 := tarGzPath(t, map[string]string{"ok.bin": strings.Repeat("x", 1024)})
+	dest2 := filepath.Join(t.TempDir(), "out2")
+	got = dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive2, "destDir": dest2}))
+	if !strings.Contains(got, `"success":true`) {
+		t.Errorf("extract at cap = %s, want success", got)
 	}
 }
 
