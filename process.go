@@ -22,15 +22,24 @@ type streamFrame struct {
 	ExitCode  *int   `json:"exitCode,omitempty"`
 }
 
+// defaultBufferCap caps the total base64-encoded data held in each per-process
+// replay buffer. A long-running, high-throughput process would otherwise grow
+// the buffer without bound for the daemon's entire lifetime (the buffer is never
+// reclaimed while the procManager holds the entry). 50 MB keeps reattach useful
+// while bounding the worst-case daemon RSS.
+const defaultBufferCap int64 = 50 * 1024 * 1024
+
 type managedProc struct {
-	id      string
-	mu      sync.Mutex
-	seq     int
-	buffer  []streamFrame
-	subs    map[*conn]struct{}
-	running bool
-	stdin   io.WriteCloser
-	cmd     *exec.Cmd
+	id       string
+	mu       sync.Mutex
+	seq      int
+	buffer   []streamFrame
+	bufBytes int64 // sum of len(f.Data) for frames currently in buffer
+	bufCap   int64 // per-instance override; 0 means use defaultBufferCap
+	subs     map[*conn]struct{}
+	running  bool
+	stdin    io.WriteCloser
+	cmd      *exec.Cmd
 }
 
 type procManager struct {
@@ -57,7 +66,9 @@ func (p *managedProc) isRunning() bool {
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
-// every attached client. The buffer retains all frames for later reattach.
+// every attached client. The buffer retains frames for later reattach, capped
+// at maxBufferBytes: the oldest frames are dropped (and firstSeq advances) when
+// the cap is exceeded, matching the reattach contract on the wire.
 func (p *managedProc) emit(f streamFrame) {
 	p.mu.Lock()
 	p.seq++
@@ -65,6 +76,16 @@ func (p *managedProc) emit(f streamFrame) {
 	f.Type = "stream"
 	f.ProcessID = p.id
 	p.buffer = append(p.buffer, f)
+	p.bufBytes += int64(len(f.Data))
+	cap := p.bufCap
+	if cap == 0 {
+		cap = defaultBufferCap
+	}
+	// Trim oldest frames while over cap, keeping at least the frame just added.
+	for len(p.buffer) > 1 && p.bufBytes > cap {
+		p.bufBytes -= int64(len(p.buffer[0].Data))
+		p.buffer = p.buffer[1:]
+	}
 	subs := make([]*conn, 0, len(p.subs))
 	for c := range p.subs {
 		subs = append(subs, c)

@@ -56,6 +56,30 @@ func TestEmitAssignsSeqAndStamps(t *testing.T) {
 	}
 }
 
+// emit caps the replay buffer at bufCap: old frames are dropped (and firstSeq
+// advances) so the buffer never grows without bound. The most recently added
+// frame is always kept even if it alone exceeds the cap.
+func TestEmitBufferCap(t *testing.T) {
+	// Use a per-instance cap to avoid touching global state while goroutines
+	// from earlier spawn tests may still be calling emit on their own processes.
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
+	// Each frame has Data "aaaaaaaaaa" (10 bytes). After 3 emits the buffer
+	// would be 30 bytes — well over the 10-byte cap — so older frames must drop.
+	for i := 0; i < 5; i++ {
+		p.emit(streamFrame{Stream: "stdout", Data: "aaaaaaaaaa"})
+	}
+	if p.bufBytes > p.bufCap {
+		t.Errorf("bufBytes = %d after cap, want ≤ %d", p.bufBytes, p.bufCap)
+	}
+	if len(p.buffer) == 0 {
+		t.Fatal("buffer is empty — at least the last frame must be retained")
+	}
+	// firstSeq must have advanced past 1 (old frames were trimmed).
+	if p.buffer[0].Seq <= 1 {
+		t.Errorf("buffer[0].Seq = %d, want > 1 (old frames trimmed)", p.buffer[0].Seq)
+	}
+}
+
 func TestReattachUnknownProcess(t *testing.T) {
 	m := newProcManager()
 	c, _ := pipeConn(t)
