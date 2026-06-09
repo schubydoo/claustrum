@@ -1,8 +1,8 @@
 # Changelog
 
 All notable changes to claustrum are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
-[Semantic Versioning](https://semver.org/) once it reaches 1.0.
+[Keep a Changelog](https://keepachangelog.com/), and this project adheres to
+[Semantic Versioning](https://semver.org/).
 
 ## [1.0.1](https://github.com/schubydoo/claustrum/compare/v1.0.0...v1.0.1) (2026-06-08)
 
