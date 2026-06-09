@@ -119,6 +119,11 @@ func isRunnable(path string) bool {
 	return exec.CommandContext(ctx, path, "--version").Run() == nil
 }
 
+// maxCLIBytes caps the decompressed size written by zstdDecompress. A crafted
+// .zst file can be tiny when compressed but expand to fill the remote disk;
+// 512 MB is well above any realistic CLI binary. Set to a small value in tests.
+var maxCLIBytes int64 = 512 * 1024 * 1024
+
 // zstdDecompress decompresses a zstd blob to dest in-process, using the same
 // library (klauspost/compress) the real binary embeds — no external zstd CLI.
 func zstdDecompress(zst []byte, dest string) error {
@@ -132,8 +137,14 @@ func zstdDecompress(zst []byte, dest string) error {
 		return err
 	}
 	defer out.Close()
-	_, err = io.Copy(out, dec)
-	return err
+	n, err := io.Copy(out, io.LimitReader(dec, maxCLIBytes+1))
+	if err != nil {
+		return err
+	}
+	if n > maxCLIBytes {
+		return fmt.Errorf("decompressed CLI exceeds %d bytes", maxCLIBytes)
+	}
+	return nil
 }
 
 func httpGet(url string) ([]byte, error) {
