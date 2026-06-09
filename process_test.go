@@ -80,6 +80,36 @@ func TestEmitBufferCap(t *testing.T) {
 	}
 }
 
+// A single frame larger than the whole cap is still retained: the trim loop
+// keeps at least one frame (`len(p.buffer) > 1`), so the buffer is never left
+// empty. Pins that boundary — the `>= 1` mutant would drop the sole frame,
+// leaving nothing to replay on reattach.
+func TestEmitKeepsSoleOverCapFrame(t *testing.T) {
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
+	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("x", 25)}) // 25 bytes > cap 10
+	if len(p.buffer) != 1 {
+		t.Fatalf("buffer len = %d, want 1 (sole over-cap frame must be kept)", len(p.buffer))
+	}
+	if p.buffer[0].Seq != 1 {
+		t.Errorf("retained frame seq = %d, want 1", p.buffer[0].Seq)
+	}
+}
+
+// Buffered bytes exactly equal to the cap trim nothing: the condition is strict
+// (`p.bufBytes > cap`). Pins that boundary — the `>= cap` mutant would drop the
+// oldest frame at the exact-equal point, wrongly advancing firstSeq past 1.
+func TestEmitRetainsAllAtExactCap(t *testing.T) {
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
+	p.emit(streamFrame{Stream: "stdout", Data: "aaaaa"}) // 5 bytes, seq 1
+	p.emit(streamFrame{Stream: "stdout", Data: "bbbbb"}) // 5 bytes, seq 2 -> total exactly 10
+	if len(p.buffer) != 2 {
+		t.Fatalf("buffer len = %d, want 2 (exactly at cap keeps every frame)", len(p.buffer))
+	}
+	if p.buffer[0].Seq != 1 {
+		t.Errorf("firstSeq = %d, want 1 (no trim when bufBytes == cap)", p.buffer[0].Seq)
+	}
+}
+
 func TestReattachUnknownProcess(t *testing.T) {
 	m := newProcManager()
 	c, _ := pipeConn(t)
