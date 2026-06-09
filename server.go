@@ -98,8 +98,10 @@ func runServe(socket, tokenFile string) {
 	_ = os.Remove(tokenFile)
 
 	// Extract a real interactive PATH from the login shell so spawned children
-	// resolve tools the way an interactive session would.
-	extractLoginPATH()
+	// resolve tools the way an interactive session would. Run in a goroutine so
+	// a stalling login shell does not delay the daemon socket opening (matches
+	// reference binary behavior; extractLoginPATH has its own internal timeout).
+	go extractLoginPATH()
 
 	_ = os.Remove(socket) // clear a stale socket
 	ln, err := net.Listen("unix", socket)

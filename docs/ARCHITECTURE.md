@@ -36,9 +36,10 @@ files differ.
    `__INSTALL_RESULT__{json}`.
 
 2. **Daemon / process supervisor (`-serve`)** — self-daemonizes (detaches from
-   the controlling session, reparents to init on Unix), extracts an interactive
-   PATH from the login shell (Unix only), opens the `0600` socket, and supervises
-   spawned children. It makes **no** network connections.
+   the controlling session, reparents to init on Unix), opens the `0600` socket,
+   and supervises spawned children. On Unix, interactive PATH extraction from the
+   login shell runs concurrently (goroutine) so a slow login shell does not delay
+   socket availability. It makes **no** network connections.
 
 3. **JSON-RPC multiplexer + replay** — one persistent socket, concurrent request
    dispatch, in-band token auth, and a per-process frame buffer (`process.*`) that

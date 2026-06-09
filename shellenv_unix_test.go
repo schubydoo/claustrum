@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // extractLoginPATH runs the login shell to resolve an interactive PATH and
@@ -89,6 +90,28 @@ func TestExtractLoginPATHInstallsExtractedValue(t *testing.T) {
 
 	if got := os.Getenv("PATH"); got != want {
 		t.Errorf("PATH = %q, want %q (column-0 sentinel must install the extracted value)", got, want)
+	}
+}
+
+// A stalling login shell must not block extractLoginPATH forever. The internal
+// context timeout kills the subprocess and the function returns. This pins the
+// exec.CommandContext usage; without it the function would hang indefinitely.
+func TestExtractLoginPATHDoesNotHang(t *testing.T) {
+	old := loginPATHTimeout
+	loginPATHTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { loginPATHTimeout = old })
+
+	shell := writeFakeShell(t, "sleep 9999")
+	t.Setenv("SHELL", shell)
+	t.Setenv("PATH", os.Getenv("PATH"))
+
+	done := make(chan struct{})
+	go func() { extractLoginPATH(); close(done) }()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("extractLoginPATH did not return — internal timeout not working")
 	}
 }
 
