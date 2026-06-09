@@ -139,6 +139,12 @@ func TestSocketFilesBattery(t *testing.T) {
 func TestSocketGitBattery(t *testing.T) {
 	requireGit(t)
 	root := t.TempDir()
+	// git rev-parse --show-toplevel (used by git.info's "root") returns the
+	// symlink-resolved path; on macOS t.TempDir() lives under /var -> /private/var,
+	// so resolve here to match what the daemon reports. No-op on Linux.
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	repo := filepath.Join(root, "myrepo")
 	runGit(t, root, "init", "-b", "main", "myrepo")
 	writeFile(t, filepath.Join(repo, "README.md"), "hello\n", 0o644)
