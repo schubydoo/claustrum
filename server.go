@@ -96,6 +96,7 @@ func runServe(socket, tokenFile string) {
 	}
 	token := normalizeToken(b)
 	_ = os.Remove(tokenFile)
+	_ = os.Unsetenv("CLAUDE_RPC_TOKEN") // prevent token propagation through daemonize → os.Environ()
 
 	// Extract a real interactive PATH from the login shell so spawned children
 	// resolve tools the way an interactive session would. Run in a goroutine so

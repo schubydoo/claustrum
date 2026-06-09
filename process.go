@@ -235,12 +235,26 @@ func (m *procManager) killAll() {
 }
 
 // buildEnv merges the caller-supplied env map over the daemon's environment.
+// CLAUDE_RPC_TOKEN is stripped from the base: the reference binary does not
+// propagate the auth token to spawned children (probe-verified 2026-06-09).
 func buildEnv(env map[string]string) []string {
-	base := os.Environ()
+	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	for k, v := range env {
 		base = replaceOrAppendEnv(base, k, v)
 	}
 	return base
+}
+
+// removeEnvKey returns a copy of env with all entries whose key equals k removed.
+func removeEnvKey(env []string, k string) []string {
+	prefix := k + "="
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func replaceOrAppendEnv(env []string, key, val string) []string {
