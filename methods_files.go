@@ -87,6 +87,9 @@ func filesRead(req *request) response {
 	if fi.IsDir() {
 		return errResult(req.ID, codeInvalidParam, "files.read: path is a directory")
 	}
+	if !fi.Mode().IsRegular() {
+		return errResult(req.ID, codeInvalidParam, "files.read: not a regular file")
+	}
 	if p.MaxBytes > 0 && fi.Size() > p.MaxBytes {
 		return errResult(req.ID, codeInvalidParam, "files.read: file exceeds maxBytes")
 	}
@@ -134,6 +137,11 @@ func filesExtractTar(req *request) response {
 	return okResult(req.ID, extractResult{Success: true, FileCount: count})
 }
 
+// maxExtractBytes caps the total uncompressed bytes written by extractTarGz.
+// A crafted archive can have a tiny compressed size but expand to fill a disk;
+// this cap bounds the damage. Set to a small value in tests.
+var maxExtractBytes int64 = 512 * 1024 * 1024
+
 func extractTarGz(archivePath, destDir string) (int, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -164,6 +172,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	}
 	tr := tar.NewReader(gz)
 	count := 0
+	var totalWritten int64
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -199,11 +208,15 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			if err != nil {
 				return count, err
 			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
+			n, err := io.Copy(out, io.LimitReader(tr, maxExtractBytes-totalWritten+1))
+			totalWritten += n
+			out.Close()
+			if err != nil {
 				return count, err
 			}
-			out.Close()
+			if totalWritten > maxExtractBytes {
+				return count, fmt.Errorf("extraction size limit exceeded")
+			}
 			count++
 		default:
 			// The reference supports only regular files and directories; any
