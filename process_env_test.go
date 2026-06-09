@@ -71,3 +71,22 @@ func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 		t.Errorf("child saw CLAUDE_SSH_DAEMON_CHILD=%q, want %q — daemon re-exec marker must propagate to spawned children for reference parity", got, "1")
 	}
 }
+
+// The reference binary strips CLAUDE_RPC_TOKEN from the env it passes to
+// process.spawn children (probe-verified 2026-06-09 against linux-amd64
+// 8de85faa). buildEnv must filter it out even when the daemon's own process
+// environment contains it (e.g. when Desktop sets it for the bridge client).
+func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
+	t.Setenv("CLAUDE_RPC_TOKEN", "secret-must-not-leak")
+	m := newProcManager()
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	if err := m.spawn(c, "tokencheck", "/bin/sh",
+		[]string{"-c", `printf 'token=%s' "$CLAUDE_RPC_TOKEN"`}, "", nil); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	// "token=" means the var was absent; anything else means it leaked.
+	if got := firstStdout(t, frames); got != "token=" {
+		t.Errorf("child saw %q, want %q — CLAUDE_RPC_TOKEN must not propagate to spawned children", got, "token=")
+	}
+}
