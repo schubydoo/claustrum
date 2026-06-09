@@ -146,6 +146,25 @@ func TestHTTPGet(t *testing.T) {
 			t.Error("expected error when response exceeds maxCLIBytes")
 		}
 	})
+
+	t.Run("size_at_exact_limit_ok", func(t *testing.T) {
+		old := maxCLIBytes
+		maxCLIBytes = 5
+		defer func() { maxCLIBytes = old }()
+
+		exact := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), 5)) // exactly maxCLIBytes(5)
+		}))
+		defer exact.Close()
+
+		b, err := httpGet(exact.URL)
+		if err != nil {
+			t.Fatalf("a response of exactly maxCLIBytes must succeed, got: %v", err)
+		}
+		if int64(len(b)) != maxCLIBytes {
+			t.Errorf("body len = %d, want %d", len(b), maxCLIBytes)
+		}
+	})
 }
 
 func TestDetectLibc(t *testing.T) {
