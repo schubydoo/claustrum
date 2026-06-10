@@ -28,55 +28,75 @@ files differ.
 
 ## The three runtime roles
 
-1. **CLI-version manager (`-install`)** — ensures the pinned `claude` CLI is
-   present under `-cli-dir`. If `<cli-dir>/<cli-version>` exists *and* is runnable
-   (`<cli> --version` exits 0) it's kept; otherwise the blob is acquired from
-   `-cli-zst` (a local `.zst`, consumed on success; checksum-verified **only when a
-   `-cli-checksum` is supplied** — an opt-in divergence from the reference, see
-   [PROTOCOL.md](PROTOCOL.md)) or downloaded from `-cli-url` (SHA-256-verified against
-   `-cli-checksum` *unconditionally* — even an empty checksum fails). The blob is
-   zstd-decompressed, `chmod 0755`, and re-checked for runnability **at a temp path,
-   then atomically renamed into place** (so an interrupted install never leaves a
-   half-written CLI); the directory is then pruned to `-cli-keep`
-   most-recent files (by mtime, default 3). It prints one line:
-   `__INSTALL_RESULT__{json}`.
+### 1 · CLI-version manager (`-install`)
 
-2. **Daemon / process supervisor (`-serve`)** — self-daemonizes (detaches from
-   the controlling session, reparents to init on Unix), opens the `0600` socket,
-   and supervises spawned children. The auth token arrives via `-token-file`
-   (read once, unlinked) or `-token-fd` (read from an open descriptor and
-   forwarded to the detached child over a pipe — never touches disk). On Unix,
-   interactive PATH extraction from the login shell runs concurrently (goroutine)
-   so a slow login shell does not delay socket availability. It makes **no**
-   outbound network connections, and no inbound listener beyond the socket unless
-   the operator opts into `-metrics-addr`.
+Ensures the pinned `claude` CLI is present under `-cli-dir`.
 
-3. **JSON-RPC multiplexer + replay** — one persistent socket, concurrent request
-   dispatch, in-band token auth, and a per-process frame buffer (`process.*`) that
-   lets a late or reconnecting client catch up via `reattach`.
+- If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
+  exits 0), it's kept as-is.
+- Otherwise the blob is acquired from one of two sources:
+    - `-cli-zst` — a local `.zst` (consumed on success); checksum-verified
+      **only when a `-cli-checksum` is supplied** — an opt-in divergence from
+      the reference, see [PROTOCOL.md](PROTOCOL.md).
+    - `-cli-url` — downloaded, SHA-256-verified against `-cli-checksum`
+      *unconditionally* (even an empty checksum fails).
+- The blob is zstd-decompressed, `chmod 0755`, and re-checked for runnability
+  **at a temp path, then atomically renamed into place** — an interrupted
+  install never leaves a half-written CLI.
+- The directory is pruned to the `-cli-keep` most-recent files (by mtime,
+  default 3).
+- It prints one line: `__INSTALL_RESULT__{json}`.
 
-**Operational logging** mirrors the reference daemon: the readiness banner
-(`… remote server listening on <socket>`) is printed to **stdout** without a
-prefix, while every operational/diagnostic line — `[Server]` connection
-lifecycle, `[process.Manager]` spawn/stream/exit, `[shellenv]`, `[frameSink]` —
-goes to **stderr** via the standard `log` package (a `2006/01/02 15:04:05`
-timestamp prefix). Only the banner's product name differs (rebranded). These logs
-are not part of the JSON-RPC wire contract, but they are kept byte-faithful (sans
-timestamp/PID) so anything tailing the daemon log behaves identically.
+### 2 · Daemon / process supervisor (`-serve`)
 
-A tiny leveled logger ([`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go)) sits in front of those
-calls so operators can quiet the daemon. Each line carries a level
-(`DEBUG`/`INFO`/`WARN`/`ERROR`), emitted as a short tag *before* the
-`[Component]` prefix — `INFO  [Server] New connection from: …` — so the prefixes
-stay byte-intact and any grep for `[Server]`, `[process.Manager]`, `[frameSink]`,
-or `[shellenv]` keeps matching. The threshold is set once at startup from
-`CLAUSTRUM_LOG_LEVEL` (`debug`|`info`|`warn`|`error`); it **defaults to `debug`**,
-so an unset (or unrecognized) value emits exactly what the daemon always has —
-raising it drops everything below the chosen level. Purely a local diagnostic
-knob: it touches stderr only, never the wire.
+Self-daemonizes (detaches from the controlling session, reparents to init on
+Unix), opens the `0600` socket, and supervises spawned children.
 
-`-bridge` is a fourth, trivial mode: a dumb stdio↔socket relay (what an SSH
-session attaches to). It injects no auth.
+- The auth token arrives via `-token-file` (read once, unlinked) or
+  `-token-fd` (read from an open descriptor and forwarded to the detached
+  child over a pipe — never touches disk).
+- On Unix, interactive PATH extraction from the login shell runs concurrently
+  (goroutine), so a slow login shell does not delay socket availability.
+- It makes **no** outbound network connections, and no inbound listener beyond
+  the socket unless the operator opts into `-metrics-addr`.
+
+### 3 · JSON-RPC multiplexer + replay
+
+One persistent socket, concurrent request dispatch, in-band token auth, and a
+per-process frame buffer (`process.*`) that lets a late or reconnecting client
+catch up via `reattach`.
+
+(`-bridge` is a fourth, trivial mode: a dumb stdio↔socket relay — what an SSH
+session attaches to. It injects no auth.)
+
+## Operational logging
+
+Mirrors the reference daemon:
+
+- The readiness banner (`… remote server listening on <socket>`) goes to
+  **stdout**, without a prefix. Only its product name differs (rebranded).
+- Every operational/diagnostic line — `[Server]` connection lifecycle,
+  `[process.Manager]` spawn/stream/exit, `[shellenv]`, `[frameSink]` — goes to
+  **stderr** via the standard `log` package (a `2006/01/02 15:04:05` timestamp
+  prefix).
+- These logs are not part of the JSON-RPC wire contract, but they are kept
+  byte-faithful (sans timestamp/PID) so anything tailing the daemon log behaves
+  identically.
+
+A tiny leveled logger
+([`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go))
+sits in front of those calls so operators can quiet the daemon:
+
+- Each line carries a level (`DEBUG`/`INFO`/`WARN`/`ERROR`), emitted as a short
+  tag *before* the `[Component]` prefix — `INFO  [Server] New connection
+  from: …` — so the prefixes stay byte-intact and any grep for `[Server]`,
+  `[process.Manager]`, `[frameSink]`, or `[shellenv]` keeps matching.
+- The threshold is set once at startup from `CLAUSTRUM_LOG_LEVEL`
+  (`debug`|`info`|`warn`|`error`).
+- It **defaults to `debug`** — an unset (or unrecognized) value emits exactly
+  what the daemon always has; raising it drops everything below the chosen
+  level.
+- Purely a local diagnostic knob: it touches stderr only, never the wire.
 
 ## `__INSTALL_RESULT__` facts
 

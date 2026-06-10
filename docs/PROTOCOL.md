@@ -53,22 +53,29 @@ include `"auth"` itself.
 | `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
 | `-32001` | unauthorized |
 
-**Validation precedence (probe-verified):** a request is checked in the order
-**parse → auth → version → method → params**. Auth is validated *before* the
-`jsonrpc` version, so a request that fails both (e.g. no `auth` and a missing/wrong
-`jsonrpc`) reports `-32001 Unauthorized`, not the version error. Only once auth
-passes is `jsonrpc == "2.0"` enforced.
+### Validation precedence (probe-verified)
 
-**Params presence and typing:** every `files.*` / `git.*` / `process.*` method
-requires a `params` object to be present. An absent `params` → `-32602 Invalid
-params`, checked *after* method existence (so an unknown method is `-32601`
-regardless). An empty `{}` is accepted and runs the method's own validation.
-`params` that is present but **mistyped** — a wrong field type (e.g.
-`"maxBytes":"4"` or `"path":123`) or a non-object value (`"params":"x"` / `[…]`) —
-is also `-32602 Invalid params`; the daemon does not silently coerce or ignore the
-decode error. (Unknown extra fields *are* ignored, by both daemons.) `server.*`
-methods take no params, so a mistyped `params` on them is ignored and the call
-succeeds.
+A request is checked in the order **parse → auth → version → method → params**:
+
+- Auth is validated *before* the `jsonrpc` version: a request that fails both
+  (no `auth` *and* a missing/wrong `jsonrpc`) reports `-32001 Unauthorized`,
+  not the version error.
+- Only once auth passes is `jsonrpc == "2.0"` enforced.
+
+### Params presence and typing
+
+Every `files.*` / `git.*` / `process.*` method requires a `params` object:
+
+- **Absent** `params` → `-32602 Invalid params` — checked *after* method
+  existence, so an unknown method is `-32601` regardless.
+- An **empty** `{}` is accepted and runs the method's own validation.
+- **Mistyped** `params` — a wrong field type (`"maxBytes":"4"`, `"path":123`)
+  or a non-object value (`"params":"x"` / `[…]`) — is also
+  `-32602 Invalid params`; the daemon does not silently coerce or ignore the
+  decode error.
+- **Unknown extra fields** *are* ignored (by both daemons).
+- `server.*` methods take no params, so a mistyped `params` on them is ignored
+  and the call succeeds.
 
 ## Methods (18)
 
@@ -253,87 +260,144 @@ stream notifications, **buffered** for later replay.
 ```
 
 - `seq` is **per-process**, starts at 1, monotonic across stdout/stderr/exit.
-- `data` is base64 for stdout/stderr; the `exit` frame carries `exitCode` and no
-  `data`. A signal-terminated child reports `exitCode: -1` (not `128+signo`).
+- `data` is base64 for stdout/stderr.
+- The `exit` frame carries `exitCode` and no `data`. A signal-terminated child
+  reports `exitCode: -1` (not `128+signo`).
 - Each stdout/stderr frame carries at most one **32 KiB** read (the streaming
-  read buffer); larger output is split across frames, so a client reassembles by
-  concatenating `data` in `seq` order. Exact frame *boundaries* depend on pipe
-  scheduling and are not stable — only the reassembled bytes are. (Both the cap
-  and the `-1` signal code are probe-verified against the reference.)
-- The replay buffer retains all frames for the life of the process (so
-  `reattach{fromSeq:0}` replays everything). A process **survives** the
-  disconnect of the connection that spawned it; another connection can pick it up
-  via `reattach`. This is the multi-attach / reconnect mechanism.
+  read buffer); larger output is split across frames. A client reassembles by
+  concatenating `data` in `seq` order.
+- Exact frame *boundaries* depend on pipe scheduling and are not stable — only
+  the reassembled bytes are. (Both the 32 KiB cap and the `-1` signal code are
+  probe-verified against the reference.)
+- The replay buffer retains frames for the life of the process, so
+  `reattach{fromSeq:0}` replays everything.
+- A process **survives** the disconnect of the connection that spawned it;
+  another connection can pick it up via `reattach`. This is the multi-attach /
+  reconnect mechanism.
 
 ## Daemon lifecycle (flags)
 
-| flag(s) | role |
-|---|---|
-| `-serve -socket <p> {-token-file <p>\|-token-fd <n>} [-metrics-addr <a>]` | self-daemonize (reparent to init / detached), extract login-shell PATH (Unix), run the RPC server (and, if `-metrics-addr` is set, a Prometheus `/metrics` HTTP endpoint) |
-| `-bridge -socket <p>` | dumb stdio↔socket relay (no auth injection) — what an SSH session attaches to |
-| `-stop -socket <p>` | send `server.shutdown` (auth from `CLAUDE_RPC_TOKEN`) |
-| `-version` | print `claustrum <id> (built <time>)` |
-| `-install -cli-dir <d> -cli-version <v> [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]` | ensure the CLI is present (download/verify/extract/prune), print `__INSTALL_RESULT__<json>` facts |
+One binary, five modes. Everything below is probe-verified against the
+reference unless marked **claustrum-only**.
 
-**CLI-mode behavior (probe-verified):**
-- **Default socket.** When `-socket` is omitted, `-serve`/`-bridge`/`-stop` fall
-  back to `~/.claude/remote/rpc.sock` (the daemon does **not** create the parent
-  directory, so `-serve` on a missing `~/.claude/remote` fails `claustrum: listen
-  unix: …: bind: no such file or directory`). The deployment always passes
-  `-socket`; this only matters for bare invocations.
-- **`-serve` requires a token source** (`-token-file` or `-token-fd`), checked
-  *before* the socket (`claustrum: daemonized child requires --token-file or
-  --token-fd`, exit `1`). The `CLAUDE_RPC_TOKEN` env is **not** accepted for
-  `-serve` (it is only for the `-bridge`/`-stop` clients), so the daemon never
-  starts unauthenticated. The token is read as a **line**: a single trailing
-  newline (`\n` or `\r\n`) is stripped, but spaces and other surrounding
-  whitespace are preserved verbatim (probe-verified — a token ending in a newline
-  still authenticates). A bad `-token-file` → `claustrum: read --token-file:
-  <err>`, exit `1`. On success it prints `Claustrum remote server listening on
-  <socket>` to stdout.
-- **`-token-fd <n>` (claustrum-only, no temp file).** Reads the token from an
-  already-open file descriptor (e.g. `-token-fd 0` for stdin) instead of
-  `-token-file`, so the token never touches disk. Because `-serve` self-daemonizes
-  (re-execs), the parent reads the fd and **forwards the token to the detached
-  child over an inherited pipe** — never via disk, argv, or the environment.
-  Additive and off the wire: callers using `-token-file` are unaffected, and the
-  reference (which has no `-token-fd`) is matched byte-for-byte when it isn't used.
-- **`-stop` is best-effort.** A missing or unreachable daemon is a silent no-op —
-  exit `0`, no output. Only a live daemon's response (if any) is echoed to stdout.
-- **`-bridge` is strict.** A dial failure is a hard error: `claustrum: dial
-  server: <err>` on stderr, exit `1`.
-- **`-metrics-addr` (opt-in observability, claustrum-only).** When set (e.g.
-  `127.0.0.1:9090`), the `-serve` daemon also serves Prometheus-format counters
-  at `http://<addr>/metrics` (connections, process spawns/exits, reattaches,
-  stream/stdin bytes). It is **off by default** — no listener exists unless the
-  flag is passed — and is **not part of the JSON-RPC wire contract** (a
-  claustrum-only operational addition; the reference daemon has none, so it never
-  affects parity). It serves **counts only** (no command output, no tokens) and
-  has **no auth**, so bind it to a trusted interface (loopback). A bind failure
-  is logged (`[Server] metrics: …`) and non-fatal.
-- **No mode given** → `claustrum: one of --version/--install/--serve/--bridge/--stop
-  is required` on stderr, exit `2` (no usage dump). An *unknown flag* still gets
-  the stdlib `flag` error + usage and exit `2`.
+### -serve — run the daemon
 
-**`-install` checksum + error framing (probe-verified):** `-cli-checksum` is
-verified **on the download (`-cli-url`) path unconditionally** — an empty
-`-cli-checksum` still fails (`checksum mismatch: expected=, actual=<sha>`).
-Input/decompress failures surface as `cliError` strings `opening input: <err>`
-(zst read) and `decompressing: <err>` (bad zstd blob); `-install` itself always
-exits `0` and prints the facts.
+```text
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>]
+```
 
-> **Intentional divergence (claustrum, [IMPROVEMENTS.md](IMPROVEMENTS.md) D1).**
-> The reference daemon **never** checksum-verifies the local `-cli-zst`
-> (SFTP-upload) path — it trusts the already-authenticated channel, so a
-> wrong/empty checksum is ignored and the blob installs. Claustrum verifies
-> `-cli-zst` **when (and only when) a `-cli-checksum` is supplied**, rejecting a
-> corrupt/tampered blob with the same `checksum mismatch: expected=<x>, actual=<y>`
-> error (the source blob is left intact, not consumed). An **absent/empty**
-> `-cli-checksum` stays trusting — byte-identical to the reference — so honest
-> callers are unaffected. The observable delta, for a *supplied* wrong checksum: a
-> valid blob the reference would install now returns `checksum mismatch` (was
-> success), and a corrupt blob returns `checksum mismatch` instead of
-> `decompressing: <err>`.
+Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
+(Unix), then runs the RPC server. On success it prints
+`Claustrum remote server listening on <socket>` to stdout.
+
+**Token source** — required, and checked *before* the socket:
+
+- Missing both flags →
+  `claustrum: daemonized child requires --token-file or --token-fd`, exit `1`.
+- `CLAUDE_RPC_TOKEN` is **not** accepted for `-serve` (it is only for the
+  `-bridge`/`-stop` clients) — the daemon never starts unauthenticated.
+- The token is read as a **line**: one trailing `\n`/`\r\n` is stripped; spaces
+  and other surrounding whitespace are preserved verbatim (a token file ending
+  in a newline still authenticates).
+- A bad `-token-file` → `claustrum: read --token-file: <err>`, exit `1`.
+- `-token-file` is read once at startup, then **unlinked**.
+
+**`-token-fd <n>`** *(claustrum-only)* — token from a descriptor, no temp file:
+
+- Reads the token from an already-open file descriptor (`-token-fd 0` = stdin),
+  so it never touches disk.
+- Because `-serve` re-execs to daemonize, the parent reads the fd and forwards
+  the token to the detached child over an inherited pipe — never via disk,
+  argv, or the environment.
+- Additive and off the wire: `-token-file` callers are unaffected, and without
+  the flag the reference is matched byte-for-byte.
+
+**`-metrics-addr <a>`** *(claustrum-only)* — opt-in observability:
+
+- Serves Prometheus-format counters at `http://<a>/metrics` — connections,
+  process spawns/exits, reattaches, stream/stdin bytes.
+- **Off by default**: no listener exists unless the flag is passed; not part of
+  the JSON-RPC wire contract, so parity is unaffected.
+- Counts only (no command output, no tokens) and **no auth** — bind it to a
+  trusted interface (loopback).
+- A bind failure is logged (`[Server] metrics: …`) and non-fatal.
+
+### -bridge — stdio↔socket relay
+
+```text
+claustrum -bridge -socket <p>
+```
+
+A dumb relay — what an SSH session attaches to. It injects **no** auth;
+whatever speaks through it supplies `"auth"` itself.
+
+- **Strict**: a dial failure is a hard error —
+  `claustrum: dial server: <err>` on stderr, exit `1`.
+
+### -stop — ask a running daemon to shut down
+
+```text
+claustrum -stop -socket <p>          # auth read from CLAUDE_RPC_TOKEN
+```
+
+Sends `server.shutdown`.
+
+- **Best-effort**: a missing or unreachable daemon is a silent no-op — exit
+  `0`, no output. Only a live daemon's response (if any) is echoed to stdout.
+
+### -version
+
+```text
+claustrum -version                   # → claustrum <id> (built <time>)
+```
+
+### -install — ensure the agent CLI
+
+```text
+claustrum -install -cli-dir <d> -cli-version <v> \
+          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]
+```
+
+Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
+facts line. `-install` itself always exits `0` — failures are reported inside
+the facts (`cliError`), not via the exit code.
+
+Checksum + error framing (probe-verified):
+
+- `-cli-checksum` is verified on the download (`-cli-url`) path
+  **unconditionally** — an empty `-cli-checksum` still fails
+  (`checksum mismatch: expected=, actual=<sha>`).
+- Input/decompress failures surface as `cliError` strings:
+  `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
+
+### Behavior shared by every mode
+
+- **Default socket** — when `-socket` is omitted, `-serve`/`-bridge`/`-stop`
+  fall back to `~/.claude/remote/rpc.sock`. The parent directory is **not**
+  created, so `-serve` on a missing `~/.claude/remote` fails with
+  `claustrum: listen unix: …: bind: no such file or directory`. (The deployment
+  always passes `-socket`; this only matters for bare invocations.)
+- **No mode given** →
+  `claustrum: one of --version/--install/--serve/--bridge/--stop is required`
+  on stderr, exit `2` — no usage dump. An *unknown flag* still gets the stdlib
+  `flag` error + usage, exit `2`.
+
+#### Intentional divergence: `-cli-zst` checksum (claustrum-only, D1)
+
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) D1 for history.
+
+- The **reference** never checksum-verifies the local `-cli-zst` (SFTP-upload)
+  path — it trusts the already-authenticated channel, so a wrong/empty checksum
+  is ignored and the blob installs.
+- **Claustrum** verifies `-cli-zst` **when (and only when) a `-cli-checksum` is
+  supplied**, rejecting a corrupt/tampered blob with the same
+  `checksum mismatch: expected=<x>, actual=<y>` error. The source blob is left
+  intact, not consumed.
+- An **absent/empty** `-cli-checksum` stays trusting — byte-identical to the
+  reference — so honest callers are unaffected.
+- The observable delta, for a *supplied wrong* checksum only: a valid blob the
+  reference would install now returns `checksum mismatch` (was success), and a
+  corrupt blob returns `checksum mismatch` instead of `decompressing: <err>`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
 deployment lifecycle, and [EXAMPLES.md](EXAMPLES.md) for runnable snippets.
