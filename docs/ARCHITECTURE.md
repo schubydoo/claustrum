@@ -17,7 +17,9 @@ Object teardown — only compiled into Windows builds).
 | `bridge.go` | `-bridge` relay and `-stop` |
 | `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |
 | `fetch`-style helpers live in `install.go` | HTTP GET + SHA-256 + in-process zstd |
-| `sysproc_unix.go` / `sysproc_windows.go` | process-group attr + signalling (setpgid+kill vs CreateProcess) |
+| `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`); level tag precedes the byte-intact `[Component]` prefixes |
+| `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`; no listener by default) |
+| `sysproc_unix.go` / `sysproc_windows.go` | whole-tree kill: process group (setpgid + negative-pid signal) vs Windows Job Object (`KILL_ON_JOB_CLOSE`) |
 | `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS) |
 | `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / no-op (Windows) |
 
@@ -41,9 +43,13 @@ files differ.
 
 2. **Daemon / process supervisor (`-serve`)** — self-daemonizes (detaches from
    the controlling session, reparents to init on Unix), opens the `0600` socket,
-   and supervises spawned children. On Unix, interactive PATH extraction from the
-   login shell runs concurrently (goroutine) so a slow login shell does not delay
-   socket availability. It makes **no** network connections.
+   and supervises spawned children. The auth token arrives via `-token-file`
+   (read once, unlinked) or `-token-fd` (read from an open descriptor and
+   forwarded to the detached child over a pipe — never touches disk). On Unix,
+   interactive PATH extraction from the login shell runs concurrently (goroutine)
+   so a slow login shell does not delay socket availability. It makes **no**
+   outbound network connections, and no inbound listener beyond the socket unless
+   the operator opts into `-metrics-addr`.
 
 3. **JSON-RPC multiplexer + replay** — one persistent socket, concurrent request
    dispatch, in-band token auth, and a per-process frame buffer (`process.*`) that

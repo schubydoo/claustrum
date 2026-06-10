@@ -116,3 +116,32 @@ claustrum -install -cli-dir "$D/cli" -cli-version 1.2.3 \
 # prints: __INSTALL_RESULT__{"serverVersion":"…","os":"linux","arch":"amd64","libc":"glibc",
 #                            "cliPath":"…/cli/1.2.3","cliWasPresent":false,"cliError":"…"}
 ```
+
+## Operational knobs (claustrum-only, all off the wire)
+
+Start the daemon with the token on a file descriptor instead of a temp file —
+the token never touches disk (fd `0` works too, for piping it on stdin):
+
+```sh
+claustrum -serve -socket "$D/rpc.sock" -token-fd 3 3< <(printf '%s' "$TOK")
+```
+
+Opt into Prometheus counters (connections, spawns/exits, reattaches,
+stream/stdin bytes). No listener exists unless the flag is set; it serves
+counts only and has no auth, so bind it to loopback:
+
+```sh
+claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -metrics-addr 127.0.0.1:9090
+curl -s http://127.0.0.1:9090/metrics | grep claustrum_
+# claustrum_connections_total 2
+# claustrum_process_spawns_total 1
+# …
+```
+
+Quiet the daemon's stderr diagnostics (default emits everything, matching the
+reference; the `[Server]`/`[process.Manager]`/… prefixes stay grep-able at any
+level):
+
+```sh
+CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token"
+```

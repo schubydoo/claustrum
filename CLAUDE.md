@@ -54,6 +54,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   stream base64 stdout/stderr frames, async stdin writer (bounded queue +
   backpressure), per-process replay buffer, `reattach`.
 - **`bridge.go`** — `-bridge`: a dumb stdio↔socket relay (what SSH attaches to).
+- **`logging.go`** — tiny leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`, defaults
+  to emit-everything). The level tag goes *before* the `[Component]` prefixes so
+  existing greps keep matching.
 - **`metrics.go`** — opt-in Prometheus counters at `/metrics`, served by a stdlib
   `net/http` listener **only** when `-metrics-addr` is set (off by default; not
   part of the JSON-RPC wire). Counting is always-on atomics; the endpoint is the
@@ -97,9 +100,11 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **`process.spawn` runs arbitrary commands as the daemon's user — by design.**
   Treat socket + token as equivalent to shell access (threat model in
   [`SECURITY.md`](SECURITY.md)).
-- **Auth is in-band per request** (`"auth":"<token>"`); the token comes from
-  `-token-file` (read once, then unlinked so it never lands in
-  `/proc/<pid>/environ`) or `CLAUDE_RPC_TOKEN`.
+- **Auth is in-band per request** (`"auth":"<token>"`); the daemon's token comes
+  from `-token-file` (read once, then unlinked so it never lands in
+  `/proc/<pid>/environ`) or `-token-fd` (read from an open descriptor, forwarded
+  to the daemonized child over a pipe — never touches disk); `CLAUDE_RPC_TOKEN`
+  is only for the `-bridge`/`-stop` clients.
 - **A connection's requests dispatch concurrently** — replies can return out of
   order, matching the reference. Don't serialize them.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
