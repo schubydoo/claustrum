@@ -48,13 +48,20 @@ func (c *conn) writeJSON(v interface{}) error {
 	if err != nil {
 		return err
 	}
+	return c.writeLine(append(b, '\n'))
+}
+
+// writeLine writes an already-marshaled, newline-terminated JSON line under the
+// same lock/closed semantics as writeJSON. It lets a frame fanned out to many
+// subscribers be marshaled once (see managedProc.emit) instead of once per conn.
+// Write does not mutate b, so the same slice is safe to hand to every conn.
+func (c *conn) writeLine(b []byte) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	if c.closed {
 		return net.ErrClosed
 	}
-	b = append(b, '\n')
-	_, err = c.nc.Write(b)
+	_, err := c.nc.Write(b)
 	return err
 }
 
