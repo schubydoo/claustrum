@@ -29,6 +29,14 @@ type streamFrame struct {
 // while bounding the worst-case daemon RSS.
 const defaultBufferCap int64 = 50 * 1024 * 1024
 
+// stdinQueueCap bounds the per-process async stdin queue. A producer that outruns
+// a slow or non-reading child blocks (backpressure) once this much data is queued,
+// rather than letting the daemon's memory grow without bound. The reference
+// applies the same kind of bound (its "stdin backpressure: queue full" guard); the
+// exact threshold is a stderr-log edge, not part of the wire contract. var so
+// tests can shrink it.
+var stdinQueueCap = 8 * 1024 * 1024
+
 type managedProc struct {
 	id       string
 	mu       sync.Mutex
@@ -40,6 +48,18 @@ type managedProc struct {
 	running  bool
 	stdin    io.WriteCloser
 	cmd      *exec.Cmd
+
+	// Async stdin: process.stdin enqueues here and returns immediately, while a
+	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
+	// keeps a slow or non-reading child from blocking the dispatch goroutine on a
+	// synchronous pipe write — matching the reference, which returns success before
+	// the child has read the data. Guarded by stdinMu (separate from mu).
+	stdinMu     sync.Mutex
+	stdinCond   *sync.Cond
+	stdinQ      [][]byte
+	stdinQBytes int
+	stdinDone   bool
+	stdinWarned bool
 }
 
 type procManager struct {
@@ -135,10 +155,12 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		stdin:   stdin,
 		cmd:     cmd,
 	}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
 	m.procs[id] = p
 	m.mu.Unlock()
 
+	go p.stdinWriter()
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); pumpStream(p, "stdout", stdout) }()
@@ -157,6 +179,12 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		p.mu.Lock()
 		p.running = false
 		p.mu.Unlock()
+		// Stop the stdin writer and wake any producer blocked on a full queue; the
+		// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
+		p.stdinMu.Lock()
+		p.stdinDone = true
+		p.stdinCond.Broadcast()
+		p.stdinMu.Unlock()
 		log.Printf("[process.Manager] Process %s exited with code %d", id, code)
 		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 	}()
@@ -180,13 +208,74 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 	}
 }
 
+// writeStdin enqueues data for asynchronous delivery to the child's stdin and
+// returns true if the process exists and has a stdin pipe. The actual pipe write
+// happens on the stdinWriter goroutine, so a slow/non-reading child never blocks
+// the caller (matching the reference's async stdin). Returns false for an unknown
+// process or one without stdin.
 func (m *procManager) writeStdin(id string, data []byte) bool {
 	p := m.get(id)
 	if p == nil || p.stdin == nil {
 		return false
 	}
-	_, err := p.stdin.Write(data)
-	return err == nil
+	p.enqueueStdin(data)
+	return true
+}
+
+// enqueueStdin appends data to the async stdin queue and returns immediately. If
+// the queue is already at capacity it blocks (backpressure) until the writer
+// drains enough room, logging the reference's "queue full" guard once. A single
+// write larger than the cap is still accepted when the queue is empty, so it can
+// never deadlock waiting for a drain that cannot start.
+func (p *managedProc) enqueueStdin(data []byte) {
+	p.stdinMu.Lock()
+	defer p.stdinMu.Unlock()
+	for !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
+		if !p.stdinWarned {
+			log.Printf("[process.Manager] stdin backpressure: queue full for %s", p.id)
+			p.stdinWarned = true
+		}
+		p.stdinCond.Wait()
+	}
+	if p.stdinDone {
+		return
+	}
+	p.stdinQ = append(p.stdinQ, data)
+	p.stdinQBytes += len(data)
+	p.stdinCond.Broadcast()
+}
+
+// stdinWriter drains the async queue to the child's stdin in FIFO order for the
+// life of the process. A write error (child gone / pipe closed) or stdinDone (set
+// when the process exits) stops it and discards any unsent data.
+func (p *managedProc) stdinWriter() {
+	p.stdinMu.Lock()
+	for {
+		for len(p.stdinQ) == 0 && !p.stdinDone {
+			p.stdinCond.Wait()
+		}
+		if p.stdinDone {
+			p.stdinQ, p.stdinQBytes = nil, 0
+			p.stdinCond.Broadcast()
+			p.stdinMu.Unlock()
+			return
+		}
+		chunk := p.stdinQ[0]
+		p.stdinQ = p.stdinQ[1:]
+		p.stdinQBytes -= len(chunk)
+		p.stdinCond.Broadcast() // wake producers blocked on a full queue
+		p.stdinMu.Unlock()
+
+		_, err := p.stdin.Write(chunk)
+
+		p.stdinMu.Lock()
+		if err != nil {
+			p.stdinQ, p.stdinQBytes, p.stdinDone = nil, 0, true
+			p.stdinCond.Broadcast()
+			p.stdinMu.Unlock()
+			return
+		}
+	}
 }
 
 // kill is best-effort and signals the whole process group (OS-specific).
