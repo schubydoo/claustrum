@@ -313,22 +313,57 @@ func TestEnsureCLIFromURL(t *testing.T) {
 	}
 }
 
-// The reference does NOT verify -cli-checksum on the -cli-zst (SFTP) path: a
-// wrong checksum is ignored and the blob installs anyway.
-func TestEnsureCLIZstIgnoresChecksum(t *testing.T) {
-	dir := t.TempDir()
-	zstFile := filepath.Join(dir, "cli.zst")
-	if err := os.WriteFile(zstFile, zstdOf(t, []byte(runnableScript)), 0o644); err != nil {
-		t.Fatal(err)
+// Claustrum's opt-in divergence (IMPROVEMENTS D1): the -cli-zst (SFTP) path
+// verifies -cli-checksum WHEN one is supplied — a wrong checksum is rejected like
+// the -cli-url path, and the source blob is left intact. An ABSENT/empty checksum
+// stays trusting, matching the reference (which never verifies this path), so
+// honest callers are unaffected.
+func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
+	mkZst := func(t *testing.T) (dir, zstFile string) {
+		dir = t.TempDir()
+		zstFile = filepath.Join(dir, "cli.zst")
+		if err := os.WriteFile(zstFile, zstdOf(t, []byte(runnableScript)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir, zstFile
 	}
-	cliPath := filepath.Join(dir, "out")
-	o := installOpts{cliZst: zstFile, cliChecksum: "deadbeef"} // wrong on purpose
-	if err := ensureCLI(o, cliPath); err != nil {
-		t.Fatalf("zst path must ignore -cli-checksum, got: %v", err)
-	}
-	if !isRunnable(cliPath) {
-		t.Error("the CLI should still be installed despite the wrong checksum")
-	}
+
+	t.Run("wrong checksum is rejected, blob preserved", func(t *testing.T) {
+		dir, zstFile := mkZst(t)
+		o := installOpts{cliZst: zstFile, cliChecksum: "deadbeef"} // wrong on purpose
+		err := ensureCLI(o, filepath.Join(dir, "out"))
+		if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+			t.Errorf("zst + wrong checksum = %v, want a checksum-mismatch error", err)
+		}
+		if !isRegularFile(zstFile) {
+			t.Error("a failed checksum must not consume the source .zst")
+		}
+	})
+
+	t.Run("absent checksum stays trusting (reference parity)", func(t *testing.T) {
+		dir, zstFile := mkZst(t)
+		cliPath := filepath.Join(dir, "out")
+		if err := ensureCLI(installOpts{cliZst: zstFile}, cliPath); err != nil {
+			t.Fatalf("zst + no checksum must install: %v", err)
+		}
+		if !isRunnable(cliPath) {
+			t.Error("the CLI should install when no checksum is supplied")
+		}
+	})
+
+	t.Run("matching checksum installs", func(t *testing.T) {
+		dir, zstFile := mkZst(t)
+		zst, _ := os.ReadFile(zstFile)
+		sum := sha256.Sum256(zst)
+		cliPath := filepath.Join(dir, "out")
+		o := installOpts{cliZst: zstFile, cliChecksum: hex.EncodeToString(sum[:])}
+		if err := ensureCLI(o, cliPath); err != nil {
+			t.Fatalf("zst + matching checksum: %v", err)
+		}
+		if !isRunnable(cliPath) {
+			t.Error("the CLI should install with a matching checksum")
+		}
+	})
 }
 
 // The -cli-url (download) path verifies UNCONDITIONALLY: a wrong checksum and an
