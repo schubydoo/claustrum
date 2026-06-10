@@ -145,7 +145,7 @@ stream notifications, **buffered** for later replay.
 
 | flag(s) | role |
 |---|---|
-| `-serve -socket <p> -token-file <p>` | self-daemonize (reparent to init / detached), extract login-shell PATH (Unix), run the RPC server |
+| `-serve -socket <p> -token-file <p> [-metrics-addr <a>]` | self-daemonize (reparent to init / detached), extract login-shell PATH (Unix), run the RPC server (and, if `-metrics-addr` is set, a Prometheus `/metrics` HTTP endpoint) |
 | `-bridge -socket <p>` | dumb stdio↔socket relay (no auth injection) — what an SSH session attaches to |
 | `-stop -socket <p>` | send `server.shutdown` (auth from `CLAUDE_RPC_TOKEN`) |
 | `-version` | print `claustrum <id> (built <time>)` |
@@ -172,6 +172,15 @@ stream notifications, **buffered** for later replay.
   exit `0`, no output. Only a live daemon's response (if any) is echoed to stdout.
 - **`-bridge` is strict.** A dial failure is a hard error: `claustrum: dial
   server: <err>` on stderr, exit `1`.
+- **`-metrics-addr` (opt-in observability, claustrum-only).** When set (e.g.
+  `127.0.0.1:9090`), the `-serve` daemon also serves Prometheus-format counters
+  at `http://<addr>/metrics` (connections, process spawns/exits, reattaches,
+  stream/stdin bytes). It is **off by default** — no listener exists unless the
+  flag is passed — and is **not part of the JSON-RPC wire contract** (a
+  claustrum-only operational addition; the reference daemon has none, so it never
+  affects parity). It serves **counts only** (no command output, no tokens) and
+  has **no auth**, so bind it to a trusted interface (loopback). A bind failure
+  is logged (`[Server] metrics: …`) and non-fatal.
 - **No mode given** → `claustrum: one of --version/--install/--serve/--bridge/--stop
   is required` on stderr, exit `2` (no usage dump). An *unknown flag* still gets
   the stdlib `flag` error + usage and exit `2`.

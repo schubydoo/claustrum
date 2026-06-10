@@ -31,6 +31,12 @@ processes on the host it runs on. Key considerations:
   verifies the downloaded blob against the supplied `-cli-checksum` (SHA-256)
   before extracting and before marking the CLI runnable. In `-serve` mode the
   daemon makes **no** outbound connections.
+- **`-metrics-addr` is off by default.** No inbound network listener exists
+  unless the operator opts in with `-metrics-addr`. When enabled it serves
+  Prometheus *counters only* (connection / spawn / exit / reattach / byte tallies
+  — no command output, arguments, or tokens) and has **no authentication**, so
+  bind it to a trusted interface (loopback). Exposing it on a reachable interface
+  discloses coarse operational counts to anyone who can connect.
 - **`files.*` / `git.*`** read and act on paths the caller supplies; they are as
   privileged as the daemon's user.
 

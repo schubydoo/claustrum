@@ -54,6 +54,10 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   stream base64 stdout/stderr frames, async stdin writer (bounded queue +
   backpressure), per-process replay buffer, `reattach`.
 - **`bridge.go`** — `-bridge`: a dumb stdio↔socket relay (what SSH attaches to).
+- **`metrics.go`** — opt-in Prometheus counters at `/metrics`, served by a stdlib
+  `net/http` listener **only** when `-metrics-addr` is set (off by default; not
+  part of the JSON-RPC wire). Counting is always-on atomics; the endpoint is the
+  opt-in part.
 - **`install.go`** — `-install`: CLI download / verify (SHA-256 — **`-cli-url`
   downloads unconditionally; the local `-cli-zst` SFTP blob is verified only when a
   `-cli-checksum` is supplied**, an opt-in divergence from the reference, see D1) /

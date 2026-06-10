@@ -20,10 +20,11 @@ type server struct {
 	ln    net.Listener
 	procs *procManager
 
-	mu       sync.Mutex
-	conns    map[*conn]struct{}
-	shutdown chan struct{}
-	once     sync.Once
+	mu        sync.Mutex
+	conns     map[*conn]struct{}
+	shutdown  chan struct{}
+	once      sync.Once
+	metricsLn net.Listener // optional Prometheus listener; nil unless -metrics-addr set
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -73,7 +74,7 @@ func (c *conn) writeResponse(v interface{}) {
 
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with CLAUDE_SSH_DAEMON_CHILD so we re-exec exactly once.
-func runServe(socket, tokenFile string) {
+func runServe(socket, tokenFile, metricsAddr string) {
 	// -serve requires --token-file, checked BEFORE the socket (probe-verified).
 	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
 	// comes from the file (read once, then unlinked), so it never lingers in
@@ -120,6 +121,17 @@ func runServe(socket, tokenFile string) {
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
+	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
+	// failure is non-fatal — the daemon's job is the socket, not the metrics.
+	if metricsAddr != "" {
+		if ln, err := startMetricsServer(metricsAddr); err != nil {
+			logErrorf("[Server] metrics: listen %s: %v", metricsAddr, err)
+		} else {
+			s.metricsLn = ln
+			logInfof("[Server] metrics: serving Prometheus counters on %s/metrics", metricsAddr)
+		}
+	}
+
 	fmt.Printf("Claustrum remote server listening on %s\n", socket)
 	s.run(socket)
 }
@@ -174,6 +186,7 @@ func (s *server) run(socket string) {
 			}
 		}
 		c := &conn{nc: nc}
+		met.connections.Add(1)
 		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
 		s.mu.Lock()
 		s.conns[c] = struct{}{}
@@ -224,6 +237,9 @@ func (s *server) signalShutdown() { s.once.Do(func() { close(s.shutdown) }) }
 // teardown closes the listener, kills child processes, drops clients, and exits.
 func (s *server) teardown(socket string) {
 	s.ln.Close()
+	if s.metricsLn != nil {
+		_ = s.metricsLn.Close()
+	}
 	_ = os.Remove(socket)
 	s.procs.killAll()
 	s.mu.Lock()
