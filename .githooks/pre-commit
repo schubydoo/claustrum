@@ -1,0 +1,51 @@
+#!/bin/sh
+# claustrum pre-commit hook — mirrors the CI `lint` job so contributors stay
+# green locally. Install with `make hooks` (sets core.hooksPath to .githooks).
+#
+# Runs the same fast checks CI gates on, in the same order:
+#   1. gofmt -l        (formatting)
+#   2. go vet ./...    (vet)
+#   3. go mod tidy     (module hygiene — checked without leaving go.mod dirty)
+#   4. golangci-lint   (only if the binary is on PATH; CI gates it regardless)
+#
+# Bypass for an in-progress commit with `git commit --no-verify`.
+set -eu
+
+fail() {
+	printf '\n\033[31mpre-commit: %s\033[0m\n' "$1" >&2
+	exit 1
+}
+
+# Only bother if Go sources or module files are staged — the checks below are
+# all Go-only, so a docs- or config-only commit skips them entirely.
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+echo "$staged" | grep -qE '\.go$|(^|/)go\.(mod|sum)$' || exit 0
+
+# 1. gofmt — list files that aren't gofmt-clean.
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+	printf 'these files are not gofmt-clean:\n%s\n' "$unformatted" >&2
+	fail "run 'make fmt' (or 'gofmt -w') and re-stage"
+fi
+
+# 2. go vet.
+go vet ./... || fail "go vet reported problems"
+
+# 3. go mod tidy must be a no-op. Run it against a backup so a dirty result
+#    never lands in the commit, then restore the originals unconditionally.
+tmpd=$(mktemp -d)
+trap 'cp -p "$tmpd/go.mod" go.mod 2>/dev/null || true; cp -p "$tmpd/go.sum" go.sum 2>/dev/null || true; rm -rf "$tmpd"' EXIT INT TERM
+cp -p go.mod "$tmpd/go.mod"
+[ -f go.sum ] && cp -p go.sum "$tmpd/go.sum"
+go mod tidy
+if ! git diff --quiet -- go.mod go.sum 2>/dev/null; then
+	# Restore happens via the trap; surface the drift before exiting.
+	fail "go.mod/go.sum are not tidy; run 'go mod tidy' and commit the result"
+fi
+
+# 4. golangci-lint — opt-in locally (slower); CI always gates it.
+if command -v golangci-lint >/dev/null 2>&1; then
+	golangci-lint run ./... || fail "golangci-lint reported problems"
+fi
+
+exit 0

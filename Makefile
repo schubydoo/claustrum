@@ -7,7 +7,7 @@ DIST     := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 LDFLAGS  := -s -w
 
-.PHONY: build all clean fmt vet test
+.PHONY: build all clean fmt vet lint test hooks
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN) .
@@ -27,6 +27,19 @@ fmt:
 
 vet:
 	go vet ./...
+
+lint:
+	golangci-lint run ./...
+
+test:
+	go test -race ./...
+
+# Install the repo's git hooks by pointing core.hooksPath at .githooks. One-time
+# per clone; the hook then mirrors CI's lint job on every commit (see
+# .githooks/pre-commit). Undo with `git config --unset core.hooksPath`.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "git hooks installed (core.hooksPath -> .githooks)"
 
 clean:
 	rm -rf $(DIST) $(BIN)
