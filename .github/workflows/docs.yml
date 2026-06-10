@@ -39,7 +39,11 @@ jobs:
           cache: pip
           cache-dependency-path: docs/requirements.txt
       - name: install toolchain
-        run: pip install -r docs/requirements.txt
+        # --require-hashes: docs/requirements.txt is a fully hash-pinned lock
+        # (compiled from docs/requirements.in via pip-compile --generate-hashes),
+        # so a tampered/substituted package on PyPI fails the install. Satisfies
+        # Scorecard Pinned-Dependencies.
+        run: pip install --require-hashes -r docs/requirements.txt
       - name: build (strict)
         run: mkdocs build --strict --site-dir site
       - name: upload pages artifact
