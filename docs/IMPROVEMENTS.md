@@ -212,20 +212,34 @@ method now gets its own table-of-contents entry on the site. Earlier site fixes
 in the same vein: `pymdownx.emoji` for Material icons (#75), `pymdownx.tilde` +
 a 72rem content column (#77). Site-only; no wire/behavior change.
 
-### 20 · Windows CI test runner ⬜ — impact M / cost M
+### 20 · Windows CI test runner ✅ — impact M / cost M
 
-- The CI test matrix runs `ubuntu-latest` + `macos-latest`; the cross-build job
-  proves the Windows targets *compile*, but nothing ever *executes* the
-  `*_windows.go` code — in particular the #14 Job Object confinement/teardown
-  in `sysproc_windows.go` ships without ever having run in CI.
-- Mutation testing quantifies the hole: every `sysproc_windows.go` mutant (9)
-  is structurally **NOT COVERED** on a Linux/macOS runner — the file is not
-  even compiled there, so no test added on these platforms can ever reach it.
-- Fix: a `windows-latest` leg in the `test` matrix. Not a one-line bump — the
-  unit and socket suites assume Unix fixtures (`/bin/echo`-style commands,
-  Unix process-group semantics in `sysproc_unix_test.go`), so it needs
-  fixture work and targeted skips; `AF_UNIX` sockets themselves are supported
-  on Windows ≥ 1803.
+- The problem: the CI test matrix ran `ubuntu-latest` + `macos-latest`; the
+  cross-build job proved the Windows targets *compile*, but nothing ever
+  *executed* the `*_windows.go` code — in particular the #14 Job Object
+  confinement/teardown in `sysproc_windows.go` shipped without ever having run
+  in CI. Mutation testing quantified the hole: every `sysproc_windows.go`
+  mutant (9) is structurally **NOT COVERED** on a Linux/macOS runner — the
+  file is not even compiled there, so no test added on those platforms can
+  ever reach it.
+- Shipped: a `windows-latest` leg in the `test` matrix. The suites' Unix
+  fixtures (`/bin/echo`-style commands, `sh -c` scripts) were replaced by the
+  stdlib helper-process pattern (`helperproc_test.go`: the test binary doubles
+  as a cross-platform echo/cat/sleep/… via `CLAUSTRUM_TEST_HELPER`), which
+  also keeps the streamed bytes byte-identical across OSes — no CRLF or
+  cmd.exe quoting drift against the committed goldens. `AF_UNIX` sockets work
+  natively on Windows ≥ 1803, so the socket suite runs unchanged.
+- `sysproc_windows_test.go` mirrors the Unix group-kill test against a real
+  two-level process tree: job-wide `signal`, `KILL_ON_JOB_CLOSE` reap on
+  `close`, the no-job/nil-receiver fallback to a parent-only kill, and close
+  idempotency — behavioral coverage for all the previously unreachable
+  `sysproc_windows.go` mutants.
+- Targeted skip: `TestSocketFilesBattery` skips on Windows — its golden pins
+  the Unix reference capture, including the `files.stat` mode string
+  (`-rw-r--r--`), which Windows stat cannot reproduce. Everything else runs.
+- Caveat: gremlins itself still runs on Linux only, so the mutation report
+  will keep listing the 9 `sysproc_windows.go` mutants as not-covered — the
+  coverage is real but lives in the Windows CI leg, not in the mutation run.
 - Mutation baseline (gremlins `--integration`, 2026-06-10, post-#86):
   **93.91% efficacy** (185 killed / 12 lived / 6 timed out), mutator coverage
   75.48% (203 runnable / 64 not covered). The not-covered set is mostly the
@@ -233,7 +247,7 @@ a 72rem content column (#77). Site-only; no wire/behavior change.
   in `server.go`/`main.go` (validated by the external battery; can't register
   in an in-process coverage profile), the `rpc.go` error-code constant
   literals (constants never appear in a coverage profile — an artifact, not a
-  gap), and the Windows-only code above.
+  gap), and the Windows-only code above (now executed by the Windows CI leg).
 
 ## Deliberate divergences (post-parity, opt-in)
 

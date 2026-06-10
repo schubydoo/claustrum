@@ -63,12 +63,13 @@ func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
-	if err := m.spawn(c, "envcheck", "/bin/sh",
-		[]string{"-c", `printf %s "$CLAUDE_SSH_DAEMON_CHILD"`}, "", nil); err != nil {
+	printenv, env := helperCommand(t, "printenv")
+	if err := m.spawn(c, "envcheck", printenv,
+		[]string{"CLAUDE_SSH_DAEMON_CHILD"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	if got := firstStdout(t, frames); got != "1" {
-		t.Errorf("child saw CLAUDE_SSH_DAEMON_CHILD=%q, want %q — daemon re-exec marker must propagate to spawned children for reference parity", got, "1")
+	if got := firstStdout(t, frames); got != "CLAUDE_SSH_DAEMON_CHILD=1" {
+		t.Errorf("child saw %q, want %q — daemon re-exec marker must propagate to spawned children for reference parity", got, "CLAUDE_SSH_DAEMON_CHILD=1")
 	}
 }
 
@@ -81,12 +82,13 @@ func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
-	if err := m.spawn(c, "tokencheck", "/bin/sh",
-		[]string{"-c", `printf 'token=%s' "$CLAUDE_RPC_TOKEN"`}, "", nil); err != nil {
+	printenv, env := helperCommand(t, "printenv")
+	if err := m.spawn(c, "tokencheck", printenv,
+		[]string{"CLAUDE_RPC_TOKEN"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	// "token=" means the var was absent; anything else means it leaked.
-	if got := firstStdout(t, frames); got != "token=" {
-		t.Errorf("child saw %q, want %q — CLAUDE_RPC_TOKEN must not propagate to spawned children", got, "token=")
+	// An empty value means the var was absent; anything else means it leaked.
+	if got := firstStdout(t, frames); got != "CLAUDE_RPC_TOKEN=" {
+		t.Errorf("child saw %q, want %q — CLAUDE_RPC_TOKEN must not propagate to spawned children", got, "CLAUDE_RPC_TOKEN=")
 	}
 }

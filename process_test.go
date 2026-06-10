@@ -207,7 +207,8 @@ func TestSpawnEmitsOperationalLogs(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
-	if err := m.spawn(c, "lg", "/bin/echo", []string{"hi"}, "", nil); err != nil {
+	echo, env := helperCommand(t, "echo")
+	if err := m.spawn(c, "lg", echo, []string{"hi"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// Wait for the exit frame so the exit log line has been emitted.
@@ -226,7 +227,7 @@ done:
 	got := buf.String()
 	for _, want := range []string{
 		"[process.Manager] Process lg started, PID=",
-		"command=/bin/echo",
+		"command=" + echo,
 		"[process.Manager] Starting stdout streaming for process lg",
 		"[process.Manager] Starting stderr streaming for process lg",
 		"[process.Manager] Process lg exited with code 0",
@@ -336,10 +337,11 @@ func firstStdout(t *testing.T, ch <-chan streamFrame) string {
 	}
 }
 
-// spawn with a non-empty cwd must set the child's working directory. Running
-// /bin/pwd -P (physical cwd, ignoring any inherited $PWD) and comparing to the
-// resolved temp dir pins the `cwd != ""` guard: a negated guard would skip
-// cmd.Dir and the child would report the test's cwd instead.
+// spawn with a non-empty cwd must set the child's working directory. The pwd
+// helper reports the physical cwd (ignoring any inherited $PWD, like
+// /bin/pwd -P); comparing to the resolved temp dir pins the `cwd != ""` guard:
+// a negated guard would skip cmd.Dir and the child would report the test's
+// cwd instead.
 func TestSpawnRespectsCwd(t *testing.T) {
 	tmp := t.TempDir()
 	want, err := filepath.EvalSymlinks(tmp)
@@ -349,7 +351,8 @@ func TestSpawnRespectsCwd(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
-	if err := m.spawn(c, "cwd", "/bin/pwd", []string{"-P"}, tmp, nil); err != nil {
+	pwd, env := helperCommand(t, "pwd")
+	if err := m.spawn(c, "cwd", pwd, nil, tmp, env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if got := firstStdout(t, frames); got != want {
@@ -364,7 +367,8 @@ func TestPumpStreamSkipsEmptyReads(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
-	if err := m.spawn(c, "em", "/bin/echo", []string{"hi"}, "", nil); err != nil {
+	echo, env := helperCommand(t, "echo")
+	if err := m.spawn(c, "em", echo, []string{"hi"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	deadline := time.After(3 * time.Second)
@@ -389,7 +393,8 @@ func TestWriteStdinReturnValue(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
 	c, _ := pipeConn(t)
-	if err := m.spawn(c, "cat", "/bin/cat", nil, "", nil); err != nil {
+	cat, env := helperCommand(t, "cat")
+	if err := m.spawn(c, "cat", cat, nil, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if !m.writeStdin("cat", []byte("hello\n")) {
@@ -482,7 +487,8 @@ func TestReattachEmptyBuffer(t *testing.T) {
 func TestKillAllTerminatesLiveProcess(t *testing.T) {
 	m := newProcManager()
 	c, frames := pipeConn(t)
-	if err := m.spawn(c, "sl", "/bin/sleep", []string{"60"}, "", nil); err != nil {
+	sleep, env := helperCommand(t, "sleep")
+	if err := m.spawn(c, "sl", sleep, []string{"60"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.killAll()
@@ -508,7 +514,8 @@ func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
 	t.Cleanup(m.killAll)
 
 	c1, _ := pipeConn(t)
-	if err := m.spawn(c1, "dup", "/bin/sleep", []string{"60"}, "", nil); err != nil {
+	sleep, env := helperCommand(t, "sleep")
+	if err := m.spawn(c1, "dup", sleep, []string{"60"}, "", env); err != nil {
 		t.Fatalf("first spawn: %v", err)
 	}
 	old := m.get("dup")
@@ -517,7 +524,7 @@ func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
 	}
 
 	c2, _ := pipeConn(t)
-	if err := m.spawn(c2, "dup", "/bin/sleep", []string{"60"}, "", nil); err != nil {
+	if err := m.spawn(c2, "dup", sleep, []string{"60"}, "", env); err != nil {
 		t.Fatalf("second spawn with duplicate id: %v (both spawns must succeed)", err)
 	}
 
@@ -626,7 +633,8 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
-	if err := m.spawn(c, "mc", "/bin/cat", nil, "", nil); err != nil {
+	cat, env := helperCommand(t, "cat")
+	if err := m.spawn(c, "mc", cat, nil, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if !m.writeStdin("mc", []byte("hello\n")) {

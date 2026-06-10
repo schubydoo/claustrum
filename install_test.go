@@ -6,11 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,9 +38,29 @@ func zstdOf(t *testing.T, b []byte) []byte {
 	return buf.Bytes()
 }
 
-// runnableScript is a stand-in CLI: exits 0 for any args, so `<cli> --version`
-// (the isRunnable check) succeeds.
-const runnableScript = "#!/bin/sh\nexit 0\n"
+// fakeCLI returns the bytes of a stand-in CLI that exits with the given code
+// when invoked (`<cli> --version`, the isRunnable probe). On Unix it is a tiny
+// sh script. Windows can't exec a shebang script, so there it is a copy of
+// this very test binary, steered into helper mode via CLAUSTRUM_TEST_HELPER
+// (helperproc_test.go) — set with t.Setenv so the probed CLI inherits it.
+// Call it right before the isRunnable/ensureCLI step it backs: a later call
+// with a different exit code overrides the mode for the whole test process.
+func fakeCLI(t *testing.T, exitCode int) []byte {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return []byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode))
+	}
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:"+strconv.Itoa(exitCode))
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
 
 func TestZstdDecompress(t *testing.T) {
 	dir := t.TempDir()
@@ -97,18 +120,18 @@ func TestIsRegularFile(t *testing.T) {
 func TestIsRunnable(t *testing.T) {
 	dir := t.TempDir()
 	ok := filepath.Join(dir, "ok")
-	if err := os.WriteFile(ok, []byte(runnableScript), 0o755); err != nil {
+	if err := os.WriteFile(ok, fakeCLI(t, 0), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if !isRunnable(ok) {
-		t.Error("an exit-0 script should be runnable")
+		t.Error("an exit-0 CLI should be runnable")
 	}
 	bad := filepath.Join(dir, "bad")
-	if err := os.WriteFile(bad, []byte("#!/bin/sh\nexit 3\n"), 0o755); err != nil {
+	if err := os.WriteFile(bad, fakeCLI(t, 3), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if isRunnable(bad) {
-		t.Error("an exit-3 script should not be runnable")
+		t.Error("an exit-3 CLI should not be runnable")
 	}
 	if isRunnable(filepath.Join(dir, "missing")) {
 		t.Error("a missing path is not runnable")
@@ -253,9 +276,10 @@ func TestPruneCLI(t *testing.T) {
 // runInstall with a pre-populated, already-runnable CLI exercises the guard
 // without a download.
 func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
-	mk := func(dir, name string, ageSec int) {
+	mk := func(t *testing.T, dir, name string, ageSec int) {
+		t.Helper()
 		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(runnableScript), 0o755); err != nil {
+		if err := os.WriteFile(p, fakeCLI(t, 0), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		mt := time.Unix(int64(1000+ageSec), 0)
@@ -263,7 +287,8 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	count := func(dir string) int {
+	count := func(t *testing.T, dir string) int {
+		t.Helper()
 		ents, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatal(err)
@@ -273,23 +298,23 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 
 	t.Run("keep0_does_not_prune", func(t *testing.T) {
 		dir := t.TempDir()
-		mk(dir, "cur", 30)
-		mk(dir, "old1", 20)
-		mk(dir, "old2", 10)
+		mk(t, dir, "cur", 30)
+		mk(t, dir, "old1", 20)
+		mk(t, dir, "old2", 10)
 		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "cur", cliKeep: 0})
-		if n := count(dir); n != 3 {
+		if n := count(t, dir); n != 3 {
 			t.Errorf("keep=0 left %d files, want 3 (cliKeep>0 guard regressed to >=0, wiping versions)", n)
 		}
 	})
 
 	t.Run("keep2_prunes_to_newest", func(t *testing.T) {
 		dir := t.TempDir()
-		mk(dir, "cur", 40) // newest → kept, and it's the present CLI
-		mk(dir, "old1", 30)
-		mk(dir, "old2", 20)
-		mk(dir, "old3", 10)
+		mk(t, dir, "cur", 40) // newest → kept, and it's the present CLI
+		mk(t, dir, "old1", 30)
+		mk(t, dir, "old2", 20)
+		mk(t, dir, "old3", 10)
 		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "cur", cliKeep: 2})
-		if n := count(dir); n != 2 {
+		if n := count(t, dir); n != 2 {
 			t.Errorf("keep=2 left %d files, want 2 (cliKeep>0 guard regressed, skipping prune)", n)
 		}
 	})
@@ -297,7 +322,7 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 
 func TestEnsureCLIFromZst(t *testing.T) {
 	dir := t.TempDir()
-	zst := zstdOf(t, []byte(runnableScript))
+	zst := zstdOf(t, fakeCLI(t, 0))
 	zstFile := filepath.Join(dir, "cli.zst")
 	if err := os.WriteFile(zstFile, zst, 0o644); err != nil {
 		t.Fatal(err)
@@ -322,7 +347,7 @@ func TestEnsureCLIFromZst(t *testing.T) {
 }
 
 func TestEnsureCLIFromURL(t *testing.T) {
-	zst := zstdOf(t, []byte(runnableScript))
+	zst := zstdOf(t, fakeCLI(t, 0))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(zst)
 	}))
@@ -348,7 +373,7 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 	mkZst := func(t *testing.T) (dir, zstFile string) {
 		dir = t.TempDir()
 		zstFile = filepath.Join(dir, "cli.zst")
-		if err := os.WriteFile(zstFile, zstdOf(t, []byte(runnableScript)), 0o644); err != nil {
+		if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return dir, zstFile
@@ -395,7 +420,7 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 // The -cli-url (download) path verifies UNCONDITIONALLY: a wrong checksum and an
 // empty checksum both fail (the reference checks even when -cli-checksum is "").
 func TestEnsureCLIURLVerifiesUnconditionally(t *testing.T) {
-	zst := zstdOf(t, []byte(runnableScript))
+	zst := zstdOf(t, fakeCLI(t, 0))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(zst)
 	}))
@@ -442,7 +467,7 @@ func TestEnsureCLINoSource(t *testing.T) {
 
 func TestRunInstallFacts(t *testing.T) {
 	dir := t.TempDir()
-	zst := zstdOf(t, []byte(runnableScript))
+	zst := zstdOf(t, fakeCLI(t, 0))
 	zstFile := filepath.Join(dir, "cli.zst")
 	if err := os.WriteFile(zstFile, zst, 0o644); err != nil {
 		t.Fatal(err)
