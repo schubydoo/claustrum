@@ -1,9 +1,9 @@
 module github.com/schubydoo/claustrum
 
-go 1.24
+go 1.25.0
 
-toolchain go1.24.4
+toolchain go1.25.11
 
 require github.com/klauspost/compress v1.18.6
 
-require golang.org/x/sys v0.33.0
+require golang.org/x/sys v0.44.0

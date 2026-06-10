@@ -22,7 +22,7 @@ frames.** The wire surface *is* the product.
 | Tests | `go test -race ./...` — unit + socket-integration suites |
 | Validation battery | `scratch/probe/validate.sh` — diffs frames vs the reference (gitignored) |
 
-- Go 1.24+. Dependencies: `github.com/klauspost/compress` (zstd) and
+- Go 1.25+. Dependencies: `github.com/klauspost/compress` (zstd) and
   `golang.org/x/sys` (Windows Job Object teardown — only compiled into Windows
   builds); `CGO_ENABLED=0`.
 - In-repo tests (`*_test.go`) cover the wire surface two ways: fast unit tests
