@@ -12,7 +12,7 @@ green (see below).
 ```sh
 git clone https://github.com/schubydoo/claustrum
 cd claustrum
-go build ./...            # Go 1.24+; deps: klauspost/compress + golang.org/x/sys (Windows-only)
+go build ./...            # Go 1.25+; deps: klauspost/compress + golang.org/x/sys (Windows-only)
 make build               # -> ./claustrum
 make hooks               # one-time: install the pre-commit hook (see below)
 ```

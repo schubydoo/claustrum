@@ -103,10 +103,12 @@ Scorecard SBOM + Signed-Releases (10/10). Also shipped `release-please.yml` +
 
 ### 12 · Pin the Go toolchain ✅ — impact M / cost L
 
-go.mod now carries an explicit `toolchain go1.24.4` directive alongside
-`go 1.24`; with CI/release on `go-version-file: go.mod`, setup-go provisions
-that exact toolchain, so release builds are reproducible against a known patch.
-Renovate can bump the patch over time.
+go.mod carries an explicit `toolchain` directive alongside the `go` directive
+(currently `toolchain go1.25.11` / `go 1.25.0`); with CI/release on
+`go-version-file: go.mod`, setup-go provisions that exact toolchain, so release
+builds are reproducible against a known patch. Renovate can bump the patch over
+time. (The pin moved 1.24.4 → 1.25.11 when x/sys was bumped for GO-2026-5024 —
+see #14.)
 
 ### 13 · Structured/leveled logging ✅ — impact M / cost L-M
 
@@ -140,8 +142,12 @@ Shipped a tiny leveled logger (`logging.go`):
   abstraction unifies both.
 - Job Object failure falls back to the old parent-only kill — spawns never
   fail because of confinement.
-- Added dependency `golang.org/x/sys` (pinned v0.33.0, **Windows-only** — not
-  compiled into other targets; discussed/approved).
+- Added dependency `golang.org/x/sys` (**Windows-only** — not compiled into
+  other targets; discussed/approved). Initially pinned v0.33.0; bumped to
+  **v0.44.0** to clear **GO-2026-5024** (`NewNTUnicodeString` overflow —
+  unreachable in claustrum, which never calls it, but version-flagged by
+  Scorecard), which in turn required the Go bump to **1.25** (the fix only
+  landed in x/sys v0.44.0, whose `go` directive is 1.25).
 - No wire change — stderr/OS behavior only; socket goldens unchanged.
 
 ### 15 · Docs site (mkdocs) ✅ — impact M / cost M
