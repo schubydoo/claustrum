@@ -36,6 +36,23 @@ func normResp(b []byte) json.RawMessage {
 	return json.RawMessage(s)
 }
 
+// spawnReq builds an authed process.spawn request whose command is this test
+// binary in the given helper mode (helperproc_test.go), so the socket suite
+// needs no /bin/sh-style fixtures and streams identical bytes on every OS.
+// json.Marshal escapes the executable path safely (Windows backslashes).
+func spawnReq(t *testing.T, id int, procID, mode string) string {
+	t.Helper()
+	exe, env := helperCommand(t, mode)
+	b, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": id, "method": "process.spawn", "auth": testToken,
+		"params": map[string]any{"id": procID, "command": exe, "args": []string{}, "env": env},
+	})
+	if err != nil {
+		t.Fatalf("marshal spawn request: %v", err)
+	}
+	return string(b)
+}
+
 func respKey(b []byte) int {
 	var e struct {
 		ID *int `json:"id"`
@@ -105,8 +122,7 @@ func TestSocketVersionReportsHostPlatform(t *testing.T) {
 func TestSocketProcessSpawnStreamsStdout(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	cl.send(authed(`{"jsonrpc":"2.0","id":1,"method":"process.spawn",` +
-		`"params":{"id":"EM","command":"sh","args":["-c","printf 'l0\nl1\nl2\n'"]}}`))
+	cl.send(spawnReq(t, 1, "EM", "stdout3")) // emits "l0\nl1\nl2\n", exit 0
 
 	cl.waitResponses(1) // spawn ack
 	frames := cl.waitExit("EM")
@@ -124,8 +140,7 @@ func TestSocketProcessSpawnStreamsStdout(t *testing.T) {
 func TestSocketProcessStderrAndNonZeroExit(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	cl.send(authed(`{"jsonrpc":"2.0","id":1,"method":"process.spawn",` +
-		`"params":{"id":"NZ","command":"sh","args":["-c","printf 'err\n' 1>&2; exit 5"]}}`))
+	cl.send(spawnReq(t, 1, "NZ", "stderr-exit5")) // emits "err\n" on stderr, exit 5
 
 	cl.waitResponses(1)
 	frames := cl.waitExit("NZ")
@@ -142,9 +157,8 @@ func TestSocketProcessStderrAndNonZeroExit(t *testing.T) {
 func TestSocketProcessStdinEcho(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	// `cat` echoes stdin to stdout until its stdin closes or it is killed.
-	cl.send(authed(`{"jsonrpc":"2.0","id":1,"method":"process.spawn",` +
-		`"params":{"id":"CAT","command":"cat","args":[]}}`))
+	// The cat helper echoes stdin to stdout until its stdin closes or it is killed.
+	cl.send(spawnReq(t, 1, "CAT", "cat"))
 	cl.waitResponses(1)
 
 	payload := base64.StdEncoding.EncodeToString([]byte("hello\n"))
@@ -174,8 +188,7 @@ func TestSocketProcessStdinEcho(t *testing.T) {
 func TestSocketProcessReattachReplay(t *testing.T) {
 	sock := startSocketServer(t)
 	a := dial(t, sock)
-	a.send(authed(`{"jsonrpc":"2.0","id":1,"method":"process.spawn",` +
-		`"params":{"id":"EM","command":"sh","args":["-c","printf 'l0\nl1\nl2\n'"]}}`))
+	a.send(spawnReq(t, 1, "EM", "stdout3"))
 	a.waitResponses(1)
 	first := a.waitExit("EM")
 	lastSeq := first[len(first)-1].Seq

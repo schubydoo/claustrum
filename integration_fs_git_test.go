@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -34,7 +35,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
-		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -98,12 +99,28 @@ func req(id int, method string, params map[string]any) string {
 	return string(b)
 }
 
-// normPath tokenizes the per-run temp root so the golden is host-stable.
+// normPath tokenizes the per-run temp root so the golden is host-stable. On
+// Windows the root can appear in three spellings — native backslashes,
+// git's forward slashes (rev-parse output), and JSON-escaped backslashes —
+// so all three are replaced; on Unix the variants collapse to the same string.
 func normPath(b json.RawMessage, tmpRoot string) json.RawMessage {
-	return json.RawMessage(strings.ReplaceAll(string(b), tmpRoot, "<DIR>"))
+	s := string(b)
+	for _, root := range []string{
+		tmpRoot,
+		filepath.ToSlash(tmpRoot),
+		strings.ReplaceAll(tmpRoot, `\`, `\\`),
+	} {
+		s = strings.ReplaceAll(s, root, "<DIR>")
+	}
+	return json.RawMessage(s)
 }
 
 func TestSocketFilesBattery(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The golden pins the Unix reference capture, including files.stat's
+		// mode string ("-rw-r--r--"); Windows stat reports its own modes.
+		t.Skip("golden fixture pins Unix stat modes")
+	}
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "hello.txt"), "hi\n", 0o644)
 	writeFile(t, filepath.Join(root, "fdir", "a.txt"), "a", 0o644)
@@ -138,13 +155,11 @@ func TestSocketFilesBattery(t *testing.T) {
 
 func TestSocketGitBattery(t *testing.T) {
 	requireGit(t)
-	root := t.TempDir()
-	// git rev-parse --show-toplevel (used by git.info's "root") returns the
-	// symlink-resolved path; on macOS t.TempDir() lives under /var -> /private/var,
-	// so resolve here to match what the daemon reports. No-op on Linux.
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
-	}
+	// Canonicalize the temp root to the spelling git.info's "root" (git
+	// rev-parse --show-toplevel) will report: symlink-resolved on macOS
+	// (/var -> /private/var), 8.3 short names expanded on Windows
+	// (C:\Users\RUNNER~1\...). No-op on Linux.
+	root := resolveTestRoot(t, t.TempDir())
 	repo := filepath.Join(root, "myrepo")
 	runGit(t, root, "init", "-b", "main", "myrepo")
 	writeFile(t, filepath.Join(repo, "README.md"), "hello\n", 0o644)
@@ -162,7 +177,10 @@ func TestSocketGitBattery(t *testing.T) {
 	// Serialized: list_branches must observe the repo BEFORE worktree_create
 	// adds the "wt" branch. baseRepo is mandatory on worktree ops — omitting it
 	// would fall back to the daemon cwd (this very repo) and leak a worktree.
-	wtPath := filepath.Join(root, "wt")
+	// Slash form: worktree_create echoes the request path verbatim in its
+	// result, so a native backslash on Windows would leak past normPath into
+	// the golden ("<DIR>\\wt"); git and the OS both accept forward slashes.
+	wtPath := filepath.ToSlash(filepath.Join(root, "wt"))
 	calls := []string{
 		req(1, "git.info", map[string]any{"path": repo}),
 		req(2, "git.status", map[string]any{"path": repo}),
