@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -170,6 +171,27 @@ func TestHTTPGet(t *testing.T) {
 func TestDetectLibc(t *testing.T) {
 	if got := detectLibc(); got != "glibc" && got != "musl" {
 		t.Errorf("detectLibc() = %q, want glibc or musl", got)
+	}
+}
+
+// TestDetectLibcWithTimeout verifies the probe returns promptly with a fallback
+// classification when `ldd` hangs, instead of blocking forever (HackerOne
+// #3793023). A runner that blocks until ctx is cancelled stands in for a stalled
+// ldd; detectLibcWith must still return within its deadline.
+func TestDetectLibcWithTimeout(t *testing.T) {
+	hung := func(ctx context.Context) ([]byte, error) {
+		<-ctx.Done() // mimic a stalled `ldd`: unblocks only when the deadline fires
+		return nil, ctx.Err()
+	}
+	done := make(chan string, 1)
+	go func() { done <- detectLibcWith(20*time.Millisecond, hung) }()
+	select {
+	case got := <-done:
+		if got != "glibc" && got != "musl" {
+			t.Errorf("detectLibcWith(timeout) = %q, want glibc or musl fallback", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("detectLibcWith did not return after its deadline — ldd timeout not enforced")
 	}
 }
 

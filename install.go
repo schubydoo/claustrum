@@ -217,8 +217,31 @@ func isRegularFile(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
+// lddProbeTimeout bounds the `ldd --version` libc probe. The reference daemon
+// runs it with no deadline, so a stalled or hostile `ldd` resolved earlier in
+// PATH hangs `-install` forever (reported upstream as HackerOne #3793023). We cap
+// it and fall back to the default classification on timeout: identical output on
+// every normal host (ldd returns in well under a second), defensive only when it
+// would otherwise hang. This is a deliberate, attack-path-only divergence from the
+// reference — normal-path frames and `__INSTALL_RESULT__` facts are unchanged.
+const lddProbeTimeout = 5 * time.Second
+
 func detectLibc() string {
-	out, err := exec.Command("ldd", "--version").CombinedOutput()
+	return detectLibcWith(lddProbeTimeout, runLddVersion)
+}
+
+// runLddVersion runs `ldd --version` under ctx; the process is killed if ctx expires.
+func runLddVersion(ctx context.Context) ([]byte, error) {
+	return exec.CommandContext(ctx, "ldd", "--version").CombinedOutput()
+}
+
+// detectLibcWith runs the libc probe under a deadline, then classifies the result.
+// The timeout and runner are injected so the timeout/fallback path is exercisable
+// on any host (mirroring classifyLibc's injectable stat).
+func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error)) string {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, err := run(ctx)
 	return classifyLibc(out, err, os.Stat)
 }
 
