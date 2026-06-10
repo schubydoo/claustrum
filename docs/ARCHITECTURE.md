@@ -28,10 +28,13 @@ files differ.
 1. **CLI-version manager (`-install`)** — ensures the pinned `claude` CLI is
    present under `-cli-dir`. If `<cli-dir>/<cli-version>` exists *and* is runnable
    (`<cli> --version` exits 0) it's kept; otherwise the blob is acquired from
-   `-cli-zst` (a local `.zst`, consumed on success, **not** checksum-verified) or
-   downloaded from `-cli-url` (SHA-256-verified against `-cli-checksum`
-   *unconditionally* — even an empty checksum fails), zstd-decompressed, `chmod 0755`,
-   re-checked for runnability, then the directory is pruned to `-cli-keep`
+   `-cli-zst` (a local `.zst`, consumed on success; checksum-verified **only when a
+   `-cli-checksum` is supplied** — an opt-in divergence from the reference, see
+   [PROTOCOL.md](PROTOCOL.md)) or downloaded from `-cli-url` (SHA-256-verified against
+   `-cli-checksum` *unconditionally* — even an empty checksum fails). The blob is
+   zstd-decompressed, `chmod 0755`, and re-checked for runnability **at a temp path,
+   then atomically renamed into place** (so an interrupted install never leaves a
+   half-written CLI); the directory is then pruned to `-cli-keep`
    most-recent files (by mtime, default 3). It prints one line:
    `__INSTALL_RESULT__{json}`.
 
