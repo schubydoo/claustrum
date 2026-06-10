@@ -29,6 +29,13 @@ It exposes **18 methods** across the `server.*`, `files.*`, `git.*`, and
 base64 stdout/stderr frames that a late or reconnecting client can replay via
 `reattach`.
 
+Beyond the wire contract, a few **claustrum-only operational extras** (all
+opt-in and invisible to clients): leveled stderr logging via
+`CLAUSTRUM_LOG_LEVEL`, a Prometheus `/metrics` endpoint via `-metrics-addr`
+(no listener exists without it), a disk-free token handoff via `-token-fd`,
+and whole-tree process kill on Windows via Job Objects. See the
+[protocol reference](PROTOCOL.md) for details.
+
 ## Where to go next
 
 <div class="grid cards" markdown>
