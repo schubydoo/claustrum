@@ -57,6 +57,17 @@ timestamp prefix). Only the banner's product name differs (rebranded). These log
 are not part of the JSON-RPC wire contract, but they are kept byte-faithful (sans
 timestamp/PID) so anything tailing the daemon log behaves identically.
 
+A tiny leveled logger ([`logging.go`](../logging.go)) sits in front of those
+calls so operators can quiet the daemon. Each line carries a level
+(`DEBUG`/`INFO`/`WARN`/`ERROR`), emitted as a short tag *before* the
+`[Component]` prefix — `INFO  [Server] New connection from: …` — so the prefixes
+stay byte-intact and any grep for `[Server]`, `[process.Manager]`, `[frameSink]`,
+or `[shellenv]` keeps matching. The threshold is set once at startup from
+`CLAUSTRUM_LOG_LEVEL` (`debug`|`info`|`warn`|`error`); it **defaults to `debug`**,
+so an unset (or unrecognized) value emits exactly what the daemon always has —
+raising it drops everything below the chosen level. Purely a local diagnostic
+knob: it touches stderr only, never the wire.
+
 `-bridge` is a fourth, trivial mode: a dumb stdio↔socket relay (what an SSH
 session attaches to). It injects no auth.
 

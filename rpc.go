@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
-	"log"
 	"strings"
 )
 
@@ -69,7 +68,7 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	// an obvious miss and reveals nothing about the token; ConstantTimeCompare
 	// returns 0 on a length mismatch, so a wrong-length token is still rejected.
 	if req.Auth == "" || subtle.ConstantTimeCompare([]byte(req.Auth), []byte(s.token)) != 1 {
-		log.Printf("[Server] Unauthorized request: method=%s, id=%v", req.Method, string(req.ID))
+		logWarnf("[Server] Unauthorized request: method=%s, id=%v", req.Method, string(req.ID))
 		return ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
 	if req.JSONRPC != "2.0" {

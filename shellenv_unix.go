@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -43,7 +42,7 @@ func extractLoginPATH() {
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("[shellenv] Shell command exited with error (may still have PATH): %v", err)
+		logWarnf("[shellenv] Shell command exited with error (may still have PATH): %v", err)
 	}
 	for _, line := range strings.Split(string(out), "\n") {
 		i := strings.Index(line, pathSentinel)
@@ -53,9 +52,9 @@ func extractLoginPATH() {
 		path := strings.TrimSpace(line[i+len(pathSentinel):])
 		if path != "" {
 			_ = os.Setenv("PATH", path)
-			log.Printf("[shellenv] Extracted shell PATH (%d chars)", len(path))
+			logDebugf("[shellenv] Extracted shell PATH (%d chars)", len(path))
 		}
 		return
 	}
-	log.Printf("[shellenv] PATH sentinel not found in shell output")
+	logWarnf("[shellenv] PATH sentinel not found in shell output")
 }

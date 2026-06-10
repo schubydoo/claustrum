@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/base64"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -113,7 +112,7 @@ func (p *managedProc) emit(f streamFrame) {
 	p.mu.Unlock()
 	for _, c := range subs {
 		if err := c.writeJSON(f); err != nil {
-			log.Printf("[frameSink] write failed, detaching: %v", err)
+			logWarnf("[frameSink] write failed, detaching: %v", err)
 			p.mu.Lock()
 			delete(p.subs, c)
 			p.mu.Unlock()
@@ -143,10 +142,10 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		return err
 	}
 	if err := cmd.Start(); err != nil {
-		log.Printf("[process.Manager] Failed to start process %s: %v", id, err)
+		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 		return err
 	}
-	log.Printf("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
+	logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 
 	p := &managedProc{
 		id:      id,
@@ -185,14 +184,14 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		p.stdinDone = true
 		p.stdinCond.Broadcast()
 		p.stdinMu.Unlock()
-		log.Printf("[process.Manager] Process %s exited with code %d", id, code)
+		logInfof("[process.Manager] Process %s exited with code %d", id, code)
 		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 	}()
 	return nil
 }
 
 func pumpStream(p *managedProc, name string, r io.Reader) {
-	log.Printf("[process.Manager] Starting %s streaming for process %s", name, p.id)
+	logDebugf("[process.Manager] Starting %s streaming for process %s", name, p.id)
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := r.Read(buf)
@@ -232,7 +231,7 @@ func (p *managedProc) enqueueStdin(data []byte) {
 	defer p.stdinMu.Unlock()
 	for !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
 		if !p.stdinWarned {
-			log.Printf("[process.Manager] stdin backpressure: queue full for %s", p.id)
+			logWarnf("[process.Manager] stdin backpressure: queue full for %s", p.id)
 			p.stdinWarned = true
 		}
 		p.stdinCond.Wait()
@@ -310,7 +309,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq int) (found, running 
 	p.mu.Unlock()
 	for _, f := range replay {
 		if err := c.writeJSON(f); err != nil {
-			log.Printf("[frameSink] replay write failed, detaching: %v", err)
+			logWarnf("[frameSink] replay write failed, detaching: %v", err)
 			p.mu.Lock()
 			delete(p.subs, c)
 			p.mu.Unlock()
