@@ -212,6 +212,29 @@ method now gets its own table-of-contents entry on the site. Earlier site fixes
 in the same vein: `pymdownx.emoji` for Material icons (#75), `pymdownx.tilde` +
 a 72rem content column (#77). Site-only; no wire/behavior change.
 
+### 20 · Windows CI test runner ⬜ — impact M / cost M
+
+- The CI test matrix runs `ubuntu-latest` + `macos-latest`; the cross-build job
+  proves the Windows targets *compile*, but nothing ever *executes* the
+  `*_windows.go` code — in particular the #14 Job Object confinement/teardown
+  in `sysproc_windows.go` ships without ever having run in CI.
+- Mutation testing quantifies the hole: every `sysproc_windows.go` mutant (9)
+  is structurally **NOT COVERED** on a Linux/macOS runner — the file is not
+  even compiled there, so no test added on these platforms can ever reach it.
+- Fix: a `windows-latest` leg in the `test` matrix. Not a one-line bump — the
+  unit and socket suites assume Unix fixtures (`/bin/echo`-style commands,
+  Unix process-group semantics in `sysproc_unix_test.go`), so it needs
+  fixture work and targeted skips; `AF_UNIX` sockets themselves are supported
+  on Windows ≥ 1803.
+- Mutation baseline (gremlins `--integration`, 2026-06-10, post-#86):
+  **93.91% efficacy** (185 killed / 12 lived / 6 timed out), mutator coverage
+  75.48% (203 runnable / 64 not covered). The not-covered set is mostly the
+  out-of-process daemon lifecycle
+  in `server.go`/`main.go` (validated by the external battery; can't register
+  in an in-process coverage profile), the `rpc.go` error-code constant
+  literals (constants never appear in a coverage profile — an artifact, not a
+  gap), and the Windows-only code above.
+
 ## Deliberate divergences (post-parity, opt-in)
 
 Unlike everything above, these **knowingly change a frame/behavior** from the

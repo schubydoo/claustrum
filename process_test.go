@@ -560,3 +560,112 @@ func TestWriteLineClosedConn(t *testing.T) {
 		t.Errorf("writeLine on closed conn = %v, want net.ErrClosed", err)
 	}
 }
+
+// emit marshals each frame once and fans the identical bytes out to every
+// attached subscriber (the marshal-once path): with two live conns subscribed,
+// both must receive the same complete frame.
+func TestEmitFansOutToAllSubscribers(t *testing.T) {
+	c1, f1 := pipeConn(t)
+	c2, f2 := pipeConn(t)
+	p := &managedProc{id: "fan", subs: map[*conn]struct{}{c1: {}, c2: {}}}
+	p.emit(streamFrame{Stream: "stdout", Data: "abc"})
+
+	for i, ch := range []<-chan streamFrame{f1, f2} {
+		got := collect(t, ch, 1)
+		if len(got) != 1 {
+			t.Fatalf("subscriber %d received %d frames, want 1", i+1, len(got))
+		}
+		f := got[0]
+		if f.Type != "stream" || f.ProcessID != "fan" || f.Stream != "stdout" ||
+			f.Seq != 1 || f.Data != "abc" {
+			t.Errorf("subscriber %d frame = %+v, want the same stream/fan/stdout/1/abc frame", i+1, f)
+		}
+	}
+}
+
+// One dead subscriber in the fan-out must not block or drop delivery to the
+// live ones: the live conn still receives the frame, the dead conn is
+// detached, and the live conn stays subscribed.
+func TestEmitFanOutSurvivesDeadSubscriber(t *testing.T) {
+	live, frames := pipeConn(t)
+	dc, ds := net.Pipe()
+	dc.Close() // writes now fail immediately
+	ds.Close()
+	dead := &conn{nc: dc}
+
+	p := &managedProc{id: "fan2", subs: map[*conn]struct{}{live: {}, dead: {}}}
+	p.emit(streamFrame{Stream: "stdout", Data: "x"})
+
+	got := collect(t, frames, 1)
+	if len(got) != 1 || got[0].Data != "x" {
+		t.Fatalf("live subscriber got %v, want the emitted frame", got)
+	}
+	p.mu.Lock()
+	_, deadStill := p.subs[dead]
+	_, liveStill := p.subs[live]
+	p.mu.Unlock()
+	if deadStill {
+		t.Error("dead subscriber was not detached")
+	}
+	if !liveStill {
+		t.Error("live subscriber was wrongly detached")
+	}
+}
+
+// The metrics counters tick on real process operations: spawn, stdin accept,
+// stdout streaming, reattach, and exit. Asserted as deltas against the
+// process-wide registry (counting is always-on); exits and stream bytes use ≥
+// because exit goroutines from earlier tests may still be landing.
+func TestMetricsCountProcessOps(t *testing.T) {
+	spawns0 := met.spawns.Load()
+	exits0 := met.processExits.Load()
+	stream0 := met.streamBytes.Load()
+	stdin0 := met.stdinBytes.Load()
+	reatt0 := met.reattaches.Load()
+
+	m := newProcManager()
+	t.Cleanup(m.killAll)
+	c, frames := pipeConn(t)
+	if err := m.spawn(c, "mc", "/bin/cat", nil, "", nil); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if !m.writeStdin("mc", []byte("hello\n")) {
+		t.Fatal("writeStdin to a live process returned false")
+	}
+	if got := firstStdout(t, frames); got != "hello" {
+		t.Fatalf("echoed stdout = %q, want hello", got)
+	}
+
+	c2, _ := pipeConn(t)
+	if found, _, _, _ := m.reattach(c2, "mc", 0); !found {
+		t.Fatal("reattach did not find the live process")
+	}
+	m.reattach(c2, "missing", 0) // not found → must not count
+
+	m.kill("mc", "KILL")
+	deadline := time.After(4 * time.Second)
+	for exited := false; !exited; {
+		select {
+		case f := <-frames:
+			exited = f.Stream == "exit"
+		case <-deadline:
+			t.Fatal("no exit frame after kill")
+		}
+	}
+
+	if d := met.spawns.Load() - spawns0; d != 1 {
+		t.Errorf("spawns delta = %d, want 1", d)
+	}
+	if d := met.stdinBytes.Load() - stdin0; d != 6 {
+		t.Errorf("stdinBytes delta = %d, want 6 (len of hello\\n)", d)
+	}
+	if d := met.streamBytes.Load() - stream0; d < 6 {
+		t.Errorf("streamBytes delta = %d, want ≥ 6 (the echoed hello\\n)", d)
+	}
+	if d := met.reattaches.Load() - reatt0; d != 1 {
+		t.Errorf("reattaches delta = %d, want 1 (a missing-process reattach must not count)", d)
+	}
+	if d := met.processExits.Load() - exits0; d < 1 {
+		t.Errorf("processExits delta = %d, want ≥ 1", d)
+	}
+}
