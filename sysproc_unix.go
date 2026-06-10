@@ -14,6 +14,25 @@ func newSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
+// procGroup is the per-process kill handle. On Unix the child already lives in
+// its own process group (Setpgid, above), so there is no extra OS state to
+// hold; the type exists only so the cross-platform caller can treat every OS
+// uniformly (on Windows it wraps a Job Object).
+type procGroup struct{}
+
+// confineProcess is a no-op on Unix — the process group was established by
+// newSysProcAttr at spawn. It returns a non-nil handle for caller uniformity.
+func confineProcess(*os.Process) (*procGroup, error) { return &procGroup{}, nil }
+
+// signal delivers the signal to the child's whole process group. Nil-receiver
+// safe (it doesn't touch the receiver).
+func (*procGroup) signal(proc *os.Process, signame string) {
+	signalProcessGroup(proc, signame)
+}
+
+// close has nothing to release on Unix.
+func (*procGroup) close() {}
+
 // signalProcessGroup delivers a signal to the child's entire process group
 // (negative pid). Best-effort.
 func signalProcessGroup(proc *os.Process, signame string) {

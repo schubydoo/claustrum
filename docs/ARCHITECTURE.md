@@ -1,7 +1,8 @@
 # claustrum architecture
 
-A single Go binary, mode-switched by flag. Static (`CGO_ENABLED=0`), one
-dependency (`klauspost/compress` for zstd).
+A single Go binary, mode-switched by flag. Static (`CGO_ENABLED=0`), two
+dependencies: `klauspost/compress` (zstd) and `golang.org/x/sys` (Windows Job
+Object teardown — only compiled into Windows builds).
 
 ## Source layout (flat `package main`)
 

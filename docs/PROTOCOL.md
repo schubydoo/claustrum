@@ -117,7 +117,7 @@ stream notifications, **buffered** for later replay.
 |---|---|---|
 | `process.spawn` | `{id,command[,args][,cwd][,env]}` | `{"success":true}`, then stream frames. `args`: string[]. `env`: `{KEY:VAL}` merged over the daemon environment. Missing `id` → `-32602 Process ID is required`; missing `command` → `-32602 Command is required`. |
 | `process.stdin` | `{id,data}` | `{"success":true}`. `data` is **base64** written to the child's stdin. Checks run in a fixed order (probe-verified): **decode → exists → running**. Invalid base64 → `-32602 Invalid base64 data` (returned *before* the process is even looked up, so an unknown id with a bad payload still reports the decode error); unknown id → `-32602 Process not found`; known but **exited** process → `-32602 Process not running`. |
-| `process.kill` | `{id[,signal]}` | `{"success":true}` (best-effort; signals the process group on Unix). |
+| `process.kill` | `{id[,signal]}` | `{"success":true}` (best-effort; tears down the whole child tree — signals the process group on Unix, terminates the Job Object on Windows). |
 | `process.reattach` | `{id,fromSeq}` | replays buffered frames with **seq > fromSeq** (exclusive) to this connection, (re)subscribes it for future frames, then returns `{"found","running","firstSeq","lastSeq"}`. Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0}`. |
 
 ### Stream notifications

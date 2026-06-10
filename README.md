@@ -43,7 +43,8 @@ be used **independently** — e.g. as a building block for self-hosted tooling l
 
 ## Install / build
 
-Requires Go 1.24+. The only dependency is `github.com/klauspost/compress` (zstd).
+Requires Go 1.24+. Dependencies: `github.com/klauspost/compress` (zstd) and
+`golang.org/x/sys` (Windows Job Object teardown — only compiled into Windows builds).
 
 ```sh
 # build the native binary

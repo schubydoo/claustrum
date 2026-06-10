@@ -35,7 +35,7 @@ codes, or frame formats unless explicitly noted as protocol-safe). Ranked by
 
 | # | Improvement | Impact | Cost | Why / compatibility |
 |---|---|---|---|---|
-| 14 | **Windows process-tree kill via Job Objects** | M | M-H | Current Windows `kill` is a best-effort `TerminateProcess` of the parent; a child subtree can leak. A Job Object kills the whole tree like a Unix process group. Windows-only, no wire change. |
+| 14 | ~~**Windows process-tree kill via Job Objects**~~ ✅ **done** | M | M-H | Spawned children are now confined to a Windows Job Object (`confineProcess` in `sysproc_windows.go`); `process.kill`/`killAll` call `TerminateJobObject`, tearing down the whole tree instead of just the parent (the old best-effort `TerminateProcess` leaked grandchildren). The job carries `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so the handle is closed on child exit (reaping stragglers) and the tree also dies if the daemon itself exits. Unix is unchanged (process-group kill). A new cross-platform `procGroup` abstraction unifies both; Job Object failure falls back to the old parent-only kill, so spawns never fail. Added dependency `golang.org/x/sys` (pinned v0.33.0, **Windows-only** — not compiled into other targets; discussed/approved). No wire change — stderr/OS behavior only; socket goldens unchanged. |
 | 15 | **Docs site (mkdocs)** | M | M | Promote `docs/` to a published, community-facing site. |
 | 16 | **`/metrics` or counters** | L-M | M | Optional observability (spawns, bytes streamed, reattach counts). Off by default; no wire change. |
 | 17 | **Duplicate-`id` spawn policy** | L | L | Decide/clarify behavior when `process.spawn` reuses a live id (today it replaces the registry entry). Document + test. |
