@@ -2,8 +2,9 @@ scratch/
 /dist/
 /claustrum
 
-# mkdocs build output
+# mkdocs build output + local docs toolchain venv
 /site/
+/.venv/
 
 # Host-local agent guardrails (host specifics + context-mode routing; never committed)
 CLAUDE.local.md

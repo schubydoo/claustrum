@@ -42,7 +42,17 @@ installed — before each commit. It needs no external tooling (no Python
   `process.go`, `results.go`), re-run the validation battery in `scratch/` and
   confirm frames stay **byte-identical**. A change that intentionally diverges
   must say so in the PR and update [docs/PROTOCOL.md](docs/PROTOCOL.md).
-- **Docs** — update `docs/` for any user-visible behavior change.
+- **Docs** — update `docs/` for any user-visible behavior change. The site is
+  built with mkdocs-material and published to GitHub Pages; CI runs
+  `mkdocs build --strict` on every docs change (a broken link or bad nav fails
+  the check). To preview locally:
+
+  ```sh
+  python3 -m venv .venv
+  .venv/bin/pip install -r docs/requirements.txt
+  .venv/bin/mkdocs serve            # live preview at http://127.0.0.1:8000
+  .venv/bin/mkdocs build --strict   # the exact check CI runs
+  ```
 - **Conventional Commits** — PR **titles** follow
   [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, …). PRs are squash-merged, so the
