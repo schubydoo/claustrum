@@ -193,7 +193,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		old.mu.Lock()
 		old.subs = map[*conn]struct{}{}
 		old.mu.Unlock()
-		if old.cmd != nil && old.cmd.Process != nil {
+		// Skip exited children — their pgid may already be recycled (see kill).
+		if old.cmd != nil && old.cmd.Process != nil && old.isRunning() {
 			old.group.signal(old.cmd.Process, "KILL")
 		}
 	}
@@ -324,10 +325,14 @@ func (p *managedProc) stdinWriter() {
 	}
 }
 
-// kill is best-effort and signals the whole process group (OS-specific).
+// kill is best-effort and signals the whole process group (OS-specific). An
+// already-exited child is skipped: once cmd.Wait has reaped it, its Unix pgid
+// can be recycled, so a late negative-pid signal could hit an unrelated
+// process group. (Windows is immune — the job handle pins identity.) OS-level
+// hardening only; the wire reply does not depend on the signal side effect.
 func (m *procManager) kill(id, signal string) {
 	p := m.get(id)
-	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil || !p.isRunning() {
 		return
 	}
 	p.group.signal(p.cmd.Process, signal)
@@ -385,7 +390,8 @@ func (m *procManager) killAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
-		if p.cmd != nil && p.cmd.Process != nil {
+		// Skip exited children — their pgid may already be recycled (see kill).
+		if p.cmd != nil && p.cmd.Process != nil && p.isRunning() {
 			p.group.signal(p.cmd.Process, "KILL")
 		}
 	}

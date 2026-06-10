@@ -298,12 +298,15 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 		return len(ents)
 	}
 
+	// Version-style names (with a dot) so the present CLI is actually runnable
+	// on Windows too — exec there only resolves paths carrying an extension,
+	// and an extensionless "cur" would silently take the not-present branch.
 	t.Run("keep0_does_not_prune", func(t *testing.T) {
 		dir := t.TempDir()
-		mk(t, dir, "cur", 30)
-		mk(t, dir, "old1", 20)
-		mk(t, dir, "old2", 10)
-		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "cur", cliKeep: 0})
+		mk(t, dir, "3.0.0", 30) // newest → the present CLI
+		mk(t, dir, "2.0.0", 20)
+		mk(t, dir, "1.0.0", 10)
+		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "3.0.0", cliKeep: 0})
 		if n := count(t, dir); n != 3 {
 			t.Errorf("keep=0 left %d files, want 3 (cliKeep>0 guard regressed to >=0, wiping versions)", n)
 		}
@@ -311,11 +314,11 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 
 	t.Run("keep2_prunes_to_newest", func(t *testing.T) {
 		dir := t.TempDir()
-		mk(t, dir, "cur", 40) // newest → kept, and it's the present CLI
-		mk(t, dir, "old1", 30)
-		mk(t, dir, "old2", 20)
-		mk(t, dir, "old3", 10)
-		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "cur", cliKeep: 2})
+		mk(t, dir, "4.0.0", 40) // newest → kept, and it's the present CLI
+		mk(t, dir, "3.0.0", 30)
+		mk(t, dir, "2.0.0", 20)
+		mk(t, dir, "1.0.0", 10)
+		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "4.0.0", cliKeep: 2})
 		if n := count(t, dir); n != 2 {
 			t.Errorf("keep=2 left %d files, want 2 (cliKeep>0 guard regressed, skipping prune)", n)
 		}

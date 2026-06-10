@@ -31,7 +31,10 @@ frames.** The wire surface *is* the product.
   + `integration*_test.go`) that boots the daemon on a temp `AF_UNIX` socket and
   asserts every method's frames against committed golden fixtures
   (`testdata/socket_*.golden.json`) — so CI gates compatibility without the
-  reference binary. ~83% statement coverage. The cross-binary battery that diffs
+  reference binary. The suite runs on linux, macOS, **and Windows** in CI:
+  process fixtures come from the test binary itself (`helperproc_test.go`,
+  `CLAUSTRUM_TEST_HELPER`), never `/bin/*`, so stream bytes match the goldens
+  on every OS. ~80% statement coverage. The cross-binary battery that diffs
   against the reference daemon lives in `scratch/`.
 
 ## Architecture
