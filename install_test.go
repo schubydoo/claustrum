@@ -315,6 +315,10 @@ func TestEnsureCLIFromZst(t *testing.T) {
 	if isRegularFile(zstFile) {
 		t.Error("the source .zst should be consumed on success")
 	}
+	// Atomic extract (#4): the .tmp staging file is renamed into place, not left behind.
+	if isRegularFile(cliPath + ".tmp") {
+		t.Error("the .tmp staging file should be renamed away, not left behind")
+	}
 }
 
 func TestEnsureCLIFromURL(t *testing.T) {
