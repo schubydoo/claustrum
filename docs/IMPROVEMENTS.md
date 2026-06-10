@@ -74,16 +74,17 @@ frames drop and `firstSeq` advances past the cap. **Protocol-safe** —
 
 ### 9 · stdin backpressure ✅ — impact M / cost M
 
-`process.stdin` used to write synchronously, so a slow/non-reading child blocked
-the dispatch goroutine once the 64 KB pipe filled. **Parity gap** — a probe
-showed the reference returns `{success:true}` immediately (async/queued) where
-claustrum blocked. Now each proc has a `stdinWriter` goroutine draining a
-bounded (`stdinQueueCap`, 8 MiB) FIFO queue; `process.stdin` enqueues and
-returns immediately, and a full queue applies backpressure + logs the
-reference's `stdin backpressure: queue full` guard. Re-probe: claustrum now
-matches the reference (success in ~350 ms vs previously blocked); `-serve`
-battery byte-identical. The exact queue threshold is a stderr-log edge, not a
-wire frame.
+- `process.stdin` used to write synchronously, so a slow/non-reading child
+  blocked the dispatch goroutine once the 64 KB pipe filled.
+- **Parity gap** — a probe showed the reference returns `{success:true}`
+  immediately (async/queued) where claustrum blocked.
+- Now each proc has a `stdinWriter` goroutine draining a bounded
+  (`stdinQueueCap`, 8 MiB) FIFO queue; `process.stdin` enqueues and returns
+  immediately. A full queue applies backpressure and logs the reference's
+  `stdin backpressure: queue full` guard.
+- Re-probe: claustrum now matches the reference (success in ~350 ms vs
+  previously blocked); `-serve` battery byte-identical. The exact queue
+  threshold is a stderr-log edge, not a wire frame.
 
 ### 10 · Fuzz the JSON-RPC parser ✅ — impact M / cost L-M
 
@@ -109,33 +110,39 @@ Renovate can bump the patch over time.
 
 ### 13 · Structured/leveled logging ✅ — impact M / cost L-M
 
-Shipped a tiny leveled logger (`logging.go`): the daemon's diagnostic
-`log.Printf("[Component] …")` calls now go through
-`logDebugf`/`logInfof`/`logWarnf`/`logErrorf`, which prepend a level tag
-*before* the existing `[Server]`/`[process.Manager]`/`[frameSink]`/`[shellenv]`
-prefixes — left **byte-intact** so greps keep working. Threshold from
-`CLAUSTRUM_LOG_LEVEL` (`debug`|`info`|`warn`|`error`), **defaulting to `debug`**
-so output is unchanged unless an operator raises it. Still routes through the
-stdlib default logger (timestamps + `log.SetOutput` test capture intact). The
-CLI's fatal `claustrum: …` startup errors are left as-is — they're user-facing
-exit messages, not diagnostic logs. Stderr-only; the wire surface is untouched
-(goldens unchanged).
+Shipped a tiny leveled logger (`logging.go`):
+
+- The daemon's diagnostic `log.Printf("[Component] …")` calls now go through
+  `logDebugf`/`logInfof`/`logWarnf`/`logErrorf`.
+- The level tag is prepended *before* the existing
+  `[Server]`/`[process.Manager]`/`[frameSink]`/`[shellenv]` prefixes — left
+  **byte-intact** so greps keep working.
+- Threshold from `CLAUSTRUM_LOG_LEVEL` (`debug`|`info`|`warn`|`error`),
+  **defaulting to `debug`** so output is unchanged unless an operator raises it.
+- Still routes through the stdlib default logger (timestamps + `log.SetOutput`
+  test capture intact).
+- The CLI's fatal `claustrum: …` startup errors are left as-is — user-facing
+  exit messages, not diagnostic logs.
+- Stderr-only; the wire surface is untouched (goldens unchanged).
 
 ## Tier 3 — larger / lower-priority
 
 ### 14 · Windows process-tree kill via Job Objects ✅ — impact M / cost M-H
 
-Spawned children are now confined to a Windows Job Object (`confineProcess` in
-`sysproc_windows.go`); `process.kill`/`killAll` call `TerminateJobObject`,
-tearing down the whole tree instead of just the parent (the old best-effort
-`TerminateProcess` leaked grandchildren). The job carries
-`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so the handle is closed on child exit
-(reaping stragglers) and the tree also dies if the daemon itself exits. Unix is
-unchanged (process-group kill). A new cross-platform `procGroup` abstraction
-unifies both; Job Object failure falls back to the old parent-only kill, so
-spawns never fail. Added dependency `golang.org/x/sys` (pinned v0.33.0,
-**Windows-only** — not compiled into other targets; discussed/approved). No
-wire change — stderr/OS behavior only; socket goldens unchanged.
+- Spawned children are now confined to a Windows Job Object (`confineProcess`
+  in `sysproc_windows.go`); `process.kill`/`killAll` call `TerminateJobObject`,
+  tearing down the whole tree instead of just the parent (the old best-effort
+  `TerminateProcess` leaked grandchildren).
+- The job carries `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so the handle is closed
+  on child exit (reaping stragglers) and the tree also dies if the daemon
+  itself exits.
+- Unix is unchanged (process-group kill); a new cross-platform `procGroup`
+  abstraction unifies both.
+- Job Object failure falls back to the old parent-only kill — spawns never
+  fail because of confinement.
+- Added dependency `golang.org/x/sys` (pinned v0.33.0, **Windows-only** — not
+  compiled into other targets; discussed/approved).
+- No wire change — stderr/OS behavior only; socket goldens unchanged.
 
 ### 15 · Docs site (mkdocs) ✅ — impact M / cost M
 
@@ -149,15 +156,18 @@ duplicating the canonical copies. Site: <https://schubydoo.github.io/claustrum/>
 
 ### 16 · `/metrics` counters ✅ — impact L-M / cost M
 
-Shipped opt-in Prometheus metrics (`metrics.go`): a process-wide atomic counter
-registry (connections, process spawns/exits, reattaches, stream/stdin bytes)
-exposed at `/metrics` via a stdlib `net/http` listener — **only** when
-`-metrics-addr` is set (off by default, no listener otherwise). Counts only (no
-command output/tokens), no auth → bind to loopback (documented in
-[PROTOCOL.md](PROTOCOL.md) +
-[SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
-Counting is always-on/atomic; the endpoint is the opt-in part. Stopped on
-teardown. Pure stdlib, no wire change, goldens unchanged.
+Shipped opt-in Prometheus metrics (`metrics.go`):
+
+- A process-wide atomic counter registry: connections, process spawns/exits,
+  reattaches, stream/stdin bytes. Counting is always-on; the endpoint is the
+  opt-in part.
+- Exposed at `/metrics` via a stdlib `net/http` listener — **only** when
+  `-metrics-addr` is set (off by default, no listener otherwise); stopped on
+  teardown.
+- Counts only (no command output/tokens), no auth → bind to loopback.
+  Documented in [PROTOCOL.md](PROTOCOL.md) +
+  [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
+- Pure stdlib, no wire change, goldens unchanged.
 
 ### 17 · Duplicate-`id` spawn policy ✅ — impact L / cost L
 
@@ -172,16 +182,19 @@ no wire change (`TestSpawnDuplicateIDReplacesAndKillsOld`; documented in
 
 ### 18 · Token from fd/stdin ✅ — impact L / cost L
 
-Shipped `-token-fd <n>` (e.g. `0` for stdin): the `-serve` daemon reads the auth
-token from an open descriptor instead of `-token-file`, so it never touches
-disk. Since `-serve` self-daemonizes, the parent reads the fd and **forwards the
-token to the detached child over an inherited pipe** (`readTokenFD` +
-`daemonizeWithToken`; child reads the fd named by `CLAUSTRUM_TOKEN_PIPE`) —
-never via disk, argv, or environ. Additive/off-wire: `-token-file` callers and
-the reference are unaffected. `readTokenFD` unit-tested; full fd→pipe→auth path
-validated live (`server.ping` authenticates with the forwarded token; wrong
-token rejected). Documented in [PROTOCOL.md](PROTOCOL.md) +
-[SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
+Shipped `-token-fd <n>` (e.g. `0` for stdin):
+
+- The `-serve` daemon reads the auth token from an open descriptor instead of
+  `-token-file`, so it never touches disk.
+- Since `-serve` self-daemonizes, the parent reads the fd and **forwards the
+  token to the detached child over an inherited pipe** (`readTokenFD` +
+  `daemonizeWithToken`; the child reads the fd named by
+  `CLAUSTRUM_TOKEN_PIPE`) — never via disk, argv, or environ.
+- Additive/off-wire: `-token-file` callers and the reference are unaffected.
+- `readTokenFD` unit-tested; the full fd→pipe→auth path validated live
+  (`server.ping` authenticates with the forwarded token; wrong token rejected).
+- Documented in [PROTOCOL.md](PROTOCOL.md) +
+  [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
 ### 19 · Docs-site visibility/formatting pass ✅ — impact L / cost L-M
 
@@ -202,17 +215,20 @@ consider them now that the harness proves parity, and document each as an
 
 ### D1 · Re-harden `-cli-zst` checksum ✅ (Option A) — impact M / cost L
 
-The reference verifies `-cli-checksum` only on the `-cli-url` download path,
-**not** on the local `-cli-zst` (SFTP) blob; PR #29 dropped our verification
-there to stay 1:1. **Shipped** as an opt-in divergence: `-cli-zst` is now
-SHA-256-verified **when (and only when) a `-cli-checksum` is supplied** — a
-mismatch is rejected with the same `checksum mismatch: …` error (source blob
-left intact); an absent/empty checksum stays trusting, so a caller that passes
-no checksum is byte-identical to the reference. **Divergence** (documented in
-[PROTOCOL.md](PROTOCOL.md) + PR): for a *supplied* wrong checksum, a valid blob
-the reference would install now returns `checksum mismatch` (was success) and a
-corrupt blob returns `checksum mismatch` instead of `decompressing: …`.
-Verified by a live ref-vs-claustrum differential.
+- The reference verifies `-cli-checksum` only on the `-cli-url` download path,
+  **not** on the local `-cli-zst` (SFTP) blob; PR #29 dropped our verification
+  there to stay 1:1.
+- **Shipped** as an opt-in divergence: `-cli-zst` is now SHA-256-verified
+  **when (and only when) a `-cli-checksum` is supplied** — a mismatch is
+  rejected with the same `checksum mismatch: …` error (source blob left
+  intact).
+- An absent/empty checksum stays trusting, so a caller that passes no checksum
+  is byte-identical to the reference.
+- The observable delta (documented in [PROTOCOL.md](PROTOCOL.md) + PR), for a
+  *supplied wrong* checksum only: a valid blob the reference would install now
+  returns `checksum mismatch` (was success), and a corrupt blob returns
+  `checksum mismatch` instead of `decompressing: …`.
+- Verified by a live ref-vs-claustrum differential.
 
 ## Explicitly out of scope (would break compatibility)
 

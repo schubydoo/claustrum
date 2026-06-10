@@ -84,15 +84,18 @@ diff /tmp/ref.json /tmp/mine.json
 ## Step 3b — real-session capture (highest fidelity, optional)
 
 Steps 2–3 drive the daemon with **synthetic** requests we author. The ultimate
-check is the **real** desktop client's traffic. The bridge (`server --bridge`) is
-a dumb stdio relay, so teeing its stdin/stdout captures the exact client↔daemon
-NDJSON of a live session — which can then be replayed against claustrum and
-diffed. Tooling lives in `scratch/capture/` (gitignored): a `capture-bridge`, a
-`replay.js` (order-insensitive diff: responses keyed by `id`, stream frames by
-`processId`+`seq`; masks the version SHA, token, and — with `--mask-data` — the
-nondeterministic agent payloads), and `REPLAY.md` with the capture runbook. The
-session is captured under a **throwaway** SSH user via a `ForceCommand` wrapper
-scoped to that user, so it never touches a live daemon.
+check is the **real** desktop client's traffic.
+
+- The bridge (`server --bridge`) is a dumb stdio relay, so teeing its
+  stdin/stdout captures the exact client↔daemon NDJSON of a live session —
+  which can then be replayed against claustrum and diffed.
+- Tooling lives in `scratch/capture/` (gitignored): a `capture-bridge`,
+  `replay.js`, and `REPLAY.md` with the capture runbook.
+- `replay.js` diffs order-insensitively — responses keyed by `id`, stream
+  frames by `processId`+`seq` — and masks the version SHA, the token, and
+  (with `--mask-data`) the nondeterministic agent payloads.
+- The session is captured under a **throwaway** SSH user via a `ForceCommand`
+  wrapper scoped to that user, so it never touches a live daemon.
 
 This was exercised against the then-pinned reference (`8de85faaa…`, since superseded by `7cbfa471`): a real Desktop
 session — 10 of the 18 methods, the full `process.*` lifecycle including a
