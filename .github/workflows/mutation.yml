@@ -46,11 +46,11 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          # gremlins needs a newer Go than the project's declared minimum
-          # (go.mod declares 1.24, but gremlins v0.6.0 requires >= 1.25).
-          # Mutation testing is a test-quality audit, not a
-          # compatibility check, so running it on the latest stable Go is fine —
-          # and it tracks future gremlins bumps without editing go.mod.
+          # Mutation testing is a test-quality audit, not a compatibility
+          # check, so it runs on the latest stable Go rather than the go.mod
+          # toolchain — that keeps tracking future gremlins requirements
+          # (v0.6.0 needs >= 1.25; go.mod caught up in #86) without editing
+          # go.mod.
           go-version: stable
           check-latest: true
           cache: true
