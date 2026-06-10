@@ -1,0 +1,17 @@
+/* Wider content column than Material's 61rem default. Several docs (the protocol
+   method tables, the improvement backlog) carry wide, prose-heavy tables that
+   otherwise wrap every cell into a thin, hard-to-read sliver. */
+.md-grid {
+  max-width: 72rem;
+}
+
+/* Tables are the densest content here — keep them readable: don't let long code
+   spans force awkward wraps, and give rows a touch more vertical breathing room. */
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+  padding: 0.5em 0.8em;
+}
+
+.md-typeset table:not([class]) code {
+  white-space: nowrap;
+}
