@@ -29,7 +29,7 @@ frames.** The wire surface *is* the product.
   + `integration*_test.go`) that boots the daemon on a temp `AF_UNIX` socket and
   asserts every method's frames against committed golden fixtures
   (`testdata/socket_*.golden.json`) — so CI gates compatibility without the
-  reference binary. ~82% statement coverage. The cross-binary battery that diffs
+  reference binary. ~83% statement coverage. The cross-binary battery that diffs
   against the reference daemon lives in `scratch/`.
 
 ## Architecture
@@ -49,7 +49,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   the reference emits. **Never a map** (maps sort keys and diverge from the wire
   contract).
 - **`process.go`** — `procManager` / `managedProc`: spawn in own process group,
-  stream base64 stdout/stderr frames, per-process replay buffer, `reattach`.
+  stream base64 stdout/stderr frames, async stdin writer (bounded queue +
+  backpressure), per-process replay buffer, `reattach`.
 - **`bridge.go`** — `-bridge`: a dumb stdio↔socket relay (what SSH attaches to).
 - **`install.go`** — `-install`: CLI download / verify (SHA-256 — **`-cli-url`
   downloads unconditionally; the local `-cli-zst` SFTP blob is verified only when a
