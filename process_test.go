@@ -499,6 +499,46 @@ func TestKillAllTerminatesLiveProcess(t *testing.T) {
 	}
 }
 
+// process.spawn with an already-live id replaces the registry entry (both spawns
+// succeed, matching the reference) AND tears down the now-orphaned old process
+// rather than leaking it — a claustrum divergence (OS-level, no wire change,
+// IMPROVEMENTS #17).
+func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
+	m := newProcManager()
+	t.Cleanup(m.killAll)
+
+	c1, _ := pipeConn(t)
+	if err := m.spawn(c1, "dup", "/bin/sleep", []string{"60"}, "", nil); err != nil {
+		t.Fatalf("first spawn: %v", err)
+	}
+	old := m.get("dup")
+	if old == nil {
+		t.Fatal("first spawn was not registered")
+	}
+
+	c2, _ := pipeConn(t)
+	if err := m.spawn(c2, "dup", "/bin/sleep", []string{"60"}, "", nil); err != nil {
+		t.Fatalf("second spawn with duplicate id: %v (both spawns must succeed)", err)
+	}
+
+	if neu := m.get("dup"); neu == old {
+		t.Fatal("duplicate-id spawn did not replace the registry entry")
+	} else if !neu.isRunning() {
+		t.Error("replacement process should be running")
+	}
+
+	// The orphaned first process must be torn down, not left running.
+	deadline := time.After(4 * time.Second)
+	for old.isRunning() {
+		select {
+		case <-deadline:
+			t.Fatal("old process was not killed on duplicate-id replace (still running)")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
 // writeJSON short-circuits with net.ErrClosed once the conn is marked closed,
 // rather than writing to a torn-down socket.
 func TestWriteJSONClosedConn(t *testing.T) {

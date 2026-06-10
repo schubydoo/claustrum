@@ -167,6 +167,22 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
+	// Reusing a live id replaces the registry entry (matching the reference:
+	// both spawns succeed). The previous process would otherwise be orphaned —
+	// unreachable via kill/stdin/reattach (which now key to the new process) and
+	// missed by killAll — so we tear its tree down here rather than leak it. We
+	// first drop its subscribers so its teardown frames (a late exit/stdout under
+	// the now-reused id) don't reach clients. OS-level only — no wire frame
+	// change; an intentional divergence from the reference, which leaves the old
+	// process running (see docs/PROTOCOL.md).
+	if old := m.procs[id]; old != nil {
+		old.mu.Lock()
+		old.subs = map[*conn]struct{}{}
+		old.mu.Unlock()
+		if old.cmd != nil && old.cmd.Process != nil {
+			old.group.signal(old.cmd.Process, "KILL")
+		}
+	}
 	m.procs[id] = p
 	m.mu.Unlock()
 
