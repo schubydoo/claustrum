@@ -119,14 +119,16 @@ func TestIsRegularFile(t *testing.T) {
 
 func TestIsRunnable(t *testing.T) {
 	dir := t.TempDir()
-	ok := filepath.Join(dir, "ok")
+	// .exe suffix: Go's exec on Windows only resolves paths that carry an
+	// extension (harmless on Unix, where the shebang decides).
+	ok := filepath.Join(dir, "ok.exe")
 	if err := os.WriteFile(ok, fakeCLI(t, 0), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if !isRunnable(ok) {
 		t.Error("an exit-0 CLI should be runnable")
 	}
-	bad := filepath.Join(dir, "bad")
+	bad := filepath.Join(dir, "bad.exe")
 	if err := os.WriteFile(bad, fakeCLI(t, 3), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -379,10 +381,12 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 		return dir, zstFile
 	}
 
+	// .exe suffix on the install targets: Go's exec on Windows only resolves
+	// paths that carry an extension (harmless on Unix).
 	t.Run("wrong checksum is rejected, blob preserved", func(t *testing.T) {
 		dir, zstFile := mkZst(t)
 		o := installOpts{cliZst: zstFile, cliChecksum: "deadbeef"} // wrong on purpose
-		err := ensureCLI(o, filepath.Join(dir, "out"))
+		err := ensureCLI(o, filepath.Join(dir, "out.exe"))
 		if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 			t.Errorf("zst + wrong checksum = %v, want a checksum-mismatch error", err)
 		}
@@ -393,7 +397,7 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 
 	t.Run("absent checksum stays trusting (reference parity)", func(t *testing.T) {
 		dir, zstFile := mkZst(t)
-		cliPath := filepath.Join(dir, "out")
+		cliPath := filepath.Join(dir, "out.exe")
 		if err := ensureCLI(installOpts{cliZst: zstFile}, cliPath); err != nil {
 			t.Fatalf("zst + no checksum must install: %v", err)
 		}
@@ -406,7 +410,7 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 		dir, zstFile := mkZst(t)
 		zst, _ := os.ReadFile(zstFile)
 		sum := sha256.Sum256(zst)
-		cliPath := filepath.Join(dir, "out")
+		cliPath := filepath.Join(dir, "out.exe")
 		o := installOpts{cliZst: zstFile, cliChecksum: hex.EncodeToString(sum[:])}
 		if err := ensureCLI(o, cliPath); err != nil {
 			t.Fatalf("zst + matching checksum: %v", err)

@@ -177,7 +177,10 @@ func TestSocketGitBattery(t *testing.T) {
 	// Serialized: list_branches must observe the repo BEFORE worktree_create
 	// adds the "wt" branch. baseRepo is mandatory on worktree ops — omitting it
 	// would fall back to the daemon cwd (this very repo) and leak a worktree.
-	wtPath := filepath.Join(root, "wt")
+	// Slash form: worktree_create echoes the request path verbatim in its
+	// result, so a native backslash on Windows would leak past normPath into
+	// the golden ("<DIR>\\wt"); git and the OS both accept forward slashes.
+	wtPath := filepath.ToSlash(filepath.Join(root, "wt"))
 	calls := []string{
 		req(1, "git.info", map[string]any{"path": repo}),
 		req(2, "git.status", map[string]any{"path": repo}),

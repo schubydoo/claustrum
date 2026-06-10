@@ -355,7 +355,10 @@ func TestSpawnRespectsCwd(t *testing.T) {
 	if err := m.spawn(c, "cwd", pwd, nil, tmp, env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	if got := firstStdout(t, frames); got != want {
+	// Canonicalize the child's report the same way as want: on Windows the
+	// child's Getwd echoes the 8.3 short form the runner's TEMP uses
+	// (C:\Users\RUNNER~1\...), while EvalSymlinks expands to the long path.
+	if got := resolveTestRoot(t, firstStdout(t, frames)); got != want {
 		t.Errorf("child cwd = %q, want %q (cwd != \"\" must set cmd.Dir)", got, want)
 	}
 }
