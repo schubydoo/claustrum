@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"log"
 	"strings"
@@ -60,7 +61,14 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	// Precedence is auth → version (probe-verified): a request that fails BOTH
 	// (e.g. no auth and no/!="2.0" jsonrpc) reports Unauthorized, not the version
 	// error. Only once auth passes is the version validated.
-	if req.Auth == "" || req.Auth != s.token {
+	//
+	// The token compare is constant-time (crypto/subtle) so the auth path can't
+	// leak the count of matching leading bytes through response latency — defense-
+	// in-depth (HackerOne #3793038); the local 0600 socket already gates any such
+	// oracle to the token's own user. The empty-auth short-circuit only fast-rejects
+	// an obvious miss and reveals nothing about the token; ConstantTimeCompare
+	// returns 0 on a length mismatch, so a wrong-length token is still rejected.
+	if req.Auth == "" || subtle.ConstantTimeCompare([]byte(req.Auth), []byte(s.token)) != 1 {
 		log.Printf("[Server] Unauthorized request: method=%s, id=%v", req.Method, string(req.ID))
 		return ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}

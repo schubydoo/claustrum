@@ -177,13 +177,24 @@ stream notifications, **buffered** for later replay.
   the stdlib `flag` error + usage and exit `2`.
 
 **`-install` checksum + error framing (probe-verified):** `-cli-checksum` is
-verified **only on the download (`-cli-url`) path, and there unconditionally** — an
-empty `-cli-checksum` still fails (`checksum mismatch: expected=, actual=<sha>`).
-The local `-cli-zst` (SFTP-upload) path is **not** checksum-verified at all: the
-blob arrives over an already-authenticated channel, so a wrong/empty checksum is
-ignored and it installs. Input/decompress failures surface as `cliError` strings
-`opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob);
-`-install` itself always exits `0` and prints the facts.
+verified **on the download (`-cli-url`) path unconditionally** — an empty
+`-cli-checksum` still fails (`checksum mismatch: expected=, actual=<sha>`).
+Input/decompress failures surface as `cliError` strings `opening input: <err>`
+(zst read) and `decompressing: <err>` (bad zstd blob); `-install` itself always
+exits `0` and prints the facts.
+
+> **Intentional divergence (claustrum, [IMPROVEMENTS.md](IMPROVEMENTS.md) D1).**
+> The reference daemon **never** checksum-verifies the local `-cli-zst`
+> (SFTP-upload) path — it trusts the already-authenticated channel, so a
+> wrong/empty checksum is ignored and the blob installs. Claustrum verifies
+> `-cli-zst` **when (and only when) a `-cli-checksum` is supplied**, rejecting a
+> corrupt/tampered blob with the same `checksum mismatch: expected=<x>, actual=<y>`
+> error (the source blob is left intact, not consumed). An **absent/empty**
+> `-cli-checksum` stays trusting — byte-identical to the reference — so honest
+> callers are unaffected. The observable delta, for a *supplied* wrong checksum: a
+> valid blob the reference would install now returns `checksum mismatch` (was
+> success), and a corrupt blob returns `checksum mismatch` instead of
+> `decompressing: <err>`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
 deployment lifecycle, and [EXAMPLES.md](EXAMPLES.md) for runnable snippets.
