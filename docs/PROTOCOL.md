@@ -19,8 +19,10 @@ contract the validation battery checks byte-for-byte.
 ## Authentication
 
 Every request carries a top-level `"auth":"<token>"`. The server's expected token
-comes from `-token-file` (read once at startup, then **unlinked**) or the
-`CLAUDE_RPC_TOKEN` environment variable. A bad or missing token →
+comes from `-token-file` (read once at startup, then **unlinked**) or `-token-fd`
+(read from an open descriptor, forwarded to the daemon over a pipe — no temp
+file); for the `-bridge`/`-stop` clients it comes from the `CLAUDE_RPC_TOKEN`
+environment variable. A bad or missing token →
 `-32001 Unauthorized: invalid or missing auth token` (also logged
 `[Server] Unauthorized request: method=…, id=…`).
 
@@ -145,7 +147,7 @@ stream notifications, **buffered** for later replay.
 
 | flag(s) | role |
 |---|---|
-| `-serve -socket <p> -token-file <p> [-metrics-addr <a>]` | self-daemonize (reparent to init / detached), extract login-shell PATH (Unix), run the RPC server (and, if `-metrics-addr` is set, a Prometheus `/metrics` HTTP endpoint) |
+| `-serve -socket <p> {-token-file <p>\|-token-fd <n>} [-metrics-addr <a>]` | self-daemonize (reparent to init / detached), extract login-shell PATH (Unix), run the RPC server (and, if `-metrics-addr` is set, a Prometheus `/metrics` HTTP endpoint) |
 | `-bridge -socket <p>` | dumb stdio↔socket relay (no auth injection) — what an SSH session attaches to |
 | `-stop -socket <p>` | send `server.shutdown` (auth from `CLAUDE_RPC_TOKEN`) |
 | `-version` | print `claustrum <id> (built <time>)` |
@@ -157,17 +159,23 @@ stream notifications, **buffered** for later replay.
   directory, so `-serve` on a missing `~/.claude/remote` fails `claustrum: listen
   unix: …: bind: no such file or directory`). The deployment always passes
   `-socket`; this only matters for bare invocations.
-- **`-serve` requires `-token-file`**, checked *before* the socket
-  (`claustrum: daemonized child requires --token-file`, exit `1`). The token comes
-  **only** from the file (read once, then unlinked); the `CLAUDE_RPC_TOKEN` env is
-  **not** accepted for `-serve` (it is only for the `-bridge`/`-stop` clients), so
-  the daemon never starts unauthenticated. The token is read as a **line**: a
-  single trailing newline (`\n` or `\r\n`) from the uploaded file is stripped,
-  but spaces and other surrounding whitespace are preserved verbatim
-  (probe-verified — a token file ending in a newline still authenticates). A bad
-  `-token-file` →
-  `claustrum: read --token-file: <err>`, exit `1`. On success it prints
-  `Claustrum remote server listening on <socket>` to stdout.
+- **`-serve` requires a token source** (`-token-file` or `-token-fd`), checked
+  *before* the socket (`claustrum: daemonized child requires --token-file or
+  --token-fd`, exit `1`). The `CLAUDE_RPC_TOKEN` env is **not** accepted for
+  `-serve` (it is only for the `-bridge`/`-stop` clients), so the daemon never
+  starts unauthenticated. The token is read as a **line**: a single trailing
+  newline (`\n` or `\r\n`) is stripped, but spaces and other surrounding
+  whitespace are preserved verbatim (probe-verified — a token ending in a newline
+  still authenticates). A bad `-token-file` → `claustrum: read --token-file:
+  <err>`, exit `1`. On success it prints `Claustrum remote server listening on
+  <socket>` to stdout.
+- **`-token-fd <n>` (claustrum-only, no temp file).** Reads the token from an
+  already-open file descriptor (e.g. `-token-fd 0` for stdin) instead of
+  `-token-file`, so the token never touches disk. Because `-serve` self-daemonizes
+  (re-execs), the parent reads the fd and **forwards the token to the detached
+  child over an inherited pipe** — never via disk, argv, or the environment.
+  Additive and off the wire: callers using `-token-file` are unaffected, and the
+  reference (which has no `-token-fd`) is matched byte-for-byte when it isn't used.
 - **`-stop` is best-effort.** A missing or unreachable daemon is a silent no-op —
   exit `0`, no output. Only a live daemon's response (if any) is echoed to stdout.
 - **`-bridge` is strict.** A dial failure is a hard error: `claustrum: dial

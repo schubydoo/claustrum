@@ -20,10 +20,13 @@ claustrum is **trusted, host-local infrastructure**, not a multi-tenant service.
 It listens on an `AF_UNIX` socket (mode `0600`, owner-only) and supervises child
 processes on the host it runs on. Key considerations:
 
-- **Auth** is an in-band per-request token, read from `-token-file` (which is
-  unlinked immediately after reading) or `CLAUDE_RPC_TOKEN`. Anyone who can read
-  the token *and* reach the socket can drive the daemon. Protect both: the socket
-  is owner-only by design; keep the token file owner-readable and short-lived.
+- **Auth** is an in-band per-request token. The `-serve` daemon takes it from
+  `-token-file` (unlinked immediately after reading) or `-token-fd` (read from an
+  open descriptor and forwarded to the detached daemon over a pipe — never on
+  disk, in argv, or in the environment); the `-bridge`/`-stop` clients read
+  `CLAUDE_RPC_TOKEN`. Anyone who can read the token *and* reach the socket can
+  drive the daemon. Protect both: the socket is owner-only by design; keep the
+  token file (or fd source) owner-readable and short-lived.
 - **`process.spawn` runs arbitrary commands** as the daemon's user, by design —
   that is the daemon's job (it hosts the agent and MCP servers). Treat access to
   the socket + token as equivalent to shell access for that user.

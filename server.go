@@ -4,14 +4,22 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 )
+
+// tokenPipeEnv names the file descriptor the daemonized child reads its auth
+// token from when the token was supplied via -token-fd. The parent reads the
+// caller's fd (only valid pre-daemonize) and forwards the token to the child
+// over an inherited pipe; this env carries only the fd number, never the token.
+const tokenPipeEnv = "CLAUSTRUM_TOKEN_PIPE"
 
 // server is the running -serve daemon: the AF_UNIX listener, the auth token, the
 // connected clients, and the process manager.
@@ -74,28 +82,56 @@ func (c *conn) writeResponse(v interface{}) {
 
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with CLAUDE_SSH_DAEMON_CHILD so we re-exec exactly once.
-func runServe(socket, tokenFile, metricsAddr string) {
-	// -serve requires --token-file, checked BEFORE the socket (probe-verified).
+func runServe(socket, tokenFile string, tokenFd int, metricsAddr string) {
+	// -serve requires a token source, checked BEFORE the socket (probe-verified).
 	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
-	// comes from the file (read once, then unlinked), so it never lingers in
-	// /proc/<pid>/environ. (env is only for the -bridge/-stop clients.)
-	if tokenFile == "" {
-		fmt.Fprintln(os.Stderr, "claustrum: daemonized child requires --token-file")
+	// comes from a file (read once, then unlinked) or an fd (read by the parent,
+	// forwarded over a pipe), so it never lingers in /proc/<pid>/environ. (env is
+	// only for the -bridge/-stop clients.)
+	if tokenFile == "" && tokenFd < 0 {
+		fmt.Fprintln(os.Stderr, "claustrum: daemonized child requires --token-file or --token-fd")
 		os.Exit(1)
 	}
 	if os.Getenv("CLAUDE_SSH_DAEMON_CHILD") != "1" {
-		daemonize()
+		// Parent. An fd is only valid in this process and would not survive the
+		// re-exec, so read it now and forward the token to the child over an
+		// inherited pipe — never via disk, argv, or environ. The -token-file path
+		// is unchanged: the file persists across the re-exec for the child to read.
+		if tokenFd >= 0 {
+			token, err := readTokenFD(tokenFd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "claustrum: read --token-fd: %v\n", err)
+				os.Exit(1)
+			}
+			daemonizeWithToken(token)
+			return
+		}
+		daemonizeWithToken("")
 		return
 	}
 
-	// We are the detached child. Read the token from --token-file and unlink it.
-	b, err := os.ReadFile(tokenFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "claustrum: read --token-file: %v\n", err)
-		os.Exit(1)
+	// We are the detached child. The token arrives either over the forwarded pipe
+	// (-token-fd path) or from --token-file (read once, then unlinked).
+	var token string
+	if fdStr := os.Getenv(tokenPipeEnv); fdStr != "" {
+		fd, err := strconv.Atoi(fdStr)
+		if err == nil {
+			token, err = readTokenFD(fd)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "claustrum: read token pipe: %v\n", err)
+			os.Exit(1)
+		}
+		_ = os.Unsetenv(tokenPipeEnv)
+	} else {
+		b, err := os.ReadFile(tokenFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "claustrum: read --token-file: %v\n", err)
+			os.Exit(1)
+		}
+		token = normalizeToken(b)
+		_ = os.Remove(tokenFile)
 	}
-	token := normalizeToken(b)
-	_ = os.Remove(tokenFile)
 	_ = os.Unsetenv("CLAUDE_RPC_TOKEN") // prevent token propagation through daemonize → os.Environ()
 
 	// Extract a real interactive PATH from the login shell so spawned children
@@ -147,7 +183,27 @@ func normalizeToken(b []byte) string {
 	return strings.TrimRight(string(b), "\r\n")
 }
 
-func daemonize() {
+// readTokenFD reads (and normalizes) an auth token from an already-open file
+// descriptor. It reads to EOF, so the writer closes its end after writing.
+func readTokenFD(fd int) (string, error) {
+	f := os.NewFile(uintptr(fd), "token-fd")
+	if f == nil {
+		return "", fmt.Errorf("invalid file descriptor %d", fd)
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+	return normalizeToken(b), nil
+}
+
+// daemonizeWithToken re-execs the binary detached from the terminal. If
+// forwardToken is non-empty (the -token-fd path) it is handed to the child over
+// an inherited pipe (child fd 3, named by tokenPipeEnv) so the token never lands
+// on disk, in argv, or in the environment; an empty forwardToken means the child
+// reads its own -token-file as before.
+func daemonizeWithToken(forwardToken string) {
 	self, err := os.Executable()
 	if err != nil {
 		self = os.Args[0]
@@ -160,9 +216,28 @@ func daemonize() {
 	cmd.Stdin = nil
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	var pipeW *os.File
+	if forwardToken != "" {
+		pr, pw, err := os.Pipe()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "daemonize: token pipe: %v\n", err)
+			os.Exit(1)
+		}
+		pipeW = pw
+		// ExtraFiles[0] becomes fd 3 in the child; tell it where to read.
+		cmd.ExtraFiles = []*os.File{pr}
+		cmd.Env = append(cmd.Env, tokenPipeEnv+"=3")
+		defer pr.Close() // parent's copy of the read end; the child has its own
+	}
+
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "daemonize: %v\n", err)
 		os.Exit(1)
+	}
+	if pipeW != nil {
+		_, _ = io.WriteString(pipeW, forwardToken)
+		_ = pipeW.Close() // closing the write end gives the child's read an EOF
 	}
 	_ = cmd.Process.Release()
 	os.Exit(0)
