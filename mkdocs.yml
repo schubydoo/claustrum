@@ -58,6 +58,10 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+  # Render Material's :icon-shortcodes: (e.g. :material-sitemap:) as inline SVGs.
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
