@@ -51,8 +51,10 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **`process.go`** — `procManager` / `managedProc`: spawn in own process group,
   stream base64 stdout/stderr frames, per-process replay buffer, `reattach`.
 - **`bridge.go`** — `-bridge`: a dumb stdio↔socket relay (what SSH attaches to).
-- **`install.go`** — `-install`: CLI download / verify (SHA-256, **`-cli-url`
-  downloads only** — the `-cli-zst` SFTP blob is not verified) / extract (zstd) / prune.
+- **`install.go`** — `-install`: CLI download / verify (SHA-256 — **`-cli-url`
+  downloads unconditionally; the local `-cli-zst` SFTP blob is verified only when a
+  `-cli-checksum` is supplied**, an opt-in divergence from the reference, see D1) /
+  extract (zstd) / prune.
 - OS-specific behavior is isolated in `*_unix.go` / `*_windows.go` (daemonize,
   process groups, login-shell PATH extraction). The JSON-RPC surface is
   identical everywhere.
@@ -93,9 +95,12 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **A connection's requests dispatch concurrently** — replies can return out of
   order, matching the reference. Don't serialize them.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
-  SHA-256 before extracting **on that download path only** (the local `-cli-zst`
-  blob is trusted and not checksum-verified, matching the reference — see
-  [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D1); `-serve` makes no outbound connections.
+  SHA-256 before extracting on that download path unconditionally. The local
+  `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is
+  supplied** — an *intentional* opt-in divergence from the reference (which never
+  verifies it), documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) +
+  [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D1; an absent checksum stays
+  trusting, so honest callers are byte-identical. `-serve` makes no outbound connections.
 
 ## Where detail lives
 
