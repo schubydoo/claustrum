@@ -105,13 +105,17 @@ catch up via the replay buffer, extracting a plugin tarball — are in
 
 - **Transport:** NDJSON over `AF_UNIX` `SOCK_STREAM` (mode `0600`); one persistent connection;
   requests dispatched concurrently.
-- **Auth:** every request carries an in-band `"auth":"<token>"`; the token comes from
-  `-token-file` (read once, then unlinked) or `CLAUDE_RPC_TOKEN`.
+- **Auth:** every request carries an in-band `"auth":"<token>"`; the daemon's token comes from
+  `-token-file` (read once, then unlinked) or `-token-fd` (read from an open descriptor —
+  never touches disk); the `-bridge`/`-stop` clients use `CLAUDE_RPC_TOKEN`.
 - **18 methods** across `server.*`, `files.*`, `git.*`, `process.*` (`server.capabilities`
   self-describes them).
 - **process.\*** is the core: a client supplies its own `id` on `spawn`; the daemon streams
   id-less `{"type":"stream",…}` notifications (base64 stdout/stderr + an `exit`), buffers them,
   and replays on `reattach{fromSeq}`. This is how both the agent and MCP servers are hosted.
+- **Operational knobs** (claustrum-only, all off the wire): `CLAUSTRUM_LOG_LEVEL` quiets the
+  leveled stderr diagnostics, and `-metrics-addr` opts into a local Prometheus `/metrics`
+  endpoint (no listener exists without it).
 
 Full details: **[docs/PROTOCOL.md](docs/PROTOCOL.md)** and **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
@@ -119,8 +123,8 @@ Full details: **[docs/PROTOCOL.md](docs/PROTOCOL.md)** and **[docs/ARCHITECTURE.
 
 Cross-compiles to **linux**, **macOS (darwin)**, and **windows** on **amd64** and **arm64** (6
 targets). It's a static `CGO_ENABLED=0` Go binary. OS-specific behavior (daemonize, process
-groups, login-shell PATH extraction) is isolated in `*_unix.go` / `*_windows.go` files; the
-JSON-RPC surface is identical everywhere.
+groups on Unix / Job Objects on Windows for whole-tree kill, login-shell PATH extraction) is
+isolated in `*_unix.go` / `*_windows.go` files; the JSON-RPC surface is identical everywhere.
 
 ## Validation
 
