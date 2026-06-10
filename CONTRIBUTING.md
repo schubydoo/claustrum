@@ -53,6 +53,16 @@ installed — before each commit. It needs no external tooling (no Python
   .venv/bin/mkdocs serve            # live preview at http://127.0.0.1:8000
   .venv/bin/mkdocs build --strict   # the exact check CI runs
   ```
+
+  `docs/requirements.txt` is a **hash-pinned lock** compiled from
+  `docs/requirements.in` — don't hand-edit it. To change the docs toolchain, edit
+  the `.in` and regenerate (Renovate does this automatically for version bumps):
+
+  ```sh
+  pip install pip-tools
+  pip-compile --generate-hashes --strip-extras \
+    --output-file=docs/requirements.txt docs/requirements.in
+  ```
 - **Conventional Commits** — PR **titles** follow
   [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, …). PRs are squash-merged, so the

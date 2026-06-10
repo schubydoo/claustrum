@@ -1,0 +1,9 @@
+# Top-level docs toolchain dependency. The pinned, hash-locked install list is
+# compiled from this into docs/requirements.txt:
+#
+#   pip-compile --generate-hashes --strip-extras \
+#     --output-file=docs/requirements.txt docs/requirements.in
+#
+# Renovate bumps the version here and regenerates the lock. mkdocs-material
+# pulls in mkdocs and the pymdownx extensions transitively.
+mkdocs-material==9.5.49
