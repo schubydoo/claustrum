@@ -73,9 +73,18 @@ func ensureCLI(o installOpts, cliPath string) error {
 	switch {
 	case o.cliZst != "":
 		// SFTP fallback: the blob arrives over an already-authenticated channel,
-		// so the reference does NOT verify -cli-checksum on this path.
+		// so the reference NEVER verifies -cli-checksum here. Claustrum diverges as
+		// an opt-in hardening (IMPROVEMENTS D1): when a -cli-checksum IS supplied we
+		// verify it and reject a corrupt/tampered blob with the same "checksum
+		// mismatch" error as the -cli-url path. An ABSENT/empty checksum stays
+		// trusting — matching the reference — so honest callers are unaffected.
 		if zst, err = os.ReadFile(o.cliZst); err != nil {
 			return fmt.Errorf("opening input: %v", err)
+		}
+		if o.cliChecksum != "" {
+			if err := verifyChecksum(zst, o.cliChecksum); err != nil {
+				return err
+			}
 		}
 	case o.cliURL != "":
 		if zst, err = httpGet(o.cliURL); err != nil {
@@ -83,9 +92,8 @@ func ensureCLI(o installOpts, cliPath string) error {
 		}
 		// Downloads are verified UNCONDITIONALLY — an empty -cli-checksum still
 		// fails ("expected= , actual=<sha>") — matching the reference.
-		sum := sha256.Sum256(zst)
-		if got := hex.EncodeToString(sum[:]); !strings.EqualFold(got, o.cliChecksum) {
-			return fmt.Errorf("checksum mismatch: expected=%s, actual=%s", o.cliChecksum, got)
+		if err := verifyChecksum(zst, o.cliChecksum); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("cli %s missing and no --cli-url or --cli-zst provided", o.cliVersion)
@@ -107,6 +115,18 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// SFTP fallback: the uploaded .zst blob is consumed on success.
 	if o.cliZst != "" {
 		_ = os.Remove(o.cliZst)
+	}
+	return nil
+}
+
+// verifyChecksum returns a "checksum mismatch" error (byte-identical to the
+// reference's -cli-url path) when sha256(zst) does not equal expected. The
+// -cli-url path calls it unconditionally; the -cli-zst path only when a checksum
+// is supplied (IMPROVEMENTS D1, an opt-in divergence from the reference).
+func verifyChecksum(zst []byte, expected string) error {
+	sum := sha256.Sum256(zst)
+	if got := hex.EncodeToString(sum[:]); !strings.EqualFold(got, expected) {
+		return fmt.Errorf("checksum mismatch: expected=%s, actual=%s", expected, got)
 	}
 	return nil
 }

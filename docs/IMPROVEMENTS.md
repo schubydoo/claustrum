@@ -50,7 +50,7 @@ consider them now that the harness proves parity, and document each as an
 
 | # | Improvement | Impact | Cost | Why / divergence |
 |---|---|---|---|---|
-| D1 | **Re-harden `-cli-zst` checksum** | M | L | The reference verifies `-cli-checksum` only on the `-cli-url` download path, **not** on the local `-cli-zst` (SFTP) blob — so PR #29 dropped our verification there to stay 1:1 (maintainer-approved baseline). A future hardening could re-add SHA-256 verification on the `-cli-zst` path when a checksum is supplied (or reject `-cli-checksum`+`-cli-zst` together rather than silently ignoring it). **Divergence:** changes the `cliError` for a mismatched local blob from `decompressing: …` back to `checksum mismatch: …`. Maintainer flagged this to revisit. |
+| D1 | ~~**Re-harden `-cli-zst` checksum**~~ ✅ **done (Option A)** | M | L | The reference verifies `-cli-checksum` only on the `-cli-url` download path, **not** on the local `-cli-zst` (SFTP) blob; PR #29 dropped our verification there to stay 1:1. **Shipped** as an opt-in divergence: `-cli-zst` is now SHA-256-verified **when (and only when) a `-cli-checksum` is supplied** — a mismatch is rejected with the same `checksum mismatch: …` error (source blob left intact); an absent/empty checksum stays trusting, so a caller that passes no checksum is byte-identical to the reference. **Divergence** (documented in [PROTOCOL.md](PROTOCOL.md) + PR): for a *supplied* wrong checksum, a valid blob the reference would install now returns `checksum mismatch` (was success) and a corrupt blob returns `checksum mismatch` instead of `decompressing: …`. Verified by a live ref-vs-claustrum differential. |
 
 ## Explicitly out of scope (would break compatibility)
 
