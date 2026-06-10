@@ -14,7 +14,15 @@ git clone https://github.com/schubydoo/claustrum
 cd claustrum
 go build ./...            # Go 1.24+; only dep is github.com/klauspost/compress
 make build               # -> ./claustrum
+make hooks               # one-time: install the pre-commit hook (see below)
 ```
+
+`make hooks` points `core.hooksPath` at the tracked `.githooks/` dir, so a
+zero-dependency `pre-commit` hook runs the same fast checks CI gates on —
+`gofmt`, `go vet`, `go mod tidy` cleanliness, and `golangci-lint` if it's
+installed — before each commit. It needs no external tooling (no Python
+`pre-commit` framework); bypass it for an in-progress commit with
+`git commit --no-verify`.
 
 ## Before opening a PR
 
