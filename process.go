@@ -47,6 +47,7 @@ type managedProc struct {
 	running  bool
 	stdin    io.WriteCloser
 	cmd      *exec.Cmd
+	group    *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 
 	// Async stdin: process.stdin enqueues here and returns immediately, while a
 	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
@@ -147,12 +148,21 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 	logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 
+	// Confine the child (and its descendants) so kill can tear down the whole
+	// tree. On Unix this is the process group from newSysProcAttr; on Windows a
+	// Job Object. A failure here is non-fatal — kill falls back to the parent.
+	group, err := confineProcess(cmd.Process)
+	if err != nil {
+		logWarnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
+	}
+
 	p := &managedProc{
 		id:      id,
 		subs:    map[*conn]struct{}{c: {}},
 		running: true,
 		stdin:   stdin,
 		cmd:     cmd,
+		group:   group,
 	}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
@@ -184,6 +194,9 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		p.stdinDone = true
 		p.stdinCond.Broadcast()
 		p.stdinMu.Unlock()
+		// Release the OS group handle now the child is gone. On Windows this drops
+		// the Job Object's last handle, reaping any descendants it left behind.
+		p.group.close()
 		logInfof("[process.Manager] Process %s exited with code %d", id, code)
 		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 	}()
@@ -283,7 +296,7 @@ func (m *procManager) kill(id, signal string) {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
-	signalProcessGroup(p.cmd.Process, signal)
+	p.group.signal(p.cmd.Process, signal)
 }
 
 // reattach replays buffered frames with seq > fromSeq to c, (re)subscribes c for
@@ -338,7 +351,7 @@ func (m *procManager) killAll() {
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
 		if p.cmd != nil && p.cmd.Process != nil {
-			signalProcessGroup(p.cmd.Process, "KILL")
+			p.group.signal(p.cmd.Process, "KILL")
 		}
 	}
 }

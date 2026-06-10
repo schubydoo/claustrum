@@ -12,7 +12,7 @@ green (see below).
 ```sh
 git clone https://github.com/schubydoo/claustrum
 cd claustrum
-go build ./...            # Go 1.24+; only dep is github.com/klauspost/compress
+go build ./...            # Go 1.24+; deps: klauspost/compress + golang.org/x/sys (Windows-only)
 make build               # -> ./claustrum
 make hooks               # one-time: install the pre-commit hook (see below)
 ```
@@ -51,7 +51,8 @@ installed — before each commit. It needs no external tooling (no Python
 ## Scope notes
 
 - **No new dependencies** without discussion — the binary is deliberately
-  stdlib + one zstd library, `CGO_ENABLED=0`.
+  stdlib + zstd (`klauspost/compress`) + `golang.org/x/sys` (Windows-only),
+  `CGO_ENABLED=0`.
 - **No telemetry, ever.**
 - Keep host-specific or reverse-engineering working notes out of the repo (the
   `scratch/` tree is gitignored on purpose).

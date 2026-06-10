@@ -22,7 +22,9 @@ frames.** The wire surface *is* the product.
 | Tests | `go test -race ./...` — unit + socket-integration suites |
 | Validation battery | `scratch/probe/validate.sh` — diffs frames vs the reference (gitignored) |
 
-- Go 1.24+. Only dependency is `github.com/klauspost/compress` (zstd); `CGO_ENABLED=0`.
+- Go 1.24+. Dependencies: `github.com/klauspost/compress` (zstd) and
+  `golang.org/x/sys` (Windows Job Object teardown — only compiled into Windows
+  builds); `CGO_ENABLED=0`.
 - In-repo tests (`*_test.go`) cover the wire surface two ways: fast unit tests
   (frame encoding, dispatch / auth / error routing, replay buffer, env merging,
   the `-install` pipeline) **and** a socket-integration suite (`harness_test.go`
@@ -57,8 +59,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `-cli-checksum` is supplied**, an opt-in divergence from the reference, see D1) /
   extract (zstd) / prune.
 - OS-specific behavior is isolated in `*_unix.go` / `*_windows.go` (daemonize,
-  process groups, login-shell PATH extraction). The JSON-RPC surface is
-  identical everywhere.
+  process groups / Windows Job Objects for whole-tree kill, login-shell PATH
+  extraction). The JSON-RPC surface is identical everywhere.
 
 ## Conventions
 
@@ -66,7 +68,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
   `results.go` must keep the validation battery green. An *intentional*
   divergence must be documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and the PR.
-- **No new dependencies** without discussion — stdlib + one zstd lib, `CGO_ENABLED=0`.
+- **No new dependencies** without discussion — stdlib + zstd (`klauspost/compress`)
+  + `golang.org/x/sys` (Windows-only), `CGO_ENABLED=0`.
 - **No telemetry, ever.**
 - **Cross-platform parity** — keep OS specifics in `*_unix.go` / `*_windows.go`;
   `make all` must cross-compile cleanly for all six targets.
