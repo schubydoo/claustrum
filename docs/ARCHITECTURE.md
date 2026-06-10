@@ -58,7 +58,7 @@ timestamp prefix). Only the banner's product name differs (rebranded). These log
 are not part of the JSON-RPC wire contract, but they are kept byte-faithful (sans
 timestamp/PID) so anything tailing the daemon log behaves identically.
 
-A tiny leveled logger ([`logging.go`](../logging.go)) sits in front of those
+A tiny leveled logger ([`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go)) sits in front of those
 calls so operators can quiet the daemon. Each line carries a level
 (`DEBUG`/`INFO`/`WARN`/`ERROR`), emitted as a short tag *before* the
 `[Component]` prefix — `INFO  [Server] New connection from: …` — so the prefixes
