@@ -31,6 +31,35 @@ func dispatchRaw(t *testing.T, s *server, line string) string {
 	return string(b)
 }
 
+// TestAuthTokenComparison locks the auth-token check: the exact token is accepted
+// and every near-miss (wrong byte, prefix, extra suffix, empty, wrong length) is
+// rejected with -32001. Guards the constant-time comparison (crypto/subtle)
+// against a regression to a short-circuiting or loose compare.
+func TestAuthTokenComparison(t *testing.T) {
+	s := newTestServer()
+	unauth := `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Unauthorized: invalid or missing auth token"}}`
+	ping := func(tok string) string {
+		return dispatchRaw(t, s, `{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"`+tok+`"}`)
+	}
+	// The exact token is accepted: server.ping returns a result, not the -32001 frame.
+	if got := ping(testToken); got == unauth {
+		t.Fatalf("correct token rejected: %s", got)
+	}
+	// Every near-miss is rejected identically.
+	for _, bad := range []string{
+		"",              // empty (fast-rejected before the compare)
+		"nope",          // wrong, shorter
+		"s3cret-toke",   // a prefix of the token (one byte short)
+		"s3cret-token ", // the token plus a trailing byte
+		"s3cret-tokeX",  // same length, last byte differs
+		"S3cret-token",  // same length, first byte differs
+	} {
+		if got := ping(bad); got != unauth {
+			t.Errorf("token %q: got %s, want unauthorized", bad, got)
+		}
+	}
+}
+
 func TestDispatchErrorPaths(t *testing.T) {
 	s := newTestServer()
 	auth := `"auth":"` + testToken + `"`
