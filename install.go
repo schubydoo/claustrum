@@ -101,16 +101,28 @@ func ensureCLI(o installOpts, cliPath string) error {
 	if err := os.MkdirAll(filepath.Dir(cliPath), 0o755); err != nil {
 		return err
 	}
-	if err := zstdDecompress(zst, cliPath); err != nil {
+	// Decompress, chmod, and verify at a temp path, then atomically rename into
+	// place — so an interrupted install never leaves a half-written or non-runnable
+	// cliPath (IMPROVEMENTS #4). The end state is identical to the reference's
+	// in-place extract: cliPath appears only as a complete, 0755, verified binary,
+	// with the same facts and the same "not runnable" error.
+	tmp := cliPath + ".tmp"
+	if err := zstdDecompress(zst, tmp); err != nil {
+		_ = os.Remove(tmp)
 		return fmt.Errorf("decompressing: %v", err)
 	}
-	if err := os.Chmod(cliPath, 0o755); err != nil {
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
-	// Verify the extracted CLI actually runs; if not, remove it and report.
-	if !isRunnable(cliPath) {
-		_ = os.Remove(cliPath)
+	// Verify the extracted CLI actually runs; if not, discard the temp and report.
+	if !isRunnable(tmp) {
+		_ = os.Remove(tmp)
 		return fmt.Errorf("installed cli at %s is not runnable", cliPath)
+	}
+	if err := os.Rename(tmp, cliPath); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
 	// SFTP fallback: the uploaded .zst blob is consumed on success.
 	if o.cliZst != "" {
