@@ -5,10 +5,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"log"
 	"net"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -381,9 +383,8 @@ func TestPumpStreamSkipsEmptyReads(t *testing.T) {
 	}
 }
 
-// writeStdin reports success (err == nil) when the child's stdin pipe accepts the
-// bytes, and failure for an unknown process. Pins the `return err == nil`: a
-// negated return would report false on a healthy write.
+// writeStdin reports success (true) when the process exists and has a stdin pipe
+// (the bytes are enqueued for async delivery), and failure for an unknown process.
 func TestWriteStdinReturnValue(t *testing.T) {
 	m := newProcManager()
 	t.Cleanup(m.killAll)
@@ -397,6 +398,68 @@ func TestWriteStdinReturnValue(t *testing.T) {
 	if m.writeStdin("nope", []byte("x")) {
 		t.Error("writeStdin to an unknown process returned true; want false")
 	}
+}
+
+// process.stdin is asynchronous: a write to a slow/non-reading child must not
+// block the caller (the reference returns success before the child reads). Here
+// the child's stdin (an io.Pipe never read) blocks the stdinWriter on its first
+// write; enqueuing many more must still return promptly.
+func TestStdinIsAsync(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pr.Close() // unblocks the writer's pipe Write so its goroutine exits
+	p := &managedProc{id: "async", subs: map[*conn]struct{}{}, stdin: pw}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	go p.stdinWriter()
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 16; i++ {
+			p.enqueueStdin([]byte("chunk"))
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("enqueueStdin blocked while the child wasn't reading — stdin is not async")
+	}
+}
+
+// With a tiny queue cap, a producer that outruns the (blocked) writer must hit
+// backpressure — and draining the child's stdin must relieve it. Pins the bounded
+// queue so a non-reading child can't grow daemon memory without bound.
+func TestStdinBackpressure(t *testing.T) {
+	old := stdinQueueCap
+	stdinQueueCap = 8
+	defer func() { stdinQueueCap = old }()
+
+	pr, pw := io.Pipe()
+	p := &managedProc{id: "bp", subs: map[*conn]struct{}{}, stdin: pw}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	go p.stdinWriter()
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ { // 200 bytes total >> 8-byte cap → must block
+			p.enqueueStdin([]byte("ab"))
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("100 writes never blocked despite an 8-byte cap — backpressure not applied")
+	case <-time.After(300 * time.Millisecond):
+		// expected: the producer is parked on backpressure
+	}
+
+	go func() { _, _ = io.Copy(io.Discard, pr) }() // drain the child stdin
+	select {
+	case <-done:
+		// expected: draining relieved the backpressure and the producer finished
+	case <-time.After(2 * time.Second):
+		t.Fatal("draining the child stdin did not relieve backpressure")
+	}
+	pr.Close()
 }
 
 // reattach to a process whose buffer is empty must report firstSeq/lastSeq 0
