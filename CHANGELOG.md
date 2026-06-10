@@ -4,6 +4,48 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0](https://github.com/schubydoo/claustrum/compare/v1.0.1...v1.1.0) (2026-06-10)
+
+
+### Features
+
+* -token-fd to pass the auth token via a descriptor (IMPROVEMENTS [#18](https://github.com/schubydoo/claustrum/issues/18)) ([#80](https://github.com/schubydoo/claustrum/issues/80)) ([37c81ce](https://github.com/schubydoo/claustrum/commit/37c81ce0ab2190ccfde41eb9ecdbf5420873c2b3))
+* async process.stdin with bounded backpressure (IMPROVEMENTS [#9](https://github.com/schubydoo/claustrum/issues/9)) ([#69](https://github.com/schubydoo/claustrum/issues/69)) ([d5434d0](https://github.com/schubydoo/claustrum/commit/d5434d04313c4bb9fb140128ab5665d17ce8afc5))
+* kill orphaned process on duplicate-id spawn (IMPROVEMENTS [#17](https://github.com/schubydoo/claustrum/issues/17)) ([#79](https://github.com/schubydoo/claustrum/issues/79)) ([b4493b0](https://github.com/schubydoo/claustrum/commit/b4493b06d96a35973bdcacc79972f07a8a5a8d6b))
+* opt-in Prometheus metrics endpoint (IMPROVEMENTS [#16](https://github.com/schubydoo/claustrum/issues/16)) ([#78](https://github.com/schubydoo/claustrum/issues/78)) ([3101063](https://github.com/schubydoo/claustrum/commit/31010634e3f54b37ba5aa3cdbe03aac3bf53e37b))
+* tiny leveled logger preserving log prefixes (IMPROVEMENTS [#13](https://github.com/schubydoo/claustrum/issues/13)) ([#72](https://github.com/schubydoo/claustrum/issues/72)) ([3955980](https://github.com/schubydoo/claustrum/commit/395598025efc253dc3c7ef5e30ea958392405f64))
+* verify -cli-checksum on the -cli-zst path when supplied (D1) ([#65](https://github.com/schubydoo/claustrum/issues/65)) ([72de5a7](https://github.com/schubydoo/claustrum/commit/72de5a7fdbb67a3e18c9347320931f6571742e39))
+* Windows process-tree kill via Job Objects (IMPROVEMENTS [#14](https://github.com/schubydoo/claustrum/issues/14)) ([#73](https://github.com/schubydoo/claustrum/issues/73)) ([7a2ef9b](https://github.com/schubydoo/claustrum/commit/7a2ef9bf3a0aa16c499fd289c77c2f1b56d0a5d2))
+
+
+### Bug Fixes
+
+* add git.info root field to match reference daemon 7cbfa471 ([#60](https://github.com/schubydoo/claustrum/issues/60)) ([dcca081](https://github.com/schubydoo/claustrum/commit/dcca081c688ffc8f20a706e9ec016513930a82ee))
+* add HTTP client timeout and response size cap to httpGet ([#59](https://github.com/schubydoo/claustrum/issues/59)) ([e0af84e](https://github.com/schubydoo/claustrum/commit/e0af84edef5e03ca84ef4c48d99403ec03c592b8))
+* bound -install ldd libc probe with a timeout ([#63](https://github.com/schubydoo/claustrum/issues/63)) ([8083a4a](https://github.com/schubydoo/claustrum/commit/8083a4a8d6fd69265bef462b7a29cd8625faa335))
+* bound git invocations with a timeout (IMPROVEMENTS [#5](https://github.com/schubydoo/claustrum/issues/5)) ([#66](https://github.com/schubydoo/claustrum/issues/66)) ([e7a0746](https://github.com/schubydoo/claustrum/commit/e7a0746ca7911546be493e931193ebd517c18d98))
+* bump x/sys to v0.44.0 + Go 1.25 to clear GO-2026-5024 ([#12](https://github.com/schubydoo/claustrum/issues/12)) ([#86](https://github.com/schubydoo/claustrum/issues/86)) ([4e44305](https://github.com/schubydoo/claustrum/commit/4e44305a52709fb6b0e50aa18979f70defca238a))
+* cap per-process replay buffer to prevent unbounded memory growth ([#58](https://github.com/schubydoo/claustrum/issues/58)) ([3ce3035](https://github.com/schubydoo/claustrum/commit/3ce3035236714339555ef529a1296b3ef05f6c93))
+* cap zstdDecompress output size to prevent disk exhaustion ([#57](https://github.com/schubydoo/claustrum/issues/57)) ([a22b609](https://github.com/schubydoo/claustrum/commit/a22b609c51a6f9a4c1fa5181f0002f85f96adc20))
+* guard files.read against non-regular files; cap extractTarGz size ([#56](https://github.com/schubydoo/claustrum/issues/56)) ([1fcb4e8](https://github.com/schubydoo/claustrum/commit/1fcb4e89c65ba50c6dcda579791f921aa14263b3))
+* make -install extract atomic via temp + rename (IMPROVEMENTS [#4](https://github.com/schubydoo/claustrum/issues/4)) ([#68](https://github.com/schubydoo/claustrum/issues/68)) ([6c51cde](https://github.com/schubydoo/claustrum/commit/6c51cde30b041d82fe53afba360ff7fb6e29c13c))
+* render Material icon shortcodes on the docs site ([#75](https://github.com/schubydoo/claustrum/issues/75)) ([fd1685a](https://github.com/schubydoo/claustrum/commit/fd1685aa74676d8d3bdad35ec0a84ae78687032c))
+* run extractLoginPATH in goroutine; add process-group kill on timeout ([#53](https://github.com/schubydoo/claustrum/issues/53)) ([899c1a6](https://github.com/schubydoo/claustrum/commit/899c1a6ceb39a0d1bb68c1cea696fdf663ca96f2))
+* skip group-kill on exited children; kill 5 lived mutants; refresh docs ([#90](https://github.com/schubydoo/claustrum/issues/90)) ([f23de46](https://github.com/schubydoo/claustrum/commit/f23de462109b5a24ab549120d8c72b3df962f3d0))
+* strip CLAUDE_RPC_TOKEN from spawned child env to match reference binary ([#55](https://github.com/schubydoo/claustrum/issues/55)) ([d5f0149](https://github.com/schubydoo/claustrum/commit/d5f0149a5403d06547f161ff33f680899b70f022))
+* use constant-time comparison for the RPC auth token ([#64](https://github.com/schubydoo/claustrum/issues/64)) ([a7bce19](https://github.com/schubydoo/claustrum/commit/a7bce1923de1004aada53cab66507705b56596b5))
+
+
+### Performance
+
+* marshal stream frames once per emit, not once per subscriber ([#83](https://github.com/schubydoo/claustrum/issues/83)) ([de2ed22](https://github.com/schubydoo/claustrum/commit/de2ed2285b0c33f46aa09bf29bfbfd74e43059d1))
+
+
+### Build System & Dependencies
+
+* add pre-commit git hook mirroring CI lint (IMPROVEMENTS [#6](https://github.com/schubydoo/claustrum/issues/6)) ([#71](https://github.com/schubydoo/claustrum/issues/71)) ([f6223cc](https://github.com/schubydoo/claustrum/commit/f6223cc815cac3484a8a4f615a57d983059480e0))
+* pin the Go toolchain (IMPROVEMENTS [#12](https://github.com/schubydoo/claustrum/issues/12)) ([#67](https://github.com/schubydoo/claustrum/issues/67)) ([fbf4d75](https://github.com/schubydoo/claustrum/commit/fbf4d75f028a122f720c06d6fa6f772af9e943e6))
+
 ## [1.0.1](https://github.com/schubydoo/claustrum/compare/v1.0.0...v1.0.1) (2026-06-08)
 
 
@@ -33,4 +75,3 @@ All notable changes to claustrum are documented here. The format is based on
 * reject mistyped params and check auth before version ([#22](https://github.com/schubydoo/claustrum/issues/22)) ([f5dbd85](https://github.com/schubydoo/claustrum/commit/f5dbd85e30782d259ce7b2028e31a968a83abcf2))
 * reject zip-slip paths in files.extract_tar (CodeQL go/zipslip) ([#14](https://github.com/schubydoo/claustrum/issues/14)) ([19adf3b](https://github.com/schubydoo/claustrum/commit/19adf3b0f3d5698eb8dc2ca015b872c5ab432ffb))
 * strip trailing newline from -serve token file to match reference ([#37](https://github.com/schubydoo/claustrum/issues/37)) ([d906812](https://github.com/schubydoo/claustrum/commit/d906812f42859aaf51d0721722e948bbd6eabad6))
-
