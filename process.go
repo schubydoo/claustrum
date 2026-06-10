@@ -147,6 +147,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		return err
 	}
 	logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
+	met.spawns.Add(1)
 
 	// Confine the child (and its descendants) so kill can tear down the whole
 	// tree. On Unix this is the process group from newSysProcAttr; on Windows a
@@ -198,6 +199,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		// the Job Object's last handle, reaping any descendants it left behind.
 		p.group.close()
 		logInfof("[process.Manager] Process %s exited with code %d", id, code)
+		met.processExits.Add(1)
 		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 	}()
 	return nil
@@ -209,6 +211,7 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
+			met.streamBytes.Add(int64(n))
 			p.emit(streamFrame{
 				Stream: name,
 				Data:   base64.StdEncoding.EncodeToString(buf[:n]),
@@ -230,6 +233,7 @@ func (m *procManager) writeStdin(id string, data []byte) bool {
 	if p == nil || p.stdin == nil {
 		return false
 	}
+	met.stdinBytes.Add(int64(len(data)))
 	p.enqueueStdin(data)
 	return true
 }
@@ -306,6 +310,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq int) (found, running 
 	if p == nil {
 		return false, false, 0, 0
 	}
+	met.reattaches.Add(1)
 	p.mu.Lock()
 	p.subs[c] = struct{}{}
 	running = p.running

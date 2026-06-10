@@ -65,6 +65,8 @@ func main() {
 		socket    = flag.String("socket", "", "Path to the daemon's Unix socket")
 		tokenFile = flag.String("token-file", "", "Read auth token from this file at startup, then unlink it. Used by the daemonized child so the token never appears in /proc/<pid>/environ.")
 
+		metricsAddr = flag.String("metrics-addr", "", "If set (e.g. 127.0.0.1:9090), serve Prometheus counters at /metrics on this address. Off by default; -serve only. Counts only, no auth — bind to a trusted interface.")
+
 		cliDir      = flag.String("cli-dir", "", "Directory for per-version CLI binaries")
 		cliVersion  = flag.String("cli-version", "", "Required CLI version (filename under --cli-dir)")
 		cliURL      = flag.String("cli-url", "", "Download URL for the CLI .zst")
@@ -113,7 +115,7 @@ func main() {
 		}
 		return
 	case *serve:
-		runServe(resolveSocket(), *tokenFile)
+		runServe(resolveSocket(), *tokenFile, *metricsAddr)
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")
