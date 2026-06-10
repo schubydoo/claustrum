@@ -176,10 +176,26 @@ func TestSocketProcessStdinEcho(t *testing.T) {
 		return false
 	})
 
-	cl.send(authed(`{"jsonrpc":"2.0","id":3,"method":"process.kill","params":{"id":"CAT","signal":"KILL"}}`))
+	// A second chunk after a successful first write: the stdin writer must
+	// keep running across successful writes (a negated error guard in
+	// stdinWriter would stop after one chunk and silently drop the rest).
+	payload2 := base64.StdEncoding.EncodeToString([]byte("world\n"))
+	cl.send(authed(`{"jsonrpc":"2.0","id":3,"method":"process.stdin","params":{"id":"CAT","data":"` + payload2 + `"}}`))
+	cl.wait(func() bool {
+		var got []byte
+		for _, f := range cl.fr {
+			if f.ProcessID == "CAT" && f.Stream == "stdout" {
+				b, _ := base64.StdEncoding.DecodeString(f.Data)
+				got = append(got, b...)
+			}
+		}
+		return string(got) == "hello\nworld\n"
+	})
+
+	cl.send(authed(`{"jsonrpc":"2.0","id":4,"method":"process.kill","params":{"id":"CAT","signal":"KILL"}}`))
 	frames := cl.waitExit("CAT")
-	if out := streamBytes(t, frames, "stdout"); out != "hello\n" {
-		t.Errorf("echoed stdout = %q, want %q", out, "hello\n")
+	if out := streamBytes(t, frames, "stdout"); out != "hello\nworld\n" {
+		t.Errorf("echoed stdout = %q, want %q", out, "hello\nworld\n")
 	}
 }
 

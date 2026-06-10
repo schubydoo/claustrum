@@ -236,6 +236,11 @@ done:
 			t.Errorf("missing log line %q\n--- captured ---\n%s", want, got)
 		}
 	}
+	// confineProcess succeeded, so the failure warn must NOT fire (a negated
+	// err guard would log it on every spawn).
+	if strings.Contains(got, "confinement failed") {
+		t.Errorf("spurious confinement-failed warn on a successful spawn\n--- captured ---\n%s", got)
+	}
 }
 
 // writeResponse logs the reference's writeResponse/Failed-to-write lines when the
@@ -442,6 +447,7 @@ func TestStdinBackpressure(t *testing.T) {
 	defer func() { stdinQueueCap = old }()
 
 	pr, pw := io.Pipe()
+	defer pr.Close()
 	p := &managedProc{id: "bp", subs: map[*conn]struct{}{}, stdin: pw}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
@@ -460,6 +466,16 @@ func TestStdinBackpressure(t *testing.T) {
 		// expected: the producer is parked on backpressure
 	}
 
+	// While parked, the queue must not have grown past the cap: the gate is
+	// qBytes+len(data) > cap (an arithmetic mutant qBytes-len admits over-cap
+	// growth before parking).
+	p.stdinMu.Lock()
+	qb := p.stdinQBytes
+	p.stdinMu.Unlock()
+	if qb > stdinQueueCap {
+		t.Fatalf("queued bytes = %d while parked, want <= cap %d", qb, stdinQueueCap)
+	}
+
 	go func() { _, _ = io.Copy(io.Discard, pr) }() // drain the child stdin
 	select {
 	case <-done:
@@ -467,7 +483,76 @@ func TestStdinBackpressure(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("draining the child stdin did not relieve backpressure")
 	}
-	pr.Close()
+}
+
+// A single write larger than the whole queue cap must be accepted immediately
+// when the queue is empty: the `stdinQBytes > 0` conjunct exempts it from
+// backpressure, so it can never deadlock waiting for a drain that cannot
+// start. A boundary mutant (`>= 0`) would park this enqueue forever.
+func TestStdinSoleOverCapWriteAccepted(t *testing.T) {
+	old := stdinQueueCap
+	stdinQueueCap = 8
+	defer func() { stdinQueueCap = old }()
+
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	p := &managedProc{id: "oc", subs: map[*conn]struct{}{}, stdin: pw}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	go p.stdinWriter()
+
+	done := make(chan struct{})
+	go func() { p.enqueueStdin([]byte(strings.Repeat("x", 25))); close(done) }() // 25 > cap 8
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a sole over-cap write on an empty queue blocked — the qBytes>0 exemption regressed")
+	}
+}
+
+// An enqueue that fills the queue to exactly the cap must be accepted without
+// blocking: the gate is strict (`qBytes+len(data) > cap`). The boundary mutant
+// (`>=`) would park the producer at the exact-fit point.
+func TestStdinExactCapFitAccepted(t *testing.T) {
+	old := stdinQueueCap
+	stdinQueueCap = 8
+	defer func() { stdinQueueCap = old }()
+
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	p := &managedProc{id: "xf", subs: map[*conn]struct{}{}, stdin: pw}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	go p.stdinWriter()
+
+	// First chunk: the writer dequeues it and parks inside pw.Write (pr is
+	// never read), leaving the queue empty but the writer busy.
+	p.enqueueStdin([]byte("aaaa"))
+	waitStdinQueueEmpty(t, p)
+
+	p.enqueueStdin([]byte("bb")) // queued: 2 bytes (writer is parked mid-Write)
+	done := make(chan struct{})
+	go func() { p.enqueueStdin([]byte("cccccc")); close(done) }() // 2+6 == cap exactly
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("an exact-fit enqueue (qBytes+len == cap) blocked — the strict > gate regressed to >=")
+	}
+}
+
+// waitStdinQueueEmpty polls until the writer has dequeued everything (it then
+// sits parked inside the pipe Write, outside the lock).
+func waitStdinQueueEmpty(t *testing.T, p *managedProc) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		p.stdinMu.Lock()
+		empty := p.stdinQBytes == 0
+		p.stdinMu.Unlock()
+		if empty {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatal("stdin queue never drained to the parked writer")
 }
 
 // reattach to a process whose buffer is empty must report firstSeq/lastSeq 0

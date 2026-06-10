@@ -249,6 +249,31 @@ a 72rem content column (#77). Site-only; no wire/behavior change.
   literals (constants never appear in a coverage profile — an artifact, not a
   gap), and the Windows-only code above (now executed by the Windows CI leg).
 
+### 21 · Exited-child group-kill guard + LIVED-mutant triage ✅ — impact S / cost S
+
+- `kill` / `killAll` / the duplicate-id replace now **skip children that have
+  already exited**: once `cmd.Wait` reaps a child its Unix pgid can be
+  recycled, so the previous unconditional negative-pid SIGKILL could hit an
+  unrelated process group (Windows was already immune — the job handle pins
+  identity). OS-level hardening, documented as a divergence in
+  [`PROTOCOL.md`](PROTOCOL.md) `process.kill`; no wire frame depends on the
+  signal side effect. Found by an independent review pass pre-v1.1.0.
+- The 12 LIVED mutants from the post-#20 run (94.06% efficacy, 190 K / 12 L,
+  mutator coverage 75.94%) triaged. **Seven are equivalent or impractical** —
+  the historical set with shifted line numbers — don't chase them:
+  `bridge.go:41` (zero-byte stdout write is a no-op), `install.go:183` (5-min
+  http timeout magnitude needs a multi-minute hang), `install.go:221` (sort
+  comparator under mtime ties; `sort.Slice` is unstable), `server.go:298`
+  (bufio initial-size hint, not the byte-pinned 1 MiB cap),
+  `methods_files.go:211` ×2 (per-file LimitReader terms; a truncated file
+  always trips the cumulative cap), `metrics.go:61` (ReadHeaderTimeout
+  magnitude). **Five were real assertion gaps, now killed**: `process.go:170`
+  (a spurious confinement-failed warn is asserted absent), `process.go:279` ×3
+  (the backpressure gate's three conjuncts: sole-over-cap write accepted on an
+  empty queue, exact-cap fit accepted, queue never exceeds the cap while
+  parked), `process.go:318` (a second stdin chunk after a successful write
+  must still be delivered — the writer survives success).
+
 ## Deliberate divergences (post-parity, opt-in)
 
 Unlike everything above, these **knowingly change a frame/behavior** from the

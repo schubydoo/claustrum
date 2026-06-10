@@ -242,6 +242,10 @@ stream notifications, **buffered** for later replay.
 
 - Best-effort; tears down the whole child tree — signals the process group on
   Unix, terminates the Job Object on Windows.
+- **Divergence:** claustrum skips the signal when the child has already
+  exited — after the child is reaped its Unix pgid can be recycled, so the
+  reference's unconditional negative-pid signal could hit an unrelated process
+  group. OS-level only — the reply is identical either way.
 
 #### process.reattach
 
