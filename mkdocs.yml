@@ -1,0 +1,79 @@
+site_name: claustrum
+site_description: >-
+  A tiny, dependency-light Go daemon that hosts a remote Claude Code session
+  over SSH — CLI-version manager, process supervisor, and JSON-RPC multiplexer
+  over an AF_UNIX socket.
+site_url: https://schubydoo.github.io/claustrum/
+site_author: Schuby
+
+repo_url: https://github.com/schubydoo/claustrum
+repo_name: schubydoo/claustrum
+edit_uri: edit/main/docs/
+
+# docs/ is the source tree; the built site lands in ./site (gitignored).
+docs_dir: docs
+
+# The build toolchain lives in docs/requirements.txt for locality; keep it out
+# of the published site.
+exclude_docs: |
+  requirements.txt
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.sections
+    - toc.follow
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Architecture: ARCHITECTURE.md
+  - Protocol reference: PROTOCOL.md
+  - Examples: EXAMPLES.md
+  - Upstream tracking: UPSTREAM-TRACKING.md
+  - Improvement backlog: IMPROVEMENTS.md
+  - Project:
+      - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
+      - Security policy: https://github.com/schubydoo/claustrum/blob/main/SECURITY.md
+      - Changelog: https://github.com/schubydoo/claustrum/blob/main/CHANGELOG.md
+      - Source (GitHub): https://github.com/schubydoo/claustrum

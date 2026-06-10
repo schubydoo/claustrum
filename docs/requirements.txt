@@ -1,0 +1,4 @@
+# Toolchain for building the documentation site (used by .github/workflows/docs.yml).
+# Pinned for reproducible builds; Renovate bumps these over time.
+# mkdocs-material pulls in a compatible mkdocs and the pymdownx extensions.
+mkdocs-material==9.5.49

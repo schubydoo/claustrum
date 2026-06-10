@@ -2,6 +2,9 @@ scratch/
 /dist/
 /claustrum
 
+# mkdocs build output
+/site/
+
 # Host-local agent guardrails (host specifics + context-mode routing; never committed)
 CLAUDE.local.md
 
