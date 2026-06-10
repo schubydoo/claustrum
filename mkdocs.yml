@@ -68,6 +68,12 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
+  # GitHub renders ~~strikethrough~~ natively; mkdocs needs this extension, or
+  # the backlog's "done" rows show literal ~~ tildes.
+  - pymdownx.tilde
+
+extra_css:
+  - stylesheets/extra.css
 
 nav:
   - Home: index.md
