@@ -92,35 +92,157 @@ process.spawn  process.stdin  process.kill  process.reattach
 
 ### files.* (param: `path`)
 
-| method | result / notes |
-|---|---|
-| `files.stat{path}` | `{"exists","isDir","size","mode":"-rw-r--r--"}`; missing → `{exists:false,isDir:false,size:0,mode:""}` |
-| `files.list{path}` | `{"entries":[{"name","path","isDir"},…]}` (name-sorted); `isDir` is resolved by **`Stat` (symlinks are FOLLOWED)** — a symlink to a directory is `isDir:true`, a dangling symlink is `isDir:false`; missing dir → `-32603 open …: no such file or directory` |
-| `files.read{path[,maxBytes]}` | `{"content":"<raw text>","exists":true}`; missing file → `{content:"",exists:false}` (not an error); a directory → `-32602 files.read: path is a directory`; size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`. `content` is **raw text**, not base64. |
-| `files.validate{path}` | `{"valid":bool,"isDir":bool[,"error"]}`; missing path → `{valid:false,isDir:false,error:"Path does not exist"}` |
-| `files.extract_tar{archivePath,destDir}` | extracts a **gzip** tar → `{"success":true,"fileCount":<n>}`. **Side effects (not in the frame):** (1) **`destDir` is wiped** (`os.RemoveAll`) then recreated before unpacking — extraction is idempotent and destructive; (2) entries get **owner-only fixed modes** — files `0600`, dirs `0700` (an executable `0755` entry still lands `0600`); (3) on success an **empty `.synced` marker** is written at `destDir` root (not counted in `fileCount`); (4) **`archivePath` is consumed** — removed on *every* outcome once opened (success, bad gzip, or unsafe path). Errors: missing params → `-32602 archivePath and destDir are required`; non-absolute/root `destDir` → `{success:false,error:"destDir must be an absolute, non-root path: …"}` (rejected before the archive is opened, so it is **not** consumed); bad gzip → `{success:false,fileCount:0,error:"gzip: …"}`; an entry whose path escapes `destDir` ("zip slip") → `{success:false,fileCount:0,error:"unsafe path in archive: <entry>"}` (a `../` resolving back inside `destDir` is allowed); a non-regular/non-directory entry (symlink, hardlink, device, fifo) → `{success:false,fileCount:0,error:"unsupported tar entry type <c>: <entry>"}` where `<c>` is the tar typeflag char (symlink=`2`, hardlink=`1`); destDir clean/mkdir or marker-write failures → `clean destDir: …` / `mkdir destDir: …` / `write .synced: …` |
+#### files.stat
+
+`{path}` → `{"exists","isDir","size","mode":"-rw-r--r--"}`
+
+- Missing path → `{exists:false,isDir:false,size:0,mode:""}`.
+
+#### files.list
+
+`{path}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted)
+
+- `isDir` is resolved by **`Stat` — symlinks are FOLLOWED**: a symlink to a
+  directory is `isDir:true`, a dangling symlink is `isDir:false`.
+- Missing dir → `-32603 open …: no such file or directory`.
+
+#### files.read
+
+`{path[,maxBytes]}` → `{"content":"<raw text>","exists":true}`
+
+- `content` is **raw text**, not base64.
+- Missing file → `{content:"",exists:false}` (not an error).
+- A directory → `-32602 files.read: path is a directory`.
+- Size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`.
+
+#### files.validate
+
+`{path}` → `{"valid":bool,"isDir":bool[,"error"]}`
+
+- Missing path → `{valid:false,isDir:false,error:"Path does not exist"}`.
+
+#### files.extract_tar
+
+`{archivePath,destDir}` → extracts a **gzip** tar → `{"success":true,"fileCount":<n>}`
+
+Side effects — deliberate, and **not visible in the frame**:
+
+1. **`destDir` is wiped** (`os.RemoveAll`) then recreated before unpacking —
+   extraction is idempotent and destructive.
+2. Entries get **owner-only fixed modes** — files `0600`, dirs `0700` (an
+   executable `0755` entry still lands `0600`).
+3. On success an **empty `.synced` marker** is written at `destDir` root (not
+   counted in `fileCount`).
+4. **`archivePath` is consumed** — removed on *every* outcome once opened
+   (success, bad gzip, or unsafe path).
+
+Errors:
+
+- Missing params → `-32602 archivePath and destDir are required`.
+- Non-absolute/root `destDir` → `{success:false,error:"destDir must be an
+  absolute, non-root path: …"}` — rejected before the archive is opened, so the
+  archive is **not** consumed.
+- Bad gzip → `{success:false,fileCount:0,error:"gzip: …"}`.
+- An entry whose path escapes `destDir` ("zip slip") →
+  `{success:false,fileCount:0,error:"unsafe path in archive: <entry>"}`; a `../`
+  that resolves back inside `destDir` is allowed.
+- A non-regular/non-directory entry (symlink, hardlink, device, fifo) →
+  `{success:false,fileCount:0,error:"unsupported tar entry type <c>: <entry>"}`
+  — `<c>` is the tar typeflag char (symlink=`2`, hardlink=`1`).
+- destDir clean/mkdir or marker-write failures → `clean destDir: …` /
+  `mkdir destDir: …` / `write .synced: …`.
 
 ### git.* (param: `path` = repo dir; worktree ops use `baseRepo`)
 
-| method | result / notes |
-|---|---|
-| `git.info{path}` | repo → `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>"}`; else `{"isRepo":false}`. `branch` is resolved via `symbolic-ref` so it works on an **unborn HEAD** (empty repo with no commits → the init branch name, e.g. `master`); a **detached HEAD** is reported as `branch:"detached:<short-sha>"`. `root` is the absolute repo top-level (`git rev-parse --show-toplevel`), so it stays the repo root even when `path` is a subdirectory (added by reference `7cbfa471`; the `8de85faa` baseline omitted it). |
-| `git.status{path}` | clean → `{"isRepo":true,"clean":true}`; dirty → `{…,"clean":false,"changes":["M a.txt","?? new"]}` (porcelain lines); non-repo → `{"isRepo":false,"clean":false}` (full shape, unlike `git.info`'s bare `{"isRepo":false}`) |
-| `git.list_branches{path}` | `{"isRepo":true,"branches":[…sorted…]}`; non-repo → `{"isRepo":false,"branches":[]}` |
-| `git.worktree_create{baseRepo,branchName,worktreePath[,sourceBranch]}` | `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`; missing `branchName` → `-32602 branchName is required`; resolved repo isn't a git repo → `{success:false,error:"not a git repository",errorCode:"not_a_repo"}` (checked before the add, so git's raw error isn't leaked); other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`. The repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo. When `sourceBranch` is omitted it defaults to the repo's current branch (and is echoed back); on an **unborn HEAD** (empty repo) the source resolves to empty, the add infers an orphan branch and still succeeds, and `sourceBranch` is omitted from the result. |
-| `git.worktree_remove{baseRepo,worktreePath}` | `{"success":true}` (lenient) |
+#### git.info
+
+`{path}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>"}` · non-repo: `{"isRepo":false}`
+
+- `branch` is resolved via `symbolic-ref`, so it works on an **unborn HEAD**
+  (empty repo with no commits → the init branch name, e.g. `master`).
+- A **detached HEAD** is reported as `branch:"detached:<short-sha>"`.
+- `root` is the absolute repo top-level (`git rev-parse --show-toplevel`), so it
+  stays the repo root even when `path` is a subdirectory (added by reference
+  `7cbfa471`; the `8de85faa` baseline omitted it).
+
+#### git.status
+
+`{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M a.txt","?? new"]}` (porcelain lines)
+
+- Non-repo → `{"isRepo":false,"clean":false}` — the **full shape**, unlike
+  `git.info`'s bare `{"isRepo":false}`.
+
+#### git.list_branches
+
+`{path}` → `{"isRepo":true,"branches":[…sorted…]}`
+
+- Non-repo → `{"isRepo":false,"branches":[]}`.
+
+#### git.worktree_create
+
+`{baseRepo,branchName,worktreePath[,sourceBranch]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`
+
+- The repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo.
+- Missing `branchName` → `-32602 branchName is required`.
+- Resolved repo isn't a git repo →
+  `{success:false,error:"not a git repository",errorCode:"not_a_repo"}` —
+  checked before the add, so git's raw error isn't leaked.
+- Other failure →
+  `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
+- When `sourceBranch` is omitted it defaults to the repo's current branch (and
+  is echoed back). On an **unborn HEAD** (empty repo) the source resolves to
+  empty, the add infers an orphan branch and still succeeds, and `sourceBranch`
+  is omitted from the result.
+
+#### git.worktree_remove
+
+`{baseRepo,worktreePath}` → `{"success":true}` (lenient)
 
 ### process.* (the agent/MCP-hosting core)
 
 The client supplies its own `id` (any string). Output is delivered as id-less
 stream notifications, **buffered** for later replay.
 
-| method | params | result / notes |
-|---|---|---|
-| `process.spawn` | `{id,command[,args][,cwd][,env]}` | `{"success":true}`, then stream frames. `args`: string[]. `env`: `{KEY:VAL}` merged over the daemon environment. Missing `id` → `-32602 Process ID is required`; missing `command` → `-32602 Command is required`. Reusing a still-live `id` succeeds and replaces the registry entry (like the reference). **Divergence:** claustrum also tears down the now-orphaned previous process tree (it would otherwise be unreachable via `kill`/`stdin`/`reattach` and leak), with its subscribers dropped first so no stray frames arrive under the reused id. OS-level only — no wire frame changes; the reference leaves the old process running. |
-| `process.stdin` | `{id,data}` | `{"success":true}`. `data` is **base64** written to the child's stdin. Checks run in a fixed order (probe-verified): **decode → exists → running**. Invalid base64 → `-32602 Invalid base64 data` (returned *before* the process is even looked up, so an unknown id with a bad payload still reports the decode error); unknown id → `-32602 Process not found`; known but **exited** process → `-32602 Process not running`. |
-| `process.kill` | `{id[,signal]}` | `{"success":true}` (best-effort; tears down the whole child tree — signals the process group on Unix, terminates the Job Object on Windows). |
-| `process.reattach` | `{id,fromSeq}` | replays buffered frames with **seq > fromSeq** (exclusive) to this connection, (re)subscribes it for future frames, then returns `{"found","running","firstSeq","lastSeq"}`. Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0}`. |
+#### process.spawn
+
+`{id,command[,args][,cwd][,env]}` → `{"success":true}`, then stream frames
+
+- `args`: string[]. `env`: `{KEY:VAL}` merged over the daemon environment.
+- Missing `id` → `-32602 Process ID is required`; missing `command` →
+  `-32602 Command is required`.
+- Reusing a still-live `id` succeeds and replaces the registry entry (like the
+  reference). **Divergence:** claustrum also tears down the now-orphaned
+  previous process tree (it would otherwise be unreachable via
+  `kill`/`stdin`/`reattach` and leak), with its subscribers dropped first so no
+  stray frames arrive under the reused id. OS-level only — no wire frame
+  changes; the reference leaves the old process running.
+
+#### process.stdin
+
+`{id,data}` → `{"success":true}`
+
+- `data` is **base64**, written to the child's stdin.
+- Checks run in a fixed order (probe-verified): **decode → exists → running**:
+    - Invalid base64 → `-32602 Invalid base64 data` — returned *before* the
+      process is even looked up, so an unknown id with a bad payload still
+      reports the decode error.
+    - Unknown id → `-32602 Process not found`.
+    - Known but **exited** process → `-32602 Process not running`.
+
+#### process.kill
+
+`{id[,signal]}` → `{"success":true}`
+
+- Best-effort; tears down the whole child tree — signals the process group on
+  Unix, terminates the Job Object on Windows.
+
+#### process.reattach
+
+`{id,fromSeq}` → `{"found","running","firstSeq","lastSeq"}`
+
+- Replays buffered frames with **seq > fromSeq** (exclusive) to this
+  connection, (re)subscribes it for future frames, then returns the result.
+- Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0}`.
 
 ### Stream notifications
 
