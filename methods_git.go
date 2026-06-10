@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 func (s *server) handleGit(req *request) response {
@@ -46,10 +48,28 @@ func (p *gitParams) repoDir() string {
 	return "."
 }
 
-// git runs git -C <dir> <args...> and returns combined output + ok.
+// gitTimeout bounds every git invocation. The reference daemon runs git with no
+// deadline, so a wedged git — an index/config lock, a credential prompt, a stalled
+// network or filesystem, a hung checkout hook — hangs the request goroutine
+// forever. We cap it; a timed-out git is reported as failure (ok=false), the same
+// as any other non-zero git exit, so callers' result shapes are unchanged. Normal
+// git ops finish in well under this bound, so happy-path frames stay byte-identical
+// — an attack/pathological-path-only divergence from the reference. (var, not
+// const, so tests can shrink it.)
+var gitTimeout = 60 * time.Second
+
+// git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
 func git(dir string, args ...string) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	return gitContext(ctx, dir, args...)
+}
+
+// gitContext is git() with an explicit context, so the timeout/cancel path is
+// testable without waiting on a real wedged git.
+func gitContext(ctx context.Context, dir string, args ...string) (string, bool) {
 	full := append([]string{"-C", dir}, args...)
-	out, err := exec.Command("git", full...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
