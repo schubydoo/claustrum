@@ -549,3 +549,14 @@ func TestWriteJSONClosedConn(t *testing.T) {
 		t.Errorf("writeJSON on closed conn = %v, want net.ErrClosed", err)
 	}
 }
+
+// writeLine (the pre-marshaled fan-out path used by emit) honors the same
+// closed-conn short-circuit as writeJSON.
+func TestWriteLineClosedConn(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { client.Close(); server.Close() })
+	c := &conn{nc: client, closed: true}
+	if err := c.writeLine([]byte("{}\n")); err != net.ErrClosed {
+		t.Errorf("writeLine on closed conn = %v, want net.ErrClosed", err)
+	}
+}

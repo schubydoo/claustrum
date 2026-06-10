@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -111,8 +112,21 @@ func (p *managedProc) emit(f streamFrame) {
 		subs = append(subs, c)
 	}
 	p.mu.Unlock()
+	// Marshal once and fan the same bytes out to every subscriber — the frames
+	// are identical per conn, so re-marshaling per subscriber was pure waste.
+	// json.Marshal of a streamFrame cannot realistically fail (strings + ints);
+	// if it somehow does, every subscriber would have failed the same way, so
+	// mirror the old per-conn behavior: log + detach each.
+	b, merr := json.Marshal(f)
+	if merr == nil {
+		b = append(b, '\n')
+	}
 	for _, c := range subs {
-		if err := c.writeJSON(f); err != nil {
+		err := merr
+		if err == nil {
+			err = c.writeLine(b)
+		}
+		if err != nil {
 			logWarnf("[frameSink] write failed, detaching: %v", err)
 			p.mu.Lock()
 			delete(p.subs, c)
