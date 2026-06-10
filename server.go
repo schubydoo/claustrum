@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -56,7 +55,7 @@ func (c *conn) writeJSON(v interface{}) error {
 func (c *conn) writeResponse(v interface{}) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("[Server] Failed to write response: %v", err)
+		logErrorf("[Server] Failed to write response: %v", err)
 		return
 	}
 	b = append(b, '\n')
@@ -67,8 +66,8 @@ func (c *conn) writeResponse(v interface{}) {
 	}
 	n, err := c.nc.Write(b)
 	if err != nil {
-		log.Printf("[Server] writeResponse: wrote %d/%d bytes, error=%v", n, len(b), err)
-		log.Printf("[Server] Failed to write response: %v", err)
+		logDebugf("[Server] writeResponse: wrote %d/%d bytes, error=%v", n, len(b), err)
+		logErrorf("[Server] Failed to write response: %v", err)
 	}
 }
 
@@ -170,12 +169,12 @@ func (s *server) run(socket string) {
 			case <-s.shutdown:
 				return
 			default:
-				log.Printf("[Server] accept error (retrying): %v", err)
+				logWarnf("[Server] accept error (retrying): %v", err)
 				continue
 			}
 		}
 		c := &conn{nc: nc}
-		log.Printf("[Server] New connection from: %s", c.nc.RemoteAddr())
+		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
 		s.mu.Lock()
 		s.conns[c] = struct{}{}
 		s.mu.Unlock()
@@ -193,7 +192,7 @@ func (s *server) serveConn(c *conn) {
 		delete(s.conns, c)
 		s.mu.Unlock()
 		s.procs.detachConn(c)
-		log.Printf("[Server] Connection closed: %s", c.nc.RemoteAddr())
+		logInfof("[Server] Connection closed: %s", c.nc.RemoteAddr())
 	}()
 
 	sc := bufio.NewScanner(c.nc)
