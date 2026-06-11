@@ -62,6 +62,12 @@ func filesList(req *request) response {
 	}
 	out := make([]listEntry, 0, len(ents))
 	for _, e := range ents {
+		// The reference omits hidden entries (any name beginning with ".",
+		// e.g. .git/.env) from files.list — probe-confirmed against the
+		// reference daemon. Match it so a workspace listing is byte-identical.
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
 		full := filepath.Join(p.Path, e.Name())
 		// The reference resolves isDir via Stat (FOLLOWING symlinks), not the raw
 		// dirent type — so a symlink to a directory reports isDir:true, and a

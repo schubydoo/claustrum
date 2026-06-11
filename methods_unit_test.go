@@ -353,6 +353,35 @@ func TestFilesListFollowsSymlinks(t *testing.T) {
 	}
 }
 
+// files.list omits hidden entries (any name beginning with "."), matching the
+// reference daemon — probe-confirmed it filters .git/.env/etc. from a listing.
+func TestFilesListSkipsDotfiles(t *testing.T) {
+	s := newTestServer()
+	dir := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.WriteFile(filepath.Join(dir, "normal.txt"), []byte("x"), 0o644))
+	must(os.Mkdir(filepath.Join(dir, "sub"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, ".hidden"), []byte("x"), 0o644))
+	must(os.Mkdir(filepath.Join(dir, ".git"), 0o755))
+
+	got := dispatchRaw(t, s, rpcLine(t, "files.list", map[string]any{"path": dir}))
+	for _, want := range []string{`"name":"normal.txt"`, `"name":"sub"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("files.list dropped non-hidden entry %q\n  in %s", want, got)
+		}
+	}
+	for _, hidden := range []string{`"name":".hidden"`, `"name":".git"`} {
+		if strings.Contains(got, hidden) {
+			t.Errorf("files.list leaked hidden entry %q (reference filters it)\n  in %s", hidden, got)
+		}
+	}
+}
+
 // On a non-repo path, git.info returns the bare {isRepo:false}, but git.status
 // and git.list_branches return their FULL shapes (clean:false / branches:[]),
 // matching the reference. git.worktree_create reports a clean not_a_repo error
