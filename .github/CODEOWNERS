@@ -1,2 +1,11 @@
 # Default owner for everything in the repo.
 * @schubydoo
+
+# Renovate-managed paths — no code owner, so Renovate's dependency PRs don't
+# auto-request review. Hand-written changes to source still request @schubydoo.
+/go.mod
+/go.sum
+/renovate.json
+/docs/requirements.in
+/docs/requirements.txt
+/.github/workflows/
