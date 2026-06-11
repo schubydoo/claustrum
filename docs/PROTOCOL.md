@@ -73,7 +73,18 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   or a non-object value (`"params":"x"` / `[…]`) — is also
   `-32602 Invalid params`; the daemon does not silently coerce or ignore the
   decode error.
-- **Unknown extra fields** *are* ignored (by both daemons).
+- **Unknown extra fields** *are* ignored — with one divergence in *how strictly*.
+  claustrum binds `params` into one struct per namespace (`pathParams`,
+  `gitParams`), so a field that is valid for the *namespace* but unused by *this*
+  method still participates in decoding: a **type-mismatched** value there →
+  `-32602` (e.g. `files.stat {"maxBytes":"{"}`, `git.status {"baseRepo":[1,2]}`).
+  The reference binds only the field the specific method reads and ignores the
+  rest regardless of type, so it runs with defaults. A genuinely unknown key (in
+  neither struct) is ignored by both. (Relatedly, on a pathological over-long
+  `path` claustrum returns the empty `exists:false` result where the reference
+  surfaces a `-32603` stat error.) These only surface under adversarial params —
+  a real client never sends them; accepted divergence, found by differential
+  fuzzing.
 - `server.*` methods take no params, so a mistyped `params` on them is ignored
   and the call succeeds.
 
@@ -96,6 +107,17 @@ process.spawn  process.stdin  process.kill  process.reattach
 | `server.version` | — | `{"version":"<id>","platform":"<goos>","arch":"<goarch>"}` |
 | `server.capabilities` | — | `{"version":"<id>","methods":[…18…]}` |
 | `server.shutdown` | — | *no response* — the daemon stops and the connection closes |
+
+> **Divergence — auth on `server.shutdown`.** claustrum validates the auth token
+> for *every* method (§Auth), so an unauthenticated or wrong-token
+> `server.shutdown` is rejected with `-32001 Unauthorized` and the daemon stays
+> up. The **reference does not authenticate `server.shutdown`** — it stops on the
+> request regardless of the token (no reply either way). Honest callers are
+> byte-identical: `-stop` and the real client always send a valid token
+> (`bridge.go`), and a valid-auth shutdown matches exactly (no response, the
+> connection closes). Only an adversarial wrong/missing-auth shutdown differs,
+> and there claustrum is the safer of the two (a bare socket peer can't kill it).
+> Surfaced by differential fuzzing; intentional hardening.
 
 ### files.* (param: `path`)
 
