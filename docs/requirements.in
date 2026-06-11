@@ -6,4 +6,4 @@
 #
 # Renovate bumps the version here and regenerates the lock. mkdocs-material
 # pulls in mkdocs and the pymdownx extensions transitively.
-mkdocs-material==9.5.49
+mkdocs-material==9.7.6
