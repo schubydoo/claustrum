@@ -131,6 +131,8 @@ process.spawn  process.stdin  process.kill  process.reattach
 
 `{path}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted)
 
+- **Hidden entries are omitted** — any name beginning with `.` (`.git`, `.env`,
+  …) is skipped, matching the reference daemon.
 - `isDir` is resolved by **`Stat` — symlinks are FOLLOWED**: a symlink to a
   directory is `isDir:true`, a dangling symlink is `isDir:false`.
 - Missing dir → `-32603 open …: no such file or directory`.
