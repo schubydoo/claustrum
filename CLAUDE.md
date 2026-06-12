@@ -78,6 +78,13 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
   `results.go` must keep the validation battery green. An *intentional*
   divergence must be documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and the PR.
+- **Structural lint (`ast-grep`, opt-in).** The "ordered structs, not maps" rule
+  above is enforced mechanically: [`rules/no-map-in-result-type.yml`](rules/no-map-in-result-type.yml)
+  fails if a `map` type appears in `results.go` (a map reorders keys on marshal →
+  wire drift; golangci-lint can't express this). Run `make sg` or `ast-grep scan`;
+  the pre-commit hook runs it too when the binary is on PATH. Not a build/test
+  dependency. The `ast-grep` MCP is also available for structure-aware Go
+  searches — when writing a rule, follow dump-AST → test-rule → refine.
 - **No new dependencies** without discussion — stdlib + zstd (`klauspost/compress`)
   + `golang.org/x/sys` (Windows-only), `CGO_ENABLED=0`.
 - **No telemetry, ever.**

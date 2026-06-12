@@ -7,7 +7,7 @@ DIST     := dist
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 LDFLAGS  := -s -w
 
-.PHONY: build all clean fmt vet lint test hooks
+.PHONY: build all clean fmt vet lint sg test hooks
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN) .
@@ -30,6 +30,12 @@ vet:
 
 lint:
 	golangci-lint run ./...
+
+# Structural lint via ast-grep (sgconfig.yml + rules/). Enforces wire-contract
+# invariants golangci-lint can't express (e.g. no map types in result structs).
+# Opt-in dev tool — not required to build/test. Install: https://ast-grep.github.io
+sg:
+	ast-grep scan
 
 test:
 	go test -race ./...

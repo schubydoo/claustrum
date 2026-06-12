@@ -1,0 +1,9 @@
+# ast-grep project config (https://ast-grep.github.io).
+#
+# ast-grep is an OPT-IN structural linter for invariants that golangci-lint
+# cannot express. It is not a build/runtime dependency: `make build`, the test
+# suite, and CI's required Go checks do not need it. Run the rules with
+# `make sg` (or `ast-grep scan`); the pre-commit hook runs them too when the
+# binary is on PATH.
+ruleDirs:
+  - rules
