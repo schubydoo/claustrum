@@ -1,0 +1,28 @@
+# Enforces claustrum's #1 rule: result types are ORDERED STRUCTS, never maps.
+#
+# A Go map marshals its keys in sorted order, which diverges from the exact
+# field order the reference daemon emits on the wire — and "stay byte-identical
+# to the reference's JSON-RPC frames" is the whole product. golangci-lint can't
+# express "no map type in this file"; ast-grep can.
+#
+# results.go is the canonical home of the wire-serialized result structs
+# ("result structs whose fields are declared in the exact order the reference
+# emits" — see CLAUDE.md and docs/PROTOCOL.md). Maps used as internal state
+# elsewhere (process registries in process.go / server.go / methods_process.go)
+# are fine — they never reach the wire — so this rule is scoped to results.go.
+id: no-map-in-result-type
+language: go
+severity: error
+files:
+  - "**/results.go"
+rule:
+  kind: map_type
+message: >-
+  Result types must be ordered structs, never a map: a map reorders keys on
+  marshal and breaks the byte-identical wire contract. Declare a struct with
+  fields in the exact order the reference emits instead.
+note: |
+  See CLAUDE.md ("Results are ordered structs, not maps") and docs/PROTOCOL.md.
+  This rule is intentionally scoped to results.go; maps as internal state in
+  process.go / server.go / methods_process.go are allowed (they never serialize
+  to the wire).
