@@ -24,7 +24,22 @@ var (
 	reVersion  = regexp.MustCompile(`"version":"[^"]*"`)
 	rePlatform = regexp.MustCompile(`"platform":"[^"]*"`)
 	reArch     = regexp.MustCompile(`"arch":"[^"]*"`)
+	// CT-1 opt-in fields are host/run-variable (the OS pid and a wall-clock epoch),
+	// so tokenize them like version/platform to keep the golden stable.
+	rePid       = regexp.MustCompile(`"pid":\d+`)
+	reStartTime = regexp.MustCompile(`"startTime":[0-9.eE+-]+`)
 )
+
+// normCT1 tokenizes the CT-1 pid/startTime fields so a wantPid reply golden is
+// stable across hosts and runs.
+// The placeholders are quoted so the tokenized frame stays valid JSON (the golden
+// encoder re-marshals it) — same convention as the version/platform tokens.
+func normCT1(b []byte) json.RawMessage {
+	s := string(b)
+	s = rePid.ReplaceAllString(s, `"pid":"<PID>"`)
+	s = reStartTime.ReplaceAllString(s, `"startTime":"<TS>"`)
+	return json.RawMessage(s)
+}
 
 // normResp tokenizes the only host-variable fields a reply can carry, so the
 // golden is stable across versions and platforms.
@@ -231,6 +246,105 @@ func TestSocketProcessReattachReplay(t *testing.T) {
 	if out := streamBytes(t, replayed, "stdout"); out != "l0\nl1\nl2\n" {
 		t.Errorf("replayed stdout = %q, want %q", out, "l0\nl1\nl2\n")
 	}
+}
+
+// rawResult extracts the verbatim "result" object of a JSON-RPC reply, so a test
+// can assert its exact bytes (field presence + order), not just parsed values.
+func rawResult(t *testing.T, resp json.RawMessage) string {
+	t.Helper()
+	var env struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(resp, &env); err != nil {
+		t.Fatalf("unmarshal reply: %v", err)
+	}
+	return string(env.Result)
+}
+
+// procSpawnReq builds a process.spawn request, optionally setting the CT-1
+// "wantPid" opt-in. With wantPid omitted entirely the params are identical to a
+// pre-CT-1 client's — the basis for the byte-identical default-path proof.
+func procSpawnReq(t *testing.T, id int, procID string, wantPid bool) string {
+	t.Helper()
+	exe, env := helperCommand(t, "stdout3")
+	params := map[string]any{"id": procID, "command": exe, "args": []string{}, "env": env}
+	if wantPid {
+		params["wantPid"] = true
+	}
+	b, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": id, "method": "process.spawn", "auth": testToken, "params": params,
+	})
+	if err != nil {
+		t.Fatalf("marshal spawn request: %v", err)
+	}
+	return string(b)
+}
+
+// TestSocketProcessWantPid covers the CT-1 opt-in on process.spawn and
+// process.reattach: the default (no wantPid) replies must stay byte-for-byte the
+// pre-CT-1 frames, while "wantPid":true appends pid + startTime. The deterministic
+// spawn replies are locked against a golden; reattach is asserted structurally
+// because its seq bounds are not frozen (frame chunking varies by host).
+func TestSocketProcessWantPid(t *testing.T) {
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+
+	// (1) Default spawn — no wantPid. The reply MUST be byte-identical to the
+	// pre-CT-1 {"success":true}; this is the core compatibility guarantee.
+	defResp := cl.call(procSpawnReq(t, 1, "DEF", false))
+	if got := rawResult(t, defResp); got != `{"success":true}` {
+		t.Fatalf("default spawn result = %s, want {\"success\":true} (default path must stay byte-identical)", got)
+	}
+
+	// (2) Opt-in spawn — wantPid:true adds pid + startTime, in that order.
+	wpResp := cl.call(procSpawnReq(t, 2, "WP", true))
+	var wp spawnResult
+	if err := json.Unmarshal([]byte(rawResult(t, wpResp)), &wp); err != nil {
+		t.Fatalf("unmarshal wantPid spawn result: %v", err)
+	}
+	if wp.Pid <= 0 {
+		t.Errorf("wantPid spawn pid = %d, want > 0", wp.Pid)
+	}
+	if wp.StartTime <= 0 {
+		t.Errorf("wantPid spawn startTime = %v, want > 0", wp.StartTime)
+	}
+
+	// (3) Reattach (default) on the exited process: no pid/startTime fields.
+	cl.waitExit("WP")
+	raDefReq := authed(`{"jsonrpc":"2.0","id":3,"method":"process.reattach","params":{"id":"WP","fromSeq":0}}`)
+	var raDef reattachResult
+	raDefRaw := rawResult(t, cl.call(raDefReq))
+	if err := json.Unmarshal([]byte(raDefRaw), &raDef); err != nil {
+		t.Fatalf("unmarshal default reattach: %v", err)
+	}
+	if !raDef.Found || raDef.Running || raDef.FirstSeq != 1 {
+		t.Errorf("default reattach = %+v, want found && !running && firstSeq==1", raDef)
+	}
+	if raDef.Pid != 0 || raDef.StartTime != 0 {
+		t.Errorf("default reattach leaked pid/startTime: %s", raDefRaw)
+	}
+
+	// (4) Reattach with wantPid:true reports the SAME pid/startTime the spawn did —
+	// the cross-call consistency a client relies on for PID-reuse detection.
+	raWPReq := authed(`{"jsonrpc":"2.0","id":4,"method":"process.reattach","params":{"id":"WP","fromSeq":0,"wantPid":true}}`)
+	var raWP reattachResult
+	if err := json.Unmarshal([]byte(rawResult(t, cl.call(raWPReq))), &raWP); err != nil {
+		t.Fatalf("unmarshal wantPid reattach: %v", err)
+	}
+	if raWP.Pid != wp.Pid {
+		t.Errorf("reattach pid = %d, want %d (must match spawn)", raWP.Pid, wp.Pid)
+	}
+	if raWP.StartTime != wp.StartTime {
+		t.Errorf("reattach startTime = %v, want %v (must match spawn)", raWP.StartTime, wp.StartTime)
+	}
+
+	// (5) Lock the deterministic spawn replies (pid/startTime tokenized) so the
+	// field set and order can't silently drift.
+	golden := []json.RawMessage{
+		normCT1([]byte(rawResult(t, defResp))),
+		normCT1([]byte(rawResult(t, wpResp))),
+	}
+	assertGolden(t, "socket_process_wantpid.golden.json", encodeGolden(t, golden))
 }
 
 func lastExit(t *testing.T, frames []streamFrame) streamFrame {

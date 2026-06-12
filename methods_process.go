@@ -29,6 +29,11 @@ type spawnParams struct {
 	Args    []string          `json:"args"`
 	Cwd     string            `json:"cwd"`
 	Env     map[string]string `json:"env"`
+	// WantPid is the CT-1 opt-in: when true the reply carries pid + startTime.
+	// Absent/false leaves the reply byte-identical to {"success":true}. An older
+	// daemon ignores the unknown field (bindParams tolerates it), so the param is
+	// safe to send unconditionally.
+	WantPid bool `json:"wantPid"`
 }
 
 func (s *server) processSpawn(c *conn, req *request) response {
@@ -42,10 +47,16 @@ func (s *server) processSpawn(c *conn, req *request) response {
 	if p.Command == "" {
 		return errResult(req.ID, codeInvalidParam, "Command is required")
 	}
-	if err := s.procs.spawn(c, p.ID, p.Command, p.Args, p.Cwd, p.Env); err != nil {
+	mp, err := s.procs.spawn(c, p.ID, p.Command, p.Args, p.Cwd, p.Env)
+	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
-	return okResult(req.ID, successResult{Success: true})
+	res := spawnResult{Success: true}
+	if p.WantPid {
+		res.Pid = mp.pid
+		res.StartTime = mp.startTime
+	}
+	return okResult(req.ID, res)
 }
 
 type stdinParams struct {
@@ -93,6 +104,9 @@ func (s *server) processKill(req *request) response {
 type reattachParams struct {
 	ID      string `json:"id"`
 	FromSeq int    `json:"fromSeq"`
+	// WantPid mirrors spawnParams.WantPid — see there. When true and the process
+	// is found, the reply carries pid + startTime.
+	WantPid bool `json:"wantPid"`
 }
 
 func (s *server) processReattach(c *conn, req *request) response {
@@ -103,8 +117,13 @@ func (s *server) processReattach(c *conn, req *request) response {
 	if p.ID == "" {
 		return errResult(req.ID, codeInvalidParam, "Process ID is required")
 	}
-	found, running, firstSeq, lastSeq := s.procs.reattach(c, p.ID, p.FromSeq)
-	return okResult(req.ID, reattachResult{
+	mp, found, running, firstSeq, lastSeq := s.procs.reattach(c, p.ID, p.FromSeq)
+	res := reattachResult{
 		Found: found, Running: running, FirstSeq: firstSeq, LastSeq: lastSeq,
-	})
+	}
+	if p.WantPid && mp != nil {
+		res.Pid = mp.pid
+		res.StartTime = mp.startTime
+	}
+	return okResult(req.ID, res)
 }

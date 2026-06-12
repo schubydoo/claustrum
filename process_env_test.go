@@ -64,7 +64,7 @@ func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")
-	if err := m.spawn(c, "envcheck", printenv,
+	if _, err := m.spawn(c, "envcheck", printenv,
 		[]string{"CLAUDE_SSH_DAEMON_CHILD"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")
-	if err := m.spawn(c, "tokencheck", printenv,
+	if _, err := m.spawn(c, "tokencheck", printenv,
 		[]string{"CLAUDE_RPC_TOKEN"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}

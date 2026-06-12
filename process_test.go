@@ -115,7 +115,7 @@ func TestEmitRetainsAllAtExactCap(t *testing.T) {
 func TestReattachUnknownProcess(t *testing.T) {
 	m := newProcManager()
 	c, _ := pipeConn(t)
-	found, running, first, last := m.reattach(c, "missing", 0)
+	_, found, running, first, last := m.reattach(c, "missing", 0)
 	if found || running || first != 0 || last != 0 {
 		t.Errorf("reattach(missing) = (%v,%v,%d,%d), want all zero/false", found, running, first, last)
 	}
@@ -132,7 +132,7 @@ func TestReattachReplaysFromSeq(t *testing.T) {
 	m.procs["p1"] = p
 
 	c, frames := pipeConn(t)
-	found, running, first, last := m.reattach(c, "p1", 1)
+	_, found, running, first, last := m.reattach(c, "p1", 1)
 	if !found || !running || first != 1 || last != 3 {
 		t.Errorf("reattach = (%v,%v,%d,%d), want (true,true,1,3)", found, running, first, last)
 	}
@@ -208,7 +208,7 @@ func TestSpawnEmitsOperationalLogs(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	echo, env := helperCommand(t, "echo")
-	if err := m.spawn(c, "lg", echo, []string{"hi"}, "", env); err != nil {
+	if _, err := m.spawn(c, "lg", echo, []string{"hi"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// Wait for the exit frame so the exit log line has been emitted.
@@ -285,7 +285,7 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 	server.Close()
 	dead := &conn{nc: client}
 
-	found, _, _, _ := m.reattach(dead, "p", 0) // replays seq 1 → write fails → detach
+	_, found, _, _, _ := m.reattach(dead, "p", 0) // replays seq 1 → write fails → detach
 	if !found {
 		t.Fatal("reattach should find p")
 	}
@@ -357,7 +357,7 @@ func TestSpawnRespectsCwd(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	pwd, env := helperCommand(t, "pwd")
-	if err := m.spawn(c, "cwd", pwd, nil, tmp, env); err != nil {
+	if _, err := m.spawn(c, "cwd", pwd, nil, tmp, env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// Canonicalize the child's report the same way as want: on Windows the
@@ -376,7 +376,7 @@ func TestPumpStreamSkipsEmptyReads(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	echo, env := helperCommand(t, "echo")
-	if err := m.spawn(c, "em", echo, []string{"hi"}, "", env); err != nil {
+	if _, err := m.spawn(c, "em", echo, []string{"hi"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	deadline := time.After(3 * time.Second)
@@ -402,7 +402,7 @@ func TestWriteStdinReturnValue(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, _ := pipeConn(t)
 	cat, env := helperCommand(t, "cat")
-	if err := m.spawn(c, "cat", cat, nil, "", env); err != nil {
+	if _, err := m.spawn(c, "cat", cat, nil, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if !m.writeStdin("cat", []byte("hello\n")) {
@@ -563,7 +563,7 @@ func TestReattachEmptyBuffer(t *testing.T) {
 	p := &managedProc{id: "eb", subs: map[*conn]struct{}{}, running: true} // no emits → empty buffer
 	m.procs["eb"] = p
 	c, _ := pipeConn(t)
-	found, running, first, last := m.reattach(c, "eb", 0)
+	_, found, running, first, last := m.reattach(c, "eb", 0)
 	if !found || !running || first != 0 || last != 0 {
 		t.Errorf("reattach(empty buffer) = (%v,%v,%d,%d), want (true,true,0,0)", found, running, first, last)
 	}
@@ -576,7 +576,7 @@ func TestKillAllTerminatesLiveProcess(t *testing.T) {
 	m := newProcManager()
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if err := m.spawn(c, "sl", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c, "sl", sleep, []string{"60"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.killAll()
@@ -603,7 +603,7 @@ func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
 
 	c1, _ := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if err := m.spawn(c1, "dup", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c1, "dup", sleep, []string{"60"}, "", env); err != nil {
 		t.Fatalf("first spawn: %v", err)
 	}
 	old := m.get("dup")
@@ -612,7 +612,7 @@ func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
 	}
 
 	c2, _ := pipeConn(t)
-	if err := m.spawn(c2, "dup", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c2, "dup", sleep, []string{"60"}, "", env); err != nil {
 		t.Fatalf("second spawn with duplicate id: %v (both spawns must succeed)", err)
 	}
 
@@ -722,7 +722,7 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	cat, env := helperCommand(t, "cat")
-	if err := m.spawn(c, "mc", cat, nil, "", env); err != nil {
+	if _, err := m.spawn(c, "mc", cat, nil, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if !m.writeStdin("mc", []byte("hello\n")) {
@@ -733,7 +733,7 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	}
 
 	c2, _ := pipeConn(t)
-	if found, _, _, _ := m.reattach(c2, "mc", 0); !found {
+	if _, found, _, _, _ := m.reattach(c2, "mc", 0); !found {
 		t.Fatal("reattach did not find the live process")
 	}
 	m.reattach(c2, "missing", 0) // not found → must not count
