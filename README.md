@@ -70,7 +70,7 @@ One binary, mode-switched by flag:
 claustrum -serve   -socket <path> -token-file <path>   # self-daemonize, run the RPC server
 claustrum -bridge  -socket <path>                       # dumb stdio<->socket relay (what SSH attaches)
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
-claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>]
+claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>]
 claustrum -version
 ```
 
