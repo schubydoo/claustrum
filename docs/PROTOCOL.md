@@ -362,6 +362,20 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 - Additive and off the wire: `-token-file` callers are unaffected, and without
   the flag the reference is matched byte-for-byte.
 
+**Daemonize sentinel** *(internal; claustrum-namespaced)* — the re-exec marker
+that tells a freshly-exec'd process "you are the detached child, don't
+re-daemonize" is **`CLAUSTRUM_DAEMON_CHILD`**, not the reference daemon's
+`CLAUDE_SSH_DAEMON_CHILD`. The reference name cannot serve this role here: a host
+running *inside* a real claude-ssh session exports `CLAUDE_SSH_DAEMON_CHILD=1` to
+every descendant, so the claustrum launcher would inherit it ambiently, mistake
+itself for the already-daemonized child, skip the parent token-forward path, and
+exit `1`. The sentinel is purely internal (never on the wire), so namespacing it
+is free. Observable parity is preserved separately: `daemonizeWithToken` still
+sets `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's own environ so it propagates
+verbatim into `process.spawn` children, exactly as the reference does (pinned by
+`TestSpawnInheritsDaemonChildMarker`); the internal `CLAUSTRUM_DAEMON_CHILD` is
+unset in the child before it spawns anything, so it never leaks downstream.
+
 **`-metrics-addr <a>`** *(claustrum-only)* — opt-in observability:
 
 - Serves Prometheus-format counters at `http://<a>/metrics` — connections,

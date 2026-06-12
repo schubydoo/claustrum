@@ -21,6 +21,27 @@ import (
 // over an inherited pipe; this env carries only the fd number, never the token.
 const tokenPipeEnv = "CLAUSTRUM_TOKEN_PIPE"
 
+// daemonChildEnv is the *internal* sentinel that tells a freshly-exec'd process
+// "you are the detached child, do not re-daemonize." It is deliberately
+// claustrum-namespaced (not the reference daemon's CLAUDE_SSH_DAEMON_CHILD)
+// because a host that is itself running inside a real claude-ssh session exports
+// CLAUDE_SSH_DAEMON_CHILD=1 to every descendant — including the claustrum
+// launcher — which would make the launcher mistake itself for the child, skip
+// the parent/daemonize+token-forward path, and die with "read --token-file:
+// open :". This sentinel is purely a re-exec marker and never crosses the wire,
+// so namespacing it is free. The separate reference-parity marker that
+// process.spawn children must still inherit is daemonChildMarker, set in
+// daemonizeWithToken. See docs/PROTOCOL.md.
+const daemonChildEnv = "CLAUSTRUM_DAEMON_CHILD"
+
+// daemonChildMarker is the env var the *reference* daemon carries in its environ
+// after its own self-daemonize re-exec, and which it propagates verbatim into
+// every process.spawn child. We set it on our re-exec purely to preserve that
+// observable parity (pinned by TestSpawnInheritsDaemonChildMarker) — it is NOT
+// used to detect the re-exec (that is daemonChildEnv), so an ambient copy
+// inherited from a surrounding claude-ssh session is harmless.
+const daemonChildMarker = "CLAUDE_SSH_DAEMON_CHILD"
+
 // server is the running -serve daemon: the AF_UNIX listener, the auth token, the
 // connected clients, and the process manager.
 type server struct {
@@ -89,7 +110,8 @@ func (c *conn) writeResponse(v interface{}) {
 }
 
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
-// child is marked with CLAUDE_SSH_DAEMON_CHILD so we re-exec exactly once.
+// child is marked with daemonChildEnv (CLAUSTRUM_DAEMON_CHILD) so we re-exec
+// exactly once — see that const for why it is not CLAUDE_SSH_DAEMON_CHILD.
 func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren bool) {
 	// -serve requires a token source, checked BEFORE the socket (probe-verified).
 	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
@@ -100,7 +122,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 		fmt.Fprintln(os.Stderr, "claustrum: daemonized child requires --token-file or --token-fd")
 		os.Exit(1)
 	}
-	if os.Getenv("CLAUDE_SSH_DAEMON_CHILD") != "1" {
+	if os.Getenv(daemonChildEnv) != "1" {
 		// Parent. An fd is only valid in this process and would not survive the
 		// re-exec, so read it now and forward the token to the child over an
 		// inherited pipe — never via disk, argv, or environ. The -token-file path
@@ -141,6 +163,11 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 		_ = os.Remove(tokenFile)
 	}
 	_ = os.Unsetenv("CLAUDE_RPC_TOKEN") // prevent token propagation through daemonize → os.Environ()
+	// Drop our internal re-exec sentinel now that we have consumed it: buildEnv
+	// bases process.spawn children on os.Environ(), and the reference daemon's
+	// environ has no CLAUSTRUM_DAEMON_CHILD — leaking it would be a (detectable)
+	// divergence. The reference-parity marker (daemonChildMarker) stays set.
+	_ = os.Unsetenv(daemonChildEnv)
 
 	// Extract a real interactive PATH from the login shell so spawned children
 	// resolve tools the way an interactive session would. Run in a goroutine so
@@ -225,7 +252,10 @@ func daemonizeWithToken(forwardToken string) {
 		self = os.Args[0]
 	}
 	cmd := exec.Command(self, os.Args[1:]...)
-	cmd.Env = append(os.Environ(), "CLAUDE_SSH_DAEMON_CHILD=1")
+	// daemonChildEnv is our private re-exec sentinel (detected in runServe);
+	// daemonChildMarker is set only to mirror the reference daemon's environ so
+	// it propagates into process.spawn children (TestSpawnInheritsDaemonChildMarker).
+	cmd.Env = append(os.Environ(), daemonChildEnv+"=1", daemonChildMarker+"=1")
 	// Detach from the controlling terminal/session (OS-specific); inherit stdio so
 	// a wrapping `> serve.out` redirect still captures the daemon's startup line.
 	cmd.SysProcAttr = detachSysProcAttr()
