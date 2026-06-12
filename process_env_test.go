@@ -8,12 +8,13 @@ import (
 // The reference daemon's environ contains CLAUDE_SSH_DAEMON_CHILD=1 after the
 // self-daemonize re-exec, and that marker is propagated verbatim into every
 // process.spawn child (observed in the real spawned agent's /proc/<pid>/environ).
-// claustrum sets the same marker on its re-exec ([server.go:142]) and buildEnv
-// uses os.Environ() as the base, so it must leak to children too. Pin that
-// behavior: a regression that swapped buildEnv's base for an empty []string or
-// a curated allow-list would diverge silently — no wire frame mentions the
-// marker, but downstream tooling can detect the absence by inspecting its own
-// environment.
+// claustrum sets the same marker (daemonChildMarker) on its re-exec in
+// daemonizeWithToken and buildEnv uses os.Environ() as the base, so it must leak
+// to children too. Pin that behavior: a regression that swapped buildEnv's base
+// for an empty []string or a curated allow-list — or that dropped the marker
+// when the internal CLAUSTRUM_DAEMON_CHILD sentinel was split out — would diverge
+// silently: no wire frame mentions the marker, but downstream tooling can detect
+// the absence by inspecting its own environment.
 
 func TestReplaceOrAppendEnv(t *testing.T) {
 	// Existing key is replaced in place.

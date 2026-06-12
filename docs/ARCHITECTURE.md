@@ -55,6 +55,14 @@ Unix), opens the `0600` socket, and supervises spawned children.
 - The auth token arrives via `-token-file` (read once, unlinked) or
   `-token-fd` (read from an open descriptor and forwarded to the detached
   child over a pipe — never touches disk).
+- The self-daemonize re-exec is gated by an **internal** sentinel,
+  `CLAUSTRUM_DAEMON_CHILD` — deliberately claustrum-namespaced, *not* the
+  reference's `CLAUDE_SSH_DAEMON_CHILD`, which a surrounding claude-ssh session
+  exports to every descendant and would make the launcher skip its own
+  daemonize/token-forward path. The child unsets the sentinel after reading it.
+  Reference parity is kept separately: `daemonizeWithToken` still sets
+  `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ so `process.spawn` children
+  inherit it exactly as the reference does (see [PROTOCOL.md](PROTOCOL.md)).
 - On Unix, interactive PATH extraction from the login shell runs concurrently
   (goroutine), so a slow login shell does not delay socket availability.
 - It makes **no** outbound network connections, and no inbound listener beyond
