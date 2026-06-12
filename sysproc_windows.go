@@ -18,6 +18,19 @@ func newSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 }
 
+// honorKeepChildren forces -keep-children OFF on Windows. Children are confined to
+// a Job Object created with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (see confineProcess);
+// the daemon holds that job handle, so when it exits the OS terminates the whole
+// tree regardless of any shutdown-time decision. Rather than silently kill while
+// claiming to keep, we ignore the flag and warn. (The hosted channel that uses
+// this is POSIX-only anyway.)
+func honorKeepChildren(requested bool) bool {
+	if requested {
+		logWarnf("[Server] -keep-children is not supported on Windows and is ignored: child processes are confined to a Job Object that the OS terminates when the daemon exits")
+	}
+	return false
+}
+
 // procGroup confines a spawned child — and everything it spawns — to a Windows
 // Job Object, so the entire tree can be torn down at once. This is the analogue
 // of a Unix process-group kill: the previous best-effort TerminateProcess hit

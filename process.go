@@ -410,6 +410,20 @@ func (m *procManager) detachConn(c *conn) {
 	}
 }
 
+// runningCount reports how many managed processes are still alive — used for the
+// honest -keep-children shutdown log line. Same m→p lock order as killAll.
+func (m *procManager) runningCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, p := range m.procs {
+		if p.isRunning() {
+			n++
+		}
+	}
+	return n
+}
+
 func (m *procManager) killAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

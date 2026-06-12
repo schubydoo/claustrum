@@ -333,7 +333,7 @@ reference unless marked **claustrum-only**.
 ### -serve — run the daemon
 
 ```text
-claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>]
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children]
 ```
 
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
@@ -371,6 +371,30 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 - Counts only (no command output, no tokens) and **no auth** — bind it to a
   trusted interface (loopback).
 - A bind failure is logged (`[Server] metrics: …`) and non-fatal.
+
+**`-keep-children`** *(claustrum-only, CT-2; POSIX-only)* — survive a daemon restart:
+
+- **Off by default**, behavior is unchanged: graceful shutdown (a
+  `server.shutdown` RPC, `SIGTERM`, or `SIGINT`) kills the whole child-process
+  tree, exactly as before.
+- **With the flag set**, graceful shutdown tears down the listener and client
+  connections but **leaves spawned children running**, so they survive a daemon
+  restart/upgrade. It logs one line —
+  `[Server] -keep-children: leaving <n> running child process(es) alive across shutdown`.
+- The new daemon does **not** re-adopt the survivors (no persist / re-manage); an
+  out-of-band consumer reconciles them (e.g. via the CT-1 `pid`/`startTime`).
+- **Off the wire**: no method, frame, or capability changes — it is a lifecycle
+  flag, so parity is unaffected (default-mode frames are byte-identical).
+- **Windows decision:** the flag is **POSIX-only**. Children are confined to a Job
+  Object created with `KILL_ON_JOB_CLOSE`, which the OS terminates when the daemon
+  exits regardless of any shutdown-time choice. Rather than silently kill while
+  claiming to keep, Windows **ignores the flag and logs a warning** at startup
+  (`[Server] -keep-children is not supported on Windows …`). The hosted channel
+  that uses this is POSIX-only anyway.
+- *(Implementation note: shutdown teardown now runs synchronously on the main
+  goroutine so the kill-or-keep decision reliably completes before the process
+  exits — it previously ran in a goroutine that could lose the race to the accept
+  loop's return, skipping child teardown entirely.)*
 
 ### -bridge — stdio↔socket relay
 

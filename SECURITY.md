@@ -40,6 +40,13 @@ processes on the host it runs on. Key considerations:
   — no command output, arguments, or tokens) and has **no authentication**, so
   bind it to a trusted interface (loopback). Exposing it on a reachable interface
   discloses coarse operational counts to anyone who can connect.
+- **`-keep-children` is off by default** and adds no attack surface — no listener,
+  no new auth path, and the children still run as the daemon's user (unchanged
+  from `process.spawn` above). The one operational consequence: when set, a
+  graceful shutdown leaves those processes **running and orphaned** (reparented to
+  init), so they outlive the daemon and are no longer reachable via its
+  `process.kill`/socket. That is the intended behavior (surviving a daemon
+  restart), but the operator owns their eventual cleanup. POSIX-only.
 - **`files.*` / `git.*`** read and act on paths the caller supplies; they are as
   privileged as the daemon's user.
 

@@ -68,6 +68,8 @@ func main() {
 
 		metricsAddr = flag.String("metrics-addr", "", "If set (e.g. 127.0.0.1:9090), serve Prometheus counters at /metrics on this address. Off by default; -serve only. Counts only, no auth — bind to a trusted interface.")
 
+		keepChildren = flag.Bool("keep-children", false, "On graceful shutdown, leave spawned child processes running instead of killing them, so they survive a daemon restart/upgrade. Off by default; -serve only; POSIX-only (ignored with a warning on Windows, where children are confined to a Job Object that the OS terminates on daemon exit). The new daemon does not re-adopt the survivors.")
+
 		cliDir      = flag.String("cli-dir", "", "Directory for per-version CLI binaries")
 		cliVersion  = flag.String("cli-version", "", "Required CLI version (filename under --cli-dir)")
 		cliURL      = flag.String("cli-url", "", "Download URL for the CLI .zst")
@@ -116,7 +118,7 @@ func main() {
 		}
 		return
 	case *serve:
-		runServe(resolveSocket(), *tokenFile, *tokenFd, *metricsAddr)
+		runServe(resolveSocket(), *tokenFile, *tokenFd, *metricsAddr, *keepChildren)
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")

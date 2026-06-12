@@ -70,7 +70,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   extract (zstd) / prune.
 - OS-specific behavior is isolated in `*_unix.go` / `*_windows.go` (daemonize,
   process groups / Windows Job Objects for whole-tree kill, login-shell PATH
-  extraction). The JSON-RPC surface is identical everywhere.
+  extraction, the `-keep-children` POSIX-only policy via `honorKeepChildren`).
+  The JSON-RPC surface is identical everywhere.
 
 ## Conventions
 

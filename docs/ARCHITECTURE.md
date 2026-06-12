@@ -9,7 +9,7 @@ Object teardown — only compiled into Windows builds).
 | file | responsibility |
 |---|---|
 | `main.go` | flag parsing, mode dispatch, version resolution |
-| `server.go` | `-serve` daemon: AF_UNIX listener, per-connection loop, concurrent dispatch, graceful shutdown |
+| `server.go` | `-serve` daemon: AF_UNIX listener, per-connection loop, concurrent dispatch, graceful shutdown (kills children, or leaves them with `-keep-children`) |
 | `rpc.go` | JSON-RPC request/response types, error codes, dispatch + params gate |
 | `results.go` | result structs (field order is part of the wire contract) |
 | `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_process.go` | the 18 method handlers |
