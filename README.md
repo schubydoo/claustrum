@@ -116,6 +116,12 @@ catch up via the replay buffer, extracting a plugin tarball — are in
 - **Operational knobs** (claustrum-only, all off the wire): `CLAUSTRUM_LOG_LEVEL` quiets the
   leveled stderr diagnostics, and `-metrics-addr` opts into a local Prometheus `/metrics`
   endpoint (no listener exists without it).
+- **Protocol extensions** (claustrum-only, opt-in — **additions**, *not* part of the reference
+  contract it mimics): `process.spawn` / `process.reattach` accept `"wantPid":true`, which adds
+  `pid` + `startTime` to the result for PID-reuse / orphan detection (CT-1). These are pure
+  additions — a client that doesn't opt in sees **byte-identical** frames, so the guarantee below
+  is unaffected. See [docs/PROTOCOL.md](docs/PROTOCOL.md) and the
+  [divergence catalog](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
 
 Full details: **[docs/PROTOCOL.md](docs/PROTOCOL.md)** and **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 

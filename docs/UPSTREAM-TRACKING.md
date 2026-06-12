@@ -131,6 +131,14 @@ If the check reports drift:
 4. Update `scripts/UPSTREAM_SHA` to the new SHA, note the change in `CHANGELOG.md`,
    and update `docs/PROTOCOL.md` if the wire surface changed.
 
+> Not every claustrum behavior is meant to match the reference. A few
+> **deliberate, opt-in divergences** — the `-cli-zst` checksum (D1) and the CT-1
+> `wantPid` `pid`/`startTime` fields — are catalogued in
+> [`IMPROVEMENTS.md`](IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
+> They sit off the default path (the drift check and the synthetic battery never
+> exercise `wantPid`, so it won't show as a diff), so don't "reconcile" them away
+> as drift if a probe that opts in surfaces them.
+
 ## Automating it
 
 - A scheduled CI job (e.g. weekly `nightly.yml`) can run `check-upstream.sh`

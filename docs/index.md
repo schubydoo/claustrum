@@ -36,6 +36,13 @@ opt-in and invisible to clients): leveled stderr logging via
 and whole-tree process kill on Windows via Job Objects. See the
 [protocol reference](PROTOCOL.md) for details.
 
+There is also one opt-in **protocol extension** — visible to clients but still an
+explicit **addition, not a reference behavior**: passing `"wantPid":true` to
+`process.spawn` / `process.reattach` adds `pid` + `startTime` to the result for
+PID-reuse detection (CT-1). A client that doesn't opt in sees byte-identical
+frames, so the hard rule above still holds. It is catalogued as a deliberate
+divergence in the [improvement backlog](IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
+
 ## Where to go next
 
 <div class="grid cards" markdown>
