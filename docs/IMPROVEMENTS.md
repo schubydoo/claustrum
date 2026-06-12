@@ -274,6 +274,40 @@ a 72rem content column (#77). Site-only; no wire/behavior change.
   parked), `process.go:318` (a second stdin chunk after a successful write
   must still be delivered — the writer survives success).
 
+### 22 · Spawn/exec syscall hardening — no daemon `chdir`, whole-group kill ✅ — impact S / cost S
+
+A syscall-trace differential (run both daemons through one deterministic session
+under `strace -f`, normalize, diff per logical op) surfaced two places where
+claustrum's filesystem/process syscalls differ from the reference while emitting
+**byte-identical frames** (the validation battery already pins every `git.*` and
+`process.*` response). Both differences are kept on purpose — claustrum is the
+safer of the two in each case. Recording them here so a future contributor
+doesn't "re-align" them to the reference and quietly regress the safety:
+
+- **`git.*` runs as `git -C <repo>`; the daemon never `chdir`s.** The reference
+  `chdir`s its own process into the repo before each bare `git` call; claustrum
+  passes `-C` and leaves the daemon cwd untouched. Because a connection's
+  requests dispatch **concurrently**, a process-global `chdir` would race any
+  other in-flight request that resolves a relative path — `-C` sidesteps it
+  entirely. (The plumbing subcommands also differ —
+  `rev-parse --is-inside-work-tree` / `symbolic-ref --short HEAD` vs the
+  reference's `--git-dir` / `branch --show-current` — for the same resulting
+  frames.)
+- **`process.kill` signals the whole process group (`kill(-pgid, sig)`).** The
+  reference `pidfd_send_signal`s only the direct child, orphaning its
+  grandchildren; claustrum's negative-pgid kill tears down the whole tree. This
+  is the Unix half of the #14 / #21 process-group teardown (with the #21
+  exited-pgid guard); the `process.kill` divergence is already noted in
+  [`PROTOCOL.md`](PROTOCOL.md). Same exit frame either way.
+
+Wire-neutrality is enforced by the byte-identical battery; the differential
+itself self-calibrates to **zero** contractual divergences on a claustrum-vs-
+claustrum self-diff. Found during the post-v1.1.0 parity-audit sweep (the tooling
+lives in `scratch/`, gitignored). The third finding from the same sweep —
+`files.list` stat-per-entry vs the reference's `getdents` `d_type` — was probed
+to be **byte-identical** even on symlink/dangling/self entries, so it needs no
+divergence note.
+
 ## Deliberate divergences (post-parity, opt-in)
 
 Unlike everything above, these **knowingly change a frame/behavior** from the
