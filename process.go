@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 // streamFrame is an id-less notification pushed to attached clients.
@@ -38,17 +39,24 @@ const defaultBufferCap int64 = 50 * 1024 * 1024
 var stdinQueueCap = 8 * 1024 * 1024
 
 type managedProc struct {
-	id       string
-	mu       sync.Mutex
-	seq      int
-	buffer   []streamFrame
-	bufBytes int64 // sum of len(f.Data) for frames currently in buffer
-	bufCap   int64 // per-instance override; 0 means use defaultBufferCap
-	subs     map[*conn]struct{}
-	running  bool
-	stdin    io.WriteCloser
-	cmd      *exec.Cmd
-	group    *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	id string
+	// pid and startTime are captured once at spawn and never mutated, so they are
+	// safe to read without p.mu. They back the CT-1 opt-in (process.spawn /
+	// process.reattach with "wantPid":true) — the OS pid plus a process start-time
+	// stamp a client uses for PID-reuse / orphan detection. startTime is epoch
+	// seconds (matching clauster's psutil create_time semantics for the match).
+	pid       int
+	startTime float64
+	mu        sync.Mutex
+	seq       int
+	buffer    []streamFrame
+	bufBytes  int64 // sum of len(f.Data) for frames currently in buffer
+	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
+	subs      map[*conn]struct{}
+	running   bool
+	stdin     io.WriteCloser
+	cmd       *exec.Cmd
+	group     *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 
 	// Async stdin: process.stdin enqueues here and returns immediately, while a
 	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
@@ -135,8 +143,10 @@ func (p *managedProc) emit(f streamFrame) {
 	}
 }
 
-// spawn starts a child process in its own process group and begins streaming.
-func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string) error {
+// spawn starts a child process in its own process group and begins streaming. It
+// returns the managedProc so the caller can read its (immutable) pid/startTime
+// for the CT-1 opt-in; the wire reply is otherwise unaffected.
+func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string) (*managedProc, error) {
 	cmd := exec.Command(command, args...)
 	if cwd != "" {
 		cmd.Dir = cwd
@@ -146,20 +156,23 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
 		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
-		return err
+		return nil, err
 	}
+	// Stamp the start time the instant the child exists, so the CT-1 startTime is
+	// the process's birth moment (within ms), not a later bookkeeping point.
+	startTime := float64(time.Now().UnixNano()) / 1e9
 	logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 	met.spawns.Add(1)
 
@@ -172,12 +185,14 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 
 	p := &managedProc{
-		id:      id,
-		subs:    map[*conn]struct{}{c: {}},
-		running: true,
-		stdin:   stdin,
-		cmd:     cmd,
-		group:   group,
+		id:        id,
+		pid:       cmd.Process.Pid,
+		startTime: startTime,
+		subs:      map[*conn]struct{}{c: {}},
+		running:   true,
+		stdin:     stdin,
+		cmd:       cmd,
+		group:     group,
 	}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
@@ -233,7 +248,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		met.processExits.Add(1)
 		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 	}()
-	return nil
+	return p, nil
 }
 
 func pumpStream(p *managedProc, name string, r io.Reader) {
@@ -339,11 +354,13 @@ func (m *procManager) kill(id, signal string) {
 }
 
 // reattach replays buffered frames with seq > fromSeq to c, (re)subscribes c for
-// future frames, and reports the buffer/running state.
-func (m *procManager) reattach(c *conn, id string, fromSeq int) (found, running bool, firstSeq, lastSeq int) {
-	p := m.get(id)
+// future frames, and reports the buffer/running state. It also returns the
+// managedProc (nil when not found) so the caller can read its immutable
+// pid/startTime for the CT-1 opt-in.
+func (m *procManager) reattach(c *conn, id string, fromSeq int) (p *managedProc, found, running bool, firstSeq, lastSeq int) {
+	p = m.get(id)
 	if p == nil {
-		return false, false, 0, 0
+		return nil, false, false, 0, 0
 	}
 	met.reattaches.Add(1)
 	p.mu.Lock()
@@ -369,7 +386,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq int) (found, running 
 			break
 		}
 	}
-	return true, running, firstSeq, lastSeq
+	return p, true, running, firstSeq, lastSeq
 }
 
 func (m *procManager) detachConn(c *conn) {

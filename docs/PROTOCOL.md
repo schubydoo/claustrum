@@ -236,7 +236,7 @@ stream notifications, **buffered** for later replay.
 
 #### process.spawn
 
-`{id,command[,args][,cwd][,env]}` → `{"success":true}`, then stream frames
+`{id,command[,args][,cwd][,env][,wantPid]}` → `{"success":true}`, then stream frames
 
 - `args`: string[]. `env`: `{KEY:VAL}` merged over the daemon environment.
 - Missing `id` → `-32602 Process ID is required`; missing `command` →
@@ -247,6 +247,17 @@ stream notifications, **buffered** for later replay.
   `kill`/`stdin`/`reattach` and leak), with its subscribers dropped first so no
   stray frames arrive under the reused id. OS-level only — no wire frame
   changes; the reference leaves the old process running.
+- **`wantPid` opt-in (CT-1, claustrum-only).** When the params carry
+  `"wantPid":true`, the reply gains two fields **after** `success`:
+  `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the child's OS
+  pid; `startTime` is its spawn instant as an **epoch-seconds** number (the
+  process's birth moment, stamped right after `Start`). A client uses the pair
+  for PID-reuse / orphan detection. **Default-mode is byte-identical:** absent or
+  `false`, the two fields are omitted (`omitempty`) and the frame is exactly the
+  old `{"success":true}`. The fields live on a dedicated result struct, so they
+  can never leak into a `process.stdin`/`process.kill` reply. An older daemon
+  ignores the unknown `wantPid` param (tolerant decode), so a CT-1 client is safe
+  to send it unconditionally — graceful degradation in both directions.
 
 #### process.stdin
 
@@ -273,11 +284,17 @@ stream notifications, **buffered** for later replay.
 
 #### process.reattach
 
-`{id,fromSeq}` → `{"found","running","firstSeq","lastSeq"}`
+`{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq"}`
 
 - Replays buffered frames with **seq > fromSeq** (exclusive) to this
   connection, (re)subscribes it for future frames, then returns the result.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0}`.
+- **`wantPid` opt-in (CT-1, claustrum-only).** As on `process.spawn`: with
+  `"wantPid":true` **and** the process found, the reply appends
+  `"pid":<int>,"startTime":<number>` after `lastSeq`, reporting the **same** pid
+  and startTime the spawn did (so a client can confirm it reattached to the same
+  process, not a pid-reuse). Omitted when `wantPid` is absent/false or the
+  process was not found — the default frame stays byte-identical.
 
 ### Stream notifications
 
