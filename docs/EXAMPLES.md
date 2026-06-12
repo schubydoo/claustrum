@@ -93,6 +93,39 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
 A process survives the disconnect of the connection that spawned it — a *new*
 connection can `reattach` to it and keep streaming. That is the reconnect path.
 
+## Opt into `pid` + `startTime` — `wantPid` (claustrum extension)
+
+!!! note "An addition, not reference behavior"
+    The reference daemon has no `wantPid`; this is an opt-in **claustrum
+    extension** (CT-1). Omit it — the default — and every frame is byte-identical
+    to the reference. It does not change the original `spawn`/`reattach`
+    behavior; it only *adds* fields when explicitly requested.
+
+`process.spawn` and `process.reattach` accept `"wantPid":true`. When set, the
+result carries the child's OS `pid` plus a `startTime` token, returned
+identically on spawn and reattach for the same `id`, for PID-reuse / orphan
+detection:
+
+```sh
+run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
+       "params":{"id":"w1","command":"sh","args":["-c","echo hi"],"wantPid":true}},
+      {"jsonrpc":"2.0","id":2,"method":"process.reattach",
+       "params":{"id":"w1","fromSeq":0,"wantPid":true}}]'
+# {"id":1,"result":{"success":true,"pid":12345,"startTime":1718040000.12}}
+# … stdout + exit stream frames …
+# {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":2,"pid":12345,"startTime":1718040000.12}}
+```
+
+Without `wantPid`, those same two replies are exactly `{"success":true}` and
+`{"found":…,"running":…,"firstSeq":…,"lastSeq":…}` — the `pid`/`startTime` fields
+are simply absent (`omitempty`).
+
+`startTime` is an **opaque token**: persist it, then compare a daemon value
+against a *later* daemon value for the **same `id`** to detect PID reuse. Do
+**not** equality-compare it against an OS-read process start time (e.g. psutil
+`create_time`) — it is the daemon's spawn-moment wall clock, not the kernel's
+process-creation time.
+
 ## Extract a plugin tarball
 
 ```sh
