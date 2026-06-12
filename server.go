@@ -28,11 +28,12 @@ type server struct {
 	ln    net.Listener
 	procs *procManager
 
-	mu        sync.Mutex
-	conns     map[*conn]struct{}
-	shutdown  chan struct{}
-	once      sync.Once
-	metricsLn net.Listener // optional Prometheus listener; nil unless -metrics-addr set
+	mu           sync.Mutex
+	conns        map[*conn]struct{}
+	shutdown     chan struct{}
+	once         sync.Once
+	metricsLn    net.Listener // optional Prometheus listener; nil unless -metrics-addr set
+	keepChildren bool         // -keep-children: leave child processes running on graceful shutdown (POSIX-only)
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -89,7 +90,7 @@ func (c *conn) writeResponse(v interface{}) {
 
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with CLAUDE_SSH_DAEMON_CHILD so we re-exec exactly once.
-func runServe(socket, tokenFile string, tokenFd int, metricsAddr string) {
+func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren bool) {
 	// -serve requires a token source, checked BEFORE the socket (probe-verified).
 	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
 	// comes from a file (read once, then unlinked) or an fd (read by the parent,
@@ -157,12 +158,20 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string) {
 		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
 	}
 
+	// -keep-children is POSIX-only. honorKeepChildren returns the flag unchanged on
+	// Unix and false-with-a-warning on Windows (where children live in a Job Object
+	// the OS tears down on daemon exit regardless) — so we never claim to keep them
+	// while the OS kills them. Evaluated here in the daemonized child so the warning
+	// logs once, from the running daemon.
+	keepChildren = honorKeepChildren(keepChildren)
+
 	s := &server{
-		token:    token,
-		ln:       ln,
-		procs:    newProcManager(),
-		conns:    make(map[*conn]struct{}),
-		shutdown: make(chan struct{}),
+		token:        token,
+		ln:           ln,
+		procs:        newProcManager(),
+		conns:        make(map[*conn]struct{}),
+		shutdown:     make(chan struct{}),
+		keepChildren: keepChildren,
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
@@ -254,8 +263,21 @@ func (s *server) run(socket string) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
 	go func() { <-sigc; s.signalShutdown() }()
-	go func() { <-s.shutdown; s.teardown(socket) }()
+	go s.acceptLoop()
 
+	// Block here until shutdown, then tear down synchronously on the main
+	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept) and
+	// then stops children + drops clients before os.Exit. Running it inline — not
+	// in a goroutine racing the accept loop's return out of run()/main — guarantees
+	// the kill-or-keep decision (and its log line) actually completes: previously
+	// the accept loop returned the moment the listener closed and main exited the
+	// process first, skipping the child teardown entirely.
+	<-s.shutdown
+	s.teardown(socket)
+}
+
+// acceptLoop accepts connections until the listener is closed on shutdown.
+func (s *server) acceptLoop() {
 	for {
 		nc, err := s.ln.Accept()
 		if err != nil {
@@ -316,18 +338,35 @@ func (s *server) serveConn(c *conn) {
 // signalShutdown requests a graceful stop exactly once.
 func (s *server) signalShutdown() { s.once.Do(func() { close(s.shutdown) }) }
 
-// teardown closes the listener, kills child processes, drops clients, and exits.
+// teardown closes the listener, stops child processes (per -keep-children), drops
+// clients, and exits.
 func (s *server) teardown(socket string) {
 	s.ln.Close()
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
 	}
 	_ = os.Remove(socket)
-	s.procs.killAll()
+	s.stopChildren()
 	s.mu.Lock()
 	for c := range s.conns {
 		c.nc.Close()
 	}
 	s.mu.Unlock()
 	os.Exit(0)
+}
+
+// stopChildren implements the -keep-children policy on graceful shutdown. By
+// default it kills the whole child tree (matching the reference). With
+// -keep-children set (POSIX only — gated at startup by honorKeepChildren), it
+// instead leaves every running child alive so they survive a daemon
+// restart/upgrade, logging one honest line with the surviving count. The new
+// daemon does not re-adopt them; an out-of-band consumer reconciles them via the
+// CT-1 pid/startTime. Split out from teardown so the gate is unit-testable
+// without teardown's os.Exit.
+func (s *server) stopChildren() {
+	if s.keepChildren {
+		logInfof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.runningCount())
+		return
+	}
+	s.procs.killAll()
 }

@@ -355,6 +355,27 @@ consider them now that the harness proves parity, and document each as an
 - Contract fixed by the sibling **clauster** client. Shipped in #105; documented
   in [PROTOCOL.md](PROTOCOL.md) (`process.spawn` + `process.reattach`).
 
+### CT-2 · Opt-in `-keep-children` serve flag ✅ — impact M / cost L
+
+- A `-serve` flag (off the wire — no method/frame/capability change). **Off by
+  default**, graceful shutdown kills the whole child tree, unchanged. **Set**, it
+  leaves spawned children running so they survive a daemon restart/upgrade,
+  logging one honest line with the surviving count. The new daemon does not
+  re-adopt the survivors; an out-of-band consumer reconciles them via the CT-1
+  `pid`/`startTime`.
+- **POSIX-only.** On Windows children are confined to a Job Object
+  (`KILL_ON_JOB_CLOSE`) that the OS terminates on daemon exit regardless, so the
+  flag is **ignored with a startup warning** rather than silently killing while
+  claiming to keep (`honorKeepChildren`). The hosted channel that uses it is
+  POSIX-only anyway.
+- **Supporting fix (default path):** shutdown teardown now runs synchronously on
+  the main goroutine. It previously ran in a goroutine that raced the accept
+  loop's return out of `run()`/`main` — `main` could exit the process first,
+  skipping child teardown entirely. So this also makes the *default* "kill on
+  shutdown" reliable (it was racy before). No wire effect — battery stays 496/496.
+- Documented in [PROTOCOL.md](PROTOCOL.md) (`-serve` flags); verified end-to-end
+  on POSIX (child survives with the flag, killed without) plus per-OS unit tests.
+
 ## Explicitly out of scope (would break compatibility)
 
 - Changing method names, params, result field order, error codes, or the

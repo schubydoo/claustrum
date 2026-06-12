@@ -14,6 +14,12 @@ func newSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
+// honorKeepChildren reports the effective -keep-children setting. On POSIX it is
+// honored verbatim: children spawn into their own process groups (Setpgid) and
+// are reparented to init when the detached daemon exits, so simply not signalling
+// them on shutdown leaves them running. (Windows overrides this — see its file.)
+func honorKeepChildren(requested bool) bool { return requested }
+
 // procGroup is the per-process kill handle. On Unix the child already lives in
 // its own process group (Setpgid, above), so there is no extra OS state to
 // hold; the type exists only so the cross-platform caller can treat every OS
