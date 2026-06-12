@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.1](https://github.com/schubydoo/claustrum/compare/v1.3.0...v1.3.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* namespace the daemonize re-exec sentinel to dodge CLAUDE_SSH_DAEMON_CHILD collision ([#111](https://github.com/schubydoo/claustrum/issues/111)) ([0e60c9c](https://github.com/schubydoo/claustrum/commit/0e60c9cd5856be1f44d4c38b86daf9526cfc651f))
+
 ## [1.3.0](https://github.com/schubydoo/claustrum/compare/v1.2.0...v1.3.0) (2026-06-12)
 
 
