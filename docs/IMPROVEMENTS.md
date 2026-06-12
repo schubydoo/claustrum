@@ -104,11 +104,11 @@ Scorecard SBOM + Signed-Releases (10/10). Also shipped `release-please.yml` +
 ### 12 · Pin the Go toolchain ✅ — impact M / cost L
 
 go.mod carries an explicit `toolchain` directive alongside the `go` directive
-(currently `toolchain go1.25.11` / `go 1.25.0`); with CI/release on
+(currently `toolchain go1.26.4` / `go 1.25.0`); with CI/release on
 `go-version-file: go.mod`, setup-go provisions that exact toolchain, so release
-builds are reproducible against a known patch. Renovate can bump the patch over
-time. (The pin moved 1.24.4 → 1.25.11 when x/sys was bumped for GO-2026-5024 —
-see #14.)
+builds are reproducible against a known patch. Renovate bumps the patch over
+time. (The pin first moved 1.24.4 → 1.25.11 when x/sys was bumped for
+GO-2026-5024 — see #14 — and Renovate has since advanced it to go1.26.4.)
 
 ### 13 · Structured/leveled logging ✅ — impact M / cost L-M
 
