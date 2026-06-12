@@ -13,13 +13,13 @@ Object teardown — only compiled into Windows builds).
 | `rpc.go` | JSON-RPC request/response types, error codes, dispatch + params gate |
 | `results.go` | result structs (field order is part of the wire contract) |
 | `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_process.go` | the 18 method handlers |
-| `process.go` | process manager: registry, per-process seq, replay buffer, subscribers |
+| `process.go` | process manager: registry, per-process seq, replay buffer, subscribers; captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
 | `bridge.go` | `-bridge` relay and `-stop` |
 | `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |
 | `fetch`-style helpers live in `install.go` | HTTP GET + SHA-256 + in-process zstd |
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`); level tag precedes the byte-intact `[Component]` prefixes |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`; no listener by default) |
-| `sysproc_unix.go` / `sysproc_windows.go` | whole-tree kill: process group (setpgid + negative-pid signal) vs Windows Job Object (`KILL_ON_JOB_CLOSE`) |
+| `sysproc_unix.go` / `sysproc_windows.go` | whole-tree kill: process group (setpgid + negative-pid signal) vs Windows Job Object (`KILL_ON_JOB_CLOSE`); the `-keep-children` POSIX-only policy (`honorKeepChildren`) |
 | `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS) |
 | `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / no-op (Windows) |
 

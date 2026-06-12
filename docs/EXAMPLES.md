@@ -183,8 +183,10 @@ Survive a daemon restart with `-keep-children` (CT-2, POSIX-only): a graceful
 shutdown leaves spawned children running instead of killing them, so they
 outlive a daemon restart/upgrade. Off by default (shutdown kills the tree); the
 new daemon does **not** re-adopt the survivors — reconcile them out-of-band via
-the CT-1 `pid`/`startTime`. On Windows the flag is ignored with a warning (a Job
-Object tears the children down on daemon exit regardless):
+the CT-1 `pid`/`startTime`. Survivors lose their stdio (stdin EOF; stdout/stderr
+writes hit a closed pipe → SIGPIPE/EPIPE — see PROTOCOL.md), so only children
+that tolerate that genuinely outlive the daemon. On Windows the flag is ignored
+with a warning (a Job Object tears the children down on daemon exit regardless):
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children

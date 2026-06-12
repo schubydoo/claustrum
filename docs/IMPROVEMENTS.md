@@ -363,6 +363,11 @@ consider them now that the harness proves parity, and document each as an
   logging one honest line with the surviving count. The new daemon does not
   re-adopt the survivors; an out-of-band consumer reconciles them via the CT-1
   `pid`/`startTime`.
+- **Caveat: survivors lose their stdio.** The pipes' daemon-side ends die with
+  the daemon — the child sees EOF on stdin, and a later stdout/stderr write gets
+  SIGPIPE (terminates by default) or EPIPE if SIGPIPE is ignored (Node's
+  default). Documented in [PROTOCOL.md](PROTOCOL.md); only children that
+  tolerate dead stdio genuinely survive.
 - **POSIX-only.** On Windows children are confined to a Job Object
   (`KILL_ON_JOB_CLOSE`) that the OS terminates on daemon exit regardless, so the
   flag is **ignored with a startup warning** rather than silently killing while
