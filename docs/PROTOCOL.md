@@ -250,14 +250,19 @@ stream notifications, **buffered** for later replay.
 - **`wantPid` opt-in (CT-1, claustrum-only).** When the params carry
   `"wantPid":true`, the reply gains two fields **after** `success`:
   `{"success":true,"pid":<int>,"startTime":<number>}`. `pid` is the child's OS
-  pid; `startTime` is its spawn instant as an **epoch-seconds** number (the
-  process's birth moment, stamped right after `Start`). A client uses the pair
-  for PID-reuse / orphan detection. **Default-mode is byte-identical:** absent or
-  `false`, the two fields are omitted (`omitempty`) and the frame is exactly the
-  old `{"success":true}`. The fields live on a dedicated result struct, so they
-  can never leak into a `process.stdin`/`process.kill` reply. An older daemon
-  ignores the unknown `wantPid` param (tolerant decode), so a CT-1 client is safe
-  to send it unconditionally — graceful degradation in both directions.
+  pid; `startTime` is the **daemon's wall clock (epoch seconds) captured at
+  spawn**, returned identically on spawn and reattach for the same process. It is
+  an **opaque token** for PID-reuse / orphan detection (CL-8): compare a persisted
+  daemon value against a later daemon value for the **same id**. **Do not** equality-
+  compare it against an independently-read OS process start time (e.g. psutil
+  `create_time`) — the daemon's spawn-moment wall clock differs from the kernel's
+  process-creation time by the fork→`time.Now()` delta and a different clock
+  derivation. **Default-mode is byte-identical:** absent or `false`, the two
+  fields are omitted (`omitempty`) and the frame is exactly the old
+  `{"success":true}`. The fields live on a dedicated result struct, so they can
+  never leak into a `process.stdin`/`process.kill` reply. An older daemon ignores
+  the unknown `wantPid` param (tolerant decode), so a CT-1 client is safe to send
+  it unconditionally — graceful degradation in both directions.
 
 #### process.stdin
 

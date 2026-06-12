@@ -42,9 +42,16 @@ type managedProc struct {
 	id string
 	// pid and startTime are captured once at spawn and never mutated, so they are
 	// safe to read without p.mu. They back the CT-1 opt-in (process.spawn /
-	// process.reattach with "wantPid":true) — the OS pid plus a process start-time
-	// stamp a client uses for PID-reuse / orphan detection. startTime is epoch
-	// seconds (matching clauster's psutil create_time semantics for the match).
+	// process.reattach with "wantPid":true).
+	//
+	// startTime is the daemon's wall clock (epoch seconds) captured at spawn,
+	// returned identically on spawn and reattach for the same process. It is an
+	// OPAQUE TOKEN for PID-reuse detection (CL-8): a client compares a persisted
+	// daemon value against a later daemon value for the same id. Do NOT compare it
+	// against an independently-read OS process start time (e.g. psutil
+	// create_time) — the daemon's spawn-moment wall clock differs from the kernel's
+	// process-creation time by the fork→time.Now() delta and a different clock
+	// derivation, so an equality check would spuriously fail.
 	pid       int
 	startTime float64
 	mu        sync.Mutex

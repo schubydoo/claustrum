@@ -61,8 +61,9 @@ type successResult struct {
 // successResult shared by process.stdin/process.kill: the CT-1 opt-in
 // ("wantPid":true) adds pid + startTime here only, so those fields can never
 // leak into a stdin/kill reply. Both are omitempty, so without the opt-in the
-// frame is byte-identical to the old {"success":true}. startTime is epoch
-// seconds (see managedProc.startTime).
+// frame is byte-identical to the old {"success":true}. startTime is an opaque
+// daemon token (epoch seconds), not an OS-comparable start time — see
+// managedProc.startTime.
 type spawnResult struct {
 	Success   bool    `json:"success"`
 	Pid       int     `json:"pid,omitempty"`
@@ -105,8 +106,9 @@ type reattachResult struct {
 	LastSeq  int  `json:"lastSeq"`
 	// Pid/StartTime are the CT-1 opt-in fields ("wantPid":true), appended after
 	// the original four so the default reply stays byte-identical. omitempty drops
-	// them when the opt-in is absent (or no process was found). startTime is epoch
-	// seconds (see managedProc.startTime).
+	// them when the opt-in is absent (or no process was found). startTime is an
+	// opaque daemon token (epoch seconds), not an OS-comparable start time — see
+	// managedProc.startTime.
 	Pid       int     `json:"pid,omitempty"`
 	StartTime float64 `json:"startTime,omitempty"`
 }
