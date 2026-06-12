@@ -40,6 +40,11 @@ processes on the host it runs on. Key considerations:
   — no command output, arguments, or tokens) and has **no authentication**, so
   bind it to a trusted interface (loopback). Exposing it on a reachable interface
   discloses coarse operational counts to anyone who can connect.
+- **`wantPid` (CT-1) discloses no new secret.** When an already-authenticated
+  caller opts in, the result carries the child's OS `pid` plus an opaque daemon
+  `startTime` token — used for PID-reuse / orphan detection. A socket + token
+  holder can already spawn and observe processes, so this is no new exposure, and
+  `startTime` is a daemon-internal token, not a credential.
 - **`-keep-children` is off by default** and adds no attack surface — no listener,
   no new auth path, and the children still run as the daemon's user (unchanged
   from `process.spawn` above). The one operational consequence: when set, a
