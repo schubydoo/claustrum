@@ -4,6 +4,14 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0](https://github.com/schubydoo/claustrum/compare/v1.2.0...v1.3.0) (2026-06-12)
+
+
+### Features
+
+* opt-in -keep-children serve flag to survive daemon restart (CT-2) ([#108](https://github.com/schubydoo/claustrum/issues/108)) ([5da6f3f](https://github.com/schubydoo/claustrum/commit/5da6f3faf8326fbec21634bd6085efbd613ad50b))
+* opt-in wantPid (pid + startTime) on process.spawn/reattach (CT-1) ([#105](https://github.com/schubydoo/claustrum/issues/105)) ([ae8e0d6](https://github.com/schubydoo/claustrum/commit/ae8e0d680f11995bb331e122c4777fe6a68cd1ba))
+
 ## [1.2.0](https://github.com/schubydoo/claustrum/compare/v1.1.0...v1.2.0) (2026-06-12)
 
 
