@@ -178,3 +178,16 @@ level):
 ```sh
 CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token"
 ```
+
+Survive a daemon restart with `-keep-children` (CT-2, POSIX-only): a graceful
+shutdown leaves spawned children running instead of killing them, so they
+outlive a daemon restart/upgrade. Off by default (shutdown kills the tree); the
+new daemon does **not** re-adopt the survivors — reconcile them out-of-band via
+the CT-1 `pid`/`startTime`. On Windows the flag is ignored with a warning (a Job
+Object tears the children down on daemon exit regardless):
+
+```sh
+claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children
+# on graceful shutdown the daemon logs, instead of killing them:
+#   [Server] -keep-children: leaving 2 running child process(es) alive across shutdown
+```

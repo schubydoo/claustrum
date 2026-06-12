@@ -33,8 +33,10 @@ Beyond the wire contract, a few **claustrum-only operational extras** (all
 opt-in and invisible to clients): leveled stderr logging via
 `CLAUSTRUM_LOG_LEVEL`, a Prometheus `/metrics` endpoint via `-metrics-addr`
 (no listener exists without it), a disk-free token handoff via `-token-fd`,
-and whole-tree process kill on Windows via Job Objects. See the
-[protocol reference](PROTOCOL.md) for details.
+whole-tree process kill on Windows via Job Objects, and a `-keep-children`
+flag (CT-2, POSIX-only) that leaves spawned processes running across a graceful
+shutdown so they survive a daemon restart (off by default — shutdown kills them).
+See the [protocol reference](PROTOCOL.md) for details.
 
 There is also one opt-in **protocol extension** — visible to clients but still an
 explicit **addition, not a reference behavior**: passing `"wantPid":true` to
