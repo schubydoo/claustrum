@@ -4,6 +4,18 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0](https://github.com/schubydoo/claustrum/compare/v1.1.0...v1.2.0) (2026-06-12)
+
+
+### Features
+
+* enforce "result types are ordered structs, not maps" via ast-grep ([#104](https://github.com/schubydoo/claustrum/issues/104)) ([f5512d7](https://github.com/schubydoo/claustrum/commit/f5512d7eda424c4d02a5ba345e6516418cbd1ba7))
+
+
+### Bug Fixes
+
+* filter hidden entries from files.list to match the reference ([#98](https://github.com/schubydoo/claustrum/issues/98)) ([23d2732](https://github.com/schubydoo/claustrum/commit/23d27325c413fbe5e3ae0437ad45af7cc42de250))
+
 ## [1.1.0](https://github.com/schubydoo/claustrum/compare/v1.0.1...v1.1.0) (2026-06-10)
 
 
