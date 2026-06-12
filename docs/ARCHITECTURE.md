@@ -13,7 +13,7 @@ Object teardown — only compiled into Windows builds).
 | `rpc.go` | JSON-RPC request/response types, error codes, dispatch + params gate |
 | `results.go` | result structs (field order is part of the wire contract) |
 | `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_process.go` | the 18 method handlers |
-| `process.go` | process manager: registry, per-process seq, replay buffer, subscribers |
+| `process.go` | process manager: registry, per-process seq, replay buffer, subscribers; captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
 | `bridge.go` | `-bridge` relay and `-stop` |
 | `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |
 | `fetch`-style helpers live in `install.go` | HTTP GET + SHA-256 + in-process zstd |

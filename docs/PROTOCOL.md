@@ -383,6 +383,14 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
   `[Server] -keep-children: leaving <n> running child process(es) alive across shutdown`.
 - The new daemon does **not** re-adopt the survivors (no persist / re-manage); an
   out-of-band consumer reconciles them (e.g. via the CT-1 `pid`/`startTime`).
+- **Survivors lose their stdio.** A child's stdin/stdout/stderr are pipes whose
+  other ends die with the daemon: the survivor sees **EOF on stdin**, and a later
+  write to stdout/stderr fails — **SIGPIPE** (default disposition: terminate) for
+  a child that hasn't ignored it, **EPIPE** write errors for one that has (Node.js
+  ignores SIGPIPE by default, so Node children get write errors, not killed).
+  Survival is therefore only useful for children that tolerate dead stdio —
+  quiet workers, EPIPE-tolerant processes, or children that re-plumb their own
+  output. There is no way for the daemon to re-plumb a live child's fds.
 - **Off the wire**: no method, frame, or capability changes — it is a lifecycle
   flag, so parity is unaffected (default-mode frames are byte-identical).
 - **Windows decision:** the flag is **POSIX-only**. Children are confined to a Job
