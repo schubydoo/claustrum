@@ -332,11 +332,37 @@ consider them now that the harness proves parity, and document each as an
   `checksum mismatch` instead of `decompressing: …`.
 - Verified by a live ref-vs-claustrum differential.
 
+### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach ✅ — impact M / cost L
+
+- `process.spawn` / `process.reattach` accept an optional `"wantPid":true` param.
+  When set, the reply gains `pid` (the child's OS pid) and `startTime`. The
+  reference has no such param, so this is the first wire-surface *extension*
+  (vs D1, which changes an install-path behavior).
+- `startTime` is an **opaque daemon token** (CL-8): the daemon's epoch-seconds
+  wall clock captured at spawn, returned identically on spawn and reattach for
+  the same id. A client persists it and compares a daemon value against a later
+  daemon value for the same id to detect PID reuse / orphans — it is **not** an
+  OS-comparable start time (don't equality-check it against psutil `create_time`).
+- **Default path is byte-identical:** absent/false, both fields are omitted
+  (`omitempty`) and the frame is exactly the old `{"success":true}` /
+  `{found,running,firstSeq,lastSeq}` — battery **496/496** vs reference
+  `d20a77da`.
+- The fields live on a dedicated `spawnResult` struct, so they can never leak
+  into the `successResult` shared by `process.stdin`/`process.kill`.
+- Tolerant both directions: an older daemon ignores the unknown param; an older
+  client never sees the extra fields — so a CT-1 client may send `wantPid`
+  unconditionally (graceful degradation).
+- Contract fixed by the sibling **clauster** client. Shipped in #105; documented
+  in [PROTOCOL.md](PROTOCOL.md) (`process.spawn` + `process.reattach`).
+
 ## Explicitly out of scope (would break compatibility)
 
 - Changing method names, params, result field order, error codes, or the
   stream-frame shape.
 - Replacing the in-band `"auth"` scheme.
-- Adding required new params to existing methods.
+- Adding **required** new params to existing methods. *(An **optional**,
+  gracefully-ignored param whose result fields vanish by default — the D1 /
+  CT-1 pattern — is the sanctioned exception: it leaves the default frame
+  byte-identical and degrades both ways.)*
 
 Any of these would need a deliberate, documented protocol version bump.
