@@ -1,0 +1,100 @@
+# Codecov config. Coverage is REPORTED here for visibility (PR comment + trend
+# graphs + per-component breakdown); the REAL gate is the CI coverage floor in
+# .github/workflows/ci.yml (the `coverage (>= 75%)` job enforces COVERAGE_MIN on
+# the single Ubuntu cell). Every Codecov status is `informational: true` — it
+# nudges, never blocks (it isn't a required check). Coverage uploads from ONE
+# Linux cell (the cross-package `-coverpkg=./...` run in ci.yml), so flags /
+# carryforward / report-merging aren't needed.
+#
+# Go note: Codecov ingests the native `go test -coverprofile` output
+# (coverage.out) directly — no lcov/cobertura conversion step.
+#
+# Validate before deploying changes:
+#   curl -X POST --data-binary @codecov.yml https://api.codecov.io/validate
+
+codecov:
+  # ci.yml uploads coverage even when the tests FAIL (the `!cancelled()` guard on
+  # the upload step), on purpose: a coverage drop should surface exactly when a
+  # change breaks something. So don't gate the Codecov status on CI passing, and
+  # don't wait for CI before reporting — show coverage as soon as it's uploaded.
+  require_ci_to_pass: false
+  notify:
+    wait_for_ci: false
+
+coverage:
+  precision: 2
+  round: down # a strict floor rounds down, matching the CI COVERAGE_MIN gate
+  range: "70...90" # red->green band tuned to a project that sits ~77%
+  status:
+    project:
+      default:
+        target: 75% # mirror the ci.yml COVERAGE_MIN floor
+        threshold: 1% # tolerate sub-1% drift before flagging
+        informational: true # nudge, never block — ci.yml is the source of truth
+    patch:
+      default:
+        informational: true # diff (new-code) coverage, advisory only
+
+# Informational setup: the per-line PR annotations are mostly visual clutter; the
+# comment + dashboard carry the signal.
+github_checks:
+  annotations: false
+
+comment:
+  # No flags are uploaded (single cell), so drop the empty "flags" panel and show
+  # the per-component breakdown instead.
+  layout: "condensed_header, diff, components, files"
+  behavior: default # update the existing comment in place
+  require_changes: true # only comment when coverage actually moves
+  hide_project_coverage: false
+
+# Per-area coverage breakdown in the dashboard + PR comment. No `statuses` are
+# defined, so components add VISIBILITY only — they do NOT create extra
+# per-component PR status checks. claustrum is a single flat `package main` at the
+# repo root, so paths are file globs; keep them roughly in sync as the wire
+# surface moves (mirrors the Architecture section of CLAUDE.md).
+component_management:
+  individual_components:
+    - component_id: rpc_dispatch
+      name: rpc & dispatch
+      paths:
+        - rpc.go
+        - results.go
+    - component_id: server
+      name: server & lifecycle
+      paths:
+        - server.go
+        - detach_unix.go
+        - detach_windows.go
+    - component_id: methods
+      name: methods (server/files/git/process)
+      paths:
+        - methods_server.go
+        - methods_files.go
+        - methods_git.go
+        - methods_process.go
+    - component_id: process
+      name: process supervisor
+      paths:
+        - process.go
+        - sysproc_unix.go
+        - sysproc_windows.go
+    - component_id: bridge_cli
+      name: bridge & CLI entrypoint
+      paths:
+        - bridge.go
+        - main.go
+    - component_id: install
+      name: install pipeline
+      paths:
+        - install.go
+    - component_id: env_compat
+      name: shell-env & cross-platform
+      paths:
+        - shellenv_unix.go
+        - shellenv_windows.go
+    - component_id: observability
+      name: logging & metrics
+      paths:
+        - logging.go
+        - metrics.go

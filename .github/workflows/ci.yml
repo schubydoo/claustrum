@@ -151,6 +151,24 @@ jobs:
           path: coverage.out
           retention-days: 7
 
+      # Report coverage to Codecov for visibility (PR comment + trend graphs +
+      # per-component breakdown, configured in codecov.yml). The REAL gate is the
+      # COVERAGE_MIN floor enforced above — Codecov is informational, never a
+      # required check, and upload flakiness must never fail CI (fail_ci_if_error:
+      # false). Codecov ingests Go's native `coverage.out` directly. `!cancelled()`
+      # so a FAILED `go test` (which fails the floor step) still uploads, surfacing
+      # a coverage drop precisely when it matters. Skips release-please's bot PRs
+      # (code never moves; the comment is pure noise) — filtered on the PR author,
+      # mirroring the .coderabbit.yaml note; the login is empty on push, so
+      # main-branch uploads are unaffected.
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.out
+          fail_ci_if_error: false
+
   ci-required-checks:
     # Single check for branch protection to gate on. Aggregates every job whose
     # failure should block merging. Add new required jobs by extending `needs`.
