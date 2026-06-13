@@ -17,10 +17,10 @@ early_access: true
 # and what CI can't catch; skip what the linters already gate. Squeezed under
 # CodeRabbit's 250-char tone_instructions cap.
 tone_instructions: >-
-  Assertive but high-signal. Prioritize: JSON frame/field-order drift,
-  error handling/silent failures, concurrency/lifecycle bugs, unix/windows
-  parity, Actions/release-workflow correctness, weak test assertions. Skip
-  what CI gates (gofmt/vet/golangci) and typos.
+  Assertive, high-signal. Prioritize: JSON frame/field-order drift, silent
+  failures, concurrency/lifecycle bugs, unix/windows parity, release-workflow
+  correctness, weak test assertions. Skip what CI gates (gofmt/vet/golangci)
+  and typos.
 
 reviews:
   profile: "assertive"
