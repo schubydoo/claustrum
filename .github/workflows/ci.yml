@@ -160,12 +160,15 @@ jobs:
       # a coverage drop precisely when it matters. Skips release-please's bot PRs
       # (code never moves; the comment is pure noise) — filtered on the PR author,
       # mirroring the .coderabbit.yaml note; the login is empty on push, so
-      # main-branch uploads are unaffected.
+      # main-branch uploads are unaffected. No token: claustrum is a public repo,
+      # so codecov-action uploads tokenless as long as the Codecov org keeps
+      # public-repo token-auth off (the default; "Global Upload Token" setting) — a
+      # CODECOV_TOKEN secret is only needed if that's re-enabled. fail_ci_if_error
+      # above keeps a token/upload hiccup non-fatal either way.
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
           fail_ci_if_error: false
 
