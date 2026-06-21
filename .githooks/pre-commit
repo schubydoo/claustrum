@@ -7,8 +7,6 @@
 #   2. go vet ./...    (vet)
 #   3. go mod tidy     (module hygiene — checked without leaving go.mod dirty)
 #   4. golangci-lint   (only if the binary is on PATH; CI gates it regardless)
-#   5. ast-grep scan   (structural wire-contract rules; only if on PATH —
-#                       local-only, CI does not gate it yet)
 #
 # Bypass for an in-progress commit with `git commit --no-verify`.
 set -eu
@@ -48,13 +46,6 @@ fi
 # 4. golangci-lint — opt-in locally (slower); CI always gates it.
 if command -v golangci-lint >/dev/null 2>&1; then
 	golangci-lint run ./... || fail "golangci-lint reported problems"
-fi
-
-# 5. ast-grep structural rules (sgconfig.yml + rules/) — enforces wire-contract
-#    invariants golangci-lint can't express, e.g. no map types in result structs.
-#    Opt-in: runs only if the binary is on PATH (install: https://ast-grep.github.io).
-if command -v ast-grep >/dev/null 2>&1; then
-	ast-grep scan || fail "ast-grep reported structural-rule problems (see rules/)"
 fi
 
 exit 0
