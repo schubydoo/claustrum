@@ -73,7 +73,7 @@ reviews:
         Result structs declare fields in the EXACT order the reference daemon
         emits them on the wire — order is the contract, not a style choice. Never
         suggest alphabetizing fields, and flag any `map` type (maps reorder keys on
-        marshal and break byte-identical frames; the ast-grep rule enforces this).
+        marshal and break byte-identical frames).
     - path: "testdata/**"
       instructions: >-
         These are committed golden fixtures of the exact reference wire frames.
