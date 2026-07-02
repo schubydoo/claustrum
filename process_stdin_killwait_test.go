@@ -135,14 +135,9 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 		t.Errorf("stdin gap = %+v, want code %d", env.Error, codeStdinOffsetGap)
 	}
 
-	raw := cl.call(authed(`{"jsonrpc":"2.0","id":7,"method":"process.reattach","params":{"id":"CAT","fromSeq":0}}`))
-	var ra reattachResult
-	decodeReply(t, raw, &ra)
-	if ra.StdinApplied != 11 {
-		t.Errorf("reattach stdinApplied = %d, want 11", ra.StdinApplied)
-	}
-
-	// Only the fresh bytes were echoed by cat: AAA + BBB + RT (never DUP/PART-head/GAP).
+	// Only the fresh bytes were echoed by cat: AAA + BBB + RT (never DUP/PART-head/
+	// GAP). Assert this on the live stream BEFORE any reattach — a reattach would
+	// replay these same frames and duplicate them in cl.fr, breaking the match.
 	cl.wait(func() bool {
 		var got []byte
 		for _, f := range cl.fr {
@@ -153,6 +148,16 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 		}
 		return string(got) == "AAA\nBBB\nRT\n"
 	})
+
+	// stdinApplied is checked on a SEPARATE connection so its replay doesn't
+	// pollute cl's frames.
+	b := dial(t, sock)
+	var ra reattachResult
+	decodeReply(t, b.call(authed(`{"jsonrpc":"2.0","id":7,"method":"process.reattach","params":{"id":"CAT","fromSeq":0}}`)), &ra)
+	if ra.StdinApplied != 11 {
+		t.Errorf("reattach stdinApplied = %d, want 11", ra.StdinApplied)
+	}
+
 	cl.send(authed(`{"jsonrpc":"2.0","id":8,"method":"process.kill","params":{"id":"CAT","signal":"KILL"}}`))
 	cl.waitExit("CAT")
 }

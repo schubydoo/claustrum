@@ -429,6 +429,14 @@ var defaultKillWaitMs = 3000
 
 const maxKillWaitMs = 600000 // 10 min
 
+// killReapGrace bounds the wait for a SIGKILL'd process to be reaped after
+// escalation. It is deliberately independent of (and larger than) the caller's
+// grace — which may be a few ms — because SIGKILL is uncatchable and the reap is
+// near-instant, so this only guards against a pathological unreapable child (e.g.
+// stuck in uninterruptible sleep) wedging the dispatch goroutine. var so tests can
+// shrink it.
+var killReapGrace = 5 * time.Second
+
 // clampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
 // waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),
 // otherwise the value verbatim up to maxKillWaitMs.
@@ -481,7 +489,7 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	select {
 	case <-p.done:
 		return true, true, false, true
-	case <-time.After(grace):
+	case <-time.After(killReapGrace):
 		// A SIGKILL that hasn't reaped (e.g. uninterruptible sleep) — don't wedge
 		// the dispatch goroutine forever; report not-yet-dead.
 		return true, false, false, true
