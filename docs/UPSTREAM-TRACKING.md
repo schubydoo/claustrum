@@ -3,7 +3,9 @@
 claustrum is behaviorally compatible with a reference daemon that ships inside
 Claude Desktop's SSH-remote feature. That daemon is versioned by **git SHA** and
 distributed as per-platform zstd blobs on a public CDN. This doc is how we detect
-when a new build appears and whether it changed anything we need to match.
+when a new build appears and whether it changed anything we need to match. For the
+running history of which builds changed what, see the
+[reference build ledger](REFERENCE-BUILDS.md).
 
 ## How the reference is distributed
 
