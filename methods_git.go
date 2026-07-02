@@ -96,7 +96,66 @@ func gitInfo(req *request) response {
 		sha, _ := git(p.Path, "rev-parse", "--short", "HEAD")
 		branch = "detached:" + sha
 	}
-	return okResult(req.ID, gitInfoResult{IsRepo: true, Repo: filepath.Base(top), Branch: branch, Root: top})
+	return okResult(req.ID, gitInfoResult{
+		IsRepo:        true,
+		Repo:          filepath.Base(top),
+		Branch:        branch,
+		Root:          top,
+		RepoSlug:      gitRepoSlug(p.Path),
+		DefaultBranch: gitDefaultBranch(p.Path),
+	})
+}
+
+// gitRepoSlug returns the "owner/repo" slug parsed from remote.origin.url, or ""
+// when there is no origin or the URL doesn't reduce to exactly two path segments.
+// Added by the reference daemon in 7c2f88d.
+func gitRepoSlug(dir string) string {
+	url, ok := git(dir, "config", "--get", "remote.origin.url")
+	if !ok || url == "" {
+		return ""
+	}
+	return parseRepoSlug(url)
+}
+
+// parseRepoSlug reduces a git remote URL to its "owner/repo" slug. It accepts the
+// scp-like (git@host:owner/repo.git), scheme (https:// or ssh://), userinfo, and
+// trailing-slash forms, strips a single trailing ".git", and returns the slug
+// ONLY when the path after the host is exactly two non-empty segments — a probe-
+// verified quirk of the reference: a GitLab subgroup URL (host/group/sub/proj)
+// has three segments and yields "". Owner/repo characters are preserved verbatim
+// (case, '-', '_', '.' all kept).
+func parseRepoSlug(remoteURL string) string {
+	u := strings.TrimSpace(remoteURL)
+	if i := strings.Index(u, "://"); i >= 0 { // strip scheme
+		u = u[i+3:]
+	}
+	if i := strings.Index(u, "@"); i >= 0 { // strip userinfo
+		u = u[i+1:]
+	}
+	// The host runs up to the first ':' (scp form) or '/' (URL form); the path is
+	// whatever follows that separator.
+	sep := strings.IndexAny(u, ":/")
+	if sep < 0 {
+		return ""
+	}
+	path := strings.TrimRight(u[sep+1:], "/")
+	path = strings.TrimSuffix(path, ".git")
+	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0] + "/" + parts[1]
+	}
+	return ""
+}
+
+// gitDefaultBranch returns the branch refs/remotes/origin/HEAD points to (e.g.
+// "main"), or "" when origin/HEAD is unset. Added by the reference daemon in
+// 7c2f88d.
+func gitDefaultBranch(dir string) string {
+	ref, ok := git(dir, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if !ok {
+		return ""
+	}
+	return strings.TrimPrefix(ref, "refs/remotes/origin/")
 }
 
 func gitStatus(req *request) response {

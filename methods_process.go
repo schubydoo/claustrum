@@ -4,7 +4,7 @@ import "encoding/base64"
 
 func (s *server) handleProcess(c *conn, req *request) response {
 	switch req.Method {
-	case "process.spawn", "process.stdin", "process.kill", "process.reattach":
+	case "process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach":
 	default:
 		return unknownMethod(req)
 	}
@@ -18,6 +18,8 @@ func (s *server) handleProcess(c *conn, req *request) response {
 		return s.processStdin(req)
 	case "process.kill":
 		return s.processKill(req)
+	case "process.killAndWait":
+		return s.processKillAndWait(req)
 	default: // process.reattach
 		return s.processReattach(c, req)
 	}
@@ -62,6 +64,11 @@ func (s *server) processSpawn(c *conn, req *request) response {
 type stdinParams struct {
 	ID   string `json:"id"`
 	Data string `json:"data"`
+	// Offset is the byte position this data starts at, for the stdin-offset
+	// idempotency contract (advertised as "process.stdin.offset"). A pointer so an
+	// absent field ("append here", the legacy behavior) is distinct from offset:0
+	// (which, once anything has been applied, is a duplicate). See applyStdin.
+	Offset *int `json:"offset"`
 }
 
 func (s *server) processStdin(req *request) response {
@@ -69,9 +76,10 @@ func (s *server) processStdin(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	// Precedence is decode → exists → running (probe-verified against the
+	// Precedence is decode → exists → running → offset (probe-verified against the
 	// reference): invalid base64 is rejected before the process is even looked
-	// up, so an unknown id with a bad payload still reports the decode error.
+	// up, so an unknown id with a bad payload still reports the decode error, and
+	// the offset gap is only checked once we know the process is live.
 	data, err := base64.StdEncoding.DecodeString(p.Data)
 	if err != nil {
 		return errResult(req.ID, codeInvalidParam, "Invalid base64 data")
@@ -83,8 +91,11 @@ func (s *server) processStdin(req *request) response {
 	if !mp.isRunning() {
 		return errResult(req.ID, codeInvalidParam, "Process not running")
 	}
-	s.procs.writeStdin(p.ID, data)
-	return okResult(req.ID, successResult{Success: true})
+	applied, duplicate, gap := mp.applyStdin(data, p.Offset)
+	if gap {
+		return errResult(req.ID, codeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")
+	}
+	return okResult(req.ID, stdinResult{Success: true, Applied: applied, Duplicate: duplicate})
 }
 
 type killParams struct {
@@ -99,6 +110,23 @@ func (s *server) processKill(req *request) response {
 	}
 	s.procs.kill(p.ID, p.Signal)
 	return okResult(req.ID, successResult{Success: true})
+}
+
+// processKillAndWait signals a process and blocks until it is gone (or was already
+// gone), unlike process.kill which is fire-and-forget. Missing id is an error;
+// an unknown id is a non-error {"found":false,"died":false}. Added in 7c2f88d.
+func (s *server) processKillAndWait(req *request) response {
+	var p killParams
+	if bad := bindParams(req, &p); bad != nil {
+		return *bad
+	}
+	if p.ID == "" {
+		return errResult(req.ID, codeInvalidParam, "Process ID is required")
+	}
+	found, died, alreadyExited, escalated := s.procs.killAndWait(p.ID, p.Signal)
+	return okResult(req.ID, killAndWaitResult{
+		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated,
+	})
 }
 
 type reattachParams struct {
@@ -117,9 +145,10 @@ func (s *server) processReattach(c *conn, req *request) response {
 	if p.ID == "" {
 		return errResult(req.ID, codeInvalidParam, "Process ID is required")
 	}
-	mp, found, running, firstSeq, lastSeq := s.procs.reattach(c, p.ID, p.FromSeq)
+	mp, found, running, firstSeq, lastSeq, stdinApplied := s.procs.reattach(c, p.ID, p.FromSeq)
 	res := reattachResult{
 		Found: found, Running: running, FirstSeq: firstSeq, LastSeq: lastSeq,
+		StdinApplied: stdinApplied,
 	}
 	if p.WantPid && mp != nil {
 		res.Pid = mp.pid

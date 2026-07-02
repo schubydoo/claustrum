@@ -48,7 +48,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **`server.go`** — the `-serve` daemon: AF_UNIX listener (mode `0600`),
   per-conn read loop, **concurrent** dispatch, self-daemonize, graceful shutdown.
 - **`methods_server.go` · `methods_files.go` · `methods_git.go` ·
-  `methods_process.go`** — the 18 methods across `server.*` / `files.*` /
+  `methods_process.go`** — the 19 methods across `server.*` / `files.*` /
   `git.*` / `process.*`.
 - **`results.go`** — result structs whose fields are declared in the exact order
   the reference emits. **Never a map** (maps sort keys and diverge from the wire

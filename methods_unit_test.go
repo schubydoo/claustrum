@@ -391,7 +391,9 @@ func TestGitNonRepoResults(t *testing.T) {
 	dir := t.TempDir() // under /tmp — not a git repo
 
 	for _, tc := range []struct{ method, wantResult string }{
-		{"git.info", `"result":{"isRepo":false}}`},
+		// git.info gained repoSlug/defaultBranch in 7c2f88d — always present, empty
+		// for a non-repo. git.status/list_branches keep their own non-repo shapes.
+		{"git.info", `"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`},
 		{"git.status", `"result":{"isRepo":false,"clean":false}}`},
 		{"git.list_branches", `"result":{"isRepo":false,"branches":[]}}`},
 	} {
