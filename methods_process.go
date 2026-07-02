@@ -1,6 +1,9 @@
 package main
 
-import "encoding/base64"
+import (
+	"encoding/base64"
+	"time"
+)
 
 func (s *server) handleProcess(c *conn, req *request) response {
 	switch req.Method {
@@ -112,18 +115,41 @@ func (s *server) processKill(req *request) response {
 	return okResult(req.ID, successResult{Success: true})
 }
 
+// killAndWaitParams is distinct from killParams: process.killAndWait accepts a
+// caller-supplied grace and an escalate toggle on top of id/signal (added in
+// 7c2f88d). Both are pointers so an absent field takes the reference default —
+// timeoutMs → 3000ms (see clampKillWaitMs), escalate → true.
+type killAndWaitParams struct {
+	ID        string `json:"id"`
+	Signal    string `json:"signal"`
+	TimeoutMs *int   `json:"timeoutMs"`
+	Escalate  *bool  `json:"escalate"`
+}
+
 // processKillAndWait signals a process and blocks until it is gone (or was already
 // gone), unlike process.kill which is fire-and-forget. Missing id is an error;
 // an unknown id is a non-error {"found":false,"died":false}. Added in 7c2f88d.
+// timeoutMs sets the graceful-signal grace (non-positive/absent → the 3000ms
+// default); escalate (absent → true) chooses whether to SIGKILL after the grace —
+// escalate:false leaves a stubborn process running and reports died:false.
 func (s *server) processKillAndWait(req *request) response {
-	var p killParams
+	var p killAndWaitParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
 	if p.ID == "" {
 		return errResult(req.ID, codeInvalidParam, "Process ID is required")
 	}
-	found, died, alreadyExited, escalated := s.procs.killAndWait(p.ID, p.Signal)
+	ms := 0
+	if p.TimeoutMs != nil {
+		ms = *p.TimeoutMs
+	}
+	grace := time.Duration(clampKillWaitMs(ms)) * time.Millisecond
+	escalate := true
+	if p.Escalate != nil {
+		escalate = *p.Escalate
+	}
+	found, died, alreadyExited, escalated := s.procs.killAndWait(p.ID, p.Signal, grace, escalate)
 	return okResult(req.ID, killAndWaitResult{
 		Found: found, Died: died, AlreadyExited: alreadyExited, Escalated: escalated,
 	})

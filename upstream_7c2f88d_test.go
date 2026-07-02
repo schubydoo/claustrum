@@ -121,6 +121,27 @@ func TestGitInfoRepoSlugAndDefaultBranch(t *testing.T) {
 	}
 }
 
+// clampKillWaitMs maps a caller's killAndWait timeoutMs onto the grace: non-positive
+// → the default (probe-verified 0 and -100 both wait 3000ms), positive honored up
+// to maxKillWaitMs.
+func TestClampKillWaitMs(t *testing.T) {
+	cases := []struct{ in, want int }{
+		{0, defaultKillWaitMs},
+		{-100, defaultKillWaitMs},
+		{50, 50},
+		{3000, 3000},
+		{90000, 90000},
+		{maxKillWaitMs, maxKillWaitMs},
+		{maxKillWaitMs + 1, maxKillWaitMs},
+		{10_000_000, maxKillWaitMs},
+	}
+	for _, tc := range cases {
+		if got := clampKillWaitMs(tc.in); got != tc.want {
+			t.Errorf("clampKillWaitMs(%d) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
 // server.capabilities advertises process.killAndWait (between kill and reattach)
 // and the process.stdin.offset feature.
 func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {

@@ -330,21 +330,30 @@ stream notifications, **buffered** for later replay.
 
 #### process.killAndWait
 
-`{id[,signal]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true]}`
+`{id[,signal][,timeoutMs][,escalate]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true]}`
 
 Added by reference `7c2f88d`. Unlike `process.kill`, it **blocks until the
-process is gone** and reports the outcome as a *result* (an unknown id is not an
-error):
+process is gone** (up to the grace) and reports the outcome as a *result* (an
+unknown id is not an error):
 
 - Missing `id` → `-32602 Process ID is required`; absent `params` object →
   `-32602 Invalid params`.
 - Unknown id → `{"found":false,"died":false}`.
 - Already exited before the call → `{"found":true,"died":true,"alreadyExited":true}`
   (no signal sent).
-- Live process → the graceful `signal` (default `SIGTERM`) is sent; if the process
-  is still alive after a grace window (~3 s) it is **escalated** to `SIGKILL` and
-  the reply adds `"escalated":true`. On success → `{"found":true,"died":true}`
-  (plus `escalated` only if the graceful signal was ignored).
+- Live process → the graceful `signal` (default `SIGTERM`) is sent, then it waits
+  up to the grace:
+    - **`timeoutMs`** sets that grace. Non-positive or absent → the **3000 ms**
+      default (probe-verified: `0` and `-100` both wait 3000 ms); positive values
+      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s). claustrum caps an
+      absurd value at 600000 ms so a signal-ignoring child can't wedge a request
+      forever — the reference clamps too, above the ~90 s ceiling we could observe.
+    - **`escalate`** (default `true`) decides what happens if the process is still
+      alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
+      and add `"escalated":true` to the reply. `false` → leave the process running
+      and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
+- On a process that dies within the grace (cooperative, or a hard `signal:"KILL"`)
+  → `{"found":true,"died":true}` with no `escalated`.
 
 #### process.reattach
 

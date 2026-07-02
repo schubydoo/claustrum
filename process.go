@@ -418,21 +418,42 @@ func (m *procManager) kill(id, signal string) {
 	p.group.signal(p.cmd.Process, signal)
 }
 
-// killGrace is how long killAndWait waits for the graceful signal to take effect
-// before escalating to SIGKILL, and again for the SIGKILL to reap. Probe-measured
-// at ~3s against the reference. var so tests can shrink it.
-var killGrace = 3 * time.Second
+// defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
+// sends no timeoutMs (or a non-positive one). Probe-measured at 3000ms against the
+// reference. var so tests can shrink it. maxKillWaitMs caps an absurd caller value
+// so a signal-ignoring child + escalate:false can't wedge the dispatch goroutine
+// indefinitely — the reference clamps too (clampKillWaitMs); its exact ceiling is
+// above the ~90s we could observe, so this generous cap only bites on adversarial
+// input, never a real client.
+var defaultKillWaitMs = 3000
+
+const maxKillWaitMs = 600000 // 10 min
+
+// clampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
+// waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),
+// otherwise the value verbatim up to maxKillWaitMs.
+func clampKillWaitMs(ms int) int {
+	if ms <= 0 {
+		return defaultKillWaitMs
+	}
+	if ms > maxKillWaitMs {
+		return maxKillWaitMs
+	}
+	return ms
+}
 
 // killAndWait signals the process (default SIGTERM) and blocks until it is gone,
-// escalating to SIGKILL if the graceful signal is ignored past killGrace. It
-// reports:
+// waiting up to grace for the graceful signal to take effect. If it is still alive
+// after grace and escalate is true, it force-kills with SIGKILL and reports
+// escalated; if escalate is false, it leaves the process running and reports
+// died:false. It reports:
 //   - found:         the id was known
 //   - died:          the process is now gone
 //   - alreadyExited: it had already exited before we signalled (no kill needed)
 //   - escalated:     it ignored the graceful signal and had to be SIGKILL'd
 //
 // The wire result is killAndWaitResult; an unknown id is (false,false,false,false).
-func (m *procManager) killAndWait(id, signal string) (found, died, alreadyExited, escalated bool) {
+func (m *procManager) killAndWait(id, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	p := m.get(id)
 	if p == nil {
 		return false, false, false, false
@@ -446,7 +467,12 @@ func (m *procManager) killAndWait(id, signal string) (found, died, alreadyExited
 	select {
 	case <-p.done:
 		return true, true, false, false
-	case <-time.After(killGrace):
+	case <-time.After(grace):
+	}
+	// Still alive after the grace window. With escalate:false the caller wants a
+	// best-effort graceful kill only — leave the process running and report it.
+	if !escalate {
+		return true, false, false, false
 	}
 	// The graceful signal was ignored — force-kill the group and wait for the reap.
 	if p.cmd != nil && p.cmd.Process != nil {
@@ -455,7 +481,7 @@ func (m *procManager) killAndWait(id, signal string) (found, died, alreadyExited
 	select {
 	case <-p.done:
 		return true, true, false, true
-	case <-time.After(killGrace):
+	case <-time.After(grace):
 		// A SIGKILL that hasn't reaped (e.g. uninterruptible sleep) — don't wedge
 		// the dispatch goroutine forever; report not-yet-dead.
 		return true, false, false, true
