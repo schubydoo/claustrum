@@ -3,18 +3,18 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
-	"os/exec"
 	"strings"
 	"testing"
 )
 
-// These tests pin the wire surface added by the reference daemon in 7c2f88d:
-// process.killAndWait, the process.stdin.offset idempotency contract (stdin
-// "applied"/"duplicate" + reattach "stdinApplied"), git.info repoSlug/
-// defaultBranch, and the server.capabilities "features" array. See
-// docs/PROTOCOL.md and docs/UPSTREAM-TRACKING.md.
+// Tests for the process-side wire surface added by the reference daemon in
+// 7c2f88d: the process.stdin.offset idempotency contract (stdin "applied"/
+// "duplicate" + reattach "stdinApplied"), process.killAndWait (and its
+// timeoutMs/escalate params via clampKillWaitMs), and the server.capabilities
+// "features" array that advertises them. See docs/PROTOCOL.md.
 
-// rpcEnvelope is a minimal reply decoder for the tests below.
+// rpcEnvelope is a minimal reply decoder shared by the 7c2f88d wire-surface tests
+// (also used by git_repo_slug_test.go and killandwait_unix_test.go).
 type rpcEnvelope struct {
 	Result json.RawMessage `json:"result"`
 	Error  *struct {
@@ -53,72 +53,6 @@ func spawnReqArgs(t *testing.T, id int, procID, mode string, args ...string) str
 		t.Fatalf("marshal spawn request: %v", err)
 	}
 	return string(b)
-}
-
-// parseRepoSlug reduces a remote URL to owner/repo only when the path after the
-// host is exactly two segments — a probe-verified quirk of the reference.
-func TestParseRepoSlug(t *testing.T) {
-	cases := []struct{ url, want string }{
-		{"git@github.com:acme/widgets.git", "acme/widgets"},
-		{"https://github.com/acme/widgets.git", "acme/widgets"},
-		{"https://github.com/acme/nosuffix", "acme/nosuffix"},
-		{"ssh://git@github.com/acme/proj.git", "acme/proj"},
-		{"https://user:pass@github.com/acme/proj.git", "acme/proj"},
-		{"https://github.com/acme/proj/", "acme/proj"},
-		{"git@github.com:acme/proj", "acme/proj"},
-		{"https://github.com/Acme-Org/My_Repo.git", "Acme-Org/My_Repo"},
-		{"https://github.com/acme/my-repo.git", "acme/my-repo"},
-		{"https://github.com/acme/my.repo.git", "acme/my.repo"},
-		// Three-segment paths (GitLab subgroups) yield "" — the reference requires
-		// exactly two segments, it does not take the last two.
-		{"https://gitlab.com/group/sub/proj.git", ""},
-		{"", ""},
-		{"not a url", ""},
-	}
-	for _, tc := range cases {
-		if got := parseRepoSlug(tc.url); got != tc.want {
-			t.Errorf("parseRepoSlug(%q) = %q, want %q", tc.url, got, tc.want)
-		}
-	}
-}
-
-// git.info populates repoSlug from remote.origin.url and defaultBranch from
-// refs/remotes/origin/HEAD; both are empty (but present) when unset.
-func TestGitInfoRepoSlugAndDefaultBranch(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
-	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(cmd.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q")
-	run("config", "user.email", "t@t")
-	run("config", "user.name", "t")
-	run("commit", "-q", "--allow-empty", "-m", "init")
-	run("remote", "add", "origin", "git@github.com:acme/gizmo.git")
-	head, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
-	if err != nil {
-		t.Fatalf("rev-parse: %v", err)
-	}
-	run("update-ref", "refs/remotes/origin/main", strings.TrimSpace(string(head)))
-	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-
-	s := newTestServer()
-	raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": dir}))
-	var got gitInfoResult
-	decodeReply(t, []byte(raw), &got)
-	if got.RepoSlug != "acme/gizmo" {
-		t.Errorf("repoSlug = %q, want acme/gizmo", got.RepoSlug)
-	}
-	if got.DefaultBranch != "main" {
-		t.Errorf("defaultBranch = %q, want main", got.DefaultBranch)
-	}
 }
 
 // clampKillWaitMs maps a caller's killAndWait timeoutMs onto the grace: non-positive
@@ -226,7 +160,8 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 // process.killAndWait: missing id is an error; an unknown id is a non-error
 // {found:false,died:false}; an already-exited process reports alreadyExited; a
 // live process is signalled and reported died (no escalation for a cooperative
-// child).
+// child). Grace/escalate params (timeoutMs, escalate:false) need a stubborn child
+// and are covered in killandwait_unix_test.go.
 func TestSocketProcessKillAndWait(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
