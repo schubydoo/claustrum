@@ -76,8 +76,14 @@ DATA=$(printf 'ping\n' | base64)
 run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"process.spawn\",\"params\":{\"id\":\"cat1\",\"command\":\"cat\"}},
      {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"process.stdin\",\"params\":{\"id\":\"cat1\",\"data\":\"$DATA\"}},
      {\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"process.kill\",\"params\":{\"id\":\"cat1\",\"signal\":\"SIGTERM\"}}]"
+# the stdin reply is {"id":2,"result":{"success":true,"applied":5}} (5 = bytes of "ping\n");
 # stdout frame decodes to "ping\n"; exit frame has exitCode -1 (signalled)
 ```
+
+`process.stdin` also accepts an `offset` (the byte position the data starts at)
+for idempotent replay across reconnects: re-sending already-applied bytes is a
+no-op flagged `"duplicate":true`, and an `offset` past the applied count is a
+`-32003 stdin offset gap` error. See [PROTOCOL.md](PROTOCOL.md).
 
 ## Reattach / catch up via the replay buffer
 
@@ -87,7 +93,7 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
        "params":{"id":"em","command":"sh","args":["-c","for i in 1 2 3; do echo $i; done"]}},
       {"jsonrpc":"2.0","id":2,"method":"process.reattach","params":{"id":"em","fromSeq":0}}]'
 # the reattach replays the buffered stdout+exit frames, then returns
-# {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":4}}
+# {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":4,"stdinApplied":0}}
 ```
 
 A process survives the disconnect of the connection that spawned it — a *new*
@@ -113,12 +119,12 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
        "params":{"id":"w1","fromSeq":0,"wantPid":true}}]'
 # {"id":1,"result":{"success":true,"pid":12345,"startTime":1718040000.12}}
 # … stdout + exit stream frames …
-# {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":2,"pid":12345,"startTime":1718040000.12}}
+# {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":2,"stdinApplied":0,"pid":12345,"startTime":1718040000.12}}
 ```
 
 Without `wantPid`, those same two replies are exactly `{"success":true}` and
-`{"found":…,"running":…,"firstSeq":…,"lastSeq":…}` — the `pid`/`startTime` fields
-are simply absent (`omitempty`).
+`{"found":…,"running":…,"firstSeq":…,"lastSeq":…,"stdinApplied":…}` — the
+`pid`/`startTime` fields are simply absent (`omitempty`).
 
 `startTime` is an **opaque token**: persist it, then compare a daemon value
 against a *later* daemon value for the **same `id`** to detect PID reuse. Do

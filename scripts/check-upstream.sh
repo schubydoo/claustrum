@@ -55,7 +55,7 @@ note() { echo "  DRIFT: $*"; drift=1; }
 CANON='server.ping server.version server.capabilities server.shutdown
 files.list files.validate files.stat files.read files.extract_tar
 git.info git.status git.list_branches git.worktree_create git.worktree_remove
-process.spawn process.stdin process.kill process.reattach'
+process.spawn process.stdin process.kill process.killAndWait process.reattach'
 refstr="$(strings -n 4 "$WORK/ref")"; ourstr="$(strings -n 4 "$WORK/claustrum")"
 for m in $CANON; do
   grep -qF "$m" <<<"$refstr"  || note "canonical method missing from REFERENCE: $m (renamed/removed upstream?)"
@@ -90,6 +90,8 @@ branchName is required
 files.read: path is a directory
 files.read: file exceeds maxBytes
 checksum mismatch: expected=%s, actual=%s
+stdin offset gap: offset ahead of applied bytes
+process.stdin.offset
 [Server] Unauthorized request: method=%s, id=%v
 [process.Manager] Process %s exited with code %d
 [frameSink] replay write failed, detaching: %v

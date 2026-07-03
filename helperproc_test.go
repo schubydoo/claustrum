@@ -52,6 +52,13 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		time.Sleep(time.Duration(secs) * time.Second)
+	case "ignore-term":
+		// Escalation fixture (Unix): ignore SIGTERM so killAndWait's graceful
+		// signal is a no-op and it must escalate to SIGKILL. Announce readiness on
+		// stdout so the test only kills once the handler is installed.
+		ignoreSigterm()
+		fmt.Print("ready\n")
+		time.Sleep(60 * time.Second)
 	case "pwd": // /bin/pwd -P: the physical working directory
 		wd, err := os.Getwd()
 		if err != nil {

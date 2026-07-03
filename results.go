@@ -17,6 +17,12 @@ type versionResult struct {
 type capabilitiesResult struct {
 	Version string   `json:"version"`
 	Methods []string `json:"methods"`
+	// Features advertises optional protocol extensions the client may rely on.
+	// Added by the reference daemon in 7c2f88d alongside process.killAndWait and
+	// the stdin-offset idempotency contract; the sole entry is
+	// "process.stdin.offset". Always present (never omitempty) — the reference
+	// emits the array unconditionally.
+	Features []string `json:"features"`
 }
 
 type statResult struct {
@@ -78,6 +84,14 @@ type gitInfoResult struct {
 	// repo root even when path points at a subdirectory. Added by the reference
 	// daemon in 7cbfa471 (the 8de85faa baseline omitted it).
 	Root string `json:"root"`
+	// RepoSlug and DefaultBranch were added by the reference daemon in 7c2f88d.
+	// Both are always present (never omitempty), empty when undeterminable.
+	// RepoSlug is the "owner/repo" parsed from remote.origin.url — populated ONLY
+	// when the path after the host is exactly two segments (a GitLab subgroup like
+	// group/sub/proj yields ""), .git and userinfo stripped (see parseRepoSlug).
+	// DefaultBranch is what refs/remotes/origin/HEAD points to (empty when unset).
+	RepoSlug      string `json:"repoSlug"`
+	DefaultBranch string `json:"defaultBranch"`
 }
 
 type gitStatusResult struct {
@@ -104,16 +118,49 @@ type reattachResult struct {
 	Running  bool `json:"running"`
 	FirstSeq int  `json:"firstSeq"`
 	LastSeq  int  `json:"lastSeq"`
-	// Pid/StartTime are the CT-1 opt-in fields ("wantPid":true), appended after
-	// the original four so the default reply stays byte-identical. omitempty drops
-	// them when the opt-in is absent (or no process was found). startTime is an
-	// opaque daemon token (epoch seconds), not an OS-comparable start time — see
-	// managedProc.startTime.
+	// StdinApplied is the cumulative count of stdin bytes applied to the process,
+	// added by the reference daemon in 7c2f88d. A reconnecting client uses it to
+	// resume stdin from the right offset (see the process.stdin.offset contract).
+	// Always present (never omitempty); 0 when no process was found.
+	StdinApplied int `json:"stdinApplied"`
+	// Pid/StartTime are the CT-1 opt-in fields ("wantPid":true), appended last so
+	// the default reply stays byte-identical. omitempty drops them when the opt-in
+	// is absent (or no process was found). startTime is an opaque daemon token
+	// (epoch seconds), not an OS-comparable start time — see managedProc.startTime.
 	Pid       int     `json:"pid,omitempty"`
 	StartTime float64 `json:"startTime,omitempty"`
 }
 
-// notRepo is the minimal {"isRepo":false} body for non-repository paths.
+// stdinResult is process.stdin's reply. Before 7c2f88d it was the bare
+// {"success":true}; the reference now always reports the cumulative applied byte
+// count, and flags a wholly-duplicate write (offset already covered) so an
+// idempotent client can resume stdin across reconnects. Applied is never
+// omitempty (the reference emits it unconditionally, even at 0); Duplicate is
+// dropped when false.
+type stdinResult struct {
+	Success   bool `json:"success"`
+	Applied   int  `json:"applied"`
+	Duplicate bool `json:"duplicate,omitempty"`
+}
+
+// killAndWaitResult is process.killAndWait's reply. Found reports whether the id
+// was known; Died whether the process is now gone. AlreadyExited flags a process
+// that had already exited before the signal (no kill needed); Escalated flags one
+// that ignored the graceful signal and had to be SIGKILL'd after the grace
+// window. Both bools are omitempty, so a plain running-process kill is
+// {"found":true,"died":true} and an unknown id is {"found":false,"died":false}.
+type killAndWaitResult struct {
+	Found         bool `json:"found"`
+	Died          bool `json:"died"`
+	AlreadyExited bool `json:"alreadyExited,omitempty"`
+	Escalated     bool `json:"escalated,omitempty"`
+}
+
+// notRepoResult is the git.info body for non-repository paths. Since 7c2f88d the
+// reference emits {"isRepo":false,"repoSlug":"","defaultBranch":""} — the two new
+// fields are always present (empty for a non-repo) just as in gitInfoResult.
 type notRepoResult struct {
-	IsRepo bool `json:"isRepo"`
+	IsRepo        bool   `json:"isRepo"`
+	RepoSlug      string `json:"repoSlug"`
+	DefaultBranch string `json:"defaultBranch"`
 }

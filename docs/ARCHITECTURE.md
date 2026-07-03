@@ -12,7 +12,7 @@ Object teardown — only compiled into Windows builds).
 | `server.go` | `-serve` daemon: AF_UNIX listener, per-connection loop, concurrent dispatch, graceful shutdown (kills children, or leaves them with `-keep-children`) |
 | `rpc.go` | JSON-RPC request/response types, error codes, dispatch + params gate |
 | `results.go` | result structs (field order is part of the wire contract) |
-| `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_process.go` | the 18 method handlers |
+| `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_process.go` | the 19 method handlers |
 | `process.go` | process manager: registry, per-process seq, replay buffer, subscribers; captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
 | `bridge.go` | `-bridge` relay and `-stop` |
 | `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |

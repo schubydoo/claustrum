@@ -81,6 +81,7 @@ nav:
   - Protocol reference: PROTOCOL.md
   - Examples: EXAMPLES.md
   - Upstream tracking: UPSTREAM-TRACKING.md
+  - Reference builds: REFERENCE-BUILDS.md
   - Improvement backlog: IMPROVEMENTS.md
   - Project:
       - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md

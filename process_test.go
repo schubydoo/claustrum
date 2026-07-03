@@ -115,7 +115,7 @@ func TestEmitRetainsAllAtExactCap(t *testing.T) {
 func TestReattachUnknownProcess(t *testing.T) {
 	m := newProcManager()
 	c, _ := pipeConn(t)
-	_, found, running, first, last := m.reattach(c, "missing", 0)
+	_, found, running, first, last, _ := m.reattach(c, "missing", 0)
 	if found || running || first != 0 || last != 0 {
 		t.Errorf("reattach(missing) = (%v,%v,%d,%d), want all zero/false", found, running, first, last)
 	}
@@ -132,7 +132,7 @@ func TestReattachReplaysFromSeq(t *testing.T) {
 	m.procs["p1"] = p
 
 	c, frames := pipeConn(t)
-	_, found, running, first, last := m.reattach(c, "p1", 1)
+	_, found, running, first, last, _ := m.reattach(c, "p1", 1)
 	if !found || !running || first != 1 || last != 3 {
 		t.Errorf("reattach = (%v,%v,%d,%d), want (true,true,1,3)", found, running, first, last)
 	}
@@ -285,7 +285,7 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 	server.Close()
 	dead := &conn{nc: client}
 
-	_, found, _, _, _ := m.reattach(dead, "p", 0) // replays seq 1 → write fails → detach
+	_, found, _, _, _, _ := m.reattach(dead, "p", 0) // replays seq 1 → write fails → detach
 	if !found {
 		t.Fatal("reattach should find p")
 	}
@@ -563,7 +563,7 @@ func TestReattachEmptyBuffer(t *testing.T) {
 	p := &managedProc{id: "eb", subs: map[*conn]struct{}{}, running: true} // no emits → empty buffer
 	m.procs["eb"] = p
 	c, _ := pipeConn(t)
-	_, found, running, first, last := m.reattach(c, "eb", 0)
+	_, found, running, first, last, _ := m.reattach(c, "eb", 0)
 	if !found || !running || first != 0 || last != 0 {
 		t.Errorf("reattach(empty buffer) = (%v,%v,%d,%d), want (true,true,0,0)", found, running, first, last)
 	}
@@ -733,7 +733,7 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	}
 
 	c2, _ := pipeConn(t)
-	if _, found, _, _, _ := m.reattach(c2, "mc", 0); !found {
+	if _, found, _, _, _, _ := m.reattach(c2, "mc", 0); !found {
 		t.Fatal("reattach did not find the live process")
 	}
 	m.reattach(c2, "missing", 0) // not found → must not count

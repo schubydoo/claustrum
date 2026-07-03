@@ -64,6 +64,9 @@ type managedProc struct {
 	stdin     io.WriteCloser
 	cmd       *exec.Cmd
 	group     *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	// done is closed once by the exit goroutine after the child is reaped, so
+	// killAndWait can block until the process is actually gone.
+	done chan struct{}
 
 	// Async stdin: process.stdin enqueues here and returns immediately, while a
 	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
@@ -76,6 +79,11 @@ type managedProc struct {
 	stdinQBytes int
 	stdinDone   bool
 	stdinWarned bool
+	// stdinApplied is the cumulative count of stdin bytes accepted for delivery,
+	// the high-water mark that backs the stdin-offset idempotency contract (see
+	// applyStdin). Guarded by stdinMu; surfaced on the wire as process.stdin's
+	// "applied" and process.reattach's "stdinApplied".
+	stdinApplied int
 }
 
 type procManager struct {
@@ -200,6 +208,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		stdin:     stdin,
 		cmd:       cmd,
 		group:     group,
+		done:      make(chan struct{}),
 	}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
@@ -254,6 +263,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		logInfof("[process.Manager] Process %s exited with code %d", id, code)
 		met.processExits.Add(1)
 		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
+		// Signal any killAndWait waiter now the child is fully reaped.
+		close(p.done)
 	}()
 	return p, nil
 }
@@ -298,7 +309,15 @@ func (m *procManager) writeStdin(id string, data []byte) bool {
 // never deadlock waiting for a drain that cannot start.
 func (p *managedProc) enqueueStdin(data []byte) {
 	p.stdinMu.Lock()
-	defer p.stdinMu.Unlock()
+	p.enqueueStdinLocked(data)
+	p.stdinMu.Unlock()
+}
+
+// enqueueStdinLocked is enqueueStdin's body with p.stdinMu already held, so the
+// stdin-offset path (applyStdin) can decide the offset and enqueue atomically
+// under a single lock. cond.Wait releases stdinMu while parked, so the exit
+// goroutine can still set stdinDone and wake it.
+func (p *managedProc) enqueueStdinLocked(data []byte) {
 	for !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
 		if !p.stdinWarned {
 			logWarnf("[process.Manager] stdin backpressure: queue full for %s", p.id)
@@ -312,6 +331,45 @@ func (p *managedProc) enqueueStdin(data []byte) {
 	p.stdinQ = append(p.stdinQ, data)
 	p.stdinQBytes += len(data)
 	p.stdinCond.Broadcast()
+}
+
+// applyStdin implements the stdin-offset idempotency contract (advertised as the
+// "process.stdin.offset" capability). offset is the byte position the caller
+// believes this data starts at; nil means "append at the current high-water"
+// (the legacy, offset-less behavior). It returns the new cumulative applied byte
+// count, plus:
+//   - duplicate=true when the data is wholly at-or-before what's already applied
+//     (nothing new is enqueued; applied is unchanged), and
+//   - gap=true when offset is ahead of applied (a hole that would drop input —
+//     the caller must resend from `applied`; nothing is enqueued).
+//
+// A partial overlap (offset < applied < offset+len) enqueues only the fresh tail
+// data[applied-offset:] and advances applied to offset+len. The decision and the
+// enqueue happen under one stdinMu hold so concurrent stdin calls can't interleave
+// against a stale counter.
+func (p *managedProc) applyStdin(data []byte, offset *int) (applied int, duplicate, gap bool) {
+	p.stdinMu.Lock()
+	cur := p.stdinApplied
+	if offset != nil {
+		off := *offset
+		if off > cur {
+			p.stdinMu.Unlock()
+			return cur, false, true
+		}
+		if skip := cur - off; skip > 0 {
+			if skip >= len(data) {
+				p.stdinMu.Unlock()
+				return cur, true, false
+			}
+			data = data[skip:]
+		}
+	}
+	p.enqueueStdinLocked(data)
+	p.stdinApplied += len(data)
+	applied = p.stdinApplied
+	p.stdinMu.Unlock()
+	met.stdinBytes.Add(int64(len(data)))
+	return applied, false, false
 }
 
 // stdinWriter drains the async queue to the child's stdin in FIFO order for the
@@ -360,14 +418,93 @@ func (m *procManager) kill(id, signal string) {
 	p.group.signal(p.cmd.Process, signal)
 }
 
+// defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
+// sends no timeoutMs (or a non-positive one). Probe-measured at 3000ms against the
+// reference. var so tests can shrink it. maxKillWaitMs caps an absurd caller value
+// so a signal-ignoring child + escalate:false can't wedge the dispatch goroutine
+// indefinitely — the reference clamps too (clampKillWaitMs); its exact ceiling is
+// above the ~90s we could observe, so this generous cap only bites on adversarial
+// input, never a real client.
+var defaultKillWaitMs = 3000
+
+const maxKillWaitMs = 600000 // 10 min
+
+// killReapGrace bounds the wait for a SIGKILL'd process to be reaped after
+// escalation. It is deliberately independent of (and larger than) the caller's
+// grace — which may be a few ms — because SIGKILL is uncatchable and the reap is
+// near-instant, so this only guards against a pathological unreapable child (e.g.
+// stuck in uninterruptible sleep) wedging the dispatch goroutine. var so tests can
+// shrink it.
+var killReapGrace = 5 * time.Second
+
+// clampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
+// waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),
+// otherwise the value verbatim up to maxKillWaitMs.
+func clampKillWaitMs(ms int) int {
+	if ms <= 0 {
+		return defaultKillWaitMs
+	}
+	if ms > maxKillWaitMs {
+		return maxKillWaitMs
+	}
+	return ms
+}
+
+// killAndWait signals the process (default SIGTERM) and blocks until it is gone,
+// waiting up to grace for the graceful signal to take effect. If it is still alive
+// after grace and escalate is true, it force-kills with SIGKILL and reports
+// escalated; if escalate is false, it leaves the process running and reports
+// died:false. It reports:
+//   - found:         the id was known
+//   - died:          the process is now gone
+//   - alreadyExited: it had already exited before we signalled (no kill needed)
+//   - escalated:     it ignored the graceful signal and had to be SIGKILL'd
+//
+// The wire result is killAndWaitResult; an unknown id is (false,false,false,false).
+func (m *procManager) killAndWait(id, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
+	p := m.get(id)
+	if p == nil {
+		return false, false, false, false
+	}
+	if !p.isRunning() {
+		return true, true, true, false
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
+		p.group.signal(p.cmd.Process, signal)
+	}
+	select {
+	case <-p.done:
+		return true, true, false, false
+	case <-time.After(grace):
+	}
+	// Still alive after the grace window. With escalate:false the caller wants a
+	// best-effort graceful kill only — leave the process running and report it.
+	if !escalate {
+		return true, false, false, false
+	}
+	// The graceful signal was ignored — force-kill the group and wait for the reap.
+	if p.cmd != nil && p.cmd.Process != nil {
+		p.group.signal(p.cmd.Process, "KILL")
+	}
+	select {
+	case <-p.done:
+		return true, true, false, true
+	case <-time.After(killReapGrace):
+		// A SIGKILL that hasn't reaped (e.g. uninterruptible sleep) — don't wedge
+		// the dispatch goroutine forever; report not-yet-dead.
+		return true, false, false, true
+	}
+}
+
 // reattach replays buffered frames with seq > fromSeq to c, (re)subscribes c for
 // future frames, and reports the buffer/running state. It also returns the
 // managedProc (nil when not found) so the caller can read its immutable
-// pid/startTime for the CT-1 opt-in.
-func (m *procManager) reattach(c *conn, id string, fromSeq int) (p *managedProc, found, running bool, firstSeq, lastSeq int) {
+// pid/startTime for the CT-1 opt-in, and the process's cumulative stdinApplied so
+// a reconnecting client can resume stdin from the right offset (0 when not found).
+func (m *procManager) reattach(c *conn, id string, fromSeq int) (p *managedProc, found, running bool, firstSeq, lastSeq, stdinApplied int) {
 	p = m.get(id)
 	if p == nil {
-		return nil, false, false, 0, 0
+		return nil, false, false, 0, 0, 0
 	}
 	met.reattaches.Add(1)
 	p.mu.Lock()
@@ -384,6 +521,9 @@ func (m *procManager) reattach(c *conn, id string, fromSeq int) (p *managedProc,
 		lastSeq = p.buffer[len(p.buffer)-1].Seq
 	}
 	p.mu.Unlock()
+	p.stdinMu.Lock()
+	stdinApplied = p.stdinApplied
+	p.stdinMu.Unlock()
 	for _, f := range replay {
 		if err := c.writeJSON(f); err != nil {
 			logWarnf("[frameSink] replay write failed, detaching: %v", err)
@@ -393,7 +533,7 @@ func (m *procManager) reattach(c *conn, id string, fromSeq int) (p *managedProc,
 			break
 		}
 	}
-	return p, true, running, firstSeq, lastSeq
+	return p, true, running, firstSeq, lastSeq, stdinApplied
 }
 
 func (m *procManager) detachConn(c *conn) {
