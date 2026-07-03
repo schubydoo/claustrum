@@ -1,10 +1,12 @@
 # Codecov config. Coverage is REPORTED here for visibility (PR comment + trend
 # graphs + per-component breakdown); the REAL gate is the CI coverage floor in
 # .github/workflows/ci.yml (the `coverage (>= 75%)` job enforces COVERAGE_MIN on
-# the single Ubuntu cell). Every Codecov status is `informational: true` — it
-# nudges, never blocks (it isn't a required check). Coverage uploads from ONE
-# Linux cell (the cross-package `-coverpkg=./...` run in ci.yml), so flags /
-# carryforward / report-merging aren't needed.
+# the single Ubuntu cell). The `project` status is `informational: true` (nudge,
+# never block); `patch` is a real pass/fail traffic light on new-code coverage —
+# but neither is a *required* check, so a red `patch` X still leaves the merge
+# button green unless someone adds `codecov/patch` to branch protection. Coverage
+# uploads from ONE Linux cell (the cross-package `-coverpkg=./...` run in ci.yml),
+# so flags / carryforward / report-merging aren't needed.
 #
 # Go note: Codecov ingests the native `go test -coverprofile` output
 # (coverage.out) directly — no lcov/cobertura conversion step.
@@ -20,6 +22,10 @@ codecov:
   require_ci_to_pass: false
   notify:
     wait_for_ci: false
+    # One upload cell (ubuntu), so report as soon as that single build lands —
+    # don't wait for a phantom second uploader. Bump this if a 2nd cell ever
+    # uploads coverage.
+    after_n_builds: 1
 
 coverage:
   precision: 2
@@ -33,7 +39,14 @@ coverage:
         informational: true # nudge, never block — ci.yml is the source of truth
     patch:
       default:
-        informational: true # diff (new-code) coverage, advisory only
+        # New-code (diff) coverage gate. 80% sits above the ci.yml 75% floor yet
+        # well below the ~96% patch coverage recent PRs actually hit, so it flags
+        # under-tested new code without chronic red. NOT clauster's 95% — that
+        # Python repo runs ~96–100%; claustrum is Go at ~77%.
+        target: 80%
+        threshold: 0% # no slack — new code meets the target or the status goes red
+        informational: false # a real pass/fail traffic light (still a non-required check)
+        if_not_found: success # docs-only PRs upload no diff → don't block them
 
 # Informational setup: the per-line PR annotations are mostly visual clutter; the
 # comment + dashboard carry the signal.
