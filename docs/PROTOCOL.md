@@ -456,6 +456,8 @@ unset in the child before it spawns anything, so it never leaks downstream.
 - Counts only (no command output, no tokens) and **no auth** — bind it to a
   trusted interface (loopback).
 - A bind failure is logged (`[Server] metrics: …`) and non-fatal.
+- Also settable in `claustrum.conf` as `metrics-addr = <a>` (an explicit
+  `-metrics-addr` flag wins); see [`-version`](#-version) / IMPROVEMENTS CT-3.
 
 **`-keep-children`** *(claustrum-only, CT-2; POSIX-only)* — survive a daemon restart:
 
@@ -484,6 +486,8 @@ unset in the child before it spawns anything, so it never leaks downstream.
   claiming to keep, Windows **ignores the flag and logs a warning** at startup
   (`[Server] -keep-children is not supported on Windows …`). The hosted channel
   that uses this is POSIX-only anyway.
+- Also settable in `claustrum.conf` as `keep-children = true|false` (an explicit
+  `-keep-children` flag wins).
 - *(Implementation note: shutdown teardown now runs synchronously on the main
   goroutine so the kill-or-keep decision reliably completes before the process
   exits — it previously ran in a goroutine that could lose the race to the accept
