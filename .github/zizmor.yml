@@ -2,12 +2,10 @@
 rules:
   unpinned-uses:
     config:
-      # Blanket policy: every action must be hash-pinned by SHA. The one
-      # exception is the SLSA generator's reusable workflow, which MUST be
-      # referenced by a semver tag, not a SHA — it derives the trusted-builder
-      # identity from its own ref, and SHA-pinning breaks provenance. The repo
-      # glob (not a bare owner/repo) is required because the `uses:` carries a
-      # subpath to the reusable workflow file.
+      # Blanket policy: every action must be hash-pinned by SHA. This matches the
+      # repository's "require SHA-pinned actions" GitHub policy. Provenance uses
+      # actions/attest-build-provenance (a normal, SHA-pinnable action) rather than
+      # the slsa-github-generator reusable workflow, so no ref-pin exception is
+      # needed.
       policies:
         "*": hash-pin
-        "slsa-framework/slsa-github-generator/*": ref-pin

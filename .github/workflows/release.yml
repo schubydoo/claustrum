@@ -36,9 +36,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write # create the GitHub Release + upload assets
-      id-token: write # Sigstore keyless: exchange OIDC token at Fulcio for a cert
-    outputs:
-      hashes: ${{ steps.hash.outputs.hashes }}
+      id-token: write # Sigstore keyless + provenance: exchange OIDC at Fulcio
+      attestations: write # actions/attest-build-provenance records SLSA provenance
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -71,31 +70,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Provenance subjects (base64 of checksums.txt)
-        id: hash
+      # SLSA build provenance over the release artifacts, via GitHub's native
+      # attestation action — SHA-pinnable — instead of the slsa-github-generator
+      # reusable workflow. The generator references an internal action by tag
+      # (detect-workflow-js@v2.1.0), which this repo's "require SHA-pinned actions"
+      # policy rejects and which a caller cannot override. subject-checksums reads
+      # goreleaser's checksums.txt and attests every listed artifact by digest.
+      - name: Locate checksums file
+        id: sums
         env:
           ARTIFACTS: ${{ steps.goreleaser.outputs.artifacts }}
         run: |
           set -euo pipefail
-          checksum_file=$(echo "$ARTIFACTS" | jq -r '.[] | select(.type=="Checksum") | .path')
-          echo "hashes=$(base64 -w0 < "$checksum_file")" >> "$GITHUB_OUTPUT"
+          f=$(echo "$ARTIFACTS" | jq -r '.[] | select(.type=="Checksum") | .path')
+          [ -s "$f" ] || { echo "no checksums file in goreleaser artifacts" >&2; exit 1; }
+          echo "file=$f" >> "$GITHUB_OUTPUT"
 
-  provenance:
-    # SLSA build provenance over the release artifact hashes, uploaded as a
-    # *.intoto.jsonl asset on the release — this is what takes Signed-Releases
-    # from 8/10 to 10/10. Only on real tag pushes (the dispatch recovery path
-    # has no tag-named release to attach to).
-    needs: goreleaser
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      actions: read # read the workflow run for provenance
-      id-token: write # keyless signing of the provenance
-      contents: write # upload the .intoto.jsonl to the release
-    # NOTE: the SLSA reusable workflow MUST be referenced by a semver tag, not a
-    # commit SHA — it derives the trusted-builder identity from its own ref.
-    # (The hash-pin exception for it lives in .github/zizmor.yml.)
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: ${{ needs.goreleaser.outputs.hashes }}
-      upload-assets: true
-      provenance-name: claustrum.intoto.jsonl
+      - name: Generate SLSA build provenance
+        id: provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-checksums: ${{ steps.sums.outputs.file }}
+
+      # Attach the provenance bundle as a *.intoto.jsonl release asset. Scorecard's
+      # Signed-Releases probe matches on the .intoto.jsonl SUFFIX (prefix is free),
+      # taking the score from 8/10 to 10/10. Runs on a tag push OR a
+      # workflow_dispatch re-publish of an existing tag (goreleaser is mode:append).
+      - name: Attach provenance to the release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [ -s "$BUNDLE" ] || { echo "no provenance bundle produced; refusing to publish without provenance" >&2; exit 1; }
+          cp "$BUNDLE" claustrum.intoto.jsonl
+          gh release upload "$TAG" claustrum.intoto.jsonl --clobber
