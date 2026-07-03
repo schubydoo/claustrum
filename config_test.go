@@ -131,20 +131,54 @@ func TestVersionLine(t *testing.T) {
 	}
 }
 
-// loadConfig must treat a non-regular file (here: a directory at the config path)
-// as absent — cross-platform stand-in for the FIFO/device rejection.
-func TestLoadConfig_NonRegularIgnored(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, configFileName), 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
+func TestLoadConfigFrom(t *testing.T) {
+	t.Run("valid file parsed", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, configFileName),
+			[]byte("version-override = "+validSHA+"\nkeep-children = true\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg := loadConfigFrom(dir)
+		if cfg.versionOverride != validSHA {
+			t.Fatalf("versionOverride = %q, want %q", cfg.versionOverride, validSHA)
+		}
+		if cfg.keepChildren == nil || !*cfg.keepChildren {
+			t.Fatalf("keepChildren = %v, want true", cfg.keepChildren)
+		}
+	})
+	t.Run("absent file => zero config", func(t *testing.T) {
+		if cfg := loadConfigFrom(t.TempDir()); cfg != (config{}) {
+			t.Fatalf("absent: got %+v, want zero config", cfg)
+		}
+	})
+	// A non-regular file (directory at the config path) is treated as absent —
+	// cross-platform stand-in for the FIFO/device rejection.
+	t.Run("directory => zero config", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, configFileName), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if cfg := loadConfigFrom(dir); cfg != (config{}) {
+			t.Fatalf("directory: got %+v, want zero config", cfg)
+		}
+	})
+}
+
+// loadConfig resolves the executable's own directory, which (in the test binary)
+// holds no claustrum.conf, so it must return the zero config without error.
+func TestLoadConfig_NoFileNextToBinary(t *testing.T) {
+	if cfg := loadConfig(); cfg != (config{}) {
+		t.Fatalf("loadConfig() = %+v, want zero config (no conf beside test binary)", cfg)
 	}
-	// loadConfig keys off os.Executable, so exercise the guard directly.
-	fi, err := os.Lstat(filepath.Join(dir, configFileName))
-	if err != nil {
-		t.Fatalf("lstat: %v", err)
+}
+
+func TestExecutableDir(t *testing.T) {
+	dir, ok := executableDir()
+	if !ok || dir == "" {
+		t.Fatalf("executableDir() = (%q, %v), want a non-empty dir", dir, ok)
 	}
-	if fi.Mode().IsRegular() {
-		t.Fatal("directory reported as regular file")
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		t.Fatalf("executableDir() = %q, not a directory (err=%v)", dir, err)
 	}
 }
 

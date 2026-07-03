@@ -54,11 +54,18 @@ type config struct {
 // fails: any problem (no executable path, missing/non-regular/unreadable file,
 // malformed lines) yields a zero config, i.e. stock behavior.
 func loadConfig() config {
-	var cfg config
 	dir, ok := executableDir()
 	if !ok {
-		return cfg
+		return config{}
 	}
+	return loadConfigFrom(dir)
+}
+
+// loadConfigFrom reads configFileName out of dir with the same fail-safe rules as
+// loadConfig. Split out so the file-IO path is testable against a temp directory
+// (loadConfig itself keys off os.Executable).
+func loadConfigFrom(dir string) config {
+	var cfg config
 	path := filepath.Join(dir, configFileName)
 	// Lstat + regular-file check rejects symlinks/FIFOs/devices/directories,
 	// so a FIFO at the path can never block startup on Open/Read.
