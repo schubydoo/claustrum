@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0](https://github.com/schubydoo/claustrum/compare/v1.3.1...v1.4.0) (2026-07-03)
+
+
+### Features
+
+* track reference 7c2f88d — killAndWait, stdin offset, git.info repoSlug/defaultBranch ([#120](https://github.com/schubydoo/claustrum/issues/120)) ([3cd5521](https://github.com/schubydoo/claustrum/commit/3cd5521612b6fa94e50a1d85c06bd42a14c4b6f6))
+
 ## [1.3.1](https://github.com/schubydoo/claustrum/compare/v1.3.0...v1.3.1) (2026-06-12)
 
 
