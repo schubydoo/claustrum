@@ -381,6 +381,49 @@ consider them now that the harness proves parity, and document each as an
 - Documented in [PROTOCOL.md](PROTOCOL.md) (`-serve` flags); verified end-to-end
   on POSIX (child survives with the flag, killed without) plus per-OS unit tests.
 
+### CT-3 · Opt-in `claustrum.conf` config file ✅ — impact M / cost L
+
+- **A single place to turn deviations on, absent ⇒ stock.** An optional
+  `key = value` file (`claustrum.conf`) read from the directory holding the
+  binary. If it's missing, unreadable, non-regular, or malformed, claustrum
+  behaves as a stock replica — every key gates an already-opt-in divergence.
+  Zero new dependency (not YAML): stdlib `bufio` + `strings.Cut`, `#` comments,
+  **unknown keys and invalid values ignored** (forward-compatible, fail-safe).
+- **Keys mirror the flags; precedence is explicit CLI flag > config > default**
+  (resolved via `flag.Visit`, so `-keep-children`/`-metrics-addr` on the command
+  line still win). Current keys:
+  - `version-override = <commit-sha>` — the **drop-in stamp** (see below).
+  - `keep-children = true|false` — default for CT-2.
+  - `metrics-addr = host:port` — default for the `/metrics` listener.
+- **`version-override` — make claustrum a permanent drop-in.** The desktop client
+  decides whether to re-upload the daemon by running `<bin> --version` on the
+  cached `~/.claude/remote/srv/<pinned-sha>/server` and matching
+  `/claude-ssh\s+(\S+)/` against the SHA it pins; it skips the upload only when
+  that token equals the pin. Stock claustrum prints `claustrum <ver> …`, so the
+  client re-SFTPs the reference over it **every session**. With
+  `version-override` set to that **bare commit SHA** (the reference versions
+  itself by **git SHA-1, 40 hex** — 64-hex also accepted; anything else is a
+  no-op), claustrum prints `claude-ssh <sha> (via Claustrum <ver>, built <t>)` —
+  the client captures only the first token, hits the cache, and stops
+  overwriting. Source the SHA from `scripts/UPSTREAM_SHA` and drop the binary at
+  `~/.claude/remote/srv/<sha>/server` alongside the config.
+- **Off the wire, off by default.** `-version` is CLI stdout, not a JSON-RPC
+  frame; auth, the socket, and every method/frame are untouched, and
+  `server.version` / `server.capabilities` still report claustrum's own version
+  (masked in the battery). No file → byte-identical stock output.
+- **Fail-safe & hardened** (any doubt → stock, startup never fails), all stdlib /
+  cross-platform: regular-file-only via `Lstat`/`IsRegular` (rejects
+  symlink/FIFO/device/directory → can't block startup), `io.LimitReader` ≤ 64 KiB,
+  per-key validation (`version-override` gated to `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`
+  and lower-cased; `metrics-addr` printable-ASCII only), values used as data
+  never as a format string.
+- Verified: unit tests (each key's valid/invalid forms, unknown-key and malformed
+  lines, case-insensitive keys, CLI-over-config precedence, non-regular-directory,
+  and a `//go:build unix` FIFO case) + an end-to-end smoke test (stock / valid
+  git-SHA impersonation with the client regex confirming a pin match / pre-prefixed
+  & invalid → stock / uppercase normalized). Documented in
+  [PROTOCOL.md](PROTOCOL.md) (`-version`).
+
 ## Explicitly out of scope (would break compatibility)
 
 - Changing method names, params, result field order, error codes, or the

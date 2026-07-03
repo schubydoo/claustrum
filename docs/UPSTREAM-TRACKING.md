@@ -164,12 +164,17 @@ If the check reports drift:
 
 > Not every claustrum behavior is meant to match the reference. A few
 > **deliberate, opt-in divergences** — the `-cli-zst` checksum (D1), the CT-1
-> `wantPid` `pid`/`startTime` fields, and the CT-2 `-keep-children` serve flag —
-> are catalogued in
+> `wantPid` `pid`/`startTime` fields, the CT-2 `-keep-children` serve flag, and
+> the CT-3 `claustrum.conf` file (`version-override` / `keep-children` /
+> `metrics-addr`) — are catalogued in
 > [`IMPROVEMENTS.md`](IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
 > They sit off the default path (the drift check and the synthetic battery never
 > exercise `wantPid` or `-keep-children`, so they won't show as a diff), so don't
-> "reconcile" them away as drift if a probe that opts in surfaces them.
+> "reconcile" them away as drift if a probe that opts in surfaces them. **CT-3 is
+> the exception the check *can* flag:** the static drift check diffs `-version`
+> format, so a deploy carrying a `claustrum.conf` with `version-override` reports
+> the impersonation line — expected, not drift (the no-config default stays
+> byte-identical).
 
 ## Automating it
 
