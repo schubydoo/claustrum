@@ -46,7 +46,11 @@
         "process.spawn",
         "process.stdin",
         "process.kill",
+        "process.killAndWait",
         "process.reattach"
+      ],
+      "features": [
+        "process.stdin.offset"
       ]
     }
   },

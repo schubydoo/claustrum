@@ -14,6 +14,10 @@ const (
 	codeInvalidParam = -32602 // bad / missing params
 	codeInternal     = -32603 // internal error
 	codeUnauthorized = -32001 // bad or missing auth token
+	// codeStdinOffsetGap is returned by process.stdin when a caller's offset is
+	// ahead of the bytes applied so far — a gap that would drop input. Added by the
+	// reference daemon in 7c2f88d with the stdin-offset idempotency contract.
+	codeStdinOffsetGap = -32003 // stdin offset ahead of applied bytes
 )
 
 // request is one inbound JSON-RPC line. id is kept raw so we can echo it back

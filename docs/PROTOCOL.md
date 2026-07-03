@@ -51,6 +51,7 @@ include `"auth"` itself.
 | `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
 | `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
+| `-32003` | `stdin offset gap: offset ahead of applied bytes` — `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
 | `-32001` | unauthorized |
 
 ### Validation precedence (probe-verified)
@@ -88,7 +89,7 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
 - `server.*` methods take no params, so a mistyped `params` on them is ignored
   and the call succeeds.
 
-## Methods (18)
+## Methods (19)
 
 `server.capabilities` self-describes the set. Order as returned:
 
@@ -96,8 +97,11 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
 server.ping  server.version  server.capabilities  server.shutdown
 files.list   files.validate  files.stat  files.read  files.extract_tar
 git.info     git.status      git.list_branches  git.worktree_create  git.worktree_remove
-process.spawn  process.stdin  process.kill  process.reattach
+process.spawn  process.stdin  process.kill  process.killAndWait  process.reattach
 ```
+
+> `process.killAndWait` was added by the reference in `7c2f88d` (it sits between
+> `process.kill` and `process.reattach`), bringing the set to 19.
 
 ### server.*
 
@@ -105,8 +109,13 @@ process.spawn  process.stdin  process.kill  process.reattach
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
 | `server.version` | — | `{"version":"<id>","platform":"<goos>","arch":"<goarch>"}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…18…]}` |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…19…],"features":["process.stdin.offset"]}` |
 | `server.shutdown` | — | *no response* — the daemon stops and the connection closes |
+
+> **`features` array (added `7c2f88d`).** `server.capabilities` now carries a
+> `features` array after `methods`, advertising optional protocol extensions a
+> client may rely on. The sole entry is `process.stdin.offset` (the resumable/
+> idempotent stdin contract — see `process.stdin` below). Always present.
 
 > **Divergence — auth on `server.shutdown`.** claustrum validates the auth token
 > for *every* method (§Auth), so an unauthenticated or wrong-token
@@ -187,7 +196,7 @@ Errors:
 
 #### git.info
 
-`{path}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>"}` · non-repo: `{"isRepo":false}`
+`{path}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""}`
 
 - `branch` is resolved via `symbolic-ref`, so it works on an **unborn HEAD**
   (empty repo with no commits → the init branch name, e.g. `master`).
@@ -195,6 +204,17 @@ Errors:
 - `root` is the absolute repo top-level (`git rev-parse --show-toplevel`), so it
   stays the repo root even when `path` is a subdirectory (added by reference
   `7cbfa471`; the `8de85faa` baseline omitted it).
+- `repoSlug` and `defaultBranch` were added by reference `7c2f88d`. Both are
+  **always present** (empty string when undeterminable) — including on the
+  non-repo body, which is now `{"isRepo":false,"repoSlug":"","defaultBranch":""}`.
+    - `repoSlug` is the `owner/repo` parsed from `remote.origin.url`. It accepts
+      the scp-like (`git@host:owner/repo.git`), scheme (`https://`, `ssh://`),
+      userinfo, and trailing-slash forms and strips a single trailing `.git`, but
+      is populated **only when the path after the host is exactly two segments** —
+      a GitLab subgroup URL (`host/group/sub/proj`) has three and yields `""`.
+      Owner/repo characters are preserved verbatim (case, `-`, `_`, `.`).
+    - `defaultBranch` is what `refs/remotes/origin/HEAD` points to (e.g. `main`);
+      empty when origin/HEAD is unset.
 
 #### git.status
 
@@ -266,40 +286,91 @@ stream notifications, **buffered** for later replay.
 
 #### process.stdin
 
-`{id,data}` → `{"success":true}`
+`{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`
 
 - `data` is **base64**, written to the child's stdin.
-- Checks run in a fixed order (probe-verified): **decode → exists → running**:
+- Checks run in a fixed order (probe-verified): **decode → exists → running →
+  offset**:
     - Invalid base64 → `-32602 Invalid base64 data` — returned *before* the
       process is even looked up, so an unknown id with a bad payload still
       reports the decode error.
     - Unknown id → `-32602 Process not found`.
     - Known but **exited** process → `-32602 Process not running`.
+- **`offset` / `applied` — the resumable-stdin contract (added `7c2f88d`,
+  advertised as the `process.stdin.offset` feature).** The reply now **always**
+  carries `applied`: the cumulative count of stdin bytes accepted for delivery
+  (the high-water mark). `offset` is the byte position the caller believes this
+  `data` starts at; it makes stdin **idempotent** across reconnects:
+    - **absent** `offset`, or `offset == applied` → append; `applied` grows by
+      `len(data)`.
+    - `offset > applied` → `-32003 stdin offset gap: offset ahead of applied
+      bytes` (a hole that would drop input — the caller must resend from
+      `applied`). Nothing is enqueued.
+    - `offset + len(data) <= applied` (wholly already applied) → **no-op**, reply
+      adds `"duplicate":true`, `applied` unchanged, nothing reaches the child.
+    - partial overlap (`offset < applied < offset+len`) → only the fresh tail
+      `data[applied-offset:]` is written and `applied` advances to
+      `offset+len(data)` (not flagged duplicate).
+  `applied` counts base64-**decoded** bytes and is never `omitempty` (emitted even
+  at 0); `duplicate` is dropped when false. A legacy client that never sends
+  `offset` still works — it just always appends — and simply gains the `applied`
+  field it can ignore.
 
 #### process.kill
 
 `{id[,signal]}` → `{"success":true}`
 
-- Best-effort; tears down the whole child tree — signals the process group on
-  Unix, terminates the Job Object on Windows.
+- Best-effort, **fire-and-forget**; tears down the whole child tree — signals the
+  process group on Unix, terminates the Job Object on Windows. Does not wait for
+  the child to actually exit (contrast `process.killAndWait`).
 - **Divergence:** claustrum skips the signal when the child has already
   exited — after the child is reaped its Unix pgid can be recycled, so the
   reference's unconditional negative-pid signal could hit an unrelated process
   group. OS-level only — the reply is identical either way.
 
+#### process.killAndWait
+
+`{id[,signal][,timeoutMs][,escalate]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true]}`
+
+Added by reference `7c2f88d`. Unlike `process.kill`, it **blocks until the
+process is gone** (up to the grace) and reports the outcome as a *result* (an
+unknown id is not an error):
+
+- Missing `id` → `-32602 Process ID is required`; absent `params` object →
+  `-32602 Invalid params`.
+- Unknown id → `{"found":false,"died":false}`.
+- Already exited before the call → `{"found":true,"died":true,"alreadyExited":true}`
+  (no signal sent).
+- Live process → the graceful `signal` (default `SIGTERM`) is sent, then it waits
+  up to the grace:
+    - **`timeoutMs`** sets that grace. Non-positive or absent → the **3000 ms**
+      default (probe-verified: `0` and `-100` both wait 3000 ms); positive values
+      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s). claustrum caps an
+      absurd value at 600000 ms so a signal-ignoring child can't wedge a request
+      forever — the reference clamps too, above the ~90 s ceiling we could observe.
+    - **`escalate`** (default `true`) decides what happens if the process is still
+      alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
+      and add `"escalated":true` to the reply. `false` → leave the process running
+      and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
+- On a process that dies within the grace (cooperative, or a hard `signal:"KILL"`)
+  → `{"found":true,"died":true}` with no `escalated`.
+
 #### process.reattach
 
-`{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq"}`
+`{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
 
 - Replays buffered frames with **seq > fromSeq** (exclusive) to this
   connection, (re)subscribes it for future frames, then returns the result.
-- Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0}`.
+- Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
+- **`stdinApplied` (added `7c2f88d`).** The process's cumulative applied-stdin
+  byte count (§`process.stdin`), always present after `lastSeq`. A reconnecting
+  client resumes stdin from this offset so no bytes are re-applied or dropped.
 - **`wantPid` opt-in (CT-1, claustrum-only).** As on `process.spawn`: with
   `"wantPid":true` **and** the process found, the reply appends
-  `"pid":<int>,"startTime":<number>` after `lastSeq`, reporting the **same** pid
-  and startTime the spawn did (so a client can confirm it reattached to the same
-  process, not a pid-reuse). Omitted when `wantPid` is absent/false or the
-  process was not found — the default frame stays byte-identical.
+  `"pid":<int>,"startTime":<number>` **after** `stdinApplied`, reporting the
+  **same** pid and startTime the spawn did (so a client can confirm it reattached
+  to the same process, not a pid-reuse). Omitted when `wantPid` is absent/false or
+  the process was not found — the default frame stays byte-identical.
 
 ### Stream notifications
 

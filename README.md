@@ -110,7 +110,7 @@ catch up via the replay buffer, extracting a plugin tarball — are in
 - **Auth:** every request carries an in-band `"auth":"<token>"`; the daemon's token comes from
   `-token-file` (read once, then unlinked) or `-token-fd` (read from an open descriptor —
   never touches disk); the `-bridge`/`-stop` clients use `CLAUDE_RPC_TOKEN`.
-- **18 methods** across `server.*`, `files.*`, `git.*`, `process.*` (`server.capabilities`
+- **19 methods** across `server.*`, `files.*`, `git.*`, `process.*` (`server.capabilities`
   self-describes them).
 - **process.\*** is the core: a client supplies its own `id` on `spawn`; the daemon streams
   id-less `{"type":"stream",…}` notifications (base64 stdout/stderr + an `exit`), buffers them,

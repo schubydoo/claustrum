@@ -18,8 +18,8 @@ func TestResultMarshalingIsByteExact(t *testing.T) {
 		{"pong", pongResult{Pong: true}, `{"pong":true}`},
 		{"version", versionResult{Version: "v1", Platform: "linux", Arch: "amd64"},
 			`{"version":"v1","platform":"linux","arch":"amd64"}`},
-		{"capabilities", capabilitiesResult{Version: "v1", Methods: []string{"server.ping"}},
-			`{"version":"v1","methods":["server.ping"]}`},
+		{"capabilities", capabilitiesResult{Version: "v1", Methods: []string{"server.ping"}, Features: []string{"process.stdin.offset"}},
+			`{"version":"v1","methods":["server.ping"],"features":["process.stdin.offset"]}`},
 
 		{"stat zero", statResult{}, `{"exists":false,"isDir":false,"size":0,"mode":""}`},
 		{"stat full", statResult{Exists: true, IsDir: true, Size: 42, Mode: "drwxr-xr-x"},
@@ -42,10 +42,12 @@ func TestResultMarshalingIsByteExact(t *testing.T) {
 			`{"success":false,"fileCount":1,"error":"gzip: bad"}`},
 
 		{"success", successResult{Success: true}, `{"success":true}`},
-		{"notRepo", notRepoResult{}, `{"isRepo":false}`},
+		{"notRepo", notRepoResult{}, `{"isRepo":false,"repoSlug":"","defaultBranch":""}`},
 
 		{"gitInfo", gitInfoResult{IsRepo: true, Repo: "claustrum", Branch: "main", Root: "/src/claustrum"},
-			`{"isRepo":true,"repo":"claustrum","branch":"main","root":"/src/claustrum"}`},
+			`{"isRepo":true,"repo":"claustrum","branch":"main","root":"/src/claustrum","repoSlug":"","defaultBranch":""}`},
+		{"gitInfo slug", gitInfoResult{IsRepo: true, Repo: "claustrum", Branch: "main", Root: "/src/claustrum", RepoSlug: "acme/claustrum", DefaultBranch: "main"},
+			`{"isRepo":true,"repo":"claustrum","branch":"main","root":"/src/claustrum","repoSlug":"acme/claustrum","defaultBranch":"main"}`},
 		{"status clean", gitStatusResult{IsRepo: true, Clean: true}, `{"isRepo":true,"clean":true}`},
 		{"status dirty", gitStatusResult{IsRepo: true, Changes: []string{"M a"}},
 			`{"isRepo":true,"clean":false,"changes":["M a"]}`},
@@ -60,7 +62,22 @@ func TestResultMarshalingIsByteExact(t *testing.T) {
 			`{"success":false,"error":"git worktree add failed: x","errorCode":"worktree_add_failed"}`},
 
 		{"reattach", reattachResult{Found: true, Running: true, FirstSeq: 1, LastSeq: 5},
-			`{"found":true,"running":true,"firstSeq":1,"lastSeq":5}`},
+			`{"found":true,"running":true,"firstSeq":1,"lastSeq":5,"stdinApplied":0}`},
+		{"reattach stdin", reattachResult{Found: true, Running: true, FirstSeq: 1, LastSeq: 5, StdinApplied: 12},
+			`{"found":true,"running":true,"firstSeq":1,"lastSeq":5,"stdinApplied":12}`},
+
+		// stdin: applied is never omitempty (emitted even at 0); duplicate drops when false.
+		{"stdin plain", stdinResult{Success: true, Applied: 6}, `{"success":true,"applied":6}`},
+		{"stdin dup", stdinResult{Success: true, Applied: 12, Duplicate: true},
+			`{"success":true,"applied":12,"duplicate":true}`},
+
+		// killAndWait: alreadyExited/escalated drop when false.
+		{"killwait plain", killAndWaitResult{Found: true, Died: true}, `{"found":true,"died":true}`},
+		{"killwait unknown", killAndWaitResult{}, `{"found":false,"died":false}`},
+		{"killwait already", killAndWaitResult{Found: true, Died: true, AlreadyExited: true},
+			`{"found":true,"died":true,"alreadyExited":true}`},
+		{"killwait escalated", killAndWaitResult{Found: true, Died: true, Escalated: true},
+			`{"found":true,"died":true,"escalated":true}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

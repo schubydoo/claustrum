@@ -24,7 +24,7 @@ The daemon is one binary, mode-switched by flag:
 - **`-install`** — CLI download / SHA-256 verify / zstd extract / prune.
 - **`-stop`** / **`-version`** — send `server.shutdown`; report the build.
 
-It exposes **18 methods** across the `server.*`, `files.*`, `git.*`, and
+It exposes **19 methods** across the `server.*`, `files.*`, `git.*`, and
 `process.*` namespaces. Auth is in-band per request; spawned processes stream
 base64 stdout/stderr frames that a late or reconnecting client can replay via
 `reattach`.
