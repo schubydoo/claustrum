@@ -29,14 +29,43 @@ easiest first:
    ```sh
    ls -1d ~/.claude/remote/srv/*/server | sed -E 's#.*/srv/([0-9a-f]+)/server#\1#'
    ```
-2. **The Desktop machine** — it caches per-platform binaries under
-   `%APPDATA%/Claude/claude-ssh-remote/<sha>/` (macOS/Linux: the app's data dir),
+2. **The Desktop app bundle** — the pinned SHA (and all six per-platform
+   checksums/sizes) is a **build-time constant baked into the app**, readable
+   offline without connecting anywhere. In the Linux `.deb` it is a
+   `JSON.parse('{"version":"<sha>",…,"baseUrl":".../claude-ssh-releases"}')`
+   literal inside `resources/app.asar` (`.vite/build/index.js`); a parallel
+   literal pins the CLI (`claude-code-releases`). So a new Desktop build is
+   itself the "new SHA" signal. Observed: Claude Desktop for **Linux 1.18286.0**
+   (2026-07-02) pins `7c2f88d…`.
+3. **The Desktop machine's cache** — per-platform binaries under
+   `<app-data>/claude-ssh-remote/<sha>/` (`%APPDATA%/Claude/…` on Windows),
    alongside a `.verified-<goos>-<goarch>` marker.
-3. **Probe a guess** — `manifest.json` returns 200 for a real SHA, 404 otherwise.
+4. **Probe a guess** — `manifest.json` returns 200 for a real SHA, 404 otherwise.
 
 > Note: the *CLI* release manifest
 > (`claude-code-releases/<ver>/manifest.json`) has a `commit` field, but that is
 > the **CLI's** commit, not the daemon's — don't confuse them.
+
+> **How the client picks the deployed SHA (and a claustrum divergence).** Before
+> a session the client runs `server --version` on the cached
+> `~/.claude/remote/srv/<pinned-sha>/server` and matches `/claude-ssh\s+(\S+)/`;
+> it skips re-upload only when that token equals the pinned SHA. The reference
+> prints `claude-ssh <sha> (built …)`, so it hits the cache. claustrum prints
+> `claustrum <ver> (built …)` — its **own** identity and **own** version — so the
+> token never matches the client's pinned SHA and the daemon is re-SFTP'd
+> (idempotently, ~2.3 MB) **every session**. This is a consequence of the
+> `claude-ssh:`→`claustrum:` rebrand: it is CLI stdout, **not** a JSON-RPC frame,
+> so the wire contract is untouched and the redeploy is harmless — the daemon
+> that ends up running is still claustrum.
+>
+> To make claustrum a **permanent drop-in** (client sees it as up-to-date and
+> stops overwriting it), `-version` need only emit `claude-ssh <pinned-sha>` as
+> its **first token** — the client captures just that token, so a
+> `(via Claustrum <ver>)` suffix is fine — with the binary placed at
+> `~/.claude/remote/srv/<pinned-sha>/server`. The SHA is per-Desktop-build, so a
+> drop-in build must track it (source it from `scripts/UPSTREAM_SHA`) and move to
+> the new `srv/<sha>/` path when Desktop bumps. This is off by default (claustrum
+> keeps its own identity); it would be an opt-in build stamp, not a wire change.
 
 ## Step 2 — run the drift check
 

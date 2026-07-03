@@ -52,6 +52,17 @@ function-table churn is real source, not compiler noise. **Not** a wire method:
 `git.refs` / `process.validateGroupKillPid` / `killProcessGroup` are internal
 symbols — `server.capabilities` is authoritative on the method set.
 
+**First observed in a shipping client:** Claude Desktop for **Linux 1.18286.0**
+(2026-07-02) embeds a manifest pinning exactly this SHA (readable offline from the
+`.deb` — see [Upstream tracking](UPSTREAM-TRACKING.md) step 1). That client calls
+15 of the 19 methods; it does **not** call `process.killAndWait` (nor
+`server.version` / `server.shutdown`, which it drives via the `--stop` CLI), so a
+real-session capture against 1.18286.0 won't exercise the new method — the
+synthetic battery stays the gate for it. It also confirms D1's shape: `--install`
+carries `--cli-checksum` on the `--cli-url` download path but ships the
+`--cli-zst` SFTP fallback **unverified**, exactly the trust boundary claustrum
+mirrors by default.
+
 ### `d20a77da22b7d4822f758654b226299ad7021c22` — 2026-06-09
 
 **Pure rebuild — no wire change.** The only source delta was in the `-install`
