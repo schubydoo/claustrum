@@ -19,7 +19,7 @@ re-published SHA is distinguishable from a real release).
 |---|---|---|---|
 | `7c2f88d1…` | 2026-07-02 | **5 changes** — see below | [#120](https://github.com/schubydoo/claustrum/pull/120) |
 | `d20a77da…` | 2026-06-09 | none (pure rebuild) | [#97](https://github.com/schubydoo/claustrum/pull/97) (pin bump only) |
-| `7cbfa471…` | 2026-06-04 | `git.info` gained `root` | [#60](https://github.com/schubydoo/claustrum/pull/60) |
+| `7cbfa471…` | 2026-06-04 | `git.info` gained `root` (+ off-wire install/spawn churn — see below) | [#60](https://github.com/schubydoo/claustrum/pull/60) |
 | `8de85faa…` | 2026-05-21 | baseline (initial clean-room target) | initial implementation |
 
 ### `7c2f88d13e5f269762dd4d463aa4eb3102214110` — 2026-07-02
@@ -65,6 +65,36 @@ byte-identical. Pin bumped without code changes.
 even when `path` is a subdirectory). The static drift check passed on this build;
 only the byte-for-byte frame battery caught the new field — the lesson that the
 battery, not the static check, is the authoritative gate.
+
+**Fuller change set (re-audited 2026-07-02).** A structural function-table diff of
+`8de85faa → 7cbfa471` (both `go1.23.12`, same deps → churn is real source) shows
+`root` was *not* the only thing that landed in this build. Two more app-code
+changes rode along — the original entry recorded only the wire-visible one. Both
+are already covered by current claustrum; neither is a missed divergence:
+
+- **Install path gained an HTTPS download + SHA-256 verify + robust rename.** New
+  `internal/fetch.fileSHA256` and `internal/fetch.renameRobust`, a grown
+  `decompressAndInstall`, and a tls/http2/crypto string avalanche (the `-cli-url`
+  HTTPS client stack linking in). **Off the JSON-RPC wire** (`-install` mode).
+  claustrum mirrors the substance: `install.go` verifies SHA-256 (`verifyChecksum`,
+  unconditional on the `-cli-url` path) and downloads via `httpGet`. The one
+  un-mirrored detail is `renameRobust`'s EEXIST-clear before rename; claustrum uses
+  a plain atomic `os.Rename`, which POSIX-replaces a target *file* anyway, so the
+  gap is a minor Windows / directory-target robustness nuance with **no wire
+  impact**.
+- **`process.(*Manager).Spawn` failure-path refactor.** +448 bytes, a new
+  `failSpawn` helper (the old inline `Spawn.Printf.func5` is gone). This one *is* on
+  a wire-reachable path (spawn failure), so it was the killAndWait-shaped risk: a
+  change the happy-path battery never stresses. **Differentially probed
+  2026-07-02** (`d20a77da` reference vs claustrum, three failure modes:
+  ENOENT-absolute, not-in-PATH, exec-a-directory) → **byte-identical**. The refactor
+  moved the failure log into a helper but kept the synchronous `-32603` +
+  Go-exec-error-string contract claustrum already emits (`methods_process.go`
+  `processSpawn` → `codeInternal`). No divergence.
+
+The lesson generalizes the `root` one: a one-line ledger entry can under-record a
+build. Diff the **function table**, not just the wire, on every bump — an off-wire
+or failure-path change won't show up in the frame battery.
 
 ### `8de85faaa11694321e937499a18c7ab88f37c76c` — 2026-05-21
 
