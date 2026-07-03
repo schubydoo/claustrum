@@ -80,6 +80,13 @@ func main() {
 	flag.Parse()
 	resolveVersion()
 
+	// Optional claustrum.conf next to the binary gates opt-in divergences; absent
+	// or malformed → stock defaults. Precedence is explicit CLI flag > config >
+	// default, so record which flags the user actually set.
+	cfg := loadConfig()
+	cliSet := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { cliSet[f.Name] = true })
+
 	// Resolve the user's home directory up front (used for default path resolution);
 	// fatal if it can't be determined.
 	home, err := os.UserHomeDir()
@@ -99,7 +106,7 @@ func main() {
 
 	switch {
 	case *version:
-		fmt.Printf("claustrum %s (built %s)\n", Version, BuildTime)
+		fmt.Println(versionLine(cfg.versionOverride))
 		return
 	case *install:
 		runInstall(installOpts{
@@ -118,7 +125,9 @@ func main() {
 		}
 		return
 	case *serve:
-		runServe(resolveSocket(), *tokenFile, *tokenFd, *metricsAddr, *keepChildren)
+		runServe(resolveSocket(), *tokenFile, *tokenFd,
+			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
+			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]))
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")

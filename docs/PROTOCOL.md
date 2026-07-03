@@ -518,6 +518,26 @@ Sends `server.shutdown`.
 claustrum -version                   # → claustrum <id> (built <time>)
 ```
 
+**Intentional divergence: `version-override` via `claustrum.conf` (claustrum-only, CT-3).**
+An optional `key = value` file named `claustrum.conf`, read from the directory
+holding the binary, gates a few opt-in divergences; **absent/malformed ⇒ stock**.
+If it sets `version-override` to a bare commit SHA (git SHA-1, 40 hex — the string
+the desktop client pins; 64-hex also accepted; anything else is a no-op), the
+output becomes:
+
+```text
+claustrum -version                   # → claude-ssh <sha> (via Claustrum <id>, built <time>)
+```
+
+This exists so the desktop client treats an already-deployed claustrum as
+up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\S+)/`
+against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
+wire contract is untouched; `server.version` / `server.capabilities` still report
+claustrum's own `<id>`. The same file also carries `keep-children` and
+`metrics-addr` defaults (precedence: explicit CLI flag > config > default). See
+[IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
+hardening.
+
 ### -install — ensure the agent CLI
 
 ```text
