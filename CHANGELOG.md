@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0](https://github.com/schubydoo/claustrum/compare/v1.4.0...v1.5.0) (2026-07-03)
+
+
+### Features
+
+* opt-in claustrum.conf config file for divergences (CT-3) ([#128](https://github.com/schubydoo/claustrum/issues/128)) ([f9b4743](https://github.com/schubydoo/claustrum/commit/f9b474327e5dfdcb89d80ed495e3e0c0a00c251b))
+
 ## [1.4.0](https://github.com/schubydoo/claustrum/compare/v1.3.1...v1.4.0) (2026-07-03)
 
 
