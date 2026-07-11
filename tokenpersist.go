@@ -15,6 +15,16 @@ import (
 // (see docs/REFERENCE-BUILDS.md): the file is mode 0600, written atomically at
 // startup, and unlinked on graceful shutdown. It lives beside the socket (not
 // the -token-file), so it works regardless of how the token was supplied.
+//
+// The fixed name + socket-dir location ARE the reconnect contract — a client
+// derives this path from the socket it already knows — so they are deliberately
+// not configurable: changing them would break drop-in compatibility. Two daemons
+// sharing one directory would collide on this file, but the deployment model is
+// one session dir per daemon (the client provisions the socket dir), so sockets
+// never share a parent in practice; this matches the reference exactly. On
+// Windows the 0600 bits do not create an owner-only DACL (a Go os.CreateTemp
+// limitation the reference shares) — there the session dir under the client's
+// per-user app-data provides the confinement instead.
 const persistedTokenName = "daemon.token"
 
 // persistTokenDir returns the directory the persisted token lives in — the

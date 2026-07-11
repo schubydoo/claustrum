@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -27,10 +28,15 @@ func TestPersistTokenRoundTrip(t *testing.T) {
 	if string(b) != token {
 		t.Fatalf("token bytes = %q, want %q (no newline, verbatim)", b, token)
 	}
-	if fi, err := os.Stat(path); err != nil {
-		t.Fatalf("stat: %v", err)
-	} else if perm := fi.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("mode = %o, want 600", perm)
+	// os.CreateTemp yields 0600 on POSIX; Windows has no Unix permission bits
+	// (Go reports 0666), so the mode assertion is POSIX-only — same platform
+	// caveat the reference daemon inherits from the Go runtime.
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(path); err != nil {
+			t.Fatalf("stat: %v", err)
+		} else if perm := fi.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("mode = %o, want 600", perm)
+		}
 	}
 
 	// No stray temp files (daemon.token-*) left behind after the atomic rename.
@@ -52,6 +58,17 @@ func TestPersistTokenRoundTrip(t *testing.T) {
 func TestRemovePersistedTokenAbsent(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "rpc.sock")
 	removePersistedToken(socket) // no daemon.token exists; must not panic
+}
+
+// persistToken is best-effort: if the socket's directory does not exist (so the
+// temp-file create fails), it logs and returns without panicking, and the daemon
+// keeps serving — only file-based reconnect is unavailable. Mirrors the reference.
+func TestPersistTokenCreateFailureIsNonFatal(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "no-such-subdir", "rpc.sock")
+	persistToken(socket, "tok") // dir missing → CreateTemp errors; must not panic
+	if _, err := os.Stat(filepath.Dir(socket)); !os.IsNotExist(err) {
+		t.Fatalf("persistToken must not create the missing directory (err=%v)", err)
+	}
 }
 
 // persistToken overwrites any stale daemon.token from a prior daemon in the same

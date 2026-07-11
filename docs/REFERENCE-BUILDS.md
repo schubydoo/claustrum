@@ -30,8 +30,8 @@ token** to `daemon.token` (mode `0600`) in the socket's directory — written
 atomically at startup via an `os.CreateTemp("daemon.token-*")` + rename, and
 unlinked on graceful shutdown. This lets a client reconnect to an already-running
 daemon and re-authenticate after the original `-token-file` was unlinked / the
-`-token-fd` pipe closed. Matched here in [`tokenpersist.go`](../tokenpersist.go)
-(wired into `runServe`/`teardown`); documented in
+`-token-fd` pipe closed. Matched here in `tokenpersist.go` (wired into
+`runServe`/`teardown`); documented in
 [PROTOCOL.md → Token persistence](PROTOCOL.md#token-persistence-daemontoken).
 
 The change is **exhaustively bounded** — four independent diffs against `7c2f88d`
