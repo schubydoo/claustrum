@@ -22,9 +22,10 @@ frames.** The wire surface *is* the product.
 | Tests | `go test -race ./...` — unit + socket-integration suites |
 | Validation battery | `scratch/probe/validate.sh` — diffs frames vs the reference (gitignored) |
 
-- Go 1.25+. Dependencies: `github.com/klauspost/compress` (zstd) and
-  `golang.org/x/sys` (Windows Job Object teardown — only compiled into Windows
-  builds); `CGO_ENABLED=0`.
+- Go 1.25+. Dependencies: `github.com/klauspost/compress` (zstd) cross-platform,
+  plus two Windows-only (compiled into Windows builds only): `golang.org/x/sys`
+  (Job Object teardown) and `github.com/Microsoft/go-winio` (the opt-in
+  `-listen-pipe` named-pipe transport); `CGO_ENABLED=0`.
 - In-repo tests (`*_test.go`) cover the wire surface two ways: fast unit tests
   (frame encoding, dispatch / auth / error routing, replay buffer, env merging,
   the `-install` pipeline) **and** a socket-integration suite (`harness_test.go`
@@ -70,8 +71,17 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   extract (zstd) / prune.
 - OS-specific behavior is isolated in `*_unix.go` / `*_windows.go` (daemonize,
   process groups / Windows Job Objects for whole-tree kill, login-shell PATH
-  extraction, the `-keep-children` POSIX-only policy via `honorKeepChildren`).
-  The JSON-RPC surface is identical everywhere.
+  extraction, the `-keep-children` POSIX-only policy via `honorKeepChildren`, the
+  Windows-only `-listen-pipe` named-pipe transport via `startPipeTransport` /
+  `honorListenPipe` in `pipetransport_windows.go`). The JSON-RPC surface is
+  identical everywhere.
+- **`pipetransport.go`** — the opt-in, default-off, Windows-only `-listen-pipe`
+  transport (CT-5): when set, `-serve` *additionally* serves the identical
+  JSON-RPC dispatch over a Windows named pipe (a second `acceptLoop` over the same
+  `serveConn` — no wire change), publishing the chosen pipe name to `rpc.pipe`
+  beside the socket. Owner-only DACL, same `daemon.token` auth. Off ⇒ byte-for-byte
+  identical to the reference. Platform-neutral helpers here; go-winio wiring in
+  `pipetransport_windows.go`, the non-Windows no-op stub in `pipetransport_other.go`.
 
 ## Conventions
 
@@ -80,7 +90,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `results.go` must keep the validation battery green. An *intentional*
   divergence must be documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and the PR.
 - **No new dependencies** without discussion — stdlib + zstd (`klauspost/compress`)
-  + `golang.org/x/sys` (Windows-only), `CGO_ENABLED=0`.
+  + `golang.org/x/sys` and `github.com/Microsoft/go-winio` (both Windows-only),
+  `CGO_ENABLED=0`.
 - **No telemetry, ever.**
 - **Cross-platform parity** — keep OS specifics in `*_unix.go` / `*_windows.go`;
   `make all` must cross-compile cleanly for all six targets.

@@ -38,7 +38,7 @@ func TestAcceptLoopServesAndReturnsOnShutdown(t *testing.T) {
 		shutdown: make(chan struct{}),
 	}
 	done := make(chan struct{})
-	go func() { s.acceptLoop(); close(done) }()
+	go func() { s.acceptLoop(s.ln); close(done) }()
 	t.Cleanup(func() { s.procs.killAll() })
 
 	// A ping must round-trip through the real acceptLoop.

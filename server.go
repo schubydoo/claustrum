@@ -54,6 +54,7 @@ type server struct {
 	shutdown     chan struct{}
 	once         sync.Once
 	metricsLn    net.Listener // optional Prometheus listener; nil unless -metrics-addr set
+	pipeLn       net.Listener // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
 	keepChildren bool         // -keep-children: leave child processes running on graceful shutdown (POSIX-only)
 }
 
@@ -112,7 +113,7 @@ func (c *conn) writeResponse(v interface{}) {
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with daemonChildEnv (CLAUSTRUM_DAEMON_CHILD) so we re-exec
 // exactly once — see that const for why it is not CLAUDE_SSH_DAEMON_CHILD.
-func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren bool) {
+func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren, listenPipe bool) {
 	// -serve requires a token source, checked BEFORE the socket (probe-verified).
 	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
 	// comes from a file (read once, then unlinked) or an fd (read by the parent,
@@ -198,6 +199,12 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// logs once, from the running daemon.
 	keepChildren = honorKeepChildren(keepChildren)
 
+	// -listen-pipe is Windows-only. honorListenPipe returns the flag unchanged on
+	// Windows and false-with-a-warning elsewhere (the named-pipe transport has no
+	// meaning off Windows) — the same shape as honorKeepChildren above, evaluated
+	// in the daemonized child so any warning logs once from the running daemon.
+	listenPipe = honorListenPipe(listenPipe)
+
 	s := &server{
 		token:        token,
 		ln:           ln,
@@ -214,6 +221,22 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 		} else {
 			s.metricsLn = ln
 			logInfof("[Server] metrics: serving Prometheus counters on %s/metrics", metricsAddr)
+		}
+	}
+
+	// Optional additional Windows named-pipe listener (opt-in via -listen-pipe).
+	// Strictly additive: the AF_UNIX socket above is unchanged, the pipe serves the
+	// exact same JSON-RPC dispatch, and startPipeTransport writes the pipe's name to
+	// rpc.pipe beside the socket *before* the pipe begins accepting and before the
+	// ready line below. A setup failure is non-fatal — the socket still serves — so
+	// a Python asyncio client that can't consume AF_UNIX on Windows simply has no
+	// pipe to find. Never reached off Windows (honorListenPipe forced it false).
+	if listenPipe {
+		if pln, err := startPipeTransport(socket); err != nil {
+			logErrorf("[Server] named-pipe transport: %v", err)
+		} else {
+			s.pipeLn = pln
+			logInfof("[Server] also listening on named pipe %s", pln.Addr())
 		}
 	}
 
@@ -299,7 +322,12 @@ func (s *server) run(socket string) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
 	go func() { <-sigc; s.signalShutdown() }()
-	go s.acceptLoop()
+	go s.acceptLoop(s.ln)
+	// The optional named-pipe listener feeds the exact same serveConn path; running
+	// it as a second accept loop keeps the AF_UNIX loop byte-for-byte unchanged.
+	if s.pipeLn != nil {
+		go s.acceptLoop(s.pipeLn)
+	}
 
 	// Block here until shutdown, then tear down synchronously on the main
 	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept) and
@@ -312,10 +340,12 @@ func (s *server) run(socket string) {
 	s.teardown(socket)
 }
 
-// acceptLoop accepts connections until the listener is closed on shutdown.
-func (s *server) acceptLoop() {
+// acceptLoop accepts connections on ln until it is closed on shutdown. It is
+// listener-agnostic so the AF_UNIX socket and the optional Windows named pipe
+// share one code path — every accepted conn goes through the same serveConn.
+func (s *server) acceptLoop(ln net.Listener) {
 	for {
-		nc, err := s.ln.Accept()
+		nc, err := ln.Accept()
 		if err != nil {
 			select {
 			case <-s.shutdown:
@@ -381,8 +411,14 @@ func (s *server) teardown(socket string) {
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
 	}
+	if s.pipeLn != nil {
+		_ = s.pipeLn.Close()
+	}
 	_ = os.Remove(socket)
 	removePersistedToken(socket)
+	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token. No-op if
+	// the pipe was never started (unconditional, matching removePersistedToken).
+	removePipeNameFile(socket)
 	s.stopChildren()
 	s.mu.Lock()
 	for c := range s.conns {

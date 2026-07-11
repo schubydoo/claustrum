@@ -70,6 +70,8 @@ func main() {
 
 		keepChildren = flag.Bool("keep-children", false, "On graceful shutdown, leave spawned child processes running instead of killing them, so they survive a daemon restart/upgrade. Off by default; -serve only; POSIX-only (ignored with a warning on Windows, where children are confined to a Job Object that the OS terminates on daemon exit). The new daemon does not re-adopt the survivors.")
 
+		listenPipe = flag.Bool("listen-pipe", false, "Additionally serve the same JSON-RPC over a Windows named pipe (claustrum picks the name and writes it to rpc.pipe beside the socket) so clients that cannot consume the AF_UNIX socket on Windows can still connect. Off by default; -serve only; Windows-only (ignored with a warning elsewhere). Strictly additive — the AF_UNIX socket and the wire contract are unchanged.")
+
 		cliDir      = flag.String("cli-dir", "", "Directory for per-version CLI binaries")
 		cliVersion  = flag.String("cli-version", "", "Required CLI version (filename under --cli-dir)")
 		cliURL      = flag.String("cli-url", "", "Download URL for the CLI .zst")
@@ -127,7 +129,8 @@ func main() {
 	case *serve:
 		runServe(resolveSocket(), *tokenFile, *tokenFd,
 			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
-			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]))
+			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]),
+			cfg.effectiveListenPipe(*listenPipe, cliSet["listen-pipe"]))
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")

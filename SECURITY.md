@@ -57,6 +57,19 @@ processes on the host it runs on. Key considerations:
   `startTime` token — used for PID-reuse / orphan detection. A socket + token
   holder can already spawn and observe processes, so this is no new exposure, and
   `startTime` is a daemon-internal token, not a credential.
+- **`-listen-pipe` is off by default** and Windows-only. When set, the daemon
+  opens an *additional* Windows named pipe serving the same JSON-RPC (same in-band
+  token auth) so a client that cannot consume the `AF_UNIX` socket can still
+  connect. The pipe is created with an **owner-only DACL** (SDDL
+  `D:P(A;;GA;;;<current-user-SID>)` — GENERIC_ALL to the daemon user's SID and to
+  no Everyone / Authenticated-Users / anonymous principal), the named-pipe
+  analogue of the socket's `0600` mode, and is a **local-only** IPC channel (not
+  reachable by a remote client). It therefore grants no access the socket + token
+  didn't already grant — it is the same authenticated surface reached over a
+  different local transport. When off, no pipe exists and behavior is byte-for-byte
+  identical to the reference. The chosen pipe name is published to `rpc.pipe` in
+  the socket directory (the name is not a secret — the DACL is the access control)
+  and removed on graceful shutdown.
 - **`-keep-children` is off by default** and adds no attack surface — no listener,
   no new auth path, and the children still run as the daemon's user (unchanged
   from `process.spawn` above). The one operational consequence: when set, a

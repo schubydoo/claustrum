@@ -442,6 +442,34 @@ consider them now that the harness proves parity, and document each as an
   socket directory is already owner-scoped in the real deployment. Recorded so
   the security trade-off (flagged in review) isn't lost.
 
+### CT-5 · Opt-in `-listen-pipe` Windows named-pipe transport ✅ — impact M / cost M
+
+- **Shipped.** `-listen-pipe` (config `listen-pipe = true|false`) makes `-serve`
+  *additionally* serve the exact same NDJSON JSON-RPC dispatch over a Windows
+  named pipe, concurrently with the `AF_UNIX` socket (`pipetransport.go` +
+  `pipetransport_windows.go`; go-winio, compiled into Windows builds only). Off by
+  default ⇒ stock; the socket, wire contract, field ordering, and framing are
+  unchanged whether a request arrives over the socket or the pipe.
+- **Why.** A Windows client that cannot consume an `AF_UNIX` socket — notably
+  Python `asyncio`, whose Unix transports are implemented only on its Unix event
+  loop while its Windows Proactor loop natively supports named pipes — otherwise
+  can't attach. The pipe is the additive escape hatch (clauster's ask).
+- **Discovery + auth.** claustrum picks the pipe name
+  (`\\.\pipe\claustrum-<instance-id>`, client-opaque) and publishes it to
+  `rpc.pipe` beside the socket (atomic write before accepting/ready; removed on
+  graceful shutdown — the `rpc.sock`/`daemon.token` lifecycle). Same in-band
+  `"auth"` + `daemon.token` handshake.
+- **Security.** Owner-only DACL (SDDL `D:P(A;;GA;;;<current-user-SID>)`, the
+  named-pipe analogue of the socket's `0600`), local-only, no new authenticated
+  surface (see
+  [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
+  Windows-only: ignored with a warning
+  elsewhere (`honorListenPipe`), setup failure non-fatal (socket still serves).
+- **Tests.** Cross-platform unit coverage of the name-file lifecycle / SDDL /
+  instance-id on the Ubuntu leg; a Windows-only integration test drives the real
+  pipe end-to-end (authed round-trip + wrong-token-denied) on the `windows-latest`
+  CI leg.
+
 ## Explicitly out of scope (would break compatibility)
 
 - Changing method names, params, result field order, error codes, or the

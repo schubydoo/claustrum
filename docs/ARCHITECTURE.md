@@ -1,8 +1,9 @@
 # claustrum architecture
 
-A single Go binary, mode-switched by flag. Static (`CGO_ENABLED=0`), two
-dependencies: `klauspost/compress` (zstd) and `golang.org/x/sys` (Windows Job
-Object teardown — only compiled into Windows builds).
+A single Go binary, mode-switched by flag. Static (`CGO_ENABLED=0`). One
+cross-platform dependency, `klauspost/compress` (zstd); two more compiled **only
+into Windows builds** — `golang.org/x/sys` (Job Object teardown) and
+`github.com/Microsoft/go-winio` (the opt-in `-listen-pipe` named-pipe transport).
 
 ## Source layout (flat `package main`)
 
@@ -20,6 +21,8 @@ Object teardown — only compiled into Windows builds).
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`); level tag precedes the byte-intact `[Component]` prefixes |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`; no listener by default) |
 | `sysproc_unix.go` / `sysproc_windows.go` | whole-tree kill: process group (setpgid + negative-pid signal) vs Windows Job Object (`KILL_ON_JOB_CLOSE`); the `-keep-children` POSIX-only policy (`honorKeepChildren`) |
+| `pipetransport.go` | `-listen-pipe` shared helpers: `rpc.pipe` name-file lifecycle (atomic write / remove), owner-only SDDL builder, pipe-name + instance-id generation (all platform-neutral) |
+| `pipetransport_windows.go` / `pipetransport_other.go` | the optional Windows named-pipe listener (`startPipeTransport` via go-winio, owner-only DACL) vs the non-Windows no-op stub + `honorListenPipe` warning |
 | `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS) |
 | `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / no-op (Windows) |
 
@@ -70,8 +73,14 @@ Unix), opens the `0600` socket, and supervises spawned children.
   inherit it exactly as the reference does (see [PROTOCOL.md](PROTOCOL.md)).
 - On Unix, interactive PATH extraction from the login shell runs concurrently
   (goroutine), so a slow login shell does not delay socket availability.
+- With **`-listen-pipe`** (Windows-only, opt-in), it *additionally* opens a Windows
+  named pipe serving the identical JSON-RPC dispatch (a second `acceptLoop` over
+  the same `serveConn`), publishes the chosen pipe name to `rpc.pipe` beside the
+  socket before accepting, and removes it on graceful shutdown. Strictly additive
+  — the socket path is unchanged.
 - It makes **no** outbound network connections, and no inbound listener beyond
-  the socket unless the operator opts into `-metrics-addr`.
+  the socket unless the operator opts into `-metrics-addr` (TCP) or `-listen-pipe`
+  (a local, owner-only Windows named pipe).
 
 ### 3 · JSON-RPC multiplexer + replay
 

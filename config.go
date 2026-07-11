@@ -46,6 +46,9 @@ type config struct {
 	versionOverride string
 	// keepChildren mirrors -keep-children; nil means "not set in the file".
 	keepChildren *bool
+	// listenPipe mirrors -listen-pipe (Windows-only opt-in); nil means "not set in
+	// the file".
+	listenPipe *bool
 	// metricsAddr mirrors -metrics-addr; "" means "not set in the file".
 	metricsAddr string
 }
@@ -111,6 +114,10 @@ func applyConfigKey(cfg *config, key, val string) {
 		if b, ok := parseConfigBool(val); ok {
 			cfg.keepChildren = &b
 		}
+	case "listen-pipe":
+		if b, ok := parseConfigBool(val); ok {
+			cfg.listenPipe = &b
+		}
 	case "metrics-addr":
 		// A host:port for the opt-in listener. Keep it printable so a stray byte
 		// can't reach a log line or listen call; net.Listen validates the rest.
@@ -139,6 +146,15 @@ func parseConfigBool(s string) (value, ok bool) {
 func (cfg config) effectiveKeepChildren(cliVal, cliSet bool) bool {
 	if !cliSet && cfg.keepChildren != nil {
 		return *cfg.keepChildren
+	}
+	return cliVal
+}
+
+// effectiveListenPipe applies the same CLI-over-config-over-default precedence for
+// -listen-pipe.
+func (cfg config) effectiveListenPipe(cliVal, cliSet bool) bool {
+	if !cliSet && cfg.listenPipe != nil {
+		return *cfg.listenPipe
 	}
 	return cliVal
 }
