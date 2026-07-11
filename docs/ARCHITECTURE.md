@@ -55,6 +55,11 @@ Unix), opens the `0600` socket, and supervises spawned children.
 - The auth token arrives via `-token-file` (read once, unlinked) or
   `-token-fd` (read from an open descriptor and forwarded to the detached
   child over a pipe — never touches disk).
+- Once listening, the daemon **persists the token to `daemon.token` (`0600`)
+  beside the socket** (atomic temp-write + rename) so a reconnecting client can
+  re-authenticate after that source is gone, and **unlinks it on graceful
+  shutdown** — behavioral parity with reference `5db5e4a` (`tokenpersist.go`; see
+  [PROTOCOL.md → Token persistence](PROTOCOL.md#token-persistence-daemontoken)).
 - The self-daemonize re-exec is gated by an **internal** sentinel,
   `CLAUSTRUM_DAEMON_CHILD` — deliberately claustrum-namespaced, *not* the
   reference's `CLAUDE_SSH_DAEMON_CHILD`, which a surrounding claude-ssh session
