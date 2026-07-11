@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -68,6 +69,49 @@ func TestPersistTokenCreateFailureIsNonFatal(t *testing.T) {
 	persistToken(socket, "tok") // dir missing → CreateTemp errors; must not panic
 	if _, err := os.Stat(filepath.Dir(socket)); !os.IsNotExist(err) {
 		t.Fatalf("persistToken must not create the missing directory (err=%v)", err)
+	}
+}
+
+// persistToken's rename-failure arm is best-effort: if the final path can't be
+// replaced (here daemon.token pre-exists as a directory, so renaming a file onto
+// it fails on every platform), it logs, cleans up the temp file, and returns —
+// no panic, the existing entry is untouched, and no daemon.token-* temp leaks.
+func TestPersistTokenRenameFailureIsNonFatal(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "rpc.sock")
+	if err := os.Mkdir(filepath.Join(dir, "daemon.token"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	persistToken(socket, "tok") // temp create/write/close ok; rename onto a dir fails
+
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if e.Name() == "daemon.token" && !e.IsDir() {
+			t.Fatal("daemon.token should remain the pre-existing directory")
+		}
+		if strings.HasPrefix(e.Name(), "daemon.token-") {
+			t.Fatalf("temp file leaked after a failed rename: %q", e.Name())
+		}
+	}
+}
+
+// removePersistedToken's remove-failure arm is best-effort: when daemon.token
+// exists but can't be unlinked (here it's a non-empty directory, so os.Remove
+// fails on every platform), it logs and returns without panicking, and the entry
+// survives. stat succeeds, so this exercises the remove-error path specifically.
+func TestRemovePersistedTokenRemoveFailureIsNonFatal(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "rpc.sock")
+	tokDir := filepath.Join(dir, "daemon.token")
+	if err := os.Mkdir(tokDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tokDir, "keep"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removePersistedToken(socket) // stat ok; remove of a non-empty dir fails
+	if _, err := os.Stat(tokDir); err != nil {
+		t.Fatalf("non-empty daemon.token dir should survive a failed remove: %v", err)
 	}
 }
 
