@@ -17,10 +17,47 @@ re-published SHA is distinguishable from a real release).
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | this PR |
 | `7c2f88d1…` | 2026-07-02 | **5 changes** — see below | [#120](https://github.com/schubydoo/claustrum/pull/120) |
 | `d20a77da…` | 2026-06-09 | none (pure rebuild) | [#97](https://github.com/schubydoo/claustrum/pull/97) (pin bump only) |
 | `7cbfa471…` | 2026-06-04 | `git.info` gained `root` (+ off-wire install/spawn churn — see below) | [#60](https://github.com/schubydoo/claustrum/pull/60) |
 | `8de85faa…` | 2026-05-21 | baseline (initial clean-room target) | initial implementation |
+
+### `5db5e4a12f88487e47c2c48259b69a2d630bb3f7` — 2026-07-06
+
+**No wire change.** One off-wire feature: the daemon now **persists its auth
+token** to `daemon.token` (mode `0600`) in the socket's directory — written
+atomically at startup via an `os.CreateTemp("daemon.token-*")` + rename, and
+unlinked on graceful shutdown. This lets a client reconnect to an already-running
+daemon and re-authenticate after the original `-token-file` was unlinked / the
+`-token-fd` pipe closed. Matched here in [`tokenpersist.go`](../tokenpersist.go)
+(wired into `runServe`/`teardown`); documented in
+[PROTOCOL.md → Token persistence](PROTOCOL.md#token-persistence-daemontoken).
+
+The change is **exhaustively bounded** — four independent diffs against `7c2f88d`
+all converge on token-persistence and nothing else:
+
+- **Function table** (all 6484 funcs via `.gopclntab`): only `daemon.persistToken`
+  + `daemon.removePersistedToken` (and 6 log closures) added; only `daemon.Stop`
+  (928→1024) and `daemon.runChild` (1024→1088) resized; **0 removed**. No
+  `server`/`rpc`/`methods`/`results`/`process`/`git`/`files` function moved.
+- **`.rodata` string constants** (exact byte accounting): exactly **5** new
+  strings — `daemon.token`, `daemon.token-*`, and the three `[daemon] failed to
+  {persist,stat,remove} …token…` messages — matching every byte of the packed-blob
+  growth; **0** real removals. (`[daemon] failed to unlink token file %q: %v` and
+  `claude-ssh: cannot resolve home directory: %v` already existed in `7c2f88d`.)
+- **Frame battery + parity harness**: `7c2f88d` ≡ `5db5e4a` ≡ claustrum,
+  byte-identical.
+- **Syscall differential** (`7c2f88d` vs `5db5e4a`, direct): the only divergence
+  is the `daemon.token` atomic write at boot and stat+unlink on shutdown; every
+  other phase (files / extract / git / spawn / internal) is syscall-identical.
+
+Same toolchain as `7c2f88d` (`go1.23.12`, `klauspost/compress v1.18.4`), so the
+function-table churn is real source. **First observed on this host** 2026-07-06
+(committed), fetched by a Claude Desktop client on 2026-07-10; the `daemon.token`
+path is the server half of client **reconnect** (a reattaching client reads it to
+recover the token). Verified via `scratch/syscall-diff.sh` (`phase 6_end` OK after
+the match) with the frame battery still byte-identical.
 
 ### `7c2f88d13e5f269762dd4d463aa4eb3102214110` — 2026-07-02
 
