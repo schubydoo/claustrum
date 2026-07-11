@@ -77,6 +77,7 @@ component_management:
       name: server & lifecycle
       paths:
         - server.go
+        - tokenpersist.go
         - detach_unix.go
         - detach_windows.go
     - component_id: methods
@@ -93,10 +94,11 @@ component_management:
         - sysproc_unix.go
         - sysproc_windows.go
     - component_id: bridge_cli
-      name: bridge & CLI entrypoint
+      name: bridge, CLI & config
       paths:
         - bridge.go
         - main.go
+        - config.go
     - component_id: install
       name: install pipeline
       paths:
