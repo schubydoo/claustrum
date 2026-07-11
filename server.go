@@ -226,20 +226,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	}
 
 	// Optional additional Windows named-pipe listener (opt-in via -listen-pipe).
-	// Strictly additive: the AF_UNIX socket above is unchanged, the pipe serves the
-	// exact same JSON-RPC dispatch, and startPipeTransport writes the pipe's name to
-	// rpc.pipe beside the socket *before* the pipe begins accepting and before the
-	// ready line below. A setup failure is non-fatal — the socket still serves — so
-	// a Python asyncio client that can't consume AF_UNIX on Windows simply has no
-	// pipe to find. Never reached off Windows (honorListenPipe forced it false).
-	if listenPipe {
-		if pln, err := startPipeTransport(socket); err != nil {
-			logErrorf("[Server] named-pipe transport: %v", err)
-		} else {
-			s.pipeLn = pln
-			logInfof("[Server] also listening on named pipe %s", pln.Addr())
-		}
-	}
+	s.enablePipe(socket, listenPipe)
 
 	fmt.Printf("Claustrum remote server listening on %s\n", socket)
 	s.run(socket)
@@ -319,16 +306,44 @@ func daemonizeWithToken(forwardToken string) {
 	os.Exit(0)
 }
 
+// enablePipe starts the optional Windows named-pipe listener when requested and
+// records it on s. Strictly additive: the AF_UNIX socket is untouched, the pipe
+// serves the exact same JSON-RPC dispatch, and startPipeTransport publishes the
+// pipe's name to rpc.pipe beside the socket *before* it begins accepting. A setup
+// failure is non-fatal — the socket still serves. Off Windows honorListenPipe has
+// already forced listenPipe false, so this is a no-op there. Split out of runServe
+// so the enable/guard/error path is unit-testable without runServe's
+// daemonize+os.Exit shell (the success arm that stores a live pipe listener is
+// Windows-only, covered by the windows-latest CI leg).
+func (s *server) enablePipe(socket string, listenPipe bool) {
+	if !listenPipe {
+		return
+	}
+	pln, err := startPipeTransport(socket)
+	if err != nil {
+		logErrorf("[Server] named-pipe transport: %v", err)
+		return
+	}
+	s.pipeLn = pln
+	logInfof("[Server] also listening on named pipe %s", pln.Addr())
+}
+
+// startAcceptLoops launches the accept loop for the socket and, when present, a
+// second one for the optional pipe listener. Both feed the same serveConn, so the
+// AF_UNIX path is byte-for-byte unchanged. Split out of run so the second-listener
+// branch is testable without run's blocking shutdown wait + os.Exit.
+func (s *server) startAcceptLoops() {
+	go s.acceptLoop(s.ln)
+	if s.pipeLn != nil {
+		go s.acceptLoop(s.pipeLn)
+	}
+}
+
 func (s *server) run(socket string) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
 	go func() { <-sigc; s.signalShutdown() }()
-	go s.acceptLoop(s.ln)
-	// The optional named-pipe listener feeds the exact same serveConn path; running
-	// it as a second accept loop keeps the AF_UNIX loop byte-for-byte unchanged.
-	if s.pipeLn != nil {
-		go s.acceptLoop(s.pipeLn)
-	}
+	s.startAcceptLoops()
 
 	// Block here until shutdown, then tear down synchronously on the main
 	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept) and

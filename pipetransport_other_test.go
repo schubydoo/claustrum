@@ -2,7 +2,10 @@
 
 package main
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // TestHonorListenPipeNonWindows: the named-pipe transport is Windows-only, so on
 // every other platform the flag is forced OFF (with a warning) rather than
@@ -26,5 +29,22 @@ func TestStartPipeTransportNonWindows(t *testing.T) {
 	}
 	if ln != nil {
 		t.Fatal("startPipeTransport off Windows returned a non-nil listener")
+	}
+}
+
+// TestEnablePipeNonWindows covers the enablePipe seam off Windows: the false guard
+// is a no-op, and the requested path hits startPipeTransport's error arm (which
+// errors everywhere but Windows), logs, and leaves pipeLn nil — the socket still
+// serves. The success arm (a live pipe listener stored on s) is Windows-only and
+// exercised by the windows-latest integration test.
+func TestEnablePipeNonWindows(t *testing.T) {
+	s := &server{}
+	s.enablePipe(filepath.Join(t.TempDir(), "rpc.sock"), false)
+	if s.pipeLn != nil {
+		t.Fatal("enablePipe with listenPipe=false should leave pipeLn nil")
+	}
+	s.enablePipe(filepath.Join(t.TempDir(), "rpc.sock"), true)
+	if s.pipeLn != nil {
+		t.Fatal("enablePipe off Windows (startPipeTransport errors) should leave pipeLn nil")
 	}
 }

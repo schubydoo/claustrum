@@ -11,6 +11,52 @@ import (
 	"time"
 )
 
+// TestStartAcceptLoopsServesBothListeners drives startAcceptLoops with a pipe
+// listener present (a second AF_UNIX listener stands in for the Windows pipe,
+// since the extracted seam is listener-agnostic), and asserts both listeners serve
+// the same dispatch — covering the `s.pipeLn != nil` second-loop branch without
+// run()'s blocking shutdown wait + os.Exit.
+func TestStartAcceptLoopsServesBothListeners(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cl")
+	if err != nil {
+		t.Fatalf("tempdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s.sock")
+	pipe := filepath.Join(dir, "p.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen socket: %v", err)
+	}
+	pln, err := net.Listen("unix", pipe)
+	if err != nil {
+		t.Fatalf("listen pipe-stand-in: %v", err)
+	}
+	s := &server{
+		token:    testToken,
+		ln:       ln,
+		pipeLn:   pln,
+		procs:    newProcManager(),
+		conns:    make(map[*conn]struct{}),
+		shutdown: make(chan struct{}),
+	}
+	s.startAcceptLoops()
+	t.Cleanup(func() {
+		s.signalShutdown()
+		_ = ln.Close()
+		_ = pln.Close()
+		s.procs.killAll()
+	})
+
+	for _, sk := range []string{sock, pipe} {
+		cl := dial(t, sk)
+		reply := string(cl.call(authed(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`)))
+		if !strings.Contains(reply, `"pong":true`) {
+			t.Fatalf("ping on %s = %s, want pong:true", sk, reply)
+		}
+	}
+}
+
 // erroringListener is a net.Listener whose Accept always fails, used to drive
 // acceptLoop's error-backoff path.
 type erroringListener struct {
