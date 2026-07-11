@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0](https://github.com/schubydoo/claustrum/compare/v1.6.0...v1.7.0) (2026-07-11)
+
+
+### Features
+
+* add opt-in Windows named-pipe transport (-listen-pipe) ([#134](https://github.com/schubydoo/claustrum/issues/134)) ([606fb2b](https://github.com/schubydoo/claustrum/commit/606fb2b5265ca85c345b3b2970430ce9201c6221))
+
 ## [1.6.0](https://github.com/schubydoo/claustrum/compare/v1.5.0...v1.6.0) (2026-07-11)
 
 
