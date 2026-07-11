@@ -39,13 +39,21 @@ unchanged whether a request arrives over the socket or the pipe.
   accepting and before the daemon prints its ready line, and is **removed on
   graceful shutdown** — the same lifecycle as the socket. The fixed name +
   socket-dir location are the discovery contract, so they are not configurable.
+- **Stale-file invariant.** Because the name is per-boot-random, every `-serve`
+  startup guarantees `rpc.pipe` exists **iff** a pipe is actively served this boot
+  — mirroring the stale-socket clear. When the pipe is served the fresh name is
+  written; when it is not (flag off, non-Windows, or the pipe failed to start), any
+  leftover `rpc.pipe` from an unclean crash is removed, so a client can never read a
+  stale file and dial a pipe that no longer exists.
 - **Same auth.** Requests over the pipe carry the same in-band `"auth":"<token>"`;
   the `daemon.token` handshake is unchanged, so a client discovers the token and
   the pipe name the same way.
-- **Owner-only.** The pipe is created with an owner-only DACL (SDDL
-  `D:P(A;;GA;;;<current-user-SID>)` — GENERIC_ALL to the daemon user's SID and to
-  no world principal), the named-pipe analogue of the socket's `0600` mode, and is
-  a purely local IPC channel (no remote clients). See
+- **Owner-only + local.** The pipe is local by two independent mechanisms: an
+  owner-only DACL (SDDL `D:P(A;;GA;;;<current-user-SID>)` — GENERIC_ALL to the
+  daemon user's SID and to no world principal), the named-pipe analogue of the
+  socket's `0600` mode; **and** remote-client rejection at pipe creation
+  (`FILE_PIPE_REJECT_REMOTE_CLIENTS`, set by go-winio's `ListenPipe`), so a client
+  reaching it over SMB is refused regardless of the DACL. See
   [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
 
 ## Authentication

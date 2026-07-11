@@ -63,8 +63,12 @@ processes on the host it runs on. Key considerations:
   connect. The pipe is created with an **owner-only DACL** (SDDL
   `D:P(A;;GA;;;<current-user-SID>)` — GENERIC_ALL to the daemon user's SID and to
   no Everyone / Authenticated-Users / anonymous principal), the named-pipe
-  analogue of the socket's `0600` mode, and is a **local-only** IPC channel (not
-  reachable by a remote client). It therefore grants no access the socket + token
+  analogue of the socket's `0600` mode. It is **local-only** by two independent
+  mechanisms: that owner-only DACL, **and** remote-client rejection at pipe
+  creation — go-winio's `ListenPipe` creates the server pipe with
+  `FILE_PIPE_REJECT_REMOTE_CLIENTS`, so a client reaching it over SMB
+  (`\\host\pipe\…`) is refused regardless of the DACL. It therefore grants no
+  access the socket + token
   didn't already grant — it is the same authenticated surface reached over a
   different local transport. When off, no pipe exists and behavior is byte-for-byte
   identical to the reference. The chosen pipe name is published to `rpc.pipe` in

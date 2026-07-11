@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -46,5 +47,25 @@ func TestEnablePipeNonWindows(t *testing.T) {
 	s.enablePipe(filepath.Join(t.TempDir(), "rpc.sock"), true)
 	if s.pipeLn != nil {
 		t.Fatal("enablePipe off Windows (startPipeTransport errors) should leave pipeLn nil")
+	}
+}
+
+// TestEnablePipeClearsStaleFileOnError: off Windows startPipeTransport always
+// errors, exercising enablePipe's error arm — which must also clear a stale
+// rpc.pipe so a client can't dial a dead pipe after a failed enable.
+func TestEnablePipeClearsStaleFileOnError(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "rpc.sock")
+	stale := pipeNameFilePath(sock)
+	if err := os.WriteFile(stale, []byte(`\\.\pipe\claustrum-dead`), 0o600); err != nil {
+		t.Fatalf("seed stale rpc.pipe: %v", err)
+	}
+	s := &server{}
+	s.enablePipe(sock, true) // startPipeTransport errors off Windows → error arm
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale rpc.pipe not removed on enable failure: err=%v", err)
+	}
+	if s.pipeLn != nil {
+		t.Fatal("failed enablePipe must leave pipeLn nil")
 	}
 }

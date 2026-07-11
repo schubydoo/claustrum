@@ -34,6 +34,14 @@ func startPipeTransport(socket string) (net.Listener, error) {
 		return nil, err
 	}
 	name := pipePath(id)
+	// Two layers keep this a local, owner-only channel:
+	//   1. The owner-only DACL (ownerOnlySDDL) — only the daemon user's SID may open
+	//      it; no Everyone/Authenticated-Users/anonymous ACE.
+	//   2. Remote-client rejection at pipe creation — go-winio's ListenPipe creates
+	//      the server pipe with FILE_PIPE_REJECT_REMOTE_CLIENTS unconditionally
+	//      (makeServerPipeHandle in pipe.go, pinned v0.6.2), so a client reaching the
+	//      pipe over SMB (\\host\pipe\…) is refused regardless of the DACL. We rely on
+	//      that library default rather than duplicating the flag.
 	// MessageMode is left false: a byte stream matches the socket's newline-framed
 	// JSON, which serveConn's bufio.Scanner splits — the wire framing is identical.
 	ln, err := winio.ListenPipe(name, &winio.PipeConfig{SecurityDescriptor: ownerOnlySDDL(sid)})

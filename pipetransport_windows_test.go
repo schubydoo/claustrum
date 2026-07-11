@@ -23,6 +23,37 @@ func TestHonorListenPipeWindows(t *testing.T) {
 	}
 }
 
+// TestPipeSecurityDescriptorIsOwnerOnly ties the local-only guarantee to the real
+// code path on Windows: the SDDL startPipeTransport hands to winio.ListenPipe is
+// built from the actual daemon-user SID (currentUserSID) and grants access to that
+// SID alone — no Everyone / Authenticated-Users / anonymous ACE and no NULL DACL.
+// That is the DACL half of "local-only"; the remote-rejection half is guaranteed by
+// go-winio creating the pipe with FILE_PIPE_REJECT_REMOTE_CLIENTS (see
+// startPipeTransport), and the baseline "the local owner CAN open it" is covered
+// end-to-end by TestPipeTransportServesJSONRPC. A cross-host rejection test isn't
+// feasible in CI, so this asserts exactly what is: no foreign principal is granted.
+func TestPipeSecurityDescriptorIsOwnerOnly(t *testing.T) {
+	sid, err := currentUserSID()
+	if err != nil {
+		t.Fatalf("currentUserSID: %v", err)
+	}
+	if !strings.HasPrefix(sid, "S-1-") {
+		t.Fatalf("currentUserSID = %q, want a Windows SID (S-1-…)", sid)
+	}
+	sddl := ownerOnlySDDL(sid)
+	if !strings.Contains(sddl, sid) {
+		t.Fatalf("SDDL %q does not grant the daemon user's SID %q", sddl, sid)
+	}
+	if !strings.HasPrefix(sddl, "D:P") {
+		t.Errorf("DACL is not protected (missing D:P): %q", sddl)
+	}
+	for _, world := range []string{"S-1-1-0", "S-1-5-11", "S-1-5-7", "NO_ACCESS_CONTROL"} {
+		if strings.Contains(sddl, world) {
+			t.Errorf("SDDL grants a world/anonymous principal %q: %q", world, sddl)
+		}
+	}
+}
+
 // TestPipeTransportServesJSONRPC boots the production named-pipe transport
 // (startPipeTransport + the real acceptLoop/serveConn dispatch), discovers the
 // pipe name from rpc.pipe exactly as a client would, and drives the same JSON-RPC

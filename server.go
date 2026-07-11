@@ -311,17 +311,29 @@ func daemonizeWithToken(forwardToken string) {
 // serves the exact same JSON-RPC dispatch, and startPipeTransport publishes the
 // pipe's name to rpc.pipe beside the socket *before* it begins accepting. A setup
 // failure is non-fatal — the socket still serves. Off Windows honorListenPipe has
-// already forced listenPipe false, so this is a no-op there. Split out of runServe
-// so the enable/guard/error path is unit-testable without runServe's
-// daemonize+os.Exit shell (the success arm that stores a live pipe listener is
-// Windows-only, covered by the windows-latest CI leg).
+// already forced listenPipe false, so this only clears a stale file there. Split
+// out of runServe so the enable/guard/error path is unit-testable without
+// runServe's daemonize+os.Exit shell (the success arm that stores a live pipe
+// listener is Windows-only, covered by the windows-latest CI leg).
+//
+// It maintains one invariant on every -serve startup — mirroring the stale-socket
+// clear (os.Remove(socket)): rpc.pipe exists iff a pipe is actively served this
+// boot. The pipe name is per-boot-random, so a leftover rpc.pipe from an unclean
+// crash names a pipe that no longer exists; when we do not serve a pipe (flag off,
+// non-Windows, or startPipeTransport failed) we remove any such stale file so a
+// Windows client can never read it and dial a dead pipe. When we do serve one,
+// startPipeTransport has already written the fresh name.
 func (s *server) enablePipe(socket string, listenPipe bool) {
 	if !listenPipe {
+		removePipeNameFile(socket) // not serving a pipe this boot → no stale rpc.pipe
 		return
 	}
 	pln, err := startPipeTransport(socket)
 	if err != nil {
 		logErrorf("[Server] named-pipe transport: %v", err)
+		// startPipeTransport writes rpc.pipe only on success, so any file present now
+		// is stale from a prior boot — clear it rather than leave a dead pointer.
+		removePipeNameFile(socket)
 		return
 	}
 	s.pipeLn = pln

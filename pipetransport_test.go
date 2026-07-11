@@ -189,6 +189,28 @@ func TestRemovePipeNameFileRemoveError(t *testing.T) {
 	removePipeNameFile(sock) // Remove fails (non-empty dir); logs and returns.
 }
 
+// TestEnablePipeClearsStaleFileWhenDisabled: a leftover rpc.pipe from a prior
+// unclean crash names a per-boot-random pipe that no longer exists. When this boot
+// does not serve a pipe (flag off — the case on every non-Windows platform, and on
+// Windows without -listen-pipe), enablePipe must remove that stale file so a client
+// can never read it and dial a dead pipe. Mirrors the stale-socket clear.
+func TestEnablePipeClearsStaleFileWhenDisabled(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "rpc.sock")
+	stale := pipeNameFilePath(sock)
+	if err := os.WriteFile(stale, []byte(`\\.\pipe\claustrum-dead`), 0o600); err != nil {
+		t.Fatalf("seed stale rpc.pipe: %v", err)
+	}
+	s := &server{}
+	s.enablePipe(sock, false)
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale rpc.pipe not removed when pipe disabled: err=%v", err)
+	}
+	if s.pipeLn != nil {
+		t.Fatal("enablePipe(false) must not set pipeLn")
+	}
+}
+
 // assertNoPipeTemps fails if any half-written rpc.pipe-* temp survived (the atomic
 // write must always rename or clean up).
 func assertNoPipeTemps(t *testing.T, dir string) {
