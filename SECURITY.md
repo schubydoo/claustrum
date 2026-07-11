@@ -27,6 +27,18 @@ processes on the host it runs on. Key considerations:
   `CLAUDE_RPC_TOKEN`. Anyone who can read the token *and* reach the socket can
   drive the daemon. Protect both: the socket is owner-only by design; keep the
   token file (or fd source) owner-readable and short-lived.
+- **The running daemon persists its token to `daemon.token` (mode `0600`) in the
+  socket's directory** so a client can reconnect and re-authenticate after the
+  `-token-file`/`-token-fd` source is gone (behavioral parity with the reference
+  daemon — added upstream `5db5e4a`; see [`docs/PROTOCOL.md`](docs/PROTOCOL.md) →
+  Token persistence). It is written atomically and **unlinked on graceful
+  shutdown**, but is **left behind on an unclean kill (`SIGKILL`) or crash**,
+  since cleanup runs only on the graceful path. This widens the on-disk token
+  window versus the immediate-unlink of the source, so treat the socket directory
+  as owner-only: it is where the token now lives for the daemon's lifetime. On
+  POSIX the file is `0600`; on Windows those bits are **not** an owner-only DACL
+  (a Go `os.CreateTemp` limitation the reference shares), so confinement there
+  comes from the session directory's ACL, not the file mode.
 - **`process.spawn` runs arbitrary commands** as the daemon's user, by design —
   that is the daemon's job (it hosts the agent and MCP servers). Treat access to
   the socket + token as equivalent to shell access for that user.

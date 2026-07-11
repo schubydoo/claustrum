@@ -424,6 +424,24 @@ consider them now that the harness proves parity, and document each as an
   & invalid → stock / uppercase normalized). Documented in
   [PROTOCOL.md](PROTOCOL.md) (`-version`).
 
+### CT-4 · Opt-in hardened token persistence — deferred idea — impact L / cost L
+
+- **Context.** As of reference `5db5e4a`, the daemon persists its token to
+  `daemon.token` (`0600`) beside the socket for client reconnect (parity, on by
+  default — `tokenpersist.go`, [PROTOCOL.md → Token
+  persistence](PROTOCOL.md#token-persistence-daemontoken)). Two accepted parity
+  caveats: the file survives an unclean
+  kill/crash (cleanup runs only on graceful shutdown), and on Windows `0600` is
+  not an owner-only DACL.
+- **Idea (not built).** A `claustrum.conf` key — e.g. `persist-token = false`
+  (skip persistence entirely, trading away file-based reconnect) and/or a
+  Windows owner-only DACL on the file — for operators who prefer a smaller
+  on-disk token window over drop-in reconnect. Must stay **absent ⇒ stock**
+  (default persists, byte-for-byte parity) like the other CT gates.
+- **Why deferred.** No demand yet; the default matches the reference, and the
+  socket directory is already owner-scoped in the real deployment. Recorded so
+  the security trade-off (flagged in review) isn't lost.
+
 ## Explicitly out of scope (would break compatibility)
 
 - Changing method names, params, result field order, error codes, or the
