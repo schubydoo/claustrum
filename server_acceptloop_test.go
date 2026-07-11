@@ -1,13 +1,68 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// erroringListener is a net.Listener whose Accept always fails, used to drive
+// acceptLoop's error-backoff path.
+type erroringListener struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (l *erroringListener) Accept() (net.Conn, error) {
+	l.mu.Lock()
+	l.calls++
+	l.mu.Unlock()
+	return nil, errors.New("boom")
+}
+func (l *erroringListener) Close() error   { return nil }
+func (l *erroringListener) Addr() net.Addr { return fakeAddr{} }
+
+type fakeAddr struct{}
+
+func (fakeAddr) Network() string { return "fake" }
+func (fakeAddr) String() string  { return "fake" }
+
+// TestAcceptLoopBacksOffOnErrors: when Accept keeps failing while shutdown is
+// still open, the loop retries (not spinning is asserted indirectly — it must
+// still make progress) and, once shutdown is signalled, returns via the shutdown
+// branch instead of looping forever. Covers the tempDelay backoff arm added for
+// the optional pipe listener.
+func TestAcceptLoopBacksOffOnErrors(t *testing.T) {
+	ln := &erroringListener{}
+	s := &server{
+		procs:    newProcManager(),
+		conns:    make(map[*conn]struct{}),
+		shutdown: make(chan struct{}),
+	}
+	done := make(chan struct{})
+	go func() { s.acceptLoop(ln); close(done) }()
+
+	// Let a few backoff cycles elapse (5ms, 10ms, 20ms, …) so the retry arm runs.
+	time.Sleep(60 * time.Millisecond)
+	ln.mu.Lock()
+	n := ln.calls
+	ln.mu.Unlock()
+	if n < 2 {
+		t.Fatalf("acceptLoop made %d Accept calls, want >= 2 (it should retry)", n)
+	}
+
+	s.signalShutdown()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("acceptLoop did not return after shutdown despite persistent accept errors")
+	}
+}
 
 // TestAcceptLoopServesAndReturnsOnShutdown drives the PRODUCTION
 // (*server).acceptLoop directly. The socket harness (newRunningServer) inlines

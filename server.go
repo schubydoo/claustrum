@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // tokenPipeEnv names the file descriptor the daemonized child reads its auth
@@ -344,6 +345,12 @@ func (s *server) run(socket string) {
 // listener-agnostic so the AF_UNIX socket and the optional Windows named pipe
 // share one code path — every accepted conn goes through the same serveConn.
 func (s *server) acceptLoop(ln net.Listener) {
+	// tempDelay backs off after consecutive non-shutdown accept errors so a
+	// listener wedged into returning errors forever — e.g. an optional named pipe
+	// in a bad state — can't hot-spin the CPU or flood the log. This is the
+	// net/http Server.Serve pattern: start small, double, cap at 1s, reset on a
+	// good Accept. The happy path (and the shutdown branch) is unaffected.
+	var tempDelay time.Duration
 	for {
 		nc, err := ln.Accept()
 		if err != nil {
@@ -351,10 +358,20 @@ func (s *server) acceptLoop(ln net.Listener) {
 			case <-s.shutdown:
 				return
 			default:
-				logWarnf("[Server] accept error (retrying): %v", err)
-				continue
 			}
+			if tempDelay == 0 {
+				tempDelay = 5 * time.Millisecond
+			} else {
+				tempDelay *= 2
+			}
+			if maxDelay := 1 * time.Second; tempDelay > maxDelay {
+				tempDelay = maxDelay
+			}
+			logWarnf("[Server] accept error (retrying in %v): %v", tempDelay, err)
+			time.Sleep(tempDelay)
+			continue
 		}
+		tempDelay = 0
 		c := &conn{nc: nc}
 		met.connections.Add(1)
 		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
