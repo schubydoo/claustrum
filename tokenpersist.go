@@ -31,6 +31,24 @@ const persistedTokenName = "daemon.token"
 // socket's directory, which is the per-session dir the client already knows.
 func persistTokenDir(socket string) string { return filepath.Dir(socket) }
 
+// tokenTempFile is the subset of *os.File that persistToken needs. It exists as
+// an interface only so the constructor below can be a package var: a real
+// os.CreateTemp file can't be coerced into failing WriteString/Close on demand,
+// so the best-effort error arms would otherwise be untestable.
+type tokenTempFile interface {
+	Name() string
+	WriteString(string) (int, error)
+	Close() error
+}
+
+// createTokenTemp opens the O_EXCL 0600 temp file persistToken renames into
+// place. A package var so tests can inject a writer that fails at a chosen step;
+// production always uses os.CreateTemp with the reference's "daemon.token-*"
+// pattern.
+var createTokenTemp = func(dir string) (tokenTempFile, error) {
+	return os.CreateTemp(dir, "daemon.token-*")
+}
+
 // persistToken atomically writes the auth token to <dir(socket)>/daemon.token
 // (0600) via a temp file + rename, mirroring the reference: os.CreateTemp with
 // the "daemon.token-*" pattern yields an O_EXCL 0600 temp, and the rename makes
@@ -41,7 +59,7 @@ func persistTokenDir(socket string) string { return filepath.Dir(socket) }
 // behaves the same (it logs and carries on).
 func persistToken(socket, token string) {
 	dir := persistTokenDir(socket)
-	f, err := os.CreateTemp(dir, "daemon.token-*")
+	f, err := createTokenTemp(dir)
 	if err != nil {
 		logErrorf("[daemon] failed to persist token: %v", err)
 		return
