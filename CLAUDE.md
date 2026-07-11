@@ -109,6 +109,17 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `/proc/<pid>/environ`) or `-token-fd` (read from an open descriptor, forwarded
   to the daemonized child over a pipe — never touches disk); `CLAUDE_RPC_TOKEN`
   is only for the `-bridge`/`-stop` clients.
+- **The daemon persists its token to `daemon.token` (mode `0600`) beside the
+  socket** — written atomically at startup, unlinked on graceful shutdown — so a
+  client can reconnect to a running daemon after the `-token-file` was unlinked /
+  the `-token-fd` pipe closed (`tokenpersist.go`). This is **behavioral parity
+  with the reference** (added upstream `5db5e4a`); the fixed name + socket-dir
+  location *are* the reconnect contract, so they're deliberately not
+  configurable. Known parity caveats (same as the reference, **do not "fix"**
+  without making them an opt-in divergence): two daemons sharing one directory
+  collide on the file, and on Windows `0600` is not an owner-only DACL (a Go
+  `os.CreateTemp` limitation — the per-user session dir is the confinement). See
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
 - **A connection's requests dispatch concurrently** — replies can return out of
   order, matching the reference. Don't serialize them.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
