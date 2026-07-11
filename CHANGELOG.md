@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0](https://github.com/schubydoo/claustrum/compare/v1.5.0...v1.6.0) (2026-07-11)
+
+
+### Features
+
+* persist auth token to daemon.token for client reconnect (ref 5db5e4a) ([#131](https://github.com/schubydoo/claustrum/issues/131)) ([3007358](https://github.com/schubydoo/claustrum/commit/3007358308ec015c5eec2ce950ca75814993af9b))
+
 ## [1.5.0](https://github.com/schubydoo/claustrum/compare/v1.4.0...v1.5.0) (2026-07-03)
 
 
