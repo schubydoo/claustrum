@@ -29,6 +29,21 @@ environment variable. A bad or missing token →
 The `-bridge` relay does **not** inject auth — whatever speaks through it must
 include `"auth"` itself.
 
+### Token persistence (`daemon.token`)
+
+Once the socket is listenable, the daemon writes the token to **`daemon.token`**
+in the socket's directory (mode `0600`, written atomically via a
+`daemon.token-*` temp file + rename), and **unlinks it on graceful shutdown**.
+This lets a client reconnect to an already-running daemon and re-authenticate
+after the original `-token-file` was unlinked / the `-token-fd` pipe closed —
+the token would otherwise be unrecoverable. The write is token-source-agnostic
+(it uses the in-memory token, so it works for both `-token-file` and
+`-token-fd`) and best-effort: a failure is logged (`[daemon] failed to persist
+token: …`) and non-fatal. Added by reference build `5db5e4a` and matched here
+(off the JSON-RPC wire; the file sits beside the socket, not on it). An unclean
+kill (`SIGKILL`/crash) leaves the file behind, since removal runs only on the
+graceful `server.shutdown` / `SIGTERM` path.
+
 ## Message shapes
 
 ```jsonc

@@ -185,6 +185,12 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
 	}
 
+	// Persist the token beside the now-listenable socket so a client can
+	// reconnect to this daemon and re-authenticate after the original -token-file
+	// was unlinked / the -token-fd pipe closed. Removed again in teardown. Matches
+	// the reference daemon (upstream 5db5e4a); best-effort and non-fatal.
+	persistToken(socket, token)
+
 	// -keep-children is POSIX-only. honorKeepChildren returns the flag unchanged on
 	// Unix and false-with-a-warning on Windows (where children live in a Job Object
 	// the OS tears down on daemon exit regardless) — so we never claim to keep them
@@ -376,6 +382,7 @@ func (s *server) teardown(socket string) {
 		_ = s.metricsLn.Close()
 	}
 	_ = os.Remove(socket)
+	removePersistedToken(socket)
 	s.stopChildren()
 	s.mu.Lock()
 	for c := range s.conns {
