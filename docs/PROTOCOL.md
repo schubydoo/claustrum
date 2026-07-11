@@ -16,6 +16,46 @@ contract the validation battery checks byte-for-byte.
 - A connection's requests are dispatched **concurrently** — responses may arrive
   out of request order; match them by `id`.
 
+### Named-pipe transport (Windows, opt-in)
+
+A **strictly additive claustrum extension** — the reference daemon has no such
+transport. The `AF_UNIX` socket above is the default and the reference contract. As an
+**opt-in, default-off** addition (enabled with `-serve -listen-pipe`, or
+`listen-pipe=true` in `claustrum.conf`), claustrum *additionally* serves the
+**exact same** NDJSON JSON-RPC dispatch over a **Windows named pipe**,
+concurrently with the socket. It exists so a Windows client which cannot consume
+an `AF_UNIX` socket (notably Python `asyncio`, whose Unix transports are
+Unix-loop-only while its Windows Proactor loop natively supports named pipes) can
+still connect. When the flag is off, behavior is byte-for-byte
+identical to the reference; the wire contract, field ordering, and framing are
+unchanged whether a request arrives over the socket or the pipe.
+
+- **Windows-only.** The flag is ignored (with a warning) on every other platform,
+  which serves JSON-RPC over the socket directly.
+- **Name + discovery.** claustrum chooses the pipe name
+  (`\\.\pipe\claustrum-<random-instance-id>`); the client treats it as opaque and
+  learns it by reading **`rpc.pipe`** in the socket's directory (beside `rpc.sock`
+  / `daemon.token`). `rpc.pipe` is written atomically **before** the pipe begins
+  accepting and before the daemon prints its ready line, and is **removed on
+  graceful shutdown** — the same lifecycle as the socket. The fixed name +
+  socket-dir location are the discovery contract, so they are not configurable.
+- **Stale-file invariant.** Because the name is per-boot-random, every `-serve`
+  startup guarantees `rpc.pipe` exists **iff** a pipe is actively served this boot
+  — mirroring the stale-socket clear. When the pipe is served the fresh name is
+  written; when it is not (flag off, non-Windows, or the pipe failed to start), any
+  leftover `rpc.pipe` from an unclean crash is removed, so a client can never read a
+  stale file and dial a pipe that no longer exists.
+- **Same auth.** Requests over the pipe carry the same in-band `"auth":"<token>"`;
+  the `daemon.token` handshake is unchanged, so a client discovers the token and
+  the pipe name the same way.
+- **Owner-only + local.** The pipe is local by two independent mechanisms: an
+  owner-only DACL (SDDL `D:P(A;;GA;;;<current-user-SID>)` — GENERIC_ALL to the
+  daemon user's SID and to no world principal), the named-pipe analogue of the
+  socket's `0600` mode; **and** remote-client rejection at pipe creation
+  (`FILE_PIPE_REJECT_REMOTE_CLIENTS`, set by go-winio's `ListenPipe`), so a client
+  reaching it over SMB is refused regardless of the DACL. See
+  [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
+
 ## Authentication
 
 Every request carries a top-level `"auth":"<token>"`. The server's expected token
@@ -419,7 +459,7 @@ reference unless marked **claustrum-only**.
 ### -serve — run the daemon
 
 ```text
-claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children]
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe]
 ```
 
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
@@ -507,6 +547,26 @@ unset in the child before it spawns anything, so it never leaks downstream.
   goroutine so the kill-or-keep decision reliably completes before the process
   exits — it previously ran in a goroutine that could lose the race to the accept
   loop's return, skipping child teardown entirely.)*
+
+**`-listen-pipe`** *(claustrum-only, CT-5; Windows-only)* — additional named-pipe transport:
+
+- **Off by default**, byte-for-byte identical to the reference. When set, the
+  daemon *additionally* serves the same NDJSON JSON-RPC dispatch over a Windows
+  named pipe, concurrently with the `AF_UNIX` socket — the socket, wire contract,
+  field ordering, and framing are unchanged. Same `"auth"` handshake.
+- Exists so a Windows client that cannot consume `AF_UNIX` (e.g. Python `asyncio`,
+  pinned to the Proactor loop) can connect over a pipe, which that loop supports
+  natively. See [Named-pipe transport](#named-pipe-transport-windows-opt-in).
+- claustrum picks the pipe name and publishes it to **`rpc.pipe`** beside the
+  socket (written before accepting/ready, removed on graceful shutdown); the
+  client reads that file to discover the opaque name.
+- The pipe is **owner-only** (SDDL `D:P(A;;GA;;;<current-user-SID>)`, the analogue
+  of the socket's `0600`) and local-only.
+- **Windows-only:** ignored with a warning on other platforms (they use the socket
+  directly). A setup failure is logged (`[Server] named-pipe transport: …`) and
+  non-fatal — the socket still serves.
+- Also settable in `claustrum.conf` as `listen-pipe = true|false` (an explicit
+  `-listen-pipe` flag wins).
 
 ### -bridge — stdio↔socket relay
 

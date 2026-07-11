@@ -78,6 +78,9 @@ component_management:
       paths:
         - server.go
         - tokenpersist.go
+        - pipetransport.go
+        - pipetransport_windows.go
+        - pipetransport_other.go
         - detach_unix.go
         - detach_windows.go
     - component_id: methods

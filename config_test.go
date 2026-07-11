@@ -72,6 +72,32 @@ func TestParseConfig_KeepChildren(t *testing.T) {
 	}
 }
 
+func TestParseConfig_ListenPipe(t *testing.T) {
+	cases := []struct {
+		body string
+		want *bool
+	}{
+		{"listen-pipe = true", boolp(true)},
+		{"listen-pipe = ON", boolp(true)},
+		{"listen-pipe = 1", boolp(true)},
+		{"listen-pipe = false", boolp(false)},
+		{"listen-pipe = 0", boolp(false)},
+		{"listen-pipe = maybe", nil},
+		{"listen-pipe =", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.body, func(t *testing.T) {
+			got := parse(t, tc.body).listenPipe
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("listenPipe = %v, want nil", *got)
+			case tc.want != nil && (got == nil || *got != *tc.want):
+				t.Fatalf("listenPipe = %v, want %v", got, *tc.want)
+			}
+		})
+	}
+}
+
 func TestParseConfig_MetricsAndUnknownAndMalformed(t *testing.T) {
 	cfg := parse(t, strings.Join([]string{
 		"metrics-addr = 127.0.0.1:9090",
@@ -113,6 +139,21 @@ func TestPrecedence(t *testing.T) {
 	// Empty config → default stands.
 	if (config{}).effectiveKeepChildren(false, false) != false {
 		t.Fatal("empty config should leave keep-children default false")
+	}
+
+	// -listen-pipe follows the same precedence rules.
+	pipeCfg := config{listenPipe: boolp(true)}
+	if pipeCfg.effectiveListenPipe(false, true) != false {
+		t.Fatal("explicit CLI -listen-pipe=false should win over config true")
+	}
+	if pipeCfg.effectiveListenPipe(false, false) != true {
+		t.Fatal("config listen-pipe=true should apply when CLI unset")
+	}
+	if (config{}).effectiveListenPipe(false, false) != false {
+		t.Fatal("empty config should leave listen-pipe default false")
+	}
+	if (config{}).effectiveListenPipe(true, true) != true {
+		t.Fatal("explicit CLI -listen-pipe=true should apply with no config")
 	}
 }
 

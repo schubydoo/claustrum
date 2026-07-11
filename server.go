@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // tokenPipeEnv names the file descriptor the daemonized child reads its auth
@@ -54,6 +55,7 @@ type server struct {
 	shutdown     chan struct{}
 	once         sync.Once
 	metricsLn    net.Listener // optional Prometheus listener; nil unless -metrics-addr set
+	pipeLn       net.Listener // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
 	keepChildren bool         // -keep-children: leave child processes running on graceful shutdown (POSIX-only)
 }
 
@@ -112,7 +114,7 @@ func (c *conn) writeResponse(v interface{}) {
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with daemonChildEnv (CLAUSTRUM_DAEMON_CHILD) so we re-exec
 // exactly once — see that const for why it is not CLAUDE_SSH_DAEMON_CHILD.
-func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren bool) {
+func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren, listenPipe bool) {
 	// -serve requires a token source, checked BEFORE the socket (probe-verified).
 	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
 	// comes from a file (read once, then unlinked) or an fd (read by the parent,
@@ -198,6 +200,12 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// logs once, from the running daemon.
 	keepChildren = honorKeepChildren(keepChildren)
 
+	// -listen-pipe is Windows-only. honorListenPipe returns the flag unchanged on
+	// Windows and false-with-a-warning elsewhere (the named-pipe transport has no
+	// meaning off Windows) — the same shape as honorKeepChildren above, evaluated
+	// in the daemonized child so any warning logs once from the running daemon.
+	listenPipe = honorListenPipe(listenPipe)
+
 	s := &server{
 		token:        token,
 		ln:           ln,
@@ -216,6 +224,9 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 			logInfof("[Server] metrics: serving Prometheus counters on %s/metrics", metricsAddr)
 		}
 	}
+
+	// Optional additional Windows named-pipe listener (opt-in via -listen-pipe).
+	s.enablePipe(socket, listenPipe)
 
 	fmt.Printf("Claustrum remote server listening on %s\n", socket)
 	s.run(socket)
@@ -295,11 +306,56 @@ func daemonizeWithToken(forwardToken string) {
 	os.Exit(0)
 }
 
+// enablePipe starts the optional Windows named-pipe listener when requested and
+// records it on s. Strictly additive: the AF_UNIX socket is untouched, the pipe
+// serves the exact same JSON-RPC dispatch, and startPipeTransport publishes the
+// pipe's name to rpc.pipe beside the socket *before* it begins accepting. A setup
+// failure is non-fatal — the socket still serves. Off Windows honorListenPipe has
+// already forced listenPipe false, so this only clears a stale file there. Split
+// out of runServe so the enable/guard/error path is unit-testable without
+// runServe's daemonize+os.Exit shell (the success arm that stores a live pipe
+// listener is Windows-only, covered by the windows-latest CI leg).
+//
+// It maintains one invariant on every -serve startup — mirroring the stale-socket
+// clear (os.Remove(socket)): rpc.pipe exists iff a pipe is actively served this
+// boot. The pipe name is per-boot-random, so a leftover rpc.pipe from an unclean
+// crash names a pipe that no longer exists; when we do not serve a pipe (flag off,
+// non-Windows, or startPipeTransport failed) we remove any such stale file so a
+// Windows client can never read it and dial a dead pipe. When we do serve one,
+// startPipeTransport has already written the fresh name.
+func (s *server) enablePipe(socket string, listenPipe bool) {
+	if !listenPipe {
+		removePipeNameFile(socket) // not serving a pipe this boot → no stale rpc.pipe
+		return
+	}
+	pln, err := startPipeTransport(socket)
+	if err != nil {
+		logErrorf("[Server] named-pipe transport: %v", err)
+		// startPipeTransport writes rpc.pipe only on success, so any file present now
+		// is stale from a prior boot — clear it rather than leave a dead pointer.
+		removePipeNameFile(socket)
+		return
+	}
+	s.pipeLn = pln
+	logInfof("[Server] also listening on named pipe %s", pln.Addr())
+}
+
+// startAcceptLoops launches the accept loop for the socket and, when present, a
+// second one for the optional pipe listener. Both feed the same serveConn, so the
+// AF_UNIX path is byte-for-byte unchanged. Split out of run so the second-listener
+// branch is testable without run's blocking shutdown wait + os.Exit.
+func (s *server) startAcceptLoops() {
+	go s.acceptLoop(s.ln)
+	if s.pipeLn != nil {
+		go s.acceptLoop(s.pipeLn)
+	}
+}
+
 func (s *server) run(socket string) {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
 	go func() { <-sigc; s.signalShutdown() }()
-	go s.acceptLoop()
+	s.startAcceptLoops()
 
 	// Block here until shutdown, then tear down synchronously on the main
 	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept) and
@@ -312,19 +368,37 @@ func (s *server) run(socket string) {
 	s.teardown(socket)
 }
 
-// acceptLoop accepts connections until the listener is closed on shutdown.
-func (s *server) acceptLoop() {
+// acceptLoop accepts connections on ln until it is closed on shutdown. It is
+// listener-agnostic so the AF_UNIX socket and the optional Windows named pipe
+// share one code path — every accepted conn goes through the same serveConn.
+func (s *server) acceptLoop(ln net.Listener) {
+	// tempDelay backs off after consecutive non-shutdown accept errors so a
+	// listener wedged into returning errors forever — e.g. an optional named pipe
+	// in a bad state — can't hot-spin the CPU or flood the log. This is the
+	// net/http Server.Serve pattern: start small, double, cap at 1s, reset on a
+	// good Accept. The happy path (and the shutdown branch) is unaffected.
+	var tempDelay time.Duration
 	for {
-		nc, err := s.ln.Accept()
+		nc, err := ln.Accept()
 		if err != nil {
 			select {
 			case <-s.shutdown:
 				return
 			default:
-				logWarnf("[Server] accept error (retrying): %v", err)
-				continue
 			}
+			if tempDelay == 0 {
+				tempDelay = 5 * time.Millisecond
+			} else {
+				tempDelay *= 2
+			}
+			if maxDelay := 1 * time.Second; tempDelay > maxDelay {
+				tempDelay = maxDelay
+			}
+			logWarnf("[Server] accept error (retrying in %v): %v", tempDelay, err)
+			time.Sleep(tempDelay)
+			continue
 		}
+		tempDelay = 0
 		c := &conn{nc: nc}
 		met.connections.Add(1)
 		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
@@ -381,8 +455,14 @@ func (s *server) teardown(socket string) {
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
 	}
+	if s.pipeLn != nil {
+		_ = s.pipeLn.Close()
+	}
 	_ = os.Remove(socket)
 	removePersistedToken(socket)
+	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token. No-op if
+	// the pipe was never started (unconditional, matching removePersistedToken).
+	removePipeNameFile(socket)
 	s.stopChildren()
 	s.mu.Lock()
 	for c := range s.conns {

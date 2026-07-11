@@ -1,6 +1,7 @@
 scratch/
 /dist/
 /claustrum
+/claustrum.exe
 
 # mkdocs build output + local docs toolchain venv
 /site/
