@@ -17,7 +17,7 @@ re-published SHA is distinguishable from a real release).
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
-| `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | this PR |
+| `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | [#131](https://github.com/schubydoo/claustrum/pull/131) |
 | `7c2f88d1…` | 2026-07-02 | **5 changes** — see below | [#120](https://github.com/schubydoo/claustrum/pull/120) |
 | `d20a77da…` | 2026-06-09 | none (pure rebuild) | [#97](https://github.com/schubydoo/claustrum/pull/97) (pin bump only) |
 | `7cbfa471…` | 2026-06-04 | `git.info` gained `root` (+ off-wire install/spawn churn — see below) | [#60](https://github.com/schubydoo/claustrum/pull/60) |
