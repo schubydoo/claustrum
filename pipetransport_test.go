@@ -173,6 +173,22 @@ func TestWritePipeNameFileRenameError(t *testing.T) {
 	assertNoPipeTemps(t, dir)
 }
 
+// TestRemovePipeNameFileRemoveError: when rpc.pipe is a NON-EMPTY directory, Stat
+// succeeds but os.Remove fails with ENOTEMPTY, exercising the remove-failure log
+// arm (must not panic). Mirrors the daemon.token RemoveFailure case.
+func TestRemovePipeNameFileRemoveError(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "rpc.sock")
+	pipeDir := pipeNameFilePath(sock)
+	if err := os.Mkdir(pipeDir, 0o755); err != nil {
+		t.Fatalf("mkdir rpc.pipe dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pipeDir, "child"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed child: %v", err)
+	}
+	removePipeNameFile(sock) // Remove fails (non-empty dir); logs and returns.
+}
+
 // assertNoPipeTemps fails if any half-written rpc.pipe-* temp survived (the atomic
 // write must always rename or clean up).
 func assertNoPipeTemps(t *testing.T, dir string) {
