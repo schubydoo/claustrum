@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.1](https://github.com/schubydoo/claustrum/compare/v1.7.0...v1.7.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **test:** give readTokenFD sole fd ownership to stop coverage flake ([#136](https://github.com/schubydoo/claustrum/issues/136)) ([c8e4775](https://github.com/schubydoo/claustrum/commit/c8e4775eb3af194126523b867dbc3896b1dfeff9))
+
 ## [1.7.0](https://github.com/schubydoo/claustrum/compare/v1.6.0...v1.7.0) (2026-07-11)
 
 
