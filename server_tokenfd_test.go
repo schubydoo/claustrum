@@ -1,8 +1,9 @@
 package main
 
 import (
-	"io"
 	"os"
+	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -10,17 +11,26 @@ import (
 // the -token-file path (trailing newline stripped, leading/interior spaces kept),
 // so -token-fd and -token-file accept byte-for-byte the same token bytes.
 func TestReadTokenFD(t *testing.T) {
-	r, w, err := os.Pipe()
+	// readTokenFD wraps the fd in an *os.File and closes it (it owns the fd, just
+	// like the daemonized child owns its inherited token pipe). So we must hand it
+	// a descriptor that nothing else owns: syscall.Open returns a bare fd with no
+	// competing *os.File finalizer. Passing an os.Pipe/os.Open file's .Fd() here
+	// instead would give the fd two owners — readTokenFD's Close plus the source
+	// file's finalizer Close — and that double-close can, after fd-number reuse,
+	// clobber an unrelated descriptor (in CI, the coverage runtime's _cover_.out,
+	// surfacing as "bad file descriptor" at exit).
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("  s3kret-token\n"), 0o600); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+	fd, err := syscall.Open(path, syscall.O_RDONLY, 0)
 	if err != nil {
-		t.Fatalf("pipe: %v", err)
+		t.Fatalf("open: %v", err)
 	}
-	// A small write fits the pipe buffer, so this won't block before the read.
-	if _, err := io.WriteString(w, "  s3kret-token\n"); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	_ = w.Close() // give the read an EOF
 
-	got, err := readTokenFD(int(r.Fd()))
+	// int(fd) is redundant on unix (syscall.Open returns int) but required on
+	// Windows (it returns syscall.Handle); the lint runs on linux, so annotate it.
+	got, err := readTokenFD(int(fd)) //nolint:unconvert // cross-platform: Windows fd is a Handle
 	if err != nil {
 		t.Fatalf("readTokenFD: %v", err)
 	}
