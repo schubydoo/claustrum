@@ -2,10 +2,10 @@ module github.com/schubydoo/claustrum
 
 go 1.25.0
 
-toolchain go1.26.4
+toolchain go1.26.5
 
 require github.com/klauspost/compress v1.19.0
 
-require golang.org/x/sys v0.46.0
+require golang.org/x/sys v0.47.0
 
 require github.com/Microsoft/go-winio v0.6.2
