@@ -4,6 +4,13 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.0](https://github.com/schubydoo/claustrum/compare/v1.7.1...v1.8.0) (2026-07-19)
+
+
+### Features
+
+* auto-detect new claude-ssh reference builds from Desktop pins ([#141](https://github.com/schubydoo/claustrum/issues/141)) ([b57610f](https://github.com/schubydoo/claustrum/commit/b57610facc4eac12b335c300d4b2495eae6c7ccf))
+
 ## [1.7.1](https://github.com/schubydoo/claustrum/compare/v1.7.0...v1.7.1) (2026-07-12)
 
 
