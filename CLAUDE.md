@@ -103,7 +103,13 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **Every change to `main` goes through a branch + PR — never commit or push to
   `main` directly.**
 - **Conventional Commits** for PR titles (`feat:` / `fix:` / `docs:` / `chore:`
-  / `ci:` …); PRs squash-merge, so the title becomes the commit subject.
+  / `ci:` …); PRs squash-merge, so the title becomes the commit subject. Titles
+  are hygiene only — they do **not** drive releases.
+- **Releases are changesets-only** (knope, not release-please). A user-facing
+  change adds a `.changeset/*.md` fragment (`knope document-change`); the fragment
+  drives the version bump + changelog. No fragment ⇒ no release. Internal PRs
+  (CI/tooling/refactor/tests) need none — apply the `no-changelog` label. See
+  [`.changeset/`](.changeset/) and CONTRIBUTING.md → Changesets.
 - Before a PR: `gofmt -l .` empty, `go vet ./...` clean, `golangci-lint run`
   clean, `go test -race ./...` green. For a **wire-surface** change, also re-run
   the `scratch/` validation battery to confirm frames stay byte-identical.
@@ -150,8 +156,12 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - Ideas / deferred → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
 - Host-local agent guardrails + context-mode routing → `CLAUDE.local.md` (gitignored)
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
-  `ci` / `security` aggregators are the required checks); cut a release by pushing
-  a `v*` tag — signed + SBOM'd + SLSA provenance via [`.goreleaser.yaml`](.goreleaser.yaml)
+  `ci` / `security` aggregators are the required checks). Releases are automated by
+  **knope** (`knope.toml`): pending `.changeset/` fragments → `knope-prepare.yml`
+  opens a `chore: prepare release X.Y.Z` PR (bumps `VERSION` + `CHANGELOG.md`);
+  merging it → `knope-release.yml` tags `v*` + creates the GitHub Release, and that
+  tag fires `release.yml` — signed + SBOM'd + SLSA provenance via
+  [`.goreleaser.yaml`](.goreleaser.yaml). Gated on the `KNOPE_ENABLED` repo var.
 
 ## Documentation references
 

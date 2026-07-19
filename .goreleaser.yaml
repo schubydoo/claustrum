@@ -106,9 +106,9 @@ release:
   github:
     owner: schubydoo
     name: claustrum
-  # `append`: creates the release if missing (manual-tag flow today), or adds
-  # artifacts to an existing one (forward-compatible with release-please later,
-  # which would pre-create the release from the CHANGELOG).
+  # `append`: creates the release if missing (manual-tag flow), or adds artifacts
+  # to an existing one — knope-release.yml pre-creates the release from the
+  # CHANGELOG and pushes the tag, and goreleaser appends the signed artifacts.
   mode: append
   draft: false
   prerelease: auto

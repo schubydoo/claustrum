@@ -2,8 +2,8 @@ name: PR Title
 
 # Validate that the pull-request title follows Conventional Commits. The repo
 # squash-merges and the PR title becomes the squash commit subject, so a
-# conventional title keeps `main`'s history parseable (and ready for
-# release-please if that's added later).
+# conventional title keeps `main`'s history parseable. Titles are hygiene only —
+# releases are changesets-only (knope), not title-driven.
 
 on:
   pull_request:

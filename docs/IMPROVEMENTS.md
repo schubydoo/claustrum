@@ -98,8 +98,10 @@ in CI; ~1.5M execs clean under active `-fuzz`. _Optional follow-up:_ a short
 
 Shipped `.goreleaser.yaml` + `release.yml`: 6-target builds, checksums, syft
 CycloneDX SBOM, cosign signing, and SLSA `*.intoto.jsonl` provenance — satisfies
-Scorecard SBOM + Signed-Releases (10/10). Also shipped `release-please.yml` +
-`pr-auto-update.yml` for automated version PRs (claustrum-ci[bot]).
+Scorecard SBOM + Signed-Releases (10/10). Automated version PRs are handled by
+**knope** (`knope.toml` + `knope-prepare.yml` / `knope-release.yml`, changesets-only;
+migrated from `release-please.yml`) with `pr-auto-update.yml`, all as
+claustrum-ci[bot].
 
 ### 12 · Pin the Go toolchain ✅ — impact M / cost L
 

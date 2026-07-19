@@ -1,0 +1,99 @@
+name: Knope Prepare
+
+# knope's "release PR" half (replaces release-please's "open the next release PR").
+# On push to main, if there are pending `.changeset/*.md` fragments, knope computes
+# the next version, bumps VERSION + CHANGELOG.md, re-adds the compare link under the
+# new heading, force-pushes the `release` branch, and opens/refreshes a
+# `chore: prepare release X.Y.Z` PR. Merging that PR is the approval gate; the merge
+# triggers knope-release.yml.
+#
+# Gated on the `KNOPE_ENABLED` repo variable. Reuses the claustrum-ci GitHub App
+# (RELEASE_PLEASE_APP_ID / RELEASE_PLEASE_APP_PRIVATE_KEY secrets — same App as
+# release-please used) so the release PR's eventual merge tag triggers release.yml
+# (a GITHUB_TOKEN-pushed tag would not, by GitHub's recursion suppression).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: knope-prepare-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    if: ${{ vars.KNOPE_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Detect a pending changeset FIRST, with a credential-less checkout, so a
+      # routine push with no fragment is a clean no-op that never touches the App.
+      # Only a release-driving push mints the token below.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect pending changesets
+        id: changesets
+        run: |
+          set -euo pipefail
+          count=0
+          if [ -d .changeset ]; then
+            count=$(find .changeset -maxdepth 1 -name '*.md' ! -iname 'README.md' | wc -l)
+          fi
+          echo "has=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "pending changeset fragments: $count"
+
+      # Everything below runs ONLY when a fragment is pending. Short-lived
+      # claustrum-ci App token; its identity is what lets the release PR's eventual
+      # merge tag trigger release.yml and lets CI run on the release PR.
+      - name: Mint claustrum-ci App token
+        id: app-token
+        if: ${{ steps.changesets.outputs.has == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Verify App token was minted
+        if: ${{ steps.changesets.outputs.has == 'true' && steps.app-token.outputs.token == '' }}
+        run: |
+          echo "::error::claustrum-ci App token mint produced an empty token; check the \
+          RELEASE_PLEASE_APP_ID / RELEASE_PLEASE_APP_PRIVATE_KEY secrets and the App installation."
+          exit 1
+
+      # Re-checkout with the App token persisted so knope's `git push` of the
+      # release branch + the PR it opens run as the App identity. Full history +
+      # tags so knope can find the last release tag.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: ${{ steps.changesets.outputs.has == 'true' }}
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true # zizmor: ignore[artipacked] — knope pushes the release branch with this token
+      - name: Configure git identity (claustrum-ci App)
+        if: ${{ steps.changesets.outputs.has == 'true' }}
+        run: |
+          # TODO: once the App's numeric bot id is known, use the canonical
+          # "<id>+claustrum-ci[bot]@users.noreply.github.com" so commits link to the
+          # bot account. Cosmetic — the tag-trigger relies on the token, not this.
+          git config user.name "claustrum-ci[bot]"
+          git config user.email "claustrum-ci[bot]@users.noreply.github.com"
+      - name: Install knope
+        if: ${{ steps.changesets.outputs.has == 'true' }}
+        uses: knope-dev/action@19617851f9f13ab2f27a05989c55efb18aca3675 # v2.1.2
+        with:
+          version: 0.23.0
+      # knope's prepare-release runs `python3 scripts/changelog_compare_link.py`
+      # (stdlib only; python3 is preinstalled on ubuntu-latest — no setup needed).
+      - name: Open or refresh the release PR
+        if: ${{ steps.changesets.outputs.has == 'true' }}
+        run: knope prepare-release --verbose
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
