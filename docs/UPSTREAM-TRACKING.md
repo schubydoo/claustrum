@@ -32,11 +32,17 @@ easiest first:
 2. **The Desktop app bundle** — the pinned SHA (and all six per-platform
    checksums/sizes) is a **build-time constant baked into the app**, readable
    offline without connecting anywhere. In the Linux `.deb` it is a
-   `JSON.parse('{"version":"<sha>",…,"baseUrl":".../claude-ssh-releases"}')`
-   literal inside `resources/app.asar` (`.vite/build/index.js`); a parallel
+   `JSON.parse('{"version":"<sha>","manifest":{…},"baseUrl":".../claude-ssh-releases"}')`
+   literal inside `resources/app.asar` (a minified `.vite/build/index.chunk-*.js`,
+   so the chunk name and wrapper function are per-build-random); a parallel
    literal pins the CLI (`claude-code-releases`). So a new Desktop build is
-   itself the "new SHA" signal. Observed: Claude Desktop for **Linux 1.18286.0**
-   (2026-07-02) pins `7c2f88d…`.
+   itself the "new SHA" signal. **[`scripts/extract-desktop-pin.py`](../scripts/extract-desktop-pin.py)**
+   reads it straight out of a `.deb` (stdlib-only: `ar` → `data.tar.xz` →
+   `app.asar` → enclosure brace-match, no `dpkg`/`asar` needed), and
+   **[`scripts/latest-desktop-sha.py`](../scripts/latest-desktop-sha.py)** does the
+   full "find the newest Desktop → download → extract → compare to
+   `UPSTREAM_SHA`" loop. Observed: Linux **1.18286.0** (2026-07-02) pinned
+   `7c2f88d…`; **1.20186.1 → 1.22209.0** pin `5db5e4a…` (the current baseline).
 3. **The Desktop machine's cache** — per-platform binaries under
    `<app-data>/claude-ssh-remote/<sha>/` (`%APPDATA%/Claude/…` on Windows),
    alongside a `.verified-<goos>-<goarch>` marker.
@@ -178,8 +184,15 @@ If the check reports drift:
 
 ## Automating it
 
-- A scheduled CI job (e.g. weekly `nightly.yml`) can run `check-upstream.sh`
-  against the pinned SHA and open an issue if the manifest/strings/flags it can
-  reach have changed. Because finding a *new* SHA needs an out-of-band source
-  (above), the cron primarily guards against the pinned build being re-published
-  or its surface shifting; feed it a freshly-discovered SHA to check a new build.
+- **[`.github/workflows/upstream-desktop-watch.yml`](../.github/workflows/upstream-desktop-watch.yml)**
+  runs weekly: it calls `scripts/latest-desktop-sha.py` to discover the SHA the
+  *newest* Claude Desktop for Linux pins (Step 1, automated — no out-of-band
+  source needed), and compares it to `scripts/UPSTREAM_SHA`. Only when the pin has
+  moved does it run `check-upstream.sh <sha>` for the static drift diff and open a
+  single idempotent tracking issue; the normal weekly run is just
+  download-extract-compare. Reconciliation (Step 4) stays a human decision.
+- The watcher currently covers **Linux** only. macOS/Windows Desktop builds pin
+  the same per-SHA CDN artifacts, so they're a redundant cross-check rather than a
+  new signal; extraction from those bundles is a possible follow-up.
+- `check-upstream.sh` can still be run by hand against any SHA (e.g. a
+  freshly-discovered one, or to confirm a re-published build hasn't shifted).
