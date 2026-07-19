@@ -1,0 +1,198 @@
+# Scheduled watcher for new reference `claude-ssh` builds.
+#
+# WHAT — automates Step 1 of docs/UPSTREAM-TRACKING.md ("find a candidate SHA").
+# Claude Desktop bakes the pinned reference daemon SHA + per-platform manifest into
+# its app bundle, so a new Desktop build is itself the "new SHA" signal. This job:
+#   0. peeks the newest Desktop version from the APT index (cheap, no download);
+#      if we've already analyzed that version the run is a NO-OP (cache hit),
+#   1. otherwise downloads that `.deb` and reads the pinned SHA out of `app.asar`
+#      (scripts/latest-desktop-sha.py -> scripts/extract-desktop-pin.py),
+#   2. compares it to the baseline in scripts/UPSTREAM_SHA, and
+#   3. when it differs, runs the existing static drift check and opens a tracking
+#      issue. Reconciliation stays a human decision (per the doc's Step 4).
+#
+# SAFETY / SCOPE
+#   * Read-only except `issues: write` (it opens ONE idempotent tracking issue).
+#   * persist-credentials:false — the token is only used by `gh`, never git.
+#   * Untrusted-ish values (the version/SHA parsed from the .deb) are passed to
+#     shell only via `env:`, never interpolated into a `run:` body.
+#   * The heavy path (download .deb, build claustrum, diff) runs ONLY for a
+#     not-yet-analyzed version, so the twice-daily run is usually a cache-hit no-op.
+#   * Advisory: the job stays green even on a new build — the issue is the signal.
+name: upstream-desktop-watch
+
+on:
+  schedule:
+    - cron: "17 6,18 * * *" # twice daily, 06:17 & 18:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-desktop-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: watch for new claude-ssh reference build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # 0) Cheap peek: newest Desktop version from the APT index (no .deb download).
+      - name: Peek latest Desktop version
+        id: peek
+        run: python3 scripts/latest-desktop-sha.py --peek --github-output
+
+      # No-op gate: a cache keyed on the version. If we've already analyzed this
+      # exact version the cache HITS and every heavy step below is skipped; the
+      # post-run save records the version only after a successful analysis.
+      - name: Analyzed-version cache
+        id: seen
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .desktop-analyzed
+          key: desktop-analyzed-v1-${{ steps.peek.outputs.desktop_version }}
+
+      - name: Summary (peek / no-op)
+        env:
+          VER: ${{ steps.peek.outputs.desktop_version }}
+          HIT: ${{ steps.seen.outputs.cache-hit }}
+        run: |
+          {
+            echo "## Upstream desktop watch"
+            echo ""
+            echo "- latest Desktop (Linux): \`$VER\`"
+            if [ "$HIT" = "true" ]; then
+              echo "- already analyzed this version — **no-op**"
+            else
+              echo "- not yet analyzed — running extraction"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---- heavy path: only for a version we have not analyzed yet ----
+
+      # Downloads the .deb and reads the pinned SHA; exits non-zero on a
+      # missing/unreadable baseline (so detection can't silently fail).
+      - name: Discover pinned SHA
+        id: discover
+        if: steps.seen.outputs.cache-hit != 'true'
+        run: python3 scripts/latest-desktop-sha.py --github-output
+
+      - name: Summary (pin)
+        if: steps.seen.outputs.cache-hit != 'true'
+        env:
+          SHA: ${{ steps.discover.outputs.claude_ssh_sha }}
+          BASE: ${{ steps.discover.outputs.baseline_sha }}
+          NEW: ${{ steps.discover.outputs.is_new }}
+          CLI: ${{ steps.discover.outputs.claude_code_cli }}
+        run: |
+          {
+            echo "- pinned claude-ssh SHA: \`$SHA\`"
+            echo "- baseline (scripts/UPSTREAM_SHA): \`$BASE\`"
+            echo "- new reference build? **$NEW**"
+            echo "- claude-code CLI: \`$CLI\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        if: steps.seen.outputs.cache-hit != 'true' && steps.discover.outputs.is_new == 'true'
+        with:
+          go-version-file: go.mod
+
+      # Static drift check. `set -o pipefail` + `2>&1` so a failing check is
+      # neither hidden by the `tee` exit status nor stripped of its stderr; the
+      # exit code is recorded and surfaced in the issue (Greptile P1).
+      - name: Static drift check (advisory)
+        id: drift
+        if: steps.seen.outputs.cache-hit != 'true' && steps.discover.outputs.is_new == 'true'
+        continue-on-error: true
+        env:
+          SHA: ${{ steps.discover.outputs.claude_ssh_sha }}
+        run: |
+          set -o pipefail
+          if ! command -v zstd >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq zstd || true
+          fi
+          rc=0
+          scripts/check-upstream.sh "$SHA" 2>&1 | tee drift.txt || rc=$?
+          printf '\n[check-upstream.sh exit code: %s]\n' "$rc" >> drift.txt
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Open tracking issue (idempotent)
+        if: steps.seen.outputs.cache-hit != 'true' && steps.discover.outputs.is_new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.discover.outputs.claude_ssh_sha }}
+          DESKTOP: ${{ steps.discover.outputs.desktop_version }}
+          BASELINE: ${{ steps.discover.outputs.baseline_sha }}
+          MAN: ${{ steps.discover.outputs.manifest_url }}
+          DRIFT_RC: ${{ steps.drift.outputs.rc }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:12}"
+          title="Upstream: new claude-ssh reference build ${short}"
+
+          # Idempotent: if an open issue with this exact title already exists, do
+          # nothing (avoids a comment on every run until the baseline is bumped).
+          existing="$(gh issue list --repo "$REPO" --state open --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -n1)"
+          if [ -n "$existing" ]; then
+            echo "issue #$existing already tracks $short — nothing to do"
+            exit 0
+          fi
+
+          drift_out="$(cat drift.txt 2>/dev/null || echo '(drift check did not run)')"
+          verdict="see output"
+          [ "${DRIFT_RC:-}" = "0" ] && verdict="PASS (no drift in the checked surface)"
+          [ -n "${DRIFT_RC:-}" ] && [ "${DRIFT_RC:-}" != "0" ] && verdict="DRIFT or error (exit ${DRIFT_RC})"
+
+          body="$(cat <<EOF
+          A newer **Claude Desktop for Linux** (\`$DESKTOP\`) pins a \`claude-ssh\`
+          reference build that differs from the baseline in \`scripts/UPSTREAM_SHA\`.
+
+          | | |
+          |---|---|
+          | Latest Desktop (Linux) | \`$DESKTOP\` |
+          | New reference SHA | \`$SHA\` |
+          | Current baseline | \`$BASELINE\` |
+          | Drift check | $verdict |
+          | Manifest | $MAN |
+
+          Discovered automatically by \`.github/workflows/upstream-desktop-watch.yml\`
+          (\`scripts/latest-desktop-sha.py\` reads the pin from the Desktop
+          \`.deb\`'s \`app.asar\` — see docs/UPSTREAM-TRACKING.md Step 1).
+
+          ### Static drift check
+          \`\`\`
+          $drift_out
+          \`\`\`
+
+          ### Next steps (docs/UPSTREAM-TRACKING.md Step 4)
+          1. Reconcile any wire drift the check flagged.
+          2. Run the private byte-for-byte battery in \`scratch/\` for frame parity.
+          3. Bump \`scripts/UPSTREAM_SHA\` to \`$SHA\`, add a row to
+             \`docs/REFERENCE-BUILDS.md\`, and note it in \`CHANGELOG.md\`.
+
+          _This issue is opened once per new SHA; the watcher goes quiet again once
+          the baseline is bumped._
+          EOF
+          )"
+
+          gh issue create --repo "$REPO" --title "$title" --body "$body" \
+            --label upstream-tracking 2>/dev/null \
+          || gh issue create --repo "$REPO" --title "$title" --body "$body"
+
+      # Record this version as analyzed so the post-run cache save fires. Runs only
+      # on the success path (a failed discover/download leaves it un-cached to retry).
+      - name: Mark version analyzed
+        if: steps.seen.outputs.cache-hit != 'true'
+        env:
+          VER: ${{ steps.peek.outputs.desktop_version }}
+          SHA: ${{ steps.discover.outputs.claude_ssh_sha }}
+        run: printf '%s %s\n' "$VER" "$SHA" > .desktop-analyzed
