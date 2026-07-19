@@ -146,7 +146,7 @@ lives in `scratch/` (local, not published).
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same
 contract without the reference binary: a socket-integration battery boots the daemon and asserts
 every method's frames against committed golden fixtures, alongside unit tests for the install
-pipeline and the bridge/stop clients (~80% statement coverage). See
+pipeline and the bridge/stop clients (~98% statement coverage). See
 [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md) for how compatibility is kept in sync over
 time.
 

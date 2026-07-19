@@ -94,7 +94,7 @@ func main() {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: cannot resolve home directory: %v\n", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	// When -socket is omitted, -bridge/-stop fall back to the reference's default
 	// daemon socket. (The deployment always passes -socket explicitly; this only
@@ -123,7 +123,7 @@ func main() {
 	case *bridge:
 		if err := runBridge(resolveSocket()); err != nil {
 			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		return
 	case *serve:
@@ -134,6 +134,6 @@ func main() {
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")
-		os.Exit(2)
+		osExit(2)
 	}
 }

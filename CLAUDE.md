@@ -35,7 +35,7 @@ frames.** The wire surface *is* the product.
   reference binary. The suite runs on linux, macOS, **and Windows** in CI:
   process fixtures come from the test binary itself (`helperproc_test.go`,
   `CLAUSTRUM_TEST_HELPER`), never `/bin/*`, so stream bytes match the goldens
-  on every OS. ~80% statement coverage. The cross-binary battery that diffs
+  on every OS. ~98% statement coverage. The cross-binary battery that diffs
   against the reference daemon lives in `scratch/`.
 
 ## Architecture
