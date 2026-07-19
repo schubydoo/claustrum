@@ -15,6 +15,12 @@ name: Knope Prepare
 on:
   push:
     branches: [main]
+  # Manual refresh escape hatch. Not normally needed: changesets live on `main`
+  # until the release PR merges, so every push to main re-runs this workflow with
+  # `has=true` and rebases the release branch onto the new HEAD — an open release
+  # PR stays up to date automatically. This is here only to force a refresh by
+  # hand if a run was ever missed.
+  workflow_dispatch:
 
 permissions:
   contents: read

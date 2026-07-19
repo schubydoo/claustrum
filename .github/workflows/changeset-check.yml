@@ -60,7 +60,13 @@ jobs:
               const files = await github.paginate(github.rest.pulls.listFiles, {
                 owner, repo, pull_number: pr.number, per_page: 100,
               });
-              const hasChangeset = files.some(f => /^\.changeset\/.+\.md$/.test(f.filename));
+              // Exclude README.md — knope-prepare's changeset count ignores it
+              // (`! -iname 'README.md'`), so counting it here would let a PR pass
+              // this advisory check while the release workflow still sees no
+              // changeset and produces no bump.
+              const hasChangeset = files.some(f =>
+                /^\.changeset\/.+\.md$/i.test(f.filename)
+                && !/^\.changeset\/README\.md$/i.test(f.filename));
               // "user-facing" = a change to daemon Go source (not tests).
               const touchesSrc = files.some(f =>
                 f.filename.endsWith('.go') && !f.filename.endsWith('_test.go'));
