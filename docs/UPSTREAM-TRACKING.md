@@ -36,10 +36,10 @@ easiest first:
    literal inside `resources/app.asar` (a minified `.vite/build/index.chunk-*.js`,
    so the chunk name and wrapper function are per-build-random); a parallel
    literal pins the CLI (`claude-code-releases`). So a new Desktop build is
-   itself the "new SHA" signal. **[`scripts/extract-desktop-pin.py`](../scripts/extract-desktop-pin.py)**
+   itself the "new SHA" signal. **[`scripts/extract-desktop-pin.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/extract-desktop-pin.py)**
    reads it straight out of a `.deb` (stdlib-only: `ar` → `data.tar.xz` →
    `app.asar` → enclosure brace-match, no `dpkg`/`asar` needed), and
-   **[`scripts/latest-desktop-sha.py`](../scripts/latest-desktop-sha.py)** does the
+   **[`scripts/latest-desktop-sha.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/latest-desktop-sha.py)** does the
    full "find the newest Desktop → download → extract → compare to
    `UPSTREAM_SHA`" loop. Observed: Linux **1.18286.0** (2026-07-02) pinned
    `7c2f88d…`; **1.20186.1 → 1.22209.0** pin `5db5e4a…` (the current baseline).
@@ -184,7 +184,7 @@ If the check reports drift:
 
 ## Automating it
 
-- **[`.github/workflows/upstream-desktop-watch.yml`](../.github/workflows/upstream-desktop-watch.yml)**
+- **[`.github/workflows/upstream-desktop-watch.yml`](https://github.com/schubydoo/claustrum/blob/main/.github/workflows/upstream-desktop-watch.yml)**
   runs weekly: it calls `scripts/latest-desktop-sha.py` to discover the SHA the
   *newest* Claude Desktop for Linux pins (Step 1, automated — no out-of-band
   source needed), and compares it to `scripts/UPSTREAM_SHA`. Only when the pin has
