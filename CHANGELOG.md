@@ -4,58 +4,66 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [1.7.1](https://github.com/schubydoo/claustrum/compare/v1.7.0...v1.7.1) (2026-07-12)
+## 1.7.1 (2026-07-12)
 
+[Compare with 1.7.0](https://github.com/schubydoo/claustrum/compare/v1.7.0...v1.7.1)
 
 ### Bug Fixes
 
 * **test:** give readTokenFD sole fd ownership to stop coverage flake ([#136](https://github.com/schubydoo/claustrum/issues/136)) ([c8e4775](https://github.com/schubydoo/claustrum/commit/c8e4775eb3af194126523b867dbc3896b1dfeff9))
 
-## [1.7.0](https://github.com/schubydoo/claustrum/compare/v1.6.0...v1.7.0) (2026-07-11)
+## 1.7.0 (2026-07-11)
 
+[Compare with 1.6.0](https://github.com/schubydoo/claustrum/compare/v1.6.0...v1.7.0)
 
 ### Features
 
 * add opt-in Windows named-pipe transport (-listen-pipe) ([#134](https://github.com/schubydoo/claustrum/issues/134)) ([606fb2b](https://github.com/schubydoo/claustrum/commit/606fb2b5265ca85c345b3b2970430ce9201c6221))
 
-## [1.6.0](https://github.com/schubydoo/claustrum/compare/v1.5.0...v1.6.0) (2026-07-11)
+## 1.6.0 (2026-07-11)
 
+[Compare with 1.5.0](https://github.com/schubydoo/claustrum/compare/v1.5.0...v1.6.0)
 
 ### Features
 
 * persist auth token to daemon.token for client reconnect (ref 5db5e4a) ([#131](https://github.com/schubydoo/claustrum/issues/131)) ([3007358](https://github.com/schubydoo/claustrum/commit/3007358308ec015c5eec2ce950ca75814993af9b))
 
-## [1.5.0](https://github.com/schubydoo/claustrum/compare/v1.4.0...v1.5.0) (2026-07-03)
+## 1.5.0 (2026-07-03)
 
+[Compare with 1.4.0](https://github.com/schubydoo/claustrum/compare/v1.4.0...v1.5.0)
 
 ### Features
 
 * opt-in claustrum.conf config file for divergences (CT-3) ([#128](https://github.com/schubydoo/claustrum/issues/128)) ([f9b4743](https://github.com/schubydoo/claustrum/commit/f9b474327e5dfdcb89d80ed495e3e0c0a00c251b))
 
-## [1.4.0](https://github.com/schubydoo/claustrum/compare/v1.3.1...v1.4.0) (2026-07-03)
+## 1.4.0 (2026-07-03)
 
+[Compare with 1.3.1](https://github.com/schubydoo/claustrum/compare/v1.3.1...v1.4.0)
 
 ### Features
 
 * track reference 7c2f88d — killAndWait, stdin offset, git.info repoSlug/defaultBranch ([#120](https://github.com/schubydoo/claustrum/issues/120)) ([3cd5521](https://github.com/schubydoo/claustrum/commit/3cd5521612b6fa94e50a1d85c06bd42a14c4b6f6))
 
-## [1.3.1](https://github.com/schubydoo/claustrum/compare/v1.3.0...v1.3.1) (2026-06-12)
+## 1.3.1 (2026-06-12)
 
+[Compare with 1.3.0](https://github.com/schubydoo/claustrum/compare/v1.3.0...v1.3.1)
 
 ### Bug Fixes
 
 * namespace the daemonize re-exec sentinel to dodge CLAUDE_SSH_DAEMON_CHILD collision ([#111](https://github.com/schubydoo/claustrum/issues/111)) ([0e60c9c](https://github.com/schubydoo/claustrum/commit/0e60c9cd5856be1f44d4c38b86daf9526cfc651f))
 
-## [1.3.0](https://github.com/schubydoo/claustrum/compare/v1.2.0...v1.3.0) (2026-06-12)
+## 1.3.0 (2026-06-12)
 
+[Compare with 1.2.0](https://github.com/schubydoo/claustrum/compare/v1.2.0...v1.3.0)
 
 ### Features
 
 * opt-in -keep-children serve flag to survive daemon restart (CT-2) ([#108](https://github.com/schubydoo/claustrum/issues/108)) ([5da6f3f](https://github.com/schubydoo/claustrum/commit/5da6f3faf8326fbec21634bd6085efbd613ad50b))
 * opt-in wantPid (pid + startTime) on process.spawn/reattach (CT-1) ([#105](https://github.com/schubydoo/claustrum/issues/105)) ([ae8e0d6](https://github.com/schubydoo/claustrum/commit/ae8e0d680f11995bb331e122c4777fe6a68cd1ba))
 
-## [1.2.0](https://github.com/schubydoo/claustrum/compare/v1.1.0...v1.2.0) (2026-06-12)
+## 1.2.0 (2026-06-12)
 
+[Compare with 1.1.0](https://github.com/schubydoo/claustrum/compare/v1.1.0...v1.2.0)
 
 ### Features
 
@@ -66,8 +74,9 @@ All notable changes to claustrum are documented here. The format is based on
 
 * filter hidden entries from files.list to match the reference ([#98](https://github.com/schubydoo/claustrum/issues/98)) ([23d2732](https://github.com/schubydoo/claustrum/commit/23d27325c413fbe5e3ae0437ad45af7cc42de250))
 
-## [1.1.0](https://github.com/schubydoo/claustrum/compare/v1.0.1...v1.1.0) (2026-06-10)
+## 1.1.0 (2026-06-10)
 
+[Compare with 1.0.1](https://github.com/schubydoo/claustrum/compare/v1.0.1...v1.1.0)
 
 ### Features
 
@@ -108,8 +117,9 @@ All notable changes to claustrum are documented here. The format is based on
 * add pre-commit git hook mirroring CI lint (IMPROVEMENTS [#6](https://github.com/schubydoo/claustrum/issues/6)) ([#71](https://github.com/schubydoo/claustrum/issues/71)) ([f6223cc](https://github.com/schubydoo/claustrum/commit/f6223cc815cac3484a8a4f615a57d983059480e0))
 * pin the Go toolchain (IMPROVEMENTS [#12](https://github.com/schubydoo/claustrum/issues/12)) ([#67](https://github.com/schubydoo/claustrum/issues/67)) ([fbf4d75](https://github.com/schubydoo/claustrum/commit/fbf4d75f028a122f720c06d6fa6f772af9e943e6))
 
-## [1.0.1](https://github.com/schubydoo/claustrum/compare/v1.0.0...v1.0.1) (2026-06-08)
+## 1.0.1 (2026-06-08)
 
+[Compare with 1.0.0](https://github.com/schubydoo/claustrum/compare/v1.0.0...v1.0.1)
 
 ### Bug Fixes
 

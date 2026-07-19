@@ -1,0 +1,74 @@
+name: Knope Release
+
+# knope's "publish" half (replaces release-please's "cut the release"). When the
+# `chore: prepare release X.Y.Z` PR (opened by knope-prepare.yml from the `release`
+# branch) merges, knope creates the GitHub Release + tag from the CHANGELOG notes.
+# Because the tag is pushed as the claustrum-ci App (not GITHUB_TOKEN), it triggers
+# release.yml — which runs the actual signed build (goreleaser: 6 binaries + SBOM +
+# cosign + SLSA provenance, release.mode: append). So this workflow deliberately
+# does NOT build or sign anything; knope creates a plain non-draft release and
+# goreleaser appends the artifacts to it, exactly the hand-off release-please used.
+#
+# Gated on the `KNOPE_ENABLED` repo variable. Triggered on the release PR MERGING
+# (head branch `release`), not a commit-message marker (squash subjects are
+# editable). Tags the squash commit that actually landed on main.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch: # manual fallback; run from main once VERSION holds the version
+
+permissions:
+  contents: read
+
+concurrency:
+  # Releases must NOT be cancelled mid-flight.
+  group: knope-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      ${{ vars.KNOPE_ENABLED == 'true'
+          && ((github.event_name == 'pull_request'
+               && github.event.pull_request.merged == true
+               && github.head_ref == 'release')
+              || (github.event_name == 'workflow_dispatch'
+                  && github.ref == 'refs/heads/main')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Mint claustrum-ci App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Verify App token was minted
+        if: ${{ steps.app-token.outputs.token == '' }}
+        run: |
+          echo "::error::claustrum-ci App token mint produced an empty token; check the \
+          RELEASE_PLEASE_APP_ID / RELEASE_PLEASE_APP_PRIVATE_KEY secrets and the App installation."
+          exit 1
+      # Tag the squash commit that landed on main (merge_commit_sha), not the
+      # orphaned PR head. Full history + tags for knope's version comparison and to
+      # load the matching CHANGELOG section as the release notes.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install knope
+        uses: knope-dev/action@19617851f9f13ab2f27a05989c55efb18aca3675 # v2.1.2
+        with:
+          version: 0.23.0
+      # knope creates the GitHub Release + tag as the App token, which triggers
+      # release.yml (the signed build). No-op if the version already has a release.
+      - name: Create the tag + GitHub Release
+        run: knope release --verbose
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

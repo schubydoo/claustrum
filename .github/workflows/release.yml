@@ -6,8 +6,9 @@ name: Release
 #   - Signed-Releases — cosign .sigstore.json signatures (8/10) + a
 #                       *.intoto.jsonl SLSA provenance file (10/10)
 #
-# Cut a release by pushing a tag: `git tag v0.1.0 && git push origin v0.1.0`.
-# (release-please can be layered on later to open version PRs and push the tag.)
+# Fired by the `v*` tag that knope-release.yml pushes when a `chore: prepare
+# release` PR merges (knope opens those PRs from `.changeset/` fragments). Can also
+# be driven by hand: `git tag v0.1.0 && git push origin v0.1.0`.
 
 on:
   push:

@@ -1,6 +1,8 @@
 <!--
 PR titles use Conventional Commits (feat: / fix: / docs: / chore: / ci: …) —
-the title becomes the squash-merge commit subject.
+the title becomes the squash-merge commit subject. Titles don't drive releases:
+a user-facing change needs a `.changeset/*.md` fragment (`knope document-change`);
+internal-only PRs apply the `no-changelog` label instead. See CONTRIBUTING.md.
 -->
 
 ## What & why

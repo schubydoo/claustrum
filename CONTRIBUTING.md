@@ -66,7 +66,44 @@ installed — before each commit. It needs no external tooling (no Python
 - **Conventional Commits** — PR **titles** follow
   [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, …). PRs are squash-merged, so the
-  title becomes the commit subject.
+  title becomes the commit subject. Titles are for a clean history only — they do
+  **not** drive releases (see [Changesets](#changesets)).
+- **Changeset** — if your PR is user-facing, add a `.changeset/*.md` fragment
+  (see [Changesets](#changesets)). No fragment ⇒ no changelog entry and no version
+  bump. Internal-only PRs (CI, tooling, refactor, tests) don't need one.
+
+## Changesets
+
+Releases are **changesets-only** (knope): the `.changeset/*.md` fragments — not
+commit messages — drive both the version bump and the CHANGELOG
+(`knope.toml` sets `ignore_conventional_commits = true`).
+
+On a user-facing PR, add a fragment — run `knope document-change`, or create
+`.changeset/<short-slug>.md`:
+
+```markdown
+---
+default: minor
+---
+
+Short, imperative summary of the change.
+```
+
+`default:` sets the bump and changelog section: `major` → Breaking changes,
+`minor` → Features, `patch` → Fixes, `perf` → Performance, `build` → Build System
+& Dependencies, `revert` → Reverts. The PR number is appended to each entry
+automatically at release time.
+
+**When you don't need one:** internal-only PRs — CI, workflows, `scripts/` tooling,
+refactors, tests, docs. The advisory `changeset-check` workflow nudges when a PR
+changes Go source without a fragment; apply the **`no-changelog`** label to
+acknowledge an intentional omission.
+
+**How a release happens:** on push to `main`, `knope-prepare.yml` consumes pending
+fragments and opens a `chore: prepare release X.Y.Z` PR (bumps `VERSION` +
+`CHANGELOG.md`); merging it tags `vX.Y.Z` and creates the GitHub Release, which
+triggers the signed `release.yml` build (goreleaser). Merging the release PR is the
+human approval gate.
 
 ## Scope notes
 
