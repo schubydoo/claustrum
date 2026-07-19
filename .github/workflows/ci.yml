@@ -107,13 +107,15 @@ jobs:
     # current number so new commits don't immediately fail; raise it as the suite
     # grows. (50% → 65% after the install/bridge/version/signal unit tests took
     # total coverage to ~70%; → 75% after the methods/process/extract-tar/
-    # shellenv unit tests took it to ~77%. The rest is fork/os.Exit daemon
-    # lifecycle, validated out-of-process by the reference battery.)
-    name: coverage (>= 75%)
+    # shellenv unit tests took it to ~77%; → 95% after the error-path sweep plus
+    # the osExit-seam lifecycle tests took it to ~98% — what remains is
+    # unreachable in-process (os.Executable/build-info/crypto-rand failures) or
+    # Windows-only arms this Ubuntu job can't see.)
+    name: coverage (>= 95%)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      COVERAGE_MIN: "75.0"
+      COVERAGE_MIN: "95.0"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

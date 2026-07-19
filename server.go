@@ -43,6 +43,12 @@ const daemonChildEnv = "CLAUSTRUM_DAEMON_CHILD"
 // inherited from a surrounding claude-ssh session is harmless.
 const daemonChildMarker = "CLAUDE_SSH_DAEMON_CHILD"
 
+// osExit is os.Exit behind a seam so the daemon-lifecycle shells (runServe,
+// daemonizeWithToken, teardown, main) are testable in-process: production never
+// reassigns it, and a test stub must panic (never return) because every call
+// site relies on it not coming back.
+var osExit = os.Exit
+
 // server is the running -serve daemon: the AF_UNIX listener, the auth token, the
 // connected clients, and the process manager.
 type server struct {
@@ -122,7 +128,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// only for the -bridge/-stop clients.)
 	if tokenFile == "" && tokenFd < 0 {
 		fmt.Fprintln(os.Stderr, "claustrum: daemonized child requires --token-file or --token-fd")
-		os.Exit(1)
+		osExit(1)
 	}
 	if os.Getenv(daemonChildEnv) != "1" {
 		// Parent. An fd is only valid in this process and would not survive the
@@ -133,7 +139,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 			token, err := readTokenFD(tokenFd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "claustrum: read --token-fd: %v\n", err)
-				os.Exit(1)
+				osExit(1)
 			}
 			daemonizeWithToken(token)
 			return
@@ -142,8 +148,37 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 		return
 	}
 
-	// We are the detached child. The token arrives either over the forwarded pipe
-	// (-token-fd path) or from --token-file (read once, then unlinked).
+	// We are the detached child.
+	token, err := childToken(tokenFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
+		osExit(1)
+	}
+
+	// Extract a real interactive PATH from the login shell so spawned children
+	// resolve tools the way an interactive session would. Run in a goroutine so
+	// a stalling login shell does not delay the daemon socket opening (matches
+	// reference binary behavior; extractLoginPATH has its own internal timeout).
+	// Kept in this shell — not newServerOnSocket — so tests booting a server
+	// never fork a login shell (which mutates the test process's PATH).
+	go extractLoginPATH()
+
+	s, err := newServerOnSocket(socket, token, metricsAddr, keepChildren, listenPipe)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
+		osExit(1)
+	}
+
+	fmt.Printf("Claustrum remote server listening on %s\n", socket)
+	s.run(socket)
+}
+
+// childToken obtains the detached child's auth token — over the forwarded pipe
+// (-token-fd path, fd named by tokenPipeEnv) or from --token-file (read once,
+// then unlinked) — and scrubs the env vars that must not leak into
+// process.spawn children. Split out of runServe so the token plumbing is
+// testable without the daemonize/osExit shell.
+func childToken(tokenFile string) (string, error) {
 	var token string
 	if fdStr := os.Getenv(tokenPipeEnv); fdStr != "" {
 		fd, err := strconv.Atoi(fdStr)
@@ -151,15 +186,13 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 			token, err = readTokenFD(fd)
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "claustrum: read token pipe: %v\n", err)
-			os.Exit(1)
+			return "", fmt.Errorf("read token pipe: %v", err)
 		}
 		_ = os.Unsetenv(tokenPipeEnv)
 	} else {
 		b, err := os.ReadFile(tokenFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "claustrum: read --token-file: %v\n", err)
-			os.Exit(1)
+			return "", fmt.Errorf("read --token-file: %v", err)
 		}
 		token = normalizeToken(b)
 		_ = os.Remove(tokenFile)
@@ -170,18 +203,20 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// environ has no CLAUSTRUM_DAEMON_CHILD — leaking it would be a (detectable)
 	// divergence. The reference-parity marker (daemonChildMarker) stays set.
 	_ = os.Unsetenv(daemonChildEnv)
+	return token, nil
+}
 
-	// Extract a real interactive PATH from the login shell so spawned children
-	// resolve tools the way an interactive session would. Run in a goroutine so
-	// a stalling login shell does not delay the daemon socket opening (matches
-	// reference binary behavior; extractLoginPATH has its own internal timeout).
-	go extractLoginPATH()
-
+// newServerOnSocket performs the daemonized child's startup in its exact
+// original order — clear stale socket, listen, chmod, persist the token, gate
+// the POSIX/Windows-only flags, construct the server, start the optional
+// metrics and pipe listeners — and hands back the ready-to-run server. Split
+// out of runServe (same pattern as enablePipe/startAcceptLoops) so the whole
+// boot sequence is testable without the daemonize/osExit shell.
+func newServerOnSocket(socket, token, metricsAddr string, keepChildren, listenPipe bool) (*server, error) {
 	_ = os.Remove(socket) // clear a stale socket
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "claustrum: listen unix: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("listen unix: %v", err)
 	}
 	if err := os.Chmod(socket, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
@@ -227,9 +262,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 
 	// Optional additional Windows named-pipe listener (opt-in via -listen-pipe).
 	s.enablePipe(socket, listenPipe)
-
-	fmt.Printf("Claustrum remote server listening on %s\n", socket)
-	s.run(socket)
+	return s, nil
 }
 
 // normalizeToken mirrors the reference daemon's token-file handling: it reads
@@ -285,7 +318,7 @@ func daemonizeWithToken(forwardToken string) {
 		pr, pw, err := os.Pipe()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "daemonize: token pipe: %v\n", err)
-			os.Exit(1)
+			osExit(1)
 		}
 		pipeW = pw
 		// ExtraFiles[0] becomes fd 3 in the child; tell it where to read.
@@ -296,14 +329,14 @@ func daemonizeWithToken(forwardToken string) {
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "daemonize: %v\n", err)
-		os.Exit(1)
+		osExit(1)
 	}
 	if pipeW != nil {
 		_, _ = io.WriteString(pipeW, forwardToken)
 		_ = pipeW.Close() // closing the write end gives the child's read an EOF
 	}
 	_ = cmd.Process.Release()
-	os.Exit(0)
+	osExit(0)
 }
 
 // enablePipe starts the optional Windows named-pipe listener when requested and
@@ -451,6 +484,15 @@ func (s *server) signalShutdown() { s.once.Do(func() { close(s.shutdown) }) }
 // teardown closes the listener, stops child processes (per -keep-children), drops
 // clients, and exits.
 func (s *server) teardown(socket string) {
+	s.closeAll(socket)
+	osExit(0)
+}
+
+// closeAll releases every daemon-held resource on the graceful-shutdown path:
+// listeners, the socket + daemon.token + rpc.pipe files, child processes (per
+// -keep-children), and connected clients. Split out of teardown (same pattern
+// as stopChildren) so the whole sequence is testable without the process exit.
+func (s *server) closeAll(socket string) {
 	s.ln.Close()
 	if s.metricsLn != nil {
 		_ = s.metricsLn.Close()
@@ -469,7 +511,6 @@ func (s *server) teardown(socket string) {
 		c.nc.Close()
 	}
 	s.mu.Unlock()
-	os.Exit(0)
 }
 
 // stopChildren implements the -keep-children policy on graceful shutdown. By
