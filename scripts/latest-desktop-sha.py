@@ -11,17 +11,25 @@ moves off the baseline.
 
 Usage:
   latest-desktop-sha.py                 # fetch latest .deb, print summary
+  latest-desktop-sha.py --peek          # ONLY read the latest version (no download)
   latest-desktop-sha.py --deb PATH      # use a local .deb (skip the download)
   latest-desktop-sha.py --github-output # also append vars to $GITHUB_OUTPUT
 
-Stdlib only. Exit 0 on success (drift is reported via output vars, not exit code),
-2 on failure.
+`--peek` is the cheap no-op gate for the watcher: it reads just the APT index to
+learn the newest Desktop version, so an already-analyzed version costs no 166 MB
+download.
+
+Stdlib only. Exit 0 on success (a *new* pin is reported via the `is_new` output
+var, not the exit code), 2 on failure — including a missing/unreadable
+`scripts/UPSTREAM_SHA`, which would otherwise silently disable detection
+(Greptile P1).
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -49,7 +57,18 @@ def parse_packages(text: str) -> list[dict]:
 
 
 def version_key(v: str) -> tuple:
-    return tuple(int(p) if p.isdigit() else 0 for p in v.split("."))
+    """Order Debian versions newest-last. Honors an optional `epoch:` prefix
+    (a higher epoch always wins, e.g. `2:1.0.0` > `1.999.0`) and compares the
+    remaining version by its numeric runs. Claude Desktop currently ships plain
+    dotted versions (`1.22209.0`), but parsing the epoch keeps the "latest"
+    selection correct if one is ever introduced (Greptile P2)."""
+    epoch = 0
+    rest = v
+    if ":" in v:
+        e, rest = v.split(":", 1)
+        epoch = int(e) if e.isdigit() else 0
+    nums = tuple(int(n) for n in re.findall(r"\d+", rest))
+    return (epoch, nums)
 
 
 def latest_package() -> dict:
@@ -94,10 +113,25 @@ def read_baseline() -> str:
 def main(argv: list[str]) -> int:
     args = argv[1:]
     github_output = "--github-output" in args
-    args = [a for a in args if a != "--github-output"]
+    peek = "--peek" in args
+    args = [a for a in args if a not in ("--github-output", "--peek")]
     deb_path = None
     if "--deb" in args:
         deb_path = args[args.index("--deb") + 1]
+
+    # --peek: cheap no-op gate — read only the newest version from the APT index.
+    if peek:
+        try:
+            pkg = latest_package()
+        except (ValueError, urllib.error.URLError, OSError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        ver = pkg["Version"]
+        print(f"desktop_version : {ver}")
+        if github_output and os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write(f"desktop_version={ver}\n")
+        return 0
 
     try:
         if deb_path:
@@ -123,7 +157,16 @@ def main(argv: list[str]) -> int:
     ssh = info["claude_ssh"]
     sha = ssh["version"]
     baseline = read_baseline()
-    is_new = bool(baseline) and sha != baseline
+    if not baseline:
+        # A missing/unreadable baseline would make every SHA look unchanged and
+        # keep the workflow silently green. Fail loudly instead (Greptile P1).
+        print(
+            f"error: baseline {UPSTREAM_SHA_FILE} is missing or empty — "
+            "cannot determine whether the pin changed",
+            file=sys.stderr,
+        )
+        return 2
+    is_new = sha != baseline
     cli = (info.get("claude_code_cli") or {}).get("version", "-")
 
     print(f"desktop_version : {desktop_version}")
