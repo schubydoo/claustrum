@@ -71,7 +71,8 @@ def extract_asar_from_deb(deb: bytes) -> bytes:
 
 
 def find_build_info(asar: bytes, marker: str) -> dict:
-    """Find the JSON build-info object whose baseUrl ends in `marker`.
+    """Find the JSON build-info object whose baseUrl carries `marker` as a path
+    segment.
 
     The object is embedded as text (a `JSON.parse('{...}')` string literal) inside
     the concatenated asar payload. `baseUrl` sits near the end of the object, and
@@ -82,6 +83,12 @@ def find_build_info(asar: bytes, marker: str) -> dict:
     each platform) close before the marker, so they're skipped; the first enclosing,
     parseable object is the real top-level build-info. This is independent of the
     (per-build-random) chunk filename and wrapper function name.
+
+    The match is a path-segment test rather than `baseUrl.endswith(marker)`: since
+    Desktop 1.24012.9 the CLI baseUrl gained a channel suffix
+    (`.../claude-code-releases/rc/<sha>`), so an `endswith` anchored on the bare
+    marker no longer matches. Segment membership (`marker in baseUrl.split("/")`)
+    tolerates the suffix while still distinguishing the two `*-releases` buckets.
     """
     text = asar.decode("latin-1")  # byte-faithful; JSON is ASCII
     found_marker = False
@@ -104,7 +111,7 @@ def find_build_info(asar: bytes, marker: str) -> dict:
                 info = json.loads(obj)
             except json.JSONDecodeError:
                 continue
-            if isinstance(info, dict) and str(info.get("baseUrl", "")).endswith(marker):
+            if isinstance(info, dict) and marker in str(info.get("baseUrl", "")).split("/"):
                 return info
         hit = text.find(marker, hit + len(marker))
     where = "no baseUrl object enclosed it" if found_marker else "marker absent"
@@ -142,7 +149,7 @@ def build_urls(info: dict) -> list[str]:
     base = info["baseUrl"].rstrip("/")
     ver = info["version"]
     plats = (info.get("manifest") or {}).get("platforms") or {}
-    leaf = "claude-ssh.zst" if base.endswith(SSH_MARKER) else "claude.zst"
+    leaf = "claude-ssh.zst" if SSH_MARKER in base.split("/") else "claude.zst"
     return [f"{base}/{ver}/{p}/{leaf}" for p in sorted(plats)]
 
 
