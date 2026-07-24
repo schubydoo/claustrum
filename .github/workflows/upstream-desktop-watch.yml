@@ -99,6 +99,34 @@ jobs:
             echo "- claude-code CLI: \`$CLI\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # A missing pin means the extractor failed to recover a value the Desktop
+      # bundle *does* contain — almost always an upstream shape-change (e.g. the
+      # 1.24012.9 CLI baseUrl gaining a `/rc/<sha>` channel suffix, PR #159). The
+      # claude-ssh case is normally a hard failure of `discover` above (this step
+      # is then skipped and the job is already red); this guards the softer cases
+      # — a blank SHA that still exited 0, and the *always* non-fatal CLI pin (`-`)
+      # — so they surface as a run annotation instead of only in the summary text.
+      - name: Warn on missing pins
+        if: steps.seen.outputs.cache-hit != 'true'
+        env:
+          SHA: ${{ steps.discover.outputs.claude_ssh_sha }}
+          CLI: ${{ steps.discover.outputs.claude_code_cli }}
+          VER: ${{ steps.peek.outputs.desktop_version }}
+        run: |
+          missing=0
+          if [ -z "$SHA" ]; then
+            echo "::warning title=Missing claude-ssh pin::Desktop $VER: claude-ssh SHA not recovered from app.asar — the extractor (scripts/extract-desktop-pin.py) likely needs updating for an upstream shape-change."
+            echo "- ⚠️ **claude-ssh SHA missing** — extractor may need updating" >> "$GITHUB_STEP_SUMMARY"
+            missing=1
+          fi
+          if [ -z "$CLI" ] || [ "$CLI" = "-" ]; then
+            echo "::warning title=Missing claude-code CLI pin::Desktop $VER: claude-code CLI version not recovered from app.asar — the extractor (scripts/extract-desktop-pin.py) likely needs updating for an upstream shape-change."
+            echo "- ⚠️ **claude-code CLI pin missing** — extractor may need updating" >> "$GITHUB_STEP_SUMMARY"
+            missing=1
+          fi
+          [ "$missing" = 0 ] && echo "both pins recovered"
+          exit 0
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: steps.seen.outputs.cache-hit != 'true' && steps.discover.outputs.is_new == 'true'
         with:
