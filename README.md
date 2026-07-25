@@ -61,8 +61,11 @@ go build -o claustrum .
 go install github.com/schubydoo/claustrum@latest
 ```
 
-`claustrum -version` prints `claustrum <git-sha> (built <iso8601>)` (the SHA/time come from
-the embedded VCS build info).
+`claustrum -version` prints `claustrum <version> (built <iso8601>)`. From a local
+`go build` the SHA/time come from the embedded VCS build info; a released binary
+carries its tag (stamped via `-ldflags`), and `go install …@vX.Y.Z` reports the
+module version it resolved (`go install` builds from the module cache, which has
+no VCS context, so the build time stays `unknown`).
 
 ## Usage
 

@@ -16,21 +16,31 @@ import (
 
 // Version is the daemon's self-reported version (the real binary reports its vcs
 // revision hash here, e.g. a 40-char git SHA). When not overridden via
-// -ldflags "-X main.Version=...", it is auto-derived from the embedded VCS build
-// info (git revision + commit time), matching how the real binary is stamped.
+// -ldflags "-X main.Version=...", it is auto-derived from the embedded build
+// info, in this order of precedence:
+//
+//	-ldflags        > vcs.revision + vcs.time > module version > devSentinel
+//	(goreleaser)      (local `go build`)        (`go install pkg@v`)
+//
+// matching how the real binary is stamped whenever VCS metadata is present.
 var (
-	Version   = "claustrum-dev"
+	Version   = devSentinel
 	BuildTime = "unknown"
 )
 
-// resolveVersion populates Version/BuildTime from embedded VCS info unless they
-// were already set at build time via -ldflags.
+// devSentinel is the placeholder Version carries until a build stamp replaces
+// it; it doubles as the "not yet stamped" test in the fallbacks below.
+const devSentinel = "claustrum-dev"
+
+// resolveVersion populates Version/BuildTime from the embedded build info unless
+// they were already set at build time via -ldflags.
 func resolveVersion() {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return
 	}
 	applyVCSStamp(bi.Settings)
+	applyModuleVersion(bi.Main.Version)
 }
 
 // applyVCSStamp fills Version/BuildTime from the embedded VCS build settings,
@@ -38,7 +48,7 @@ func resolveVersion() {
 // sentinel). Split out from resolveVersion so the stamp logic is testable
 // without depending on the test binary's own (absent) VCS metadata.
 func applyVCSStamp(settings []debug.BuildSetting) {
-	if Version != "claustrum-dev" {
+	if Version != devSentinel {
 		return // explicitly stamped via -ldflags
 	}
 	for _, s := range settings {
@@ -53,6 +63,20 @@ func applyVCSStamp(settings []debug.BuildSetting) {
 			}
 		}
 	}
+}
+
+// applyModuleVersion is the last fallback: `go install pkg@vX.Y.Z` builds from
+// the module cache with no VCS context, so it embeds no vcs.* settings at all
+// and records the resolved module version in debug.BuildInfo.Main.Version
+// instead. Called after applyVCSStamp — the dev-sentinel guard means both an
+// -ldflags stamp and a local git build still win. "(devel)" is what a local
+// build puts here and is no more useful than the sentinel, so it is rejected.
+// BuildTime stays "unknown": the module cache carries no commit time.
+func applyModuleVersion(mainVersion string) {
+	if Version != devSentinel || mainVersion == "" || mainVersion == "(devel)" {
+		return
+	}
+	Version = mainVersion
 }
 
 func main() {
