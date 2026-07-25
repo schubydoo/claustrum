@@ -101,9 +101,16 @@ acknowledge an intentional omission.
 
 **How a release happens:** on push to `main`, `knope-prepare.yml` consumes pending
 fragments and opens a `chore: prepare release X.Y.Z` PR (bumps `VERSION` +
-`CHANGELOG.md`); merging it tags `vX.Y.Z` and creates the GitHub Release, which
-triggers the signed `release.yml` build (goreleaser). Merging the release PR is the
-human approval gate.
+`CHANGELOG.md`, and stamps `buildstamp.go` — see below); merging it tags `vX.Y.Z`
+and creates the GitHub Release, which triggers the signed `release.yml` build
+(goreleaser). Merging the release PR is the human approval gate.
+
+**`buildstamp.go` is generated — don't edit it by hand.** `scripts/write_build_stamp.py`
+rewrites its two consts during `prepare-release`, so the tagged source carries the
+release version and timestamp. That exists solely for `go install pkg@vX.Y.Z`
+builds, which compile from the module cache: they embed no `vcs.*` settings and
+receive no `-ldflags`, so the source is the only channel that can tell them when
+they were released. The script fails loudly if the file's shape has changed.
 
 ## Scope notes
 

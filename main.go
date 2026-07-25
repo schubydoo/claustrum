@@ -16,21 +16,30 @@ import (
 
 // Version is the daemon's self-reported version (the real binary reports its vcs
 // revision hash here, e.g. a 40-char git SHA). When not overridden via
-// -ldflags "-X main.Version=...", it is auto-derived from the embedded build
-// info, in this order of precedence:
+// -ldflags "-X main.Version=...", both fields are auto-derived from the embedded
+// build info, in this order of precedence:
 //
-//	-ldflags        > vcs.revision + vcs.time > module version > devSentinel
-//	(goreleaser)      (local `go build`)        (`go install pkg@v`)
+//	              -ldflags     >  vcs.*             >  module info      >  sentinel
+//	Version:      (goreleaser)    vcs.revision         Main.Version        devSentinel
+//	BuildTime:    (goreleaser)    vcs.time             releaseTime         unknownTime
+//	                              (local `go build`)   (`go install @v`)
 //
-// matching how the real binary is stamped whenever VCS metadata is present.
+// matching how the real binary is stamped whenever VCS metadata is present. The
+// module-info column covers `go install pkg@vX.Y.Z`, which builds from the module
+// cache and embeds no vcs.* settings at all; releaseTime comes from the generated
+// buildstamp.go, since no build time is recoverable at runtime on that path.
 var (
 	Version   = devSentinel
-	BuildTime = "unknown"
+	BuildTime = unknownTime
 )
 
-// devSentinel is the placeholder Version carries until a build stamp replaces
-// it; it doubles as the "not yet stamped" test in the fallbacks below.
-const devSentinel = "claustrum-dev"
+// devSentinel and unknownTime are the placeholders the two fields carry until a
+// build stamp replaces them; they double as the "not yet stamped" tests in the
+// fallbacks below.
+const (
+	devSentinel = "claustrum-dev"
+	unknownTime = "unknown"
+)
 
 // resolveVersion populates Version/BuildTime from the embedded build info unless
 // they were already set at build time via -ldflags.
@@ -71,12 +80,34 @@ func applyVCSStamp(settings []debug.BuildSetting) {
 // instead. Called after applyVCSStamp — the dev-sentinel guard means both an
 // -ldflags stamp and a local git build still win. "(devel)" is what a local
 // build puts here and is no more useful than the sentinel, so it is rejected.
-// BuildTime stays "unknown": the module cache carries no commit time.
 func applyModuleVersion(mainVersion string) {
 	if Version != devSentinel || mainVersion == "" || mainVersion == "(devel)" {
 		return
 	}
 	Version = mainVersion
+	applyReleaseStamp(mainVersion, releaseVersion, releaseTime)
+}
+
+// applyReleaseStamp supplies BuildTime on that same `go install` path, where no
+// build time is recoverable at runtime: the module cache carries no commit time,
+// and debug.BuildInfo has no timestamp field. The release pipeline therefore
+// bakes one into the source it tags (buildstamp.go, written by
+// scripts/write_build_stamp.py during `knope prepare-release`).
+//
+// relVersion is compared against the resolved module version so the stamp is
+// only ever claimed by the exact release it describes: a `go install …@main` or
+// …@<sha> build resolves to a pseudo-version (vX.Y.Z-0.<time>-<sha>), doesn't
+// match, and keeps unknownTime rather than inheriting the previous release's
+// timestamp. The BuildTime guard leaves an -ldflags stamp and a vcs.time stamp
+// untouched; empty stamp fields mean "no release stamp in this source".
+func applyReleaseStamp(mainVersion, relVersion, relTime string) {
+	if BuildTime != unknownTime || relVersion == "" || relTime == "" {
+		return
+	}
+	if mainVersion != "v"+relVersion {
+		return
+	}
+	BuildTime = relTime
 }
 
 func main() {

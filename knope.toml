@@ -78,6 +78,15 @@ type = "PrepareRelease"
 type = "Command"
 command = "python3 scripts/changelog_compare_link.py $version"
 
+# Bake the version + a UTC timestamp into buildstamp.go. `go install pkg@vX.Y.Z`
+# compiles the tagged source from the module cache: no vcs.* settings, no
+# -ldflags, and debug.BuildInfo has no timestamp field — so the source itself is
+# the only channel that reaches such a build, and without this it reports
+# "built unknown". The file is tracked, so the `git commit -am` below stages it.
+[[workflows.steps]]
+type = "Command"
+command = "python3 scripts/write_build_stamp.py $version"
+
 [[workflows.steps]]
 type = "Command"
 command = 'git commit -am "chore: prepare release $version"'
