@@ -63,9 +63,21 @@ go install github.com/schubydoo/claustrum@latest
 
 `claustrum -version` prints `claustrum <version> (built <iso8601>)`. From a local
 `go build` the SHA/time come from the embedded VCS build info; a released binary
-carries its tag (stamped via `-ldflags`), and `go install …@vX.Y.Z` reports the
-module version it resolved (`go install` builds from the module cache, which has
-no VCS context, so the build time stays `unknown`).
+carries its tag (stamped via `-ldflags`); and `go install …@vX.Y.Z` reports the
+module version it resolved plus the release timestamp baked into the tagged
+source (`buildstamp.go`) — that path builds from the module cache, which has no
+VCS context, so those two are the only stamps available. Installing a
+pseudo-version (`@main`, `@<sha>`) prints `built unknown`, since no release
+timestamp describes it.
+
+A `go install` binary is not flag-for-flag identical to a release artifact: it
+uses the host's defaults (cgo enabled, no `-trimpath`, unstripped), so it is
+tied to that machine's libc. Pass the release flags if you want an equivalent
+build:
+
+```sh
+CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" github.com/schubydoo/claustrum@latest
+```
 
 ## Usage
 

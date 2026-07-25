@@ -113,6 +113,83 @@ func TestApplyModuleVersionRejectsNonVersions(t *testing.T) {
 	}
 }
 
+// On the `go install pkg@vX.Y.Z` path there is no vcs.time and no -ldflags, so
+// the stamp baked into the tagged source (buildstamp.go) is the only build time
+// available. It applies when the resolved module version is exactly the release
+// the stamp describes.
+func TestApplyReleaseStampFillsBuildTime(t *testing.T) {
+	oldV, oldT := Version, BuildTime
+	defer func() { Version, BuildTime = oldV, oldT }()
+	Version, BuildTime = devSentinel, unknownTime
+	applyReleaseStamp("v1.7.3", "1.7.3", "2026-07-25T21:04:16Z")
+	if BuildTime != "2026-07-25T21:04:16Z" {
+		t.Errorf("BuildTime = %q, want the baked release stamp", BuildTime)
+	}
+}
+
+// The stamp must never be claimed by a build that isn't that release. A
+// `go install …@main` / …@<sha> build resolves to a pseudo-version, which must
+// keep unknownTime rather than inherit the previous release's timestamp.
+func TestApplyReleaseStampRejectsPseudoVersion(t *testing.T) {
+	oldV, oldT := Version, BuildTime
+	defer func() { Version, BuildTime = oldV, oldT }()
+	for _, mainVersion := range []string{
+		"v1.7.4-0.20260725210416-b7ca7395d3e2", // …@main, after the 1.7.3 release
+		"v1.7.2",                               // an older tag than the stamp
+		"1.7.3",                                // missing the "v" the module path uses
+	} {
+		Version, BuildTime = devSentinel, unknownTime
+		applyReleaseStamp(mainVersion, "1.7.3", "2026-07-25T21:04:16Z")
+		if BuildTime != unknownTime {
+			t.Errorf("applyReleaseStamp(%q, …) set BuildTime = %q, want it left unknown",
+				mainVersion, BuildTime)
+		}
+	}
+}
+
+// Precedence: an -ldflags stamp (goreleaser) and a vcs.time stamp (local git
+// build) both outrank the baked release stamp, and empty stamp fields — the
+// state of buildstamp.go between releases — mean "no stamp", never a guess.
+func TestApplyReleaseStampRespectsPrecedence(t *testing.T) {
+	oldV, oldT := Version, BuildTime
+	defer func() { Version, BuildTime = oldV, oldT }()
+
+	Version, BuildTime = devSentinel, "2026-01-01T00:00:00Z" // as if -ldflags/vcs.time set it
+	applyReleaseStamp("v1.7.3", "1.7.3", "2026-07-25T21:04:16Z")
+	if BuildTime != "2026-01-01T00:00:00Z" {
+		t.Errorf("applyReleaseStamp overrode an existing build time: %s", BuildTime)
+	}
+
+	for _, stamp := range [][2]string{{"", "2026-07-25T21:04:16Z"}, {"1.7.3", ""}, {"", ""}} {
+		Version, BuildTime = devSentinel, unknownTime
+		applyReleaseStamp("v1.7.3", stamp[0], stamp[1])
+		if BuildTime != unknownTime {
+			t.Errorf("applyReleaseStamp with empty stamp %q/%q set BuildTime = %q, want unknown",
+				stamp[0], stamp[1], BuildTime)
+		}
+	}
+}
+
+// applyModuleVersion drives the stamp, so the whole `go install` fallback — the
+// version from module info, the build time from the baked stamp — lands in one
+// call. The generated buildstamp.go is empty on an unreleased tree, so this
+// drives the wiring with the real consts and asserts only what holds either way.
+func TestApplyModuleVersionAppliesReleaseStamp(t *testing.T) {
+	oldV, oldT := Version, BuildTime
+	defer func() { Version, BuildTime = oldV, oldT }()
+	Version, BuildTime = devSentinel, unknownTime
+	applyModuleVersion("v" + releaseVersion)
+	if releaseVersion == "" || releaseTime == "" {
+		if BuildTime != unknownTime {
+			t.Errorf("BuildTime = %q with no stamp baked in, want unknown", BuildTime)
+		}
+		return
+	}
+	if BuildTime != releaseTime {
+		t.Errorf("BuildTime = %q, want the baked stamp %q", BuildTime, releaseTime)
+	}
+}
+
 func TestGzipErrPrefix(t *testing.T) {
 	if got := (gzipErr{errors.New("invalid header")}).Error(); got != "gzip: invalid header" {
 		t.Errorf("gzipErr.Error() = %q, want %q", got, "gzip: invalid header")
