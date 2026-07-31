@@ -159,9 +159,10 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// resolve tools the way an interactive session would. Run in a goroutine so
 	// a stalling login shell does not delay the daemon socket opening (matches
 	// reference binary behavior; extractLoginPATH has its own internal timeout).
+	// buildEnv awaits it, so no child is built from a pre-extraction PATH.
 	// Kept in this shell — not newServerOnSocket — so tests booting a server
 	// never fork a login shell (which mutates the test process's PATH).
-	go extractLoginPATH()
+	startLoginPATH()
 
 	s, err := newServerOnSocket(socket, token, metricsAddr, keepChildren, listenPipe)
 	if err != nil {
