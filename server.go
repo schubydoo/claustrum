@@ -315,6 +315,16 @@ func openDaemonLog(socket string) *os.File {
 	if err != nil {
 		return nil
 	}
+	// The 0o600 above applies ONLY when the open CREATES the file. An existing
+	// log is truncated and reused with whatever mode it already had, so a
+	// predecessor (or a hostile local user who pre-created it) could leave the
+	// daemon's output world-readable. The reference re-applies the mode —
+	// probe-measured: a log pre-created 0666 is 0600 once it starts — so chmod
+	// unconditionally.
+	//
+	// Through the file handle, not the path: chmod-by-path could be redirected
+	// by something swapping the entry between the open and the chmod.
+	_ = f.Chmod(0o600)
 	return f
 }
 

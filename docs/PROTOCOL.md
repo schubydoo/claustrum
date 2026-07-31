@@ -87,7 +87,8 @@ graceful `server.shutdown` / `SIGTERM` path.
 ### Daemon log (`remote-server.log`)
 
 The `-serve` launcher creates **`remote-server.log`** in the socket's directory
-(mode `0600`, **truncated** on every start) and redirects the daemonized child's
+(mode `0600`, re-applied on every start even when the file already exists,
+**truncated** on every start) and redirects the daemonized child's
 **stdout and stderr** into it, so the launcher's own streams stay empty. The
 first line is the ready banner, carrying no timestamp:
 

@@ -245,6 +245,28 @@ func TestOpenDaemonLog(t *testing.T) {
 		}
 	}
 
+	// An EXISTING log with a loose mode must be tightened, not inherited: the
+	// 0o600 passed to OpenFile applies only on creation, so without an explicit
+	// chmod a pre-created 0666 file would keep the daemon's output readable by
+	// other local users. The reference re-applies the mode (probe-measured).
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(logPath, 0o666); err != nil {
+			t.Fatal(err)
+		}
+		f3 := openDaemonLog(sock)
+		if f3 == nil {
+			t.Fatal("openDaemonLog returned nil for an existing log")
+		}
+		_ = f3.Close()
+		fi, err := os.Stat(logPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != 0o600 {
+			t.Errorf("pre-existing 0666 log left at mode %o, want 600", got)
+		}
+	}
+
 	// TRUNCATE, not append: the reference starts a fresh log every -serve.
 	f2 := openDaemonLog(sock)
 	if f2 == nil {
