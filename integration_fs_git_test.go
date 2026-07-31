@@ -665,3 +665,40 @@ func TestWorktreeRemoveResultShape(t *testing.T) {
 		t.Errorf("worktreeRemoveResult (no error) = %s, want %s", b, want)
 	}
 }
+
+// TestSocketWorktreeCreatePopulates proves the WIRING, not just the copy logic:
+// git.worktree_create must actually seed the new worktree. TestPopulateWorktree
+// calls populateWorktree directly, so it passes even if gitWorktreeCreate never
+// invokes it — this test is what fails in that case.
+//
+// The reply is byte-identical either way (F1 is a filesystem-side gap), so the
+// assertion is on the resulting tree, reached over the real socket.
+func TestSocketWorktreeCreatePopulates(t *testing.T) {
+	requireGit(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses POSIX modes; see TestPopulateWorktree")
+	}
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "tracked\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt")
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"), "{}\n", 0o644)
+	writeFile(t, filepath.Join(repo, ".worktreeinclude"), "local.env\n", 0o644)
+	writeFile(t, filepath.Join(repo, "local.env"), "K=V\n", 0o644)
+	writeFile(t, filepath.Join(repo, "unlisted.txt"), "no\n", 0o644)
+	runGit(t, repo, "commit", "-m", "init")
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	wt := filepath.ToSlash(filepath.Join(root, "wt"))
+	reply := cl.call(req(1, "git.worktree_create", map[string]any{
+		"baseRepo": repo, "branchName": "wt", "worktreePath": wt}))
+	if !strings.Contains(string(reply), `"success":true`) {
+		t.Fatalf("worktree_create failed: %s", reply)
+	}
+
+	got := treeOf(t, filepath.Join(root, "wt"))
+	want := []string{".claude", ".claude/settings.json", "local.env", "tracked.txt"}
+	eqTree(t, got, want, "worktree_create over the socket")
+}

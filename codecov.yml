@@ -90,6 +90,7 @@ component_management:
         - methods_files.go
         - methods_git.go
         - methods_process.go
+        - worktreecopy.go
     - component_id: process
       name: process supervisor
       paths:

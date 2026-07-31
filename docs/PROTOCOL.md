@@ -346,6 +346,31 @@ Errors:
   empty, the add infers an orphan branch and still succeeds, and `sourceBranch`
   is omitted from the result.
 
+
+**Worktree population.** `git worktree add` checks out tracked files only, so
+the daemon then seeds the new worktree:
+
+- **`.claude/` is copied recursively and unconditionally** — nested directories
+  and dotfiles inside it included. It does not need to be listed anywhere; an
+  absent `.claude/` is skipped silently.
+- **`.worktreeinclude`** (repo root, `.gitignore` syntax) is an **include**
+  manifest: untracked files matching it are copied, even when they are also
+  gitignored. The selection is
+  `git ls-files --others --ignored --exclude-from=.worktreeinclude` — without
+  `--exclude-standard`, so a gitignored file the manifest does not name is *not*
+  copied. Without the manifest, no untracked file is copied at all.
+- **Symlinks are skipped** — neither the link nor its target is materialized.
+- **Manifest entries must be plain filenames.** `git ls-files` C-quotes any path
+  containing a tab, a quote, a backslash or a non-ASCII byte (`weird-café.txt`
+  prints as `"weird-caf\303\251.txt"`), and such an entry is silently **not**
+  copied. This is a reference limitation reproduced here for parity, not a
+  claustrum bug — the reference skips the same files.
+- **Copies do not preserve the source mode.** Each is created 0666-subject-to-
+  umask, so an executable listed in the manifest arrives non-executable, and a
+  deliberately private source (say `0400`) is widened to whatever the umask
+  allows. This matches the reference and is reproduced deliberately; treat the
+  manifest as naming configuration, not secrets or scripts.
+- Copy failures are best-effort and never fail the request.
 #### git.worktree_remove
 
 `{baseRepo,worktreePath}` → `{"success":true}` (lenient)
