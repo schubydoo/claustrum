@@ -273,7 +273,12 @@ Errors:
 
 #### git.status
 
-`{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M a.txt","?? new"]}` (porcelain lines)
+`{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}` (porcelain lines)
+
+- Lines are `git status --porcelain` output **verbatim**, minus only the line
+  ending. The two-character XY column is **positional**, so the leading space of
+  an unstaged-only change is data: `"M  a.txt"` (staged) and `" M b.txt"`
+  (unstaged) differ only in which column holds the letter.
 
 - Non-repo → `{"isRepo":false,"clean":false}` — the **full shape**, unlike
   `git.info`'s bare `{"isRepo":false}`.
