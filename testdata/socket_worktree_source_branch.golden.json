@@ -1,0 +1,74 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt0",
+      "sourceBranch": "feature"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt1",
+      "sourceBranch": "diverged"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt2",
+      "sourceBranch": "master"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt3",
+      "sourceBranch": "master"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt4",
+      "sourceBranch": "master"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt5",
+      "sourceBranch": "master"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt6",
+      "sourceBranch": "master"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt7",
+      "sourceBranch": "master"
+    }
+  }
+]

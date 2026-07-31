@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -490,4 +491,112 @@ func TestSocketStatErrorPropagation(t *testing.T) {
 			string(normPath(cl.call(line), root)), strings.Repeat("L", 300), "<LONG>"))
 	}
 	assertGolden(t, "socket_stat_error_propagation.golden.json", encodeGolden(t, got))
+}
+
+// TestSocketGitRepoDetection pins sweep gap W3: git.status and git.list_branches
+// gate on `rev-parse --git-dir`, which succeeds for a BARE repo and from inside
+// a `.git` directory, where `--is-inside-work-tree` reports false.
+//
+// git.info is deliberately NOT changed — it agreed with the reference in all
+// four cases, so the helper is not blanket-swapped. All twelve rows below were
+// measured against the reference at 5db5e4a on 2026-07-30.
+func TestSocketGitRepoDetection(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	work := filepath.Join(root, "work")
+	runGit(t, root, "init", "-b", "master", "work")
+	writeFile(t, filepath.Join(work, "a.txt"), "x\n", 0o644)
+	runGit(t, work, "add", "a.txt")
+	runGit(t, work, "commit", "-m", "init")
+	runGit(t, work, "branch", "wtbranch")
+	runGit(t, root, "init", "-b", "master", "--bare", "bare.git")
+	if err := os.MkdirAll(filepath.Join(root, "plain"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	var calls []string
+	id := 0
+	for _, m := range []string{"git.info", "git.status", "git.list_branches"} {
+		for _, dir := range []string{
+			work,                            // ordinary work tree
+			filepath.Join(root, "bare.git"), // bare: no work tree
+			filepath.Join(work, ".git"),     // inside the .git directory
+			filepath.Join(root, "plain"),    // not a repo at all
+		} {
+			id++
+			calls = append(calls, req(id, m, map[string]any{"path": dir}))
+		}
+	}
+	got := make([]json.RawMessage, len(calls))
+	for i, line := range calls {
+		got[i] = normPath(cl.call(line), root)
+	}
+	assertGolden(t, "socket_git_repo_detection.golden.json", encodeGolden(t, got))
+}
+
+// TestSocketWorktreeSourceBranch pins sweep gap W4: a sourceBranch is honoured
+// ONLY when it names an existing local branch. Anything else is ignored and the
+// worktree is created off HEAD, with the fallback reported in sourceBranch —
+// where claustrum used to fail the whole request with git's "invalid reference".
+//
+// The accepted set is narrower than "a resolvable rev", which is why the fix
+// tests refs/heads/<source> existence rather than `rev-parse --verify`. Measured
+// against the reference at 5db5e4a; "diverged" is accepted although it is not an
+// ancestor of HEAD.
+func TestSocketWorktreeSourceBranch(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "a.txt"), "x\n", 0o644)
+	runGit(t, repo, "add", "a.txt")
+	runGit(t, repo, "commit", "-m", "init")
+	runGit(t, repo, "branch", "feature")
+	runGit(t, repo, "tag", "v1")
+	// A branch that diverges from master, so it is NOT an ancestor of HEAD.
+	runGit(t, repo, "checkout", "-q", "-b", "diverged")
+	writeFile(t, filepath.Join(repo, "b.txt"), "y\n", 0o644)
+	runGit(t, repo, "add", "b.txt")
+	runGit(t, repo, "commit", "-m", "diverge")
+	runGit(t, repo, "checkout", "-q", "master")
+	runGit(t, repo, "update-ref", "refs/remotes/origin/rbranch", "master")
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	// value == "" means the param is omitted entirely.
+	sources := []string{"feature", "diverged", "no-such-branch", "HEAD",
+		"refs/heads/feature", "v1", "origin/rbranch", ""}
+	got := make([]json.RawMessage, 0, len(sources))
+	for i, src := range sources {
+		params := map[string]any{
+			"baseRepo":     repo,
+			"branchName":   fmt.Sprintf("w%d", i),
+			"worktreePath": filepath.ToSlash(filepath.Join(root, fmt.Sprintf("wt%d", i))),
+		}
+		if src != "" {
+			params["sourceBranch"] = src
+		}
+		got = append(got, normPath(cl.call(req(i+1, "git.worktree_create", params)), root))
+	}
+	assertGolden(t, "socket_worktree_source_branch.golden.json", encodeGolden(t, got))
+}
+
+// TestWorktreeResultFieldOrder pins sweep gap L1. No input populates
+// sourceBranch together with error/errorCode, so the order is unreachable over
+// the socket — assert it directly on the struct instead, because ordered result
+// structs ARE the wire contract and an unreachable field order is still one that
+// a future input could expose.
+func TestWorktreeResultFieldOrder(t *testing.T) {
+	b, err := json.Marshal(worktreeResult{
+		Success: true, Path: "/p", Error: "e", ErrorCode: "c", SourceBranch: "s",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"success":true,"path":"/p","error":"e","errorCode":"c","sourceBranch":"s"}`
+	if string(b) != want {
+		t.Errorf("worktreeResult field order:\n got %s\nwant %s", b, want)
+	}
 }

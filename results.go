@@ -105,12 +105,17 @@ type branchesResult struct {
 	Branches []string `json:"branches"`
 }
 
+// Field order is the reference's: success, path, error, errorCode, sourceBranch.
+// No input currently populates sourceBranch together with error/errorCode, so
+// the difference is unreachable on the wire today — corrected anyway, because
+// ordered structs ARE the contract and a future input that populates both would
+// otherwise diverge silently.
 type worktreeResult struct {
 	Success      bool   `json:"success"`
 	Path         string `json:"path,omitempty"`
-	SourceBranch string `json:"sourceBranch,omitempty"`
 	Error        string `json:"error,omitempty"`
 	ErrorCode    string `json:"errorCode,omitempty"`
+	SourceBranch string `json:"sourceBranch,omitempty"`
 }
 
 type reattachResult struct {
