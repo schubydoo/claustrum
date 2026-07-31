@@ -315,6 +315,11 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "worktree_add_failed",
 		})
 	}
+	// `git worktree add` checks out tracked files only, so the reference seeds
+	// the new worktree with .claude/ and the .worktreeinclude matches — without
+	// this the worktree comes up bare, with no agent configuration. Best-effort:
+	// the worktree exists and the reference reports success regardless.
+	populateWorktree(repo, p.WorktreePath)
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source})
 }
 
