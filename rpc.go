@@ -64,14 +64,19 @@ type rpcError struct {
 // that ID is a decoded interface{} rather than the raw bytes. An absent id stays
 // empty rather than becoming "null", which is what the previous string(req.ID)
 // produced for a nil RawMessage.
+//
+// The marshal error is discarded rather than branched on. id came out of
+// json.Unmarshal into an interface{}, so it is a string, float64, bool, nil,
+// []interface{} or map[string]interface{} — none of which json.Marshal can fail
+// on. Only cycles, channels, funcs and NaN/Inf can, and a decoded JSON document
+// produces none of them. On that impossible error b is nil, which renders as the
+// same empty string the nil case above returns, so the branch would have been
+// unreachable code that says nothing.
 func idForLog(id interface{}) string {
 	if id == nil {
 		return ""
 	}
-	b, err := json.Marshal(id)
-	if err != nil {
-		return ""
-	}
+	b, _ := json.Marshal(id)
 	return string(b)
 }
 
