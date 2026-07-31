@@ -1,0 +1,152 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "exists": true,
+      "isDir": false,
+      "size": 14,
+      "mode": "-rw-r--r--"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "valid": true,
+      "isDir": false
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "content": "hello in home\n",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "entries": [
+        {
+          "name": "arc.tar.gz",
+          "path": "<DIR>/arc.tar.gz",
+          "isDir": false
+        },
+        {
+          "name": "f.txt",
+          "path": "<DIR>/f.txt",
+          "isDir": false
+        },
+        {
+          "name": "repo",
+          "path": "<DIR>/repo",
+          "isDir": true
+        },
+        {
+          "name": "~",
+          "path": "<DIR>/~",
+          "isDir": true
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "success": true,
+      "fileCount": 1
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "result": {
+      "isRepo": true,
+      "repo": "repo",
+      "branch": "main",
+      "root": "<DIR>/repo",
+      "repoSlug": "",
+      "defaultBranch": ""
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "result": {
+      "isRepo": true,
+      "clean": false,
+      "changes": [
+        "?? dirty.txt"
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "result": {
+      "isRepo": true,
+      "branches": [
+        "main"
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt",
+      "sourceBranch": "main"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+      "valid": true,
+      "isDir": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 11,
+    "result": {
+      "valid": true,
+      "isDir": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 12,
+    "result": {
+      "exists": false,
+      "isDir": false,
+      "size": 0,
+      "mode": ""
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 13,
+    "result": {
+      "exists": true,
+      "isDir": false,
+      "size": 18,
+      "mode": "-rw-r--r--"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 14,
+    "result": {
+      "exists": false,
+      "isDir": false,
+      "size": 0,
+      "mode": ""
+    }
+  }
+]
