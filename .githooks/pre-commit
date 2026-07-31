@@ -16,9 +16,23 @@ fail() {
 	exit 1
 }
 
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+# 0. Changeset shape. Runs before the Go-only early exit below, because a
+#    changeset-only commit stages no Go files at all. A multi-line fragment body
+#    makes knope render a `#### heading` block instead of a bullet, which breaks
+#    the changelog. Skipped (not failed) without python3, like golangci-lint
+#    below — CI gates it regardless.
+if echo "$staged" | grep -qE '^\.changeset/.*\.md$'; then
+	if command -v python3 >/dev/null 2>&1; then
+		python3 scripts/lint_changesets.py || fail "changeset fragment must be a single line"
+	else
+		printf 'pre-commit: python3 not found, skipping changeset lint (CI still gates it)\n' >&2
+	fi
+fi
+
 # Only bother if Go sources or module files are staged — the checks below are
 # all Go-only, so a docs- or config-only commit skips them entirely.
-staged=$(git diff --cached --name-only --diff-filter=ACM)
 echo "$staged" | grep -qE '\.go$|(^|/)go\.(mod|sum)$' || exit 0
 
 # 1. gofmt — list files that aren't gofmt-clean.
