@@ -61,6 +61,13 @@ jobs:
         with:
           version: v2.12.2
 
+      # Blocking, unlike the advisory changeset-check.yml (which only asks whether
+      # a fragment exists). This gates the SHAPE of the fragments that do exist: a
+      # multi-line body makes knope render a `#### heading` block instead of a
+      # bullet, which is what broke the 1.7.2 and 1.7.3 release notes.
+      - name: changeset fragments are one-liners
+        run: python3 scripts/lint_changesets.py
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
