@@ -178,11 +178,16 @@ func gitStatus(req *request) response {
 		// XY status column is positional, so the leading space of an
 		// unstaged-only change (" M f") is data, not padding. Trimming it made
 		// staged ("M  f") and unstaged (" M f") differ only in space count.
-		t := strings.TrimRight(line, "\r\n")
-		if strings.TrimSpace(t) == "" {
-			continue
+		//
+		// Kept as a single guarded append rather than an `if ... { continue }`:
+		// git() already strips the trailing newline and an empty `out` returns
+		// earlier, so no blank line reaches this loop in practice, and a bare
+		// `continue` is then a statement coverage can never reach. The blank
+		// skip itself stays — git() uses CombinedOutput, so stderr shares this
+		// stream.
+		if t := strings.TrimRight(line, "\r\n"); strings.TrimSpace(t) != "" {
+			changes = append(changes, t)
 		}
-		changes = append(changes, t)
 	}
 	return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: false, Changes: changes})
 }
