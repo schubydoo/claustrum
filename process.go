@@ -70,8 +70,14 @@ type managedProc struct {
 	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
 	subs      map[*conn]struct{}
 	running   bool
-	// reaped is set as soon as cmd.Wait returns, which is up to exitDrainGrace
-	// before running clears. See isReaped — the gap is why the two exist.
+	// reaped is set as soon as cmd.Wait returns — the moment the kernel frees the
+	// pid, and with it the process GROUP id once the last member goes. That is up
+	// to exitDrainGrace before running clears, which is why the two fields exist
+	// separately: running is the client's view, reaped is signal safety. The gap
+	// is reachable exactly when a grandchild holds the pipe open, and a
+	// grandchild that calls setsid() (which is what daemonizing means) leaves the
+	// group, so the group really can empty and its id be reused mid-drain. Read
+	// only under p.mu, and only by signalIfLive.
 	reaped bool
 	stdin  io.WriteCloser
 	cmd    *exec.Cmd
@@ -124,30 +130,32 @@ func (p *managedProc) isRunning() bool {
 	return p.running
 }
 
-// isReaped reports whether cmd.Wait has returned, which is the moment the pid —
-// and on Unix the process GROUP id, once every member has gone — becomes
-// available for reuse by the kernel.
-//
-// This is deliberately NOT the same question as isRunning. Before the bounded
-// exit drain the two were a hair apart and the distinction did not matter; now
-// there is a window of up to exitDrainGrace where the process is reaped but
-// still reports running, and signaling a recycled pgid in that window would hit
-// an unrelated process group. The window is reachable exactly when a grandchild
-// holds the pipe open — and a grandchild that calls setsid() (which is what
-// daemonizing means) leaves the group, so the group really can empty out and its
-// id really can be reused while we are still draining.
-func (p *managedProc) isReaped() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.reaped
-}
-
 // signalGroup is a seam over procGroup.signal so the "do not signal a reaped
 // process" guards are testable without actually delivering a signal to whatever
 // now owns a recycled pgid — which is precisely the accident being guarded
 // against. Production never reassigns it.
 var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 	g.signal(proc, signame)
+}
+
+// signalIfLive delivers signame to the process group unless the process has
+// already been reaped. p.mu is held across BOTH the check and the delivery: an
+// isReaped() that returns before the signal leaves a gap for the exit goroutine
+// to reap in between, which is the very race the check exists to prevent. Every
+// signal site goes through here for that reason.
+//
+// One window remains and cannot be closed at this layer: the kernel frees the
+// pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
+// reaped. Signaling by pid on POSIX is racy by construction — nothing short of a
+// pidfd fixes it, and a pidfd cannot address a process GROUP. The reference has
+// no guard here at all, so this is strictly narrower than reference behavior.
+func (p *managedProc) signalIfLive(signame string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	signalGroup(p.group, p.cmd.Process, signame)
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
@@ -296,9 +304,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		old.subs = map[*conn]struct{}{}
 		old.mu.Unlock()
 		// Skip exited children — their pgid may already be recycled (see kill).
-		if old.cmd != nil && old.cmd.Process != nil && old.isRunning() && !old.isReaped() {
-			signalGroup(old.group, old.cmd.Process, "KILL")
-		}
+		old.signalIfLive("KILL")
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
@@ -513,10 +519,10 @@ func (p *managedProc) stdinWriter() {
 // hardening only; the wire reply does not depend on the signal side effect.
 func (m *procManager) kill(id, signal string) {
 	p := m.get(id)
-	if p == nil || p.cmd == nil || p.cmd.Process == nil || !p.isRunning() || p.isReaped() {
+	if p == nil {
 		return
 	}
-	signalGroup(p.group, p.cmd.Process, signal)
+	p.signalIfLive(signal)
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
@@ -597,9 +603,7 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if !p.isRunning() {
 		return true, true, true, false
 	}
-	if p.cmd != nil && p.cmd.Process != nil && !p.isReaped() {
-		signalGroup(p.group, p.cmd.Process, signal)
-	}
+	p.signalIfLive(signal)
 	select {
 	case <-p.done:
 		return true, true, false, false
@@ -613,9 +617,7 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	// The graceful signal was ignored — force-kill the group and wait for the reap.
 	// Same reaped guard as every other signal site: the grace can elapse while the
 	// process is in the exit drain, and by then its pgid may belong to someone else.
-	if p.cmd != nil && p.cmd.Process != nil && !p.isReaped() {
-		signalGroup(p.group, p.cmd.Process, "KILL")
-	}
+	p.signalIfLive("KILL")
 	select {
 	case <-p.done:
 		return true, true, false, true
@@ -699,9 +701,7 @@ func (m *procManager) killAll() {
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
 		// Skip exited children — their pgid may already be recycled (see kill).
-		if p.cmd != nil && p.cmd.Process != nil && p.isRunning() && !p.isReaped() {
-			signalGroup(p.group, p.cmd.Process, "KILL")
-		}
+		p.signalIfLive("KILL")
 	}
 }
 

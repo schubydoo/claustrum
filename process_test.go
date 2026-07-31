@@ -917,3 +917,44 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 		t.Errorf("signals for a live process = %v, want [TERM KILL]", signals)
 	}
 }
+
+// TestSignalIsAtomicWithTheReapedCheck pins that the check and the delivery
+// happen under one acquisition of p.mu.
+//
+// Checking isReaped() and then signalling leaves a gap the exit goroutine can
+// reap in, which defeats the guard entirely for exactly the concurrent case it
+// exists to handle — the check would pass, the process would be reaped, and the
+// signal would go to whatever now owns the pgid. TryLock from inside the
+// delivery is the observation: it can only fail if the caller still holds the
+// lock.
+func TestSignalIsAtomicWithTheReapedCheck(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+
+	var p *managedProc
+	held := false
+	delivered := false
+	signalGroup = func(*procGroup, *os.Process, string) {
+		delivered = true
+		// TryLock succeeds only if the lock is free — i.e. only if the check was
+		// released before the signal.
+		if p.mu.TryLock() {
+			p.mu.Unlock()
+			return
+		}
+		held = true
+	}
+
+	p = &managedProc{
+		id: "LIVE", running: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+	}
+	p.signalIfLive("TERM")
+
+	if !delivered {
+		t.Fatal("no signal delivered for a live process")
+	}
+	if !held {
+		t.Error("p.mu was free during delivery: the reaped check and the signal are not atomic")
+	}
+}
