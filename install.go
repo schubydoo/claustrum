@@ -113,7 +113,11 @@ func ensureCLI(o installOpts, cliPath string) error {
 	default:
 		return fmt.Errorf("cli %s missing and no --cli-url or --cli-zst provided", o.cliVersion)
 	}
-	if err := os.MkdirAll(filepath.Dir(cliPath), 0o755); err != nil {
+	// 0700, not 0755: the reference creates the whole cli-dir chain owner-only.
+	// Probe-measured under umask 022 against 5db5e4a — every directory it makes
+	// comes out drwx------, while claustrum's came out drwxr-xr-x. The installed
+	// CLI file itself is 0755 on both.
+	if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
 		return err
 	}
 	// Decompress, chmod, and verify at a temp path, then atomically rename into
