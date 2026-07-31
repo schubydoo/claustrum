@@ -110,6 +110,16 @@ type branchesResult struct {
 // the difference is unreachable on the wire today — corrected anyway, because
 // ordered structs ARE the contract and a future input that populates both would
 // otherwise diverge silently.
+// worktreeRemoveResult is git.worktree_remove's reply. The reference declares an
+// `error` field alongside `success`; no probed input populates it — removing a
+// nonexistent worktree, or naming a branch that does not exist, still answers a
+// bare {"success":true} — but the field is part of the declared shape, so it is
+// carried here rather than reusing successResult.
+type worktreeRemoveResult struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
 type worktreeResult struct {
 	Success      bool   `json:"success"`
 	Path         string `json:"path,omitempty"`

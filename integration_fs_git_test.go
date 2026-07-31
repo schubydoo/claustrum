@@ -600,3 +600,68 @@ func TestWorktreeResultFieldOrder(t *testing.T) {
 		t.Errorf("worktreeResult field order:\n got %s\nwant %s", b, want)
 	}
 }
+
+// TestSocketWorktreeRemoveBranch pins sweep gap F2: git.worktree_remove deletes
+// the branch named by branchName, forcefully — an UNMERGED branch goes too.
+// claustrum ignored the parameter entirely and left both branches behind.
+//
+// The reply is a bare {"success":true} either way, so this gap is invisible in
+// the frame it returns. It is pinned through git.list_branches before and after,
+// which is where a client would actually notice.
+func TestSocketWorktreeRemoveBranch(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "a.txt"), "x\n", 0o644)
+	runGit(t, repo, "add", "a.txt")
+	runGit(t, repo, "commit", "-m", "init")
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	wt := func(n string) string { return filepath.ToSlash(filepath.Join(root, n)) }
+
+	// Two worktrees: one whose branch stays at master, one that diverges.
+	cl.call(req(1, "git.worktree_create", map[string]any{
+		"baseRepo": repo, "branchName": "merged", "worktreePath": wt("wtm")}))
+	cl.call(req(2, "git.worktree_create", map[string]any{
+		"baseRepo": repo, "branchName": "unmerged", "worktreePath": wt("wtu")}))
+	writeFile(t, filepath.Join(root, "wtu", "z.txt"), "z\n", 0o644)
+	runGit(t, filepath.Join(root, "wtu"), "add", "z.txt")
+	runGit(t, filepath.Join(root, "wtu"), "commit", "-m", "diverge")
+
+	got := []json.RawMessage{
+		// before: master + both worktree branches
+		normPath(cl.call(req(3, "git.list_branches", map[string]any{"path": repo})), root),
+		normPath(cl.call(req(4, "git.worktree_remove", map[string]any{
+			"baseRepo": repo, "worktreePath": wt("wtm"), "branchName": "merged"})), root),
+		// the unmerged branch must go too — `git branch -d` would refuse it
+		normPath(cl.call(req(5, "git.worktree_remove", map[string]any{
+			"baseRepo": repo, "worktreePath": wt("wtu"), "branchName": "unmerged"})), root),
+		// a branch that does not exist is still {"success":true}, not an error
+		normPath(cl.call(req(6, "git.worktree_remove", map[string]any{
+			"baseRepo": repo, "worktreePath": wt("nope"), "branchName": "ghost"})), root),
+		// after: only master survives
+		normPath(cl.call(req(7, "git.list_branches", map[string]any{"path": repo})), root),
+	}
+	assertGolden(t, "socket_worktree_remove_branch.golden.json", encodeGolden(t, got))
+}
+
+// TestWorktreeRemoveResultShape pins the declared reply shape. No probed input
+// populates `error` — removing a nonexistent worktree still answers
+// {"success":true} — but the field is part of the reference's declared struct,
+// so its presence and order are asserted directly rather than left unpinned.
+func TestWorktreeRemoveResultShape(t *testing.T) {
+	b, err := json.Marshal(worktreeRemoveResult{Success: true, Error: "e"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"success":true,"error":"e"}`; string(b) != want {
+		t.Errorf("worktreeRemoveResult = %s, want %s", b, want)
+	}
+	// omitempty: the reachable reply must stay a bare {"success":true}.
+	b, _ = json.Marshal(worktreeRemoveResult{Success: true})
+	if want := `{"success":true}`; string(b) != want {
+		t.Errorf("worktreeRemoveResult (no error) = %s, want %s", b, want)
+	}
+}

@@ -323,6 +323,15 @@ func gitWorktreeRemove(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	git(p.repoDir(), "worktree", "remove", "--force", p.WorktreePath)
-	return okResult(req.ID, successResult{Success: true})
+	repo := p.repoDir()
+	git(repo, "worktree", "remove", "--force", p.WorktreePath)
+	// The reference also deletes the branch when branchName is given, and does
+	// so FORCEFULLY — an unmerged branch goes too (probe-measured at 5db5e4a:
+	// both a merged and an unmerged branch are gone afterwards, where claustrum
+	// left both behind). Best-effort: naming a branch that does not exist still
+	// answers {"success":true}, so a failed delete is not surfaced.
+	if p.BranchName != "" {
+		git(repo, "branch", "-D", p.BranchName)
+	}
+	return okResult(req.ID, worktreeRemoveResult{Success: true})
 }
