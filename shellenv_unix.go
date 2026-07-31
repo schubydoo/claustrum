@@ -11,9 +11,16 @@ import (
 	"time"
 )
 
-// loginPATHTimeout caps the time the login-shell subprocess may run.
+// loginPATHTimeout caps the time the login-shell subprocess may run. The
+// reference uses 4s — measured two ways against 5db5e4a: its extractPathFromShell
+// carries a 4e9 ns timer immediate, and with a login shell that sleeps 6s the
+// reference answers the first process.spawn after 4.01s (having given up) while
+// a 10s cap answers after 5.82s (having waited). The value is load-bearing: on a
+// host whose login shell takes longer than this, children inherit the daemon's
+// PATH rather than the login PATH, so a longer cap diverges both in first-spawn
+// latency and in every spawned child's environment.
 // A variable so tests can override it without affecting production behavior.
-var loginPATHTimeout = 10 * time.Second
+var loginPATHTimeout = 4 * time.Second
 
 // pathSentinel brackets the PATH value echoed from the login shell.
 const pathSentinel = "___CLAUDE_SSH_PATH_EXTRACT___"

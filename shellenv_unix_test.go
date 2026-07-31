@@ -93,6 +93,18 @@ func TestExtractLoginPATHInstallsExtractedValue(t *testing.T) {
 	}
 }
 
+// The login-PATH cap is the reference's 4s, not a rounder number of our own.
+// Probe-measured against 5db5e4a: with a login shell that sleeps 6s the
+// reference answers the first process.spawn after 4.01s, claustrum at 10s
+// answered after 5.82s. The constant is the whole behaviour here — a slow login
+// shell changes both spawn latency and the PATH every child inherits — so lock
+// the value, not just the fact that a timeout exists.
+func TestLoginPATHTimeoutMatchesReference(t *testing.T) {
+	if loginPATHTimeout != 4*time.Second {
+		t.Errorf("loginPATHTimeout = %v, want 4s (reference-measured at 5db5e4a)", loginPATHTimeout)
+	}
+}
+
 // A stalling login shell must not block extractLoginPATH forever. The internal
 // context timeout kills the subprocess and the function returns. This pins the
 // exec.CommandContext usage; without it the function would hang indefinitely.
