@@ -73,6 +73,34 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
+// gitStatusErr runs git and returns the exec error itself, not just an ok flag.
+// The reference reports a failed `git status --porcelain` as the bare Go error
+// string ("exit status 128"), NOT git's stderr — measured against 5db5e4a.
+func gitStatusErr(dir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	full := append([]string{"-C", dir}, args...)
+	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
+	return strings.TrimRight(string(out), "\n"), err
+}
+
+// isRepoGitDir is the repo test used by git.status and git.list_branches. The
+// reference gates those two on `rev-parse --git-dir`, which succeeds for a BARE
+// repo and from inside a `.git` directory, where `--is-inside-work-tree` (still
+// used by git.info) reports false.
+//
+// Measured against the reference at 5db5e4a — only these two methods diverged,
+// so this deliberately does not replace isRepo everywhere:
+//
+//	                    bare repo                inside .git
+//	git.info            isRepo:false (agrees)    isRepo:false (agrees)
+//	git.status          -32603 exit status 128   -32603 exit status 128
+//	git.list_branches   isRepo:true, []          isRepo:true, [master …]
+func isRepoGitDir(dir string) bool {
+	_, ok := git(dir, "rev-parse", "--git-dir")
+	return ok
+}
+
 func isRepo(dir string) bool {
 	out, ok := git(dir, "rev-parse", "--is-inside-work-tree")
 	return ok && out == "true"
@@ -163,12 +191,18 @@ func gitStatus(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if !isRepo(p.Path) {
+	if !isRepoGitDir(p.Path) {
 		// The reference returns the full status shape (clean:false), not the
 		// bare notRepoResult that git.info uses.
 		return okResult(req.ID, gitStatusResult{})
 	}
-	out, _ := git(p.Path, "status", "--porcelain")
+	// A bare repo and a `.git` directory pass the gate above but have no work
+	// tree, so `git status` exits 128. The reference propagates that as -32603
+	// carrying the Go error string, not git's "fatal: …" output.
+	out, err := gitStatusErr(p.Path, "status", "--porcelain")
+	if err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
+	}
 	if out == "" {
 		return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: true})
 	}
@@ -197,9 +231,11 @@ func gitListBranches(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if !isRepo(p.Path) {
+	if !isRepoGitDir(p.Path) {
 		// The reference returns the full branches shape (branches:[]), not the
-		// bare notRepoResult that git.info uses.
+		// bare notRepoResult that git.info uses. Gated on --git-dir, so a bare
+		// repo and a `.git` directory both list their branches (see
+		// isRepoGitDir).
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	out, _ := git(p.Path, "for-each-ref", "--format=%(refname:short)", "refs/heads")
@@ -236,7 +272,32 @@ func gitWorktreeCreate(req *request) response {
 	// (no-commit repo) abbrev-ref fails — leave source empty rather than capturing
 	// git's error text, and let `git worktree add` infer an orphan branch (it
 	// succeeds, and the reference omits sourceBranch from the result).
+	// The reference accepts a sourceBranch ONLY when it names an existing local
+	// branch, and silently ignores anything else — succeeding off HEAD rather
+	// than failing the request. claustrum forwarded the value straight to
+	// `git worktree add`, which failed with "invalid reference".
+	//
+	// Measured against the reference at 5db5e4a; the accepted set is narrower
+	// than "a resolvable rev":
+	//
+	//	feature, diverged           local branches  -> used as-is
+	//	HEAD                                        -> ignored, falls back
+	//	refs/heads/feature          full ref name   -> ignored, falls back
+	//	v1                          tag             -> ignored, falls back
+	//	cb77b0c                     commit sha      -> ignored, falls back
+	//	origin/rbranch              remote-tracking -> ignored, falls back
+	//	no-such-branch                              -> ignored, falls back
+	//
+	// So the test is the existence of refs/heads/<source>, not `rev-parse
+	// --verify`, which would accept HEAD, the tag and the sha. Note "diverged"
+	// is accepted although it is NOT an ancestor of HEAD, which rules out an
+	// ancestry check here.
 	source := p.SourceBranch
+	if source != "" {
+		if _, ok := git(repo, "show-ref", "--verify", "--quiet", "refs/heads/"+source); !ok {
+			source = "" // fall through to HEAD below
+		}
+	}
 	if source == "" {
 		if s, ok := git(repo, "rev-parse", "--abbrev-ref", "HEAD"); ok {
 			source = s

@@ -1,0 +1,111 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "isRepo": true,
+      "repo": "work",
+      "branch": "master",
+      "root": "<DIR>/work",
+      "repoSlug": "",
+      "defaultBranch": ""
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "isRepo": false,
+      "repoSlug": "",
+      "defaultBranch": ""
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "isRepo": false,
+      "repoSlug": "",
+      "defaultBranch": ""
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "isRepo": false,
+      "repoSlug": "",
+      "defaultBranch": ""
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "isRepo": true,
+      "clean": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "error": {
+      "code": -32603,
+      "message": "exit status 128"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "error": {
+      "code": -32603,
+      "message": "exit status 128"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "result": {
+      "isRepo": false,
+      "clean": false
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "result": {
+      "isRepo": true,
+      "branches": [
+        "master",
+        "wtbranch"
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+      "isRepo": true,
+      "branches": []
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 11,
+    "result": {
+      "isRepo": true,
+      "branches": [
+        "master",
+        "wtbranch"
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 12,
+    "result": {
+      "isRepo": false,
+      "branches": []
+    }
+  }
+]
