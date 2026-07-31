@@ -123,6 +123,15 @@ subsequent lines are the intentional rebrand described under Logging.
 {"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>}
 ```
 
+The reply's `id` is the request's id **decoded and re-encoded**, not the bytes the
+client sent. Any JSON value is accepted, and it comes back canonicalized: a number
+round-trips through a float64 (`1.0` → `1`, `1e2` → `100`,
+`12345678901234567890` → `12345678901234567000`) and an object comes back with its
+keys sorted (`{"b":1,"a":2}` → `{"a":2,"b":1}`). Integers, strings, arrays and
+`null` are unchanged, so a client using ordinary ids sees nothing unusual — but a
+client that matches replies by comparing the id *text* must compare the decoded
+value instead. Probe-verified against the reference at `5db5e4a`.
+
 ### Error codes
 
 | code | meaning |
