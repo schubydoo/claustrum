@@ -174,9 +174,15 @@ func gitStatus(req *request) response {
 	}
 	var changes []string
 	for _, line := range strings.Split(out, "\n") {
-		if t := strings.TrimSpace(line); t != "" {
-			changes = append(changes, t)
+		// Pass porcelain lines through verbatim apart from the line ending: the
+		// XY status column is positional, so the leading space of an
+		// unstaged-only change (" M f") is data, not padding. Trimming it made
+		// staged ("M  f") and unstaged (" M f") differ only in space count.
+		t := strings.TrimRight(line, "\r\n")
+		if strings.TrimSpace(t) == "" {
+			continue
 		}
+		changes = append(changes, t)
 	}
 	return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: false, Changes: changes})
 }

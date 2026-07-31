@@ -197,3 +197,46 @@ func TestSocketGitBattery(t *testing.T) {
 	}
 	assertGolden(t, "socket_git.golden.json", encodeGolden(t, got))
 }
+
+// TestSocketGitStatusPorcelain pins every XY status column shape git.status can
+// emit. The battery above only ever produced "?? dirty.txt" — an untracked entry,
+// the one shape that carries no leading space — so a trim of the porcelain line
+// went unnoticed. The leading space is positional data: " M f" (unstaged) and
+// "M  f" (staged) differ only in where the letter sits.
+func TestSocketGitStatusPorcelain(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "main", "repo")
+
+	// Committed baseline. rename_src.txt needs enough content for git's rename
+	// detection to pair it with rename_dst.txt at 100% similarity.
+	writeFile(t, filepath.Join(repo, "mod_unstaged.txt"), "one\n", 0o644)
+	writeFile(t, filepath.Join(repo, "mod_both.txt"), "one\n", 0o644)
+	writeFile(t, filepath.Join(repo, "del_unstaged.txt"), "one\n", 0o644)
+	writeFile(t, filepath.Join(repo, "del_staged.txt"), "one\n", 0o644)
+	writeFile(t, filepath.Join(repo, "rename_src.txt"), "rename me\nsecond line\nthird line\n", 0o644)
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "init")
+
+	// One mutation per XY shape.
+	writeFile(t, filepath.Join(repo, "mod_unstaged.txt"), "two\n", 0o644) // " M"
+	writeFile(t, filepath.Join(repo, "mod_both.txt"), "two\n", 0o644)     // staged half of "MM"
+	runGit(t, repo, "add", "mod_both.txt")
+	writeFile(t, filepath.Join(repo, "mod_both.txt"), "three\n", 0o644) // unstaged half of "MM"
+	if err := os.Remove(filepath.Join(repo, "del_unstaged.txt")); err != nil {
+		t.Fatal(err) // " D"
+	}
+	runGit(t, repo, "rm", "-q", "del_staged.txt")                     // "D "
+	runGit(t, repo, "mv", "rename_src.txt", "rename_dst.txt")         // "R "
+	writeFile(t, filepath.Join(repo, "staged_new.txt"), "n\n", 0o644) // "A "
+	runGit(t, repo, "add", "staged_new.txt")
+	writeFile(t, filepath.Join(repo, "untracked.txt"), "u\n", 0o644) // "??"
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	got := []json.RawMessage{
+		normPath(cl.call(req(1, "git.status", map[string]any{"path": repo})), root),
+	}
+	assertGolden(t, "socket_git_status.golden.json", encodeGolden(t, got))
+}
