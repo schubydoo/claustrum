@@ -110,6 +110,11 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   drives the version bump + changelog. No fragment ⇒ no release. Internal PRs
   (CI/tooling/refactor/tests) need none — apply the `no-changelog` label. See
   [`.changeset/`](.changeset/) and CONTRIBUTING.md → Changesets.
+- **A changeset body is ONE line.** knope renders any multi-line body as a `####`
+  heading block instead of a bullet, which breaks the changelog (it already did,
+  in 1.7.2 and 1.7.3). Fold every detail into the single sentence — never a second
+  line, never a second paragraph. `scripts/lint_changesets.py` gates this in CI
+  and pre-commit.
 - Before a PR: `gofmt -l .` empty, `go vet ./...` clean, `golangci-lint run`
   clean, `go test -race ./...` green. For a **wire-surface** change, also re-run
   the `scratch/` validation battery to confirm frames stay byte-identical.
