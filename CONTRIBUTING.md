@@ -89,6 +89,14 @@ default: minor
 Short, imperative summary of the change.
 ```
 
+**The body must be a single line.** knope takes the first line as the entry
+summary; any further content — a second line, or a blank-line-separated
+paragraph such as an "Upgrade note" — makes it render the entry as a `####`
+heading block instead of a bullet, and a lone heading among bullets is what
+breaks the changelog. This already shipped twice, in the 1.7.2 and 1.7.3 release
+notes. Fold every detail into that one sentence. `scripts/lint_changesets.py`
+enforces it, in CI and in the `make hooks` pre-commit hook.
+
 `default:` sets the bump and changelog section: `major` → Breaking changes,
 `minor` → Features, `patch` → Fixes, `perf` → Performance, `build` → Build System
 & Dependencies, `revert` → Reverts. The PR number is appended to each entry
