@@ -245,10 +245,12 @@ func TestOpenDaemonLog(t *testing.T) {
 		}
 	}
 
-	// An EXISTING log with a loose mode must be tightened, not inherited: the
-	// 0o600 passed to OpenFile applies only on creation, so without an explicit
-	// chmod a pre-created 0666 file would keep the daemon's output readable by
-	// other local users. The reference re-applies the mode (probe-measured).
+	// An EXISTING log with a loose mode must not be inherited. The 0o600 passed
+	// to OpenFile applies only on creation, so truncating a pre-created 0666 file
+	// would keep the daemon's output readable by other local users. openDaemonLog
+	// removes first and creates exclusively, which the reference also does
+	// (probe-measured: a planted 0666 file owned by ANOTHER user comes back 0600
+	// owned by us — an owner change, which chmod cannot perform).
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(logPath, 0o666); err != nil {
 			t.Fatal(err)
@@ -296,5 +298,48 @@ func TestOpenDaemonLogUnusablePath(t *testing.T) {
 	if f := openDaemonLog(missing); f != nil {
 		_ = f.Close()
 		t.Error("missing socket directory should not open a log")
+	}
+}
+
+// TestOpenDaemonLogRefusesUnremovableFile is the security backstop. When the log
+// exists and CANNOT be removed — a sticky directory holding another user's file
+// — openDaemonLog must return nil so daemonizeWithToken falls back to inherited
+// stdio, rather than writing the daemon's stdout and stderr into a file someone
+// else owns and can read.
+//
+// A chmod-based fix could not cover this: chmod(2) on another user's file fails
+// with EPERM, and discarding that failure is precisely the disclosure. The
+// O_EXCL create is what makes the refusal structural.
+func TestOpenDaemonLogRefusesUnremovableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sticky-directory semantics are POSIX")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can remove anything, so the refusal cannot be provoked")
+	}
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "s.sock")
+	logPath := filepath.Join(dir, daemonLogName)
+	if err := os.WriteFile(logPath, []byte("planted\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	// Read-only directory: the entry cannot be unlinked, so the O_EXCL create
+	// must fail rather than the open silently reusing the planted file.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if f := openDaemonLog(sock); f != nil {
+		_ = f.Close()
+		t.Error("openDaemonLog returned a handle to a file it could not replace; " +
+			"the daemon would write its output into a file it does not control")
+	}
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "planted\n" {
+		t.Errorf("planted file was modified: %q", b)
 	}
 }

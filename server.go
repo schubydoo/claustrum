@@ -298,33 +298,43 @@ func readTokenFD(fd int) (string, error) {
 // deployment contract, the same as daemon.token, so neither is configurable.
 const daemonLogName = "remote-server.log"
 
-// openDaemonLog creates (or TRUNCATES) remote-server.log beside the socket with
-// mode 0600, returning nil when it cannot be opened.
+// openDaemonLog creates a FRESH remote-server.log beside the socket, mode 0600,
+// returning nil when it cannot get one that is exclusively ours.
 //
-// Truncate, not append: the reference starts a fresh log on every -serve
-// (probe-measured — a restart took the file from 8 lines to 5). It is NOT
-// removed on shutdown; unlike the socket and daemon.token it outlives the
-// daemon, so a post-mortem is still readable.
+// Unlink-then-create-exclusively, not open-with-O_TRUNC. Probe-measured against
+// the reference at 5db5e4a with the log pre-planted as another user's
+// world-writable file:
+//
+//	planted:   666 root
+//	reference: 600 claude   <- the OWNER changed, so it recreated the file
+//	claustrum: 666 root     <- before this, it truncated and wrote into it
+//
+// chmod cannot change an owner, and chmod(2) on another user's file fails with
+// EPERM anyway, so truncate-and-chmod cannot reproduce that and cannot secure
+// the file. Removing first does both: it matches the reference's fresh-log
+// semantics and guarantees the daemon's stdout/stderr land somewhere only this
+// user can read.
+//
+// O_EXCL is the backstop. If the remove failed — a sticky directory holding
+// another user's file — the create fails too and this returns nil, so
+// daemonizeWithToken falls back to inherited stdio rather than writing the
+// daemon's output into a file someone else owns. That case is unmeasured on the
+// reference (its remove succeeded in the probe above, the directory not being
+// sticky), so it is a deliberate, attack-path-only divergence in the same class
+// as the -install checksum hardening: on any honest path the two are identical.
+//
+// The log is NOT removed on shutdown; unlike the socket and daemon.token it
+// outlives the daemon, so a post-mortem is still readable.
 func openDaemonLog(socket string) *os.File {
 	if socket == "" {
 		return nil
 	}
-	f, err := os.OpenFile(
-		filepath.Join(filepath.Dir(socket), daemonLogName),
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	path := filepath.Join(filepath.Dir(socket), daemonLogName)
+	_ = os.Remove(path) // best-effort; O_EXCL below is what actually guarantees it
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil
 	}
-	// The 0o600 above applies ONLY when the open CREATES the file. An existing
-	// log is truncated and reused with whatever mode it already had, so a
-	// predecessor (or a hostile local user who pre-created it) could leave the
-	// daemon's output world-readable. The reference re-applies the mode —
-	// probe-measured: a log pre-created 0666 is 0600 once it starts — so chmod
-	// unconditionally.
-	//
-	// Through the file handle, not the path: chmod-by-path could be redirected
-	// by something swapping the entry between the open and the chmod.
-	_ = f.Chmod(0o600)
 	return f
 }
 
