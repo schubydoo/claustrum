@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"testing"
+	"time"
 )
 
 // These tests exercise the *real* AF_UNIX wire path end to end — listener,
@@ -402,5 +403,74 @@ func assertGolden(t *testing.T, name string, got []byte) {
 	}
 	if string(got) != string(want) {
 		t.Errorf("golden mismatch for %s:\n--- got ---\n%s\n--- want ---\n%s", name, got, want)
+	}
+}
+
+// TestSocketExitFrameBoundsTheDrain pins the cap on how long the exit frame
+// waits for stdout to reach EOF after the spawned process has exited.
+//
+// Only a grandchild that inherited the pipe can hold it open past the process's
+// own exit, so that is what the fixture builds: "orphan-stdout" starts a
+// 20-second sleeper on its own stdout, prints one line, and exits 7. Before the
+// bounded drain, the daemon waited for EOF, so the exit frame was hostage to the
+// grandchild — the whole 20 seconds here, and forever for a real dev server. The
+// reference caps that at 5s (exitDrainGrace), closes the read ends, and emits
+// exit; the grandchild's next write then fails with EPIPE.
+//
+// The cap is shrunk to 300ms so the test measures the CAP rather than the clock.
+// waitExit's own deadline is 5s, well under the grandchild's 20s, so without the
+// fix this test fails by timeout rather than by hanging the suite. Restoring the
+// var is registered BEFORE startSocketServer so the LIFO cleanup order shuts the
+// daemon down first — otherwise a live waiter goroutine reads it as it changes.
+func TestSocketExitFrameBoundsTheDrain(t *testing.T) {
+	old := exitDrainGrace
+	exitDrainGrace = 300 * time.Millisecond
+	t.Cleanup(func() { exitDrainGrace = old })
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+
+	exe, env := helperCommand(t, "orphan-stdout")
+	spawn, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "process.spawn", "auth": testToken,
+		"params": map[string]any{
+			"id": "ORPH", "command": exe, "args": []string{"20"}, "env": env,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal spawn request: %v", err)
+	}
+	cl.send(string(spawn))
+	cl.waitResponses(1)
+
+	start := time.Now()
+	frames := cl.waitExit("ORPH")
+	elapsed := time.Since(start)
+
+	// The grandchild lives 20s. Anything near that means the drain was unbounded.
+	if elapsed > 5*time.Second {
+		t.Errorf("exit frame took %v; the drain is not bounded by exitDrainGrace", elapsed)
+	}
+	exit := lastExit(t, frames)
+	if exit.ExitCode == nil || *exit.ExitCode != 7 {
+		t.Errorf("exit code = %v, want 7", exit.ExitCode)
+	}
+	// The line printed before the process exited must still arrive: the cap drops
+	// what the grandchild writes later, not what the process already wrote.
+	if out := streamBytes(t, frames, "stdout"); out != "early\n" {
+		t.Errorf("stdout = %q, want %q", out, "early\n")
+	}
+	// Ordering is the second half of the contract. Nothing may follow the exit
+	// frame, and no seq may be burnt on a frame that was dropped — the reference
+	// emits exactly stdout seq 1 then exit seq 2 for this fixture.
+	assertSeqMonotonic(t, frames)
+	if n := len(frames); n != 2 {
+		t.Fatalf("got %d frames, want 2 (stdout, exit): %+v", n, frames)
+	}
+	if frames[0].Stream != "stdout" || frames[0].Seq != 1 {
+		t.Errorf("frame 0 = %+v, want stdout seq 1", frames[0])
+	}
+	if frames[1].Stream != "exit" || frames[1].Seq != 2 {
+		t.Errorf("frame 1 = %+v, want exit seq 2", frames[1])
 	}
 }

@@ -195,22 +195,35 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	cmd.Env = buildEnv(env)
 	cmd.SysProcAttr = newSysProcAttr()
 
-	stdout, err := cmd.StdoutPipe()
+	// Deliberately os.Pipe rather than cmd.StdoutPipe/StderrPipe. cmd.Wait closes
+	// the pipes it creates itself, which forces the "drain fully, then Wait"
+	// order and leaves no way to learn the moment the process exited — the exact
+	// thing the bounded drain below needs. Handing exec a plain *os.File instead
+	// passes the descriptor straight to the child: cmd.Wait then returns at
+	// process exit and leaves these read ends alone, so their lifetime is ours.
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	stderr, err := cmd.StderrPipe()
+	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
+		closeAll(stdoutR, stdoutW)
 		return nil, err
 	}
+	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
 		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		return nil, err
 	}
+	// The child holds its own copies now. Drop ours, or the read ends never see
+	// EOF even after every process in the tree has exited.
+	closeAll(stdoutW, stderrW)
 	// Stamp the start time the instant the child exists, so the CT-1 startTime is
 	// the process's birth moment (within ms), not a later bookkeeping point.
 	startTime := float64(time.Now().UnixNano()) / 1e9
@@ -261,10 +274,11 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	go p.stdinWriter()
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); pumpStream(p, "stdout", stdout) }()
-	go func() { defer wg.Done(); pumpStream(p, "stderr", stderr) }()
+	go func() { defer wg.Done(); pumpStream(p, "stdout", stdoutR) }()
+	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
 	go func() {
-		wg.Wait()
+		// cmd.Wait returns the moment the process itself exits — it no longer
+		// waits on the pipes, because they are ours now.
 		err := cmd.Wait()
 		code := 0
 		if err != nil {
@@ -274,6 +288,29 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 				code = -1
 			}
 		}
+		// A child can leave a grandchild holding the same stdout — `npm run dev &`,
+		// anything that daemonizes. The pipes then stay open long after the process
+		// we spawned is gone. The reference gives that drain exactly 5 seconds and
+		// then closes the read ends, so the exit frame lands on time and the
+		// grandchild's next write fails with EPIPE. Waiting for EOF instead (what
+		// claustrum did) means the exit frame is delayed for as long as the
+		// grandchild lives, which for a dev server is "never".
+		drained := make(chan struct{})
+		go func() { wg.Wait(); close(drained) }()
+		select {
+		case <-drained:
+		case <-time.After(exitDrainGrace):
+			closeAll(stdoutR, stderrR)
+		}
+		// Both pumps have returned by here: either they hit EOF on their own, or
+		// the close above turned their blocked Read into ErrClosed. That barrier
+		// is what keeps an output frame from overtaking the exit frame — no flag
+		// on the frame path required, and no seq number burnt on a dropped frame.
+		<-drained
+		closeAll(stdoutR, stderrR) // no-op on the drained path; idempotent
+		// running flips only now, not when cmd.Wait returned. Probe-measured: the
+		// reference still reports running:true two seconds into the drain window
+		// and false only once the exit frame is out.
 		p.mu.Lock()
 		p.running = false
 		p.mu.Unlock()
@@ -462,6 +499,24 @@ const maxKillWaitMs = 600000 // 10 min
 // stuck in uninterruptible sleep) wedging the dispatch goroutine. var so tests can
 // shrink it.
 var killReapGrace = 5 * time.Second
+
+// exitDrainGrace bounds how long the exit frame waits for stdout/stderr to reach
+// EOF after the spawned process itself has exited. Only a grandchild that
+// inherited the pipe can hold them open that long, and the reference gives it
+// exactly this much before closing the read ends and emitting exit anyway
+// (measured at 5s against 5db5e4a; its Spawn waiter pairs os.Process.wait with a
+// 5s time.NewTimer). var so tests can shrink it.
+var exitDrainGrace = 5 * time.Second
+
+// closeAll closes every file, ignoring errors. Used on the spawn error paths and
+// to force a stalled drain to end. Closing an *os.File twice is safe — the second
+// call returns ErrClosed without touching the descriptor — so callers may close
+// defensively without tracking whether a pump got there first.
+func closeAll(fs ...*os.File) {
+	for _, f := range fs {
+		_ = f.Close()
+	}
+}
 
 // clampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
 // waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),

@@ -96,6 +96,26 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		time.Sleep(60 * time.Second)
+	case "orphan-stdout":
+		// Fixture for the bounded exit drain: start a grandchild that INHERITS
+		// this process's stdout (child.Stdout, unlike "tree" above), print one
+		// line, then exit. The spawned process is gone but the pipe stays open
+		// for args[0] seconds, which is the only way the drain window is
+		// reachable at all.
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, args[0])
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stdout = os.Stdout
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Print("early\n")
+		return 7
 	default:
 		// "exit:N": exit with code N (a stand-in CLI for the -install tests,
 		// where the invocation is fixed at `<cli> --version`).

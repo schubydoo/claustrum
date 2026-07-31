@@ -543,6 +543,14 @@ unknown id is not an error):
 - `data` is base64 for stdout/stderr.
 - The `exit` frame carries `exitCode` and no `data`. A signal-terminated child
   reports `exitCode: -1` (not `128+signo`).
+- The `exit` frame waits at most **5 seconds** after the process itself exits for
+  stdout/stderr to reach EOF, then the daemon closes the read ends and emits it
+  anyway. This only matters when the command leaves a **grandchild holding the
+  same pipe** (`npm run dev &`, anything that daemonizes): output that grandchild
+  writes after the cap is **not** forwarded, and its write fails with `EPIPE`.
+  Until the frame is emitted, `process.reattach` still reports
+  `running: true` — the flag flips with the frame, not with the process. All
+  probe-verified against the reference at `5db5e4a`.
 - Each stdout/stderr frame carries at most one **32 KiB** read (the streaming
   read buffer); larger output is split across frames. A client reassembles by
   concatenating `data` in `seq` order.
