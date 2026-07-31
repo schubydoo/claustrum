@@ -86,15 +86,6 @@ type managedProc struct {
 	stdin    io.WriteCloser
 	cmd      *exec.Cmd
 	group    *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
-=======
-	// exitedAt is stamped alongside running=false, so it dates the exit frame
-	// rather than the reap. Zero while the process is alive. Read only by
-	// pruneExited, under p.mu like running.
-	exitedAt time.Time
-	stdin    io.WriteCloser
-	cmd      *exec.Cmd
-	group    *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
->>>>>>> 4872fec (feat: drop exited processes from the table 15 minutes after they finish)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}

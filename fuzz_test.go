@@ -55,7 +55,7 @@ func FuzzDispatch(f *testing.F) {
 		f.Add([]byte(seed))
 	}
 
-	s := newTestServer() // only read-only methods execute, so one server is safe
+	s := newTestServer(f) // only read-only methods execute, so one server is safe
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		var peek struct {
 			Method string `json:"method"`

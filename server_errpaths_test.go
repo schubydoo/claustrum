@@ -49,7 +49,7 @@ func TestAcceptLoopBackoffCapsAtOneSecond(t *testing.T) {
 	}
 	ln := &erroringListener{}
 	s := &server{
-		procs:    newProcManager(),
+		procs:    newTestProcManager(t),
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}

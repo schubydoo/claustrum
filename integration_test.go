@@ -607,7 +607,7 @@ func TestSocketPrunesLongExitedProcesses(t *testing.T) {
 // too — so a regression that prunes on age alone, or that ignores the window,
 // fails here rather than showing up as a flake in the socket test.
 func TestPruneExitedSkipsRunning(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.close)
 	long := time.Now().Add(-time.Hour)
 

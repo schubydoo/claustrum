@@ -50,7 +50,7 @@ func TestFilesReadMaxBytesBoundary(t *testing.T) {
 	if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer()
+	s := newTestServer(t)
 
 	// maxBytes exactly equals the file size: allowed.
 	got := dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": path, "maxBytes": len(payload)}))
@@ -72,7 +72,7 @@ func TestFilesReadMaxBytesBoundary(t *testing.T) {
 }
 
 func TestFilesReadDirectoryAndMissing(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	dir := t.TempDir()
 
 	got := dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": dir}))
@@ -99,7 +99,7 @@ func TestFilesReadRejectsNonRegular(t *testing.T) {
 	if err != nil || fi.Mode().IsRegular() {
 		t.Skip("/dev/null unavailable or unexpectedly regular")
 	}
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": "/dev/null"}))
 	if !strings.Contains(got, "not a regular file") {
 		t.Errorf("files.read(/dev/null) = %s, want not-a-regular-file error", got)
@@ -116,7 +116,7 @@ func tarGzPath(t *testing.T, entries map[string]string) string {
 }
 
 func TestFilesExtractTarSuccess(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	archive := tarGzPath(t, map[string]string{"a.txt": "alpha", "sub/b.txt": "beta"})
 	dest := filepath.Join(t.TempDir(), "out")
 
@@ -133,7 +133,7 @@ func TestFilesExtractTarSuccess(t *testing.T) {
 }
 
 func TestFilesExtractTarErrors(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	good := tarGzPath(t, map[string]string{"a.txt": "x"})
 
 	cases := []struct {
@@ -173,7 +173,7 @@ func TestFilesExtractTarErrors(t *testing.T) {
 // drops an empty ".synced" marker at the root on success, and consumes the
 // source archive. These are invisible to a frame-only diff, so lock them here.
 func TestFilesExtractTarSideEffects(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root := t.TempDir()
 	dest := filepath.Join(root, "dest")
 	if err := os.MkdirAll(dest, 0o755); err != nil {
@@ -245,7 +245,7 @@ func TestFilesExtractTarUnsupportedEntry(t *testing.T) {
 		}
 	}
 
-	s := newTestServer()
+	s := newTestServer(t)
 	dest := filepath.Join(t.TempDir(), "out")
 	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
 	if !strings.Contains(got, `"success":false`) ||
@@ -265,7 +265,7 @@ func TestFilesExtractTarUnsupportedEntry(t *testing.T) {
 // reference daemon's exact error and fileCount 0, and nothing is written outside
 // destDir. A "../" that resolves back inside destDir is still allowed.
 func TestFilesExtractTarZipSlip(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root := t.TempDir()
 	dest := filepath.Join(root, "sub")
 
@@ -302,7 +302,7 @@ func TestFilesExtractTarSizeLimit(t *testing.T) {
 	defer func() { maxExtractBytes = old }()
 
 	// Archive with a single 1025-byte file — one byte over the 1 KB cap.
-	s := newTestServer()
+	s := newTestServer(t)
 	archive := tarGzPath(t, map[string]string{"big.bin": strings.Repeat("x", 1025)})
 	dest := filepath.Join(t.TempDir(), "out")
 	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
@@ -326,7 +326,7 @@ func TestFilesListFollowsSymlinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs privileges on Windows")
 	}
-	s := newTestServer()
+	s := newTestServer(t)
 	dir := t.TempDir()
 	must := func(err error) {
 		t.Helper()
@@ -356,7 +356,7 @@ func TestFilesListFollowsSymlinks(t *testing.T) {
 // files.list omits hidden entries (any name beginning with "."), matching the
 // reference daemon — probe-confirmed it filters .git/.env/etc. from a listing.
 func TestFilesListSkipsDotfiles(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	dir := t.TempDir()
 	must := func(err error) {
 		t.Helper()
@@ -387,7 +387,7 @@ func TestFilesListSkipsDotfiles(t *testing.T) {
 // matching the reference. git.worktree_create reports a clean not_a_repo error
 // instead of leaking git's raw "not a git repository" output.
 func TestGitNonRepoResults(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	dir := t.TempDir() // under /tmp — not a git repo
 
 	for _, tc := range []struct{ method, wantResult string }{
@@ -419,7 +419,7 @@ func TestGitNonRepoResults(t *testing.T) {
 // previously leaked git's error text) or return "HEAD".
 func TestGitInfoBranchEdges(t *testing.T) {
 	requireGit(t)
-	s := newTestServer()
+	s := newTestServer(t)
 
 	// Empty repo (no commits): the init branch name still resolves.
 	empty := filepath.Join(t.TempDir(), "empty")
@@ -452,7 +452,7 @@ func TestGitInfoBranchEdges(t *testing.T) {
 // failing on the unresolvable HEAD.
 func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
 	requireGit(t)
-	s := newTestServer()
+	s := newTestServer(t)
 	base := filepath.Join(t.TempDir(), "empty")
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		t.Fatal(err)
@@ -495,7 +495,7 @@ func TestGitContextTimeout(t *testing.T) {
 // The procManager mutators must be no-ops (not panics) for unknown ids and
 // procs that never got a running command/stdin.
 func TestProcManagerEdgeCases(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 
 	if m.writeStdin("missing", []byte("x")) {
 		t.Error("writeStdin(missing) = true, want false")
@@ -516,7 +516,7 @@ func TestProcManagerEdgeCases(t *testing.T) {
 
 // detachConn unsubscribes a conn from every managed proc's replay fan-out.
 func TestProcManagerDetachConn(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
 	p := &managedProc{id: "p", subs: map[*conn]struct{}{c: {}}}
 	m.procs["p"] = p
@@ -531,7 +531,7 @@ func TestProcManagerDetachConn(t *testing.T) {
 }
 
 func TestProcessSpawnValidation(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 
 	got := dispatchRaw(t, s, rpcLine(t, "process.spawn", map[string]any{"command": "echo"}))
 	if !strings.Contains(got, "Process ID is required") {
@@ -544,7 +544,7 @@ func TestProcessSpawnValidation(t *testing.T) {
 }
 
 func TestProcessStdinErrors(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	goodB64 := base64.StdEncoding.EncodeToString([]byte("x"))
 
 	// Unknown process id (valid payload) → Process not found.
@@ -574,7 +574,7 @@ func TestProcessStdinErrors(t *testing.T) {
 }
 
 func TestProcessReattachValidation(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "process.reattach", map[string]any{"fromSeq": 0}))
 	if !strings.Contains(got, "Process ID is required") {
 		t.Errorf("reattach without id = %s, want id-required error", got)
@@ -584,7 +584,7 @@ func TestProcessReattachValidation(t *testing.T) {
 // Each namespace handler routes an unrecognized method to the shared
 // "Unknown method" error (its switch default).
 func TestRoutingUnknownMethodPerNamespace(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	for _, m := range []string{"files.bogus", "git.bogus", "process.bogus"} {
 		got := dispatchRaw(t, s, rpcLine(t, m, map[string]any{"x": 1}))
 		if want := "Unknown method: " + m; !strings.Contains(got, want) {
@@ -596,7 +596,7 @@ func TestRoutingUnknownMethodPerNamespace(t *testing.T) {
 // Each namespace handler rejects a known method that arrives with no params
 // object via the shared needParams gate.
 func TestRoutingMissingParamsPerNamespace(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	auth := `"auth":"` + testToken + `"`
 	for _, m := range []string{"files.read", "git.info", "process.spawn"} {
 		line := `{"jsonrpc":"2.0","id":1,"method":"` + m + `",` + auth + `}`
@@ -717,7 +717,7 @@ func TestExtractTarGzCorruptTar(t *testing.T) {
 
 // process.spawn: a JSON type mismatch in params hits the bindParams error path.
 func TestProcessSpawnBindParamsError(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "process.spawn", map[string]any{"id": "p1", "command": 123}))
 	if !strings.Contains(got, "Invalid params") {
 		t.Errorf("spawn with wrong command type = %s, want Invalid params", got)
@@ -726,7 +726,7 @@ func TestProcessSpawnBindParamsError(t *testing.T) {
 
 // process.spawn: valid params but the binary doesn't exist → codeInternal error.
 func TestProcessSpawnFailed(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "process.spawn", map[string]any{
 		"id": "p_err", "command": "/nonexistent_binary_xyz_claustrum",
 	}))
@@ -737,7 +737,7 @@ func TestProcessSpawnFailed(t *testing.T) {
 
 // process.kill: a JSON type mismatch in params hits the bindParams error path.
 func TestProcessKillBindParamsError(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "process.kill", map[string]any{"id": "p1", "signal": 123}))
 	if !strings.Contains(got, "Invalid params") {
 		t.Errorf("kill with wrong signal type = %s, want Invalid params", got)
@@ -746,7 +746,7 @@ func TestProcessKillBindParamsError(t *testing.T) {
 
 // process.reattach: a JSON type mismatch in params hits the bindParams error path.
 func TestProcessReattachBindParamsError(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "process.reattach", map[string]any{"id": "p1", "fromSeq": "nope"}))
 	if !strings.Contains(got, "Invalid params") {
 		t.Errorf("reattach with wrong fromSeq type = %s, want Invalid params", got)
@@ -764,7 +764,7 @@ func TestGitWorktreeCreateFailed(t *testing.T) {
 	}
 	runGit(t, repo, "add", "f")
 	runGit(t, repo, "commit", "-m", "init")
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "main", "worktreePath": filepath.Join(root, "wt"),
 	}))
@@ -775,7 +775,7 @@ func TestGitWorktreeCreateFailed(t *testing.T) {
 
 // git.worktree_remove: a JSON type mismatch in params hits the bindParams error path.
 func TestGitWorktreeRemoveBindParamsError(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", map[string]any{"worktreePath": 123}))
 	if !strings.Contains(got, "Invalid params") {
 		t.Errorf("worktree_remove wrong type = %s, want Invalid params", got)

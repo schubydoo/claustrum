@@ -7,10 +7,11 @@ import (
 
 const testToken = "s3cret-token"
 
-func newTestServer() *server {
+func newTestServer(tb testing.TB) *server {
+	tb.Helper()
 	return &server{
 		token:    testToken,
-		procs:    newProcManager(),
+		procs:    newTestProcManager(tb),
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
@@ -36,7 +37,7 @@ func dispatchRaw(t *testing.T, s *server, line string) string {
 // rejected with -32001. Guards the constant-time comparison (crypto/subtle)
 // against a regression to a short-circuiting or loose compare.
 func TestAuthTokenComparison(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	unauth := `{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Unauthorized: invalid or missing auth token"}}`
 	ping := func(tok string) string {
 		return dispatchRaw(t, s, `{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"`+tok+`"}`)
@@ -61,7 +62,7 @@ func TestAuthTokenComparison(t *testing.T) {
 }
 
 func TestDispatchErrorPaths(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	auth := `"auth":"` + testToken + `"`
 
 	cases := []struct {
@@ -147,7 +148,7 @@ func TestDispatchErrorPaths(t *testing.T) {
 }
 
 func TestDispatchHappyServerMethods(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	auth := `"auth":"` + testToken + `"`
 
 	got := dispatchRaw(t, s, `{"jsonrpc":"2.0","id":1,"method":"server.ping",`+auth+`}`)
@@ -176,7 +177,7 @@ func TestDispatchHappyServerMethods(t *testing.T) {
 // The id is echoed verbatim — numbers stay numbers, strings stay strings — so a
 // client can correlate replies regardless of its id type.
 func TestDispatchEchoesIDVerbatim(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	auth := `"auth":"` + testToken + `"`
 	for _, id := range []string{`42`, `"req-a"`, `null`} {
 		line := `{"jsonrpc":"2.0","id":` + id + `,"method":"server.ping",` + auth + `}`

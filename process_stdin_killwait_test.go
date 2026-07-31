@@ -80,7 +80,7 @@ func TestClampKillWaitMs(t *testing.T) {
 // server.capabilities advertises process.killAndWait (between kill and reattach)
 // and the process.stdin.offset feature.
 func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "server.capabilities", map[string]any{}))
 	var got capabilitiesResult
 	decodeReply(t, []byte(raw), &got)
