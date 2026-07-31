@@ -652,6 +652,12 @@ func TestExtractTarGzDirEntry(t *testing.T) {
 // detectLibc's fallback branch: when `ldd` can't be executed, it probes for the
 // musl loader and otherwise reports glibc. Emptying PATH forces that branch.
 func TestDetectLibcLddMissing(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		// There is no probe to fall back FROM off linux: detectLibc returns ""
+		// without consulting ldd, matching the reference, whose detectLibc does
+		// not exist in the darwin or windows builds. TestDetectLibc covers that.
+		t.Skip("the libc probe is linux-only")
+	}
 	t.Setenv("PATH", t.TempDir()) // a dir with no `ldd`
 	if got := detectLibc(); got != "glibc" && got != "musl" {
 		t.Errorf("detectLibc() with no ldd = %q, want glibc or musl", got)

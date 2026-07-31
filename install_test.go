@@ -195,7 +195,16 @@ func TestHTTPGet(t *testing.T) {
 }
 
 func TestDetectLibc(t *testing.T) {
-	if got := detectLibc(); got != "glibc" && got != "musl" {
+	got := detectLibc()
+	if runtime.GOOS != "linux" {
+		// The reference has no detectLibc off linux and reports an empty libc
+		// there; claustrum used to answer "glibc" on Windows and macOS.
+		if got != "" {
+			t.Errorf("detectLibc() = %q on %s, want \"\" (the reference reports no libc off linux)", got, runtime.GOOS)
+		}
+		return
+	}
+	if got != "glibc" && got != "musl" {
 		t.Errorf("detectLibc() = %q, want glibc or musl", got)
 	}
 }
@@ -221,26 +230,35 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 	}
 }
 
-// classifyLibc covers all four branches with an injected stat, so the
-// ldd-failure + musl-marker paths are exercised on a glibc host too. exists
-// reports the musl marker present (stat error nil); missing reports it absent.
+// classifyLibc's branches with an injected glob, so the musl paths are
+// exercised on a glibc host too. The mixed-host row is the one that motivated
+// W9: a loader present while ldd SUCCEEDS and reports glibc.
 func TestClassifyLibc(t *testing.T) {
-	exists := func(string) (os.FileInfo, error) { return nil, nil }
-	missing := func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+	found := func(string) ([]string, error) { return []string{"/lib/ld-musl-aarch64.so.1"}, nil }
+	none := func(string) ([]string, error) { return nil, nil }
+	broken := func(string) ([]string, error) { return nil, filepath.ErrBadPattern }
 	cases := []struct {
 		name string
 		out  []byte
 		err  error
-		stat func(string) (os.FileInfo, error)
+		glob func(string) ([]string, error)
 		want string
 	}{
-		{"ldd ok, musl banner", []byte("musl libc (x86_64)\nVersion 1.2.3"), nil, missing, "musl"},
-		{"ldd ok, glibc banner", []byte("ldd (GNU libc) 2.31"), nil, missing, "glibc"},
-		{"ldd fails, musl marker present", nil, io.EOF, exists, "musl"},
-		{"ldd fails, no marker", nil, io.EOF, missing, "glibc"},
+		{"ldd ok, musl banner", []byte("musl libc (x86_64)\nVersion 1.2.3"), nil, none, "musl"},
+		{"ldd ok, glibc banner", []byte("ldd (GNU libc) 2.31"), nil, none, "glibc"},
+		{"ldd fails, loader present", nil, io.EOF, found, "musl"},
+		{"ldd fails, no loader", nil, io.EOF, none, "glibc"},
+		// The mixed host: glibc's ldd succeeds AND a musl loader is installed.
+		// The reference answers musl; claustrum used to answer glibc because it
+		// consulted the marker only on the ldd-failure path.
+		{"mixed host: ldd says glibc, loader present", []byte("ldd (Debian GLIBC 2.41) 2.41"), nil, found, "musl"},
+		// A non-x86_64 loader must match — the old hardcoded path could not.
+		{"arm64 loader", nil, io.EOF, found, "musl"},
+		// A glob error is not a match.
+		{"glob errors", []byte("ldd (GNU libc) 2.31"), nil, broken, "glibc"},
 	}
 	for _, tc := range cases {
-		if got := classifyLibc(tc.out, tc.err, tc.stat); got != tc.want {
+		if got := classifyLibc(tc.out, tc.err, tc.glob); got != tc.want {
 			t.Errorf("%s: classifyLibc = %q, want %q", tc.name, got, tc.want)
 		}
 	}
@@ -628,8 +646,17 @@ func TestRunInstallFacts(t *testing.T) {
 	if f.CliError != "" {
 		t.Errorf("unexpected cliError: %s", f.CliError)
 	}
-	if f.OS == "" || f.Arch == "" || f.Libc == "" {
-		t.Errorf("facts missing os/arch/libc: %+v", f)
+	if f.OS == "" || f.Arch == "" {
+		t.Errorf("facts missing os/arch: %+v", f)
+	}
+	// libc is reported on linux only — off linux the reference has no
+	// detectLibc at all and emits an empty string, so "" is the correct value
+	// there rather than a missing one.
+	if runtime.GOOS == "linux" && f.Libc == "" {
+		t.Errorf("facts missing libc on linux: %+v", f)
+	}
+	if runtime.GOOS != "linux" && f.Libc != "" {
+		t.Errorf("facts carry libc=%q on %s, want empty", f.Libc, runtime.GOOS)
 	}
 	if f.CliPath != filepath.Join(o.cliDir, o.cliVersion) {
 		t.Errorf("cliPath = %q", f.CliPath)
