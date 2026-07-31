@@ -40,6 +40,11 @@ type pathParams struct {
 	MaxBytes int64  `json:"maxBytes"`
 }
 
+// defaultReadMaxBytes is the ceiling files.read applies when the caller supplies
+// no usable maxBytes. Probe-measured against the reference at 5db5e4a: a
+// 262144-byte file reads, 262145 fails with "file exceeds maxBytes".
+const defaultReadMaxBytes = 262144
+
 // statForRequest wraps os.Stat with the reference's error policy: a genuine
 // ENOENT is the "does not exist" answer each caller reports in its own shape,
 // while any OTHER stat failure is surfaced verbatim rather than being flattened
@@ -149,7 +154,16 @@ func filesRead(req *request) response {
 	if !fi.Mode().IsRegular() {
 		return errResult(req.ID, codeInvalidParam, "files.read: not a regular file")
 	}
-	if p.MaxBytes > 0 && fi.Size() > p.MaxBytes {
+	// An absent, zero, or negative maxBytes is NOT "no limit" — the reference
+	// substitutes defaultReadMaxBytes and rejects anything larger, so the cap
+	// applies to the default request shape. A positive maxBytes is honored
+	// verbatim, above or below the default (probe-verified against 5db5e4a: a
+	// 300000-byte file reads fine at maxBytes=10000000 but errors at 0 and -1).
+	maxBytes := p.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultReadMaxBytes
+	}
+	if fi.Size() > maxBytes {
 		return errResult(req.ID, codeInvalidParam, "files.read: file exceeds maxBytes")
 	}
 	b, err := os.ReadFile(p.Path)

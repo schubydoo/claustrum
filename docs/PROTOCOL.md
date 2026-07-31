@@ -259,6 +259,10 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 - Missing file → `{content:"",exists:false}` (not an error).
 - A directory → `-32602 files.read: path is a directory`.
 - Size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`.
+- **`maxBytes` absent, `0`, or negative → the cap is `262144` (256 KiB), not
+  "unlimited".** Probe-measured: 262144 bytes reads, 262145 errors. A positive
+  `maxBytes` is honored verbatim, above or below that default — so the 256 KiB
+  figure is a fallback, not a ceiling.
 - **Any non-regular file → `-32602 files.read: not a regular file`.** This is an
   intentional divergence, and the only one on this method — see below.
 
