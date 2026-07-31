@@ -579,6 +579,10 @@ func (m *procManager) killAll() {
 // CLAUDE_RPC_TOKEN is stripped from the base: the reference binary does not
 // propagate the auth token to spawned children (probe-verified 2026-06-09).
 func buildEnv(env map[string]string) []string {
+	// Block until login-shell PATH extraction has finished, so the first spawn
+	// sees the same PATH as every later one. No-op once extraction is done, and
+	// immediate when it was never started.
+	awaitLoginPATH()
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	for k, v := range env {
 		base = replaceOrAppendEnv(base, k, v)
