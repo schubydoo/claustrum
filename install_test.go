@@ -646,8 +646,17 @@ func TestRunInstallFacts(t *testing.T) {
 	if f.CliError != "" {
 		t.Errorf("unexpected cliError: %s", f.CliError)
 	}
-	if f.OS == "" || f.Arch == "" || f.Libc == "" {
-		t.Errorf("facts missing os/arch/libc: %+v", f)
+	if f.OS == "" || f.Arch == "" {
+		t.Errorf("facts missing os/arch: %+v", f)
+	}
+	// libc is reported on linux only — off linux the reference has no
+	// detectLibc at all and emits an empty string, so "" is the correct value
+	// there rather than a missing one.
+	if runtime.GOOS == "linux" && f.Libc == "" {
+		t.Errorf("facts missing libc on linux: %+v", f)
+	}
+	if runtime.GOOS != "linux" && f.Libc != "" {
+		t.Errorf("facts carry libc=%q on %s, want empty", f.Libc, runtime.GOOS)
 	}
 	if f.CliPath != filepath.Join(o.cliDir, o.cliVersion) {
 		t.Errorf("cliPath = %q", f.CliPath)
