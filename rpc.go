@@ -130,15 +130,14 @@ func decodeParams(req *request, v interface{}) error {
 // even though encoding/json could partially decode them — matching that, any
 // unmarshal error becomes "Invalid params". Absent params is gated earlier by
 // needParams; unknown fields are ignored by both daemons. Returns nil on success.
-func bindParams(req *request, v interface{}) *response {
+// bindParams decodes params and expands any leading `~` before the method sees
+// them. The parameter type is pathExpander, not `any`, so a params struct that
+// has not declared its expansion behavior does not compile — see expandpath.go
+// for why a type assertion here would have been the wrong design.
+func bindParams(req *request, v pathExpander) *response {
 	if err := decodeParams(req, v); err != nil {
 		return ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
 	}
-	// Expand a leading `~` on every bound path before the method sees it, the
-	// way the reference does. Centralized here rather than at each call site so
-	// a new path-bearing method cannot silently skip it. See expandpath.go.
-	if e, ok := v.(pathExpander); ok {
-		e.expandPaths()
-	}
+	v.expandPaths()
 	return nil
 }

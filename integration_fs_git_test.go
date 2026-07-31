@@ -396,9 +396,13 @@ func TestSocketTildeExpansion(t *testing.T) {
 		req(9, "git.worktree_create", map[string]any{ // both params expand
 			"baseRepo": "~/repo", "branchName": "wt", "worktreePath": "~/wt",
 		}),
-		// Bare "~" and a trailing slash both expand.
-		req(10, "files.stat", map[string]any{"path": "~"}),
-		req(11, "files.stat", map[string]any{"path": "~/"}),
+		// Bare "~" and a trailing slash both expand. Asserted with validate,
+		// not stat: a directory's reported size is filesystem-dependent (140
+		// here, 4096 on the ext4 CI runners), so a stat golden on a DIRECTORY
+		// pins a value that is not ours to control. Files are fine — ids 1 and
+		// 13 stat regular files, whose sizes are the bytes we wrote.
+		req(10, "files.validate", map[string]any{"path": "~"}),
+		req(11, "files.validate", map[string]any{"path": "~/"}),
 		// NOT expanded.
 		req(12, "files.stat", map[string]any{"path": "~nosuchuser/f.txt"}),
 		req(13, "files.stat", map[string]any{"path": filepath.Join(home, "~", "f.txt")}),

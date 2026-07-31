@@ -86,14 +86,18 @@ func FuzzBindParams(f *testing.F) {
 		f.Add([]byte(seed))
 	}
 
-	makers := []func() interface{}{
-		func() interface{} { return &pathParams{} },
-		func() interface{} { return &gitParams{} },
-		func() interface{} { return &spawnParams{} },
-		func() interface{} { return &extractTarParams{} },
-		func() interface{} { return &stdinParams{} },
-		func() interface{} { return &killParams{} },
-		func() interface{} { return &reattachParams{} },
+	// pathExpander, not interface{}: bindParams now takes the interface so a
+	// params struct cannot skip `~` expansion (see expandpath.go). Fuzzing
+	// through the same type keeps this exercising the real signature.
+	makers := []func() pathExpander{
+		func() pathExpander { return &pathParams{} },
+		func() pathExpander { return &gitParams{} },
+		func() pathExpander { return &spawnParams{} },
+		func() pathExpander { return &extractTarParams{} },
+		func() pathExpander { return &stdinParams{} },
+		func() pathExpander { return &killParams{} },
+		func() pathExpander { return &killAndWaitParams{} },
+		func() pathExpander { return &reattachParams{} },
 	}
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		req := &request{ID: json.RawMessage(`1`), Params: json.RawMessage(raw)}

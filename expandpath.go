@@ -41,12 +41,21 @@ func expandPath(p string) string {
 	return home + p[1:]
 }
 
-// pathExpander is implemented by every params struct carrying filesystem paths.
-// bindParams calls it immediately after decoding, so expansion cannot be
-// forgotten at an individual call site — the reference expands at all ten path
-// binding points, and missing one is silent (the request simply operates on a
-// literal "~" path, which is how claustrum came to create a literal `~`
-// directory inside a user's repo).
+// pathExpander is implemented by EVERY params struct, not just those carrying
+// paths, and bindParams takes it as its parameter type rather than `any`. That
+// makes expansion a compile-time obligation: a new params struct does not build
+// until its author writes expandPaths and, in doing so, decides whether it has
+// paths to expand.
+//
+// A type assertion inside bindParams was the obvious design and is the wrong
+// one: a new path-bearing struct that forgot the method would fail the assertion
+// silently and keep the literal-"~" behavior this file exists to remove. The
+// failure mode of that bug is not an error — it is a request quietly operating
+// on a path named "~", which is how claustrum came to create a literal `~`
+// directory inside a user's repo.
+//
+// Structs with no path fields implement it as a no-op, which doubles as the
+// declaration that they were considered.
 type pathExpander interface {
 	expandPaths()
 }
@@ -63,3 +72,11 @@ func (p *gitParams) expandPaths() {
 	// BranchName and SourceBranch are refs, not paths — never expanded.
 }
 func (p *spawnParams) expandPaths() { p.Cwd = expandPath(p.Cwd) }
+
+// The process-control params address a process by id and carry no filesystem
+// paths, so expansion is a no-op. Declared explicitly rather than omitted: the
+// interface is what forces that judgement to be made for every params type.
+func (p *stdinParams) expandPaths()       {}
+func (p *killParams) expandPaths()        {}
+func (p *killAndWaitParams) expandPaths() {}
+func (p *reattachParams) expandPaths()    {}
