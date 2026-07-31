@@ -524,6 +524,13 @@ unknown id is not an error):
 - **`stdinApplied` (added `7c2f88d`).** The process's cumulative applied-stdin
   byte count (§`process.stdin`), always present after `lastSeq`. A reconnecting
   client resumes stdin from this offset so no bytes are re-applied or dropped.
+  **It is an acknowledgement, not a delivery receipt.** `process.stdin` returns
+  before the child has read the data, so bytes accepted just before the child
+  exits are counted here even though the writer never delivered them — including
+  bytes accepted during the exit-drain window, where the child is already reaped
+  but still reports `running`. Probe-verified as reference behavior at `5db5e4a`,
+  down to the same `stdinApplied` value; a client that must know data arrived has
+  to confirm it in-band, not from this counter.
 - **`wantPid` opt-in (CT-1, claustrum-only).** As on `process.spawn`: with
   `"wantPid":true` **and** the process found, the reply appends
   `"pid":<int>,"startTime":<number>` **after** `stdinApplied`, reporting the
