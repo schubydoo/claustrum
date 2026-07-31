@@ -26,9 +26,17 @@ type streamFrame struct {
 // defaultBufferCap caps the total base64-encoded data held in each per-process
 // replay buffer. A long-running, high-throughput process would otherwise grow
 // the buffer without bound for the daemon's entire lifetime (the buffer is never
-// reclaimed while the procManager holds the entry). 50 MB keeps reattach useful
-// while bounding the worst-case daemon RSS.
-const defaultBufferCap int64 = 50 * 1024 * 1024
+// reclaimed while the procManager holds the entry).
+//
+// 16 MiB is the REFERENCE's value, not a tuning choice — do not change it
+// without re-measuring. Driving 70 MiB of output through both daemons and then
+// calling reattach{fromSeq:0} showed the reference retaining ≈15.85 MiB of
+// base64 across 1,915 frames (firstSeq 7599) where claustrum's 50 MiB retained
+// ≈49.99 MiB across 5,718 frames (firstSeq 4133). The accounting method already
+// matched — base64 length, whole frames dropped oldest-first — so only the
+// constant differed. firstSeq is wire-visible via reattach, so this bound is
+// part of the observable contract.
+const defaultBufferCap int64 = 16 * 1024 * 1024
 
 // stdinQueueCap bounds the per-process async stdin queue. A producer that outruns
 // a slow or non-reading child blocks (backpressure) once this much data is queued,
