@@ -52,6 +52,16 @@ func copyClaudeDir(repo, worktree string) {
 // the ignore set, so every gitignored file would be listed whether the manifest
 // named it or not. Verified — with it, a gitignored `logs/l1.txt` the manifest
 // never mentions is selected; without it, only manifest matches are.
+//
+// Line-delimited, and NOT `-z`, which is a deliberate parity choice rather than
+// an oversight. git C-quotes any path containing a tab, a quote, a backslash or
+// a non-ASCII byte, so those arrive here as display forms like
+// "weird\ttab.txt" or "weird-caf\303\251.txt" and do not name a real file —
+// they are silently skipped. The reference has exactly the same limitation
+// (probe-measured: of six manifest-matched files it copied only the two whose
+// names git prints bare), so `-z` would make claustrum copy MORE than the
+// reference. Pinned by TestWorktreeIncludeSkipsQuotedNames; see
+// docs/PROTOCOL.md, which tells manifest authors to stick to plain names.
 func copyWorktreeIncludes(repo, worktree string) {
 	if _, err := os.Stat(filepath.Join(repo, worktreeIncludeFile)); err != nil {
 		return

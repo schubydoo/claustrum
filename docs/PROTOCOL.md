@@ -360,6 +360,11 @@ the daemon then seeds the new worktree:
   `--exclude-standard`, so a gitignored file the manifest does not name is *not*
   copied. Without the manifest, no untracked file is copied at all.
 - **Symlinks are skipped** — neither the link nor its target is materialized.
+- **Manifest entries must be plain filenames.** `git ls-files` C-quotes any path
+  containing a tab, a quote, a backslash or a non-ASCII byte (`weird-café.txt`
+  prints as `"weird-caf\303\251.txt"`), and such an entry is silently **not**
+  copied. This is a reference limitation reproduced here for parity, not a
+  claustrum bug — the reference skips the same files.
 - **Copies do not preserve the source mode.** Each is created 0666-subject-to-
   umask, so an executable listed in the manifest arrives non-executable, and a
   deliberately private source (say `0400`) is widened to whatever the umask

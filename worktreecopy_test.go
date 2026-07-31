@@ -260,3 +260,43 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 		}
 	})
 }
+
+// TestWorktreeIncludeSkipsQuotedNames pins a REFERENCE LIMITATION that claustrum
+// reproduces on purpose. `git ls-files` C-quotes any path containing a tab, a
+// quote, a backslash or a non-ASCII byte, and the line-delimited output is
+// parsed as-is, so such a file is silently not copied.
+//
+// Probe-measured: given six manifest-matched files the reference copied only the
+// two whose names git prints bare — plain and space-containing. Using `-z` here
+// would fix the limitation and thereby DIVERGE, copying files the reference
+// leaves behind, so the behaviour is asserted rather than corrected.
+func TestWorktreeIncludeSkipsQuotedNames(t *testing.T) {
+	requireGit(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("tabs and quotes are not legal in Windows filenames")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "t\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt")
+	writeFile(t, filepath.Join(repo, worktreeIncludeFile), "weird*\n", 0o644)
+	for _, name := range []string{
+		"weird-plain.txt",  // printed bare      -> copied
+		"weird space.txt",  // printed bare      -> copied
+		"weird\ttab.txt",   // C-quoted          -> skipped
+		"weird\"quote.txt", // C-quoted          -> skipped
+		"weird-café.txt",   // C-quoted (UTF-8)  -> skipped
+	} {
+		writeFile(t, filepath.Join(repo, name), "x\n", 0o644)
+	}
+	runGit(t, repo, "commit", "-m", "init")
+
+	wt := filepath.Join(root, "wt")
+	runGit(t, repo, "worktree", "add", "-b", "b", wt)
+	populateWorktree(repo, wt)
+
+	eqTree(t, treeOf(t, wt),
+		[]string{"tracked.txt", "weird space.txt", "weird-plain.txt"},
+		"quoted-name manifest matches")
+}
