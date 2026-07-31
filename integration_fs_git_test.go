@@ -345,3 +345,93 @@ func TestSocketListPermissionDeniedErrorText(t *testing.T) {
 	}
 	assertGolden(t, "socket_list_permission_denied.golden.json", encodeGolden(t, got))
 }
+
+// TestSocketTildeExpansion pins sweep gap W1: a leading `~` is expanded against
+// the daemon user's home at every path binding point, and NOT expanded anywhere
+// else. Every clause was probe-measured against the reference at 5db5e4a on
+// 2026-07-30 — including two edges the sweep had not recorded ("~/" and "~//f")
+// and the fact that results echo the EXPANDED path (files.list entry paths,
+// git.info root, worktree_create path).
+//
+// Before this, claustrum treated `~` as a literal directory name: every call
+// below failed or, worse, CREATED a literal `~` directory inside the user's
+// repo (observed as "?? ~/" in git.status).
+func TestSocketTildeExpansion(t *testing.T) {
+	requireGit(t)
+	if runtime.GOOS == "windows" {
+		// The reference was measured on Unix; its behaviour for a "~\" form is
+		// unmeasured, so expandPath deliberately handles only "~/" and this
+		// golden pins the Unix spelling.
+		t.Skip("tilde form is measured on Unix only")
+	}
+	// The temp root IS the home directory, so one token normalizes everything.
+	home := resolveTestRoot(t, t.TempDir())
+	t.Setenv("HOME", home)
+
+	writeFile(t, filepath.Join(home, "f.txt"), "hello in home\n", 0o644)
+	// A LITERAL "~" directory, to prove a mid-path tilde is a directory name.
+	writeFile(t, filepath.Join(home, "~", "f.txt"), "literal tilde dir\n", 0o644)
+	makeTarGz(t, filepath.Join(home, "arc.tar.gz"), map[string]string{"one.txt": "1"})
+	repo := filepath.Join(home, "repo")
+	runGit(t, home, "init", "-b", "main", "repo")
+	writeFile(t, filepath.Join(repo, "a.txt"), "x\n", 0o644)
+	runGit(t, repo, "add", "a.txt")
+	runGit(t, repo, "commit", "-m", "init")
+	writeFile(t, filepath.Join(repo, "dirty.txt"), "d\n", 0o644)
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	calls := []string{
+		// Expanded — one per binding point.
+		req(1, "files.stat", map[string]any{"path": "~/f.txt"}),
+		req(2, "files.validate", map[string]any{"path": "~/f.txt"}),
+		req(3, "files.read", map[string]any{"path": "~/f.txt"}),
+		req(4, "files.list", map[string]any{"path": "~"}), // entry paths echo expanded
+		req(5, "files.extract_tar", map[string]any{
+			"archivePath": "~/arc.tar.gz", "destDir": "~/dest",
+		}),
+		req(6, "git.info", map[string]any{"path": "~/repo"}), // root echoes expanded
+		req(7, "git.status", map[string]any{"path": "~/repo"}),
+		req(8, "git.list_branches", map[string]any{"path": "~/repo"}),
+		req(9, "git.worktree_create", map[string]any{ // both params expand
+			"baseRepo": "~/repo", "branchName": "wt", "worktreePath": "~/wt",
+		}),
+		// Bare "~" and a trailing slash both expand.
+		req(10, "files.stat", map[string]any{"path": "~"}),
+		req(11, "files.stat", map[string]any{"path": "~/"}),
+		// NOT expanded.
+		req(12, "files.stat", map[string]any{"path": "~nosuchuser/f.txt"}),
+		req(13, "files.stat", map[string]any{"path": filepath.Join(home, "~", "f.txt")}),
+		req(14, "files.stat", map[string]any{"path": "$HOME/f.txt"}),
+	}
+	got := make([]json.RawMessage, len(calls))
+	for i, line := range calls {
+		got[i] = normPath(cl.call(line), home)
+	}
+	assertGolden(t, "socket_tilde_expansion.golden.json", encodeGolden(t, got))
+
+	// process.spawn's cwd is the tenth binding point. Its reply is a bare
+	// {"success":true}, so the expansion is only observable in the child's
+	// output — assert it separately rather than pretending the golden covers it.
+	cl.call(spawnReqArgsCwd(t, 20, "TILDE", "pwd", "~/repo"))
+	frames := cl.waitExit("TILDE")
+	if out := strings.TrimSpace(streamBytes(t, frames, "stdout")); out != repo {
+		t.Errorf("spawn cwd %q resolved to %q, want %q", "~/repo", out, repo)
+	}
+}
+
+// spawnReqArgsCwd is spawnReqArgs with an explicit cwd.
+func spawnReqArgsCwd(t *testing.T, id int, procID, mode, cwd string) string {
+	t.Helper()
+	exe, env := helperCommand(t, mode)
+	b, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": id, "method": "process.spawn", "auth": testToken,
+		"params": map[string]any{
+			"id": procID, "command": exe, "args": []string{}, "env": env, "cwd": cwd,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal spawn request: %v", err)
+	}
+	return string(b)
+}

@@ -114,6 +114,7 @@ component_management:
     - component_id: env_compat
       name: shell-env & cross-platform
       paths:
+        - expandpath.go
         - shellenv.go
         - shellenv_unix.go
         - shellenv_windows.go

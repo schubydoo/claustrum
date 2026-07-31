@@ -134,5 +134,11 @@ func bindParams(req *request, v interface{}) *response {
 	if err := decodeParams(req, v); err != nil {
 		return ptr(errResult(req.ID, codeInvalidParam, "Invalid params"))
 	}
+	// Expand a leading `~` on every bound path before the method sees it, the
+	// way the reference does. Centralized here rather than at each call site so
+	// a new path-bearing method cannot silently skip it. See expandpath.go.
+	if e, ok := v.(pathExpander); ok {
+		e.expandPaths()
+	}
 	return nil
 }
