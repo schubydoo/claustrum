@@ -274,11 +274,9 @@ func isRegularFile(p string) bool {
 // every normal host (ldd returns in well under a second), defensive only when it
 // would otherwise hang. This is a deliberate, attack-path-only divergence from the
 // reference — normal-path frames and `__INSTALL_RESULT__` facts are unchanged.
+// (The libc VALUE itself is a separate matter: see classifyLibc for the loader
+// glob, and libc_other.go for why the probe does not run off linux at all.)
 const lddProbeTimeout = 5 * time.Second
-
-func detectLibc() string {
-	return detectLibcWith(lddProbeTimeout, runLddVersion)
-}
 
 // runLddVersion runs `ldd --version` under ctx; the process is killed if ctx expires.
 func runLddVersion(ctx context.Context) ([]byte, error) {
@@ -287,25 +285,38 @@ func runLddVersion(ctx context.Context) ([]byte, error) {
 
 // detectLibcWith runs the libc probe under a deadline, then classifies the result.
 // The timeout and runner are injected so the timeout/fallback path is exercisable
-// on any host (mirroring classifyLibc's injectable stat).
+// on any host (mirroring classifyLibc's injectable glob).
 func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error)) string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	out, err := run(ctx)
-	return classifyLibc(out, err, os.Stat)
+	return classifyLibc(out, err, filepath.Glob)
 }
 
+// muslLoaderGlob matches the musl dynamic loader for ANY architecture. The
+// reference carries this glob; claustrum used to stat a hardcoded
+// "/lib/ld-musl-x86_64.so.1", which cannot see the loader on arm64 or riscv.
+const muslLoaderGlob = "/lib/ld-musl-*.so.*"
+
 // classifyLibc maps an `ldd --version` result to "musl" or "glibc". It is split
-// from detectLibc with an injectable stat so the ldd-failure + musl-marker
-// branches are testable on any host — a glibc box can't otherwise reach them.
-func classifyLibc(lddOut []byte, lddErr error, stat func(string) (os.FileInfo, error)) string {
-	if lddErr != nil {
-		if _, e := stat("/lib/ld-musl-x86_64.so.1"); e == nil {
-			return "musl"
-		}
-		return "glibc"
+// from detectLibc with an injectable glob so both branches are testable on any
+// host — a glibc box can't otherwise reach the musl paths.
+//
+// The loader glob is consulted FIRST and outranks ldd, which is what the
+// reference does. Measured on a mixed host carrying glibc's ldd and a musl
+// loader together: `ldd --version` reports "Debian GLIBC 2.41" and succeeds, yet
+// the reference still answers "musl" — so the marker decides, and a successful
+// glibc ldd does not veto it. claustrum consulted the marker only when ldd
+// FAILED, so it answered "glibc" there, 3 runs out of 3.
+//
+// Clean single-libc hosts are unaffected and were identical before this change
+// (Alpine → musl, Debian → glibc, container-verified): a Debian box has no musl
+// loader to match, and an Alpine box is caught by either rule.
+func classifyLibc(lddOut []byte, lddErr error, glob func(string) ([]string, error)) string {
+	if m, err := glob(muslLoaderGlob); err == nil && len(m) > 0 {
+		return "musl"
 	}
-	if strings.Contains(strings.ToLower(string(lddOut)), "musl") {
+	if lddErr == nil && strings.Contains(strings.ToLower(string(lddOut)), "musl") {
 		return "musl"
 	}
 	return "glibc"

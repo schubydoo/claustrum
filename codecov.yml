@@ -112,6 +112,8 @@ component_management:
       name: install pipeline
       paths:
         - install.go
+        - libc_linux.go
+        - libc_other.go
     - component_id: env_compat
       name: shell-env & cross-platform
       paths:
