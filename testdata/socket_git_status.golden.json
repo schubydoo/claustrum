@@ -6,6 +6,7 @@
       "isRepo": true,
       "clean": false,
       "changes": [
+        "M a_mod_unstaged.txt",
         "D  del_staged.txt",
         " D del_unstaged.txt",
         "MM mod_both.txt",
