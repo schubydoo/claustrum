@@ -67,10 +67,17 @@ the CI `lint` job.
 
 ### 8 · Bounded replay buffer (ring) ✅ — impact M-H / cost M
 
-Shipped in #58: each per-process buffer is capped at 50 MiB of base64 data (was
-unbounded — a noisy long-lived process grew memory without bound); the oldest
-frames drop and `firstSeq` advances past the cap. **Protocol-safe** —
-`reattach` returns `firstSeq`, so clients handle the moved floor.
+Shipped in #58: each per-process buffer is capped at **16 MiB** of base64 data
+(claustrum's own buffer was unbounded before #58 — a noisy long-lived process
+grew memory without bound); the oldest frames drop and `firstSeq` advances past
+the cap. `reattach` returns `firstSeq`, so clients handle the moved floor.
+
+**The cap is parity, not tuning.** #58 chose 50 MiB before the reference's value
+was known; the 2026-07 sweep measured the reference at **16 MiB** with identical
+accounting (base64 length, whole frames dropped oldest-first), and claustrum was
+corrected to match. Because `firstSeq` is wire-visible, the bound is part of the
+observable contract — it is **not** a free local tuning knob. Re-measure before
+changing it.
 
 ### 9 · stdin backpressure ✅ — impact M / cost M
 

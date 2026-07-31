@@ -450,8 +450,13 @@ unknown id is not an error):
 - Exact frame *boundaries* depend on pipe scheduling and are not stable — only
   the reassembled bytes are. (Both the 32 KiB cap and the `-1` signal code are
   probe-verified against the reference.)
-- The replay buffer retains frames for the life of the process, so
-  `reattach{fromSeq:0}` replays everything.
+- The replay buffer is **bounded at 16 MiB** of base64 `data` per process
+  (probe-verified against the reference). Frames are dropped oldest-first, whole
+  frames at a time, once a new frame would exceed the cap; at least one frame is
+  always retained, even one larger than the cap. So `reattach{fromSeq:0}` replays
+  everything **still retained**, not necessarily everything ever emitted — the
+  reply's `firstSeq` is the floor, and a client that needs the gap detected must
+  compare it against the last `seq` it saw.
 - A process **survives** the disconnect of the connection that spawned it;
   another connection can pick it up via `reattach`. This is the multi-attach /
   reconnect mechanism.

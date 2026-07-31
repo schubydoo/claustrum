@@ -765,3 +765,46 @@ func TestMetricsCountProcessOps(t *testing.T) {
 		t.Errorf("processExits delta = %d, want ≥ 1", d)
 	}
 }
+
+// TestDefaultBufferCapMatchesReference pins the replay-buffer bound to the
+// reference's value. This is parity, not tuning: firstSeq is wire-visible via
+// process.reattach, so the cap decides which seq a reconnecting client can still
+// replay from. Driving 70 MiB of output through both daemons showed the
+// reference retaining ~15.85 MiB (firstSeq 7599) against claustrum's ~49.99 MiB
+// (firstSeq 4133) — same accounting, different constant. Re-measure before
+// changing this number.
+func TestDefaultBufferCapMatchesReference(t *testing.T) {
+	const want int64 = 16 * 1024 * 1024
+	if defaultBufferCap != want {
+		t.Errorf("defaultBufferCap = %d, want %d (the reference's 16 MiB)", defaultBufferCap, want)
+	}
+}
+
+// TestEmitUsesDefaultBufferCap checks the constant is actually WIRED, not just
+// declared: a proc with no per-instance bufCap override must trim against
+// defaultBufferCap. TestEmitBufferCap above uses a 10-byte override, so it would
+// still pass if emit's `cap == 0` fallback were broken.
+func TestEmitUsesDefaultBufferCap(t *testing.T) {
+	const half = 9 << 20 // two of these exceed the 16 MiB cap, one does not
+	p := &managedProc{id: "defcap", subs: map[*conn]struct{}{}}
+	if p.bufCap != 0 {
+		t.Fatalf("bufCap = %d, want 0 so the default applies", p.bufCap)
+	}
+	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("a", half)})
+	if len(p.buffer) != 1 || p.buffer[0].Seq != 1 {
+		t.Fatalf("after one frame: %d frames, first seq %d; want 1 frame at seq 1",
+			len(p.buffer), p.buffer[0].Seq)
+	}
+	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("b", half)})
+	if len(p.buffer) != 1 {
+		// Fatal, not Error: an empty buffer from a trimming regression would
+		// panic on the p.buffer[0] read below instead of reporting the count.
+		t.Fatalf("after 18 MiB over a 16 MiB cap: %d frames retained, want 1", len(p.buffer))
+	}
+	if p.buffer[0].Seq != 2 {
+		t.Errorf("buffer[0].Seq = %d, want 2 (the older frame must be dropped)", p.buffer[0].Seq)
+	}
+	if p.bufBytes > defaultBufferCap {
+		t.Errorf("bufBytes = %d, want <= %d", p.bufBytes, defaultBufferCap)
+	}
+}
