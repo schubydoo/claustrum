@@ -1,0 +1,10 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "error": {
+      "code": -32603,
+      "message": "open <DIR>/noperm.txt: permission denied"
+    }
+  }
+]

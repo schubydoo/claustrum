@@ -246,10 +246,6 @@ func TestSocketGitStatusPorcelain(t *testing.T) {
 // -32603/error-field strings a client may surface verbatim, so the wording is
 // part of the contract.
 //
-//	W5 files.list on a non-directory  ref: "readdirent <p>: not a directory"
-//	                                  was: "open <p>: not a directory"
-//	   files.list on a mode-000 file  ref: "open <p>: permission denied"
-//	                                  was: "open <p>: not a directory"
 //	W7 extract_tar, missing archive   ref: "open archive: open <p>: ..."
 //	                                  was: "open <p>: ..."
 //	W8 spawn, missing cwd             ref: "chdir <p>: stat <p>: no such file..."
@@ -259,30 +255,22 @@ func TestSocketGitStatusPorcelain(t *testing.T) {
 // The two W8 strings differ in shape — the file case carries no "stat <p>:"
 // segment. That was measured against the reference binary at 5db5e4a on
 // 2026-07-30, not inferred from the missing-dir case.
+//
+// The two W5 cases live in their own tests below: each has a narrower
+// precondition (linux-only op names, non-root), and folding them in here would
+// make those preconditions skip these four contracts too.
 func TestSocketErrorTextParity(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		// readdirent/permission-denied are Unix syscall wordings; Windows
-		// reports its own. The Unix capture is what the reference was probed on.
+		// no-such-file / not-a-directory are Unix wordings; Windows reports its
+		// own. Nothing here depends on the running uid.
 		t.Skip("golden pins Unix syscall error text")
-	}
-	if os.Geteuid() == 0 {
-		// root ignores mode 000, so the permission-denied case would not fire.
-		t.Skip("runs as root; mode-000 would be readable")
 	}
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "regular.txt"), "x\n", 0o644)
-	writeFile(t, filepath.Join(root, "noperm.txt"), "x\n", 0o000)
-	if err := os.Symlink(filepath.Join(root, "regular.txt"), filepath.Join(root, "link")); err != nil {
-		t.Fatal(err)
-	}
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	calls := []string{
-		// W5
-		req(1, "files.list", map[string]any{"path": filepath.Join(root, "regular.txt")}),
-		req(2, "files.list", map[string]any{"path": filepath.Join(root, "link")}),
-		req(3, "files.list", map[string]any{"path": filepath.Join(root, "noperm.txt")}),
 		req(4, "files.list", map[string]any{"path": filepath.Join(root, "missing")}),
 		// W7
 		req(5, "files.extract_tar", map[string]any{
@@ -304,4 +292,56 @@ func TestSocketErrorTextParity(t *testing.T) {
 		got[i] = normPath(cl.call(line), root)
 	}
 	assertGolden(t, "socket_error_text_parity.golden.json", encodeGolden(t, got))
+}
+
+// TestSocketListNonDirErrorText pins the W5 non-directory wording, which is
+// linux-only because the syscall op name is platform-specific: Go reports
+// "readdirent" on Linux and "fdopendir" on Darwin for the same failure.
+//
+// That is NOT a claustrum-vs-reference divergence. The reference daemon is also
+// Go, so it goes through the same stdlib path and reports the same op on each
+// platform; claustrum matches it per-OS. What is pinned here is that we reach
+// the readdir stage at all — the bug this replaced reported an "open" error,
+// because os.ReadDir collapses both failures into one PathError.
+func TestSocketListNonDirErrorText(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("syscall op name is platform-specific (linux readdirent / darwin fdopendir)")
+	}
+	root := resolveTestRoot(t, t.TempDir())
+	writeFile(t, filepath.Join(root, "regular.txt"), "x\n", 0o644)
+	if err := os.Symlink(filepath.Join(root, "regular.txt"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	got := []json.RawMessage{
+		normPath(cl.call(req(1, "files.list", map[string]any{"path": filepath.Join(root, "regular.txt")})), root),
+		normPath(cl.call(req(2, "files.list", map[string]any{"path": filepath.Join(root, "link")})), root),
+	}
+	assertGolden(t, "socket_list_nondir_linux.golden.json", encodeGolden(t, got))
+}
+
+// TestSocketListPermissionDeniedErrorText pins the remaining W5 case: an
+// unreadable file must report the open failure ("permission denied"), where the
+// old os.ReadDir path reported "not a directory" for it — describing the wrong
+// problem entirely.
+//
+// Split out because it is the ONLY assertion in this group that depends on the
+// running uid; keeping it inside the shared test made a root environment skip
+// the extract_tar and spawn contracts too, which do not care who runs them.
+func TestSocketListPermissionDeniedErrorText(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits are not the access control on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("runs as root; mode 000 is readable so the open would succeed")
+	}
+	root := resolveTestRoot(t, t.TempDir())
+	writeFile(t, filepath.Join(root, "noperm.txt"), "x\n", 0o000)
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	got := []json.RawMessage{
+		normPath(cl.call(req(3, "files.list", map[string]any{"path": filepath.Join(root, "noperm.txt")})), root),
+	}
+	assertGolden(t, "socket_list_permission_denied.golden.json", encodeGolden(t, got))
 }
