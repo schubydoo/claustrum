@@ -250,6 +250,33 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 - Missing file → `{content:"",exists:false}` (not an error).
 - A directory → `-32602 files.read: path is a directory`.
 - Size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`.
+- **Any non-regular file → `-32602 files.read: not a regular file`.** This is an
+  intentional divergence, and the only one on this method — see below.
+
+##### Non-regular files (intentional divergence)
+
+claustrum refuses to read anything that is not a regular file. The reference does
+not, and the difference is visible two ways (probe-measured against `5db5e4a`):
+
+| path | reference | claustrum |
+|---|---|---|
+| a FIFO | **never replies** — no frame at all, the request hangs forever | `-32602 files.read: not a regular file` |
+| `/dev/null` | `{"content":"","exists":true}` | `-32602 files.read: not a regular file` |
+
+The FIFO case is why the guard exists. A read of a FIFO with no writer blocks
+indefinitely, and because the reference emits no frame at all, a frame-diffing
+comparison cannot even see it — the request goroutine is simply consumed, and a
+client waiting on that `id` waits forever. Refusing the read converts an
+unbounded hang into an immediate, actionable error.
+
+The `/dev/null` row is the cost of that guard rather than a second decision: the
+check is `Mode().IsRegular()`, so it also rejects character devices the reference
+reads happily. Narrowing it to permit *some* character devices would reopen the
+same hazard on others — `/dev/zero` and `/dev/random` are unbounded reads, and
+the reference has no protection against those either.
+
+So a client that needs `/dev/null` semantics should treat an empty file as the
+portable spelling. Everything else about `files.read` is byte-identical.
 
 #### files.validate
 
