@@ -72,7 +72,7 @@ func TestPipeTransportServesJSONRPC(t *testing.T) {
 	s := &server{
 		token:    testToken,
 		pipeLn:   pln,
-		procs:    newProcManager(),
+		procs:    newTestProcManager(t),
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}

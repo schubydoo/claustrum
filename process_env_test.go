@@ -61,7 +61,7 @@ func TestBuildEnvMergesOverEnviron(t *testing.T) {
 
 func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 	t.Setenv("CLAUDE_SSH_DAEMON_CHILD", "1")
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")
@@ -80,7 +80,7 @@ func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 // environment contains it (e.g. when Desktop sets it for the bridge client).
 func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 	t.Setenv("CLAUDE_RPC_TOKEN", "secret-must-not-leak")
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")

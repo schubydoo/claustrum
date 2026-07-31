@@ -116,7 +116,7 @@ func TestEmitRetainsAllAtExactCap(t *testing.T) {
 }
 
 func TestReattachUnknownProcess(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
 	_, found, running, first, last, _ := m.reattach(c, "missing", 0)
 	if found || running || first != 0 || last != 0 {
@@ -127,7 +127,7 @@ func TestReattachUnknownProcess(t *testing.T) {
 // reattach replays only frames newer than fromSeq, but always reports the full
 // buffer's first/last seq and the running flag.
 func TestReattachReplaysFromSeq(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, running: true}
 	p.emit(streamFrame{Stream: "stdout", Data: "a"}) // seq 1
 	p.emit(streamFrame{Stream: "stdout", Data: "b"}) // seq 2
@@ -207,7 +207,7 @@ func TestSpawnEmitsOperationalLogs(t *testing.T) {
 	log.SetFlags(0) // assert on the message text, not the timestamp
 	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldFlags) })
 
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	echo, env := helperCommand(t, "echo")
@@ -278,7 +278,7 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 	log.SetFlags(0)
 	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
 
-	m := newProcManager()
+	m := newTestProcManager(t)
 	p := &managedProc{id: "p", subs: map[*conn]struct{}{}, running: true}
 	p.emit(streamFrame{Stream: "stdout", Data: "a"}) // buffered seq 1
 	m.procs["p"] = p
@@ -356,7 +356,7 @@ func TestSpawnRespectsCwd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("evalsymlinks: %v", err)
 	}
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	pwd, env := helperCommand(t, "pwd")
@@ -375,7 +375,7 @@ func TestSpawnRespectsCwd(t *testing.T) {
 // suppresses the trailing EOF read. A boundary mutant (`n >= 0`) would push an
 // empty-data stdout/stderr frame at EOF, which this test rejects.
 func TestPumpStreamSkipsEmptyReads(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	echo, env := helperCommand(t, "echo")
@@ -401,7 +401,7 @@ func TestPumpStreamSkipsEmptyReads(t *testing.T) {
 // writeStdin reports success (true) when the process exists and has a stdin pipe
 // (the bytes are enqueued for async delivery), and failure for an unknown process.
 func TestWriteStdinReturnValue(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	c, _ := pipeConn(t)
 	cat, env := helperCommand(t, "cat")
@@ -562,7 +562,7 @@ func waitStdinQueueEmpty(t *testing.T, p *managedProc) {
 // without panicking. Pins the `len(p.buffer) > 0` guard: a boundary mutant
 // (`len >= 0`) would index p.buffer[0] on an empty slice and panic.
 func TestReattachEmptyBuffer(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	p := &managedProc{id: "eb", subs: map[*conn]struct{}{}, running: true} // no emits → empty buffer
 	m.procs["eb"] = p
 	c, _ := pipeConn(t)
@@ -576,7 +576,7 @@ func TestReattachEmptyBuffer(t *testing.T) {
 // `p.cmd != nil && p.cmd.Process != nil` guard: a negated sub-condition would
 // skip the signal and the process would outlive the timeout (no exit frame).
 func TestKillAllTerminatesLiveProcess(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
 	if _, err := m.spawn(c, "sl", sleep, []string{"60"}, "", env); err != nil {
@@ -601,7 +601,7 @@ func TestKillAllTerminatesLiveProcess(t *testing.T) {
 // rather than leaking it — a claustrum divergence (OS-level, no wire change,
 // IMPROVEMENTS #17).
 func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 
 	c1, _ := pipeConn(t)
@@ -721,7 +721,7 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	stdin0 := met.stdinBytes.Load()
 	reatt0 := met.reattaches.Load()
 
-	m := newProcManager()
+	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	cat, env := helperCommand(t, "cat")
@@ -837,7 +837,7 @@ func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
 			}
 			return nil, nil, errors.New("pipe: too many open files")
 		}
-		m := newProcManager()
+		m := newTestProcManager(t)
 		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
 			t.Fatal("spawn succeeded despite a pipe failure")
 		}
@@ -856,7 +856,7 @@ func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
 		cmdStdinPipe = func(*exec.Cmd) (io.WriteCloser, error) {
 			return nil, errors.New("stdinpipe: too many open files")
 		}
-		m := newProcManager()
+		m := newTestProcManager(t)
 		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
 			t.Fatal("spawn succeeded despite a stdin pipe failure")
 		}
@@ -889,7 +889,7 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 		signals = append(signals, name)
 	}
 
-	m := newProcManager()
+	m := newTestProcManager(t)
 	// A process mid-drain: reaped, but still running as far as clients are told.
 	p := &managedProc{
 		id: "DRAIN", running: true, reaped: true,
@@ -984,7 +984,7 @@ func TestSpawnConfinesTheDrainGrace(t *testing.T) {
 	t.Cleanup(func() { a.Close(); b.Close() })
 	go func() { _, _ = io.Copy(io.Discard, b) }()
 
-	m := newProcManager()
+	m := newTestProcManager(t)
 	exe, env := helperCommand(t, "orphan-stdout")
 	if _, err := m.spawn(&conn{nc: a}, "GRACE", exe, []string{"3"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)

@@ -15,7 +15,7 @@ import (
 // contract; the value-typed cousins live in rpc_test.go). This sweeps the
 // methods the earlier suites didn't reach one by one.
 func TestBindParamsMistypedPerMethod(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	cases := map[string]map[string]any{
 		"files.stat":          {"path": 123},
 		"files.list":          {"path": 123},
@@ -38,7 +38,7 @@ func TestBindParamsMistypedPerMethod(t *testing.T) {
 // git.worktree_create validates branchName presence right after bindParams,
 // before any repo probing.
 func TestGitWorktreeCreateMissingBranchName(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{"path": t.TempDir()}))
 	if !strings.Contains(got, "branchName is required") {
 		t.Errorf("worktree_create without branchName = %s, want branchName is required", got)
@@ -48,7 +48,7 @@ func TestGitWorktreeCreateMissingBranchName(t *testing.T) {
 // files.stat on a path that does not exist reports the zero facts object with
 // exists:false — a result, never an error (matching the reference).
 func TestFilesStatNonexistent(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "files.stat",
 		map[string]any{"path": filepath.Join(t.TempDir(), "absent")}))
 	if !strings.Contains(got, `"exists":false`) {
@@ -59,7 +59,7 @@ func TestFilesStatNonexistent(t *testing.T) {
 // files.list surfaces an unreadable directory as -32603 (unlike files.stat's
 // soft empty result — probe-verified asymmetry).
 func TestFilesListNonexistentDir(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "files.list",
 		map[string]any{"path": filepath.Join(t.TempDir(), "absent")}))
 	if !strings.Contains(got, `"code":-32603`) {
@@ -77,7 +77,7 @@ func TestGitStatusCleanRepo(t *testing.T) {
 	runGit(t, dir, "add", ".")
 	runGit(t, dir, "commit", "-q", "-m", "init")
 
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": dir}))
 	if !strings.Contains(got, `"clean":true`) {
 		t.Errorf("git.status clean repo = %s, want clean:true", got)

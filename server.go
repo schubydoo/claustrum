@@ -571,6 +571,7 @@ func (s *server) closeAll(socket string) {
 	// the pipe was never started (unconditional, matching removePersistedToken).
 	removePipeNameFile(socket)
 	s.stopChildren()
+	s.procs.close() // end the prune sweep; idempotent
 	s.mu.Lock()
 	for c := range s.conns {
 		c.nc.Close()

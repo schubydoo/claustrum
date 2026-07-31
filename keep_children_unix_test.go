@@ -28,7 +28,7 @@ func TestHonorKeepChildrenUnix(t *testing.T) {
 // drive stopChildren (the exact step teardown runs) rather than teardown itself,
 // which calls os.Exit and would take the test process down with it.
 func TestStopChildrenKeepsChildAlive(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
 	if _, err := m.spawn(c, "keep", sleep, []string{"60"}, "", env); err != nil {
@@ -59,7 +59,7 @@ func TestStopChildrenKeepsChildAlive(t *testing.T) {
 
 // Without the flag, graceful shutdown kills the child (today's behavior, unchanged).
 func TestStopChildrenKillsChildByDefault(t *testing.T) {
-	m := newProcManager()
+	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
 	if _, err := m.spawn(c, "kill", sleep, []string{"60"}, "", env); err != nil {

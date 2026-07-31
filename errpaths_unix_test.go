@@ -31,7 +31,7 @@ func TestFilesReadUnreadableFile(t *testing.T) {
 	if err := os.WriteFile(p, []byte("x"), 0o000); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer()
+	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": p}))
 	if !strings.Contains(got, `"code":-32603`) {
 		t.Errorf("files.read unreadable = %s, want -32603", got)

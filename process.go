@@ -79,9 +79,13 @@ type managedProc struct {
 	// group, so the group really can empty and its id be reused mid-drain. Read
 	// only under p.mu, and only by signalIfLive.
 	reaped bool
-	stdin  io.WriteCloser
-	cmd    *exec.Cmd
-	group  *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	// exitedAt is stamped alongside running=false, so it dates the exit frame
+	// rather than the reap — the two are up to exitDrainGrace apart. Zero while
+	// the process is alive. Read only by pruneExited, under p.mu like running.
+	exitedAt time.Time
+	stdin    io.WriteCloser
+	cmd      *exec.Cmd
+	group    *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -107,10 +111,93 @@ type managedProc struct {
 type procManager struct {
 	mu    sync.Mutex
 	procs map[string]*managedProc
+	// stop ends the background prune sweep; stopOnce keeps close() idempotent so
+	// a double shutdown cannot panic on a second close of the channel.
+	stop     chan struct{}
+	stopOnce sync.Once
+	// pruneAge/pruneInterval are COPIED from the package vars at construction
+	// rather than read live by the sweep. A sweep goroutine outlives its test
+	// whenever a manager is built without a teardown, so reading the vars from
+	// inside the loop makes any later test that shrinks them a data race — which
+	// is exactly what -race caught. Copying confines each var to the constructing
+	// goroutine.
+	pruneAge      time.Duration
+	pruneInterval time.Duration
 }
 
+// procPruneAge is how long a process stays reachable after it exits. Past this,
+// process.reattach reports found:false and the id is free again — the reference
+// drops the entry, along with its replay buffer, from the table. Probe-measured
+// at 5db5e4a: the only duration constant in its pruneExited is 900s, and a
+// process exited 960s earlier is gone while one that just exited is not. Copied
+// into the manager at construction. var so tests can shrink it.
+var procPruneAge = 15 * time.Minute
+
+// procPruneInterval is the sweep period of the background prune. The reference
+// runs the same sweep from a time.NewTicker(60s) started by NewManager, on top
+// of the inline call in Spawn — so an idle daemon prunes too, with no spawn to
+// trigger it. Copied into the manager at construction, so a test must set it
+// before newProcManager. var so tests can shrink it.
+var procPruneInterval = time.Minute
+
 func newProcManager() *procManager {
-	return &procManager{procs: make(map[string]*managedProc)}
+	m := &procManager{
+		procs:         make(map[string]*managedProc),
+		stop:          make(chan struct{}),
+		pruneAge:      procPruneAge,
+		pruneInterval: procPruneInterval,
+	}
+	go m.pruneLoop()
+	return m
+}
+
+// pruneLoop sweeps long-exited processes out of the table on a timer, matching
+// the goroutine the reference's NewManager starts. Without it an idle daemon
+// would keep every dead process forever; spawn's inline sweep only ever prunes
+// when new work arrives.
+func (m *procManager) pruneLoop() {
+	t := time.NewTicker(m.pruneInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			m.pruneExited()
+		case <-m.stop:
+			return
+		}
+	}
+}
+
+// close ends the prune sweep. Idempotent, and safe to call on a manager whose
+// sweep never started.
+func (m *procManager) close() {
+	m.stopOnce.Do(func() { close(m.stop) })
+}
+
+// pruneExited drops every process that has been exited for longer than
+// procPruneAge, freeing its replay buffer with it. A RUNNING process is immune
+// at any age — probe-measured: a sleeper spawned 960s earlier is still
+// found:true,running:true while a process that exited at the same moment is
+// gone. After pruning, the id behaves exactly like one that never existed:
+// reattach reports found:false and kill reports success:true, so no caller sees
+// a new error.
+func (m *procManager) pruneExited() {
+	cutoff := time.Now().Add(-m.pruneAge)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, p := range m.procs {
+		p.mu.Lock()
+		// exitedAt is zero until the exit frame goes out, which covers both a
+		// running process and the brief window while one is being reaped.
+		stale := !p.running && !p.exitedAt.IsZero() && p.exitedAt.Before(cutoff)
+		p.mu.Unlock()
+		if stale {
+			// Safe to delete during range — Go defines this, and an entry removed
+			// mid-iteration is simply not produced.
+			delete(m.procs, id)
+			logDebugf("[process.Manager] Pruned exited process %s", id)
+		}
+	}
 }
 
 func (m *procManager) get(id string) *managedProc {
@@ -217,6 +304,9 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// test that shrinks it. macOS CI caught exactly that; the same confinement is
 	// why procManager copies its prune tunables at construction.
 	grace := exitDrainGrace
+	// The reference prunes inline here as well as on its ticker, so a busy daemon
+	// sheds long-dead entries without waiting for the next sweep.
+	m.pruneExited()
 	cmd := exec.Command(command, args...)
 	if cwd != "" {
 		// Stat the cwd before exec so an unusable one names the directory at
@@ -363,6 +453,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		// and false only once the exit frame is out.
 		p.mu.Lock()
 		p.running = false
+		p.exitedAt = time.Now() // starts the procPruneAge clock
 		p.mu.Unlock()
 		// Stop the stdin writer and wake any producer blocked on a full queue; the
 		// child's stdin pipe is closed by cmd.Wait, so further writes would fail.

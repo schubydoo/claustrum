@@ -40,7 +40,7 @@ func newRunningServer(t *testing.T) (*server, string) {
 	s := &server{
 		token:    testToken,
 		ln:       ln,
-		procs:    newProcManager(),
+		procs:    newTestProcManager(t),
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
@@ -232,4 +232,20 @@ func streamBytes(t *testing.T, frames []streamFrame, stream string) string {
 		sb = append(sb, b...)
 	}
 	return string(sb)
+}
+
+// newTestProcManager builds a procManager whose background prune sweep is shut
+// down when the test ends.
+//
+// newProcManager starts that sweep unconditionally, matching the reference's
+// NewManager. In the daemon the server's teardown closes it; a test that builds
+// a manager directly has no such teardown, so every one of them would otherwise
+// leak a goroutine and a ticker for the life of the test binary. Tests use this
+// instead of calling newProcManager, so the ownership is not something each new
+// test has to remember.
+func newTestProcManager(tb testing.TB) *procManager {
+	tb.Helper()
+	m := newProcManager()
+	tb.Cleanup(m.close)
+	return m
 }

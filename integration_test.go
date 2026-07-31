@@ -519,3 +519,111 @@ func TestSocketResponseIDCanonicalization(t *testing.T) {
 		}
 	}
 }
+
+// TestSocketPrunesLongExitedProcesses pins the process table's retention rule:
+// a process that exited longer ago than procPruneAge is dropped, along with its
+// replay buffer, and its id then behaves exactly as one that never existed.
+//
+// Three separate claims, and the fixture is arranged so each is load-bearing:
+//
+//   - the BACKGROUND sweep prunes. Nothing is spawned after OLD exits, so only
+//     the ticker can drop it — the inline sweep in spawn never runs here.
+//   - a RUNNING process is immune at any age. LIVE is older than procPruneAge by
+//     the time the assertion runs, so an age-only rule would take it too.
+//   - a pruned id is indistinguishable from an unknown one: reattach reports
+//     found:false and kill still reports success:true, no new error path.
+//
+// All three probe-measured against the reference at 5db5e4a (its threshold is
+// 900s and its sweep a 60s ticker; both are shrunk here). The vars are set before
+// startSocketServer because pruneLoop reads the interval once at start, and the
+// restore is registered first so the LIFO cleanup stops the daemon before it.
+func TestSocketPrunesLongExitedProcesses(t *testing.T) {
+	oldAge, oldInterval := procPruneAge, procPruneInterval
+	t.Cleanup(func() { procPruneAge, procPruneInterval = oldAge, oldInterval })
+	procPruneAge, procPruneInterval = 100*time.Millisecond, 20*time.Millisecond
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+
+	// LIVE outlives the whole test; OLD exits at once.
+	exe, env := helperCommand(t, "sleep")
+	live, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "process.spawn", "auth": testToken,
+		"params": map[string]any{
+			"id": "LIVE", "command": exe, "args": []string{"20"}, "env": env,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal spawn request: %v", err)
+	}
+	cl.send(string(live))
+	cl.send(spawnReq(t, 2, "OLD", "stdout3"))
+	cl.waitResponses(2)
+	cl.waitExit("OLD")
+
+	// Past the retention window, with NO further spawn: only the ticker can act.
+	time.Sleep(procPruneAge + 10*procPruneInterval)
+
+	var got struct {
+		Result struct {
+			Found   bool `json:"found"`
+			Running bool `json:"running"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(cl.call(req(3, "process.reattach",
+		map[string]any{"id": "OLD", "fromSeq": 0})), &got); err != nil {
+		t.Fatalf("unmarshal reattach OLD: %v", err)
+	}
+	if got.Result.Found {
+		t.Errorf("reattach OLD found=true; a process exited longer ago than procPruneAge must be gone")
+	}
+
+	if err := json.Unmarshal(cl.call(req(4, "process.reattach",
+		map[string]any{"id": "LIVE", "fromSeq": 0})), &got); err != nil {
+		t.Fatalf("unmarshal reattach LIVE: %v", err)
+	}
+	if !got.Result.Found || !got.Result.Running {
+		t.Errorf("reattach LIVE found=%v running=%v, want true/true; a running process is immune at any age",
+			got.Result.Found, got.Result.Running)
+	}
+
+	var killed struct {
+		Result struct {
+			Success bool `json:"success"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(cl.call(req(5, "process.kill",
+		map[string]any{"id": "OLD"})), &killed); err != nil {
+		t.Fatalf("unmarshal kill OLD: %v", err)
+	}
+	if !killed.Result.Success {
+		t.Errorf("kill of a pruned id = %+v, want success:true (same as an unknown id)", killed.Result)
+	}
+}
+
+// TestPruneExitedSkipsRunning is the deterministic half of the rule above: no
+// timers, no sockets, just the predicate. A process still marked running is kept
+// however old its exitedAt looks, and one that exited inside the window is kept
+// too — so a regression that prunes on age alone, or that ignores the window,
+// fails here rather than showing up as a flake in the socket test.
+func TestPruneExitedSkipsRunning(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.close)
+	long := time.Now().Add(-time.Hour)
+
+	m.procs["running-but-ancient"] = &managedProc{running: true, exitedAt: long}
+	m.procs["exited-long-ago"] = &managedProc{running: false, exitedAt: long}
+	m.procs["exited-just-now"] = &managedProc{running: false, exitedAt: time.Now()}
+	m.procs["never-stamped"] = &managedProc{running: false}
+
+	m.pruneExited()
+
+	for _, id := range []string{"running-but-ancient", "exited-just-now", "never-stamped"} {
+		if m.procs[id] == nil {
+			t.Errorf("%s was pruned; it must be kept", id)
+		}
+	}
+	if m.procs["exited-long-ago"] != nil {
+		t.Errorf("exited-long-ago survived pruneExited")
+	}
+}

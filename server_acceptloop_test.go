@@ -36,7 +36,7 @@ func TestStartAcceptLoopsServesBothListeners(t *testing.T) {
 		token:    testToken,
 		ln:       ln,
 		pipeLn:   pln,
-		procs:    newProcManager(),
+		procs:    newTestProcManager(t),
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
@@ -86,7 +86,7 @@ func (fakeAddr) String() string  { return "fake" }
 func TestAcceptLoopBacksOffOnErrors(t *testing.T) {
 	ln := &erroringListener{}
 	s := &server{
-		procs:    newProcManager(),
+		procs:    newTestProcManager(t),
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}
@@ -134,7 +134,7 @@ func TestAcceptLoopServesAndReturnsOnShutdown(t *testing.T) {
 	s := &server{
 		token:    testToken,
 		ln:       ln,
-		procs:    newProcManager(),
+		procs:    newTestProcManager(t),
 		conns:    make(map[*conn]struct{}),
 		shutdown: make(chan struct{}),
 	}

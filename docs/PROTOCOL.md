@@ -530,6 +530,14 @@ unknown id is not an error):
 - Replays buffered frames with **seq > fromSeq** (exclusive) to this
   connection, (re)subscribes it for future frames, then returns the result.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
+- **Exited processes are retained for 15 minutes, then dropped** — with their
+  replay buffers — so an id last seen longer ago than that answers exactly like
+  an unknown one, and `process.kill` on it still reports `{"success":true}`. A
+  **running** process is never dropped, however old. The sweep runs on a 60-second
+  timer *and* inline on every `process.spawn`, so an idle daemon prunes too.
+  Probe-verified against the reference at `5db5e4a`. A client that reconnects
+  after a long gap must therefore treat `found:false` as "finished and forgotten",
+  not as "never existed".
 - **`stdinApplied` (added `7c2f88d`).** The process's cumulative applied-stdin
   byte count (§`process.stdin`), always present after `lastSeq`. A reconnecting
   client resumes stdin from this offset so no bytes are re-applied or dropped.

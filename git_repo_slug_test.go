@@ -63,7 +63,7 @@ func TestGitInfoRepoSlugAndDefaultBranch(t *testing.T) {
 	run("update-ref", "refs/remotes/origin/main", strings.TrimSpace(string(head)))
 	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
 
-	s := newTestServer()
+	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": dir}))
 	var got gitInfoResult
 	decodeReply(t, []byte(raw), &got)
