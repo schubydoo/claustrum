@@ -102,6 +102,11 @@ component_management:
         - bridge.go
         - main.go
         - config.go
+        # Declaration-only (two generated consts, no statements), so Codecov
+        # never reports it and its absence could not show up as a coverage gap.
+        # Listed anyway: main.go's -version reads it, and the rule is that every
+        # production .go file appears here exactly once.
+        - buildstamp.go
     - component_id: install
       name: install pipeline
       paths:
