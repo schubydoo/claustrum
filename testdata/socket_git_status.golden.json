@@ -1,0 +1,19 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "isRepo": true,
+      "clean": false,
+      "changes": [
+        "D  del_staged.txt",
+        " D del_unstaged.txt",
+        "MM mod_both.txt",
+        " M mod_unstaged.txt",
+        "R  rename_src.txt -\u003e rename_dst.txt",
+        "A  staged_new.txt",
+        "?? untracked.txt"
+      ]
+    }
+  }
+]
