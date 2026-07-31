@@ -300,3 +300,45 @@ func TestWorktreeIncludeSkipsQuotedNames(t *testing.T) {
 		[]string{"tracked.txt", "weird space.txt", "weird-plain.txt"},
 		"quoted-name manifest matches")
 }
+
+// copyFile's two remaining give-up paths, which the directory-permission cases
+// above cannot reach: they fail at MkdirAll before the file is ever opened.
+func TestCopyFileOpenAndWriteFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on POSIX open/write errors")
+	}
+
+	// Destination exists as a DIRECTORY: MkdirAll succeeds, OpenFile fails.
+	t.Run("destination_is_a_directory", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "a.txt")
+		writeFile(t, src, "x\n", 0o644)
+		dst := filepath.Join(dir, "out", "a.txt")
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		copyFile(src, dst) // must give up quietly
+		fi, err := os.Stat(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !fi.IsDir() {
+			t.Error("copyFile replaced a directory with a file")
+		}
+	})
+
+	// Write failure mid-copy: /dev/full accepts the open and fails every write
+	// with ENOSPC, which is the only portable way to reach the io.Copy branch.
+	t.Run("write_fails", func(t *testing.T) {
+		if runtime.GOOS != "linux" {
+			t.Skip("/dev/full is a Linux device")
+		}
+		if _, err := os.Stat("/dev/full"); err != nil {
+			t.Skip("/dev/full not present")
+		}
+		dir := t.TempDir()
+		src := filepath.Join(dir, "a.txt")
+		writeFile(t, src, "some bytes to write\n", 0o644)
+		copyFile(src, "/dev/full") // must return without panicking
+	})
+}

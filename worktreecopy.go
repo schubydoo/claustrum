@@ -72,11 +72,13 @@ func copyWorktreeIncludes(repo, worktree string) {
 		return
 	}
 	for _, rel := range strings.Split(out, "\n") {
-		rel = strings.TrimRight(rel, "\r")
-		if rel == "" {
-			continue
+		// One guarded call rather than `if rel == "" { continue }`: git() strips
+		// the trailing newline and an empty `out` returned above, so no blank
+		// element reaches this loop and a bare `continue` would be a statement
+		// coverage can never reach. Same shape as the git.status porcelain loop.
+		if rel = strings.TrimRight(rel, "\r"); rel != "" {
+			copyFile(filepath.Join(repo, rel), filepath.Join(worktree, rel))
 		}
-		copyFile(filepath.Join(repo, rel), filepath.Join(worktree, rel))
 	}
 }
 
