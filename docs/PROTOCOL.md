@@ -524,6 +524,13 @@ unknown id is not an error):
 - **`stdinApplied` (added `7c2f88d`).** The process's cumulative applied-stdin
   byte count (§`process.stdin`), always present after `lastSeq`. A reconnecting
   client resumes stdin from this offset so no bytes are re-applied or dropped.
+  **It is an acknowledgement, not a delivery receipt.** `process.stdin` returns
+  before the child has read the data, so bytes accepted just before the child
+  exits are counted here even though the writer never delivered them — including
+  bytes accepted during the exit-drain window, where the child is already reaped
+  but still reports `running`. Probe-verified as reference behavior at `5db5e4a`,
+  down to the same `stdinApplied` value; a client that must know data arrived has
+  to confirm it in-band, not from this counter.
 - **`wantPid` opt-in (CT-1, claustrum-only).** As on `process.spawn`: with
   `"wantPid":true` **and** the process found, the reply appends
   `"pid":<int>,"startTime":<number>` **after** `stdinApplied`, reporting the
@@ -543,6 +550,14 @@ unknown id is not an error):
 - `data` is base64 for stdout/stderr.
 - The `exit` frame carries `exitCode` and no `data`. A signal-terminated child
   reports `exitCode: -1` (not `128+signo`).
+- The `exit` frame waits at most **5 seconds** after the process itself exits for
+  stdout/stderr to reach EOF, then the daemon closes the read ends and emits it
+  anyway. This only matters when the command leaves a **grandchild holding the
+  same pipe** (`npm run dev &`, anything that daemonizes): output that grandchild
+  writes after the cap is **not** forwarded, and its write fails with `EPIPE`.
+  Until the frame is emitted, `process.reattach` still reports
+  `running: true` — the flag flips with the frame, not with the process. All
+  probe-verified against the reference at `5db5e4a`.
 - Each stdout/stderr frame carries at most one **32 KiB** read (the streaming
   read buffer); larger output is split across frames. A client reassembles by
   concatenating `data` in `seq` order.

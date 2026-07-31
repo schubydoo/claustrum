@@ -70,9 +70,18 @@ type managedProc struct {
 	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
 	subs      map[*conn]struct{}
 	running   bool
-	stdin     io.WriteCloser
-	cmd       *exec.Cmd
-	group     *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	// reaped is set as soon as cmd.Wait returns — the moment the kernel frees the
+	// pid, and with it the process GROUP id once the last member goes. That is up
+	// to exitDrainGrace before running clears, which is why the two fields exist
+	// separately: running is the client's view, reaped is signal safety. The gap
+	// is reachable exactly when a grandchild holds the pipe open, and a
+	// grandchild that calls setsid() (which is what daemonizing means) leaves the
+	// group, so the group really can empty and its id be reused mid-drain. Read
+	// only under p.mu, and only by signalIfLive.
+	reaped bool
+	stdin  io.WriteCloser
+	cmd    *exec.Cmd
+	group  *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -110,12 +119,43 @@ func (m *procManager) get(id string) *managedProc {
 	return m.procs[id]
 }
 
-// isRunning reports whether the child is still alive (the exit goroutine clears
-// this under p.mu once cmd.Wait returns).
+// isRunning reports the process's state AS CLIENTS SEE IT: true until the exit
+// frame is emitted. During the bounded exit drain that is a window in which the
+// process has already been reaped but still reports running — deliberately, to
+// match the reference. Use isReaped, not this, to decide whether it is safe to
+// signal.
 func (p *managedProc) isRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.running
+}
+
+// signalGroup is a seam over procGroup.signal so the "do not signal a reaped
+// process" guards are testable without actually delivering a signal to whatever
+// now owns a recycled pgid — which is precisely the accident being guarded
+// against. Production never reassigns it.
+var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
+	g.signal(proc, signame)
+}
+
+// signalIfLive delivers signame to the process group unless the process has
+// already been reaped. p.mu is held across BOTH the check and the delivery: an
+// isReaped() that returns before the signal leaves a gap for the exit goroutine
+// to reap in between, which is the very race the check exists to prevent. Every
+// signal site goes through here for that reason.
+//
+// One window remains and cannot be closed at this layer: the kernel frees the
+// pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
+// reaped. Signaling by pid on POSIX is racy by construction — nothing short of a
+// pidfd fixes it, and a pidfd cannot address a process GROUP. The reference has
+// no guard here at all, so this is strictly narrower than reference behavior.
+func (p *managedProc) signalIfLive(signame string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	signalGroup(p.group, p.cmd.Process, signame)
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
@@ -171,6 +211,12 @@ func (p *managedProc) emit(f streamFrame) {
 // returns the managedProc so the caller can read its (immutable) pid/startTime
 // for the CT-1 opt-in; the wire reply is otherwise unaffected.
 func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string) (*managedProc, error) {
+	// Read the drain cap ONCE, here in the caller's goroutine, rather than from
+	// inside the exit waiter. The waiter outlives the request — and outlives the
+	// test that spawned it — so reading the package var there races any later
+	// test that shrinks it. macOS CI caught exactly that; the same confinement is
+	// why procManager copies its prune tunables at construction.
+	grace := exitDrainGrace
 	cmd := exec.Command(command, args...)
 	if cwd != "" {
 		// Stat the cwd before exec so an unusable one names the directory at
@@ -195,22 +241,35 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	cmd.Env = buildEnv(env)
 	cmd.SysProcAttr = newSysProcAttr()
 
-	stdout, err := cmd.StdoutPipe()
+	// Deliberately os.Pipe rather than cmd.StdoutPipe/StderrPipe. cmd.Wait closes
+	// the pipes it creates itself, which forces the "drain fully, then Wait"
+	// order and leaves no way to learn the moment the process exited — the exact
+	// thing the bounded drain below needs. Handing exec a plain *os.File instead
+	// passes the descriptor straight to the child: cmd.Wait then returns at
+	// process exit and leaves these read ends alone, so their lifetime is ours.
+	stdoutR, stdoutW, err := osPipe()
 	if err != nil {
 		return nil, err
 	}
-	stderr, err := cmd.StderrPipe()
+	stderrR, stderrW, err := osPipe()
 	if err != nil {
+		closeAll(stdoutR, stdoutW)
 		return nil, err
 	}
-	stdin, err := cmd.StdinPipe()
+	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
+	stdin, err := cmdStdinPipe(cmd)
 	if err != nil {
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
 		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		return nil, err
 	}
+	// The child holds its own copies now. Drop ours, or the read ends never see
+	// EOF even after every process in the tree has exited.
+	closeAll(stdoutW, stderrW)
 	// Stamp the start time the instant the child exists, so the CT-1 startTime is
 	// the process's birth moment (within ms), not a later bookkeeping point.
 	startTime := float64(time.Now().UnixNano()) / 1e9
@@ -251,9 +310,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		old.subs = map[*conn]struct{}{}
 		old.mu.Unlock()
 		// Skip exited children — their pgid may already be recycled (see kill).
-		if old.cmd != nil && old.cmd.Process != nil && old.isRunning() {
-			old.group.signal(old.cmd.Process, "KILL")
-		}
+		old.signalIfLive("KILL")
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
@@ -261,10 +318,11 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	go p.stdinWriter()
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); pumpStream(p, "stdout", stdout) }()
-	go func() { defer wg.Done(); pumpStream(p, "stderr", stderr) }()
+	go func() { defer wg.Done(); pumpStream(p, "stdout", stdoutR) }()
+	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
 	go func() {
-		wg.Wait()
+		// cmd.Wait returns the moment the process itself exits — it no longer
+		// waits on the pipes, because they are ours now.
 		err := cmd.Wait()
 		code := 0
 		if err != nil {
@@ -274,6 +332,35 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 				code = -1
 			}
 		}
+		// The pid is now free for the kernel to reuse, and the pgid will be too
+		// once the last group member goes. Record that BEFORE the drain window
+		// opens, so no signal path can target a recycled id while we wait.
+		p.mu.Lock()
+		p.reaped = true
+		p.mu.Unlock()
+		// A child can leave a grandchild holding the same stdout — `npm run dev &`,
+		// anything that daemonizes. The pipes then stay open long after the process
+		// we spawned is gone. The reference gives that drain exactly 5 seconds and
+		// then closes the read ends, so the exit frame lands on time and the
+		// grandchild's next write fails with EPIPE. Waiting for EOF instead (what
+		// claustrum did) means the exit frame is delayed for as long as the
+		// grandchild lives, which for a dev server is "never".
+		drained := make(chan struct{})
+		go func() { wg.Wait(); close(drained) }()
+		select {
+		case <-drained:
+		case <-time.After(grace):
+			closeAll(stdoutR, stderrR)
+		}
+		// Both pumps have returned by here: either they hit EOF on their own, or
+		// the close above turned their blocked Read into ErrClosed. That barrier
+		// is what keeps an output frame from overtaking the exit frame — no flag
+		// on the frame path required, and no seq number burnt on a dropped frame.
+		<-drained
+		closeAll(stdoutR, stderrR) // no-op on the drained path; idempotent
+		// running flips only now, not when cmd.Wait returned. Probe-measured: the
+		// reference still reports running:true two seconds into the drain window
+		// and false only once the exit frame is out.
 		p.mu.Lock()
 		p.running = false
 		p.mu.Unlock()
@@ -438,10 +525,10 @@ func (p *managedProc) stdinWriter() {
 // hardening only; the wire reply does not depend on the signal side effect.
 func (m *procManager) kill(id, signal string) {
 	p := m.get(id)
-	if p == nil || p.cmd == nil || p.cmd.Process == nil || !p.isRunning() {
+	if p == nil {
 		return
 	}
-	p.group.signal(p.cmd.Process, signal)
+	p.signalIfLive(signal)
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
@@ -462,6 +549,33 @@ const maxKillWaitMs = 600000 // 10 min
 // stuck in uninterruptible sleep) wedging the dispatch goroutine. var so tests can
 // shrink it.
 var killReapGrace = 5 * time.Second
+
+// exitDrainGrace bounds how long the exit frame waits for stdout/stderr to reach
+// EOF after the spawned process itself has exited. Only a grandchild that
+// inherited the pipe can hold them open that long, and the reference gives it
+// exactly this much before closing the read ends and emitting exit anyway
+// (measured at 5s against 5db5e4a; its Spawn waiter pairs os.Process.wait with a
+// 5s time.NewTimer). var so tests can shrink it.
+var exitDrainGrace = 5 * time.Second
+
+// osPipe and cmdStdinPipe are seams over the three pipe constructions in spawn.
+// Each fails only on fd exhaustion, so their cleanup paths — which must close the
+// pipes already made, or spawn leaks descriptors on every failure — are otherwise
+// unreachable in a test. Production never reassigns either.
+var (
+	osPipe       = os.Pipe
+	cmdStdinPipe = (*exec.Cmd).StdinPipe
+)
+
+// closeAll closes every file, ignoring errors. Used on the spawn error paths and
+// to force a stalled drain to end. Closing an *os.File twice is safe — the second
+// call returns ErrClosed without touching the descriptor — so callers may close
+// defensively without tracking whether a pump got there first.
+func closeAll(fs ...*os.File) {
+	for _, f := range fs {
+		_ = f.Close()
+	}
+}
 
 // clampKillWaitMs maps a caller's timeoutMs onto the grace killAndWait actually
 // waits: non-positive → the default (probe-verified: 0 and -100 both wait 3000ms),
@@ -495,9 +609,7 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if !p.isRunning() {
 		return true, true, true, false
 	}
-	if p.cmd != nil && p.cmd.Process != nil {
-		p.group.signal(p.cmd.Process, signal)
-	}
+	p.signalIfLive(signal)
 	select {
 	case <-p.done:
 		return true, true, false, false
@@ -509,9 +621,9 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 		return true, false, false, false
 	}
 	// The graceful signal was ignored — force-kill the group and wait for the reap.
-	if p.cmd != nil && p.cmd.Process != nil {
-		p.group.signal(p.cmd.Process, "KILL")
-	}
+	// Same reaped guard as every other signal site: the grace can elapse while the
+	// process is in the exit drain, and by then its pgid may belong to someone else.
+	p.signalIfLive("KILL")
 	select {
 	case <-p.done:
 		return true, true, false, true
@@ -595,9 +707,7 @@ func (m *procManager) killAll() {
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
 		// Skip exited children — their pgid may already be recycled (see kill).
-		if p.cmd != nil && p.cmd.Process != nil && p.isRunning() {
-			p.group.signal(p.cmd.Process, "KILL")
-		}
+		p.signalIfLive("KILL")
 	}
 }
 

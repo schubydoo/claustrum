@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -807,4 +810,189 @@ func TestEmitUsesDefaultBufferCap(t *testing.T) {
 	if p.bufBytes > defaultBufferCap {
 		t.Errorf("bufBytes = %d, want <= %d", p.bufBytes, defaultBufferCap)
 	}
+}
+
+// TestSpawnClosesPipesOnConstructionFailure covers spawn's three pipe-cleanup
+// paths. Each fires only on fd exhaustion, so without a seam they are dead code
+// that leaks descriptors the first time a real host runs out — and a leak here
+// is silent, since spawn's error reply looks the same either way.
+//
+// The assertion is on the FILES, not on coverage: every pipe made before the
+// failure must be closed, which a second Close reports via ErrClosed.
+func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
+	oldPipe, oldStdin := osPipe, cmdStdinPipe
+	t.Cleanup(func() { osPipe, cmdStdinPipe = oldPipe, oldStdin })
+
+	closed := func(f *os.File) bool { return errors.Is(f.Close(), os.ErrClosed) }
+
+	t.Run("stderr pipe fails", func(t *testing.T) {
+		var first [2]*os.File
+		calls := 0
+		osPipe = func() (*os.File, *os.File, error) {
+			calls++
+			if calls == 1 {
+				r, w, err := oldPipe()
+				first[0], first[1] = r, w
+				return r, w, err
+			}
+			return nil, nil, errors.New("pipe: too many open files")
+		}
+		m := newProcManager()
+		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
+			t.Fatal("spawn succeeded despite a pipe failure")
+		}
+		if !closed(first[0]) || !closed(first[1]) {
+			t.Error("the stdout pipe was left open after the stderr pipe failed")
+		}
+	})
+
+	t.Run("stdin pipe fails", func(t *testing.T) {
+		var made []*os.File
+		osPipe = func() (*os.File, *os.File, error) {
+			r, w, err := oldPipe()
+			made = append(made, r, w)
+			return r, w, err
+		}
+		cmdStdinPipe = func(*exec.Cmd) (io.WriteCloser, error) {
+			return nil, errors.New("stdinpipe: too many open files")
+		}
+		m := newProcManager()
+		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
+			t.Fatal("spawn succeeded despite a stdin pipe failure")
+		}
+		if len(made) != 4 {
+			t.Fatalf("made %d pipe ends, want 4", len(made))
+		}
+		for i, f := range made {
+			if !closed(f) {
+				t.Errorf("pipe end %d was left open after the stdin pipe failed", i)
+			}
+		}
+	})
+}
+
+// TestReapedProcessIsNotSignalled is the guard behind the exit-drain window.
+//
+// cmd.Wait frees the pid, and on Unix the pgid too once the last group member
+// goes — but running stays true until the exit frame, which is up to
+// exitDrainGrace later. Signalling in that window can deliver to a process group
+// the kernel has since handed to someone else. That window only exists because
+// of the bounded drain, so the guard ships with it.
+//
+// The seam is the point: the failure being guarded against is "a signal reaches
+// an unrelated process", which a test cannot safely provoke for real.
+func TestReapedProcessIsNotSignalled(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+	var signals []string
+	signalGroup = func(_ *procGroup, _ *os.Process, name string) {
+		signals = append(signals, name)
+	}
+
+	m := newProcManager()
+	// A process mid-drain: reaped, but still running as far as clients are told.
+	p := &managedProc{
+		id: "DRAIN", running: true, reaped: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+	}
+	m.procs["DRAIN"] = p
+
+	m.kill("DRAIN", "TERM")
+	if len(signals) != 0 {
+		t.Errorf("kill signalled a reaped process: %v", signals)
+	}
+	m.killAll()
+	if len(signals) != 0 {
+		t.Errorf("killAll signalled a reaped process: %v", signals)
+	}
+
+	// Not yet reaped: the same calls must still signal, or the guard has simply
+	// broken kill.
+	p.mu.Lock()
+	p.reaped = false
+	p.mu.Unlock()
+	m.kill("DRAIN", "TERM")
+	m.killAll()
+	if len(signals) != 2 {
+		t.Errorf("signals for a live process = %v, want [TERM KILL]", signals)
+	}
+}
+
+// TestSignalIsAtomicWithTheReapedCheck pins that the check and the delivery
+// happen under one acquisition of p.mu.
+//
+// Checking isReaped() and then signalling leaves a gap the exit goroutine can
+// reap in, which defeats the guard entirely for exactly the concurrent case it
+// exists to handle — the check would pass, the process would be reaped, and the
+// signal would go to whatever now owns the pgid. TryLock from inside the
+// delivery is the observation: it can only fail if the caller still holds the
+// lock.
+func TestSignalIsAtomicWithTheReapedCheck(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+
+	var p *managedProc
+	held := false
+	delivered := false
+	signalGroup = func(*procGroup, *os.Process, string) {
+		delivered = true
+		// TryLock succeeds only if the lock is free — i.e. only if the check was
+		// released before the signal.
+		if p.mu.TryLock() {
+			p.mu.Unlock()
+			return
+		}
+		held = true
+	}
+
+	p = &managedProc{
+		id: "LIVE", running: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+	}
+	p.signalIfLive("TERM")
+
+	if !delivered {
+		t.Fatal("no signal delivered for a live process")
+	}
+	if !held {
+		t.Error("p.mu was free during delivery: the reaped check and the signal are not atomic")
+	}
+}
+
+// TestSpawnConfinesTheDrainGrace pins that the exit waiter does not read the
+// exitDrainGrace package var.
+//
+// The waiter outlives its request, and in a test binary it outlives the test
+// that spawned it — so reading the tunable from inside the waiter races any
+// later test that shrinks it. That is not hypothetical: macOS CI failed on
+// exactly this pair (the waiter's time.After read vs a test's write), while
+// linux passed, because the window is a few instructions wide and scheduler-
+// dependent. spawn now reads the value once, in the caller's goroutine.
+//
+// The unsynchronized write below is the point of the test, not an oversight: it
+// reproduces what a later test does, and -race flags it only if the waiter is
+// still reading the var. Same confinement, same reason, as procManager copying
+// its prune tunables at construction.
+func TestSpawnConfinesTheDrainGrace(t *testing.T) {
+	old := exitDrainGrace
+	t.Cleanup(func() { exitDrainGrace = old })
+	exitDrainGrace = 3 * time.Second
+
+	// A real conn: the fixture writes a line before exiting, and emit fans out to
+	// every subscriber, so a nil conn would panic before the race could matter.
+	a, b := net.Pipe()
+	t.Cleanup(func() { a.Close(); b.Close() })
+	go func() { _, _ = io.Copy(io.Discard, b) }()
+
+	m := newProcManager()
+	exe, env := helperCommand(t, "orphan-stdout")
+	if _, err := m.spawn(&conn{nc: a}, "GRACE", exe, []string{"3"}, "", env); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	// The child exits at once; its grandchild holds stdout, so by now the waiter
+	// is parked in the drain select — the state in which it used to hold a read
+	// of the package var.
+	time.Sleep(300 * time.Millisecond)
+	exitDrainGrace = 50 * time.Millisecond
+	time.Sleep(200 * time.Millisecond)
 }
