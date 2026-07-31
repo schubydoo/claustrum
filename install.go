@@ -51,12 +51,27 @@ func runInstall(o installOpts) {
 		// "present" requires the file to exist AND be runnable (real binary checks
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
 		if isRegularFile(f.CliPath) && isRunnable(f.CliPath) {
+			// Cache hit: the reference touches the cli-dir at all only when it
+			// attempts an install, so neither the orphan sweep nor the prune
+			// runs here (probe-measured — a cache-hit run with 4 versions and
+			// -cli-keep 3 left all four in place).
 			f.CliWasPresent = true
-		} else if err := ensureCLI(o, f.CliPath); err != nil {
-			f.CliError = err.Error()
-		}
-		if o.cliKeep > 0 {
-			pruneCLI(o.cliDir, o.cliKeep)
+		} else {
+			err := ensureCLI(o, f.CliPath)
+			if err != nil {
+				f.CliError = err.Error()
+			}
+			// The sweep runs whether or not the install succeeded; the prune
+			// runs only when it succeeded. Both probe-measured at 5db5e4a:
+			//
+			//	scenario                 sweep  prune
+			//	cache hit                no     no
+			//	install attempted+failed yes    no
+			//	install succeeded        yes    yes
+			sweepFetchTemps(o.cliDir)
+			if err == nil && o.cliKeep > 0 {
+				pruneCLI(o.cliDir, o.cliKeep)
+			}
 		}
 	}
 
@@ -200,6 +215,29 @@ func httpGet(url string) ([]byte, error) {
 }
 
 // pruneCLI keeps the most-recent `keep` version files under cliDir (by mtime).
+// sweepFetchTemps removes the reference's leftover download temporaries from the
+// cli-dir. They are named ".fetch-<something>"; an interrupted install leaves
+// them behind indefinitely, and claustrum's pruneCLI used to count them as CLI
+// *versions*, so they consumed the -cli-keep budget and evicted real binaries —
+// with four versions, three orphans and -cli-keep 3, every real version was
+// deleted, including the one just installed.
+//
+// os.Remove per entry, matching the reference exactly: it clears files and EMPTY
+// directories, and silently leaves a non-empty ".fetch-dir/" in place. That
+// asymmetry is measured, not incidental — an empty orphan directory is swept, a
+// populated one survives.
+func sweepFetchTemps(cliDir string) {
+	ents, err := os.ReadDir(cliDir)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".fetch-") {
+			_ = os.Remove(filepath.Join(cliDir, e.Name()))
+		}
+	}
+}
+
 func pruneCLI(cliDir string, keep int) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {

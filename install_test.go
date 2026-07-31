@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -272,11 +273,14 @@ func TestPruneCLI(t *testing.T) {
 	}
 }
 
-// runInstall's prune step is gated on `o.cliKeep > 0`. With keep=0 it must NOT
-// prune (a boundary mutant `>= 0` would wipe every version); with keep>0 it must
-// prune to the newest keep (a negated guard `<= 0` would skip pruning). Driving
-// runInstall with a pre-populated, already-runnable CLI exercises the guard
-// without a download.
+// runInstall's prune step is gated on `o.cliKeep > 0` AND on an install having
+// actually succeeded. The reference touches the cli-dir only when it attempts an
+// install: a cache-hit run neither sweeps orphans nor prunes, and a FAILED
+// install sweeps but does not prune (probe-measured at 5db5e4a).
+//
+// This test previously drove runInstall with an already-present CLI and asserted
+// that it pruned — encoding claustrum's divergence. It now exercises the guard on
+// the install path, where prune belongs, and pins the cache-hit case separately.
 func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 	mk := func(t *testing.T, dir, name string, ageSec int) {
 		t.Helper()
@@ -297,32 +301,160 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 		}
 		return len(ents)
 	}
+	// blob returns a -cli-zst source, so the install path runs without a network.
+	blob := func(t *testing.T) string {
+		t.Helper()
+		f := filepath.Join(t.TempDir(), "cli.zst")
+		if err := os.WriteFile(f, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
 
-	// Version-style names (with a dot) so the present CLI is actually runnable
-	// on Windows too — exec there only resolves paths carrying an extension,
-	// and an extensionless "cur" would silently take the not-present branch.
+	// Version-style names (with a dot) so a present CLI is actually runnable on
+	// Windows too — exec there only resolves paths carrying an extension, and an
+	// extensionless name would silently take the not-present branch.
 	t.Run("keep0_does_not_prune", func(t *testing.T) {
 		dir := t.TempDir()
-		mk(t, dir, "3.0.0", 30) // newest → the present CLI
+		mk(t, dir, "3.0.0", 30)
 		mk(t, dir, "2.0.0", 20)
 		mk(t, dir, "1.0.0", 10)
-		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "3.0.0", cliKeep: 0})
-		if n := count(t, dir); n != 3 {
-			t.Errorf("keep=0 left %d files, want 3 (cliKeep>0 guard regressed to >=0, wiping versions)", n)
+		_ = captureInstallFacts(t, installOpts{
+			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: 0})
+		if n := count(t, dir); n != 4 {
+			t.Errorf("keep=0 left %d files, want 4 (3 existing + the new one; a >=0 guard would wipe versions)", n)
 		}
 	})
 
 	t.Run("keep2_prunes_to_newest", func(t *testing.T) {
 		dir := t.TempDir()
-		mk(t, dir, "4.0.0", 40) // newest → kept, and it's the present CLI
+		mk(t, dir, "4.0.0", 40)
 		mk(t, dir, "3.0.0", 30)
 		mk(t, dir, "2.0.0", 20)
 		mk(t, dir, "1.0.0", 10)
-		_ = captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "4.0.0", cliKeep: 2})
+		_ = captureInstallFacts(t, installOpts{
+			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: 2})
 		if n := count(t, dir); n != 2 {
 			t.Errorf("keep=2 left %d files, want 2 (cliKeep>0 guard regressed, skipping prune)", n)
 		}
 	})
+
+	// The reference leaves a cache-hit run's cli-dir completely alone.
+	t.Run("cache_hit_does_not_prune", func(t *testing.T) {
+		dir := t.TempDir()
+		mk(t, dir, "4.0.0", 40) // newest → the present CLI
+		mk(t, dir, "3.0.0", 30)
+		mk(t, dir, "2.0.0", 20)
+		mk(t, dir, "1.0.0", 10)
+		f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "4.0.0", cliKeep: 2})
+		if !f.CliWasPresent {
+			t.Fatal("fixture did not take the cache-hit branch")
+		}
+		if n := count(t, dir); n != 4 {
+			t.Errorf("cache hit left %d files, want 4: the reference does not prune when it installs nothing", n)
+		}
+	})
+}
+
+// TestSweepFetchTemps pins the orphan sweep, including the asymmetry that made
+// it worth measuring: os.Remove clears files and EMPTY directories, and silently
+// leaves a POPULATED ".fetch-dir/" behind. Real CLI versions must never be
+// touched by the sweep.
+func TestSweepFetchTemps(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".fetch-abc123")
+	write(".fetch-") // the empty-suffix form
+	write("1.0.0")   // a real version
+	if err := os.Mkdir(filepath.Join(dir, ".fetch-empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, ".fetch-full"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(".fetch-full", "inner"))
+
+	sweepFetchTemps(dir)
+
+	got := map[string]bool{}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		got[e.Name()] = true
+	}
+	for _, gone := range []string{".fetch-abc123", ".fetch-", ".fetch-empty"} {
+		if got[gone] {
+			t.Errorf("%s survived the sweep", gone)
+		}
+	}
+	if !got[".fetch-full"] {
+		t.Error(".fetch-full was removed; a populated orphan directory must survive, matching os.Remove")
+	}
+	if !got["1.0.0"] {
+		t.Error("the sweep deleted a real CLI version")
+	}
+}
+
+// TestPruneBudgetIgnoresOrphans is the regression for the bug behind F3: orphan
+// temps counted as CLI *versions*, so they consumed the -cli-keep budget. With
+// three orphans, four versions and keep=3, every real version was evicted —
+// including the one just installed.
+func TestPruneBudgetIgnoresOrphans(t *testing.T) {
+	dir := t.TempDir()
+	for i, name := range []string{"1.0.0", "2.0.0", "3.0.0", "4.0.0"} {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, fakeCLI(t, 0), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Unix(int64(1000+i*10), 0)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Orphans NEWER than every version, so a prune that counted them would keep
+	// the orphans and delete the real binaries.
+	for _, name := range []string{".fetch-a", ".fetch-b", ".fetch-c"} {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Unix(9999, 0)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	zstFile := filepath.Join(t.TempDir(), "cli.zst")
+	if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = captureInstallFacts(t, installOpts{
+		cliDir: dir, cliVersion: "5.0.0", cliZst: zstFile, cliKeep: 3})
+
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range ents {
+		left = append(left, e.Name())
+	}
+	sort.Strings(left)
+	want := []string{"3.0.0", "4.0.0", "5.0.0"}
+	if len(left) != len(want) {
+		t.Fatalf("cli-dir = %v, want %v (orphans must not consume the keep budget)", left, want)
+	}
+	for i := range want {
+		if left[i] != want[i] {
+			t.Fatalf("cli-dir = %v, want %v", left, want)
+		}
+	}
 }
 
 func TestEnsureCLIFromZst(t *testing.T) {
@@ -535,4 +667,11 @@ func captureInstallFacts(t *testing.T, o installOpts) installFacts {
 		t.Fatalf("unmarshal facts: %v", err)
 	}
 	return f
+}
+
+// TestSweepFetchTempsUnreadableDir covers the early return: an unreadable or
+// missing cli-dir must be a no-op, never a panic, because the sweep runs on the
+// install path where the directory may not exist yet.
+func TestSweepFetchTempsUnreadableDir(t *testing.T) {
+	sweepFetchTemps(filepath.Join(t.TempDir(), "no-such-dir"))
 }
