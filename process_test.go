@@ -797,7 +797,9 @@ func TestEmitUsesDefaultBufferCap(t *testing.T) {
 	}
 	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("b", half)})
 	if len(p.buffer) != 1 {
-		t.Errorf("after 18 MiB over a 16 MiB cap: %d frames retained, want 1", len(p.buffer))
+		// Fatal, not Error: an empty buffer from a trimming regression would
+		// panic on the p.buffer[0] read below instead of reporting the count.
+		t.Fatalf("after 18 MiB over a 16 MiB cap: %d frames retained, want 1", len(p.buffer))
 	}
 	if p.buffer[0].Seq != 2 {
 		t.Errorf("buffer[0].Seq = %d, want 2 (the older frame must be dropped)", p.buffer[0].Seq)
