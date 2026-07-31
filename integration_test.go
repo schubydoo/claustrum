@@ -361,7 +361,7 @@ func lastExit(t *testing.T, frames []streamFrame) streamFrame {
 func assertSeqMonotonic(t *testing.T, frames []streamFrame) {
 	t.Helper()
 	for i, f := range frames {
-		if f.Seq != i+1 {
+		if f.Seq != uint64(i+1) {
 			t.Errorf("frame %d has seq %d, want %d (seqs must be 1..N contiguous)", i, f.Seq, i+1)
 		}
 	}

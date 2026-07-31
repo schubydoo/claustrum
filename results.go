@@ -114,15 +114,15 @@ type worktreeResult struct {
 }
 
 type reattachResult struct {
-	Found    bool `json:"found"`
-	Running  bool `json:"running"`
-	FirstSeq int  `json:"firstSeq"`
-	LastSeq  int  `json:"lastSeq"`
+	Found    bool   `json:"found"`
+	Running  bool   `json:"running"`
+	FirstSeq uint64 `json:"firstSeq"`
+	LastSeq  uint64 `json:"lastSeq"`
 	// StdinApplied is the cumulative count of stdin bytes applied to the process,
 	// added by the reference daemon in 7c2f88d. A reconnecting client uses it to
 	// resume stdin from the right offset (see the process.stdin.offset contract).
 	// Always present (never omitempty); 0 when no process was found.
-	StdinApplied int `json:"stdinApplied"`
+	StdinApplied uint64 `json:"stdinApplied"`
 	// Pid/StartTime are the CT-1 opt-in fields ("wantPid":true), appended last so
 	// the default reply stays byte-identical. omitempty drops them when the opt-in
 	// is absent (or no process was found). startTime is an opaque daemon token
@@ -138,9 +138,9 @@ type reattachResult struct {
 // omitempty (the reference emits it unconditionally, even at 0); Duplicate is
 // dropped when false.
 type stdinResult struct {
-	Success   bool `json:"success"`
-	Applied   int  `json:"applied"`
-	Duplicate bool `json:"duplicate,omitempty"`
+	Success   bool   `json:"success"`
+	Applied   uint64 `json:"applied"`
+	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
 // killAndWaitResult is process.killAndWait's reply. Found reports whether the id

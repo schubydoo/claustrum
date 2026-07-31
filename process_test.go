@@ -46,7 +46,7 @@ func TestEmitAssignsSeqAndStamps(t *testing.T) {
 		t.Fatalf("buffer len = %d, want 2", len(p.buffer))
 	}
 	for i, f := range p.buffer {
-		if f.Seq != i+1 {
+		if f.Seq != uint64(i+1) {
 			t.Errorf("frame %d seq = %d, want %d", i, f.Seq, i+1)
 		}
 		if f.Type != "stream" {
@@ -166,8 +166,8 @@ func collect(t *testing.T, ch <-chan streamFrame, n int) []streamFrame {
 	return out
 }
 
-func seqs(fs []streamFrame) []int {
-	out := make([]int, len(fs))
+func seqs(fs []streamFrame) []uint64 {
+	out := make([]uint64, len(fs))
 	for i, f := range fs {
 		out[i] = f.Seq
 	}
