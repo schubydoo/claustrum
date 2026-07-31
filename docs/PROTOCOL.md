@@ -356,6 +356,11 @@ Errors:
 
 `{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}` (porcelain lines)
 
+- `changes` comes from `git status --porcelain`'s **stdout only**. git writes
+  warnings (an unreadable `core.excludesFile`, an unreadable directory) to stderr
+  while still exiting 0; those never appear in `changes`, and a repo with nothing
+  modified still reports `"clean":true`. Measured against `5db5e4a`.
+
 - Lines are `git status --porcelain` output **verbatim**, minus only the line
   ending. The two-character XY column is **positional**, so the leading space of
   an unstaged-only change is data: `"M  a.txt"` (staged) and `" M b.txt"`
