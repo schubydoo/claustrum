@@ -474,3 +474,48 @@ func TestSocketExitFrameBoundsTheDrain(t *testing.T) {
 		t.Errorf("frame 1 = %+v, want exit seq 2", frames[1])
 	}
 }
+
+// TestSocketResponseIDCanonicalization pins that the reply carries the id Go
+// re-encodes, not the bytes the client sent.
+//
+// The reference's rpc.Request.ID is an interface{}, so every id makes a round
+// trip through float64 / map[string]interface{} before it is written back.
+// claustrum used json.RawMessage and echoed the bytes, which is indistinguishable
+// for the ids a real client sends and wrong for everything else. Each case below
+// was measured against the reference at 5db5e4a; the four that change are the
+// four that were divergent.
+//
+// The precision case is the load-bearing one: 12345678901234567890 comes back
+// as ...567000 only if the id went through a float64. That is the evidence the
+// reference decodes without UseNumber, so a "fix" that preserved precision would
+// be a new divergence, not an improvement.
+func TestSocketResponseIDCanonicalization(t *testing.T) {
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+
+	cases := []struct {
+		name, sent, want string
+	}{
+		{"integer", `1`, `1`},
+		{"float form of an integer", `1.0`, `1`},
+		{"exponent", `1e2`, `100`},
+		{"int wider than float64", `12345678901234567890`, `12345678901234567000`},
+		{"precision past float64", `1.000000000000000005`, `1`},
+		{"string", `"abc"`, `"abc"`},
+		// < > & are escaped by encoding/json on the way out, on both daemons.
+		{"HTML-escaped string", `"a<b>c&d"`, `"a\u003cb\u003ec\u0026d"`},
+		{"non-ASCII string", `"Aé"`, `"Aé"`},
+		{"object sorts its keys", `{"b":1,"a":2}`, `{"a":2,"b":1}`},
+		{"array", `[1,"x"]`, `[1,"x"]`},
+		{"null", `null`, `null`},
+		{"surrounding whitespace", `  1  `, `1`},
+	}
+	for _, tc := range cases {
+		line := `{"jsonrpc":"2.0","id":` + tc.sent + `,"method":"server.ping","auth":"` + testToken + `"}`
+		got := string(cl.call(line))
+		want := `{"jsonrpc":"2.0","id":` + tc.want + `,"result":{"pong":true}}`
+		if got != want {
+			t.Errorf("%s: id %s\n got %s\nwant %s", tc.name, tc.sent, got, want)
+		}
+	}
+}

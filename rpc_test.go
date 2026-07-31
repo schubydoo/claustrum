@@ -211,3 +211,28 @@ func TestDecodeAndNeedParams(t *testing.T) {
 		t.Errorf("decoded params = %+v", p)
 	}
 }
+
+// TestIDForLog pins the rendering of the id in the unauthorized log line.
+//
+// docs/PROTOCOL.md documents that line, and `string(req.ID)` used to produce it
+// straight from the raw request bytes. Now that ID is a decoded interface{},
+// the text has to be reconstructed — so this locks the shapes that line has
+// always had: a bare number, a quoted string, and empty for an absent id.
+func TestIDForLog(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		id   interface{}
+		want string
+	}{
+		{"absent", nil, ""},
+		{"number", float64(1), "1"},
+		{"number that is not an integer", 1.5, "1.5"},
+		{"string", "abc", `"abc"`},
+		{"object renders with sorted keys", map[string]interface{}{"b": 1.0, "a": 2.0}, `{"a":2,"b":1}`},
+		{"array", []interface{}{1.0, "x"}, `[1,"x"]`},
+	} {
+		if got := idForLog(tc.id); got != tc.want {
+			t.Errorf("%s: idForLog(%#v) = %q, want %q", tc.name, tc.id, got, tc.want)
+		}
+	}
+}

@@ -20,21 +20,38 @@ const (
 	codeStdinOffsetGap = -32003 // stdin offset ahead of applied bytes
 )
 
-// request is one inbound JSON-RPC line. id is kept raw so we can echo it back
-// verbatim (numbers, strings) and emit null on parse failure.
+// request is one inbound JSON-RPC line.
+//
+// id is decoded into an interface{}, NOT a json.RawMessage, so the reply carries
+// the id Go re-encodes rather than the bytes the client sent. That is what the
+// reference does — its rpc.Request.ID is an interface{} — and the difference is
+// observable. Probe-measured against 5db5e4a:
+//
+//	sent 1.0                   -> reference replies 1
+//	sent 1e2                   -> 100
+//	sent 12345678901234567890  -> 12345678901234567000   (float64, so precision is lost)
+//	sent {"b":1,"a":2}         -> {"a":2,"b":1}          (map, so keys sort)
+//
+// Echoing the raw bytes reproduced none of those. Plain interface{} reproduces
+// all four exactly, including the precision loss — which is itself the evidence
+// the reference does not use a json.Decoder with UseNumber.
+//
+// Integers, strings, arrays and null were already identical: encoding/json
+// compacts and HTML-escapes a RawMessage too, so "a<b" came back "a\u003cb"
+// either way.
 type request struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id"`
+	ID      interface{}     `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
 	Auth    string          `json:"auth"`
 }
 
 type response struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id"`
-	Result  interface{}     `json:"result,omitempty"`
-	Error   *rpcError       `json:"error,omitempty"`
+	JSONRPC string      `json:"jsonrpc"`
+	ID      interface{} `json:"id"`
+	Result  interface{} `json:"result,omitempty"`
+	Error   *rpcError   `json:"error,omitempty"`
 }
 
 type rpcError struct {
@@ -42,14 +59,35 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func errResult(id json.RawMessage, code int, msg string) response {
+// idForLog renders an id the way the log line always has: as the JSON text that
+// will appear on the wire, so `id=1` and `id="abc"` keep their existing shape now
+// that ID is a decoded interface{} rather than the raw bytes. An absent id stays
+// empty rather than becoming "null", which is what the previous string(req.ID)
+// produced for a nil RawMessage.
+//
+// The marshal error is discarded rather than branched on. id came out of
+// json.Unmarshal into an interface{}, so it is a string, float64, bool, nil,
+// []interface{} or map[string]interface{} — none of which json.Marshal can fail
+// on. Only cycles, channels, funcs and NaN/Inf can, and a decoded JSON document
+// produces none of them. On that impossible error b is nil, which renders as the
+// same empty string the nil case above returns, so the branch would have been
+// unreachable code that says nothing.
+func idForLog(id interface{}) string {
 	if id == nil {
-		id = json.RawMessage("null")
+		return ""
 	}
+	b, _ := json.Marshal(id)
+	return string(b)
+}
+
+// errResult builds an error reply. A nil id marshals to null on its own now that
+// ID is an interface{}, so the parse-error path needs no special case — but the
+// field must stay free of omitempty, or a null id would vanish from the frame.
+func errResult(id interface{}, code int, msg string) response {
 	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}}
 }
 
-func okResult(id json.RawMessage, result interface{}) response {
+func okResult(id interface{}, result interface{}) response {
 	return response{JSONRPC: "2.0", ID: id, Result: result}
 }
 
@@ -72,7 +110,7 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	// an obvious miss and reveals nothing about the token; ConstantTimeCompare
 	// returns 0 on a length mismatch, so a wrong-length token is still rejected.
 	if req.Auth == "" || subtle.ConstantTimeCompare([]byte(req.Auth), []byte(s.token)) != 1 {
-		logWarnf("[Server] Unauthorized request: method=%s, id=%v", req.Method, string(req.ID))
+		logWarnf("[Server] Unauthorized request: method=%s, id=%v", req.Method, idForLog(req.ID))
 		return ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
 	if req.JSONRPC != "2.0" {
