@@ -1,0 +1,104 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+      "code": -32603,
+      "message": "stat <DIR>/a.txt/../a.txt: not a directory"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+      "code": -32603,
+      "message": "stat <DIR>/<LONG>: file name too long"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "error": {
+      "code": -32603,
+      "message": "stat <DIR>/a\u0000b: invalid argument"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "exists": false,
+      "isDir": false,
+      "size": 0,
+      "mode": ""
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "error": {
+      "code": -32603,
+      "message": "stat <DIR>/a.txt/../a.txt: not a directory"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "error": {
+      "code": -32603,
+      "message": "stat <DIR>/<LONG>: file name too long"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "error": {
+      "code": -32603,
+      "message": "stat <DIR>/a\u0000b: invalid argument"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "result": {
+      "content": "",
+      "exists": false
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "result": {
+      "valid": false,
+      "isDir": false,
+      "error": "stat <DIR>/a.txt/../a.txt: not a directory"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 10,
+    "result": {
+      "valid": false,
+      "isDir": false,
+      "error": "stat <DIR>/<LONG>: file name too long"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 11,
+    "result": {
+      "valid": false,
+      "isDir": false,
+      "error": "stat <DIR>/a\u0000b: invalid argument"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 12,
+    "result": {
+      "valid": false,
+      "isDir": false,
+      "error": "Path does not exist"
+    }
+  }
+]

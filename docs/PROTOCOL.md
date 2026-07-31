@@ -136,11 +136,26 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   `-32602` (e.g. `files.stat {"maxBytes":"{"}`, `git.status {"baseRepo":[1,2]}`).
   The reference binds only the field the specific method reads and ignores the
   rest regardless of type, so it runs with defaults. A genuinely unknown key (in
-  neither struct) is ignored by both. (Relatedly, on a pathological over-long
-  `path` claustrum returns the empty `exists:false` result where the reference
-  surfaces a `-32603` stat error.) These only surface under adversarial params —
-  a real client never sends them; accepted divergence, found by differential
+  neither struct) is ignored by both. This only surfaces under adversarial params
+  — a real client never sends them; accepted divergence, found by differential
   fuzzing.
+
+### Stat failures other than "does not exist"
+
+`files.stat`, `files.read` and `files.validate` distinguish a path that is
+**absent** from one that could not be examined:
+
+- A genuine `ENOENT` is the "does not exist" answer in each method's own shape —
+  `exists:false`, `content:"" exists:false`, and `valid:false` with
+  `error:"Path does not exist"` respectively.
+- **Any other stat failure is reported**, carrying the underlying message.
+  `files.stat` and `files.read` return `-32603 stat <path>: <reason>`;
+  `files.validate` keeps its result shape and puts that same text in its `error`
+  field instead of `"Path does not exist"`.
+
+Reachable reasons include `not a directory` (a path component is a regular file
+— e.g. joining a path against a file, which needs no adversarial input),
+`file name too long`, and `invalid argument` (a NUL byte in the path).
 - `server.*` methods take no params, so a mistyped `params` on them is ignored
   and the call succeeds.
 
