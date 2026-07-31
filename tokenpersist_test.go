@@ -215,3 +215,64 @@ func TestPersistTokenOverwritesStale(t *testing.T) {
 		t.Fatalf("token = %q, want FRESH (stale not overwritten)", b)
 	}
 }
+
+// openDaemonLog is the platform-neutral half of sweep gap N1: daemonizeWithToken
+// lives in server.go and is shared, so these semantics apply on Windows too,
+// where the e2e in server_daemonize_unix_test.go cannot run.
+func TestOpenDaemonLog(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "s.sock")
+	logPath := filepath.Join(dir, daemonLogName)
+
+	f := openDaemonLog(sock)
+	if f == nil {
+		t.Fatal("openDaemonLog returned nil for a writable socket directory")
+	}
+	if _, err := f.WriteString("first run\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	fi, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatalf("log not created beside the socket: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		// Windows does not model 0600 as an owner-only ACL — the same caveat
+		// already documented for daemon.token.
+		if got := fi.Mode().Perm(); got != 0o600 {
+			t.Errorf("mode = %o, want 600", got)
+		}
+	}
+
+	// TRUNCATE, not append: the reference starts a fresh log every -serve.
+	f2 := openDaemonLog(sock)
+	if f2 == nil {
+		t.Fatal("second openDaemonLog returned nil")
+	}
+	if _, err := f2.WriteString("second\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = f2.Close()
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "second\n" {
+		t.Errorf("log = %q, want %q — a restart must truncate, not append", b, "second\n")
+	}
+}
+
+// A socket path whose directory does not exist, or an empty one, must yield nil
+// so daemonize falls back to inherited stdio instead of refusing to start.
+func TestOpenDaemonLogUnusablePath(t *testing.T) {
+	if f := openDaemonLog(""); f != nil {
+		_ = f.Close()
+		t.Error("empty socket path should not open a log")
+	}
+	missing := filepath.Join(t.TempDir(), "no-such-dir", "s.sock")
+	if f := openDaemonLog(missing); f != nil {
+		_ = f.Close()
+		t.Error("missing socket directory should not open a log")
+	}
+}

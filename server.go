@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -141,10 +142,10 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 				fmt.Fprintf(os.Stderr, "claustrum: read --token-fd: %v\n", err)
 				osExit(1)
 			}
-			daemonizeWithToken(token)
+			daemonizeWithToken(socket, token)
 			return
 		}
-		daemonizeWithToken("")
+		daemonizeWithToken(socket, "")
 		return
 	}
 
@@ -292,12 +293,37 @@ func readTokenFD(fd int) (string, error) {
 	return normalizeToken(b), nil
 }
 
+// daemonLogName is the file the daemonized child's stdout and stderr are
+// redirected to, alongside the socket. The fixed name and location are the
+// deployment contract, the same as daemon.token, so neither is configurable.
+const daemonLogName = "remote-server.log"
+
+// openDaemonLog creates (or TRUNCATES) remote-server.log beside the socket with
+// mode 0600, returning nil when it cannot be opened.
+//
+// Truncate, not append: the reference starts a fresh log on every -serve
+// (probe-measured — a restart took the file from 8 lines to 5). It is NOT
+// removed on shutdown; unlike the socket and daemon.token it outlives the
+// daemon, so a post-mortem is still readable.
+func openDaemonLog(socket string) *os.File {
+	if socket == "" {
+		return nil
+	}
+	f, err := os.OpenFile(
+		filepath.Join(filepath.Dir(socket), daemonLogName),
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil
+	}
+	return f
+}
+
 // daemonizeWithToken re-execs the binary detached from the terminal. If
 // forwardToken is non-empty (the -token-fd path) it is handed to the child over
 // an inherited pipe (child fd 3, named by tokenPipeEnv) so the token never lands
 // on disk, in argv, or in the environment; an empty forwardToken means the child
 // reads its own -token-file as before.
-func daemonizeWithToken(forwardToken string) {
+func daemonizeWithToken(socket, forwardToken string) {
 	self, err := os.Executable()
 	if err != nil {
 		self = os.Args[0]
@@ -307,12 +333,30 @@ func daemonizeWithToken(forwardToken string) {
 	// daemonChildMarker is set only to mirror the reference daemon's environ so
 	// it propagates into process.spawn children (TestSpawnInheritsDaemonChildMarker).
 	cmd.Env = append(os.Environ(), daemonChildEnv+"=1", daemonChildMarker+"=1")
-	// Detach from the controlling terminal/session (OS-specific); inherit stdio so
-	// a wrapping `> serve.out` redirect still captures the daemon's startup line.
+	// Detach from the controlling terminal/session (OS-specific).
 	cmd.SysProcAttr = detachSysProcAttr()
 	cmd.Stdin = nil
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Both of the child's streams go to remote-server.log beside the socket, the
+	// way the reference does it — its own stdout and stderr are 0 bytes. The
+	// parent opens the file so the log exists from the moment the daemon starts,
+	// and closes its copy once the child owns it.
+	//
+	// BOTH streams, not just stderr: claustrum splits its output, printing the
+	// "listening on …" banner to stdout and log lines to stderr. Redirecting only
+	// stderr would leave the banner on the terminal and produce a log missing its
+	// first line.
+	logFile := openDaemonLog(socket)
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+		defer logFile.Close()
+	} else {
+		// Could not open the log (missing or unwritable socket directory): fall
+		// back to inherited stdio rather than refusing to start. The daemon is
+		// about to fail on the socket anyway if the directory is really absent.
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 
 	var pipeW *os.File
 	if forwardToken != "" {

@@ -84,6 +84,24 @@ token: …`) and non-fatal. Added by reference build `5db5e4a` and matched here
 kill (`SIGKILL`/crash) leaves the file behind, since removal runs only on the
 graceful `server.shutdown` / `SIGTERM` path.
 
+### Daemon log (`remote-server.log`)
+
+The `-serve` launcher creates **`remote-server.log`** in the socket's directory
+(mode `0600`, **truncated** on every start) and redirects the daemonized child's
+**stdout and stderr** into it, so the launcher's own streams stay empty. The
+first line is the ready banner, carrying no timestamp:
+
+```
+Claustrum remote server listening on /run/user/1000/claude/rpc.sock
+2026/07/31 00:17:30 INFO  [Server] New connection from: @
+```
+
+Unlike the socket and `daemon.token`, the log is **not removed on graceful
+shutdown** — it outlives the daemon so a post-mortem stays readable. The fixed
+name and socket-dir location are the deployment contract, so neither is
+configurable. Matches the reference daemon; the banner word and the level tag on
+subsequent lines are the intentional rebrand described under Logging.
+
 ## Message shapes
 
 ```jsonc
