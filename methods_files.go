@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -56,10 +57,26 @@ func filesList(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	ents, err := os.ReadDir(p.Path) // returns entries sorted by name
+	// Open then read, rather than os.ReadDir, to match the reference's error
+	// text and call order. os.ReadDir collapses both failures into an "open"
+	// PathError, so a regular file reported `open <p>: not a directory` where
+	// the reference says `readdirent <p>: not a directory`, and an unreadable
+	// file reported `not a directory` where the reference says
+	// `permission denied`. Splitting the calls reproduces both.
+	f, err := os.Open(p.Path)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
+	ents, err := f.ReadDir(-1)
+	_ = f.Close()
+	if err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
+	}
+	// f.ReadDir returns raw directory order; os.ReadDir sorted for us. The
+	// byte-wise name sort is verified parity with the reference, so restore it
+	// explicitly — dropping it would silently break list ordering while fixing
+	// an error string.
+	sort.Slice(ents, func(i, j int) bool { return ents[i].Name() < ents[j].Name() })
 	out := make([]listEntry, 0, len(ents))
 	for _, e := range ents {
 		// The reference omits hidden entries (any name beginning with ".",
@@ -151,7 +168,9 @@ var maxExtractBytes int64 = 512 * 1024 * 1024
 func extractTarGz(archivePath, destDir string) (int, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
-		return 0, err
+		// The reference prefixes this one open failure with "open archive: ",
+		// distinguishing it from the per-entry write errors below.
+		return 0, fmt.Errorf("open archive: %w", err)
 	}
 	// The reference consumes the source archive: once opened, archivePath is
 	// removed on every outcome — success, bad gzip, or unsafe path alike

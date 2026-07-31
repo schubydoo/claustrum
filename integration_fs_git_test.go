@@ -240,3 +240,68 @@ func TestSocketGitStatusPorcelain(t *testing.T) {
 	}
 	assertGolden(t, "socket_git_status.golden.json", encodeGolden(t, got))
 }
+
+// TestSocketErrorTextParity pins the reference's error text for three failures
+// that claustrum reported differently (sweep gaps W5, W7, W8). All three are
+// -32603/error-field strings a client may surface verbatim, so the wording is
+// part of the contract.
+//
+//	W5 files.list on a non-directory  ref: "readdirent <p>: not a directory"
+//	                                  was: "open <p>: not a directory"
+//	   files.list on a mode-000 file  ref: "open <p>: permission denied"
+//	                                  was: "open <p>: not a directory"
+//	W7 extract_tar, missing archive   ref: "open archive: open <p>: ..."
+//	                                  was: "open <p>: ..."
+//	W8 spawn, missing cwd             ref: "chdir <p>: stat <p>: no such file..."
+//	   spawn, cwd is a regular file   ref: "chdir <p>: not a directory"
+//	                                  was: "fork/exec <command>: ..." for both
+//
+// The two W8 strings differ in shape — the file case carries no "stat <p>:"
+// segment. That was measured against the reference binary at 5db5e4a on
+// 2026-07-30, not inferred from the missing-dir case.
+func TestSocketErrorTextParity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// readdirent/permission-denied are Unix syscall wordings; Windows
+		// reports its own. The Unix capture is what the reference was probed on.
+		t.Skip("golden pins Unix syscall error text")
+	}
+	if os.Geteuid() == 0 {
+		// root ignores mode 000, so the permission-denied case would not fire.
+		t.Skip("runs as root; mode-000 would be readable")
+	}
+	root := resolveTestRoot(t, t.TempDir())
+	writeFile(t, filepath.Join(root, "regular.txt"), "x\n", 0o644)
+	writeFile(t, filepath.Join(root, "noperm.txt"), "x\n", 0o000)
+	if err := os.Symlink(filepath.Join(root, "regular.txt"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	calls := []string{
+		// W5
+		req(1, "files.list", map[string]any{"path": filepath.Join(root, "regular.txt")}),
+		req(2, "files.list", map[string]any{"path": filepath.Join(root, "link")}),
+		req(3, "files.list", map[string]any{"path": filepath.Join(root, "noperm.txt")}),
+		req(4, "files.list", map[string]any{"path": filepath.Join(root, "missing")}),
+		// W7
+		req(5, "files.extract_tar", map[string]any{
+			"archivePath": filepath.Join(root, "nosuch.tar.gz"),
+			"destDir":     filepath.Join(root, "dest"),
+		}),
+		// W8 — the two shapes differ; both are pinned.
+		req(6, "process.spawn", map[string]any{
+			"id": "CWD1", "command": "/bin/pwd", "args": []string{},
+			"cwd": filepath.Join(root, "missingdir"),
+		}),
+		req(7, "process.spawn", map[string]any{
+			"id": "CWD2", "command": "/bin/pwd", "args": []string{},
+			"cwd": filepath.Join(root, "regular.txt"),
+		}),
+	}
+	got := make([]json.RawMessage, len(calls))
+	for i, line := range calls {
+		got[i] = normPath(cl.call(line), root)
+	}
+	assertGolden(t, "socket_error_text_parity.golden.json", encodeGolden(t, got))
+}

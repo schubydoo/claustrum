@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -172,6 +173,23 @@ func (p *managedProc) emit(f streamFrame) {
 func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string) (*managedProc, error) {
 	cmd := exec.Command(command, args...)
 	if cwd != "" {
+		// Stat the cwd before exec so an unusable one names the directory at
+		// fault, as the reference does, instead of Go's `fork/exec <command>:
+		// …` which names the command. The two failures have DIFFERENT shapes —
+		// probe-measured against the reference at 5db5e4a, 2026-07-30:
+		//
+		//	missing dir   -> "chdir <p>: stat <p>: no such file or directory"
+		//	cwd is a file -> "chdir <p>: not a directory"   (no "stat <p>:" part)
+		//
+		// so the stat error is wrapped but the not-a-directory case is its own
+		// message rather than a wrapped ENOTDIR.
+		fi, err := os.Stat(cwd)
+		if err != nil {
+			return nil, fmt.Errorf("chdir %s: %w", cwd, err)
+		}
+		if !fi.IsDir() {
+			return nil, fmt.Errorf("chdir %s: not a directory", cwd)
+		}
 		cmd.Dir = cwd
 	}
 	cmd.Env = buildEnv(env)
