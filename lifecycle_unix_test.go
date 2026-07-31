@@ -247,12 +247,31 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 }
 
 // daemonizeWithToken's -token-file shape (no forwarded token, no pipe): the
-// re-exec'd child starts detached and the parent exits 0.
+// re-exec'd child starts detached and the parent exits 0. The socket path is
+// passed so the child's stdio can be redirected to remote-server.log beside it;
+// a temp dir is used so the test does not write a log into the working tree.
 func TestDaemonizeWithoutForwardedToken(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
-	if code, exited := catchExit(func() { daemonizeWithToken("") }); !exited || code != 0 {
-		t.Errorf("daemonizeWithToken(\"\"): exited=%v code=%d, want exit 0", exited, code)
+	sock := filepath.Join(t.TempDir(), "s.sock")
+	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 0 {
+		t.Errorf("daemonizeWithToken: exited=%v code=%d, want exit 0", exited, code)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(sock), daemonLogName)); err != nil {
+		t.Errorf("daemonize did not create %s beside the socket: %v", daemonLogName, err)
+	}
+}
+
+// When the log cannot be opened — here because the socket directory does not
+// exist — daemonize must fall back to inherited stdio and still start the child,
+// rather than refusing to run. The daemon will fail on the socket itself if the
+// directory is genuinely absent; that is a clearer error than a log-file one.
+func TestDaemonizeFallsBackWhenLogUnopenable(t *testing.T) {
+	stubOsExit(t)
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
+	sock := filepath.Join(t.TempDir(), "no-such-dir", "s.sock")
+	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 0 {
+		t.Errorf("daemonizeWithToken with an unopenable log: exited=%v code=%d, want exit 0", exited, code)
 	}
 }
 

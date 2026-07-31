@@ -44,10 +44,11 @@ func TestServeDaemonizeWithAmbientChildMarker(t *testing.T) {
 	sock := filepath.Join(dir, "s.sock")
 	const token = "ambient-collision-token"
 
-	// The daemonized child inherits the launcher's stdout/stderr (daemonizeWithToken
-	// sets cmd.Stdout = os.Stdout) and holds them open for its whole life, so we
-	// must NOT use a pipe (CombinedOutput) here — Wait would block on EOF forever.
-	// Redirect stdio to a file, exactly as clauster's spawn does (→ daemon.log).
+	// Redirect the launcher's stdio to a file rather than a pipe. The child no
+	// longer inherits these — it writes to remote-server.log beside the socket
+	// (see TestServeWritesRemoteServerLog) — but a launcher that ever did hold
+	// them open for its whole life would make CombinedOutput's Wait block on EOF
+	// forever, so a file stays the safe shape here.
 	logPath := filepath.Join(dir, "daemon.log")
 	logFile, err := os.Create(logPath)
 	if err != nil {
@@ -146,4 +147,102 @@ func roundTrip(t *testing.T, nc net.Conn, line string) map[string]any {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// TestServeWritesRemoteServerLog pins sweep gap N1: the daemonized child's
+// stdout AND stderr go to remote-server.log beside the socket, mode 0600, and
+// the file OUTLIVES a graceful shutdown that removes the socket and
+// daemon.token.
+//
+// Probe-measured against the reference at 5db5e4a: its launcher's own stdout and
+// stderr are 0 bytes, the banner is the file's first line, and a restart
+// truncates rather than appends.
+//
+// Both streams matter: claustrum prints the banner to stdout and log lines to
+// stderr, so redirecting only stderr would leave the banner on the terminal and
+// produce a log missing its first line.
+func TestServeWritesRemoteServerLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and spawns the real binary; skipped under -short")
+	}
+	bin := buildClaustrum(t)
+	dir, err := os.MkdirTemp("", "cld")
+	if err != nil {
+		t.Fatalf("tempdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s.sock")
+	const token = "remote-log-token"
+
+	outPath := filepath.Join(dir, "launcher.out")
+	errPath := filepath.Join(dir, "launcher.err")
+	outF, err := os.Create(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errF, err := os.Create(errPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "-serve", "-socket", sock, "-token-fd", "0")
+	cmd.Stdin = strings.NewReader(token + "\n")
+	cmd.Stdout, cmd.Stderr = outF, errF
+	cmd.Env = append(removeEnvKey(os.Environ(), daemonChildEnv), daemonChildMarker+"=1")
+	if runErr := cmd.Run(); runErr != nil {
+		t.Fatalf("launcher failed: %v", runErr)
+	}
+	_ = outF.Close()
+	_ = errF.Close()
+
+	nc := dialWithRetry(t, sock, 10*time.Second)
+	reply := roundTrip(t, nc, `{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"`+token+`"}`)
+	if _, ok := reply["result"]; !ok {
+		t.Fatalf("ping failed: %s", mustJSON(reply))
+	}
+
+	// The launcher's own streams must be empty — everything went to the log.
+	for _, p := range []string{outPath, errPath} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b) != 0 {
+			t.Errorf("%s = %d bytes, want 0 (the child's output belongs in remote-server.log):\n%s",
+				filepath.Base(p), len(b), b)
+		}
+	}
+
+	logPath := filepath.Join(dir, daemonLogName)
+	fi, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatalf("remote-server.log not created beside the socket: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Errorf("remote-server.log mode = %o, want 600", got)
+	}
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _, _ := strings.Cut(string(b), "\n")
+	if !strings.Contains(first, "listening on "+sock) {
+		t.Errorf("first log line = %q, want the banner naming the socket", first)
+	}
+
+	// Graceful shutdown removes the socket and daemon.token; the log stays.
+	_, _ = nc.Write([]byte(`{"jsonrpc":"2.0","id":99,"method":"server.shutdown","auth":"` + token + `"}` + "\n"))
+	_ = nc.Close()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(sock); os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, err := os.Stat(sock); !os.IsNotExist(err) {
+		t.Error("socket survived graceful shutdown")
+	}
+	if _, err := os.Stat(logPath); err != nil {
+		t.Errorf("remote-server.log did not survive graceful shutdown: %v", err)
+	}
 }
