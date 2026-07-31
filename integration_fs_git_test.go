@@ -439,3 +439,55 @@ func spawnReqArgsCwd(t *testing.T, id int, procID, mode, cwd string) string {
 	}
 	return string(b)
 }
+
+// TestSocketStatErrorPropagation pins sweep gap W6: a stat failure that is NOT
+// "does not exist" is reported, not flattened into exists:false.
+//
+// Three triggers, all probe-measured against the reference at 5db5e4a on
+// 2026-07-30. ENOTDIR is the one that motivated the change — it needs no
+// adversarial input, just a client joining a path against a regular file:
+//
+//	<dir>/a.txt/../a.txt   ENOTDIR        "stat <p>: not a directory"
+//	a 300-character name   ENAMETOOLONG   "stat <p>: file name too long"
+//	a NUL byte in the path EINVAL         "stat <p>: invalid argument"
+//
+// files.stat and files.read report these as -32603; files.validate keeps its own
+// result shape and puts the stat text in the error field instead of "Path does
+// not exist". The genuine-ENOENT rows are pinned alongside, because the change
+// must NOT disturb them.
+func TestSocketStatErrorPropagation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// "not a directory" / "file name too long" / "invalid argument" are the
+		// Unix errno strings the reference was measured against.
+		t.Skip("golden pins Unix errno text")
+	}
+	root := resolveTestRoot(t, t.TempDir())
+	writeFile(t, filepath.Join(root, "a.txt"), "content here\n", 0o644)
+
+	// Built by concatenation, NOT filepath.Join: Join calls Clean, which
+	// resolves "a.txt/../a.txt" back to "a.txt" — a path that exists, so the
+	// ENOTDIR case would silently never fire. The kernel does no such cleaning;
+	// it walks the components and fails on the file in the middle.
+	notDir := root + "/a.txt/../a.txt"
+	tooLong := filepath.Join(root, strings.Repeat("L", 300))
+	withNUL := filepath.Join(root, "a\x00b")
+	absent := filepath.Join(root, "missing")
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	var calls []string
+	id := 0
+	for _, m := range []string{"files.stat", "files.read", "files.validate"} {
+		for _, path := range []string{notDir, tooLong, withNUL, absent} {
+			id++
+			calls = append(calls, req(id, m, map[string]any{"path": path}))
+		}
+	}
+	got := make([]json.RawMessage, len(calls))
+	for i, line := range calls {
+		// The 300-char component would otherwise make the golden unreadable.
+		got[i] = json.RawMessage(strings.ReplaceAll(
+			string(normPath(cl.call(line), root)), strings.Repeat("L", 300), "<LONG>"))
+	}
+	assertGolden(t, "socket_stat_error_propagation.golden.json", encodeGolden(t, got))
+}

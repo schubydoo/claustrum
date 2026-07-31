@@ -3,8 +3,10 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,13 +40,44 @@ type pathParams struct {
 	MaxBytes int64  `json:"maxBytes"`
 }
 
+// statForRequest wraps os.Stat with the reference's error policy: a genuine
+// ENOENT is the "does not exist" answer each caller reports in its own shape,
+// while any OTHER stat failure is surfaced verbatim rather than being flattened
+// into "does not exist".
+//
+// Probe-measured against the reference at 5db5e4a on 2026-07-30 — three triggers,
+// all reachable:
+//
+//	<dir>/a.txt/../a.txt   ENOTDIR        "stat <p>: not a directory"
+//	a 300-char name        ENAMETOOLONG   "stat <p>: file name too long"
+//	a NUL byte in the path EINVAL         "stat <p>: invalid argument"
+//
+// ENOTDIR is the one that matters: it needs no adversarial input, only a client
+// joining a path against a regular file. claustrum previously answered all three
+// with exists:false, which told the caller the path was absent when the real
+// problem was that the path was malformed or unusable.
+func statForRequest(path string) (fs.FileInfo, error, bool) {
+	fi, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return fi, nil, false
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, nil, true // genuinely absent
+	default:
+		return nil, err, false
+	}
+}
+
 func filesStat(req *request) response {
 	var p pathParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	fi, err := os.Stat(p.Path)
+	fi, err, absent := statForRequest(p.Path)
 	if err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
+	}
+	if absent {
 		return okResult(req.ID, statResult{})
 	}
 	return okResult(req.ID, statResult{
@@ -103,8 +136,11 @@ func filesRead(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	fi, err := os.Stat(p.Path)
+	fi, err, absent := statForRequest(p.Path)
 	if err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
+	}
+	if absent {
 		return okResult(req.ID, readResult{})
 	}
 	if fi.IsDir() {
@@ -130,8 +166,14 @@ func filesValidate(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	fi, err := os.Stat(p.Path)
+	fi, err, absent := statForRequest(p.Path)
+	// Unlike stat/read, validate reports the failure in its own result shape
+	// rather than as an RPC error — the stat text replaces "Path does not
+	// exist" in the error field (probe-measured).
 	if err != nil {
+		return okResult(req.ID, validateResult{Error: err.Error()})
+	}
+	if absent {
 		return okResult(req.ID, validateResult{Error: "Path does not exist"})
 	}
 	return okResult(req.ID, validateResult{Valid: true, IsDir: fi.IsDir()})
