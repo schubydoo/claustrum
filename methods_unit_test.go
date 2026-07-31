@@ -64,10 +64,62 @@ func TestFilesReadMaxBytesBoundary(t *testing.T) {
 		t.Errorf("read over maxBytes = %s, want exceeds error", got)
 	}
 
-	// maxBytes unset (0) disables the cap entirely.
+	// maxBytes unset does NOT disable the cap — it falls back to
+	// defaultReadMaxBytes, which this 10-byte payload is comfortably under.
+	// TestFilesReadDefaultMaxBytes covers the fallback boundary itself.
 	got = dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": path}))
 	if !strings.Contains(got, `"exists":true`) {
 		t.Errorf("read without maxBytes = %s, want exists", got)
+	}
+}
+
+// An absent, zero, or negative maxBytes falls back to defaultReadMaxBytes rather
+// than reading without limit. Probe-measured against the reference at 5db5e4a:
+// 262144 bytes reads, 262145 errors, and an explicit positive maxBytes is
+// honored verbatim above the default. Before this was fixed claustrum returned
+// the whole file for every one of the "over" cases below.
+func TestFilesReadDefaultMaxBytes(t *testing.T) {
+	dir := t.TempDir()
+	atCap := filepath.Join(dir, "at.txt")
+	overCap := filepath.Join(dir, "over.txt")
+	if err := os.WriteFile(atCap, bytes.Repeat([]byte("a"), defaultReadMaxBytes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overCap, bytes.Repeat([]byte("a"), defaultReadMaxBytes+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestServer(t)
+
+	// Exactly at the default cap: allowed, for every spelling of "no maxBytes".
+	for _, params := range []map[string]any{
+		{"path": atCap},
+		{"path": atCap, "maxBytes": 0},
+		{"path": atCap, "maxBytes": -1},
+	} {
+		if got := dispatchRaw(t, s, rpcLine(t, "files.read", params)); !strings.Contains(got, `"exists":true`) {
+			t.Errorf("read at default cap %v = %s, want exists", params, got)
+		}
+	}
+
+	// One byte over: rejected, for every spelling of "no maxBytes".
+	for _, params := range []map[string]any{
+		{"path": overCap},
+		{"path": overCap, "maxBytes": 0},
+		{"path": overCap, "maxBytes": -1},
+	} {
+		got := dispatchRaw(t, s, rpcLine(t, "files.read", params))
+		if !strings.Contains(got, "files.read: file exceeds maxBytes") {
+			// Truncate: the failure mode IS a 256 KiB body, so printing it whole
+			// buries the assertion in the log.
+			t.Errorf("read over default cap %v = %.120s… (%d bytes), want exceeds error", params, got, len(got))
+		}
+	}
+
+	// An explicit positive maxBytes above the default is honored verbatim: the
+	// default is a fallback, not a ceiling.
+	got := dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": overCap, "maxBytes": defaultReadMaxBytes * 4}))
+	if !strings.Contains(got, `"exists":true`) {
+		t.Errorf("read with explicit large maxBytes = %.80s…, want exists", got)
 	}
 }
 
