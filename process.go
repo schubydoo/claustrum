@@ -211,6 +211,12 @@ func (p *managedProc) emit(f streamFrame) {
 // returns the managedProc so the caller can read its (immutable) pid/startTime
 // for the CT-1 opt-in; the wire reply is otherwise unaffected.
 func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string) (*managedProc, error) {
+	// Read the drain cap ONCE, here in the caller's goroutine, rather than from
+	// inside the exit waiter. The waiter outlives the request — and outlives the
+	// test that spawned it — so reading the package var there races any later
+	// test that shrinks it. macOS CI caught exactly that; the same confinement is
+	// why procManager copies its prune tunables at construction.
+	grace := exitDrainGrace
 	cmd := exec.Command(command, args...)
 	if cwd != "" {
 		// Stat the cwd before exec so an unusable one names the directory at
@@ -343,7 +349,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		go func() { wg.Wait(); close(drained) }()
 		select {
 		case <-drained:
-		case <-time.After(exitDrainGrace):
+		case <-time.After(grace):
 			closeAll(stdoutR, stderrR)
 		}
 		// Both pumps have returned by here: either they hit EOF on their own, or

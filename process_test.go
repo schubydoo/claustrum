@@ -958,3 +958,41 @@ func TestSignalIsAtomicWithTheReapedCheck(t *testing.T) {
 		t.Error("p.mu was free during delivery: the reaped check and the signal are not atomic")
 	}
 }
+
+// TestSpawnConfinesTheDrainGrace pins that the exit waiter does not read the
+// exitDrainGrace package var.
+//
+// The waiter outlives its request, and in a test binary it outlives the test
+// that spawned it — so reading the tunable from inside the waiter races any
+// later test that shrinks it. That is not hypothetical: macOS CI failed on
+// exactly this pair (the waiter's time.After read vs a test's write), while
+// linux passed, because the window is a few instructions wide and scheduler-
+// dependent. spawn now reads the value once, in the caller's goroutine.
+//
+// The unsynchronized write below is the point of the test, not an oversight: it
+// reproduces what a later test does, and -race flags it only if the waiter is
+// still reading the var. Same confinement, same reason, as procManager copying
+// its prune tunables at construction.
+func TestSpawnConfinesTheDrainGrace(t *testing.T) {
+	old := exitDrainGrace
+	t.Cleanup(func() { exitDrainGrace = old })
+	exitDrainGrace = 3 * time.Second
+
+	// A real conn: the fixture writes a line before exiting, and emit fans out to
+	// every subscriber, so a nil conn would panic before the race could matter.
+	a, b := net.Pipe()
+	t.Cleanup(func() { a.Close(); b.Close() })
+	go func() { _, _ = io.Copy(io.Discard, b) }()
+
+	m := newProcManager()
+	exe, env := helperCommand(t, "orphan-stdout")
+	if _, err := m.spawn(&conn{nc: a}, "GRACE", exe, []string{"3"}, "", env); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	// The child exits at once; its grandchild holds stdout, so by now the waiter
+	// is parked in the drain select — the state in which it used to hold a read
+	// of the package var.
+	time.Sleep(300 * time.Millisecond)
+	exitDrainGrace = 50 * time.Millisecond
+	time.Sleep(200 * time.Millisecond)
+}
