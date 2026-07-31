@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -806,5 +809,111 @@ func TestEmitUsesDefaultBufferCap(t *testing.T) {
 	}
 	if p.bufBytes > defaultBufferCap {
 		t.Errorf("bufBytes = %d, want <= %d", p.bufBytes, defaultBufferCap)
+	}
+}
+
+// TestSpawnClosesPipesOnConstructionFailure covers spawn's three pipe-cleanup
+// paths. Each fires only on fd exhaustion, so without a seam they are dead code
+// that leaks descriptors the first time a real host runs out — and a leak here
+// is silent, since spawn's error reply looks the same either way.
+//
+// The assertion is on the FILES, not on coverage: every pipe made before the
+// failure must be closed, which a second Close reports via ErrClosed.
+func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
+	oldPipe, oldStdin := osPipe, cmdStdinPipe
+	t.Cleanup(func() { osPipe, cmdStdinPipe = oldPipe, oldStdin })
+
+	closed := func(f *os.File) bool { return errors.Is(f.Close(), os.ErrClosed) }
+
+	t.Run("stderr pipe fails", func(t *testing.T) {
+		var first [2]*os.File
+		calls := 0
+		osPipe = func() (*os.File, *os.File, error) {
+			calls++
+			if calls == 1 {
+				r, w, err := oldPipe()
+				first[0], first[1] = r, w
+				return r, w, err
+			}
+			return nil, nil, errors.New("pipe: too many open files")
+		}
+		m := newProcManager()
+		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
+			t.Fatal("spawn succeeded despite a pipe failure")
+		}
+		if !closed(first[0]) || !closed(first[1]) {
+			t.Error("the stdout pipe was left open after the stderr pipe failed")
+		}
+	})
+
+	t.Run("stdin pipe fails", func(t *testing.T) {
+		var made []*os.File
+		osPipe = func() (*os.File, *os.File, error) {
+			r, w, err := oldPipe()
+			made = append(made, r, w)
+			return r, w, err
+		}
+		cmdStdinPipe = func(*exec.Cmd) (io.WriteCloser, error) {
+			return nil, errors.New("stdinpipe: too many open files")
+		}
+		m := newProcManager()
+		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
+			t.Fatal("spawn succeeded despite a stdin pipe failure")
+		}
+		if len(made) != 4 {
+			t.Fatalf("made %d pipe ends, want 4", len(made))
+		}
+		for i, f := range made {
+			if !closed(f) {
+				t.Errorf("pipe end %d was left open after the stdin pipe failed", i)
+			}
+		}
+	})
+}
+
+// TestReapedProcessIsNotSignalled is the guard behind the exit-drain window.
+//
+// cmd.Wait frees the pid, and on Unix the pgid too once the last group member
+// goes — but running stays true until the exit frame, which is up to
+// exitDrainGrace later. Signalling in that window can deliver to a process group
+// the kernel has since handed to someone else. That window only exists because
+// of the bounded drain, so the guard ships with it.
+//
+// The seam is the point: the failure being guarded against is "a signal reaches
+// an unrelated process", which a test cannot safely provoke for real.
+func TestReapedProcessIsNotSignalled(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+	var signals []string
+	signalGroup = func(_ *procGroup, _ *os.Process, name string) {
+		signals = append(signals, name)
+	}
+
+	m := newProcManager()
+	// A process mid-drain: reaped, but still running as far as clients are told.
+	p := &managedProc{
+		id: "DRAIN", running: true, reaped: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+	}
+	m.procs["DRAIN"] = p
+
+	m.kill("DRAIN", "TERM")
+	if len(signals) != 0 {
+		t.Errorf("kill signalled a reaped process: %v", signals)
+	}
+	m.killAll()
+	if len(signals) != 0 {
+		t.Errorf("killAll signalled a reaped process: %v", signals)
+	}
+
+	// Not yet reaped: the same calls must still signal, or the guard has simply
+	// broken kill.
+	p.mu.Lock()
+	p.reaped = false
+	p.mu.Unlock()
+	m.kill("DRAIN", "TERM")
+	m.killAll()
+	if len(signals) != 2 {
+		t.Errorf("signals for a live process = %v, want [TERM KILL]", signals)
 	}
 }

@@ -70,9 +70,12 @@ type managedProc struct {
 	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
 	subs      map[*conn]struct{}
 	running   bool
-	stdin     io.WriteCloser
-	cmd       *exec.Cmd
-	group     *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	// reaped is set as soon as cmd.Wait returns, which is up to exitDrainGrace
+	// before running clears. See isReaped — the gap is why the two exist.
+	reaped bool
+	stdin  io.WriteCloser
+	cmd    *exec.Cmd
+	group  *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -110,12 +113,41 @@ func (m *procManager) get(id string) *managedProc {
 	return m.procs[id]
 }
 
-// isRunning reports whether the child is still alive (the exit goroutine clears
-// this under p.mu once cmd.Wait returns).
+// isRunning reports the process's state AS CLIENTS SEE IT: true until the exit
+// frame is emitted. During the bounded exit drain that is a window in which the
+// process has already been reaped but still reports running — deliberately, to
+// match the reference. Use isReaped, not this, to decide whether it is safe to
+// signal.
 func (p *managedProc) isRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.running
+}
+
+// isReaped reports whether cmd.Wait has returned, which is the moment the pid —
+// and on Unix the process GROUP id, once every member has gone — becomes
+// available for reuse by the kernel.
+//
+// This is deliberately NOT the same question as isRunning. Before the bounded
+// exit drain the two were a hair apart and the distinction did not matter; now
+// there is a window of up to exitDrainGrace where the process is reaped but
+// still reports running, and signaling a recycled pgid in that window would hit
+// an unrelated process group. The window is reachable exactly when a grandchild
+// holds the pipe open — and a grandchild that calls setsid() (which is what
+// daemonizing means) leaves the group, so the group really can empty out and its
+// id really can be reused while we are still draining.
+func (p *managedProc) isReaped() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.reaped
+}
+
+// signalGroup is a seam over procGroup.signal so the "do not signal a reaped
+// process" guards are testable without actually delivering a signal to whatever
+// now owns a recycled pgid — which is precisely the accident being guarded
+// against. Production never reassigns it.
+var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
+	g.signal(proc, signame)
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
@@ -201,17 +233,17 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// thing the bounded drain below needs. Handing exec a plain *os.File instead
 	// passes the descriptor straight to the child: cmd.Wait then returns at
 	// process exit and leaves these read ends alone, so their lifetime is ours.
-	stdoutR, stdoutW, err := os.Pipe()
+	stdoutR, stdoutW, err := osPipe()
 	if err != nil {
 		return nil, err
 	}
-	stderrR, stderrW, err := os.Pipe()
+	stderrR, stderrW, err := osPipe()
 	if err != nil {
 		closeAll(stdoutR, stdoutW)
 		return nil, err
 	}
 	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
-	stdin, err := cmd.StdinPipe()
+	stdin, err := cmdStdinPipe(cmd)
 	if err != nil {
 		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		return nil, err
@@ -264,8 +296,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		old.subs = map[*conn]struct{}{}
 		old.mu.Unlock()
 		// Skip exited children — their pgid may already be recycled (see kill).
-		if old.cmd != nil && old.cmd.Process != nil && old.isRunning() {
-			old.group.signal(old.cmd.Process, "KILL")
+		if old.cmd != nil && old.cmd.Process != nil && old.isRunning() && !old.isReaped() {
+			signalGroup(old.group, old.cmd.Process, "KILL")
 		}
 	}
 	m.procs[id] = p
@@ -288,6 +320,12 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 				code = -1
 			}
 		}
+		// The pid is now free for the kernel to reuse, and the pgid will be too
+		// once the last group member goes. Record that BEFORE the drain window
+		// opens, so no signal path can target a recycled id while we wait.
+		p.mu.Lock()
+		p.reaped = true
+		p.mu.Unlock()
 		// A child can leave a grandchild holding the same stdout — `npm run dev &`,
 		// anything that daemonizes. The pipes then stay open long after the process
 		// we spawned is gone. The reference gives that drain exactly 5 seconds and
@@ -475,10 +513,10 @@ func (p *managedProc) stdinWriter() {
 // hardening only; the wire reply does not depend on the signal side effect.
 func (m *procManager) kill(id, signal string) {
 	p := m.get(id)
-	if p == nil || p.cmd == nil || p.cmd.Process == nil || !p.isRunning() {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil || !p.isRunning() || p.isReaped() {
 		return
 	}
-	p.group.signal(p.cmd.Process, signal)
+	signalGroup(p.group, p.cmd.Process, signal)
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
@@ -507,6 +545,15 @@ var killReapGrace = 5 * time.Second
 // (measured at 5s against 5db5e4a; its Spawn waiter pairs os.Process.wait with a
 // 5s time.NewTimer). var so tests can shrink it.
 var exitDrainGrace = 5 * time.Second
+
+// osPipe and cmdStdinPipe are seams over the three pipe constructions in spawn.
+// Each fails only on fd exhaustion, so their cleanup paths — which must close the
+// pipes already made, or spawn leaks descriptors on every failure — are otherwise
+// unreachable in a test. Production never reassigns either.
+var (
+	osPipe       = os.Pipe
+	cmdStdinPipe = (*exec.Cmd).StdinPipe
+)
 
 // closeAll closes every file, ignoring errors. Used on the spawn error paths and
 // to force a stalled drain to end. Closing an *os.File twice is safe — the second
@@ -550,8 +597,8 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if !p.isRunning() {
 		return true, true, true, false
 	}
-	if p.cmd != nil && p.cmd.Process != nil {
-		p.group.signal(p.cmd.Process, signal)
+	if p.cmd != nil && p.cmd.Process != nil && !p.isReaped() {
+		signalGroup(p.group, p.cmd.Process, signal)
 	}
 	select {
 	case <-p.done:
@@ -564,8 +611,10 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 		return true, false, false, false
 	}
 	// The graceful signal was ignored — force-kill the group and wait for the reap.
-	if p.cmd != nil && p.cmd.Process != nil {
-		p.group.signal(p.cmd.Process, "KILL")
+	// Same reaped guard as every other signal site: the grace can elapse while the
+	// process is in the exit drain, and by then its pgid may belong to someone else.
+	if p.cmd != nil && p.cmd.Process != nil && !p.isReaped() {
+		signalGroup(p.group, p.cmd.Process, "KILL")
 	}
 	select {
 	case <-p.done:
@@ -650,8 +699,8 @@ func (m *procManager) killAll() {
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
 		// Skip exited children — their pgid may already be recycled (see kill).
-		if p.cmd != nil && p.cmd.Process != nil && p.isRunning() {
-			p.group.signal(p.cmd.Process, "KILL")
+		if p.cmd != nil && p.cmd.Process != nil && p.isRunning() && !p.isReaped() {
+			signalGroup(p.group, p.cmd.Process, "KILL")
 		}
 	}
 }
