@@ -16,7 +16,12 @@ fail() {
 	exit 1
 }
 
-staged=$(git diff --cached --name-only --diff-filter=ACM)
+# R is included: rename detection is on by default, so `git mv other.md
+# .changeset/frag.md` is reported as R100 and an ACM-only filter would list
+# nothing — the changeset guard below would never fire and a malformed fragment
+# could be renamed past it. R also means a renamed .go file still gets the Go
+# checks, which is the behavior you want anyway.
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
 # 0. Changeset shape. Runs before the Go-only early exit below, because a
 #    changeset-only commit stages no Go files at all. A multi-line fragment body
