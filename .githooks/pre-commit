@@ -23,9 +23,25 @@ staged=$(git diff --cached --name-only --diff-filter=ACM)
 #    makes knope render a `#### heading` block instead of a bullet, which breaks
 #    the changelog. Skipped (not failed) without python3, like golangci-lint
 #    below — CI gates it regardless.
+#
+#    Lints the STAGED snapshot, never the working tree. The two can differ, and
+#    both directions are wrong: a malformed fragment staged while a corrected
+#    copy sits unstaged would pass (and the malformed content is what lands),
+#    and a valid staged fragment would be rejected over an unrelated unstaged
+#    edit. So materialize the index's .changeset/ into a temp dir and lint that
+#    — exactly what the commit will contain.
 if echo "$staged" | grep -qE '^\.changeset/.*\.md$'; then
 	if command -v python3 >/dev/null 2>&1; then
-		python3 scripts/lint_changesets.py || fail "changeset fragment must be a single line"
+		repo_root=$(pwd) # git runs hooks from the worktree top level
+		lintdir=$(mktemp -d)
+		mkdir "$lintdir/.changeset"
+		git ls-files --cached -- '.changeset/*.md' | while IFS= read -r f; do
+			git cat-file blob ":$f" >"$lintdir/$f"
+		done
+		lint_status=0
+		(cd "$lintdir" && python3 "$repo_root/scripts/lint_changesets.py") || lint_status=$?
+		rm -rf "$lintdir"
+		[ "$lint_status" -eq 0 ] || fail "changeset fragment must be a single line"
 	else
 		printf 'pre-commit: python3 not found, skipping changeset lint (CI still gates it)\n' >&2
 	fi
