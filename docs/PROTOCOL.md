@@ -348,6 +348,12 @@ Errors:
   an unstaged-only change is data: `"M  a.txt"` (staged) and `" M b.txt"`
   (unstaged) differ only in which column holds the letter.
 
+- **The first line is the exception.** The daemon trims the whole porcelain blob
+  before splitting it, so a leading space is stripped from the first entry only.
+  A repo whose first two entries are `" M a1.txt"` and `" M a2.txt"` returns
+  `["M a1.txt"," M a2.txt"]`. Probe-measured against the reference at `5db5e4a`;
+  clients that parse by column must handle entry 0 separately.
+
 - Non-repo → `{"isRepo":false,"clean":false}` — the **full shape**, unlike
   `git.info`'s bare `{"isRepo":false}`.
 

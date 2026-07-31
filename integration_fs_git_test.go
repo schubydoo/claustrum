@@ -200,10 +200,17 @@ func TestSocketGitBattery(t *testing.T) {
 }
 
 // TestSocketGitStatusPorcelain pins every XY status column shape git.status can
-// emit. The battery above only ever produced "?? dirty.txt" — an untracked entry,
-// the one shape that carries no leading space — so a trim of the porcelain line
-// went unnoticed. The leading space is positional data: " M f" (unstaged) and
-// "M  f" (staged) differ only in where the letter sits.
+// emit, AND the position each shape appears in. The leading space is positional
+// data: " M f" (unstaged) and "M  f" (staged) differ only in where the letter
+// sits — except on the FIRST line, which the reference strips because it trims
+// the whole porcelain blob before splitting it.
+//
+// Both halves of that need a fixture. The battery only ever produced
+// "?? dirty.txt" — an untracked entry, the one shape carrying no leading space —
+// so a per-line trim went unnoticed; the first revision of this test began with
+// "D  del_staged.txt", so removing the per-line trim then went unnoticed too.
+// a_mod_unstaged.txt sorts first and carries a leading space, which pins the
+// blob-level trim; every later entry pins the verbatim pass-through.
 func TestSocketGitStatusPorcelain(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
@@ -212,6 +219,7 @@ func TestSocketGitStatusPorcelain(t *testing.T) {
 
 	// Committed baseline. rename_src.txt needs enough content for git's rename
 	// detection to pair it with rename_dst.txt at 100% similarity.
+	writeFile(t, filepath.Join(repo, "a_mod_unstaged.txt"), "one\n", 0o644)
 	writeFile(t, filepath.Join(repo, "mod_unstaged.txt"), "one\n", 0o644)
 	writeFile(t, filepath.Join(repo, "mod_both.txt"), "one\n", 0o644)
 	writeFile(t, filepath.Join(repo, "del_unstaged.txt"), "one\n", 0o644)
@@ -220,9 +228,11 @@ func TestSocketGitStatusPorcelain(t *testing.T) {
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "init")
 
-	// One mutation per XY shape.
-	writeFile(t, filepath.Join(repo, "mod_unstaged.txt"), "two\n", 0o644) // " M"
-	writeFile(t, filepath.Join(repo, "mod_both.txt"), "two\n", 0o644)     // staged half of "MM"
+	// One mutation per XY shape. a_mod_unstaged.txt is the first porcelain line,
+	// so its leading space is the one the reference eats.
+	writeFile(t, filepath.Join(repo, "a_mod_unstaged.txt"), "two\n", 0o644) // " M", first line
+	writeFile(t, filepath.Join(repo, "mod_unstaged.txt"), "two\n", 0o644)   // " M"
+	writeFile(t, filepath.Join(repo, "mod_both.txt"), "two\n", 0o644)       // staged half of "MM"
 	runGit(t, repo, "add", "mod_both.txt")
 	writeFile(t, filepath.Join(repo, "mod_both.txt"), "three\n", 0o644) // unstaged half of "MM"
 	if err := os.Remove(filepath.Join(repo, "del_unstaged.txt")); err != nil {
