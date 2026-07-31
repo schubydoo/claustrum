@@ -18,7 +18,7 @@ type streamFrame struct {
 	Type      string `json:"type"`
 	ProcessID string `json:"processId"`
 	Stream    string `json:"stream"` // stdout | stderr | exit
-	Seq       int    `json:"seq"`
+	Seq       uint64 `json:"seq"`
 	Data      string `json:"data,omitempty"`
 	ExitCode  *int   `json:"exitCode,omitempty"`
 }
@@ -55,7 +55,7 @@ type managedProc struct {
 	pid       int
 	startTime float64
 	mu        sync.Mutex
-	seq       int
+	seq       uint64
 	buffer    []streamFrame
 	bufBytes  int64 // sum of len(f.Data) for frames currently in buffer
 	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
@@ -83,7 +83,7 @@ type managedProc struct {
 	// the high-water mark that backs the stdin-offset idempotency contract (see
 	// applyStdin). Guarded by stdinMu; surfaced on the wire as process.stdin's
 	// "applied" and process.reattach's "stdinApplied".
-	stdinApplied int
+	stdinApplied uint64
 }
 
 type procManager struct {
@@ -347,7 +347,7 @@ func (p *managedProc) enqueueStdinLocked(data []byte) {
 // data[applied-offset:] and advances applied to offset+len. The decision and the
 // enqueue happen under one stdinMu hold so concurrent stdin calls can't interleave
 // against a stale counter.
-func (p *managedProc) applyStdin(data []byte, offset *int) (applied int, duplicate, gap bool) {
+func (p *managedProc) applyStdin(data []byte, offset *uint64) (applied uint64, duplicate, gap bool) {
 	p.stdinMu.Lock()
 	cur := p.stdinApplied
 	if offset != nil {
@@ -357,7 +357,7 @@ func (p *managedProc) applyStdin(data []byte, offset *int) (applied int, duplica
 			return cur, false, true
 		}
 		if skip := cur - off; skip > 0 {
-			if skip >= len(data) {
+			if skip >= uint64(len(data)) {
 				p.stdinMu.Unlock()
 				return cur, true, false
 			}
@@ -365,7 +365,7 @@ func (p *managedProc) applyStdin(data []byte, offset *int) (applied int, duplica
 		}
 	}
 	p.enqueueStdinLocked(data)
-	p.stdinApplied += len(data)
+	p.stdinApplied += uint64(len(data))
 	applied = p.stdinApplied
 	p.stdinMu.Unlock()
 	met.stdinBytes.Add(int64(len(data)))
@@ -501,7 +501,7 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 // managedProc (nil when not found) so the caller can read its immutable
 // pid/startTime for the CT-1 opt-in, and the process's cumulative stdinApplied so
 // a reconnecting client can resume stdin from the right offset (0 when not found).
-func (m *procManager) reattach(c *conn, id string, fromSeq int) (p *managedProc, found, running bool, firstSeq, lastSeq, stdinApplied int) {
+func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedProc, found, running bool, firstSeq, lastSeq, stdinApplied uint64) {
 	p = m.get(id)
 	if p == nil {
 		return nil, false, false, 0, 0, 0

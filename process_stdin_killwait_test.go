@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -199,4 +200,48 @@ func TestSocketProcessKillAndWait(t *testing.T) {
 	if !kw.Found || !kw.Died || kw.AlreadyExited || kw.Escalated {
 		t.Errorf("killAndWait live = %+v, want found&died only", kw)
 	}
+}
+
+// TestSocketStdinOffsetUint64Edges pins the W2 typing contract: the reference
+// declares StdinParams.Offset as *uint64 and ReattachParams.FromSeq as uint64,
+// so a negative value is a decode failure (-32602), not an accepted offset, and
+// 2^64-1 is a legal value that lands in the offset-gap path (-32003).
+//
+// claustrum used *int / int, which silently ACCEPTED offset:-1 (applying the
+// data as if no offset were given) and rejected 2^64-1 as invalid params —
+// inverting the reference on both ends of the range.
+func TestSocketStdinOffsetUint64Edges(t *testing.T) {
+	const maxU64 = "18446744073709551615" // 2^64-1
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	// sleep, not cat: a process that never writes keeps the reattach reply's
+	// firstSeq/lastSeq deterministically 0, with no stream frames racing.
+	cl.call(spawnReqArgs(t, 1, "U64", "sleep", "30"))
+
+	data := base64.StdEncoding.EncodeToString([]byte("hello\n")) // 6 bytes
+	stdin := func(id int, offset string) string {
+		off := ""
+		if offset != "" {
+			off = `,"offset":` + offset
+		}
+		return authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(id) +
+			`,"method":"process.stdin","params":{"id":"U64","data":"` + data + `"` + off + `}}`)
+	}
+	reattach := func(id int, fromSeq string) string {
+		return authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(id) +
+			`,"method":"process.reattach","params":{"id":"U64","fromSeq":` + fromSeq + `}}`)
+	}
+
+	got := []json.RawMessage{
+		cl.call(stdin(2, "-1")),      // negative offset -> -32602, NOT accepted
+		cl.call(reattach(3, "-1")),   // negative fromSeq -> -32602
+		cl.call(stdin(4, maxU64)),    // 2^64-1 is valid and ahead of applied=0 -> -32003
+		cl.call(stdin(5, "")),        // no offset: appends, applied=6
+		cl.call(stdin(6, "0")),       // offset 0 with applied=6 -> wholly duplicate
+		cl.call(stdin(7, maxU64)),    // still a gap now that applied=6
+		cl.call(reattach(8, maxU64)), // valid; nothing buffered to replay
+		cl.call(reattach(9, "0")),    // control: same shape, ordinary fromSeq
+	}
+	assertGolden(t, "socket_stdin_uint64_edges.golden.json", encodeGolden(t, got))
 }

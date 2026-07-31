@@ -71,7 +71,7 @@ type stdinParams struct {
 	// idempotency contract (advertised as "process.stdin.offset"). A pointer so an
 	// absent field ("append here", the legacy behavior) is distinct from offset:0
 	// (which, once anything has been applied, is a duplicate). See applyStdin.
-	Offset *int `json:"offset"`
+	Offset *uint64 `json:"offset"`
 }
 
 func (s *server) processStdin(req *request) response {
@@ -157,7 +157,7 @@ func (s *server) processKillAndWait(req *request) response {
 
 type reattachParams struct {
 	ID      string `json:"id"`
-	FromSeq int    `json:"fromSeq"`
+	FromSeq uint64 `json:"fromSeq"`
 	// WantPid mirrors spawnParams.WantPid — see there. When true and the process
 	// is found, the reply carries pid + startTime.
 	WantPid bool `json:"wantPid"`
