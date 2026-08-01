@@ -379,3 +379,47 @@ func TestPruneCLIEdges(t *testing.T) {
 		t.Errorf("pruneCLI kept the older version (err=%v), want pruned", err)
 	}
 }
+
+// The rename fails while the staging file is still present. Distinct from
+// TestEnsureCLIKeepsDestinationWhenStagingVanishes, where the staging file is
+// the thing that went missing — here it survives and the destination path is
+// what rename(2) rejects, so the staging file must be cleaned up.
+//
+// The fixture is a final component longer than NAME_MAX. It is a real
+// filesystem error rather than an injected one, and it reaches this branch only
+// because the clear above is now narrowed to directories: os.Lstat on the
+// over-long path fails, so no RemoveAll is attempted, and rename is the first
+// call to report the problem. (Clearing unconditionally made RemoveAll fail
+// first, which returned the "clearing stale dir at" error instead.)
+//
+// validateCLIVersion accepts it: a long name is still one path component.
+func TestEnsureCLIRenameFailureCleansUpStaging(t *testing.T) {
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tooLong := strings.Repeat("v", 300) // > NAME_MAX on every supported filesystem
+
+	err := ensureCLI(installOpts{cliDir: cliDir, cliVersion: tooLong, cliZst: zstPath},
+		filepath.Join(cliDir, tooLong))
+	if err == nil {
+		t.Fatal("ensureCLI onto an unusable path succeeded, want a rename error")
+	}
+	if strings.Contains(err.Error(), "clearing stale dir at ") {
+		t.Errorf("error = %q, want the rename error — nothing needed clearing", err)
+	}
+	if strings.Contains(err.Error(), "staging file vanished") {
+		t.Errorf("error = %q, but the staging file was present", err)
+	}
+	// The staging file must not be left behind as litter.
+	for name := range cliDirEntries(cliDir) {
+		if strings.HasPrefix(name, ".fetch-") {
+			t.Errorf("staging file %q survived a failed rename", name)
+		}
+	}
+}

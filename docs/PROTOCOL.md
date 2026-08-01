@@ -871,13 +871,16 @@ Staging and cleanup (probe-verified):
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
-  `clearing stale dir at <path>: <err>`. The rename is attempted **first**, and
-  the destination is cleared only when the rename reports that something is in
-  the way — so a destination is never sacrificed for an install that cannot
-  finish. If the staging file has vanished (a concurrent sweep took it) the
-  result is `staging file vanished before install: <err>` and `cliPath` is left
-  untouched. Clearing first destroyed it: the already-installed CLI was deleted
-  and nothing replaced it, leaving an empty cli-dir.
+  `clearing stale dir at <path>: <err>`. The clear runs **only when `cliPath` is a
+  directory**, which is the only shape `rename(2)` refuses — a regular file is
+  replaced atomically. An installed CLI is always a regular file, so it is never
+  the thing being cleared, and a destination is never sacrificed for an install
+  that cannot finish. If the staging file has vanished (a concurrent sweep took
+  it) the result is `staging file vanished before install: <err>` and `cliPath`
+  is left untouched. Clearing unconditionally destroyed it: the already-installed
+  CLI was deleted and nothing replaced it, leaving an empty cli-dir. End states
+  match the reference for every destination shape — absent, regular file, and
+  non-empty directory.
 - **Divergence (claustrum-only hardening): `-cli-version` must name a single
   path component.** That clearing step is an `os.RemoveAll` on
   `filepath.Join(cliDir, cliVersion)`, so a version that reaches outside the

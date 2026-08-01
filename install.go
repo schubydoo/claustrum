@@ -183,39 +183,43 @@ func ensureCLI(o installOpts, cliPath string) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("installed cli at %s is not runnable", cliPath)
 	}
-	// Rename into place, and clear an occupied destination only when the rename
-	// says there IS one. The obvious order — RemoveAll then Rename — destroys the
+	// Clear the destination ONLY when it is a directory, then rename into place.
+	//
+	// Only a directory blocks rename(2) — a regular file is replaced atomically —
+	// so a directory is the only case that needs clearing, and it is the same case
+	// the reference clears: measured at 5db5e4a, the reference removes the blocker
+	// and installs successfully while claustrum returned `rename …: file exists`
+	// and left it in place. End states match the reference for every destination
+	// shape (absent / regular file / non-empty directory), re-measured after this
+	// change.
+	//
+	// The narrowness is the point. Clearing unconditionally destroys the
 	// destination BEFORE knowing the staging file survived, and the staging file
 	// can vanish: it lives in the ".fetch-*" namespace that every concurrent
-	// install's sweep claims. Reproduced deterministically by unlinking the
-	// staging file while isRunnable holds it open (the exec survives, so
-	// isRunnable still returns true):
+	// install's sweep claims. Reproduced deterministically by unlinking it while
+	// isRunnable holds it open, since the exec survives the unlink and isRunnable
+	// still returns true:
 	//
-	//	RemoveAll-first : cli-dir EMPTY — a working CLI deleted and not replaced
-	//	Rename-first    : the rename fails, the destination is untouched
+	//	clear unconditionally : cli-dir EMPTY — a working CLI deleted, nothing put back
+	//	clear only a directory: the rename fails, the destination is untouched
 	//
-	// So the destination is never sacrificed for an install that cannot complete.
-	// End states are unchanged on every non-racing path: a regular file is
-	// replaced by rename(2) directly, and only a directory needs the RemoveAll,
-	// which is the same case the reference clears.
-	if err := os.Rename(tmp, cliPath); err != nil {
-		if _, statErr := os.Lstat(tmp); statErr != nil {
-			// The staging file is gone — a concurrent sweep took it. Report and
-			// leave cliPath alone; there is nothing to install.
-			return fmt.Errorf("staging file vanished before install: %v", err)
-		}
-		// rename(2) refuses to replace a non-empty directory, so an occupied
-		// destination fails the install without this: measured at 5db5e4a, the
-		// reference removes the blocker and installs successfully while claustrum
-		// returned `rename …: file exists` and left the blocker in place.
+	// An installed CLI is always a regular file (that is what the cache-hit check
+	// requires), so it is never the thing being cleared here. A directory at
+	// cliPath is a stale blocker, not a working install.
+	if fi, err := os.Lstat(cliPath); err == nil && fi.IsDir() {
 		if rmErr := os.RemoveAll(cliPath); rmErr != nil {
 			_ = os.Remove(tmp)
 			return fmt.Errorf("clearing stale dir at %s: %v", cliPath, rmErr)
 		}
-		if err := os.Rename(tmp, cliPath); err != nil {
-			_ = os.Remove(tmp)
-			return err
+	}
+	if err := os.Rename(tmp, cliPath); err != nil {
+		if _, statErr := os.Lstat(tmp); statErr != nil {
+			// The staging file is gone — a concurrent sweep took it. Report it and
+			// leave cliPath alone; there is nothing left to install.
+			return fmt.Errorf("staging file vanished before install: %v", err)
 		}
+		_ = os.Remove(tmp)
+		return err
 	}
 	// SFTP fallback: the uploaded .zst blob is consumed on success.
 	if o.cliZst != "" {
