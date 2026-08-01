@@ -197,7 +197,21 @@ func childToken(tokenFile string) (string, error) {
 			return "", fmt.Errorf("read --token-file: %v", err)
 		}
 		token = normalizeToken(b)
-		_ = os.Remove(tokenFile)
+		// An unlink failure is worth a line: the token file is supposed to be
+		// consumed, and one left on disk is a credential the operator does not
+		// know is still there.
+		if err := os.Remove(tokenFile); err != nil {
+			logWarnf("[daemon] failed to remove --token-file %s: %v", tokenFile, err)
+		}
+	}
+	// An empty token must be fatal. Otherwise the daemon comes up healthy and
+	// listening while nothing can ever authenticate to it: every request fails
+	// -32001 forever, and the operator sees a running service. Measured at
+	// 5db5e4a with a zero-byte -token-file — the reference refuses to start (its
+	// launcher reports "timeout waiting for daemon to accept" and exits 1) where
+	// claustrum happily served a permanently unauthenticatable socket.
+	if token == "" {
+		return "", fmt.Errorf("token is empty")
 	}
 	_ = os.Unsetenv("CLAUDE_RPC_TOKEN") // prevent token propagation through daemonize → os.Environ()
 	// Drop our internal re-exec sentinel now that we have consumed it: buildEnv
