@@ -84,6 +84,43 @@ token: …`) and non-fatal. Added by reference build `5db5e4a` and matched here
 kill (`SIGKILL`/crash) leaves the file behind, since removal runs only on the
 graceful `server.shutdown` / `SIGTERM` path.
 
+### Daemon startup (`-serve`)
+
+The `-serve` launcher **creates the socket's parent directory** if it is missing,
+mode `0700` — the same owner-only mode the reference uses for the cli-dir — and
+then **does not return until the daemon is accepting** on the socket. It confirms
+this by dialing the socket and closing again, so a freshly started daemon's log
+opens with a `New connection from: @` / `Connection closed: @` pair from the
+launcher's own probe, before any real client appears.
+
+What it waits for is the socket **path to exist** (polled every 20 ms, bounded at
+**10 seconds**), not a successful dial, and it does **not** give up early when the
+child dies — both deliberate, and both measured against `5db5e4a`:
+
+| start | what the launcher sees | outcome |
+|---|---|---|
+| normal | path appears, confirming dial succeeds | exit `0` |
+| socket path occupied by a directory | path exists **immediately** | exit `0`, in ~0.01 s (reference 0.08 s) |
+| child can never bind (uncreatable parent dir) | path never appears | exit `1` at ~10.04 s (reference 10.06 s) |
+
+On timeout the launcher prints
+`claustrum: timeout waiting for daemon to accept on <socket>` to **stderr** and
+exits `1`. On success it prints nothing and exits `0`.
+
+The occupied-path row is why the wait polls for existence: a dial-based wait
+would invert both rows, sitting out the full deadline where nothing ever accepts
+and giving up early on a child that dies. The confirming dial's result is ignored
+for the same reason.
+
+Two things are *not* promised. The child's own startup errors reach the
+launcher's stderr only when the daemon log could not be opened (a missing socket
+directory), because the child then falls back to inherited stdio — normally they
+go to `remote-server.log`. And exit `0` means the path appeared, not that a
+daemon is healthy behind it, as the occupied-path row shows.
+
+The practical guarantee is the one that matters to a client: after a successful
+`-serve`, connecting immediately over SSH never loses the race.
+
 ### Daemon log (`remote-server.log`)
 
 The `-serve` launcher creates **`remote-server.log`** in the socket's directory
@@ -343,18 +380,38 @@ Errors:
 - `repoSlug` and `defaultBranch` were added by reference `7c2f88d`. Both are
   **always present** (empty string when undeterminable) — including on the
   non-repo body, which is now `{"isRepo":false,"repoSlug":"","defaultBranch":""}`.
-    - `repoSlug` is the `owner/repo` parsed from `remote.origin.url`. It accepts
-      the scp-like (`git@host:owner/repo.git`), scheme (`https://`, `ssh://`),
-      userinfo, and trailing-slash forms and strips a single trailing `.git`, but
-      is populated **only when the path after the host is exactly two segments** —
-      a GitLab subgroup URL (`host/group/sub/proj`) has three and yields `""`.
-      Owner/repo characters are preserved verbatim (case, `-`, `_`, `.`).
+    - `repoSlug` is the `owner/repo` parsed from `remote.origin.url`, and it is
+      populated **only for a canonical `github.com` remote**. Every rule below was
+      measured by driving 42 remote-URL shapes through the reference at `5db5e4a`:
+        - **Scheme** must be `https`, `http`, `ssh`, `git`, or absent (the
+          scp-like `[user@]host:owner/repo` form). `git+ssh://` and `file://`
+          yield `""` — the scheme is matched whole, not by suffix.
+        - **Host** must equal `github.com`, case-insensitively (`GITHUB.COM` is
+          accepted). `www.github.com`, a trailing-dot `github.com.`, GitLab,
+          Bitbucket and any self-hosted GHE all yield `""`. A port makes it a
+          different host, so `github.com:443/…` yields `""` too. Userinfo
+          (`git@`, `user:pw@`) is stripped.
+        - **Path** must be exactly two non-empty segments after one optional
+          trailing `/` and one optional trailing `.git`. Three segments
+          (`acme/sub/gizmo`) or one (`acme`) yield `""`.
+        - **Owner** is alphanumerics with *interior* hyphens only: `ac-me` and
+          `ac--me` pass; `-acme`, `acme-`, `acme_corp` and `acme.co` do not.
+        - **Repo** is alphanumerics plus `.`, `_` and `-`, not starting with `-`,
+          not `.` or `..`, and not ending in a **lowercase** `.wiki`. The owner
+          charset is stricter than the repo charset — `_` and `.` are legal in a
+          repo name and illegal in an owner. The `.wiki` test is case-sensitive
+          and suffix-only, so `GIZMO.WIKI` and a repo named `wiki` are accepted.
     - `defaultBranch` is what `refs/remotes/origin/HEAD` points to (e.g. `main`);
       empty when origin/HEAD is unset.
 
 #### git.status
 
 `{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}` (porcelain lines)
+
+- `changes` comes from `git status --porcelain`'s **stdout only**. git writes
+  warnings (an unreadable `core.excludesFile`, an unreadable directory) to stderr
+  while still exiting 0; those never appear in `changes`, and a repo with nothing
+  modified still reports `"clean":true`. Measured against `5db5e4a`.
 
 - Lines are `git status --porcelain` output **verbatim**, minus only the line
   ending. The two-character XY column is **positional**, so the leading space of
@@ -387,6 +444,12 @@ Errors:
   checked before the add, so git's raw error isn't leaked.
 - Other failure →
   `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
+  The tail after the colon is git's **combined** output — the opposite of
+  `git.status` above, and deliberately so: `git worktree add` writes both its
+  progress and its fatal to stderr and leaves stdout empty, so reading stdout
+  only would truncate this to `"git worktree add failed: "`. Measured against
+  `5db5e4a` with an existing branch name:
+  `"git worktree add failed: Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"`.
 - When `sourceBranch` is omitted it defaults to the repo's current branch (and
   is echoed back). On an **unborn HEAD** (empty repo) the source resolves to
   empty, the add infers an orphan branch and still succeeds, and `sourceBranch`
@@ -492,9 +555,21 @@ stream notifications, **buffered** for later replay.
 
 `{id[,signal]}` → `{"success":true}`
 
-- Best-effort, **fire-and-forget**; tears down the whole child tree — signals the
-  process group on Unix, terminates the Job Object on Windows. Does not wait for
-  the child to actually exit (contrast `process.killAndWait`).
+- Best-effort, **fire-and-forget**. Does not wait for the child to actually exit
+  (contrast `process.killAndWait`).
+- **How wide the signal reaches depends on the signal**, on Unix:
+    - `KILL` goes to the whole **process group** (negative pid), so the entire
+      child tree dies — backgrounded grandchildren included.
+    - **Every other signal** (`TERM`, `INT`, `HUP`, and the default) goes to the
+      **direct child only**. A grandchild the child backgrounded keeps running.
+      Measured against the reference at `5db5e4a`: spawning
+      `sh -c "sleep 40 & wait"` and sending `process.kill` with `TERM` leaves the
+      backgrounded sleeper alive.
+    - So a graceful `process.kill` is **not** a tree teardown. Use
+      `signal:"KILL"`, or `process.killAndWait` with `escalate:true` (which
+      escalates to a group `SIGKILL`), when the whole tree must go.
+  On Windows the split does not apply — the Job Object is terminated, which takes
+  the tree either way.
 - **Divergence:** claustrum skips the signal when the child has already
   exited — after the child is reaped its Unix pgid can be recycled, so the
   reference's unconditional negative-pid signal could hit an unrelated process
@@ -524,6 +599,11 @@ unknown id is not an error):
       alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
       and add `"escalated":true` to the reply. `false` → leave the process running
       and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
+      The escalation `SIGKILL` goes to the **process group**, so it sweeps up the
+      child tree the graceful signal spared — and it is sent even when the
+      graceful signal already killed the child itself, since a grandchild holding
+      the stdout pipe can keep the drain pending past the grace. `escalate:false`
+      spares the tree entirely.
 - On a process that dies within the grace (cooperative, or a hard `signal:"KILL"`)
   → `{"found":true,"died":true}` with no `escalated`.
 
@@ -801,10 +881,10 @@ Staging and cleanup (probe-verified):
 ### Behavior shared by every mode
 
 - **Default socket** — when `-socket` is omitted, `-serve`/`-bridge`/`-stop`
-  fall back to `~/.claude/remote/rpc.sock`. The parent directory is **not**
-  created, so `-serve` on a missing `~/.claude/remote` fails with
-  `claustrum: listen unix: …: bind: no such file or directory`. (The deployment
-  always passes `-socket`; this only matters for bare invocations.)
+  fall back to `~/.claude/remote/rpc.sock`. `-serve` **creates** the parent
+  directory (mode `0700`) if it is missing — see *Daemon startup* above — so a
+  bare `-serve` on a fresh machine works. `-bridge`/`-stop` do not create it and
+  still fail with `connect: no such file or directory` when no daemon has run.
 - **No mode given** →
   `claustrum: one of --version/--install/--serve/--bridge/--stop is required`
   on stderr, exit `2` — no usage dump. An *unknown flag* still gets the stdlib
