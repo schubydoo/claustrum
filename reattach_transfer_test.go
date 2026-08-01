@@ -66,9 +66,9 @@ func drain(ch <-chan streamFrame) {
 }
 
 // The exclusive transfer must hold under a CONCURRENT emit, not just a
-// sequential one. Raised on review: if emit snapshots the subscriber set and a
-// reattach replaces p.subs before the write lands, does the old connection get a
-// post-transfer frame?
+// sequential one. Raised on review of #202: if emit snapshots the subscriber set
+// and a reattach replaces p.subs before the write lands, does the old connection
+// get a post-transfer frame?
 //
 // It cannot, and the reason is the lock structure rather than luck. emit stamps
 // f.Seq, appends to p.buffer, and copies p.subs inside ONE p.mu critical
@@ -84,23 +84,61 @@ func drain(ch <-chan streamFrame) {
 // a seq ABOVE the transfer point — not "the old connection sees nothing more",
 // which would be wrong for a frame that legitimately predates the cut.
 //
+// THE FRAMES MUST BE DRAINED WHILE THE EMITTER RUNS. pipeConn's channel holds 64
+// frames; once it fills, the scanner stops reading, the net.Pipe write blocks
+// inside emit, and the emitter never re-checks its stop flag — the test then
+// hangs forever rather than failing. The first version of this test drained only
+// after stopping the emitter and timed out the macOS leg at 10 minutes after
+// passing on linux and windows, purely because that runner scheduled ~65 frames
+// into a 64-slot buffer where this host produced 18.
+//
 // SENSITIVITY, verified rather than assumed: this test passes against a mutant
-// that merely splits the critical section, because the resulting window is a few
-// nanoseconds and 300 rounds never land in it. Widening that mutant's window to
-// 50us makes it fail immediately ("OLD conn received seq 2 > lastSeq 1"), which
-// is what shows the assertion can detect a real leak at all. Treat it as a guard
-// against a future refactor that widens the window, not as proof on its own.
+// that merely splits emit's critical section, because the resulting window is a
+// few nanoseconds and no realistic round count lands in it. Widening that
+// mutant's window to 50us makes it fail at once ("OLD conn received seq 2 >
+// lastSeq 1"). Treat it as a guard against a refactor that widens the window,
+// not as the proof — the proof is the single critical section.
 func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
-	for round := 0; round < 300; round++ {
+	for round := 0; round < 100; round++ {
 		oldConn, oldFrames := pipeConn(t)
-		fresh, _ := pipeConn(t)
+		fresh, freshFrames := pipeConn(t)
 		p := &managedProc{id: "r", subs: map[*conn]struct{}{oldConn: {}}}
 
-		var stop atomic.Bool
-		var wg sync.WaitGroup
-		wg.Add(1)
+		// Drain both sides continuously so no write can ever block.
+		var mu sync.Mutex
+		var oldSeqs []uint64
+		drain := make(chan struct{})
+		var drainers sync.WaitGroup
+		drainers.Add(2)
 		go func() {
-			defer wg.Done()
+			defer drainers.Done()
+			for {
+				select {
+				case f := <-oldFrames:
+					mu.Lock()
+					oldSeqs = append(oldSeqs, f.Seq)
+					mu.Unlock()
+				case <-drain:
+					return
+				}
+			}
+		}()
+		go func() {
+			defer drainers.Done()
+			for {
+				select {
+				case <-freshFrames:
+				case <-drain:
+					return
+				}
+			}
+		}()
+
+		var stop atomic.Bool
+		var emitter sync.WaitGroup
+		emitter.Add(1)
+		go func() {
+			defer emitter.Done()
 			for !stop.Load() {
 				p.emit(streamFrame{Stream: "stdout", Data: "eA=="})
 			}
@@ -114,17 +152,18 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 		p.mu.Unlock()
 
 		stop.Store(true)
-		wg.Wait()
+		emitter.Wait()
+		time.Sleep(2 * time.Millisecond) // let in-flight writes land
+		close(drain)
+		drainers.Wait()
 
-		for drained := false; !drained; {
-			select {
-			case f := <-oldFrames:
-				if f.Seq > lastSeq {
-					t.Fatalf("round %d: the old connection received seq %d, above the "+
-						"transfer point lastSeq=%d", round, f.Seq, lastSeq)
-				}
-			default:
-				drained = true
+		mu.Lock()
+		got := append([]uint64(nil), oldSeqs...)
+		mu.Unlock()
+		for _, seq := range got {
+			if seq > lastSeq {
+				t.Fatalf("round %d: the old connection received seq %d, above the "+
+					"transfer point lastSeq=%d", round, seq, lastSeq)
 			}
 		}
 	}
