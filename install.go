@@ -83,27 +83,44 @@ func runInstall(o installOpts) {
 // uploaded one (-cli-zst, SFTP fallback) or a download (-cli-url), verified
 // against -cli-checksum, then zstd-decompressed to cliPath.
 func ensureCLI(o installOpts, cliPath string) error {
-	// Refuse a -cli-version that resolves outside -cli-dir, BEFORE anything
+	// Require -cli-version to name a SINGLE entry under -cli-dir, BEFORE anything
 	// touches the filesystem. cliPath is filepath.Join(cliDir, cliVersion), and
-	// Join cleans, so a version of "../victim" resolves to a sibling of cliDir —
-	// which the os.RemoveAll below then deletes RECURSIVELY before installing
-	// there. Measured: with -cli-version ../victim, a directory holding an
-	// unrelated file was destroyed and replaced by the CLI binary.
+	// the os.RemoveAll below deletes cliPath RECURSIVELY before the rename, so a
+	// version that reaches outside cliDir destroys unrelated data. Two ways it
+	// can, both measured:
 	//
-	// This is a DIVERGENCE, and a deliberate one: the reference does exactly the
-	// same thing on the same input (measured at 5db5e4a — identical destruction,
-	// identical facts frame). It is the same class as the remote-server.log
-	// refusal documented in PROTOCOL.md — a claustrum-only hardening on an attack
-	// path the reference was not measured on, invisible on every honest path.
-	// The real client passes a bare version string ("1.0.86"), so a legitimate
-	// cliPath is always a single component under cliDir and never trips this.
+	//	"../victim"   Join CLEANS, so cliPath lands beside cliDir
+	//	"link/1.0.0"  an intermediate symlink under cliDir, followed at open time
+	//
+	// A lexical containment check catches the first and NOT the second: with
+	// cliDir/link -> /outside, "link/1.0.0" is lexically inside cliDir, and
+	// RemoveAll then deleted /outside/1.0.0 and installed the CLI there.
+	//
+	// Hence a single component rather than a containment test. It costs nothing:
+	// the reference does not support a nested version either — measured at
+	// 5db5e4a, "sub/2.0.0" fails with `creating temp file: … no such file or
+	// directory` because it never creates the nested parent — and the real client
+	// passes a bare version string ("1.0.86"). A single component also removes
+	// the intermediate-path problem by construction rather than by inspection,
+	// which is why it beats calling EvalSymlinks here (that would only add a
+	// TOCTOU window between the check and the RemoveAll).
+	//
+	// A final component that is ITSELF a symlink stays safe: os.RemoveAll unlinks
+	// a symlink rather than following it (verified — the target's contents
+	// survive and only the link is removed).
+	//
+	// This is a DIVERGENCE, and a deliberate one: on "../victim" AND on
+	// "link/1.0.0" the reference destroys the outside directory (measured at
+	// 5db5e4a, identical destruction, identical facts frame). Same class as the
+	// remote-server.log refusal in PROTOCOL.md — a claustrum-only hardening on an
+	// attack path the reference was not measured on, invisible on honest paths.
 	//
 	// Guarding here rather than at the RemoveAll gates every filesystem effect,
 	// not just the destructive one, and reports through the existing cliError
 	// field so the facts frame keeps its shape. Skipped when cliDir is unset —
 	// then cliPath is not derived from a version and there is nothing to contain.
-	if o.cliDir != "" && !withinDir(o.cliDir, cliPath) {
-		return fmt.Errorf("cli version %q escapes the cli dir", o.cliVersion)
+	if o.cliDir != "" && !isSingleComponent(o.cliVersion) {
+		return fmt.Errorf("cli version %q must be a single path component", o.cliVersion)
 	}
 	var zst []byte
 	var err error
@@ -195,24 +212,22 @@ func ensureCLI(o installOpts, cliPath string) error {
 	return nil
 }
 
-// withinDir reports whether path lies strictly inside dir, lexically. "Strictly"
-// matters: a path EQUAL to dir is rejected too, because -cli-version "." resolves
-// cliPath to cliDir itself and would hand the whole cli-dir to os.RemoveAll.
+// isSingleComponent reports whether name is one ordinary path element — a name
+// that can only ever resolve to a direct child of the directory it is joined to.
 //
-// Lexical, not symlink-resolved. That is the same containment the escape it
-// blocks is built from — filepath.Join cleans "..", so the attack is lexical —
-// and EvalSymlinks would add a TOCTOU window plus a dependency on paths that may
-// not exist yet. A nested version ("linux-x64/1.0.86") stays legal; only leaving
-// the tree does not.
-func withinDir(dir, path string) bool {
-	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
-	if err != nil {
+// "." and ".." are rejected explicitly: "." resolves cliPath to the cli-dir
+// ITSELF, which would hand the whole cli-dir to os.RemoveAll.
+//
+// BOTH separators are rejected on every OS, not just the local one. A backslash
+// is a legal filename byte on Unix, so this is stricter than the platform
+// requires — deliberately, so a Unix daemon cannot be handed a path that a
+// Windows client built, and so the accepted set does not change with GOOS. No
+// real version string contains either character.
+func isSingleComponent(name string) bool {
+	if name == "" || name == "." || name == ".." {
 		return false
 	}
-	if rel == "." || rel == ".." {
-		return false
-	}
-	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return !strings.ContainsAny(name, `/\`)
 }
 
 // verifyChecksum returns a "checksum mismatch" error (byte-identical to the

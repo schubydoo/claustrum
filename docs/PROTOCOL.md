@@ -872,17 +872,35 @@ Staging and cleanup (probe-verified):
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
   `clearing stale dir at <path>: <err>`.
-- **Divergence (claustrum-only hardening): a `-cli-version` that escapes
-  `-cli-dir` is refused.** That clearing step is an `os.RemoveAll`, and `cliPath`
-  is `filepath.Join(cliDir, cliVersion)` — `Join` cleans, so `-cli-version
-  ../victim` resolves to a *sibling* of the cli-dir and deletes it recursively
-  before installing there. Measured at `5db5e4a`: **the reference destroys it**,
-  and so did claustrum before this check. claustrum now answers
-  `cli version "../victim" escapes the cli dir` in `cliError` and touches
-  nothing. A version equal to `.` is refused for the same reason (it resolves to
-  the cli-dir itself); a nested version stays legal. The real client passes a
-  bare version string, so every honest path is byte-identical — the same shape
-  as the `remote-server.log` refusal above and D1 below.
+- **Divergence (claustrum-only hardening): `-cli-version` must name a single
+  path component.** That clearing step is an `os.RemoveAll` on
+  `filepath.Join(cliDir, cliVersion)`, so a version that reaches outside the
+  cli-dir deletes unrelated data recursively. Two ways it can, both measured
+  against `5db5e4a`, and **the reference destroys the target on both**:
+
+  | `-cli-version` | why it escapes |
+  |---|---|
+  | `../victim` | `Join` **cleans**, so `cliPath` lands beside the cli-dir |
+  | `link/1.0.0` | an intermediate symlink under the cli-dir, followed at open time |
+
+  claustrum answers `cli version "…" must be a single path component` in
+  `cliError` and touches nothing. `.` and `..` are refused for the same reason
+  (`.` resolves to the cli-dir itself), and both `/` and `\` are rejected on
+  every OS so the accepted set does not change with the platform.
+
+  A single component rather than a containment check, because a *lexical*
+  containment check accepts `link/1.0.0` — it is lexically inside the cli-dir —
+  and `EvalSymlinks` would only add a TOCTOU window before the `RemoveAll`.
+  Nesting costs nothing to give up: **the reference does not support a nested
+  version either**, failing `sub/2.0.0` with
+  `creating temp file: … no such file or directory` because it never creates the
+  nested parent. A final component that is itself a symlink stays legal and
+  safe — `os.RemoveAll` unlinks a symlink rather than following it.
+
+  The real client passes a bare version string (`1.0.86`, `2.0.0-beta.1`, a
+  commit sha, `latest`, `1.0.86+build.5` — all measured as accepted), so every
+  honest path is byte-identical. Same shape as the `remote-server.log` refusal
+  above and D1 below.
 - The orphan sweep removes both **`.fetch-*`** and **`*.zst`** entries from the
   cli-dir, with `os.Remove` per entry — so it clears files and *empty*
   directories and silently leaves a non-empty `.fetch-dir/` in place. Unrelated
