@@ -96,6 +96,33 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		time.Sleep(60 * time.Second)
+	case "tree-stdout":
+		// Like "tree", but the grandchild INHERITS this process's stdout and this
+		// process lingers instead of exiting. That combination is what the
+		// escalation test needs: the leader dies on the graceful signal while the
+		// grandchild keeps the stdout pipe open, so the exit drain stays pending
+		// past the grace and the leader is already reaped by the time the
+		// escalation fires.
+		//
+		// No stdin go-ahead, unlike "tree": this mode is used by Unix-only tests
+		// that set the process group at fork, so there is nothing to wait for.
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, "60")
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stdout = os.Stdout
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		time.Sleep(60 * time.Second)
 	case "orphan-stdout":
 		// Fixture for the bounded exit drain: start a grandchild that INHERITS
 		// this process's stdout (child.Stdout, unlike "tree" above), print one
