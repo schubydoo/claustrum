@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -60,5 +61,156 @@ func TestEnsureCLICreatesOwnerOnlyDirs(t *testing.T) {
 	}
 	if got := fi.Mode().Perm(); got != 0o755 {
 		t.Errorf("installed CLI mode = %04o, want 0755 (unchanged by this fix)", got)
+	}
+}
+
+// The two tests below moved here from install_errpaths_test.go after the Windows
+// CI leg failed on both. Each depends on a POSIX permission bit denying an
+// operation — an unremovable entry, an unwritable directory — and os.Chmod on
+// Windows only toggles the read-only attribute, which does not restrict
+// directories. So ensureCLI SUCCEEDED there and both "want an error" assertions
+// failed. They are unix-only in the same sense TestEnsureCLICreatesOwnerOnlyDirs
+// above is: the mechanism under test is a POSIX permission, not the install
+// logic.
+
+// When the blocker cannot be removed, the failure is reported with the
+// reference's "clearing stale dir at " prefix rather than a bare rename error.
+// Measured at 5db5e4a: an undeletable entry under cliPath yields
+// `clearing stale dir at <path>: unlinkat <path>/locked/x: permission denied`.
+func TestEnsureCLIReportsUnclearablePath(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a 0500 directory is still writable")
+	}
+	dir := t.TempDir()
+	cliPath := filepath.Join(dir, "v1")
+	locked := filepath.Join(cliPath, "locked")
+	if err := os.MkdirAll(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "x"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o500); err != nil { // cannot unlink x inside
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+
+	zstPath := filepath.Join(dir, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := ensureCLI(installOpts{cliZst: zstPath}, cliPath)
+	if err == nil {
+		t.Fatal("ensureCLI with an unclearable cliPath succeeded, want an error")
+	}
+	if !strings.Contains(err.Error(), "clearing stale dir at ") {
+		t.Errorf("error = %q, want the reference's \"clearing stale dir at \" prefix", err)
+	}
+}
+
+// The staging file cannot be created when the cli-dir exists but is not
+// writable. MkdirAll succeeds (the directory is already there), so this is the
+// only path that reaches the CreateTemp failure branch.
+func TestEnsureCLIStagingFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a 0500 directory is still writable")
+	}
+	dir := t.TempDir()
+	cliDir := filepath.Join(dir, "clidir")
+	if err := os.Mkdir(cliDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(cliDir, 0o700) })
+
+	zstPath := filepath.Join(dir, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := ensureCLI(installOpts{cliZst: zstPath}, filepath.Join(cliDir, "v1"))
+	if err == nil {
+		t.Fatal("ensureCLI into an unwritable cli-dir succeeded, want a staging error")
+	}
+	if !strings.Contains(err.Error(), "staging cli: ") {
+		t.Errorf("error = %q, want a \"staging cli: \" prefix", err)
+	}
+}
+
+// The staging file can vanish mid-install: it lives in the ".fetch-*" namespace
+// that every concurrent install's sweep claims, and claustrum holds it open for
+// the whole decompress + chmod + isRunnable window (the reference does not — it
+// extracts in place, so it has no in-flight file there to lose).
+//
+// The destination must survive that. Ordering RemoveAll before Rename destroyed
+// it: the CLI already installed at cliPath was deleted and nothing replaced it,
+// leaving an EMPTY cli-dir and a working install gone.
+//
+// The fixture makes the race deterministic instead of timing-dependent: the
+// stand-in CLI deletes ITSELF when isRunnable execs it. The exec survives the
+// unlink, so isRunnable still returns true and the code proceeds to the rename
+// with its source already gone — exactly the interleaving a concurrent sweep
+// produces, with no sleeps.
+//
+// Unix-only: it relies on a shell stand-in that can unlink "$0", and on unlink
+// during exec, neither of which Windows offers.
+func TestEnsureCLIKeepsDestinationWhenStagingVanishes(t *testing.T) {
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cliPath := filepath.Join(cliDir, "1.0.0")
+	if err := os.WriteFile(cliPath, []byte("the previously installed CLI"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stand-in that removes its own path during the isRunnable probe.
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, []byte("#!/bin/sh\nrm -f -- \"$0\"\nexit 0\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ensureCLI(installOpts{cliDir: cliDir, cliVersion: "1.0.0", cliZst: zstPath}, cliPath)
+	if err == nil {
+		t.Fatal("ensureCLI succeeded although its staging file was removed, want an error")
+	}
+	if _, statErr := os.Stat(cliPath); statErr != nil {
+		t.Errorf("the destination was destroyed for an install that could not finish: %v", statErr)
+	}
+}
+
+// The concurrent-install case Greptile reported: another install's sweep
+// reclaims our staging file, and the install must still SUCCEED rather than
+// report "staging file vanished".
+//
+// A name-only sweep guard cannot fix this. In the staggered ordering the other
+// install staged BEFORE this one began, so its file is indistinguishable from
+// litter by name — which is why the fix is a bounded retry rather than a smarter
+// sweep, and why the sweep itself stays unconditional like the reference.
+//
+// Deterministic, no sleeps: the stand-in CLI removes its own path the FIRST time
+// isRunnable execs it and leaves a marker, so the retry's copy survives. The exec
+// survives the unlink, so isRunnable still returns true and the rename is reached
+// with its source already gone — exactly what a concurrent sweep produces.
+func TestEnsureCLIRetriesWhenStagingIsSweptOnce(t *testing.T) {
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "swept-once")
+	script := "#!/bin/sh\nif [ ! -f " + marker + " ]; then : > " + marker + "; rm -f -- \"$0\"; fi\nexit 0\n"
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, []byte(script)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cliPath := filepath.Join(cliDir, "1.0.0")
+	if err := ensureCLI(installOpts{cliDir: cliDir, cliVersion: "1.0.0", cliZst: zstPath}, cliPath); err != nil {
+		t.Fatalf("ensureCLI = %v, want the retry to recover from a swept staging file", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the fixture never removed its own staging file, so nothing was retried: %v", err)
+	}
+	if !isRegularFile(cliPath) {
+		t.Error("the CLI was not installed after the retry")
 	}
 }

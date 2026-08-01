@@ -702,3 +702,51 @@ func captureInstallFacts(t *testing.T, o installOpts) installFacts {
 func TestSweepFetchTempsUnreadableDir(t *testing.T) {
 	sweepFetchTemps(filepath.Join(t.TempDir(), "no-such-dir"))
 }
+
+// A non-200 download is reported with the reference's exact wording, and it is
+// NOT prefixed "download failed: " — that prefix belongs to transport failures
+// only. Measured at 5db5e4a:
+//
+//	404 response        -> cliError "download failed with status 404"
+//	connection refused  -> cliError "download failed: Get \"http://…\": dial tcp …"
+//
+// claustrum used to emit "download failed: download <url>: 404 File not found"
+// for the first case, which also leaked the (possibly signed) URL onto the
+// __INSTALL_RESULT__ line.
+func TestDownloadStatusErrorWording(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := httpGet(srv.URL + "/missing")
+	if err == nil {
+		t.Fatal("httpGet on a 404 returned no error")
+	}
+	if got := err.Error(); got != "download failed with status 404" {
+		t.Errorf("httpGet 404 error = %q, want %q", got, "download failed with status 404")
+	}
+
+	// ensureCLI must pass a status error through unwrapped.
+	dir := t.TempDir()
+	err = ensureCLI(installOpts{cliURL: srv.URL + "/missing", cliChecksum: "irrelevant"},
+		filepath.Join(dir, "v1"))
+	if err == nil {
+		t.Fatal("ensureCLI with a 404 download succeeded")
+	}
+	if got := err.Error(); got != "download failed with status 404" {
+		t.Errorf("ensureCLI 404 cliError = %q, want it unwrapped and exactly %q",
+			got, "download failed with status 404")
+	}
+
+	// A transport failure keeps the "download failed: " prefix. refusedURL binds a
+	// port, closes it, and hands back the address, so the connection is refused
+	// immediately. A hardcoded port cannot promise that: if anything listens there
+	// the test takes a different path, and if the host DROPS rather than refuses
+	// it blocks for the 5-minute client timeout instead of failing.
+	err = ensureCLI(installOpts{cliURL: refusedURL(t), cliChecksum: "x"},
+		filepath.Join(dir, "v2"))
+	if err == nil || !strings.HasPrefix(err.Error(), "download failed: ") {
+		t.Errorf("transport failure = %v, want a \"download failed: \" prefix", err)
+	}
+}
