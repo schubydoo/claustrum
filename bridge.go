@@ -53,10 +53,16 @@ func runStop(socket string) error {
 	// request has already been written by this point, so a daemon that is merely
 	// slow to answer still stops.
 	_ = nc.SetReadDeadline(time.Now().Add(stopReplyTimeout))
+	// Read the reply and DISCARD it. The reference prints nothing: measured with
+	// a deliberately wrong CLAUDE_RPC_TOKEN, so the daemon answers -32001 and a
+	// reply is genuinely in flight, the reference's stdout stays empty while
+	// claustrum echoed the raw frame:
+	//
+	//	{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Unauthorized: …
+	//
+	// -stop is a control command, not a relay; a caller parsing its output should
+	// not have a JSON-RPC frame appear only on the failure path.
 	buf := make([]byte, 4096)
-	n, _ := nc.Read(buf)
-	if n > 0 {
-		_, _ = os.Stdout.Write(buf[:n])
-	}
+	_, _ = nc.Read(buf)
 	return nil
 }
