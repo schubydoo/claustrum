@@ -34,30 +34,39 @@ func TestWaitForDaemonAcceptReturnsWhenListening(t *testing.T) {
 		}
 	}()
 
-	done := make(chan struct{})
-	go func() { waitForDaemonAccept(sock, make(chan struct{})); close(done) }()
+	done := make(chan bool, 1)
+	go func() { done <- waitForDaemonAccept(sock) }()
 	select {
-	case <-done:
+	case ok := <-done:
+		if !ok {
+			t.Error("waitForDaemonAccept reported failure for a listening socket")
+		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("waitForDaemonAccept did not return for a listening socket")
 	}
 }
 
-// A child that dies before listening must end the wait immediately, not after
-// the full deadline. This is what keeps a doomed start fast: with the socket
-// path occupied the reference's launcher returns in ~0.07s, not ~10s.
-func TestWaitForDaemonAcceptReturnsWhenChildExits(t *testing.T) {
+// An occupied socket path counts as "up" and returns at once, even though
+// nothing will ever accept there. This is measured reference behaviour, not a
+// convenience: with the path occupied by a directory the reference's launcher
+// exits 0 in 0.08s. A dial-based wait would sit out the whole deadline here.
+func TestWaitForDaemonAcceptReturnsForAnOccupiedPath(t *testing.T) {
 	old := daemonStartTimeout
 	daemonStartTimeout = 30 * time.Second // long enough that a deadline return is obvious
 	t.Cleanup(func() { daemonStartTimeout = old })
 
-	exited := make(chan struct{})
-	close(exited)
+	occupied := filepath.Join(t.TempDir(), "rpc.sock")
+	if err := os.Mkdir(occupied, 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	start := time.Now()
-	waitForDaemonAccept(filepath.Join(t.TempDir(), "never-exists.sock"), exited)
+	ok := waitForDaemonAccept(occupied)
+	if !ok {
+		t.Error("waitForDaemonAccept = false for an existing path, want true")
+	}
 	if el := time.Since(start); el > 2*time.Second {
-		t.Errorf("waited %v for an already-exited child, want an immediate return", el)
+		t.Errorf("waited %v for a path that already exists, want an immediate return", el)
 	}
 }
 
@@ -69,7 +78,9 @@ func TestWaitForDaemonAcceptGivesUpAtDeadline(t *testing.T) {
 	t.Cleanup(func() { daemonStartTimeout = old })
 
 	start := time.Now()
-	waitForDaemonAccept(filepath.Join(t.TempDir(), "never-exists.sock"), make(chan struct{}))
+	if waitForDaemonAccept(filepath.Join(t.TempDir(), "never-exists.sock")) {
+		t.Error("waitForDaemonAccept = true for a socket that never appears, want false")
+	}
 	el := time.Since(start)
 	if el < 200*time.Millisecond {
 		t.Errorf("returned after %v, want at least the %v deadline", el, daemonStartTimeout)
