@@ -800,10 +800,10 @@ Checksum + error framing (probe-verified):
 ### Behavior shared by every mode
 
 - **Default socket** — when `-socket` is omitted, `-serve`/`-bridge`/`-stop`
-  fall back to `~/.claude/remote/rpc.sock`. The parent directory is **not**
-  created, so `-serve` on a missing `~/.claude/remote` fails with
-  `claustrum: listen unix: …: bind: no such file or directory`. (The deployment
-  always passes `-socket`; this only matters for bare invocations.)
+  fall back to `~/.claude/remote/rpc.sock`. `-serve` **creates** the parent
+  directory (mode `0700`) if it is missing — see *Daemon startup* above — so a
+  bare `-serve` on a fresh machine works. `-bridge`/`-stop` do not create it and
+  still fail with `connect: no such file or directory` when no daemon has run.
 - **No mode given** →
   `claustrum: one of --version/--install/--serve/--bridge/--stop is required`
   on stderr, exit `2` — no usage dump. An *unknown flag* still gets the stdlib
