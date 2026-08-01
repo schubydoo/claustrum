@@ -83,44 +83,19 @@ func runInstall(o installOpts) {
 // uploaded one (-cli-zst, SFTP fallback) or a download (-cli-url), verified
 // against -cli-checksum, then zstd-decompressed to cliPath.
 func ensureCLI(o installOpts, cliPath string) error {
-	// Require -cli-version to name a SINGLE entry under -cli-dir, BEFORE anything
-	// touches the filesystem. cliPath is filepath.Join(cliDir, cliVersion), and
-	// the os.RemoveAll below deletes cliPath RECURSIVELY before the rename, so a
-	// version that reaches outside cliDir destroys unrelated data. Two ways it
-	// can, both measured:
+	// Validate -cli-version BEFORE anything touches the filesystem. The rules and
+	// their measurements live on validateCLIVersion; both are claustrum-only
+	// hardening, and on each input the reference does the damaging thing.
 	//
-	//	"../victim"   Join CLEANS, so cliPath lands beside cliDir
-	//	"link/1.0.0"  an intermediate symlink under cliDir, followed at open time
-	//
-	// A lexical containment check catches the first and NOT the second: with
-	// cliDir/link -> /outside, "link/1.0.0" is lexically inside cliDir, and
-	// RemoveAll then deleted /outside/1.0.0 and installed the CLI there.
-	//
-	// Hence a single component rather than a containment test. It costs nothing:
-	// the reference does not support a nested version either — measured at
-	// 5db5e4a, "sub/2.0.0" fails with `creating temp file: … no such file or
-	// directory` because it never creates the nested parent — and the real client
-	// passes a bare version string ("1.0.86"). A single component also removes
-	// the intermediate-path problem by construction rather than by inspection,
-	// which is why it beats calling EvalSymlinks here (that would only add a
-	// TOCTOU window between the check and the RemoveAll).
-	//
-	// A final component that is ITSELF a symlink stays safe: os.RemoveAll unlinks
-	// a symlink rather than following it (verified — the target's contents
-	// survive and only the link is removed).
-	//
-	// This is a DIVERGENCE, and a deliberate one: on "../victim" AND on
-	// "link/1.0.0" the reference destroys the outside directory (measured at
-	// 5db5e4a, identical destruction, identical facts frame). Same class as the
-	// remote-server.log refusal in PROTOCOL.md — a claustrum-only hardening on an
-	// attack path the reference was not measured on, invisible on honest paths.
-	//
-	// Guarding here rather than at the RemoveAll gates every filesystem effect,
-	// not just the destructive one, and reports through the existing cliError
-	// field so the facts frame keeps its shape. Skipped when cliDir is unset —
-	// then cliPath is not derived from a version and there is nothing to contain.
-	if o.cliDir != "" && !isSingleComponent(o.cliVersion) {
-		return fmt.Errorf("cli version %q must be a single path component", o.cliVersion)
+	// Guarding here rather than at the individual hazards gates every filesystem
+	// effect, not just the destructive one, and reports through the existing
+	// cliError field so the facts frame keeps its shape. Skipped when cliDir is
+	// unset — then cliPath is not derived from a version and there is nothing to
+	// contain.
+	if o.cliDir != "" {
+		if err := validateCLIVersion(o.cliVersion); err != nil {
+			return err
+		}
 	}
 	var zst []byte
 	var err error
@@ -212,17 +187,48 @@ func ensureCLI(o installOpts, cliPath string) error {
 	return nil
 }
 
-// isSingleComponent reports whether name is one ordinary path element — a name
-// that can only ever resolve to a direct child of the directory it is joined to.
+// validateCLIVersion rejects a -cli-version the install cannot honestly carry
+// out. Two rules, both measured, both claustrum-only hardening — the reference
+// accepts each input and does the damaging thing.
 //
-// "." and ".." are rejected explicitly: "." resolves cliPath to the cli-dir
-// ITSELF, which would hand the whole cli-dir to os.RemoveAll.
+//  1. A SINGLE PATH COMPONENT. cliPath is filepath.Join(cliDir, cliVersion) and
+//     ensureCLI's os.RemoveAll deletes cliPath recursively, so a version that
+//     reaches outside cliDir destroys unrelated data. "../victim" escapes because
+//     Join CLEANS; "link/1.0.0" escapes through a symlink under cliDir, which a
+//     lexical containment check accepts because it is lexically inside.
+//
+//  2. NOT A NAME THE SWEEP CLAIMS. sweepFetchTemps runs after every attempted
+//     install and removes ".fetch-*" and "*.zst". A version of ".fetch-x" or
+//     "1.0.zst" therefore installs correctly and is deleted moments later, in the
+//     same run, while the facts frame reports success with no cliError. Measured
+//     at 5db5e4a: reference AND claustrum both leave an EMPTY cli-dir and report
+//     no error. Reporting an error beats reporting a success that installed
+//     nothing, so claustrum refuses the version instead.
+//
+// "." and ".." are rejected explicitly by rule 1: "." resolves cliPath to the
+// cli-dir ITSELF, which would hand the whole cli-dir to os.RemoveAll.
 //
 // BOTH separators are rejected on every OS, not just the local one. A backslash
 // is a legal filename byte on Unix, so this is stricter than the platform
 // requires — deliberately, so a Unix daemon cannot be handed a path that a
-// Windows client built, and so the accepted set does not change with GOOS. No
-// real version string contains either character.
+// Windows client built, and so the accepted set does not change with GOOS.
+//
+// No real version string trips either rule: 1.0.86, 2.0.0-beta.1, a commit sha,
+// "latest" and 1.0.86+build.5 are all measured as accepted.
+func validateCLIVersion(v string) error {
+	if !isSingleComponent(v) {
+		return fmt.Errorf("cli version %q must be a single path component", v)
+	}
+	if isSweptName(v) {
+		// Deliberately names the sweep, not the character class: the point is the
+		// collision, and isSweptName is the one definition of it.
+		return fmt.Errorf("cli version %q collides with the install temp sweep", v)
+	}
+	return nil
+}
+
+// isSingleComponent reports whether name is one ordinary path element — a name
+// that can only ever resolve to a direct child of the directory it is joined to.
 func isSingleComponent(name string) bool {
 	if name == "" || name == "." || name == ".." {
 		return false
@@ -316,14 +322,25 @@ func sweepFetchTemps(cliDir string) {
 		return
 	}
 	for _, e := range ents {
-		// ".fetch-*" AND "*.zst": the reference sweeps both. Measured at 5db5e4a
-		// with a stray "leftover.zst" in the cli-dir — the reference removed it,
-		// claustrum kept it, and pruneCLI then counted it as a version and burned
-		// a -cli-keep slot on it. An unrelated file ("README") survives on both.
-		if strings.HasPrefix(e.Name(), ".fetch-") || strings.HasSuffix(e.Name(), ".zst") {
+		if isSweptName(e.Name()) {
 			_ = os.Remove(filepath.Join(cliDir, e.Name()))
 		}
 	}
+}
+
+// isSweptName reports whether the sweep above claims a cli-dir entry.
+//
+// ".fetch-*" AND "*.zst": the reference sweeps both. Measured at 5db5e4a with a
+// stray "leftover.zst" in the cli-dir — the reference removed it, claustrum kept
+// it, and pruneCLI then counted it as a version and burned a -cli-keep slot on
+// it. An unrelated file ("README") survives on both.
+//
+// Split out so the sweep and the -cli-version validator read the SAME rule. A
+// version matching this predicate installs successfully and is then deleted by
+// the sweep in the same run, so the two must not drift apart — see
+// validateCLIVersion.
+func isSweptName(name string) bool {
+	return strings.HasPrefix(name, ".fetch-") || strings.HasSuffix(name, ".zst")
 }
 
 func pruneCLI(cliDir string, keep int) {

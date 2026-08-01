@@ -248,6 +248,55 @@ func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 	}
 }
 
+// A version that the orphan sweep would claim is refused. Without this the
+// install SUCCEEDS and the sweep then deletes the CLI it just wrote, in the same
+// run, while the facts frame reports no cliError — measured at 5db5e4a with an
+// EMPTY cli-dir and no error on BOTH the reference and claustrum.
+//
+// Reporting an error beats reporting a success that installed nothing, so this
+// is a second claustrum-only hardening on the same flag. It is exact parity that
+// is being given up here, unlike the escape rules, where the reference destroys
+// unrelated data.
+func TestEnsureCLIRefusesSweptVersionNames(t *testing.T) {
+	for _, v := range []string{".fetch-x", "1.0.zst"} {
+		t.Run(v, func(t *testing.T) {
+			root := t.TempDir()
+			cliDir := filepath.Join(root, "clidir")
+			if err := os.MkdirAll(cliDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			zstPath := filepath.Join(root, "cli.zst")
+			if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			f := captureInstallFacts(t, installOpts{
+				cliDir: cliDir, cliVersion: v, cliZst: zstPath,
+			})
+			if !strings.Contains(f.CliError, "collides with the install temp sweep") {
+				t.Errorf("CliError = %q, want a sweep-collision refusal", f.CliError)
+			}
+		})
+	}
+}
+
+// The sweep and the validator must agree on what the sweep claims, or a version
+// becomes install-then-vanish again. This pins them to the one predicate.
+func TestSweptNameRuleIsShared(t *testing.T) {
+	for _, name := range []string{".fetch-x", ".fetch-", "1.0.zst", ".zst"} {
+		if !isSweptName(name) {
+			t.Errorf("isSweptName(%q) = false, want true", name)
+		}
+		if err := validateCLIVersion(name); err == nil {
+			t.Errorf("validateCLIVersion(%q) = nil, but the sweep would delete it", name)
+		}
+	}
+	for _, name := range []string{"1.0.86", "latest", "README"} {
+		if isSweptName(name) {
+			t.Errorf("isSweptName(%q) = true, want false", name)
+		}
+	}
+}
+
 func TestIsSingleComponent(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -259,7 +308,6 @@ func TestIsSingleComponent(t *testing.T) {
 		{"5db5e4a12f88487e47c2c48259b69a2d630bb3f7", true},
 		{"latest", true},
 		{"1.0.86+build.5", true},
-		{".fetch-x", true}, // a leading dot is just a name, not a traversal
 
 		{"", false},
 		{".", false},  // resolves cliPath to the cli-dir ITSELF

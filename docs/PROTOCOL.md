@@ -901,6 +901,16 @@ Staging and cleanup (probe-verified):
   commit sha, `latest`, `1.0.86+build.5` — all measured as accepted), so every
   honest path is byte-identical. Same shape as the `remote-server.log` refusal
   above and D1 below.
+- **Divergence (claustrum-only hardening): `-cli-version` must not collide with
+  the orphan sweep.** The sweep below claims `.fetch-*` and `*.zst`, and it runs
+  after *every* attempted install — so `-cli-version .fetch-x` or `1.0.zst`
+  installs correctly and is deleted moments later in the same run. Measured at
+  `5db5e4a`: reference **and** claustrum both finish with an **empty cli-dir and
+  no `cliError`**, reporting success while having installed nothing. claustrum
+  now answers `cli version "…" collides with the install temp sweep` instead.
+  Unlike the escape rules above this gives up exact parity, on the grounds that
+  an error beats a success that installed nothing. The sweep predicate and this
+  check share one definition, so they cannot drift apart.
 - The orphan sweep removes both **`.fetch-*`** and **`*.zst`** entries from the
   cli-dir, with `os.Remove` per entry — so it clears files and *empty*
   directories and silently leaves a non-empty `.fetch-dir/` in place. Unrelated
