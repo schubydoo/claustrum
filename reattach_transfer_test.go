@@ -1,6 +1,8 @@
 package main
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -59,6 +61,71 @@ func drain(ch <-chan streamFrame) {
 		case <-ch:
 		default:
 			return
+		}
+	}
+}
+
+// The exclusive transfer must hold under a CONCURRENT emit, not just a
+// sequential one. Raised on review: if emit snapshots the subscriber set and a
+// reattach replaces p.subs before the write lands, does the old connection get a
+// post-transfer frame?
+//
+// It cannot, and the reason is the lock structure rather than luck. emit stamps
+// f.Seq, appends to p.buffer, and copies p.subs inside ONE p.mu critical
+// section, and reattach swaps p.subs under the same lock. So the two serialize,
+// and every frame falls on one side of the cut:
+//
+//	emit locks first     -> subs is the OLD set, and seq <= the lastSeq the
+//	                        reattach then reports; the frame is also already in
+//	                        p.buffer, so the new connection gets it in the replay
+//	emit locks second    -> subs is ALREADY {new}, so the old connection is gone
+//
+// The assertion is therefore the seq-precise one — the old connection never sees
+// a seq ABOVE the transfer point — not "the old connection sees nothing more",
+// which would be wrong for a frame that legitimately predates the cut.
+//
+// SENSITIVITY, verified rather than assumed: this test passes against a mutant
+// that merely splits the critical section, because the resulting window is a few
+// nanoseconds and 300 rounds never land in it. Widening that mutant's window to
+// 50us makes it fail immediately ("OLD conn received seq 2 > lastSeq 1"), which
+// is what shows the assertion can detect a real leak at all. Treat it as a guard
+// against a future refactor that widens the window, not as proof on its own.
+func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
+	for round := 0; round < 300; round++ {
+		oldConn, oldFrames := pipeConn(t)
+		fresh, _ := pipeConn(t)
+		p := &managedProc{id: "r", subs: map[*conn]struct{}{oldConn: {}}}
+
+		var stop atomic.Bool
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for !stop.Load() {
+				p.emit(streamFrame{Stream: "stdout", Data: "eA=="})
+			}
+		}()
+		time.Sleep(200 * time.Microsecond) // let the emitter get going
+
+		// The transfer, exactly as reattach performs it.
+		p.mu.Lock()
+		lastSeq := p.seq
+		p.subs = map[*conn]struct{}{fresh: {}}
+		p.mu.Unlock()
+
+		stop.Store(true)
+		wg.Wait()
+
+		for drained := false; !drained; {
+			select {
+			case f := <-oldFrames:
+				if f.Seq > lastSeq {
+					t.Fatalf("round %d: the old connection received seq %d, above the "+
+						"transfer point lastSeq=%d", round, f.Seq, lastSeq)
+				}
+			default:
+				drained = true
+			}
 		}
 	}
 }

@@ -618,6 +618,15 @@ unknown id is not an error):
   is what makes resume safe — otherwise an old connection that is still open
   would keep getting frames the new one has just been replayed, and the two
   deliveries would overlap. Measured against the reference at `5db5e4a`.
+- **The cut is by `seq`, not by wall-clock.** The transfer point is the `lastSeq`
+  the reattach reports: the old connection can still receive a frame whose `seq`
+  is `<= lastSeq` slightly *after* the reattach reply, and never one above it. A
+  frame is stamped with its `seq`, appended to the replay buffer, and matched
+  against the subscriber set in a single critical section, so a frame that
+  predates the transfer belongs to the old connection and is simultaneously in
+  the new connection's replay — which is exactly what `fromSeq` is for. There is
+  no frame that reaches the old connection and is absent from the new one's
+  replay.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
 - **Exited processes are retained for 15 minutes, then dropped** — with their
   replay buffers — so an id last seen longer ago than that answers exactly like
