@@ -12,6 +12,7 @@ func resetLoginPATHForTest() {
 	loginPATHMu.Lock()
 	loginPATHWait = nil
 	loginPATHMu.Unlock()
+	setLoginPATH("")
 }
 
 // envValue reads key out of a buildEnv result. Windows spells the variable
@@ -51,7 +52,9 @@ func TestBuildEnvWaitsForLoginPATH(t *testing.T) {
 		close(started)
 		// Long enough that a non-waiting buildEnv reliably wins the race.
 		time.Sleep(100 * time.Millisecond)
-		_ = os.Setenv("PATH", want)
+		// setLoginPATH, NOT os.Setenv: the extracted PATH is recorded for child
+		// environments only and never installed into the daemon's own.
+		setLoginPATH(want)
 	}
 
 	startLoginPATH()

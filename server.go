@@ -72,6 +72,52 @@ type conn struct {
 	nc     net.Conn
 	wmu    sync.Mutex
 	closed bool
+
+	// process.stdin is the one method whose ARRIVAL ORDER is part of its meaning:
+	// the chunks are a byte stream, and delivering them out of order corrupts it.
+	// Everything else on a connection stays concurrent (the reference dispatches
+	// concurrently and replies can return out of order — that is contract), but
+	// stdin requests take a ticket in read order and are admitted one at a time.
+	//
+	// Measured at 5db5e4a: 20 stdin chunks pipelined back-to-back on one
+	// connection arrive in order on the reference and scrambled on claustrum
+	// (L02 L03 L00 L08 L04 …), because each request ran in its own goroutine and
+	// raced to the queue.
+	stdinMu     sync.Mutex
+	stdinCond   *sync.Cond
+	stdinNext   uint64 // next ticket to hand out
+	stdinServed uint64 // ticket currently admitted
+}
+
+// nextStdinTicket reserves this request's place in the stdin stream. Called from
+// the connection's read loop, so tickets follow wire order exactly.
+func (c *conn) nextStdinTicket() uint64 {
+	c.stdinMu.Lock()
+	defer c.stdinMu.Unlock()
+	if c.stdinCond == nil {
+		c.stdinCond = sync.NewCond(&c.stdinMu)
+	}
+	t := c.stdinNext
+	c.stdinNext++
+	return t
+}
+
+// awaitStdinTurn blocks until every earlier stdin request on this connection has
+// finished.
+func (c *conn) awaitStdinTurn(t uint64) {
+	c.stdinMu.Lock()
+	defer c.stdinMu.Unlock()
+	for c.stdinServed != t {
+		c.stdinCond.Wait()
+	}
+}
+
+// doneStdinTurn admits the next stdin request.
+func (c *conn) doneStdinTurn(t uint64) {
+	c.stdinMu.Lock()
+	c.stdinServed = t + 1
+	c.stdinCond.Broadcast()
+	c.stdinMu.Unlock()
 }
 
 func (c *conn) writeJSON(v interface{}) error {
@@ -197,7 +243,21 @@ func childToken(tokenFile string) (string, error) {
 			return "", fmt.Errorf("read --token-file: %v", err)
 		}
 		token = normalizeToken(b)
-		_ = os.Remove(tokenFile)
+		// An unlink failure is worth a line: the token file is supposed to be
+		// consumed, and one left on disk is a credential the operator does not
+		// know is still there.
+		if err := os.Remove(tokenFile); err != nil {
+			logWarnf("[daemon] failed to remove --token-file %s: %v", tokenFile, err)
+		}
+	}
+	// An empty token must be fatal. Otherwise the daemon comes up healthy and
+	// listening while nothing can ever authenticate to it: every request fails
+	// -32001 forever, and the operator sees a running service. Measured at
+	// 5db5e4a with a zero-byte -token-file — the reference refuses to start (its
+	// launcher reports "timeout waiting for daemon to accept" and exits 1) where
+	// claustrum happily served a permanently unauthenticatable socket.
+	if token == "" {
+		return "", fmt.Errorf("token is empty")
 	}
 	_ = os.Unsetenv("CLAUDE_RPC_TOKEN") // prevent token propagation through daemonize → os.Environ()
 	// Drop our internal re-exec sentinel now that we have consumed it: buildEnv
@@ -343,7 +403,26 @@ func openDaemonLog(socket string) *os.File {
 // an inherited pipe (child fd 3, named by tokenPipeEnv) so the token never lands
 // on disk, in argv, or in the environment; an empty forwardToken means the child
 // reads its own -token-file as before.
+// daemonStartTimeout caps how long the -serve launcher waits for the daemonized
+// child to start accepting before it returns anyway. The reference uses 10s
+// (a 1e10 ns deadline in its spawnChild, alongside the string "timeout waiting
+// for daemon to accept on %s"). var so tests can shrink it.
+var daemonStartTimeout = 10 * time.Second
+
 func daemonizeWithToken(socket, forwardToken string) {
+	// Create the socket's directory before anything opens a file in it — the
+	// reference does this in its launcher (string "mkdir parent %s: %v") and
+	// creates the chain 0700, the same owner-only mode it uses for the cli-dir.
+	// Measured: with a missing socket directory the reference starts normally and
+	// leaves d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600)
+	// behind, while claustrum refused to start at all.
+	//
+	// The error is deliberately not reported here: a failure surfaces immediately
+	// as the child's bind error, and the reference prints nothing to the
+	// launcher's stderr on this path.
+	if dir := filepath.Dir(socket); dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0o700)
+	}
 	self, err := os.Executable()
 	if err != nil {
 		self = os.Args[0]
@@ -400,8 +479,52 @@ func daemonizeWithToken(socket, forwardToken string) {
 		_, _ = io.WriteString(pipeW, forwardToken)
 		_ = pipeW.Close() // closing the write end gives the child's read an EOF
 	}
-	_ = cmd.Process.Release()
+	// Do not return until the child is actually accepting. The reference's
+	// launcher blocks here, so a client that runs `-serve` over SSH and connects
+	// immediately always finds a listening socket; claustrum returned the moment
+	// the fork succeeded and lost that race. Measured at 5db5e4a — socket present
+	// at the instant the launcher returned: reference YES, claustrum NO.
+	if !waitForDaemonAccept(socket) {
+		// The socket never appeared. The reference reports exactly this and exits
+		// 1 — measured with a zero-byte -token-file, where its child refuses to
+		// start: "claude-ssh: timeout waiting for daemon to accept on <socket>",
+		// exit 1, after the full 10.06s deadline.
+		fmt.Fprintf(os.Stderr, "claustrum: timeout waiting for daemon to accept on %s\n", socket)
+		osExit(1)
+	}
 	osExit(0)
+}
+
+// waitForDaemonAccept waits for the daemonized child to come up, reporting
+// whether it did. It polls for the socket PATH TO EXIST, then dials once to
+// confirm, and that dial is what puts a "New connection from: @" /
+// "Connection closed: @" pair at the top of a freshly started daemon's log.
+//
+// Polling for existence rather than for a successful dial is not a shortcut —
+// it is what the reference does, and the two are distinguishable. Measured at
+// 5db5e4a:
+//
+//	socket path occupied by a directory  path exists at once -> exit 0 in 0.08s
+//	child never binds (empty token file) path never appears  -> exit 1 at 10.06s
+//
+// A dial-based wait would invert both: it would sit out the full deadline on the
+// occupied path (nothing ever accepts there) and it would give up early on any
+// child that dies, where the reference keeps waiting. The confirming dial's
+// result is deliberately ignored for the same reason.
+func waitForDaemonAccept(socket string) bool {
+	deadline := time.Now().Add(daemonStartTimeout)
+	for {
+		if _, err := os.Stat(socket); err == nil {
+			if c, err := net.Dial("unix", socket); err == nil {
+				_ = c.Close()
+			}
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // enablePipe starts the optional Windows named-pipe listener when requested and
@@ -533,10 +656,42 @@ func (s *server) serveConn(c *conn) {
 		}
 		raw := make([]byte, len(line))
 		copy(raw, line)
+		// Peek at the method while still in the read loop, so a stdin request can
+		// take its ticket in wire order before dispatch goes concurrent. A
+		// malformed line yields an empty method and is simply not ordered — it has
+		// no stdin payload to misplace.
+		var peek struct {
+			Method string `json:"method"`
+		}
+		_ = json.Unmarshal(raw, &peek)
+		ordered := peek.Method == "process.stdin"
+		var ticket uint64
+		if ordered {
+			ticket = c.nextStdinTicket()
+		}
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
 		go func() {
-			if resp := s.dispatch(c, raw); resp != nil {
+			// The stdin ticket covers DISPATCH ONLY, never the response write.
+			// dispatch appends the chunk to the process's existing stdin FIFO
+			// (applyStdin) before it returns, so byte order is already fixed by
+			// then. Holding the ticket across writeResponse would add nothing to
+			// ordering and would couple input admission to response delivery: a
+			// client that stops reading blocks the socket write, and every later
+			// process.stdin on the connection stalls behind it — including input
+			// for OTHER processes.
+			//
+			// The inner func is what keeps the release on a defer, so a panic in
+			// dispatch cannot strand the ticket and deadlock the connection.
+			var resp *response
+			func() {
+				if ordered {
+					c.awaitStdinTurn(ticket)
+					defer c.doneStdinTurn(ticket)
+				}
+				resp = s.dispatch(c, raw)
+			}()
+			if resp != nil {
 				c.writeResponse(*resp)
 			}
 		}()
