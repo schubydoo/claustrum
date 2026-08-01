@@ -343,12 +343,27 @@ Errors:
 - `repoSlug` and `defaultBranch` were added by reference `7c2f88d`. Both are
   **always present** (empty string when undeterminable) — including on the
   non-repo body, which is now `{"isRepo":false,"repoSlug":"","defaultBranch":""}`.
-    - `repoSlug` is the `owner/repo` parsed from `remote.origin.url`. It accepts
-      the scp-like (`git@host:owner/repo.git`), scheme (`https://`, `ssh://`),
-      userinfo, and trailing-slash forms and strips a single trailing `.git`, but
-      is populated **only when the path after the host is exactly two segments** —
-      a GitLab subgroup URL (`host/group/sub/proj`) has three and yields `""`.
-      Owner/repo characters are preserved verbatim (case, `-`, `_`, `.`).
+    - `repoSlug` is the `owner/repo` parsed from `remote.origin.url`, and it is
+      populated **only for a canonical `github.com` remote**. Every rule below was
+      measured by driving 42 remote-URL shapes through the reference at `5db5e4a`:
+        - **Scheme** must be `https`, `http`, `ssh`, `git`, or absent (the
+          scp-like `[user@]host:owner/repo` form). `git+ssh://` and `file://`
+          yield `""` — the scheme is matched whole, not by suffix.
+        - **Host** must equal `github.com`, case-insensitively (`GITHUB.COM` is
+          accepted). `www.github.com`, a trailing-dot `github.com.`, GitLab,
+          Bitbucket and any self-hosted GHE all yield `""`. A port makes it a
+          different host, so `github.com:443/…` yields `""` too. Userinfo
+          (`git@`, `user:pw@`) is stripped.
+        - **Path** must be exactly two non-empty segments after one optional
+          trailing `/` and one optional trailing `.git`. Three segments
+          (`acme/sub/gizmo`) or one (`acme`) yield `""`.
+        - **Owner** is alphanumerics with *interior* hyphens only: `ac-me` and
+          `ac--me` pass; `-acme`, `acme-`, `acme_corp` and `acme.co` do not.
+        - **Repo** is alphanumerics plus `.`, `_` and `-`, not starting with `-`,
+          not `.` or `..`, and not ending in a **lowercase** `.wiki`. The owner
+          charset is stricter than the repo charset — `_` and `.` are legal in a
+          repo name and illegal in an owner. The `.wiki` test is case-sensitive
+          and suffix-only, so `GIZMO.WIKI` and a repo named `wiki` are accepted.
     - `defaultBranch` is what `refs/remotes/origin/HEAD` points to (e.g. `main`);
       empty when origin/HEAD is unset.
 
