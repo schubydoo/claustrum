@@ -518,9 +518,21 @@ stream notifications, **buffered** for later replay.
 
 `{id[,signal]}` → `{"success":true}`
 
-- Best-effort, **fire-and-forget**; tears down the whole child tree — signals the
-  process group on Unix, terminates the Job Object on Windows. Does not wait for
-  the child to actually exit (contrast `process.killAndWait`).
+- Best-effort, **fire-and-forget**. Does not wait for the child to actually exit
+  (contrast `process.killAndWait`).
+- **How wide the signal reaches depends on the signal**, on Unix:
+    - `KILL` goes to the whole **process group** (negative pid), so the entire
+      child tree dies — backgrounded grandchildren included.
+    - **Every other signal** (`TERM`, `INT`, `HUP`, and the default) goes to the
+      **direct child only**. A grandchild the child backgrounded keeps running.
+      Measured against the reference at `5db5e4a`: spawning
+      `sh -c "sleep 40 & wait"` and sending `process.kill` with `TERM` leaves the
+      backgrounded sleeper alive.
+    - So a graceful `process.kill` is **not** a tree teardown. Use
+      `signal:"KILL"`, or `process.killAndWait` with `escalate:true` (which
+      escalates to a group `SIGKILL`), when the whole tree must go.
+  On Windows the split does not apply — the Job Object is terminated, which takes
+  the tree either way.
 - **Divergence:** claustrum skips the signal when the child has already
   exited — after the child is reaped its Unix pgid can be recycled, so the
   reference's unconditional negative-pid signal could hit an unrelated process
@@ -550,6 +562,11 @@ unknown id is not an error):
       alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
       and add `"escalated":true` to the reply. `false` → leave the process running
       and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
+      The escalation `SIGKILL` goes to the **process group**, so it sweeps up the
+      child tree the graceful signal spared — and it is sent even when the
+      graceful signal already killed the child itself, since a grandchild holding
+      the stdout pipe can keep the drain pending past the grace. `escalate:false`
+      spares the tree entirely.
 - On a process that dies within the grace (cooperative, or a hard `signal:"KILL"`)
   → `{"found":true,"died":true}` with no `escalated`.
 
