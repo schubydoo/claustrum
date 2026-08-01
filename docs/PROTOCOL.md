@@ -58,7 +58,15 @@ unchanged whether a request arrives over the socket or the pipe.
 
 ## Authentication
 
-Every request carries a top-level `"auth":"<token>"`. The server's expected token
+Every request carries a top-level `"auth":"<token>"` — **except
+`server.shutdown`, which is not authenticated at all.** A shutdown frame whose
+`auth` member is absent, empty, wrong, or valid all stop the daemon, and
+`-stop` sends no `auth` member. This matches the reference and is load-bearing:
+the Desktop client tears the daemon down with `server --stop --socket <sock>`
+from a bare SSH command line, with no `CLAUDE_RPC_TOKEN` in its environment.
+The exemption covers auth ONLY — a shutdown frame with a bad or absent
+`jsonrpc` version is still rejected `-32600` and the daemon stays up. Every
+other method rejects an unauthenticated request with `-32001`. The server's expected token
 comes from `-token-file` (read once at startup, then **unlinked**) or `-token-fd`
 (read from an open descriptor, forwarded to the daemon over a pipe — no temp
 file); for the `-bridge`/`-stop` clients it comes from the `CLAUDE_RPC_TOKEN`

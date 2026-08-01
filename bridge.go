@@ -34,8 +34,18 @@ func runStop(socket string) error {
 		return nil
 	}
 	defer nc.Close()
-	tok := os.Getenv("CLAUDE_RPC_TOKEN")
-	_, _ = fmt.Fprintf(nc, `{"jsonrpc":"2.0","id":1,"method":"server.shutdown","auth":%q}`+"\n", tok)
+	// No auth member. The reference's -stop sends exactly this frame, and its
+	// daemon does not authenticate server.shutdown. Captured off a fake listener
+	// with CLAUDE_RPC_TOKEN deliberately SET, so the omission is known to be real
+	// and not just an unset variable:
+	//
+	//	reference : {"jsonrpc":"2.0","id":1,"method":"server.shutdown"}
+	//	claustrum : {"jsonrpc":"2.0","id":1,"method":"server.shutdown","auth":"…"}
+	//
+	// CLAUDE_RPC_TOKEN is no longer read here at all — -stop needs no credential,
+	// which is what lets `server --stop --socket <sock>` work from a bare SSH
+	// command line the way the Desktop client invokes it.
+	_, _ = fmt.Fprint(nc, `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`+"\n")
 	buf := make([]byte, 4096)
 	n, _ := nc.Read(buf)
 	if n > 0 {
