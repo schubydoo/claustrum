@@ -739,8 +739,12 @@ func TestDownloadStatusErrorWording(t *testing.T) {
 			got, "download failed with status 404")
 	}
 
-	// A transport failure keeps the "download failed: " prefix.
-	err = ensureCLI(installOpts{cliURL: "http://127.0.0.1:1/x.zst", cliChecksum: "x"},
+	// A transport failure keeps the "download failed: " prefix. refusedURL binds a
+	// port, closes it, and hands back the address, so the connection is refused
+	// immediately. A hardcoded port cannot promise that: if anything listens there
+	// the test takes a different path, and if the host DROPS rather than refuses
+	// it blocks for the 5-minute client timeout instead of failing.
+	err = ensureCLI(installOpts{cliURL: refusedURL(t), cliChecksum: "x"},
 		filepath.Join(dir, "v2"))
 	if err == nil || !strings.HasPrefix(err.Error(), "download failed: ") {
 		t.Errorf("transport failure = %v, want a \"download failed: \" prefix", err)
