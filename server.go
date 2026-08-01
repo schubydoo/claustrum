@@ -72,6 +72,52 @@ type conn struct {
 	nc     net.Conn
 	wmu    sync.Mutex
 	closed bool
+
+	// process.stdin is the one method whose ARRIVAL ORDER is part of its meaning:
+	// the chunks are a byte stream, and delivering them out of order corrupts it.
+	// Everything else on a connection stays concurrent (the reference dispatches
+	// concurrently and replies can return out of order — that is contract), but
+	// stdin requests take a ticket in read order and are admitted one at a time.
+	//
+	// Measured at 5db5e4a: 20 stdin chunks pipelined back-to-back on one
+	// connection arrive in order on the reference and scrambled on claustrum
+	// (L02 L03 L00 L08 L04 …), because each request ran in its own goroutine and
+	// raced to the queue.
+	stdinMu     sync.Mutex
+	stdinCond   *sync.Cond
+	stdinNext   uint64 // next ticket to hand out
+	stdinServed uint64 // ticket currently admitted
+}
+
+// nextStdinTicket reserves this request's place in the stdin stream. Called from
+// the connection's read loop, so tickets follow wire order exactly.
+func (c *conn) nextStdinTicket() uint64 {
+	c.stdinMu.Lock()
+	defer c.stdinMu.Unlock()
+	if c.stdinCond == nil {
+		c.stdinCond = sync.NewCond(&c.stdinMu)
+	}
+	t := c.stdinNext
+	c.stdinNext++
+	return t
+}
+
+// awaitStdinTurn blocks until every earlier stdin request on this connection has
+// finished.
+func (c *conn) awaitStdinTurn(t uint64) {
+	c.stdinMu.Lock()
+	defer c.stdinMu.Unlock()
+	for c.stdinServed != t {
+		c.stdinCond.Wait()
+	}
+}
+
+// doneStdinTurn admits the next stdin request.
+func (c *conn) doneStdinTurn(t uint64) {
+	c.stdinMu.Lock()
+	c.stdinServed = t + 1
+	c.stdinCond.Broadcast()
+	c.stdinMu.Unlock()
 }
 
 func (c *conn) writeJSON(v interface{}) error {
@@ -610,10 +656,42 @@ func (s *server) serveConn(c *conn) {
 		}
 		raw := make([]byte, len(line))
 		copy(raw, line)
+		// Peek at the method while still in the read loop, so a stdin request can
+		// take its ticket in wire order before dispatch goes concurrent. A
+		// malformed line yields an empty method and is simply not ordered — it has
+		// no stdin payload to misplace.
+		var peek struct {
+			Method string `json:"method"`
+		}
+		_ = json.Unmarshal(raw, &peek)
+		ordered := peek.Method == "process.stdin"
+		var ticket uint64
+		if ordered {
+			ticket = c.nextStdinTicket()
+		}
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
 		go func() {
-			if resp := s.dispatch(c, raw); resp != nil {
+			// The stdin ticket covers DISPATCH ONLY, never the response write.
+			// dispatch appends the chunk to the process's existing stdin FIFO
+			// (applyStdin) before it returns, so byte order is already fixed by
+			// then. Holding the ticket across writeResponse would add nothing to
+			// ordering and would couple input admission to response delivery: a
+			// client that stops reading blocks the socket write, and every later
+			// process.stdin on the connection stalls behind it — including input
+			// for OTHER processes.
+			//
+			// The inner func is what keeps the release on a defer, so a panic in
+			// dispatch cannot strand the ticket and deadlock the connection.
+			var resp *response
+			func() {
+				if ordered {
+					c.awaitStdinTurn(ticket)
+					defer c.doneStdinTurn(ticket)
+				}
+				resp = s.dispatch(c, raw)
+			}()
+			if resp != nil {
 				c.writeResponse(*resp)
 			}
 		}()
