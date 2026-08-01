@@ -2,4 +2,4 @@
 default: patch
 ---
 
-`-install` now stages the CLI at `.fetch-<random>` like the reference, clears an occupied `cliPath` instead of failing the install with a rename error, reports a failed cli-dir creation with the `mkdir cli dir: ` prefix, sweeps stray `*.zst` blobs so they no longer consume a `-cli-keep` slot, and validates `-cli-version` so the clearing step can never recursively delete content outside `-cli-dir` (through `..` or through a symlink under it) and a version that collides with the orphan sweep is refused instead of being installed and then silently deleted.
+`-install` now stages the CLI at `.fetch-<random>` and sweeps stray `*.zst` blobs, so leftover files no longer take a `-cli-keep` slot. An occupied `cliPath` is cleared instead of failing the install with a rename error. A failed cli-dir creation now carries the `mkdir cli dir: ` prefix. `-cli-version` must now name a single entry inside `-cli-dir`. A version that reaches outside it, with `..` or through a symlink, can no longer delete a directory there. A version the orphan sweep claims (`.fetch-*` or `*.zst`) is refused too, because the sweep deleted it moments after the install.
