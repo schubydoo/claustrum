@@ -138,27 +138,68 @@ func gitInfo(req *request) response {
 // when there is no origin or the URL doesn't reduce to exactly two path segments.
 // Added by the reference daemon in 7c2f88d.
 func gitRepoSlug(dir string) string {
-	url, ok := git(dir, "config", "--get", "remote.origin.url")
+	// `remote get-url`, NOT `config --get remote.origin.url`: the former applies
+	// url.<base>.insteadOf rewrites, the latter returns the raw stored value.
+	// Measured at 5db5e4a with origin "gl-base/acme/gizmo.git" and
+	// url."https://github.com/".insteadOf "gl-base/" — the reference answers
+	// "acme/gizmo", which is only reachable from the rewritten URL.
+	//
+	// This became load-bearing with the host gate below: the raw value has no
+	// github.com host, so reading it would drop the slug for every developer who
+	// uses an insteadOf rewrite. Without the gate the old call happened to give
+	// the right answer, which is why this looked like a no-op before.
+	url, ok := git(dir, "remote", "get-url", "origin")
 	if !ok || url == "" {
 		return ""
 	}
 	return parseRepoSlug(url)
 }
 
-// parseRepoSlug reduces a git remote URL to its "owner/repo" slug. It accepts the
-// scp-like (git@host:owner/repo.git), scheme (https:// or ssh://), userinfo, and
-// trailing-slash forms, strips a single trailing ".git", and returns the slug
-// ONLY when the path after the host is exactly two non-empty segments — a probe-
-// verified quirk of the reference: a GitLab subgroup URL (host/group/sub/proj)
-// has three segments and yields "". Owner/repo characters are preserved verbatim
-// (case, '-', '_', '.' all kept).
+// slugHost is the only remote host the reference emits a repoSlug for. Every
+// other host — GitLab, Bitbucket, a self-hosted GHE, even "www.github.com" or a
+// trailing-dot "github.com." — yields "".
+const slugHost = "github.com"
+
+// parseRepoSlug reduces a git remote URL to its "owner/repo" slug, reproducing
+// the reference's rule exactly. Derived by driving 42 remote-URL shapes through
+// both daemons at 5db5e4a and diffing the git.info frames:
+//
+//   - Scheme must be https, http, ssh, or git, or absent (the scp-like
+//     [user@]host:owner/repo form). "git+ssh://" is REJECTED — the scheme is
+//     matched whole, not by suffix — and so is "file://".
+//   - Host must equal "github.com", case-insensitively ("GITHUB.COM" is fine).
+//     A port makes it a different host, so "github.com:443/..." yields "" — and
+//     in the scp-like form the port lands in the path and gives three segments,
+//     which fails for the same reason. Userinfo ("git@", "user:pw@") is stripped.
+//   - The path, after one optional trailing "/" and one optional trailing
+//     ".git", must be exactly two non-empty segments. Three ("acme/sub/gizmo")
+//     or one ("acme") yield "".
+//   - Owner: alphanumerics with interior hyphens only. "ac-me" and "ac--me" pass;
+//     "-acme", "acme-", "acme_corp" and "acme.co" do not. Note the owner charset
+//     is STRICTER than the repo charset — '_' and '.' are legal in a repo name
+//     and illegal in an owner.
+//   - Repo: alphanumerics plus '.', '_' and '-', not starting with '-', not "."
+//     or "..", and not ending in a lowercase ".wiki". The wiki check is
+//     case-sensitive and suffix-only, so "GIZMO.WIKI" and a repo simply named
+//     "wiki" are both accepted.
 func parseRepoSlug(remoteURL string) string {
 	u := strings.TrimSpace(remoteURL)
-	if i := strings.Index(u, "://"); i >= 0 { // strip scheme
+	if i := strings.Index(u, "://"); i >= 0 {
+		switch strings.ToLower(u[:i]) {
+		case "https", "http", "ssh", "git":
+		default:
+			return ""
+		}
 		u = u[i+3:]
 	}
-	if i := strings.Index(u, "@"); i >= 0 { // strip userinfo
-		u = u[i+1:]
+	// Strip userinfo, but only when the '@' precedes the path — otherwise an '@'
+	// inside a repo name would be mistaken for a userinfo delimiter.
+	hostEnd := len(u)
+	if i := strings.Index(u, "/"); i >= 0 {
+		hostEnd = i
+	}
+	if a := strings.Index(u[:hostEnd], "@"); a >= 0 {
+		u = u[a+1:]
 	}
 	// The host runs up to the first ':' (scp form) or '/' (URL form); the path is
 	// whatever follows that separator.
@@ -166,13 +207,56 @@ func parseRepoSlug(remoteURL string) string {
 	if sep < 0 {
 		return ""
 	}
+	if !strings.EqualFold(u[:sep], slugHost) {
+		return ""
+	}
 	path := strings.TrimRight(u[sep+1:], "/")
 	path = strings.TrimSuffix(path, ".git")
 	parts := strings.Split(path, "/")
-	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-		return parts[0] + "/" + parts[1]
+	if len(parts) != 2 || !validSlugOwner(parts[0]) || !validSlugRepo(parts[1]) {
+		return ""
 	}
-	return ""
+	return parts[0] + "/" + parts[1]
+}
+
+// validSlugOwner reports whether s is alphanumerics with interior hyphens only.
+func validSlugOwner(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '-':
+			if i == 0 || i == len(s)-1 { // no leading or trailing hyphen
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validSlugRepo reports whether s is a repo name the reference accepts.
+func validSlugRepo(s string) bool {
+	if s == "" || s == "." || s == ".." || s[0] == '-' {
+		return false
+	}
+	if strings.HasSuffix(s, ".wiki") { // case-sensitive: "GIZMO.WIKI" is fine
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // gitDefaultBranch returns the branch refs/remotes/origin/HEAD points to (e.g.
