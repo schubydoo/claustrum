@@ -118,6 +118,12 @@ func ensureCLI(o installOpts, cliPath string) error {
 		}
 	case o.cliURL != "":
 		if zst, err = httpGet(o.cliURL); err != nil {
+			// A status failure is already fully worded; only a transport failure
+			// takes the "download failed: " prefix (see httpStatusError).
+			var se *httpStatusError
+			if errors.As(err, &se) {
+				return se
+			}
 			return fmt.Errorf("download failed: %v", err)
 		}
 		// Downloads are verified UNCONDITIONALLY — an empty -cli-checksum still
@@ -338,6 +344,18 @@ func zstdDecompress(zst []byte, dest string) error {
 	return nil
 }
 
+// httpStatusError is a non-200 response from the CLI download. It exists so the
+// caller can tell a STATUS failure from a TRANSPORT failure: the reference words
+// them differently, prefixing only the latter with "download failed: ".
+//
+//	transport : download failed: Get "http://…": dial tcp …: connection refused
+//	status    : download failed with status 404
+type httpStatusError struct{ code int }
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("download failed with status %d", e.code)
+}
+
 func httpGet(url string) ([]byte, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(url)
@@ -346,7 +364,13 @@ func httpGet(url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download %s: %s", url, resp.Status)
+		// "download failed with status %d" — the reference's exact wording, and it
+		// carries neither the URL nor the reason phrase. Measured at 5db5e4a: a 404
+		// gives cliError "download failed with status 404" where claustrum emitted
+		// "download failed: download <url>: 404 File not found". The URL is worth
+		// omitting on its own merits: cliError is printed on the __INSTALL_RESULT__
+		// line, and a signed URL would land in whatever captures that output.
+		return nil, &httpStatusError{code: resp.StatusCode}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCLIBytes+1))
 	if err != nil {

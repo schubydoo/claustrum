@@ -134,9 +134,33 @@ sits in front of those calls so operators can quiet the daemon:
 }
 ```
 
-`cliError` strings: `cli <v> missing and no --cli-url or --cli-zst provided` ·
-`download failed: <err>` · `checksum mismatch: expected=<a>, actual=<b>` ·
-`installed cli at <path> is not runnable`.
+**`cliError` strings.** Every error `ensureCLI` returns lands here verbatim. The
+list had drifted — it named four of these while the code produced thirteen — so it
+is grouped by phase rather than left as prose:
+
+| phase | string |
+|---|---|
+| version check | `cli version "<v>" must be a single path component` |
+| | `cli version "<v>" collides with the install temp sweep` |
+| source | `cli <v> missing and no --cli-url or --cli-zst provided` |
+| | `opening input: <err>` (`-cli-zst` read) |
+| download | `download failed: <err>` — **transport** failure only |
+| | `download failed with status <code>` — **non-200**, no URL, no reason phrase |
+| | `response exceeds <n> bytes` |
+| verify | `checksum mismatch: expected=<a>, actual=<b>` |
+| install | `mkdir cli dir: <err>` |
+| | `staging cli: <err>` |
+| | `decompressing: <err>` |
+| | `decompressed CLI exceeds <n> bytes` |
+| | `installed cli at <path> is not runnable` |
+| | `clearing stale dir at <path>: <err>` |
+| | `staging file vanished before install: <err>` |
+
+The two download forms are deliberately worded differently, matching the
+reference: only the transport failure carries the `download failed: ` prefix, and
+the status form omits the URL so a signed URL cannot reach whatever captures the
+`__INSTALL_RESULT__` line. A bare `chmod`/`rename` failure propagates as the raw
+Go error.
 
 ## Deployment lifecycle (how a driver uses it)
 
