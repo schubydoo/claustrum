@@ -672,11 +672,26 @@ func (s *server) serveConn(c *conn) {
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
 		go func() {
-			if ordered {
-				c.awaitStdinTurn(ticket)
-				defer c.doneStdinTurn(ticket)
-			}
-			if resp := s.dispatch(c, raw); resp != nil {
+			// The stdin ticket covers DISPATCH ONLY, never the response write.
+			// dispatch appends the chunk to the process's existing stdin FIFO
+			// (applyStdin) before it returns, so byte order is already fixed by
+			// then. Holding the ticket across writeResponse would add nothing to
+			// ordering and would couple input admission to response delivery: a
+			// client that stops reading blocks the socket write, and every later
+			// process.stdin on the connection stalls behind it — including input
+			// for OTHER processes.
+			//
+			// The inner func is what keeps the release on a defer, so a panic in
+			// dispatch cannot strand the ticket and deadlock the connection.
+			var resp *response
+			func() {
+				if ordered {
+					c.awaitStdinTurn(ticket)
+					defer c.doneStdinTurn(ticket)
+				}
+				resp = s.dispatch(c, raw)
+			}()
+			if resp != nil {
 				c.writeResponse(*resp)
 			}
 		}()
