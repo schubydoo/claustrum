@@ -26,14 +26,17 @@ import (
 // leaves no backgrounded sleeper alive, while escalate:false spares it.
 func TestKillAndWaitEscalationReapsOrphanedGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "gpid")
-	// The backgrounded sleeper inherits stdout, so it holds the pipe open after
-	// the shell dies — which is what keeps the drain (and p.done) pending.
-	script := "sleep 60 & echo $! > " + pidFile + "; sleep 60"
+	// The "tree-stdout" fixture's grandchild inherits stdout, so it holds the
+	// pipe open after the leader dies — which is what keeps the drain (and
+	// p.done) pending. The test binary itself is the fixture, per AGENTS.md; a
+	// /bin/sh script would put this test at the mercy of the platform shell's
+	// job-control behavior.
+	exe, env := helperCommand(t, "tree-stdout")
 
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
 
-	if _, err := m.spawn(c, "orphans", "/bin/sh", []string{"-c", script}, "", nil); err != nil {
+	if _, err := m.spawn(c, "orphans", exe, []string{pidFile}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	gpid := waitPIDFile(t, pidFile)

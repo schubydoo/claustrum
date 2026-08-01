@@ -52,12 +52,7 @@ func TestDetachSysProcAttr(t *testing.T) {
 // the other half: every non-KILL signal must NOT reach the group.
 func TestSignalProcessGroupKillsWholeGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "gpid")
-	// Non-interactive sh has no job control, so the backgrounded sleep stays in
-	// the shell's process group. Record its PID, then wait so the leader stays
-	// alive until we signal it.
-	script := "sleep 60 & echo $! > " + pidFile + "; wait"
-	cmd := exec.Command("/bin/sh", "-c", script)
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd := treeFixture(t, pidFile)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -85,9 +80,7 @@ func TestSignalProcessGroupKillsWholeGroup(t *testing.T) {
 // second half would pass for a signal that went nowhere at all.
 func TestSignalTermSparesTheGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "gpid")
-	script := "sleep 60 & echo $! > " + pidFile + "; wait"
-	cmd := exec.Command("/bin/sh", "-c", script)
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd := treeFixture(t, pidFile)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -121,8 +114,28 @@ func TestSignalTermSparesTheGroup(t *testing.T) {
 	}
 }
 
-// readPIDFile polls until the file holds a parseable PID (the backgrounding shell
-// writes it asynchronously).
+// treeFixture builds a process-group leader that spawns one grandchild in the
+// SAME group and then lingers, writing the grandchild's pid to pidFile. The
+// fixture is this test binary in "tree" mode, not a /bin/sh script — AGENTS.md
+// requires process fixtures to come from the test binary, and a shell script
+// would make these tests depend on the platform shell's job-control semantics
+// for whether the backgrounded child even lands in the leader's group.
+//
+// The "tree" mode waits for one byte on stdin before spawning, so stdin is
+// pre-loaded here; the group is set at fork by newSysProcAttr, so there is
+// nothing this test needs to sequence behind that gate.
+func treeFixture(t *testing.T, pidFile string) *exec.Cmd {
+	t.Helper()
+	exe, env := helperCommand(t, "tree")
+	cmd := exec.Command(exe, pidFile)
+	cmd.Env = buildEnv(env)
+	cmd.Stdin = strings.NewReader("g")
+	cmd.SysProcAttr = newSysProcAttr()
+	return cmd
+}
+
+// readPIDFile polls until the file holds a parseable PID (the fixture writes it
+// asynchronously, after its grandchild starts).
 func readPIDFile(t *testing.T, path string) int {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
