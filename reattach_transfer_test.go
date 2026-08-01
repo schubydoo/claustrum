@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -110,11 +111,20 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 		drain := make(chan struct{})
 		var drainers sync.WaitGroup
 		drainers.Add(2)
+		sawSentinel := make(chan struct{})
 		go func() {
 			defer drainers.Done()
+			sentinelSeen := false
 			for {
 				select {
 				case f := <-oldFrames:
+					if f.ProcessID == sentinelID {
+						if !sentinelSeen {
+							sentinelSeen = true
+							close(sawSentinel)
+						}
+						continue
+					}
 					mu.Lock()
 					oldSeqs = append(oldSeqs, f.Seq)
 					mu.Unlock()
@@ -153,7 +163,25 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 
 		stop.Store(true)
 		emitter.Wait()
-		time.Sleep(2 * time.Millisecond) // let in-flight writes land
+
+		// Drain to a SENTINEL rather than to a timer. Once emitter.Wait returns no
+		// emit write is in flight, so a frame written now is strictly last: the
+		// net.Pipe, the scanner and the channel are all FIFO, so seeing the
+		// sentinel proves every earlier frame has already been collected.
+		//
+		// A fixed sleep here was wrong in the direction that matters. Closing
+		// drain makes the collector's exit case selectable, so a frame still in
+		// flight could be dropped instead of appended — and a dropped frame is a
+		// MISSED leak, i.e. the test passes when it should fail.
+		if err := oldConn.writeLine(sentinelLine); err != nil {
+			t.Fatalf("round %d: sentinel write: %v", round, err)
+		}
+		select {
+		case <-sawSentinel:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("round %d: sentinel never arrived — the collector cannot be "+
+				"trusted to have seen every frame", round)
+		}
 		close(drain)
 		drainers.Wait()
 
@@ -168,3 +196,17 @@ func TestReattachTransferHoldsUnderConcurrentEmit(t *testing.T) {
 		}
 	}
 }
+
+// sentinelID marks the end-of-stream frame the concurrency test writes directly
+// to a connection. It is not a process id any test spawns, so it cannot collide.
+const sentinelID = "\x00end-of-frames"
+
+// sentinelLine is that frame already encoded, so the test writes it with the same
+// writeLine path (and therefore the same conn write lock) as a real frame.
+var sentinelLine = func() []byte {
+	b, err := json.Marshal(streamFrame{Type: "stream", ProcessID: sentinelID})
+	if err != nil {
+		panic(err)
+	}
+	return append(b, '\n')
+}()
