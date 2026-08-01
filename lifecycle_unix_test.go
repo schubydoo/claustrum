@@ -226,7 +226,22 @@ func TestRunServeFatalGuards(t *testing.T) {
 // The parent half of -serve with -token-fd: read the caller's fd, re-exec
 // detached (the child is this test binary steered into an exit-0 helper),
 // forward the token over the inherited pipe, and exit 0.
+// shortDaemonStart shrinks the launcher's wait-for-accept deadline for tests
+// whose stub child never binds a socket.
+func shortDaemonStart(t *testing.T) {
+	t.Helper()
+	old := daemonStartTimeout
+	daemonStartTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { daemonStartTimeout = old })
+}
+
 func TestRunServeParentDaemonizes(t *testing.T) {
+	// The stub child is an exit-0 helper that never binds a socket, so the
+	// launcher's wait-for-accept correctly reports a failed start. Shrink the
+	// deadline so the test does not sit out the production 10s, and expect exit
+	// 1 — that is the right answer for a daemon that never came up.
+	shortDaemonStart(t)
+
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "")
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
@@ -241,8 +256,8 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 	}
 
 	code, exited := catchExit(func() { runServe("unused.sock", "", fd, "", false, false) })
-	if !exited || code != 0 {
-		t.Errorf("parent runServe: exited=%v code=%d, want exit 0", exited, code)
+	if !exited || code != 1 {
+		t.Errorf("parent runServe: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
 	}
 }
 
@@ -251,11 +266,17 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 // passed so the child's stdio can be redirected to remote-server.log beside it;
 // a temp dir is used so the test does not write a log into the working tree.
 func TestDaemonizeWithoutForwardedToken(t *testing.T) {
+	// The stub child is an exit-0 helper that never binds a socket, so the
+	// launcher's wait-for-accept correctly reports a failed start. Shrink the
+	// deadline so the test does not sit out the production 10s, and expect exit
+	// 1 — that is the right answer for a daemon that never came up.
+	shortDaemonStart(t)
+
 	stubOsExit(t)
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
 	sock := filepath.Join(t.TempDir(), "s.sock")
-	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 0 {
-		t.Errorf("daemonizeWithToken: exited=%v code=%d, want exit 0", exited, code)
+	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 1 {
+		t.Errorf("daemonizeWithToken: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(sock), daemonLogName)); err != nil {
 		t.Errorf("daemonize did not create %s beside the socket: %v", daemonLogName, err)
@@ -267,11 +288,17 @@ func TestDaemonizeWithoutForwardedToken(t *testing.T) {
 // rather than refusing to run. The daemon will fail on the socket itself if the
 // directory is genuinely absent; that is a clearer error than a log-file one.
 func TestDaemonizeFallsBackWhenLogUnopenable(t *testing.T) {
+	// The stub child is an exit-0 helper that never binds a socket, so the
+	// launcher's wait-for-accept correctly reports a failed start. Shrink the
+	// deadline so the test does not sit out the production 10s, and expect exit
+	// 1 — that is the right answer for a daemon that never came up.
+	shortDaemonStart(t)
+
 	stubOsExit(t)
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
 	sock := filepath.Join(t.TempDir(), "no-such-dir", "s.sock")
-	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 0 {
-		t.Errorf("daemonizeWithToken with an unopenable log: exited=%v code=%d, want exit 0", exited, code)
+	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 1 {
+		t.Errorf("daemonizeWithToken with an unopenable log: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
 	}
 }
 
@@ -353,6 +380,12 @@ func TestRunServeChildFullLifecycle(t *testing.T) {
 // main's -serve dispatch wires the parent daemonize path end to end (config
 // resolution included); the re-exec'd child is the exit-0 helper again.
 func TestMainServeDispatch(t *testing.T) {
+	// The stub child is an exit-0 helper that never binds a socket, so the
+	// launcher's wait-for-accept correctly reports a failed start. Shrink the
+	// deadline so the test does not sit out the production 10s, and expect exit
+	// 1 — that is the right answer for a daemon that never came up.
+	shortDaemonStart(t)
+
 	t.Setenv(daemonChildEnv, "")
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
 	dir := shortTempDir(t)
@@ -361,8 +394,8 @@ func TestMainServeDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, exited := runMain(t, "-serve", "-socket", filepath.Join(dir, "m.sock"), "-token-file", tf)
-	if !exited || code != 0 {
-		t.Errorf("main -serve: exited=%v code=%d, want exit 0", exited, code)
+	if !exited || code != 1 {
+		t.Errorf("main -serve: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
 	}
 
 	// Without -socket, main resolves the reference's default socket path — safe
@@ -372,7 +405,7 @@ func TestMainServeDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, exited = runMain(t, "-serve", "-token-file", tf)
-	if !exited || code != 0 {
-		t.Errorf("main -serve without -socket: exited=%v code=%d, want exit 0", exited, code)
+	if !exited || code != 1 {
+		t.Errorf("main -serve without -socket: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
 	}
 }

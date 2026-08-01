@@ -246,6 +246,24 @@ func (p *managedProc) signalIfLive(signame string) {
 	signalGroup(p.group, p.cmd.Process, signame)
 }
 
+// killGroupAfterExit SIGKILLs the process group once the managed process itself
+// has already exited, sweeping up any child it left behind. Deliberately does
+// NOT take the reaped guard signalIfLive applies: by construction it runs after
+// the reap, so that guard would make it a no-op and the orphans would survive.
+//
+// This is the one place claustrum knowingly signals a pgid whose leader is gone.
+// It runs immediately after p.done fires, so the window before the kernel could
+// recycle the pgid is as small as it can be, and it is exactly what the
+// reference does — the reference has no such guard anywhere.
+func (p *managedProc) killGroupAfterExit() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	signalGroup(p.group, p.cmd.Process, "KILL")
+}
+
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
 // every attached client. The buffer retains frames for later reattach, capped
 // at maxBufferBytes: the oldest frames are dropped (and firstSeq advances) when
@@ -716,6 +734,18 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	p.signalIfLive(signal)
 	select {
 	case <-p.done:
+		if escalate {
+			// The reference SIGKILLs the group even when the graceful signal
+			// already did the job. Measured at 5db5e4a with a child that
+			// backgrounds a sleeper: killAndWait with escalate:true leaves no
+			// grandchild alive, escalate:false spares it — and the child itself
+			// dies promptly either way, so this is not the post-grace escalation
+			// below, it is an unconditional whole-tree sweep.
+			//
+			// Side effect only: every returned flag is unchanged, so the reply
+			// frame is byte-identical to what it was before.
+			p.killGroupAfterExit()
+		}
 		return true, true, false, false
 	case <-time.After(grace):
 	}
@@ -724,10 +754,17 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if !escalate {
 		return true, false, false, false
 	}
-	// The graceful signal was ignored — force-kill the group and wait for the reap.
-	// Same reaped guard as every other signal site: the grace can elapse while the
-	// process is in the exit drain, and by then its pgid may belong to someone else.
-	p.signalIfLive("KILL")
+	// The graceful signal did not finish the job within the grace — force-kill the
+	// group.
+	//
+	// signalIfLive is deliberately NOT used here. By this point the child is very
+	// often already reaped: the graceful signal worked, but a grandchild still
+	// holding the stdout pipe keeps p.done pending until the exit drain gives up.
+	// signalIfLive's reaped guard would then make the escalation a silent no-op,
+	// which is precisely how claustrum came to leave grandchildren running where
+	// the reference kills them. Measured: killAndWait with escalate:true left the
+	// backgrounded sleeper alive on claustrum and dead on the reference.
+	p.killGroupAfterExit()
 	select {
 	case <-p.done:
 		return true, true, false, true
@@ -824,6 +861,13 @@ func buildEnv(env map[string]string) []string {
 	// immediate when it was never started.
 	awaitLoginPATH()
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	// The login-shell PATH is applied HERE, to the child's environment, rather
+	// than being installed into the daemon's own — see loginPATH in shellenv.go.
+	// Applied before the caller's env so an explicit PATH in the spawn request
+	// still wins.
+	if lp := currentLoginPATH(); lp != "" {
+		base = replaceOrAppendEnv(base, "PATH", lp)
+	}
 	for k, v := range env {
 		base = replaceOrAppendEnv(base, k, v)
 	}
