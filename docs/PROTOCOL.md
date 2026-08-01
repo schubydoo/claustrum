@@ -371,6 +371,11 @@ Errors:
 
 `{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}` (porcelain lines)
 
+- `changes` comes from `git status --porcelain`'s **stdout only**. git writes
+  warnings (an unreadable `core.excludesFile`, an unreadable directory) to stderr
+  while still exiting 0; those never appear in `changes`, and a repo with nothing
+  modified still reports `"clean":true`. Measured against `5db5e4a`.
+
 - Lines are `git status --porcelain` output **verbatim**, minus only the line
   ending. The two-character XY column is **positional**, so the leading space of
   an unstaged-only change is data: `"M  a.txt"` (staged) and `" M b.txt"`
@@ -402,6 +407,12 @@ Errors:
   checked before the add, so git's raw error isn't leaked.
 - Other failure →
   `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
+  The tail after the colon is git's **combined** output — the opposite of
+  `git.status` above, and deliberately so: `git worktree add` writes both its
+  progress and its fatal to stderr and leaves stdout empty, so reading stdout
+  only would truncate this to `"git worktree add failed: "`. Measured against
+  `5db5e4a` with an existing branch name:
+  `"git worktree add failed: Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"`.
 - When `sourceBranch` is omitted it defaults to the repo's current branch (and
   is echoed back). On an **unborn HEAD** (empty repo) the source resolves to
   empty, the add infers an orphan branch and still succeeds, and `sourceBranch`
