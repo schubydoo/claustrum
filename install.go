@@ -163,6 +163,13 @@ var errStagingVanished = errors.New("staging file vanished")
 // stageAndInstall decompresses zst to a staging file beside cliPath, verifies it
 // runs, and renames it into place.
 //
+// The staging step ITSELF is a pre-existing claustrum divergence (IMPROVEMENTS
+// #4): the reference extracts in place, so an interrupted install can leave a
+// half-written or non-runnable cliPath, while here cliPath only ever appears as a
+// complete, 0755, verified binary. The end state is identical — same facts, same
+// "not runnable" error — so nothing on the wire changes. Everything below about
+// losing a staging file follows from that choice, not from a new one.
+//
 // Staged under the reference's own temp name, ".fetch-<random>" in the cli-dir,
 // rather than "<cliPath>.tmp": sweepFetchTemps reaps ".fetch-*" but knew nothing
 // about a ".tmp", so claustrum's own interrupted-install litter was never cleaned
