@@ -51,7 +51,16 @@ func TestExtractLoginPATHNoSentinel(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
 
 	t.Setenv("PATH", os.Getenv("PATH"))
-	t.Setenv("SHELL", "/bin/true") // ignores args → emits nothing
+	// A CONTROLLED stub that emits nothing, not a system binary.
+	//
+	// This used to be "/bin/true", which worked only by accident and stopped
+	// working the moment safeLoginShell landed: macOS has no /bin/true (it ships
+	// /usr/bin/true), so $SHELL became non-executable, safeLoginShell correctly
+	// fell back to /bin/bash, and bash emitted a REAL sentinel — the macOS leg
+	// failed with "Extracted shell PATH (1008 chars)" where a not-found log was
+	// expected. The stub removes the dependency on which system binaries a
+	// platform happens to place where.
+	t.Setenv("SHELL", writeFakeShell(t, "")) // ignores args, emits nothing
 
 	extractLoginPATH()
 
