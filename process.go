@@ -848,6 +848,13 @@ func buildEnv(env map[string]string) []string {
 	// immediate when it was never started.
 	awaitLoginPATH()
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	// The login-shell PATH is applied HERE, to the child's environment, rather
+	// than being installed into the daemon's own — see loginPATH in shellenv.go.
+	// Applied before the caller's env so an explicit PATH in the spawn request
+	// still wins.
+	if lp := currentLoginPATH(); lp != "" {
+		base = replaceOrAppendEnv(base, "PATH", lp)
+	}
 	for k, v := range env {
 		base = replaceOrAppendEnv(base, k, v)
 	}
