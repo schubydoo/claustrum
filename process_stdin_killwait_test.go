@@ -159,8 +159,11 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 		t.Errorf("reattach stdinApplied = %d, want 11", ra.StdinApplied)
 	}
 
+	// The reattach above TRANSFERRED the frame stream to b, so the exit frame
+	// arrives there and not on cl. Measured at 5db5e4a: after a reattach the
+	// previously attached connection stops receiving.
 	cl.send(authed(`{"jsonrpc":"2.0","id":8,"method":"process.kill","params":{"id":"CAT","signal":"KILL"}}`))
-	cl.waitExit("CAT")
+	b.waitExit("CAT")
 }
 
 // process.killAndWait: missing id is an error; an unknown id is a non-error

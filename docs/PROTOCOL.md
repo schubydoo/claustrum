@@ -532,7 +532,12 @@ unknown id is not an error):
 `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
 
 - Replays buffered frames with **seq > fromSeq** (exclusive) to this
-  connection, (re)subscribes it for future frames, then returns the result.
+  connection, **transfers** the frame stream to it, then returns the result.
+- **The transfer is exclusive.** A reattach does not add a second listener: any
+  previously attached connection stops receiving frames for that process. This
+  is what makes resume safe — otherwise an old connection that is still open
+  would keep getting frames the new one has just been replayed, and the two
+  deliveries would overlap. Measured against the reference at `5db5e4a`.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
 - **Exited processes are retained for 15 minutes, then dropped** — with their
   replay buffers — so an id last seen longer ago than that answers exactly like

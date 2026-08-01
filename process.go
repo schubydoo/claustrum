@@ -737,7 +737,18 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	}
 	met.reattaches.Add(1)
 	p.mu.Lock()
-	p.subs[c] = struct{}{}
+	// A reattach TRANSFERS the frame stream to the new connection; it does not
+	// add a second listener. Measured at 5db5e4a: after a reattach, output
+	// produced by the process reaches only the reattaching connection, while the
+	// previously attached one stops receiving. claustrum fanned out to both, so
+	// a resumed session double-delivered every frame to whichever old connection
+	// was still open — and the replay the new connection just received made those
+	// duplicates overlap.
+	//
+	// The map is replaced rather than cleared entry-by-entry so the old set is
+	// dropped atomically under p.mu, with no window where a frame could reach a
+	// half-emptied set.
+	p.subs = map[*conn]struct{}{c: {}}
 	running = p.running
 	var replay []streamFrame
 	for _, f := range p.buffer {
