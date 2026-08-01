@@ -3,10 +3,12 @@
 package main
 
 import (
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,6 +89,41 @@ func TestWaitForDaemonAcceptGivesUpAtDeadline(t *testing.T) {
 	}
 	if el > 5*time.Second {
 		t.Errorf("returned after %v, want bounded by the %v deadline", el, daemonStartTimeout)
+	}
+}
+
+// A failed start is NOT silent: the launcher prints the timeout line to stderr
+// and exits 1. PROTOCOL.md quotes that line as the contract, and the exit code
+// alone was already covered — this pins the message text so the documented
+// string cannot drift away from the code.
+//
+// The reference reports exactly this and exits 1 (measured at 5db5e4a with a
+// zero-byte -token-file, whose child refuses to start): "claude-ssh: timeout
+// waiting for daemon to accept on <socket>", after the full deadline. Only the
+// program name differs.
+func TestDaemonizeTimeoutPrintsToStderr(t *testing.T) {
+	shortDaemonStart(t)
+	stubOsExit(t)
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0") // a child that never binds
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	sock := filepath.Join(t.TempDir(), "never.sock")
+	code, exited := catchExit(func() { daemonizeWithToken(sock, "") })
+	_ = w.Close()
+	os.Stderr = old
+
+	if !exited || code != 1 {
+		t.Errorf("daemonizeWithToken: exited=%v code=%d, want exit 1", exited, code)
+	}
+	out, _ := io.ReadAll(r)
+	want := "claustrum: timeout waiting for daemon to accept on " + sock
+	if !strings.Contains(string(out), want) {
+		t.Errorf("stderr = %q, want it to contain %q", out, want)
 	}
 }
 

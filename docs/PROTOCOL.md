@@ -93,12 +93,33 @@ this by dialing the socket and closing again, so a freshly started daemon's log
 opens with a `New connection from: @` / `Connection closed: @` pair from the
 launcher's own probe, before any real client appears.
 
-The wait ends early if the child exits first, so a start that cannot succeed
-(socket path occupied, directory uncreatable) returns immediately rather than
-sitting out the ceiling, and is bounded at 10 seconds otherwise. The launcher
-exits `0` either way and prints nothing on failure. All of this is measured
-against `5db5e4a`; the practical guarantee is that a client which runs `-serve`
-over SSH and connects immediately never loses the race.
+What it waits for is the socket **path to exist** (polled every 20 ms, bounded at
+**10 seconds**), not a successful dial, and it does **not** give up early when the
+child dies — both deliberate, and both measured against `5db5e4a`:
+
+| start | what the launcher sees | outcome |
+|---|---|---|
+| normal | path appears, confirming dial succeeds | exit `0` |
+| socket path occupied by a directory | path exists **immediately** | exit `0`, in ~0.01 s (reference 0.08 s) |
+| child can never bind (uncreatable parent dir) | path never appears | exit `1` at ~10.04 s (reference 10.06 s) |
+
+On timeout the launcher prints
+`claustrum: timeout waiting for daemon to accept on <socket>` to **stderr** and
+exits `1`. On success it prints nothing and exits `0`.
+
+The occupied-path row is why the wait polls for existence: a dial-based wait
+would invert both rows, sitting out the full deadline where nothing ever accepts
+and giving up early on a child that dies. The confirming dial's result is ignored
+for the same reason.
+
+Two things are *not* promised. The child's own startup errors reach the
+launcher's stderr only when the daemon log could not be opened (a missing socket
+directory), because the child then falls back to inherited stdio — normally they
+go to `remote-server.log`. And exit `0` means the path appeared, not that a
+daemon is healthy behind it, as the occupied-path row shows.
+
+The practical guarantee is the one that matters to a client: after a successful
+`-serve`, connecting immediately over SSH never loses the race.
 
 ### Daemon log (`remote-server.log`)
 
