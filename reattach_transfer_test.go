@@ -15,7 +15,11 @@ func TestReattachTransfersTheFrameStream(t *testing.T) {
 	m := newTestProcManager(t)
 
 	old, oldFrames := pipeConn(t)
-	if _, err := m.spawn(old, "xfer", "/bin/sh", []string{"-c", "sleep 30"}, "", nil); err != nil {
+	// The test binary in "sleep" mode, not /bin/sh: AGENTS.md requires process
+	// fixtures to come from the test binary, and a /bin/sh fixture cannot run on
+	// the Windows CI leg at all.
+	exe, env := helperCommand(t, "sleep")
+	if _, err := m.spawn(old, "xfer", exe, []string{"30"}, "", env); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	p := m.get("xfer")
