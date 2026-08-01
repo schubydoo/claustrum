@@ -780,6 +780,23 @@ Checksum + error framing (probe-verified):
   (`checksum mismatch: expected=, actual=<sha>`).
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
+- A cli-dir that cannot be created is reported with a **`mkdir cli dir: `**
+  prefix, e.g. `mkdir cli dir: mkdir /ro/nested: permission denied`.
+
+Staging and cleanup (probe-verified):
+
+- The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
+  into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
+  matches `.fetch-*`, so an interrupted install's litter is reclaimed.
+- **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
+  a non-empty directory, so whatever sits there is removed first and the install
+  succeeds. If it cannot be removed the failure is reported as
+  `clearing stale dir at <path>: <err>`.
+- The orphan sweep removes both **`.fetch-*`** and **`*.zst`** entries from the
+  cli-dir, with `os.Remove` per entry — so it clears files and *empty*
+  directories and silently leaves a non-empty `.fetch-dir/` in place. Unrelated
+  files (a `README`) survive. The sweep runs whenever an install was attempted,
+  succeeded or not; the `-cli-keep` prune runs only on success.
 
 ### Behavior shared by every mode
 

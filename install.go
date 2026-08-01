@@ -118,14 +118,28 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// comes out drwx------, while claustrum's came out drwxr-xr-x. The installed
 	// CLI file itself is 0755 on both.
 	if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
-		return err
+		// "mkdir cli dir: " prefix, measured against 5db5e4a — the reference
+		// reports `mkdir cli dir: mkdir <path>: permission denied` where claustrum
+		// emitted the bare Go error. This lands in cliError on the wire.
+		return fmt.Errorf("mkdir cli dir: %v", err)
 	}
 	// Decompress, chmod, and verify at a temp path, then atomically rename into
 	// place — so an interrupted install never leaves a half-written or non-runnable
 	// cliPath (IMPROVEMENTS #4). The end state is identical to the reference's
 	// in-place extract: cliPath appears only as a complete, 0755, verified binary,
 	// with the same facts and the same "not runnable" error.
-	tmp := cliPath + ".tmp"
+	// Stage under the reference's own temp name, ".fetch-<random>" in the cli-dir,
+	// rather than "<cliPath>.tmp". Two reasons, both measured: the reference
+	// creates exactly that (O_EXCL, mode 0600 — visible in an strace of its
+	// install), and sweepFetchTemps already reaps ".fetch-*" but knew nothing
+	// about our ".tmp", so claustrum's own interrupted-install litter was never
+	// cleaned up while the reference's was.
+	tmpFile, err := os.CreateTemp(filepath.Dir(cliPath), ".fetch-*")
+	if err != nil {
+		return fmt.Errorf("staging cli: %v", err)
+	}
+	tmp := tmpFile.Name()
+	_ = tmpFile.Close()
 	if err := zstdDecompress(zst, tmp); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("decompressing: %v", err)
@@ -138,6 +152,15 @@ func ensureCLI(o installOpts, cliPath string) error {
 	if !isRunnable(tmp) {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("installed cli at %s is not runnable", cliPath)
+	}
+	// Clear whatever is already at cliPath before renaming over it. rename(2)
+	// refuses to replace a non-empty directory, so without this an occupied
+	// destination fails the whole install: measured at 5db5e4a, the reference
+	// removes the blocker and installs successfully while claustrum returned
+	// `rename …: file exists` and left the blocker in place.
+	if err := os.RemoveAll(cliPath); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("clearing stale dir at %s: %v", cliPath, err)
 	}
 	if err := os.Rename(tmp, cliPath); err != nil {
 		_ = os.Remove(tmp)
@@ -236,7 +259,11 @@ func sweepFetchTemps(cliDir string) {
 		return
 	}
 	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), ".fetch-") {
+		// ".fetch-*" AND "*.zst": the reference sweeps both. Measured at 5db5e4a
+		// with a stray "leftover.zst" in the cli-dir — the reference removed it,
+		// claustrum kept it, and pruneCLI then counted it as a version and burned
+		// a -cli-keep slot on it. An unrelated file ("README") survives on both.
+		if strings.HasPrefix(e.Name(), ".fetch-") || strings.HasSuffix(e.Name(), ".zst") {
 			_ = os.Remove(filepath.Join(cliDir, e.Name()))
 		}
 	}
