@@ -1,0 +1,97 @@
+//go:build unix
+
+package main
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// lockedWorktree builds a repo with a LOCKED worktree, the reachable case where
+// `git worktree remove --force` refuses (exit 128) and leaves the directory.
+func lockedWorktree(t *testing.T) (repo, wt string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	base := t.TempDir()
+	repo = filepath.Join(base, "repo")
+	holder := filepath.Join(base, "holder")
+	wt = filepath.Join(holder, "wt")
+	if err := os.MkdirAll(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(holder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(cmd.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	run("commit", "-q", "--allow-empty", "-m", "init")
+	run("worktree", "add", "-q", "-b", "wtb", wt)
+	run("worktree", "lock", wt)
+	return repo, wt
+}
+
+// When git refuses the removal, the reference removes the directory itself and
+// still answers {"success":true}. claustrum used to answer success:true while
+// leaving the directory in place — the same reply for the opposite outcome.
+// Measured at 5db5e4a.
+func TestWorktreeRemoveFallsBackToManualCleanup(t *testing.T) {
+	repo, wt := lockedWorktree(t)
+	s := newTestServer(t)
+
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+	if !strings.Contains(raw, `"success":true`) {
+		t.Errorf("reply = %s, want success:true", raw)
+	}
+	if _, err := os.Stat(wt); err == nil {
+		t.Error("the worktree directory survived — the manual cleanup fallback did not run")
+	}
+}
+
+// When the manual cleanup ALSO fails, the reference reports it in the result's
+// error field with success:false. Measured at 5db5e4a:
+//
+//	{"success":false,"error":"failed to remove worktree: fatal: cannot remove a
+//	 locked working tree;\nuse 'remove -f -f' to override or unlock first;
+//	 manual cleanup also failed: unlinkat <path>: permission denied"}
+func TestWorktreeRemoveReportsWhenCleanupAlsoFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a 0500 directory is still writable")
+	}
+	repo, wt := lockedWorktree(t)
+	holder := filepath.Dir(wt)
+	if err := os.Chmod(holder, 0o500); err != nil { // cleanup cannot unlink wt
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(holder, 0o700) })
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+
+	if !strings.Contains(raw, `"success":false`) {
+		t.Errorf("reply = %s, want success:false", raw)
+	}
+	for _, want := range []string{
+		"failed to remove worktree: ",
+		"; manual cleanup also failed: ",
+	} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("reply = %s, want it to contain %q", raw, want)
+		}
+	}
+}

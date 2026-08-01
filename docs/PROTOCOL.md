@@ -419,7 +419,16 @@ the daemon then seeds the new worktree:
 - Copy failures are best-effort and never fail the request.
 #### git.worktree_remove
 
-`{baseRepo,worktreePath}` → `{"success":true}` (lenient)
+`{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)
+
+- Runs `git worktree remove --force`. When git **refuses** — a LOCKED worktree
+  is the reachable case, where it exits 128 and leaves the directory — the
+  daemon removes the directory itself and still answers `{"success":true}`.
+- Only when that manual cleanup **also** fails does the reply carry the declared
+  `error` field:
+  `{"success":false,"error":"failed to remove worktree: <git output>; manual cleanup also failed: <err>"}`.
+- Removing a path that is not a worktree, or naming a branch that does not
+  exist, still answers a bare `{"success":true}` — hence "lenient".
 
 ### process.* (the agent/MCP-hosting core)
 

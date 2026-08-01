@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -82,6 +84,17 @@ func gitStatusErr(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
 	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
 	return strings.TrimRight(string(out), "\n"), err
+}
+
+// gitCombined runs git and returns its stdout+stderr together with the exec
+// error. worktree_remove needs git's stderr verbatim: the reference quotes it
+// inside "failed to remove worktree: %s; manual cleanup also failed: %v".
+func gitCombined(dir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	full := append([]string{"-C", dir}, args...)
+	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
+	return string(out), err
 }
 
 // isRepoGitDir is the repo test used by git.status and git.list_branches. The
@@ -335,7 +348,26 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
-	git(repo, "worktree", "remove", "--force", p.WorktreePath)
+	// git refuses some removals outright — a LOCKED worktree is the reachable
+	// case: `git worktree remove --force` exits 128 and leaves the directory.
+	// The reference then removes the directory itself, and only reports failure
+	// when that manual cleanup ALSO fails.
+	//
+	// Measured at 5db5e4a with a locked worktree: the reference answered
+	// {"success":true} with the directory GONE, while claustrum answered
+	// {"success":true} with the directory still there — the same reply for
+	// opposite outcomes. With the parent made unwritable so cleanup fails too,
+	// the reference answered {"success":false,"error":"failed to remove
+	// worktree: <git stderr>; manual cleanup also failed: <err>"}.
+	if out, err := gitCombined(repo, "worktree", "remove", "--force", p.WorktreePath); err != nil {
+		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
+			return okResult(req.ID, worktreeRemoveResult{
+				Success: false,
+				Error: fmt.Sprintf("failed to remove worktree: %s; manual cleanup also failed: %v",
+					strings.TrimSpace(out), rmErr),
+			})
+		}
+	}
 	// The reference also deletes the branch when branchName is given, and does
 	// so FORCEFULLY — an unmerged branch goes too (probe-measured at 5db5e4a:
 	// both a merged and an unmerged branch are gone afterwards, where claustrum
