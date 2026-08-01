@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
 )
 
 // runBridge is a dumb stdio<->unix-socket relay. It does NOT inject auth; the
@@ -28,6 +29,10 @@ func runBridge(socket string) error {
 // running daemon. ⚠️ this stops the daemon and drops its sessions. It is
 // best-effort (matching the reference): a missing or unreachable daemon is a
 // silent no-op, not an error.
+// stopReplyTimeout bounds how long -stop waits for the daemon's reply to its
+// shutdown request. 2s, measured against the reference. var so tests can shrink it.
+var stopReplyTimeout = 2 * time.Second
+
 func runStop(socket string) error {
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
@@ -36,10 +41,28 @@ func runStop(socket string) error {
 	defer nc.Close()
 	tok := os.Getenv("CLAUDE_RPC_TOKEN")
 	_, _ = fmt.Fprintf(nc, `{"jsonrpc":"2.0","id":1,"method":"server.shutdown","auth":%q}`+"\n", tok)
+	// Bound the wait for the shutdown reply. A daemon that accepts the connection
+	// and then never answers — wedged, or a stale socket now owned by something
+	// else — would otherwise hang -stop forever, since a bare Read has no
+	// deadline. Measured at 5db5e4a: against a socket that accepts and never
+	// replies the reference returns in 2.030s (three runs, and its Stop carries a
+	// 2e9 ns immediate), where claustrum was still blocked when killed at 45s.
+	//
+	// A deadline error is deliberately ignored, exactly like the read error
+	// already was: -stop is best-effort and always reports success. The shutdown
+	// request has already been written by this point, so a daemon that is merely
+	// slow to answer still stops.
+	_ = nc.SetReadDeadline(time.Now().Add(stopReplyTimeout))
+	// Read the reply and DISCARD it. The reference prints nothing: measured with
+	// a deliberately wrong CLAUDE_RPC_TOKEN, so the daemon answers -32001 and a
+	// reply is genuinely in flight, the reference's stdout stays empty while
+	// claustrum echoed the raw frame:
+	//
+	//	{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"Unauthorized: …
+	//
+	// -stop is a control command, not a relay; a caller parsing its output should
+	// not have a JSON-RPC frame appear only on the failure path.
 	buf := make([]byte, 4096)
-	n, _ := nc.Read(buf)
-	if n > 0 {
-		_, _ = os.Stdout.Write(buf[:n])
-	}
+	_, _ = nc.Read(buf)
 	return nil
 }

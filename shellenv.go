@@ -21,10 +21,33 @@ var (
 	loginPATHMu   sync.Mutex
 	loginPATHWait chan struct{} // non-nil only while an extraction is in flight or done
 
+	// loginPATH holds the PATH the login shell resolved, for spawned children
+	// ONLY. It is deliberately not installed into the daemon's own environment:
+	// the reference keeps the two separate, and mutating os.Environ made the
+	// daemon resolve its OWN tools through the user's login PATH. Measured at
+	// 5db5e4a with a fake `git` placed only on the login PATH — the reference ran
+	// the real git, claustrum ran the fake one.
+	loginPATH string
+
 	// loginPATHExtractor is a seam for tests; production always uses the real
 	// per-platform extractLoginPATH (a no-op on Windows).
 	loginPATHExtractor = extractLoginPATH
 )
+
+// setLoginPATH records the extracted PATH for later child-env builds.
+func setLoginPATH(p string) {
+	loginPATHMu.Lock()
+	loginPATH = p
+	loginPATHMu.Unlock()
+}
+
+// currentLoginPATH returns the extracted PATH, or "" when extraction never ran
+// or failed.
+func currentLoginPATH() string {
+	loginPATHMu.Lock()
+	defer loginPATHMu.Unlock()
+	return loginPATH
+}
 
 // startLoginPATH begins login-shell PATH extraction in the background. Callers
 // that later build a child env must call awaitLoginPATH first.

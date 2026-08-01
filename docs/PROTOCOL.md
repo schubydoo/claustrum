@@ -84,6 +84,43 @@ token: …`) and non-fatal. Added by reference build `5db5e4a` and matched here
 kill (`SIGKILL`/crash) leaves the file behind, since removal runs only on the
 graceful `server.shutdown` / `SIGTERM` path.
 
+### Daemon startup (`-serve`)
+
+The `-serve` launcher **creates the socket's parent directory** if it is missing,
+mode `0700` — the same owner-only mode the reference uses for the cli-dir — and
+then **does not return until the daemon is accepting** on the socket. It confirms
+this by dialing the socket and closing again, so a freshly started daemon's log
+opens with a `New connection from: @` / `Connection closed: @` pair from the
+launcher's own probe, before any real client appears.
+
+What it waits for is the socket **path to exist** (polled every 20 ms, bounded at
+**10 seconds**), not a successful dial, and it does **not** give up early when the
+child dies — both deliberate, and both measured against `5db5e4a`:
+
+| start | what the launcher sees | outcome |
+|---|---|---|
+| normal | path appears, confirming dial succeeds | exit `0` |
+| socket path occupied by a directory | path exists **immediately** | exit `0`, in ~0.01 s (reference 0.08 s) |
+| child can never bind (uncreatable parent dir) | path never appears | exit `1` at ~10.04 s (reference 10.06 s) |
+
+On timeout the launcher prints
+`claustrum: timeout waiting for daemon to accept on <socket>` to **stderr** and
+exits `1`. On success it prints nothing and exits `0`.
+
+The occupied-path row is why the wait polls for existence: a dial-based wait
+would invert both rows, sitting out the full deadline where nothing ever accepts
+and giving up early on a child that dies. The confirming dial's result is ignored
+for the same reason.
+
+Two things are *not* promised. The child's own startup errors reach the
+launcher's stderr only when the daemon log could not be opened (a missing socket
+directory), because the child then falls back to inherited stdio — normally they
+go to `remote-server.log`. And exit `0` means the path appeared, not that a
+daemon is healthy behind it, as the occupied-path row shows.
+
+The practical guarantee is the one that matters to a client: after a successful
+`-serve`, connecting immediately over SSH never loses the race.
+
 ### Daemon log (`remote-server.log`)
 
 The `-serve` launcher creates **`remote-server.log`** in the socket's directory
@@ -343,18 +380,38 @@ Errors:
 - `repoSlug` and `defaultBranch` were added by reference `7c2f88d`. Both are
   **always present** (empty string when undeterminable) — including on the
   non-repo body, which is now `{"isRepo":false,"repoSlug":"","defaultBranch":""}`.
-    - `repoSlug` is the `owner/repo` parsed from `remote.origin.url`. It accepts
-      the scp-like (`git@host:owner/repo.git`), scheme (`https://`, `ssh://`),
-      userinfo, and trailing-slash forms and strips a single trailing `.git`, but
-      is populated **only when the path after the host is exactly two segments** —
-      a GitLab subgroup URL (`host/group/sub/proj`) has three and yields `""`.
-      Owner/repo characters are preserved verbatim (case, `-`, `_`, `.`).
+    - `repoSlug` is the `owner/repo` parsed from `remote.origin.url`, and it is
+      populated **only for a canonical `github.com` remote**. Every rule below was
+      measured by driving 42 remote-URL shapes through the reference at `5db5e4a`:
+        - **Scheme** must be `https`, `http`, `ssh`, `git`, or absent (the
+          scp-like `[user@]host:owner/repo` form). `git+ssh://` and `file://`
+          yield `""` — the scheme is matched whole, not by suffix.
+        - **Host** must equal `github.com`, case-insensitively (`GITHUB.COM` is
+          accepted). `www.github.com`, a trailing-dot `github.com.`, GitLab,
+          Bitbucket and any self-hosted GHE all yield `""`. A port makes it a
+          different host, so `github.com:443/…` yields `""` too. Userinfo
+          (`git@`, `user:pw@`) is stripped.
+        - **Path** must be exactly two non-empty segments after one optional
+          trailing `/` and one optional trailing `.git`. Three segments
+          (`acme/sub/gizmo`) or one (`acme`) yield `""`.
+        - **Owner** is alphanumerics with *interior* hyphens only: `ac-me` and
+          `ac--me` pass; `-acme`, `acme-`, `acme_corp` and `acme.co` do not.
+        - **Repo** is alphanumerics plus `.`, `_` and `-`, not starting with `-`,
+          not `.` or `..`, and not ending in a **lowercase** `.wiki`. The owner
+          charset is stricter than the repo charset — `_` and `.` are legal in a
+          repo name and illegal in an owner. The `.wiki` test is case-sensitive
+          and suffix-only, so `GIZMO.WIKI` and a repo named `wiki` are accepted.
     - `defaultBranch` is what `refs/remotes/origin/HEAD` points to (e.g. `main`);
       empty when origin/HEAD is unset.
 
 #### git.status
 
 `{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}` (porcelain lines)
+
+- `changes` comes from `git status --porcelain`'s **stdout only**. git writes
+  warnings (an unreadable `core.excludesFile`, an unreadable directory) to stderr
+  while still exiting 0; those never appear in `changes`, and a repo with nothing
+  modified still reports `"clean":true`. Measured against `5db5e4a`.
 
 - Lines are `git status --porcelain` output **verbatim**, minus only the line
   ending. The two-character XY column is **positional**, so the leading space of
@@ -387,6 +444,12 @@ Errors:
   checked before the add, so git's raw error isn't leaked.
 - Other failure →
   `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
+  The tail after the colon is git's **combined** output — the opposite of
+  `git.status` above, and deliberately so: `git worktree add` writes both its
+  progress and its fatal to stderr and leaves stdout empty, so reading stdout
+  only would truncate this to `"git worktree add failed: "`. Measured against
+  `5db5e4a` with an existing branch name:
+  `"git worktree add failed: Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"`.
 - When `sourceBranch` is omitted it defaults to the repo's current branch (and
   is echoed back). On an **unborn HEAD** (empty repo) the source resolves to
   empty, the add infers an orphan branch and still succeeds, and `sourceBranch`
@@ -492,9 +555,21 @@ stream notifications, **buffered** for later replay.
 
 `{id[,signal]}` → `{"success":true}`
 
-- Best-effort, **fire-and-forget**; tears down the whole child tree — signals the
-  process group on Unix, terminates the Job Object on Windows. Does not wait for
-  the child to actually exit (contrast `process.killAndWait`).
+- Best-effort, **fire-and-forget**. Does not wait for the child to actually exit
+  (contrast `process.killAndWait`).
+- **How wide the signal reaches depends on the signal**, on Unix:
+    - `KILL` goes to the whole **process group** (negative pid), so the entire
+      child tree dies — backgrounded grandchildren included.
+    - **Every other signal** (`TERM`, `INT`, `HUP`, and the default) goes to the
+      **direct child only**. A grandchild the child backgrounded keeps running.
+      Measured against the reference at `5db5e4a`: spawning
+      `sh -c "sleep 40 & wait"` and sending `process.kill` with `TERM` leaves the
+      backgrounded sleeper alive.
+    - So a graceful `process.kill` is **not** a tree teardown. Use
+      `signal:"KILL"`, or `process.killAndWait` with `escalate:true` (which
+      escalates to a group `SIGKILL`), when the whole tree must go.
+  On Windows the split does not apply — the Job Object is terminated, which takes
+  the tree either way.
 - **Divergence:** claustrum skips the signal when the child has already
   exited — after the child is reaped its Unix pgid can be recycled, so the
   reference's unconditional negative-pid signal could hit an unrelated process
@@ -524,6 +599,11 @@ unknown id is not an error):
       alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
       and add `"escalated":true` to the reply. `false` → leave the process running
       and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
+      The escalation `SIGKILL` goes to the **process group**, so it sweeps up the
+      child tree the graceful signal spared — and it is sent even when the
+      graceful signal already killed the child itself, since a grandchild holding
+      the stdout pipe can keep the drain pending past the grace. `escalate:false`
+      spares the tree entirely.
 - On a process that dies within the grace (cooperative, or a hard `signal:"KILL"`)
   → `{"found":true,"died":true}` with no `escalated`.
 
@@ -532,7 +612,21 @@ unknown id is not an error):
 `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
 
 - Replays buffered frames with **seq > fromSeq** (exclusive) to this
-  connection, (re)subscribes it for future frames, then returns the result.
+  connection, **transfers** the frame stream to it, then returns the result.
+- **The transfer is exclusive.** A reattach does not add a second listener: any
+  previously attached connection stops receiving frames for that process. This
+  is what makes resume safe — otherwise an old connection that is still open
+  would keep getting frames the new one has just been replayed, and the two
+  deliveries would overlap. Measured against the reference at `5db5e4a`.
+- **The cut is by `seq`, not by wall-clock.** The transfer point is the `lastSeq`
+  the reattach reports: the old connection can still receive a frame whose `seq`
+  is `<= lastSeq` slightly *after* the reattach reply, and never one above it. A
+  frame is stamped with its `seq`, appended to the replay buffer, and matched
+  against the subscriber set in a single critical section, so a frame that
+  predates the transfer belongs to the old connection and is simultaneously in
+  the new connection's replay — which is exactly what `fromSeq` is for. There is
+  no frame that reaches the old connection and is absent from the new one's
+  replay.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
 - **Exited processes are retained for 15 minutes, then dropped** — with their
   replay buffers — so an id last seen longer ago than that answers exactly like
@@ -780,14 +874,85 @@ Checksum + error framing (probe-verified):
   (`checksum mismatch: expected=, actual=<sha>`).
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
+- A cli-dir that cannot be created is reported with a **`mkdir cli dir: `**
+  prefix, e.g. `mkdir cli dir: mkdir /ro/nested: permission denied`.
 
+Staging and cleanup (probe-verified):
+
+- The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
+  into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
+  matches `.fetch-*`, so an interrupted install's litter is reclaimed.
+- **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
+  a non-empty directory, so whatever sits there is removed first and the install
+  succeeds. If it cannot be removed the failure is reported as
+  `clearing stale dir at <path>: <err>`. The clear runs **only when `cliPath` is a
+  directory**, which is the only shape `rename(2)` refuses — a regular file is
+  replaced atomically. An installed CLI is always a regular file, so it is never
+  the thing being cleared, and a destination is never sacrificed for an install
+  that cannot finish. If the staging file has vanished (a concurrent sweep took
+  it) the result is `staging file vanished before install: <err>` and `cliPath`
+  is left untouched. Clearing unconditionally destroyed it: the already-installed
+  CLI was deleted and nothing replaced it, leaving an empty cli-dir. End states
+  match the reference for every destination shape — absent, regular file, and
+  non-empty directory.
+- **Divergence (claustrum-only hardening): `-cli-version` must name a single
+  path component.** That clearing step is an `os.RemoveAll` on
+  `filepath.Join(cliDir, cliVersion)`, so a version that reaches outside the
+  cli-dir deletes unrelated data recursively. Two ways it can, both measured
+  against `5db5e4a`, and **the reference destroys the target on both**:
+
+  | `-cli-version` | why it escapes |
+  |---|---|
+  | `../victim` | `Join` **cleans**, so `cliPath` lands beside the cli-dir |
+  | `link/1.0.0` | an intermediate symlink under the cli-dir, followed at open time |
+
+  claustrum answers `cli version "…" must be a single path component` in
+  `cliError` and touches nothing. `.` and `..` are refused for the same reason
+  (`.` resolves to the cli-dir itself), and both `/` and `\` are rejected on
+  every OS so the accepted set does not change with the platform.
+
+  A single component rather than a containment check, because a *lexical*
+  containment check accepts `link/1.0.0` — it is lexically inside the cli-dir —
+  and `EvalSymlinks` would only add a TOCTOU window before the `RemoveAll`.
+  Nesting costs nothing to give up: **the reference does not support a nested
+  version either**, failing `sub/2.0.0` with
+  `creating temp file: … no such file or directory` because it never creates the
+  nested parent. A final component that is itself a symlink stays legal and
+  safe — `os.RemoveAll` unlinks a symlink rather than following it.
+
+  The real client passes a bare version string (`1.0.86`, `2.0.0-beta.1`, a
+  commit sha, `latest`, `1.0.86+build.5` — all measured as accepted), so every
+  honest path is byte-identical. Same shape as the `remote-server.log` refusal
+  above and D1 below.
+- **Divergence (claustrum-only hardening): `-cli-version` must not collide with
+  the orphan sweep.** The sweep below claims `.fetch-*` and `*.zst`, and it runs
+  after *every* attempted install — so `-cli-version .fetch-x` or `1.0.zst`
+  installs correctly and is deleted moments later in the same run. Measured at
+  `5db5e4a`: reference **and** claustrum both finish with an **empty cli-dir and
+  no `cliError`**, reporting success while having installed nothing. claustrum
+  now answers `cli version "…" collides with the install temp sweep` instead.
+  Unlike the escape rules above this gives up exact parity, on the grounds that
+  an error beats a success that installed nothing. The sweep predicate and this
+  check share one definition, so they cannot drift apart.
+- The orphan sweep removes both **`.fetch-*`** and **`*.zst`** entries from the
+  cli-dir, with `os.Remove` per entry — so it clears files and *empty*
+  directories and silently leaves a non-empty `.fetch-dir/` in place. Unrelated
+  files (a `README`) survive. The sweep runs whenever an install was attempted,
+  succeeded or not; the `-cli-keep` prune runs only on success.
+  - The sweep is **unconditional**, matching the reference. claustrum stages its
+    extract at `.fetch-<random>` in this same namespace (the reference extracts in
+    place and has no in-flight file here), so a concurrent install can reclaim
+    another's staging file. That is handled by a **single retry** of the
+    stage-verify-rename step rather than by narrowing the sweep: a name-only guard
+    cannot tell a staggered peer's in-flight file from litter, and narrowing it
+    would also diverge. Recovering from the loss is exact.
 ### Behavior shared by every mode
 
 - **Default socket** — when `-socket` is omitted, `-serve`/`-bridge`/`-stop`
-  fall back to `~/.claude/remote/rpc.sock`. The parent directory is **not**
-  created, so `-serve` on a missing `~/.claude/remote` fails with
-  `claustrum: listen unix: …: bind: no such file or directory`. (The deployment
-  always passes `-socket`; this only matters for bare invocations.)
+  fall back to `~/.claude/remote/rpc.sock`. `-serve` **creates** the parent
+  directory (mode `0700`) if it is missing — see *Daemon startup* above — so a
+  bare `-serve` on a fresh machine works. `-bridge`/`-stop` do not create it and
+  still fail with `connect: no such file or directory` when no daemon has run.
 - **No mode given** →
   `claustrum: one of --version/--install/--serve/--bridge/--stop is required`
   on stderr, exit `2` — no usage dump. An *unknown flag* still gets the stdlib

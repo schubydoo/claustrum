@@ -39,10 +39,33 @@ func (*procGroup) signal(proc *os.Process, signame string) {
 // close has nothing to release on Unix.
 func (*procGroup) close() {}
 
-// signalProcessGroup delivers a signal to the child's entire process group
-// (negative pid). Best-effort.
+// signalProcessGroup delivers signame the way the reference does: SIGKILL goes
+// to the child's entire process group (negative pid), every other signal goes to
+// the direct child alone. Best-effort.
+//
+// The split is measured, not inferred. Spawning `sh -c "sleep 40 & ...; sleep 40"`
+// and signalling the managed process at 5db5e4a:
+//
+//	process.kill TERM                     grandchild SURVIVES
+//	process.kill KILL                     grandchild dies
+//	process.killAndWait TERM escalate:false  grandchild SURVIVES
+//	process.killAndWait (escalates to KILL)  grandchild dies
+//
+// claustrum killed the grandchild in all four cases, because it always used the
+// negative pid. The reference's own function table corroborates the split: it
+// carries both a signalProcess and a killProcessGroup.
+//
+// This matters to a client: a graceful `process.kill` is meant to ask one process
+// to stop, and taking down every background job that process started is a
+// different operation. SIGKILL keeps the group form deliberately — that is the
+// whole-tree teardown, and it is what the reference does too.
 func signalProcessGroup(proc *os.Process, signame string) {
-	_ = syscall.Kill(-proc.Pid, parseSignal(signame))
+	sig := parseSignal(signame)
+	if sig == syscall.SIGKILL {
+		_ = syscall.Kill(-proc.Pid, sig)
+		return
+	}
+	_ = syscall.Kill(proc.Pid, sig)
 }
 
 // parseSignal maps a signal NAME to a signal, reproducing the reference exactly.

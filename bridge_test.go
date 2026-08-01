@@ -45,11 +45,16 @@ func TestRunBridgeDialError(t *testing.T) {
 	}
 }
 
-// runStop echoes the server's response frame to stdout. The real daemon is silent
-// on shutdown, so we point runStop at a raw socket server that replies with a
-// known frame, swap os.Stdout for a pipe, and assert the reply is written. This
-// pins the `if n > 0` write guard: a negated guard would drop the response.
-func TestRunStopEchoesResponse(t *testing.T) {
+// runStop must print NOTHING, even when the daemon does reply. Measured at
+// 5db5e4a with a deliberately wrong CLAUDE_RPC_TOKEN, so the daemon answers
+// -32001 and a frame is genuinely in flight: the reference's stdout stays empty
+// where claustrum echoed the raw JSON-RPC frame.
+//
+// This test previously asserted the OPPOSITE — that the reply IS echoed — which
+// was claustrum's behaviour, not the reference's. The audit that first checked
+// this used the CORRECT token, where the daemon shuts down without replying, so
+// both printed nothing and the difference was invisible.
+func TestRunStopDiscardsTheReply(t *testing.T) {
 	// Short socket dir (macOS sun_path is ~104 bytes), mirroring the harness.
 	dir, err := os.MkdirTemp("", "cl")
 	if err != nil {
@@ -82,18 +87,20 @@ func TestRunStopEchoesResponse(t *testing.T) {
 	}
 	os.Stdout = w
 	t.Setenv("CLAUDE_RPC_TOKEN", "tok")
-
-	stopErr := runStop(sock)
-	_ = w.Close()
+	got := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		got <- string(b)
+	}()
+	if err := runStop(sock); err != nil {
+		t.Errorf("runStop = %v, want nil", err)
+	}
 	os.Stdout = old
-
-	if stopErr != nil {
-		t.Fatalf("runStop: %v", stopErr)
+	_ = w.Close()
+	if out := <-got; out != "" {
+		t.Errorf("runStop wrote %q to stdout, want nothing", out)
 	}
-	out, _ := io.ReadAll(r)
-	if !strings.Contains(string(out), `"result"`) {
-		t.Errorf("runStop did not echo the server reply to stdout; got %q (the n>0 write was skipped)", out)
-	}
+	_ = r.Close()
 }
 
 // TestRunBridgeRelays drives a request through the stdio<->socket relay: swap

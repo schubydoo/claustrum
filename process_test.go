@@ -735,7 +735,9 @@ func TestMetricsCountProcessOps(t *testing.T) {
 		t.Fatalf("echoed stdout = %q, want hello", got)
 	}
 
-	c2, _ := pipeConn(t)
+	// reattach transfers the frame stream, so post-reattach frames arrive on c2's
+	// channel rather than the original connection's.
+	c2, frames2 := pipeConn(t)
 	if _, found, _, _, _, _ := m.reattach(c2, "mc", 0); !found {
 		t.Fatal("reattach did not find the live process")
 	}
@@ -745,7 +747,7 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	deadline := time.After(4 * time.Second)
 	for exited := false; !exited; {
 		select {
-		case f := <-frames:
+		case f := <-frames2:
 			exited = f.Stream == "exit"
 		case <-deadline:
 			t.Fatal("no exit frame after kill")
