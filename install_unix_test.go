@@ -134,3 +134,45 @@ func TestEnsureCLIStagingFailure(t *testing.T) {
 		t.Errorf("error = %q, want a \"staging cli: \" prefix", err)
 	}
 }
+
+// The staging file can vanish mid-install: it lives in the ".fetch-*" namespace
+// that every concurrent install's sweep claims, and claustrum holds it open for
+// the whole decompress + chmod + isRunnable window (the reference does not — it
+// extracts in place, so it has no in-flight file there to lose).
+//
+// The destination must survive that. Ordering RemoveAll before Rename destroyed
+// it: the CLI already installed at cliPath was deleted and nothing replaced it,
+// leaving an EMPTY cli-dir and a working install gone.
+//
+// The fixture makes the race deterministic instead of timing-dependent: the
+// stand-in CLI deletes ITSELF when isRunnable execs it. The exec survives the
+// unlink, so isRunnable still returns true and the code proceeds to the rename
+// with its source already gone — exactly the interleaving a concurrent sweep
+// produces, with no sleeps.
+//
+// Unix-only: it relies on a shell stand-in that can unlink "$0", and on unlink
+// during exec, neither of which Windows offers.
+func TestEnsureCLIKeepsDestinationWhenStagingVanishes(t *testing.T) {
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cliPath := filepath.Join(cliDir, "1.0.0")
+	if err := os.WriteFile(cliPath, []byte("the previously installed CLI"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stand-in that removes its own path during the isRunnable probe.
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, []byte("#!/bin/sh\nrm -f -- \"$0\"\nexit 0\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ensureCLI(installOpts{cliDir: cliDir, cliVersion: "1.0.0", cliZst: zstPath}, cliPath)
+	if err == nil {
+		t.Fatal("ensureCLI succeeded although its staging file was removed, want an error")
+	}
+	if _, statErr := os.Stat(cliPath); statErr != nil {
+		t.Errorf("the destination was destroyed for an install that could not finish: %v", statErr)
+	}
+}

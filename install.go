@@ -57,6 +57,22 @@ func runInstall(o installOpts) {
 			// -cli-keep 3 left all four in place).
 			f.CliWasPresent = true
 		} else {
+			// Snapshot the cli-dir BEFORE the install stages anything. The sweep
+			// below then reclaims only litter that already existed, never a file
+			// another install created while this one was running.
+			//
+			// Needed because claustrum stages its extract at ".fetch-<random>" in
+			// the cli-dir — the same namespace the sweep claims — and holds it for
+			// the whole decompress + chmod + isRunnable window. The reference does
+			// not: measured with a CLI that sleeps 3s on --version, claustrum shows
+			// ".fetch-XXXX" in the cli-dir for that entire time while the reference
+			// shows only the installed version, on BOTH the -cli-zst and -cli-url
+			// paths. So the reference's unconditional sweep cannot hit its own
+			// in-flight file, and claustrum's could.
+			//
+			// Honest paths are unchanged: litter from an interrupted install
+			// predates this snapshot and is still swept.
+			pre := cliDirEntries(o.cliDir)
 			err := ensureCLI(o, f.CliPath)
 			if err != nil {
 				f.CliError = err.Error()
@@ -68,7 +84,7 @@ func runInstall(o installOpts) {
 			//	cache hit                no     no
 			//	install attempted+failed yes    no
 			//	install succeeded        yes    yes
-			sweepFetchTemps(o.cliDir)
+			sweepFetchTemps(o.cliDir, pre)
 			if err == nil && o.cliKeep > 0 {
 				pruneCLI(o.cliDir, o.cliKeep)
 			}
@@ -167,18 +183,39 @@ func ensureCLI(o installOpts, cliPath string) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("installed cli at %s is not runnable", cliPath)
 	}
-	// Clear whatever is already at cliPath before renaming over it. rename(2)
-	// refuses to replace a non-empty directory, so without this an occupied
-	// destination fails the whole install: measured at 5db5e4a, the reference
-	// removes the blocker and installs successfully while claustrum returned
-	// `rename …: file exists` and left the blocker in place.
-	if err := os.RemoveAll(cliPath); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("clearing stale dir at %s: %v", cliPath, err)
-	}
+	// Rename into place, and clear an occupied destination only when the rename
+	// says there IS one. The obvious order — RemoveAll then Rename — destroys the
+	// destination BEFORE knowing the staging file survived, and the staging file
+	// can vanish: it lives in the ".fetch-*" namespace that every concurrent
+	// install's sweep claims. Reproduced deterministically by unlinking the
+	// staging file while isRunnable holds it open (the exec survives, so
+	// isRunnable still returns true):
+	//
+	//	RemoveAll-first : cli-dir EMPTY — a working CLI deleted and not replaced
+	//	Rename-first    : the rename fails, the destination is untouched
+	//
+	// So the destination is never sacrificed for an install that cannot complete.
+	// End states are unchanged on every non-racing path: a regular file is
+	// replaced by rename(2) directly, and only a directory needs the RemoveAll,
+	// which is the same case the reference clears.
 	if err := os.Rename(tmp, cliPath); err != nil {
-		_ = os.Remove(tmp)
-		return err
+		if _, statErr := os.Lstat(tmp); statErr != nil {
+			// The staging file is gone — a concurrent sweep took it. Report and
+			// leave cliPath alone; there is nothing to install.
+			return fmt.Errorf("staging file vanished before install: %v", err)
+		}
+		// rename(2) refuses to replace a non-empty directory, so an occupied
+		// destination fails the install without this: measured at 5db5e4a, the
+		// reference removes the blocker and installs successfully while claustrum
+		// returned `rename …: file exists` and left the blocker in place.
+		if rmErr := os.RemoveAll(cliPath); rmErr != nil {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("clearing stale dir at %s: %v", cliPath, rmErr)
+		}
+		if err := os.Rename(tmp, cliPath); err != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
 	}
 	// SFTP fallback: the uploaded .zst blob is consumed on success.
 	if o.cliZst != "" {
@@ -316,16 +353,29 @@ func httpGet(url string) ([]byte, error) {
 // directories, and silently leaves a non-empty ".fetch-dir/" in place. That
 // asymmetry is measured, not incidental — an empty orphan directory is swept, a
 // populated one survives.
-func sweepFetchTemps(cliDir string) {
-	ents, err := os.ReadDir(cliDir)
-	if err != nil {
-		return
-	}
-	for _, e := range ents {
-		if isSweptName(e.Name()) {
-			_ = os.Remove(filepath.Join(cliDir, e.Name()))
+func sweepFetchTemps(cliDir string, preexisting map[string]bool) {
+	for name := range cliDirEntries(cliDir) {
+		// Only entries that were already there when this install started. An
+		// entry that appeared since belongs to a concurrent install and is very
+		// likely its in-flight staging file — see the snapshot note in runInstall.
+		if preexisting[name] && isSweptName(name) {
+			_ = os.Remove(filepath.Join(cliDir, name))
 		}
 	}
+}
+
+// cliDirEntries lists the cli-dir's entry names, or nil when it cannot be read.
+// Returned as a set-shaped map so the snapshot reads as a membership test.
+func cliDirEntries(cliDir string) map[string]bool {
+	ents, err := os.ReadDir(cliDir)
+	if err != nil {
+		return nil
+	}
+	names := make(map[string]bool, len(ents))
+	for _, e := range ents {
+		names[e.Name()] = true
+	}
+	return names
 }
 
 // isSweptName reports whether the sweep above claims a cli-dir entry.

@@ -871,7 +871,13 @@ Staging and cleanup (probe-verified):
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
-  `clearing stale dir at <path>: <err>`.
+  `clearing stale dir at <path>: <err>`. The rename is attempted **first**, and
+  the destination is cleared only when the rename reports that something is in
+  the way — so a destination is never sacrificed for an install that cannot
+  finish. If the staging file has vanished (a concurrent sweep took it) the
+  result is `staging file vanished before install: <err>` and `cliPath` is left
+  untouched. Clearing first destroyed it: the already-installed CLI was deleted
+  and nothing replaced it, leaving an empty cli-dir.
 - **Divergence (claustrum-only hardening): `-cli-version` must name a single
   path component.** That clearing step is an `os.RemoveAll` on
   `filepath.Join(cliDir, cliVersion)`, so a version that reaches outside the
@@ -916,16 +922,21 @@ Staging and cleanup (probe-verified):
   directories and silently leaves a non-empty `.fetch-dir/` in place. Unrelated
   files (a `README`) survive. The sweep runs whenever an install was attempted,
   succeeded or not; the `-cli-keep` prune runs only on success.
-  - **Known race, inherited from the reference and deliberately not "fixed":**
-    the sweep is unconditional, so two installs sharing one cli-dir can remove
-    each other's in-flight `.fetch-<random>`. Measured at `5db5e4a` — a stray
-    `.fetch-OTHERPROC` left in the cli-dir is removed by the reference and by
-    claustrum alike, while an unrelated `README` survives on both. The loser's
-    install fails with an ordinary `cliError` (nothing is corrupted, and the
-    installed CLI is never affected), and the real client's two `-install` calls
-    are sequential. Distinguishing "my temp file" from "another process's"
-    requires diverging from the reference's sweep, so it is documented rather
-    than changed.
+  - The sweep reclaims only entries that were **already present when the install
+    started**. This is a claustrum-only divergence, and it exists because
+    claustrum stages its extract at `.fetch-<random>` in the cli-dir — the same
+    namespace the sweep claims — and holds it for the whole decompress + chmod +
+    runnable-check window. **The reference does not:** measured with a CLI that
+    sleeps 3 s on `--version`, claustrum shows `.fetch-XXXX` in the cli-dir for
+    that entire time while the reference shows only the installed version, on
+    both the `-cli-zst` and `-cli-url` paths. So the reference's unconditional
+    sweep can never hit its own in-flight file, and claustrum's could. Litter
+    from an interrupted install predates the snapshot and is still reclaimed, so
+    honest paths are unchanged.
+  - The snapshot is a partial guard by construction: it spares a file created
+    *after* it, which covers two installs that start together, not one that
+    starts while another is already staging. What makes the remainder harmless is
+    the rename order — see *Install ordering* below.
 
 ### Behavior shared by every mode
 
