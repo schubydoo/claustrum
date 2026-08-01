@@ -138,7 +138,17 @@ func gitInfo(req *request) response {
 // when there is no origin or the URL doesn't reduce to exactly two path segments.
 // Added by the reference daemon in 7c2f88d.
 func gitRepoSlug(dir string) string {
-	url, ok := git(dir, "config", "--get", "remote.origin.url")
+	// `remote get-url`, NOT `config --get remote.origin.url`: the former applies
+	// url.<base>.insteadOf rewrites, the latter returns the raw stored value.
+	// Measured at 5db5e4a with origin "gl-base/acme/gizmo.git" and
+	// url."https://github.com/".insteadOf "gl-base/" — the reference answers
+	// "acme/gizmo", which is only reachable from the rewritten URL.
+	//
+	// This became load-bearing with the host gate below: the raw value has no
+	// github.com host, so reading it would drop the slug for every developer who
+	// uses an insteadOf rewrite. Without the gate the old call happened to give
+	// the right answer, which is why this looked like a no-op before.
+	url, ok := git(dir, "remote", "get-url", "origin")
 	if !ok || url == "" {
 		return ""
 	}

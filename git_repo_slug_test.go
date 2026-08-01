@@ -159,3 +159,41 @@ func TestGitInfoRepoSlugAndDefaultBranch(t *testing.T) {
 		t.Errorf("defaultBranch = %q, want main", got.DefaultBranch)
 	}
 }
+
+// repoSlug must come from `git remote get-url origin`, which applies
+// url.<base>.insteadOf rewrites, not from `git config --get remote.origin.url`,
+// which returns the raw stored value.
+//
+// Measured at 5db5e4a with origin "gl-base/acme/gizmo.git" and
+// url."https://github.com/".insteadOf "gl-base/": the reference answers
+// "acme/gizmo", reachable only from the rewritten URL.
+//
+// This became load-bearing with the github.com host gate in this same PR — the
+// raw value has no github.com host, so reading it drops the slug entirely for
+// anyone using an insteadOf rewrite. Before the gate the old call happened to
+// produce the right answer, which is why this looked like a no-op.
+func TestGitRepoSlugAppliesInsteadOfRewrite(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(cmd.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	run("commit", "-q", "--allow-empty", "-m", "init")
+	run("remote", "add", "origin", "gl-base/acme/gizmo.git")
+	run("config", `url.https://github.com/.insteadOf`, "gl-base/")
+
+	if got := gitRepoSlug(dir); got != "acme/gizmo" {
+		t.Errorf("gitRepoSlug with an insteadOf rewrite = %q, want acme/gizmo "+
+			"(reading remote.origin.url raw would give %q)", got, "")
+	}
+}
