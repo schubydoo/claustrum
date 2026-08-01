@@ -83,6 +83,28 @@ func runInstall(o installOpts) {
 // uploaded one (-cli-zst, SFTP fallback) or a download (-cli-url), verified
 // against -cli-checksum, then zstd-decompressed to cliPath.
 func ensureCLI(o installOpts, cliPath string) error {
+	// Refuse a -cli-version that resolves outside -cli-dir, BEFORE anything
+	// touches the filesystem. cliPath is filepath.Join(cliDir, cliVersion), and
+	// Join cleans, so a version of "../victim" resolves to a sibling of cliDir —
+	// which the os.RemoveAll below then deletes RECURSIVELY before installing
+	// there. Measured: with -cli-version ../victim, a directory holding an
+	// unrelated file was destroyed and replaced by the CLI binary.
+	//
+	// This is a DIVERGENCE, and a deliberate one: the reference does exactly the
+	// same thing on the same input (measured at 5db5e4a — identical destruction,
+	// identical facts frame). It is the same class as the remote-server.log
+	// refusal documented in PROTOCOL.md — a claustrum-only hardening on an attack
+	// path the reference was not measured on, invisible on every honest path.
+	// The real client passes a bare version string ("1.0.86"), so a legitimate
+	// cliPath is always a single component under cliDir and never trips this.
+	//
+	// Guarding here rather than at the RemoveAll gates every filesystem effect,
+	// not just the destructive one, and reports through the existing cliError
+	// field so the facts frame keeps its shape. Skipped when cliDir is unset —
+	// then cliPath is not derived from a version and there is nothing to contain.
+	if o.cliDir != "" && !withinDir(o.cliDir, cliPath) {
+		return fmt.Errorf("cli version %q escapes the cli dir", o.cliVersion)
+	}
 	var zst []byte
 	var err error
 	switch {
@@ -171,6 +193,26 @@ func ensureCLI(o installOpts, cliPath string) error {
 		_ = os.Remove(o.cliZst)
 	}
 	return nil
+}
+
+// withinDir reports whether path lies strictly inside dir, lexically. "Strictly"
+// matters: a path EQUAL to dir is rejected too, because -cli-version "." resolves
+// cliPath to cliDir itself and would hand the whole cli-dir to os.RemoveAll.
+//
+// Lexical, not symlink-resolved. That is the same containment the escape it
+// blocks is built from — filepath.Join cleans "..", so the attack is lexical —
+// and EvalSymlinks would add a TOCTOU window plus a dependency on paths that may
+// not exist yet. A nested version ("linux-x64/1.0.86") stays legal; only leaving
+// the tree does not.
+func withinDir(dir, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	if rel == "." || rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // verifyChecksum returns a "checksum mismatch" error (byte-identical to the

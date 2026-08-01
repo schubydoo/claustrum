@@ -872,11 +872,32 @@ Staging and cleanup (probe-verified):
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
   `clearing stale dir at <path>: <err>`.
+- **Divergence (claustrum-only hardening): a `-cli-version` that escapes
+  `-cli-dir` is refused.** That clearing step is an `os.RemoveAll`, and `cliPath`
+  is `filepath.Join(cliDir, cliVersion)` — `Join` cleans, so `-cli-version
+  ../victim` resolves to a *sibling* of the cli-dir and deletes it recursively
+  before installing there. Measured at `5db5e4a`: **the reference destroys it**,
+  and so did claustrum before this check. claustrum now answers
+  `cli version "../victim" escapes the cli dir` in `cliError` and touches
+  nothing. A version equal to `.` is refused for the same reason (it resolves to
+  the cli-dir itself); a nested version stays legal. The real client passes a
+  bare version string, so every honest path is byte-identical — the same shape
+  as the `remote-server.log` refusal above and D1 below.
 - The orphan sweep removes both **`.fetch-*`** and **`*.zst`** entries from the
   cli-dir, with `os.Remove` per entry — so it clears files and *empty*
   directories and silently leaves a non-empty `.fetch-dir/` in place. Unrelated
   files (a `README`) survive. The sweep runs whenever an install was attempted,
   succeeded or not; the `-cli-keep` prune runs only on success.
+  - **Known race, inherited from the reference and deliberately not "fixed":**
+    the sweep is unconditional, so two installs sharing one cli-dir can remove
+    each other's in-flight `.fetch-<random>`. Measured at `5db5e4a` — a stray
+    `.fetch-OTHERPROC` left in the cli-dir is removed by the reference and by
+    claustrum alike, while an unrelated `README` survives on both. The loser's
+    install fails with an ordinary `cliError` (nothing is corrupted, and the
+    installed CLI is never affected), and the real client's two `-install` calls
+    are sequential. Distinguishing "my temp file" from "another process's"
+    requires diverging from the reference's sweep, so it is documented rather
+    than changed.
 
 ### Behavior shared by every mode
 

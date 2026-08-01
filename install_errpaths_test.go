@@ -109,6 +109,71 @@ func TestEnsureCLIClearsOccupiedPath(t *testing.T) {
 	}
 }
 
+// A -cli-version that resolves outside -cli-dir must be refused BEFORE any
+// filesystem effect. cliPath is filepath.Join(cliDir, cliVersion) and Join
+// cleans, so "../victim" lands beside cliDir — where ensureCLI's os.RemoveAll
+// would delete it recursively and install the CLI in its place.
+//
+// Measured without the guard: the victim directory and its file were destroyed
+// and replaced by the CLI binary. The reference at 5db5e4a does exactly the
+// same, so this is a deliberate claustrum-only hardening, not a parity fix —
+// invisible on every honest path, where the version is a bare string.
+//
+// The assertion is on the SURVIVING file, not just the error: an error alone
+// would also be reported if the guard ran after the delete.
+func TestEnsureCLIRefusesVersionEscapingCliDir(t *testing.T) {
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	victim := filepath.Join(root, "victim")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(victim, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(victim, "keep.txt")
+	if err := os.WriteFile(keep, []byte("important"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	f := captureInstallFacts(t, installOpts{
+		cliDir: cliDir, cliVersion: filepath.Join("..", "victim"), cliZst: zstPath,
+	})
+	if !strings.Contains(f.CliError, "escapes the cli dir") {
+		t.Errorf("CliError = %q, want an escape refusal", f.CliError)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("the sibling directory's file was destroyed: %v", err)
+	}
+	if fi, err := os.Stat(victim); err != nil || !fi.IsDir() {
+		t.Errorf("victim is no longer a directory (err=%v) — it was replaced by the CLI", err)
+	}
+}
+
+func TestWithinDir(t *testing.T) {
+	base := filepath.Join("a", "b")
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{filepath.Join(base, "1.0.86"), true},           // the real shape
+		{filepath.Join(base, "linux-x64", "1.0"), true}, // nested stays legal
+		{base, false},                         // version "." → RemoveAll(cliDir)
+		{filepath.Join("a", "victim"), false}, // version ".." + name
+		{filepath.Join("a"), false},           // the parent itself
+		{filepath.Join("a", "bc"), false},     // prefix-but-not-child
+	}
+	for _, tc := range cases {
+		if got := withinDir(base, tc.path); got != tc.want {
+			t.Errorf("withinDir(%q, %q) = %v, want %v", base, tc.path, got, tc.want)
+		}
+	}
+}
+
 // httpGet propagates a dial failure from client.Get.
 func TestHTTPGetConnectionError(t *testing.T) {
 	if _, err := httpGet(refusedURL(t)); err == nil {
