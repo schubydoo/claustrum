@@ -712,3 +712,47 @@ func TestSocketWorktreeCreatePopulates(t *testing.T) {
 	want := []string{".claude", ".claude/settings.json", "local.env", "tracked.txt"}
 	eqTree(t, got, want, "worktree_create over the socket")
 }
+
+// TestSocketWorktreeCreateFailureCarriesGitStderr pins the OTHER half of the
+// stdout/stderr split. git.status must read stdout only (see
+// TestGitStatusIgnoresGitStderr); git.worktree_create must NOT, because it puts
+// git's output on the wire and `git worktree add` writes everything — progress
+// and the fatal alike — to stderr, leaving stdout empty.
+//
+// Measured against the reference at 5db5e4a with a branch name that already
+// exists:
+//
+//	reference : "git worktree add failed: Preparing worktree (new branch 'dup')\n
+//	             fatal: a branch named 'dup' already exists"
+//	Output()  : "git worktree add failed: "
+//
+// Switching the shared git() helper to Output() empties this frame, which is why
+// that helper stays on CombinedOutput. The assertion is on the substring git
+// itself emits, not the full string, so a git that reworks its wording still
+// fails the empty-tail regression rather than the phrasing.
+func TestSocketWorktreeCreateFailureCarriesGitStderr(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "tracked\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt")
+	runGit(t, repo, "commit", "-m", "init")
+	runGit(t, repo, "branch", "dup")
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	wt := filepath.ToSlash(filepath.Join(root, "wt"))
+	reply := string(cl.call(req(1, "git.worktree_create", map[string]any{
+		"baseRepo": repo, "branchName": "dup", "worktreePath": wt})))
+
+	if !strings.Contains(reply, `"success":false`) {
+		t.Fatalf("worktree_create on an existing branch should fail: %s", reply)
+	}
+	if !strings.Contains(reply, "already exists") {
+		t.Errorf("failure error dropped git's stderr — the reference includes it: %s", reply)
+	}
+	if strings.Contains(reply, `git worktree add failed: "`) {
+		t.Errorf("failure error is empty after the colon: %s", reply)
+	}
+}

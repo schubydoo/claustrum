@@ -59,6 +59,20 @@ func (p *gitParams) repoDir() string {
 var gitTimeout = 60 * time.Second
 
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
+//
+// Combined, deliberately — do NOT "fix" this to Output() to match gitStatusErr
+// below. git.worktree_create puts this string ON THE WIRE on failure
+// ("git worktree add failed: " + out), and `git worktree add` writes both its
+// progress and its fatal to stderr while leaving stdout empty. Measured against
+// 5db5e4a with a branch name that already exists:
+//
+//	reference : "git worktree add failed: Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"
+//	stdout-only: "git worktree add failed: "
+//
+// The stderr-in-porcelain bug that gitStatusErr fixes does not apply here: no
+// caller of git() parses this string as a line-oriented list, and the two
+// callers that compare it (isRepo, isRepoGitDir) test the exit status or an
+// exact "true", both of which a warning-prefixed string already fails safely.
 func git(dir string, args ...string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
@@ -66,7 +80,7 @@ func git(dir string, args ...string) (string, bool) {
 }
 
 // gitContext is git() with an explicit context, so the timeout/cancel path is
-// testable without waiting on a real wedged git.
+// testable without waiting on a real wedged git. Combined output — see git().
 func gitContext(ctx context.Context, dir string, args ...string) (string, bool) {
 	full := append([]string{"-C", dir}, args...)
 	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
@@ -76,11 +90,19 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 // gitStatusErr runs git and returns the exec error itself, not just an ok flag.
 // The reference reports a failed `git status --porcelain` as the bare Go error
 // string ("exit status 128"), NOT git's stderr — measured against 5db5e4a.
+//
+// Output, NOT CombinedOutput: git writes warnings to stderr while still
+// succeeding on stdout, and folding the two streams together turned those
+// warnings into porcelain entries. Measured against 5db5e4a with a repo whose
+// core.excludesFile is unreadable — the reference answers {"isRepo":true,
+// "clean":true} while claustrum reported the warning text as a change. The error
+// path is unaffected: the caller reports err.Error(), which for an ExitError is
+// "exit status N" and never includes stderr.
 func gitStatusErr(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
 	full := append([]string{"-C", dir}, args...)
-	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "git", full...).Output()
 	return strings.TrimRight(string(out), "\n"), err
 }
 
@@ -304,11 +326,11 @@ func gitStatus(req *request) response {
 		// made staged ("M  f") and unstaged (" M f") differ only in space count.
 		//
 		// Kept as a single guarded append rather than an `if ... { continue }`:
-		// git() already strips the trailing newline and an empty `out` returns
-		// earlier, so no blank line reaches this loop in practice, and a bare
-		// `continue` is then a statement coverage can never reach. The blank
-		// skip itself stays — git() uses CombinedOutput, so stderr shares this
-		// stream.
+		// gitStatusErr already strips the trailing newline and an empty `out`
+		// returns earlier, so no blank line reaches this loop in practice, and a
+		// bare `continue` is then a statement coverage can never reach. The blank
+		// skip itself stays as cheap insurance against a porcelain blob that ends
+		// in a stray separator.
 		if t := strings.TrimRight(line, "\r\n"); strings.TrimSpace(t) != "" {
 			changes = append(changes, t)
 		}
