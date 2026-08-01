@@ -84,6 +84,22 @@ token: …`) and non-fatal. Added by reference build `5db5e4a` and matched here
 kill (`SIGKILL`/crash) leaves the file behind, since removal runs only on the
 graceful `server.shutdown` / `SIGTERM` path.
 
+### Daemon startup (`-serve`)
+
+The `-serve` launcher **creates the socket's parent directory** if it is missing,
+mode `0700` — the same owner-only mode the reference uses for the cli-dir — and
+then **does not return until the daemon is accepting** on the socket. It confirms
+this by dialing the socket and closing again, so a freshly started daemon's log
+opens with a `New connection from: @` / `Connection closed: @` pair from the
+launcher's own probe, before any real client appears.
+
+The wait ends early if the child exits first, so a start that cannot succeed
+(socket path occupied, directory uncreatable) returns immediately rather than
+sitting out the ceiling, and is bounded at 10 seconds otherwise. The launcher
+exits `0` either way and prints nothing on failure. All of this is measured
+against `5db5e4a`; the practical guarantee is that a client which runs `-serve`
+over SSH and connects immediately never loses the race.
+
 ### Daemon log (`remote-server.log`)
 
 The `-serve` launcher creates **`remote-server.log`** in the socket's directory

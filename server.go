@@ -343,7 +343,26 @@ func openDaemonLog(socket string) *os.File {
 // an inherited pipe (child fd 3, named by tokenPipeEnv) so the token never lands
 // on disk, in argv, or in the environment; an empty forwardToken means the child
 // reads its own -token-file as before.
+// daemonStartTimeout caps how long the -serve launcher waits for the daemonized
+// child to start accepting before it returns anyway. The reference uses 10s
+// (a 1e10 ns deadline in its spawnChild, alongside the string "timeout waiting
+// for daemon to accept on %s"). var so tests can shrink it.
+var daemonStartTimeout = 10 * time.Second
+
 func daemonizeWithToken(socket, forwardToken string) {
+	// Create the socket's directory before anything opens a file in it — the
+	// reference does this in its launcher (string "mkdir parent %s: %v") and
+	// creates the chain 0700, the same owner-only mode it uses for the cli-dir.
+	// Measured: with a missing socket directory the reference starts normally and
+	// leaves d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600)
+	// behind, while claustrum refused to start at all.
+	//
+	// The error is deliberately not reported here: a failure surfaces immediately
+	// as the child's bind error, and the reference prints nothing to the
+	// launcher's stderr on this path.
+	if dir := filepath.Dir(socket); dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0o700)
+	}
 	self, err := os.Executable()
 	if err != nil {
 		self = os.Args[0]
@@ -400,8 +419,48 @@ func daemonizeWithToken(socket, forwardToken string) {
 		_, _ = io.WriteString(pipeW, forwardToken)
 		_ = pipeW.Close() // closing the write end gives the child's read an EOF
 	}
-	_ = cmd.Process.Release()
+	// Do not return until the child is actually accepting. The reference's
+	// launcher blocks here, so a client that runs `-serve` over SSH and connects
+	// immediately always finds a listening socket; claustrum returned the moment
+	// the fork succeeded and lost that race. Measured at 5db5e4a — socket present
+	// at the instant the launcher returned: reference YES, claustrum NO.
+	exited := make(chan struct{})
+	go func() { _, _ = cmd.Process.Wait(); close(exited) }()
+	waitForDaemonAccept(socket, exited)
 	osExit(0)
+}
+
+// waitForDaemonAccept blocks until the socket accepts a connection, the child
+// exits, or daemonStartTimeout elapses — whichever comes first. Returning on
+// child exit is what keeps a doomed start fast: with the socket path already
+// occupied the reference's launcher returns in ~0.07s rather than sitting out
+// the full deadline.
+//
+// It DIALS rather than stat-ing the path, because a socket file can exist before
+// its listener is ready and the point is to answer "can a client connect yet".
+// That is what the reference does too: its log carries a "New connection from: @"
+// and "Connection closed: @" pair from the launcher's own probe, before any real
+// client appears.
+//
+// Failure is silent. The launcher exits 0 either way — matching the reference,
+// which reports nothing on its stderr when the child cannot bind.
+func waitForDaemonAccept(socket string, exited <-chan struct{}) {
+	deadline := time.After(daemonStartTimeout)
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if c, err := net.Dial("unix", socket); err == nil {
+			_ = c.Close()
+			return
+		}
+		select {
+		case <-exited:
+			return
+		case <-deadline:
+			return
+		case <-tick.C:
+		}
+	}
 }
 
 // enablePipe starts the optional Windows named-pipe listener when requested and
