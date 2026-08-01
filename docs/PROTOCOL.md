@@ -84,6 +84,43 @@ token: …`) and non-fatal. Added by reference build `5db5e4a` and matched here
 kill (`SIGKILL`/crash) leaves the file behind, since removal runs only on the
 graceful `server.shutdown` / `SIGTERM` path.
 
+### Daemon startup (`-serve`)
+
+The `-serve` launcher **creates the socket's parent directory** if it is missing,
+mode `0700` — the same owner-only mode the reference uses for the cli-dir — and
+then **does not return until the daemon is accepting** on the socket. It confirms
+this by dialing the socket and closing again, so a freshly started daemon's log
+opens with a `New connection from: @` / `Connection closed: @` pair from the
+launcher's own probe, before any real client appears.
+
+What it waits for is the socket **path to exist** (polled every 20 ms, bounded at
+**10 seconds**), not a successful dial, and it does **not** give up early when the
+child dies — both deliberate, and both measured against `5db5e4a`:
+
+| start | what the launcher sees | outcome |
+|---|---|---|
+| normal | path appears, confirming dial succeeds | exit `0` |
+| socket path occupied by a directory | path exists **immediately** | exit `0`, in ~0.01 s (reference 0.08 s) |
+| child can never bind (uncreatable parent dir) | path never appears | exit `1` at ~10.04 s (reference 10.06 s) |
+
+On timeout the launcher prints
+`claustrum: timeout waiting for daemon to accept on <socket>` to **stderr** and
+exits `1`. On success it prints nothing and exits `0`.
+
+The occupied-path row is why the wait polls for existence: a dial-based wait
+would invert both rows, sitting out the full deadline where nothing ever accepts
+and giving up early on a child that dies. The confirming dial's result is ignored
+for the same reason.
+
+Two things are *not* promised. The child's own startup errors reach the
+launcher's stderr only when the daemon log could not be opened (a missing socket
+directory), because the child then falls back to inherited stdio — normally they
+go to `remote-server.log`. And exit `0` means the path appeared, not that a
+daemon is healthy behind it, as the occupied-path row shows.
+
+The practical guarantee is the one that matters to a client: after a successful
+`-serve`, connecting immediately over SSH never loses the race.
+
 ### Daemon log (`remote-server.log`)
 
 The `-serve` launcher creates **`remote-server.log`** in the socket's directory
@@ -827,10 +864,10 @@ Checksum + error framing (probe-verified):
 ### Behavior shared by every mode
 
 - **Default socket** — when `-socket` is omitted, `-serve`/`-bridge`/`-stop`
-  fall back to `~/.claude/remote/rpc.sock`. The parent directory is **not**
-  created, so `-serve` on a missing `~/.claude/remote` fails with
-  `claustrum: listen unix: …: bind: no such file or directory`. (The deployment
-  always passes `-socket`; this only matters for bare invocations.)
+  fall back to `~/.claude/remote/rpc.sock`. `-serve` **creates** the parent
+  directory (mode `0700`) if it is missing — see *Daemon startup* above — so a
+  bare `-serve` on a fresh machine works. `-bridge`/`-stop` do not create it and
+  still fail with `connect: no such file or directory` when no daemon has run.
 - **No mode given** →
   `claustrum: one of --version/--install/--serve/--bridge/--stop is required`
   on stderr, exit `2` — no usage dump. An *unknown flag* still gets the stdlib
