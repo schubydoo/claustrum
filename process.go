@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -486,6 +487,13 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 			})
 		}
 		if err != nil {
+			// EOF is the normal end of a stream and says nothing. Anything else —
+			// a closed pipe forced by the drain cap, an I/O error — is why the
+			// output stopped, and without it a truncated stream looks identical to
+			// a clean one. The reference logs this; claustrum returned silently.
+			if !errors.Is(err, io.EOF) {
+				logWarnf("[process.Manager] %s read error for process %s: %v", name, p.id, err)
+			}
 			return
 		}
 	}
@@ -601,6 +609,11 @@ func (p *managedProc) stdinWriter() {
 
 		p.stdinMu.Lock()
 		if err != nil {
+			// The whole queue is discarded here — everything the client sent and
+			// got success:true for, that the child will now never see. Silently
+			// dropping it left no trace at all; the reference logs the write error
+			// that caused it.
+			logWarnf("[process.Manager] drainStdin %s: write error: %v", p.id, err)
 			p.stdinQ, p.stdinQBytes, p.stdinDone = nil, 0, true
 			p.stdinCond.Broadcast()
 			p.stdinMu.Unlock()
