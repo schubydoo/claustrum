@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -38,7 +39,17 @@ func expandPath(p string) string {
 	if err != nil || home == "" {
 		return p
 	}
-	return home + p[1:]
+	// filepath.Clean, so "~/link/../x" resolves LEXICALLY to "~/x" rather than
+	// letting the OS walk the symlink and land in its parent. Measured at
+	// 5db5e4a with ~/link -> b/c and both ~/x.txt and ~/b/x.txt present:
+	//
+	//	~/link/../x.txt        reference "in-home"   claustrum "in-b"
+	//	<abs>/link/../x.txt    reference "in-b"      claustrum "in-b"
+	//
+	// So the cleaning applies to the TILDE form only — an absolute path keeps OS
+	// resolution on both — which is why it belongs here rather than in the
+	// callers. Same request, different file: worth getting exactly right.
+	return filepath.Clean(home + p[1:])
 }
 
 // pathExpander is implemented by EVERY params struct, not just those carrying

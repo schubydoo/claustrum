@@ -21,12 +21,20 @@ func TestExpandPath(t *testing.T) {
 		name, in, want string
 	}{
 		{"bare tilde", "~", home},
-		{"trailing slash", "~/", home + "/"},
 		{"file under home", "~/f.txt", home + "/f.txt"},
-		// Only the leading "~" is replaced; the remainder is kept verbatim, so
-		// a doubled slash survives (the OS collapses it). Path cleaning here
-		// would diverge from the reference.
-		{"doubled slash", "~//f.txt", home + "//f.txt"},
+		// A tilde path is CLEANED. The comment here used to claim the opposite —
+		// that cleaning "would diverge from the reference" — which was an
+		// assumption, not a measurement. It is wrong: with ~/link -> b/c the
+		// reference reads ~/x.txt for "~/link/../x.txt" while an uncleaned path
+		// walks the symlink and reads ~/b/x.txt instead. See
+		// TestExpandPathCleansTildeLexically.
+		//
+		// These two rows follow from that same Clean. Their difference is NOT
+		// externally observable on its own — "~/" and "~//f.txt" open exactly the
+		// same file either way, because the OS collapses the slashes — so they
+		// are asserted for internal consistency, not as measured reference output.
+		{"trailing slash", "~/", home},
+		{"doubled slash", "~//f.txt", home + "/f.txt"},
 		// Everything below must be returned untouched.
 		{"tilde user", "~root/f.txt", "~root/f.txt"},
 		{"tilde unknown user", "~nosuchuser/f.txt", "~nosuchuser/f.txt"},
