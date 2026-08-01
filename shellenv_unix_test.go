@@ -55,8 +55,12 @@ func TestExtractLoginPATHNoSentinel(t *testing.T) {
 
 	extractLoginPATH()
 
-	if !strings.Contains(buf.String(), "[shellenv] PATH sentinel not found in shell output") {
-		t.Errorf("expected sentinel-not-found log, got %q", buf.String())
+	// The reference wraps the failure and appends the shell's own output, so the
+	// log says WHY it could not parse anything. Measured at 5db5e4a:
+	// "[shellenv] Failed to extract PATH from login shell: PATH sentinel not
+	// found in shell output: no sentinel here".
+	if !strings.Contains(buf.String(), "[shellenv] Failed to extract PATH from login shell: PATH sentinel not found in shell output:") {
+		t.Errorf("expected the wrapped sentinel-not-found log, got %q", buf.String())
 	}
 }
 
@@ -80,16 +84,26 @@ func writeFakeShell(t *testing.T, body string) string {
 // non-emptiness — is what makes both observable.
 func TestExtractLoginPATHInstallsExtractedValue(t *testing.T) {
 	const want = "/zzz/claustrum/extracted/bin"
+	const daemonPATH = "/original/path/should/be/replaced"
 	// Sentinel printed at the very start of the line → strings.Index == 0.
 	shell := writeFakeShell(t, "printf '%s%s\\n' '"+pathSentinel+"' '"+want+"'")
 
-	t.Setenv("PATH", "/original/path/should/be/replaced")
+	t.Setenv("PATH", daemonPATH)
 	t.Setenv("SHELL", shell)
+	t.Cleanup(resetLoginPATHForTest)
 
 	extractLoginPATH()
 
-	if got := os.Getenv("PATH"); got != want {
-		t.Errorf("PATH = %q, want %q (column-0 sentinel must install the extracted value)", got, want)
+	if got := currentLoginPATH(); got != want {
+		t.Errorf("loginPATH = %q, want %q (column-0 sentinel must record the extracted value)", got, want)
+	}
+	// And it must NOT be installed into the daemon's own environment. The
+	// reference keeps the two apart; mutating os.Environ made the daemon resolve
+	// its own tools through the user's login PATH — measured with a fake `git`
+	// reachable only from the login PATH, which claustrum then ran instead of the
+	// real one.
+	if got := os.Getenv("PATH"); got != daemonPATH {
+		t.Errorf("daemon PATH = %q, want it untouched at %q", got, daemonPATH)
 	}
 }
 
@@ -146,5 +160,68 @@ func TestExtractLoginPATHLogsShellError(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "[shellenv] Shell command exited with error") {
 		t.Errorf("non-zero-exit shell did not log the error branch; got %q", buf.String())
+	}
+}
+
+// $SHELL is used only when it is an executable file. A non-executable value
+// falls through to the candidate list rather than being handed to exec, which
+// would fail the extraction outright and leave children with the daemon's bare
+// PATH. Measured at 5db5e4a with a non-executable $SHELL: the reference still
+// logged "Extracted shell PATH (262 chars)" while claustrum logged
+// "fork/exec …: permission denied" and gave up.
+func TestSafeLoginShellRejectsNonExecutableShell(t *testing.T) {
+	dir := t.TempDir()
+
+	exe := filepath.Join(dir, "good")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", exe)
+	if got := safeLoginShell(); got != exe {
+		t.Errorf("safeLoginShell() = %q, want the executable $SHELL %q", got, exe)
+	}
+
+	noexec := filepath.Join(dir, "noexec")
+	if err := os.WriteFile(noexec, []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", noexec)
+	got := safeLoginShell()
+	if got == noexec {
+		t.Fatal("safeLoginShell() returned a non-executable $SHELL")
+	}
+	if !isExecutableFile(got) {
+		t.Errorf("safeLoginShell() = %q, which is not executable", got)
+	}
+
+	// A directory is not a shell either, and neither is a missing path.
+	t.Setenv("SHELL", dir)
+	if got := safeLoginShell(); got == dir {
+		t.Error("safeLoginShell() accepted a directory as $SHELL")
+	}
+	t.Setenv("SHELL", filepath.Join(dir, "does-not-exist"))
+	if got := safeLoginShell(); !isExecutableFile(got) {
+		t.Errorf("safeLoginShell() with a missing $SHELL = %q, want a usable fallback", got)
+	}
+
+	// Empty $SHELL folds into the same path.
+	t.Setenv("SHELL", "")
+	if got := safeLoginShell(); !isExecutableFile(got) {
+		t.Errorf("safeLoginShell() with an empty $SHELL = %q, want a usable fallback", got)
+	}
+}
+
+// When nothing in the candidate list is usable, safeLoginShell still returns
+// /bin/sh and lets the exec fail and be logged, rather than returning "" and
+// exec'ing the empty string. Unreachable on a normal host, so the candidate list
+// is overridden here.
+func TestSafeLoginShellLastResort(t *testing.T) {
+	old := fallbackShells
+	fallbackShells = []string{"/nonexistent/bash", "/nonexistent/zsh"}
+	t.Cleanup(func() { fallbackShells = old })
+
+	t.Setenv("SHELL", "")
+	if got := safeLoginShell(); got != "/bin/sh" {
+		t.Errorf("safeLoginShell() with no usable candidate = %q, want /bin/sh", got)
 	}
 }
