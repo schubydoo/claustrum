@@ -15,6 +15,14 @@ CLAUDE.local.md
 *.out
 coverage.*
 
+# Daemon runtime artifacts. -serve creates remote-server.log beside the socket,
+# and a bare `-serve` in the repo root puts it here. Accidentally committed once
+# (0 bytes, in #196) by a `git add -A`.
+/remote-server.log
+/rpc.sock
+/rpc.pipe
+/daemon.token
+
 # Python bytecode (the scripts/ upstream-tracking helpers are stdlib Python)
 __pycache__/
 *.pyc
