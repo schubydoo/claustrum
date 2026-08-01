@@ -925,22 +925,13 @@ Staging and cleanup (probe-verified):
   directories and silently leaves a non-empty `.fetch-dir/` in place. Unrelated
   files (a `README`) survive. The sweep runs whenever an install was attempted,
   succeeded or not; the `-cli-keep` prune runs only on success.
-  - The sweep reclaims only entries that were **already present when the install
-    started**. This is a claustrum-only divergence, and it exists because
-    claustrum stages its extract at `.fetch-<random>` in the cli-dir — the same
-    namespace the sweep claims — and holds it for the whole decompress + chmod +
-    runnable-check window. **The reference does not:** measured with a CLI that
-    sleeps 3 s on `--version`, claustrum shows `.fetch-XXXX` in the cli-dir for
-    that entire time while the reference shows only the installed version, on
-    both the `-cli-zst` and `-cli-url` paths. So the reference's unconditional
-    sweep can never hit its own in-flight file, and claustrum's could. Litter
-    from an interrupted install predates the snapshot and is still reclaimed, so
-    honest paths are unchanged.
-  - The snapshot is a partial guard by construction: it spares a file created
-    *after* it, which covers two installs that start together, not one that
-    starts while another is already staging. What makes the remainder harmless is
-    the rename order — see *Install ordering* below.
-
+  - The sweep is **unconditional**, matching the reference. claustrum stages its
+    extract at `.fetch-<random>` in this same namespace (the reference extracts in
+    place and has no in-flight file here), so a concurrent install can reclaim
+    another's staging file. That is handled by a **single retry** of the
+    stage-verify-rename step rather than by narrowing the sweep: a name-only guard
+    cannot tell a staggered peer's in-flight file from litter, and narrowing it
+    would also diverge. Recovering from the loss is exact.
 ### Behavior shared by every mode
 
 - **Default socket** — when `-socket` is omitted, `-serve`/`-bridge`/`-stop`

@@ -397,7 +397,7 @@ func TestSweepFetchTemps(t *testing.T) {
 	}
 	write(filepath.Join(".fetch-full", "inner"))
 
-	sweepFetchTemps(dir, cliDirEntries(dir))
+	sweepFetchTemps(dir)
 
 	got := map[string]bool{}
 	ents, err := os.ReadDir(dir)
@@ -700,47 +700,5 @@ func captureInstallFacts(t *testing.T, o installOpts) installFacts {
 // missing cli-dir must be a no-op, never a panic, because the sweep runs on the
 // install path where the directory may not exist yet.
 func TestSweepFetchTempsUnreadableDir(t *testing.T) {
-	sweepFetchTemps(filepath.Join(t.TempDir(), "no-such-dir"), nil)
-}
-
-// The sweep must reclaim pre-existing litter and NOT a file that appeared after
-// the install started — that file belongs to a concurrent install and is very
-// likely its in-flight ".fetch-<random>" staging file.
-//
-// Partial by construction, and deliberately so: the snapshot protects a file
-// created AFTER it, so it covers two installs that start together (the realistic
-// case) and not one that starts while another is already staging. The
-// destination is protected in every ordering by the rename-first sequence — see
-// TestEnsureCLIKeepsDestinationWhenStagingVanishes — so what remains is a
-// concurrent install failing with a clear error, never data loss.
-func TestSweepFetchTempsSparesEntriesCreatedAfterTheSnapshot(t *testing.T) {
-	dir := t.TempDir()
-	old := filepath.Join(dir, ".fetch-litter") // an interrupted install's leftover
-	if err := os.WriteFile(old, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	keep := filepath.Join(dir, "README")
-	if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	pre := cliDirEntries(dir) // the install starts here
-
-	// A concurrent install stages its file after our snapshot.
-	other := filepath.Join(dir, ".fetch-concurrent")
-	if err := os.WriteFile(other, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	sweepFetchTemps(dir, pre)
-
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Errorf("pre-existing litter survived the sweep (err=%v), want it reclaimed", err)
-	}
-	if _, err := os.Stat(other); err != nil {
-		t.Errorf("the sweep removed a concurrent install's in-flight staging file: %v", err)
-	}
-	if _, err := os.Stat(keep); err != nil {
-		t.Errorf("the sweep removed an unrelated file: %v", err)
-	}
+	sweepFetchTemps(filepath.Join(t.TempDir(), "no-such-dir"))
 }

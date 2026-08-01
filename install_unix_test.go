@@ -176,3 +176,41 @@ func TestEnsureCLIKeepsDestinationWhenStagingVanishes(t *testing.T) {
 		t.Errorf("the destination was destroyed for an install that could not finish: %v", statErr)
 	}
 }
+
+// The concurrent-install case Greptile reported: another install's sweep
+// reclaims our staging file, and the install must still SUCCEED rather than
+// report "staging file vanished".
+//
+// A name-only sweep guard cannot fix this. In the staggered ordering the other
+// install staged BEFORE this one began, so its file is indistinguishable from
+// litter by name — which is why the fix is a bounded retry rather than a smarter
+// sweep, and why the sweep itself stays unconditional like the reference.
+//
+// Deterministic, no sleeps: the stand-in CLI removes its own path the FIRST time
+// isRunnable execs it and leaves a marker, so the retry's copy survives. The exec
+// survives the unlink, so isRunnable still returns true and the rename is reached
+// with its source already gone — exactly what a concurrent sweep produces.
+func TestEnsureCLIRetriesWhenStagingIsSweptOnce(t *testing.T) {
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "swept-once")
+	script := "#!/bin/sh\nif [ ! -f " + marker + " ]; then : > " + marker + "; rm -f -- \"$0\"; fi\nexit 0\n"
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, []byte(script)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cliPath := filepath.Join(cliDir, "1.0.0")
+	if err := ensureCLI(installOpts{cliDir: cliDir, cliVersion: "1.0.0", cliZst: zstPath}, cliPath); err != nil {
+		t.Fatalf("ensureCLI = %v, want the retry to recover from a swept staging file", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the fixture never removed its own staging file, so nothing was retried: %v", err)
+	}
+	if !isRegularFile(cliPath) {
+		t.Error("the CLI was not installed after the retry")
+	}
+}
