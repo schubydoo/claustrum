@@ -5,8 +5,9 @@ small daemon that hosts a remote Claude Code session over SSH. It is, in one
 binary: a local CLI-version manager, a process supervisor, and a JSON-RPC
 multiplexer (with a replay buffer) over an `AF_UNIX` socket.
 
-It was built to a behavioral contract captured by black-box probing the
-reference binary — no code was copied or decompiled (see
+It was built to a behavioral contract captured by probing the reference binary
+at the wire level — no code was copied, and no decompiler output was
+transcribed into the implementation (see
 [`NOTICE`](https://github.com/schubydoo/claustrum/blob/main/NOTICE)).
 
 !!! note "The one hard rule"

@@ -18,6 +18,7 @@ to describe interoperability and the protocol claustrum speaks — and no
 affiliation or endorsement is implied.
 
 claustrum was written from a behavioral specification of a JSON-RPC-over-Unix-
-socket protocol observed at the wire/black-box level. It contains no source code,
-disassembly, or decompilation derived from any Anthropic binary, and no Anthropic
-proprietary material is included in this repository.
+socket protocol observed at the wire level. No code was copied from any Anthropic
+binary, and no decompiler or disassembler output was transcribed into the
+implementation. No Anthropic source code or other proprietary material is
+included in this repository.
