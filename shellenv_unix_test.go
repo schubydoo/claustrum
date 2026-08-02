@@ -374,7 +374,6 @@ func TestExtractLoginPATHTruncatesTheLoggedShellOutput(t *testing.T) {
 	log.SetFlags(0)
 	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
 
-	t.Setenv("PATH", os.Getenv("PATH"))
 	// 500 bytes, no sentinel anywhere — the same shape as the measured fixture.
 	t.Setenv("SHELL", writeFakeShell(t, "printf '%0500d' 0"))
 

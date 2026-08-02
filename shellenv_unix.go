@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 // loginPATHTimeout caps the time the login-shell subprocess may run. The
@@ -100,7 +102,25 @@ func extractLoginPATH() {
 	// Own process group so all children (e.g. tools the shell forks) are killed
 	// together when the context times out, allowing CombinedOutput to return.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	// timedOut records that the DEADLINE killed the command, rather than asking
+	// the clock afterwards. os/exec calls Cancel only when the context finishes
+	// before Wait completes (watchCtx selects between the two and returns without
+	// calling Cancel when Wait wins), so setting it here IS "the deadline fired".
+	//
+	// Reading ctx.Err() after CombinedOutput returns answers a different
+	// question — "is the deadline in the past NOW?" — and a shell that printed a
+	// good sentinel and exited at 3.999s would lose its PATH to any scheduling gap
+	// (a GC pause, a loaded host) that crossed the 4s boundary before the check.
+	// That is the opposite of the divergence this function exists to fix, and it
+	// is likeliest on exactly the hosts whose login shell already sits near the
+	// cap. Not airtight — if Wait and the deadline land in the same instant
+	// watchCtx still picks arbitrarily — but it narrows the window to true
+	// simultaneity instead of "however long the code in between takes".
+	var timedOut atomic.Bool
+	cmd.Cancel = func() error {
+		timedOut.Store(true)
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 	cmd.Env = append(os.Environ(),
 		"DISABLE_AUTO_UPDATE=true",
 		"ZSH_DISABLE_COMPFIX=true",
@@ -120,7 +140,7 @@ func extractLoginPATH() {
 	// So this is wire-visible too, not log-only: the child's environment differs.
 	// The check must come BEFORE the sentinel scan below, because the scan is
 	// what would otherwise install the discarded value.
-	if ctx.Err() != nil {
+	if timedOut.Load() {
 		logWarnf("[shellenv] Failed to extract PATH from login shell: "+
 			"shell PATH extraction timed out (%s)", shell)
 		return
@@ -166,9 +186,20 @@ func extractLoginPATH() {
 const shellOutputLogLimit = 200
 
 // truncateShellOutput cuts s to shellOutputLogLimit and marks it as cut.
+//
+// The cut walks back to a rune boundary. Byte-slicing has a failure mode that is
+// independent of bytes-vs-runes: a localised profile banner, a glyph or a UTF-8
+// path can put byte 200 mid-sequence, and the log line then carries a truncated
+// code point before the ellipsis — worse than either counting rule. Walking back
+// moves the cut by at most three bytes and leaves ASCII output byte-identical to
+// what was measured, so the 203-byte observation still holds.
 func truncateShellOutput(s string) string {
 	if len(s) <= shellOutputLogLimit {
 		return s
 	}
-	return s[:shellOutputLogLimit] + "..."
+	cut := shellOutputLogLimit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
 }
