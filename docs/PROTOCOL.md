@@ -230,6 +230,21 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   — a real client never sends them; accepted divergence, found by differential
   fuzzing.
 
+### A path must be valid UTF-8 to be addressable at all
+
+Before any expansion or method logic, the JSON decoder replaces bytes that are
+not valid UTF-8 with `U+FFFD`. A file whose **name** contains such bytes
+therefore cannot be named in any request: the daemon receives the substituted
+name, and answers about a path that does not exist — `exists:false`, or a `chdir`
+/ `stat` error quoting the name with `U+FFFD` where the byte was.
+
+This is **parity, not a divergence** — both daemons inherit it from the same
+place — so there is nothing to opt into or out of. It is recorded here because
+the symptom ("the daemon says my file is missing, but it is right there") is
+otherwise very hard to attribute. See
+[ARCHITECTURE.md → Inherited wire bytes](ARCHITECTURE.md#inherited-wire-bytes)
+for the rest of that class.
+
 ### Tilde expansion in path params (probe-verified)
 
 Every path-bearing param is tilde-expanded before the method runs, and the rule

@@ -18,20 +18,26 @@ import (
 //
 // Every case here was measured against the reference at 5db5e4a and agreed byte
 // for byte. What these tests protect is the OTHER direction: a Go upgrade that
-// changes an escaping rule, or a refactor that swaps the encoder or disables
-// HTML escaping, would move the wire silently. Here it fails instead.
+// changes an escaping rule, or a refactor that disables HTML escaping, would move
+// the wire silently. Here it fails instead.
+//
+// THEY GO THROUGH THE SOCKET, deliberately. An earlier version drove dispatch
+// directly via dispatchRaw, which marshals the response with its OWN
+// json.Marshal call — so it asserted encoding/json's behaviour but never touched
+// conn.writeResponse, and the exact refactor server.go warns about (swapping
+// json.Marshal for an Encoder with SetEscapeHTML(false)) would have kept these
+// green. Running over a real connection makes the asserted bytes the ones a
+// client actually receives.
 //
 // The expected strings are written with doubled backslashes on purpose — they
 // assert the six ASCII characters of a JSON escape sequence, not the character
 // it denotes. Writing the character itself would assert the opposite of the
 // rule under test.
 //
-// See docs/ARCHITECTURE.md → "Inherited wire bytes" for the full register and
-// which behaviours are inherited versus deliberately chosen.
+// See docs/ARCHITECTURE.md → "Inherited wire bytes" for the full register.
 
-// readContentFrame drives a real files.read through dispatch and returns the raw
-// reply line, because the question is how the bytes were produced, not what a
-// decoder makes of them.
+// readContentFrame writes blob to a file, reads it back through a real socket
+// round trip, and returns the raw reply bytes.
 func readContentFrame(t *testing.T, blob []byte) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -39,8 +45,13 @@ func readContentFrame(t *testing.T, blob []byte) string {
 	if err := os.WriteFile(p, blob, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s := newTestServer(t)
-	return dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": p}))
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	// filepath.ToSlash keeps the JSON literal free of Windows backslashes, which
+	// would otherwise need escaping in this hand-built line.
+	line := `{"jsonrpc":"2.0","id":1,"method":"files.read","params":{"path":"` +
+		filepath.ToSlash(p) + `"}}`
+	return string(cl.call(authed(line)))
 }
 
 // encoding/json replaces bytes that are not valid UTF-8 with U+FFFD when it
@@ -72,8 +83,12 @@ func TestInheritedLoneSurrogateBecomesThreeReplacements(t *testing.T) {
 // way to opt out (only an Encoder does, via SetEscapeHTML(false)). Any file
 // holding HTML or shell redirection comes back escaped.
 //
-// Do NOT "fix" this into literal characters: that is a wire change, not a
-// cleanup.
+// This is the assertion that guards conn.writeResponse specifically: it is the
+// function the "switch to an Encoder" refactor would change, and the bytes
+// checked here came out of it.
+//
+// Do NOT "fix" the expectation into literal characters: that is a wire change,
+// not a cleanup.
 func TestInheritedHTMLEscapingReachesContent(t *testing.T) {
 	got := readContentFrame(t, []byte("a<b>c&d\n"))
 	want := "\"content\":\"a\\u003cb\\u003ec\\u0026d\\n\""
@@ -84,7 +99,7 @@ func TestInheritedHTMLEscapingReachesContent(t *testing.T) {
 	}
 }
 
-// The fourth inherited surface — Go's *PathError text reaching an error message
-// — lives in inherited_encoding_unix_test.go. It needs a path holding a byte
-// that is not valid UTF-8, which is a POSIX notion: Windows paths are UTF-16 and
-// cannot carry one, so the case does not exist there.
+// The decode-side surface — Go's *PathError text plus the request decoder's own
+// U+FFFD substitution — lives in inherited_encoding_unix_test.go. It needs a
+// path holding a byte that is not valid UTF-8, which is a POSIX notion: Windows
+// paths are UTF-16 and cannot carry one, so the case does not exist there.
