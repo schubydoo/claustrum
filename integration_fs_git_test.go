@@ -278,6 +278,7 @@ func TestSocketErrorTextParity(t *testing.T) {
 	}
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "regular.txt"), "x\n", 0o644)
+	helperExe, helperEnv := helperCommand(t, "pwd")
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -289,12 +290,22 @@ func TestSocketErrorTextParity(t *testing.T) {
 			"destDir":     filepath.Join(root, "dest"),
 		}),
 		// W8 — the two shapes differ; both are pinned.
+		//
+		// The command comes from the test binary, not /bin/pwd. CLAUDE.md's rule
+		// is that process fixtures never come from /bin/*, because a system binary
+		// that exists on Linux may not on another leg. It survived here only
+		// because both spawns fail at chdir BEFORE exec, so the binary is never
+		// run and its absence would not show — which makes it latent rather than
+		// safe: the day this golden pins anything past the chdir, or the pre-exec
+		// ordering changes, the fixture becomes load-bearing on a platform nobody
+		// checked. Free to fix, since any existing path satisfies a spawn that
+		// never reaches exec.
 		req(6, "process.spawn", map[string]any{
-			"id": "CWD1", "command": "/bin/pwd", "args": []string{},
+			"id": "CWD1", "command": helperExe, "args": []string{}, "env": helperEnv,
 			"cwd": filepath.Join(root, "missingdir"),
 		}),
 		req(7, "process.spawn", map[string]any{
-			"id": "CWD2", "command": "/bin/pwd", "args": []string{},
+			"id": "CWD2", "command": helperExe, "args": []string{}, "env": helperEnv,
 			"cwd": filepath.Join(root, "regular.txt"),
 		}),
 	}
@@ -458,6 +469,23 @@ func TestSocketTildeExpansion(t *testing.T) {
 		req(19, "git.worktree_create", map[string]any{
 			"baseRepo": "~/repo", "branchName": "wt3", "worktreePath": "~//wt3",
 		}),
+		// The remaining frames that carry an expanded path. #205 pinned the four
+		// above and left these unpinned, which is the same gap in a smaller form:
+		// each echoes the expanded string into an ERROR, and each was previously
+		// exercised only with a spelling the clean is a no-op on. Two of the four
+		// land here in the golden; git.worktree_create's error (id 22) and
+		// process.spawn's cwd error (id 24) are asserted off-band below, for
+		// reasons given at each.
+		//
+		// id 20 — files.read's error text. Post-clean this SUCCEEDS on a trailing
+		// separator, exactly like files.stat (id 15), because the ENOTDIR is what
+		// the separator was causing.
+		req(20, "files.read", map[string]any{"path": "~/f.txt/"}),
+		// id 21 — files.extract_tar's result.error embeds archivePath. A doubled
+		// separator on a missing archive shows whether the string was cleaned.
+		req(21, "files.extract_tar", map[string]any{
+			"archivePath": "~//nosuch.tar.gz", "destDir": "~/dest2",
+		}),
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
@@ -465,13 +493,84 @@ func TestSocketTildeExpansion(t *testing.T) {
 	}
 	assertGolden(t, "socket_tilde_expansion.golden.json", encodeGolden(t, got))
 
+	// id 22 — git.worktree_create's result.error, asserted off-band rather than
+	// pinned in the golden. The frame carries git's own two sentences
+	// ("Preparing worktree (new branch 'wt4')\nfatal: '<DIR>/wt2' already
+	// exists"), and git() runs the subprocess with the daemon's AMBIENT
+	// environment — no LC_ALL, no GIT_CONFIG_GLOBAL, unlike this file's runGit.
+	// Both sentences are gettext-marked in git, so a golden would pin the host's
+	// git build and locale rather than claustrum's behavior. This test runs the
+	// darwin leg too, whose git is a different build again.
+	//
+	// What the row has to prove is one thing: that the daemon handed git the
+	// CLEANED "<DIR>/wt2" and not "<DIR>/wt2/". So assert the PATH, never git's
+	// prose. git translates the sentence but not the path, and the translation
+	// is not merely a rewording — the Russian catalogue replaces the ASCII
+	// apostrophes with guillemets, so even "' already exists" would be
+	// locale-coupled. The empty-tail regression that DOES need git's wording is
+	// pinned by TestSocketWorktreeCreateFailureCarriesGitStderr, which asserts a
+	// bare "already exists" with no path, for the mirror-image reason.
+	//
+	// git echoes the worktree path verbatim into that message — measured
+	// 2026-08-02 on git 2.47.3 (this host) and 2.50.1 (darwin), where "…/wt2/"
+	// and "…//wt2" both survive unchanged, and checked against git's own
+	// builtin/worktree.c, where the path reaches die() uncanonicalized. The CI
+	// runners are newer still, which is why the NEGATIVE check carries the
+	// weight: if some future git normalizes the path away, that check fails
+	// loudly instead of the positive one silently ceasing to discriminate.
+	//
+	// The trailing separator is on an ALREADY-EXISTING worktree, created by
+	// id 18 above. Note this leaves branch "wt4" behind — a failed
+	// `worktree add -b` creates the branch before it validates the path — so
+	// anything appended after this point inherits it.
+	wtErr := string(normPath(cl.call(req(22, "git.worktree_create", map[string]any{
+		"baseRepo": "~/repo", "branchName": "wt4", "worktreePath": "~/wt2/",
+	})), home))
+	if strings.Contains(wtErr, "<DIR>/wt2/") {
+		t.Errorf("worktree_create error kept the trailing separator: %s", wtErr)
+	}
+	if !strings.Contains(wtErr, "<DIR>/wt2") {
+		t.Errorf("worktree_create error does not name the expanded path: %s", wtErr)
+	}
+
 	// process.spawn's cwd is the tenth binding point. Its reply is a bare
 	// {"success":true}, so the expansion is only observable in the child's
 	// output — assert it separately rather than pretending the golden covers it.
-	cl.call(spawnReqArgsCwd(t, 20, "TILDE", "pwd", "~/repo"))
+	cl.call(spawnReqArgsCwd(t, 23, "TILDE", "pwd", "~/repo"))
 	frames := cl.waitExit("TILDE")
 	if out := strings.TrimSpace(streamBytes(t, frames, "stdout")); out != repo {
 		t.Errorf("spawn cwd %q resolved to %q, want %q", "~/repo", out, repo)
+	}
+
+	// A dirty cwd spelling reaches the wire through spawn's ERROR text, which the
+	// golden cannot hold because it is asserted off-band like the row above. A
+	// missing directory spelled "~/nope/" must report the CLEANED path: pre-clean
+	// it read "chdir <home>/nope/: stat <home>/nope/: ...". Asserted on the
+	// substring rather than the whole string so the surrounding syscall wording
+	// stays the golden's business, not this assertion's.
+	//
+	// The positive check is anchored on the NORMALIZED home token, not a bare
+	// "/nope", so it says what its failure text says. Dropping expansion outright
+	// IS caught by the negative check above — expandPath then returns "~/nope/"
+	// verbatim, since the Clean lives inside the expansion branch. What a bare
+	// "/nope" would miss is a mutant that cleans WITHOUT expanding
+	// (filepath.Clean(p) in place of filepath.Join(home, p[2:])): that yields
+	// "~/nope", which contains "/nope" and not "/nope/", leaving both assertions
+	// green while the message names no expanded path at all.
+	//
+	// That extra strength is real but NOT exercised here, and the distinction is
+	// the same one id 17 is labelled with: verified against the clean-without-
+	// expand mutant, this test dies at id 23 above — an unexpanded "~/repo" does
+	// not exist, so the child never starts and waitExit fatals — before id 24 is
+	// ever sent. The anchor is the right assertion and costs nothing; do not
+	// count it as the thing that catches that mutant.
+	raw := cl.call(spawnReqArgsCwd(t, 24, "TILDE2", "pwd", "~/nope/"))
+	msg := string(normPath(raw, home))
+	if strings.Contains(msg, "/nope/") {
+		t.Errorf("spawn cwd error kept the trailing separator: %s", msg)
+	}
+	if !strings.Contains(msg, "<DIR>/nope") {
+		t.Errorf("spawn cwd error does not name the expanded path at all: %s", msg)
 	}
 }
 
