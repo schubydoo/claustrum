@@ -6,7 +6,15 @@
 # but neither is a *required* check, so a red `patch` X still leaves the merge
 # button green unless someone adds `codecov/patch` to branch protection. Coverage
 # uploads from ONE Linux cell (the cross-package `-coverpkg=./...` run in ci.yml),
-# so flags / carryforward / report-merging aren't needed.
+# so COVERAGE flags / carryforward / report-merging aren't needed.
+#
+# TEST RESULTS are separate and DO carry flags. The `test` job runs on all three
+# OSes and uploads a gotestsum-produced junit.xml per leg with
+# `report_type: test_results` and `flags: <Linux|macOS|Windows>`, so Test Analytics
+# (flaky + slow tests) breaks out per platform — the axis claustrum actually varies
+# on. Those flags tag test results, not coverage, so the single-cell coverage story
+# above is unchanged and the comment layout below still has no coverage flags to
+# show.
 #
 # Go note: Codecov ingests the native `go test -coverprofile` output
 # (coverage.out) directly — no lcov/cobertura conversion step.
@@ -54,8 +62,9 @@ github_checks:
   annotations: false
 
 comment:
-  # No flags are uploaded (single cell), so drop the empty "flags" panel and show
-  # the per-component breakdown instead.
+  # No COVERAGE flags are uploaded (single cell), so drop the empty "flags" panel
+  # and show the per-component breakdown instead. The per-OS flags on the test
+  # results upload do not appear here — Test Analytics renders separately.
   layout: "condensed_header, diff, components, files"
   behavior: default # update the existing comment in place
   require_changes: true # only comment when coverage actually moves

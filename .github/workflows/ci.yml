@@ -76,6 +76,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # Renovate bumps this via a customManagers entry in the shared
+      # schubydoo/renovate-config:claustrum preset — the same shape as
+      # GREMLINS_VERSION in mutation.yml. A bare `@v1.13.0` inline would be
+      # invisible to every manager: gomod reads go.mod/go.sum (untouched by a
+      # `go install` outside the module) and github-actions reads `uses:`.
+      GOTESTSUM_VERSION: v1.13.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,8 +91,70 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # gotestsum wraps `go test -json` to emit JUnit XML, which is the only format
+      # Codecov's Test Analytics ingests — Go has no native JUnit writer. It is a CI
+      # TOOL, not a module dependency: `go install <pkg>@<version>` outside the module
+      # leaves go.mod and go.sum untouched (verified), so the repo's "no new
+      # dependencies" rule is not in play.
+      #
+      # Version comes from GOTESTSUM_VERSION above so Renovate can see it; pinning
+      # matches the repo's hash-pin policy for actions at the granularity Go
+      # modules offer, and the tracker is what makes the pin stay honest.
+      #
+      # GOPATH/bin is added to PATH explicitly. mutation.yml relies on setup-go
+      # doing it, which is true — but only that job is Linux-only. This one runs
+      # on windows too, where the implicit path is the thing most likely to differ,
+      # so $GITHUB_PATH under `shell: bash` is the portable form. Both comments are
+      # right for their own job; this note exists so the difference does not read
+      # as one of them being wrong.
+      - name: Install gotestsum
+        shell: bash
+        run: |
+          go install gotest.tools/gotestsum@"${GOTESTSUM_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      # Same flags as before — `-race -count=1 ./...` — just run through gotestsum so
+      # a junit.xml falls out. gotestsum exits NON-ZERO when a test fails (verified:
+      # exit 1, with failures="1" in the XML), so this still gates the job exactly as
+      # `go test` did.
       - name: go test
-        run: go test -race -count=1 ./...
+        run: gotestsum --format pkgname --junitfile junit.xml -- -race -count=1 ./...
+      # Upload from EVERY leg, tagged with its OS as a Codecov flag, so Test Analytics
+      # (flaky/slow tests) breaks out per platform — which is the axis claustrum
+      # actually varies on. The matrix has no second dimension, so one cell per OS is
+      # already what this produces; no cell-selection filter is needed.
+      #
+      # No token: claustrum is a public repo, so codecov-action uploads tokenless (same
+      # rationale as the coverage upload below). Non-blocking — Codecov is never a
+      # required check and upload flakiness must not fail CI. `!cancelled()` so a
+      # FAILED test run still uploads: gotestsum writes junit.xml before exiting
+      # non-zero, and a failing suite is exactly when the analytics matter. Skips
+      # knope's release-bot PRs, where code never moves.
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: junit.xml
+          # `files` is ADDITIVE, not exclusive — the action's own docs say the
+          # listed files "will be added to the coverage files found for upload".
+          # Without this the CLI still walks the checkout looking for more. There
+          # is nothing else JUnit-shaped to find today, so this buys exactness and
+          # a skipped filesystem walk on three legs, not a bug fix.
+          disable_search: true
+          flags: ${{ runner.os }}
+          report_type: test_results
+          fail_ci_if_error: false
+      # Keep the junit files even when the upload is a no-op. The Codecov step is
+      # deliberately non-blocking, so a rejected upload is a warning line and
+      # nothing else; the coverage job already retains coverage.out for exactly
+      # this reason. Named per-OS because artifact names must be unique across a
+      # matrix.
+      - name: Upload test results artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-${{ matrix.os }}
+          path: junit.xml
+          retention-days: 7
 
   cross-build:
     name: cross-build (6 targets)

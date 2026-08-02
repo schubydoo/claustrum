@@ -220,6 +220,80 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   — a real client never sends them; accepted divergence, found by differential
   fuzzing.
 
+### Tilde expansion in path params (probe-verified)
+
+Every path-bearing param is tilde-expanded before the method runs, and the rule
+below applies identically to `files.*` `path`,
+`extract_tar`'s `archivePath` / `destDir`, `git.*` `path` / `baseRepo` /
+`worktreePath`, and `process.spawn`'s `cwd`. Branch names are refs, not paths, and
+are never expanded.
+
+A leading `~` is replaced with the daemon user's home directory, and **the
+remainder is then cleaned lexically**. Measured at `5db5e4a` on 2026-08-02 by
+reading the string the reference echoes back, with the equivalent absolute-form
+request sent in the same run as the control:
+
+| sent | reference replies | absolute-form control |
+|------|-------------------|-----------------------|
+| `~` | `<home>` — **verbatim, not cleaned** | n/a |
+| `~/` | `<home>` (trailing separator stripped) | unchanged |
+| `~/f.txt` | `<home>/f.txt` | unchanged |
+| `~//f.txt` | `<home>/f.txt` (doubled separator collapsed) | `<home>//f.txt` |
+| `~/a/./b` | `<home>/a/b` (`.` resolved) | `<home>/a/./b` |
+| `~/a/x/../b` | `<home>/a/b` (`..` resolved **lexically**) | `<home>/a/x/../b` |
+| `~user/f`, `/tmp/~/f`, `$HOME/f` | unchanged — not expanded | n/a |
+
+Two consequences worth stating plainly:
+
+- **Bare `~` is the exception.** It returns the home directory untouched, so a
+  `HOME` of `/home/me/` echoes back with its trailing slash while `~/` under the
+  same `HOME` does not. Cleaning it would diverge.
+- **The cleaning is lexical, and it applies to the tilde form only.** With
+  `~/link -> b/c`, the reference reads `<home>/x.txt` for `~/link/../x.txt` while
+  the absolute spelling of the same path walks the symlink and reads
+  `<home>/b/x.txt`. Same request, different file.
+
+**Windows behaves the same way, in Windows separator terms.** Measured on Windows
+11 against the reference at `5db5e4a` on 2026-08-02, same method and per-row
+control:
+
+| sent | reference replies |
+|------|-------------------|
+| `~\a7` | `~\a7` — **not expanded**; `~\` is not a tilde form |
+| `~/a1` | `<home>\a1` — `/` rewritten to `\` |
+| `~/a4\x\..\w` | `<home>\a4\w` — `\` **is** a separator for `..` |
+| `~/a5/` | `<home>\a5` |
+| `~//a6` | `<home>\a6` |
+| `~` | `<home>` verbatim — a home of `C:\h\` keeps its trailing `\` |
+
+Two Windows-specific notes: only bare `~` and a `~/` prefix expand, so a
+backslash form passes through untouched; and the home comes from `USERPROFILE`,
+not `HOME`. Every absolute-form control came back verbatim there too, so the
+tilde-only rule holds on both platforms. The cleaning is therefore **not**
+build-tagged to Unix.
+
+**The expanded spelling is wire-visible on eight frames**, so this is a wire
+contract and not an internal detail: `git.worktree_create` reflects
+`worktreePath` verbatim into `result.path` and into git's error text, and the
+expanded string appears in the error text of `files.stat`, `files.read`,
+`files.list`, `files.validate`, `files.extract_tar` and `process.spawn`. Two
+places that do *not* carry the spelling: `files.list` entry paths are re-joined,
+and `git.info`'s `root` comes from git's own output. On a trailing-separator
+spelling the difference is a change of *verdict*, not of formatting — POSIX
+`stat("f.txt/")` is `ENOTDIR`, so cleaning the separator away turns a `-32603`
+error frame into a success frame. Pinned by ids 15, 16, 18 and 19 of
+`testdata/socket_tilde_expansion.golden.json`; id 17 sends `~//` to `files.list`
+and is documentary only, since re-joined entry paths answer identically whatever
+spelling they are sent.
+
+> **Correction (2026-08-02).** Until this entry existed, the doc comment in
+> `expandpath.go` was the only record of this behaviour, and it was wrong: it
+> stated `~/` → `<home>/` and `~//f.txt` → `<home>//f.txt` as probe-measured, and
+> concluded that no cleaning was applied. Those rows were asserted with
+> `files.validate`, whose reply is `{valid,isDir}` and echoes no path — the probe
+> could not have observed the difference it recorded. The values were inferred and
+> both were wrong.
+
 ### Stat failures other than "does not exist"
 
 `files.stat`, `files.read` and `files.validate` distinguish a path that is
@@ -493,7 +567,53 @@ the daemon then seeds the new worktree:
 - Copy failures are best-effort and never fail the request.
 #### git.worktree_remove
 
-`{baseRepo,worktreePath}` → `{"success":true}` (lenient)
+`{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)
+
+- Runs `git worktree remove --force`. **Whenever git exits non-zero — for any
+  reason — the daemon then removes `worktreePath` itself, recursively, and still
+  answers `{"success":true}`.** Only when that manual cleanup *also* fails does
+  the reply carry the declared `error` field:
+  `{"success":false,"error":"failed to remove worktree: <git output>; manual cleanup also failed: <err>"}`.
+- ⚠️ **"For any reason" is literal, and it is measured.** The deletion is not
+  limited to the locked-worktree case that motivated it. Probed at `5db5e4a`,
+  checking the directory afterwards rather than the reply:
+
+  | `worktreePath` | why git fails | directory afterwards |
+  |---|---|---|
+  | a locked worktree | it is locked | **deleted** |
+  | an ordinary directory, never a worktree | `not a working tree` | **deleted** |
+  | any path, with a `baseRepo` that is not a repo | `not a git repository` | **deleted** |
+
+  So this method is a recursive delete of the caller-supplied `worktreePath`
+  whenever git is unhappy. That is **reference behavior**, matched deliberately —
+  not a claustrum addition. Callers should treat `worktreePath` as a path they are
+  asking to have removed, not as a filter.
+- The worktree stays **registered**. Deleting the directory does not remove
+  `$GIT_DIR/worktrees/<name>`, so `git worktree list` still shows it afterwards
+  and a later `git.worktree_create` at the same path fails with
+  `already registered`. Measured identical on both binaries (2 entries still
+  listed after a locked removal); the reference does not prune either.
+- **A relative `worktreePath` is resolved twice, against different roots.** git
+  runs with `-C <baseRepo>` and resolves it against the repo; the manual cleanup
+  resolves it against the **daemon's working directory**. So the fallback can
+  delete a directory git never looked at. Measured at `5db5e4a` with a locked
+  worktree at `<repo>/wt` and a decoy at `<daemon cwd>/wt`: **both binaries
+  deleted the decoy and left `<repo>/wt` in place.** Parity, and alarming — send
+  an absolute `worktreePath`. The reference client does: it tilde-expands every
+  remote path before sending.
+- **`gitTimeout` does NOT authorise the deletion — claustrum-only.** (The cap is
+  also softer than it reads: it waits on git's output pipe, so a git that spawns a
+  surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
+  on git is a claustrum divergence (the reference runs git with no deadline and
+  blocks), so a timeout must not be read as "git refused". It answers
+  `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
+  was attempted, and git may have partially removed the worktree"}` and the daemon
+  itself removes nothing. The wording claims only what the daemon can observe: the
+  git it SIGKILLed unlinks files as it goes, so the directory state is not knowable
+  from here. Before this was separated out, a wedged git produced a deletion plus
+  `{"success":true}` — an outcome the reference cannot reach.
+- Naming a branch that does not exist still answers a bare `{"success":true}` —
+  hence "lenient".
 
 ### process.* (the agent/MCP-hosting core)
 

@@ -148,5 +148,74 @@
       "size": 0,
       "mode": ""
     }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 15,
+    "result": {
+      "exists": true,
+      "isDir": false,
+      "size": 14,
+      "mode": "-rw-r--r--"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 16,
+    "result": {
+      "valid": true,
+      "isDir": false
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 17,
+    "result": {
+      "entries": [
+        {
+          "name": "dest",
+          "path": "<DIR>/dest",
+          "isDir": true
+        },
+        {
+          "name": "f.txt",
+          "path": "<DIR>/f.txt",
+          "isDir": false
+        },
+        {
+          "name": "repo",
+          "path": "<DIR>/repo",
+          "isDir": true
+        },
+        {
+          "name": "wt",
+          "path": "<DIR>/wt",
+          "isDir": true
+        },
+        {
+          "name": "~",
+          "path": "<DIR>/~",
+          "isDir": true
+        }
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 18,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt2",
+      "sourceBranch": "main"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 19,
+    "result": {
+      "success": true,
+      "path": "<DIR>/wt3",
+      "sourceBranch": "main"
+    }
   }
 ]
