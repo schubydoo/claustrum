@@ -22,13 +22,28 @@ import (
 // A variable so tests can override it without affecting production behavior.
 var loginPATHTimeout = 4 * time.Second
 
-// fallbackShells is the candidate list the reference walks when $SHELL is not
-// usable. Its getSafeShell references exactly these three paths (plus SHELL),
-// and on a host where $SHELL was non-executable it produced a full bash-profile
-// PATH — so /bin/bash is tried before /bin/sh. The bash-vs-zsh order could not
-// be measured here (no /bin/zsh on the probe host) and follows the order the
-// reference's string table lists them in.
-var fallbackShells = []string{"/bin/bash", "/bin/zsh", "/bin/sh"}
+// fallbackShells is the candidate list walked when $SHELL is not usable. The
+// reference prefers **zsh**, then bash, then sh.
+//
+// CORRECTION, 2026-08-02: this list shipped as {bash, zsh, sh}, and the comment
+// here said the bash-vs-zsh order "could not be measured (no /bin/zsh on the
+// probe host)" and followed the reference's string-table order. Both halves were
+// wrong. String-table order is not preference order, and the question is
+// measurable on a host with no zsh — you supply one.
+//
+// Measured 2026-08-02 against 5db5e4a, two independent instruments agreeing:
+//
+//	stand-in shells bind-mounted over /usr/bin (bwrap, no root)  ref zsh, claustrum bash
+//	real bash + zsh in a clean Ubuntu VM, markers in each        ref zsh, claustrum bash
+//	  shell's own login profile
+//
+// Each run carried single-shell controls — with only one of the two executable,
+// both binaries agree — so "they differ" is not a harness artifact.
+//
+// This is WIRE-VISIBLE, not cosmetic: the extracted PATH is installed into every
+// spawned child's environment, so on a host with both shells and an unusable
+// $SHELL the two daemons hand their children different PATHs.
+var fallbackShells = []string{"/bin/zsh", "/bin/bash", "/bin/sh"}
 
 // safeLoginShell returns $SHELL when it is an executable file, else the first
 // usable entry in fallbackShells.
@@ -84,6 +99,25 @@ func extractLoginPATH() {
 		"ZSH_DISABLE_COMPFIX=true",
 	)
 	out, err := cmd.CombinedOutput()
+	// A timeout DISCARDS whatever the shell printed, even a valid sentinel line,
+	// and reports itself as one line naming the shell. Measured 2026-08-02
+	// against 5db5e4a with a login shell that prints a good sentinel and THEN
+	// sleeps past the cap:
+	//
+	//	reference : child PATH does NOT contain the extracted value
+	//	            "[shellenv] Failed to extract PATH from login shell:
+	//	             shell PATH extraction timed out (/bin/bash)"
+	//	claustrum : child PATH DOES contain it, over two log lines, neither
+	//	            of which says "timed out"
+	//
+	// So this is wire-visible too, not log-only: the child's environment differs.
+	// The check must come BEFORE the sentinel scan below, because the scan is
+	// what would otherwise install the discarded value.
+	if ctx.Err() != nil {
+		logWarnf("[shellenv] Failed to extract PATH from login shell: "+
+			"shell PATH extraction timed out (%s)", shell)
+		return
+	}
 	if err != nil {
 		logWarnf("[shellenv] Shell command exited with error (may still have PATH): %v", err)
 	}
@@ -107,5 +141,27 @@ func extractLoginPATH() {
 	// Measured at 5db5e4a: "[shellenv] Failed to extract PATH from login shell:
 	// PATH sentinel not found in shell output: no sentinel here".
 	logWarnf("[shellenv] Failed to extract PATH from login shell: "+
-		"PATH sentinel not found in shell output: %s", strings.TrimRight(string(out), "\n"))
+		"PATH sentinel not found in shell output: %s",
+		truncateShellOutput(strings.TrimRight(string(out), "\n")))
+}
+
+// shellOutputLogLimit is where the reference cuts the shell output it echoes
+// into the failure log above, before appending "...".
+//
+// Measured 2026-08-02 against 5db5e4a with a login shell printing 500 bytes and
+// no sentinel: the logged payload was exactly 203 characters and ended in "...",
+// i.e. 200 kept plus the ellipsis. claustrum echoed all 500. Without the cut a
+// chatty shell writes its whole profile output into the daemon log.
+//
+// The fixture was ASCII, so whether the reference counts bytes or runes is NOT
+// established. Bytes is what a Go slice expression gives and is what this does;
+// a multi-byte fixture would settle it and has not been run.
+const shellOutputLogLimit = 200
+
+// truncateShellOutput cuts s to shellOutputLogLimit and marks it as cut.
+func truncateShellOutput(s string) string {
+	if len(s) <= shellOutputLogLimit {
+		return s
+	}
+	return s[:shellOutputLogLimit] + "..."
 }
