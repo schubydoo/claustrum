@@ -86,9 +86,12 @@ type gitInfoResult struct {
 	Root string `json:"root"`
 	// RepoSlug and DefaultBranch were added by the reference daemon in 7c2f88d.
 	// Both are always present (never omitempty), empty when undeterminable.
-	// RepoSlug is the "owner/repo" parsed from remote.origin.url — populated ONLY
-	// when the path after the host is exactly two segments (a GitLab subgroup like
-	// group/sub/proj yields ""), .git and userinfo stripped (see parseRepoSlug).
+	// RepoSlug is the "owner/repo" parsed from remote.origin.url, .git and
+	// userinfo stripped. Populated only when the host is github.com, the path is
+	// exactly two segments (a subgroup like group/sub/proj yields ""), and both
+	// segments pass their charset rules — see parseRepoSlug, and the 42-shape
+	// table in docs/PROTOCOL.md. The host gate is not optional: describing this
+	// as the segment count alone would admit gitlab.com/acme/gizmo.
 	// DefaultBranch is what refs/remotes/origin/HEAD points to (empty when unset).
 	RepoSlug      string `json:"repoSlug"`
 	DefaultBranch string `json:"defaultBranch"`

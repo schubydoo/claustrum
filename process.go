@@ -132,9 +132,13 @@ type procManager struct {
 //
 // Provenance, which used to be labelled "probe-measured" as a whole and is not:
 //
-//	probe (5db5e4a)  a process that exited 960s earlier is gone, one that just
-//	                 exited is not. That brackets the age to (20s, 960s] — it
-//	                 does NOT single out 900s, and no black-box observable can.
+//	probe (5db5e4a)  an entry is still reachable 45s after its process exited,
+//	                 and gone 960s after. That brackets the age to (45s, 960s].
+//	                 It does NOT single out 900s, and no black-box observable
+//	                 can. Both ends are observations, not inferences: the lower
+//	                 one is a reattach answering found:true at 45s, re-measured
+//	                 2026-08-02 because the bracket previously published a 20s
+//	                 lower bound that nothing stated beside it supported.
 //	pointer-class    the only duration constant in its pruneExited is 900s.
 //	                 That is where the exact value comes from. Read, not probed.
 //

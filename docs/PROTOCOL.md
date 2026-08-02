@@ -101,13 +101,14 @@ graceful `server.shutdown` / `SIGTERM` path.
 
 The `-serve` launcher **creates the socket's parent directory** if it is missing,
 mode `0700`, and then **does not return until the daemon is accepting** on the
-socket. The mode is measured directly on the reference under `umask 022`, with a
-`0755` control to prove the fixture could have shown a different mode; earlier
+socket. It confirms this by dialing the socket and closing again, so a freshly
+started daemon's log opens with a `New connection from: @` / `Connection
+closed: @` pair from the launcher's own probe, before any real client appears.
+
+The `0700` is measured directly on the reference under `umask 022`, with a `0755`
+control to prove the fixture could have shown a different mode; earlier
 observations all used `mktemp -d`, which creates `0700` by itself, so the mode
-they reported was a fixture artefact rather than a reading of the reference. It confirms
-this by dialing the socket and closing again, so a freshly started daemon's log
-opens with a `New connection from: @` / `Connection closed: @` pair from the
-launcher's own probe, before any real client appears.
+they reported was a fixture artefact rather than a reading of the reference.
 
 What it waits for is the socket **path to exist** (polled every 20 ms, bounded at
 **10 seconds**), not a successful dial, and it does **not** give up early when the
@@ -798,11 +799,16 @@ unknown id is not an error):
 
   *Provenance.* This bullet used to be flagged "probe-verified against the
   reference at `5db5e4a`" in full, which overstated it. What the probe supports:
-  an entry aged 960 s is gone while a just-exited one is not (bracketing the
-  retention to *(20 s, 960 s]*), a running process survives, and an entry can
-  disappear with no intervening `process.spawn`. The exact **15 minutes** and the
-  **60-second** period are pointer-class — no wire observable distinguishes them
-  from any other value inside the bracket, or one ticker period from another.
+  an entry is still reachable **45 s** after its process exited and gone after
+  **960 s** — bracketing the retention to *(45 s, 960 s]* — a running process
+  survives, and an entry can disappear with no intervening `process.spawn`.
+
+  Both ends of that bracket are observations. It previously read *(20 s, 960 s]*,
+  whose lower bound followed from nothing stated beside it ("a just-exited one is
+  still there" supports no lower bound at all); 45 s is a measured `reattach`
+  answering `found:true`. The exact **15 minutes** and the **60-second** period
+  remain pointer-class — no wire observable distinguishes them from any other
+  value inside the bracket, or one ticker period from another.
 - **`stdinApplied` (added `7c2f88d`).** The process's cumulative applied-stdin
   byte count (§`process.stdin`), always present after `lastSeq`. A reconnecting
   client resumes stdin from this offset so no bytes are re-applied or dropped.
