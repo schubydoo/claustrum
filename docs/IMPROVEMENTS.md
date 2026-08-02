@@ -75,10 +75,18 @@ not promise a bound the code does not deliver.
 The timeout reply shape is also not unchanged: `git.worktree_remove` answers
 `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
 was attempted, and git may have partially removed the worktree"}`, a frame the
-reference never emits. It is confined to this pathological path; every
-reference-reachable frame stays byte-identical. The wording deliberately claims
-only what the daemon can observe — the SIGKILLed git unlinks as it goes, so the
-directory state is not knowable from here.
+reference never emits. It is confined to this pathological path, and **no OTHER
+frame moves because of the deadline** — which is the scoped form of a claim that
+used to read "every reference-reachable frame stays byte-identical". That whole-
+wire version was false for the entire window between the deadline work and the
+stdout-only fix, for the reason recorded in the CORRECTION above: `git.status`
+and `git.list_branches` put a claustrum-only `-32603` on the wire when our own
+deadline killed git. It is arguably true again now, which is exactly the trap —
+it was restated as scope rather than deleted so the two copies cannot drift apart
+a second time.
+
+The wording deliberately claims only what the daemon can observe — the SIGKILLed
+git unlinks as it goes, so the directory state is not knowable from here.
 
 ### 6 · pre-commit + `gofmt`/`vet` hooks ✅ — impact M / cost L
 

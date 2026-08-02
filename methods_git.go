@@ -101,12 +101,22 @@ var gitTimeout = 60 * time.Second
 // are safe by argument:
 //
 //	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
-//	                     both of which a warning-prefixed string fails safely
+//	                     both of which a warning-prefixed string fails safely;
+//	                     show-ref --verify --quiet and branch -D, which discard
+//	                     their output entirely
 //	wants the stderr     gitWorktreeCreate — the failure text lives there
-//	echoes it verbatim   --show-toplevel → root/repo, rev-parse → branch,
-//	                     remote get-url → repoSlug, symbolic-ref → defaultBranch
+//	echoes it verbatim   --show-toplevel → root/repo, symbolic-ref --short HEAD →
+//	                     branch (rev-parse --short HEAD supplies only the
+//	                     detached-HEAD sha fallback), remote get-url → repoSlug,
+//	                     symbolic-ref → defaultBranch
+//	echoed AND used      rev-parse --abbrev-ref HEAD → sourceBranch, which is both
+//	  as argv            put on the wire AND passed to `git worktree add` as the
+//	                     commit-ish. This is the most exposed of the set and had
+//	                     no row at all: a folded warning here would not merely be
+//	                     echoed, it would make the add fail and surface as a
+//	                     wire-visible worktree_add_failed.
 //
-// That third group puts combined output on the wire unsplit. No fixture has been
+// The last two groups put combined output on the wire unsplit. No fixture has been
 // found that makes those commands write to stderr while exiting 0, so the
 // exposure is theoretical and this change does not touch it — but it is NOT
 // covered by the argument above, and saying otherwise would repeat the mistake

@@ -21,7 +21,7 @@ import (
 //	claustrum : {"isRepo":true,"branches":["main","real",
 //	             "warning: ignoring broken ref refs/heads/broken"]}
 //
-// Same defect gitStatusErr fixed for git.status (TestGitStatusIgnoresGitStderr),
+// Same defect gitStdoutErr fixed for git.status (TestGitStatusIgnoresGitStderr),
 // one function over. Cross-platform: the fixture is a file write, not a chmod,
 // so this runs on all three CI legs — unlike the git.status version, which needs
 // an unreadable directory and is therefore Unix-and-not-root only.
