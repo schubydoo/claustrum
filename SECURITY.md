@@ -23,10 +23,19 @@ processes on the host it runs on. Key considerations:
 - **Auth** is an in-band per-request token. The `-serve` daemon takes it from
   `-token-file` (unlinked immediately after reading) or `-token-fd` (read from an
   open descriptor and forwarded to the detached daemon over a pipe — never on
-  disk, in argv, or in the environment); the `-bridge`/`-stop` clients read
+  disk, in argv, or in the environment); the `-bridge` client reads
   `CLAUDE_RPC_TOKEN`. Anyone who can read the token *and* reach the socket can
   drive the daemon. Protect both: the socket is owner-only by design; keep the
   token file (or fd source) owner-readable and short-lived.
+- **`server.shutdown` is the one method the token does not gate.** It is not
+  authenticated — behavioral parity with the reference, which the Desktop client
+  depends on: it tears the daemon down by shelling out `server --stop --socket
+  <sock>` with no token in its environment. So for that one method, reaching the
+  socket is by itself sufficient to stop the daemon and drop every session, and
+  `-stop` sends no token at all. The socket's owner-only mode is what confines
+  this; an actor who already shares the uid can do strictly more via
+  `process.spawn` below. The same exception applies to the optional Windows
+  named-pipe transport, which shares this dispatch.
 - **The running daemon persists its token to `daemon.token` (mode `0600`) in the
   socket's directory** so a client can reconnect and re-authenticate after the
   `-token-file`/`-token-fd` source is gone (behavioral parity with the reference

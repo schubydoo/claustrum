@@ -111,7 +111,7 @@ printf '{"jsonrpc":"2.0","id":2,"method":"server.capabilities","auth":"%s"}\n' "
   | socat - UNIX-CONNECT:"$D/rpc.sock"
 
 # 5. shut it down
-claustrum -stop -socket "$D/rpc.sock"   # reads CLAUDE_RPC_TOKEN for auth
+claustrum -stop -socket "$D/rpc.sock"   # no token needed: shutdown is unauthenticated
 ```
 
 More worked examples — spawning a process and reading its base64 output stream, reattaching to
@@ -124,7 +124,9 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   requests dispatched concurrently.
 - **Auth:** every request carries an in-band `"auth":"<token>"`; the daemon's token comes from
   `-token-file` (read once, then unlinked) or `-token-fd` (read from an open descriptor —
-  never touches disk); the `-bridge`/`-stop` clients use `CLAUDE_RPC_TOKEN`.
+  never touches disk); the `-bridge` client uses `CLAUDE_RPC_TOKEN`. The one
+  exception is `server.shutdown`, which is **not** authenticated (matching the
+  reference), so `-stop` sends no token at all.
 - **19 methods** across `server.*`, `files.*`, `git.*`, `process.*` (`server.capabilities`
   self-describes them).
 - **process.\*** is the core: a client supplies its own `id` on `spawn`; the daemon streams

@@ -130,7 +130,10 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   from `-token-file` (read once, then unlinked so it never lands in
   `/proc/<pid>/environ`) or `-token-fd` (read from an open descriptor, forwarded
   to the daemonized child over a pipe — never touches disk); `CLAUDE_RPC_TOKEN`
-  is only for the `-bridge`/`-stop` clients.
+  is only for the `-bridge` client. **`server.shutdown` is the one method that is
+  not authenticated** (parity with the reference — Desktop stops the daemon with
+  no token in its environment), so `-stop` sends no `auth` member and reads no
+  token; every other method still rejects an unauthenticated request `-32001`.
 - **The daemon persists its token to `daemon.token` (mode `0600`) beside the
   socket** — written atomically at startup, unlinked on graceful shutdown — so a
   client can reconnect to a running daemon after the `-token-file` was unlinked /
