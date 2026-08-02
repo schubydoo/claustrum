@@ -120,6 +120,11 @@ func (c *conn) doneStdinTurn(t uint64) {
 	c.stdinMu.Unlock()
 }
 
+// writeJSON is the single outbound encode for every reply and frame. json.Marshal
+// (not an Encoder) is load-bearing: it HTML-escapes `< > &` with no opt-out,
+// which is what the reference emits. Switching to json.NewEncoder and calling
+// SetEscapeHTML(false) would look like a cleanup and would move the wire — see
+// docs/ARCHITECTURE.md → "Inherited wire bytes".
 func (c *conn) writeJSON(v interface{}) error {
 	b, err := json.Marshal(v)
 	if err != nil {
