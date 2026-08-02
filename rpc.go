@@ -106,9 +106,16 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return ptr(errResult(nil, codeParse, "Parse error"))
 	}
-	// Precedence is auth → version (probe-verified): a request that fails BOTH
-	// (e.g. no auth and no/!="2.0" jsonrpc) reports Unauthorized, not the version
-	// error. Only once auth passes is the version validated.
+	// Precedence is auth → version (probe-verified) for every method that IS
+	// authenticated: a request that fails BOTH (e.g. no auth and no/!="2.0"
+	// jsonrpc) reports Unauthorized, not the version error. Only once auth passes
+	// is the version validated.
+	//
+	// Stated without that qualifier this was wrong, because server.shutdown skips
+	// the auth gate entirely (see below). The exemption does NOT extend to the
+	// version check: a shutdown frame whose jsonrpc is not "2.0" still gets the
+	// version error rather than proceeding, which is what the measured note below
+	// records and what makes the two gates separable at all.
 	//
 	// The token compare is constant-time (crypto/subtle) so the auth path can't
 	// leak the count of matching leading bytes through response latency — defense-

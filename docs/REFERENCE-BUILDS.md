@@ -75,10 +75,15 @@ timing) against the reference:
    `-32003` gap error, partial overlap applies only the fresh tail).
 3. **`process.reattach`** gained `stdinApplied` (the cumulative counter, so a
    reconnecting client resumes stdin at the right offset).
-4. **`git.info`** gained `repoSlug` (`owner/repo` from `remote.origin.url`, only
-   when the path is exactly two segments) and `defaultBranch` (from
-   `refs/remotes/origin/HEAD`); both always present, including on the non-repo
-   body.
+4. **`git.info`** gained `repoSlug` (`owner/repo` from `remote.origin.url`) and
+   `defaultBranch` (from `refs/remotes/origin/HEAD`); both always present,
+   including on the non-repo body.
+
+   The slug rule is **not** "the path is exactly two segments" — that summary
+   used to appear here and is wrong, because it would admit
+   `gitlab.com/acme/gizmo`. The host must be `github.com`, and the two segments
+   must each pass a charset rule (the owner's is stricter than the repo's). See
+   PROTOCOL.md's 42-shape table, which is authoritative and always was.
 5. **`server.capabilities`** gained a `features` array
    (`["process.stdin.offset"]`).
 

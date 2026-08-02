@@ -80,8 +80,12 @@ func TestZstdDecompress(t *testing.T) {
 }
 
 // zstdDecompress must reject a blob that decompresses beyond the cap. Without
-// this guard, a tiny .zst file (e.g. 6 KB) can expand to hundreds of GB on disk
-// (zstd bomb, probe-verified against the reference binary — S6).
+// this guard a tiny .zst file expands unbounded on disk (a zstd bomb): the
+// reference was measured writing past 200 MB from a small blob and still going
+// when the probe was stopped — S6.
+//
+// The comment used to say "hundreds of GB". Nothing measured that; the probe was
+// stopped at 200 MB. The unbounded direction is what S6 supports, not a figure.
 func TestZstdDecompressSizeLimit(t *testing.T) {
 	old := maxCLIBytes
 	maxCLIBytes = 1024
@@ -197,8 +201,14 @@ func TestHTTPGet(t *testing.T) {
 func TestDetectLibc(t *testing.T) {
 	got := detectLibc()
 	if runtime.GOOS != "linux" {
-		// The reference has no detectLibc off linux and reports an empty libc
-		// there; claustrum used to answer "glibc" on Windows and macOS.
+		// The reference reports an empty libc off linux; claustrum used to answer
+		// "glibc" on Windows and macOS.
+		//
+		// Pointer-class, and deliberately labelled as such: it was settled by
+		// inspecting the non-linux reference builds, not by a probe, because the
+		// reference cannot be run on this host's darwin or windows targets. The
+		// observable it predicts is that the `libc` key is always present and
+		// always empty there — which is exactly what this assertion pins.
 		if got != "" {
 			t.Errorf("detectLibc() = %q on %s, want \"\" (the reference reports no libc off linux)", got, runtime.GOOS)
 		}

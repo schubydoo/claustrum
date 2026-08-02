@@ -128,17 +128,34 @@ type procManager struct {
 
 // procPruneAge is how long a process stays reachable after it exits. Past this,
 // process.reattach reports found:false and the id is free again — the reference
-// drops the entry, along with its replay buffer, from the table. Probe-measured
-// at 5db5e4a: the only duration constant in its pruneExited is 900s, and a
-// process exited 960s earlier is gone while one that just exited is not. Copied
-// into the manager at construction. var so tests can shrink it.
+// drops the entry, along with its replay buffer, from the table.
+//
+// Provenance, which used to be labelled "probe-measured" as a whole and is not:
+//
+//	probe (5db5e4a)  a process that exited 960s earlier is gone, one that just
+//	                 exited is not. That brackets the age to (20s, 960s] — it
+//	                 does NOT single out 900s, and no black-box observable can.
+//	pointer-class    the only duration constant in its pruneExited is 900s.
+//	                 That is where the exact value comes from. Read, not probed.
+//
+// The value is very likely right; the label was wrong. Copied into the manager
+// at construction. var so tests can shrink it.
 var procPruneAge = 15 * time.Minute
 
 // procPruneInterval is the sweep period of the background prune. The reference
 // runs the same sweep from a time.NewTicker(60s) started by NewManager, on top
 // of the inline call in Spawn — so an idle daemon prunes too, with no spawn to
-// trigger it. Copied into the manager at construction, so a test must set it
-// before newProcManager. var so tests can shrink it.
+// trigger it.
+//
+// Pointer-class, NOT probe-measured, and it cannot become probe-measured: the
+// only wire effect of the sweep is that an aged-out id answers found:false, and
+// an id that has aged out answers that way whatever schedule noticed it. No
+// observable distinguishes a 60s ticker from a 30s or 120s one. What the probe
+// DOES support is the "idle daemon prunes too" half — an entry disappears with
+// no intervening process.spawn to trigger the inline call.
+//
+// Copied into the manager at construction, so a test must set it before
+// newProcManager. var so tests can shrink it.
 var procPruneInterval = time.Minute
 
 func newProcManager() *procManager {
@@ -235,8 +252,14 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 // One window remains and cannot be closed at this layer: the kernel frees the
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
 // reaped. Signaling by pid on POSIX is racy by construction — nothing short of a
-// pidfd fixes it, and a pidfd cannot address a process GROUP. The reference has
-// no guard here at all, so this is strictly narrower than reference behavior.
+// pidfd fixes it, and a pidfd cannot address a process GROUP.
+//
+// This guard is a claustrum-only judgement, not a measured parity claim. The
+// comment used to read "the reference has no guard here at all", which asserts
+// an ABSENCE — no black-box probe can establish that, and it kept getting sent
+// back for re-measurement it can never satisfy. What is defensible: the guard
+// can only ever suppress a signal, so claustrum's behaviour here is at most
+// narrower than the reference's, never wider.
 func (p *managedProc) signalIfLive(signame string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -253,8 +276,13 @@ func (p *managedProc) signalIfLive(signame string) {
 //
 // This is the one place claustrum knowingly signals a pgid whose leader is gone.
 // It runs immediately after p.done fires, so the window before the kernel could
-// recycle the pgid is as small as it can be, and it is exactly what the
-// reference does — the reference has no such guard anywhere.
+// recycle the pgid is as small as it can be.
+//
+// What is measured is the OUTCOME, not the absence of a guard: the reference
+// also sweeps up a grandchild left behind after the leader exits (#194). The
+// comment used to say "the reference has no such guard anywhere" — an absence
+// assertion no probe can confirm. Matching the observable sweep is the claim;
+// how the reference arrives at it is not something this comment can know.
 func (p *managedProc) killGroupAfterExit() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -54,8 +54,14 @@ func runInstall(o installOpts) {
 		if isRegularFile(f.CliPath) && isRunnable(f.CliPath) {
 			// Cache hit: the reference touches the cli-dir at all only when it
 			// attempts an install, so neither the orphan sweep nor the prune
-			// runs here (probe-measured — a cache-hit run with 4 versions and
-			// -cli-keep 3 left all four in place).
+			// runs here.
+			//
+			// The citation used to be "a cache-hit run with 4 versions and
+			// -cli-keep 3 left all four in place". That fixture supports the
+			// PRUNE half only — it contained no orphan litter, so it could not
+			// have observed a sweep either way. Re-probed with a `.fetch-orphan`
+			// and a `leftover.zst` present: both survive a cache hit, so the
+			// sweep half is now supported too. Value was right, citation was not.
 			f.CliWasPresent = true
 		} else {
 			err := ensureCLI(o, f.CliPath)
@@ -127,7 +133,10 @@ func ensureCLI(o installOpts, cliPath string) error {
 			return fmt.Errorf("download failed: %v", err)
 		}
 		// Downloads are verified UNCONDITIONALLY — an empty -cli-checksum still
-		// fails ("expected= , actual=<sha>") — matching the reference.
+		// fails ("checksum mismatch: expected=, actual=<sha>") — matching the
+		// reference. That string is verifyChecksum's own output, captured; the
+		// quote here used to read "expected= , actual=<sha>", which neither binary
+		// emits — it had a space that is not there and dropped the prefix.
 		if err := verifyChecksum(zst, o.cliChecksum); err != nil {
 			return err
 		}

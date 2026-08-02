@@ -104,11 +104,13 @@ func TestParseRepoSlugMatchesReference(t *testing.T) {
 }
 
 // The empty-segment guards are reachable through a doubled slash
-// ("https://github.com//gizmo"), where Split yields an empty owner. Asserted on
-// the helpers directly rather than through a URL: that URL shape was not part of
-// the reference measurement above, so inventing an expected slug for it would be
-// guessing. Both segments are empty-rejecting in the old and new code, so the
-// slug is "" either way — only the guard itself is pinned here.
+// ("https://github.com//gizmo"), where Split yields an empty owner.
+//
+// This shape has now been measured against the reference, which answers `""` —
+// so the assertion below pins agreement, not just claustrum's own guard. The
+// comment used to decline that claim ("inventing an expected slug for it would
+// be guessing") because the shape was outside the 42-URL sweep above; it no
+// longer is.
 func TestSlugSegmentGuardsRejectEmpty(t *testing.T) {
 	if validSlugOwner("") {
 		t.Error("validSlugOwner(\"\") = true, want false")
