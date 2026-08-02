@@ -212,6 +212,80 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   — a real client never sends them; accepted divergence, found by differential
   fuzzing.
 
+### Tilde expansion in path params (probe-verified)
+
+Every path-bearing param is tilde-expanded before the method runs, and the rule
+below applies identically to `files.*` `path`,
+`extract_tar`'s `archivePath` / `destDir`, `git.*` `path` / `baseRepo` /
+`worktreePath`, and `process.spawn`'s `cwd`. Branch names are refs, not paths, and
+are never expanded.
+
+A leading `~` is replaced with the daemon user's home directory, and **the
+remainder is then cleaned lexically**. Measured at `5db5e4a` on 2026-08-02 by
+reading the string the reference echoes back, with the equivalent absolute-form
+request sent in the same run as the control:
+
+| sent | reference replies | absolute-form control |
+|------|-------------------|-----------------------|
+| `~` | `<home>` — **verbatim, not cleaned** | n/a |
+| `~/` | `<home>` (trailing separator stripped) | unchanged |
+| `~/f.txt` | `<home>/f.txt` | unchanged |
+| `~//f.txt` | `<home>/f.txt` (doubled separator collapsed) | `<home>//f.txt` |
+| `~/a/./b` | `<home>/a/b` (`.` resolved) | `<home>/a/./b` |
+| `~/a/x/../b` | `<home>/a/b` (`..` resolved **lexically**) | `<home>/a/x/../b` |
+| `~user/f`, `/tmp/~/f`, `$HOME/f` | unchanged — not expanded | n/a |
+
+Two consequences worth stating plainly:
+
+- **Bare `~` is the exception.** It returns the home directory untouched, so a
+  `HOME` of `/home/me/` echoes back with its trailing slash while `~/` under the
+  same `HOME` does not. Cleaning it would diverge.
+- **The cleaning is lexical, and it applies to the tilde form only.** With
+  `~/link -> b/c`, the reference reads `<home>/x.txt` for `~/link/../x.txt` while
+  the absolute spelling of the same path walks the symlink and reads
+  `<home>/b/x.txt`. Same request, different file.
+
+**Windows behaves the same way, in Windows separator terms.** Measured on Windows
+11 against the reference at `5db5e4a` on 2026-08-02, same method and per-row
+control:
+
+| sent | reference replies |
+|------|-------------------|
+| `~\a7` | `~\a7` — **not expanded**; `~\` is not a tilde form |
+| `~/a1` | `<home>\a1` — `/` rewritten to `\` |
+| `~/a4\x\..\w` | `<home>\a4\w` — `\` **is** a separator for `..` |
+| `~/a5/` | `<home>\a5` |
+| `~//a6` | `<home>\a6` |
+| `~` | `<home>` verbatim — a home of `C:\h\` keeps its trailing `\` |
+
+Two Windows-specific notes: only bare `~` and a `~/` prefix expand, so a
+backslash form passes through untouched; and the home comes from `USERPROFILE`,
+not `HOME`. Every absolute-form control came back verbatim there too, so the
+tilde-only rule holds on both platforms. The cleaning is therefore **not**
+build-tagged to Unix.
+
+**The expanded spelling is wire-visible on eight frames**, so this is a wire
+contract and not an internal detail: `git.worktree_create` reflects
+`worktreePath` verbatim into `result.path` and into git's error text, and the
+expanded string appears in the error text of `files.stat`, `files.read`,
+`files.list`, `files.validate`, `files.extract_tar` and `process.spawn`. Two
+places that do *not* carry the spelling: `files.list` entry paths are re-joined,
+and `git.info`'s `root` comes from git's own output. On a trailing-separator
+spelling the difference is a change of *verdict*, not of formatting — POSIX
+`stat("f.txt/")` is `ENOTDIR`, so cleaning the separator away turns a `-32603`
+error frame into a success frame. Pinned by ids 15, 16, 18 and 19 of
+`testdata/socket_tilde_expansion.golden.json`; id 17 sends `~//` to `files.list`
+and is documentary only, since re-joined entry paths answer identically whatever
+spelling they are sent.
+
+> **Correction (2026-08-02).** Until this entry existed, the doc comment in
+> `expandpath.go` was the only record of this behaviour, and it was wrong: it
+> stated `~/` → `<home>/` and `~//f.txt` → `<home>//f.txt` as probe-measured, and
+> concluded that no cleaning was applied. Those rows were asserted with
+> `files.validate`, whose reply is `{valid,isDir}` and echoes no path — the probe
+> could not have observed the difference it recorded. The values were inferred and
+> both were wrong.
+
 ### Stat failures other than "does not exist"
 
 `files.stat`, `files.read` and `files.validate` distinguish a path that is
