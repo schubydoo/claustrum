@@ -97,7 +97,7 @@ var gitTimeout = 60 * time.Second
 //	reference : "git worktree add failed: Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"
 //	stdout-only: "git worktree add failed: "
 //
-// This helper's remaining callers fall into three groups, and only the first two
+// This helper's remaining callers fall into four groups, and only the first two
 // are safe by argument:
 //
 //	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
