@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -51,11 +53,32 @@ func (p *gitParams) repoDir() string {
 // gitTimeout bounds every git invocation. The reference daemon runs git with no
 // deadline, so a wedged git — an index/config lock, a credential prompt, a stalled
 // network or filesystem, a hung checkout hook — hangs the request goroutine
-// forever. We cap it; a timed-out git is reported as failure (ok=false), the same
-// as any other non-zero git exit, so callers' result shapes are unchanged. Normal
-// git ops finish in well under this bound, so happy-path frames stay byte-identical
-// — an attack/pathological-path-only divergence from the reference. (var, not
-// const, so tests can shrink it.)
+// forever. We cap it. Normal git ops finish in well under this bound, so
+// happy-path frames stay byte-identical — an attack/pathological-path-only
+// divergence from the reference. (var, not const, so tests can shrink it.)
+//
+// ⚠️ A TIMEOUT IS NOT "the same as any other git failure". That is what this
+// comment used to say, and it was true only while failure meant NOTHING HAPPENED.
+// gitWorktreeRemove now treats a failed git as permission to delete the worktree
+// itself, so a caller that ACTS on failure must distinguish our deadline from
+// git's verdict — otherwise our own safety cap authorises a destructive act the
+// reference cannot perform, since it has no deadline and simply blocks.
+//
+//	read-only callers (isRepo, gitInfo, gitStatus, …)  ok=false is enough
+//	callers with a side effect (gitWorktreeRemove)     MUST use gitDeadline
+//
+// The reply shape is NOT unchanged either: the timeout branch answers
+// {"success":false,"error":"git worktree remove timed out after …"}, a frame the
+// reference never emits. That is confined to this pathological path; every
+// reference-reachable frame is still byte-identical.
+//
+// ⚠️ THE BOUND IS SOFTER THAN IT LOOKS. CombinedOutput waits for the output pipe
+// to close, not merely for git to exit, so a git that spawns a child which
+// OUTLIVES it keeps the call blocked past the deadline — the orphan still holds
+// the pipe. Measured: a stub `sleep 30` under `sh` took the full 30s against a
+// 300ms gitTimeout, while the same stub as `exec sleep 30` returned promptly.
+// Closing it means reading the streams explicitly instead of CombinedOutput,
+// which is more code and more divergence, so it is recorded rather than fixed.
 var gitTimeout = 60 * time.Second
 
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
@@ -104,6 +127,23 @@ func gitStatusErr(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
 	out, err := exec.CommandContext(ctx, "git", full...).Output()
 	return strings.TrimRight(string(out), "\n"), err
+}
+
+// gitDeadline is git() plus one extra bit: whether OUR deadline killed the
+// process, as opposed to git exiting non-zero on its own.
+//
+// It exists for exactly one caller. gitWorktreeRemove treats a failed git as
+// permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
+// divergence — the reference runs git with no deadline and simply blocks. So
+// without this distinction a wedged git turns a claustrum safety measure into a
+// recursive delete the reference would never perform. Measured before the fix,
+// with a stub git that sleeps and gitTimeout shrunk: the directory was deleted
+// and the reply was {"success":true}.
+func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	out, ok = gitContext(ctx, dir, args...)
+	return out, ok, ctx.Err() != nil
 }
 
 // isRepoGitDir is the repo test used by git.status and git.list_branches. The
@@ -441,7 +481,67 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
-	git(repo, "worktree", "remove", "--force", p.WorktreePath)
+	// When `git worktree remove --force` fails for ANY reason, the reference
+	// removes worktreePath itself and still answers {"success":true}; it reports
+	// failure only when that manual cleanup ALSO fails.
+	//
+	// ⚠️ "any reason" is literal, and it is measured — not inferred from the one
+	// fixture that motivated this. Reviewed on PR #204, which pointed out that the
+	// original measurement covered only a locked worktree while the code deletes on
+	// every non-zero exit. Re-probed at 5db5e4a, checking the DIRECTORY afterwards
+	// rather than the reply, and claustrum matches on all three:
+	//
+	//	fixture      git fails because            reference: dir after
+	//	locked       the worktree is locked       DELETED
+	//	plain-dir    the path was never a worktree  DELETED
+	//	bogus-repo   baseRepo is not a repo at all  DELETED
+	//
+	// So `git.worktree_remove` is a recursive delete of the caller-supplied
+	// worktreePath whenever git is unhappy, and that is parity, not a claustrum
+	// invention. Documented in PROTOCOL.md because it will otherwise read as a bug.
+	// The caller did name the path and ask for it to be removed, which is why this
+	// is not treated like the -cli-version escape in #196 — there the deletion
+	// reached a path the caller never named.
+	//
+	// The registration is NOT cleaned up either: after a locked removal the repo
+	// still lists the worktree (measured: 2 entries, on both binaries).
+	//
+	// git() not a bespoke helper — it is already CombinedOutput, and the only
+	// differences were error-vs-ok and a trailing-newline trim that the
+	// strings.TrimSpace below absorbs.
+	out, ok, timedOut := gitDeadline(repo, "worktree", "remove", "--force", p.WorktreePath)
+	// NESTED under !ok deliberately: timedOut alone is not enough. If git exits 0
+	// at the instant the deadline fires, exec's Wait returns a nil error (ok=true)
+	// while ctx.Err() is already DeadlineExceeded — so a removal that SUCCEEDED
+	// would be reported as a wedged one, and the branchName delete below skipped.
+	// The window is nanoseconds and not reproducible in a test, so the guarantee
+	// is structural: a successful git cannot reach the timeout report at all.
+	// Raised on review.
+	if !ok {
+		if timedOut {
+			// OUR deadline, not git's verdict. Deleting here would be a destructive
+			// act on a path the reference never reaches, so report instead — a bare
+			// {"success":true} would be a lie about a wedged removal.
+			//
+			// Worded as what the daemon KNOWS: its deadline fired and it ran no
+			// cleanup of its own. It does NOT know the directory state, because the
+			// git it SIGKILLed unlinks as it goes and the slow-filesystem case this
+			// timeout exists for is exactly when it will have got part-way.
+			return okResult(req.ID, worktreeRemoveResult{
+				Success: false,
+				Error: fmt.Sprintf(
+					"git worktree remove timed out after %s; no cleanup was attempted, "+
+						"and git may have partially removed the worktree", gitTimeout),
+			})
+		}
+		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
+			return okResult(req.ID, worktreeRemoveResult{
+				Success: false,
+				Error: fmt.Sprintf("failed to remove worktree: %s; manual cleanup also failed: %v",
+					strings.TrimSpace(out), rmErr),
+			})
+		}
+	}
 	// The reference also deletes the branch when branchName is given, and does
 	// so FORCEFULLY — an unmerged branch goes too (probe-measured at 5db5e4a:
 	// both a merged and an unmerged branch are gone afterwards, where claustrum
