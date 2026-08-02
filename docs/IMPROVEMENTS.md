@@ -51,8 +51,17 @@ entry used to say so. That held only while "failure" meant *nothing happened*.
 `git.worktree_remove` now treats a failed git as permission to delete the
 worktree directory itself, so a caller with a side effect must distinguish our
 deadline from git's verdict — `gitDeadline` returns that third bit — or our own
-safety cap authorises a destructive act the reference cannot perform. Read-only
-callers are unaffected and still just check `ok`.
+safety cap authorises a destructive act the reference cannot perform.
+
+CORRECTION, 2026-08-02: this used to end "read-only callers are unaffected and
+still just check `ok`". They are not unaffected. `git.status` and (since the
+stdout-only fix) `git.list_branches` REPORT the failure as `-32603` carrying the
+Go error string, so when our deadline kills git they put a claustrum-only frame
+on the wire: measured, `err.Error()` is **`signal: killed`**, not `context
+deadline exceeded` — `Cmd.Wait` prefers the SIGKILLed process's `ExitError` over
+the context error. The reference has no deadline and simply blocks, emitting
+nothing. Unreachable for it, so not a parity break, but it is ours and it is on
+the wire.
 
 ⚠️ **The 60 s bound is softer than it reads.** `CombinedOutput` waits for the
 output pipe to close, not just for git to exit, so a git that spawns a child which
@@ -66,10 +75,18 @@ not promise a bound the code does not deliver.
 The timeout reply shape is also not unchanged: `git.worktree_remove` answers
 `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
 was attempted, and git may have partially removed the worktree"}`, a frame the
-reference never emits. It is confined to this pathological path; every
-reference-reachable frame stays byte-identical. The wording deliberately claims
-only what the daemon can observe — the SIGKILLed git unlinks as it goes, so the
-directory state is not knowable from here.
+reference never emits. It is confined to this pathological path, and **no OTHER
+frame moves because of the deadline** — which is the scoped form of a claim that
+used to read "every reference-reachable frame stays byte-identical". That whole-
+wire version was false for the entire window between the deadline work and the
+stdout-only fix, for the reason recorded in the CORRECTION above: `git.status`
+and `git.list_branches` put a claustrum-only `-32603` on the wire when our own
+deadline killed git. It is arguably true again now, which is exactly the trap —
+it was restated as scope rather than deleted so the two copies cannot drift apart
+a second time.
+
+The wording deliberately claims only what the daemon can observe — the SIGKILLed
+git unlinks as it goes, so the directory state is not knowable from here.
 
 ### 6 · pre-commit + `gofmt`/`vet` hooks ✅ — impact M / cost L
 

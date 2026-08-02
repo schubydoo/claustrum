@@ -527,6 +527,17 @@ Errors:
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`
 
 - Non-repo → `{"isRepo":false,"branches":[]}`.
+- **stdout only**, like `git.status` and unlike `git.worktree_create`. A repo
+  with a broken ref makes `for-each-ref` warn on stderr while still exiting `0`;
+  that warning must not become a branch name.
+- A `for-each-ref` that **fails** (e.g. a corrupt `packed-refs`, exit 128) is
+  reported as `-32603` carrying the Go error string — `exit status 128`, not
+  git's `fatal: …` text. Same rule as `git.status`.
+- **Claustrum-only frame.** If claustrum's 60 s `gitTimeout` kills git instead,
+  the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
+  SIGKILLed process's exit error over the context error. The reference runs git
+  with no deadline and simply blocks, so it never emits this. `git.status` has
+  the identical frame for the identical reason. See IMPROVEMENTS §5.
 
 #### git.worktree_create
 
