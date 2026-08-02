@@ -116,8 +116,32 @@ jobs:
       # a junit.xml falls out. gotestsum exits NON-ZERO when a test fails (verified:
       # exit 1, with failures="1" in the XML), so this still gates the job exactly as
       # `go test` did.
+      #
+      # `standard-verbose` (plain `go test -v`), NOT the `pkgname` default.
+      #
+      # To be accurate about what pkgname does and does not do, because the obvious
+      # justification for this change is wrong: pkgname DOES print a failing test's
+      # own output in its end-of-run summary (checked directly — a subtest's
+      # `x_test.go:7: …` line appears under `=== Failed`). It is not hiding
+      # diagnostics.
+      #
+      # What it does not do is STREAM. pkgname emits one line per package, and this
+      # repo is a single package, so nothing at all appears until the run finishes —
+      # and the summary only prints if the run finishes. That is the gap worth
+      # closing: a test that hangs until a runner or step deadline kills the job
+      # leaves a log with no indication of which test was running. Verbose shows the
+      # last `=== RUN` either way. A windows-latest leg on 2026-08-02 spent 30s in
+      # one test's exec deadline, and "which test, and how far did it get" had to be
+      # inferred from elapsed time rather than read.
+      #
+      # It also makes per-test timing visible on every leg, which is the input to
+      # judging whether a slow windows test is drifting toward its deadline.
+      #
+      # Alternative if this proves too noisy: `github-actions` (testname format plus
+      # collapsible ::group:: markers) — quieter, still not streaming. `--junitfile`
+      # is independent of `--format`, so Codecov's ingest is unaffected either way.
       - name: go test
-        run: gotestsum --format pkgname --junitfile junit.xml -- -race -count=1 ./...
+        run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 ./...
       # Upload from EVERY leg, tagged with its OS as a Codecov flag, so Test Analytics
       # (flaky/slow tests) breaks out per platform — which is the axis claustrum
       # actually varies on. The matrix has no second dimension, so one cell per OS is
