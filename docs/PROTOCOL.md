@@ -733,9 +733,14 @@ unknown id is not an error):
   up to the grace:
     - **`timeoutMs`** sets that grace. Non-positive or absent → the **3000 ms**
       default (probe-verified: `0` and `-100` both wait 3000 ms); positive values
-      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s). claustrum caps an
-      absurd value at 600000 ms so a signal-ignoring child can't wedge a request
-      forever — the reference clamps too, above the ~90 s ceiling we could observe.
+      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s) **up to a 30000 ms
+      ceiling**. A larger value is clamped to it, so `timeoutMs: 45000` against a
+      signal-ignoring child answers after ~30 s, not 45 s. Measured against the
+      reference at `5db5e4a`; the black-box bracket is (29500, 30500] and 30000 is
+      the only round value in it. (This previously read "claustrum caps an absurd
+      value at 600000 ms … the reference clamps too, above the ~90 s ceiling we
+      could observe" — the ceiling is 30 s, and 90 s is an ordinary client value,
+      not an absurd one.)
     - **`escalate`** (default `true`) decides what happens if the process is still
       alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
       and add `"escalated":true` to the reply. `false` → leave the process running

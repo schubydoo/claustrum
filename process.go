@@ -655,18 +655,64 @@ func (m *procManager) kill(id, signal string) {
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
 // sends no timeoutMs (or a non-positive one). Probe-measured at 3000ms against the
-// reference. var so tests can shrink it. maxKillWaitMs caps an absurd caller value
-// so a signal-ignoring child + escalate:false can't wedge the dispatch goroutine
-// indefinitely — the reference clamps too (clampKillWaitMs); its exact ceiling is
-// above the ~90s we could observe, so this generous cap only bites on adversarial
-// input, never a real client.
+// reference. var so tests can shrink it.
 var defaultKillWaitMs = 3000
 
-const maxKillWaitMs = 600000 // 10 min
+// maxKillWaitMs is the ceiling killAndWait clamps a caller's timeoutMs to. This
+// is REFERENCE-REACHABLE and was wrong: a caller asking for 45s got 45s here and
+// 30s there, so the exit frame arrived 15s late.
+//
+// CORRECTION, 2026-08-02: this shipped at 600000 with a comment saying the
+// reference's "exact ceiling is above the ~90s we could observe, so this generous
+// cap only bites on adversarial input, never a real client". Both halves were
+// wrong — the ceiling is 30s, well inside what a real client sends, and it was
+// observable all along. An earlier sweep had also filed this finding as disproved
+// without recording the observation behind the dismissal, which is why it
+// survived: a dismissal needs its evidence written down as much as a
+// confirmation does.
+//
+// Measured against 5db5e4a with a SIGTERM-ignoring child, so the grace must run
+// out in full. Elapsed to the killAndWait reply, ~0.4s of spawn+reply overhead
+// included:
+//
+//	timeoutMs   reference   claustrum (before)
+//	     2000       2.4s       2.4s     (control — both honour it)
+//	    29500      29.9s      29.9s     (below the ceiling)
+//	    30500      30.0s      30.9s     (reference stops; claustrum does not)
+//	    45000      30.0s      45.4s     (constant, not proportional)
+//
+// For a child that NEVER exits the observable is elapsed time alone, so no golden
+// or battery id can catch a regression there: the reply is
+// {"found":true,"died":true,"escalated":true} whatever the ceiling is. Only a
+// differential probe against the reference can see this at all.
+//
+// The body is NOT always identical, though, and the first probe here could not
+// see that — its fixture excluded the only window where it matters. A child that
+// ignores SIGTERM and then self-exits BETWEEN the clamp and the requested grace
+// takes a different branch: with escalate:true the omitempty `escalated` key
+// appears, and with escalate:false `died` flips true→false. Measured against
+// 5db5e4a with a child exiting at 35s and timeoutMs:45000 — the reference
+// escalates at 30s and claustrum now matches on both arms, with sub-clamp arms as
+// the control.
+//
+// Honest bound: black-box timing places the ceiling in (29500, 30500] and cannot
+// resolve it further, because ~0.4s of overhead swamps a finer bracket. 30000 is
+// the only round value in that interval. An earlier audit reached the same value
+// the same way, from a WIDER bracket — that is agreement, not independent
+// confirmation, and borrowing confidence from it would be the mistake this
+// comment exists to avoid. Do not restate this as "measured exactly 30000ms".
+// var, not const, for the same reason defaultKillWaitMs is one: a test has to be
+// able to shrink it to prove the clamp reaches the actual wait. Production never
+// assigns it.
+var maxKillWaitMs = 30000 // 30s
 
 // killReapGrace bounds the wait for a SIGKILL'd process to be reaped after
-// escalation. It is deliberately independent of (and larger than) the caller's
-// grace — which may be a few ms — because SIGKILL is uncatchable and the reap is
+// escalation. It is deliberately independent of the caller's grace — NOT
+// necessarily larger than it, as this said until 2026-08-02: a caller may send
+// any timeoutMs up to the 30s ceiling, so "larger than" was false for anything
+// over 5s and was false before that change too. The two never interact: the reap
+// bound runs strictly after the grace, sequentially. It is small because SIGKILL
+// is uncatchable and the reap is
 // near-instant, so this only guards against a pathological unreapable child (e.g.
 // stuck in uninterruptible sleep) wedging the dispatch goroutine. var so tests can
 // shrink it.

@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/base64"
 	"testing"
+	"time"
 )
 
 // spawnIgnoreTerm spawns the ignore-term helper (ignores SIGTERM) and blocks until
@@ -90,5 +91,50 @@ func TestKillAndWaitTimeoutMs(t *testing.T) {
 	kw := killWait(t, cl, `{"jsonrpc":"2.0","id":2,"method":"process.killAndWait","params":{"id":"TO","timeoutMs":150}}`)
 	if !kw.Found || !kw.Died || !kw.Escalated {
 		t.Errorf("killAndWait timeoutMs=150 = %+v, want found&died&escalated", kw)
+	}
+}
+
+// The clamp must reach the WAIT, not merely exist. clampKillWaitMs is unit-tested
+// separately; that says nothing about whether processKillAndWait calls it, and a
+// call site that passed timeoutMs through raw would leave every other test green.
+//
+// Driven with escalate:false so the observable is the grace alone: the child
+// survives, the reply is {found:true,died:false}, and the elapsed time is the
+// clamped value rather than the requested one. Unix-only, because it needs a
+// process that can ignore SIGTERM.
+func TestKillAndWaitClampReachesTheGrace(t *testing.T) {
+	oldMax := maxKillWaitMs
+	maxKillWaitMs = 250 // stand-in ceiling; the real one is 30s and untestable in CI
+	t.Cleanup(func() { maxKillWaitMs = oldMax })
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	spawnIgnoreTerm(t, cl, "CLAMP", 1)
+
+	start := time.Now()
+	// 3000ms, not 8000: the shared harness aborts a read at 5s (harness_test.go),
+	// so an 8s unclamped reply never arrives and the failure surfaces as a generic
+	// harness timeout instead of the diagnostic below. Chosen so all four numbers
+	// are comfortably separated — clamped ~0.25s, threshold 1.5s, unclamped ~3.0s,
+	// harness cap 5s.
+	kw := killWait(t, cl, `{"jsonrpc":"2.0","id":2,"method":"process.killAndWait",`+
+		`"params":{"id":"CLAMP","signal":"SIGTERM","timeoutMs":3000,"escalate":false}}`)
+	elapsed := time.Since(start)
+
+	if !kw.Found || kw.Died {
+		t.Errorf("killAndWait = %+v, want found:true died:false (escalate:false spares it)", kw)
+	}
+	// The requested grace was 3s and the ceiling is 250ms. A raw pass-through
+	// cannot come in under 1.5s; the clamped path takes ~0.25s.
+	if elapsed > 1500*time.Millisecond {
+		t.Errorf("killAndWait waited %v for a clamped 250ms grace — the clamp is not "+
+			"reaching the wait, so timeoutMs is being honored verbatim", elapsed)
+	}
+	// And it must actually have waited the grace, not returned instantly: an
+	// instant return would mean the child died on SIGTERM and the fixture is
+	// wrong, which would make the assertion above pass for the wrong reason.
+	if elapsed < 200*time.Millisecond {
+		t.Errorf("killAndWait returned in %v, faster than the 250ms grace — the "+
+			"ignore-term child cannot have survived, so this proves nothing", elapsed)
 	}
 }

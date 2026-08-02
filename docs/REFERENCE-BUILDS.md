@@ -66,7 +66,10 @@ timing) against the reference:
 
 1. **`process.killAndWait`** — new method (between `process.kill` and
    `process.reattach`). Blocks until the process is gone. Params `timeoutMs`
-   (grace; non-positive/absent → 3000 ms default, capped at 600000 ms) and
+   (grace; non-positive/absent → 3000 ms default, clamped at 30000 ms — black-box
+   bracket (29500, 30500] measured 2026-08-02, 30000 inferred as the only round
+   value in it; this entry previously said 600000 ms, which was claustrum's own
+   constant stated as if it were the reference's) and
    `escalate` (default `true`; `false` → leave a stubborn process running and
    report `died:false`). Result `{found,died[,alreadyExited][,escalated]}`.
 2. **`process.stdin.offset` contract** — `process.stdin` replies now always carry
