@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -504,6 +505,13 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 			})
 		}
 		if err != nil {
+			// EOF is the normal end of a stream and says nothing. Anything else —
+			// a closed pipe forced by the drain cap, an I/O error — is why the
+			// output stopped, and without it a truncated stream looks identical to
+			// a clean one. The reference logs this; claustrum returned silently.
+			if !errors.Is(err, io.EOF) {
+				logWarnf("[process.Manager] %s read error for process %s: %v", name, p.id, err)
+			}
 			return
 		}
 	}
@@ -619,6 +627,11 @@ func (p *managedProc) stdinWriter() {
 
 		p.stdinMu.Lock()
 		if err != nil {
+			// The whole queue is discarded here — everything the client sent and
+			// got success:true for, that the child will now never see. Silently
+			// dropping it left no trace at all; the reference logs the write error
+			// that caused it.
+			logWarnf("[process.Manager] drainStdin %s: write error: %v", p.id, err)
 			p.stdinQ, p.stdinQBytes, p.stdinDone = nil, 0, true
 			p.stdinCond.Broadcast()
 			p.stdinMu.Unlock()
@@ -774,7 +787,18 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	}
 	met.reattaches.Add(1)
 	p.mu.Lock()
-	p.subs[c] = struct{}{}
+	// A reattach TRANSFERS the frame stream to the new connection; it does not
+	// add a second listener. Measured at 5db5e4a: after a reattach, output
+	// produced by the process reaches only the reattaching connection, while the
+	// previously attached one stops receiving. claustrum fanned out to both, so
+	// a resumed session double-delivered every frame to whichever old connection
+	// was still open — and the replay the new connection just received made those
+	// duplicates overlap.
+	//
+	// The map is replaced rather than cleared entry-by-entry so the old set is
+	// dropped atomically under p.mu, with no window where a frame could reach a
+	// half-emptied set.
+	p.subs = map[*conn]struct{}{c: {}}
 	running = p.running
 	var replay []streamFrame
 	for _, f := range p.buffer {
@@ -848,6 +872,13 @@ func buildEnv(env map[string]string) []string {
 	// immediate when it was never started.
 	awaitLoginPATH()
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	// The login-shell PATH is applied HERE, to the child's environment, rather
+	// than being installed into the daemon's own — see loginPATH in shellenv.go.
+	// Applied before the caller's env so an explicit PATH in the spawn request
+	// still wins.
+	if lp := currentLoginPATH(); lp != "" {
+		base = replaceOrAppendEnv(base, "PATH", lp)
+	}
 	for k, v := range env {
 		base = replaceOrAppendEnv(base, k, v)
 	}

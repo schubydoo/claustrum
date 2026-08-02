@@ -18,16 +18,37 @@ func TestParseSignal(t *testing.T) {
 		in   string
 		want syscall.Signal
 	}{
+		// Every expectation is what the REFERENCE at 5db5e4a actually delivered,
+		// observed by trapping the signal in the child and printing which one
+		// arrived. The reply to process.kill is {"success":true} whatever is sent,
+		// so it cannot distinguish signals — an earlier version of this audit
+		// "refuted" the divergence by comparing those identical replies.
 		{"KILL", syscall.SIGKILL},
-		{"kill", syscall.SIGKILL},    // ToUpper handles case for the bare name
-		{"SIGKILL", syscall.SIGKILL}, // SIG prefix stripped (case-sensitive), then matched
-		{"sigkill", syscall.SIGTERM}, // quirk: TrimPrefix is case-sensitive, so lowercase "sig" isn't stripped → default
+		{"SIGKILL", syscall.SIGKILL}, // SIG prefix stripped, then matched
 		{"INT", syscall.SIGINT},
+		{"SIGINT", syscall.SIGINT},
 		{"HUP", syscall.SIGHUP},
-		{"QUIT", syscall.SIGQUIT},
+		{"SIGHUP", syscall.SIGHUP},
 		{"TERM", syscall.SIGTERM},
+		{"SIGTERM", syscall.SIGTERM},
 		{"", syscall.SIGTERM},      // default
 		{"bogus", syscall.SIGTERM}, // unknown → default
+
+		// CASE-SENSITIVE. Lowercase and mixed case are not recognised and fall to
+		// the default, on the reference and now here.
+		{"kill", syscall.SIGTERM},
+		{"int", syscall.SIGTERM},
+		{"hup", syscall.SIGTERM},
+		{"term", syscall.SIGTERM},
+		{"Int", syscall.SIGTERM},
+		{"sigkill", syscall.SIGTERM},
+		{"sigint", syscall.SIGTERM},
+
+		// There is NO QUIT mapping. claustrum used to send SIGQUIT here, which
+		// dumps core by default, where the reference sends SIGTERM.
+		{"QUIT", syscall.SIGTERM},
+		{"quit", syscall.SIGTERM},
+		{"SIGQUIT", syscall.SIGTERM},
 	}
 	for _, tc := range cases {
 		if got := parseSignal(tc.in); got != tc.want {
