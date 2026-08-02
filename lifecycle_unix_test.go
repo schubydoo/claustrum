@@ -207,15 +207,20 @@ func TestRunServeChildFatalArms(t *testing.T) {
 	}
 }
 
-// runServe's fatal guards: no token source at all, and a parent whose
-// -token-fd cannot be read. Both must exit 1 without daemonizing.
+// runServe's one remaining parent-side fatal guard: a -token-fd that cannot be
+// read must exit 1 without daemonizing.
+//
+// The missing-token-source arm used to live here too. It moved to the child
+// with the check itself — see TestRunServeChildRejectsMissingTokenSource. It
+// could not stay: with the parent-side check gone, `runServe("s.sock", "", -1,
+// …)` no longer exits here, it falls through to daemonizeWithToken and re-execs
+// this test binary, which re-runs the suite and re-execs again. Every arm in
+// this test must therefore die BEFORE the re-exec, or set a helper mode the way
+// TestRunServeParentDaemonizes does. TestMain now backstops that rule.
 func TestRunServeFatalGuards(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "")
 
-	if code, exited := catchExit(func() { runServe("s.sock", "", -1, "", false, false) }); !exited || code != 1 {
-		t.Errorf("runServe without token source: exited=%v code=%d, want exit 1", exited, code)
-	}
 	// An fd number far past any open descriptor: readTokenFD wraps it but the
 	// read fails (EBADF), so the parent dies before the re-exec.
 	if code, exited := catchExit(func() { runServe("s.sock", "", 1<<20, "", false, false) }); !exited || code != 1 {
@@ -407,5 +412,76 @@ func TestMainServeDispatch(t *testing.T) {
 	code, exited = runMain(t, "-serve", "-token-file", tf)
 	if !exited || code != 1 {
 		t.Errorf("main -serve without -socket: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
+	}
+}
+
+// The missing-token-source check runs in the DETACHED CHILD, not the launcher.
+//
+// Measured 2026-08-02 against 5db5e4a with `-serve` and no token flags: the
+// reference exits 1 after 10.07 s reporting its accept timeout, because its
+// parent daemonizes regardless and only the child discovers the problem.
+// claustrum exited in 0.03 s naming the actual cause. Matching costs both the
+// speed and the diagnosis, on purpose.
+//
+// This drives the CHILD half directly (daemonChildEnv set), which is the half
+// that carries the check. On its own it does NOT pin the move: the old
+// parent-side check sat above the parent/child branch, so the child exited 1
+// under that design too. TestRunServeLauncherDaemonizesWithoutATokenSource
+// below is the arm that discriminates.
+func TestRunServeChildRejectsMissingTokenSource(t *testing.T) {
+	stubOsExit(t)
+	// Stub the extraction seam so runServe does not fork a real login shell that
+	// outlives the test. Inlined rather than shared: #212 factors this into a
+	// stubLoginPATHExtractor helper, and this branch is independent of it. The
+	// restore awaits the goroutine, because startLoginPATH READS the seam inside
+	// it and restoring underneath is a data race.
+	oldExtractor := loginPATHExtractor
+	loginPATHExtractor = func() {}
+	t.Cleanup(func() { awaitLoginPATH(); loginPATHExtractor = oldExtractor })
+	t.Setenv(daemonChildEnv, "1")
+
+	dir := shortTempDir(t)
+	code, exited := catchExit(func() {
+		runServe(filepath.Join(dir, "s.sock"), "", -1, "", false, false)
+	})
+
+	if !exited || code != 1 {
+		t.Errorf("child with no token source: exited=%v code=%d, want exit 1", exited, code)
+	}
+	// And it must not have bound a socket on the way out — a daemon that starts
+	// and then cannot authenticate anyone is the failure this check exists for.
+	if _, err := os.Stat(filepath.Join(dir, "s.sock")); err == nil {
+		t.Error("the child bound its socket despite having no token source")
+	}
+}
+
+// The LAUNCHER half, and the arm that actually pins the move.
+//
+// Exit code alone cannot separate the two designs: both exit 1. The
+// discriminating observable is whether the launcher DAEMONIZED before failing.
+// daemonizeWithToken opens remote-server.log beside the socket in the parent,
+// before it re-execs, so that file's existence proves the launcher got as far
+// as spawning a child. Under the old design it exited above the parent/child
+// branch and no log was ever created.
+//
+// The stub child is the exit-0 helper, so it never binds and the launcher
+// correctly reports a failed start; shortDaemonStart keeps that off the
+// production 10 s deadline.
+func TestRunServeLauncherDaemonizesWithoutATokenSource(t *testing.T) {
+	shortDaemonStart(t)
+	stubOsExit(t)
+	t.Setenv(daemonChildEnv, "")
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
+
+	dir := shortTempDir(t)
+	code, exited := catchExit(func() {
+		runServe(filepath.Join(dir, "s.sock"), "", -1, "", false, false)
+	})
+
+	if !exited || code != 1 {
+		t.Errorf("launcher with no token source: exited=%v code=%d, want exit 1 via the accept timeout", exited, code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, daemonLogName)); err != nil {
+		t.Errorf("no %s beside the socket (%v): the launcher exited before daemonizing, which is the behaviour this change removed", daemonLogName, err)
 	}
 }

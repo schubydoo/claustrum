@@ -34,6 +34,29 @@ func runBridge(socket string) error {
 var stopReplyTimeout = 2 * time.Second
 
 func runStop(socket string) error {
+	// The socket path is unlinked UNCONDITIONALLY, on every path out of this
+	// function, matching the reference. Deferred so the dial-failure return below
+	// gets it too — that is the case which proves the unlink is -stop's own act
+	// and not the daemon's.
+	//
+	// Measured 2026-08-02 against 5db5e4a, three arms:
+	//
+	//	live daemon (control)   both: socket gone — but the DAEMON removes it on
+	//	                        graceful shutdown, so this arm attributes nothing
+	//	stale socket, no        reference: gone      claustrum: left in place
+	//	  listener
+	//	live FOREIGN listener   reference: gone, and the listener stays ALIVE
+	//	                        claustrum: left in place
+	//
+	// The last arm is worth stating plainly, because it is destructive and it is
+	// the behaviour being matched on purpose: -stop removes a socket path it did
+	// not create and cannot identify the owner of. The listener itself is not
+	// torn down — that arm checks it is still alive afterwards — but the path it
+	// was reachable through is gone, so a new client dialing by path cannot
+	// reach it. What becomes of its already-open connections was not measured.
+	// A conditional unlink is recorded as a candidate divergence rather than
+	// taken here — see the improvements backlog.
+	defer func() { _ = os.Remove(socket) }()
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
 		return nil

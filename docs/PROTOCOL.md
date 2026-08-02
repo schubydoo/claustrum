@@ -846,10 +846,21 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 (Unix), then runs the RPC server. On success it prints
 `Claustrum remote server listening on <socket>` to stdout.
 
-**Token source** — required, and checked *before* the socket:
+**Token source** — required, and checked **in the detached child**, not in the
+launcher:
 
-- Missing both flags →
-  `claustrum: daemonized child requires --token-file or --token-fd`, exit `1`.
+- Missing both flags → the launcher daemonizes anyway, the child refuses to
+  start, and the launcher reports its accept timeout after ~10 s:
+  `claustrum: timeout waiting for daemon to accept on <socket>`, exit `1`. The
+  specific reason —
+  `claustrum: daemonized child requires --token-file or --token-fd` — reaches
+  only the child's own stderr, which is detached.
+
+  This is deliberate parity, measured against the reference: `-serve` with no
+  token flags exits 1 after 10.07 s there with the same accept-timeout shape.
+  claustrum used to check in the launcher and fail in 0.03 s naming the actual
+  problem. That is friendlier and it is a divergence, so it is not what ships.
+  A zero-byte `-token-file` always behaved this way on both.
 - `CLAUDE_RPC_TOKEN` is **not** accepted for `-serve` — nor read by any other
   mode; no claustrum code path reads it at all. The daemon never starts
   unauthenticated.
@@ -981,6 +992,27 @@ authenticate that method (see [Authentication](#authentication)).
   `0`, no output. Nothing is ever echoed to stdout: any reply is read and
   discarded, matching the reference. Against a current daemon there is no reply
   to begin with, since `server.shutdown` answers nothing and closes.
+- **The socket path is unlinked on every exit path**, including the one where the
+  dial fails and no daemon was ever reached. Measured against the reference on
+  three arms:
+
+  | arm | reference | claustrum before |
+  |-----|-----------|------------------|
+  | live daemon (control) | gone | gone |
+  | stale socket, no listener | gone | left in place |
+  | live foreign listener | gone, listener alive | left in place, listener alive |
+
+  The control arm attributes nothing: a live daemon unlinks its own socket during
+  graceful shutdown, so "gone" there says nothing about who removed it. The other
+  two arms are the evidence, because no claustrum daemon is involved in either.
+
+  The foreign-listener arm is destructive, and it is matched deliberately: `-stop`
+  removes a socket path it did not create and cannot identify the owner of. The
+  listener itself is not torn down — that arm confirms it is still alive
+  afterwards — but the path it was reachable through is gone, so a new client
+  dialing by path cannot reach it. What becomes of its already-open connections
+  was not measured. Making the unlink conditional would be a divergence, so it is
+  recorded as a candidate rather than taken.
 
 ### -version
 
