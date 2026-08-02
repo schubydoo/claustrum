@@ -1019,6 +1019,23 @@ Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
+Two side effects have no frame and are easy to miss:
+
+- **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
+  on a fully successful install. An extracted CLI that fails the `--version`
+  runnability check still costs you the blob. A blob that is not valid zstd is
+  left alone, because decompression never produced a staged file. Measured
+  against the reference on four fixtures that bracket the decompress step, where
+  it behaves the same way on all four. The narrow window between decompression
+  and the rename (`chmod`, the destination clear) was not provoked — it sits on
+  the consumed side by construction, not by observation.
+- **`ldd` is executed only when the musl loader glob does not match.** On a host
+  carrying `/lib/ld-musl-*.so.*` the marker decides on its own and no `ldd`
+  process is started at all. Measured with a stand-in `ldd` on `PATH` that
+  records its own invocation: the reference does not start it on that path
+  either, and with the marker masked both binaries reach the stand-in — so
+  "not started" is an observation and not a fixture that never fired.
+
 Checksum + error framing (probe-verified):
 
 - `-cli-checksum` is verified on the download (`-cli-url`) path

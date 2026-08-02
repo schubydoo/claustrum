@@ -147,19 +147,30 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// Stage, verify and install, retried ONCE if a concurrent install's sweep
 	// reclaimed our staging file. See stageAndInstall for why that can happen and
 	// why a retry is the fix rather than a smarter sweep.
-	if err := stageAndInstall(zst, cliPath); err != nil {
-		if !errors.Is(err, errStagingVanished) {
-			return err
-		}
-		if err := stageAndInstall(zst, cliPath); err != nil {
-			return err
-		}
+	decompressed, err := stageAndInstall(zst, cliPath)
+	if err != nil && errors.Is(err, errStagingVanished) {
+		decompressed, err = stageAndInstall(zst, cliPath)
 	}
-	// SFTP fallback: the uploaded .zst blob is consumed on success.
-	if o.cliZst != "" {
+	// The uploaded .zst blob is consumed once DECOMPRESSION SUCCEEDED — not only
+	// on a fully successful install.
+	//
+	// Measured against 5db5e4a with four fixtures, which bracket the boundary
+	// tightly around the decompress step:
+	//
+	//	extracted CLI runs           reference consumed   claustrum consumed
+	//	extracted CLI exits 1        reference CONSUMED   claustrum kept
+	//	blob is not valid zstd       reference kept       claustrum kept
+	//	blob does not exist          nothing to consume on either
+	//
+	// So a failure BEFORE the staged file exists leaves the blob alone, and a
+	// failure after it exists does not. The cliError strings are byte-identical
+	// on all four. The failures between decompression and rename (chmod, the
+	// destination clear) were not provoked; they sit on the consumed side of the
+	// measured boundary by construction, not by observation.
+	if o.cliZst != "" && decompressed {
 		_ = os.Remove(o.cliZst)
 	}
-	return nil
+	return err
 }
 
 // errStagingVanished marks the one failure ensureCLI retries: the staging file
@@ -194,25 +205,25 @@ var errStagingVanished = errors.New("staging file vanished")
 // and its file is indistinguishable from litter by name alone. Recovering from
 // the loss is exact; predicting which files are safe to delete is not — and the
 // retry lets the sweep stay unconditional, matching the reference.
-func stageAndInstall(zst []byte, cliPath string) error {
+func stageAndInstall(zst []byte, cliPath string) (decompressed bool, err error) {
 	tmpFile, err := os.CreateTemp(filepath.Dir(cliPath), ".fetch-*")
 	if err != nil {
-		return fmt.Errorf("staging cli: %v", err)
+		return false, fmt.Errorf("staging cli: %v", err)
 	}
 	tmp := tmpFile.Name()
 	_ = tmpFile.Close()
 	if err := zstdDecompress(zst, tmp); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("decompressing: %v", err)
+		return false, fmt.Errorf("decompressing: %v", err)
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		_ = os.Remove(tmp)
-		return err
+		return true, err
 	}
 	// Verify the extracted CLI actually runs; if not, discard the temp and report.
 	if !isRunnable(tmp) {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("installed cli at %s is not runnable", cliPath)
+		return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
 	}
 	// Clear the destination ONLY when it is a directory, then rename into place.
 	//
@@ -232,19 +243,19 @@ func stageAndInstall(zst []byte, cliPath string) error {
 	if fi, err := os.Lstat(cliPath); err == nil && fi.IsDir() {
 		if rmErr := os.RemoveAll(cliPath); rmErr != nil {
 			_ = os.Remove(tmp)
-			return fmt.Errorf("clearing stale dir at %s: %v", cliPath, rmErr)
+			return true, fmt.Errorf("clearing stale dir at %s: %v", cliPath, rmErr)
 		}
 	}
 	if err := os.Rename(tmp, cliPath); err != nil {
 		if _, statErr := os.Lstat(tmp); statErr != nil {
 			// Our staging file is gone — a concurrent install's sweep took it.
 			// cliPath is deliberately left alone; there is nothing to install.
-			return fmt.Errorf("%w before install: %v", errStagingVanished, err)
+			return true, fmt.Errorf("%w before install: %v", errStagingVanished, err)
 		}
 		_ = os.Remove(tmp)
-		return err
+		return true, err
 	}
-	return nil
+	return true, nil
 }
 
 // validateCLIVersion rejects a -cli-version the install cannot honestly carry
@@ -472,14 +483,44 @@ func runLddVersion(ctx context.Context) ([]byte, error) {
 	return exec.CommandContext(ctx, "ldd", "--version").CombinedOutput()
 }
 
-// detectLibcWith runs the libc probe under a deadline, then classifies the result.
+// detectLibcWith answers the libc question, running the `ldd` probe ONLY when the
+// loader glob cannot answer on its own.
+//
+// The order is the behaviour, not a tidy-up. With the marker present the
+// reference reports musl and starts no `ldd` process; with the marker masked it
+// runs `ldd`. The ordering is INFERRED from that pair, not assumed — what was
+// observed is which process got spawned.
+//
+// claustrum ran ldd unconditionally and only then consulted the glob, so on that
+// path it executed a PATH-RESOLVED BINARY THE REFERENCE DOES NOT EXECUTE THERE,
+// and paid the probe timeout for an answer it was going to discard. That matters
+// more here than elsewhere because `-install` is the one mode with a
+// network-facing threat model.
+//
+// Measured 2026-08-02 against 5db5e4a, with a stand-in `ldd` on PATH that records
+// its own invocation:
+//
+//	musl loader present   reference: ldd NOT run, libc=musl
+//	                      claustrum: ldd RAN,     libc=musl
+//	loader masked (ctl)   both: ldd RAN, libc=glibc
+//
+// The control is what makes the first row mean something: with the marker hidden
+// both binaries reach the stand-in, so "not run" is an observation and not a
+// broken fixture.
+//
+// glob is injectable for the same reason classifyLibc takes one — the musl branch
+// is otherwise unreachable on a glibc host.
 // The timeout and runner are injected so the timeout/fallback path is exercisable
 // on any host (mirroring classifyLibc's injectable glob).
-func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error)) string {
+func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error),
+	glob func(string) ([]string, error)) string {
+	if m, err := glob(muslLoaderGlob); err == nil && len(m) > 0 {
+		return "musl" // run() is deliberately never called on this path
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	out, err := run(ctx)
-	return classifyLibc(out, err, filepath.Glob)
+	return classifyLibc(out, err, glob)
 }
 
 // muslLoaderGlob matches the musl dynamic loader for ANY architecture. The

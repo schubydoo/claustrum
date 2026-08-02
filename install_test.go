@@ -218,8 +218,13 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 		<-ctx.Done() // mimic a stalled `ldd`: unblocks only when the deadline fires
 		return nil, ctx.Err()
 	}
+	// The glob MUST report no match here. detectLibcWith short-circuits to "musl"
+	// when the loader marker is present and never calls the runner — so on a musl
+	// host (this one has /lib/ld-musl-x86_64.so.1) a real glob would make this
+	// test pass without exercising the timeout at all.
+	noMusl := func(string) ([]string, error) { return nil, nil }
 	done := make(chan string, 1)
-	go func() { done <- detectLibcWith(20*time.Millisecond, hung) }()
+	go func() { done <- detectLibcWith(20*time.Millisecond, hung, noMusl) }()
 	select {
 	case got := <-done:
 		if got != "glibc" && got != "musl" {
@@ -613,6 +618,13 @@ func TestEnsureCLIErrorWrapping(t *testing.T) {
 		!strings.HasPrefix(err.Error(), "decompressing:") {
 		t.Errorf("bad zst = %v, want a 'decompressing:' error", err)
 	}
+	// The KEEP side of the consume boundary. A failure before decompression
+	// produced a staged file leaves the blob alone — measured on the reference
+	// too. Without this, an over-correction to unconditional consumption would
+	// pass every other test.
+	if !isRegularFile(badZst) {
+		t.Error("a blob that failed to decompress was consumed; it must be kept")
+	}
 }
 
 func TestEnsureCLINoSource(t *testing.T) {
@@ -748,5 +760,84 @@ func TestDownloadStatusErrorWording(t *testing.T) {
 		filepath.Join(dir, "v2"))
 	if err == nil || !strings.HasPrefix(err.Error(), "download failed: ") {
 		t.Errorf("transport failure = %v, want a \"download failed: \" prefix", err)
+	}
+}
+
+// The loader glob decides ALONE: when it matches, `ldd` is never executed.
+//
+// This is the behaviour, not an optimisation. Measured 2026-08-02 against
+// 5db5e4a with a stand-in `ldd` on PATH that records its own invocation: with a
+// musl loader present the reference did not run it and claustrum did. With the
+// marker masked BOTH reached the stand-in, so "not run" is an observation and
+// not a fixture that never fired. Executing a PATH-resolved binary the reference
+// does not execute on this path matters in `-install`, which is the one mode
+// with a network-facing threat model.
+func TestDetectLibcSkipsLddWhenLoaderGlobMatches(t *testing.T) {
+	called := false
+	run := func(context.Context) ([]byte, error) {
+		called = true
+		return []byte("ldd (Debian GLIBC 2.41-1) 2.41"), nil
+	}
+	muslPresent := func(string) ([]string, error) {
+		return []string{"/lib/ld-musl-x86_64.so.1"}, nil
+	}
+
+	if got := detectLibcWith(time.Second, run, muslPresent); got != "musl" {
+		t.Errorf("detectLibcWith = %q, want musl (the loader marker decides)", got)
+	}
+	if called {
+		t.Error("ldd was executed even though the loader glob matched — " +
+			"the reference does not run it on this path")
+	}
+}
+
+// The control for the test above: with no marker, the probe IS run. Without this
+// row, a detectLibcWith that never ran ldd under any condition would pass the
+// skip test and still be wrong.
+func TestDetectLibcRunsLddWhenLoaderGlobDoesNotMatch(t *testing.T) {
+	called := false
+	run := func(context.Context) ([]byte, error) {
+		called = true
+		return []byte("ldd (Debian GLIBC 2.41-1) 2.41"), nil
+	}
+	noMusl := func(string) ([]string, error) { return nil, nil }
+
+	if got := detectLibcWith(time.Second, run, noMusl); got != "glibc" {
+		t.Errorf("detectLibcWith = %q, want glibc", got)
+	}
+	if !called {
+		t.Error("ldd was not executed with no loader marker present — " +
+			"then the skip test above proves nothing")
+	}
+}
+
+// The CONSUME side of the boundary: once decompression has produced a staged
+// file, the uploaded blob is consumed even though the install then fails.
+//
+// Measured 2026-08-02 against 5db5e4a across four fixtures — a runnable CLI
+// (consumed, the control), one that exits 1 (consumed), a blob that is not valid
+// zstd (kept), and an absent blob. claustrum kept the blob on row two.
+//
+// This is the only cell that discriminates. Every other -cli-zst test either
+// fails before decompression (where consume-on-success and consume-on-decompress
+// agree) or succeeds outright (where they also agree), which is why the fix
+// shipped uncovered until a mutant run went looking. Exit code 1 is the load
+// bearing choice: it is the one post-decompress failure provokable without
+// permission games that break the Windows leg.
+func TestEnsureCLIConsumesBlobWhenExtractedCLIIsNotRunnable(t *testing.T) {
+	dir := t.TempDir()
+	zstFile := filepath.Join(dir, "cli.zst")
+	if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// .exe so Go's exec resolves it on the Windows leg, as the sibling tests do.
+	err := ensureCLI(installOpts{cliZst: zstFile}, filepath.Join(dir, "out.exe"))
+	if err == nil || !strings.Contains(err.Error(), "not runnable") {
+		t.Fatalf("want a not-runnable error, got %v", err)
+	}
+	if isRegularFile(zstFile) {
+		t.Error("the blob must be consumed once decompression succeeded — " +
+			"the reference consumes it even when the extracted CLI does not run")
 	}
 }
