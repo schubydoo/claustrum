@@ -23,6 +23,11 @@ type streamFrame struct {
 	Seq       uint64 `json:"seq"`
 	Data      string `json:"data,omitempty"`
 	ExitCode  *int   `json:"exitCode,omitempty"`
+
+	// lineBytes is the length of this frame AS SERIALIZED, including the
+	// trailing newline — the unit the replay buffer accounts in. Unexported, so
+	// encoding/json ignores it and no frame on the wire changes shape.
+	lineBytes int64
 }
 
 // defaultBufferCap caps the total base64-encoded data held in each per-process
@@ -31,13 +36,43 @@ type streamFrame struct {
 // reclaimed while the procManager holds the entry).
 //
 // 16 MiB is the REFERENCE's value, not a tuning choice — do not change it
-// without re-measuring. Driving 70 MiB of output through both daemons and then
-// calling reattach{fromSeq:0} showed the reference retaining ≈15.85 MiB of
-// base64 across 1,915 frames (firstSeq 7599) where claustrum's 50 MiB retained
-// ≈49.99 MiB across 5,718 frames (firstSeq 4133). The accounting method already
-// matched — base64 length, whole frames dropped oldest-first — so only the
-// constant differed. firstSeq is wire-visible via reattach, so this bound is
-// part of the observable contract.
+// without re-measuring. Driving 70 MiB through both daemons and calling
+// reattach{fromSeq:0} showed the reference retaining ≈15.85 MiB across 1,915
+// frames where claustrum's then-50 MiB retained ≈49.99 MiB across 5,718.
+// firstSeq is wire-visible via reattach, so this bound is observable contract.
+//
+// CORRECTION, 2026-08-02: that measurement also concluded "the accounting method
+// already matched — base64 length", and only the constant was changed. The unit
+// was wrong too. The reference's retained-frame counts match a 16 MiB bound
+// measured in the bytes a subscriber receives — the serialized frame plus its
+// newline — where claustrum counted len(f.Data), the base64 payload alone. See
+// bufBytes/emit below.
+//
+// The reason it read as matching is worth more than the bug. That run used
+// ~8.7 KB frames, where the ~80-byte JSON envelope is under 1% — inside the noise
+// of where a trim boundary lands. Re-measured at ~600-byte frames, where the
+// envelope is ~12%, driving 27 MiB through each:
+//
+//	frame size   retained frames, reference   claustrum (before)
+//	  ~8700 B                       1,438       1,447    control — 0.6% apart
+//	   ~600 B                      19,195      20,962    9.2% apart
+//
+// The arithmetic identifies the ENVELOPE, and only the envelope. A 600-byte
+// payload is 800 bytes of base64: 16 MiB / 800 = 20,971 ≈ claustrum's 20,962,
+// while 16 MiB / (800 + ~80) = 19,065 and with the newline 19,043 — both within
+// the slop of a ≈ against 19,195, so this division cannot tell you whether the
+// trailing newline is counted. What settles the newline is the post-fix run:
+// counting frame+newline puts both binaries on the SAME retained count exactly
+// (19,194 each), where omitting it would leave claustrum ~22 frames adrift.
+//
+// Those figures are one frame apart between runs (19,195 then 19,194 for the
+// reference) because frame boundaries depend on pipe scheduling and are not
+// deterministic — see the note on frame boundaries in docs/PROTOCOL.md. The
+// exact-agreement claim is about a single run comparing both binaries, not about
+// a number that reproduces across runs.
+//
+// A fixture can make a real divergence unmeasurable purely by choosing the wrong
+// magnitude, and nothing about the earlier run looked wrong.
 const defaultBufferCap int64 = 16 * 1024 * 1024
 
 // stdinQueueCap bounds the per-process async stdin queue. A producer that outruns
@@ -67,7 +102,7 @@ type managedProc struct {
 	mu        sync.Mutex
 	seq       uint64
 	buffer    []streamFrame
-	bufBytes  int64 // sum of len(f.Data) for frames currently in buffer
+	bufBytes  int64 // sum of f.lineBytes (serialized frame + newline) in buffer
 	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
 	subs      map[*conn]struct{}
 	running   bool
@@ -266,7 +301,8 @@ func (p *managedProc) killGroupAfterExit() {
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
 // every attached client. The buffer retains frames for later reattach, capped
-// at maxBufferBytes: the oldest frames are dropped (and firstSeq advances) when
+// at defaultBufferCap (or the per-instance bufCap): the oldest frames are
+// dropped, and firstSeq advances, when
 // the cap is exceeded, matching the reattach contract on the wire.
 func (p *managedProc) emit(f streamFrame) {
 	p.mu.Lock()
@@ -274,15 +310,23 @@ func (p *managedProc) emit(f streamFrame) {
 	f.Seq = p.seq
 	f.Type = "stream"
 	f.ProcessID = p.id
+	// Marshal HERE, under the lock, because the accounting unit is the serialized
+	// line and the seq that goes into it is assigned here. The same bytes are
+	// reused for the fan-out below, so this is not an extra marshal — it moved.
+	b, merr := json.Marshal(f)
+	if merr == nil {
+		b = append(b, '\n')
+	}
+	f.lineBytes = int64(len(b))
 	p.buffer = append(p.buffer, f)
-	p.bufBytes += int64(len(f.Data))
+	p.bufBytes += f.lineBytes
 	cap := p.bufCap
 	if cap == 0 {
 		cap = defaultBufferCap
 	}
 	// Trim oldest frames while over cap, keeping at least the frame just added.
 	for len(p.buffer) > 1 && p.bufBytes > cap {
-		p.bufBytes -= int64(len(p.buffer[0].Data))
+		p.bufBytes -= p.buffer[0].lineBytes
 		p.buffer = p.buffer[1:]
 	}
 	subs := make([]*conn, 0, len(p.subs))
@@ -290,15 +334,10 @@ func (p *managedProc) emit(f streamFrame) {
 		subs = append(subs, c)
 	}
 	p.mu.Unlock()
-	// Marshal once and fan the same bytes out to every subscriber — the frames
-	// are identical per conn, so re-marshaling per subscriber was pure waste.
+	// The frames are identical per conn, so one marshal serves every subscriber.
 	// json.Marshal of a streamFrame cannot realistically fail (strings + ints);
 	// if it somehow does, every subscriber would have failed the same way, so
 	// mirror the old per-conn behavior: log + detach each.
-	b, merr := json.Marshal(f)
-	if merr == nil {
-		b = append(b, '\n')
-	}
 	for _, c := range subs {
 		err := merr
 		if err == nil {
