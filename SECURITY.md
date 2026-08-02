@@ -29,7 +29,7 @@ processes on the host it runs on. Key considerations:
   token file (or fd source) owner-readable and short-lived.
 - **`server.shutdown` is the one method the token does not gate.** It is not
   authenticated — behavioral parity with the reference, which the Desktop client
-  depends on: it tears the daemon down by shelling out `server --stop --socket
+  depends on: it tears the daemon down by invoking `server --stop --socket
   <sock>` with no token in its environment. So for that one method, reaching the
   socket is by itself sufficient to stop the daemon and drop every session, and
   `-stop` sends no token at all. The socket's owner-only mode is what confines

@@ -124,9 +124,9 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	// one differed).
 	//
 	// This is deliberately NOT a hardening claustrum keeps. The Desktop client
-	// tears the daemon down by shelling out to `server --stop --socket <sock>`
-	// with no CLAUDE_RPC_TOKEN in its environment, so a claustrum that demands
-	// auth here cannot be stopped by it at all — and being swappable for the
+	// tears the daemon down by invoking `server --stop --socket <sock>` with no
+	// CLAUDE_RPC_TOKEN in its environment, so a claustrum that demands auth
+	// here cannot be stopped by it at all — and being swappable for the
 	// reference under Desktop is the whole point of the version-spoofing conf.
 	// clauster is unaffected in either direction: it shuts down over its own
 	// authenticated RPC connection, and an auth member that IS present is simply
