@@ -827,9 +827,9 @@ unknown id is not an error):
   `data`. (This previously read "16 MiB of base64 `data`". The constant was right
   and the unit was not: the difference is under 1% at 8.7 KB frames and ~12% at
   600-byte frames, so the run that established the constant could not see it.)
-  Frames are dropped oldest-first, whole
-  frames at a time, once a new frame would exceed the cap; at least one frame is
-  always retained, even one larger than the cap. So `reattach{fromSeq:0}` replays
+  Frames are dropped oldest-first, whole frames at a time, once a new frame would
+  exceed the cap; at least one frame is always retained, even one larger than the
+  cap. So `reattach{fromSeq:0}` replays
   everything **still retained**, not necessarily everything ever emitted — the
   reply's `firstSeq` is the floor, and a client that needs the gap detected must
   compare it against the last `seq` it saw.

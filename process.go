@@ -30,8 +30,8 @@ type streamFrame struct {
 	lineBytes int64
 }
 
-// defaultBufferCap caps the total base64-encoded data held in each per-process
-// replay buffer. A long-running, high-throughput process would otherwise grow
+// defaultBufferCap caps the total SERIALIZED FRAME BYTES — each frame's JSON
+// line including its trailing newline — held in each per-process replay buffer. A long-running, high-throughput process would otherwise grow
 // the buffer without bound for the daemon's entire lifetime (the buffer is never
 // reclaimed while the procManager holds the entry).
 //
@@ -70,6 +70,13 @@ type streamFrame struct {
 // deterministic — see the note on frame boundaries in docs/PROTOCOL.md. The
 // exact-agreement claim is about a single run comparing both binaries, not about
 // a number that reproduces across runs.
+//
+// Be honest about how much that carries: the run-to-run spread is inferred from
+// TWO observations, so "~22 frames adrift would be visible" rests on a weakly
+// established noise floor. The load-bearing evidence is the SECOND arm — the
+// ~8.7 KB control landing exactly (1,438 / 1,438) after the fix. Two independent
+// arms agreeing exactly is much harder to get by luck than one, and that is what
+// settles the trailing newline, not the 22-frame margin.
 //
 // A fixture can make a real divergence unmeasurable purely by choosing the wrong
 // magnitude, and nothing about the earlier run looked wrong.
@@ -313,6 +320,15 @@ func (p *managedProc) emit(f streamFrame) {
 	// Marshal HERE, under the lock, because the accounting unit is the serialized
 	// line and the seq that goes into it is assigned here. The same bytes are
 	// reused for the fan-out below, so this is not an extra marshal — it moved.
+	//
+	// The COUNT is unchanged; the lock hold is not. p.mu is now held across a
+	// marshal of up to ~44 KB of base64 per frame, where it was released first.
+	// That is the same lock reattach takes to swap the subscriber set and the one
+	// the stdout and stderr readers contend on, so under a high-throughput process
+	// the two emitters now serialize on marshal time as well as on bookkeeping.
+	// Unavoidable as written — the seq that goes into the bytes is assigned under
+	// the lock — and stated here so anyone profiling emit finds it rather than
+	// discovering it.
 	b, merr := json.Marshal(f)
 	if merr == nil {
 		b = append(b, '\n')

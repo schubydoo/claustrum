@@ -111,7 +111,9 @@ func TestEmitBufferCap(t *testing.T) {
 // leaving nothing to replay on reattach.
 func TestEmitKeepsSoleOverCapFrame(t *testing.T) {
 	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
-	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("x", 25)}) // 25 bytes > cap 10
+	// No payload arithmetic here: the test only needs ONE frame that exceeds the
+	// cap, and the accounted size is the serialized line, not the 25 payload bytes.
+	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("x", 25)})
 	if len(p.buffer) != 1 {
 		t.Fatalf("buffer len = %d, want 1 (sole over-cap frame must be kept)", len(p.buffer))
 	}
