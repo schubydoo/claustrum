@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -219,9 +220,18 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 		return nil, ctx.Err()
 	}
 	// The glob MUST report no match here. detectLibcWith short-circuits to "musl"
-	// when the loader marker is present and never calls the runner — so on a musl
-	// host (this one has /lib/ld-musl-x86_64.so.1) a real glob would make this
-	// test pass without exercising the timeout at all.
+	// when the loader marker is present and never calls the runner, so on a musl
+	// host a real glob would match and this test would pass without ever entering
+	// the hung runner.
+	//
+	// The stub is load-bearing, not defensive, and that was checked rather than
+	// argued: with a real glob on a host that HAS the loader, replacing the runner
+	// with `select {}` — no deadline honoured at all, the exact regression this
+	// test exists to catch — still passed, in under a millisecond.
+	//
+	// Deliberately not phrased in terms of "this host": CI's Linux leg is glibc,
+	// so a reader who checks for the loader there finds none and could conclude
+	// the stub is unnecessary. That is the one conclusion that would re-break it.
 	noMusl := func(string) ([]string, error) { return nil, nil }
 	done := make(chan string, 1)
 	go func() { done <- detectLibcWith(20*time.Millisecond, hung, noMusl) }()
@@ -839,5 +849,46 @@ func TestEnsureCLIConsumesBlobWhenExtractedCLIIsNotRunnable(t *testing.T) {
 	if isRegularFile(zstFile) {
 		t.Error("the blob must be consumed once decompression succeeded — " +
 			"the reference consumes it even when the extracted CLI does not run")
+	}
+}
+
+// The OTHER post-decompress failure: chmod fails after the staged file exists.
+//
+// docs/PROTOCOL.md records the window between decompress and rename as sitting
+// on the consumed side "by construction, not by observation" — because no
+// fixture provokes it. A permission game would provoke it on unix and be a no-op
+// on the Windows leg (os.Chmod there only toggles a read-only attribute), which
+// is the fixture trap this repo has hit three times, so the failure is injected
+// through the chmodStaged seam instead. That keeps the test identical on every
+// OS and turns the one unobserved cell of the boundary into an observed one.
+func TestEnsureCLIConsumesBlobWhenChmodFails(t *testing.T) {
+	old := chmodStaged
+	chmodStaged = func(string, os.FileMode) error { return errors.New("chmod refused") }
+	t.Cleanup(func() { chmodStaged = old })
+
+	dir := t.TempDir()
+	zstFile := filepath.Join(dir, "cli.zst")
+	// A CLI that WOULD run: the failure must come from chmod, not runnability,
+	// or this test would duplicate the sibling above instead of covering a new
+	// branch.
+	if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ensureCLI(installOpts{cliZst: zstFile}, filepath.Join(dir, "out.exe"))
+	if err == nil || !strings.Contains(err.Error(), "chmod refused") {
+		t.Fatalf("want the injected chmod error, got %v", err)
+	}
+	if isRegularFile(zstFile) {
+		t.Error("the blob must be consumed: decompression had already produced a " +
+			"staged file, which is the side of the boundary this branch is on")
+	}
+	// And the staging file must not survive the failure — the same cleanup the
+	// not-runnable branch does.
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".fetch-") {
+			t.Errorf("staging file %s survived a chmod failure", e.Name())
+		}
 	}
 }

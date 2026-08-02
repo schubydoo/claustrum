@@ -149,7 +149,20 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// why a retry is the fix rather than a smarter sweep.
 	decompressed, err := stageAndInstall(zst, cliPath)
 	if err != nil && errors.Is(err, errStagingVanished) {
-		decompressed, err = stageAndInstall(zst, cliPath)
+		// Accumulate rather than overwrite. Decompression is a fact about the
+		// blob, not about an attempt: once any attempt has decompressed it, the
+		// consume rule below is satisfied for good. Assigning here instead would
+		// let a retry that fails BEFORE its own decompress (a CreateTemp or write
+		// error) report false and keep a blob the first attempt had already
+		// decompressed — contradicting the rule stated right below.
+		//
+		// Not shown to be reachable: the sweep that triggers the retry removes
+		// `.fetch-*`, not the cli-dir, so a second-pass CreateTemp failure needs
+		// state the retry path does not itself produce. This is invariant
+		// hygiene, and it costs one variable.
+		retryDecompressed, retryErr := stageAndInstall(zst, cliPath)
+		decompressed = decompressed || retryDecompressed
+		err = retryErr
 	}
 	// The uploaded .zst blob is consumed once DECOMPRESSION SUCCEEDED — not only
 	// on a fully successful install.
@@ -205,6 +218,13 @@ var errStagingVanished = errors.New("staging file vanished")
 // and its file is indistinguishable from litter by name alone. Recovering from
 // the loss is exact; predicting which files are safe to delete is not — and the
 // retry lets the sweep stay unconditional, matching the reference.
+// chmodStaged is os.Chmod behind a seam, so the one branch between decompress
+// and rename that no fixture can otherwise provoke is reachable from a test.
+// That branch matters more than its size: it is on the CONSUMED side of the
+// blob rule, and until it was exercised the PR could only claim so by
+// construction. Production never reassigns it.
+var chmodStaged = os.Chmod
+
 func stageAndInstall(zst []byte, cliPath string) (decompressed bool, err error) {
 	tmpFile, err := os.CreateTemp(filepath.Dir(cliPath), ".fetch-*")
 	if err != nil {
@@ -216,7 +236,7 @@ func stageAndInstall(zst []byte, cliPath string) (decompressed bool, err error) 
 		_ = os.Remove(tmp)
 		return false, fmt.Errorf("decompressing: %v", err)
 	}
-	if err := os.Chmod(tmp, 0o755); err != nil {
+	if err := chmodStaged(tmp, 0o755); err != nil {
 		_ = os.Remove(tmp)
 		return true, err
 	}
@@ -514,7 +534,7 @@ func runLddVersion(ctx context.Context) ([]byte, error) {
 // on any host (mirroring classifyLibc's injectable glob).
 func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error),
 	glob func(string) ([]string, error)) string {
-	if m, err := glob(muslLoaderGlob); err == nil && len(m) > 0 {
+	if hasMuslLoader(glob) {
 		return "musl" // run() is deliberately never called on this path
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -527,6 +547,24 @@ func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, er
 // reference carries this glob; claustrum used to stat a hardcoded
 // "/lib/ld-musl-x86_64.so.1", which cannot see the loader on arm64 or riscv.
 const muslLoaderGlob = "/lib/ld-musl-*.so.*"
+
+// hasMuslLoader reports whether the musl dynamic loader is present. Shared by
+// detectLibcWith (which uses it to decide whether ldd is spawned AT ALL) and
+// classifyLibc (which uses it to decide the reported value), so the two are
+// definitionally the same predicate.
+//
+// They must not drift: the argument that this whole ordering change is
+// wire-invisible rests on the two agreeing, so an edit to one — a second loader
+// path, a match rule stronger than "any match" — would silently change WHEN ldd
+// runs relative to HOW the answer is computed. One definition removes that
+// possibility, and stops the glob running twice on a glibc host.
+//
+// A glob error is treated as "no loader", which is the same fallback both call
+// sites had: the ldd path still decides.
+func hasMuslLoader(glob func(string) ([]string, error)) bool {
+	m, err := glob(muslLoaderGlob)
+	return err == nil && len(m) > 0
+}
 
 // classifyLibc maps an `ldd --version` result to "musl" or "glibc". It is split
 // from detectLibc with an injectable glob so both branches are testable on any
@@ -543,7 +581,7 @@ const muslLoaderGlob = "/lib/ld-musl-*.so.*"
 // (Alpine → musl, Debian → glibc, container-verified): a Debian box has no musl
 // loader to match, and an Alpine box is caught by either rule.
 func classifyLibc(lddOut []byte, lddErr error, glob func(string) ([]string, error)) string {
-	if m, err := glob(muslLoaderGlob); err == nil && len(m) > 0 {
+	if hasMuslLoader(glob) {
 		return "musl"
 	}
 	if lddErr == nil && strings.Contains(strings.ToLower(string(lddOut)), "musl") {
