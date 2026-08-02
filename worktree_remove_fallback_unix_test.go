@@ -159,3 +159,45 @@ func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 		t.Errorf("reply = %s, want it to say what the daemon actually knows", raw)
 	}
 }
+
+// A git that SUCCEEDS must never be reported as a timeout, and must still get
+// its branchName delete.
+//
+// The timeout report is nested under !ok for that reason: `timedOut` alone is
+// true whenever ctx.Err() is set, and if git exits 0 at the instant the deadline
+// fires, exec's Wait returns nil (ok=true) alongside a DeadlineExceeded context.
+// That window is nanoseconds and cannot be forced from a test, so this pins the
+// reachable half — a fast, successful git under a live deadline takes the normal
+// path — and the unreachable half is prevented by construction rather than by
+// assertion.
+func TestWorktreeRemoveSuccessIsNotReportedAsTimeout(t *testing.T) {
+	requireGit(t)
+	old := gitTimeout
+	gitTimeout = 30 * time.Second // live, not expired: git wins the race
+	t.Cleanup(func() { gitTimeout = old })
+
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "main", "repo")
+	runGit(t, repo, "commit", "--allow-empty", "-m", "init")
+	wt := filepath.ToSlash(filepath.Join(root, "wt"))
+	runGit(t, repo, "worktree", "add", "-b", "gone", wt)
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt, "branchName": "gone"}))
+
+	if !strings.Contains(raw, `"success":true`) {
+		t.Errorf("reply = %s, want a bare success for a removal git completed", raw)
+	}
+	if strings.Contains(raw, "timed out") {
+		t.Errorf("reply = %s, reports a timeout for a git that succeeded", raw)
+	}
+	// The branch delete lives AFTER the timeout branch, so reporting a timeout
+	// would silently skip it. Asserting the branch is gone is what proves the
+	// early return was not taken.
+	out, _ := git(repo, "branch", "--list", "gone")
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("branch %q still exists — the branchName delete was skipped", "gone")
+	}
+}

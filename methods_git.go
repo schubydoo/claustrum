@@ -502,24 +502,30 @@ func gitWorktreeRemove(req *request) response {
 	// differences were error-vs-ok and a trailing-newline trim that the
 	// strings.TrimSpace below absorbs.
 	out, ok, timedOut := gitDeadline(repo, "worktree", "remove", "--force", p.WorktreePath)
-	if timedOut {
-		// OUR deadline, not git's verdict. Deleting here would be a destructive
-		// act on a path the reference never reaches, so report instead — a bare
-		// {"success":true} would be a lie about a wedged removal.
-		// Word this as what the daemon KNOWS. It knows its own deadline fired and
-		// that it did not run its own cleanup; it does NOT know the directory
-		// state, because the git it SIGKILLed unlinks files as it goes and the
-		// slow-filesystem case this timeout exists for is exactly when it will
-		// have got part-way. "nothing was removed" asserted a filesystem fact
-		// that is not observable from here — raised on review.
-		return okResult(req.ID, worktreeRemoveResult{
-			Success: false,
-			Error: fmt.Sprintf(
-				"git worktree remove timed out after %s; no cleanup was attempted, "+
-					"and git may have partially removed the worktree", gitTimeout),
-		})
-	}
+	// NESTED under !ok deliberately: timedOut alone is not enough. If git exits 0
+	// at the instant the deadline fires, exec's Wait returns a nil error (ok=true)
+	// while ctx.Err() is already DeadlineExceeded — so a removal that SUCCEEDED
+	// would be reported as a wedged one, and the branchName delete below skipped.
+	// The window is nanoseconds and not reproducible in a test, so the guarantee
+	// is structural: a successful git cannot reach the timeout report at all.
+	// Raised on review.
 	if !ok {
+		if timedOut {
+			// OUR deadline, not git's verdict. Deleting here would be a destructive
+			// act on a path the reference never reaches, so report instead — a bare
+			// {"success":true} would be a lie about a wedged removal.
+			//
+			// Worded as what the daemon KNOWS: its deadline fired and it ran no
+			// cleanup of its own. It does NOT know the directory state, because the
+			// git it SIGKILLed unlinks as it goes and the slow-filesystem case this
+			// timeout exists for is exactly when it will have got part-way.
+			return okResult(req.ID, worktreeRemoveResult{
+				Success: false,
+				Error: fmt.Sprintf(
+					"git worktree remove timed out after %s; no cleanup was attempted, "+
+						"and git may have partially removed the worktree", gitTimeout),
+			})
+		}
 		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
 			return okResult(req.ID, worktreeRemoveResult{
 				Success: false,
