@@ -61,6 +61,14 @@ func TestShutdownStillRequiresTheJSONRPCVersion(t *testing.T) {
 // unauthenticated request with -32001 — swept against both daemons, and all 18
 // were identical. A regression that widened the exemption would be a real hole,
 // so pin the whole surface rather than a sample.
+//
+// The literal list below is kept because it documents the intended surface at a
+// glance, but a literal list CANNOT police itself here: auth is checked before
+// method routing, so an unknown method with no auth also answers -32001 and a
+// typo ("git.list_branch") would pass exactly as green while silently covering
+// one method fewer. The set cross-check against capabilityMethods is what makes
+// the list load-bearing — it fails on a typo AND on a 20th method added to the
+// dispatch surface without being pinned here.
 func TestEveryOtherMethodStillRequiresAuth(t *testing.T) {
 	methods := []string{
 		"server.ping", "server.version", "server.capabilities",
@@ -68,6 +76,28 @@ func TestEveryOtherMethodStillRequiresAuth(t *testing.T) {
 		"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 		"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
 	}
+
+	want := map[string]bool{}
+	for _, m := range capabilityMethods {
+		if m != methodShutdown {
+			want[m] = true
+		}
+	}
+	got := map[string]bool{}
+	for _, m := range methods {
+		got[m] = true
+	}
+	for m := range want {
+		if !got[m] {
+			t.Errorf("%s is in capabilityMethods but is not pinned here", m)
+		}
+	}
+	for m := range got {
+		if !want[m] {
+			t.Errorf("%s is pinned here but is not a real method — typo?", m)
+		}
+	}
+
 	s := newTestServer(t)
 	for _, m := range methods {
 		t.Run(m, func(t *testing.T) {

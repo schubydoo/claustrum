@@ -13,7 +13,6 @@ import (
 
 func TestRunStopSignalsShutdown(t *testing.T) {
 	s, sock := newRunningServer(t)
-	t.Setenv("CLAUDE_RPC_TOKEN", testToken)
 
 	if err := runStop(sock); err != nil {
 		t.Fatalf("runStop: %v", err)
@@ -45,10 +44,18 @@ func TestRunBridgeDialError(t *testing.T) {
 	}
 }
 
-// runStop must print NOTHING, even when the daemon does reply. Measured at
-// 5db5e4a with a deliberately wrong CLAUDE_RPC_TOKEN, so the daemon answers
-// -32001 and a frame is genuinely in flight: the reference's stdout stays empty
-// where claustrum echoed the raw JSON-RPC frame.
+// runStop must print NOTHING, even when the daemon does reply: the reference's
+// stdout stays empty where claustrum echoed the raw JSON-RPC frame.
+//
+// CORRECTION, 2026-08-02: this comment used to say the in-flight frame was a
+// -32001 drawn from the reference by a deliberately wrong CLAUDE_RPC_TOKEN. It
+// cannot have been. Re-measured against 5db5e4a — a server.shutdown frame with
+// absent, wrong OR valid auth stops the reference silently every time, and only
+// a bad jsonrpc version draws a reply at all (-32600). The -32001 that was
+// observed came from CLAUSTRUM's daemon of the day, which still authenticated
+// shutdown. A replying daemon is therefore something this test has to
+// CONSTRUCT, which is what the fake listener below does — and is why the test is
+// still not vacuous now that neither daemon answers a real shutdown.
 //
 // This test previously asserted the OPPOSITE — that the reply IS echoed — which
 // was claustrum's behaviour, not the reference's. The audit that first checked
@@ -86,7 +93,6 @@ func TestRunStopDiscardsTheReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stdout = w
-	t.Setenv("CLAUDE_RPC_TOKEN", "tok")
 	got := make(chan string, 1)
 	go func() {
 		b, _ := io.ReadAll(r)

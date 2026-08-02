@@ -92,6 +92,10 @@ func okResult(id interface{}, result interface{}) response {
 }
 
 // methodShutdown is the one method exempt from the auth gate — see dispatch.
+//
+// The value is also ON THE WIRE: capabilityMethods embeds it, so it is emitted
+// as server.capabilities → result.methods[3]. Changing this string for an auth
+// reason would silently move that frame; it is not an internal identifier.
 const methodShutdown = "server.shutdown"
 
 // dispatch validates and routes one request. It returns the response to send, or
