@@ -84,8 +84,48 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # gotestsum wraps `go test -json` to emit JUnit XML, which is the only format
+      # Codecov's Test Analytics ingests — Go has no native JUnit writer. It is a CI
+      # TOOL, not a module dependency: `go install <pkg>@<version>` outside the module
+      # leaves go.mod and go.sum untouched (verified), so the repo's "no new
+      # dependencies" rule is not in play.
+      #
+      # Version-pinned rather than @latest, matching the repo's hash-pin policy for
+      # actions at the granularity Go modules offer.
+      #
+      # GOPATH/bin is added to PATH explicitly rather than assumed. setup-go does add
+      # it, but `shell: bash` + $GITHUB_PATH is the portable form and works on the
+      # windows leg without worrying about separators or the .exe suffix.
+      - name: Install gotestsum
+        shell: bash
+        run: |
+          go install gotest.tools/gotestsum@v1.13.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      # Same flags as before — `-race -count=1 ./...` — just run through gotestsum so
+      # a junit.xml falls out. gotestsum exits NON-ZERO when a test fails (verified:
+      # exit 1, with failures="1" in the XML), so this still gates the job exactly as
+      # `go test` did.
       - name: go test
-        run: go test -race -count=1 ./...
+        run: gotestsum --format pkgname --junitfile junit.xml -- -race -count=1 ./...
+      # Upload from EVERY leg, tagged with its OS as a Codecov flag, so Test Analytics
+      # (flaky/slow tests) breaks out per platform — which is the axis claustrum
+      # actually varies on. The matrix has no second dimension, so one cell per OS is
+      # already what this produces; no cell-selection filter is needed.
+      #
+      # No token: claustrum is a public repo, so codecov-action uploads tokenless (same
+      # rationale as the coverage upload below). Non-blocking — Codecov is never a
+      # required check and upload flakiness must not fail CI. `!cancelled()` so a
+      # FAILED test run still uploads: gotestsum writes junit.xml before exiting
+      # non-zero, and a failing suite is exactly when the analytics matter. Skips
+      # knope's release-bot PRs, where code never moves.
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && github.event.pull_request.user.login != 'claustrum-ci[bot]' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: junit.xml
+          flags: ${{ runner.os }}
+          report_type: test_results
+          fail_ci_if_error: false
 
   cross-build:
     name: cross-build (6 targets)
