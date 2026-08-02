@@ -91,12 +91,12 @@ func okResult(id interface{}, result interface{}) response {
 	return response{JSONRPC: "2.0", ID: id, Result: result}
 }
 
-// dispatch validates and routes one request. It returns the response to send, or
-// nil when the method must produce no reply (server.shutdown closes silently).
-// Stream-producing methods (process.*) use the conn to attach the client.
 // methodShutdown is the one method exempt from the auth gate — see dispatch.
 const methodShutdown = "server.shutdown"
 
+// dispatch validates and routes one request. It returns the response to send, or
+// nil when the method must produce no reply (server.shutdown closes silently).
+// Stream-producing methods (process.*) use the conn to attach the client.
 func (s *server) dispatch(c *conn, raw []byte) *response {
 	var req request
 	if err := json.Unmarshal(raw, &req); err != nil {
