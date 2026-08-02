@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // lockedWorktree builds a repo with a LOCKED worktree, the reachable case where
@@ -102,3 +103,50 @@ func TestWorktreeRemoveReportsWhenCleanupAlsoFails(t *testing.T) {
 // cannot run past the end of the JSON string value.
 var errRe = regexp.MustCompile(
 	`failed to remove worktree: [^"]*fatal:[^"]+; manual cleanup also failed: [^"]+`)
+
+// OUR gitTimeout must not authorise the destructive fallback.
+//
+// gitTimeout is a claustrum-only divergence: the reference runs git with no
+// deadline and simply blocks, so it never reaches a delete on this path. Before
+// the fix a wedged git produced exactly what the reference cannot — the
+// directory removed and a bare {"success":true} — which turns a safety measure
+// into data loss.
+//
+// The fixture is a stub `git` on PATH that sleeps, with gitTimeout shrunk. It is
+// unix-only because it relies on a shell stub and an executable bit.
+func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"),
+		[]byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := gitTimeout
+	gitTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { gitTimeout = old })
+
+	root := t.TempDir()
+	wt := filepath.Join(root, "wt")
+	if err := os.MkdirAll(wt, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(wt, "KEEP.txt")
+	if err := os.WriteFile(keep, []byte("must survive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": root, "worktreePath": wt}))
+
+	// The surviving file is the assertion that matters; the reply is secondary.
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("a timed-out git deleted the worktree directory: %v", err)
+	}
+	if !strings.Contains(raw, "timed out") {
+		t.Errorf("reply = %s, want it to report the timeout rather than claim success", raw)
+	}
+	if strings.Contains(raw, `"success":true`) {
+		t.Errorf("reply = %s, want success:false — nothing was removed", raw)
+	}
+}

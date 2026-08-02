@@ -508,6 +508,21 @@ the daemon then seeds the new worktree:
   and a later `git.worktree_create` at the same path fails with
   `already registered`. Measured identical on both binaries (2 entries still
   listed after a locked removal); the reference does not prune either.
+- **A relative `worktreePath` is resolved twice, against different roots.** git
+  runs with `-C <baseRepo>` and resolves it against the repo; the manual cleanup
+  resolves it against the **daemon's working directory**. So the fallback can
+  delete a directory git never looked at. Measured at `5db5e4a` with a locked
+  worktree at `<repo>/wt` and a decoy at `<daemon cwd>/wt`: **both binaries
+  deleted the decoy and left `<repo>/wt` in place.** Parity, and alarming — send
+  an absolute `worktreePath`. The reference client does: it tilde-expands every
+  remote path before sending.
+- **`gitTimeout` does NOT authorise the deletion — claustrum-only.** The 60 s cap
+  on git is a claustrum divergence (the reference runs git with no deadline and
+  blocks), so a timeout must not be read as "git refused". It answers
+  `{"success":false,"error":"git worktree remove timed out after 1m0s; nothing
+  was removed"}` and touches nothing. Before this was separated out, a wedged git
+  produced a deletion plus `{"success":true}` — an outcome the reference cannot
+  reach.
 - Naming a branch that does not exist still answers a bare `{"success":true}` —
   hence "lenient".
 

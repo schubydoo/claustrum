@@ -108,6 +108,23 @@ func gitStatusErr(dir string, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
+// gitDeadline is git() plus one extra bit: whether OUR deadline killed the
+// process, as opposed to git exiting non-zero on its own.
+//
+// It exists for exactly one caller. gitWorktreeRemove treats a failed git as
+// permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
+// divergence — the reference runs git with no deadline and simply blocks. So
+// without this distinction a wedged git turns a claustrum safety measure into a
+// recursive delete the reference would never perform. Measured before the fix,
+// with a stub git that sleeps and gitTimeout shrunk: the directory was deleted
+// and the reply was {"success":true}.
+func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	out, ok = gitContext(ctx, dir, args...)
+	return out, ok, ctx.Err() != nil
+}
+
 // isRepoGitDir is the repo test used by git.status and git.list_branches. The
 // reference gates those two on `rev-parse --git-dir`, which succeeds for a BARE
 // repo and from inside a `.git` directory, where `--is-inside-work-tree` (still
@@ -471,7 +488,18 @@ func gitWorktreeRemove(req *request) response {
 	// git() not a bespoke helper — it is already CombinedOutput, and the only
 	// differences were error-vs-ok and a trailing-newline trim that the
 	// strings.TrimSpace below absorbs.
-	if out, ok := git(repo, "worktree", "remove", "--force", p.WorktreePath); !ok {
+	out, ok, timedOut := gitDeadline(repo, "worktree", "remove", "--force", p.WorktreePath)
+	if timedOut {
+		// OUR deadline, not git's verdict. Deleting here would be a destructive
+		// act on a path the reference never reaches, so report instead — and say
+		// plainly that nothing was removed, because a bare {"success":true} would
+		// be a lie about a wedged removal.
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error:   fmt.Sprintf("git worktree remove timed out after %s; nothing was removed", gitTimeout),
+		})
+	}
+	if !ok {
 		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
 			return okResult(req.ID, worktreeRemoveResult{
 				Success: false,
