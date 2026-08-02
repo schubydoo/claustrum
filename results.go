@@ -111,10 +111,18 @@ type branchesResult struct {
 // ordered structs ARE the contract and a future input that populates both would
 // otherwise diverge silently.
 // worktreeRemoveResult is git.worktree_remove's reply. The reference declares an
-// `error` field alongside `success`; no probed input populates it — removing a
-// nonexistent worktree, or naming a branch that does not exist, still answers a
-// bare {"success":true} — but the field is part of the declared shape, so it is
-// carried here rather than reusing successResult.
+// `error` field alongside `success`, and the lenient cases still answer a bare
+// {"success":true} — removing a nonexistent worktree, or naming a branch that
+// does not exist.
+//
+// TWO inputs DO populate `error` now; this comment used to say none did:
+//
+//	git refused AND the daemon's own cleanup also failed  (matches the reference)
+//	claustrum's gitTimeout fired                          (claustrum-only)
+//
+// The second is a frame the reference cannot emit — it runs git with no deadline.
+// Both are confined to pathological paths; every reference-reachable reply is
+// still the bare {"success":true}, which is what the committed goldens pin.
 type worktreeRemoveResult struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`

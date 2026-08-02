@@ -53,11 +53,24 @@ func (p *gitParams) repoDir() string {
 // gitTimeout bounds every git invocation. The reference daemon runs git with no
 // deadline, so a wedged git — an index/config lock, a credential prompt, a stalled
 // network or filesystem, a hung checkout hook — hangs the request goroutine
-// forever. We cap it; a timed-out git is reported as failure (ok=false), the same
-// as any other non-zero git exit, so callers' result shapes are unchanged. Normal
-// git ops finish in well under this bound, so happy-path frames stay byte-identical
-// — an attack/pathological-path-only divergence from the reference. (var, not
-// const, so tests can shrink it.)
+// forever. We cap it. Normal git ops finish in well under this bound, so
+// happy-path frames stay byte-identical — an attack/pathological-path-only
+// divergence from the reference. (var, not const, so tests can shrink it.)
+//
+// ⚠️ A TIMEOUT IS NOT "the same as any other git failure". That is what this
+// comment used to say, and it was true only while failure meant NOTHING HAPPENED.
+// gitWorktreeRemove now treats a failed git as permission to delete the worktree
+// itself, so a caller that ACTS on failure must distinguish our deadline from
+// git's verdict — otherwise our own safety cap authorises a destructive act the
+// reference cannot perform, since it has no deadline and simply blocks.
+//
+//	read-only callers (isRepo, gitInfo, gitStatus, …)  ok=false is enough
+//	callers with a side effect (gitWorktreeRemove)     MUST use gitDeadline
+//
+// The reply shape is NOT unchanged either: the timeout branch answers
+// {"success":false,"error":"git worktree remove timed out after …"}, a frame the
+// reference never emits. That is confined to this pathological path; every
+// reference-reachable frame is still byte-identical.
 var gitTimeout = 60 * time.Second
 
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
@@ -491,12 +504,19 @@ func gitWorktreeRemove(req *request) response {
 	out, ok, timedOut := gitDeadline(repo, "worktree", "remove", "--force", p.WorktreePath)
 	if timedOut {
 		// OUR deadline, not git's verdict. Deleting here would be a destructive
-		// act on a path the reference never reaches, so report instead — and say
-		// plainly that nothing was removed, because a bare {"success":true} would
-		// be a lie about a wedged removal.
+		// act on a path the reference never reaches, so report instead — a bare
+		// {"success":true} would be a lie about a wedged removal.
+		// Word this as what the daemon KNOWS. It knows its own deadline fired and
+		// that it did not run its own cleanup; it does NOT know the directory
+		// state, because the git it SIGKILLed unlinks files as it goes and the
+		// slow-filesystem case this timeout exists for is exactly when it will
+		// have got part-way. "nothing was removed" asserted a filesystem fact
+		// that is not observable from here — raised on review.
 		return okResult(req.ID, worktreeRemoveResult{
 			Success: false,
-			Error:   fmt.Sprintf("git worktree remove timed out after %s; nothing was removed", gitTimeout),
+			Error: fmt.Sprintf(
+				"git worktree remove timed out after %s; no cleanup was attempted, "+
+					"and git may have partially removed the worktree", gitTimeout),
 		})
 	}
 	if !ok {

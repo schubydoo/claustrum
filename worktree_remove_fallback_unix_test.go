@@ -147,6 +147,15 @@ func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 		t.Errorf("reply = %s, want it to report the timeout rather than claim success", raw)
 	}
 	if strings.Contains(raw, `"success":true`) {
-		t.Errorf("reply = %s, want success:false — nothing was removed", raw)
+		t.Errorf("reply = %s, want success:false — the removal did not complete", raw)
+	}
+	// The reply must not assert a filesystem fact the daemon cannot observe: the
+	// SIGKILLed git unlinks as it goes, so "nothing was removed" would be a claim
+	// about a directory state nobody checked.
+	if strings.Contains(raw, "nothing was removed") {
+		t.Errorf("reply = %s, asserts a filesystem fact the daemon cannot know", raw)
+	}
+	if !strings.Contains(raw, "no cleanup was attempted") {
+		t.Errorf("reply = %s, want it to say what the daemon actually knows", raw)
 	}
 }

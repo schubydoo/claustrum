@@ -519,10 +519,12 @@ the daemon then seeds the new worktree:
 - **`gitTimeout` does NOT authorise the deletion — claustrum-only.** The 60 s cap
   on git is a claustrum divergence (the reference runs git with no deadline and
   blocks), so a timeout must not be read as "git refused". It answers
-  `{"success":false,"error":"git worktree remove timed out after 1m0s; nothing
-  was removed"}` and touches nothing. Before this was separated out, a wedged git
-  produced a deletion plus `{"success":true}` — an outcome the reference cannot
-  reach.
+  `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
+  was attempted, and git may have partially removed the worktree"}` and the daemon
+  itself removes nothing. The wording claims only what the daemon can observe: the
+  git it SIGKILLed unlinks files as it goes, so the directory state is not knowable
+  from here. Before this was separated out, a wedged git produced a deletion plus
+  `{"success":true}` — an outcome the reference cannot reach.
 - Naming a branch that does not exist still answers a bare `{"success":true}` —
   hence "lenient".
 

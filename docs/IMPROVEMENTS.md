@@ -42,10 +42,25 @@ error).
 git/ldd hung a request goroutine forever. Both are now wrapped in
 `exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, security
 fix S4 / HackerOne [#3793023](https://hackerone.com/reports/3793023)) and every
-`git` invocation (`gitTimeout` 60s — a timed-out git reports `ok=false`, the
-same as any other failure). Happy-path results/frames unchanged; an
+`git` invocation (`gitTimeout` 60s). Happy-path results/frames unchanged; an
 attack/pathological-path-only divergence from the reference (which has no
 deadline).
+
+⚠️ **A timeout is NOT interchangeable with an ordinary git failure**, though this
+entry used to say so. That held only while "failure" meant *nothing happened*.
+`git.worktree_remove` now treats a failed git as permission to delete the
+worktree directory itself, so a caller with a side effect must distinguish our
+deadline from git's verdict — `gitDeadline` returns that third bit — or our own
+safety cap authorises a destructive act the reference cannot perform. Read-only
+callers are unaffected and still just check `ok`.
+
+The timeout reply shape is also not unchanged: `git.worktree_remove` answers
+`{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
+was attempted, and git may have partially removed the worktree"}`, a frame the
+reference never emits. It is confined to this pathological path; every
+reference-reachable frame stays byte-identical. The wording deliberately claims
+only what the daemon can observe — the SIGKILLed git unlinks as it goes, so the
+directory state is not knowable from here.
 
 ### 6 · pre-commit + `gofmt`/`vet` hooks ✅ — impact M / cost L
 

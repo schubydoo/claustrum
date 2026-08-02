@@ -657,10 +657,12 @@ func TestSocketWorktreeRemoveBranch(t *testing.T) {
 	assertGolden(t, "socket_worktree_remove_branch.golden.json", encodeGolden(t, got))
 }
 
-// TestWorktreeRemoveResultShape pins the declared reply shape. No probed input
-// populates `error` — removing a nonexistent worktree still answers
-// {"success":true} — but the field is part of the reference's declared struct,
-// so its presence and order are asserted directly rather than left unpinned.
+// TestWorktreeRemoveResultShape pins the declared reply shape: field ORDER, and
+// that `error` is omitted when empty. The lenient cases still answer a bare
+// {"success":true}, which is what the committed goldens pin; `error` is populated
+// only on the two pathological paths (cleanup-also-failed, and claustrum's
+// gitTimeout). Asserted directly so the order cannot drift on a path no golden
+// covers.
 func TestWorktreeRemoveResultShape(t *testing.T) {
 	b, err := json.Marshal(worktreeRemoveResult{Success: true, Error: "e"})
 	if err != nil {
