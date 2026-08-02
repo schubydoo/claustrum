@@ -217,5 +217,22 @@
       "path": "<DIR>/wt3",
       "sourceBranch": "main"
     }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 20,
+    "result": {
+      "content": "hello in home\n",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 21,
+    "result": {
+      "success": false,
+      "fileCount": 0,
+      "error": "open archive: open <DIR>/nosuch.tar.gz: no such file or directory"
+    }
   }
 ]
