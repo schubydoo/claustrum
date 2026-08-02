@@ -130,9 +130,13 @@ func TestKillAndWaitClampReachesTheGrace(t *testing.T) {
 		t.Errorf("killAndWait waited %v for a clamped 250ms grace — the clamp is not "+
 			"reaching the wait, so timeoutMs is being honored verbatim", elapsed)
 	}
-	// And it must actually have waited the grace, not returned instantly: an
-	// instant return would mean the child died on SIGTERM and the fixture is
-	// wrong, which would make the assertion above pass for the wrong reason.
+	// Redundant with the died:false assertion above — kept so the timing
+	// invariant is stated explicitly rather than left implicit.
+	//
+	// It cannot fire on its own: with escalate:false, killAndWait returns
+	// died:false from exactly one place, after the grace elapses, and every
+	// faster return sets died:true. So a fixture that died on SIGTERM trips the
+	// died check first and this one only ever fires alongside it.
 	if elapsed < 200*time.Millisecond {
 		t.Errorf("killAndWait returned in %v, faster than the 250ms grace — the "+
 			"ignore-term child cannot have survived, so this proves nothing", elapsed)

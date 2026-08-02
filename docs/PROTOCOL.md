@@ -737,10 +737,8 @@ unknown id is not an error):
       ceiling**. A larger value is clamped to it, so `timeoutMs: 45000` against a
       signal-ignoring child answers after ~30 s, not 45 s. Measured against the
       reference at `5db5e4a`; the black-box bracket is (29500, 30500] and 30000 is
-      the only round value in it. (This previously read "claustrum caps an absurd
-      value at 600000 ms … the reference clamps too, above the ~90 s ceiling we
-      could observe" — the ceiling is 30 s, and 90 s is an ordinary client value,
-      not an absurd one.)
+      the only round value in it. The ceiling is not new in `5db5e4a`: `7c2f88d`,
+      the build that added the method, answers at ~30 s for the same input.
     - **`escalate`** (default `true`) decides what happens if the process is still
       alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
       and add `"escalated":true` to the reply. `false` → leave the process running

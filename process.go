@@ -654,8 +654,15 @@ func (m *procManager) kill(id, signal string) {
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
-// sends no timeoutMs (or a non-positive one). Probe-measured at 3000ms against the
-// reference. var so tests can shrink it.
+// sends no timeoutMs (or a non-positive one).
+//
+// Probe-measured at 3000ms against the reference — and re-measured 2026-08-02
+// against the PIN, `5db5e4a`, because the original run used `7c2f88d` and the
+// comment did not say so. Omitting timeoutMs entirely against a SIGTERM-ignoring
+// child answers at 3.4s, where an explicit timeoutMs:1000 answers at 1.4s; the
+// same ~0.4s harness overhead in both rows is what makes the pair readable, and
+// the 1000ms row is the control proving the harness can separate two graces at
+// all. var so tests can shrink it.
 var defaultKillWaitMs = 3000
 
 // maxKillWaitMs is the ceiling killAndWait clamps a caller's timeoutMs to. This
@@ -711,11 +718,12 @@ var maxKillWaitMs = 30000 // 30s
 // necessarily larger than it, as this said until 2026-08-02: a caller may send
 // any timeoutMs up to the 30s ceiling, so "larger than" was false for anything
 // over 5s and was false before that change too. The two never interact: the reap
-// bound runs strictly after the grace, sequentially. It is small because SIGKILL
-// is uncatchable and the reap is
-// near-instant, so this only guards against a pathological unreapable child (e.g.
-// stuck in uninterruptible sleep) wedging the dispatch goroutine. var so tests can
-// shrink it.
+// bound runs strictly after the grace, sequentially.
+//
+// It is small because SIGKILL is uncatchable and the reap is near-instant, so it
+// only guards against a pathological unreapable child (e.g. stuck in
+// uninterruptible sleep) wedging the dispatch goroutine. var so tests can shrink
+// it.
 var killReapGrace = 5 * time.Second
 
 // exitDrainGrace bounds how long the exit frame waits for stdout/stderr to reach
