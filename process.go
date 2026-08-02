@@ -295,6 +295,11 @@ func (p *managedProc) emit(f streamFrame) {
 	// json.Marshal of a streamFrame cannot realistically fail (strings + ints);
 	// if it somehow does, every subscriber would have failed the same way, so
 	// mirror the old per-conn behavior: log + detach each.
+	//
+	// json.Marshal, not an Encoder: this is the encode that carries EVERY live
+	// stream frame, and its HTML escaping is inherited wire behaviour — see
+	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on
+	// conn.writeJSON.
 	b, merr := json.Marshal(f)
 	if merr == nil {
 		b = append(b, '\n')
