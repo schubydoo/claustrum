@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -119,9 +120,6 @@ func TestRunStopUnlinksForeignListenerPathAndLeavesItAlive(t *testing.T) {
 
 	stopLeavesNoSocket(t, sock)
 
-	// The listener is still bound: it accepted runStop's connection, and a fresh
-	// Listen on the same path now succeeds precisely BECAUSE the path was
-	// unlinked rather than because the old listener died.
 	select {
 	case c := <-accepted:
 		// Close it here rather than leaving it to the cleanup: the cleanup's
@@ -131,9 +129,35 @@ func TestRunStopUnlinksForeignListenerPathAndLeavesItAlive(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the foreign listener never accepted -stop's connection")
 	}
-	ln2, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("re-Listen on the unlinked path: %v, want success", err)
+
+	// Now prove the listener SURVIVED, which is the over-correction guard.
+	//
+	// Neither obvious check does that. The accept above happened BEFORE the
+	// unlink, so it says nothing about the listener's state after it; and a fresh
+	// net.Listen on the same path succeeds purely because the path is free —
+	// equally true if runStop had torn the old listener down.
+	//
+	// The discriminator is what Accept does on a CLOSED listener: it returns
+	// net.ErrClosed immediately, where a live one blocks with nothing dialing it.
+	// So a short deadline separates the two — a timeout means alive.
+	if ul, ok := ln.(*net.UnixListener); ok {
+		if err := ul.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+			t.Fatalf("SetDeadline: %v", err)
+		}
+		_, err := ul.Accept()
+		if errors.Is(err, net.ErrClosed) {
+			t.Error("the foreign listener was closed by -stop; it must only lose its " +
+				"path, keeping its bound descriptor")
+		} else if !isTimeout(err) {
+			t.Errorf("Accept after the unlink = %v, want a timeout (proving the "+
+				"listener is still bound and waiting)", err)
+		}
 	}
-	_ = ln2.Close()
+}
+
+// isTimeout reports whether err is a deadline expiry, which is the "listener is
+// alive and idle" signal above.
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }

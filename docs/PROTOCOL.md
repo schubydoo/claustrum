@@ -1012,7 +1012,11 @@ authenticate that method (see [Authentication](#authentication)).
   afterwards — but the path it was reachable through is gone, so a new client
   dialing by path cannot reach it. What becomes of its already-open connections
   was not measured. Making the unlink conditional would be a divergence, so it is
-  recorded as a candidate rather than taken.
+  recorded as a candidate rather than taken — see
+  [IMPROVEMENTS.md → Candidates identified but NOT taken](IMPROVEMENTS.md#candidates-identified-but-not-taken-cli-mode-parity-2026-08-02).
+  Note also that all three measured arms used socket-shaped paths: `os.Remove`
+  removes a regular file or an empty directory at the `-socket` path just the
+  same, and neither shape was put in front of the reference.
 
 ### -version
 

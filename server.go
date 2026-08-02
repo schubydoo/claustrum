@@ -204,7 +204,9 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// said exactly what was wrong. Matching costs both of those.
 	//
 	// This is parity on purpose. Failing fast in the parent is recorded as a
-	// candidate divergence rather than kept — see the improvements backlog. Note
+	// candidate divergence rather than kept — recorded in docs/IMPROVEMENTS.md
+	// under "Candidates identified but NOT taken", which is a record, not a
+	// decision. Note
 	// the zero-byte -token-file case ALREADY behaved this way (the child rejects
 	// an empty token and the parent times out), so this only aligns the one path
 	// that short-circuited early.

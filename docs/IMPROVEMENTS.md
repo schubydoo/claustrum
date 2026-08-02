@@ -503,6 +503,28 @@ consider them now that the harness proves parity, and document each as an
   pipe end-to-end (authed round-trip + wrong-token-denied) on the `windows-latest`
   CI leg.
 
+### Candidates identified but NOT taken (CLI-mode parity, 2026-08-02)
+
+Both are places where claustrum was friendlier than the reference and matching it
+cost something real. They are recorded so the code can point somewhere durable
+rather than at "the backlog" — **no decision is implied**, and nothing here is
+shipped or scheduled.
+
+- **Conditional `-stop` socket unlink.** `-stop` removes the socket path on every
+  exit, including when no daemon answered — matching the reference, measured on
+  three arms. That means it removes a path it did not create and cannot identify
+  the owner of; a live foreign listener keeps its descriptor but loses its name.
+  `os.Remove` does not distinguish shapes either, so a regular file or an empty
+  directory at the `-socket` path goes the same way, and only socket-shaped paths
+  were put in front of the reference. A `stat`-first variant that removes only a
+  socket would be strictly safer **and a divergence** — the reference is
+  unconditional. Deciding that is a maintainer call, not a code cleanup.
+- **Fail fast on a missing `-serve` token source.** The check now runs in the
+  detached child, so the launcher reports its ~10 s accept timeout and the real
+  reason reaches only the child's own log — reference parity, measured at 10.02 s
+  against 10.07 s. Keeping the old parent-side check answered in 0.03 s and named
+  the actual problem. That is better operator experience and a divergence.
+
 ## Explicitly out of scope (would break compatibility)
 
 - Changing method names, params, result field order, error codes, or the

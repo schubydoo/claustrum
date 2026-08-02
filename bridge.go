@@ -54,8 +54,17 @@ func runStop(socket string) error {
 	// torn down — that arm checks it is still alive afterwards — but the path it
 	// was reachable through is gone, so a new client dialing by path cannot
 	// reach it. What becomes of its already-open connections was not measured.
-	// A conditional unlink is recorded as a candidate divergence rather than
-	// taken here — see the improvements backlog.
+	//
+	// Note the scope of what WAS measured: all three arms used socket-shaped
+	// paths. os.Remove does not care — a regular file or an empty directory at
+	// the -socket path is removed just the same, and neither shape was put in
+	// front of the reference. Since -socket is operator-supplied rather than
+	// client-supplied, that is a footgun rather than an attack surface, but the
+	// comment should not imply the measurement covered it.
+	//
+	// Making the unlink conditional (stat first, remove only a socket) would be a
+	// DIVERGENCE, so it is not taken here. It is recorded as a candidate in
+	// docs/IMPROVEMENTS.md, not decided.
 	defer func() { _ = os.Remove(socket) }()
 	nc, err := net.Dial("unix", socket)
 	if err != nil {

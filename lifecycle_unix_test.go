@@ -430,15 +430,11 @@ func TestMainServeDispatch(t *testing.T) {
 // below is the arm that discriminates.
 func TestRunServeChildRejectsMissingTokenSource(t *testing.T) {
 	stubOsExit(t)
-	// Stub the extraction seam so runServe does not fork a real login shell that
-	// outlives the test. Inlined rather than shared: #212 factors this into a
-	// stubLoginPATHExtractor helper, and this branch is independent of it. The
-	// restore awaits the goroutine, because startLoginPATH READS the seam inside
-	// it and restoring underneath is a data race.
-	oldExtractor := loginPATHExtractor
-	loginPATHExtractor = func() {}
-	t.Cleanup(func() { awaitLoginPATH(); loginPATHExtractor = oldExtractor })
 	t.Setenv(daemonChildEnv, "1")
+	// No login-PATH stub here on purpose. An earlier version installed one, but
+	// the check under test exits before startLoginPATH is ever reached, so the
+	// stub protected nothing and implied this path forks a login shell when it
+	// does not. The sibling arms that DO reach it still stub it.
 
 	dir := shortTempDir(t)
 	code, exited := catchExit(func() {
