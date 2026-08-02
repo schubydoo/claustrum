@@ -143,7 +143,8 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"files.extract_tar\",
 ## Shut it down
 
 ```sh
-CLAUDE_RPC_TOKEN="$TOK" claustrum -stop -socket "$D/rpc.sock"
+# No token: server.shutdown is the one unauthenticated method.
+claustrum -stop -socket "$D/rpc.sock"
 rm -rf "$D"
 ```
 

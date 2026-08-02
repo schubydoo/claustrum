@@ -3,7 +3,7 @@ package main
 import "runtime"
 
 var capabilityMethods = []string{
-	"server.ping", "server.version", "server.capabilities", "server.shutdown",
+	"server.ping", "server.version", "server.capabilities", methodShutdown,
 	"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 	"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 	"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
@@ -22,7 +22,7 @@ func (s *server) handleServer(c *conn, req *request) *response {
 		return ptr(okResult(req.ID, versionResult{Version: Version, Platform: runtime.GOOS, Arch: runtime.GOARCH}))
 	case "server.capabilities":
 		return ptr(okResult(req.ID, capabilitiesResult{Version: Version, Methods: capabilityMethods, Features: capabilityFeatures}))
-	case "server.shutdown":
+	case methodShutdown:
 		// No response is sent: the daemon stops and the connection closes.
 		s.signalShutdown()
 		return nil

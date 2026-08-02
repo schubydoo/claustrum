@@ -47,7 +47,8 @@ unchanged whether a request arrives over the socket or the pipe.
   stale file and dial a pipe that no longer exists.
 - **Same auth.** Requests over the pipe carry the same in-band `"auth":"<token>"`;
   the `daemon.token` handshake is unchanged, so a client discovers the token and
-  the pipe name the same way.
+  the pipe name the same way. The `server.shutdown` exemption below applies over
+  the pipe too — it is the same dispatch.
 - **Owner-only + local.** The pipe is local by two independent mechanisms: an
   owner-only DACL (SDDL `D:P(A;;GA;;;<current-user-SID>)` — GENERIC_ALL to the
   daemon user's SID and to no world principal), the named-pipe analogue of the
@@ -58,16 +59,28 @@ unchanged whether a request arrives over the socket or the pipe.
 
 ## Authentication
 
-Every request carries a top-level `"auth":"<token>"`. The server's expected token
+Every request carries a top-level `"auth":"<token>"` — **except
+`server.shutdown`, which is not authenticated at all.** A shutdown frame whose
+`auth` member is absent, empty, wrong, or valid all stop the daemon, and
+`-stop` sends no `auth` member. This matches the reference and is load-bearing:
+the Desktop client tears the daemon down with `server --stop --socket <sock>`
+from a bare SSH command line, with no `CLAUDE_RPC_TOKEN` in its environment.
+The exemption covers auth ONLY — a shutdown frame with a bad or absent
+`jsonrpc` version is still rejected `-32600` and the daemon stays up. Every
+other method rejects an unauthenticated request with `-32001`. The server's expected token
 comes from `-token-file` (read once at startup, then **unlinked**) or `-token-fd`
 (read from an open descriptor, forwarded to the daemon over a pipe — no temp
-file); for the `-bridge`/`-stop` clients it comes from the `CLAUDE_RPC_TOKEN`
-environment variable. A bad or missing token →
+file). A bad or missing token →
 `-32001 Unauthorized: invalid or missing auth token` (also logged
 `[Server] Unauthorized request: method=…, id=…`).
 
-The `-bridge` relay does **not** inject auth — whatever speaks through it must
-include `"auth"` itself.
+**No claustrum mode reads `CLAUDE_RPC_TOKEN`** — not `-serve`, not `-bridge`, not
+`-stop`. `-bridge` is a dumb relay and does **not** inject auth: whatever speaks
+through it must include `"auth"` itself, obtaining the token from the
+`daemon.token` handshake below or from whoever launched it. `-stop` needs no
+credential at all. claustrum's only remaining dealings with the variable are to
+*remove* it — unset before daemonizing, and stripped from every spawned child —
+so a token never reaches a child through the environment.
 
 ### Token persistence (`daemon.token`)
 
@@ -189,6 +202,11 @@ A request is checked in the order **parse → auth → version → method → pa
   (no `auth` *and* a missing/wrong `jsonrpc`) reports `-32001 Unauthorized`,
   not the version error.
 - Only once auth passes is `jsonrpc == "2.0"` enforced.
+- **`server.shutdown` is the exception**, because auth is skipped for it
+  entirely (see [Authentication](#authentication)). A shutdown frame missing
+  *both* `auth` and `jsonrpc` therefore surfaces `-32600 Invalid JSON-RPC
+  version`, not `-32001` — the version gate still applies to it, and the daemon
+  stays up.
 
 ### Params presence and typing
 
@@ -333,16 +351,19 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 > client may rely on. The sole entry is `process.stdin.offset` (the resumable/
 > idempotent stdin contract — see `process.stdin` below). Always present.
 
-> **Divergence — auth on `server.shutdown`.** claustrum validates the auth token
-> for *every* method (§Auth), so an unauthenticated or wrong-token
-> `server.shutdown` is rejected with `-32001 Unauthorized` and the daemon stays
-> up. The **reference does not authenticate `server.shutdown`** — it stops on the
-> request regardless of the token (no reply either way). Honest callers are
-> byte-identical: `-stop` and the real client always send a valid token
-> (`bridge.go`), and a valid-auth shutdown matches exactly (no response, the
-> connection closes). Only an adversarial wrong/missing-auth shutdown differs,
-> and there claustrum is the safer of the two (a bare socket peer can't kill it).
-> Surfaced by differential fuzzing; intentional hardening.
+> **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
+> A shutdown frame with an absent, empty, wrong or valid `auth` member all stop
+> the daemon, and `-stop` sends no `auth` member at all. This matches the
+> reference.
+>
+> This block previously documented the opposite as an intentional hardening:
+> claustrum used to reject an unauthenticated shutdown with `-32001` and stay up.
+> That was removed because it is not a free divergence — the Desktop client tears
+> the daemon down with `server --stop --socket <sock>` from a bare SSH command
+> line, with **no `CLAUDE_RPC_TOKEN` in its environment**, so a daemon that
+> demands a token here cannot be stopped by its real client. The old note argued
+> "honest callers are byte-identical" from `bridge.go` alone, without checking
+> what the actual client sends.
 
 ### files.* (param: `path`)
 
@@ -829,8 +850,9 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 
 - Missing both flags →
   `claustrum: daemonized child requires --token-file or --token-fd`, exit `1`.
-- `CLAUDE_RPC_TOKEN` is **not** accepted for `-serve` (it is only for the
-  `-bridge`/`-stop` clients) — the daemon never starts unauthenticated.
+- `CLAUDE_RPC_TOKEN` is **not** accepted for `-serve` — nor read by any other
+  mode; no claustrum code path reads it at all. The daemon never starts
+  unauthenticated.
 - The token is read as a **line**: one trailing `\n`/`\r\n` is stripped; spaces
   and other surrounding whitespace are preserved verbatim (a token file ending
   in a newline still authenticates).
@@ -942,13 +964,23 @@ whatever speaks through it supplies `"auth"` itself.
 ### -stop — ask a running daemon to shut down
 
 ```text
-claustrum -stop -socket <p>          # auth read from CLAUDE_RPC_TOKEN
+claustrum -stop -socket <p>          # no token needed, and none is read
 ```
 
-Sends `server.shutdown`.
+Sends `server.shutdown`, with **no `auth` member** — the daemon does not
+authenticate that method (see [Authentication](#authentication)).
+
+> **Upgrading a live daemon.** A daemon still running from a build that predates
+> this change *does* require auth on `server.shutdown`, so it answers `-32001`
+> and keeps running. `-stop` discards the reply and exits `0` either way, so the
+> caller sees success while the old daemon survives — and a new `-serve` then
+> takes the socket beside it. Stop the old daemon before upgrading, or kill it by
+> PID once. Self-correcting, but silent the first time.
 
 - **Best-effort**: a missing or unreachable daemon is a silent no-op — exit
-  `0`, no output. Only a live daemon's response (if any) is echoed to stdout.
+  `0`, no output. Nothing is ever echoed to stdout: any reply is read and
+  discarded, matching the reference. Against a current daemon there is no reply
+  to begin with, since `server.shutdown` answers nothing and closes.
 
 ### -version
 

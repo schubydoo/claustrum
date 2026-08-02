@@ -91,6 +91,13 @@ func okResult(id interface{}, result interface{}) response {
 	return response{JSONRPC: "2.0", ID: id, Result: result}
 }
 
+// methodShutdown is the one method exempt from the auth gate — see dispatch.
+//
+// The value is also ON THE WIRE: capabilityMethods embeds it, so it is emitted
+// as server.capabilities → result.methods[3]. Changing this string for an auth
+// reason would silently move that frame; it is not an internal identifier.
+const methodShutdown = "server.shutdown"
+
 // dispatch validates and routes one request. It returns the response to send, or
 // nil when the method must produce no reply (server.shutdown closes silently).
 // Stream-producing methods (process.*) use the conn to attach the client.
@@ -109,7 +116,27 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	// oracle to the token's own user. The empty-auth short-circuit only fast-rejects
 	// an obvious miss and reveals nothing about the token; ConstantTimeCompare
 	// returns 0 on a length mismatch, so a wrong-length token is still rejected.
-	if req.Auth == "" || subtle.ConstantTimeCompare([]byte(req.Auth), []byte(s.token)) != 1 {
+	//
+	// server.shutdown is the ONE exemption: the reference does not authenticate
+	// it. Measured at 5db5e4a — a shutdown frame whose auth member is absent,
+	// wrong, or arbitrary all stop the daemon, while every OTHER method rejects an
+	// unauthenticated request with -32001 on both daemons (all 19 swept, only this
+	// one differed).
+	//
+	// This is deliberately NOT a hardening claustrum keeps. The Desktop client
+	// tears the daemon down by invoking `server --stop --socket <sock>` with no
+	// CLAUDE_RPC_TOKEN in its environment, so a claustrum that demands auth
+	// here cannot be stopped by it at all — and being swappable for the
+	// reference under Desktop is the whole point of the version-spoofing conf.
+	// clauster is unaffected in either direction: it shuts down over its own
+	// authenticated RPC connection, and an auth member that IS present is simply
+	// ignored here rather than rejected.
+	//
+	// The exemption covers auth ONLY. The version check below still applies:
+	// measured, a shutdown frame with jsonrpc "1.0" or absent yields -32600 and
+	// the reference stays up.
+	if req.Method != methodShutdown &&
+		(req.Auth == "" || subtle.ConstantTimeCompare([]byte(req.Auth), []byte(s.token)) != 1) {
 		logWarnf("[Server] Unauthorized request: method=%s, id=%v", req.Method, idForLog(req.ID))
 		return ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
