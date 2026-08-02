@@ -527,6 +527,17 @@ Errors:
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`
 
 - Non-repo → `{"isRepo":false,"branches":[]}`.
+- **stdout only**, like `git.status` and unlike `git.worktree_create`. A repo
+  with a broken ref makes `for-each-ref` warn on stderr while still exiting `0`;
+  that warning must not become a branch name.
+- A `for-each-ref` that **fails** (e.g. a corrupt `packed-refs`, exit 128) is
+  reported as `-32603` carrying the Go error string — `exit status 128`, not
+  git's `fatal: …` text. Same rule as `git.status`.
+- **Claustrum-only frame.** If claustrum's 60 s `gitTimeout` kills git instead,
+  the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
+  SIGKILLed process's exit error over the context error. The reference runs git
+  with no deadline and simply blocks, so it never emits this. `git.status` has
+  the identical frame for the identical reason. See IMPROVEMENTS §5.
 
 #### git.worktree_create
 
@@ -848,6 +859,20 @@ claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 (Unix), then runs the RPC server. On success it prints
 `Claustrum remote server listening on <socket>` to stdout.
+
+**Login-shell PATH extraction** (Unix) runs `$SHELL -l -i -c …` when `$SHELL` is
+an executable file, else the first usable of `/bin/zsh`, `/bin/bash`, `/bin/sh`
+— **zsh first**, matching the reference. The resolved PATH goes to spawned
+children only, never into the daemon's own environment. Two observable rules:
+
+- Extraction is capped at **4 s**, and a timeout **discards** whatever the shell
+  printed — even a complete, valid PATH. The daemon logs one line naming the
+  shell and children fall back to the inherited PATH.
+- The value reaches `process.spawn` children as their `PATH`. It does **not**
+  affect how the daemon resolves the `command` you send: that is looked up
+  against the daemon's own PATH, so the extracted value can never turn a spawn
+  into `executable file not found`. It is visible only to a child that resolves
+  binaries itself (`sh -c …`).
 
 **Token source** — required, and checked *before* the socket:
 

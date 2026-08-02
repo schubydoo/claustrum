@@ -69,8 +69,13 @@ func (p *gitParams) repoDir() string {
 //
 // The reply shape is NOT unchanged either: the timeout branch answers
 // {"success":false,"error":"git worktree remove timed out after …"}, a frame the
-// reference never emits. That is confined to this pathological path; every
-// reference-reachable frame is still byte-identical.
+// reference never emits. That is confined to this pathological path — no OTHER
+// frame moves because of the deadline.
+//
+// CORRECTION, 2026-08-02: that last clause used to read "every reference-reachable
+// frame is still byte-identical", which is a claim about the whole wire and was
+// false when written — git.list_branches was folding git's stderr into branches[]
+// at the time. Scope a claim to the thing it was measured on.
 //
 // ⚠️ THE BOUND IS SOFTER THAN IT LOOKS. CombinedOutput waits for the output pipe
 // to close, not merely for git to exit, so a git that spawns a child which
@@ -83,7 +88,7 @@ var gitTimeout = 60 * time.Second
 
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
 //
-// Combined, deliberately — do NOT "fix" this to Output() to match gitStatusErr
+// Combined, deliberately — do NOT "fix" this to Output() to match gitStdoutErr
 // below. git.worktree_create puts this string ON THE WIRE on failure
 // ("git worktree add failed: " + out), and `git worktree add` writes both its
 // progress and its fatal to stderr while leaving stdout empty. Measured against
@@ -92,10 +97,36 @@ var gitTimeout = 60 * time.Second
 //	reference : "git worktree add failed: Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"
 //	stdout-only: "git worktree add failed: "
 //
-// The stderr-in-porcelain bug that gitStatusErr fixes does not apply here: no
-// caller of git() parses this string as a line-oriented list, and the two
-// callers that compare it (isRepo, isRepoGitDir) test the exit status or an
-// exact "true", both of which a warning-prefixed string already fails safely.
+// This helper's remaining callers fall into four groups, and only the first two
+// are safe by argument:
+//
+//	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
+//	                     both of which a warning-prefixed string fails safely;
+//	                     show-ref --verify --quiet and branch -D, which discard
+//	                     their output entirely
+//	wants the stderr     gitWorktreeCreate — the failure text lives there
+//	echoes it verbatim   --show-toplevel → root/repo, symbolic-ref --short HEAD →
+//	                     branch (rev-parse --short HEAD supplies only the
+//	                     detached-HEAD sha fallback), remote get-url → repoSlug,
+//	                     symbolic-ref → defaultBranch
+//	echoed AND used      rev-parse --abbrev-ref HEAD → sourceBranch, which is both
+//	  as argv            put on the wire AND passed to `git worktree add` as the
+//	                     commit-ish. This is the most exposed of the set and had
+//	                     no row at all: a folded warning here would not merely be
+//	                     echoed, it would make the add fail and surface as a
+//	                     wire-visible worktree_add_failed.
+//
+// The last two groups put combined output on the wire unsplit. No fixture has been
+// found that makes those commands write to stderr while exiting 0, so the
+// exposure is theoretical and this change does not touch it — but it is NOT
+// covered by the argument above, and saying otherwise would repeat the mistake
+// this block already records.
+//
+// CORRECTION, 2026-08-02: this used to say "no caller of git() parses this string
+// as a line-oriented list". Two did — gitListBranches and copyWorktreeIncludes —
+// and the first put the result on the wire. They now use gitStdoutErr. Keep the
+// split: choosing between the helpers is a per-caller decision about whether
+// stderr is data or noise, not an inconsistency to tidy away.
 func git(dir string, args ...string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
@@ -110,7 +141,7 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
-// gitStatusErr runs git and returns the exec error itself, not just an ok flag.
+// gitStdoutErr runs git and returns the exec error itself, not just an ok flag.
 // The reference reports a failed `git status --porcelain` as the bare Go error
 // string ("exit status 128"), NOT git's stderr — measured against 5db5e4a.
 //
@@ -121,7 +152,7 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 // "clean":true} while claustrum reported the warning text as a change. The error
 // path is unaffected: the caller reports err.Error(), which for an ExitError is
 // "exit status N" and never includes stderr.
-func gitStatusErr(dir string, args ...string) (string, error) {
+func gitStdoutErr(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
 	full := append([]string{"-C", dir}, args...)
@@ -345,7 +376,7 @@ func gitStatus(req *request) response {
 	// A bare repo and a `.git` directory pass the gate above but have no work
 	// tree, so `git status` exits 128. The reference propagates that as -32603
 	// carrying the Go error string, not git's "fatal: …" output.
-	out, err := gitStatusErr(p.Path, "status", "--porcelain")
+	out, err := gitStdoutErr(p.Path, "status", "--porcelain")
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
@@ -366,7 +397,7 @@ func gitStatus(req *request) response {
 		// made staged ("M  f") and unstaged (" M f") differ only in space count.
 		//
 		// Kept as a single guarded append rather than an `if ... { continue }`:
-		// gitStatusErr already strips the trailing newline and an empty `out`
+		// gitStdoutErr already strips the trailing newline and an empty `out`
 		// returns earlier, so no blank line reaches this loop in practice, and a
 		// bare `continue` is then a statement coverage can never reach. The blank
 		// skip itself stays as cheap insurance against a porcelain blob that ends
@@ -390,7 +421,22 @@ func gitListBranches(req *request) response {
 		// isRepoGitDir).
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
-	out, _ := git(p.Path, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	// stdout only, AND propagate a failure — the same two rules git.status
+	// follows, for the same reason. Two distinct frames were wrong here:
+	//
+	//	broken ref, for-each-ref exits 0   ref ["main","real"]
+	//	                                   was ["main","real","warning: ignoring broken ref …"]
+	//	corrupt packed-refs, exits 128     ref -32603 "exit status 128"
+	//	                                   was ["fatal: unexpected line in .git/packed-refs: …"]
+	//
+	// Both measured 2026-08-02 against 5db5e4a, with a clean repo as the control.
+	// Reading stdout alone fixes only the first: it turns the second into an empty
+	// branches[], which is a different wrong answer. Discarding the error was the
+	// other half of the bug.
+	out, err := gitStdoutErr(p.Path, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	if err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
+	}
 	branches := []string{}
 	for _, line := range strings.Split(out, "\n") {
 		if t := strings.TrimSpace(line); t != "" {
