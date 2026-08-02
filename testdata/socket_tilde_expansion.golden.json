@@ -234,14 +234,5 @@
       "fileCount": 0,
       "error": "open archive: open <DIR>/nosuch.tar.gz: no such file or directory"
     }
-  },
-  {
-    "jsonrpc": "2.0",
-    "id": 22,
-    "result": {
-      "success": false,
-      "error": "git worktree add failed: Preparing worktree (new branch 'wt4')\nfatal: '<DIR>/wt2' already exists",
-      "errorCode": "worktree_add_failed"
-    }
   }
 ]
