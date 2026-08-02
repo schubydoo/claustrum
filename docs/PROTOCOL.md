@@ -484,14 +484,32 @@ the daemon then seeds the new worktree:
 
 `{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)
 
-- Runs `git worktree remove --force`. When git **refuses** — a LOCKED worktree
-  is the reachable case, where it exits 128 and leaves the directory — the
-  daemon removes the directory itself and still answers `{"success":true}`.
-- Only when that manual cleanup **also** fails does the reply carry the declared
-  `error` field:
+- Runs `git worktree remove --force`. **Whenever git exits non-zero — for any
+  reason — the daemon then removes `worktreePath` itself, recursively, and still
+  answers `{"success":true}`.** Only when that manual cleanup *also* fails does
+  the reply carry the declared `error` field:
   `{"success":false,"error":"failed to remove worktree: <git output>; manual cleanup also failed: <err>"}`.
-- Removing a path that is not a worktree, or naming a branch that does not
-  exist, still answers a bare `{"success":true}` — hence "lenient".
+- ⚠️ **"For any reason" is literal, and it is measured.** The deletion is not
+  limited to the locked-worktree case that motivated it. Probed at `5db5e4a`,
+  checking the directory afterwards rather than the reply:
+
+  | `worktreePath` | why git fails | directory afterwards |
+  |---|---|---|
+  | a locked worktree | it is locked | **deleted** |
+  | an ordinary directory, never a worktree | `not a working tree` | **deleted** |
+  | any path, with a `baseRepo` that is not a repo | `not a git repository` | **deleted** |
+
+  So this method is a recursive delete of the caller-supplied `worktreePath`
+  whenever git is unhappy. That is **reference behavior**, matched deliberately —
+  not a claustrum addition. Callers should treat `worktreePath` as a path they are
+  asking to have removed, not as a filter.
+- The worktree stays **registered**. Deleting the directory does not remove
+  `$GIT_DIR/worktrees/<name>`, so `git worktree list` still shows it afterwards
+  and a later `git.worktree_create` at the same path fails with
+  `already registered`. Measured identical on both binaries (2 entries still
+  listed after a locked removal); the reference does not prune either.
+- Naming a branch that does not exist still answers a bare `{"success":true}` —
+  hence "lenient".
 
 ### process.* (the agent/MCP-hosting core)
 

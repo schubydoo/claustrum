@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -86,12 +87,18 @@ func TestWorktreeRemoveReportsWhenCleanupAlsoFails(t *testing.T) {
 	if !strings.Contains(raw, `"success":false`) {
 		t.Errorf("reply = %s, want success:false", raw)
 	}
-	for _, want := range []string{
-		"failed to remove worktree: ",
-		"; manual cleanup also failed: ",
-	} {
-		if !strings.Contains(raw, want) {
-			t.Errorf("reply = %s, want it to contain %q", raw, want)
-		}
+	// Assert git's OWN message lands between the two halves, not just that both
+	// halves are present. They are adjacent in the format string, so a regression
+	// that fed %s an empty string — dropping git's output entirely, which is the
+	// whole reason this reads combined output — would leave two separate
+	// Contains checks green. Raised on review of #204.
+	if !errRe.MatchString(raw) {
+		t.Errorf("reply = %s, want git's own message between the two halves (%s)", raw, errRe)
 	}
 }
+
+// errRe pins the shape "failed to remove worktree: <non-empty git output>;
+// manual cleanup also failed: <non-empty err>". [^"]+ rather than .+ so it
+// cannot run past the end of the JSON string value.
+var errRe = regexp.MustCompile(
+	`failed to remove worktree: [^"]*fatal:[^"]+; manual cleanup also failed: [^"]+`)

@@ -108,17 +108,6 @@ func gitStatusErr(dir string, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
-// gitCombined runs git and returns its stdout+stderr together with the exec
-// error. worktree_remove needs git's stderr verbatim: the reference quotes it
-// inside "failed to remove worktree: %s; manual cleanup also failed: %v".
-func gitCombined(dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
-	defer cancel()
-	full := append([]string{"-C", dir}, args...)
-	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
-	return string(out), err
-}
-
 // isRepoGitDir is the repo test used by git.status and git.list_branches. The
 // reference gates those two on `rev-parse --git-dir`, which succeeds for a BARE
 // repo and from inside a `.git` directory, where `--is-inside-work-tree` (still
@@ -454,18 +443,35 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
-	// git refuses some removals outright — a LOCKED worktree is the reachable
-	// case: `git worktree remove --force` exits 128 and leaves the directory.
-	// The reference then removes the directory itself, and only reports failure
-	// when that manual cleanup ALSO fails.
+	// When `git worktree remove --force` fails for ANY reason, the reference
+	// removes worktreePath itself and still answers {"success":true}; it reports
+	// failure only when that manual cleanup ALSO fails.
 	//
-	// Measured at 5db5e4a with a locked worktree: the reference answered
-	// {"success":true} with the directory GONE, while claustrum answered
-	// {"success":true} with the directory still there — the same reply for
-	// opposite outcomes. With the parent made unwritable so cleanup fails too,
-	// the reference answered {"success":false,"error":"failed to remove
-	// worktree: <git stderr>; manual cleanup also failed: <err>"}.
-	if out, err := gitCombined(repo, "worktree", "remove", "--force", p.WorktreePath); err != nil {
+	// ⚠️ "any reason" is literal, and it is measured — not inferred from the one
+	// fixture that motivated this. Reviewed on PR #204, which pointed out that the
+	// original measurement covered only a locked worktree while the code deletes on
+	// every non-zero exit. Re-probed at 5db5e4a, checking the DIRECTORY afterwards
+	// rather than the reply, and claustrum matches on all three:
+	//
+	//	fixture      git fails because            reference: dir after
+	//	locked       the worktree is locked       DELETED
+	//	plain-dir    the path was never a worktree  DELETED
+	//	bogus-repo   baseRepo is not a repo at all  DELETED
+	//
+	// So `git.worktree_remove` is a recursive delete of the caller-supplied
+	// worktreePath whenever git is unhappy, and that is parity, not a claustrum
+	// invention. Documented in PROTOCOL.md because it will otherwise read as a bug.
+	// The caller did name the path and ask for it to be removed, which is why this
+	// is not treated like the -cli-version escape in #196 — there the deletion
+	// reached a path the caller never named.
+	//
+	// The registration is NOT cleaned up either: after a locked removal the repo
+	// still lists the worktree (measured: 2 entries, on both binaries).
+	//
+	// git() not a bespoke helper — it is already CombinedOutput, and the only
+	// differences were error-vs-ok and a trailing-newline trim that the
+	// strings.TrimSpace below absorbs.
+	if out, ok := git(repo, "worktree", "remove", "--force", p.WorktreePath); !ok {
 		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
 			return okResult(req.ID, worktreeRemoveResult{
 				Success: false,
