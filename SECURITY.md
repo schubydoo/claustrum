@@ -23,10 +23,13 @@ processes on the host it runs on. Key considerations:
 - **Auth** is an in-band per-request token. The `-serve` daemon takes it from
   `-token-file` (unlinked immediately after reading) or `-token-fd` (read from an
   open descriptor and forwarded to the detached daemon over a pipe — never on
-  disk, in argv, or in the environment); the `-bridge` client reads
-  `CLAUDE_RPC_TOKEN`. Anyone who can read the token *and* reach the socket can
-  drive the daemon. Protect both: the socket is owner-only by design; keep the
-  token file (or fd source) owner-readable and short-lived.
+  disk, in argv, or in the environment). **claustrum never reads a token from the
+  environment at all** — `CLAUDE_RPC_TOKEN` is read by no mode; `-bridge` is a
+  dumb relay whose client carries its own `auth`, and the daemon unsets the
+  variable before daemonizing and strips it from every spawned child. Anyone who
+  can read the token *and* reach the socket can drive the daemon. Protect both:
+  the socket is owner-only by design; keep the token file (or fd source)
+  owner-readable and short-lived.
 - **`server.shutdown` is the one method the token does not gate.** It is not
   authenticated — behavioral parity with the reference, which the Desktop client
   depends on: it tears the daemon down by invoking `server --stop --socket

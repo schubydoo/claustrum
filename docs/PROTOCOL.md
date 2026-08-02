@@ -70,14 +70,17 @@ The exemption covers auth ONLY — a shutdown frame with a bad or absent
 other method rejects an unauthenticated request with `-32001`. The server's expected token
 comes from `-token-file` (read once at startup, then **unlinked**) or `-token-fd`
 (read from an open descriptor, forwarded to the daemon over a pipe — no temp
-file); for the `-bridge` client it comes from the `CLAUDE_RPC_TOKEN`
-environment variable. `-stop` needs no credential and reads no token from
-anywhere. A bad or missing token →
+file). A bad or missing token →
 `-32001 Unauthorized: invalid or missing auth token` (also logged
 `[Server] Unauthorized request: method=…, id=…`).
 
-The `-bridge` relay does **not** inject auth — whatever speaks through it must
-include `"auth"` itself.
+**No claustrum mode reads `CLAUDE_RPC_TOKEN`** — not `-serve`, not `-bridge`, not
+`-stop`. `-bridge` is a dumb relay and does **not** inject auth: whatever speaks
+through it must include `"auth"` itself, obtaining the token from the
+`daemon.token` handshake below or from whoever launched it. `-stop` needs no
+credential at all. claustrum's only remaining dealings with the variable are to
+*remove* it — unset before daemonizing, and stripped from every spawned child —
+so a token never reaches a child through the environment.
 
 ### Token persistence (`daemon.token`)
 
@@ -847,8 +850,8 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 
 - Missing both flags →
   `claustrum: daemonized child requires --token-file or --token-fd`, exit `1`.
-- `CLAUDE_RPC_TOKEN` is **not** accepted for `-serve` (it is only for the
-  `-bridge` client; `-stop` reads no token) — the daemon never starts
+- `CLAUDE_RPC_TOKEN` is **not** accepted for `-serve` — nor read by any other
+  mode; no claustrum code path reads it at all. The daemon never starts
   unauthenticated.
 - The token is read as a **line**: one trailing `\n`/`\r\n` is stripped; spaces
   and other surrounding whitespace are preserved verbatim (a token file ending
