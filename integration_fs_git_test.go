@@ -359,10 +359,24 @@ func TestSocketListPermissionDeniedErrorText(t *testing.T) {
 
 // TestSocketTildeExpansion pins sweep gap W1: a leading `~` is expanded against
 // the daemon user's home at every path binding point, and NOT expanded anywhere
-// else. Every clause was probe-measured against the reference at 5db5e4a on
-// 2026-07-30 — including two edges the sweep had not recorded ("~/" and "~//f")
-// and the fact that results echo the EXPANDED path (files.list entry paths,
-// git.info root, worktree_create path).
+// else. Probe-measured against the reference at 5db5e4a on 2026-08-02.
+//
+// Results echo the EXPANDED path, so its exact spelling is wire-visible:
+// worktree_create's result.path reflects worktreePath verbatim, and the expanded
+// string also lands in the error text of files.stat / read / list / validate,
+// files.extract_tar and process.spawn. files.list entry paths and git.info root
+// are the two that do NOT carry a spelling — entries are re-joined and root comes
+// from git's own output, so both normalise whatever they are sent.
+//
+// CORRECTION, 2026-08-02: this comment previously dated the measurement to
+// 2026-07-30 and said it covered "~/" and "~//f". Those two edges were asserted
+// with files.validate, whose reply is {valid,isDir} and echoes no path, so the
+// probe could not have seen the difference it claimed to record. It also listed
+// files.list entry paths and git.info root as evidence that results echo the
+// spelling; neither can. Ids 15, 16, 18 and 19 below now pin the spellings at
+// the wire — id 17 is documentary only, for the reason just given: files.list
+// re-joins its entry paths, so it answers identically whatever spelling it is
+// sent, and it is the one row here that would NOT catch a regression.
 //
 // Before this, claustrum treated `~` as a literal directory name: every call
 // below failed or, worse, CREATED a literal `~` directory inside the user's
@@ -370,10 +384,12 @@ func TestSocketListPermissionDeniedErrorText(t *testing.T) {
 func TestSocketTildeExpansion(t *testing.T) {
 	requireGit(t)
 	if runtime.GOOS == "windows" {
-		// The reference was measured on Unix; its behaviour for a "~\" form is
-		// unmeasured, so expandPath deliberately handles only "~/" and this
-		// golden pins the Unix spelling.
-		t.Skip("tilde form is measured on Unix only")
+		// Windows IS measured now (see expandpath.go): same tilde-only cleaning,
+		// in Windows separator terms, with "~\" not a tilde form at all. What
+		// keeps this golden off Windows is the SPELLING — the reference rewrites
+		// "/" to "\" there, so every echoed path in the fixture would differ by
+		// separator. Pinning that needs its own golden, not a skip removal.
+		t.Skip("this golden pins the Unix spelling; Windows is pinned in expandpath.go")
 	}
 	// The temp root IS the home directory, so one token normalizes everything.
 	home := resolveTestRoot(t, t.TempDir())
@@ -418,6 +434,30 @@ func TestSocketTildeExpansion(t *testing.T) {
 		req(12, "files.stat", map[string]any{"path": "~nosuchuser/f.txt"}),
 		req(13, "files.stat", map[string]any{"path": filepath.Join(home, "~", "f.txt")}),
 		req(14, "files.stat", map[string]any{"path": "$HOME/f.txt"}),
+		// The expanded remainder is CLEANED, and the spelling is wire-visible.
+		// Nothing above catches this: ids 1-14 all use spellings the clean is a
+		// no-op on, so the whole golden stayed byte-identical while the frames
+		// below moved.
+		//
+		// Ids 15-16 are the sharp ones: a trailing separator makes POSIX stat
+		// answer ENOTDIR on a regular file, so cleaning it away turns an error
+		// frame into a success frame — a different verdict, not a different
+		// string. The reference answers the cleaned form.
+		req(15, "files.stat", map[string]any{"path": "~/f.txt/"}),
+		req(16, "files.validate", map[string]any{"path": "~/f.txt/../f.txt"}),
+		// Id 17 is DOCUMENTARY, not discriminating: files.list re-joins every
+		// entry path, so it replies identically whether or not expandPath
+		// cleaned "~//". Verified against a no-clean mutant, where 15/16/18/19
+		// all move and this row does not. Kept because "this one cannot tell"
+		// is worth recording next to four rows that can — but do not count it
+		// as coverage.
+		req(17, "files.list", map[string]any{"path": "~//"}),
+		req(18, "git.worktree_create", map[string]any{
+			"baseRepo": "~/repo", "branchName": "wt2", "worktreePath": "~/wt2/",
+		}),
+		req(19, "git.worktree_create", map[string]any{
+			"baseRepo": "~/repo", "branchName": "wt3", "worktreePath": "~//wt3",
+		}),
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
