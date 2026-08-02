@@ -42,10 +42,34 @@ error).
 git/ldd hung a request goroutine forever. Both are now wrapped in
 `exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, security
 fix S4 / HackerOne [#3793023](https://hackerone.com/reports/3793023)) and every
-`git` invocation (`gitTimeout` 60s — a timed-out git reports `ok=false`, the
-same as any other failure). Happy-path results/frames unchanged; an
+`git` invocation (`gitTimeout` 60s). Happy-path results/frames unchanged; an
 attack/pathological-path-only divergence from the reference (which has no
 deadline).
+
+⚠️ **A timeout is NOT interchangeable with an ordinary git failure**, though this
+entry used to say so. That held only while "failure" meant *nothing happened*.
+`git.worktree_remove` now treats a failed git as permission to delete the
+worktree directory itself, so a caller with a side effect must distinguish our
+deadline from git's verdict — `gitDeadline` returns that third bit — or our own
+safety cap authorises a destructive act the reference cannot perform. Read-only
+callers are unaffected and still just check `ok`.
+
+⚠️ **The 60 s bound is softer than it reads.** `CombinedOutput` waits for the
+output pipe to close, not just for git to exit, so a git that spawns a child which
+outlives it stays blocked past the deadline — the orphan holds the pipe open.
+Measured: a stub `sleep 30` under `sh` took the full 30 s against a 300 ms cap,
+while the same stub written as `exec sleep 30` returned at once. Closing that gap
+means reading the streams explicitly rather than using `CombinedOutput`, which is
+more code and more divergence; recorded here rather than fixed, so the entry does
+not promise a bound the code does not deliver.
+
+The timeout reply shape is also not unchanged: `git.worktree_remove` answers
+`{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
+was attempted, and git may have partially removed the worktree"}`, a frame the
+reference never emits. It is confined to this pathological path; every
+reference-reachable frame stays byte-identical. The wording deliberately claims
+only what the daemon can observe — the SIGKILLed git unlinks as it goes, so the
+directory state is not knowable from here.
 
 ### 6 · pre-commit + `gofmt`/`vet` hooks ✅ — impact M / cost L
 
