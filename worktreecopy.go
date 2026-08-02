@@ -66,9 +66,13 @@ func copyWorktreeIncludes(repo, worktree string) {
 	if _, err := os.Stat(filepath.Join(repo, worktreeIncludeFile)); err != nil {
 		return
 	}
-	out, ok := git(repo, "ls-files", "--others", "--ignored",
+	// stdout ONLY, for the same reason as gitListBranches: this splits the result
+	// into paths, so a warning on stderr becomes a bogus path. No wire impact —
+	// the bogus path simply fails Lstat and is skipped — but it is the identical
+	// defect and there is no reason to leave one of the two behind.
+	out, err := gitStdoutErr(repo, "ls-files", "--others", "--ignored",
 		"--exclude-from="+worktreeIncludeFile)
-	if !ok || out == "" {
+	if err != nil || out == "" {
 		return
 	}
 	for _, rel := range strings.Split(out, "\n") {

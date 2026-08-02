@@ -51,8 +51,17 @@ entry used to say so. That held only while "failure" meant *nothing happened*.
 `git.worktree_remove` now treats a failed git as permission to delete the
 worktree directory itself, so a caller with a side effect must distinguish our
 deadline from git's verdict — `gitDeadline` returns that third bit — or our own
-safety cap authorises a destructive act the reference cannot perform. Read-only
-callers are unaffected and still just check `ok`.
+safety cap authorises a destructive act the reference cannot perform.
+
+CORRECTION, 2026-08-02: this used to end "read-only callers are unaffected and
+still just check `ok`". They are not unaffected. `git.status` and (since the
+stdout-only fix) `git.list_branches` REPORT the failure as `-32603` carrying the
+Go error string, so when our deadline kills git they put a claustrum-only frame
+on the wire: measured, `err.Error()` is **`signal: killed`**, not `context
+deadline exceeded` — `Cmd.Wait` prefers the SIGKILLed process's `ExitError` over
+the context error. The reference has no deadline and simply blocks, emitting
+nothing. Unreachable for it, so not a parity break, but it is ours and it is on
+the wire.
 
 ⚠️ **The 60 s bound is softer than it reads.** `CombinedOutput` waits for the
 output pipe to close, not just for git to exit, so a git that spawns a child which
