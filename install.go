@@ -557,7 +557,14 @@ const muslLoaderGlob = "/lib/ld-musl-*.so.*"
 // wire-invisible rests on the two agreeing, so an edit to one — a second loader
 // path, a match rule stronger than "any match" — would silently change WHEN ldd
 // runs relative to HOW the answer is computed. One definition removes that
-// possibility, and stops the glob running twice on a glibc host.
+// possibility.
+//
+// It does NOT reduce the number of glob calls: on a glibc host detectLibcWith
+// asks, gets no match, runs ldd, and classifyLibc asks again — two
+// filepath.Glob calls, exactly as before. What was deduplicated is the source,
+// not the call. Said plainly because the cost is unmeasurable today and a reader
+// who trusts a "runs once" claim will not check, which matters the moment
+// something more expensive than a glob sits behind this predicate.
 //
 // A glob error is treated as "no loader", which is the same fallback both call
 // sites had: the ldd path still decides.
