@@ -14,6 +14,10 @@ CLAUDE.local.md
 *.test
 *.out
 coverage.*
+# gotestsum's JUnit output (ci.yml). Matches neither *.out nor coverage.*, so a
+# contributor reproducing the CI command locally would otherwise be left with an
+# untracked file in the repo root — cf. /remote-server.log below.
+/junit.xml
 
 # Daemon runtime artifacts. -serve creates remote-server.log beside the socket,
 # and a bare `-serve` in the repo root puts it here. Accidentally committed once

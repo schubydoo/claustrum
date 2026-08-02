@@ -76,6 +76,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # Renovate bumps this via a customManagers entry in the shared
+      # schubydoo/renovate-config:claustrum preset — the same shape as
+      # GREMLINS_VERSION in mutation.yml. A bare `@v1.13.0` inline would be
+      # invisible to every manager: gomod reads go.mod/go.sum (untouched by a
+      # `go install` outside the module) and github-actions reads `uses:`.
+      GOTESTSUM_VERSION: v1.13.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,16 +97,20 @@ jobs:
       # leaves go.mod and go.sum untouched (verified), so the repo's "no new
       # dependencies" rule is not in play.
       #
-      # Version-pinned rather than @latest, matching the repo's hash-pin policy for
-      # actions at the granularity Go modules offer.
+      # Version comes from GOTESTSUM_VERSION above so Renovate can see it; pinning
+      # matches the repo's hash-pin policy for actions at the granularity Go
+      # modules offer, and the tracker is what makes the pin stay honest.
       #
-      # GOPATH/bin is added to PATH explicitly rather than assumed. setup-go does add
-      # it, but `shell: bash` + $GITHUB_PATH is the portable form and works on the
-      # windows leg without worrying about separators or the .exe suffix.
+      # GOPATH/bin is added to PATH explicitly. mutation.yml relies on setup-go
+      # doing it, which is true — but only that job is Linux-only. This one runs
+      # on windows too, where the implicit path is the thing most likely to differ,
+      # so $GITHUB_PATH under `shell: bash` is the portable form. Both comments are
+      # right for their own job; this note exists so the difference does not read
+      # as one of them being wrong.
       - name: Install gotestsum
         shell: bash
         run: |
-          go install gotest.tools/gotestsum@v1.13.0
+          go install gotest.tools/gotestsum@"${GOTESTSUM_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       # Same flags as before — `-race -count=1 ./...` — just run through gotestsum so
       # a junit.xml falls out. gotestsum exits NON-ZERO when a test fails (verified:
@@ -123,9 +134,27 @@ jobs:
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: junit.xml
+          # `files` is ADDITIVE, not exclusive — the action's own docs say the
+          # listed files "will be added to the coverage files found for upload".
+          # Without this the CLI still walks the checkout looking for more. There
+          # is nothing else JUnit-shaped to find today, so this buys exactness and
+          # a skipped filesystem walk on three legs, not a bug fix.
+          disable_search: true
           flags: ${{ runner.os }}
           report_type: test_results
           fail_ci_if_error: false
+      # Keep the junit files even when the upload is a no-op. The Codecov step is
+      # deliberately non-blocking, so a rejected upload is a warning line and
+      # nothing else; the coverage job already retains coverage.out for exactly
+      # this reason. Named per-OS because artifact names must be unique across a
+      # matrix.
+      - name: Upload test results artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results-${{ matrix.os }}
+          path: junit.xml
+          retention-days: 7
 
   cross-build:
     name: cross-build (6 targets)
