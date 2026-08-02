@@ -40,9 +40,16 @@ var loginPATHTimeout = 4 * time.Second
 // Each run carried single-shell controls — with only one of the two executable,
 // both binaries agree — so "they differ" is not a harness artifact.
 //
-// This is WIRE-VISIBLE, not cosmetic: the extracted PATH is installed into every
-// spawned child's environment, so on a host with both shells and an unusable
-// $SHELL the two daemons hand their children different PATHs.
+// This is wire-REACHABLE, not cosmetic: the extracted PATH is installed into
+// every spawned child's environment, so on a host with both shells and an
+// unusable $SHELL the two daemons hand their children different PATHs.
+//
+// Reachable, but by a narrower route than "wire-visible" suggests, so do not
+// over-claim it: exec.Command resolves process.spawn's `command` against the
+// DAEMON's PATH, not the child env, and extraction deliberately never touches
+// the daemon's own environment. So this can never flip a spawn between a success
+// frame and "executable file not found". It shows up only in the payload bytes
+// of a child that resolves binaries itself, e.g. `sh -c`.
 var fallbackShells = []string{"/bin/zsh", "/bin/bash", "/bin/sh"}
 
 // safeLoginShell returns $SHELL when it is an executable file, else the first
