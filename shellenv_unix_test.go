@@ -17,27 +17,32 @@ import (
 // under test is narrow: it must not panic, and it must leave PATH non-empty
 // (either the freshly-extracted value or the pre-existing one on any failure).
 func TestExtractLoginPATH(t *testing.T) {
-	// Snapshot PATH via t.Setenv so the framework restores it after the test,
-	// since extractLoginPATH mutates the process environment directly.
-	t.Setenv("PATH", os.Getenv("PATH"))
 	t.Setenv("SHELL", "/bin/sh")
+	// extractLoginPATH records into loginPATH, NOT the process environment, so it
+	// leaves package state behind for the next test. Reset both ways round.
+	resetLoginPATHForTest()
+	t.Cleanup(resetLoginPATHForTest)
 
 	extractLoginPATH()
 
-	if os.Getenv("PATH") == "" {
-		t.Error("extractLoginPATH left PATH empty")
+	// Assert the recorded value, not os.Getenv("PATH"). The old assertion could
+	// no longer fail: extractLoginPATH deliberately stopped touching the process
+	// environment, so PATH was only ever whatever t.Setenv had just put there.
+	if currentLoginPATH() == "" {
+		t.Error("extractLoginPATH recorded no login PATH")
 	}
 }
 
 // With SHELL unset, extractLoginPATH falls back to /bin/sh rather than failing.
 func TestExtractLoginPATHDefaultShell(t *testing.T) {
-	t.Setenv("PATH", os.Getenv("PATH"))
 	t.Setenv("SHELL", "")
+	resetLoginPATHForTest()
+	t.Cleanup(resetLoginPATHForTest)
 
 	extractLoginPATH() // must not panic; exercises the empty-SHELL default branch
 
-	if os.Getenv("PATH") == "" {
-		t.Error("extractLoginPATH (default shell) left PATH empty")
+	if currentLoginPATH() == "" {
+		t.Error("extractLoginPATH (default shell) recorded no login PATH")
 	}
 }
 
@@ -309,12 +314,26 @@ func TestExtractLoginPATHDiscardsTheValueOnTimeout(t *testing.T) {
 	// earlier version pinned PATH to a fake value, so the stub exited 127
 	// immediately, no timeout fired, and the test passed against the unfixed code
 	// for the wrong reason.
-	t.Setenv("PATH", os.Getenv("PATH"))
 	t.Setenv("SHELL", shell)
+	// Reset BEFORE the body, not only after it. The "" precondition below is a
+	// claim about package state, and registering the reset purely as cleanup
+	// borrows it from whichever test happened to run earlier — so this passed
+	// under the full suite and failed under any -run filter or -shuffle.
+	resetLoginPATHForTest()
 	t.Cleanup(resetLoginPATHForTest)
 
+	start := time.Now()
 	extractLoginPATH()
+	elapsed := time.Since(start)
 
+	// The stub must actually have HUNG. If it dies early instead — an unresolved
+	// `sleep`, say — extractLoginPATH returns at once, no deadline fires, and
+	// every assertion below passes against unfixed code. That exact false pass
+	// happened while writing this test.
+	if elapsed < loginPATHTimeout {
+		t.Fatalf("stub returned in %v, before the %v cap — it did not hang, so this "+
+			"test proves nothing about the timeout path", elapsed, loginPATHTimeout)
+	}
 	if got := currentLoginPATH(); got != "" {
 		t.Errorf("loginPATH = %q after a timeout, want empty — the reference discards it", got)
 	}
@@ -371,4 +390,36 @@ func TestExtractLoginPATHTruncatesTheLoggedShellOutput(t *testing.T) {
 		t.Errorf("logged payload is %d chars, want %d — the cut is not reaching the log",
 			len(payload), shellOutputLogLimit+3)
 	}
+}
+
+// stubLoginPATHExtractor replaces the extraction seam with a no-op for the
+// duration of a test.
+//
+// CORRECTION, 2026-08-02: two lifecycle tests used to do this by pointing $SHELL
+// at "/claustrum-no-such-shell", commented "keep extractLoginPATH inert". That
+// stopped being true when safeLoginShell gained a fallback list: an unusable
+// $SHELL no longer fails the extraction, it falls through to /bin/zsh or
+// /bin/bash and runs a REAL login shell. runServe starts that in a background
+// goroutine which outlives the test and writes the runner's real login PATH into
+// package state at an arbitrary later moment, bounded only by the 4s cap.
+//
+// Nothing failed because ~24 test files sit between those tests and this one, so
+// the write always landed in a gap. That is wall-clock luck, not isolation —
+// reproduced with `go test -count=15 -run 'TestRunServeChildFullLifecycle|
+// TestExtractLoginPATHDiscardsTheValueOnTimeout'`, which fails with the leaked
+// PATH. Stub the seam, which is what it exists for (see shellenv_test.go).
+// The restore must AWAIT the extraction goroutine. startLoginPATH reads the seam
+// inside the goroutine (shellenv.go:61), so restoring it from cleanup while that
+// goroutine is live is a genuine data race — caught by -race the first time this
+// helper existed, on exactly the tests it was written for. awaitLoginPATH returns
+// immediately when nothing was started, so this is free for tests that never boot
+// a server.
+func stubLoginPATHExtractor(t *testing.T) {
+	t.Helper()
+	old := loginPATHExtractor
+	loginPATHExtractor = func() {}
+	t.Cleanup(func() {
+		awaitLoginPATH()
+		loginPATHExtractor = old
+	})
 }
