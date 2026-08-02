@@ -278,6 +278,7 @@ func TestSocketErrorTextParity(t *testing.T) {
 	}
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "regular.txt"), "x\n", 0o644)
+	helperExe, helperEnv := helperCommand(t, "pwd")
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -289,12 +290,22 @@ func TestSocketErrorTextParity(t *testing.T) {
 			"destDir":     filepath.Join(root, "dest"),
 		}),
 		// W8 — the two shapes differ; both are pinned.
+		//
+		// The command comes from the test binary, not /bin/pwd. CLAUDE.md's rule
+		// is that process fixtures never come from /bin/*, because a system binary
+		// that exists on Linux may not on another leg. It survived here only
+		// because both spawns fail at chdir BEFORE exec, so the binary is never
+		// run and its absence would not show — which makes it latent rather than
+		// safe: the day this golden pins anything past the chdir, or the pre-exec
+		// ordering changes, the fixture becomes load-bearing on a platform nobody
+		// checked. Free to fix, since any existing path satisfies a spawn that
+		// never reaches exec.
 		req(6, "process.spawn", map[string]any{
-			"id": "CWD1", "command": "/bin/pwd", "args": []string{},
+			"id": "CWD1", "command": helperExe, "args": []string{}, "env": helperEnv,
 			"cwd": filepath.Join(root, "missingdir"),
 		}),
 		req(7, "process.spawn", map[string]any{
-			"id": "CWD2", "command": "/bin/pwd", "args": []string{},
+			"id": "CWD2", "command": helperExe, "args": []string{}, "env": helperEnv,
 			"cwd": filepath.Join(root, "regular.txt"),
 		}),
 	}
@@ -458,6 +469,26 @@ func TestSocketTildeExpansion(t *testing.T) {
 		req(19, "git.worktree_create", map[string]any{
 			"baseRepo": "~/repo", "branchName": "wt3", "worktreePath": "~//wt3",
 		}),
+		// The remaining frames that carry an expanded path. #205 pinned the four
+		// above and left these unpinned, which is the same gap in a smaller form:
+		// each echoes the expanded string into an ERROR, and each was previously
+		// exercised only with a spelling the clean is a no-op on.
+		//
+		// id 20 — files.read's error text. Post-clean this SUCCEEDS on a trailing
+		// separator, exactly like files.stat (id 15), because the ENOTDIR is what
+		// the separator was causing.
+		req(20, "files.read", map[string]any{"path": "~/f.txt/"}),
+		// id 21 — files.extract_tar's result.error embeds archivePath. A doubled
+		// separator on a missing archive shows whether the string was cleaned.
+		req(21, "files.extract_tar", map[string]any{
+			"archivePath": "~//nosuch.tar.gz", "destDir": "~/dest2",
+		}),
+		// id 22 — git.worktree_create's result.error. git echoes back the path the
+		// daemon handed it, so a trailing separator on an ALREADY-EXISTING
+		// worktree (created by id 18) reveals the spelling git actually received.
+		req(22, "git.worktree_create", map[string]any{
+			"baseRepo": "~/repo", "branchName": "wt4", "worktreePath": "~/wt2/",
+		}),
 	}
 	got := make([]json.RawMessage, len(calls))
 	for i, line := range calls {
@@ -468,10 +499,25 @@ func TestSocketTildeExpansion(t *testing.T) {
 	// process.spawn's cwd is the tenth binding point. Its reply is a bare
 	// {"success":true}, so the expansion is only observable in the child's
 	// output — assert it separately rather than pretending the golden covers it.
-	cl.call(spawnReqArgsCwd(t, 20, "TILDE", "pwd", "~/repo"))
+	cl.call(spawnReqArgsCwd(t, 23, "TILDE", "pwd", "~/repo"))
 	frames := cl.waitExit("TILDE")
 	if out := strings.TrimSpace(streamBytes(t, frames, "stdout")); out != repo {
 		t.Errorf("spawn cwd %q resolved to %q, want %q", "~/repo", out, repo)
+	}
+
+	// A dirty cwd spelling reaches the wire through spawn's ERROR text, which the
+	// golden cannot hold because it is asserted off-band like the row above. A
+	// missing directory spelled "~/nope/" must report the CLEANED path: pre-clean
+	// it read "chdir <home>/nope/: stat <home>/nope/: ...". Asserted on the
+	// substring rather than the whole string so the surrounding syscall wording
+	// stays the golden's business, not this assertion's.
+	raw := cl.call(spawnReqArgsCwd(t, 24, "TILDE2", "pwd", "~/nope/"))
+	msg := string(normPath(raw, home))
+	if strings.Contains(msg, "/nope/") {
+		t.Errorf("spawn cwd error kept the trailing separator: %s", msg)
+	}
+	if !strings.Contains(msg, "/nope") {
+		t.Errorf("spawn cwd error does not name the expanded path at all: %s", msg)
 	}
 }
 
