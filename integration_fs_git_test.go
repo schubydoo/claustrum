@@ -758,3 +758,49 @@ func TestSocketWorktreeCreateFailureCarriesGitStderr(t *testing.T) {
 		t.Errorf("failure error is empty after the colon: %s", reply)
 	}
 }
+
+// A git that SUCCEEDS must never be reported as a timeout, and must still get
+// its branchName delete.
+//
+// The timeout report is nested under !ok for that reason: `timedOut` alone is
+// true whenever ctx.Err() is set, and if git exits 0 at the instant the deadline
+// fires, exec's Wait returns nil (ok=true) alongside a DeadlineExceeded context.
+// That window is nanoseconds and cannot be forced from a test, so this pins the
+// reachable half — a successful git takes the normal path — and the unreachable
+// half is prevented by construction rather than by assertion.
+//
+// gitTimeout is deliberately NOT overridden here. An earlier version set it to
+// 30s, which read as "exercise the deadline" and asserted nothing: the test
+// passes identically without the override, because the production default is
+// already 60s and git finishes in milliseconds either way.
+//
+// Cross-platform on purpose. Nothing here is POSIX — real git, the daemon's own
+// dispatch — and it lived in the unix-gated file only by accident of where it was
+// written, which kept it off the leg that has broken most often.
+func TestWorktreeRemoveSuccessIsNotReportedAsTimeout(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "main", "repo")
+	runGit(t, repo, "commit", "--allow-empty", "-m", "init")
+	wt := filepath.ToSlash(filepath.Join(root, "wt"))
+	runGit(t, repo, "worktree", "add", "-b", "gone", wt)
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt, "branchName": "gone"}))
+
+	if !strings.Contains(raw, `"success":true`) {
+		t.Errorf("reply = %s, want a bare success for a removal git completed", raw)
+	}
+	if strings.Contains(raw, "timed out") {
+		t.Errorf("reply = %s, reports a timeout for a git that succeeded", raw)
+	}
+	// The branch delete lives AFTER the timeout branch, so reporting a timeout
+	// would silently skip it. Asserting the branch is gone is what proves the
+	// early return was not taken.
+	out, _ := git(repo, "branch", "--list", "gone")
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("branch %q still exists — the branchName delete was skipped", "gone")
+	}
+}

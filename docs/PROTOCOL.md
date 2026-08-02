@@ -516,7 +516,9 @@ the daemon then seeds the new worktree:
   deleted the decoy and left `<repo>/wt` in place.** Parity, and alarming — send
   an absolute `worktreePath`. The reference client does: it tilde-expands every
   remote path before sending.
-- **`gitTimeout` does NOT authorise the deletion — claustrum-only.** The 60 s cap
+- **`gitTimeout` does NOT authorise the deletion — claustrum-only.** (The cap is
+  also softer than it reads: it waits on git's output pipe, so a git that spawns a
+  surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
   on git is a claustrum divergence (the reference runs git with no deadline and
   blocks), so a timeout must not be read as "git refused". It answers
   `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup

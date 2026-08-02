@@ -71,6 +71,14 @@ func (p *gitParams) repoDir() string {
 // {"success":false,"error":"git worktree remove timed out after …"}, a frame the
 // reference never emits. That is confined to this pathological path; every
 // reference-reachable frame is still byte-identical.
+//
+// ⚠️ THE BOUND IS SOFTER THAN IT LOOKS. CombinedOutput waits for the output pipe
+// to close, not merely for git to exit, so a git that spawns a child which
+// OUTLIVES it keeps the call blocked past the deadline — the orphan still holds
+// the pipe. Measured: a stub `sleep 30` under `sh` took the full 30s against a
+// 300ms gitTimeout, while the same stub as `exec sleep 30` returned promptly.
+// Closing it means reading the streams explicitly instead of CombinedOutput,
+// which is more code and more divergence, so it is recorded rather than fixed.
 var gitTimeout = 60 * time.Second
 
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.

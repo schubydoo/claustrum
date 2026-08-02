@@ -54,6 +54,15 @@ deadline from git's verdict — `gitDeadline` returns that third bit — or our 
 safety cap authorises a destructive act the reference cannot perform. Read-only
 callers are unaffected and still just check `ok`.
 
+⚠️ **The 60 s bound is softer than it reads.** `CombinedOutput` waits for the
+output pipe to close, not just for git to exit, so a git that spawns a child which
+outlives it stays blocked past the deadline — the orphan holds the pipe open.
+Measured: a stub `sleep 30` under `sh` took the full 30 s against a 300 ms cap,
+while the same stub written as `exec sleep 30` returned at once. Closing that gap
+means reading the streams explicitly rather than using `CombinedOutput`, which is
+more code and more divergence; recorded here rather than fixed, so the entry does
+not promise a bound the code does not deliver.
+
 The timeout reply shape is also not unchanged: `git.worktree_remove` answers
 `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
 was attempted, and git may have partially removed the worktree"}`, a frame the
