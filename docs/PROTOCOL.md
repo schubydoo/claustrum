@@ -857,6 +857,20 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 (Unix), then runs the RPC server. On success it prints
 `Claustrum remote server listening on <socket>` to stdout.
 
+**Login-shell PATH extraction** (Unix) runs `$SHELL -l -i -c …` when `$SHELL` is
+an executable file, else the first usable of `/bin/zsh`, `/bin/bash`, `/bin/sh`
+— **zsh first**, matching the reference. The resolved PATH goes to spawned
+children only, never into the daemon's own environment. Two observable rules:
+
+- Extraction is capped at **4 s**, and a timeout **discards** whatever the shell
+  printed — even a complete, valid PATH. The daemon logs one line naming the
+  shell and children fall back to the inherited PATH.
+- The value reaches `process.spawn` children as their `PATH`. It does **not**
+  affect how the daemon resolves the `command` you send: that is looked up
+  against the daemon's own PATH, so the extracted value can never turn a spawn
+  into `executable file not found`. It is visible only to a child that resolves
+  binaries itself (`sh -c …`).
+
 **Token source** — required, and checked *before* the socket:
 
 - Missing both flags →
