@@ -545,6 +545,17 @@ Errors:
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`
 
 - Non-repo → `{"isRepo":false,"branches":[]}`.
+- **stdout only**, like `git.status` and unlike `git.worktree_create`. A repo
+  with a broken ref makes `for-each-ref` warn on stderr while still exiting `0`;
+  that warning must not become a branch name.
+- A `for-each-ref` that **fails** (e.g. a corrupt `packed-refs`, exit 128) is
+  reported as `-32603` carrying the Go error string — `exit status 128`, not
+  git's `fatal: …` text. Same rule as `git.status`.
+- **Claustrum-only frame.** If claustrum's 60 s `gitTimeout` kills git instead,
+  the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
+  SIGKILLed process's exit error over the context error. The reference runs git
+  with no deadline and simply blocks, so it never emits this. `git.status` has
+  the identical frame for the identical reason. See IMPROVEMENTS §5.
 
 #### git.worktree_create
 
@@ -753,9 +764,12 @@ unknown id is not an error):
   up to the grace:
     - **`timeoutMs`** sets that grace. Non-positive or absent → the **3000 ms**
       default (probe-verified: `0` and `-100` both wait 3000 ms); positive values
-      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s). claustrum caps an
-      absurd value at 600000 ms so a signal-ignoring child can't wedge a request
-      forever — the reference clamps too, above the ~90 s ceiling we could observe.
+      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s) **up to a 30000 ms
+      ceiling**. A larger value is clamped to it, so `timeoutMs: 45000` against a
+      signal-ignoring child answers after ~30 s, not 45 s. Measured against the
+      reference at `5db5e4a`; the black-box bracket is (29500, 30500] and 30000 is
+      the only round value in it. The ceiling is not new in `5db5e4a`: `7c2f88d`,
+      the build that added the method, answers at ~30 s for the same input.
     - **`escalate`** (default `true`) decides what happens if the process is still
       alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
       and add `"escalated":true` to the reply. `false` → leave the process running
@@ -852,10 +866,16 @@ unknown id is not an error):
 - Exact frame *boundaries* depend on pipe scheduling and are not stable — only
   the reassembled bytes are. (Both the 32 KiB cap and the `-1` signal code are
   probe-verified against the reference.)
-- The replay buffer is **bounded at 16 MiB** of base64 `data` per process
-  (probe-verified against the reference). Frames are dropped oldest-first, whole
-  frames at a time, once a new frame would exceed the cap; at least one frame is
-  always retained, even one larger than the cap. So `reattach{fromSeq:0}` replays
+- The replay buffer is **bounded at 16 MiB per process**, counted as the
+  **serialized frame including its trailing newline** — the bytes a subscriber
+  would receive — not as the base64 `data` alone. Probe-verified against the
+  reference; an exit frame therefore costs its envelope even though it carries no
+  `data`. (This previously read "16 MiB of base64 `data`". The constant was right
+  and the unit was not: the difference is under 1% at 8.7 KB frames and ~12% at
+  600-byte frames, so the run that established the constant could not see it.)
+  Frames are dropped oldest-first, whole frames at a time, once a new frame would
+  exceed the cap; at least one frame is always retained, even one larger than the
+  cap. So `reattach{fromSeq:0}` replays
   everything **still retained**, not necessarily everything ever emitted — the
   reply's `firstSeq` is the floor, and a client that needs the gap detected must
   compare it against the last `seq` it saw.
@@ -878,10 +898,35 @@ Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 (Unix), then runs the RPC server. On success it prints
 `Claustrum remote server listening on <socket>` to stdout.
 
-**Token source** — required, and checked *before* the socket:
+**Login-shell PATH extraction** (Unix) runs `$SHELL -l -i -c …` when `$SHELL` is
+an executable file, else the first usable of `/bin/zsh`, `/bin/bash`, `/bin/sh`
+— **zsh first**, matching the reference. The resolved PATH goes to spawned
+children only, never into the daemon's own environment. Two observable rules:
 
-- Missing both flags →
-  `claustrum: daemonized child requires --token-file or --token-fd`, exit `1`.
+- Extraction is capped at **4 s**, and a timeout **discards** whatever the shell
+  printed — even a complete, valid PATH. The daemon logs one line naming the
+  shell and children fall back to the inherited PATH.
+- The value reaches `process.spawn` children as their `PATH`. It does **not**
+  affect how the daemon resolves the `command` you send: that is looked up
+  against the daemon's own PATH, so the extracted value can never turn a spawn
+  into `executable file not found`. It is visible only to a child that resolves
+  binaries itself (`sh -c …`).
+
+**Token source** — required, and checked **in the detached child**, not in the
+launcher:
+
+- Missing both flags → the launcher daemonizes anyway, the child refuses to
+  start, and the launcher reports its accept timeout after ~10 s:
+  `claustrum: timeout waiting for daemon to accept on <socket>`, exit `1`. The
+  specific reason —
+  `claustrum: daemonized child requires --token-file or --token-fd` — reaches
+  only the child's own stderr, which is detached.
+
+  This is deliberate parity, measured against the reference: `-serve` with no
+  token flags exits 1 after 10.07 s there with the same accept-timeout shape.
+  claustrum used to check in the launcher and fail in 0.03 s naming the actual
+  problem. That is friendlier and it is a divergence, so it is not what ships.
+  A zero-byte `-token-file` always behaved this way on both.
 - `CLAUDE_RPC_TOKEN` is **not** accepted for `-serve` — nor read by any other
   mode; no claustrum code path reads it at all. The daemon never starts
   unauthenticated.
@@ -1013,6 +1058,31 @@ authenticate that method (see [Authentication](#authentication)).
   `0`, no output. Nothing is ever echoed to stdout: any reply is read and
   discarded, matching the reference. Against a current daemon there is no reply
   to begin with, since `server.shutdown` answers nothing and closes.
+- **The socket path is unlinked on every exit path**, including the one where the
+  dial fails and no daemon was ever reached. Measured against the reference on
+  three arms:
+
+  | arm | reference | claustrum before |
+  |-----|-----------|------------------|
+  | live daemon (control) | gone | gone |
+  | stale socket, no listener | gone | left in place |
+  | live foreign listener | gone, listener alive | left in place, listener alive |
+
+  The control arm attributes nothing: a live daemon unlinks its own socket during
+  graceful shutdown, so "gone" there says nothing about who removed it. The other
+  two arms are the evidence, because no claustrum daemon is involved in either.
+
+  The foreign-listener arm is destructive, and it is matched deliberately: `-stop`
+  removes a socket path it did not create and cannot identify the owner of. The
+  listener itself is not torn down — that arm confirms it is still alive
+  afterwards — but the path it was reachable through is gone, so a new client
+  dialing by path cannot reach it. What becomes of its already-open connections
+  was not measured. Making the unlink conditional would be a divergence, so it is
+  recorded as a candidate rather than taken — see
+  [IMPROVEMENTS.md → Candidates identified but NOT taken](IMPROVEMENTS.md#candidates-identified-but-not-taken-cli-mode-parity-2026-08-02).
+  Note also that all three measured arms used socket-shaped paths: `os.Remove`
+  removes a regular file or an empty directory at the `-socket` path just the
+  same, and neither shape was put in front of the reference.
 
 ### -version
 
@@ -1050,6 +1120,23 @@ claustrum -install -cli-dir <d> -cli-version <v> \
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
+
+Two side effects have no frame and are easy to miss:
+
+- **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
+  on a fully successful install. An extracted CLI that fails the `--version`
+  runnability check still costs you the blob. A blob that is not valid zstd is
+  left alone, because decompression never produced a staged file. Measured
+  against the reference on four fixtures that bracket the decompress step, where
+  it behaves the same way on all four. The narrow window between decompression
+  and the rename (`chmod`, the destination clear) was not provoked — it sits on
+  the consumed side by construction, not by observation.
+- **`ldd` is executed only when the musl loader glob does not match.** On a host
+  carrying `/lib/ld-musl-*.so.*` the marker decides on its own and no `ldd`
+  process is started at all. Measured with a stand-in `ldd` on `PATH` that
+  records its own invocation: the reference does not start it on that path
+  either, and with the marker masked both binaries reach the stand-in — so
+  "not started" is an observation and not a fixture that never fired.
 
 Checksum + error framing (probe-verified):
 
