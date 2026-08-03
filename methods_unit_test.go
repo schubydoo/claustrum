@@ -496,9 +496,38 @@ func TestFilesExtractTarMkdirParentPrefix(t *testing.T) {
 
 	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
 		map[string]any{"archivePath": archive, "destDir": dest}))
-	for _, want := range []string{`"success":false`, `"fileCount":0`, "mkdir parent p/child.txt: ", "not a directory"} {
+	// NOT the errno text. "not a directory" is the POSIX rendering of ENOTDIR;
+	// Windows renders the same failure "The system cannot find the path
+	// specified." and this assertion turned the windows-latest leg red. The OS
+	// string is not what this PR adds — the prefix and the count are.
+	for _, want := range []string{`"success":false`, `"fileCount":0`, "mkdir parent p/child.txt: "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("mkdir-parent failure = %s, missing %q", got, want)
+		}
+	}
+}
+
+// fileCount is 0 on a create failure even when an EARLIER entry was already
+// written — the partial count is not reported. Measured against 5db5e4a with
+// an archive whose first entry succeeds ("!ok.txt" sorts before "../sub",
+// 0x21 < 0x2E, so makeTarGz's sort puts it first) and whose second lands on
+// destDir itself:
+//
+//	reference : create ../sub: open <dest>: is a directory, fileCount 0
+//	claustrum : (before this change)                        fileCount 1
+//
+// The single-entry fixture above cannot see this: with nothing written first,
+// the partial count IS 0 and both spellings agree.
+func TestFilesExtractTarCreateFailureReportsZeroCount(t *testing.T) {
+	s := newTestServer(t)
+	dest := filepath.Join(t.TempDir(), "sub")
+	archive := tarGzPath(t, map[string]string{"!ok.txt": "payload", "../sub": "x"})
+
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
+		map[string]any{"archivePath": archive, "destDir": dest}))
+	for _, want := range []string{`"success":false`, `"fileCount":0`, "create ../sub: "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("create failure after a successful entry = %s, missing %q", got, want)
 		}
 	}
 }

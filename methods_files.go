@@ -363,7 +363,11 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// wrapped on the strength of the two arms that WERE measured.
 				// Assuming a third prefix from two observations is how a parity
 				// claim outruns its evidence.
-				return count, fmt.Errorf("create %s: %v", hdr.Name, err)
+				// fileCount 0, not the partial count — measured with an archive
+				// whose first entry succeeds and whose second hits this branch:
+				// the reference answers fileCount 0 while claustrum answered 1.
+				// Same shape as the mkdir-parent and zip-slip arms.
+				return 0, fmt.Errorf("create %s: %v", hdr.Name, err)
 			}
 			n, err := io.Copy(out, io.LimitReader(tr, maxExtractBytes-totalWritten+1))
 			totalWritten += n
