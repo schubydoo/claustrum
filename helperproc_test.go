@@ -19,6 +19,26 @@ import (
 // across OSes (no CRLF translation, no cmd.exe quoting).
 func TestMain(m *testing.M) {
 	mode := os.Getenv("CLAUSTRUM_TEST_HELPER")
+
+	// A re-exec'd daemon child must never run the suite. runServe's parent half
+	// re-execs os.Executable() with daemonChildEnv=1 — and under `go test` that
+	// executable IS this binary. So a test which reaches the parent path without
+	// steering the child into a helper mode forks a detached copy of the whole
+	// suite, which reaches the same test and forks again. The copies are
+	// setsid-detached with their output redirected to a log, so they outlive the
+	// `go test` run that started them and nothing reaps them: a fork bomb that
+	// looks like a passing test. That is not hypothetical — it happened on
+	// 2026-08-02 and took the host down hard.
+	//
+	// Every legitimate re-exec either sets a helper mode (see helperCommand) or
+	// strips daemonChildEnv (see removeEnvKey in server_daemonize_unix_test.go),
+	// so reaching here with the child marker and no mode means a test forgot the
+	// seam. Refuse loudly: the cost is one dead process instead of a generation.
+	if mode == "" && os.Getenv(daemonChildEnv) == "1" {
+		fmt.Fprintln(os.Stderr, "test binary re-exec'd as a daemon child without CLAUSTRUM_TEST_HELPER: refusing to run the suite (a test reached runServe's parent path without the helper seam)")
+		os.Exit(1)
+	}
+
 	if mode == "" {
 		os.Exit(m.Run())
 	}
