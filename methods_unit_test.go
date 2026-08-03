@@ -351,13 +351,21 @@ func TestFilesExtractTarZipSlip(t *testing.T) {
 // parity question that has not been measured for most of these, and pinning an
 // unmeasured accept/reject here would dress a guess up as a contract.
 //
-// This exists because CodeQL alert 8 (go/zipslip) reappeared on main without the
-// guard changing: its text is byte-identical to 896fd5c, the commit CodeQL
-// itself marked as fixing it, and the commit GitHub attributes the reappearance
-// to (#167) does not touch this file at all. So the reappearance is an analysis
-// change, not a regression — and that conclusion needs evidence stronger than
-// reading the guard, which is what this table provides. It is also the safety
-// net for any future rewrite of the guard into a form CodeQL recognises.
+// This exists because CodeQL's go/zipslip alert kept reopening on main while the
+// guard was demonstrably correct — its text was byte-identical to 896fd5c, and
+// the commit GitHub attributed a reappearance to (#167) does not touch this file
+// at all. The guard needed evidence stronger than reading it, and this table is
+// that evidence. It is also the safety net for the rewrites that followed.
+//
+// CORRECTION: an earlier version of this comment blamed a CodeQL version change
+// ("2.26.2 stopped recognizing the filepath.Rel form"). That was wrong, and the
+// query has not changed in years. What actually happens is that the alert's
+// FINGERPRINT moves when the surrounding code moves, so it closes under one
+// number and reopens under another — alert 8 closed and alert 20 opened for
+// exactly that reason after the guard was rewritten. The Rel form was most
+// likely never recognized at all, including on the day it was recorded as fixed.
+// The lesson is the reason this table exists: reason about the analyzer from its
+// source, not from the shape of its alert history.
 //
 // WHICH ROWS ACTUALLY BITE, established by mutation rather than assumed — do not
 // cite this as "seven adversarial shapes, all pinned":

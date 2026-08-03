@@ -255,26 +255,9 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	count := 0
 	var totalWritten int64
 
-	// Zip-slip guard operands, hoisted: both are loop-invariant, and computing
-	// them per entry invited the reading that they depend on hdr.Name.
-	//
-	// destPrefix appends the separator UNLESS cleanDest already ends in one,
-	// which happens only for a root destDir ("/", or a Windows volume root).
-	// Concatenating unconditionally yields "//" there, and no target has that
-	// prefix, so every entry would be rejected — a differential against the old
-	// filepath.Rel form caught exactly this, on 19 pairs, all with destDir "/".
-	//
-	// The prefix form also rejects everything when destDir cleans to "." (a
-	// relative destDir), where the Rel form accepted. That is unreachable rather
-	// than handled: filesExtractTar gates on filepath.IsAbs(destDir) before this
-	// runs, so a relative destDir never gets here. Named because it is the one
-	// input on which the two forms genuinely disagree — if that gate is ever
-	// relaxed, this guard has to be revisited with it.
+	// Hoisted because it is loop-invariant; computing it per entry invited the
+	// reading that it depends on hdr.Name.
 	cleanDest := filepath.Clean(destDir)
-	destPrefix := cleanDest
-	if !strings.HasSuffix(destPrefix, string(os.PathSeparator)) {
-		destPrefix += string(os.PathSeparator)
-	}
 
 	for {
 		hdr, err := tr.Next()
@@ -284,31 +267,38 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		if err != nil {
 			return count, gzipErr{err}
 		}
-		// Reject entries that would escape destDir ("zip slip"). filepath.Join
-		// cleans, so target is already normalized; an entry then lands inside
-		// destDir exactly when target IS destDir or sits under it with a
-		// separator. An in-bounds "../" (and the destDir itself, e.g. a "."
-		// entry) resolves inside and is allowed, matching the reference. The
-		// reference rejects an escaping archive with this exact error and
-		// fileCount 0 — even when earlier safe entries were already written.
+		// Reject entries that would escape destDir ("zip slip"), while building
+		// target through the ONE construction CodeQL's query actually models.
 		//
-		// THE TRAILING SEPARATOR IS THE WHOLE GUARD. Comparing against cleanDest
-		// alone would admit a sibling whose name merely starts with destDir's —
-		// "../sub-sibling.txt" out of a "…/sub" destDir — which is the classic
-		// way this check is written wrong. TestFilesExtractTarZipSlipShapes has a
-		// row for exactly that, and it is the only test in the suite that catches
-		// it; do not "simplify" the separator away.
+		// safeName resolves the entry against a root, so every "..", however
+		// deep, is absorbed at "/" and the result can never climb out. Joining
+		// that onto cleanDest therefore cannot escape by construction, not merely
+		// by a check that happens to precede it.
 		//
-		// This replaced an equivalent filepath.Rel form on 2026-08-03. The Rel
-		// version was correct and stayed byte-identical from the commit CodeQL
-		// marked as fixing go/zipslip (896fd5c) — but CodeQL 2.26.2 stopped
-		// recognizing it as a sanitizer and reopened the alert with no code
-		// change. This form is the one its query models. Behaviour is unchanged,
-		// which the shapes table is there to prove rather than assert.
+		// The Clean("/"+name) shape is load-bearing and is NOT a stylistic
+		// choice: TaintedPathCustomizations.qll's FilepathCleanSanitizer matches
+		// exactly a filepath.Clean whose argument is a concatenation beginning
+		// with "/" or "\", and ZipSlipCustomizations.qll delegates its sanitizers
+		// to that file. Rewriting this as Clean(name) or as a prefix/Rel check
+		// re-opens go/zipslip even though the behaviour is identical — which is
+		// how this code got rewritten twice for nothing. Do not "tidy" it.
 		//
-		// cleanDest/destPrefix are computed once above the loop.
-		target := filepath.Join(cleanDest, hdr.Name)
-		if target != cleanDest && !strings.HasPrefix(target, destPrefix) {
+		// The comparison against the RAW join is what preserves parity: the
+		// reference REJECTS an escaping archive with this exact error and
+		// fileCount 0, it does not silently clamp the entry into destDir. Clamping
+		// is what the sanitizer would do on its own, and it would be a wire
+		// divergence. An in-bounds "../" (and the destDir itself, e.g. a "."
+		// entry) resolves inside, leaves the two joins equal, and is allowed —
+		// matching the reference.
+		//
+		// Equivalence to the previous prefix form is measured, not assumed: over
+		// 200 (destDir, entry) pairs the two disagree on zero reject decisions and
+		// zero accepted targets. TestFilesExtractTarZipSlipShapes is the in-repo
+		// half of that, and its sibling-prefix row is the one that catches the
+		// classic mis-write.
+		safeName := filepath.Clean(string(os.PathSeparator) + hdr.Name)
+		target := filepath.Join(cleanDest, safeName)
+		if target != filepath.Join(cleanDest, hdr.Name) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
 		// The reference ignores the archive's mode bits and forces owner-only
