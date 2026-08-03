@@ -434,6 +434,49 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 // A crafted .tar.gz can have a tiny compressed payload that expands to fill a disk;
 // the cap bounds that damage. The var is overridden to a small value here so the test
 // does not write gigabytes to disk.
+// Two behaviours of the up-then-back-in shape, both MEASURED against 5db5e4a on
+// 2026-08-03 rather than assumed. They were an assumption until then, and the
+// assumption was load-bearing: PR #224 rewrote the guard in a way that rejected
+// the first row, and nothing in the suite noticed.
+//
+//	entry "../sub/inside.txt"	reference ACCEPTS, writes sub/inside.txt
+//	entry "../sub"          	reference errors "create ../sub: open <dest>: is a
+//	                        	directory" — note the "create <entry>: " prefix,
+//	                        	which claustrum omitted
+//
+// The entry must name destDir's OWN basename to leave and re-enter it, which is
+// why a differential over randomly chosen names cannot find this shape.
+func TestFilesExtractTarUpThenBackIn(t *testing.T) {
+	s := newTestServer(t)
+	root := t.TempDir()
+	dest := filepath.Join(root, "sub")
+
+	// Climbs out of destDir and back in: normalises inside, so it is accepted
+	// and the file lands in destDir.
+	archive := tarGzPath(t, map[string]string{"../sub/inside.txt": "payload"})
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
+		map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":true`) || !strings.Contains(got, `"fileCount":1`) {
+		t.Fatalf("up-then-back-in extract = %s, want success + fileCount:1 (the reference accepts it)", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(dest, "inside.txt")); err != nil || string(b) != "payload" {
+		t.Errorf("inside.txt = %q (err %v), want payload inside destDir", b, err)
+	}
+
+	// The bare form resolves onto destDir itself, which is a directory, so the
+	// create fails — and the reference names the ENTRY in the prefix.
+	dest2 := filepath.Join(root, "sub2")
+	archive2 := tarGzPath(t, map[string]string{"../sub2": "payload"})
+	got = dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
+		map[string]any{"archivePath": archive2, "destDir": dest2}))
+	if !strings.Contains(got, "create ../sub2: ") {
+		t.Errorf("bare up-then-back-in = %s, want the reference's \"create <entry>: \" prefix", got)
+	}
+	if !strings.Contains(got, "is a directory") {
+		t.Errorf("bare up-then-back-in = %s, want the underlying is-a-directory error retained", got)
+	}
+}
+
 func TestFilesExtractTarSizeLimit(t *testing.T) {
 	old := maxExtractBytes
 	maxExtractBytes = 1024

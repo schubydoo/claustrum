@@ -325,7 +325,23 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			}
 			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
-				return count, err
+				// "create <entry>: " prefix, naming the ARCHIVE ENTRY rather than
+				// the resolved target. Measured against 5db5e4a with an entry that
+				// lands on an existing directory:
+				//
+				//	reference : create ../sub: open <dest>: is a directory
+				//	claustrum : open <dest>: is a directory
+				//
+				// This lands in the extract_tar error field on the wire.
+				//
+				// Deliberately scoped to THIS call. The io.Copy failure below and
+				// the MkdirAll above may or may not carry the same prefix — neither
+				// was provokable: the destDir wipe removes any blocker planted for
+				// the mkdir, and a mid-copy failure needs a short read the harness
+				// cannot stage. Wrapping them on the strength of this one
+				// observation would be inventing parity, so they are left alone and
+				// named here instead.
+				return count, fmt.Errorf("create %s: %v", hdr.Name, err)
 			}
 			n, err := io.Copy(out, io.LimitReader(tr, maxExtractBytes-totalWritten+1))
 			totalWritten += n
