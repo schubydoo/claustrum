@@ -344,6 +344,58 @@ func TestFilesExtractTarZipSlip(t *testing.T) {
 	}
 }
 
+// The zip-slip guard across the entry shapes an attacker actually sends.
+//
+// Asserts ONE property: nothing lands outside destDir. Deliberately NOT whether
+// each shape is accepted or rejected — which shapes the reference accepts is a
+// parity question that has not been measured for most of these, and pinning an
+// unmeasured accept/reject here would dress a guess up as a contract.
+//
+// This exists because CodeQL alert 8 (go/zipslip) reappeared on main without the
+// guard changing: its text is byte-identical to 896fd5c, the commit CodeQL
+// itself marked as fixing it, and the commit GitHub attributes the reappearance
+// to (#167) does not touch this file at all. So the reappearance is an analysis
+// change, not a regression — and that conclusion needs evidence stronger than
+// reading the guard, which is what this table provides. It is also the safety
+// net for any future rewrite of the guard into a form CodeQL recognises.
+func TestFilesExtractTarZipSlipShapes(t *testing.T) {
+	for _, entry := range []string{
+		"../escaped.txt",               // one level up
+		"../../../../escaped-deep.txt", // far above the temp root
+		"a/b/../../../escape.txt",      // traversal hidden behind a legitimate prefix
+		"../sub-sibling.txt",           // sibling whose name PREFIXES destDir's
+		"/absolute.txt",                // absolute entry
+		"./ok.txt",                     // current-dir form
+		"inner/../within.txt",          // in-bounds "..", resolves inside
+	} {
+		t.Run(entry, func(t *testing.T) {
+			s := newTestServer(t)
+			root := t.TempDir()
+			dest := filepath.Join(root, "sub")
+			archive := tarGzPath(t, map[string]string{entry: "payload"})
+
+			// The reply is not asserted: accept and reject are both fine here, so
+			// long as the filesystem outside destDir is untouched.
+			_ = dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
+				map[string]any{"archivePath": archive, "destDir": dest}))
+
+			var stray []string
+			_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil //nolint:nilerr // a missing tree just means nothing was written
+				}
+				if !strings.HasPrefix(p, dest+string(os.PathSeparator)) {
+					stray = append(stray, p)
+				}
+				return nil
+			})
+			if len(stray) > 0 {
+				t.Errorf("entry %q escaped destDir, wrote: %v", entry, stray)
+			}
+		})
+	}
+}
+
 // extractTarGz must reject archives whose total uncompressed size exceeds the cap.
 // A crafted .tar.gz can have a tiny compressed payload that expands to fill a disk;
 // the cap bounds that damage. The var is overridden to a small value here so the test
