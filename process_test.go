@@ -61,15 +61,35 @@ func TestEmitAssignsSeqAndStamps(t *testing.T) {
 	}
 }
 
+// lineBytesFor reports what one frame carrying `data` costs the replay buffer:
+// the serialized frame plus its trailing newline, which is the unit bufBytes
+// accounts in.
+//
+// The tests below derive their caps from this instead of hardcoding byte counts.
+// They used to assume the cap counted len(f.Data), so a cap of 10 meant "two
+// 5-byte frames" — that stopped being true when the unit was corrected to the
+// serialized line, and the numbers would have to be re-tuned again for any change
+// to the frame's JSON shape. Expressed as N frames' worth, they pin the BOUNDARY
+// (strict `>` vs `>=`) rather than an envelope size.
+func lineBytesFor(t *testing.T, data string) int64 {
+	t.Helper()
+	probe := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 1 << 30}
+	probe.emit(streamFrame{Stream: "stdout", Data: data})
+	if len(probe.buffer) != 1 {
+		t.Fatalf("probe buffer len = %d, want 1", len(probe.buffer))
+	}
+	return probe.buffer[0].lineBytes
+}
+
 // emit caps the replay buffer at bufCap: old frames are dropped (and firstSeq
 // advances) so the buffer never grows without bound. The most recently added
 // frame is always kept even if it alone exceeds the cap.
 func TestEmitBufferCap(t *testing.T) {
 	// Use a per-instance cap to avoid touching global state while goroutines
 	// from earlier spawn tests may still be calling emit on their own processes.
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
-	// Each frame has Data "aaaaaaaaaa" (10 bytes). After 3 emits the buffer
-	// would be 30 bytes — well over the 10-byte cap — so older frames must drop.
+	// Room for exactly two frames. After five emits the older three must drop.
+	line := lineBytesFor(t, "aaaaaaaaaa")
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 2 * line}
 	for i := 0; i < 5; i++ {
 		p.emit(streamFrame{Stream: "stdout", Data: "aaaaaaaaaa"})
 	}
@@ -91,7 +111,9 @@ func TestEmitBufferCap(t *testing.T) {
 // leaving nothing to replay on reattach.
 func TestEmitKeepsSoleOverCapFrame(t *testing.T) {
 	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
-	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("x", 25)}) // 25 bytes > cap 10
+	// No payload arithmetic here: the test only needs ONE frame that exceeds the
+	// cap, and the accounted size is the serialized line, not the 25 payload bytes.
+	p.emit(streamFrame{Stream: "stdout", Data: strings.Repeat("x", 25)})
 	if len(p.buffer) != 1 {
 		t.Fatalf("buffer len = %d, want 1 (sole over-cap frame must be kept)", len(p.buffer))
 	}
@@ -104,9 +126,11 @@ func TestEmitKeepsSoleOverCapFrame(t *testing.T) {
 // (`p.bufBytes > cap`). Pins that boundary — the `>= cap` mutant would drop the
 // oldest frame at the exact-equal point, wrongly advancing firstSeq past 1.
 func TestEmitRetainsAllAtExactCap(t *testing.T) {
-	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 10}
-	p.emit(streamFrame{Stream: "stdout", Data: "aaaaa"}) // 5 bytes, seq 1
-	p.emit(streamFrame{Stream: "stdout", Data: "bbbbb"}) // 5 bytes, seq 2 -> total exactly 10
+	// Exactly two frames' worth, so the second emit lands on bufBytes == cap.
+	line := lineBytesFor(t, "aaaaa")
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 2 * line}
+	p.emit(streamFrame{Stream: "stdout", Data: "aaaaa"}) // seq 1
+	p.emit(streamFrame{Stream: "stdout", Data: "bbbbb"}) // seq 2 -> exactly at cap
 	if len(p.buffer) != 2 {
 		t.Fatalf("buffer len = %d, want 2 (exactly at cap keeps every frame)", len(p.buffer))
 	}
@@ -776,8 +800,12 @@ func TestMetricsCountProcessOps(t *testing.T) {
 // process.reattach, so the cap decides which seq a reconnecting client can still
 // replay from. Driving 70 MiB of output through both daemons showed the
 // reference retaining ~15.85 MiB (firstSeq 7599) against claustrum's ~49.99 MiB
-// (firstSeq 4133) — same accounting, different constant. Re-measure before
-// changing this number.
+// (firstSeq 4133). Re-measure before changing this number.
+//
+// CORRECTION, 2026-08-02: this used to end "— same accounting, different
+// constant". The constant was the only thing that run could see. The UNIT was
+// wrong too, and stayed wrong for another four months: see defaultBufferCap in
+// process.go and TestEmitAccountsSerializedLineBytes.
 func TestDefaultBufferCapMatchesReference(t *testing.T) {
 	const want int64 = 16 * 1024 * 1024
 	if defaultBufferCap != want {
@@ -997,4 +1025,59 @@ func TestSpawnConfinesTheDrainGrace(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	exitDrainGrace = 50 * time.Millisecond
 	time.Sleep(200 * time.Millisecond)
+}
+
+// The replay buffer accounts in SERIALIZED LINE bytes — the marshaled frame plus
+// its trailing newline — not in len(f.Data).
+//
+// Measured against the reference at 5db5e4a with ~600-byte frames, where the
+// ~80-byte JSON envelope is ~12% rather than the <1% it is at 8.7 KB: driving
+// 27 MiB through each, the reference retained 19,195 frames and claustrum 20,962,
+// with an ~8700-byte control that agreed to 0.6%. 16 MiB / 800 (base64 of 600) =
+// 20,971 identifies claustrum's old unit; 16 MiB / (800+~80+1) = 19,043
+// identifies the reference's.
+//
+// Asserted as a RELATION, not a magic number: the accounted cost of a frame must
+// exceed its payload by the envelope, and must equal the bytes actually written
+// to a subscriber. Both survive any change to the frame's JSON shape.
+func TestEmitAccountsSerializedLineBytes(t *testing.T) {
+	const data = "aaaaaaaaaa"
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 1 << 30}
+	p.emit(streamFrame{Stream: "stdout", Data: data})
+
+	f := p.buffer[0]
+	if f.lineBytes <= int64(len(data)) {
+		t.Errorf("lineBytes = %d, want > len(Data) = %d — the envelope is not counted",
+			f.lineBytes, len(data))
+	}
+	if p.bufBytes != f.lineBytes {
+		t.Errorf("bufBytes = %d, want %d (the frame's own accounted cost)",
+			p.bufBytes, f.lineBytes)
+	}
+
+	// The accounted cost must be exactly what a subscriber would receive.
+	b, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(len(b) + 1); f.lineBytes != want {
+		t.Errorf("lineBytes = %d, want %d (marshaled frame + trailing newline)",
+			f.lineBytes, want)
+	}
+}
+
+// An exit frame carries no Data at all, so under the old unit it cost the buffer
+// ZERO and could never trigger a trim. Under the serialized unit it costs its
+// envelope like any other frame. Pins that the accounting is not payload-derived.
+func TestEmitAccountsExitFrameWithNoData(t *testing.T) {
+	code := 0
+	p := &managedProc{id: "p1", subs: map[*conn]struct{}{}, bufCap: 1 << 30}
+	p.emit(streamFrame{Stream: "exit", ExitCode: &code})
+
+	if p.buffer[0].Data != "" {
+		t.Fatalf("fixture: exit frame should carry no Data, got %q", p.buffer[0].Data)
+	}
+	if p.bufBytes == 0 {
+		t.Error("an exit frame cost the buffer 0 bytes — accounting is still payload-only")
+	}
 }

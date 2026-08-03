@@ -198,7 +198,7 @@ func TestRunServeChildFatalArms(t *testing.T) {
 	if err := os.WriteFile(tf, []byte("tok\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SHELL", "/claustrum-no-such-shell") // keep extractLoginPATH inert
+	stubLoginPATHExtractor(t) // genuinely inert; see the helper
 	code, exited = catchExit(func() {
 		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", false, false)
 	})
@@ -315,9 +315,7 @@ func TestRunServeChildFullLifecycle(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")
 	t.Setenv("CLAUDE_RPC_TOKEN", "ambient")
-	// A shell that cannot exec keeps extractLoginPATH from rewriting the test
-	// process's PATH (its failure path leaves PATH untouched).
-	t.Setenv("SHELL", "/claustrum-no-such-shell")
+	stubLoginPATHExtractor(t) // genuinely inert; see the helper
 	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
 
 	dir := shortTempDir(t)

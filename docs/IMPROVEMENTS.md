@@ -51,8 +51,17 @@ entry used to say so. That held only while "failure" meant *nothing happened*.
 `git.worktree_remove` now treats a failed git as permission to delete the
 worktree directory itself, so a caller with a side effect must distinguish our
 deadline from git's verdict — `gitDeadline` returns that third bit — or our own
-safety cap authorises a destructive act the reference cannot perform. Read-only
-callers are unaffected and still just check `ok`.
+safety cap authorises a destructive act the reference cannot perform.
+
+CORRECTION, 2026-08-02: this used to end "read-only callers are unaffected and
+still just check `ok`". They are not unaffected. `git.status` and (since the
+stdout-only fix) `git.list_branches` REPORT the failure as `-32603` carrying the
+Go error string, so when our deadline kills git they put a claustrum-only frame
+on the wire: measured, `err.Error()` is **`signal: killed`**, not `context
+deadline exceeded` — `Cmd.Wait` prefers the SIGKILLed process's `ExitError` over
+the context error. The reference has no deadline and simply blocks, emitting
+nothing. Unreachable for it, so not a parity break, but it is ours and it is on
+the wire.
 
 ⚠️ **The 60 s bound is softer than it reads.** `CombinedOutput` waits for the
 output pipe to close, not just for git to exit, so a git that spawns a child which
@@ -66,10 +75,18 @@ not promise a bound the code does not deliver.
 The timeout reply shape is also not unchanged: `git.worktree_remove` answers
 `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
 was attempted, and git may have partially removed the worktree"}`, a frame the
-reference never emits. It is confined to this pathological path; every
-reference-reachable frame stays byte-identical. The wording deliberately claims
-only what the daemon can observe — the SIGKILLed git unlinks as it goes, so the
-directory state is not knowable from here.
+reference never emits. It is confined to this pathological path, and **no OTHER
+frame moves because of the deadline** — which is the scoped form of a claim that
+used to read "every reference-reachable frame stays byte-identical". That whole-
+wire version was false for the entire window between the deadline work and the
+stdout-only fix, for the reason recorded in the CORRECTION above: `git.status`
+and `git.list_branches` put a claustrum-only `-32603` on the wire when our own
+deadline killed git. It is arguably true again now, which is exactly the trap —
+it was restated as scope rather than deleted so the two copies cannot drift apart
+a second time.
+
+The wording deliberately claims only what the daemon can observe — the SIGKILLed
+git unlinks as it goes, so the directory state is not knowable from here.
 
 ### 6 · pre-commit + `gofmt`/`vet` hooks ✅ — impact M / cost L
 
@@ -91,17 +108,31 @@ the CI `lint` job.
 
 ### 8 · Bounded replay buffer (ring) ✅ — impact M-H / cost M
 
-Shipped in #58: each per-process buffer is capped at **16 MiB** of base64 data
-(claustrum's own buffer was unbounded before #58 — a noisy long-lived process
-grew memory without bound); the oldest frames drop and `firstSeq` advances past
-the cap. `reattach` returns `firstSeq`, so clients handle the moved floor.
+Shipped in #58: each per-process buffer is capped at **16 MiB** of **serialized
+frame bytes**, each frame's JSON line including its trailing newline (claustrum's
+own buffer was unbounded before #58 — a noisy long-lived process grew memory
+without bound); the oldest frames drop and `firstSeq` advances past the cap.
+`reattach` returns `firstSeq`, so clients handle the moved floor.
 
 **The cap is parity, not tuning.** #58 chose 50 MiB before the reference's value
-was known; the 2026-07 sweep measured the reference at **16 MiB** with identical
-accounting (base64 length, whole frames dropped oldest-first), and claustrum was
-corrected to match. Because `firstSeq` is wire-visible, the bound is part of the
-observable contract — it is **not** a free local tuning knob. Re-measure before
-changing it.
+was known; the 2026-07 sweep measured the reference at **16 MiB**, and claustrum
+was corrected to match. Because `firstSeq` is wire-visible, the bound is part of
+the observable contract — it is **not** a free local tuning knob. Re-measure
+before changing it.
+
+⚠️ **CORRECTION (2026-08-02): the ACCOUNTING UNIT above was wrong, and this entry
+stated it most strongly of all the records.** It read "16 MiB of base64 data" and
+claimed the 2026-07 sweep had *measured* "identical accounting (base64 length,
+whole frames dropped oldest-first)". The constant was right; the unit was not.
+The reference counts the serialized frame **including its trailing newline**,
+where claustrum counted `len(f.Data)` only — so on small-frame workloads
+claustrum retained ~18.05 MiB of line bytes against the reference's 16 MiB, and
+`reattach{fromSeq:0}`'s `firstSeq` diverged. The exit frame is the clearest case:
+no `Data` at all, so it cost 0 here and ~60 B there.
+
+Naming the accounting method as *measured* is why this survived: PR #174 compared
+at ~8.7 KB frames, where the two hypotheses agree to within rounding, and
+concluded the accounting already matched. **Reproduce with SMALL frames.**
 
 ### 9 · stdin backpressure ✅ — impact M / cost M
 

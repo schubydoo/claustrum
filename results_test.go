@@ -106,6 +106,15 @@ func TestStreamFrameMarshaling(t *testing.T) {
 			`{"type":"stream","processId":"p1","stream":"stdout","seq":1,"data":"AAA"}`},
 		{"exit zero", streamFrame{Type: "stream", ProcessID: "p1", Stream: "exit", Seq: 2, ExitCode: &zero},
 			`{"type":"stream","processId":"p1","stream":"exit","seq":2,"exitCode":0}`},
+		// lineBytes is the replay buffer's accounting unit and must never reach
+		// the wire. It is unexported today, so encoding/json drops it — but every
+		// other case here leaves it at its zero value, which would keep passing if
+		// someone exported it WITH omitempty. process.reattach re-marshals buffered
+		// frames, and those DO carry a non-zero value, so that edit would silently
+		// add a key to every replayed frame while this test stayed green.
+		{"lineBytes never serialized",
+			streamFrame{Type: "stream", ProcessID: "p1", Stream: "stdout", Seq: 3, Data: "AAA", lineBytes: 81},
+			`{"type":"stream","processId":"p1","stream":"stdout","seq":3,"data":"AAA"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
