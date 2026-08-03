@@ -262,15 +262,39 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		if err != nil {
 			return count, gzipErr{err}
 		}
-		target := filepath.Join(destDir, hdr.Name)
-		// Reject entries that would escape destDir ("zip slip"). filepath.Rel
-		// returns a path beginning with ".." exactly when target lands outside
-		// destDir; an in-bounds "../" (or the destDir itself, e.g. a "." entry)
-		// resolves inside and is allowed, matching the reference. The reference
-		// rejects an escaping archive with this exact error and fileCount 0 —
-		// even when earlier safe entries were already written to disk. (This Rel
-		// form is also what CodeQL recognizes as a go/zipslip sanitizer.)
-		if rel, err := filepath.Rel(destDir, target); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		// Reject entries that would escape destDir ("zip slip"). filepath.Join
+		// cleans, so target is already normalized; an entry then lands inside
+		// destDir exactly when target IS destDir or sits under it with a
+		// separator. An in-bounds "../" (and the destDir itself, e.g. a "."
+		// entry) resolves inside and is allowed, matching the reference. The
+		// reference rejects an escaping archive with this exact error and
+		// fileCount 0 — even when earlier safe entries were already written.
+		//
+		// THE TRAILING SEPARATOR IS THE WHOLE GUARD. Comparing against cleanDest
+		// alone would admit a sibling whose name merely starts with destDir's —
+		// "../sub-sibling.txt" out of a "…/sub" destDir — which is the classic
+		// way this check is written wrong. TestFilesExtractTarZipSlipShapes has a
+		// row for exactly that, and it is the only test in the suite that catches
+		// it; do not "simplify" the separator away.
+		//
+		// This replaced an equivalent filepath.Rel form on 2026-08-03. The Rel
+		// version was correct and stayed byte-identical from the commit CodeQL
+		// marked as fixing go/zipslip (896fd5c) — but CodeQL 2.26.2 stopped
+		// recognizing it as a sanitizer and reopened the alert with no code
+		// change. This form is the one its query models. Behaviour is unchanged,
+		// which the shapes table is there to prove rather than assert.
+		// destPrefix appends the separator UNLESS cleanDest already ends in one,
+		// which happens only for a root destDir ("/", or a Windows volume root).
+		// Concatenating unconditionally yields "//" there, and no target has that
+		// prefix, so every entry would be rejected — a differential against the
+		// old Rel form caught exactly this, on 19 pairs, all with destDir "/".
+		cleanDest := filepath.Clean(destDir)
+		destPrefix := cleanDest
+		if !strings.HasSuffix(destPrefix, string(os.PathSeparator)) {
+			destPrefix += string(os.PathSeparator)
+		}
+		target := filepath.Join(cleanDest, hdr.Name)
+		if target != cleanDest && !strings.HasPrefix(target, destPrefix) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
 		// The reference ignores the archive's mode bits and forces owner-only
