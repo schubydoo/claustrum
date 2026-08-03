@@ -321,7 +321,27 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				return count, err
+				// "mkdir parent <entry>: " — a DIFFERENT prefix from the create
+				// path below, and fileCount 0 rather than the partial count.
+				// Measured against 5db5e4a with an archive whose FIRST entry
+				// writes a regular file "p" and whose second needs "p" as a
+				// directory:
+				//
+				//	reference : mkdir parent p/child.txt: mkdir <dest>/p: not a directory
+				//	            fileCount 0
+				//	claustrum : mkdir <dest>/p: not a directory
+				//	            fileCount 1
+				//
+				// fileCount 0 despite one entry already being on disk is the same
+				// shape the zip-slip rejection has: the reference reports nothing
+				// extracted even when earlier entries were written.
+				//
+				// An earlier version of this comment said the mkdir path was "not
+				// provokable" because extract_tar wipes destDir before extracting.
+				// That was wrong — the wipe cannot remove a blocker the ARCHIVE
+				// ITSELF creates on an earlier entry, which is how this was
+				// measured. Raised in review.
+				return 0, fmt.Errorf("mkdir parent %s: %v", hdr.Name, err)
 			}
 			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
@@ -334,13 +354,15 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				//
 				// This lands in the extract_tar error field on the wire.
 				//
-				// Deliberately scoped to THIS call. The io.Copy failure below and
-				// the MkdirAll above may or may not carry the same prefix — neither
-				// was provokable: the destDir wipe removes any blocker planted for
-				// the mkdir, and a mid-copy failure needs a short read the harness
-				// cannot stage. Wrapping them on the strength of this one
-				// observation would be inventing parity, so they are left alone and
-				// named here instead.
+				// The MkdirAll above carries a DIFFERENT prefix ("mkdir parent
+				// <entry>: ") and is handled there — measured, after an earlier
+				// version of this comment wrongly called it unprovokable.
+				//
+				// The io.Copy failure below is still unmeasured: it needs a short
+				// read the harness cannot stage, so it is left bare rather than
+				// wrapped on the strength of the two arms that WERE measured.
+				// Assuming a third prefix from two observations is how a parity
+				// claim outruns its evidence.
 				return count, fmt.Errorf("create %s: %v", hdr.Name, err)
 			}
 			n, err := io.Copy(out, io.LimitReader(tr, maxExtractBytes-totalWritten+1))

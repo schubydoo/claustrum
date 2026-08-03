@@ -430,10 +430,6 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 	}
 }
 
-// extractTarGz must reject archives whose total uncompressed size exceeds the cap.
-// A crafted .tar.gz can have a tiny compressed payload that expands to fill a disk;
-// the cap bounds that damage. The var is overridden to a small value here so the test
-// does not write gigabytes to disk.
 // Two behaviours of the up-then-back-in shape, both MEASURED against 5db5e4a on
 // 2026-08-03 rather than assumed. They were an assumption until then, and the
 // assumption was load-bearing: PR #224 rewrote the guard in a way that rejected
@@ -469,14 +465,48 @@ func TestFilesExtractTarUpThenBackIn(t *testing.T) {
 	archive2 := tarGzPath(t, map[string]string{"../sub2": "payload"})
 	got = dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
 		map[string]any{"archivePath": archive2, "destDir": dest2}))
-	if !strings.Contains(got, "create ../sub2: ") {
-		t.Errorf("bare up-then-back-in = %s, want the reference's \"create <entry>: \" prefix", got)
-	}
-	if !strings.Contains(got, "is a directory") {
-		t.Errorf("bare up-then-back-in = %s, want the underlying is-a-directory error retained", got)
+	for _, want := range []string{`"success":false`, `"fileCount":0`, "create ../sub2: ", "is a directory"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("bare up-then-back-in = %s, missing %q", got, want)
+		}
 	}
 }
 
+// The OTHER create-failure prefix, and the one that shows the two are not the
+// same string. An archive whose FIRST entry writes a regular file "p" and whose
+// second needs "p" as a directory fails the parent mkdir — a blocker the destDir
+// wipe cannot remove, because the archive itself creates it.
+//
+// Measured against 5db5e4a:
+//
+//	reference : mkdir parent p/child.txt: mkdir <dest>/p: not a directory, fileCount 0
+//	claustrum : mkdir <dest>/p: not a directory,                          fileCount 1
+//
+// fileCount 0 with one entry already on disk is the same shape the zip-slip
+// rejection has: the reference reports nothing extracted even when earlier
+// entries were written.
+func TestFilesExtractTarMkdirParentPrefix(t *testing.T) {
+	s := newTestServer(t)
+	dest := filepath.Join(t.TempDir(), "sub")
+	// Entry ORDER is the fixture: "p" must be written before "p/child.txt", or
+	// the mkdir succeeds and nothing is tested. makeTarGz sorts entry names and
+	// "p" sorts before "p/child.txt", so the map form is safe here — but the
+	// dependency is real, so do not switch this to an unsorted writer.
+	archive := tarGzPath(t, map[string]string{"p": "blocker", "p/child.txt": "payload"})
+
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
+		map[string]any{"archivePath": archive, "destDir": dest}))
+	for _, want := range []string{`"success":false`, `"fileCount":0`, "mkdir parent p/child.txt: ", "not a directory"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("mkdir-parent failure = %s, missing %q", got, want)
+		}
+	}
+}
+
+// extractTarGz must reject archives whose total uncompressed size exceeds the cap.
+// A crafted .tar.gz can have a tiny compressed payload that expands to fill a disk;
+// the cap bounds that damage. The var is overridden to a small value here so the test
+// does not write gigabytes to disk.
 func TestFilesExtractTarSizeLimit(t *testing.T) {
 	old := maxExtractBytes
 	maxExtractBytes = 1024
