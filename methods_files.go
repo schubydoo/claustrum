@@ -198,6 +198,27 @@ type extractTarParams struct {
 	DestDir     string `json:"destDir"`
 }
 
+// isFilesystemRoot reports whether p names a filesystem root, on any platform.
+//
+// The gate this backs matters because filesExtractTar WIPES destDir before
+// extracting (os.RemoveAll), so a root destDir would recursively delete the
+// volume. It is claustrum-only safety, not parity — the reference has no such
+// guard — which is exactly why it must not have a platform-shaped hole.
+//
+// It used to compare `filepath.Clean(destDir) == "/"`. That is a Unix-only
+// notion of root: a Windows volume root cleans to `C:\`, never the string "/",
+// and filepath.IsAbs accepts it — so `C:\` (and a UNC share root) passed the
+// gate and reached the RemoveAll. Raised in review on #224 as pre-existing.
+//
+// `filepath.Dir(x) == x` is the platform's own definition of "has no parent",
+// true for "/" on Unix and for a drive or UNC root on Windows, and it needs no
+// separate spelling per platform. Clean first so a trailing separator ("/" vs
+// "//", `C:\` vs `C:\\`) cannot slip past by shape.
+func isFilesystemRoot(p string) bool {
+	c := filepath.Clean(p)
+	return filepath.Dir(c) == c
+}
+
 func filesExtractTar(req *request) response {
 	var p extractTarParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -206,7 +227,7 @@ func filesExtractTar(req *request) response {
 	if p.ArchivePath == "" || p.DestDir == "" {
 		return errResult(req.ID, codeInvalidParam, "archivePath and destDir are required")
 	}
-	if !filepath.IsAbs(p.DestDir) || filepath.Clean(p.DestDir) == "/" {
+	if !filepath.IsAbs(p.DestDir) || isFilesystemRoot(p.DestDir) {
 		return okResult(req.ID, extractResult{Error: fmt.Sprintf("destDir must be an absolute, non-root path: %q", p.DestDir)})
 	}
 	count, err := extractTarGz(p.ArchivePath, p.DestDir)

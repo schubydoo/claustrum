@@ -184,6 +184,36 @@ func TestFilesExtractTarSuccess(t *testing.T) {
 	}
 }
 
+// isFilesystemRoot must recognise the platform's OWN root, not just "/".
+//
+// The gate it backs guards an os.RemoveAll of destDir, so a root that slips
+// through recursively deletes the volume. The previous spelling compared
+// against the literal "/", which a Windows volume root never equals — `C:\`
+// cleans to itself and passes filepath.IsAbs, so it reached the wipe.
+//
+// The Windows rows are the point of this test and can only fail on the Windows
+// leg; the Unix rows keep it honest there.
+func TestIsFilesystemRoot(t *testing.T) {
+	var roots, nonRoots []string
+	if runtime.GOOS == "windows" {
+		roots = []string{`C:\`, `C:\\`, `\\srv\share`}
+		nonRoots = []string{`C:\tmp`, `C:\tmp\out`, `\\srv\share\sub`}
+	} else {
+		roots = []string{"/", "//", "/."}
+		nonRoots = []string{"/tmp", "/tmp/out", "/tmp/"}
+	}
+	for _, r := range roots {
+		if !isFilesystemRoot(r) {
+			t.Errorf("isFilesystemRoot(%q) = false, want true — a root destDir reaches os.RemoveAll", r)
+		}
+	}
+	for _, n := range nonRoots {
+		if isFilesystemRoot(n) {
+			t.Errorf("isFilesystemRoot(%q) = true, want false — this would refuse a legitimate destDir", n)
+		}
+	}
+}
+
 func TestFilesExtractTarErrors(t *testing.T) {
 	s := newTestServer(t)
 	good := tarGzPath(t, map[string]string{"a.txt": "x"})
