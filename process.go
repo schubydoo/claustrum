@@ -23,21 +23,63 @@ type streamFrame struct {
 	Seq       uint64 `json:"seq"`
 	Data      string `json:"data,omitempty"`
 	ExitCode  *int   `json:"exitCode,omitempty"`
+
+	// lineBytes is the length of this frame AS SERIALIZED, including the
+	// trailing newline — the unit the replay buffer accounts in. Unexported, so
+	// encoding/json ignores it and no frame on the wire changes shape.
+	lineBytes int64
 }
 
-// defaultBufferCap caps the total base64-encoded data held in each per-process
-// replay buffer. A long-running, high-throughput process would otherwise grow
+// defaultBufferCap caps the total SERIALIZED FRAME BYTES — each frame's JSON
+// line including its trailing newline — held in each per-process replay buffer. A long-running, high-throughput process would otherwise grow
 // the buffer without bound for the daemon's entire lifetime (the buffer is never
 // reclaimed while the procManager holds the entry).
 //
 // 16 MiB is the REFERENCE's value, not a tuning choice — do not change it
-// without re-measuring. Driving 70 MiB of output through both daemons and then
-// calling reattach{fromSeq:0} showed the reference retaining ≈15.85 MiB of
-// base64 across 1,915 frames (firstSeq 7599) where claustrum's 50 MiB retained
-// ≈49.99 MiB across 5,718 frames (firstSeq 4133). The accounting method already
-// matched — base64 length, whole frames dropped oldest-first — so only the
-// constant differed. firstSeq is wire-visible via reattach, so this bound is
-// part of the observable contract.
+// without re-measuring. Driving 70 MiB through both daemons and calling
+// reattach{fromSeq:0} showed the reference retaining ≈15.85 MiB across 1,915
+// frames where claustrum's then-50 MiB retained ≈49.99 MiB across 5,718.
+// firstSeq is wire-visible via reattach, so this bound is observable contract.
+//
+// CORRECTION, 2026-08-02: that measurement also concluded "the accounting method
+// already matched — base64 length", and only the constant was changed. The unit
+// was wrong too. The reference's retained-frame counts match a 16 MiB bound
+// measured in the bytes a subscriber receives — the serialized frame plus its
+// newline — where claustrum counted len(f.Data), the base64 payload alone. See
+// bufBytes/emit below.
+//
+// The reason it read as matching is worth more than the bug. That run used
+// ~8.7 KB frames, where the ~80-byte JSON envelope is under 1% — inside the noise
+// of where a trim boundary lands. Re-measured at ~600-byte frames, where the
+// envelope is ~12%, driving 27 MiB through each:
+//
+//	frame size   retained frames, reference   claustrum (before)
+//	  ~8700 B                       1,438       1,447    control — 0.6% apart
+//	   ~600 B                      19,195      20,962    9.2% apart
+//
+// The arithmetic identifies the ENVELOPE, and only the envelope. A 600-byte
+// payload is 800 bytes of base64: 16 MiB / 800 = 20,971 ≈ claustrum's 20,962,
+// while 16 MiB / (800 + ~80) = 19,065 and with the newline 19,043 — both within
+// the slop of a ≈ against 19,195, so this division cannot tell you whether the
+// trailing newline is counted. What settles the newline is the post-fix run:
+// counting frame+newline puts both binaries on the SAME retained count exactly
+// (19,194 each), where omitting it would leave claustrum ~22 frames adrift.
+//
+// Those figures are one frame apart between runs (19,195 then 19,194 for the
+// reference) because frame boundaries depend on pipe scheduling and are not
+// deterministic — see the note on frame boundaries in docs/PROTOCOL.md. The
+// exact-agreement claim is about a single run comparing both binaries, not about
+// a number that reproduces across runs.
+//
+// Be honest about how much that carries: the run-to-run spread is inferred from
+// TWO observations, so "~22 frames adrift would be visible" rests on a weakly
+// established noise floor. The load-bearing evidence is the SECOND arm — the
+// ~8.7 KB control landing exactly (1,438 / 1,438) after the fix. Two independent
+// arms agreeing exactly is much harder to get by luck than one, and that is what
+// settles the trailing newline, not the 22-frame margin.
+//
+// A fixture can make a real divergence unmeasurable purely by choosing the wrong
+// magnitude, and nothing about the earlier run looked wrong.
 const defaultBufferCap int64 = 16 * 1024 * 1024
 
 // stdinQueueCap bounds the per-process async stdin queue. A producer that outruns
@@ -67,7 +109,7 @@ type managedProc struct {
 	mu        sync.Mutex
 	seq       uint64
 	buffer    []streamFrame
-	bufBytes  int64 // sum of len(f.Data) for frames currently in buffer
+	bufBytes  int64 // sum of f.lineBytes (serialized frame + newline) in buffer
 	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
 	subs      map[*conn]struct{}
 	running   bool
@@ -266,7 +308,8 @@ func (p *managedProc) killGroupAfterExit() {
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
 // every attached client. The buffer retains frames for later reattach, capped
-// at maxBufferBytes: the oldest frames are dropped (and firstSeq advances) when
+// at defaultBufferCap (or the per-instance bufCap): the oldest frames are
+// dropped, and firstSeq advances, when
 // the cap is exceeded, matching the reattach contract on the wire.
 func (p *managedProc) emit(f streamFrame) {
 	p.mu.Lock()
@@ -274,15 +317,32 @@ func (p *managedProc) emit(f streamFrame) {
 	f.Seq = p.seq
 	f.Type = "stream"
 	f.ProcessID = p.id
+	// Marshal HERE, under the lock, because the accounting unit is the serialized
+	// line and the seq that goes into it is assigned here. The same bytes are
+	// reused for the fan-out below, so this is not an extra marshal — it moved.
+	//
+	// The COUNT is unchanged; the lock hold is not. p.mu is now held across a
+	// marshal of up to ~44 KB of base64 per frame, where it was released first.
+	// That is the same lock reattach takes to swap the subscriber set and the one
+	// the stdout and stderr readers contend on, so under a high-throughput process
+	// the two emitters now serialize on marshal time as well as on bookkeeping.
+	// Unavoidable as written — the seq that goes into the bytes is assigned under
+	// the lock — and stated here so anyone profiling emit finds it rather than
+	// discovering it.
+	b, merr := json.Marshal(f)
+	if merr == nil {
+		b = append(b, '\n')
+	}
+	f.lineBytes = int64(len(b))
 	p.buffer = append(p.buffer, f)
-	p.bufBytes += int64(len(f.Data))
+	p.bufBytes += f.lineBytes
 	cap := p.bufCap
 	if cap == 0 {
 		cap = defaultBufferCap
 	}
 	// Trim oldest frames while over cap, keeping at least the frame just added.
 	for len(p.buffer) > 1 && p.bufBytes > cap {
-		p.bufBytes -= int64(len(p.buffer[0].Data))
+		p.bufBytes -= p.buffer[0].lineBytes
 		p.buffer = p.buffer[1:]
 	}
 	subs := make([]*conn, 0, len(p.subs))
@@ -290,15 +350,10 @@ func (p *managedProc) emit(f streamFrame) {
 		subs = append(subs, c)
 	}
 	p.mu.Unlock()
-	// Marshal once and fan the same bytes out to every subscriber — the frames
-	// are identical per conn, so re-marshaling per subscriber was pure waste.
+	// The frames are identical per conn, so one marshal serves every subscriber.
 	// json.Marshal of a streamFrame cannot realistically fail (strings + ints);
 	// if it somehow does, every subscriber would have failed the same way, so
 	// mirror the old per-conn behavior: log + detach each.
-	b, merr := json.Marshal(f)
-	if merr == nil {
-		b = append(b, '\n')
-	}
 	for _, c := range subs {
 		err := merr
 		if err == nil {
@@ -654,22 +709,76 @@ func (m *procManager) kill(id, signal string) {
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
-// sends no timeoutMs (or a non-positive one). Probe-measured at 3000ms against the
-// reference. var so tests can shrink it. maxKillWaitMs caps an absurd caller value
-// so a signal-ignoring child + escalate:false can't wedge the dispatch goroutine
-// indefinitely — the reference clamps too (clampKillWaitMs); its exact ceiling is
-// above the ~90s we could observe, so this generous cap only bites on adversarial
-// input, never a real client.
+// sends no timeoutMs (or a non-positive one).
+//
+// Probe-measured at 3000ms against the reference — and re-measured 2026-08-02
+// against the PIN, `5db5e4a`, because the original run used `7c2f88d` and the
+// comment did not say so. Omitting timeoutMs entirely against a SIGTERM-ignoring
+// child answers at 3.4s, where an explicit timeoutMs:1000 answers at 1.4s; the
+// same ~0.4s harness overhead in both rows is what makes the pair readable, and
+// the 1000ms row is the control proving the harness can separate two graces at
+// all. var so tests can shrink it.
 var defaultKillWaitMs = 3000
 
-const maxKillWaitMs = 600000 // 10 min
+// maxKillWaitMs is the ceiling killAndWait clamps a caller's timeoutMs to. This
+// is REFERENCE-REACHABLE and was wrong: a caller asking for 45s got 45s here and
+// 30s there, so the exit frame arrived 15s late.
+//
+// CORRECTION, 2026-08-02: this shipped at 600000 with a comment saying the
+// reference's "exact ceiling is above the ~90s we could observe, so this generous
+// cap only bites on adversarial input, never a real client". Both halves were
+// wrong — the ceiling is 30s, well inside what a real client sends, and it was
+// observable all along. An earlier sweep had also filed this finding as disproved
+// without recording the observation behind the dismissal, which is why it
+// survived: a dismissal needs its evidence written down as much as a
+// confirmation does.
+//
+// Measured against 5db5e4a with a SIGTERM-ignoring child, so the grace must run
+// out in full. Elapsed to the killAndWait reply, ~0.4s of spawn+reply overhead
+// included:
+//
+//	timeoutMs   reference   claustrum (before)
+//	     2000       2.4s       2.4s     (control — both honour it)
+//	    29500      29.9s      29.9s     (below the ceiling)
+//	    30500      30.0s      30.9s     (reference stops; claustrum does not)
+//	    45000      30.0s      45.4s     (constant, not proportional)
+//
+// For a child that NEVER exits the observable is elapsed time alone, so no golden
+// or battery id can catch a regression there: the reply is
+// {"found":true,"died":true,"escalated":true} whatever the ceiling is. Only a
+// differential probe against the reference can see this at all.
+//
+// The body is NOT always identical, though, and the first probe here could not
+// see that — its fixture excluded the only window where it matters. A child that
+// ignores SIGTERM and then self-exits BETWEEN the clamp and the requested grace
+// takes a different branch: with escalate:true the omitempty `escalated` key
+// appears, and with escalate:false `died` flips true→false. Measured against
+// 5db5e4a with a child exiting at 35s and timeoutMs:45000 — the reference
+// escalates at 30s and claustrum now matches on both arms, with sub-clamp arms as
+// the control.
+//
+// Honest bound: black-box timing places the ceiling in (29500, 30500] and cannot
+// resolve it further, because ~0.4s of overhead swamps a finer bracket. 30000 is
+// the only round value in that interval. An earlier audit reached the same value
+// the same way, from a WIDER bracket — that is agreement, not independent
+// confirmation, and borrowing confidence from it would be the mistake this
+// comment exists to avoid. Do not restate this as "measured exactly 30000ms".
+// var, not const, for the same reason defaultKillWaitMs is one: a test has to be
+// able to shrink it to prove the clamp reaches the actual wait. Production never
+// assigns it.
+var maxKillWaitMs = 30000 // 30s
 
 // killReapGrace bounds the wait for a SIGKILL'd process to be reaped after
-// escalation. It is deliberately independent of (and larger than) the caller's
-// grace — which may be a few ms — because SIGKILL is uncatchable and the reap is
-// near-instant, so this only guards against a pathological unreapable child (e.g.
-// stuck in uninterruptible sleep) wedging the dispatch goroutine. var so tests can
-// shrink it.
+// escalation. It is deliberately independent of the caller's grace — NOT
+// necessarily larger than it, as this said until 2026-08-02: a caller may send
+// any timeoutMs up to the 30s ceiling, so "larger than" was false for anything
+// over 5s and was false before that change too. The two never interact: the reap
+// bound runs strictly after the grace, sequentially.
+//
+// It is small because SIGKILL is uncatchable and the reap is near-instant, so it
+// only guards against a pathological unreapable child (e.g. stuck in
+// uninterruptible sleep) wedging the dispatch goroutine. var so tests can shrink
+// it.
 var killReapGrace = 5 * time.Second
 
 // exitDrainGrace bounds how long the exit frame waits for stdout/stderr to reach

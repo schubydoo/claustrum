@@ -527,6 +527,17 @@ Errors:
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`
 
 - Non-repo → `{"isRepo":false,"branches":[]}`.
+- **stdout only**, like `git.status` and unlike `git.worktree_create`. A repo
+  with a broken ref makes `for-each-ref` warn on stderr while still exiting `0`;
+  that warning must not become a branch name.
+- A `for-each-ref` that **fails** (e.g. a corrupt `packed-refs`, exit 128) is
+  reported as `-32603` carrying the Go error string — `exit status 128`, not
+  git's `fatal: …` text. Same rule as `git.status`.
+- **Claustrum-only frame.** If claustrum's 60 s `gitTimeout` kills git instead,
+  the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
+  SIGKILLed process's exit error over the context error. The reference runs git
+  with no deadline and simply blocks, so it never emits this. `git.status` has
+  the identical frame for the identical reason. See IMPROVEMENTS §5.
 
 #### git.worktree_create
 
@@ -733,9 +744,12 @@ unknown id is not an error):
   up to the grace:
     - **`timeoutMs`** sets that grace. Non-positive or absent → the **3000 ms**
       default (probe-verified: `0` and `-100` both wait 3000 ms); positive values
-      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s). claustrum caps an
-      absurd value at 600000 ms so a signal-ignoring child can't wedge a request
-      forever — the reference clamps too, above the ~90 s ceiling we could observe.
+      are honored verbatim (50 ms → ~50 ms, 8000 ms → ~8 s) **up to a 30000 ms
+      ceiling**. A larger value is clamped to it, so `timeoutMs: 45000` against a
+      signal-ignoring child answers after ~30 s, not 45 s. Measured against the
+      reference at `5db5e4a`; the black-box bracket is (29500, 30500] and 30000 is
+      the only round value in it. The ceiling is not new in `5db5e4a`: `7c2f88d`,
+      the build that added the method, answers at ~30 s for the same input.
     - **`escalate`** (default `true`) decides what happens if the process is still
       alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
       and add `"escalated":true` to the reply. `false` → leave the process running
@@ -820,10 +834,16 @@ unknown id is not an error):
 - Exact frame *boundaries* depend on pipe scheduling and are not stable — only
   the reassembled bytes are. (Both the 32 KiB cap and the `-1` signal code are
   probe-verified against the reference.)
-- The replay buffer is **bounded at 16 MiB** of base64 `data` per process
-  (probe-verified against the reference). Frames are dropped oldest-first, whole
-  frames at a time, once a new frame would exceed the cap; at least one frame is
-  always retained, even one larger than the cap. So `reattach{fromSeq:0}` replays
+- The replay buffer is **bounded at 16 MiB per process**, counted as the
+  **serialized frame including its trailing newline** — the bytes a subscriber
+  would receive — not as the base64 `data` alone. Probe-verified against the
+  reference; an exit frame therefore costs its envelope even though it carries no
+  `data`. (This previously read "16 MiB of base64 `data`". The constant was right
+  and the unit was not: the difference is under 1% at 8.7 KB frames and ~12% at
+  600-byte frames, so the run that established the constant could not see it.)
+  Frames are dropped oldest-first, whole frames at a time, once a new frame would
+  exceed the cap; at least one frame is always retained, even one larger than the
+  cap. So `reattach{fromSeq:0}` replays
   everything **still retained**, not necessarily everything ever emitted — the
   reply's `firstSeq` is the floor, and a client that needs the gap detected must
   compare it against the last `seq` it saw.
@@ -845,6 +865,20 @@ claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
 (Unix), then runs the RPC server. On success it prints
 `Claustrum remote server listening on <socket>` to stdout.
+
+**Login-shell PATH extraction** (Unix) runs `$SHELL -l -i -c …` when `$SHELL` is
+an executable file, else the first usable of `/bin/zsh`, `/bin/bash`, `/bin/sh`
+— **zsh first**, matching the reference. The resolved PATH goes to spawned
+children only, never into the daemon's own environment. Two observable rules:
+
+- Extraction is capped at **4 s**, and a timeout **discards** whatever the shell
+  printed — even a complete, valid PATH. The daemon logs one line naming the
+  shell and children fall back to the inherited PATH.
+- The value reaches `process.spawn` children as their `PATH`. It does **not**
+  affect how the daemon resolves the `command` you send: that is looked up
+  against the daemon's own PATH, so the extracted value can never turn a spawn
+  into `executable file not found`. It is visible only to a child that resolves
+  binaries itself (`sh -c …`).
 
 **Token source** — required, and checked *before* the socket:
 
