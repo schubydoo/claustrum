@@ -184,6 +184,51 @@ func TestFilesExtractTarSuccess(t *testing.T) {
 	}
 }
 
+// isFilesystemRoot must recognise the platform's OWN root, not just "/".
+//
+// The gate it backs guards an os.RemoveAll of destDir, so a root that slips
+// through recursively deletes the volume. The previous spelling compared
+// against the literal "/", which a Windows volume root never equals — `C:\`
+// cleans to itself and passes filepath.IsAbs, so it reached the wipe.
+//
+// The Windows rows are the point of this test and can only fail on the Windows
+// leg; the Unix rows keep it honest there.
+func TestIsFilesystemRoot(t *testing.T) {
+	var roots, nonRoots []string
+	if runtime.GOOS == "windows" {
+		roots = []string{`C:\`, `C:\\`, `\\srv\share`}
+		nonRoots = []string{`C:\tmp`, `C:\tmp\out`, `\\srv\share\sub`}
+	} else {
+		roots = []string{"/", "//", "/."}
+		nonRoots = []string{"/tmp", "/tmp/out", "/tmp/"}
+	}
+	for _, r := range roots {
+		if !isFilesystemRoot(r) {
+			t.Errorf("isFilesystemRoot(%q) = false, want true — a root destDir reaches os.RemoveAll", r)
+		}
+	}
+	for _, n := range nonRoots {
+		if isFilesystemRoot(n) {
+			t.Errorf("isFilesystemRoot(%q) = true, want false — this would refuse a legitimate destDir", n)
+		}
+	}
+}
+
+// rootDestDirForOS is the platform's own filesystem root, so the "root destDir"
+// row below exercises the gate END TO END on every leg.
+//
+// It used to be the literal "/", which on Windows is not a root at all — the row
+// still passed there (a relative path is also refused, by the IsAbs half), so
+// nothing asserted that filesExtractTar reaches the root check on the platform
+// where that check was broken. TestIsFilesystemRoot covers the predicate; this
+// covers the wiring.
+func rootDestDirForOS() string {
+	if runtime.GOOS == "windows" {
+		return `C:\`
+	}
+	return "/"
+}
+
 func TestFilesExtractTarErrors(t *testing.T) {
 	s := newTestServer(t)
 	good := tarGzPath(t, map[string]string{"a.txt": "x"})
@@ -196,11 +241,32 @@ func TestFilesExtractTarErrors(t *testing.T) {
 	}{
 		{"missing fields", "", "", "archivePath and destDir are required"},
 		{"relative destDir", good, "relative/out", "destDir must be an absolute"},
-		{"root destDir", good, "/", "destDir must be an absolute, non-root path"},
+		// The archive is DELIBERATELY nonexistent on this row. The destDir gate runs
+		// before the archive is opened, so with the guard holding the row is
+		// unaffected — but if the guard ever regresses, extraction fails on the
+		// missing archive instead of unpacking into a real filesystem root. The
+		// wipe seam stops the RemoveAll; this stops the writes that would follow it.
+		// Together they make "run this without the fix" a safe thing to do.
+		{"root destDir", filepath.Join(t.TempDir(), "no-such.tar.gz"), rootDestDirForOS(), "destDir must be an absolute, non-root path"},
 	}
+	// Stub the wipe for EVERY row. The root row sends a real filesystem root —
+	// C:\ on Windows — so if isFilesystemRoot ever stops holding, an unstubbed
+	// run would answer that by recursively deleting the CI runner. The stub also
+	// makes the assertion sharper than "an error came back": the guard must
+	// refuse BEFORE any filesystem effect, which is what wiped records.
+	wiped := ""
+	oldWipe := wipeDestDir
+	wipeDestDir = func(path string) error { wiped = path; return nil }
+	t.Cleanup(func() { wipeDestDir = oldWipe })
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			wiped = ""
 			got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": tc.archivePath, "destDir": tc.destDir}))
+			if wiped != "" {
+				t.Errorf("destDir %q was refused but the wipe still ran on %q — the guard must "+
+					"reject before any filesystem effect", tc.destDir, wiped)
+			}
 			if !strings.Contains(got, tc.wantSub) {
 				t.Errorf("extract = %s, want substring %q", got, tc.wantSub)
 			}

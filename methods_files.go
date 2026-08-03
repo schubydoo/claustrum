@@ -198,6 +198,48 @@ type extractTarParams struct {
 	DestDir     string `json:"destDir"`
 }
 
+// wipeDestDir is the recursive delete extract_tar performs before unpacking,
+// behind a seam.
+//
+// The seam exists for ONE reason: the test that proves isFilesystemRoot is
+// actually wired into filesExtractTar has to send a real filesystem root, and
+// on Windows that is C:\\. If the guard ever stops holding, an unstubbed test
+// would answer the question by deleting the CI runner. A test whose failure
+// mode is destroying the machine is not a test, so the wipe is observable and
+// stubbable instead: TestFilesExtractTarErrors records whether it was reached
+// and never lets it run.
+//
+// Production never reassigns it.
+var wipeDestDir = os.RemoveAll
+
+// isFilesystemRoot reports whether p names a filesystem root, on any platform.
+//
+// The gate this backs matters because filesExtractTar WIPES destDir before
+// extracting (os.RemoveAll), so a root destDir would recursively delete the
+// volume.
+//
+// Whether the reference refuses a root destDir is NOT measured — an earlier
+// version of this comment asserted "the reference has no such guard", which is
+// an absence claim with no probe behind it, and docs/PROTOCOL.md files the
+// refusal as neither parity nor divergence. What is certain is the consequence
+// here: this guard is the only thing between a root destDir and a recursive
+// delete, so it must not have a platform-shaped hole whatever the reference
+// does.
+//
+// It used to compare `filepath.Clean(destDir) == "/"`. That is a Unix-only
+// notion of root: a Windows volume root cleans to `C:\`, never the string "/",
+// and filepath.IsAbs accepts it — so `C:\` (and a UNC share root) passed the
+// gate and reached the RemoveAll. Raised in review on #224 as pre-existing.
+//
+// `filepath.Dir(x) == x` is the platform's own definition of "has no parent",
+// true for "/" on Unix and for a drive or UNC root on Windows, and it needs no
+// separate spelling per platform. Clean first so a trailing separator ("/" vs
+// "//", `C:\` vs `C:\\`) cannot slip past by shape.
+func isFilesystemRoot(p string) bool {
+	c := filepath.Clean(p)
+	return filepath.Dir(c) == c
+}
+
 func filesExtractTar(req *request) response {
 	var p extractTarParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -206,7 +248,7 @@ func filesExtractTar(req *request) response {
 	if p.ArchivePath == "" || p.DestDir == "" {
 		return errResult(req.ID, codeInvalidParam, "archivePath and destDir are required")
 	}
-	if !filepath.IsAbs(p.DestDir) || filepath.Clean(p.DestDir) == "/" {
+	if !filepath.IsAbs(p.DestDir) || isFilesystemRoot(p.DestDir) {
 		return okResult(req.ID, extractResult{Error: fmt.Sprintf("destDir must be an absolute, non-root path: %q", p.DestDir)})
 	}
 	count, err := extractTarGz(p.ArchivePath, p.DestDir)
@@ -245,7 +287,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	// validates above, so a corrupt archive leaves an existing destDir intact
 	// (probe-verified). destDir is created owner-only (0700), matching the
 	// reference's umask-077 extraction.
-	if err := os.RemoveAll(destDir); err != nil {
+	if err := wipeDestDir(destDir); err != nil {
 		return 0, fmt.Errorf("clean destDir: %v", err)
 	}
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
