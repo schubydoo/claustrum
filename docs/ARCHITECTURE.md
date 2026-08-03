@@ -91,6 +91,44 @@ catch up via `reattach`.
 (`-bridge` is a fourth, trivial mode: a dumb stdio↔socket relay — what an SSH
 session attaches to. It injects no auth.)
 
+## Inherited wire bytes
+
+Some of claustrum's byte-identical output is produced by **Go's standard library,
+not by claustrum's code**. The reference is also Go, so its stdlib is doing
+unpaid parity work for us. That is a real asset — and it is worth being explicit
+about, because inherited agreement is agreement nobody verified.
+
+Two things follow. A Go upgrade that changes an escaping rule moves the wire with
+no diff in this repo. And a reimplementation in another language would have to
+re-derive every row below by hand; the list is the honest cost estimate for that.
+
+The rows marked **inherited** are decided by the stdlib. **Deliberate** means
+claustrum chose the mechanism *because* it reproduced the reference — inherited
+behaviour that someone measured and adopted, rather than inherited behaviour
+nobody looked at.
+
+| Surface | Where | Source | Status |
+|---|---|---|---|
+| `id` echo: `1.0`→`1`, `1e2`→`100`, big-int precision loss, map keys sorted | `rpc.go` (`request.ID interface{}`) | `encoding/json` round-trip through `interface{}` | **deliberate** — `json.RawMessage` reproduced none of it; measured |
+| Invalid UTF-8 in a result string → one `\ufffd` escape per bad byte; NUL → `\u0000` | `files.read` `content`, any string field | `encoding/json` encode | inherited |
+| `<` `>` `&` → `\u003c` `\u003e` `\u0026` | every string field and error message | `encoding/json` HTML escaping, on by default | inherited |
+| Invalid UTF-8 in a **request** param replaced with U+FFFD before dispatch sees it | every path param | `encoding/json` **decode** | inherited |
+| `chdir <p>: stat <p>: no such file or directory` | error messages built from `err.Error()` | `os` `*PathError` (`op + " " + path + ": " + errno`) | inherited |
+| Frame `data` alphabet and `=` padding | `process.*` stdout/stderr frames | `base64.StdEncoding` | inherited |
+| Result field ORDER | `results.go` | `encoding/json` emits struct fields in declaration order | **deliberate** — order is chosen to match, and results are structs, never maps, precisely because maps sort |
+| Path cleaning for `~`-prefixed paths | `expandpath.go` | `filepath.Join`/`Clean` | **deliberate** — the lexical clean was measured and matched (#205) |
+
+The decode-side row is the one with a user-visible consequence: **a file whose
+name is not valid UTF-8 cannot be addressed through the protocol at all**, on
+either daemon. The request decoder substitutes U+FFFD before any method runs, so
+the daemon operates on a name that does not exist. This is not a claustrum
+limitation to fix; it is the reference's behaviour, inherited by the same route.
+
+`inherited_encoding_test.go` and `inherited_encoding_unix_test.go` pin these
+against regression. They assert escape TEXT (`\ufffd`) for encode-side rules and
+the U+FFFD CHARACTER for the decode-side one — which side substituted is exactly
+what distinguishes them.
+
 ## Operational logging
 
 Mirrors the reference daemon:

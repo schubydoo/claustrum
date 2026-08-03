@@ -361,6 +361,11 @@ func (p *managedProc) emit(f streamFrame) {
 	// Unavoidable as written — the seq that goes into the bytes is assigned under
 	// the lock — and stated here so anyone profiling emit finds it rather than
 	// discovering it.
+	//
+	// json.Marshal, not an Encoder: this is the encode that carries EVERY live
+	// stream frame, and its HTML escaping is inherited wire behaviour — see
+	// docs/ARCHITECTURE.md → "Inherited wire bytes" and the note on
+	// conn.writeJSON.
 	b, merr := json.Marshal(f)
 	if merr == nil {
 		b = append(b, '\n')

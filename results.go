@@ -3,6 +3,12 @@ package main
 // Result structs with fields in the exact order the real binary emits them, so
 // serialized frames are byte-compatible (Go marshals struct fields in declaration
 // order; a map would sort keys alphabetically and diverge).
+//
+// Field order is chosen; the string CONTENTS of these fields are not. Invalid
+// UTF-8, NUL, and `< > &` are all rewritten by encoding/json on the way out, and
+// that formatting reaches the wire unmediated by any claustrum code. See
+// docs/ARCHITECTURE.md → "Inherited wire bytes" for the register, and
+// inherited_encoding_test.go for the assertions that keep it from drifting.
 
 type pongResult struct {
 	Pong bool `json:"pong"`
