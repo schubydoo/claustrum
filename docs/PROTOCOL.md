@@ -100,11 +100,15 @@ graceful `server.shutdown` / `SIGTERM` path.
 ### Daemon startup (`-serve`)
 
 The `-serve` launcher **creates the socket's parent directory** if it is missing,
-mode `0700` — the same owner-only mode the reference uses for the cli-dir — and
-then **does not return until the daemon is accepting** on the socket. It confirms
-this by dialing the socket and closing again, so a freshly started daemon's log
-opens with a `New connection from: @` / `Connection closed: @` pair from the
-launcher's own probe, before any real client appears.
+mode `0700`, and then **does not return until the daemon is accepting** on the
+socket. It confirms this by dialing the socket and closing again, so a freshly
+started daemon's log opens with a `New connection from: @` / `Connection
+closed: @` pair from the launcher's own probe, before any real client appears.
+
+The `0700` is measured directly on the reference under `umask 022`, with a `0755`
+control to prove the fixture could have shown a different mode; earlier
+observations all used `mktemp -d`, which creates `0700` by itself, so the mode
+they reported was a fixture artefact rather than a reading of the reference.
 
 What it waits for is the socket **path to exist** (polled every 20 ms, bounded at
 **10 seconds**), not a successful dial, and it does **not** give up early when the
@@ -405,14 +409,28 @@ not, and the difference is visible two ways (probe-measured against `5db5e4a`):
 
 | path | reference | claustrum |
 |---|---|---|
-| a FIFO | **never replies** — no frame at all, the request hangs forever | `-32602 files.read: not a regular file` |
+| a FIFO | **no frame while the FIFO has no writer**; the reply arrives normally once one opens | `-32602 files.read: not a regular file` |
 | `/dev/null` | `{"content":"","exists":true}` | `-32602 files.read: not a regular file` |
 
-The FIFO case is why the guard exists. A read of a FIFO with no writer blocks
-indefinitely, and because the reference emits no frame at all, a frame-diffing
-comparison cannot even see it — the request goroutine is simply consumed, and a
-client waiting on that `id` waits forever. Refusing the read converts an
-unbounded hang into an immediate, actionable error.
+The FIFO case is why the guard exists. A read of a FIFO with no writer blocks in
+`open`, so the reference emits no frame for as long as that holds and a
+frame-diffing comparison cannot see the request at all.
+
+**It is not a permanent hang, and this document used to say it was.** Measured:
+the reference replies `{"content":"<the bytes written>","exists":true}` the
+instant a writer opens, and stays responsive on other requests throughout. The
+control is a non-blocking
+open-for-write of the same FIFO, which on POSIX succeeds only if a reader is
+already present — it SUCCEEDS against the reference (a request goroutine really
+is parked in the FIFO) and returns `ENXIO` against claustrum (the read was
+refused, so there is no reader). The earlier "never replies" came from a probe
+that wrapped the read in `timeout 8` and never opened a writer; a harness
+deadline shorter than the subject's own blocking behaviour records "no reply" by
+construction.
+
+So the divergence is real but narrower than stated: a client that reads a FIFO
+nothing ever writes to waits indefinitely on the reference, and claustrum turns
+that into an immediate, actionable error instead.
 
 The `/dev/null` row is the cost of that guard rather than a second decision: the
 check is `Mode().IsRegular()`, so it also rejects character devices the reference
@@ -626,7 +644,9 @@ the daemon then seeds the new worktree:
   also softer than it reads: it waits on git's output pipe, so a git that spawns a
   surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
   on git is a claustrum divergence (the reference runs git with no deadline and
-  blocks), so a timeout must not be read as "git refused". It answers
+  blocks — measured: no reply at 75 s against claustrum's 60.1 s, with a fast-git
+  control proving the fixture could answer at all; this was pointer-class until
+  that run), so a timeout must not be read as "git refused". It answers
   `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
   was attempted, and git may have partially removed the worktree"}` and the daemon
   itself removes nothing. The wording claims only what the daemon can observe: the
@@ -787,10 +807,22 @@ unknown id is not an error):
   replay buffers — so an id last seen longer ago than that answers exactly like
   an unknown one, and `process.kill` on it still reports `{"success":true}`. A
   **running** process is never dropped, however old. The sweep runs on a 60-second
-  timer *and* inline on every `process.spawn`, so an idle daemon prunes too.
-  Probe-verified against the reference at `5db5e4a`. A client that reconnects
-  after a long gap must therefore treat `found:false` as "finished and forgotten",
-  not as "never existed".
+  timer *and* inline on every `process.spawn`, so an idle daemon prunes too. A
+  client that reconnects after a long gap must therefore treat `found:false` as
+  "finished and forgotten", not as "never existed".
+
+  *Provenance.* This bullet used to be flagged "probe-verified against the
+  reference at `5db5e4a`" in full, which overstated it. What the probe supports:
+  an entry is still reachable **45 s** after its process exited and gone after
+  **960 s** — bracketing the retention to *(45 s, 960 s]* — a running process
+  survives, and an entry can disappear with no intervening `process.spawn`.
+
+  Both ends of that bracket are observations. It previously read *(20 s, 960 s]*,
+  whose lower bound followed from nothing stated beside it ("a just-exited one is
+  still there" supports no lower bound at all); 45 s is a measured `reattach`
+  answering `found:true`. The exact **15 minutes** and the **60-second** period
+  remain pointer-class — no wire observable distinguishes them from any other
+  value inside the bracket, or one ticker period from another.
 - **`stdinApplied` (added `7c2f88d`).** The process's cumulative applied-stdin
   byte count (§`process.stdin`), always present after `lastSeq`. A reconnecting
   client resumes stdin from this offset so no bytes are re-applied or dropped.

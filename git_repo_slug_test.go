@@ -9,8 +9,13 @@ import (
 // Tests for git.info's repoSlug / defaultBranch fields, added by the reference
 // daemon in 7c2f88d. See docs/PROTOCOL.md and docs/UPSTREAM-TRACKING.md.
 
-// parseRepoSlug reduces a remote URL to owner/repo only when the path after the
-// host is exactly two segments — a probe-verified quirk of the reference.
+// parseRepoSlug reduces a remote URL to owner/repo. The rule is NOT "the path
+// after the host is exactly two segments", which is what this said until
+// 2026-08-02 and would admit gitlab.com/acme/gizmo: the host must be github.com,
+// AND the path must be exactly two segments, AND each segment must pass its own
+// charset predicate (the owner's is stricter than the repo's). The full rule is
+// pinned by TestParseRepoSlugMatchesReference below, and tabulated in
+// docs/PROTOCOL.md.
 func TestParseRepoSlug(t *testing.T) {
 	cases := []struct{ url, want string }{
 		{"git@github.com:acme/widgets.git", "acme/widgets"},
@@ -23,8 +28,10 @@ func TestParseRepoSlug(t *testing.T) {
 		{"https://github.com/Acme-Org/My_Repo.git", "Acme-Org/My_Repo"},
 		{"https://github.com/acme/my-repo.git", "acme/my-repo"},
 		{"https://github.com/acme/my.repo.git", "acme/my.repo"},
-		// Three-segment paths (GitLab subgroups) yield "" — the reference requires
-		// exactly two segments, it does not take the last two.
+		// Three-segment paths yield "" — the reference requires exactly two, it
+		// does not take the last two. (This row is a gitlab.com URL, so the host
+		// gate rejects it first; the segment-count rule is exercised on a
+		// github.com three-segment URL in TestParseRepoSlugMatchesReference.)
 		{"https://gitlab.com/group/sub/proj.git", ""},
 		{"", ""},
 		{"not a url", ""},
@@ -104,11 +111,13 @@ func TestParseRepoSlugMatchesReference(t *testing.T) {
 }
 
 // The empty-segment guards are reachable through a doubled slash
-// ("https://github.com//gizmo"), where Split yields an empty owner. Asserted on
-// the helpers directly rather than through a URL: that URL shape was not part of
-// the reference measurement above, so inventing an expected slug for it would be
-// guessing. Both segments are empty-rejecting in the old and new code, so the
-// slug is "" either way — only the guard itself is pinned here.
+// ("https://github.com//gizmo"), where Split yields an empty owner.
+//
+// This shape has now been measured against the reference, which answers `""` —
+// so the assertion below pins agreement, not just claustrum's own guard. The
+// comment used to decline that claim ("inventing an expected slug for it would
+// be guessing") because the shape was outside the 42-URL sweep above; it no
+// longer is.
 func TestSlugSegmentGuardsRejectEmpty(t *testing.T) {
 	if validSlugOwner("") {
 		t.Error("validSlugOwner(\"\") = true, want false")
