@@ -47,8 +47,8 @@ var loginPATHTimeout = 4 * time.Second
 // unusable $SHELL the two daemons hand their children different PATHs.
 //
 // Reachable, but by a narrower route than "wire-visible" suggests, so do not
-// over-claim it: exec.Command resolves process.spawn's `command` against the
-// DAEMON's PATH, not the child env, and extraction deliberately never touches
+// over-claim it: the daemon resolves process.spawn's `command` against its OWN
+// PATH, not against the child env, and extraction deliberately never touches
 // the daemon's own environment. So this can never flip a spawn between a success
 // frame and "executable file not found". It shows up only in the payload bytes
 // of a child that resolves binaries itself, e.g. `sh -c`.
