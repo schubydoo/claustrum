@@ -108,17 +108,31 @@ the CI `lint` job.
 
 ### 8 · Bounded replay buffer (ring) ✅ — impact M-H / cost M
 
-Shipped in #58: each per-process buffer is capped at **16 MiB** of base64 data
-(claustrum's own buffer was unbounded before #58 — a noisy long-lived process
-grew memory without bound); the oldest frames drop and `firstSeq` advances past
-the cap. `reattach` returns `firstSeq`, so clients handle the moved floor.
+Shipped in #58: each per-process buffer is capped at **16 MiB** of **serialized
+frame bytes**, each frame's JSON line including its trailing newline (claustrum's
+own buffer was unbounded before #58 — a noisy long-lived process grew memory
+without bound); the oldest frames drop and `firstSeq` advances past the cap.
+`reattach` returns `firstSeq`, so clients handle the moved floor.
 
 **The cap is parity, not tuning.** #58 chose 50 MiB before the reference's value
-was known; the 2026-07 sweep measured the reference at **16 MiB** with identical
-accounting (base64 length, whole frames dropped oldest-first), and claustrum was
-corrected to match. Because `firstSeq` is wire-visible, the bound is part of the
-observable contract — it is **not** a free local tuning knob. Re-measure before
-changing it.
+was known; the 2026-07 sweep measured the reference at **16 MiB**, and claustrum
+was corrected to match. Because `firstSeq` is wire-visible, the bound is part of
+the observable contract — it is **not** a free local tuning knob. Re-measure
+before changing it.
+
+⚠️ **CORRECTION (2026-08-02): the ACCOUNTING UNIT above was wrong, and this entry
+stated it most strongly of all the records.** It read "16 MiB of base64 data" and
+claimed the 2026-07 sweep had *measured* "identical accounting (base64 length,
+whole frames dropped oldest-first)". The constant was right; the unit was not.
+The reference counts the serialized frame **including its trailing newline**,
+where claustrum counted `len(f.Data)` only — so on small-frame workloads
+claustrum retained ~18.05 MiB of line bytes against the reference's 16 MiB, and
+`reattach{fromSeq:0}`'s `firstSeq` diverged. The exit frame is the clearest case:
+no `Data` at all, so it cost 0 here and ~60 B there.
+
+Naming the accounting method as *measured* is why this survived: PR #174 compared
+at ~8.7 KB frames, where the two hypotheses agree to within rounding, and
+concluded the accounting already matched. **Reproduce with SMALL frames.**
 
 ### 9 · stdin backpressure ✅ — impact M / cost M
 

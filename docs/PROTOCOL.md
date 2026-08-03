@@ -834,10 +834,16 @@ unknown id is not an error):
 - Exact frame *boundaries* depend on pipe scheduling and are not stable — only
   the reassembled bytes are. (Both the 32 KiB cap and the `-1` signal code are
   probe-verified against the reference.)
-- The replay buffer is **bounded at 16 MiB** of base64 `data` per process
-  (probe-verified against the reference). Frames are dropped oldest-first, whole
-  frames at a time, once a new frame would exceed the cap; at least one frame is
-  always retained, even one larger than the cap. So `reattach{fromSeq:0}` replays
+- The replay buffer is **bounded at 16 MiB per process**, counted as the
+  **serialized frame including its trailing newline** — the bytes a subscriber
+  would receive — not as the base64 `data` alone. Probe-verified against the
+  reference; an exit frame therefore costs its envelope even though it carries no
+  `data`. (This previously read "16 MiB of base64 `data`". The constant was right
+  and the unit was not: the difference is under 1% at 8.7 KB frames and ~12% at
+  600-byte frames, so the run that established the constant could not see it.)
+  Frames are dropped oldest-first, whole frames at a time, once a new frame would
+  exceed the cap; at least one frame is always retained, even one larger than the
+  cap. So `reattach{fromSeq:0}` replays
   everything **still retained**, not necessarily everything ever emitted — the
   reply's `firstSeq` is the floor, and a client that needs the gap detected must
   compare it against the last `seq` it saw.
