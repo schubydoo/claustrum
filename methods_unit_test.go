@@ -358,20 +358,45 @@ func TestFilesExtractTarZipSlip(t *testing.T) {
 // change, not a regression — and that conclusion needs evidence stronger than
 // reading the guard, which is what this table provides. It is also the safety
 // net for any future rewrite of the guard into a form CodeQL recognises.
+//
+// WHICH ROWS ACTUALLY BITE, established by mutation rather than assumed — do not
+// cite this as "seven adversarial shapes, all pinned":
+//
+//	guard deleted           rows 1-4 fail (a real file lands outside destDir)
+//	naive HasPrefix guard   ONLY row 4 fails — and the older
+//	                        TestFilesExtractTarZipSlip passes, a false green
+//	guard rejects everything all seven pass
+//
+// So row 4 is the row that earns this test: a prefix-based rewrite is the most
+// likely way a future "make CodeQL recognise it" attempt goes wrong, and row 4
+// is the only thing in the suite that catches it. Rows 5-7 are controls, not
+// escapes — `/absolute.txt` cannot escape at all, because filepath.Join cleans
+// the leading slash before the guard is ever consulted.
+//
+// The last bullet is the honest limit: this table is a ONE-SIDED oracle. It
+// asserts only the safety direction, so over-rejection is caught elsewhere
+// (TestFilesExtractTarZipSlip's benign-"../" case and TestFilesExtractTarSuccess).
 func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 	for _, entry := range []string{
-		"../escaped.txt",               // one level up
-		"../../../../escaped-deep.txt", // far above the temp root
-		"a/b/../../../escape.txt",      // traversal hidden behind a legitimate prefix
-		"../sub-sibling.txt",           // sibling whose name PREFIXES destDir's
-		"/absolute.txt",                // absolute entry
-		"./ok.txt",                     // current-dir form
-		"inner/../within.txt",          // in-bounds "..", resolves inside
+		"../escaped.txt",               // 1: one level up
+		"../../../../escaped-deep.txt", // 2: deep traversal, still inside root (see below)
+		"a/b/../../../escape.txt",      // 3: traversal hidden behind a legitimate prefix
+		"../sub-sibling.txt",           // 4: sibling whose name PREFIXES destDir's
+		"/absolute.txt",                // 5: control — Join cleans it, cannot escape
+		"./ok.txt",                     // 6: control — current-dir form
+		"inner/../within.txt",          // 7: control — in-bounds "..", resolves inside
 	} {
 		t.Run(entry, func(t *testing.T) {
 			s := newTestServer(t)
 			root := t.TempDir()
-			dest := filepath.Join(root, "sub")
+			// destDir is nested deep on purpose. With dest directly under root, row
+			// 2 resolved ABOVE root, so the WalkDir below could not see its escape
+			// and the row could never fail — it passed here only because a non-root
+			// test user got EACCES writing to /. Under a root CI container it would
+			// have written /escaped-deep.txt on the runner and still reported PASS.
+			// Four levels up from here is still inside root, so the escape is
+			// observable and the litter stays in the temp tree.
+			dest := filepath.Join(root, "a", "b", "c", "d", "sub")
 			archive := tarGzPath(t, map[string]string{entry: "payload"})
 
 			// The reply is not asserted: accept and reject are both fine here, so
