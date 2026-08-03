@@ -284,13 +284,13 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		if err != nil {
 			return count, gzipErr{err}
 		}
+		if !isSafeArchivePath(hdr.Name) {
+			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
+		}
 		// Reject entries that would escape destDir ("zip slip"). filepath.Join
 		// cleans, so target is already normalized; an entry then lands inside
 		// destDir exactly when target IS destDir or sits under it with a
-		// separator. An in-bounds "../" (and the destDir itself, e.g. a "."
-		// entry) resolves inside and is allowed, matching the reference. The
-		// reference rejects an escaping archive with this exact error and
-		// fileCount 0 — even when earlier safe entries were already written.
+		// separator.
 		//
 		// THE TRAILING SEPARATOR IS THE WHOLE GUARD. Comparing against cleanDest
 		// alone would admit a sibling whose name merely starts with destDir's —
@@ -298,13 +298,6 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		// way this check is written wrong. TestFilesExtractTarZipSlipShapes has a
 		// row for exactly that, and it is the only test in the suite that catches
 		// it; do not "simplify" the separator away.
-		//
-		// This replaced an equivalent filepath.Rel form on 2026-08-03. The Rel
-		// version was correct and stayed byte-identical from the commit CodeQL
-		// marked as fixing go/zipslip (896fd5c) — but CodeQL 2.26.2 stopped
-		// recognizing it as a sanitizer and reopened the alert with no code
-		// change. This form is the one its query models. Behaviour is unchanged,
-		// which the shapes table is there to prove rather than assert.
 		//
 		// cleanDest/destPrefix are computed once above the loop.
 		target := filepath.Join(cleanDest, hdr.Name)
@@ -351,6 +344,23 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		return count, fmt.Errorf("write .synced: %v", err)
 	}
 	return count, nil
+}
+
+func isSafeArchivePath(name string) bool {
+	if name == "" {
+		return false
+	}
+	if filepath.IsAbs(name) {
+		return false
+	}
+	s := filepath.ToSlash(name)
+	for _, part := range strings.Split(s, "/") {
+		if part == ".." {
+			return false
+		}
+	}
+	clean := filepath.Clean(name)
+	return clean != ".." && !strings.HasPrefix(clean, ".."+string(os.PathSeparator))
 }
 
 // gzipErr reproduces the real binary's "gzip: " prefix on archive errors.
