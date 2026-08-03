@@ -182,15 +182,6 @@ func (c *conn) writeResponse(v interface{}) {
 // child is marked with daemonChildEnv (CLAUSTRUM_DAEMON_CHILD) so we re-exec
 // exactly once — see that const for why it is not CLAUDE_SSH_DAEMON_CHILD.
 func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren, listenPipe bool) {
-	// -serve requires a token source, checked BEFORE the socket (probe-verified).
-	// The CLAUDE_RPC_TOKEN env is NOT accepted here: the daemon's token always
-	// comes from a file (read once, then unlinked) or an fd (read by the parent,
-	// forwarded over a pipe), so it never lingers in /proc/<pid>/environ. (env is
-	// only for the -bridge/-stop clients.)
-	if tokenFile == "" && tokenFd < 0 {
-		fmt.Fprintln(os.Stderr, "claustrum: daemonized child requires --token-file or --token-fd")
-		osExit(1)
-	}
 	if os.Getenv(daemonChildEnv) != "1" {
 		// Parent. An fd is only valid in this process and would not survive the
 		// re-exec, so read it now and forward the token to the child over an
@@ -210,6 +201,34 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	}
 
 	// We are the detached child.
+
+	// The missing-token-source check lives HERE, in the child, not in the parent.
+	//
+	// That looks like the worse place to put it and it is what the reference
+	// does. Measured 2026-08-02 against 5db5e4a, `-serve` with no token flags:
+	//
+	//	reference : exit 1 after 10.07s
+	//	            "claude-ssh: timeout waiting for daemon to accept on <sock>"
+	//	claustrum : exit 1 after 0.03s
+	//	            "claustrum: daemonized child requires --token-file or …"
+	//
+	// So the reference's parent daemonizes regardless, its child refuses to
+	// start, and the operator sees the launcher's accept timeout — the real
+	// reason is only in the child's own log. claustrum answered 300x faster and
+	// said exactly what was wrong. Matching costs both of those.
+	//
+	// This is parity on purpose. Failing fast in the parent is recorded as a
+	// candidate divergence rather than kept — recorded in docs/IMPROVEMENTS.md
+	// under "Candidates identified but NOT taken", which is a record, not a
+	// decision. Note
+	// the zero-byte -token-file case ALREADY behaved this way (the child rejects
+	// an empty token and the parent times out), so this only aligns the one path
+	// that short-circuited early.
+	if tokenFile == "" && tokenFd < 0 {
+		fmt.Fprintln(os.Stderr, "claustrum: daemonized child requires --token-file or --token-fd")
+		osExit(1)
+	}
+
 	token, err := childToken(tokenFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)

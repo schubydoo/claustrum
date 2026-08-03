@@ -12,10 +12,16 @@ import (
 // TestSocketFilesReadNonRegular pins sweep gap N3: the documented, intentional
 // divergence on files.read.
 //
-// A FIFO read blocks forever with no writer, and the reference emits NO FRAME at
-// all — probe-measured, the request simply never replies, which a frame-diffing
-// comparison cannot even see. claustrum refuses the read instead, converting an
-// unbounded hang into an immediate error.
+// A FIFO read blocks in open while the FIFO has no writer, so the reference
+// emits no frame for as long as that holds and a frame-diffing comparison cannot
+// see the request at all. claustrum refuses the read instead, converting an
+// indefinite wait into an immediate error.
+//
+// It is NOT a permanent hang, and this comment said it was until 2026-08-02:
+// the reference replies normally the instant a writer opens. The "never replies"
+// reading came from a probe that wrapped the read in `timeout 8` and never
+// opened one — a harness deadline shorter than the subject's own blocking
+// behaviour records "no reply" by construction. See docs/PROTOCOL.md.
 //
 // /dev/null is the cost of that guard rather than a separate decision: the check
 // is Mode().IsRegular(), so it also rejects character devices the reference reads

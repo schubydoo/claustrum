@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// git writes warnings to stderr while still succeeding on stdout. gitStatusErr
+// git writes warnings to stderr while still succeeding on stdout. gitStdoutErr
 // must read stdout ONLY: folding the streams together turns those warnings into
 // porcelain entries, so a clean repo reports as dirty with the warning text as a
 // "change".

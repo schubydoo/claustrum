@@ -34,6 +34,38 @@ func runBridge(socket string) error {
 var stopReplyTimeout = 2 * time.Second
 
 func runStop(socket string) error {
+	// The socket path is unlinked UNCONDITIONALLY, on every path out of this
+	// function, matching the reference. Deferred so the dial-failure return below
+	// gets it too — that is the case which proves the unlink is -stop's own act
+	// and not the daemon's.
+	//
+	// Measured 2026-08-02 against 5db5e4a, three arms:
+	//
+	//	live daemon (control)   both: socket gone — but the DAEMON removes it on
+	//	                        graceful shutdown, so this arm attributes nothing
+	//	stale socket, no        reference: gone      claustrum: left in place
+	//	  listener
+	//	live FOREIGN listener   reference: gone, and the listener stays ALIVE
+	//	                        claustrum: left in place
+	//
+	// The last arm is worth stating plainly, because it is destructive and it is
+	// the behaviour being matched on purpose: -stop removes a socket path it did
+	// not create and cannot identify the owner of. The listener itself is not
+	// torn down — that arm checks it is still alive afterwards — but the path it
+	// was reachable through is gone, so a new client dialing by path cannot
+	// reach it. What becomes of its already-open connections was not measured.
+	//
+	// Note the scope of what WAS measured: all three arms used socket-shaped
+	// paths. os.Remove does not care — a regular file or an empty directory at
+	// the -socket path is removed just the same, and neither shape was put in
+	// front of the reference. Since -socket is operator-supplied rather than
+	// client-supplied, that is a footgun rather than an attack surface, but the
+	// comment should not imply the measurement covered it.
+	//
+	// Making the unlink conditional (stat first, remove only a socket) would be a
+	// DIVERGENCE, so it is not taken here. It is recorded as a candidate in
+	// docs/IMPROVEMENTS.md, not decided.
+	defer func() { _ = os.Remove(socket) }()
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
 		return nil
