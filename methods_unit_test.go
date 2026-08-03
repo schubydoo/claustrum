@@ -393,6 +393,15 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 		"/absolute.txt",                // 5: control — Join cleans it, cannot escape
 		"./ok.txt",                     // 6: control — current-dir form
 		"inner/../within.txt",          // 7: control — in-bounds "..", resolves inside
+		// 8-9: a leading separator PAIRED with "..". Inert on Unix — row 9 is one
+		// literal filename containing backslashes — but load-bearing on the Windows
+		// leg, where a doubled leading separator is parsed as a UNC volume prefix
+		// and Clean will not rewrite inside it. Without these the table cannot see
+		// a guard that absorbs ".." only when the name is not already rooted, which
+		// is a Windows-only zip-slip hole. The Windows CI leg is the instrument;
+		// nothing on Unix can fail these.
+		"/../evil.txt",
+		`\..\evil.txt`,
 	} {
 		t.Run(entry, func(t *testing.T) {
 			s := newTestServer(t)

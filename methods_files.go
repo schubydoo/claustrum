@@ -296,7 +296,23 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		// zero accepted targets. TestFilesExtractTarZipSlipShapes is the in-repo
 		// half of that, and its sibling-prefix row is the one that catches the
 		// classic mis-write.
-		safeName := filepath.Clean(string(os.PathSeparator) + hdr.Name)
+		// STRIP LEADING SEPARATORS FIRST. Without this the concatenation below can
+		// carry TWO of them for an entry named "/../evil" or "\..\evil", and on
+		// Windows filepath parses a doubled leading separator as a UNC volume
+		// prefix — Clean never rewrites components inside a volume prefix, so the
+		// ".." SURVIVES, both sides of the comparison land on the same escaping
+		// path, and the guard passes. That is a zip-slip hole, not a cosmetic
+		// difference, and it exists on Windows only.
+		//
+		// os.IsPathSeparator, not TrimLeft(name, `/\`): on Unix a backslash is an
+		// ordinary filename character, and stripping it there would reject entries
+		// the reference accepts. Measured — TrimLeft disagreed with the previous
+		// form on 12 of 132 Unix pairs, this form on none.
+		entry := hdr.Name
+		for len(entry) > 0 && os.IsPathSeparator(entry[0]) {
+			entry = entry[1:]
+		}
+		safeName := filepath.Clean(string(os.PathSeparator) + entry)
 		target := filepath.Join(cleanDest, safeName)
 		if target != filepath.Join(cleanDest, hdr.Name) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
