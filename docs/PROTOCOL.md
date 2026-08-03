@@ -496,7 +496,10 @@ Errors:
   `{success:false,fileCount:0,error:"create <entry>: open <target>: is a directory"}`.
 - An entry whose parent cannot be created — e.g. an **earlier entry in the same
   archive** wrote a regular file where this one needs a directory →
-  `{success:false,fileCount:0,error:"mkdir parent <entry>: mkdir <path>: not a directory"}`.
+  `{success:false,fileCount:0,error:"mkdir parent <entry>: <os error>"}` — the
+  tail is the operating system's, e.g. `mkdir <path>: not a directory` on POSIX
+  and `The system cannot find the path specified.` on Windows. Only the
+  `mkdir parent <entry>: ` prefix is claustrum's, and only it is contract.
 
   Both prefixes name the **archive entry**, not the resolved target, and they are
   **different strings** — `create <entry>: ` and `mkdir parent <entry>: `. Both
