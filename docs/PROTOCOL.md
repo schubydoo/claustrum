@@ -492,6 +492,20 @@ Errors:
   — `<c>` is the tar typeflag char (symlink=`2`, hardlink=`1`).
 - destDir clean/mkdir or marker-write failures → `clean destDir: …` /
   `mkdir destDir: …` / `write .synced: …`.
+- An entry whose target is an existing directory →
+  `{success:false,fileCount:0,error:"create <entry>: open <target>: is a directory"}`.
+- An entry whose parent cannot be created — e.g. an **earlier entry in the same
+  archive** wrote a regular file where this one needs a directory →
+  `{success:false,fileCount:0,error:"mkdir parent <entry>: <os error>"}` — the
+  tail is the operating system's, e.g. `mkdir <path>: not a directory` on POSIX
+  and `The system cannot find the path specified.` on Windows. Only the
+  `mkdir parent <entry>: ` prefix is claustrum's, and only it is contract.
+
+  Both prefixes name the **archive entry**, not the resolved target, and they are
+  **different strings** — `create <entry>: ` and `mkdir parent <entry>: `. Both
+  report `fileCount:0` even when earlier entries were already written to disk,
+  the same shape the zip-slip rejection has. Measured against `5db5e4a`; the
+  `io.Copy` failure path is *not* measured and is left unwrapped.
 
 ### git.* (param: `path` = repo dir; worktree ops use `baseRepo`)
 
