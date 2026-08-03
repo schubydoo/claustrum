@@ -241,7 +241,13 @@ func TestFilesExtractTarErrors(t *testing.T) {
 	}{
 		{"missing fields", "", "", "archivePath and destDir are required"},
 		{"relative destDir", good, "relative/out", "destDir must be an absolute"},
-		{"root destDir", good, rootDestDirForOS(), "destDir must be an absolute, non-root path"},
+		// The archive is DELIBERATELY nonexistent on this row. The destDir gate runs
+		// before the archive is opened, so with the guard holding the row is
+		// unaffected — but if the guard ever regresses, extraction fails on the
+		// missing archive instead of unpacking into a real filesystem root. The
+		// wipe seam stops the RemoveAll; this stops the writes that would follow it.
+		// Together they make "run this without the fix" a safe thing to do.
+		{"root destDir", filepath.Join(t.TempDir(), "no-such.tar.gz"), rootDestDirForOS(), "destDir must be an absolute, non-root path"},
 	}
 	// Stub the wipe for EVERY row. The root row sends a real filesystem root —
 	// C:\ on Windows — so if isFilesystemRoot ever stops holding, an unstubbed
