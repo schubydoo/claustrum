@@ -202,8 +202,15 @@ type extractTarParams struct {
 //
 // The gate this backs matters because filesExtractTar WIPES destDir before
 // extracting (os.RemoveAll), so a root destDir would recursively delete the
-// volume. It is claustrum-only safety, not parity — the reference has no such
-// guard — which is exactly why it must not have a platform-shaped hole.
+// volume.
+//
+// Whether the reference refuses a root destDir is NOT measured — an earlier
+// version of this comment asserted "the reference has no such guard", which is
+// an absence claim with no probe behind it, and docs/PROTOCOL.md files the
+// refusal as neither parity nor divergence. What is certain is the consequence
+// here: this guard is the only thing between a root destDir and a recursive
+// delete, so it must not have a platform-shaped hole whatever the reference
+// does.
 //
 // It used to compare `filepath.Clean(destDir) == "/"`. That is a Unix-only
 // notion of root: a Windows volume root cleans to `C:\`, never the string "/",

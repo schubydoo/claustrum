@@ -214,6 +214,21 @@ func TestIsFilesystemRoot(t *testing.T) {
 	}
 }
 
+// rootDestDirForOS is the platform's own filesystem root, so the "root destDir"
+// row below exercises the gate END TO END on every leg.
+//
+// It used to be the literal "/", which on Windows is not a root at all — the row
+// still passed there (a relative path is also refused, by the IsAbs half), so
+// nothing asserted that filesExtractTar reaches the root check on the platform
+// where that check was broken. TestIsFilesystemRoot covers the predicate; this
+// covers the wiring.
+func rootDestDirForOS() string {
+	if runtime.GOOS == "windows" {
+		return `C:\`
+	}
+	return "/"
+}
+
 func TestFilesExtractTarErrors(t *testing.T) {
 	s := newTestServer(t)
 	good := tarGzPath(t, map[string]string{"a.txt": "x"})
@@ -226,7 +241,7 @@ func TestFilesExtractTarErrors(t *testing.T) {
 	}{
 		{"missing fields", "", "", "archivePath and destDir are required"},
 		{"relative destDir", good, "relative/out", "destDir must be an absolute"},
-		{"root destDir", good, "/", "destDir must be an absolute, non-root path"},
+		{"root destDir", good, rootDestDirForOS(), "destDir must be an absolute, non-root path"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
