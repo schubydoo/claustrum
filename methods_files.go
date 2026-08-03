@@ -254,6 +254,28 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	tr := tar.NewReader(gz)
 	count := 0
 	var totalWritten int64
+
+	// Zip-slip guard operands, hoisted: both are loop-invariant, and computing
+	// them per entry invited the reading that they depend on hdr.Name.
+	//
+	// destPrefix appends the separator UNLESS cleanDest already ends in one,
+	// which happens only for a root destDir ("/", or a Windows volume root).
+	// Concatenating unconditionally yields "//" there, and no target has that
+	// prefix, so every entry would be rejected — a differential against the old
+	// filepath.Rel form caught exactly this, on 19 pairs, all with destDir "/".
+	//
+	// The prefix form also rejects everything when destDir cleans to "." (a
+	// relative destDir), where the Rel form accepted. That is unreachable rather
+	// than handled: filesExtractTar gates on filepath.IsAbs(destDir) before this
+	// runs, so a relative destDir never gets here. Named because it is the one
+	// input on which the two forms genuinely disagree — if that gate is ever
+	// relaxed, this guard has to be revisited with it.
+	cleanDest := filepath.Clean(destDir)
+	destPrefix := cleanDest
+	if !strings.HasSuffix(destPrefix, string(os.PathSeparator)) {
+		destPrefix += string(os.PathSeparator)
+	}
+
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -283,16 +305,8 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		// recognizing it as a sanitizer and reopened the alert with no code
 		// change. This form is the one its query models. Behaviour is unchanged,
 		// which the shapes table is there to prove rather than assert.
-		// destPrefix appends the separator UNLESS cleanDest already ends in one,
-		// which happens only for a root destDir ("/", or a Windows volume root).
-		// Concatenating unconditionally yields "//" there, and no target has that
-		// prefix, so every entry would be rejected — a differential against the
-		// old Rel form caught exactly this, on 19 pairs, all with destDir "/".
-		cleanDest := filepath.Clean(destDir)
-		destPrefix := cleanDest
-		if !strings.HasSuffix(destPrefix, string(os.PathSeparator)) {
-			destPrefix += string(os.PathSeparator)
-		}
+		//
+		// cleanDest/destPrefix are computed once above the loop.
 		target := filepath.Join(cleanDest, hdr.Name)
 		if target != cleanDest && !strings.HasPrefix(target, destPrefix) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)

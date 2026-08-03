@@ -397,6 +397,15 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 			// Four levels up from here is still inside root, so the escape is
 			// observable and the litter stays in the temp tree.
 			dest := filepath.Join(root, "a", "b", "c", "d", "sub")
+			// Assert the depth rather than trust the comment above it. Row 2 is
+			// observable only while four ".." from dest stay inside the walked
+			// root; there is exactly one level of slack. Shortening dest must fail
+			// HERE, loudly, rather than silently turning that row back into one
+			// that can never fail.
+			if probe := filepath.Join(dest, "../../../../probe"); !strings.HasPrefix(probe, root+string(os.PathSeparator)) {
+				t.Fatalf("dest %q is too shallow: four levels up reaches %q, outside the walked root %q — "+
+					"the deep-traversal row would be unobservable", dest, probe, root)
+			}
 			archive := tarGzPath(t, map[string]string{entry: "payload"})
 
 			// The reply is not asserted: accept and reject are both fine here, so
