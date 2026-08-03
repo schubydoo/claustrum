@@ -198,6 +198,20 @@ type extractTarParams struct {
 	DestDir     string `json:"destDir"`
 }
 
+// wipeDestDir is the recursive delete extract_tar performs before unpacking,
+// behind a seam.
+//
+// The seam exists for ONE reason: the test that proves isFilesystemRoot is
+// actually wired into filesExtractTar has to send a real filesystem root, and
+// on Windows that is C:\\. If the guard ever stops holding, an unstubbed test
+// would answer the question by deleting the CI runner. A test whose failure
+// mode is destroying the machine is not a test, so the wipe is observable and
+// stubbable instead: TestFilesExtractTarErrors records whether it was reached
+// and never lets it run.
+//
+// Production never reassigns it.
+var wipeDestDir = os.RemoveAll
+
 // isFilesystemRoot reports whether p names a filesystem root, on any platform.
 //
 // The gate this backs matters because filesExtractTar WIPES destDir before
@@ -273,7 +287,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	// validates above, so a corrupt archive leaves an existing destDir intact
 	// (probe-verified). destDir is created owner-only (0700), matching the
 	// reference's umask-077 extraction.
-	if err := os.RemoveAll(destDir); err != nil {
+	if err := wipeDestDir(destDir); err != nil {
 		return 0, fmt.Errorf("clean destDir: %v", err)
 	}
 	if err := os.MkdirAll(destDir, 0o700); err != nil {

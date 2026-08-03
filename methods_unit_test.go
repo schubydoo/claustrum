@@ -243,9 +243,24 @@ func TestFilesExtractTarErrors(t *testing.T) {
 		{"relative destDir", good, "relative/out", "destDir must be an absolute"},
 		{"root destDir", good, rootDestDirForOS(), "destDir must be an absolute, non-root path"},
 	}
+	// Stub the wipe for EVERY row. The root row sends a real filesystem root —
+	// C:\ on Windows — so if isFilesystemRoot ever stops holding, an unstubbed
+	// run would answer that by recursively deleting the CI runner. The stub also
+	// makes the assertion sharper than "an error came back": the guard must
+	// refuse BEFORE any filesystem effect, which is what wiped records.
+	wiped := ""
+	oldWipe := wipeDestDir
+	wipeDestDir = func(path string) error { wiped = path; return nil }
+	t.Cleanup(func() { wipeDestDir = oldWipe })
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			wiped = ""
 			got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": tc.archivePath, "destDir": tc.destDir}))
+			if wiped != "" {
+				t.Errorf("destDir %q was refused but the wipe still ran on %q — the guard must "+
+					"reject before any filesystem effect", tc.destDir, wiped)
+			}
 			if !strings.Contains(got, tc.wantSub) {
 				t.Errorf("extract = %s, want substring %q", got, tc.wantSub)
 			}
