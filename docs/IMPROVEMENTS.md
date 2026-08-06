@@ -396,6 +396,79 @@ consider them now that the harness proves parity, and document each as an
   `checksum mismatch` instead of `decompressing: …`.
 - Verified by a live ref-vs-claustrum differential.
 
+### D2 · Refuse a home directory as a destructive path target — impact H / cost L
+
+**Status: `files.extract_tar` shipped ✅. `git.worktree_remove` is the same defect
+and is guarded in a separate PR** — it is listed here because the predicate
+(`homeguard.go`) is shared and was written for both.
+
+- **Not opt-in, and deliberately so.** Every other entry in this section is off by
+  default; this one is always on, because the thing it prevents is unrecoverable
+  and a flag to re-arm it would be a footgun with a switch.
+- Two methods hand a caller-supplied path to `os.RemoveAll`: `files.extract_tar`
+  wipes `destDir` before unpacking, and `git.worktree_remove` deletes
+  `worktreePath` when git exits non-zero. **Both are `~`-expanded first**
+  (`bindParams` → `expandPaths`, on every request), so `"~"` reaches
+  `os.RemoveAll($HOME)` on either.
+- ⚠️ **`git.worktree_remove` is the more exposed of the two and is still open.**
+  It has no `IsAbs` and no `isFilesystemRoot` gate at all, so once guarded,
+  `wipesHomeDir` is the *only* thing between `worktreePath` and the delete —
+  where `extract_tar` keeps two checks behind it.
+- **The predicate resolves relative paths** (`filepath.Abs`) rather than only
+  cleaning them. Without that, every relative input compares unequal to an
+  absolute home and the guard answers "safe" whatever the path resolves to.
+  Measured on an unguarded tree: with the daemon's working directory inside a
+  home directory, `"worktreePath":".."` deletes it. (`os.RemoveAll` special-cases
+  a trailing `"."` and returns `EINVAL`; `".."` has no such guard.) Raised in
+  review on #231.
+- **This fired.** On 2026-08-02 an in-repo fuzzer sent `"destDir":"~"` at a live
+  daemon and destroyed the maintainer's home directory. `"~"` is the first value
+  in its adversarial list that survives the gate — everything before it is
+  rejected as non-absolute (`..`, `C:\`, `\`) or as a root (`/`, `//`, `///`).
+- The pre-existing gate, `IsAbs(p) && !isFilesystemRoot(p)`, could not catch it
+  and was not wrong: it was written to close a **Windows volume-root** hole
+  (#224). "Absolute and not a filesystem root" is exactly what a home directory
+  is. The lesson is the shape of the question — not *"is this path special?"* but
+  *"does deleting it delete something the caller cannot have meant?"*
+- **Containment is the test** (`homeguard.go`): refuse when the home directory is
+  at or under the target, i.e. the home directory itself plus every ancestor
+  (`/home`, `/Users`, a drive root). **Descendants stay allowed** — extracting
+  into `~/.claude/…` is the daemon's own install path, so a guard over the whole
+  home subtree would refuse the product's own use.
+- **MEASURED: the reference destroys the home directory on BOTH methods.** Probed
+  2026-08-06 on an ephemeral Linux VM, against `5db5e4a` (the pin) and
+  `8de85fa` — identical results on both builds:
+
+  | probe | reference reply | fixture home afterwards |
+  |---|---|---|
+  | `worktree_remove` `worktreePath:"~"` | `{"success":true}` | **deleted outright** |
+  | `extract_tar` `destDir:"~"` | `{"success":true,"fileCount":1}` | **wiped**, then recreated empty + the archive member |
+  | `extract_tar` `destDir:"~/sub"` (control) | `{"success":true,"fileCount":1}` | untouched — only `sub/` replaced |
+
+  Two instrument checks ran first, because a "nothing happened" result would
+  otherwise be indistinguishable from a probe that never reached the code:
+  `files.validate` on `~/KEEP.txt` returned `valid:true` (the pinned `HOME` took
+  and `~` resolved to the fixture), and `worktree_remove` on an ordinary
+  non-worktree directory deleted it (the fallback arm is reachable).
+- **So D2 is a knowing divergence from measured behaviour on both methods, and
+  they weigh the same.** An earlier version of this entry called the
+  `extract_tar` half "unmeasured" and therefore lighter. That was an absence
+  claim with no probe behind it; the probe now exists and says otherwise.
+  Matching the reference is the hard rule for *frames*; it was never a commitment
+  to reproduce accidental data loss.
+- ⚠️ **The probe is destructive and must never run on a real host.** It pins
+  `HOME` to a `/tmp` fixture and carries a canary in the real home to catch an
+  override that did not take. On a host where that override failed, it would
+  delete the user's home — which is the incident, repeated. Ephemeral VM only.
+- **Not a security boundary.** A caller holding the socket and token can already
+  run arbitrary commands via `process.spawn` (SECURITY.md). This stops an
+  accidental, generated or fat-fingered path — the shape the incident had — so
+  lexical containment is the right depth. Symlinks are not resolved.
+- Documented in [PROTOCOL.md](PROTOCOL.md) under each method as it ships. Tests
+  are in `homeguard_test.go`; the destructive call is seamed (`wipeDestDir`) or
+  aimed at a `t.TempDir()` home, so the suite is safe to run against an
+  **unfixed** tree — verified by reverting the guard and watching it fail.
+
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach ✅ — impact M / cost L
 
 - `process.spawn` / `process.reattach` accept an optional `"wantPid":true` param.

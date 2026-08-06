@@ -126,6 +126,17 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **`process.spawn` runs arbitrary commands as the daemon's user — by design.**
   Treat socket + token as equivalent to shell access (threat model in
   [`SECURITY.md`](SECURITY.md)).
+- **Two methods `os.RemoveAll` a caller-supplied path, and both are `~`-expanded
+  first**: `files.extract_tar` wipes `destDir`, `git.worktree_remove` deletes
+  `worktreePath` when git fails. `"~"` therefore meant `os.RemoveAll($HOME)` —
+  which destroyed the maintainer's home directory on 2026-08-02. `wipesHomeDir`
+  (`homeguard.go`) refuses a target that **is or contains** home; paths **under**
+  home stay allowed, because `~/.claude/…` is the daemon's own install path.
+  Always-on, not opt-in — see [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D2.
+  ⚠️ **`git.worktree_remove` is not guarded yet** (separate PR) and has no
+  `IsAbs`/root check either. **Any path that reaches a recursive delete owes this
+  guard**, and `IsAbs && !isFilesystemRoot` is not it — a home directory passes
+  both, and neither one resolves a relative path.
 - **Auth is in-band per request** (`"auth":"<token>"`); the daemon's token comes
   from `-token-file` (read once, then unlinked so it never lands in
   `/proc/<pid>/environ`) or `-token-fd` (read from an open descriptor, forwarded

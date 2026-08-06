@@ -480,9 +480,22 @@ Side effects — deliberate, and **not visible in the frame**:
 Errors:
 
 - Missing params → `-32602 archivePath and destDir are required`.
-- Non-absolute/root `destDir` → `{success:false,error:"destDir must be an
-  absolute, non-root path: …"}` — rejected before the archive is opened, so the
-  archive is **not** consumed.
+- Non-absolute/root `destDir` → `{success:false,fileCount:0,error:"destDir must
+  be an absolute, non-root path: …"}` — rejected before the archive is opened, so
+  the archive is **not** consumed. (`fileCount` has no `omitempty`, so it is on
+  the wire as `0`; this row omitted it until #231.)
+- **`destDir` is, or contains, the home directory** →
+  `{success:false,fileCount:0,error:"destDir must not be or contain the home directory: …"}`
+  — also rejected before the archive is opened. **Intentional divergence** (D2):
+  `destDir` is `~`-expanded before the method sees it, so `"destDir":"~"`
+  otherwise reaches `os.RemoveAll($HOME)` — which is how an in-repo fuzzer
+  destroyed a home directory on 2026-08-02. **The reference wipes it**: measured
+  2026-08-06 at `5db5e4a`, `"destDir":"~"` answers
+  `{"success":true,"fileCount":1}` and leaves the home directory emptied and
+  recreated. The test is *containment*: the home
+  directory itself and any ancestor of it (`/home`, `/Users`) are refused, while
+  anything **under** home — `~/.claude/…`, the daemon's own install path — is
+  still accepted.
 - Bad gzip → `{success:false,fileCount:0,error:"gzip: …"}`.
 - An entry whose path escapes `destDir` ("zip slip") →
   `{success:false,fileCount:0,error:"unsafe path in archive: <entry>"}`; a `../`
