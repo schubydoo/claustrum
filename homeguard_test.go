@@ -241,3 +241,113 @@ func TestFilesExtractTarRefusesHomeDir(t *testing.T) {
 		}
 	})
 }
+
+// git.worktree_remove must refuse a worktreePath that is (or contains) the home
+// directory.
+//
+// This is the SECOND caller-supplied path handed to os.RemoveAll, found while
+// fixing the first: when `git worktree remove --force` fails — and it fails on a
+// home directory, which is not a worktree — the daemon deletes worktreePath
+// itself. `~` expands there too.
+//
+// Unlike the extract_tar wipe there is no seam on that delete, so safety here
+// comes from the home being a t.TempDir(): against the unfixed tree this test
+// fails by deleting a temporary directory, never a real one. KEEP.txt is the
+// assertion, because it is the thing that would actually be gone.
+// A TABLE, not a single row, and the ancestor row is the load-bearing one: on
+// this method wipesHomeDir is the ONLY gate, where filesExtractTar still has
+// IsAbs and isFilesystemRoot behind it. If the predicate ever narrows to "the
+// home directory itself", extract_tar's ancestor case is caught by its root
+// check and this one is not. Raised in review on #231.
+func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home", "someone")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(homeEnvVar(), home)
+	s := newTestServer(t)
+
+	for _, tc := range []struct {
+		name, worktreePath string
+	}{
+		// The bare tilde the fuzzer sent — also the end-to-end proof, since
+		// nothing in gitWorktreeRemove mentions "~".
+		{"bare tilde", "~"},
+		{"the home directory spelled out", home},
+		{"the parent of home", filepath.Dir(home)},
+		// Relative, resolved against the daemon's working directory — the spelling
+		// the guard missed entirely before filepath.Abs was added.
+		//
+		// ".." is the one that actually destroys: os.RemoveAll special-cases a
+		// trailing "." and returns EINVAL, so "." could not have deleted anything
+		// even unguarded, while ".." from a daemon sitting in the home directory
+		// resolves to home's PARENT and takes home with it. Both rows are kept —
+		// "." pins that the refusal is the guard's doing and not an os.RemoveAll
+		// accident.
+		{"dot, with the daemon's cwd in home", "."},
+		{"dotdot, with the daemon's cwd in home", ".."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A fresh marker per row: each row must independently prove nothing was
+			// deleted, and the previous row must not be able to satisfy it.
+			keep := filepath.Join(home, "KEEP.txt")
+			if err := os.WriteFile(keep, []byte("must survive"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if !filepath.IsAbs(tc.worktreePath) && tc.worktreePath != "~" {
+				t.Chdir(home)
+			}
+			// baseRepo is a real directory but not a repository, so git fails and the
+			// destructive fallback is the arm under test.
+			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+				map[string]any{"baseRepo": t.TempDir(), "worktreePath": tc.worktreePath}))
+
+			if _, err := os.Stat(keep); err != nil {
+				t.Errorf("worktreePath %q deleted the home directory: %v", tc.worktreePath, err)
+			}
+			if !strings.Contains(got, "worktreePath must not be or contain the home directory") {
+				t.Errorf("worktree_remove %q = %s, want the home-directory refusal", tc.worktreePath, got)
+			}
+			if strings.Contains(got, `"success":true`) {
+				t.Errorf("worktree_remove %q = %s, want success:false — nothing was removed", tc.worktreePath, got)
+			}
+		})
+	}
+}
+
+// An OMITTED worktreePath must keep its pre-guard reply, and this row exists
+// because the guard got it wrong once.
+//
+// gitWorktreeRemove has no required-param check — unlike filesExtractTar, which
+// answers "archivePath and destDir are required" long before the guard runs. So
+// an empty worktreePath reaches wipesHomeDir, where filepath.Abs("") resolves to
+// the daemon's working directory. On a daemon started in the user's home — which
+// is what an SSH-launched daemon inherits, and the same premise the ".." rows
+// above rest on — that equals home and the guard refused.
+//
+// Refusing it is wrong on both counts: os.RemoveAll("") is a documented no-op
+// returning nil, so nothing was ever going to be deleted, and the refusal also
+// skipped the branchName delete that the reference still performs. The frame it
+// produced varied with the daemon's cwd, which no golden can observe because the
+// harness runs from a temp dir. Raised in review on #232.
+func TestWorktreeRemoveEmptyPathIsNotRefused(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home", "someone")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(homeEnvVar(), home)
+	// The cwd is what makes this bite: an empty path resolves to it.
+	t.Chdir(home)
+
+	s := newTestServer(t)
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": t.TempDir(), "branchName": "b1"}))
+
+	if strings.Contains(got, "home directory") {
+		t.Errorf("worktree_remove with no worktreePath = %s, want the pre-guard reply — "+
+			"os.RemoveAll(\"\") is a no-op, so there is nothing here to guard", got)
+	}
+	if !strings.Contains(got, `"success":true`) {
+		t.Errorf("worktree_remove with no worktreePath = %s, want the bare success:true", got)
+	}
+}

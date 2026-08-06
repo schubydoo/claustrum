@@ -669,6 +669,37 @@ the daemon then seeds the new worktree:
   whenever git is unhappy. That is **reference behavior**, matched deliberately —
   not a claustrum addition. Callers should treat `worktreePath` as a path they are
   asking to have removed, not as a filter.
+- **One input is exempt from that parity — claustrum-only hardening (D2).** A
+  `worktreePath` that **is, or contains, the home directory** is refused before
+  git runs at all:
+  `{"success":false,"error":"worktreePath must not be or contain the home directory: …"}`.
+  Neither the removal nor the `branchName` delete happens.
+
+  ⚠️ **Containment is judged AFTER the path is resolved against the daemon's
+  working directory**, not on the string the caller sent — so `"."` and `".."` are
+  refused too whenever that working directory is the home directory or a
+  descendant of it. That is the same double resolution documented three bullets
+  below, and it is deliberate: the daemon's cwd is the root `os.RemoveAll` itself
+  uses, so the guard judges the path the delete would actually hit. The
+  consequence for a client is that **the verdict on a relative `worktreePath` is
+  not predictable without knowing where the daemon was started** — send an
+  absolute path. An **empty or omitted** `worktreePath` is exempt from the guard
+  entirely and keeps its pre-D2 reply, since `os.RemoveAll("")` is a no-op.
+
+  The reason for the rule is the row the table above was missing — now measured,
+  2026-08-06 at `5db5e4a` on an ephemeral VM:
+
+  | `worktreePath` | reference reply | directory afterwards |
+  |---|---|---|
+  | `"~"`, i.e. the home directory | `{"success":true}` | **deleted** |
+
+  `worktreePath` is `~`-expanded before the method sees it (and the reference
+  *client* tilde-expands too, see below), a home directory is not a worktree so
+  git fails, and the fallback is therefore
+  `os.RemoveAll($HOME)`. Matching the reference is this project's rule for
+  *frames*; it was never a commitment to reproduce an unrecoverable data loss the
+  reference reaches by accident. Same containment test as `files.extract_tar` —
+  paths **under** home are unaffected.
 - The worktree stays **registered**. Deleting the directory does not remove
   `$GIT_DIR/worktrees/<name>`, so `git worktree list` still shows it afterwards
   and a later `git.worktree_create` at the same path fails with

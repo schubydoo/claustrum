@@ -396,11 +396,11 @@ consider them now that the harness proves parity, and document each as an
   `checksum mismatch` instead of `decompressing: …`.
 - Verified by a live ref-vs-claustrum differential.
 
-### D2 · Refuse a home directory as a destructive path target — impact H / cost L
+### D2 · Refuse a home directory as a destructive path target ✅ — impact H / cost L
 
-**Status: `files.extract_tar` shipped ✅. `git.worktree_remove` is the same defect
-and is guarded in a separate PR** — it is listed here because the predicate
-(`homeguard.go`) is shared and was written for both.
+**Status: both methods shipped.** `files.extract_tar` landed first; this entry
+completes it with `git.worktree_remove`, which shares the predicate
+(`homeguard.go`).
 
 - **Not opt-in, and deliberately so.** Every other entry in this section is off by
   default; this one is always on, because the thing it prevents is unrecoverable
@@ -410,10 +410,12 @@ and is guarded in a separate PR** — it is listed here because the predicate
   `worktreePath` when git exits non-zero. **Both are `~`-expanded first**
   (`bindParams` → `expandPaths`, on every request), so `"~"` reaches
   `os.RemoveAll($HOME)` on either.
-- ⚠️ **`git.worktree_remove` is the more exposed of the two and is still open.**
-  It has no `IsAbs` and no `isFilesystemRoot` gate at all, so once guarded,
-  `wipesHomeDir` is the *only* thing between `worktreePath` and the delete —
-  where `extract_tar` keeps two checks behind it.
+- ⚠️ **`git.worktree_remove` is the more exposed of the two.** It has no `IsAbs`
+  and no `isFilesystemRoot` gate at all, so `wipesHomeDir` is the *only* thing
+  between `worktreePath` and the delete — where `extract_tar` keeps two checks
+  behind it. That also means the guard incidentally closes a second hole there:
+  `"worktreePath":"/"` previously reached `os.RemoveAll("/")` unguarded, and a
+  root contains the home directory.
 - **The predicate resolves relative paths** (`filepath.Abs`) rather than only
   cleaning them. Without that, every relative input compares unequal to an
   absolute home and the guard answers "safe" whatever the path resolves to.
@@ -464,10 +466,10 @@ and is guarded in a separate PR** — it is listed here because the predicate
   run arbitrary commands via `process.spawn` (SECURITY.md). This stops an
   accidental, generated or fat-fingered path — the shape the incident had — so
   lexical containment is the right depth. Symlinks are not resolved.
-- Documented in [PROTOCOL.md](PROTOCOL.md) under each method as it ships. Tests
-  are in `homeguard_test.go`; the destructive call is seamed (`wipeDestDir`) or
-  aimed at a `t.TempDir()` home, so the suite is safe to run against an
-  **unfixed** tree — verified by reverting the guard and watching it fail.
+- Documented in [PROTOCOL.md](PROTOCOL.md) under both methods. Tests are in
+  `homeguard_test.go`; the destructive call is seamed (`wipeDestDir`) or aimed
+  at a `t.TempDir()` home, so the suite is safe to run against an **unfixed**
+  tree — verified by reverting both guards and watching it fail.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach ✅ — impact M / cost L
 
