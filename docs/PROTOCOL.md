@@ -484,6 +484,21 @@ Errors:
   be an absolute, non-root path: …"}` — rejected before the archive is opened, so
   the archive is **not** consumed. (`fileCount` has no `omitempty`, so it is on
   the wire as `0`; this row omitted it until #231.)
+
+  **"Root" is the platform's own definition, so the rejected set differs by OS.**
+  The test is `filepath.Dir(filepath.Clean(destDir)) == filepath.Clean(destDir)`
+  — "has no parent" — which is `/` on Unix and a **drive root (`C:\`) or a UNC
+  share root (`\\server\share\`)** on Windows. It used to compare against the
+  literal string `"/"`, which is a Unix-only notion: `C:\` cleans to `C:\`,
+  never to `"/"`, and `filepath.IsAbs` accepts it — so a Windows volume root
+  passed the gate and reached the `os.RemoveAll` that wipes `destDir`. Fixed in
+  #225; a trailing separator (`C:\\`, `//`) cannot slip past by shape either,
+  because the path is cleaned first.
+
+  Whether the reference refuses a root `destDir` at all is **not measured** —
+  filed here as neither parity nor divergence, because the guard's justification
+  is the consequence on our side (a recursive delete of the volume) rather than a
+  claim about the reference.
 - **`destDir` is, or contains, the home directory** →
   `{success:false,fileCount:0,error:"destDir must not be or contain the home directory: …"}`
   — also rejected before the archive is opened. **Intentional divergence** (D2):
