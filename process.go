@@ -816,7 +816,22 @@ var maxKillWaitMs = 30000 // 30s
 // only guards against a pathological unreapable child (e.g. stuck in
 // uninterruptible sleep) wedging the dispatch goroutine. var so tests can shrink
 // it.
-var killReapGrace = 5 * time.Second
+//
+// SEVEN seconds, matching the reference — MEASURED 2026-08-06, black-box, not
+// inferred. Observing it needs a child SIGKILL cannot reap, which a
+// pipe-holding grandchild does NOT produce: the exit drain closes the read ends
+// at 5s on both binaries and the reply lands at 5.01s either way, so that route
+// proves nothing. The fixture that works is real uninterruptible sleep — a read
+// against a dm-delay device on an ephemeral VM. With timeoutMs 500:
+//
+//	reference : reply at 7.51s   -> 7s grace
+//	claustrum : reply at 5.51s   -> 5s grace (was)
+//	control   : an ordinary sleeper, 0.00s on both
+//
+// The reply JSON is the same shape on both ({"found":true,"died":false,
+// "escalated":true}); what differed was when it arrived — and, for a child that
+// IS reaped between 5s and 7s, whether "died" is false or true.
+var killReapGrace = 7 * time.Second
 
 // exitDrainGrace bounds how long the exit frame waits for stdout/stderr to reach
 // EOF after the spawned process itself has exited. Only a grandchild that
