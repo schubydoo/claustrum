@@ -608,10 +608,17 @@ exactly how D2 nearly got reused.)*
   the known unlink-and-recreate when replacement is *possible*, so the sticky
   difference is about the refused replacement and not about a daemon that failed
   to start.
-- **So the divergence is real and the hazard is the reference's**: it truncates
-  and writes its diagnostics into a file owned by another user, which in a sticky
-  world-writable directory is a file any local user can plant and then read.
-  claustrum declines and falls back to inherited stdio.
+- **So the divergence is real**: the reference truncates and writes its
+  diagnostics into a file owned by another user; claustrum declines and falls back
+  to inherited stdio.
+- ⚠️ **It is hardening, NOT a defect claim, and the entry should not read as one.**
+  Reaching it needs a local user who can already plant a file in that directory —
+  the same class of precondition claustrum's own
+  [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)
+  puts out of scope ("reports that … amount to 'the operator can run commands on
+  their own host'"). The justification for D8 does not depend on the reference
+  being wrong: **a daemon should not write into a file it does not own.** That is
+  a design position, and it is the whole of it.
 - The log-handling behavior is otherwise identical — though the *contents* never
   were, since the banner word and the level tag are an intentional rebrand.
 - **Why always-on rather than opt-in**, against the rule that opt-in is the

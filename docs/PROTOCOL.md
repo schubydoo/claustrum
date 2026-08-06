@@ -166,9 +166,15 @@ a daemon that failed to start.
 **Not reachable on the deployed path**, which is why it is always-on rather than
 opt-in: the socket directory is `~/.claude/remote/`, per-user and not
 world-writable, so the fallback never fires there and the two binaries behave
-identically. It fires only where the log's directory is shared, which is also the
-only place the reference's behaviour is a disclosure risk — a file any local user
-can plant and later read.
+identically. It fires only where the log's directory is shared.
+
+⚠️ **This is hardening, not a vulnerability, and the difference matters for how it
+is described.** Reaching it requires a local user who can already plant a file in
+that directory. Claustrum declines because a daemon should not write into a file
+it does not own — not because the reference is wrong. The precondition (a local
+user who can already plant files there) is the same class claustrum's own
+[SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md) puts
+out of scope.
 
 Unlike the socket and `daemon.token`, the log is **not removed on graceful
 shutdown** — it outlives the daemon so a post-mortem stays readable. The fixed
