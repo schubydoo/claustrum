@@ -636,7 +636,8 @@ exactly how D2 nearly got reused.)*
 - **Default path is byte-identical:** absent/false, both fields are omitted
   (`omitempty`) and the frame is exactly the old `{"success":true}` /
   `{found,running,firstSeq,lastSeq}` — battery **496/496** vs reference
-  `d20a77da`.
+  `d20a77da` (see *About the 496/496 figure* below — it is historical, and its
+  unit is not what today's harness counts).
 - The fields live on a dedicated `spawnResult` struct, so they can never leak
   into the `successResult` shared by `process.stdin`/`process.kill`.
 - Tolerant both directions: an older daemon ignores the unknown param; an older
@@ -667,7 +668,8 @@ exactly how D2 nearly got reused.)*
   the main goroutine. It previously ran in a goroutine that raced the accept
   loop's return out of `run()`/`main` — `main` could exit the process first,
   skipping child teardown entirely. So this also makes the *default* "kill on
-  shutdown" reliable (it was racy before). No wire effect — battery stays 496/496.
+  shutdown" reliable (it was racy before). No wire effect — battery stays 496/496
+  (again historical; see the note below).
 - Documented in [PROTOCOL.md](PROTOCOL.md) (`-serve` flags); verified end-to-end
   on POSIX (child survives with the flag, killed without) plus per-OS unit tests.
 
@@ -782,6 +784,30 @@ shipped or scheduled.
   reason reaches only the child's own log — reference parity, measured at 10.02 s
   against 10.07 s. Keeping the old parent-side check answered in 0.03 s and named
   the actual problem. That is better operator experience and a divergence.
+
+## About the 496/496 figure
+
+Two entries above quote "battery **496/496**". **The figure is historical: it is
+not reproducible, and its unit is not what the harness counts today.** It is kept
+rather than rewritten because those lines record what was claimed at the time.
+
+- **It was real and contemporaneous.** PR 97 (June 2026) reports it as
+  "byte-identical, **496/496 frames**" from `scratch/probe/validate.sh` — the same
+  harness path in use today.
+- **It cannot mean "frames" in today's sense.** A complete run measured
+  2026-08-06 is **59 responses + 7 frames** (66 objects) across **612 lines** of
+  output. 496 is nowhere near any object count and is the same order as the line
+  count, so the most economical reading is that it counted output lines and was
+  labelled "frames". **That is a reconstruction, not a measurement.**
+- **The battery has grown since**, which fits the direction: process-frame capture
+  was fixed and the tilde fixtures were added after that figure was recorded.
+- **The June harness is gone.** `scratch/probe/validate.sh` and `battery.js` are
+  gitignored, so no commit holds an earlier version, and the file has been
+  overwritten in place. Nothing else in the tree preserves a copy or a saved run.
+
+**Recount at the time of writing rather than quoting any figure from here** — a
+replacement number recorded in July (48 responses + 7 frames) had already drifted
+by August for exactly this reason.
 
 ## Explicitly out of scope (would break compatibility)
 
