@@ -21,6 +21,8 @@ func parse(t *testing.T, body string) config {
 
 func boolp(b bool) *bool { return &b }
 
+func int64p(n int64) *int64 { return &n }
+
 func TestParseConfig_VersionOverride(t *testing.T) {
 	cases := []struct {
 		name, body, want string
@@ -154,6 +156,54 @@ func TestPrecedence(t *testing.T) {
 	}
 	if (config{}).effectiveListenPipe(true, true) != true {
 		t.Fatal("explicit CLI -listen-pipe=true should apply with no config")
+	}
+}
+
+func TestParseConfig_MaxCLIBytes(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       *int64
+	}{
+		{"plain byte count", "max-cli-bytes = 536870912", int64p(536870912)},
+		{"zero disables the cap explicitly", "max-cli-bytes = 0", int64p(0)},
+		{"negative rejected", "max-cli-bytes = -1", nil},
+		{"non-numeric rejected", "max-cli-bytes = 512MiB", nil},
+		{"case-insensitive key", "MAX-CLI-BYTES = 1024", int64p(1024)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parse(t, tc.body).maxCLIBytes
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("maxCLIBytes = %d, want unset (value rejected)", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("maxCLIBytes unset, want %d", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("maxCLIBytes = %d, want %d", *got, *tc.want)
+			}
+		})
+	}
+}
+
+// -max-cli-bytes follows the same CLI-over-config-over-default precedence, with
+// the same wrinkle the other numeric key has: 0 is a real value (cap off), so
+// "config said 0" and "config said nothing" must stay distinguishable.
+func TestPrecedenceMaxCLIBytes(t *testing.T) {
+	withFile := config{maxCLIBytes: int64p(1024)}
+	if got := withFile.effectiveMaxCLIBytes(2048, true); got != 2048 {
+		t.Errorf("explicit CLI should win, got %d", got)
+	}
+	if got := withFile.effectiveMaxCLIBytes(0, false); got != 1024 {
+		t.Errorf("config value should apply when CLI unset, got %d", got)
+	}
+	if got := withFile.effectiveMaxCLIBytes(0, true); got != 0 {
+		t.Errorf("explicit CLI 0 should disable the cap, got %d", got)
+	}
+	if got := (config{maxCLIBytes: int64p(0)}).effectiveMaxCLIBytes(0, false); got != 0 {
+		t.Errorf("config 0 should apply, got %d", got)
+	}
+	if got := (config{}).effectiveMaxCLIBytes(0, false); got != 0 {
+		t.Errorf("empty config should leave the cap off, got %d", got)
 	}
 }
 

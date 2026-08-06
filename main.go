@@ -134,6 +134,7 @@ func main() {
 		cliChecksum = flag.String("cli-checksum", "", "Expected SHA256 of the compressed CLI .zst")
 		cliZst      = flag.String("cli-zst", "", "Path to an already-uploaded CLI .zst (SFTP fallback)")
 		cliKeep     = flag.Int("cli-keep", 3, "How many most-recent CLI versions to keep")
+		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 	)
 	flag.Parse()
 	resolveVersion()
@@ -167,6 +168,10 @@ func main() {
 		fmt.Println(versionLine(cfg.versionOverride))
 		return
 	case *install:
+		// -install only: the cap governs the decompress and download reads, which
+		// no other mode performs. Set before runInstall because the value is read
+		// deep in those helpers, not carried through installOpts.
+		maxCLIBytes = cfg.effectiveMaxCLIBytes(*maxCLI, cliSet["max-cli-bytes"])
 		runInstall(installOpts{
 			cliDir: *cliDir, cliVersion: *cliVersion, cliURL: *cliURL,
 			cliChecksum: *cliChecksum, cliZst: *cliZst, cliKeep: *cliKeep,

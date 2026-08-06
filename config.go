@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -51,6 +52,11 @@ type config struct {
 	listenPipe *bool
 	// metricsAddr mirrors -metrics-addr; "" means "not set in the file".
 	metricsAddr string
+	// maxCLIBytes mirrors -max-cli-bytes; nil means "not set in the file". The
+	// config key matters more than the flag: Claude Desktop owns the argv on the
+	// -install invocation too, so a flag alone would be unreachable for the
+	// people who need it.
+	maxCLIBytes *int64
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
@@ -124,6 +130,13 @@ func applyConfigKey(cfg *config, key, val string) {
 		if val != "" && isPrintableASCII(val) {
 			cfg.metricsAddr = val
 		}
+	case "max-cli-bytes":
+		// A plain byte count; 0 disables the cap (the default). Negative values
+		// and anything unparseable are rejected, so a typo can never silently
+		// enable a cap the operator did not ask for.
+		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
+			cfg.maxCLIBytes = &n
+		}
 	}
 	// Unknown keys are intentionally ignored (forward-compatibility).
 }
@@ -163,6 +176,16 @@ func (cfg config) effectiveListenPipe(cliVal, cliSet bool) bool {
 func (cfg config) effectiveMetricsAddr(cliVal string, cliSet bool) string {
 	if !cliSet && cfg.metricsAddr != "" {
 		return cfg.metricsAddr
+	}
+	return cliVal
+}
+
+// effectiveMaxCLIBytes applies the same precedence for -max-cli-bytes. Unlike the
+// string/bool keys there is no "empty means unset" ambiguity to dodge: 0 is a
+// meaningful value (cap disabled, the default), so the config side is a pointer.
+func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
+	if !cliSet && cfg.maxCLIBytes != nil {
+		return *cfg.maxCLIBytes
 	}
 	return cliVal
 }

@@ -1178,8 +1178,9 @@ This exists so the desktop client treats an already-deployed claustrum as
 up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\S+)/`
 against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
 wire contract is untouched; `server.version` / `server.capabilities` still report
-claustrum's own `<id>`. The same file also carries `keep-children` and
-`metrics-addr` defaults (precedence: explicit CLI flag > config > default). See
+claustrum's own `<id>`. The same file also carries `keep-children`,
+`metrics-addr` and `max-cli-bytes` defaults (precedence: explicit CLI flag >
+config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1187,7 +1188,8 @@ hardening.
 
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
-          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]
+          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
+          [-max-cli-bytes <n>]
 ```
 
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
@@ -1218,6 +1220,19 @@ Checksum + error framing (probe-verified):
   (`checksum mismatch: expected=, actual=<sha>`).
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
+- **A decompressed CLI (or a download body) over the opt-in cap** →
+  `cliError "decompressing: decompressed CLI exceeds <n> bytes"` /
+  `"response exceeds <n> bytes"`. **Not reachable by default** — the cap is `0`
+  (off), matching the reference. **Intentional divergence** (D10), enabled with
+  `-max-cli-bytes <n>` or `max-cli-bytes = <n>` in `claustrum.conf`. Measured at
+  `5db5e4a` on the `-cli-zst` path with a 600 MiB payload (21 KB compressed): the
+  reference decompressed all of it and failed only at the runnability check
+  (`installed cli at <path> is not runnable`), which claustrum now answers
+  identically. The `-cli-url` half was measured separately with a 629 MB
+  incompressible body — same result, and the cap-on control answers
+  `download failed: response exceeds 536870912 bytes`, proving the probe reaches
+  that limit. (Both disprove a cap at or below ~600 MiB; neither proves the
+  reference has none above it.)
 - A cli-dir that cannot be created is reported with a **`mkdir cli dir: `**
   prefix, e.g. `mkdir cli dir: mkdir /ro/nested: permission denied`.
 

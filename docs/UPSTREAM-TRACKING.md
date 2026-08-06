@@ -171,10 +171,11 @@ If the check reports drift:
    and update `docs/PROTOCOL.md` if the wire surface changed.
 
 > Not every claustrum behavior is meant to match the reference. A few
-> **deliberate, opt-in divergences** — the `-cli-zst` checksum (D1), the CT-1
+> **deliberate, opt-in divergences** — the `-cli-zst` checksum (D1), the D10
+> `-max-cli-bytes` install cap (off by default), the CT-1
 > `wantPid` `pid`/`startTime` fields, the CT-2 `-keep-children` serve flag, and
 > the CT-3 `claustrum.conf` file (`version-override` / `keep-children` /
-> `metrics-addr`) — are catalogued in
+> `metrics-addr` / `max-cli-bytes`) — are catalogued in
 > [`IMPROVEMENTS.md`](IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
 > They sit off the default path (the drift check and the synthetic battery never
 > exercise `wantPid` or `-keep-children`, so they won't show as a diff), so don't

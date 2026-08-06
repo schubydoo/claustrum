@@ -41,8 +41,7 @@ error).
 `git.*` and the `-install` libc probe shelled out with no deadline; a wedged
 git/ldd hung a request goroutine forever. Both are now wrapped in
 `exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, security
-fix S4 / HackerOne [#3793023](https://hackerone.com/reports/3793023)) and every
-`git` invocation (`gitTimeout` 60s). Happy-path results/frames unchanged; an
+fix S4) and every `git` invocation (`gitTimeout` 60s). Happy-path results/frames unchanged; an
 attack/pathological-path-only divergence from the reference (which has no
 deadline).
 
@@ -471,6 +470,82 @@ completes it with `git.worktree_remove`, which shares the predicate
   at a `t.TempDir()` home, so the suite is safe to run against an **unfixed**
   tree — verified by reverting both guards and watching it fail.
 
+### D10 · Make the `-install` CLI size cap opt-in ✅ — impact H / cost M
+
+- **The sibling of the `files.extract_tar` cap, from the same wave.** `maxCLIBytes`
+  shipped as a hardcoded **512 MiB, on by default**, with no flag and no config
+  key, in PRs 57 and 59 — the same hardening round as the extract cap. It
+  governs **two** reads: the decompressed size written by `zstdDecompress` and the
+  HTTP response body in `httpGet`. It had no PROTOCOL.md entry either.
+- **Measured at `5db5e4a`** on the `-cli-zst` path with a 600 MiB payload
+  (21 KB compressed):
+
+  | binary | `cliError` |
+  |---|---|
+  | reference `5db5e4a` | `installed cli at <path> is not runnable` |
+  | claustrum, capped (old default) | `decompressing: decompressed CLI exceeds 536870912 bytes` |
+  | claustrum, cap off (new default) | `installed cli at <path> is not runnable` |
+
+  The reference decompressed the whole payload and got as far as the runnability
+  check — a 600 MiB file of zeros is not executable — so the cap is the only thing
+  that differed. That disproves a cap at or below 600 MiB; it does not prove there
+  is none above it.
+- **The `-cli-url` half was measured separately**, because `maxCLIBytes` gates the
+  download body too and the `-cli-zst` run does not exercise that path. A 629 MB
+  **incompressible** body (so the body itself exceeds the cap) over a localhost
+  server: the reference downloads it all and reaches the same runnability check,
+  and claustrum with the cap off matches. The **control** — the same fixture with
+  `-max-cli-bytes 536870912` — answers `download failed: response exceeds
+  536870912 bytes`, which is what proves the probe reaches `httpGet`'s limit at
+  all rather than passing for an unrelated reason.
+- **`maxCLIBytes` shipped as a hardcoded 512 MiB in PRs 57 and 59** — the same
+  hardening round as the `files.extract_tar` cap, which gets the same flip
+  in its own PR. Neither had a flag, a config key, or a PROTOCOL.md entry.
+- **Shipped as: default `0` = unlimited = byte-identical to the reference**, with
+  the cap opt-in via `-max-cli-bytes <n>` **and** the `max-cli-bytes` key in
+  `claustrum.conf` (explicit flag > config > default). The config key is the one
+  that matters: Desktop owns the argv on `-install` too, so a flag alone would be
+  unreachable for the people who need it.
+- **Both call sites bypass their `LimitReader` entirely when disabled** rather
+  than passing a huge bound — the `cap+1` arithmetic is what defines the boundary,
+  and routing the unlimited case through it would invent one.
+- The error strings are unchanged when the cap is opted in, so a host that wants
+  the bound keeps exactly the behaviour it had.
+- 🔧 **The blob is now STREAMED, never buffered — this ships with the flip and is
+  not separable from it.** Turning the cap off removes the only bound on what used
+  to be `io.ReadAll` (download) and `os.ReadFile` (local blob), which would leave
+  `-install` unbounded in memory where the reference streams. So the blob is a
+  **path** throughout: the download streams to a temp file beside the destination
+  and is hashed as it arrives, the local blob is hashed in one bounded pass, and
+  `zstdDecompress` opens the path. A path rather than a reader because `ensureCLI`
+  retries `stageAndInstall` once and needs a source readable **twice**.
+- **Measured, peak RSS, 400 MiB incompressible payload** (`/proc/<pid>/status`
+  `VmHWM`, polled):
+
+  | path | before | after |
+  |---|---|---|
+  | `-cli-zst` (was `os.ReadFile`) | 410 MB | **9 MB** |
+  | `-cli-url` (was `io.ReadAll`) | 886 MB | **10 MB** |
+
+  Peak memory is now **flat in the blob size**. `-cli-url` was ~2× the blob before
+  because `io.ReadAll` holds the old and new buffers together while it grows.
+  **Control:** the same 400 MiB as *zeros* — a 14 KB blob, identical decompressed
+  size — peaks at 9 MB on both binaries, which is what shows the after-figure is
+  baseline rather than workload.
+
+  ⚠️ **An earlier version of this entry reported 885 MB → 419 MB and blamed a
+  residual on the zstd decoder. That was an instrument error, not a finding.**
+  `wait4`'s `ru_maxrss` reports the high-water mark across *all* reaped children,
+  so every measurement after a large one silently inherited its number — which is
+  why repeated runs returned byte-identical values. There is no decoder residual;
+  only the first reading in each of those runs was real.
+- ⚠️ **One string can move**, on a path nothing provokes: a `-cli-zst` blob that
+  opens but fails **mid-read** now surfaces at decompress as `decompressing: `
+  rather than `opening input: `. Recorded rather than claimed identical.
+- Error ordering is preserved deliberately: the download temp falls back to the OS
+  temp dir when the cli-dir does not exist yet, because `ensureCLI` creates that
+  directory *after* the download and owns the `mkdir cli dir: ` error.
+
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach ✅ — impact M / cost L
 
 - `process.spawn` / `process.reattach` accept an optional `"wantPid":true` param.
@@ -534,6 +609,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   - `version-override = <commit-sha>` — the **drop-in stamp** (see below).
   - `keep-children = true|false` — default for CT-2.
   - `metrics-addr = host:port` — default for the `/metrics` listener.
+  - `max-cli-bytes = <n>` — default for D10; `0` (the default) is no cap.
 - **`version-override` — make claustrum a permanent drop-in.** The desktop client
   decides whether to re-upload the daemon by running `<bin> --version` on the
   cached `~/.claude/remote/srv/<pinned-sha>/server` and matching
@@ -554,8 +630,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   cross-platform: regular-file-only via `Lstat`/`IsRegular` (rejects
   symlink/FIFO/device/directory → can't block startup), `io.LimitReader` ≤ 64 KiB,
   per-key validation (`version-override` gated to `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`
-  and lower-cased; `metrics-addr` printable-ASCII only), values used as data
-  never as a format string.
+  and lower-cased; `metrics-addr` printable-ASCII only; `max-cli-bytes` parsed as
+  a non-negative int64, anything else ignored), values used as data never as a
+  format string.
 - Verified: unit tests (each key's valid/invalid forms, unknown-key and malformed
   lines, case-insensitive keys, CLI-over-config precedence, non-regular-directory,
   and a `//go:build unix` FIFO case) + an end-to-end smoke test (stock / valid
