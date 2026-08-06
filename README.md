@@ -134,11 +134,15 @@ catch up via the replay buffer, extracting a plugin tarball — are in
 - **process.\*** is the core: a client supplies its own `id` on `spawn`; the daemon streams
   id-less `{"type":"stream",…}` notifications (base64 stdout/stderr + an `exit`), buffers them,
   and replays on `reattach{fromSeq}`. This is how both the agent and MCP servers are hosted.
-- **Operational knobs** (claustrum-only, all off the wire): `CLAUSTRUM_LOG_LEVEL` quiets the
+- **Operational knobs** (claustrum-only, off the wire unless noted): `CLAUSTRUM_LOG_LEVEL` quiets the
   leveled stderr diagnostics, `-metrics-addr` opts into a local Prometheus `/metrics`
   endpoint (no listener exists without it), and `-keep-children` (CT-2, POSIX-only) makes a
   graceful shutdown leave spawned children running so they survive a daemon restart (off by
   default — shutdown kills them, unchanged; ignored with a warning on Windows).
+  `-max-extract-bytes` (D3) opts into a `files.extract_tar` size cap — **off by default**,
+  because a cap fails an extraction the reference completes (measured to 629 MB). This one
+  **is** wire-visible when enabled: exceeding it returns an error frame the reference has no
+  way to produce.
 - **Protocol extensions** (claustrum-only, opt-in — **additions**, *not* part of the reference
   contract it mimics): `process.spawn` / `process.reattach` accept `"wantPid":true`, which adds
   `pid` + `startTime` to the result for PID-reuse / orphan detection (CT-1). These are pure

@@ -160,6 +160,17 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
 - **A connection's requests dispatch concurrently** — replies can return out of
   order, matching the reference. Don't serialize them.
+- **The `files.extract_tar` size cap is OFF by default, and that is the parity
+  position.** The reference applies no cap at any size the probe could reach
+  (measured: a 629 MB payload extracts fully and answers
+  `{"success":true,"fileCount":1}`), so a non-zero default fails
+  an extraction the reference completes — with no way through, since Claude
+  Desktop owns the argv. `maxExtractBytes` therefore defaults to `0` = unlimited,
+  and the cap is opt-in via `-max-extract-bytes` **or** the `max-extract-bytes`
+  key in `claustrum.conf` (the config key is the reachable one). Disabled bypasses
+  `io.LimitReader` entirely — do not "simplify" it into a huge limit, because the
+  `max-total+1` arithmetic is what defines the boundary. Divergence D3; see
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) + [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

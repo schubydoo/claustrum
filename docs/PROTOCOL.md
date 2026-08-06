@@ -503,6 +503,12 @@ Errors:
 - A non-regular/non-directory entry (symlink, hardlink, device, fifo) →
   `{success:false,fileCount:0,error:"unsupported tar entry type <c>: <entry>"}`
   — `<c>` is the tar typeflag char (symlink=`2`, hardlink=`1`).
+- **Total uncompressed bytes over the opt-in cap** →
+  `{success:false,fileCount:0,error:"extraction size limit exceeded"}`. **Not
+  reachable by default** — the cap is `0` (off), matching the reference, which
+  has none. **Intentional divergence** (D3), enabled with
+  `-max-extract-bytes <n>` or `max-extract-bytes = <n>` in `claustrum.conf`; see
+  that flag for the measurement and the reason the default flipped.
 - destDir clean/mkdir or marker-write failures → `clean destDir: …` /
   `mkdir destDir: …` / `write .synced: …`.
 - An entry whose target is an existing directory →
@@ -964,7 +970,7 @@ reference unless marked **claustrum-only**.
 ### -serve — run the daemon
 
 ```text
-claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe]
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>]
 ```
 
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
@@ -1099,6 +1105,27 @@ unset in the child before it spawns anything, so it never leaks downstream.
 - Also settable in `claustrum.conf` as `listen-pipe = true|false` (an explicit
   `-listen-pipe` flag wins).
 
+**`-max-extract-bytes <n>`** *(claustrum-only, D3)* — opt-in extraction cap:
+
+- **`0` (the default) means no cap**, which is what the reference does at every
+  size the probe could reach: measured at `5db5e4a`, a 629 MB payload extracts
+  fully and answers `{"success":true,"fileCount":1}`. claustrum's default answers
+  the identical frame. (That measurement disproves a 512 MiB cap; it does not
+  prove the reference has none above 629 MB.)
+- A non-zero `<n>` caps the **total uncompressed bytes** `files.extract_tar` will
+  write across all entries of one archive. Exceeding it returns
+  `{success:false,fileCount:0,error:"extraction size limit exceeded"}` — a frame
+  the reference never produces, hence the divergence. The entry that tripped the
+  cap is removed rather than left truncated; entries already written are not.
+- The cap **shipped on by default at 512 MiB** and that was a live user-facing
+  break: a caller with a tree over the cap got an error with no way through,
+  because Claude Desktop owns the argv. Flipping the default to `0` is the parity
+  fix; the cap itself survives as an opt-in for hosts that want it.
+- Also settable in `claustrum.conf` as `max-extract-bytes = <n>` (an explicit
+  `-max-extract-bytes` flag wins). **That is the reachable knob** — see the argv
+  point above. Negative or unparseable values are ignored, so a typo can never
+  silently enable a cap.
+
 ### -bridge — stdio↔socket relay
 
 ```text
@@ -1178,8 +1205,9 @@ This exists so the desktop client treats an already-deployed claustrum as
 up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\S+)/`
 against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
 wire contract is untouched; `server.version` / `server.capabilities` still report
-claustrum's own `<id>`. The same file also carries `keep-children` and
-`metrics-addr` defaults (precedence: explicit CLI flag > config > default). See
+claustrum's own `<id>`. The same file also carries `keep-children`,
+`metrics-addr`, `listen-pipe` and `max-extract-bytes` defaults (precedence:
+explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
