@@ -579,7 +579,7 @@ exactly how D2 nearly got reused.)*
   drift apart.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `-install`.
 
-### D8 · `remote-server.log` is declined rather than shared ✅ (always-on) — impact L / cost L
+### D8 · `remote-server.log` is declined rather than shared ✅ (always-on) — impact M / cost L
 
 - ⚠️ **Only the DECLINE is the divergence.** Recreating `remote-server.log` fresh
   on every start (unlink + create, not truncate in place) is **measured parity** —
@@ -590,18 +590,30 @@ exactly how D2 nearly got reused.)*
 - The divergence is the **fallback**: when the existing log cannot be replaced —
   a sticky directory holding another user's file — claustrum declines the log
   entirely and the daemon's output falls back to the launcher's inherited stdio.
-- **The weakest-evidence entry in this section, and it says so.** This is a
-  hardening on an attack path **the reference was never measured on**, so the
-  claim is not that the reference behaves differently — only that claustrum's
-  behavior here is a deliberate choice. The log-handling behavior is otherwise
-  identical (the banner word and the level tag are an intentional rebrand, so the
-  log's *contents* never were).
-- 🔬 **"Not measured" here means "not yet measured", and the run is cheap.** On an
-  ephemeral VM: `chmod 1777` the socket dir, plant a root-owned `0600` log, start
-  the reference `-serve` as an unprivileged user, then read the file's owner and
-  the launcher's inherited stderr. Two outcomes, both decisive — the reference
-  writes into the foreign file (D8 becomes parity-measured) or it falls back too
-  (D8 retires). Do not leave this a judgement call by default.
+- ✅ **MEASURED 2026-08-06 — the reference writes into the foreign file.** This
+  entry used to say the reference had never been measured here; it has been now,
+  on an ephemeral VM. Socket dir `1777` (sticky, so a non-owner cannot unlink),
+  holding a **root-owned, mode 0666** `remote-server.log` — world-writable on
+  purpose, because at `0644` the daemon could not write for a trivial permission
+  reason and the run would prove nothing about intent. Daemon started as an
+  unprivileged user:
+
+  | | log after start | canary | launcher stdio |
+  |---|---|---|---|
+  | reference `5db5e4a` | `root` `0666`, **162 B of its own output** | **destroyed** | quiet |
+  | claustrum | `root` `0666`, 24 B (untouched) | **intact** | **carries the banner** |
+  | *control:* the same fixture in a NON-sticky dir | both → `schuby` `0600`, recreated | gone on both | quiet |
+
+  The control is what makes the sticky row readable: it shows both binaries doing
+  the known unlink-and-recreate when replacement is *possible*, so the sticky
+  difference is about the refused replacement and not about a daemon that failed
+  to start.
+- **So the divergence is real and the hazard is the reference's**: it truncates
+  and writes its diagnostics into a file owned by another user, which in a sticky
+  world-writable directory is a file any local user can plant and then read.
+  claustrum declines and falls back to inherited stdio.
+- The log-handling behavior is otherwise identical — though the *contents* never
+  were, since the banner word and the level tag are an intentional rebrand.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → *Daemon log*.
 
 ### D9 · Namespace-wide params binding is stricter than the reference's ✅ (always-on) — impact L / cost L

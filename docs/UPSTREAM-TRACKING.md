@@ -173,8 +173,11 @@ If the check reports drift:
 > Not every claustrum behavior is meant to match the reference. A set of
 > **deliberate divergences** is catalogued in
 > [`IMPROVEMENTS.md`](IMPROVEMENTS.md#deliberate-divergences-post-parity) — don't
-> "reconcile" any of them away as drift. They split three ways, and the split is
-> what decides whether a probe can see them.
+> "reconcile" any of them away as drift. They split two ways, and the split is
+> what decides whether a probe can see them. (A third bucket — "always-on,
+> reference behavior unknown" — held only D8 and was emptied when D8 was measured
+> on 2026-08-06. Re-add it if another entry ever needs it: an unmeasured
+> divergence must not sit silently among measured ones.)
 >
 > **Opt-in — off the default path.** The JSON-RPC battery (`validate.sh` /
 > `battery.js`) never exercises these, so they won't show as a diff there:
@@ -198,14 +201,12 @@ If the check reports drift:
 >   own cap too.
 > - **D6 / D7** — `-cli-version` must be a single path component, and must not
 >   collide with the install temp sweep.
+> - **D8** — `remote-server.log` is declined rather than shared with another user.
+>   Measured 2026-08-06: in a sticky directory holding a root-owned world-writable
+>   log, the reference truncates it and writes its own output in; claustrum leaves
+>   it alone and falls back to inherited stdio.
 > - **D9** — namespace-wide params binding rejects a type-mismatched field the
 >   reference ignores. Adversarial params only.
->
-> **Always-on, reference behavior UNKNOWN** — do not record a difference here as
-> either drift *or* expected divergence until someone measures it:
-> - **D8** — `remote-server.log` is declined rather than shared with another
->   user. The reference was never measured on that path; D8's entry carries the
->   one-VM run that would settle it.
 >
 > **This list covers the D/CT-numbered divergences only.** Several claustrum-only
 > behaviors are catalogued by *tier number* instead and are just as real:
