@@ -1090,7 +1090,7 @@ func TestGitWorktreeRemoveBindParamsError(t *testing.T) {
 
 // zstdDecompress: os.Create fails when the destination parent directory doesn't exist.
 func TestZstdDecompressDestError(t *testing.T) {
-	err := zstdDecompress(zstdOf(t, []byte("payload")), filepath.Join(t.TempDir(), "nonexistent", "out"))
+	err := zstdDecompressBytes(t, zstdOf(t, []byte("payload")), filepath.Join(t.TempDir(), "nonexistent", "out"))
 	if err == nil {
 		t.Fatal("expected error for missing parent dir, got nil")
 	}

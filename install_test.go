@@ -68,14 +68,14 @@ func TestZstdDecompress(t *testing.T) {
 	dir := t.TempDir()
 	payload := []byte("hello zstd payload")
 	dest := filepath.Join(dir, "out")
-	if err := zstdDecompress(zstdOf(t, payload), dest); err != nil {
+	if err := zstdDecompressBytes(t, zstdOf(t, payload), dest); err != nil {
 		t.Fatalf("decompress: %v", err)
 	}
 	got, _ := os.ReadFile(dest)
 	if string(got) != string(payload) {
 		t.Errorf("decompressed = %q, want %q", got, payload)
 	}
-	if err := zstdDecompress([]byte("not a zstd stream"), filepath.Join(dir, "x")); err == nil {
+	if err := zstdDecompressBytes(t, []byte("not a zstd stream"), filepath.Join(dir, "x")); err == nil {
 		t.Error("expected error decompressing non-zstd input")
 	}
 }
@@ -87,6 +87,113 @@ func TestZstdDecompress(t *testing.T) {
 //
 // The comment used to say "hundreds of GB". Nothing measured that; the probe was
 // stopped at 200 MB. The unbounded direction is what S6 supports, not a figure.
+// fetchBytes runs the production download path and returns the bytes it landed,
+// so the assertions below keep testing what they always did now that
+// fetchToFile streams to a file instead of returning a buffer.
+func fetchBytes(t *testing.T, url string) ([]byte, error) {
+	t.Helper()
+	path, _, err := fetchToFile(url, t.TempDir())
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.Remove(path) }()
+	return os.ReadFile(path)
+}
+
+// zstdDecompressBytes stages blob as a file and decompresses it, for the same
+// reason: zstdDecompress now takes a path so ensureCLI can re-read it on retry.
+func zstdDecompressBytes(t *testing.T, blob []byte, dest string) error {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "blob.zst")
+	if err := os.WriteFile(src, blob, 0o600); err != nil {
+		t.Fatalf("stage blob: %v", err)
+	}
+	return zstdDecompress(src, dest)
+}
+
+// fetchToFile must land the body on disk and return the sha256 it computed
+// WHILE streaming — the point of the change is that no caller ever holds the
+// blob, so the hash cannot come from a second pass over a buffer.
+func TestFetchToFileStreamsAndHashes(t *testing.T) {
+	body := bytes.Repeat([]byte("z"), 128*1024)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	path, sum, err := fetchToFile(srv.URL, dir)
+	if err != nil {
+		t.Fatalf("fetchToFile: %v", err)
+	}
+	defer func() { _ = os.Remove(path) }()
+
+	if got := filepath.Dir(path); got != dir {
+		t.Errorf("temp landed in %s, want %s (beside the install destination)", got, dir)
+	}
+	want := sha256.Sum256(body)
+	if sum != hex.EncodeToString(want[:]) {
+		t.Errorf("streamed sum = %s, want %s", sum, hex.EncodeToString(want[:]))
+	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read temp: %v", err)
+	}
+	if !bytes.Equal(onDisk, body) {
+		t.Errorf("temp holds %d bytes, want %d", len(onDisk), len(body))
+	}
+}
+
+// An unusable target directory must NOT turn into a download failure. ensureCLI
+// creates the cli-dir after the download and reports its own "mkdir cli dir: "
+// error there; failing here would move that error to a different string on a
+// reachable path, so fetchToFile falls back to the OS temp dir instead.
+func TestFetchToFileFallsBackWhenDirUnusable(t *testing.T) {
+	body := []byte("payload")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	path, _, err := fetchToFile(srv.URL, missing)
+	if err != nil {
+		t.Fatalf("fetchToFile with an unusable dir must fall back, got: %v", err)
+	}
+	defer func() { _ = os.Remove(path) }()
+	if filepath.Dir(path) == missing {
+		t.Errorf("temp claims to be in the missing dir %s", missing)
+	}
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, body) {
+		t.Errorf("fallback temp = %q (err %v), want %q", got, err, body)
+	}
+}
+
+// A body over the cap must leave nothing behind: the temp is partially written
+// by the time the limit is detected.
+func TestFetchToFileRemovesTempWhenOverCap(t *testing.T) {
+	old := maxCLIBytes
+	maxCLIBytes = 5
+	defer func() { maxCLIBytes = old }()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 64))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	if _, _, err := fetchToFile(srv.URL, dir); err == nil {
+		t.Fatal("over-cap body succeeded, want an error")
+	}
+	left, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	if len(left) != 0 {
+		t.Errorf("%d file(s) left behind after an over-cap download, want 0", len(left))
+	}
+}
+
 func TestZstdDecompressSizeLimit(t *testing.T) {
 	old := maxCLIBytes
 	maxCLIBytes = 1024
@@ -95,13 +202,13 @@ func TestZstdDecompressSizeLimit(t *testing.T) {
 	dir := t.TempDir()
 	// 1025 bytes decompressed — one byte over the 1 KB cap.
 	bomb := zstdOf(t, bytes.Repeat([]byte("x"), 1025))
-	if err := zstdDecompress(bomb, filepath.Join(dir, "over")); err == nil {
+	if err := zstdDecompressBytes(t, bomb, filepath.Join(dir, "over")); err == nil {
 		t.Error("expected error for oversized zstd payload, got nil")
 	}
 
 	// Exactly at the cap (1024 bytes) must succeed.
 	ok := zstdOf(t, bytes.Repeat([]byte("x"), 1024))
-	if err := zstdDecompress(ok, filepath.Join(dir, "at")); err != nil {
+	if err := zstdDecompressBytes(t, ok, filepath.Join(dir, "at")); err != nil {
 		t.Errorf("zstdDecompress at cap: %v", err)
 	}
 }
@@ -156,11 +263,11 @@ func TestHTTPGet(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b, err := httpGet(srv.URL + "/ok")
+	b, err := fetchBytes(t, srv.URL+"/ok")
 	if err != nil || string(b) != "body-bytes" {
 		t.Fatalf("httpGet ok = %q, %v", b, err)
 	}
-	if _, err := httpGet(srv.URL + "/missing"); err == nil {
+	if _, err := fetchBytes(t, srv.URL+"/missing"); err == nil {
 		t.Error("a non-200 response should error")
 	}
 
@@ -174,7 +281,7 @@ func TestHTTPGet(t *testing.T) {
 		}))
 		defer large.Close()
 
-		if _, err := httpGet(large.URL); err == nil {
+		if _, err := fetchBytes(t, large.URL); err == nil {
 			t.Error("expected error when response exceeds maxCLIBytes")
 		}
 	})
@@ -189,7 +296,7 @@ func TestHTTPGet(t *testing.T) {
 		}))
 		defer exact.Close()
 
-		b, err := httpGet(exact.URL)
+		b, err := fetchBytes(t, exact.URL)
 		if err != nil {
 			t.Fatalf("a response of exactly maxCLIBytes must succeed, got: %v", err)
 		}
@@ -751,7 +858,7 @@ func TestDownloadStatusErrorWording(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := httpGet(srv.URL + "/missing")
+	_, err := fetchBytes(t, srv.URL+"/missing")
 	if err == nil {
 		t.Fatal("httpGet on a 404 returned no error")
 	}

@@ -327,7 +327,7 @@ func TestIsSingleComponent(t *testing.T) {
 
 // httpGet propagates a dial failure from client.Get.
 func TestHTTPGetConnectionError(t *testing.T) {
-	if _, err := httpGet(refusedURL(t)); err == nil {
+	if _, err := fetchBytes(t, refusedURL(t)); err == nil {
 		t.Error("httpGet to a refused port succeeded, want error")
 	}
 }
@@ -340,7 +340,7 @@ func TestHTTPGetTruncatedBody(t *testing.T) {
 		_, _ = w.Write([]byte("short"))
 	}))
 	defer srv.Close()
-	if _, err := httpGet(srv.URL); err == nil {
+	if _, err := fetchBytes(t, srv.URL); err == nil {
 		t.Error("httpGet with truncated body succeeded, want error")
 	}
 }
