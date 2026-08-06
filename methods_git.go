@@ -527,6 +527,38 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
+	// ⚠️ INTENTIONAL DIVERGENCE, and the only one on this method — refused before
+	// git is run at all, so neither the removal nor the branch delete happens.
+	//
+	// Everything below documents that a failed `git worktree remove` hands
+	// worktreePath to os.RemoveAll, and that this is measured PARITY rather than a
+	// claustrum invention. What that measurement did not cover is that
+	// worktreePath is `~`-expanded first (expandpath.go), so `"worktreePath":"~"`
+	// makes that line os.RemoveAll($HOME) — git fails on a home directory, which
+	// is not a worktree, so the fallback is the arm that runs.
+	//
+	// That gap is now closed, not inferred: probed 2026-08-06 at 5db5e4a on an
+	// ephemeral VM with HOME pinned to a fixture, `"worktreePath":"~"` answers
+	// {"success":true} and the home directory is GONE. Two instrument checks ran
+	// first, so a null result could not be mistaken for a refusal — files.validate
+	// on ~/KEEP.txt returned valid:true, and an ordinary non-worktree directory
+	// was deleted as the table below predicts.
+	//
+	// It is the same defect that destroyed the maintainer's home directory through
+	// files.extract_tar on 2026-08-02; only the method differs.
+	//
+	// The comment below justifies the parity by "the caller did name the path and
+	// ask for it to be removed". That is the right test, and a home directory
+	// fails it: the caller named "~", and no caller asking to remove a worktree
+	// means "delete my home directory". Matching the reference is this project's
+	// hard rule for FRAMES; it was never a commitment to reproduce an
+	// unrecoverable data loss the reference reaches by accident.
+	if wipesHomeDir(p.WorktreePath) {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error:   fmt.Sprintf("worktreePath must not be or contain the home directory: %q", p.WorktreePath),
+		})
+	}
 	// When `git worktree remove --force` fails for ANY reason, the reference
 	// removes worktreePath itself and still answers {"success":true}; it reports
 	// failure only when that manual cleanup ALSO fails.

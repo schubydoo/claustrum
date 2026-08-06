@@ -69,11 +69,11 @@ func wipesHomeDir(p string) bool {
 	// what ".." resolves to. That is not academic. git.worktree_remove performs
 	// the same recursive delete with NO IsAbs gate of its own, and PROTOCOL.md
 	// already measures that its fallback resolves worktreePath against the
-	// DAEMON's working directory — so a guard placed there would miss ".." from
-	// a daemon sitting in a home directory, which is os.RemoveAll on home's
-	// parent. os.RemoveAll refuses a trailing "." but has no such guard for
-	// "..". Measured: unguarded, that spelling really does delete the home
-	// directory. Raised in review on #231.
+	// DAEMON's working directory — so without this, the guard on that method
+	// would miss ".." from a daemon sitting in a home directory, which is
+	// os.RemoveAll on home's parent. os.RemoveAll refuses a trailing "." but has
+	// no such guard for "..". Measured: unguarded, that spelling really does
+	// delete the home directory. Raised in review on #231.
 	//
 	// filepath.Abs resolves against os.Getwd(), which is exactly the root
 	// os.RemoveAll will use, so the guard judges the path the delete actually
@@ -94,8 +94,8 @@ func wipesHomeDir(p string) bool {
 	//
 	// Do NOT justify this with "isFilesystemRoot rejects roots before we get
 	// here" — that holds only for files.extract_tar. git.worktree_remove has no
-	// root check at all, so a call site added there relies on THIS branch to
-	// refuse a root, since every root contains the home directory.
+	// root check at all, so THIS branch is the only thing refusing a root there,
+	// since every root contains the home directory.
 	if !strings.HasSuffix(dest, string(os.PathSeparator)) {
 		dest += string(os.PathSeparator)
 	}

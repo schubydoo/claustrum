@@ -133,10 +133,10 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   (`homeguard.go`) refuses a target that **is or contains** home; paths **under**
   home stay allowed, because `~/.claude/…` is the daemon's own install path.
   Always-on, not opt-in — see [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D2.
-  ⚠️ **`git.worktree_remove` is not guarded yet** (separate PR) and has no
-  `IsAbs`/root check either. **Any path that reaches a recursive delete owes this
-  guard**, and `IsAbs && !isFilesystemRoot` is not it — a home directory passes
-  both, and neither one resolves a relative path.
+  **Any path that reaches a recursive delete owes this guard**, and
+  `IsAbs && !isFilesystemRoot` is not it — a home directory passes both, and
+  neither one resolves a relative path (`worktreePath:".."` from a daemon sitting
+  in home deletes it; measured).
 - **Auth is in-band per request** (`"auth":"<token>"`); the daemon's token comes
   from `-token-file` (read once, then unlinked so it never lands in
   `/proc/<pid>/environ`) or `-token-fd` (read from an open descriptor, forwarded

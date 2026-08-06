@@ -124,14 +124,16 @@ type branchesResult struct {
 // {"success":true} — removing a nonexistent worktree, or naming a branch that
 // does not exist.
 //
-// TWO inputs DO populate `error` now; this comment used to say none did:
+// THREE inputs DO populate `error` now; this comment used to say none did:
 //
 //	git refused AND the daemon's own cleanup also failed  (matches the reference)
 //	claustrum's gitTimeout fired                          (claustrum-only)
+//	worktreePath is/contains the home directory           (claustrum-only)
 //
-// The second is a frame the reference cannot emit — it runs git with no deadline.
-// Both are confined to pathological paths; every reference-reachable reply is
-// still the bare {"success":true}, which is what the committed goldens pin.
+// The last two are frames the reference cannot emit — it runs git with no
+// deadline, and it hands a home directory straight to the delete. All three are
+// confined to pathological paths; every reference-reachable reply is still the
+// bare {"success":true}, which is what the committed goldens pin.
 type worktreeRemoveResult struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
