@@ -9,7 +9,7 @@
 # worktree — but tools that read AGENTS.md fall back to CLAUDE.md, which IS
 # tracked and therefore present. So it's intentionally not listed here.
 
-# Host-local agent guardrails (host safety + context-mode routing)
+# Host-local agent guardrails (host safety + agent-tool routing)
 CLAUDE.local.md
 
 # Reverse-engineering working notes + the validation battery
