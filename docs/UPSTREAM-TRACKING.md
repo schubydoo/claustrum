@@ -170,18 +170,53 @@ If the check reports drift:
 4. Update `scripts/UPSTREAM_SHA` to the new SHA, note the change in `CHANGELOG.md`,
    and update `docs/PROTOCOL.md` if the wire surface changed.
 
-> Not every claustrum behavior is meant to match the reference. A few
-> **deliberate, opt-in divergences** — the `-cli-zst` checksum (D1), the CT-1
-> `wantPid` `pid`/`startTime` fields, the CT-2 `-keep-children` serve flag, and
-> the CT-3 `claustrum.conf` file (`version-override` / `keep-children` /
-> `metrics-addr`) — are catalogued in
-> [`IMPROVEMENTS.md`](IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
-> They sit off the default path (the drift check and the synthetic battery never
-> exercise `wantPid` or `-keep-children`, so they won't show as a diff), so don't
-> "reconcile" them away as drift if a probe that opts in surfaces them. **CT-3 is
-> the exception the check *can* flag:** the static drift check diffs `-version`
-> format, so a deploy carrying a `claustrum.conf` with `version-override` reports
-> the impersonation line — expected, not drift (the no-config default stays
+> Not every claustrum behavior is meant to match the reference. A set of
+> **deliberate divergences** is catalogued in
+> [`IMPROVEMENTS.md`](IMPROVEMENTS.md#deliberate-divergences-post-parity) — don't
+> "reconcile" any of them away as drift. They split three ways, and the split is
+> what decides whether a probe can see them.
+>
+> **Opt-in — off the default path.** The JSON-RPC battery (`validate.sh` /
+> `battery.js`) never exercises these, so they won't show as a diff there:
+> - **D1** — `-cli-zst` SHA-256 verification when a `-cli-checksum` is supplied.
+>   ⚠️ Unlike the rest of this group, `scratch/probe/cli_probe.sh` **does** drive
+>   this path on both binaries — the JSON-RPC battery is not the only instrument.
+> - **CT-1** — `wantPid` adds `pid`/`startTime` to spawn/reattach replies.
+> - **CT-2** — `-keep-children` leaves children running across shutdown.
+> - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /
+>   `metrics-addr` / `listen-pipe`).
+> - **CT-5** — `-listen-pipe`, the additional Windows named-pipe transport.
+>
+> **Always-on and measured — a probe that reaches the path sees a real
+> difference**, and that is expected, not drift:
+> - **D2** — a destructive path target that is or contains the home directory is
+>   refused (`files.extract_tar` `destDir`, `git.worktree_remove` `worktreePath`).
+> - **D4** — `files.read` refuses a non-regular file.
+> - **D5** — every git invocation is capped at 60 s. **Two ways to probe this and
+>   see nothing:** a harness deadline under 60 s records "no reply" for both
+>   binaries, and a git that spawns a surviving child blocks claustrum past its
+>   own cap too.
+> - **D6 / D7** — `-cli-version` must be a single path component, and must not
+>   collide with the install temp sweep.
+> - **D9** — namespace-wide params binding rejects a type-mismatched field the
+>   reference ignores. Adversarial params only.
+>
+> **Always-on, reference behavior UNKNOWN** — do not record a difference here as
+> either drift *or* expected divergence until someone measures it:
+> - **D8** — `remote-server.log` is declined rather than shared with another
+>   user. The reference was never measured on that path; D8's entry carries the
+>   one-VM run that would settle it.
+>
+> **This list covers the D/CT-numbered divergences only.** Several claustrum-only
+> behaviors are catalogued by *tier number* instead and are just as real:
+> **item 16** (`-metrics-addr`), **item 17** (the orphaned previous process tree
+> is torn down), **item 18** (`-token-fd`), **item 21** (the signal is skipped
+> when the child has already exited). Check both indexes before concluding that
+> something is drift.
+>
+> **CT-3 is the one the static check *can* flag:** it diffs `-version` format, so
+> a deploy carrying a `claustrum.conf` with `version-override` reports the
+> impersonation line — expected, not drift (the no-config default stays
 > byte-identical).
 
 ## Automating it

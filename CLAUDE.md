@@ -133,10 +133,12 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   (`homeguard.go`) refuses a target that **is or contains** home; paths **under**
   home stay allowed, because `~/.claude/…` is the daemon's own install path.
   Always-on, not opt-in — see [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D2.
-  **Any path that reaches a recursive delete owes this guard**, and
+  **Any RPC path param that reaches a recursive delete owes this guard**, and
   `IsAbs && !isFilesystemRoot` is not it — a home directory passes both, and
   neither one resolves a relative path (`worktreePath:".."` from a daemon sitting
-  in home deletes it; measured).
+  in home deletes it; measured). The install path has a **third** `os.RemoveAll`
+  on operator-supplied input (`filepath.Join(cliDir, cliVersion)`); it is guarded
+  by D6's single-path-component rule instead, not by `wipesHomeDir`.
 - **Auth is in-band per request** (`"auth":"<token>"`); the daemon's token comes
   from `-token-file` (read once, then unlinked so it never lands in
   `/proc/<pid>/environ`) or `-token-fd` (read from an open descriptor, forwarded
