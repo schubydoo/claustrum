@@ -314,3 +314,40 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 		})
 	}
 }
+
+// An OMITTED worktreePath must keep its pre-guard reply, and this row exists
+// because the guard got it wrong once.
+//
+// gitWorktreeRemove has no required-param check — unlike filesExtractTar, which
+// answers "archivePath and destDir are required" long before the guard runs. So
+// an empty worktreePath reaches wipesHomeDir, where filepath.Abs("") resolves to
+// the daemon's working directory. On a daemon started in the user's home — which
+// is what an SSH-launched daemon inherits, and the same premise the ".." rows
+// above rest on — that equals home and the guard refused.
+//
+// Refusing it is wrong on both counts: os.RemoveAll("") is a documented no-op
+// returning nil, so nothing was ever going to be deleted, and the refusal also
+// skipped the branchName delete that the reference still performs. The frame it
+// produced varied with the daemon's cwd, which no golden can observe because the
+// harness runs from a temp dir. Raised in review on #232.
+func TestWorktreeRemoveEmptyPathIsNotRefused(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home", "someone")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(homeEnvVar(), home)
+	// The cwd is what makes this bite: an empty path resolves to it.
+	t.Chdir(home)
+
+	s := newTestServer(t)
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": t.TempDir(), "branchName": "b1"}))
+
+	if strings.Contains(got, "home directory") {
+		t.Errorf("worktree_remove with no worktreePath = %s, want the pre-guard reply — "+
+			"os.RemoveAll(\"\") is a no-op, so there is nothing here to guard", got)
+	}
+	if !strings.Contains(got, `"success":true`) {
+		t.Errorf("worktree_remove with no worktreePath = %s, want the bare success:true", got)
+	}
+}

@@ -553,7 +553,17 @@ func gitWorktreeRemove(req *request) response {
 	// means "delete my home directory". Matching the reference is this project's
 	// hard rule for FRAMES; it was never a commitment to reproduce an
 	// unrecoverable data loss the reference reaches by accident.
-	if wipesHomeDir(p.WorktreePath) {
+	// The empty check is not defensive noise — without it this guard CHANGED a
+	// reference-reachable frame. gitWorktreeRemove has no required-param check, so
+	// an omitted worktreePath arrives here as "", and filepath.Abs("") resolves to
+	// the daemon's working directory: on a daemon started in the user's home (what
+	// an SSH-launched one inherits) that equals home and the guard fired. It would
+	// have refused an input where os.RemoveAll("") is a documented no-op returning
+	// nil — nothing to protect — and skipped the branchName delete the reference
+	// still performs. Worse, the frame varied with the daemon's cwd, which no
+	// golden can observe because the harness runs from a temp dir. Raised in review
+	// on #232; pinned by TestWorktreeRemoveEmptyPathIsNotRefused.
+	if p.WorktreePath != "" && wipesHomeDir(p.WorktreePath) {
 		return okResult(req.ID, worktreeRemoveResult{
 			Success: false,
 			Error:   fmt.Sprintf("worktreePath must not be or contain the home directory: %q", p.WorktreePath),
