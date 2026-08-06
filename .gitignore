@@ -7,7 +7,7 @@ scratch/
 /site/
 /.venv/
 
-# Host-local agent guardrails (host specifics + context-mode routing; never committed)
+# Host-local agent guardrails (host specifics + agent-tool routing; never committed)
 CLAUDE.local.md
 
 # Go build & test artifacts

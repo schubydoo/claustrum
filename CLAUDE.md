@@ -164,7 +164,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - Worked client examples → [`docs/EXAMPLES.md`](docs/EXAMPLES.md)
 - Keeping compatibility in sync → [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md)
 - Ideas / deferred → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
-- Host-local agent guardrails + context-mode routing → `CLAUDE.local.md` (gitignored)
+- Host-local agent guardrails + agent-tool routing → `CLAUDE.local.md` (gitignored)
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
   `ci` / `security` aggregators are the required checks). Releases are automated by
   **knope** (`knope.toml`): pending `.changeset/` fragments → `knope-prepare.yml`
