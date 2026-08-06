@@ -614,6 +614,17 @@ exactly how D2 nearly got reused.)*
   claustrum declines and falls back to inherited stdio.
 - The log-handling behavior is otherwise identical — though the *contents* never
   were, since the banner word and the level tag are an intentional rebrand.
+- **Why always-on rather than opt-in**, against the rule that opt-in is the
+  default: the trigger is **unreachable on the deployed path**. The socket
+  directory is `~/.claude/remote/`, per-user and not world-writable, so a foreign
+  log cannot be planted there and the fallback never fires — Desktop sees
+  identical behaviour either way. It fires only in a shared directory, which is
+  also the only place the reference's behaviour is a disclosure risk. A flag would
+  gate a branch no honest deployment reaches.
+- **Reopen trigger** (the old one — "any measurement of that log path" — is spent):
+  a deployment that puts the socket directory somewhere shared *and* needs the log
+  file, since there the fallback sends diagnostics to the launcher's stdio instead.
+  If that stream is one a client parses, D8's fallback becomes visible to it.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → *Daemon log*.
 
 ### D9 · Namespace-wide params binding is stricter than the reference's ✅ (always-on) — impact L / cost L

@@ -155,8 +155,20 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock
 If the existing log cannot be replaced — a sticky directory holding another
 user's file — claustrum declines the log entirely and the daemon's output falls
 back to the launcher's inherited stdio, rather than writing into a file another
-user can read. That refusal is a claustrum-only hardening (D8) on an attack path
-the reference was not measured on; on every honest path the two are identical.
+user can read. **Intentional divergence (D8), and the reference is measured on
+this path as of 2026-08-06**: given a root-owned, world-writable
+`remote-server.log` in a `1777` directory, the reference **truncates it and
+writes its own diagnostics in**, where claustrum leaves it untouched. Control:
+the same fixture in a non-sticky directory, where both binaries unlink and
+recreate the log — so the difference is about the refused replacement, not about
+a daemon that failed to start.
+
+**Not reachable on the deployed path**, which is why it is always-on rather than
+opt-in: the socket directory is `~/.claude/remote/`, per-user and not
+world-writable, so the fallback never fires there and the two binaries behave
+identically. It fires only where the log's directory is shared, which is also the
+only place the reference's behaviour is a disclosure risk — a file any local user
+can plant and later read.
 
 Unlike the socket and `daemon.token`, the log is **not removed on graceful
 shutdown** — it outlives the daemon so a post-mortem stays readable. The fixed
