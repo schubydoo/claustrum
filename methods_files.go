@@ -201,13 +201,15 @@ type extractTarParams struct {
 // wipeDestDir is the recursive delete extract_tar performs before unpacking,
 // behind a seam.
 //
-// The seam exists for ONE reason: the test that proves isFilesystemRoot is
-// actually wired into filesExtractTar has to send a real filesystem root, and
-// on Windows that is C:\\. If the guard ever stops holding, an unstubbed test
-// would answer the question by deleting the CI runner. A test whose failure
-// mode is destroying the machine is not a test, so the wipe is observable and
-// stubbable instead: TestFilesExtractTarErrors records whether it was reached
-// and never lets it run.
+// The seam exists so that a test proving a destDir gate is actually WIRED INTO
+// filesExtractTar can send the very input the gate exists to refuse. For
+// isFilesystemRoot that input is a real filesystem root — on Windows, C:\\. For
+// wipesHomeDir it is a home directory. If either guard stops holding, an
+// unstubbed test would answer the question by deleting the CI runner or the
+// developer's home. A test whose failure mode is destroying the machine is not
+// a test, so the wipe is observable and stubbable instead: TestFilesExtractTarErrors
+// and TestFilesExtractTarRefusesHomeDir record whether it was reached and never
+// let it run.
 //
 // Production never reassigns it.
 var wipeDestDir = os.RemoveAll
@@ -250,6 +252,16 @@ func filesExtractTar(req *request) response {
 	}
 	if !filepath.IsAbs(p.DestDir) || isFilesystemRoot(p.DestDir) {
 		return okResult(req.ID, extractResult{Error: fmt.Sprintf("destDir must be an absolute, non-root path: %q", p.DestDir)})
+	}
+	// A home directory is absolute and is not a filesystem root, so it clears the
+	// gate above and reaches the wipe. `"destDir":"~"` expands to exactly that
+	// before this function is entered, which is how an in-repo fuzzer deleted the
+	// maintainer's home directory on 2026-08-02. Refused here, alongside the root
+	// check, so neither reaches extractTarGz: both errors precede the archive
+	// open, so the archive is not consumed either. See homeguard.go for why
+	// containment is the test and why ~/... stays allowed.
+	if wipesHomeDir(p.DestDir) {
+		return okResult(req.ID, extractResult{Error: fmt.Sprintf("destDir must not be or contain the home directory: %q", p.DestDir)})
 	}
 	count, err := extractTarGz(p.ArchivePath, p.DestDir)
 	if err != nil {
