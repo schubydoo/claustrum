@@ -471,6 +471,83 @@ completes it with `git.worktree_remove`, which shares the predicate
   at a `t.TempDir()` home, so the suite is safe to run against an **unfixed**
   tree — verified by reverting both guards and watching it fail.
 
+### D11 · `-install` bounds the runnability probe at 15 s ✅ (always-on) — impact M / cost L
+
+- `isRunnable` runs `<cli> --version` to decide whether an installed CLI works.
+  **The reference has no deadline there.** Measured with a planted CLI that hangs
+  on `--version`:
+
+  | binary | outcome |
+  |---|---|
+  | reference `5db5e4a` | **still running when the harness killed it at 45 s** |
+  | claustrum | returns at **15 s** |
+  | *control:* a CLI that answers instantly | **0 s on both** |
+
+  The control is what makes the 45 s mean something: without it, "the reference
+  did not finish" is indistinguishable from a fixture that could never finish.
+  This bounds the reference's deadline at *above 45 s*, not at *absent*.
+- **No observable delta on any honest path.** A CLI that answers `--version`
+  behaves identically. The divergence appears only when a CLI never answers, and
+  there the reference wedges `-install` indefinitely.
+- **Trade:** matching means reintroducing an unbounded hang in `-install`, which
+  is why this stays.
+- Note the second observable: after the probe times out claustrum reports
+  `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, because a
+  CLI that fails the runnability check is treated as absent.
+
+### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
+
+- `httpGet` runs with `http.Client{Timeout: 5 * time.Minute}` (PR 59), which
+  bounds the whole exchange. **The reference showed no bound at or below 400 s.**
+  Measured against a server that sends `200 OK` with a `Content-Length` and then
+  never sends the body:
+
+  | binary | outcome |
+  |---|---|
+  | reference `5db5e4a` | **still downloading at 400 s**, killed by the harness |
+  | claustrum | returns at **300 s** with `cliError "download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)"` |
+  | *control:* the same server style serving a real 629 MB body | completes on both |
+
+  400 s is deliberately past claustrum's own 300 s bound, so the run
+  discriminates. The control matters for the same reason as D11's: a stall probe
+  where nothing can ever succeed cannot tell "no deadline" from "broken fixture",
+  and the D10 measurement supplies exactly that positive case on the same path.
+- **No observable delta on any honest path.** A server that sends its body
+  behaves identically. The divergence appears only against a stalled or
+  black-holed download, where the reference waits indefinitely.
+- **Trade:** matching means an `-install` that can hang forever on a network path
+  the caller does not control.
+- ⚠️ **This bounds the exchange, not the throughput.** A server dribbling bytes
+  slower than 5 minutes' worth still trips it, and one that finishes in 4:59 does
+  not — so it is a deadline, not a stall detector.
+
+### D13 · `-install` verifies the checksum before decompressing ✅ (always-on) — impact M / cost L
+
+- On the `-cli-url` path the **reference decompresses first** and aborts on the
+  first invalid bytes; **claustrum buffers the response, verifies the checksum,
+  then decompresses**. Exactly one input reveals the order — a blob that is
+  **both** corrupt zstd **and** wrong-checksummed:
+
+  | input | reference | claustrum |
+  |---|---|---|
+  | corrupt blob **+ wrong checksum** | `decompressing: invalid input: magic number mismatch` | `checksum mismatch: expected=…, actual=…` |
+  | *control:* corrupt blob + correct checksum | `decompressing: invalid input: …` | **same** |
+  | *control:* valid blob + wrong checksum | `checksum mismatch: …` | **same** |
+
+  Both controls come back identical, which is why the single differing row is
+  attributable to ordering rather than to the fixture. Measured at `5db5e4a`.
+- **Observable delta:** the `cliError` string, on that one combined-failure input
+  only.
+- **Trade:** matching means feeding unverified bytes to the decompressor — giving
+  up a verify-then-use property for parity on an input no honest caller produces.
+- ⚠️ **The reference's approach is better on memory, and that matters more since
+  D10.** It streams and decompresses concurrently; claustrum holds the whole
+  response in memory (`io.ReadAll`). With D10 flipping the size cap off by
+  default, nothing bounds that buffer any more — see D10 for the trade.
+- **Not the same thing as D1.** D1 is about *whether* the local `-cli-zst` blob is
+  verified at all; D13 is about the *order* of verify and decompress on the
+  `-cli-url` download.
+
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach ✅ — impact M / cost L
 
 - `process.spawn` / `process.reattach` accept an optional `"wantPid":true` param.

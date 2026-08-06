@@ -160,6 +160,13 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
 - **A connection's requests dispatch concurrently** — replies can return out of
   order, matching the reference. Don't serialize them.
+- **Three always-on `-install` bounds are claustrum's, not the reference's**
+  (D11/D12/D13, all measured with controls): the `<cli> --version` runnability
+  probe is capped at 15 s (the reference was still running at 45 s), the download
+  at 5 minutes (still downloading at 400 s), and the checksum is verified
+  **before** decompressing where the reference decompresses first. None differs on
+  an honest path — they only show against a CLI that never answers, a download
+  that never arrives, or a blob that is corrupt *and* wrong-checksummed.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

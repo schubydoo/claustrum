@@ -1196,6 +1196,20 @@ the facts (`cliError`), not via the exit code.
 
 Two side effects have no frame and are easy to miss:
 
+- **The download is bounded at 5 minutes — intentional divergence (D12).** The
+  reference has no bound there: measured against a server that sends headers and
+  then never sends the body, it was still downloading at 400 s while claustrum
+  returned at 300 s with `cliError "download failed: context deadline exceeded
+  (Client.Timeout or context cancellation while reading body)"`. A real 629 MB
+  body completes on both, so only a stalled or black-holed download differs.
+- **The `--version` runnability probe is bounded at 15 s — intentional
+  divergence (D11).** The reference has no deadline there: measured with a CLI
+  that hangs on `--version`, it was still running when the harness stopped it at
+  45 s, where claustrum returns at 15 s (control: a CLI that answers instantly
+  returns at 0 s on both). No honest path differs — a CLI that answers behaves
+  identically. After the probe times out, claustrum reports
+  `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, since a CLI
+  that fails the check is treated as absent.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
   on a fully successful install. An extracted CLI that fails the `--version`
   runnability check still costs you the blob. A blob that is not valid zstd is
@@ -1216,6 +1230,14 @@ Checksum + error framing (probe-verified):
 - `-cli-checksum` is verified on the download (`-cli-url`) path
   **unconditionally** — an empty `-cli-checksum` still fails
   (`checksum mismatch: expected=, actual=<sha>`).
+- **Verify happens BEFORE decompress — intentional divergence (D13).** The
+  reference decompresses first and aborts on the first invalid bytes, so exactly
+  one input tells them apart: a blob that is **both** corrupt zstd **and**
+  wrong-checksummed. Measured at `5db5e4a` — reference
+  `decompressing: invalid input: magic number mismatch`, claustrum
+  `checksum mismatch: expected=…, actual=…`. Every other combination is
+  order-blind and identical on both (verified with two controls). Matching would
+  mean feeding unverified bytes to the decompressor.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - A cli-dir that cannot be created is reported with a **`mkdir cli dir: `**

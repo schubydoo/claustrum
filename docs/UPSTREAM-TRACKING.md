@@ -173,7 +173,9 @@ If the check reports drift:
 > Not every claustrum behavior is meant to match the reference. A few
 > **deliberate, opt-in divergences** — the `-cli-zst` checksum (D1), the CT-1
 > `wantPid` `pid`/`startTime` fields, the CT-2 `-keep-children` serve flag, and
-> the CT-3 `claustrum.conf` file (`version-override` / `keep-children` /
+> the always-on `-install` bounds and ordering (**D11** the 15 s runnability
+> probe, **D12** the 5-minute download deadline, **D13** verify-before-decompress),
+> and the CT-3 `claustrum.conf` file (`version-override` / `keep-children` /
 > `metrics-addr`) — are catalogued in
 > [`IMPROVEMENTS.md`](IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
 > They sit off the default path (the drift check and the synthetic battery never
