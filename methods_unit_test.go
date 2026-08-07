@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -599,9 +600,43 @@ func TestFilesExtractTarCreateFailureReportsZeroCount(t *testing.T) {
 }
 
 // The cap is OFF by default, which is the parity position: measured, the
-// reference has no cap at all, so any non-zero default makes claustrum fail an
-// extraction the reference completes. This asserts the default itself, because
-// that constant IS the divergence — every other test in this file overrides it.
+// reference applies no cap at any size the probe could reach (629 MB), so any
+// non-zero default makes claustrum fail an extraction the reference completes.
+// That measurement disproves a 512 MiB cap; it does not prove there is none
+// above 629 MB, and this comment must not say otherwise. This asserts the
+// default itself, because that constant IS the divergence —
+// TestFilesExtractTarSizeLimit is the one test that overrides it.
+// A cap of MaxInt64 must behave like a very large cap, not like a zero-byte one.
+// The bound is maxExtractBytes-totalWritten+1, and Go WRAPS signed overflow: at
+// MaxInt64 that sum used to become MinInt64, io.LimitReader returns EOF for any
+// N <= 0, and io.Copy does not report EOF as an error — so every entry was
+// created at 0 bytes, totalWritten stayed 0 so the cap check never fired, and the
+// reply was success:true over a destDir of empty files. Silent data loss reported
+// as success, reachable through -max-extract-bytes and the claustrum.conf key
+// the moment the cap became settable.
+func TestFilesExtractTarCapMaxInt64DoesNotOverflow(t *testing.T) {
+	old := maxExtractBytes
+	maxExtractBytes = math.MaxInt64
+	defer func() { maxExtractBytes = old }()
+
+	s := newTestServer(t)
+	const body = "not empty"
+	archive := tarGzPath(t, map[string]string{"f.bin": body})
+	dest := filepath.Join(t.TempDir(), "out")
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":true`) {
+		t.Fatalf("extract with a MaxInt64 cap = %s, want success", got)
+	}
+	// The assertion that matters: success alone was TRUE while the bug was live.
+	b, err := os.ReadFile(filepath.Join(dest, "f.bin"))
+	if err != nil {
+		t.Fatalf("read extracted file: %v", err)
+	}
+	if string(b) != body {
+		t.Errorf("extracted %d bytes (%q), want %d (%q) — the cap bound overflowed", len(b), b, len(body), body)
+	}
+}
+
 func TestFilesExtractTarCapDefaultsOff(t *testing.T) {
 	if maxExtractBytes != 0 {
 		t.Fatalf("maxExtractBytes default = %d, want 0 (cap off = reference parity)", maxExtractBytes)
@@ -643,8 +678,9 @@ func TestFilesExtractTarSizeLimit(t *testing.T) {
 	if !strings.Contains(got, `"success":false`) || !strings.Contains(got, "size limit exceeded") {
 		t.Errorf("extract over cap = %s, want success:false and size-limit error", got)
 	}
-	// fileCount 0, matching every other failure arm on this method — the cap arm
-	// was the only one that answered a partial count.
+	// fileCount 0, matching the four arms that reject the archive outright
+	// (create, mkdir-parent, zip-slip, unsupported type) — not every arm; the
+	// note at the cap arm in methods_files.go has the full split.
 	if !strings.Contains(got, `"fileCount":0`) {
 		t.Errorf("extract over cap = %s, want fileCount:0", got)
 	}

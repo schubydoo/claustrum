@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -448,7 +449,22 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// being the same code path. Re-measure if that lands.
 				n, err = io.Copy(out, tr)
 			} else {
-				n, err = io.Copy(out, io.LimitReader(tr, maxExtractBytes-totalWritten+1))
+				// The +1 is the boundary definition: reading one byte PAST the
+				// cap is what makes the totalWritten > maxExtractBytes test below
+				// able to fire at all. It must SATURATE rather than wrap. Go wraps
+				// signed overflow, so at maxExtractBytes == MaxInt64 (reachable
+				// since the cap became settable) this sum becomes MinInt64,
+				// io.LimitReader returns EOF on the first Read for any N <= 0, and
+				// io.Copy does not report EOF as an error — every entry would be
+				// created at 0 bytes, totalWritten would stay 0 so the cap test
+				// never fires, and the reply would be success:true over a destDir
+				// of empty files. Measured: the bound wraps to
+				// -9223372036854775808 and io.Copy returns 0.
+				bound := maxExtractBytes - totalWritten
+				if bound < math.MaxInt64 {
+					bound++
+				}
+				n, err = io.Copy(out, io.LimitReader(tr, bound))
 			}
 			totalWritten += n
 			out.Close()

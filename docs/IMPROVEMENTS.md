@@ -566,6 +566,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   the direct parity evidence. (Deliberately no frame count: a run's size changes as
   the battery grows, so a number quoted here goes stale the way `496/496` did.
   Recount at the time of writing if you need one.)
+
 ### D4 · `files.read` refuses a non-regular file ✅ (always-on) — impact M / cost L
 
 - **Shipped in PR 56, unnumbered until now.** `files.read` rejects anything that

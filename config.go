@@ -187,6 +187,16 @@ func (cfg config) effectiveMaxExtractBytes(cliVal int64, cliSet bool) int64 {
 	if !cliSet && cfg.maxExtractBytes != nil {
 		return *cfg.maxExtractBytes
 	}
+	// The config path rejects a negative outright so a typo can never silently
+	// enable a cap; the flag had no validation at all, so -max-extract-bytes -1
+	// reached the daemon as a negative. It disabled the cap either way (the copy
+	// site tests maxExtractBytes > 0), but the two paths disagreeing about the
+	// same input is the kind of gap that survives until something depends on it.
+	// Normalised to the disabled value, with a line saying so.
+	if cliVal < 0 {
+		logWarnf("[Server] -max-extract-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		return 0
+	}
 	return cliVal
 }
 

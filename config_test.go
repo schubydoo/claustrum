@@ -284,3 +284,23 @@ func TestParseConfig_HugeTailBounded(t *testing.T) {
 		t.Fatalf("versionOverride = %q, want %q", got, validSHA)
 	}
 }
+
+// A negative -max-extract-bytes is normalised to 0 (cap disabled) rather than
+// reaching the daemon as a negative. The config path already rejects a negative
+// so a typo cannot silently enable a cap; the flag had no validation, and the two
+// paths disagreeing about the same input is the gap this closes.
+func TestEffectiveMaxExtractBytesNormalisesNegative(t *testing.T) {
+	var cfg config
+	if got := cfg.effectiveMaxExtractBytes(-1, true); got != 0 {
+		t.Errorf("effectiveMaxExtractBytes(-1, true) = %d, want 0", got)
+	}
+	if got := cfg.effectiveMaxExtractBytes(1024, true); got != 1024 {
+		t.Errorf("effectiveMaxExtractBytes(1024, true) = %d, want 1024", got)
+	}
+	// The config value still wins when the flag was not set.
+	n := int64(4096)
+	cfg.maxExtractBytes = &n
+	if got := cfg.effectiveMaxExtractBytes(0, false); got != 4096 {
+		t.Errorf("config value = %d, want 4096", got)
+	}
+}
