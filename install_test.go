@@ -64,6 +64,116 @@ func fakeCLI(t *testing.T, exitCode int) []byte {
 	return b
 }
 
+// slowCLI returns the bytes of a stand-in CLI that answers `--version` with exit
+// 0 only after `seconds` — the honest-but-slow shape divergence D11 is about.
+// Same Unix/Windows split as fakeCLI above, and the same "call it right before
+// the step it backs" caveat on Windows.
+// ⚠️ `seconds` is a process-leak budget on the Unix legs, not just a duration.
+// The sh branch makes `sleep` a GRANDCHILD, and exec.CommandContext kills only
+// the direct `sh` child — measured: with `sleep 30` the probe returned
+// `signal: killed` at 100 ms while the sleeper was reparented to PID 1 and still
+// alive a second later. At 1 s it self-exits and nothing leaks, which is the only
+// reason this is safe. Raising it to "make the test more robust" leaks one
+// process per run on macOS and linux and changes nothing on Windows, whose branch
+// is a single process.
+func slowCLI(t *testing.T, seconds int) []byte {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return []byte(fmt.Sprintf("#!/bin/sh\nsleep %d\nexit 0\n", seconds))
+	}
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "slow:"+strconv.Itoa(seconds))
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// setCLIProbeTimeout sets the package-level probe deadline for one test and
+// restores it afterwards, so a failure cannot leak a deadline into the rest of
+// the suite (every other isRunnable caller here expects the default: none).
+func setCLIProbeTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := cliProbeTimeout
+	cliProbeTimeout = d
+	t.Cleanup(func() { cliProbeTimeout = old })
+}
+
+// D11: the runnability probe's deadline is opt-in and OFF by default, so an
+// honest-but-slow CLI installs — which is what the reference does (measured at
+// 5db5e4a: it installed a CLI answering in 90 s, waiting 91 s for it).
+//
+// The two arms discriminate against different mistakes. The "off" arm fails if
+// disabled is ever implemented as a zero-valued context.WithTimeout instead of
+// no context at all, because a 0 deadline expires before exec. The "on" arm
+// fails if the deadline stops being applied. Neither arm re-measures the 15 s
+// constant this replaced — a test that slow would be its own problem; that
+// number is settled by the differential run recorded in IMPROVEMENTS.md D11.
+func TestIsRunnable_ProbeTimeoutOptIn(t *testing.T) {
+	dir := t.TempDir()
+	// .exe suffix for the same reason as TestIsRunnable: Go's exec on Windows
+	// only resolves paths that carry an extension.
+	slow := filepath.Join(dir, "slow.exe")
+	if err := os.WriteFile(slow, slowCLI(t, 1), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	setCLIProbeTimeout(t, 0)
+	if !isRunnable(slow) {
+		t.Error("with the deadline disabled (the default), a slow-but-honest CLI must still be runnable")
+	}
+
+	setCLIProbeTimeout(t, 100*time.Millisecond)
+	if isRunnable(slow) {
+		t.Error("with a 100ms deadline opted in, a 1s CLI must be rejected")
+	}
+
+	// Third arm, and it is not redundant: the two above only ever assert
+	// "rejected", so they cannot tell an applied deadline from one that always
+	// expires. A negated duration and a duration divided by 1000 both satisfy them.
+	// This arm asserts the deadline is honoured at the value the operator gave.
+	setCLIProbeTimeout(t, 5*time.Second)
+	if !isRunnable(slow) {
+		t.Error("a 1s CLI must still be runnable under a 5s opted-in deadline")
+	}
+}
+
+// The default must be 0 — no deadline — because that is the parity position and
+// the whole point of the flip. Asserted on the package variable, since a wrong
+// default is invisible in every test that sets it explicitly.
+func TestCLIProbeTimeoutDefaultsOff(t *testing.T) {
+	if cliProbeTimeout != 0 {
+		t.Fatalf("cliProbeTimeout default = %s, want 0 (no deadline = reference parity)", cliProbeTimeout)
+	}
+	if got := (config{}).effectiveCLIProbeTimeout(0, false); got != 0 {
+		t.Fatalf("resolved default = %s, want 0", got)
+	}
+	// The package variable and the resolver are not the value a user gets — the
+	// flag's own DECLARED default is. Moving the 15 s into flag.Duration's default
+	// argument survives both assertions above while shipping a binary that
+	// deadlines every -install.
+	//
+	// Assert the declared default, not the resolved value: a real claustrum.conf
+	// beside the binary sets the resolved one legitimately, and a test that reads
+	// it fails for a correct reason. (Measured — with `cli-probe-timeout = 30s`
+	// beside a pre-built test binary, the resolved-value form of this assertion
+	// failed exactly as the config intended.)
+	if _, exited := runMain(t, "-install"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	f := lastMainFlagSet.Lookup("cli-probe-timeout")
+	if f == nil {
+		t.Fatal("main() did not register -cli-probe-timeout")
+	}
+	if f.DefValue != "0s" {
+		t.Fatalf("-cli-probe-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
+	}
+}
+
 func TestZstdDecompress(t *testing.T) {
 	dir := t.TempDir()
 	payload := []byte("hello zstd payload")

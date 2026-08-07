@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -22,6 +23,8 @@ func parse(t *testing.T, body string) config {
 func boolp(b bool) *bool { return &b }
 
 func int64p(n int64) *int64 { return &n }
+
+func durp(d time.Duration) *time.Duration { return &d }
 
 func TestParseConfig_VersionOverride(t *testing.T) {
 	cases := []struct {
@@ -267,6 +270,89 @@ func TestPrecedenceMaxCLIBytes(t *testing.T) {
 	}
 	if got := (config{}).effectiveMaxCLIBytes(0, false); got != 0 {
 		t.Errorf("empty config should leave the cap off, got %d", got)
+	}
+}
+
+// The runnability probe's deadline is the third opt-in numeric key and the first
+// that is a duration, so a bare number must be REJECTED rather than silently
+// meaning nanoseconds.
+func TestParseConfig_CLIProbeTimeout(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       *time.Duration
+	}{
+		{"seconds", "cli-probe-timeout = 30s", durp(30 * time.Second)},
+		{"minutes", "cli-probe-timeout = 2m", durp(2 * time.Minute)},
+		{"negative rejected", "cli-probe-timeout = -1s", nil},
+		{"bare number rejected", "cli-probe-timeout = 15", nil},
+		// Go's parser special-cases a bare zero, so "0" and "+0" DO parse. Pinned
+		// because the docs say "a bare number is rejected" and this is the
+		// exception to it — harmless (0 means disabled either way) but real.
+		{"bare zero is accepted by Go's parser", "cli-probe-timeout = 0", durp(0)},
+		{"bare +0 likewise", "cli-probe-timeout = +0", durp(0)},
+		// "-0" and "-0s" are negative in spelling but parse to zero, so they pass
+		// the d >= 0 guard and are ACCEPTED rather than dropped. Pinned because
+		// "a negative is rejected" is otherwise read as covering them.
+		{"negative zero is accepted, not dropped", "cli-probe-timeout = -0", durp(0)},
+		{"negative zero with a unit likewise", "cli-probe-timeout = -0s", durp(0)},
+		{"any zero-valued duration, any sign", "cli-probe-timeout = -0m", durp(0)},
+		// A genuinely negative value that truncates to zero. Not a spelling of
+		// zero — it is why "a negative is rejected" is false at the edge.
+		{"negative truncating to zero is accepted", "cli-probe-timeout = -0.4ns", durp(0)},
+		// The spelling an operator most often writes meaning "disabled".
+		{"plain 0s", "cli-probe-timeout = 0s", durp(0)},
+		{"non-duration rejected", "cli-probe-timeout = soon", nil},
+		{"empty rejected", "cli-probe-timeout =", nil},
+		{"case-insensitive key", "CLI-PROBE-TIMEOUT = 45s", durp(45 * time.Second)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parse(t, tc.body).cliProbeTimeout
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("cliProbeTimeout = %s, want unset (value rejected)", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("cliProbeTimeout unset, want %s", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("cliProbeTimeout = %s, want %s", *got, *tc.want)
+			}
+		})
+	}
+	// Same non-aliasing assertion the two byte-count keys carry: this key must not
+	// reach either of them, and neither of them must reach it.
+	// "0" on purpose, not "30s": a duration-only spelling fails ParseInt, so it
+	// could never observe a leak into the int64 keys. 0 parses both ways.
+	if got := parse(t, "cli-probe-timeout = 0"); got.maxCLIBytes != nil || got.maxExtractBytes != nil {
+		t.Errorf("cli-probe-timeout leaked into a size cap: cli=%v extract=%v", got.maxCLIBytes, got.maxExtractBytes)
+	}
+	if got := parse(t, "max-cli-bytes = 4096"); got.cliProbeTimeout != nil {
+		t.Errorf("max-cli-bytes also set cliProbeTimeout = %s, want unset", *got.cliProbeTimeout)
+	}
+}
+
+// -cli-probe-timeout follows the same CLI-over-config-over-default precedence as
+// the two size caps, with the same 0-is-a-real-value wrinkle.
+func TestPrecedenceCLIProbeTimeout(t *testing.T) {
+	withFile := config{cliProbeTimeout: durp(20 * time.Second)}
+	if got := withFile.effectiveCLIProbeTimeout(45*time.Second, true); got != 45*time.Second {
+		t.Errorf("explicit CLI should win, got %s", got)
+	}
+	if got := withFile.effectiveCLIProbeTimeout(0, false); got != 20*time.Second {
+		t.Errorf("config value should apply when CLI unset, got %s", got)
+	}
+	if got := withFile.effectiveCLIProbeTimeout(0, true); got != 0 {
+		t.Errorf("explicit CLI 0 should disable the deadline, got %s", got)
+	}
+	if got := (config{cliProbeTimeout: durp(0)}).effectiveCLIProbeTimeout(0, false); got != 0 {
+		t.Errorf("config 0 should apply, got %s", got)
+	}
+	if got := (config{}).effectiveCLIProbeTimeout(0, false); got != 0 {
+		t.Errorf("empty config should leave the deadline off, got %s", got)
+	}
+	// A negative flag normalises to disabled rather than reaching isRunnable as a
+	// negative, where context.WithTimeout would expire the probe immediately.
+	if got := (config{}).effectiveCLIProbeTimeout(-1*time.Second, true); got != 0 {
+		t.Errorf("negative CLI should normalise to 0, got %s", got)
 	}
 }
 

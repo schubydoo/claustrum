@@ -1273,8 +1273,8 @@ up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\
 against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
-`metrics-addr`, `listen-pipe`, `max-extract-bytes` and `max-cli-bytes` defaults
-(precedence: explicit CLI flag > config > default). See
+`metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes` and
+`cli-probe-timeout` defaults (precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1283,20 +1283,26 @@ hardening.
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
           [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>]
+          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>]
 ```
 
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
-Five `-install` behaviours are easy to miss. The first two are wall-clock bounds
-the reference does not appear to apply, a third bounds the `libc` probe, and the
-last two have no frame at all. Only the
-download bound *always* surfaces a `cliError` — a timed-out runnability probe on
-the cache-hit check can surface as the **absence** of an error — but only when the
-replacement answers in time; if it is just as slow, both probes time out and the
-run fails after ~30 s with the cached binary left in place:
+Five `-install` behaviours are easy to miss. Three are wall-clock bounds: the
+`--version` runnability probe (D11), the download (D12), and — **on linux only** —
+the `libc` probe. The reference does not appear to apply the first two (measured);
+the third has never been probed on it either way. **D11's is the one that is off by
+default**, so a stock claustrum applies two of the three on linux and one of the
+two that exist off it. The last two behaviours have no frame at all.
+
+D11's deadline became opt-in (default off = no deadline), so the D11 bullet below
+describes what an operator turns on, except where it says otherwise. The download bound *always* surfaces a `cliError`; an opted-in
+runnability timeout on the cache-hit check can surface as the **absence** of an
+error — but only when the replacement answers in time; if it is just as slow, both
+probes time out and the run fails after ~2× the deadline with the cached binary
+left in place:
 
 - **The download is bounded at 5 minutes — intentional divergence (D12).** The
   reference showed no bound at or below 400 s: measured against a server that
@@ -1309,21 +1315,35 @@ run fails after ~30 s with the cached binary left in place:
   a black hole does — the control passed because it arrived in time, not because
   it was honest. (That half is derived from the Client.Timeout semantics; only the
   stalled-download row was measured.)
-- **The `--version` runnability probe is bounded at 15 s — intentional
-  divergence (D11).** The reference showed no deadline at or below 45 s: measured
+- **The `--version` runnability probe can be bounded, but is NOT by default —
+  opt-in divergence (D11).** With `-cli-probe-timeout` unset (or `0`) the probe
+  runs with **no deadline at all**, matching the reference on every input measured
+  (still running at 45 s on a CLI that never answers; installing one that answers
+  at 90 s). Above 90 s the reference is unmeasured, so this is parity with the
+  observed behaviour rather than a proof that it has no deadline at all. Except
+  where a sentence says "at the default", everything below describes what an
+  operator opts into
+  by passing `-cli-probe-timeout <duration>` or setting the `cli-probe-timeout` key
+  in `claustrum.conf`; the figures are the old hardcoded 15 s default, which shipped
+  in every release up to and including 1.7.3 and in every build before this change.
+
+  The reference showed no deadline at or below 45 s: measured
   with a CLI that hangs on `--version`, it was still running when the harness
-  stopped it at 45 s, where claustrum returns at 15 s (control: a CLI that answers
-  instantly returns at 0 s on both). It also **installed a 90 s CLI, waiting 91 s**.
+  stopped it at 45 s, where claustrum bounded at 15 s returns at 15 s (control: a
+  CLI that answers instantly returns at 0 s on both; claustrum with the deadline
+  off is likewise still running when cut at 45 s — but on a planted `sleep 120` in
+  a separate run, not the reference row's hang-forever CLI under the same probe). It also **installed a 90 s CLI, waiting 91 s**.
   Those figures bound the reference's deadline above 90 s; none shows it is
-  absent. **A CLI answering within 15 s
+  absent. **A CLI answering within the configured deadline
   is expected to behave identically — derived from the constant, not bisected;
-  slower ones diverge, and not only broken ones.** This is a
-  wall-clock deadline, not a hang detector — measured 2026-08-07 with a CLI that
+  slower ones diverge, and not only broken ones.** A deadline is a threshold, not a
+  hang detector — measured 2026-08-07 with a CLI that
   answers honestly in 20 s, the reference installs it (no `cliError`, 20 s) while
-  claustrum fails at 15 s with `cliError "installed cli at <path> is not
+  claustrum bounded at 15 s fails with `cliError "installed cli at <path> is not
   runnable"` and deletes the staged binary, leaving the cli-dir empty. A control
   CLI answering instantly installs on both. So that string is reachable on a
-  working CLI, not only a broken one. What a timeout reports depends on which of
+  working CLI, not only a broken one — **which is why the bound is now off by
+  default.** What an opted-in timeout reports depends on which of
   the two probe sites hit it: after extraction it is
   `cliError "installed cli at <path> is not runnable"`, while on the cache-hit
   check a timeout is indistinguishable from a cache miss and the install simply
@@ -1332,12 +1352,14 @@ run fails after ~30 s with the cached binary left in place:
   **With `-cli-url` present, and the downloaded CLI answering in time, that shape
   emits no `cliError` at all**: the run downloads, installs, passes the probe on
   the fresh binary and reports `cliWasPresent:false`. If the replacement is just as
-  slow, both probes time out and the run ends after ~30 s at `installed cli at
-  <path> is not runnable`, with the cached binary left in place because the rename
-  is never reached. That is the divergence at its purest — claustrum recovers
-  silently from a stale hanging CLI, where the reference was still wedged on it
-  when the harness stopped the probe. The observable is the absence of an error,
-  not the presence of one.
+  slow, both probes time out and the run ends after ~2× the deadline at `installed
+  cli at <path> is not runnable`, with the cached binary left in place because the
+  rename is never reached. (**~2× measured once**, as 30 s at a 15 s deadline; on
+  the `-cli-url` shape the download time is added on top.) That is the divergence at its purest — an opted-in
+  claustrum recovers silently from a stale hanging CLI, where the reference was
+  still wedged on it when the harness stopped the probe. The observable is the
+  absence of an error, not the presence of one. **At the default, none of this
+  happens: claustrum waits with the reference.**
 - **The `ldd --version` libc probe is bounded at 5 s (tier item 5) — linux only.**
   Off linux the probe never runs (`libc_other.go` returns `""`), so no bound
   exists there. No deadline has been measured on the reference. `libc` is a field of the
@@ -1396,6 +1418,16 @@ Checksum + error framing (probe-verified):
   `download failed: response exceeds 536870912 bytes`, proving the probe reaches
   that limit. (Both disprove a cap at or below ~600 MiB; neither proves the
   reference has none above it.)
+- **A CLI slower than the opt-in runnability deadline** → `cliError "installed cli
+  at <path> is not runnable"` from the post-extraction probe, or (from the
+  cache-hit probe) `"cli <v> missing and no --cli-url or --cli-zst provided"`, or
+  no `cliError` at all. **Not reachable by default** — the deadline is `0` (off),
+  matching the reference, which was still running at 45 s on a CLI that never
+  answers and installed one that answered at 90 s. **Intentional divergence**
+  (D11), enabled with `-cli-probe-timeout <dur>` or `cli-probe-timeout = <dur>` in
+  `claustrum.conf`. The three shapes and their end states are in the D11 bullet
+  above; note that the same string is also produced by a genuinely broken CLI on
+  both binaries, so it does not by itself identify a timeout.
 - A cli-dir that cannot be created is reported with a **`mkdir cli dir: `**
   prefix, e.g. `mkdir cli dir: mkdir /ro/nested: permission denied`.
 

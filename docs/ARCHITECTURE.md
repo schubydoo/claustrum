@@ -36,8 +36,10 @@ files differ.
 Ensures the pinned `claude` CLI is present under `-cli-dir`.
 
 - If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
-  exits 0 **within 15 s** — see divergence D11; a slower but working CLI fails
-  this guard), it's kept as-is.
+  exits 0), it's kept as-is. The probe has **no deadline by default**, matching the
+  reference on every input measured (it was still running at 45 s on a CLI that
+  never answers, and installed one that answered at 90 s; above that, unprobed); `-cli-probe-timeout` / the `cli-probe-timeout` config key opts into
+  one, and then a slower but working CLI fails this guard — see divergence D11.
 - Otherwise the blob is acquired from one of two sources:
     - `-cli-zst` — a local `.zst` (consumed once **decompression** succeeds, even if the install then fails the runnability probe); checksum-verified
       **only when a `-cli-checksum` is supplied** — an opt-in divergence from
@@ -169,7 +171,8 @@ sits in front of those calls so operators can quiet the daemon:
   "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux a >5s
                               // ldd falls back to glibc (tier item 5)
   "cliPath": "<cli-dir>/<cli-version>",
-  "cliWasPresent": false,     // true only if it existed AND answered --version within 15s (D11)
+  "cliWasPresent": false,     // true only if it existed AND answered --version — within
+                              // -cli-probe-timeout when that is set; no deadline by default (D11)
   "cliError": "…"             // omitted on success
 }
 ```
@@ -182,7 +185,7 @@ is grouped by phase rather than left as prose:
 |---|---|
 | version check | `cli version "<v>" must be a single path component` |
 | | `cli version "<v>" collides with the install temp sweep` |
-| source | `cli <v> missing and no --cli-url or --cli-zst provided` — also reached when a **present, working** CLI answers `--version` too slowly and no source flag was given (D11) |
+| source | `cli <v> missing and no --cli-url or --cli-zst provided` — also reached when a **present, working** CLI answers `--version` more slowly than an opted-in `-cli-probe-timeout` and no source flag was given (D11; unreachable at the default, which has no deadline) |
 | | `opening input: <err>` (`-cli-zst` read) |
 | download | `download failed: <err>` — **transport** failure only |
 | | `download failed with status <code>` — **non-200**, no URL, no reason phrase |

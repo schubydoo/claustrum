@@ -53,7 +53,8 @@ a claustrum-only `-32603` carrying `signal: killed` when the deadline fires — 
 real on-wire cost, not a narrow one.) `lddProbeTimeout` is a wall-clock deadline and so
 cannot separate a hostile `ldd` from a slow one — but unlike D11, a timeout
 usually changes **nothing observable**, because the fallback value and the true
-value coincide:
+value coincide (the comparison is about the two bounds' *shape*; D11's is now off
+by default, this one is not):
 
 - On a **musl** host the probe is never spawned at all: `detectLibcWith` returns
   `"musl"` on the loader glob before reaching `ldd`, so it cannot time out.
@@ -72,7 +73,14 @@ goes on to install the CLI and print a **complete `__INSTALL_RESULT__` line**,
 where the reference — assumed unbounded here, not probed — emits **nothing at
 all**. A facts
 line, a `cliWasPresent`, an installed binary versus silence. That is the same
-shape D11 and D12 lead with, on this bound's own motivating path.
+shape D11 and D12 lead with, on this bound's own motivating path — and now that
+D11's deadline defaults off, D12's download timeout is the only `-install`
+wall-clock bound applied unconditionally everywhere. This one is *not*
+unconditional twice over: it is linux-only, and even on linux `detectLibcWith`
+returns on a matching `/lib/ld-musl-*.so.*` glob before `ldd` is spawned, so it
+cannot fire there. The predicate is the **glob**, not the host — a musl box whose
+loader that glob misses does reach the bound, which is exactly the narrow case this
+entry's own `libc`-delta argument turns on.
 
 ⚠️ And the cap addresses the *stall* half only. A **hostile** `ldd` resolved
 earlier in `PATH` that answers in 1 s is untouched by the deadline, and
@@ -887,7 +895,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   temp dir when the cli-dir does not exist yet, because `ensureCLI` creates that
   directory *after* the download and owns the `mkdir cli dir: ` error.
 
-### D11 · `-install` bounds the runnability probe at 15 s ✅ (always-on) — impact M / cost L
+### D11 · Make the `-install` runnability probe deadline opt-in ✅ (opt-in) — impact M / cost L
 
 - `isRunnable` runs `<cli> --version` to decide whether an installed CLI works.
   **The reference showed no deadline at or below 45 s on a CLI that never answers,
@@ -897,26 +905,51 @@ completes it with `git.worktree_remove`, which shares the predicate
   | binary | outcome |
   |---|---|
   | reference `5db5e4a` | **still running when the harness killed it at 45 s** |
-  | claustrum | returns at **15 s** |
-  | *control:* a CLI that answers instantly | **0 s on both** |
+  | claustrum, bounded (the old hardcoded 15 s default) | returns at **15 s** |
+  | claustrum, deadline off (the new default) | **still running when killed at 45 s** — matching the reference *within that window*; fixture is a planted `sleep 120`, not row 1's hang-forever CLI, which is why the paragraph below names it |
+  | *control:* a CLI that answers instantly | **0 s on all three** |
 
   The control is what makes the 45 s mean something: without it, "the reference
   did not finish" is indistinguishable from a fixture that could never finish.
-  This bounds the reference's deadline at *above 45 s*, not at *absent*.
+  This bounds the reference's deadline at *above 45 s*, not at *absent* — and the
+  deadline-off row inherits exactly that limit, since it is the same 45 s cut.
+
+  The deadline-off row was **measured on the flip branch**, not derived: a planted
+  `sleep 120` CLI, `-install -cli-dir <d> -cli-version v1`, cut at 45 s, which
+  exited 124 having emitted no `__INSTALL_RESULT__` line. Two controls fired — the
+  same fixture with `-cli-probe-timeout 15s` returned at 15 s with `cliError "cli
+  v1 missing and no --cli-url or --cli-zst provided"` (reproducing the old default
+  exactly), and an instant CLI returned at 0 s with `cliWasPresent:true`.
+
+  The **third column of the 20 s table below** was measured on the same branch and
+  on its own fixture, since the cache-hit run above cannot stand in for a
+  `-cli-zst` install: a 20 s CLI compressed to a fresh blob, installed into an
+  empty cli-dir with the deadline off, returned at **20 s** with no `cliError`,
+  `cliWasPresent:false` and `v1` present in the cli-dir. Controls: the same
+  `-cli-zst` shape with an instant CLI returned at 0 s identically, and a **second
+  blob of the same 20 s content** with `-cli-probe-timeout 15s` failed at 15 s with `cliError "installed
+  cli at <path> is not runnable"` and an **empty** cli-dir — reproducing the old
+  default's row exactly, which is what makes the deadline the only variable.
+  ⚠️ Each arm needs its **own** blob: the first run consumes it, and a re-used
+  blob makes the next arm answer `opening input: … no such file or directory` at
+  0 s, which reads exactly like "no divergence".
 - 🔴 **A bound is not a hang detector, and the "no observable delta on any honest
   path" framing this entry was drafted with is FALSE.** `isRunnable` is a wall-clock deadline, so it cannot separate "never
   answers" from "answers slowly" — and a CLI that answers honestly in 20 s (a cold
   binary on a network filesystem, a first run behind Gatekeeper, a loaded host)
-  is not a broken one. **Measured 2026-08-07.** The 20 s rows and the control were
-  run on **both** binaries with a CLI that sleeps, prints its version and exits 0;
-  the 90 s row is **reference-only** — claustrum was not re-run, since its 15 s
-  bound makes the outcome identical to the 20 s row:
+  is not a broken one. **Measured 2026-08-07.** The 20 s row and its control were
+  run on the reference and on claustrum-bounded-at-15 s with a CLI that sleeps,
+  prints its version and exits 0; the third column was run **on the flip branch**
+  with the same `-cli-zst` fixture family, a fresh blob per arm. The 90 s row is
+  **reference-only** — no claustrum column was re-run for it, since a 15 s bound
+  makes the outcome identical to the 20 s row and no deadline makes it identical to
+  the 20 s row's third column:
 
-  | scenario | reference `5db5e4a` | claustrum |
-  |---|---|---|
-  | 20 s CLI, installed via `-cli-zst` | **installs it**, no `cliError`, returns at 20 s | **fails** at 15 s: `cliError "installed cli at <path> is not runnable"`, staged binary deleted, cli-dir left **empty** — **and the blob is consumed anyway**, so a re-run has nothing to install from |
-  | **90 s** CLI, same fixture shape | **installs it**, waiting 91 s | (not run) |
-  | *control:* the same fixture with a CLI that answers instantly | installs, 0 s | installs, 0 s |
+  | scenario | reference `5db5e4a` | claustrum, bounded at 15 s (old default) | claustrum, deadline off (new default) |
+  |---|---|---|---|
+  | 20 s CLI, installed via `-cli-zst` | **installs it**, no `cliError`, returns at 20 s | **fails** at 15 s: `cliError "installed cli at <path> is not runnable"`, staged binary deleted, cli-dir left **empty** — **and the blob is consumed anyway**, so a re-run has nothing to install from | **installs it**, no `cliError`, returns at 20 s |
+  | **90 s** CLI, same fixture shape | **installs it**, waiting 91 s | (not run) | (not run) |
+  | *control:* the same fixture with a CLI that answers instantly | installs, 0 s | installs, 0 s | installs, 0 s |
 
   The 90 s row is why the flip below is the parity-correct answer rather than a
   larger constant: it moves the reference from "no deadline at or below 45 s" to
@@ -929,35 +962,42 @@ completes it with `git.worktree_remove`, which shares the predicate
   The control is what makes it attributable: the only variable between the rows is
   how long the CLI takes to answer. The reference column above is the **no-cache**
   shape. On the three cached shapes it is expected to cache-hit and report
-  `cliWasPresent:true` having installed nothing, since its guard has no 15 s
-  cut-off — **derived, not separately measured**. So the divergence is not confined to a broken
+  `cliWasPresent:true` having installed nothing, since its guard showed no cut-off
+  at or below 90 s — **derived, not separately measured**, and above 90 s neither
+  binary has been probed. So the divergence is not confined to a broken
   CLI — claustrum **fails an install the reference completes, and discards a
   working binary**, on an input no one would call adversarial.
 - **The delta is bounded by the deadline, not by honesty.** A CLI answering within
-  15 s is expected to behave identically on both — **derived, not measured**: only
-  0 s and 20 s were run, so the boundary itself is inferred from the constant
-  rather than bisected. Everything slower diverges, and how it diverges depends on
+  the configured deadline is expected to behave identically on both — **derived,
+  not measured**: only 0 s and 20 s were run against the then-hardcoded 15 s, so the
+  boundary itself is inferred from the constant rather than bisected. Everything slower diverges, and how it diverges depends on
   which probe site sees it — see the two-site bullet below.
 - ⚠️ **TWO probe sites, three different outcomes — "the observable" is not one
   string.** `isRunnable` is called on the cache-hit guard (`isRegularFile &&
   isRunnable`) and again after extraction. A timeout on the first is
   indistinguishable from a cache miss, so what follows depends on the flags rather
-  than on the timeout. All four measured 2026-08-07. The cached CLI is the same
-  20 s fixture throughout — what varies is what the source flag supplies, which is
-  why row two needs a replacement that answers in time:
+  than on the timeout. All four measured 2026-08-07 **against the then-hardcoded
+  15 s**; at the default there is no deadline and none of these four shapes occurs.
+  Rows 1 and 4 were re-run on the flip branch with `-cli-probe-timeout` and
+  reproduced (row 1 at both 15 s and 5 s, row 4 at 15 s); rows 2 and 3 were not
+  re-run, and that the flag reproduces them follows from the code — it sets the same
+  `cliProbeTimeout` the old constant occupied — rather than from a measurement. The cached CLI is the
+  same 20 s fixture throughout — what varies is what the source flag supplies,
+  which is why row two needs a replacement that answers in time:
 
-  | shape | claustrum | note |
+  | shape | claustrum, deadline opted in (figures: 15 s) | note |
   |---|---|---|
   | cached slow CLI, **no** source flag | `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, 15 s | the working CLI is still on disk and is reported missing; a plainly absent file produces this string too, so it does not identify a timeout |
   | cached slow CLI **+** a source (`-cli-zst` or `-cli-url`) supplying a CLI that answers **in time** | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error, plus `cliWasPresent:false`. On `-cli-zst` the blob is consumed here too: the consume rule keys on decompression succeeding, not on which shape ran |
-  | cached slow CLI **+** a source supplying the **same slow** CLI | `cliError "installed cli at <path> is not runnable"`, **30 s** | both probes time out. The cached working binary **survives** — the rename never runs. With `-cli-zst` the operator's blob is consumed as well; with `-cli-url` there is none to lose, since the download temp is removed by its own defer either way. Arguably the likeliest shape in practice: a CLI is usually slow because the *host* is, and the fresh copy runs on the same host |
+  | cached slow CLI **+** a source supplying the **same slow** CLI | `cliError "installed cli at <path> is not runnable"`, **~2× the deadline** (measured **30 s** at 15 s) | both probes time out. The cached working binary **survives** — the rename never runs. With `-cli-zst` the operator's blob is consumed as well; with `-cli-url` there is none to lose, since the download temp is removed by its own defer either way. Arguably the likeliest shape in practice: a CLI is usually slow because the *host* is, and the fresh copy runs on the same host |
   | no cache, slow CLI arriving via `-cli-zst` | `cliError "installed cli at <path> is not runnable"`, 15 s | staged binary deleted, cli-dir empty, blob consumed |
 
   Silent recovery therefore needs the *replacement* to be fast: it is the
   stale-hanging-CLI story, not the slow-CLI one.
 
-- ⚠️ **The facts frame is not the whole end state: the cache-hit shapes also run
-  the sweep, and the silent one runs the prune.** The reference touches the cli-dir
+- ⚠️ **The facts frame is not the whole end state: with the deadline opted in, the
+  cache-hit shapes also run the sweep, and the silent one runs the prune.** (At the
+  default the cache-hit guard passes, so none of this is reached.) The reference touches the cli-dir
   only when it attempts an install, so on a cache hit it touches nothing
   (`install.go` records that contrast itself). Claustrum's cache-hit guard fails
   instead, so it falls into `ensureCLI` and `sweepFetchTemps` runs on every cached
@@ -970,8 +1010,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   leave all six. **Control that must fire:** the same directory with an instant
   CLI, where both must cache-hit and leave all six.
 - **`cliWasPresent` flips, and it is a structured field rather than a string.**
-  In all three cached shapes above it comes back `false` for a CLI that is present
-  and works — including the silent one, where it is the ONLY field in the facts
+  With the deadline opted in, in all three cached shapes above it comes back
+  `false` for a CLI that is present and works — including the silent one, where it is the ONLY field in the facts
   that moves. The reference, which showed no deadline at or below 45 s, has no
   equivalent 15 s cut-off to trip. Worth more attention than the `cliError`
   wording: a client reads this field, it does not parse prose.
@@ -984,21 +1024,71 @@ completes it with `git.worktree_remove`, which shares the predicate
   fail its install and lose **both** its binary and the blob it came from" (on the
   `-cli-zst` shape; the cached shapes leave the working binary in place) —
   recovery then needs a fresh upload, because the consume rule keys on
-  decompression succeeding, not on the install succeeding. Raising the deadline reduces the second
-  without giving up the first; 15 s was never measured against anything.
-- **Why always-on, and why that is now under review.** It clears the bar this
-  section sets — the reference's behaviour on the motivating path is an apparently
-  unbounded wait (no bound at or below 90 s) rather than a frame, which is the same justification D4 and D5 use
-  explicitly, D12 restates in its Trade bullet, and D13 supplies in a different
-  form ("an input no honest caller produces"). So the ground is consistent across
-  the group; what varies is only how plainly each entry names it. What
-  the measurement adds is a *cost* the bar does not weigh: an honest-but-slow CLI
-  pays for it, and Desktop owns the argv so a caller cannot decline. That argument
-  applies equally to D12 and to D5, so it is a question about the bar rather than
-  about D11 alone. Flipping these to opt-in (default off = unbounded = parity, the
-  shape D3 and D10 took) is a live proposal; this entry records what ships today.
+  decompression succeeding, not on the install succeeding. Raising the deadline
+  would have reduced the second without giving up the first — 15 s was never
+  measured against anything — but that was rejected in favour of defaulting it off,
+  because every finite value merely moves the boundary.
+- **Why it stopped being always-on.** It did clear the bar this section sets —
+  the reference's behaviour on the motivating path is an apparently unbounded wait
+  (no bound at or below 90 s) rather than a frame, the same justification D4 and D5
+  use explicitly, D12 restates in its Trade bullet, and D13 supplies in a different
+  form ("an input no honest caller produces"). What the 2026-08-07 measurement added
+  is a *cost* the bar does not weigh: an honest-but-slow CLI pays for it, and
+  Desktop owns the argv on `-install`, so the caller who pays cannot decline. That
+  is the same argument D3 and D10 used, and it is why this took the same shape they
+  did rather than a larger constant.
+- ✅ **The flip was verified against the reference, not just argued.** Measured
+  2026-08-07 on the cached-slow shape, cli-dir seeded with a 20 s `v1` plus a
+  `.fetch-orphan` and a `leftover.zst`, no source flag:
+
+  | arm | elapsed | facts | cli-dir after |
+  |---|---|---|---|
+  | reference `5db5e4a` | 21 s | `cliWasPresent:true`, no `cliError` | `.fetch-orphan leftover.zst v1` |
+  | claustrum, deadline **off** (new default) | 20 s | `cliWasPresent:true`, no `cliError` | `.fetch-orphan leftover.zst v1` |
+  | *control:* claustrum, `-cli-probe-timeout 5s` | 5 s | `cliWasPresent:false`, `cliError "cli v1 missing and no --cli-url or --cli-zst provided"` | `v1` |
+
+  The control is what makes row 2 a measurement rather than blindness: it moves
+  **every** observable — elapsed, `cliWasPresent`, `cliError`, and the directory,
+  where the sweep removes the litter the other two arms leave in place. So this run
+  also settles the **sweep half** of the sweep/prune contrast below on D11's own
+  fixture: the reference cache-hits and touches nothing, and at the new default so
+  does claustrum. The prune half is still derived.
+- **Shipped as: default `0` = no deadline**, which matches the reference on every
+  input measured (still running at 45 s on a CLI that never answers; installing one
+  that answers at 90 s). What it does above 90 s remains unmeasured, so this is
+  parity with the observed behaviour, not a proof of no deadline at all. With
+  the bound opt-in via `-cli-probe-timeout <duration>` **and** the
+  `cli-probe-timeout` key in `claustrum.conf` (explicit flag > config > default).
+  The config key is the one that matters, for the same reason as `max-cli-bytes`:
+  Desktop owns the argv on `-install`. The value is a Go duration (`30s`, `2m`);
+  `time.ParseDuration` rejects a bare number rather than reading it as nanoseconds
+  — **except for zero, and the set of zeroes is unbounded.** Two halves: *unitless*
+  zero is exactly `0`, `+0` and `-0` (Go's parser special-cases the string `"0"`);
+  *with a unit*, every zero-valued duration parses whatever its sign, so `0s`,
+  `0h0m0s`, `-0m` and `-0.0s` all arrive as `0`. So does `-0.4ns`, which is a
+  genuinely negative input truncated to zero rather than a spelling of zero at all.
+  Every one of them slips past the `d >= 0` guard and lands on the disabled value,
+  which is why this is a documentation problem and not a safety one: **no accepted
+  input turns the deadline ON by accident.** Do not special-case `-0s` in a later
+  reader — `-0m` behaves identically. The two paths differ
+  on a negative: `-cli-probe-timeout -1s` normalises to disabled and logs an
+  `[Install]` warning, while `cli-probe-timeout = -1s` in the config is **dropped
+  silently**, leaving the default. Either way the deadline ends up off.
+- **Disabled bypasses `context.WithTimeout` entirely** rather than passing a huge
+  duration — the same rule D3 and D10 apply to their `io.LimitReader`s. A
+  far-future deadline is a different thing that merely looks equivalent, and it
+  would keep `exec.CommandContext`'s kill-on-cancel path in play where the
+  reference showed no such cut-off.
+- **What still ships bounded on the `-install` path:** D12's download timeout —
+  the same flip is **proposed** for it in a follow-up PR, not yet made — and the
+  linux-only `ldd` probe (tier item 5), which is not a D-number and is not
+  proposed for a flip.
 
 ### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
+
+> ⚠️ **The same flip D11 took is proposed for this bound in a follow-up PR** (default
+> off = unbounded = parity). It has not been made; everything below describes what
+> ships today, which is always-on.
 
 - The download runs with `http.Client{Timeout: 5 * time.Minute}` (added in PR 59
   on `httpGet`, now `fetchToFile` after the streaming change in D10), which bounds
@@ -1149,6 +1239,14 @@ completes it with `git.worktree_remove`, which shares the predicate
   - `listen-pipe = true|false` — default for CT-5 (Windows-only).
   - `max-extract-bytes = <n>` — default for D3; `0` (the default) is no cap.
   - `max-cli-bytes = <n>` — default for D10; `0` (the default) is no cap.
+  - `cli-probe-timeout = <duration>` — default for D11; `0` (the default) is no
+    deadline. A Go duration (`30s`, `2m`); a bare number is rejected rather than
+    read as nanoseconds, except zero, which parses in unboundedly many spellings
+    (`0`, `+0`, `-0`, plus any zero-valued duration with a unit, plus a negative
+    that truncates to zero like `-0.4ns`) and always means disabled. A negative is dropped silently here; on the
+    flag path a negative warns and normalises, while a bare number is rejected by
+    `flag.Duration` before any mode runs (usage + exit 2, no facts line). Every
+    one of these leaves the deadline off.
 - **`version-override` — make claustrum a permanent drop-in.** The desktop client
   decides whether to re-upload the daemon by running `<bin> --version` on the
   cached `~/.claude/remote/srv/<pinned-sha>/server` and matching
@@ -1170,7 +1268,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   symlink/FIFO/device/directory → can't block startup), `io.LimitReader` ≤ 64 KiB,
   per-key validation (`version-override` gated to `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`
   and lower-cased; `metrics-addr` printable-ASCII only; `max-extract-bytes` and
-  `max-cli-bytes` parsed as a non-negative int64, anything else ignored), values
+  `max-cli-bytes` parsed as a non-negative int64, `cli-probe-timeout` via
+  `time.ParseDuration` and rejected if negative, anything else ignored), values
   used as data never as a format string.
 - Verified: unit tests (each key's valid/invalid forms, unknown-key and malformed
   lines, case-insensitive keys, CLI-over-config precedence, non-regular-directory,
