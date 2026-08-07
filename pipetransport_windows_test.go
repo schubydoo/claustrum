@@ -3,6 +3,8 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,5 +115,26 @@ func TestPipeTransportServesJSONRPC(t *testing.T) {
 	denied := string(cl.call(`{"jsonrpc":"2.0","id":2,"method":"server.ping","auth":"wrong-token"}`))
 	if !strings.Contains(denied, "-32001") || !strings.Contains(denied, "Unauthorized") {
 		t.Fatalf("bad-token ping over pipe = %s, want -32001 Unauthorized", denied)
+	}
+}
+
+// TestIsOurCloseWindows: Windows needs BOTH sentinels. A -listen-pipe conn is
+// served by the same serveConn and dropped by the same closeAll as a socket conn,
+// but go-winio reports a read against a closed pipe as winio.ErrFileClosed — a
+// plain error value that does not satisfy errors.Is(err, net.ErrClosed). Missing
+// that arm costs one spurious scanner-error line per connected client on every
+// server.shutdown with -listen-pipe set.
+func TestIsOurCloseWindows(t *testing.T) {
+	if !isOurClose(net.ErrClosed) {
+		t.Error("isOurClose(net.ErrClosed) = false, want true")
+	}
+	if !isOurClose(winio.ErrFileClosed) {
+		t.Error("isOurClose(winio.ErrFileClosed) = false, want true")
+	}
+	if !isOurClose(fmt.Errorf("read: %w", winio.ErrFileClosed)) {
+		t.Error("isOurClose(wrapped winio.ErrFileClosed) = false, want true")
+	}
+	if isOurClose(fmt.Errorf("bufio.Scanner: token too long")) {
+		t.Error("isOurClose(a real read failure) = true, want false")
 	}
 }
