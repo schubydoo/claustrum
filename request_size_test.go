@@ -106,6 +106,12 @@ func TestOversizeRequestLogsScannerError(t *testing.T) {
 // stays as quiet as it was before the check existed.
 func TestCleanDisconnectLogsNoScannerError(t *testing.T) {
 	out := serveConnOnPipe(t, func(net.Conn) {})
+	// Positive control FIRST: this test asserts an absence, so it would pass just
+	// as happily if captureLog saw nothing at all. Anchoring on the line that must
+	// always be there proves the capture window actually covered this connection.
+	if !strings.Contains(out, "[Server] Connection closed: pipe") {
+		t.Fatalf("captured no output for this connection, so the absence below proves nothing; got:\n%s", out)
+	}
 	if strings.Contains(out, "scanner error") {
 		t.Errorf("clean disconnect logged a scanner error; got:\n%s", out)
 	}
@@ -159,6 +165,10 @@ func TestServerInitiatedCloseLogsNoScannerError(t *testing.T) {
 		_ = a.nc.Close() // what closeAll does on server.shutdown
 		<-done
 	})
+	// Positive control, same reasoning as TestCleanDisconnectLogsNoScannerError.
+	if !strings.Contains(out, "[Server] Connection closed") {
+		t.Fatalf("captured no output for this connection, so the absence below proves nothing; got:\n%s", out)
+	}
 	if strings.Contains(out, "scanner error") {
 		t.Errorf("daemon-initiated close logged a scanner error; got:\n%s", out)
 	}
