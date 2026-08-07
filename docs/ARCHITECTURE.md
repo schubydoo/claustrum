@@ -169,7 +169,8 @@ sits in front of those calls so operators can quiet the daemon:
   "os":   "linux",            // GOOS
   "arch": "amd64",            // GOARCH
   "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux a >5s
-                              // ldd falls back to glibc (tier item 5)
+                              // ldd falls back to glibc (D14). The driver uses
+                              // this field to pick which CLI build to download.
   "cliPath": "<cli-dir>/<cli-version>",
   "cliWasPresent": false,     // true only if it existed AND answered --version — within
                               // -cli-probe-timeout when that is set; no deadline by default (D11)
@@ -177,24 +178,28 @@ sits in front of those calls so operators can quiet the daemon:
 }
 ```
 
-**`cliError` strings.** Every error `ensureCLI` returns lands here verbatim. The
-list had drifted — it named four of these while the code produced thirteen — so it
-is grouped by phase rather than left as prose:
+**`cliError` strings.** Every error `ensureCLI` returns lands here verbatim,
+**with the wrapping prefix its phase adds** — that is the form a driver actually
+sees, and two rows below used to be listed unprefixed. The
+list had drifted — it named four of these while the code produced more — so it
+is grouped by phase rather than left as prose (no count is quoted: the last one
+went stale, and it is cheaper to re-derive from `ensureCLI` than to maintain):
 
 | phase | string |
 |---|---|
 | version check | `cli version "<v>" must be a single path component` |
 | | `cli version "<v>" collides with the install temp sweep` |
+| | `cli version "<v>" collides with the install download blob` |
 | source | `cli <v> missing and no --cli-url or --cli-zst provided` — also reached when a **present, working** CLI answers `--version` more slowly than an opted-in `-cli-probe-timeout` and no source flag was given (D11; unreachable at the default, which has no deadline) |
 | | `opening input: <err>` (`-cli-zst` read) |
 | download | `download failed: <err>` — **transport** failure only, plus `context deadline exceeded (…)` when the opt-in `-cli-download-timeout` bound fires (D12; off by default, so unreachable unless asked for) |
 | | `download failed with status <code>` — **non-200**, no URL, no reason phrase |
-| | `response exceeds <n> bytes` |
+| | `download failed: response exceeds <n> bytes` |
 | verify | `checksum mismatch: expected=<a>, actual=<b>` |
 | install | `mkdir cli dir: <err>` |
 | | `staging cli: <err>` |
 | | `decompressing: <err>` |
-| | `decompressed CLI exceeds <n> bytes` |
+| | `decompressing: decompressed CLI exceeds <n> bytes` |
 | | `installed cli at <path> is not runnable` |
 | | `clearing stale dir at <path>: <err>` |
 | | `staging file vanished before install: <err>` |
@@ -204,6 +209,21 @@ reference: only the transport failure carries the `download failed: ` prefix, an
 the status form omits the URL so a signed URL cannot reach whatever captures the
 `__INSTALL_RESULT__` line. A bare `chmod`/`rename` failure propagates as the raw
 Go error.
+
+⚠️ **These strings are not free-form diagnostics — the driver reads them.** Claude
+Desktop classifies `cliError` by *text*: a message shaped like a disk-full failure
+is surfaced as a terminal error with an actionable code, and every other message is
+treated as retryable and re-attempted over the SFTP path. So changing the wording of a row
+above — or adding a guard whose error pre-empts one — can change what a user is
+told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
+
+⚠️ **Provenance, because this is a different class of claim from the rest of these
+docs.** It describes a **third binary** — the driver — not the reference daemon and
+not claustrum, so the reference-vs-claustrum harness cannot confirm or refute it and
+no `scratch/` fixture covers it. It is derived from how the shipped Desktop client
+handles the field, not from a differential probe. Treat it as a design constraint
+worth respecting, not as a measured parity result; anything that depends on it
+(D13's always-on justification does) should say so and carry a reopen trigger.
 
 ## Deployment lifecycle (how a driver uses it)
 

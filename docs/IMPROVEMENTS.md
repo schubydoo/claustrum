@@ -46,50 +46,39 @@ git/ldd left a request goroutine waiting with no bound. Both are now wrapped in
 `exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, 5 s,
 security fix S4) and every `git` invocation (`gitTimeout` 60 s).
 
-⚠️ **For the `ldd` half, the honest-path cost is far narrower than D11's — but the
-entry used to state that absolutely, which a wall-clock deadline cannot support.**
-(The `gitTimeout` half is a different matter and is owned by **D5**, which records
-a claustrum-only `-32603` carrying `signal: killed` when the deadline fires — a
-real on-wire cost, not a narrow one.) `lddProbeTimeout` is a wall-clock deadline and so
-cannot separate a hostile `ldd` from a slow one — but unlike D11, a timeout
-usually changes **nothing observable**, because the fallback value and the true
-value coincide (the comparison is about the two bounds' *shape*; D11's is now off
-by default, this one is not):
+**Both halves are now numbered divergences, and the detail lives with them, not
+here.** The `gitTimeout` half is **D5** — which records a claustrum-only `-32603`
+carrying `signal: killed` when the deadline fires, a real on-wire cost, and which
+the preamble notes currently fails rule 3. The `ldd` half is **D14**, numbered
+after the reference was finally probed on it.
 
-- On a **musl** host the probe is never spawned at all: `detectLibcWith` returns
-  `"musl"` on the loader glob before reaching `ldd`, so it cannot time out.
-- On a **glibc** host the timeout fallback is `"glibc"` (`classifyLibc`: no musl
-  loader, `lddErr != nil` → `"glibc"`) — the same answer the probe would have
-  given.
+Two things this section used to get wrong, corrected in D14 and repeated here only
+so a reader who lands on the tier item is not misled:
 
-So the `libc` field moves only on a host where `ldd` *reports* musl while
-`/lib/ld-musl-*.so.*` does **not** match — close to unreachable in practice.
-
-🔴 **But that is only the honest-but-slow direction, and the bound is NOT narrow
-overall.** Against the *stalled* `ldd` this cap exists for, the divergence is
-total: `detectLibc()` is called unconditionally in the facts literal
-(`install.go`, before any branch), so claustrum returns `"glibc"` at 5 s and then
-goes on to install the CLI and print a **complete `__INSTALL_RESULT__` line**,
-where the reference — assumed unbounded here, not probed — emits **nothing at
-all**. A facts
-line, a `cliWasPresent`, an installed binary versus silence. That is the same
-shape D11 and D12 lead with, on this bound's own motivating path — and now that
-D11's deadline defaults off, D12's download timeout is the only `-install`
-wall-clock bound applied unconditionally everywhere. This one is *not*
-unconditional twice over: it is linux-only, and even on linux `detectLibcWith`
-returns on a matching `/lib/ld-musl-*.so.*` glob before `ldd` is spawned, so it
-cannot fire there. The predicate is the **glob**, not the host — a musl box whose
-loader that glob misses does reach the bound, which is exactly the narrow case this
-entry's own `libc`-delta argument turns on.
+- **The reference's unbounded wait is measured now, not assumed** — but only in
+  the stall shape where nothing survives the kill. ⚠️ The surviving-child shape is
+  **uninformative about the reference**: claustrum has a 5 s deadline and produced
+  the identical "no reply at 45 s" there, so that arm cannot tell a missing
+  deadline from one the pipe wait swallows.
+- **"The divergence is total" was written unconditionally and is false as such.**
+  The bound fires only when the stalled `ldd` leaves nothing holding its output
+  pipe; with a surviving child, claustrum blocks past the deadline exactly like the
+  reference. The `libc`-value delta is separately narrow — a host **whose loader
+  the glob matches** never reaches the probe, and a glibc host's fallback *is*
+  `"glibc"`; note the predicate is the glob, not the host, so a musl box the glob
+  misses does reach it — but **not costless**,
+  because Claude Desktop uses `libc` to choose which CLI build to download.
 
 ⚠️ And the cap addresses the *stall* half only. A **hostile** `ldd` resolved
 earlier in `PATH` that answers in 1 s is untouched by the deadline, and
 `classifyLibc` then trusts its `musl` banner verbatim — so "security fix S4"
 overstates what a timeout can buy.
 
-Neither direction is measured on either binary.
-
-The fixture that would settle it must use a **musl** banner, not a glibc one: a
+**One question here is still open, and it is the `libc`-value one, not the
+unbounded-wait one.** D14's probe settled whether the reference bounds this call
+(it does not, at or below 45 s) using a glibc-banner stub. Whether the *reported
+value* ever diverges is untested, and the fixture that would settle **that** must
+use a **musl** banner, not a glibc one: a
 stand-in `ldd` on `PATH` that sleeps 6 s, prints `musl libc (x86_64)` **and exits
 0**, with the musl loader glob masked. The exit code is load-bearing:
 `classifyLibc` takes the musl banner only when `lddErr == nil`, and a real musl
@@ -480,25 +469,47 @@ reference. They follow the "match upstream first, then improve" plan: only
 consider them now that the harness proves parity, and document each as an
 *intentional* divergence in [`PROTOCOL.md`](PROTOCOL.md) + the PR if adopted.
 
-**Most are opt-in; some are always-on, and the entry says which.** An always-on
-divergence needs a reason the opt-in shape does not work — usually that the thing
-it prevents is unrecoverable (D2) or that the reference's own behavior on that
-path is an **unbounded wait** rather than a frame (D4, D5) — **or that it is an
-accepted artifact no honest caller can reach, which is D9's case rather than a
-decision a flag would improve.** *Unbounded wait*, not "hang" — the reference
-recovers the moment the wait's cause clears, and saying otherwise is a correction
-D4 already had to make once.
+**Most are opt-in; some are always-on, and the entry says which.** Which shape an
+entry may take is not per-entry taste. It comes from **THE RULE** — the standard
+this project judges every divergence against, in priority order:
 
-🔴 **That test is necessary and NOT sufficient.** **D11 and D12** both *cleared*
-the unbounded-wait bar — their entries say so in as many words — and were flipped
-to opt-in anyway, so for those two the bar returns the wrong answer applied
-literally. **D3 and D10 are a different case and it is worth not conflating them:**
-they are *size* caps, and the reference's behaviour on their motivating path is a
-629 MB extraction and a 600 MiB install that both **complete** — a frame, not an
-unbounded wait. The bar was not wrong about them; it was **silent**, because it
-never asked about cost. Two entries where it misfires and two where it says
-nothing are the same gap seen from either side, and it is the reason for the
-second question an always-on entry must answer:
+> 1. **Claude Desktop must keep working.** Claustrum is a drop-in. If a behaviour
+>    is reachable by Desktop and matching the reference is what keeps it working,
+>    we match. No exceptions, no matter how ugly the reference's behaviour is.
+> 2. **Match by default.** A wart Desktop tolerates is not a bug — it is the
+>    contract. **Divergence needs a reason; matching does not.** The burden of
+>    proof is always on the divergence.
+> 3. **A divergence earns ALWAYS-ON only if** *either* **(a)** the reference's
+>    behaviour on that path **is not a frame at all** — an unbounded wait,
+>    unbounded memory, or unrecoverable data loss — **and** no honest caller can
+>    observe the difference; *or* **(b)** the **trigger itself** is unreachable on
+>    an honest path, so no honest caller can observe the difference at all; *or*
+>    **(c)** the trigger is reachable, but **both binaries fail the operation** and
+>    the only delta is diagnostic text.
+> 4. **Anything else that changes an honest-path frame is OPT-IN, default off**, or
+>    it does not ship. "Off by default" must mean byte-identical, not nearly.
+
+Corollaries:
+
+- **Keeping a wart does not mean hiding it.** We match *and* document, so a user
+  can see the edge before it bites. Parity is a promise about bytes, not silence.
+- **"The reference does it too" is a reason to match, never a reason to call it
+  safe.** D2 is the standing counter-example: the reference wipes a home directory
+  and we still refuse.
+- **Every always-on divergence owes a reopen trigger** — the observation that would
+  make us take it back out. An always-on divergence with no reopen trigger is a
+  preference, not a decision.
+
+⚠️ **Clause (a) is an AND, and this document previously wrote it as a menu of
+alternatives.** That demotion is the whole reason four hardcoded caps shipped
+always-on. **D11 and D12** both *cleared* the not-a-frame half — their entries say
+so in as many words — and were flipped to opt-in anyway. **D3 and D10 are a
+different case worth not conflating:** they are *size* caps, and the reference's
+behaviour on their motivating path is a 629 MB extraction and a 600 MiB install
+that both **complete** — a frame, not an unbounded wait. The old bar was not wrong
+about those two; it was **silent**, because it never asked about cost. Two entries
+where it misfired and two where it said nothing are the same gap from either side,
+and restoring the AND is what closes it. The question it forces:
 
 > **Who pays when the guard fires on an honest input, and can they decline?**
 
@@ -510,18 +521,52 @@ Claude Desktop owns the argv, so the person who pays has no way to decline; that
 is what flipped all four, and it is why every one of them ships a
 `claustrum.conf` key rather than a flag alone.
 
-The always-on entries that survive both tests do so because the *trigger itself*
-is unreachable on an honest path — D2 and D6/D7 (a destructive target no honest
-caller names), D8 (not reachable on the deployed path), D9 (adversarial params
-only), D13 (an input no honest caller produces). Those are arguments about
-reachability, which is the right form. ⚠️ **D5's is not**: its 60 s `gitTimeout` is
-a wall-clock threshold with a wire-visible cost (a claustrum-only `-32603
-"signal: killed"`), it has no flag and no config key, and its stated reason —
-"no opt-in default can improve on [an unbounded wait] for a caller who does not
-know the flag exists" — is the exact argument these four rejected. An honest 61 s
-git on a large repo has never been measured on either binary. D4's `/dev/null`
-row is a narrower instance of the same shape. Both are open, and neither is
-resolved by this section.
+**Clause (b) is the right *form* of argument** and most surviving always-on entries
+use it — but each has its own trigger, and the glosses are not interchangeable:
+D2 and D6 (a destructive target no honest caller names), **D7** (a `-cli-version`
+colliding with the install temp sweep — a *name* collision, not a destructive
+target), D8 (not reachable on the deployed path), D9 (a params type error no
+correct client sends).
+
+**Clause (c) is deliberately narrow, was written for D13, and its status is
+currently OPEN.** Two things a reader should not take on trust:
+
+- 🔴 **An early draft justified its narrowness by saying "everywhere else the
+  reference *succeeds* where claustrum errors". That is false**, and three entries
+  in this file refute it: D4's FIFO row (the reference **blocks**), D5 and D14 (the
+  reference emits **nothing**). What actually keeps those three out of clause (c)
+  is that the reference does not *fail the operation and report it* — it hangs or
+  says nothing, which is clause (a)'s territory, not clause (c)'s.
+- 🔴 **D13 does not strictly satisfy clause (c) as worded, measured.** On both
+  honest-path rows the reference **creates an empty cli-dir** and claustrum
+  **creates nothing** — so the delta is not confined to diagnostic text. Both
+  binaries still fail the install and neither leaves a usable CLI. Whether clause
+  (c) should be widened to "differences confined to the error text and to state
+  neither binary leaves usable", or D13 should join the unresolved group, is a
+  decision this section does not make. It is recorded, not assumed away.
+
+⚠️ Clause (c) is also not a licence to treat error strings as free: Claude Desktop
+**parses** `-install`'s `cliError`, reporting a disk-full-shaped message as a
+terminal failure with an actionable code and treating everything else as a
+retryable one. A divergence that moves a string across that line changes what the
+user is told, whatever the rules say about frames. *(That is a claim about the
+**driver**, not about the reference — the parity harness cannot settle it; see
+[ARCHITECTURE.md](ARCHITECTURE.md) → `cliError` strings for its provenance and the
+limits that come with it.)*
+
+🔴 **Three entries do not currently clear rule 3, and are recorded here rather
+than explained away** — all three are wall-clock thresholds, which is not a
+coincidence. **D5**'s 60 s `gitTimeout` is a wall-clock threshold with a
+wire-visible cost (a claustrum-only `-32603` carrying `signal: killed`), it has no
+flag and no config key, and its stated reason — "no opt-in default can improve on
+[an unbounded wait] for a caller who does not know the flag exists" — is the exact
+argument the four flipped caps rejected. An honest 61 s git on a large repo has
+never been measured on either binary. **D4**'s `/dev/null` row is the same shape
+and narrower: the reference reads a character device happily and claustrum refuses
+it, so an honest caller *can* observe the difference. **D14**'s 5 s `ldd` bound is
+the third, and it differs from the other two only in evidence: its honest-path cost
+is **untested in either direction** rather than measured, and like D5 it has no flag
+and no config key. None of the three is resolved by this section.
 
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
 carries the evidence that was already in [`PROTOCOL.md`](PROTOCOL.md) rather than
@@ -529,7 +574,7 @@ a new claim — **with one exception: D8's reference behaviour was unmeasured wh
 this catalogue was written and was measured on 2026-08-06, so that entry does
 carry a new claim, and says so.**
 
-### D1 · Re-harden `-cli-zst` checksum ✅ (Option A) — impact M / cost L
+### D1 · Re-harden `-cli-zst` checksum ✅ (conditional — activated by `-cli-checksum`) — impact M / cost L
 
 - The reference verifies `-cli-checksum` only on the `-cli-url` download path,
   **not** on the local `-cli-zst` (SFTP) blob; PR #29 dropped our verification
@@ -540,13 +585,20 @@ carry a new claim, and says so.**
   intact).
 - An absent/empty checksum stays trusting, so a caller that passes no checksum
   is byte-identical to the reference.
+- ⚠️ **Tagged "conditional" rather than "(opt-in)" on purpose.** Everywhere else in
+  this section "(opt-in)" means *operator-declinable* — a flag **and** a
+  `claustrum.conf` key, because Claude Desktop owns the argv. D1 has neither: what
+  activates it is the caller supplying `-cli-checksum`, and on `-install` that
+  caller is Desktop. The reason it still does not need an operator switch is that
+  the delta requires a checksum that is **wrong** — supplying a correct one is
+  byte-identical — so no honest caller pays for it.
 - The observable delta (documented in [PROTOCOL.md](PROTOCOL.md) + PR), for a
   *supplied wrong* checksum only: a valid blob the reference would install now
   returns `checksum mismatch` (was success), and a corrupt blob returns
   `checksum mismatch` instead of `decompressing: …`.
 - Verified by a live ref-vs-claustrum differential.
 
-### D2 · Refuse a home directory as a destructive path target ✅ — impact H / cost L
+### D2 · Refuse a home directory as a destructive path target ✅ (always-on) — impact H / cost L
 
 **Status: both methods shipped.** `files.extract_tar` landed first; this entry
 completes it with `git.worktree_remove`, which shares the predicate
@@ -554,10 +606,11 @@ completes it with `git.worktree_remove`, which shares the predicate
 
 - **Not opt-in, and deliberately so.** This one is always on because the thing it
   prevents is unrecoverable and a flag to re-arm it would be a footgun with a
-  switch — it clears both tests in the preamble, since no honest caller names a
-  destructive target that is or contains home. (An earlier version of this bullet
+  switch — it satisfies **both halves of rule 3 clause (a)**: the reference's
+  behaviour is unrecoverable data loss, and no honest caller names a destructive
+  target that is or contains home. (An earlier version of this bullet
   said "every other entry in this section is off by default", which was never
-  true: D4, D5, D6, D7, D8, D9 and D13 are always-on too.)
+  true: D4, D5, D6, D7, D8, D9, D13 and D14 are always-on too.)
 - Two methods hand a caller-supplied path to `os.RemoveAll`: `files.extract_tar`
   wipes `destDir` before unpacking, and `git.worktree_remove` deletes
   `worktreePath` when git exits non-zero. **Both are `~`-expanded first**
@@ -619,6 +672,11 @@ completes it with `git.worktree_remove`, which shares the predicate
   run arbitrary commands via `process.spawn` (SECURITY.md). This stops an
   accidental, generated or fat-fingered path — the shape the incident had — so
   lexical containment is the right depth. Symlinks are not resolved.
+- **Reopen trigger:** an honest caller — Desktop or a real client — legitimately
+  naming a destructive target that *is or contains* a home directory. The guard
+  allows descendants precisely because `~/.claude/…` is the daemon's own install
+  path, so the trigger is a use for the home directory *itself*, not for a path
+  under it.
 - Documented in [PROTOCOL.md](PROTOCOL.md) under both methods. Tests are in
   `homeguard_test.go`; the destructive call is seamed (`wipeDestDir`) or aimed
   at a `t.TempDir()` home, so the suite is safe to run against an **unfixed**
@@ -673,10 +731,14 @@ completes it with `git.worktree_remove`, which shares the predicate
   FIFO (the reference *blocks* rather than reading) and `/dev/null` (it reads,
   answering `{"content":"","exists":true}`). Sockets and block devices were not
   measured — "does not refuse" is the claim, not "reads".
-- **Always-on, because the reference's behavior on the motivating path is not a
+- **Always-on because the reference's behavior on the motivating path is not a
   frame.** A read of a FIFO with no writer blocks in `open`, so the reference
   emits nothing for as long as that holds — a frame-diffing comparison cannot even
   see the request. claustrum turns that into an immediate, actionable error.
+  🔴 **That is only the FIRST half of rule 3 clause (a), which is an AND, and this
+  entry currently fails the second half** — see the `/dev/null` bullet below and
+  the preamble. The sentence is kept because it is true and it is why the guard
+  exists; it is not a sufficient justification on its own.
 - **It is not a permanent hang on the reference, and PROTOCOL.md used to say it
   was.** Measured: the reference replies the instant a writer opens and stays
   responsive throughout. The correction stands with the divergence; the guard's
@@ -686,6 +748,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   happily (`{"content":"","exists":true}`). Narrowing it to permit *some* would
   reopen the hazard on `/dev/zero` and `/dev/random`, which are unbounded reads
   the reference has no protection against either.
+- **Reopen trigger — already met on the behaviour, outstanding only on the
+  deployment.** The divergence itself is measured: the reference reads `/dev/null`
+  and answers `{"content":"","exists":true}` where claustrum returns `-32602`. What
+  is not established is whether any real client reads a character device through
+  `files.read` — Desktop's use of the method has never been enumerated against it.
+  So the trigger to watch for is a *client* doing it; the *observable* is already
+  in hand, which is why the preamble lists D4 as failing rather than as at risk.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `files.read` → *Non-regular files*.
 
 ### D5 · 60 s `gitTimeout` on every git invocation ✅ (always-on) — impact M / cost L
@@ -701,6 +770,13 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Always-on for the same reason as D4** — the behavior being replaced is an
   unbounded wait, which no opt-in default can improve on for a caller who does not
   know the flag exists.
+  🔴 **Both halves of that sentence are now on the record as insufficient.** It is
+  the first half of rule 3 clause (a), which is an AND, and D5 fails the second
+  half — the `-32603 signal: killed` arm below is an honest caller observing the
+  difference. The second half of the sentence — "no opt-in default can improve on
+  an unbounded wait" — is verbatim the argument D3, D10, D11 and D12 each rejected
+  on the way to being flipped. Kept here because it is what the entry originally
+  argued, annotated because it no longer carries the decision.
 - **A timeout must not be read as "git refused".** On `git.worktree_remove` it
   answers `{"success":false,"error":"git worktree remove timed out after 1m0s;
   no cleanup was attempted, and git may have partially removed the worktree"}`
@@ -716,6 +792,11 @@ completes it with `git.worktree_remove`, which shares the predicate
   killed repo-detection call answers `isRepo:false` where the reference emits
   nothing — and §5 records why no total is asserted. Unreachable on the reference,
   so not a parity break, but it is ours and it is on the wire.
+- **Reopen trigger:** an honest git invocation on a large or slow repository
+  taking longer than 60 s — the `-32603` arm makes that observable on the wire, so
+  a single user report is enough. Unlike the other entries here this one is
+  already **overdue**: the preamble records that D5 fails rule 3 today, and no
+  honest 61 s git has been measured on either binary.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`, and →
   `git.list_branches` for the `signal: killed` arm — that bullet is the only
   PROTOCOL record of the `signal: killed` *frame*, and `git.status`
@@ -745,6 +826,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   JSON-RPC frame) — the real client passes a bare version
   string (`1.0.86`, `2.0.0-beta.1`, a commit sha, `latest`, `1.0.86+build.5`, all
   measured as accepted). Same shape as D8 and D1.
+- **Reopen trigger:** Claude Desktop passing a `-cli-version` that is not a single
+  path component. The evidence for clause (b) here is an observed value plus a
+  measured accepted-set, not an enumeration of everything Desktop can emit.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `-install`.
 
 ### D7 · `-cli-version` must not collide with the install temp sweep ✅ (always-on) — impact M / cost L
@@ -757,8 +841,17 @@ completes it with `git.worktree_remove`, which shares the predicate
 - claustrum answers `cli version "…" collides with the install temp sweep`
   instead. **Unlike D6 this gives up exact parity**, on the grounds that an error
   beats a success that installed nothing.
+- **Always-on under rule 3 clause (b)** — the trigger is a `-cli-version` matching
+  `.fetch-*` or `*.zst`, which the real client does not emit (same evidence as D6).
+  ⚠️ "An error beats a success that installed nothing" is the reason the *behaviour*
+  was chosen; it is a preference, and rule 2 says a preference alone does not earn a
+  divergence. Clause (b) is what earns it, and the reopen trigger below is what
+  keeps that honest.
 - The sweep predicate and this check **share one definition**, so they cannot
   drift apart.
+- **Reopen trigger:** the same as D6 — Claude Desktop passing a `-cli-version`
+  matching `.fetch-*` or `*.zst`. Both entries rest on the same evidence about
+  what the real client emits, so one observation reopens both.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `-install`.
 
 ### D8 · `remote-server.log` is declined rather than shared ✅ (always-on) — impact M / cost L
@@ -828,10 +921,18 @@ completes it with `git.worktree_remove`, which shares the predicate
   {"baseRepo":[1,2]}`). The reference binds only the field the specific method
   reads, ignores the rest regardless of type, and runs with defaults.
 - A genuinely unknown key — in neither struct — is ignored by both.
-- **Found by differential fuzzing, and accepted rather than fixed**: it surfaces
-  only under adversarial params, and a real client never sends them. Wire-visible
-  and always-on, which is why it earns a number even though no honest caller can
-  reach it.
+- **Found by differential fuzzing, and accepted rather than fixed.** Wire-visible
+  and always-on, which is why it earns a number.
+- ⚠️ **What the clause-(b) claim rests on, stated honestly.** A *correctly typed*
+  extra field is ignored by both binaries, so the trigger is specifically a **type
+  error in a field the method does not read** — that is a client bug, not a param
+  choice. This entry used to say "a real client never sends them"; that was an
+  assertion with no measurement behind it, and **Claude Desktop's per-method param
+  set has never been enumerated against this binding**. Rule 2 puts the burden on
+  the divergence, so the narrower statement is the one that ships.
+- **Reopen trigger:** any real client observed sending a type-mismatched value in
+  a namespace field the target method does not read — which is also the
+  measurement this entry owes and does not have.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → *Params are bound per namespace*.
 
 ### D10 · Make the `-install` CLI size cap opt-in ✅ (opt-in) — impact H / cost M
@@ -875,6 +976,26 @@ completes it with `git.worktree_remove`, which shares the predicate
   and routing the unlimited case through it would invent one.
 - The error strings are unchanged when the cap is opted in, so a host that wants
   the bound keeps exactly the behaviour it had.
+- ⚠️ **Who pays for opting in.** Claude Desktop *parses* `cliError`: a
+  disk-full-shaped message is reported as a terminal failure with an actionable
+  code, and anything else is treated as retryable and re-attempted over SFTP. A
+  cap set **below the free space** therefore replaces a disk-full report with the
+  cap's own message, and the user is not told to free space. Measured on a
+  size-limited filesystem with a payload larger than both:
+
+  | configuration | `cliError` |
+  |---|---|
+  | cap **off** (the default), free space < payload | reference **and** claustrum: `decompressing: write …: no space left on device` |
+  | cap **below** free space | `decompressing: decompressed CLI exceeds <n> bytes` |
+  | cap **above** free space | `decompressing: write …: no space left on device` |
+  | *control:* cap off, free space > payload | both **install** |
+
+  **At the shipped default the disk-full report is preserved and matches the
+  reference**, so this is a cost of opting in, not a defect. *(The table is the
+  **decompress** path. Code-derived, not measured: on **both** cap paths
+  `io.Copy`'s error is returned before the size check, which is why a genuine
+  `ENOSPC` wins whenever the disk fills first — the table's third row observes it
+  on the decompress half only; the download half is read from the code.)*
 - 🔧 **The blob is now STREAMED, never buffered — this ships with the flip and is
   not separable from it.** Turning the cap off removes the only bound on what used
   to be `io.ReadAll` (download) and `os.ReadFile` (local blob), which would leave
@@ -1068,8 +1189,10 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Why it stopped being always-on.** It did clear the bar this section sets —
   the reference's behaviour on the motivating path is an apparently unbounded wait
   (no bound at or below 90 s) rather than a frame, the same justification D4 and D5
-  use explicitly, D12 restates in its Trade bullet, and D13 supplies in a different
-  form ("an input no honest caller produces"). What the 2026-08-07 measurement added
+  use explicitly and D12 restates in its Trade bullet. (D13 used to be cited here
+  as a third form of the same argument — "an input no honest caller produces" —
+  but that claim has since been **measured wrong** and D13 now rests on rule 3
+  clause (c) instead.) What the 2026-08-07 measurement added
   is a *cost* the bar does not weigh: an honest-but-slow CLI pays for it, and
   Desktop owns the argv on `-install`, so the caller who pays cannot decline. That
   is the same argument D3 and D10 used, and it is why this took the same shape they
@@ -1117,8 +1240,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   would keep `exec.CommandContext`'s kill-on-cancel path in play where the
   reference showed no such cut-off.
 - **What still ships bounded on the `-install` path:** of the *claustrum-chosen*
-  bounds, only the linux-only `ldd` probe (tier item 5), which carries no D-number
-  and is not proposed for a flip — D12's download bound took this
+  bounds, only the linux-only `ldd` probe (**D14**), which is not proposed for a
+  flip — D12's download bound took this
   same flip alongside D11's. ⚠️ Not the same as "nothing bounds an `-install`":
   `http.DefaultTransport`'s `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s` still apply on the `-cli-url` path, on every platform,
@@ -1247,25 +1370,78 @@ completes it with `git.worktree_remove`, which shares the predicate
 
 - On the `-cli-url` path the **reference decompresses first** and aborts on the
   first invalid bytes; **claustrum hashes the response as it streams to disk,
-  verifies the checksum, then decompresses**. Of the three combinations measured,
-  one reveals the order — a blob that is **both** corrupt zstd **and**
-  wrong-checksummed:
+  verifies the checksum, then decompresses**. The order shows on any blob that is
+  **both** undecompressable **and** wrong-checksummed:
 
   | input | reference | claustrum |
   |---|---|---|
-  | corrupt blob **+ wrong checksum** | `decompressing: invalid input: magic number mismatch` | `checksum mismatch: expected=…, actual=…` |
+  | origin serves a **short artifact** (`Content-Length` matches the short body), checksum of the intended full blob | `decompressing: unexpected EOF` | `checksum mismatch: expected=…, actual=…` |
+  | bad-magic blob **+ wrong checksum** | `decompressing: invalid input: magic number mismatch` | `checksum mismatch: expected=…, actual=…` |
+  | **interrupted transfer** — `Content-Length` says full, connection reset at 60 % | `decompressing: read tcp …: connection reset by peer` | `download failed: read tcp …: connection reset by peer` |
   | *control:* corrupt blob + correct checksum | `decompressing: invalid input: …` | **same** |
   | *control:* valid blob + wrong checksum | `checksum mismatch: …` | **same** |
+  | *control:* valid blob + correct checksum | **installs** | **installs** |
 
-  Both controls come back identical, which is why the single differing row is
+  The controls come back identical, which is why the differing rows are
   attributable to ordering rather than to the fixture. Measured at `5db5e4a`.
-- **Observable delta:** the `cliError` string, and only that — the two controls
-  compared reply strings, not on-disk end state. Of the three combinations measured
-  it differs on one — the combined failure; the other two are identical. That is a
-  claim about the three rows above, not about every possible input, and D11 is the
-  reminder of why the distinction matters.
-- **Trade:** matching means feeding unverified bytes to the decompressor — giving
-  up a verify-then-use property for parity on an input no honest caller produces.
+  ⚠️ **The last two rows are different failures and the distinction is the whole
+  point of the fixture.** A *short artifact* reaches the checksum comparison, so
+  the ordering shows as `checksum mismatch` vs a decompression error. A *genuine
+  interrupted transfer* never gets that far on claustrum: `fetchToFile` returns
+  `io.Copy`'s error before any checksum runs, so it surfaces as `download failed:
+  <transport error>` — where the reference, decompressing from the stream, reports
+  the identical transport error as `decompressing: <transport error>`. Same
+  architectural cause, two different observable shapes.
+- **Observable delta:** the `cliError` string, and only that — the controls
+  compared reply strings, not on-disk end state. That is a claim about the rows
+  above, not about every possible input, and D11 is the reminder of why the
+  distinction matters.
+- 🔴 **This entry used to say the trigger was "an input no honest caller
+  produces". That is measured wrong.** An **origin serving a short or truncated
+  artifact** — a bad mirror, a partial upload, a proxy answering with a stale short
+  object — is undecompressable *and* checksum-mismatched, and no adversary is
+  needed. The entry also recorded only the bad-magic shape, so the divergence class
+  is **broader than the fixture it was written from**: the reference answers
+  `unexpected EOF` there, not `magic number mismatch`.
+  ⚠️ **Scope, because the obvious wider wording is wrong:** this is *not* the
+  generic "flaky network" case. A genuine mid-transfer interruption is the last row
+  of the table and diverges on the **prefix** instead, never reaching the checksum
+  on claustrum at all.
+- **So D13's justification is rule 3 clause (c), not clause (b) — and it does not
+  strictly meet it.** The trigger is reachable and **both binaries fail the
+  install**, but the delta is not confined to diagnostic text. Measured on both
+  honest-path rows, with the cli-dir absent beforehand:
+
+  | | reference | claustrum |
+  |---|---|---|
+  | short artifact | `decompressing: unexpected EOF` · **creates an empty cli-dir** | `checksum mismatch: …` · **creates nothing** |
+  | interrupted transfer | `decompressing: <transport error>` · **creates an empty cli-dir** | `download failed: <transport error>` · **creates nothing** |
+  | *control:* valid + correct checksum | installs, 1 entry | **identical** |
+  | *control:* short artifact + checksum **of the short bytes** | `decompressing: unexpected EOF` · empty cli-dir | **identical** |
+
+  The second control is what makes the rows readable: giving claustrum a checksum
+  that *matches the short bytes* makes it answer exactly like the reference, which
+  is how we know the `checksum mismatch` above comes from the **ordering** and not
+  from the truncation. It also shows the directory difference is a consequence of
+  returning early, not a separate divergence.
+  ⚠️ **Neither binary leaves a usable CLI, so nothing a caller keeps differs** — but
+  "the only delta is diagnostic text" is still false as written, and clause (c) says
+  that. See the preamble: this is an open decision, not a settled justification.
+- ⚠️ **Clause (c) here leans on a claim about the driver, and that claim is not
+  parity-measured.** Neither binary's string is disk-full-shaped, so Claude Desktop
+  classifies both the same way and retries over SFTP — which is what makes the
+  delta cost-free. That is a statement about a **third binary**, derived from how
+  the shipped Desktop client handles the field rather than from a
+  reference-vs-claustrum probe, and the parity harness cannot settle it. If it is
+  ever falsified, clause (c) fails and this entry owes an opt-in flip. The reopen
+  trigger below is exactly that observation.
+- **Trade:** matching would mean feeding unverified bytes to the decompressor,
+  giving up a verify-then-use property to change which error a *failing* install
+  reports. That is why the reachability correction above does not flip it.
+- **Reopen trigger:** any change to how Claude Desktop classifies `cliError` — if a
+  future client distinguished `checksum mismatch` from a decompression error, or
+  matched either as terminal, clause (c) would no longer hold and this entry would
+  owe an opt-in flip.
 - **The memory cost of verifying first is one pass, not a buffer.** The download
   streams to a temp file and is hashed on the way past (D10), so peak **RSS** is
   flat in the blob size — measured 886 MB → 10 MB on a 400 MiB
@@ -1277,6 +1453,81 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Not the same thing as D1.** D1 is about *whether* the local `-cli-zst` blob is
   verified at all; D13 is about the *order* of verify and decompress on the
   `-cli-url` download.
+
+### D14 · 5 s bound on the `-install` libc probe ✅ (always-on) — impact L / cost L
+
+- **Shipped in PR 63 (`8083a4a`), unnumbered until now** — it was carried as "tier
+  item 5" beside `gitTimeout` and never earned its own entry, so nothing indexed it
+  as a divergence. (Not PR 56, which is D4's; the loader-glob predicate arrived
+  later still, in PR 183.) `lddProbeTimeout` (`install.go`, 5 s) bounds the `ldd --version`
+  probe that decides musl vs glibc; on timeout `classifyLibc` falls back.
+- **Linux-only, and not even always there.** `libc_other.go` returns `""` without
+  probing off linux, and on linux `detectLibcWith` returns `"musl"` from the
+  loader glob **before** `ldd` is spawned — so the bound cannot fire on a host
+  whose `/lib/ld-musl-*.so.*` matches. The predicate is the **glob**, not the host.
+- ✅ **MEASURED — the reference has no deadline at or below 45 s**, from **row 2
+  below only**. This was previously *assumed*, and the entry said so. ⚠️ Row 1 is
+  **non-discriminating** and supports nothing about the reference: claustrum has a
+  5 s deadline and produced the identical "no reply at 45 s" there. Probed with a
+  stub `ldd` on `PATH` and the musl glob masked, `-install` with no source flag:
+
+  | stub `ldd` | claustrum | reference `5db5e4a` |
+  |---|---|---|
+  | `sleep 120` — shell killed, `sleep` survives holding the output pipe | **no reply at 45 s** | **no reply at 45 s** |
+  | `exec sleep 120` — nothing survives the kill | **5 s**, full `__INSTALL_RESULT__`, `libc:"glibc"` | **no reply at 45 s** |
+  | *control:* an `ldd` that answers instantly | 0 s, `libc:"glibc"` | 0 s, `libc:"glibc"` |
+
+  The control proves both binaries can answer, and the masked glob is what lets
+  `ldd` be spawned at all — unmasked, both return `"musl"` instantly and the probe
+  measures nothing. ⚠️ **The instant-`ldd` control does NOT by itself prove the
+  reference executed the stub**, since a reference that never spawned `ldd` would
+  also report `"glibc"`. What proves it is the separate 2026-08-02 run recorded at
+  `install.go` → `detectLibcWith`, where a self-recording stand-in `ldd` showed the
+  reference spawning a PATH-resolved `ldd` once the glob is masked. Without that
+  prior result this table would not establish what it is cited for.
+- 🔴 **D14's always-on status is UNRESOLVED, and this entry does not claim
+  otherwise.** A first draft justified it under rule 3 clause (b) as "the trigger is
+  a stalled `ldd`, which no honest deployment has". That is the bound described by
+  *intent*, and the code implements a **5 s wall-clock threshold** — the same
+  defect that cost D11 three review rounds. A threshold cannot separate a stalled
+  `ldd` from a slow one. Stated honestly, against rule 3:
+  - **Clause (a), first half — MET and measured.** The reference's behaviour on the
+    motivating path is not a frame; see the table above (discriminating shape).
+  - **Clause (a), second half — UNTESTED.** For the reported `libc` to move, four
+    things must hold together: the loader glob misses **and** `ldd` prints a musl
+    banner **and** exits 0 **and** takes longer than 5 s. On any other honest-but-slow
+    `ldd` the fallback value and the true value coincide — a host whose loader the
+    glob **matches** never reaches the probe (the predicate is the glob, not the
+    host: a musl box the glob misses does reach it, which is precisely the
+    conjunction above), and on a glibc host the fallback **is** `"glibc"`. But nobody has run
+    the musl-banner fixture (§5 above names it), so "no honest caller observes this"
+    is an **untested conjunction, not a demonstrated impossibility**.
+  - ⚠️ **And there is no escape hatch.** `lddProbeTimeout` is a `const` with no flag
+    and no `claustrum.conf` key — the same shape the preamble flags as D5's failure.
+    Nobody who pays for it can decline.
+- **So D14 sits with D4 and D5 in the unresolved group, and the difference is
+  evidential rather than principled.** D4's and D5's honest-path costs are
+  *measured*; D14's is *untested in either direction*. It is numbered here so it can
+  be argued about at all — being unnumbered is what let it avoid the question.
+- 🔴 **The bound is narrower than it reads, and this entry used to overstate it.**
+  It fired in only one of the two stall shapes measured. The probe waits on `ldd`'s
+  output pipe, so a stalled `ldd` that leaves a surviving child keeps claustrum
+  blocked past the deadline — the same softness D5 records for `gitTimeout`. "The
+  divergence is total" was written unconditionally and is true only for the shape
+  where nothing survives the kill.
+- ⚠️ **The residual delta is not cosmetic.** Claude Desktop uses the reported
+  `libc` to choose which CLI build it downloads. So on
+  the one host shape where the value *does* move — `ldd` reports musl while the
+  loader glob misses, and it is slow — the consequence is Desktop fetching a glibc
+  build for a musl host, not merely a wrong string in a log line.
+- ⚠️ **It addresses the stall half only.** A hostile `ldd` resolved earlier in
+  `PATH` that answers in 1 s is untouched by any deadline, and `classifyLibc` then
+  trusts its `musl` banner verbatim.
+- **Reopen trigger:** a musl host whose loader the glob misses, reported together
+  with a slow `ldd` — that is the single configuration where the bound changes the
+  installed CLI rather than nothing. A second trigger: any measurement showing the
+  reference *does* bound this probe above 45 s.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → `-install`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach ✅ — impact M / cost L
 
