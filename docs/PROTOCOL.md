@@ -155,8 +155,26 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock
 If the existing log cannot be replaced — a sticky directory holding another
 user's file — claustrum declines the log entirely and the daemon's output falls
 back to the launcher's inherited stdio, rather than writing into a file another
-user can read. That refusal is a claustrum-only hardening on an attack path the
-reference was not measured on; on every honest path the two are identical.
+user can read. **Intentional divergence (D8), and the reference is measured on
+this path as of 2026-08-06**: given a root-owned, world-writable
+`remote-server.log` in a `1777` directory, the reference **truncates it and
+writes its own diagnostics in**, where claustrum leaves it untouched. Control:
+the same fixture in a non-sticky directory, where both binaries unlink and
+recreate the log — so the difference is about the refused replacement, not about
+a daemon that failed to start.
+
+**Not reachable on the deployed path**, which is why it is always-on rather than
+opt-in: the socket directory is `~/.claude/remote/`, per-user and not
+world-writable, so the fallback never fires there and the two binaries behave
+identically. It fires only where the log's directory is shared.
+
+⚠️ **This is hardening, not a vulnerability, and the difference matters for how it
+is described.** Reaching it requires a local user who can already plant a file in
+that directory. Claustrum declines because a daemon should not write into a file
+it does not own — not because the reference is wrong. The precondition (a local
+user who can already plant files there) is the same class claustrum's own
+[SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md) puts
+out of scope.
 
 Unlike the socket and `daemon.token`, the log is **not removed on graceful
 shutdown** — it outlives the daemon so a post-mortem stays readable. The fixed
@@ -194,9 +212,26 @@ value instead. Probe-verified against the reference at `5db5e4a`.
 | `-32600` | `Invalid JSON-RPC version` — `jsonrpc` absent or != `"2.0"` |
 | `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
-| `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
+| `-32603` | internal error (e.g. `open <path>: no such file or directory`); also a **recovered handler panic** → `recovered panic: <v>`, see below |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` — `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
 | `-32001` | unauthorized |
+
+### Handler panic recovery
+
+The per-request goroutine wraps dispatch in `recover()`, so a panic in any
+handler is caught rather than crashing the daemon. The reply is
+`{"error":{"code":-32603,"message":"recovered panic: <v>"}}` and the daemon logs
+`[Server] recovered panic: method=<m> id=<id>: <v>`.
+
+⚠️ **This frame is claustrum's own, and it is the one entry in this document that
+is not a statement about the wire.** No input is known to reach a handler panic
+(extensive fuzzing found none, and claustrum's own panic sites are each either an
+unreachable stdlib guard or an already-bounds-guarded slice), so the path is
+unreachable and no client can provoke the frame. `-32603` is `codeInternal`, the
+JSON-RPC 2.0 standard *Internal error* code; the message prefix, the log line and
+the id rendering are claustrum's own conventions. It is documented here so an
+operator who somehow sees it knows what it means — not as a compatibility
+guarantee, and not as a claim about any other implementation.
 
 ### Validation precedence (probe-verified)
 
@@ -223,7 +258,7 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   or a non-object value (`"params":"x"` / `[…]`) — is also
   `-32602 Invalid params`; the daemon does not silently coerce or ignore the
   decode error.
-- **Unknown extra fields** *are* ignored — with one divergence in *how strictly*.
+- **Unknown extra fields** *are* ignored — with one divergence in *how strictly* (D9).
   claustrum binds `params` into one struct per namespace (`pathParams`,
   `gitParams`), so a field that is valid for the *namespace* but unused by *this*
   method still participates in decoding: a **type-mismatched** value there →
@@ -231,8 +266,8 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   The reference binds only the field the specific method reads and ignores the
   rest regardless of type, so it runs with defaults. A genuinely unknown key (in
   neither struct) is ignored by both. This only surfaces under adversarial params
-  — a real client never sends them; accepted divergence, found by differential
-  fuzzing.
+  — a real client never sends them; accepted divergence (D9), found by
+  differential fuzzing.
 
 ### A path must be valid UTF-8 to be addressable at all
 
@@ -415,9 +450,9 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
   `maxBytes` is honored verbatim, above or below that default — so the 256 KiB
   figure is a fallback, not a ceiling.
 - **Any non-regular file → `-32602 files.read: not a regular file`.** This is an
-  intentional divergence, and the only one on this method — see below.
+  intentional divergence (D4), and the only one on this method — see below.
 
-##### Non-regular files (intentional divergence)
+##### Non-regular files (intentional divergence, D4)
 
 claustrum refuses to read anything that is not a regular file. The reference does
 not, and the difference is visible two ways (probe-measured against `5db5e4a`):
@@ -484,6 +519,28 @@ Errors:
   be an absolute, non-root path: …"}` — rejected before the archive is opened, so
   the archive is **not** consumed. (`fileCount` has no `omitempty`, so it is on
   the wire as `0`; this row omitted it until #231.)
+
+  **"Root" is the platform's own definition.** The test is
+  `filepath.Dir(filepath.Clean(destDir)) == filepath.Clean(destDir)` — "has no
+  parent" — which is `/` on Unix and a **drive root (`C:\`) or a UNC share root
+  (`\\server\share\`)** on Windows. It used to compare against the literal string
+  `"/"`, which is a Unix-only notion: `C:\` cleans to `C:\`, never to `"/"`, and
+  `filepath.IsAbs` accepts it — so a Windows volume root passed the gate and
+  reached the `os.RemoveAll` that wipes `destDir`. Fixed in #225; a trailing
+  separator (a doubled `C:\\`, or `//`) cannot slip past by shape either, because
+  the path is cleaned first.
+
+  **Which arm fires is not observable.** The root test and the `filepath.IsAbs`
+  test share one branch and one message, so `C:\` is refused on Unix too — there
+  by the *non-absolute* arm, since `IsAbs` on Unix is a leading-`/` test — with a
+  byte-identical error. What genuinely varies by OS is the **accepted** set: the
+  same `destDir` can be absolute with a parent on one platform and not on the
+  other, so a client can see one platform unpack a path the other refuses.
+
+  Whether the reference refuses a root `destDir` at all is **not measured** —
+  filed here as neither parity nor divergence, because the guard's justification
+  is the consequence on our side (a recursive delete of the volume) rather than a
+  claim about the reference.
 - **`destDir` is, or contains, the home directory** →
   `{success:false,fileCount:0,error:"destDir must not be or contain the home directory: …"}`
   — also rejected before the archive is opened. **Intentional divergence** (D2):
@@ -503,6 +560,12 @@ Errors:
 - A non-regular/non-directory entry (symlink, hardlink, device, fifo) →
   `{success:false,fileCount:0,error:"unsupported tar entry type <c>: <entry>"}`
   — `<c>` is the tar typeflag char (symlink=`2`, hardlink=`1`).
+- **Total uncompressed bytes over the opt-in cap** →
+  `{success:false,fileCount:0,error:"extraction size limit exceeded"}`. **Not
+  reachable by default** — the cap is `0` (off), matching the reference, which
+  has none. **Intentional divergence** (D3), enabled with
+  `-max-extract-bytes <n>` or `max-extract-bytes = <n>` in `claustrum.conf`; see
+  that flag for the measurement and the reason the default flipped.
 - destDir clean/mkdir or marker-write failures → `clean destDir: …` /
   `mkdir destDir: …` / `write .synced: …`.
 - An entry whose target is an existing directory →
@@ -597,7 +660,8 @@ Errors:
   the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
   SIGKILLed process's exit error over the context error. The reference runs git
   with no deadline and simply blocks, so it never emits this. `git.status` has
-  the identical frame for the identical reason. See IMPROVEMENTS §5.
+  the identical frame for the identical reason. Intentional divergence **(D5)** —
+  see IMPROVEMENTS §5 and the D5 entry.
 
 #### git.worktree_create
 
@@ -713,7 +777,7 @@ the daemon then seeds the new worktree:
   deleted the decoy and left `<repo>/wt` in place.** Parity, and alarming — send
   an absolute `worktreePath`. The reference client does: it tilde-expands every
   remote path before sending.
-- **`gitTimeout` does NOT authorise the deletion — claustrum-only.** (The cap is
+- **`gitTimeout` does NOT authorise the deletion — claustrum-only (D5).** (The cap is
   also softer than it reads: it waits on git's output pipe, so a git that spawns a
   surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
   on git is a claustrum divergence (the reference runs git with no deadline and
@@ -844,8 +908,15 @@ unknown id is not an error):
       the only round value in it. The ceiling is not new in `5db5e4a`: `7c2f88d`,
       the build that added the method, answers at ~30 s for the same input.
     - **`escalate`** (default `true`) decides what happens if the process is still
-      alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
-      and add `"escalated":true` to the reply. `false` → leave the process running
+      alive after the grace. `true` → **escalate** to `SIGKILL`, wait up to
+      **7 s** for the reap, and add `"escalated":true` to the reply. That 7 s is
+      itself measured against the reference (2026-08-06, black-box): with
+      `timeoutMs: 500` against a child `SIGKILL` cannot reap, the reference
+      replies at 7.51 s. It is client-observable twice over — in when the reply
+      arrives, and in whether a child reaped between 5 s and 7 s reports
+      `"died":true` rather than `false`. A pipe-holding grandchild cannot measure
+      it: the exit drain closes the read ends at 5 s first, so both binaries
+      answer at 5.01 s regardless. `false` → leave the process running
       and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
       The escalation `SIGKILL` goes to the **process group**, so it sweeps up the
       child tree the graceful signal spared — and it is sent even when the
@@ -964,7 +1035,7 @@ reference unless marked **claustrum-only**.
 ### -serve — run the daemon
 
 ```text
-claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe]
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>]
 ```
 
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
@@ -1099,6 +1170,27 @@ unset in the child before it spawns anything, so it never leaks downstream.
 - Also settable in `claustrum.conf` as `listen-pipe = true|false` (an explicit
   `-listen-pipe` flag wins).
 
+**`-max-extract-bytes <n>`** *(claustrum-only, D3)* — opt-in extraction cap:
+
+- **`0` (the default) means no cap**, which is what the reference does at every
+  size the probe could reach: measured at `5db5e4a`, a 629 MB payload extracts
+  fully and answers `{"success":true,"fileCount":1}`. claustrum's default answers
+  the identical frame. (That measurement disproves a 512 MiB cap; it does not
+  prove the reference has none above 629 MB.)
+- A non-zero `<n>` caps the **total uncompressed bytes** `files.extract_tar` will
+  write across all entries of one archive. Exceeding it returns
+  `{success:false,fileCount:0,error:"extraction size limit exceeded"}` — a frame
+  the reference never produces, hence the divergence. The entry that tripped the
+  cap is removed rather than left truncated; entries already written are not.
+- The cap **shipped on by default at 512 MiB** and that was a live user-facing
+  break: a caller with a tree over the cap got an error with no way through,
+  because Claude Desktop owns the argv. Flipping the default to `0` is the parity
+  fix; the cap itself survives as an opt-in for hosts that want it.
+- Also settable in `claustrum.conf` as `max-extract-bytes = <n>` (an explicit
+  `-max-extract-bytes` flag wins). **That is the reachable knob** — see the argv
+  point above. Negative or unparseable values are ignored, so a typo can never
+  silently enable a cap.
+
 ### -bridge — stdio↔socket relay
 
 ```text
@@ -1178,8 +1270,9 @@ This exists so the desktop client treats an already-deployed claustrum as
 up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\S+)/`
 against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
 wire contract is untouched; `server.version` / `server.capabilities` still report
-claustrum's own `<id>`. The same file also carries `keep-children` and
-`metrics-addr` defaults (precedence: explicit CLI flag > config > default). See
+claustrum's own `<id>`. The same file also carries `keep-children`,
+`metrics-addr`, `listen-pipe`, `max-extract-bytes` and `max-cli-bytes` defaults
+(precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1187,7 +1280,8 @@ hardening.
 
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
-          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]
+          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
+          [-max-cli-bytes <n>]
 ```
 
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
@@ -1240,6 +1334,19 @@ Checksum + error framing (probe-verified):
   mean feeding unverified bytes to the decompressor.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
+- **A decompressed CLI (or a download body) over the opt-in cap** →
+  `cliError "decompressing: decompressed CLI exceeds <n> bytes"` /
+  `"response exceeds <n> bytes"`. **Not reachable by default** — the cap is `0`
+  (off), matching the reference. **Intentional divergence** (D10), enabled with
+  `-max-cli-bytes <n>` or `max-cli-bytes = <n>` in `claustrum.conf`. Measured at
+  `5db5e4a` on the `-cli-zst` path with a 600 MiB payload (21 KB compressed): the
+  reference decompressed all of it and failed only at the runnability check
+  (`installed cli at <path> is not runnable`), which claustrum now answers
+  identically. The `-cli-url` half was measured separately with a 629 MB
+  incompressible body — same result, and the cap-on control answers
+  `download failed: response exceeds 536870912 bytes`, proving the probe reaches
+  that limit. (Both disprove a cap at or below ~600 MiB; neither proves the
+  reference has none above it.)
 - A cli-dir that cannot be created is reported with a **`mkdir cli dir: `**
   prefix, e.g. `mkdir cli dir: mkdir /ro/nested: permission denied`.
 
@@ -1248,6 +1355,21 @@ Staging and cleanup (probe-verified):
 - The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
   into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
   matches `.fetch-*`, so an interrupted install's litter is reclaimed.
+- A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`**, and the
+  different prefix is deliberate — the sweep must **not** claim it. The sweep runs
+  after every attempted install, so a `.fetch-*` blob could be removed by a
+  concurrent install's sweep together with the staging file, leaving the
+  retry-on-`errStagingVanished` with no source to re-read. The orphan **prune**
+  skips it for the same reason: `pruneCLI` counts every non-directory in the
+  cli-dir as a CLI version, so an in-flight blob would sort newest, consume a
+  `-cli-keep` slot and evict a real binary. For the same reason a `-cli-version`
+  starting `.blob-` is **refused** (`cli version "…" collides with the install
+  download blob`) — it would install fine and then be exempt from the prune census
+  forever, never counted against `-cli-keep` and never evicted. That is the mirror
+  of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
+  every path; only a SIGKILLed download leaves it behind, and nothing reclaims
+  that. (Claustrum-only: the reference buffers the download in
+  memory, so it has no such file. No frame changes.)
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
@@ -1261,7 +1383,7 @@ Staging and cleanup (probe-verified):
   CLI was deleted and nothing replaced it, leaving an empty cli-dir. End states
   match the reference for every destination shape — absent, regular file, and
   non-empty directory.
-- **Divergence (claustrum-only hardening): `-cli-version` must name a single
+- **Divergence (claustrum-only hardening, D6): `-cli-version` must name a single
   path component.** That clearing step is an `os.RemoveAll` on
   `filepath.Join(cliDir, cliVersion)`, so a version that reaches outside the
   cli-dir deletes unrelated data recursively. Two ways it can, both measured
@@ -1289,9 +1411,9 @@ Staging and cleanup (probe-verified):
   The real client passes a bare version string (`1.0.86`, `2.0.0-beta.1`, a
   commit sha, `latest`, `1.0.86+build.5` — all measured as accepted), so every
   honest path is byte-identical. Same shape as the `remote-server.log` refusal
-  above and D1 below.
-- **Divergence (claustrum-only hardening): `-cli-version` must not collide with
-  the orphan sweep.** The sweep below claims `.fetch-*` and `*.zst`, and it runs
+  above (D8) and D1 below.
+- **Divergence (claustrum-only hardening, D7): `-cli-version` must not collide
+  with the orphan sweep.** The sweep below claims `.fetch-*` and `*.zst`, and it runs
   after *every* attempted install — so `-cli-version .fetch-x` or `1.0.zst`
   installs correctly and is deleted moments later in the same run. Measured at
   `5db5e4a`: reference **and** claustrum both finish with an **empty cli-dir and

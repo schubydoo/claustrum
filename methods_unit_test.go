@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -598,10 +599,73 @@ func TestFilesExtractTarCreateFailureReportsZeroCount(t *testing.T) {
 	}
 }
 
-// extractTarGz must reject archives whose total uncompressed size exceeds the cap.
-// A crafted .tar.gz can have a tiny compressed payload that expands to fill a disk;
-// the cap bounds that damage. The var is overridden to a small value here so the test
-// does not write gigabytes to disk.
+// A cap of MaxInt64 must behave like a very large cap, not like a zero-byte one.
+// The bound is maxExtractBytes-totalWritten+1, and Go WRAPS signed overflow: at
+// MaxInt64 that sum used to become MinInt64, io.LimitReader returns EOF for any
+// N <= 0, and io.Copy does not report EOF as an error — so every entry was
+// created at 0 bytes, totalWritten stayed 0 so the cap check never fired, and the
+// reply was success:true over a destDir of empty files. Silent data loss reported
+// as success, reachable through -max-extract-bytes and the claustrum.conf key
+// the moment the cap became settable.
+func TestFilesExtractTarCapMaxInt64DoesNotOverflow(t *testing.T) {
+	old := maxExtractBytes
+	maxExtractBytes = math.MaxInt64
+	defer func() { maxExtractBytes = old }()
+
+	s := newTestServer(t)
+	const body = "not empty"
+	archive := tarGzPath(t, map[string]string{"f.bin": body})
+	dest := filepath.Join(t.TempDir(), "out")
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":true`) {
+		t.Fatalf("extract with a MaxInt64 cap = %s, want success", got)
+	}
+	// The assertion that matters: success alone was TRUE while the bug was live.
+	b, err := os.ReadFile(filepath.Join(dest, "f.bin"))
+	if err != nil {
+		t.Fatalf("read extracted file: %v", err)
+	}
+	if string(b) != body {
+		t.Errorf("extracted %d bytes (%q), want %d (%q) — the cap bound overflowed", len(b), b, len(body), body)
+	}
+}
+
+// The cap is OFF by default, which is the parity position: measured, the
+// reference applies no cap at any size the probe could reach (629 MB), so any
+// non-zero default makes claustrum fail an extraction the reference completes.
+// That measurement disproves a 512 MiB cap; it does not prove there is none
+// above 629 MB, and this comment must not say otherwise. This asserts the
+// default itself, because that constant IS the divergence —
+// TestFilesExtractTarSizeLimit and TestFilesExtractTarCapMaxInt64DoesNotOverflow
+// are the two tests that override it.
+func TestFilesExtractTarCapDefaultsOff(t *testing.T) {
+	if maxExtractBytes != 0 {
+		t.Fatalf("maxExtractBytes default = %d, want 0 (cap off = reference parity)", maxExtractBytes)
+	}
+
+	// And the disabled path copies straight through rather than through a
+	// LimitReader, so a file lands whole.
+	s := newTestServer(t)
+	body := strings.Repeat("x", 4096)
+	archive := tarGzPath(t, map[string]string{"whole.bin": body})
+	dest := filepath.Join(t.TempDir(), "out")
+	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+	if !strings.Contains(got, `"success":true`) || !strings.Contains(got, `"fileCount":1`) {
+		t.Fatalf("extract with cap off = %s, want success:true fileCount:1", got)
+	}
+	written, err := os.ReadFile(filepath.Join(dest, "whole.bin"))
+	if err != nil {
+		t.Fatalf("read extracted file: %v", err)
+	}
+	if len(written) != len(body) {
+		t.Errorf("extracted %d bytes, want %d (cap-off path must not truncate)", len(written), len(body))
+	}
+}
+
+// With the cap opted in, extractTarGz must reject archives whose total
+// uncompressed size exceeds it. A crafted .tar.gz can have a tiny compressed
+// payload that expands to fill a disk; the cap bounds that damage. The var is
+// overridden to a small value here so the test does not write gigabytes to disk.
 func TestFilesExtractTarSizeLimit(t *testing.T) {
 	old := maxExtractBytes
 	maxExtractBytes = 1024
@@ -614,6 +678,34 @@ func TestFilesExtractTarSizeLimit(t *testing.T) {
 	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
 	if !strings.Contains(got, `"success":false`) || !strings.Contains(got, "size limit exceeded") {
 		t.Errorf("extract over cap = %s, want success:false and size-limit error", got)
+	}
+	// fileCount 0, matching the four arms that reject the archive outright
+	// (create, mkdir-parent, zip-slip, unsupported type) — not every arm; the
+	// note at the cap arm in methods_files.go has the full split.
+	if !strings.Contains(got, `"fileCount":0`) {
+		t.Errorf("extract over cap = %s, want fileCount:0", got)
+	}
+	// And nothing truncated is left behind: the entry that tripped the cap was
+	// written up to cap+1 bytes before the check fired.
+	if _, err := os.Stat(filepath.Join(dest, "big.bin")); !os.IsNotExist(err) {
+		t.Errorf("truncated entry survived the cap failure (stat err = %v)", err)
+	}
+
+	// The fileCount claim needs an entry to have SUCCEEDED first, or 0 is just
+	// the count that was already there. Sorted archive order makes this
+	// deterministic: a-first.bin lands (count 1), then b-over.bin takes the
+	// total past the cap.
+	archivePartial := tarGzPath(t, map[string]string{
+		"a-first.bin": strings.Repeat("x", 600),
+		"b-over.bin":  strings.Repeat("x", 600),
+	})
+	destPartial := filepath.Join(t.TempDir(), "outPartial")
+	got = dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archivePartial, "destDir": destPartial}))
+	if !strings.Contains(got, `"fileCount":0`) {
+		t.Errorf("cap tripped after a successful entry = %s, want fileCount:0 (not the partial count)", got)
+	}
+	if _, err := os.Stat(filepath.Join(destPartial, "b-over.bin")); !os.IsNotExist(err) {
+		t.Errorf("truncated entry survived the cap failure (stat err = %v)", err)
 	}
 
 	// Archive with a 1024-byte file — exactly at the cap — must succeed.
@@ -1090,7 +1182,7 @@ func TestGitWorktreeRemoveBindParamsError(t *testing.T) {
 
 // zstdDecompress: os.Create fails when the destination parent directory doesn't exist.
 func TestZstdDecompressDestError(t *testing.T) {
-	err := zstdDecompress(zstdOf(t, []byte("payload")), filepath.Join(t.TempDir(), "nonexistent", "out"))
+	err := zstdDecompressBytes(t, zstdOf(t, []byte("payload")), filepath.Join(t.TempDir(), "nonexistent", "out"))
 	if err == nil {
 		t.Fatal("expected error for missing parent dir, got nil")
 	}

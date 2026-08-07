@@ -19,6 +19,13 @@ func honorListenPipe(requested bool) bool {
 	return false
 }
 
+// isOurClose reports whether a connection read failed because the daemon itself
+// closed the connection (what closeAll does to every client on the graceful
+// shutdown path) rather than because the read genuinely failed. Off Windows the
+// only transport is the AF_UNIX socket, so the net-package sentinel is the whole
+// answer.
+func isOurClose(err error) bool { return errors.Is(err, net.ErrClosed) }
+
 // startPipeTransport is never reached off Windows (honorListenPipe forces the flag
 // false before server.run consults it), but must exist so server.go compiles on
 // every target.

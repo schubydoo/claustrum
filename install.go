@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -104,7 +103,20 @@ func ensureCLI(o installOpts, cliPath string) error {
 			return err
 		}
 	}
-	var zst []byte
+	// blobPath is the .zst on disk. Nothing HERE reads it into memory: the local
+	// path uses the caller's file as-is, the download streams to a temp file, and
+	// both are hashed and decompressed in bounded passes. The download's temp is
+	// removed by a defer on that branch, so it cannot outlive the call.
+	//
+	// Measured with a 400 MiB incompressible blob (peak RSS from /proc VmHWM):
+	//
+	//	-cli-zst   410 MB -> 9 MB
+	//	-cli-url   886 MB -> 10 MB   (ReadAll peaked at ~2x the body while growing)
+	//
+	// After this, peak memory is flat in the blob size. Control: the same 400 MiB
+	// as zeros, a 14 KB blob, is 9 MB on both binaries — so the post-change number
+	// is baseline, not workload.
+	var blobPath, blobSum string
 	var err error
 	switch {
 	case o.cliZst != "":
@@ -114,16 +126,44 @@ func ensureCLI(o installOpts, cliPath string) error {
 		// verify it and reject a corrupt/tampered blob with the same "checksum
 		// mismatch" error as the -cli-url path. An ABSENT/empty checksum stays
 		// trusting — matching the reference — so honest callers are unaffected.
-		if zst, err = os.ReadFile(o.cliZst); err != nil {
-			return fmt.Errorf("opening input: %v", err)
+		//
+		// Opened and read one byte, purely to keep `opening input: ` attached to
+		// the same conditions os.ReadFile reported it for (missing, permission,
+		// is-a-directory). The read is not optional: os.Open SUCCEEDS on a
+		// directory on both Unix and Windows — EISDIR surfaces on the first Read —
+		// and os.ReadFile opened AND read, so an open alone would move
+		// `-cli-zst <dir>` to `decompressing: `. That is the DEFAULT -cli-zst
+		// shape (no -cli-checksum, which is what the reference does), and it is
+		// provokable with mkdir. One byte reproduces the condition in the same
+		// place with the OS's own wording. io.EOF is not a failure: os.ReadFile
+		// succeeds on an empty file.
+		//
+		// A mid-read I/O error still surfaces later, at decompress, as
+		// `decompressing: ` — an unprovoked path, recorded rather than claimed
+		// identical.
+		f, oerr := os.Open(o.cliZst)
+		if oerr != nil {
+			return fmt.Errorf("opening input: %v", oerr)
 		}
+		_, rerr := f.Read(make([]byte, 1))
+		_ = f.Close()
+		if rerr != nil && !errors.Is(rerr, io.EOF) {
+			return fmt.Errorf("opening input: %v", rerr)
+		}
+		blobPath = o.cliZst
 		if o.cliChecksum != "" {
-			if err := verifyChecksum(zst, o.cliChecksum); err != nil {
+			if blobSum, err = sha256File(blobPath); err != nil {
+				return fmt.Errorf("opening input: %v", err)
+			}
+			if err := verifyChecksum(blobSum, o.cliChecksum); err != nil {
 				return err
 			}
 		}
 	case o.cliURL != "":
-		if zst, err = httpGet(o.cliURL); err != nil {
+		// The temp lands beside the CLI destination when it can; see fetchToFile
+		// for why a failure there falls back rather than erroring.
+		blobPath, blobSum, err = fetchToFile(o.cliURL, filepath.Dir(cliPath))
+		if err != nil {
 			// A status failure is already fully worded; only a transport failure
 			// takes the "download failed: " prefix (see httpStatusError).
 			var se *httpStatusError
@@ -132,12 +172,15 @@ func ensureCLI(o installOpts, cliPath string) error {
 			}
 			return fmt.Errorf("download failed: %v", err)
 		}
+		defer func() { _ = os.Remove(blobPath) }()
 		// Downloads are verified UNCONDITIONALLY — an empty -cli-checksum still
 		// fails ("checksum mismatch: expected=, actual=<sha>") — matching the
 		// reference. That string is verifyChecksum's own output, captured; the
 		// quote here used to read "expected= , actual=<sha>", which neither binary
 		// emits — it had a space that is not there and dropped the prefix.
-		if err := verifyChecksum(zst, o.cliChecksum); err != nil {
+		//
+		// blobSum came from the download stream, so verifying costs no second read.
+		if err := verifyChecksum(blobSum, o.cliChecksum); err != nil {
 			return err
 		}
 	default:
@@ -156,7 +199,7 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// Stage, verify and install, retried ONCE if a concurrent install's sweep
 	// reclaimed our staging file. See stageAndInstall for why that can happen and
 	// why a retry is the fix rather than a smarter sweep.
-	decompressed, err := stageAndInstall(zst, cliPath)
+	decompressed, err := stageAndInstall(blobPath, cliPath)
 	if err != nil && errors.Is(err, errStagingVanished) {
 		// Accumulate rather than overwrite. Decompression is a fact about the
 		// blob, not about an attempt: once any attempt has decompressed it, the
@@ -169,7 +212,7 @@ func ensureCLI(o installOpts, cliPath string) error {
 		// `.fetch-*`, not the cli-dir, so a second-pass CreateTemp failure needs
 		// state the retry path does not itself produce. This is invariant
 		// hygiene, and it costs one variable.
-		retryDecompressed, retryErr := stageAndInstall(zst, cliPath)
+		retryDecompressed, retryErr := stageAndInstall(blobPath, cliPath)
 		decompressed = decompressed || retryDecompressed
 		err = retryErr
 	}
@@ -234,14 +277,14 @@ var errStagingVanished = errors.New("staging file vanished")
 // construction. Production never reassigns it.
 var chmodStaged = os.Chmod
 
-func stageAndInstall(zst []byte, cliPath string) (decompressed bool, err error) {
+func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 	tmpFile, err := os.CreateTemp(filepath.Dir(cliPath), ".fetch-*")
 	if err != nil {
 		return false, fmt.Errorf("staging cli: %v", err)
 	}
 	tmp := tmpFile.Name()
 	_ = tmpFile.Close()
-	if err := zstdDecompress(zst, tmp); err != nil {
+	if err := zstdDecompress(blobPath, tmp); err != nil {
 		_ = os.Remove(tmp)
 		return false, fmt.Errorf("decompressing: %v", err)
 	}
@@ -324,6 +367,16 @@ func validateCLIVersion(v string) error {
 		// collision, and isSweptName is the one definition of it.
 		return fmt.Errorf("cli version %q collides with the install temp sweep", v)
 	}
+	if isDownloadBlobName(v) {
+		// The MIRROR of the check above, on the identical input. A version with
+		// the blob prefix installs fine and is then exempt from pruneCLI's census
+		// FOREVER — never counted against -cli-keep, never evicted, and not
+		// reclaimed by the sweep either, since neither pass claims that prefix by
+		// construction. A leaked immortal binary rather than a deleted one, but
+		// the same class of collision, so the validator reads the same set of
+		// housekeeping names both passes do.
+		return fmt.Errorf("cli version %q collides with the install download blob", v)
+	}
 	return nil
 }
 
@@ -337,15 +390,33 @@ func isSingleComponent(name string) bool {
 }
 
 // verifyChecksum returns a "checksum mismatch" error (byte-identical to the
-// reference's -cli-url path) when sha256(zst) does not equal expected. The
-// -cli-url path calls it unconditionally; the -cli-zst path only when a checksum
-// is supplied (IMPROVEMENTS D1, an opt-in divergence from the reference).
-func verifyChecksum(zst []byte, expected string) error {
-	sum := sha256.Sum256(zst)
-	if got := hex.EncodeToString(sum[:]); !strings.EqualFold(got, expected) {
+// reference's -cli-url path) when got does not equal expected. The -cli-url path
+// calls it unconditionally; the -cli-zst path only when a checksum is supplied
+// (IMPROVEMENTS D1, an opt-in divergence from the reference).
+//
+// It takes the hex digest rather than the bytes so no caller has to hold the
+// whole blob in memory to check it: the download hashes as it streams, and the
+// local path hashes the file in one bounded pass (sha256File).
+func verifyChecksum(got, expected string) error {
+	if !strings.EqualFold(got, expected) {
 		return fmt.Errorf("checksum mismatch: expected=%s, actual=%s", expected, got)
 	}
 	return nil
+}
+
+// sha256File returns the hex sha256 of a file, read in fixed-size chunks so a
+// large blob never lands in memory.
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // isRunnable reports whether `<path> --version` exits 0 (the real binary's CLI
@@ -356,15 +427,44 @@ func isRunnable(path string) bool {
 	return exec.CommandContext(ctx, path, "--version").Run() == nil
 }
 
-// maxCLIBytes caps the decompressed size written by zstdDecompress. A crafted
-// .zst file can be tiny when compressed but expand to fill the remote disk;
-// 512 MB is well above any realistic CLI binary. Set to a small value in tests.
-var maxCLIBytes int64 = 512 * 1024 * 1024
+// maxCLIBytes caps two install-path reads: the decompressed size written by
+// zstdDecompress, and the downloaded body in fetchToFile. A crafted .zst can be
+// tiny compressed and expand to fill the remote disk; the cap bounds that.
+//
+// ZERO (the default) DISABLES IT, which is what the reference does at every size
+// the probe could reach. Measured at 5db5e4a with a 600 MiB payload (21 KB
+// compressed) on the -cli-zst path: the reference decompressed all of it and got
+// as far as the runnability check, answering
+//
+//	cliError "installed cli at <path> is not runnable"
+//
+// while a capped claustrum answered
+//
+//	cliError "decompressing: decompressed CLI exceeds 536870912 bytes"
+//
+// — a string the reference cannot produce. The cap shipped on by default at
+// 512 MiB (PRs 57 and 59) and is the sibling of the files.extract_tar cap, which
+// gets the same flip in its own PR. Opt in with -max-cli-bytes or the
+// max-cli-bytes key in claustrum.conf. Also set directly by tests.
+//
+// The -cli-url half was measured separately (the download body, 629 MB
+// incompressible): same result, with a cap-on control answering "response
+// exceeds 536870912 bytes" to prove the probe reached this limit.
+var maxCLIBytes int64
 
-// zstdDecompress decompresses a zstd blob to dest in-process, using the same
-// library (klauspost/compress) the real binary embeds — no external zstd CLI.
-func zstdDecompress(zst []byte, dest string) error {
-	dec, err := zstd.NewReader(bytes.NewReader(zst))
+// zstdDecompress decompresses the zstd blob at src to dest in-process, using the
+// same library (klauspost/compress) the real binary embeds — no external zstd CLI.
+//
+// It takes a PATH rather than a []byte for two reasons: the blob never has to be
+// held in memory, and ensureCLI retries stageAndInstall once, which needs a
+// source it can read a second time.
+func zstdDecompress(src, dest string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	dec, err := zstd.NewReader(in)
 	if err != nil {
 		return err
 	}
@@ -374,11 +474,20 @@ func zstdDecompress(zst []byte, dest string) error {
 		return err
 	}
 	defer out.Close()
-	n, err := io.Copy(out, io.LimitReader(dec, maxCLIBytes+1))
+	// Cap disabled (the default): copy straight through, as the reference does.
+	// Deliberately NOT a LimitReader with a huge bound — the cap+1 arithmetic is
+	// what defines the boundary, and routing the unlimited case through it would
+	// invent one the reference does not have.
+	var n int64
+	if maxCLIBytes <= 0 {
+		n, err = io.Copy(out, dec)
+	} else {
+		n, err = io.Copy(out, io.LimitReader(dec, maxCLIBytes+1))
+	}
 	if err != nil {
 		return err
 	}
-	if n > maxCLIBytes {
+	if maxCLIBytes > 0 && n > maxCLIBytes {
 		return fmt.Errorf("decompressed CLI exceeds %d bytes", maxCLIBytes)
 	}
 	return nil
@@ -396,11 +505,22 @@ func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("download failed with status %d", e.code)
 }
 
-func httpGet(url string) ([]byte, error) {
+// fetchToFile downloads url to a temporary file and returns that file's path
+// together with the sha256 computed WHILE streaming, so the blob is never held in
+// memory and is never hashed in a second pass. The caller owns the temp file and
+// must remove it.
+//
+// The temp is preferentially created beside the CLI destination (dir), which puts
+// it on the filesystem the install writes to. If that fails — an unwritable or
+// not-yet-created cli-dir — it falls back to the OS temp dir rather than
+// reporting a download failure, because ensureCLI creates the cli-dir AFTER the
+// download and reports its own `mkdir cli dir: ` error there. Failing here
+// instead would move that error to a different string on a reachable path.
+func fetchToFile(url, dir string) (path, sum string, err error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(url)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -410,16 +530,51 @@ func httpGet(url string) ([]byte, error) {
 		// "download failed: download <url>: 404 File not found". The URL is worth
 		// omitting on its own merits: cliError is printed on the __INSTALL_RESULT__
 		// line, and a signed URL would land in whatever captures that output.
-		return nil, &httpStatusError{code: resp.StatusCode}
+		return "", "", &httpStatusError{code: resp.StatusCode}
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCLIBytes+1))
+	// ⚠️ The prefix must be one isSweptName does NOT claim. sweepFetchTemps runs
+	// after EVERY attempted install and takes ".fetch-*" and "*.zst" from the
+	// cli-dir, so naming the blob ".fetch-*" would let a concurrent install's
+	// sweep delete the staging file AND the blob the retry re-reads — defeating
+	// errStagingVanished in exactly the case it exists for, and able to fail the
+	// first attempt too if the sweep lands between here and zstdDecompress. That
+	// invariant is what the retry's correctness now rests on.
+	//
+	// Kept beside the destination rather than moved to the OS temp dir: /tmp is a
+	// tmpfs on many hosts, so downloading a 600 MiB blob there would put it back
+	// in RAM and undo the streaming this change exists for. The cost is that the
+	// sweep can no longer reclaim a blob left by a SIGKILLed install; the caller's
+	// own defer removes it on every other path.
+	f, err := os.CreateTemp(dir, blobTempPrefix+"*")
 	if err != nil {
-		return nil, err
+		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
+			return "", "", err
+		}
 	}
-	if int64(len(body)) > maxCLIBytes {
-		return nil, fmt.Errorf("response exceeds %d bytes", maxCLIBytes)
+	tmp := f.Name()
+	h := sha256.New()
+	// Same bypass as zstdDecompress: with the cap off the body streams straight
+	// through, hashed on the way past.
+	var n int64
+	var copyErr error
+	if maxCLIBytes <= 0 {
+		n, copyErr = io.Copy(io.MultiWriter(f, h), resp.Body)
+	} else {
+		n, copyErr = io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, maxCLIBytes+1))
 	}
-	return body, nil
+	closeErr := f.Close()
+	switch {
+	case copyErr != nil:
+		_ = os.Remove(tmp)
+		return "", "", copyErr
+	case closeErr != nil:
+		_ = os.Remove(tmp)
+		return "", "", closeErr
+	case maxCLIBytes > 0 && n > maxCLIBytes:
+		_ = os.Remove(tmp)
+		return "", "", fmt.Errorf("response exceeds %d bytes", maxCLIBytes)
+	}
+	return tmp, hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // pruneCLI keeps the most-recent `keep` version files under cliDir (by mtime).
@@ -452,6 +607,26 @@ func sweepFetchTemps(cliDir string) {
 	}
 }
 
+// blobTempPrefix names the -cli-url download blob. It must be a prefix that
+// NEITHER cli-dir housekeeping pass acts on — isSweptName must not claim it, and
+// pruneCLI must not count it as a version. Both halves matter and they failed one
+// at a time: ".fetch-" let the sweep delete the blob out from under the
+// errStagingVanished retry, and a name merely absent from isSweptName still let
+// pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
+// slot and evicts a real version instead.
+//
+// The reference gets this property for free by buffering the download in memory
+// and never creating the file; claustrum streams, so it has to be stated. Defined
+// once here so the creator, BOTH housekeeping passes and validateCLIVersion read
+// the same rule — the same reason isSweptName is factored out below, and with the
+// same fourth reader. A rule the validator does not consult is one an operator can
+// walk into with -cli-version.
+const blobTempPrefix = ".blob-"
+
+// isDownloadBlobName reports whether a cli-dir entry is an in-flight download
+// blob, which is neither litter to sweep nor a CLI version to prune.
+func isDownloadBlobName(name string) bool { return strings.HasPrefix(name, blobTempPrefix) }
+
 // isSweptName reports whether the sweep above claims a cli-dir entry.
 //
 // ".fetch-*" AND "*.zst": the reference sweeps both. Measured at 5db5e4a with a
@@ -481,6 +656,14 @@ func pruneCLI(cliDir string, keep int) {
 		if e.IsDir() {
 			continue
 		}
+		// A concurrent install's in-flight download blob is not a CLI version.
+		// It is the only file claustrum creates in the cli-dir that survives the
+		// sweep, so without this it would sort NEWEST, take a -cli-keep slot and
+		// evict a real binary — the exact defect isSweptName was introduced to
+		// stop for .fetch-* staging files.
+		if isDownloadBlobName(e.Name()) {
+			continue
+		}
 		if fi, err := e.Info(); err == nil {
 			vs = append(vs, ver{e.Name(), fi.ModTime().UnixNano()})
 		}
@@ -498,7 +681,7 @@ func isRegularFile(p string) bool {
 
 // lddProbeTimeout bounds the `ldd --version` libc probe. The reference daemon
 // runs it with no deadline, so a stalled or hostile `ldd` resolved earlier in
-// PATH hangs `-install` forever (reported upstream as HackerOne #3793023). We cap
+// PATH hangs `-install` forever. We cap
 // it and fall back to the default classification on timeout: identical output on
 // every normal host (ldd returns in well under a second), defensive only when it
 // would otherwise hang. This is a deliberate, attack-path-only divergence from the

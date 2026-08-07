@@ -21,6 +21,8 @@ func parse(t *testing.T, body string) config {
 
 func boolp(b bool) *bool { return &b }
 
+func int64p(n int64) *int64 { return &n }
+
 func TestParseConfig_VersionOverride(t *testing.T) {
 	cases := []struct {
 		name, body, want string
@@ -157,6 +159,117 @@ func TestPrecedence(t *testing.T) {
 	}
 }
 
+func TestParseConfig_MaxExtractBytes(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       *int64
+	}{
+		{"plain byte count", "max-extract-bytes = 536870912", int64p(536870912)},
+		{"zero disables the cap explicitly", "max-extract-bytes = 0", int64p(0)},
+		{"negative rejected", "max-extract-bytes = -1", nil},
+		{"non-numeric rejected", "max-extract-bytes = 512MiB", nil},
+		{"empty rejected", "max-extract-bytes =", nil},
+		{"case-insensitive key", "MAX-EXTRACT-BYTES = 1024", int64p(1024)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parse(t, tc.body).maxExtractBytes
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("maxExtractBytes = %d, want unset (value rejected)", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("maxExtractBytes unset, want %d", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("maxExtractBytes = %d, want %d", *got, *tc.want)
+			}
+		})
+	}
+}
+
+// Separate from the max-extract-bytes test above on purpose: these two keys are
+// the pair whose switch cases a careless merge would collapse into one, and two
+// independent tests are what would catch that.
+func TestParseConfig_MaxCLIBytes(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       *int64
+	}{
+		{"plain byte count", "max-cli-bytes = 536870912", int64p(536870912)},
+		{"zero disables the cap explicitly", "max-cli-bytes = 0", int64p(0)},
+		{"negative rejected", "max-cli-bytes = -1", nil},
+		{"non-numeric rejected", "max-cli-bytes = 512MiB", nil},
+		{"empty rejected", "max-cli-bytes =", nil},
+		{"case-insensitive key", "MAX-CLI-BYTES = 1024", int64p(1024)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parse(t, tc.body).maxCLIBytes
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("maxCLIBytes = %d, want unset (value rejected)", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("maxCLIBytes unset, want %d", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("maxCLIBytes = %d, want %d", *got, *tc.want)
+			}
+		})
+	}
+	// The pair must not alias: setting one key must leave the other unset. This is
+	// the assertion that fails if the two switch cases are ever collapsed.
+	if got := parse(t, "max-cli-bytes = 4096"); got.maxExtractBytes != nil {
+		t.Errorf("max-cli-bytes also set maxExtractBytes = %d, want unset", *got.maxExtractBytes)
+	}
+	if got := parse(t, "max-extract-bytes = 4096"); got.maxCLIBytes != nil {
+		t.Errorf("max-extract-bytes also set maxCLIBytes = %d, want unset", *got.maxCLIBytes)
+	}
+}
+
+// -max-extract-bytes follows the same CLI-over-config-over-default precedence,
+// with one wrinkle the others do not have: 0 is a real value (cap off), so
+// "config said 0" and "config said nothing" must stay distinguishable.
+func TestPrecedenceMaxExtractBytes(t *testing.T) {
+	withFile := config{maxExtractBytes: int64p(1024)}
+	if got := withFile.effectiveMaxExtractBytes(2048, true); got != 2048 {
+		t.Errorf("explicit CLI should win, got %d", got)
+	}
+	if got := withFile.effectiveMaxExtractBytes(0, false); got != 1024 {
+		t.Errorf("config value should apply when CLI unset, got %d", got)
+	}
+	// An explicit CLI 0 turns the cap off even though the file enabled it.
+	if got := withFile.effectiveMaxExtractBytes(0, true); got != 0 {
+		t.Errorf("explicit CLI 0 should disable the cap, got %d", got)
+	}
+	// A config 0 is "set", not "absent" — the pointer is what keeps them apart.
+	if got := (config{maxExtractBytes: int64p(0)}).effectiveMaxExtractBytes(0, false); got != 0 {
+		t.Errorf("config 0 should apply, got %d", got)
+	}
+	if got := (config{}).effectiveMaxExtractBytes(0, false); got != 0 {
+		t.Errorf("empty config should leave the cap off, got %d", got)
+	}
+}
+
+// -max-cli-bytes follows the same CLI-over-config-over-default precedence, with
+// the same wrinkle the other numeric key has: 0 is a real value (cap off), so
+// "config said 0" and "config said nothing" must stay distinguishable.
+func TestPrecedenceMaxCLIBytes(t *testing.T) {
+	withFile := config{maxCLIBytes: int64p(1024)}
+	if got := withFile.effectiveMaxCLIBytes(2048, true); got != 2048 {
+		t.Errorf("explicit CLI should win, got %d", got)
+	}
+	if got := withFile.effectiveMaxCLIBytes(0, false); got != 1024 {
+		t.Errorf("config value should apply when CLI unset, got %d", got)
+	}
+	if got := withFile.effectiveMaxCLIBytes(0, true); got != 0 {
+		t.Errorf("explicit CLI 0 should disable the cap, got %d", got)
+	}
+	if got := (config{maxCLIBytes: int64p(0)}).effectiveMaxCLIBytes(0, false); got != 0 {
+		t.Errorf("config 0 should apply, got %d", got)
+	}
+	if got := (config{}).effectiveMaxCLIBytes(0, false); got != 0 {
+		t.Errorf("empty config should leave the cap off, got %d", got)
+	}
+}
+
 func TestVersionLine(t *testing.T) {
 	oldV, oldB := Version, BuildTime
 	Version, BuildTime = "1.4.0", "2026-07-02T00:00:00Z"
@@ -229,5 +342,25 @@ func TestParseConfig_HugeTailBounded(t *testing.T) {
 	body := "version-override = " + validSHA + "\n" + strings.Repeat("x=y\n", 100000)
 	if got := parse(t, body).versionOverride; got != validSHA {
 		t.Fatalf("versionOverride = %q, want %q", got, validSHA)
+	}
+}
+
+// A negative -max-extract-bytes is normalised to 0 (cap disabled) rather than
+// reaching the daemon as a negative. The config path already rejects a negative
+// so a typo cannot silently enable a cap; the flag had no validation, and the two
+// paths disagreeing about the same input is the gap this closes.
+func TestEffectiveMaxExtractBytesNormalisesNegative(t *testing.T) {
+	var cfg config
+	if got := cfg.effectiveMaxExtractBytes(-1, true); got != 0 {
+		t.Errorf("effectiveMaxExtractBytes(-1, true) = %d, want 0", got)
+	}
+	if got := cfg.effectiveMaxExtractBytes(1024, true); got != 1024 {
+		t.Errorf("effectiveMaxExtractBytes(1024, true) = %d, want 1024", got)
+	}
+	// The config value still wins when the flag was not set.
+	n := int64(4096)
+	cfg.maxExtractBytes = &n
+	if got := cfg.effectiveMaxExtractBytes(0, false); got != 4096 {
+		t.Errorf("config value = %d, want 4096", got)
 	}
 }

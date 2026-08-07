@@ -297,6 +297,33 @@ func TestSweptNameRuleIsShared(t *testing.T) {
 	}
 }
 
+// The download blob prefix is the OTHER housekeeping name rule, and it needs the
+// same sharing. Its failure is the mirror of the sweep's: a version with this
+// prefix is not deleted, it is exempted from pruneCLI's census forever — never
+// counted against -cli-keep, never evicted, and not swept either, since neither
+// pass claims the prefix by construction.
+func TestDownloadBlobNameRuleIsShared(t *testing.T) {
+	for _, name := range []string{".blob-x", ".blob-", ".blob-123456"} {
+		if !isDownloadBlobName(name) {
+			t.Errorf("isDownloadBlobName(%q) = false, want true", name)
+		}
+		if err := validateCLIVersion(name); err == nil {
+			t.Errorf("validateCLIVersion(%q) = nil, but pruneCLI would never count it", name)
+		}
+		// It must ALSO stay outside the sweep — that is the invariant the blob
+		// itself relies on, and widening isSweptName to cover it would silently
+		// re-break the retry.
+		if isSweptName(name) {
+			t.Errorf("isSweptName(%q) = true; the sweep must not claim the download blob", name)
+		}
+	}
+	for _, name := range []string{"1.0.86", "latest", "blob-x", ".blobby"} {
+		if isDownloadBlobName(name) {
+			t.Errorf("isDownloadBlobName(%q) = true, want false", name)
+		}
+	}
+}
+
 func TestIsSingleComponent(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -327,7 +354,7 @@ func TestIsSingleComponent(t *testing.T) {
 
 // httpGet propagates a dial failure from client.Get.
 func TestHTTPGetConnectionError(t *testing.T) {
-	if _, err := httpGet(refusedURL(t)); err == nil {
+	if _, err := fetchBytes(t, refusedURL(t)); err == nil {
 		t.Error("httpGet to a refused port succeeded, want error")
 	}
 }
@@ -340,7 +367,7 @@ func TestHTTPGetTruncatedBody(t *testing.T) {
 		_, _ = w.Write([]byte("short"))
 	}))
 	defer srv.Close()
-	if _, err := httpGet(srv.URL); err == nil {
+	if _, err := fetchBytes(t, srv.URL); err == nil {
 		t.Error("httpGet with truncated body succeeded, want error")
 	}
 }
