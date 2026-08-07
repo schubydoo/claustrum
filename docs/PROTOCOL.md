@@ -1288,8 +1288,11 @@ Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
-Four `-install` behaviours are easy to miss — the first two are bounds the
-reference does not appear to apply, and both DO surface a `cliError`:
+Four `-install` behaviours are easy to miss. The first two are bounds the
+reference does not appear to apply; the last two have no frame at all. Only the
+download bound *always* surfaces a `cliError` — a timed-out runnability probe on
+the cache-hit check often surfaces as the **absence** of an error, since the
+install simply proceeds and succeeds on a fresh binary:
 
 - **The download is bounded at 5 minutes — intentional divergence (D12).** The
   reference showed no bound at or below 400 s: measured against a server that
@@ -1310,6 +1313,12 @@ reference does not appear to apply, and both DO surface a `cliError`:
   check a timeout is indistinguishable from a cache miss and the install simply
   proceeds — ending at `"cli <v> missing and no --cli-url or --cli-zst provided"`
   only when no source flag was given, which a plainly missing file produces too.
+  **With `-cli-url` present that shape emits no `cliError` at all**: the run
+  downloads, installs, passes the probe on the fresh binary and reports
+  `cliWasPresent:false`. That is the divergence at its purest — claustrum recovers
+  silently from a stale hanging CLI, where the reference was still wedged on it
+  when the harness stopped the probe. The observable is the absence of an error,
+  not the presence of one.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
   on a fully successful install. An extracted CLI that fails the `--version`
   runnability check still costs you the blob. A blob that is not valid zstd is

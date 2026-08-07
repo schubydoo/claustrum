@@ -846,7 +846,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   This bounds the reference's deadline at *above 45 s*, not at *absent*.
 - **No observable delta on any honest path.** A CLI that answers `--version`
   behaves identically. The divergence appears only when a CLI never answers, and
-  there the reference wedges `-install` indefinitely.
+  there the reference was still wedged when the harness killed it at 45 s.
 - **Trade:** matching means reintroducing an unbounded hang in `-install`, which
   is why this stays.
 - ⚠️ **There are TWO probe sites and they fail differently, so "the second
@@ -861,6 +861,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   `installed cli at <path> is not runnable`. An earlier version of this entry
   quoted the first string as *the* timeout observable; it is neither unique to a
   timeout nor reachable on the common path.
+- **The most reachable shape emits no `cliError` at all.** A cached CLI that hangs
+  on `--version` fails the cache-hit guard after 15 s and drops into `ensureCLI`;
+  with `-cli-url` present the run downloads, installs, passes the probe on the
+  fresh binary and reports `cliWasPresent:false`. So the divergence at its purest
+  is claustrum recovering *silently* from a stale hanging CLI, where the reference
+  was still wedged on it when the harness stopped the probe — the observable is
+  the **absence** of an error, not the presence of one.
 
 ### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
 
@@ -882,7 +889,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   and the D10 measurement supplies exactly that positive case on the same path.
 - **No observable delta on any honest path.** A server that sends its body
   behaves identically. The divergence appears only against a stalled or
-  black-holed download, where the reference waits indefinitely.
+  black-holed download, where the reference was still waiting at 400 s.
 - **Trade:** matching means an `-install` that can hang forever on a network path
   the caller does not control.
 - ⚠️ **This bounds the exchange, not the throughput.** A server dribbling bytes
