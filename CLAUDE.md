@@ -161,7 +161,12 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `os.CreateTemp` limitation — the per-user session dir is the confinement). See
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
 - **A connection's requests dispatch concurrently** — replies can return out of
-  order, matching the reference. Don't serialize them.
+  order, matching the reference. Don't serialize them. The per-request goroutine
+  **recovers from panics**, replying `-32603 "recovered panic: <v>"`. That frame
+  is **claustrum's own and is NOT a parity claim** — the path is unreachable, so
+  no client can observe it and it cannot diverge from anything. Don't add a golden
+  for it (the battery never exercises it) and don't treat it as a wire contract.
+  It is provoked in tests through the `dispatchRequest` seam.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

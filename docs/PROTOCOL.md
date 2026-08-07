@@ -212,9 +212,26 @@ value instead. Probe-verified against the reference at `5db5e4a`.
 | `-32600` | `Invalid JSON-RPC version` — `jsonrpc` absent or != `"2.0"` |
 | `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
-| `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
+| `-32603` | internal error (e.g. `open <path>: no such file or directory`); also a **recovered handler panic** → `recovered panic: <v>`, see below |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` — `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
 | `-32001` | unauthorized |
+
+### Handler panic recovery
+
+The per-request goroutine wraps dispatch in `recover()`, so a panic in any
+handler is caught rather than crashing the daemon. The reply is
+`{"error":{"code":-32603,"message":"recovered panic: <v>"}}` and the daemon logs
+`[Server] recovered panic: method=<m> id=<id>: <v>`.
+
+⚠️ **This frame is claustrum's own, and it is the one entry in this document that
+is not a statement about the wire.** No input is known to reach a handler panic
+(extensive fuzzing found none, and claustrum's own panic sites are each either an
+unreachable stdlib guard or an already-bounds-guarded slice), so the path is
+unreachable and no client can provoke the frame. `-32603` is `codeInternal`, the
+JSON-RPC 2.0 standard *Internal error* code; the message prefix, the log line and
+the id rendering are claustrum's own conventions. It is documented here so an
+operator who somehow sees it knows what it means — not as a compatibility
+guarantee, and not as a claim about any other implementation.
 
 ### Validation precedence (probe-verified)
 
@@ -502,6 +519,28 @@ Errors:
   be an absolute, non-root path: …"}` — rejected before the archive is opened, so
   the archive is **not** consumed. (`fileCount` has no `omitempty`, so it is on
   the wire as `0`; this row omitted it until #231.)
+
+  **"Root" is the platform's own definition.** The test is
+  `filepath.Dir(filepath.Clean(destDir)) == filepath.Clean(destDir)` — "has no
+  parent" — which is `/` on Unix and a **drive root (`C:\`) or a UNC share root
+  (`\\server\share\`)** on Windows. It used to compare against the literal string
+  `"/"`, which is a Unix-only notion: `C:\` cleans to `C:\`, never to `"/"`, and
+  `filepath.IsAbs` accepts it — so a Windows volume root passed the gate and
+  reached the `os.RemoveAll` that wipes `destDir`. Fixed in #225; a trailing
+  separator (a doubled `C:\\`, or `//`) cannot slip past by shape either, because
+  the path is cleaned first.
+
+  **Which arm fires is not observable.** The root test and the `filepath.IsAbs`
+  test share one branch and one message, so `C:\` is refused on Unix too — there
+  by the *non-absolute* arm, since `IsAbs` on Unix is a leading-`/` test — with a
+  byte-identical error. What genuinely varies by OS is the **accepted** set: the
+  same `destDir` can be absolute with a parent on one platform and not on the
+  other, so a client can see one platform unpack a path the other refuses.
+
+  Whether the reference refuses a root `destDir` at all is **not measured** —
+  filed here as neither parity nor divergence, because the guard's justification
+  is the consequence on our side (a recursive delete of the volume) rather than a
+  claim about the reference.
 - **`destDir` is, or contains, the home directory** →
   `{success:false,fileCount:0,error:"destDir must not be or contain the home directory: …"}`
   — also rejected before the archive is opened. **Intentional divergence** (D2):
@@ -862,8 +901,15 @@ unknown id is not an error):
       the only round value in it. The ceiling is not new in `5db5e4a`: `7c2f88d`,
       the build that added the method, answers at ~30 s for the same input.
     - **`escalate`** (default `true`) decides what happens if the process is still
-      alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
-      and add `"escalated":true` to the reply. `false` → leave the process running
+      alive after the grace. `true` → **escalate** to `SIGKILL`, wait up to
+      **7 s** for the reap, and add `"escalated":true` to the reply. That 7 s is
+      itself measured against the reference (2026-08-06, black-box): with
+      `timeoutMs: 500` against a child `SIGKILL` cannot reap, the reference
+      replies at 7.51 s. It is client-observable twice over — in when the reply
+      arrives, and in whether a child reaped between 5 s and 7 s reports
+      `"died":true` rather than `false`. A pipe-holding grandchild cannot measure
+      it: the exit drain closes the read ends at 5 s first, so both binaries
+      answer at 5.01 s regardless. `false` → leave the process running
       and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
       The escalation `SIGKILL` goes to the **process group**, so it sweeps up the
       child tree the graceful signal spared — and it is sent even when the
