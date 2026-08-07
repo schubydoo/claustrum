@@ -57,6 +57,10 @@ type config struct {
 	// files.extract_tar, whose caller is Claude Desktop, which owns the argv — so
 	// a flag alone would be unreachable for the people who need it.
 	maxExtractBytes *int64
+	// maxCLIBytes mirrors -max-cli-bytes; nil means "not set in the file". The
+	// config key matters more than the flag for the same reason: Claude Desktop
+	// owns the argv on the -install invocation too.
+	maxCLIBytes *int64
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
@@ -130,12 +134,23 @@ func applyConfigKey(cfg *config, key, val string) {
 		if val != "" && isPrintableASCII(val) {
 			cfg.metricsAddr = val
 		}
+	// ⚠️ These two cases are deliberately written out in full rather than sharing
+	// a body. They arrived on separate branches whose conflict hunks share the
+	// parse line as context, so the tempting union — an empty `case
+	// "max-extract-bytes":` stacked above `case "max-cli-bytes":` — reads like a
+	// fallthrough and is not one. Go would make the first key a silent no-op and
+	// let the second set both caps, and gofmt / vet / lint / the suite all pass.
 	case "max-extract-bytes":
 		// A plain byte count; 0 disables the cap (the default). Negative values
 		// and anything unparseable are rejected, so a typo can never silently
 		// enable a cap the operator did not ask for.
 		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
 			cfg.maxExtractBytes = &n
+		}
+	case "max-cli-bytes":
+		// Same shape as max-extract-bytes above, same reasoning.
+		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
+			cfg.maxCLIBytes = &n
 		}
 	}
 	// Unknown keys are intentionally ignored (forward-compatibility).
@@ -195,6 +210,22 @@ func (cfg config) effectiveMaxExtractBytes(cliVal int64, cliSet bool) int64 {
 	// Normalised to the disabled value, with a line saying so.
 	if cliVal < 0 {
 		logWarnf("[Server] -max-extract-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		return 0
+	}
+	return cliVal
+}
+
+// effectiveMaxCLIBytes applies the same precedence for -max-cli-bytes, and the
+// same negative handling — the asymmetry fixed for max-extract-bytes would
+// otherwise be reintroduced here by its sibling.
+func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
+	if !cliSet && cfg.maxCLIBytes != nil {
+		return *cfg.maxCLIBytes
+	}
+	if cliVal < 0 {
+		// [Install], not [Server]: this cap governs zstdDecompress and fetchToFile,
+		// and effectiveMaxCLIBytes is reached only from the -install arm.
+		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
 		return 0
 	}
 	return cliVal

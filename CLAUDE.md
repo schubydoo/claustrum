@@ -178,6 +178,17 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `io.LimitReader` entirely — do not "simplify" it into a huge limit, because the
   `max-total+1` arithmetic is what defines the boundary. Divergence D3; see
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md) + [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
+- **The `-install` CLI size cap is OFF by default (D10).** `maxCLIBytes` governs
+  both the decompressed CLI and the download body; measured on both paths, the
+  reference took a 600 MiB payload all the way to the runnability check, so a
+  non-zero default fails an install the reference completes — and Claude Desktop
+  owns the argv on `-install`, so there is no way through. Opt in with
+  `-max-cli-bytes` or the `max-cli-bytes` key in `claustrum.conf`. Disabled
+  bypasses **both** `io.LimitReader`s entirely — do not "simplify" either into a
+  huge limit, because the `cap+1` arithmetic is what defines the boundary. The
+  blob is **streamed, never buffered** (a path, not a `[]byte`, so the staging
+  retry can re-read it); that is what keeps "cap off" from meaning "unbounded
+  memory".
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

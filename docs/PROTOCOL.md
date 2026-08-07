@@ -1271,8 +1271,8 @@ up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\
 against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
-`metrics-addr`, `listen-pipe` and `max-extract-bytes` defaults (precedence:
-explicit CLI flag > config > default). See
+`metrics-addr`, `listen-pipe`, `max-extract-bytes` and `max-cli-bytes` defaults
+(precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1280,7 +1280,8 @@ hardening.
 
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
-          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>]
+          [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
+          [-max-cli-bytes <n>]
 ```
 
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
@@ -1311,6 +1312,19 @@ Checksum + error framing (probe-verified):
   (`checksum mismatch: expected=, actual=<sha>`).
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
+- **A decompressed CLI (or a download body) over the opt-in cap** →
+  `cliError "decompressing: decompressed CLI exceeds <n> bytes"` /
+  `"response exceeds <n> bytes"`. **Not reachable by default** — the cap is `0`
+  (off), matching the reference. **Intentional divergence** (D10), enabled with
+  `-max-cli-bytes <n>` or `max-cli-bytes = <n>` in `claustrum.conf`. Measured at
+  `5db5e4a` on the `-cli-zst` path with a 600 MiB payload (21 KB compressed): the
+  reference decompressed all of it and failed only at the runnability check
+  (`installed cli at <path> is not runnable`), which claustrum now answers
+  identically. The `-cli-url` half was measured separately with a 629 MB
+  incompressible body — same result, and the cap-on control answers
+  `download failed: response exceeds 536870912 bytes`, proving the probe reaches
+  that limit. (Both disprove a cap at or below ~600 MiB; neither proves the
+  reference has none above it.)
 - A cli-dir that cannot be created is reported with a **`mkdir cli dir: `**
   prefix, e.g. `mkdir cli dir: mkdir /ro/nested: permission denied`.
 
@@ -1319,6 +1333,21 @@ Staging and cleanup (probe-verified):
 - The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
   into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
   matches `.fetch-*`, so an interrupted install's litter is reclaimed.
+- A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`**, and the
+  different prefix is deliberate — the sweep must **not** claim it. The sweep runs
+  after every attempted install, so a `.fetch-*` blob could be removed by a
+  concurrent install's sweep together with the staging file, leaving the
+  retry-on-`errStagingVanished` with no source to re-read. The orphan **prune**
+  skips it for the same reason: `pruneCLI` counts every non-directory in the
+  cli-dir as a CLI version, so an in-flight blob would sort newest, consume a
+  `-cli-keep` slot and evict a real binary. For the same reason a `-cli-version`
+  starting `.blob-` is **refused** (`cli version "…" collides with the install
+  download blob`) — it would install fine and then be exempt from the prune census
+  forever, never counted against `-cli-keep` and never evicted. That is the mirror
+  of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
+  every path; only a SIGKILLed download leaves it behind, and nothing reclaims
+  that. (Claustrum-only: the reference buffers the download in
+  memory, so it has no such file. No frame changes.)
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as

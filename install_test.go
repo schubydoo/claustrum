@@ -68,16 +68,173 @@ func TestZstdDecompress(t *testing.T) {
 	dir := t.TempDir()
 	payload := []byte("hello zstd payload")
 	dest := filepath.Join(dir, "out")
-	if err := zstdDecompress(zstdOf(t, payload), dest); err != nil {
+	if err := zstdDecompressBytes(t, zstdOf(t, payload), dest); err != nil {
 		t.Fatalf("decompress: %v", err)
 	}
 	got, _ := os.ReadFile(dest)
 	if string(got) != string(payload) {
 		t.Errorf("decompressed = %q, want %q", got, payload)
 	}
-	if err := zstdDecompress([]byte("not a zstd stream"), filepath.Join(dir, "x")); err == nil {
+	if err := zstdDecompressBytes(t, []byte("not a zstd stream"), filepath.Join(dir, "x")); err == nil {
 		t.Error("expected error decompressing non-zstd input")
 	}
+}
+
+// fetchBytes runs the production download path and returns the bytes it landed,
+// so the assertions below keep testing what they always did now that
+// fetchToFile streams to a file instead of returning a buffer.
+func fetchBytes(t *testing.T, url string) ([]byte, error) {
+	t.Helper()
+	path, _, err := fetchToFile(url, t.TempDir())
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.Remove(path) }()
+	return os.ReadFile(path)
+}
+
+// zstdDecompressBytes stages blob as a file and decompresses it, for the same
+// reason: zstdDecompress now takes a path so ensureCLI can re-read it on retry.
+func zstdDecompressBytes(t *testing.T, blob []byte, dest string) error {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "blob.zst")
+	if err := os.WriteFile(src, blob, 0o600); err != nil {
+		t.Fatalf("stage blob: %v", err)
+	}
+	return zstdDecompress(src, dest)
+}
+
+// fetchToFile must land the body on disk and return the sha256 it computed
+// WHILE streaming — the point of the change is that no caller ever holds the
+// blob, so the hash cannot come from a second pass over a buffer.
+func TestFetchToFileStreamsAndHashes(t *testing.T) {
+	body := bytes.Repeat([]byte("z"), 128*1024)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	path, sum, err := fetchToFile(srv.URL, dir)
+	if err != nil {
+		t.Fatalf("fetchToFile: %v", err)
+	}
+	defer func() { _ = os.Remove(path) }()
+
+	if got := filepath.Dir(path); got != dir {
+		t.Errorf("temp landed in %s, want %s (beside the install destination)", got, dir)
+	}
+	want := sha256.Sum256(body)
+	if sum != hex.EncodeToString(want[:]) {
+		t.Errorf("streamed sum = %s, want %s", sum, hex.EncodeToString(want[:]))
+	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read temp: %v", err)
+	}
+	if !bytes.Equal(onDisk, body) {
+		t.Errorf("temp holds %d bytes, want %d", len(onDisk), len(body))
+	}
+}
+
+// An unusable target directory must NOT turn into a download failure. ensureCLI
+// creates the cli-dir after the download and reports its own "mkdir cli dir: "
+// error there; failing here would move that error to a different string on a
+// reachable path, so fetchToFile falls back to the OS temp dir instead.
+func TestFetchToFileFallsBackWhenDirUnusable(t *testing.T) {
+	body := []byte("payload")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	path, _, err := fetchToFile(srv.URL, missing)
+	if err != nil {
+		t.Fatalf("fetchToFile with an unusable dir must fall back, got: %v", err)
+	}
+	defer func() { _ = os.Remove(path) }()
+	if filepath.Dir(path) == missing {
+		t.Errorf("temp claims to be in the missing dir %s", missing)
+	}
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, body) {
+		t.Errorf("fallback temp = %q (err %v), want %q", got, err, body)
+	}
+}
+
+// A body over the cap must leave nothing behind: the temp is partially written
+// by the time the limit is detected.
+func TestFetchToFileRemovesTempWhenOverCap(t *testing.T) {
+	old := maxCLIBytes
+	maxCLIBytes = 5
+	defer func() { maxCLIBytes = old }()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 64))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	if _, _, err := fetchToFile(srv.URL, dir); err == nil {
+		t.Fatal("over-cap body succeeded, want an error")
+	}
+	left, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	if len(left) != 0 {
+		t.Errorf("%d file(s) left behind after an over-cap download, want 0", len(left))
+	}
+}
+
+// The cap is OFF by default, which is the parity position: measured at 5db5e4a
+// with a 600 MiB payload on the -cli-zst path, the reference decompressed all of
+// it and failed only at the runnability check, while a capped claustrum answered
+// "decompressing: decompressed CLI exceeds 536870912 bytes" — a cliError the
+// reference cannot produce. Both halves were measured: on the -cli-url path a
+// 629 MB incompressible body downloads fully on both binaries with the cap off,
+// and the cap-on control answers "download failed: response exceeds 536870912
+// bytes", proving the probe reaches the download limit at all.
+//
+// This asserts the default itself, because that constant IS the divergence;
+// every other test here overrides it.
+func TestCLISizeCapDefaultsOff(t *testing.T) {
+	if maxCLIBytes != 0 {
+		t.Fatalf("maxCLIBytes default = %d, want 0 (cap off = reference parity)", maxCLIBytes)
+	}
+
+	// Both disabled paths must copy straight through rather than through a
+	// LimitReader, so neither truncates.
+	t.Run("zstd_decompress_whole", func(t *testing.T) {
+		dir := t.TempDir()
+		body := bytes.Repeat([]byte("x"), 4096)
+		dest := filepath.Join(dir, "whole")
+		if err := zstdDecompressBytes(t, zstdOf(t, body), dest); err != nil {
+			t.Fatalf("decompress with cap off: %v", err)
+		}
+		got, err := os.ReadFile(dest)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if len(got) != len(body) {
+			t.Errorf("decompressed %d bytes, want %d (cap-off path must not truncate)", len(got), len(body))
+		}
+	})
+
+	t.Run("download_whole", func(t *testing.T) {
+		body := bytes.Repeat([]byte("y"), 4096)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(body)
+		}))
+		defer srv.Close()
+		got, err := fetchBytes(t, srv.URL)
+		if err != nil {
+			t.Fatalf("download with cap off: %v", err)
+		}
+		if len(got) != len(body) {
+			t.Errorf("got %d bytes, want %d (cap-off path must not truncate)", len(got), len(body))
+		}
+	})
 }
 
 // zstdDecompress must reject a blob that decompresses beyond the cap. Without
@@ -95,13 +252,13 @@ func TestZstdDecompressSizeLimit(t *testing.T) {
 	dir := t.TempDir()
 	// 1025 bytes decompressed — one byte over the 1 KB cap.
 	bomb := zstdOf(t, bytes.Repeat([]byte("x"), 1025))
-	if err := zstdDecompress(bomb, filepath.Join(dir, "over")); err == nil {
+	if err := zstdDecompressBytes(t, bomb, filepath.Join(dir, "over")); err == nil {
 		t.Error("expected error for oversized zstd payload, got nil")
 	}
 
 	// Exactly at the cap (1024 bytes) must succeed.
 	ok := zstdOf(t, bytes.Repeat([]byte("x"), 1024))
-	if err := zstdDecompress(ok, filepath.Join(dir, "at")); err != nil {
+	if err := zstdDecompressBytes(t, ok, filepath.Join(dir, "at")); err != nil {
 		t.Errorf("zstdDecompress at cap: %v", err)
 	}
 }
@@ -156,11 +313,11 @@ func TestHTTPGet(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b, err := httpGet(srv.URL + "/ok")
+	b, err := fetchBytes(t, srv.URL+"/ok")
 	if err != nil || string(b) != "body-bytes" {
 		t.Fatalf("httpGet ok = %q, %v", b, err)
 	}
-	if _, err := httpGet(srv.URL + "/missing"); err == nil {
+	if _, err := fetchBytes(t, srv.URL+"/missing"); err == nil {
 		t.Error("a non-200 response should error")
 	}
 
@@ -174,7 +331,7 @@ func TestHTTPGet(t *testing.T) {
 		}))
 		defer large.Close()
 
-		if _, err := httpGet(large.URL); err == nil {
+		if _, err := fetchBytes(t, large.URL); err == nil {
 			t.Error("expected error when response exceeds maxCLIBytes")
 		}
 	})
@@ -189,7 +346,7 @@ func TestHTTPGet(t *testing.T) {
 		}))
 		defer exact.Close()
 
-		b, err := httpGet(exact.URL)
+		b, err := fetchBytes(t, exact.URL)
 		if err != nil {
 			t.Fatalf("a response of exactly maxCLIBytes must succeed, got: %v", err)
 		}
@@ -221,9 +378,9 @@ func TestDetectLibc(t *testing.T) {
 }
 
 // TestDetectLibcWithTimeout verifies the probe returns promptly with a fallback
-// classification when `ldd` hangs, instead of blocking forever (HackerOne
-// #3793023). A runner that blocks until ctx is cancelled stands in for a stalled
-// ldd; detectLibcWith must still return within its deadline.
+// classification when `ldd` hangs, instead of blocking forever. A runner that
+// blocks until ctx is cancelled stands in for a stalled ldd; detectLibcWith must
+// still return within its deadline.
 func TestDetectLibcWithTimeout(t *testing.T) {
 	hung := func(ctx context.Context) ([]byte, error) {
 		<-ctx.Done() // mimic a stalled `ldd`: unblocks only when the deadline fires
@@ -645,6 +802,85 @@ func TestEnsureCLIErrorWrapping(t *testing.T) {
 	if !isRegularFile(badZst) {
 		t.Error("a blob that failed to decompress was consumed; it must be kept")
 	}
+	// A DIRECTORY at -cli-zst must still report "opening input:", and this is the
+	// case an os.Open alone does not catch: open succeeds on a directory on both
+	// Unix and Windows, EISDIR arriving only on the first Read. Asserted WITHOUT a
+	// -cli-checksum because that is the default -cli-zst shape (the reference never
+	// verifies that blob); with a checksum, sha256File's read would have caught it
+	// anyway, which is why the gap survived.
+	asDir := filepath.Join(dir, "adir.zst")
+	if err := os.Mkdir(asDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureCLI(installOpts{cliZst: asDir}, filepath.Join(dir, "out3")); err == nil ||
+		!strings.HasPrefix(err.Error(), "opening input:") {
+		t.Errorf("directory as zst = %v, want an 'opening input:' error", err)
+	}
+	// An EMPTY blob must NOT be rejected by that one-byte read: os.ReadFile
+	// succeeded on one, so io.EOF has to stay a non-failure. Measured, it gets all
+	// the way past decompress (an empty zstd stream yields no bytes) and fails at
+	// the runnability check — so the assertion is that it is NOT "opening input:",
+	// which is exactly the regression treating io.EOF as an error would cause.
+	emptyZst := filepath.Join(dir, "empty.zst")
+	if err := os.WriteFile(emptyZst, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureCLI(installOpts{cliZst: emptyZst}, filepath.Join(dir, "out4")); err == nil ||
+		strings.HasPrefix(err.Error(), "opening input:") {
+		t.Errorf("empty zst = %v, want a later failure, not 'opening input:'", err)
+	}
+}
+
+// The download blob must be invisible to BOTH cli-dir housekeeping passes, and
+// they fail differently. If the sweep claims it, a concurrent install removes the
+// blob the errStagingVanished retry re-reads — and can fail the first attempt
+// outright by landing between fetchToFile and zstdDecompress. If the prune
+// censuses it, the blob sorts newest, takes a -cli-keep slot and evicts a real
+// version. Escaping only the sweep converts the first failure into the second,
+// which is why this asserts both.
+func TestDownloadBlobSurvivesHousekeeping(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("payload"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	blobPath, _, err := fetchToFile(srv.URL, dir)
+	if err != nil {
+		t.Fatalf("fetchToFile: %v", err)
+	}
+	defer func() { _ = os.Remove(blobPath) }()
+
+	if isSweptName(filepath.Base(blobPath)) {
+		t.Fatalf("download blob %q matches isSweptName; the sweep would delete it", filepath.Base(blobPath))
+	}
+	// Belt and braces: run the real sweep and confirm the blob survives it.
+	sweepFetchTemps(dir)
+	if !isRegularFile(blobPath) {
+		t.Errorf("sweepFetchTemps removed the download blob %q", blobPath)
+	}
+
+	// Surviving the sweep is only half of it. pruneCLI has no name predicate of
+	// its own — it counts every non-directory in the cli-dir as a CLI version —
+	// so a blob that escapes the sweep is the first file claustrum creates that
+	// reaches the prune census. Being newest, it sorts to the front, takes a
+	// -cli-keep slot and evicts a real version instead.
+	realVersion := filepath.Join(dir, "1.0.0")
+	if err := os.WriteFile(realVersion, []byte("cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Make the blob the NEWEST entry, which is the in-flight-download case.
+	now := time.Now()
+	if err := os.Chtimes(realVersion, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	pruneCLI(dir, 1)
+	if !isRegularFile(realVersion) {
+		t.Error("pruneCLI evicted the real version; the download blob took its -cli-keep slot")
+	}
+	if !isRegularFile(blobPath) {
+		t.Errorf("pruneCLI removed the download blob %q, which a retry would re-read", blobPath)
+	}
 }
 
 func TestEnsureCLINoSource(t *testing.T) {
@@ -751,7 +987,7 @@ func TestDownloadStatusErrorWording(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := httpGet(srv.URL + "/missing")
+	_, err := fetchBytes(t, srv.URL+"/missing")
 	if err == nil {
 		t.Fatal("httpGet on a 404 returned no error")
 	}

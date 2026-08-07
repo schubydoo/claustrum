@@ -189,10 +189,14 @@ If the check reports drift:
 >   the parity position** — the reference applies no cap at any size the probe
 >   could reach, so a non-zero default would fail an extraction the reference
 >   completes.
+> - **D10** — the `-install` CLI size cap, `-max-cli-bytes` / the `max-cli-bytes`
+>   config key, governing both the decompressed CLI and the download body. **Off by
+>   default**, same reasoning as D3: measured, the reference takes a 600 MiB payload
+>   all the way to the runnability check.
 > - **CT-1** — `wantPid` adds `pid`/`startTime` to spawn/reattach replies.
 > - **CT-2** — `-keep-children` leaves children running across shutdown.
 > - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /
->   `metrics-addr` / `listen-pipe` / `max-extract-bytes`).
+>   `metrics-addr` / `listen-pipe` / `max-extract-bytes` / `max-cli-bytes`).
 > - **CT-5** — `-listen-pipe`, the additional Windows named-pipe transport.
 >
 > **Always-on and measured — a probe that reaches the path sees a real
