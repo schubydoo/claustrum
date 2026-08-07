@@ -147,8 +147,8 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   way to produce. Two `-install` knobs are off by default for the same reason:
   `-max-cli-bytes` (D10) caps the decompressed CLI and the download body, and
   `-cli-probe-timeout` (D11) bounds the `<cli> --version` runnability probe — measured, the
-  reference installs a CLI that answers in 90 s, so any deadline fails an install it
-  completes. Each also has a `claustrum.conf` key, which is the reachable one when Claude
+  reference installs a CLI that answers in 90 s, so any deadline at or below that fails an
+  install it completes. Each also has a `claustrum.conf` key, which is the reachable one when Claude
   Desktop owns the argv.
 - **Protocol extensions** (claustrum-only, opt-in — **additions**, *not* part of the reference
   contract it mimics): `process.spawn` / `process.reattach` accept `"wantPid":true`, which adds

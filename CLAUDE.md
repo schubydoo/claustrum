@@ -194,12 +194,15 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `<cli> --version` runnability probe
   (D11), the download at 5 minutes (D12), and, on linux only, the `ldd --version`
   libc probe at 5 s (tier item 5; `libc_other.go` skips the probe entirely off
-  linux). **D11's is OFF by default and opt-in via `-cli-probe-timeout` or the
+  linux) — so on linux three exist and **two are on by default**, while off linux
+  only two exist and one is on. **D11's is OFF by default and opt-in via
+  `-cli-probe-timeout` or the
   `cli-probe-timeout` key in `claustrum.conf`** — the config key is the reachable
   one, since Desktop owns the argv; disabled bypasses `context.WithTimeout`
   entirely, so do not "simplify" it into a huge duration. Everything below about
   D11 therefore describes what an operator opts INTO, measured against the old
-  hardcoded 15 s. D12's and the ldd bound are still unconditional.
+  hardcoded 15 s. D12's is still unconditional; the ldd bound is not flipped but is
+  linux-only and cannot fire on a musl host.
   D13 is **not** a bound — it is verify-before-decompress
   ordering, which no slow input trips. **No bound here is a hang detector**: each is
   a threshold, so an honest-but-slow input trips it too. For D11 and D12 the
@@ -220,10 +223,12 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   does still run).
   **Measured (reference):** it installs the 20 s CLI outright on the no-cache
   shape. **Derived:** on the cached shapes it should cache-hit and report
-  `cliWasPresent:true` having installed nothing, since its guard has no
-  cut-off — not separately measured. **Measured on the flip branch:** with the
-  deadline off, claustrum is likewise still running at 45 s against a CLI that
-  never answers, with an opted-in 15 s run and an instant CLI as the two controls. Also derived: a download slower than 5 minutes
+  `cliWasPresent:true` having installed nothing, since its guard has no cut-off at
+  or below 90 s — not separately measured, and what it does above 90 s is
+  unmeasured on both binaries. **Measured on the flip branch:** with the deadline
+  off, claustrum is likewise still running when cut at 45 s against a planted
+  `sleep 120` CLI, with an opted-in 15 s run and an instant CLI as the two
+  controls. Also derived: a download slower than 5 minutes
   (`http.Client.Timeout` bounds the whole exchange). The ldd bound's *value* delta is narrow —
   fallback and true value coincide except where `ldd` reports musl and the loader
   glob misses. But a **stalled** `ldd` makes it total on **any host without a musl

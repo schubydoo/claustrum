@@ -160,8 +160,12 @@ func applyConfigKey(cfg *config, key, val string) {
 	case "cli-probe-timeout":
 		// A Go duration ("20s", "2m"); 0 disables the deadline (the default).
 		// Negative and unparseable values are rejected, so a typo can never
-		// silently impose a deadline the reference does not have. A bare number
-		// is unparseable on purpose — "15" meaning 15ns would be a trap.
+		// silently impose a deadline the reference does not have. A bare number is
+		// unparseable on purpose — "15" meaning 15ns would be a trap — EXCEPT for
+		// zero: time.ParseDuration accepts "0", "+0", "-0" and "-0s", all of which
+		// reach d == 0 and pass the guard below. Harmless (zero is the disabled
+		// value either way), but it means "a bare number is always rejected" is
+		// not true, and "-0s" slips past the negative check as well.
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.cliProbeTimeout = &d
 		}

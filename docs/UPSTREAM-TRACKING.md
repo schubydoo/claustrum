@@ -197,14 +197,28 @@ If the check reports drift:
 >   `cli-probe-timeout` config key. **Off by default (`0` = no deadline), and OFF is
 >   the parity position** — measured, the reference was still running at 45 s
 >   against a CLI that never answers and INSTALLED one that answered at 90 s, so
->   any finite default fails an install the reference completes. ⚠️ **A probe that
+>   any default **at or below 90 s** fails an install the reference completes.
+>   (Above 90 s the reference is unmeasured; "no deadline at all" is the practical
+>   reading, not a result.) ⚠️ **A probe that
 >   sees a D11-shaped difference on a stock claustrum is drift, not D11** — check
 >   for a `cli-probe-timeout` key in `claustrum.conf` or a `-cli-probe-timeout`
->   flag first, **and confirm the value actually parses to a positive duration**:
->   a bare number or a negative leaves the deadline off, silently on the config
->   path and with only a stderr warning on the flag path, so a key being *present*
->   does not mean a deadline is *in force*. Once genuinely opted in, the three
->   surfaces below apply.
+>   flag first, **and confirm the value actually parses to a positive duration** —
+>   a key being *present* does not mean a deadline is *in force*, and the two paths
+>   fail differently:
+>   - **config key**, e.g. `cli-probe-timeout = 15` or `= -1s`: dropped **silently**,
+>     the run proceeds with no deadline and a normal `__INSTALL_RESULT__` line. This
+>     is the shape that looks like drift.
+>   - **flag**, e.g. `-cli-probe-timeout 15`: `flag.Duration` rejects it before any
+>     mode runs, so claustrum prints `invalid value "15" for flag
+>     -cli-probe-timeout: parse error` plus usage and **exits 2 with no facts line
+>     at all** (measured). A missing `__INSTALL_RESULT__` on claustrum is therefore
+>     a malformed flag, not a divergence — do not chase it as one.
+>   - `0`, `+0`, `-0` and `-0s` all parse to zero and are *accepted*, so they read as
+>     opted-in but leave the deadline off.
+>
+>   Once genuinely opted in, the three surfaces below apply — but note the same
+>   strings are also produced by a genuinely broken or absent CLI on both binaries,
+>   so a surface alone does not identify a timeout.
 > - **CT-1** — `wantPid` adds `pid`/`startTime` to spawn/reattach replies.
 > - **CT-2** — `-keep-children` leaves children running across shutdown.
 > - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /

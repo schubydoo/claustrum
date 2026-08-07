@@ -138,7 +138,7 @@ func main() {
 		cliKeep     = flag.Int("cli-keep", 3, "How many most-recent CLI versions to keep")
 		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 
-		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the `<cli> --version` runnability probe with this wall-clock deadline (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
+		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the <cli> --version runnability probe with this wall-clock `duration` (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
 	)
 	flag.Parse()
 	resolveVersion()

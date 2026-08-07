@@ -1291,10 +1291,11 @@ facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
 Five `-install` behaviours are easy to miss. Three are wall-clock bounds the
-reference does not appear to apply — but **only two of them are on by default**,
-and the third bounds the `libc` probe — while the last two have no frame at all.
-Of the two runnability/download bounds, only the download one is on by
-default: the runnability probe's deadline became opt-in (default off = no
+reference does not appear to apply: the `--version` runnability probe (D11), the
+download (D12), and — **on linux only** — the `libc` probe. **D11's is the one
+that is off by default**, so a stock claustrum applies two of the three on linux
+and one of the two that exist off it. The last two behaviours have no frame at
+all: the runnability probe's deadline became opt-in (default off = no
 deadline = parity) and everything the D11 bullet describes is reachable only once
 it is turned on. The download bound *always* surfaces a `cliError`; an opted-in
 runnability timeout on the cache-hit check can surface as the **absence** of an
@@ -1315,8 +1316,10 @@ left in place:
   stalled-download row was measured.)
 - **The `--version` runnability probe can be bounded, but is NOT by default —
   opt-in divergence (D11).** With `-cli-probe-timeout` unset (or `0`) the probe
-  runs with **no deadline at all**, which is the reference's observed behaviour and
-  therefore byte-identical. Everything below describes what an operator opts into
+  runs with **no deadline at all**, matching the reference on every input measured
+  (still running at 45 s on a CLI that never answers; installing one that answers
+  at 90 s). Above 90 s the reference is unmeasured, so this is parity with the
+  observed behaviour rather than a proof that it has no deadline at all. Everything below describes what an operator opts into
   by passing `-cli-probe-timeout <duration>` or setting the `cli-probe-timeout` key
   in `claustrum.conf`; the figures are the old hardcoded 15 s default, which is what
   shipped through 1.7.3.
@@ -1347,7 +1350,8 @@ left in place:
   the fresh binary and reports `cliWasPresent:false`. If the replacement is just as
   slow, both probes time out and the run ends after ~2× the deadline at `installed
   cli at <path> is not runnable`, with the cached binary left in place because the
-  rename is never reached. That is the divergence at its purest — an opted-in
+  rename is never reached. (**~2× measured once**, as 30 s at a 15 s deadline; on
+  the `-cli-url` shape the download time is added on top.) That is the divergence at its purest — an opted-in
   claustrum recovers silently from a stale hanging CLI, where the reference was
   still wedged on it when the harness stopped the probe. The observable is the
   absence of an error, not the presence of one. **At the default, none of this

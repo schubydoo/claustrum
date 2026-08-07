@@ -441,7 +441,8 @@ func sha256File(path string) (string, error) {
 //
 // and deleted the staged binary, leaving the cli-dir empty. That is why raising
 // the constant was rejected in favour of disabling it — every finite deadline
-// invents a boundary the reference does not have, it only moves where.
+// invents a boundary the reference was not observed to have — measured only at or
+// below 90 s; above that it is unmeasured on this path.
 //
 // The probe shipped bounded at a hardcoded 15 s and is the sibling of the
 // files.extract_tar and -install size caps, which were flipped the same way in

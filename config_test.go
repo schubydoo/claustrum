@@ -291,6 +291,11 @@ func TestParseConfig_CLIProbeTimeout(t *testing.T) {
 		// exception to it — harmless (0 means disabled either way) but real.
 		{"bare zero is accepted by Go's parser", "cli-probe-timeout = 0", durp(0)},
 		{"bare +0 likewise", "cli-probe-timeout = +0", durp(0)},
+		// "-0" and "-0s" are negative in spelling but parse to zero, so they pass
+		// the d >= 0 guard and are ACCEPTED rather than dropped. Pinned because
+		// "a negative is rejected" is otherwise read as covering them.
+		{"negative zero is accepted, not dropped", "cli-probe-timeout = -0", durp(0)},
+		{"negative zero with a unit likewise", "cli-probe-timeout = -0s", durp(0)},
 		{"non-duration rejected", "cli-probe-timeout = soon", nil},
 		{"empty rejected", "cli-probe-timeout =", nil},
 		{"case-insensitive key", "CLI-PROBE-TIMEOUT = 45s", durp(45 * time.Second)},
