@@ -328,6 +328,14 @@ func TestParseConfig_CLIProbeTimeout(t *testing.T) {
 	if got := parse(t, "max-cli-bytes = 4096"); got.cliProbeTimeout != nil {
 		t.Errorf("max-cli-bytes also set cliProbeTimeout = %s, want unset", *got.cliProbeTimeout)
 	}
+	// ...and against the OTHER duration key, which the int64 assertions above
+	// cannot cover. Unioning the two duration cases into one body that sets both
+	// fields is not a dead no-op — it is cross-contamination: opting into D11
+	// would silently switch D12's download bound on at the same value. That mutant
+	// passes gofmt, vet, golangci-lint and the whole suite without this line.
+	if got := parse(t, "cli-probe-timeout = 30s"); got.cliDownloadTimeout != nil {
+		t.Errorf("cli-probe-timeout also set cliDownloadTimeout = %s, want unset", *got.cliDownloadTimeout)
+	}
 }
 
 // -cli-probe-timeout follows the same CLI-over-config-over-default precedence as
@@ -403,6 +411,11 @@ func TestParseConfig_CLIDownloadTimeout(t *testing.T) {
 	}
 	if got := parse(t, "max-cli-bytes = 4096"); got.cliDownloadTimeout != nil {
 		t.Errorf("max-cli-bytes also set cliDownloadTimeout = %s, want unset", *got.cliDownloadTimeout)
+	}
+	// The mirror of the cross-assertion in TestParseConfig_CLIProbeTimeout; see
+	// the note there for why the int64 pair cannot stand in for it.
+	if got := parse(t, "cli-download-timeout = 10m"); got.cliProbeTimeout != nil {
+		t.Errorf("cli-download-timeout also set cliProbeTimeout = %s, want unset", *got.cliProbeTimeout)
 	}
 }
 
