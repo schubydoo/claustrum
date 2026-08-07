@@ -204,11 +204,13 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   and *how* depends on the shape — `installed cli at <path> is not runnable` with
   the staged binary deleted; or `cli <v> missing and no --cli-url or --cli-zst
   provided`; or **no error at all**, silently reinstalled. On `-cli-zst` the blob is
-  consumed whenever decompression succeeded, which includes the silent shape. Of
-  the shapes that attempt an install, the cached binary survives only when both
-  probes time out (the rename is never reached) — a fast replacement does replace
-  it; with no source flag `ensureCLI` still runs but returns before any install
-  step, so the cached binary survives (the orphan sweep does still run).
+  consumed whenever decompression succeeded, which includes the silent shape. The
+  cached binary survives **every** failure before the rename — both probes timing
+  out is one of them, and so are a 404, a checksum mismatch, a `mkdir cli dir:`
+  error and a bad-zstd blob, none of which reach the second probe at all. Only a
+  replacement that gets as far as the rename replaces it. With no source flag
+  `ensureCLI` still runs but returns before any install step (the orphan sweep
+  does still run).
   **Measured (reference):** it installs the 20 s CLI outright on the no-cache
   shape. **Derived:** on the cached shapes it should cache-hit and report
   `cliWasPresent:true` having installed nothing, since its guard has no 15 s
