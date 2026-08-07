@@ -194,6 +194,8 @@ If the check reports drift:
 > difference**, and that is expected, not drift:
 > - **D2** — a destructive path target that is or contains the home directory is
 >   refused (`files.extract_tar` `destDir`, `git.worktree_remove` `worktreePath`).
+> - **D3** is reserved by the open extract-cap PR and has no entry on `main` yet —
+>   the gap between D2 and D4 here is a reservation, not an omission.
 > - **D4** — `files.read` refuses a non-regular file.
 > - **D5** — every git invocation is capped at 60 s. **Two ways to probe this and
 >   see nothing:** a harness deadline under 60 s records "no reply" for both

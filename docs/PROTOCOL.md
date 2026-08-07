@@ -654,7 +654,8 @@ Errors:
   the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
   SIGKILLed process's exit error over the context error. The reference runs git
   with no deadline and simply blocks, so it never emits this. `git.status` has
-  the identical frame for the identical reason. See IMPROVEMENTS §5.
+  the identical frame for the identical reason. Intentional divergence **(D5)** —
+  see IMPROVEMENTS §5 and the D5 entry.
 
 #### git.worktree_create
 

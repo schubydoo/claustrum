@@ -423,14 +423,17 @@ consider them now that the harness proves parity, and document each as an
 **Most are opt-in; some are always-on, and the entry says which.** An always-on
 divergence needs a reason the opt-in shape does not work — usually that the thing
 it prevents is unrecoverable (D2) or that the reference's own behavior on that
-path is an **unbounded wait** rather than a frame (D4, D5). *Unbounded wait*, not
-"hang" — the reference recovers the moment the wait's cause clears, and saying
-otherwise is a correction D4 already had to make once.
+path is an **unbounded wait** rather than a frame (D4, D5) — **or that it is an
+accepted artifact no honest caller can reach, which is D9's case rather than a
+decision a flag would improve.** *Unbounded wait*, not "hang" — the reference
+recovers the moment the wait's cause clears, and saying otherwise is a correction
+D4 already had to make once.
 
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
 carries the evidence that was already in [`PROTOCOL.md`](PROTOCOL.md) rather than
-a new claim — **including, for D8, the explicit statement that no measurement of
-the reference exists on that path.**
+a new claim — **with one exception: D8's reference behaviour was unmeasured when
+this catalogue was written and was measured on 2026-08-06, so that entry does
+carry a new claim, and says so.**
 
 ### D1 · Re-harden `-cli-zst` checksum ✅ (Option A) — impact M / cost L
 
@@ -577,8 +580,10 @@ exactly how D2 nearly got reused.)*
   and `git.list_branches` the same cap surfaces as `-32603` with `err.Error()` =
   **`signal: killed`** (§5 above). Unreachable on the reference, so not a parity
   break — but it is ours and it is on the wire.
-- Documented in [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove` (and §5 for
-  the `signal: killed` arm).
+- Documented in [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`, and →
+  `git.list_branches` for the `signal: killed` arm — that bullet is the only
+  PROTOCOL record of the one claustrum-only *frame* in D5, and `git.status`
+  carries the identical frame for the identical reason.
 
 ### D6 · `-cli-version` must name a single path component ✅ (always-on) — impact H / cost L
 
