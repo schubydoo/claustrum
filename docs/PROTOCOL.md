@@ -155,8 +155,26 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock
 If the existing log cannot be replaced — a sticky directory holding another
 user's file — claustrum declines the log entirely and the daemon's output falls
 back to the launcher's inherited stdio, rather than writing into a file another
-user can read. That refusal is a claustrum-only hardening on an attack path the
-reference was not measured on; on every honest path the two are identical.
+user can read. **Intentional divergence (D8), and the reference is measured on
+this path as of 2026-08-06**: given a root-owned, world-writable
+`remote-server.log` in a `1777` directory, the reference **truncates it and
+writes its own diagnostics in**, where claustrum leaves it untouched. Control:
+the same fixture in a non-sticky directory, where both binaries unlink and
+recreate the log — so the difference is about the refused replacement, not about
+a daemon that failed to start.
+
+**Not reachable on the deployed path**, which is why it is always-on rather than
+opt-in: the socket directory is `~/.claude/remote/`, per-user and not
+world-writable, so the fallback never fires there and the two binaries behave
+identically. It fires only where the log's directory is shared.
+
+⚠️ **This is hardening, not a vulnerability, and the difference matters for how it
+is described.** Reaching it requires a local user who can already plant a file in
+that directory. Claustrum declines because a daemon should not write into a file
+it does not own — not because the reference is wrong. The precondition (a local
+user who can already plant files there) is the same class claustrum's own
+[SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md) puts
+out of scope.
 
 Unlike the socket and `daemon.token`, the log is **not removed on graceful
 shutdown** — it outlives the daemon so a post-mortem stays readable. The fixed
@@ -240,7 +258,7 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   or a non-object value (`"params":"x"` / `[…]`) — is also
   `-32602 Invalid params`; the daemon does not silently coerce or ignore the
   decode error.
-- **Unknown extra fields** *are* ignored — with one divergence in *how strictly*.
+- **Unknown extra fields** *are* ignored — with one divergence in *how strictly* (D9).
   claustrum binds `params` into one struct per namespace (`pathParams`,
   `gitParams`), so a field that is valid for the *namespace* but unused by *this*
   method still participates in decoding: a **type-mismatched** value there →
@@ -248,8 +266,8 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   The reference binds only the field the specific method reads and ignores the
   rest regardless of type, so it runs with defaults. A genuinely unknown key (in
   neither struct) is ignored by both. This only surfaces under adversarial params
-  — a real client never sends them; accepted divergence, found by differential
-  fuzzing.
+  — a real client never sends them; accepted divergence (D9), found by
+  differential fuzzing.
 
 ### A path must be valid UTF-8 to be addressable at all
 
@@ -432,9 +450,9 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
   `maxBytes` is honored verbatim, above or below that default — so the 256 KiB
   figure is a fallback, not a ceiling.
 - **Any non-regular file → `-32602 files.read: not a regular file`.** This is an
-  intentional divergence, and the only one on this method — see below.
+  intentional divergence (D4), and the only one on this method — see below.
 
-##### Non-regular files (intentional divergence)
+##### Non-regular files (intentional divergence, D4)
 
 claustrum refuses to read anything that is not a regular file. The reference does
 not, and the difference is visible two ways (probe-measured against `5db5e4a`):
@@ -636,7 +654,8 @@ Errors:
   the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
   SIGKILLed process's exit error over the context error. The reference runs git
   with no deadline and simply blocks, so it never emits this. `git.status` has
-  the identical frame for the identical reason. See IMPROVEMENTS §5.
+  the identical frame for the identical reason. Intentional divergence **(D5)** —
+  see IMPROVEMENTS §5 and the D5 entry.
 
 #### git.worktree_create
 
@@ -752,7 +771,7 @@ the daemon then seeds the new worktree:
   deleted the decoy and left `<repo>/wt` in place.** Parity, and alarming — send
   an absolute `worktreePath`. The reference client does: it tilde-expands every
   remote path before sending.
-- **`gitTimeout` does NOT authorise the deletion — claustrum-only.** (The cap is
+- **`gitTimeout` does NOT authorise the deletion — claustrum-only (D5).** (The cap is
   also softer than it reads: it waits on git's output pipe, so a git that spawns a
   surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
   on git is a claustrum divergence (the reference runs git with no deadline and
@@ -1224,8 +1243,9 @@ This exists so the desktop client treats an already-deployed claustrum as
 up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\S+)/`
 against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
 wire contract is untouched; `server.version` / `server.capabilities` still report
-claustrum's own `<id>`. The same file also carries `keep-children` and
-`metrics-addr` defaults (precedence: explicit CLI flag > config > default). See
+claustrum's own `<id>`. The same file also carries `keep-children`,
+`metrics-addr` and `listen-pipe` defaults (precedence: explicit CLI flag >
+config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1285,7 +1305,7 @@ Staging and cleanup (probe-verified):
   CLI was deleted and nothing replaced it, leaving an empty cli-dir. End states
   match the reference for every destination shape — absent, regular file, and
   non-empty directory.
-- **Divergence (claustrum-only hardening): `-cli-version` must name a single
+- **Divergence (claustrum-only hardening, D6): `-cli-version` must name a single
   path component.** That clearing step is an `os.RemoveAll` on
   `filepath.Join(cliDir, cliVersion)`, so a version that reaches outside the
   cli-dir deletes unrelated data recursively. Two ways it can, both measured
@@ -1313,9 +1333,9 @@ Staging and cleanup (probe-verified):
   The real client passes a bare version string (`1.0.86`, `2.0.0-beta.1`, a
   commit sha, `latest`, `1.0.86+build.5` — all measured as accepted), so every
   honest path is byte-identical. Same shape as the `remote-server.log` refusal
-  above and D1 below.
-- **Divergence (claustrum-only hardening): `-cli-version` must not collide with
-  the orphan sweep.** The sweep below claims `.fetch-*` and `*.zst`, and it runs
+  above (D8) and D1 below.
+- **Divergence (claustrum-only hardening, D7): `-cli-version` must not collide
+  with the orphan sweep.** The sweep below claims `.fetch-*` and `*.zst`, and it runs
   after *every* attempted install — so `-cli-version .fetch-x` or `1.0.zst`
   installs correctly and is deleted moments later in the same run. Measured at
   `5db5e4a`: reference **and** claustrum both finish with an **empty cli-dir and

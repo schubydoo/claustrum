@@ -412,10 +412,13 @@ const daemonLogName = "remote-server.log"
 // O_EXCL is the backstop. If the remove failed — a sticky directory holding
 // another user's file — the create fails too and this returns nil, so
 // daemonizeWithToken falls back to inherited stdio rather than writing the
-// daemon's output into a file someone else owns. That case is unmeasured on the
-// reference (its remove succeeded in the probe above, the directory not being
-// sticky), so it is a deliberate, attack-path-only divergence in the same class
-// as the -install checksum hardening: on any honest path the two are identical.
+// daemon's output into a file someone else owns. That case IS measured as of
+// 2026-08-06: in a sticky directory the reference truncates the foreign file and
+// writes into it. Declining is therefore a deliberate divergence, filed as D8 in
+// docs/IMPROVEMENTS.md. It is always-on rather than opt-in — unlike the -install
+// checksum hardening (D1), which is opt-in — because the trigger is unreachable
+// on the deployed path: the per-user session directory is not sticky, so no
+// honest caller reaches this branch at all.
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it
 // outlives the daemon, so a post-mortem is still readable.
