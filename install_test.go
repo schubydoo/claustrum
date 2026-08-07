@@ -413,6 +413,80 @@ func TestIsRunnable(t *testing.T) {
 	}
 }
 
+// setCLIDownloadTimeout sets the package-level download bound for one test and
+// restores it afterwards, so a failure cannot leak a bound into the rest of the
+// suite (every other fetchToFile caller here expects the default: none).
+func setCLIDownloadTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := cliDownloadTimeout
+	cliDownloadTimeout = d
+	t.Cleanup(func() { cliDownloadTimeout = old })
+}
+
+// D12: the download bound is opt-in and OFF by default, so an honest-but-slow
+// download completes — which is what the reference does (measured at 5db5e4a: it
+// was still downloading at 400 s against a server that never sends a body).
+//
+// The three arms discriminate against different mistakes. Arm 1 fails if the
+// bound is ever applied by default. Arm 2 fails if an opted-in bound stops being
+// applied. Arm 3 fails if the bound is applied with the wrong sign or unit — the
+// shapes that survived the first mutation run on D11's sibling, because asserting
+// only "rejected" cannot tell an applied deadline from one that always expires.
+func TestFetchToFile_DownloadTimeoutOptIn(t *testing.T) {
+	// Sends headers immediately, then stalls before the body. http.Client.Timeout
+	// covers the whole exchange, so this is what an honest-but-slow link looks
+	// like to it.
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		time.Sleep(600 * time.Millisecond)
+		_, _ = w.Write([]byte("payload-bytes"))
+	}))
+	defer slow.Close()
+
+	setCLIDownloadTimeout(t, 0)
+	if _, _, err := fetchToFile(slow.URL, t.TempDir()); err != nil {
+		t.Errorf("with the bound disabled (the default), a slow-but-honest download must succeed, got: %v", err)
+	}
+
+	setCLIDownloadTimeout(t, 100*time.Millisecond)
+	if _, _, err := fetchToFile(slow.URL, t.TempDir()); err == nil {
+		t.Error("with a 100ms bound opted in, a 600ms download must fail")
+	}
+
+	setCLIDownloadTimeout(t, 10*time.Second)
+	if _, _, err := fetchToFile(slow.URL, t.TempDir()); err != nil {
+		t.Errorf("a 600ms download must still succeed under a 10s opted-in bound, got: %v", err)
+	}
+}
+
+// The default must be 0 — no bound — because that is the parity position and the
+// whole point of the flip. Asserted on the package variable AND on the flag's
+// DECLARED default: moving a non-zero value into flag.Duration's default argument
+// ships a bounded binary while leaving the package variable at zero.
+func TestCLIDownloadTimeoutDefaultsOff(t *testing.T) {
+	if cliDownloadTimeout != 0 {
+		t.Fatalf("cliDownloadTimeout default = %s, want 0 (no bound = reference parity)", cliDownloadTimeout)
+	}
+	if got := (config{}).effectiveCLIDownloadTimeout(0, false); got != 0 {
+		t.Fatalf("resolved default = %s, want 0", got)
+	}
+	// The declared default, not the resolved one: a real claustrum.conf sets the
+	// resolved value legitimately, and a test reading it fails for a correct reason.
+	if _, exited := runMain(t, "-install"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	f := lastMainFlagSet.Lookup("cli-download-timeout")
+	if f == nil {
+		t.Fatal("main() did not register -cli-download-timeout")
+	}
+	if f.DefValue != "0s" {
+		t.Fatalf("-cli-download-timeout declared default = %q, want \"0s\" (no bound = reference parity)", f.DefValue)
+	}
+}
+
 func TestHTTPGet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ok" {

@@ -19,7 +19,8 @@ var lastMainFlagSet *flag.FlagSet
 // -install output doesn't pollute the test log.
 //
 // The -install and -serve arms of main() also WRITE package globals
-// (cliProbeTimeout, maxCLIBytes, maxExtractBytes) and never restore them, so
+// (cliProbeTimeout, cliDownloadTimeout, maxCLIBytes, maxExtractBytes) and never
+// restore them, so
 // without the save/restore below a `-install` run here leaks its resolved values
 // into every later test. Reproduced 2026-08-07: with a claustrum.conf holding
 // `cli-probe-timeout = 30s` beside a pre-built test binary, 4 of 6 -test.shuffle
@@ -37,9 +38,11 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// t.Cleanup, NOT the defer below: the defer runs when runMain returns, which
 	// would put the globals back before the caller can assert on what main()
 	// actually resolved. t.Cleanup still contains the leak to this one test.
-	oldProbe, oldMaxCLI, oldMaxExtract := cliProbeTimeout, maxCLIBytes, maxExtractBytes
+	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
+	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
 	t.Cleanup(func() {
-		cliProbeTimeout, maxCLIBytes, maxExtractBytes = oldProbe, oldMaxCLI, oldMaxExtract
+		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
+		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)

@@ -139,6 +139,8 @@ func main() {
 		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 
 		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the <cli> --version runnability probe with this wall-clock `duration` (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
+
+		cliDownload = flag.Duration("cli-download-timeout", 0, "Bound the whole -cli-url download exchange with this wall-clock `duration` (e.g. 10m). 0 (the default) means no bound, which is what the reference does; a non-zero value is an opt-in divergence that fails any download slower than it, honest or not. -install only. Claude Desktop owns the argv, so the cli-download-timeout key in claustrum.conf is usually the reachable way to set this.")
 	)
 	flag.Parse()
 	resolveVersion()
@@ -180,6 +182,9 @@ func main() {
 		// called from the runInstall path's two call sites (the cache-hit guard
 		// here, and stageAndInstall via ensureCLI), not handed an option struct.
 		cliProbeTimeout = cfg.effectiveCLIProbeTimeout(*cliProbe, cliSet["cli-probe-timeout"])
+		// Same reasoning: fetchToFile reads this deep in the download path rather
+		// than taking it through installOpts.
+		cliDownloadTimeout = cfg.effectiveCLIDownloadTimeout(*cliDownload, cliSet["cli-download-timeout"])
 		runInstall(installOpts{
 			cliDir: *cliDir, cliVersion: *cliVersion, cliURL: *cliURL,
 			cliChecksum: *cliChecksum, cliZst: *cliZst, cliKeep: *cliKeep,

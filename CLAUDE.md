@@ -190,22 +190,24 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   retry can re-read it); that is what keeps "cap off" from meaning "unbounded
   memory".
 - **`-install` applies wall-clock bounds the reference does not appear to, plus one
-  ordering difference.** Three exist — the
-  `<cli> --version` runnability probe
-  (D11), the download at 5 minutes (D12), and, on linux only, the `ldd --version`
-  libc probe at 5 s (tier item 5; `libc_other.go` skips the probe entirely off
-  linux) — so on linux three exist and **two are on by default**, while off linux
-  only two exist and one is on. **D11's is OFF by default and opt-in via
-  `-cli-probe-timeout` or the
-  `cli-probe-timeout` key in `claustrum.conf`** — the config key is the reachable
-  one, since Desktop owns the argv; disabled bypasses `context.WithTimeout`
-  entirely, so do not "simplify" it into a huge duration. Everything below about
-  D11 therefore describes what an operator opts INTO, measured against the old
-  hardcoded 15 s — except where it says "with the deadline off". D12's is still
-  unconditional; the ldd bound is not flipped but is linux-only, and even there it
-  cannot fire **where the musl loader glob matches**, because `detectLibcWith`
-  returns before spawning `ldd`. The predicate is the glob, not the host: a musl
-  box whose loader the glob misses still reaches the 5 s bound.
+  ordering difference.** Three exist — the `<cli> --version` runnability probe
+  (D11), the download (D12), and, on linux only, the `ldd --version` libc probe at
+  5 s (tier item 5; `libc_other.go` skips the probe entirely off linux). **D11 and
+  D12 are BOTH off by default now**, opt-in via `-cli-probe-timeout` /
+  `-cli-download-timeout` or the matching `claustrum.conf` keys — the config keys
+  are the reachable ones, since Desktop owns the argv. Each disables differently
+  and neither may be "simplified" into a huge duration: D11 bypasses
+  `context.WithTimeout` entirely, and D12 relies on `http.Client{Timeout: 0}` being
+  the stdlib's own "no timeout". ⚠️ D12's zero frees the **body read only** —
+  `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
+  `TLSHandshakeTimeout: 10s`, both always-on, unnumbered and unprobed on the
+  reference. So at the shipped defaults the only `-install` wall-clock bound
+  claustrum applies is the linux `ldd` one, and even that cannot fire **where the
+  musl loader glob matches**, because `detectLibcWith` returns before spawning
+  `ldd` — the predicate is the glob, not the host, so a musl box whose loader the
+  glob misses still reaches it. Everything below about D11 and D12 therefore
+  describes what an operator opts INTO, measured against the old hardcoded 15 s and
+  5 minutes, except where a sentence says otherwise.
   D13 is **not** a bound — it is verify-before-decompress
   ordering, which no slow input trips. **No bound here is a hang detector**: each is
   a threshold, so an honest-but-slow input trips it too. For D11 and D12 the
@@ -228,11 +230,17 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   shape. **Derived:** on the cached shapes it should cache-hit and report
   `cliWasPresent:true` having installed nothing, since its guard has no cut-off at
   or below 90 s — not separately measured, and what it does above 90 s is
-  unmeasured on both binaries. **Measured on the flip branch:** with the deadline
-  off, claustrum is likewise still running when cut at 45 s against a planted
-  `sleep 120` CLI, with an opted-in 15 s run and an instant CLI as the two
-  controls. Also derived: a download slower than 5 minutes
-  (`http.Client.Timeout` bounds the whole exchange). The ldd bound's *value* delta is narrow —
+  unmeasured on both binaries. **Measured on the D11 flip branch:** with the
+  deadline off, claustrum is likewise still running when cut at 45 s against a
+  planted `sleep 120` CLI, with an opted-in 15 s run and an instant CLI as the two
+  controls. **D12's honest-but-slow half is measured too**: a valid zstd blob
+  dribbled over ~14 s installs on the reference and on claustrum at the new default
+  alike, while a `-cli-download-timeout 2s` control fails at 2 s. ⚠️ That fixture
+  sits far under the retracted 5-minute bound, so it measures the shape rather than
+  the shipped value; the fixture must also carry a VALID zstd body, because with an
+  invalid one the reference answers `decompressing: invalid input: magic number
+  mismatch` at 0 s, which is D13, not a download bound.
+  The ldd bound's *value* delta is narrow —
   fallback and true value coincide except where `ldd` reports musl and the loader
   glob misses. But a **stalled** `ldd` makes it total on **any host without a musl
   loader** — i.e. every ordinary glibc host, since that is exactly when `ldd` is

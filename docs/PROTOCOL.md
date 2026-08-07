@@ -1274,7 +1274,7 @@ against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — s
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
 `metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes` and
-`cli-probe-timeout` defaults (precedence: explicit CLI flag > config > default). See
+`cli-probe-timeout` and `cli-download-timeout` defaults (precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1283,7 +1283,7 @@ hardening.
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
           [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>]
+          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
 ```
 
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
@@ -1304,7 +1304,20 @@ error — but only when the replacement answers in time; if it is just as slow, 
 probes time out and the run fails after ~2× the deadline with the cached binary
 left in place:
 
-- **The download is bounded at 5 minutes — intentional divergence (D12).** The
+- **The download can be bounded, but is NOT by default — opt-in divergence
+  (D12).** With `-cli-download-timeout` unset (or `0`) the download has **no bound
+  at all** — `http.Client{Timeout: 0}` is the stdlib's own "no timeout" — which
+  matches the reference on every input measured. Opt in with
+  `-cli-download-timeout <duration>` or the `cli-download-timeout` key in
+  `claustrum.conf`; the figures below are the old hardcoded 5-minute default.
+  Measured 2026-08-07 with a valid 30-byte zstd blob dribbled over ~14 s and a
+  correct `-cli-checksum`: the reference installs it at 14 s with no `cliError`,
+  claustrum at the new default installs it at 15 s with no `cliError`, and the
+  control at `-cli-download-timeout 2s` fails at 2 s with `cliError "download
+  failed: context deadline exceeded (Client.Timeout or context cancellation while
+  reading body)"`. ⚠️ A D12 probe **must** use a valid zstd body: with an invalid
+  one the reference answers `decompressing: invalid input: magic number mismatch`
+  at 0 s, which is D13's ordering, not a download bound. The
   reference showed no bound at or below 400 s: measured against a server that
   sends headers and then never sends the body, it was still downloading when the
   harness stopped it at 400 s while claustrum

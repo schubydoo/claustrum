@@ -1084,7 +1084,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   linux-only `ldd` probe (tier item 5), which is not a D-number and is not
   proposed for a flip.
 
-### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
+### D12 · Make the `-install` CLI download bound opt-in ✅ (opt-in) — impact M / cost L
 
 > ⚠️ **The same flip D11 took is proposed for this bound in a follow-up PR** (default
 > off = unbounded = parity). It has not been made; everything below describes what
@@ -1123,15 +1123,50 @@ completes it with `git.worktree_remove`, which shares the predicate
   exchange including the body read, so a real 600 MiB body over a link that needs
   six minutes trips it exactly as a black hole does. The 629 MB control passed
   because it *arrived in time*, not because it was honest.
-- ⚠️ **That last half is DERIVED from `http.Client.Timeout` semantics, not
-  measured** — unlike D11's, whose slow-CLI row was run on both binaries. A probe
-  would need a >5-minute run to discriminate, and the deadline caveat below says
-  the same thing from the code side. Treat it as the strongest available claim,
-  not as a measurement.
+- ✅ **The honest-but-slow half is now MEASURED, and it was the reason for the
+  flip.** It used to be derived from `http.Client.Timeout` semantics alone, on the
+  grounds that discriminating it needed a >5-minute run. It does not: dribbling a
+  **valid** blob slowly discriminates at any duration, because the bound is on the
+  exchange. Measured 2026-08-07 with a 30-byte valid zstd CLI served in 30 chunks
+  half a second apart, correct `-cli-checksum`:
+
+  | arm | elapsed | facts |
+  |---|---|---|
+  | reference `5db5e4a` | 14 s | installs, **no `cliError`** |
+  | claustrum, bound off (new default) | 15 s | installs, **no `cliError`** |
+  | *control:* claustrum, `-cli-download-timeout 2s` | 2 s | `cliError "download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)"` |
+
+  The control fires on both elapsed and `cliError`, so row 2's match with row 1 is
+  a measurement rather than blindness.
+
+  ⚠️ **The first attempt at this fixture was confounded and would have "proved"
+  the opposite.** Serving an INVALID body (plain `xxxx`) had the reference return
+  at **0 s** with `decompressing: invalid input: magic number mismatch` — not a
+  download bound at all, but D13's decompress-first ordering short-circuiting on
+  the first bytes. Any D12 fixture must carry a valid zstd blob, or D13 answers
+  the question instead.
 - **Trade:** matching means an `-install` that waits without bound on a network
-  path the caller does not control — an *unbounded wait*, not a hang. ⚠️ Unlike D11 — whose 20 s and 90 s rows
-  observe the reference recovering — D12's recovery half is unobserved: the stall
-  fixture never sent a body.
+  path the caller does not control — an *unbounded wait*, not a hang. The recovery
+  half **is** now observed: the dribbled-blob run above shows the reference
+  completing a download that takes as long as it takes, and claustrum at the new
+  default doing the same. (The older *stall* fixture never sent a body, so it could
+  not show recovery; that is what the dribble fixture adds.)
+- **Shipped as: default `0` = no bound**, which matches the reference on every
+  input measured — still downloading at 400 s against a body that never arrives,
+  and completing a 14 s dribbled one. Above 400 s it is unmeasured. Opt in with
+  `-cli-download-timeout <duration>` **and/or** the `cli-download-timeout` key in
+  `claustrum.conf` (explicit flag > config > default); the config key is the
+  reachable one, because Desktop owns the argv on `-install`.
+- **Zero is the stdlib's own "no timeout" sentinel**, so `http.Client{Timeout: 0}`
+  IS the bypass — there is no huge-but-finite value anywhere in the path. Same
+  property D3 and D10 get by skipping their `io.LimitReader`s, obtained here for
+  free rather than by branching.
+- **Why it stopped being always-on.** Identical to D11's argument: the bar this
+  section sets is cleared (the reference's behaviour on the motivating path is an
+  apparently unbounded wait rather than a frame), but the bar does not weigh the
+  *cost* — an honest-but-slow download pays it, and Desktop owns the argv, so the
+  caller who pays cannot decline. With the honest half now measured rather than
+  derived, that cost is a fact rather than an inference.
 - ⚠️ **This bounds the exchange, not the throughput.** A server dribbling bytes
   slower than 5 minutes' worth still trips it, and one that finishes in 4:59 does
   not — so it is a deadline, not a stall detector.
@@ -1247,6 +1282,10 @@ completes it with `git.worktree_remove`, which shares the predicate
     flag path a negative warns and normalises, while a bare number is rejected by
     `flag.Duration` before any mode runs (usage + exit 2, no facts line). Every
     one of these leaves the deadline off.
+  - `cli-download-timeout = <duration>` — default for D12; `0` (the default) is no
+    bound. Same duration parsing and the same zero/negative edges as
+    `cli-probe-timeout` above, with the same consequence: every accepted oddity
+    leaves the bound off, so none of them can switch it on.
 - **`version-override` — make claustrum a permanent drop-in.** The desktop client
   decides whether to re-upload the daemon by running `<bin> --version` on the
   cached `~/.claude/remote/srv/<pinned-sha>/server` and matching
@@ -1268,7 +1307,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   symlink/FIFO/device/directory → can't block startup), `io.LimitReader` ≤ 64 KiB,
   per-key validation (`version-override` gated to `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`
   and lower-cased; `metrics-addr` printable-ASCII only; `max-extract-bytes` and
-  `max-cli-bytes` parsed as a non-negative int64, `cli-probe-timeout` via
+  `max-cli-bytes` parsed as a non-negative int64, `cli-probe-timeout` and
+  `cli-download-timeout` via
   `time.ParseDuration` and rejected if negative, anything else ignored), values
   used as data never as a format string.
 - Verified: unit tests (each key's valid/invalid forms, unknown-key and malformed

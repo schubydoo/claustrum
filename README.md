@@ -89,7 +89,7 @@ One binary, mode-switched by flag:
 claustrum -serve   -socket <path> -token-file <path>   # self-daemonize, run the RPC server
 claustrum -bridge  -socket <path>                       # dumb stdio<->socket relay (what SSH attaches)
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
-claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>] [-max-cli-bytes <n>] [-cli-probe-timeout <dur>]
+claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>] [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
 claustrum -version
 ```
 
@@ -174,8 +174,9 @@ method, error path, and the full process lifecycle, then diffs normalized frames
 deliberate divergences** — see
 [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity); the bounds
 D11/D12 in particular are wall-clock thresholds, so an honest-but-slow CLI or download diverges
-once they apply — which for D11 means only when `-cli-probe-timeout` is opted into, since it is
-off by default. The harness lives in `scratch/` (local, not published).
+once they apply — which now means only when `-cli-probe-timeout` (D11) or
+`-cli-download-timeout` (D12) is opted into, since both are off by default. The harness
+lives in `scratch/` (local, not published).
 
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same
 contract without the reference binary: a socket-integration battery boots the daemon and asserts
