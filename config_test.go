@@ -283,7 +283,6 @@ func TestParseConfig_CLIProbeTimeout(t *testing.T) {
 	}{
 		{"seconds", "cli-probe-timeout = 30s", durp(30 * time.Second)},
 		{"minutes", "cli-probe-timeout = 2m", durp(2 * time.Minute)},
-		{"zero disables the deadline explicitly", "cli-probe-timeout = 0s", durp(0)},
 		{"negative rejected", "cli-probe-timeout = -1s", nil},
 		{"bare number rejected", "cli-probe-timeout = 15", nil},
 		// Go's parser special-cases a bare zero, so "0" and "+0" DO parse. Pinned

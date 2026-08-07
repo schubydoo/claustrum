@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+// lastMainFlagSet is the FlagSet the most recent runMain handed to main(), kept
+// after runMain restores flag.CommandLine so a test can inspect flag defaults.
+var lastMainFlagSet *flag.FlagSet
+
 // runMain drives the real main() with a synthetic argv. main registers its
 // flags on the global flag.CommandLine (already populated by the previous
 // call, and by the testing package), so each run gets a fresh FlagSet; Version
@@ -25,10 +29,6 @@ import (
 // beside os.Executable(), the build-cache temp dir), but it goes live with
 // -shuffle, with a pre-built binary run from a directory holding a conf, or as
 // soon as a case here passes one of those flags.
-// lastMainFlagSet is the FlagSet the most recent runMain handed to main(), kept
-// after runMain restores flag.CommandLine so a test can inspect flag defaults.
-var lastMainFlagSet *flag.FlagSet
-
 func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	t.Helper()
 	stubOsExit(t)
