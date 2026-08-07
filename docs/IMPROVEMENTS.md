@@ -527,9 +527,45 @@ completes it with `git.worktree_remove`, which shares the predicate
   at a `t.TempDir()` home, so the suite is safe to run against an **unfixed**
   tree — verified by reverting both guards and watching it fail.
 
-*(**D3 is reserved** by the open extract-cap PR — the number is taken even though
-its entry is not on `main` yet. Recorded here because an unrecorded reservation is
-exactly how D2 nearly got reused.)*
+### D3 · Make the `files.extract_tar` size cap opt-in ✅ (opt-in) — impact H / cost M
+
+- `maxExtractBytes` shipped as a hardcoded **512 MiB, on by default**, with no
+  flag and no config key. It arrived with PR 56 as a size-bomb hardening; the
+  sibling guard from that same commit got a PROTOCOL.md entry and this one got none — so it was an **undocumented** divergence for its whole
+  life.
+- **The reference applies no cap at any size the probe could reach.** Measured at
+  `5db5e4a` with a 629 MB payload (600 MiB of zeros, 610 KB compressed) — enough
+  to disprove a 512 MiB cap, not enough to prove there is none above 629 MB:
+
+  | binary | reply | bytes on disk |
+  |---|---|---|
+  | reference `5db5e4a` | `{"success":true,"fileCount":1}` | 629145600 |
+  | claustrum, cap off (new default) | `{"success":true,"fileCount":1}` | 629145600 |
+  | claustrum, cap opted in at 512 MiB | `{"success":false,"fileCount":0,"error":"extraction size limit exceeded"}` | 0 |
+
+- **This was a live user-facing break, not a theoretical one.** A tree over the
+  cap got an error the reference never produces, and **Claude Desktop owns the
+  argv**, so there was no way through from the caller's side.
+- **Shipped as: default `0` = unlimited = byte-identical to the reference.** The
+  cap survives as an opt-in via `-max-extract-bytes <n>` **and** the
+  `max-extract-bytes` key in `claustrum.conf` (precedence: explicit CLI flag >
+  config > default, matching keep-children / listen-pipe / metrics-addr). The
+  config key is the one that matters — see the argv point above.
+- **Disabled bypasses `io.LimitReader` entirely** (`io.Copy(out, tr)`) rather
+  than passing a huge bound. The `max-total+1` arithmetic is what defines the
+  boundary behaviour; routing the unlimited case through it would invent a
+  boundary where the reference has none.
+- Two defects the measurement exposed, fixed with the flip: the cap arm returned
+  the **partial `fileCount`** where the four arms that reject the archive outright
+  (create, mkdir-parent, zip-slip, unsupported type) all answer `0`, and it left
+  the truncated entry on disk. It now returns `0` and removes that entry. (Four
+  *other* arms — mid-stream `tr.Next`, `TypeDir` mkdir, `io.Copy`, `write .synced`
+  — do still return the partial count; the cap arm was grouped with the wrong set,
+  not with all of them.)
+- The differential battery stays **byte-identical**, and the 629 MB probe above is
+  the direct parity evidence. (Deliberately no frame count: a run's size changes as
+  the battery grows, so a number quoted here goes stale the way `496/496` did.
+  Recount at the time of writing if you need one.)
 
 ### D4 · `files.read` refuses a non-regular file ✅ (always-on) — impact M / cost L
 
@@ -764,6 +800,7 @@ exactly how D2 nearly got reused.)*
   - `keep-children = true|false` — default for CT-2.
   - `metrics-addr = host:port` — default for the `/metrics` listener.
   - `listen-pipe = true|false` — default for CT-5 (Windows-only).
+  - `max-extract-bytes = <n>` — default for D3; `0` (the default) is no cap.
 - **`version-override` — make claustrum a permanent drop-in.** The desktop client
   decides whether to re-upload the daemon by running `<bin> --version` on the
   cached `~/.claude/remote/srv/<pinned-sha>/server` and matching
@@ -784,7 +821,8 @@ exactly how D2 nearly got reused.)*
   cross-platform: regular-file-only via `Lstat`/`IsRegular` (rejects
   symlink/FIFO/device/directory → can't block startup), `io.LimitReader` ≤ 64 KiB,
   per-key validation (`version-override` gated to `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`
-  and lower-cased; `metrics-addr` printable-ASCII only), values used as data
+  and lower-cased; `metrics-addr` printable-ASCII only; `max-extract-bytes`
+  parsed as a non-negative int64, anything else ignored), values used as data
   never as a format string.
 - Verified: unit tests (each key's valid/invalid forms, unknown-key and malformed
   lines, case-insensitive keys, CLI-over-config precedence, non-regular-directory,

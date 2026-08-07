@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -272,8 +273,17 @@ func filesExtractTar(req *request) response {
 
 // maxExtractBytes caps the total uncompressed bytes written by extractTarGz.
 // A crafted archive can have a tiny compressed size but expand to fill a disk;
-// this cap bounds the damage. Set to a small value in tests.
-var maxExtractBytes int64 = 512 * 1024 * 1024
+// the cap bounds that damage.
+//
+// ZERO (the default) DISABLES IT, which is what the reference does at every size
+// the probe could reach: measured, a 629 MB archive extracts fully there and
+// answers {"success":true,"fileCount":1}, while a capped claustrum answered an
+// error the reference never produces at that size. The
+// cap shipped on by default at 512 MiB and that was a live user-facing break —
+// Claude Desktop owns the argv, so a caller who hit it had no way through. It is
+// now opt-in: divergence D3, set via -max-extract-bytes or the max-extract-bytes
+// key in claustrum.conf. Also set directly by tests.
+var maxExtractBytes int64
 
 func extractTarGz(archivePath, destDir string) (int, error) {
 	f, err := os.Open(archivePath)
@@ -423,14 +433,56 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// Same shape as the mkdir-parent and zip-slip arms.
 				return 0, fmt.Errorf("create %s: %v", hdr.Name, err)
 			}
-			n, err := io.Copy(out, io.LimitReader(tr, maxExtractBytes-totalWritten+1))
+			var n int64
+			if maxExtractBytes <= 0 {
+				// Cap disabled: copy straight through, exactly as the reference
+				// does. Deliberately NOT a LimitReader with a huge bound — the
+				// max-total+1 arithmetic below is what defines the boundary
+				// behaviour, and routing the unlimited case through it would
+				// invent a boundary where the reference has none.
+				//
+				// The two branches read identically today: archive/tar's
+				// Reader.WriteTo is unexported, so io.Copy falls through to the
+				// same 32 KiB generic copy either way. If a future Go exports it
+				// (the stdlib carries a TODO to), only this branch would take the
+				// sparse-file fast path — same bytes, but the branches would stop
+				// being the same code path. Re-measure if that lands.
+				n, err = io.Copy(out, tr)
+			} else {
+				// The +1 is the boundary definition: reading one byte PAST the
+				// cap is what makes the totalWritten > maxExtractBytes test below
+				// able to fire at all. It must SATURATE rather than wrap. Go wraps
+				// signed overflow, so at maxExtractBytes == MaxInt64 (reachable
+				// since the cap became settable) this sum becomes MinInt64,
+				// io.LimitReader returns EOF on the first Read for any N <= 0, and
+				// io.Copy does not report EOF as an error — every entry would be
+				// created at 0 bytes, totalWritten would stay 0 so the cap test
+				// never fires, and the reply would be success:true over a destDir
+				// of empty files. Measured: the bound wraps to
+				// -9223372036854775808 and io.Copy returns 0.
+				bound := maxExtractBytes - totalWritten
+				if bound < math.MaxInt64 {
+					bound++
+				}
+				n, err = io.Copy(out, io.LimitReader(tr, bound))
+			}
 			totalWritten += n
 			out.Close()
 			if err != nil {
 				return count, err
 			}
-			if totalWritten > maxExtractBytes {
-				return count, fmt.Errorf("extraction size limit exceeded")
+			if maxExtractBytes > 0 && totalWritten > maxExtractBytes {
+				// The entry that tripped the cap was written truncated (the
+				// LimitReader stops at cap+1), so remove it rather than leaving a
+				// corrupt file behind that looks like a partial success.
+				_ = os.Remove(target)
+				// fileCount 0, not the partial count — grouping this with the four
+				// arms that reject the archive outright (create, mkdir-parent,
+				// zip-slip, unsupported type), all of which answer 0. It is NOT
+				// every arm: mid-stream tr.Next, TypeDir mkdir, io.Copy and
+				// write .synced all still return the partial count, and the cap
+				// arm was simply in the wrong group.
+				return 0, fmt.Errorf("extraction size limit exceeded")
 			}
 			count++
 		default:

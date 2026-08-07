@@ -184,18 +184,21 @@ If the check reports drift:
 > - **D1** — `-cli-zst` SHA-256 verification when a `-cli-checksum` is supplied.
 >   ⚠️ Unlike the rest of this group, `scratch/probe/cli_probe.sh` **does** drive
 >   this path on both binaries — the JSON-RPC battery is not the only instrument.
+> - **D3** — the `files.extract_tar` size cap, `-max-extract-bytes` / the
+>   `max-extract-bytes` config key. **Off by default (`0` = unlimited), and OFF is
+>   the parity position** — the reference applies no cap at any size the probe
+>   could reach, so a non-zero default would fail an extraction the reference
+>   completes.
 > - **CT-1** — `wantPid` adds `pid`/`startTime` to spawn/reattach replies.
 > - **CT-2** — `-keep-children` leaves children running across shutdown.
 > - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /
->   `metrics-addr` / `listen-pipe`).
+>   `metrics-addr` / `listen-pipe` / `max-extract-bytes`).
 > - **CT-5** — `-listen-pipe`, the additional Windows named-pipe transport.
 >
 > **Always-on and measured — a probe that reaches the path sees a real
 > difference**, and that is expected, not drift:
 > - **D2** — a destructive path target that is or contains the home directory is
 >   refused (`files.extract_tar` `destDir`, `git.worktree_remove` `worktreePath`).
-> - **D3** is reserved by the open extract-cap PR and has no entry on `main` yet —
->   the gap between D2 and D4 here is a reservation, not an omission.
 > - **D4** — `files.read` refuses a non-regular file.
 > - **D5** — every git invocation is capped at 60 s. **Two ways to probe this and
 >   see nothing:** a harness deadline under 60 s records "no reply" for both
