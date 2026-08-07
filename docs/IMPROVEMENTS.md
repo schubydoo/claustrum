@@ -372,6 +372,43 @@ lives in `scratch/`, gitignored). The third finding from the same sweep —
 to be **byte-identical** even on symlink/dangling/self entries, so it needs no
 divergence note.
 
+### 23 · Recover from handler panics (parity with the reference) ✅ — impact M / cost S
+
+The per-request goroutine now wraps dispatch in `defer recover()`. Before this, a
+panic in any handler crashed the **whole** daemon — an unrecovered panic in any
+goroutine takes the process down — orphaning managed children and leaving a stale
+socket, so reconnects failed `connection refused` rather than `no such file`.
+
+**This is parity, not a divergence: the reference already recovers from a panic
+per request in the equivalent per-request goroutine.** claustrum lacked it; this
+catches up.
+
+⚠️ **The frame and log line are INFERRED from static inspection of the reference,
+not measured, and the entry must not pretend otherwise.** The reply code
+(**−32603**, claustrum's `codeInternal`), the message prefix
+(**`internal panic: `**) and the log format
+(`[Server] handler panic: method=%s id=%v: %v`) match the reference's, read from
+the binary; the id rendering uses claustrum's own `idForLog`, matching its other
+log lines. Not probe-verified — the panic path is unreachable, so the exact
+reference bytes cannot be confirmed on the wire.
+
+**Why it cannot be measured:** no input is known to reach a handler panic on
+either binary. Two fuzz waves (the 3481-case run plus a gap-closing run over
+malformed frames, `auth`/`jsonrpc`, and multi-param combos) found zero, and a
+read of the handler bodies accounts for every panic site as either an unreachable
+stdlib guard (`time.Timer.Stop/Reset` on an uninitialised timer, which
+`time.NewTimer` precludes) or an already-bounds-guarded slice (`WriteStdin`'s
+offset/dedup, `frameSink`'s eviction). **So the reference's recover is itself
+blanket-defensive**, and this matches that engineering posture rather than a
+measured frame.
+
+- **Default path byte-identical:** the recover fires only on a panic, which does
+  not occur on any reachable input, so the differential battery is unchanged
+  (612/612).
+- Provoked in test through the `dispatchRequest` seam (`server.go`); reverting the
+  recover makes the test crash the binary (an unrecovered goroutine panic), which
+  is the mutant signal.
+
 ## Deliberate divergences (post-parity, opt-in)
 
 Unlike everything above, these **knowingly change a frame/behavior** from the

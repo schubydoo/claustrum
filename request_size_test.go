@@ -46,3 +46,35 @@ func TestRequestSizeCap(t *testing.T) {
 		t.Errorf("1048576-byte request: reply=%q, want none (connection dropped)", reply)
 	}
 }
+
+// A panicking handler must not take the daemon down — the per-request goroutine
+// recovers, replies -32603 "internal panic: <v>", and the connection stays
+// usable for the next request. Matches the reference's per-request panic
+// isolation; the path is otherwise unreachable, so it is provoked here through
+// the dispatchRequest seam. Reverting the recover makes this CRASH the test
+// binary (an unrecovered goroutine panic kills the process), which is the
+// mutant signal — run it isolated when checking.
+func TestHandlerPanicIsRecovered(t *testing.T) {
+	old := dispatchRequest
+	dispatchRequest = func(s *server, c *conn, raw []byte) *response {
+		panic("boom-" + string(raw[:0]))
+	}
+	t.Cleanup(func() { dispatchRequest = old })
+
+	sock := startSocketServer(t)
+
+	// First request hits the panicking dispatch: expect the -32603 frame, not a
+	// dropped connection or a dead daemon.
+	reply := sendRaw(t, sock, `{"jsonrpc":"2.0","id":7,"method":"server.ping","auth":"`+testToken+`"}`)
+	for _, want := range []string{`"id":7`, `"code":-32603`, "internal panic:"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("panic reply = %q, missing %q", reply, want)
+		}
+	}
+
+	// The daemon is still alive: restore normal dispatch and a fresh request works.
+	dispatchRequest = old
+	if reply := sendRaw(t, sock, `{"jsonrpc":"2.0","id":8,"method":"server.ping","auth":"`+testToken+`"}`); !strings.Contains(reply, `"pong":true`) {
+		t.Errorf("daemon dead after a handler panic: reply=%q, want a pong", reply)
+	}
+}

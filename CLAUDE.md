@@ -159,7 +159,14 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `os.CreateTemp` limitation — the per-user session dir is the confinement). See
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
 - **A connection's requests dispatch concurrently** — replies can return out of
-  order, matching the reference. Don't serialize them.
+  order, matching the reference. Don't serialize them. The per-request goroutine
+  **recovers from panics** (parity with the reference), replying `-32603
+  "internal panic: <v>"`. That frame is **inferred from static analysis, not
+  measured** — no input reaches a handler panic on either binary — so do not
+  "correct" the code or message to some other value expecting a golden to catch
+  it: the path is unreachable, the battery never exercises it, and the reference
+  bytes cannot be probed. It is provoked in tests through the `dispatchRequest`
+  seam.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

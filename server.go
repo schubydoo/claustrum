@@ -663,6 +663,12 @@ func (s *server) acceptLoop(ln net.Listener) {
 	}
 }
 
+// dispatchRequest is the seam serveConn dispatches through. A var so a test can
+// force a handler panic and prove the per-request recover keeps the daemon alive
+// (the panic path is otherwise unreachable, so it cannot be provoked by input).
+// Production never reassigns it.
+var dispatchRequest = func(s *server, c *conn, raw []byte) *response { return s.dispatch(c, raw) }
+
 func (s *server) serveConn(c *conn) {
 	defer func() {
 		c.wmu.Lock()
@@ -694,7 +700,8 @@ func (s *server) serveConn(c *conn) {
 		// malformed line yields an empty method and is simply not ordered — it has
 		// no stdin payload to misplace.
 		var peek struct {
-			Method string `json:"method"`
+			Method string      `json:"method"`
+			ID     interface{} `json:"id"`
 		}
 		_ = json.Unmarshal(raw, &peek)
 		ordered := peek.Method == "process.stdin"
@@ -705,6 +712,27 @@ func (s *server) serveConn(c *conn) {
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
 		go func() {
+			// Per-request panic isolation, matching the reference: without this a
+			// panic in any handler crashes the whole daemon (an unrecovered panic
+			// in ANY goroutine takes the process down), orphaning managed children
+			// and leaving a stale socket. The reference recovers per request in the
+			// equivalent goroutine.
+			//
+			// The frame and log line are INFERRED from static analysis of the
+			// reference (code -32603, message "internal panic: <v>", log
+			// "[Server] handler panic: method=%s id=%v: %v"), NOT measured: no
+			// input is known to reach a handler panic on either binary — extensive
+			// fuzzing and a read of the handler bodies found every panic site
+			// either unreachable (stdlib timer guards) or already bounds-guarded,
+			// so the reference's recover is itself blanket-defensive. This matches
+			// that engineering posture; the exact bytes are unverifiable precisely
+			// because the path is unreachable. See docs/IMPROVEMENTS.md.
+			defer func() {
+				if r := recover(); r != nil {
+					logErrorf("[Server] handler panic: method=%s id=%v: %v", peek.Method, idForLog(peek.ID), r)
+					c.writeResponse(errResult(peek.ID, codeInternal, fmt.Sprintf("internal panic: %v", r)))
+				}
+			}()
 			// The stdin ticket covers DISPATCH ONLY, never the response write.
 			// dispatch appends the chunk to the process's existing stdin FIFO
 			// (applyStdin) before it returns, so byte order is already fixed by
@@ -722,7 +750,7 @@ func (s *server) serveConn(c *conn) {
 					c.awaitStdinTurn(ticket)
 					defer c.doneStdinTurn(ticket)
 				}
-				resp = s.dispatch(c, raw)
+				resp = dispatchRequest(s, c, raw)
 			}()
 			if resp != nil {
 				c.writeResponse(*resp)

@@ -194,9 +194,27 @@ value instead. Probe-verified against the reference at `5db5e4a`.
 | `-32600` | `Invalid JSON-RPC version` — `jsonrpc` absent or != `"2.0"` |
 | `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
-| `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
+| `-32603` | internal error (e.g. `open <path>: no such file or directory`); also a **recovered handler panic** → `internal panic: <v>`, see below |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` — `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
 | `-32001` | unauthorized |
+
+### Handler panic recovery
+
+The per-request goroutine wraps dispatch in `recover()`, so a panic in any
+handler is caught rather than crashing the daemon. The reply is
+`{"error":{"code":-32603,"message":"internal panic: <v>"}}` and the daemon logs
+`[Server] handler panic: method=<m> id=<id>: <v>`. This is **parity with the
+reference**, which recovers per request the same way.
+
+⚠️ **These bytes are inferred from static analysis of the reference, not
+measured.** No input is known to reach a handler panic on either binary
+(extensive fuzzing found none; the reference's handler bodies guard or preclude
+every panic site), so the frame cannot be provoked to confirm it on the wire. It
+is documented as the reference's *apparent* frame, matched as closely as static
+analysis allows — the code (`-32603`), message prefix (`internal panic: `) and log
+format are read directly from the binary; the exact id rendering is claustrum's
+own convention. Treat this row as the one error frame in this document that is
+not probe-verified.
 
 ### Validation precedence (probe-verified)
 
