@@ -13,11 +13,24 @@ import (
 // and BuildTime are restored because resolveVersion may stamp them from the
 // test binary's own build info; stdout is parked on /dev/null so -version and
 // -install output doesn't pollute the test log.
+//
+// The -install and -serve arms of main() also WRITE package globals
+// (cliProbeTimeout, maxCLIBytes, maxExtractBytes) and never restore them, so
+// without the save/restore below a `-install` run here leaks its resolved values
+// into every later test. Reproduced 2026-08-07: with a claustrum.conf holding
+// `cli-probe-timeout = 30s` beside a pre-built test binary, 4 of 6 -test.shuffle
+// seeds failed TestCLIProbeTimeoutDefaultsOff with "default = 30s"; the two that
+// passed were the seeds that ran the assertion first, and the same seeds with no
+// conf present passed. Not reachable under plain `go test` (loadConfig reads
+// beside os.Executable(), the build-cache temp dir), but it goes live with
+// -shuffle, with a pre-built binary run from a directory holding a conf, or as
+// soon as a case here passes one of those flags.
 func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	t.Helper()
 	stubOsExit(t)
 	oldArgs, oldFS := os.Args, flag.CommandLine
 	oldVersion, oldBuildTime := Version, BuildTime
+	oldProbe, oldMaxCLI, oldMaxExtract := cliProbeTimeout, maxCLIBytes, maxExtractBytes
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
@@ -29,6 +42,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	defer func() {
 		os.Args, flag.CommandLine = oldArgs, oldFS
 		Version, BuildTime = oldVersion, oldBuildTime
+		cliProbeTimeout, maxCLIBytes, maxExtractBytes = oldProbe, oldMaxCLI, oldMaxExtract
 		os.Stdout = oldStdout
 		_ = devnull.Close()
 	}()

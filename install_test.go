@@ -68,6 +68,14 @@ func fakeCLI(t *testing.T, exitCode int) []byte {
 // 0 only after `seconds` — the honest-but-slow shape divergence D11 is about.
 // Same Unix/Windows split as fakeCLI above, and the same "call it right before
 // the step it backs" caveat on Windows.
+// ⚠️ `seconds` is a process-leak budget on the Unix legs, not just a duration.
+// The sh branch makes `sleep` a GRANDCHILD, and exec.CommandContext kills only
+// the direct `sh` child — measured: with `sleep 30` the probe returned
+// `signal: killed` at 100 ms while the sleeper was reparented to PID 1 and still
+// alive a second later. At 1 s it self-exits and nothing leaks, which is the only
+// reason this is safe. Raising it to "make the test more robust" leaks one
+// process per run on macOS and linux and changes nothing on Windows, whose branch
+// is a single process.
 func slowCLI(t *testing.T, seconds int) []byte {
 	t.Helper()
 	if runtime.GOOS != "windows" {
