@@ -1340,7 +1340,11 @@ Staging and cleanup (probe-verified):
   retry-on-`errStagingVanished` with no source to re-read. The orphan **prune**
   skips it for the same reason: `pruneCLI` counts every non-directory in the
   cli-dir as a CLI version, so an in-flight blob would sort newest, consume a
-  `-cli-keep` slot and evict a real binary. It is removed by the install itself on
+  `-cli-keep` slot and evict a real binary. For the same reason a `-cli-version`
+  starting `.blob-` is **refused** (`cli version "…" collides with the install
+  download blob`) — it would install fine and then be exempt from the prune census
+  forever, never counted against `-cli-keep` and never evicted. That is the mirror
+  of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
   every path; only a SIGKILLed download leaves it behind, and nothing reclaims
   that. (Claustrum-only: the reference buffers the download in
   memory, so it has no such file. No frame changes.)

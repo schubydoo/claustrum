@@ -367,6 +367,16 @@ func validateCLIVersion(v string) error {
 		// collision, and isSweptName is the one definition of it.
 		return fmt.Errorf("cli version %q collides with the install temp sweep", v)
 	}
+	if isDownloadBlobName(v) {
+		// The MIRROR of the check above, on the identical input. A version with
+		// the blob prefix installs fine and is then exempt from pruneCLI's census
+		// FOREVER — never counted against -cli-keep, never evicted, and not
+		// reclaimed by the sweep either, since neither pass claims that prefix by
+		// construction. A leaked immortal binary rather than a deleted one, but
+		// the same class of collision, so the validator reads the same set of
+		// housekeeping names both passes do.
+		return fmt.Errorf("cli version %q collides with the install download blob", v)
+	}
 	return nil
 }
 
@@ -607,8 +617,10 @@ func sweepFetchTemps(cliDir string) {
 //
 // The reference gets this property for free by buffering the download in memory
 // and never creating the file; claustrum streams, so it has to be stated. Defined
-// once here so the creator and both passes read the same rule — the same reason
-// isSweptName is factored out below.
+// once here so the creator, BOTH housekeeping passes and validateCLIVersion read
+// the same rule — the same reason isSweptName is factored out below, and with the
+// same fourth reader. A rule the validator does not consult is one an operator can
+// walk into with -cli-version.
 const blobTempPrefix = ".blob-"
 
 // isDownloadBlobName reports whether a cli-dir entry is an in-flight download

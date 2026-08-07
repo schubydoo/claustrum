@@ -793,7 +793,11 @@ completes it with `git.worktree_remove`, which shares the predicate
   Those fail differently, and fixing only the first converts one into the other:
   a name the sweep ignores still reaches the prune, where an in-flight blob sorts
   newest, takes a `-cli-keep` slot and evicts a real version. `blobTempPrefix` is
-  defined once and read by the creator and both passes; one test asserts both. Kept beside the
+  defined once and read by the creator, both passes **and `validateCLIVersion`** —
+  a housekeeping name rule the validator does not consult is one an operator walks
+  into with `-cli-version`, which is how `.blob-x` would have installed as an
+  immortal, never-pruned binary. Same fourth reader `isSweptName` has, and for the
+  same reason. Tests assert every half. Kept beside the
   destination rather than in the OS temp dir because `/tmp` is a tmpfs on many
   hosts, which would put the blob back in RAM and undo this whole change.
 - **Measured, peak RSS, 400 MiB incompressible payload** (`/proc/<pid>/status`
