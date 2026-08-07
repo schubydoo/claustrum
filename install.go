@@ -545,6 +545,35 @@ func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("download failed with status %d", e.code)
 }
 
+// cliDownloadTimeout bounds the whole `-cli-url` exchange in fetchToFile.
+//
+// ZERO (the default) DISABLES IT, which is the parity position: measured at
+// 5db5e4a against a server that sends 200 OK with a Content-Length and then never
+// sends a body, the reference was still downloading when the harness stopped it at
+// 400 s, where claustrum returned at 300 s.
+//
+// ⚠️ `http.Client.Timeout` bounds the ENTIRE exchange including the body read, so
+// it is a deadline, not a stall detector: a real body arriving over a link that
+// needs six minutes trips it exactly as a black hole does, and one that finishes
+// in 4:59 does not. That is the same threshold-not-intent problem D3 and D10 were
+// flipped for, and Claude Desktop owns the argv on `-install`, so the caller who
+// pays cannot decline. (D11's runnability probe has the same shape and the same
+// flip proposed, on its own branch — it is still always-on here.)
+//
+// Zero is the stdlib's own "no timeout" sentinel, so assigning it straight through
+// IS the bypass — no huge-but-finite value stands in for "off", which is the same
+// property D3 and D10 get by skipping their `io.LimitReader`s.
+//
+// ⚠️ That disables the bound on the BODY READ, not every clock on the path.
+// fetchToFile leaves Transport nil, so it uses http.DefaultTransport, which
+// carries net.Dialer{Timeout: 30s} and TLSHandshakeTimeout: 10s. A host that
+// black-holes SYN still fails at 30 s with the bound "off". Those are stdlib
+// defaults, always-on, and unnumbered — neither has been probed on the reference.
+// Opt in with
+// -cli-download-timeout or the cli-download-timeout key in claustrum.conf. Also
+// set directly by tests. Divergence D12.
+var cliDownloadTimeout time.Duration
+
 // fetchToFile downloads url to a temporary file and returns that file's path
 // together with the sha256 computed WHILE streaming, so the blob is never held in
 // memory and is never hashed in a second pass. The caller owns the temp file and
@@ -556,27 +585,6 @@ func (e *httpStatusError) Error() string {
 // reporting a download failure, because ensureCLI creates the cli-dir AFTER the
 // download and reports its own `mkdir cli dir: ` error there. Failing here
 // instead would move that error to a different string on a reachable path.
-// cliDownloadTimeout bounds the whole `-cli-url` exchange in fetchToFile.
-//
-// ZERO (the default) DISABLES IT, which is the parity position: measured at
-// 5db5e4a against a server that sends 200 OK with a Content-Length and then never
-// sends a body, the reference was still downloading when the harness stopped it at
-// 400 s, where claustrum returned at 300 s.
-//
-// ⚠️ `http.Client.Timeout` bounds the ENTIRE exchange including the body read, so
-// it is a deadline, not a stall detector: a real body arriving over a link that
-// needs six minutes trips it exactly as a black hole does, and one that finishes
-// in 4:59 does not. That is the same threshold-not-intent problem D3, D10 and D11
-// were flipped for, and Claude Desktop owns the argv on `-install`, so the caller
-// who pays cannot decline.
-//
-// Zero is the stdlib's own "no timeout" sentinel, so assigning it straight through
-// IS the bypass — there is no huge-but-finite value in play, which is the same
-// property D3 and D10 get by skipping their `io.LimitReader`s. Opt in with
-// -cli-download-timeout or the cli-download-timeout key in claustrum.conf. Also
-// set directly by tests. Divergence D12.
-var cliDownloadTimeout time.Duration
-
 func fetchToFile(url, dir string) (path, sum string, err error) {
 	client := &http.Client{Timeout: cliDownloadTimeout}
 	resp, err := client.Get(url)

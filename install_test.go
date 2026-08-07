@@ -1195,7 +1195,7 @@ func TestDownloadStatusErrorWording(t *testing.T) {
 	// port, closes it, and hands back the address, so the connection is refused
 	// immediately. A hardcoded port cannot promise that: if anything listens there
 	// the test takes a different path, and if the host DROPS rather than refuses
-	// it blocks for the 5-minute client timeout instead of failing.
+	// it blocks for the transport's 30 s dial timeout instead of failing.
 	err = ensureCLI(installOpts{cliURL: refusedURL(t), cliChecksum: "x"},
 		filepath.Join(dir, "v2"))
 	if err == nil || !strings.HasPrefix(err.Error(), "download failed: ") {
