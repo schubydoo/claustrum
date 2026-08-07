@@ -233,13 +233,14 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   unmeasured on both binaries. **Measured on the D11 flip branch:** with the
   deadline off, claustrum is likewise still running when cut at 45 s against a
   planted `sleep 120` CLI, with an opted-in 15 s run and an instant CLI as the two
-  controls. **D12's honest-but-slow half is measured too**: a valid zstd blob
-  dribbled over ~14 s installs on the reference and on claustrum at the new default
-  alike, while a `-cli-download-timeout 2s` control fails at 2 s. ⚠️ That fixture
-  sits far under the retracted 5-minute bound, so it measures the shape rather than
-  the shipped value; the fixture must also carry a VALID zstd body, because with an
-  invalid one the reference answers `decompressing: invalid input: magic number
-  mismatch` at 0 s, which is D13, not a download bound.
+  controls. **D12's honest-but-slow half is measured too**, on a fixture that
+  straddles the retracted bound: a valid zstd blob dribbled over ~324 s installs on
+  the reference and on claustrum at the new default, while claustrum with
+  `-cli-download-timeout 5m` — the value that shipped — fails the same download at
+  300 s. ⚠️ A shorter dribble proves nothing: under the old bound both arms install
+  either way. And the fixture must carry a VALID zstd body, because with an invalid
+  one the reference answers `decompressing: invalid input: magic number mismatch`
+  at 0 s, which is D13, not a download bound.
   The ldd bound's *value* delta is narrow —
   fallback and true value coincide except where `ldd` reports musl and the loader
   glob misses. But a **stalled** `ldd` makes it total on **any host without a musl

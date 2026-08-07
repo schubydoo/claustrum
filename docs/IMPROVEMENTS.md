@@ -1079,10 +1079,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   far-future deadline is a different thing that merely looks equivalent, and it
   would keep `exec.CommandContext`'s kill-on-cancel path in play where the
   reference showed no such cut-off.
-- **What still ships bounded on the `-install` path:** D12's download timeout —
-  the same flip is **proposed** for it in a follow-up PR, not yet made — and the
-  linux-only `ldd` probe (tier item 5), which is not a D-number and is not
-  proposed for a flip.
+- **What still ships bounded on the `-install` path:** only the linux-only `ldd`
+  probe (tier item 5), which is not a D-number and is not proposed for a flip.
+  D12's download bound took this same flip alongside it.
 
 ### D12 · Make the `-install` CLI download bound opt-in ✅ (opt-in) — impact M / cost L
 
@@ -1123,53 +1122,74 @@ completes it with `git.worktree_remove`, which shares the predicate
   exchange including the body read, so a real 600 MiB body over a link that needs
   six minutes trips it exactly as a black hole does. The 629 MB control passed
   because it *arrived in time*, not because it was honest.
-- ✅ **The honest-but-slow half is now MEASURED, and it was the reason for the
-  flip.** It used to be derived from `http.Client.Timeout` semantics alone, on the
-  grounds that discriminating it needed a >5-minute run. It does not: dribbling a
-  **valid** blob slowly discriminates at any duration, because the bound is on the
-  exchange. Measured 2026-08-07 with a 30-byte valid zstd CLI served in 30 chunks
-  half a second apart, correct `-cli-checksum`:
+- ✅ **The honest-but-slow half is MEASURED, on a fixture that straddles the
+  retracted bound.** It used to be derived from `http.Client.Timeout` semantics
+  alone, on the grounds that discriminating it needed a >5-minute run. That
+  requirement was real: an earlier draft of this entry used a 14 s dribble and
+  claimed it settled the question, which it does not — 14 s is far under the
+  retracted 300 s, so the **old always-on build would have installed it too**, and
+  both arms answer "installs" whether or not the divergence exists. Re-run
+  2026-08-07 with a valid 30-byte zstd CLI served **one byte at a time over a
+  target 335 s**, correct `-cli-checksum`, three concurrent servers so every arm
+  sees the same conditions:
 
   | arm | elapsed | facts |
   |---|---|---|
-  | reference `5db5e4a` | 14 s | installs, **no `cliError`** |
-  | claustrum, bound off (new default) | 15 s | installs, **no `cliError`** |
-  | *control:* claustrum, `-cli-download-timeout 2s` | 2 s | `cliError "download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)"` |
+  | reference `5db5e4a` | **324 s** | installs, **no `cliError`** |
+  | claustrum, `-cli-download-timeout 5m` (the retracted default) | **300 s** | `cliError "download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)"` |
+  | claustrum, bound **off** (new default) | **324 s** | installs, **no `cliError`** |
 
-  The control fires on both elapsed and `cliError`, so row 2's match with row 1 is
-  a measurement rather than blindness.
+  Row 2 is what the 14 s fixture could not produce: an **honest** download, failed
+  by the value that shipped, completed by the reference and by the new default. The
+  three arms differ in exactly one variable.
 
-  ⚠️ **The first attempt at this fixture was confounded and would have "proved"
-  the opposite.** Serving an INVALID body (plain `xxxx`) had the reference return
-  at **0 s** with `decompressing: invalid input: magic number mismatch` — not a
-  download bound at all, but D13's decompress-first ordering short-circuiting on
-  the first bytes. Any D12 fixture must carry a valid zstd blob, or D13 answers
-  the question instead.
+  ⚠️ **Generalisable, and it is why the first fixture was useless:** a dribble
+  discriminates a bound **you can set**, because you place the fixture above it.
+  Discriminating the *reference's* requires exceeding a value you do not know — so
+  the only usable fixture is one that exceeds the value **under test on your own
+  side**. "Dribbling slowly discriminates at any duration" is true of claustrum and
+  false of the reference arm.
+
+  ⚠️ **A second confounder, also worth keeping.** An earlier attempt served an
+  INVALID body (plain `xxxx`); the reference returned at **0 s** with
+  `decompressing: invalid input: magic number mismatch` — not a download bound at
+  all, but D13's decompress-first ordering short-circuiting on the first bytes. Any
+  D12 fixture must carry a valid zstd blob, or D13 answers the question instead.
 - **Trade:** matching means an `-install` that waits without bound on a network
   path the caller does not control — an *unbounded wait*, not a hang. The recovery
-  half **is** now observed: the dribbled-blob run above shows the reference
-  completing a download that takes as long as it takes, and claustrum at the new
-  default doing the same. (The older *stall* fixture never sent a body, so it could
-  not show recovery; that is what the dribble fixture adds.)
-- **Shipped as: default `0` = no bound**, which matches the reference on every
-  input measured — still downloading at 400 s against a body that never arrives,
-  and completing a 14 s dribbled one. Above 400 s it is unmeasured. Opt in with
-  `-cli-download-timeout <duration>` **and/or** the `cli-download-timeout` key in
+  half **is** observed, up to 324 s: the straddling run shows the reference
+  completing a body that arrives over 324 s, and claustrum at the new default doing
+  the same. Longer completions are unprobed. (The older *stall* fixture never sent
+  a body, so it could not show recovery at all.)
+- **Shipped as: default `0` = no bound.** On the 324 s dribble it matches the
+  reference, measured. On the 400 s never-arrives body the reference's
+  still-downloading row was measured, but **claustrum at the new default was not
+  re-run there** — that half is derived from `Client.Timeout` being zero. Opt in
+  with `-cli-download-timeout <duration>` **or** the `cli-download-timeout` key in
   `claustrum.conf` (explicit flag > config > default); the config key is the
-  reachable one, because Desktop owns the argv on `-install`.
+  reachable one, because Desktop owns the argv on `-install`. (Scope: "matches the
+  reference" is about this bound. D13 is a measured difference on the same
+  `-cli-url` path.)
 - **Zero is the stdlib's own "no timeout" sentinel**, so `http.Client{Timeout: 0}`
-  IS the bypass — there is no huge-but-finite value anywhere in the path. Same
-  property D3 and D10 get by skipping their `io.LimitReader`s, obtained here for
-  free rather than by branching.
+  IS the bypass — no huge-but-finite value stands in for "off". Same property D3
+  and D10 get by skipping their `io.LimitReader`s, obtained here for free rather
+  than by branching.
+- ⚠️ **That frees the body read, not every clock on the path.** `fetchToFile`
+  leaves `Transport` nil, so `http.DefaultTransport` applies
+  `net.Dialer{Timeout: 30s}` and `TLSHandshakeTimeout: 10s`. A host that black-holes
+  SYN still fails at 30 s with this bound off. Both are stdlib defaults, always-on
+  and **unnumbered** — neither probed on the reference, so whether they diverge is
+  open. Named here so "unbounded" is not read wider than it is.
 - **Why it stopped being always-on.** Identical to D11's argument: the bar this
   section sets is cleared (the reference's behaviour on the motivating path is an
   apparently unbounded wait rather than a frame), but the bar does not weigh the
   *cost* — an honest-but-slow download pays it, and Desktop owns the argv, so the
-  caller who pays cannot decline. With the honest half now measured rather than
-  derived, that cost is a fact rather than an inference.
-- ⚠️ **This bounds the exchange, not the throughput.** A server dribbling bytes
-  slower than 5 minutes' worth still trips it, and one that finishes in 4:59 does
-  not — so it is a deadline, not a stall detector.
+  caller who pays cannot decline. The 324 s row makes that cost a measurement
+  rather than an inference.
+- ⚠️ **When opted in, it bounds the exchange, not the throughput.** A server
+  dribbling bytes slower than the configured duration trips it, and one that
+  finishes just inside does not — so it is a deadline, not a stall detector. That
+  is exactly why it is no longer on by default.
 
 ### D13 · `-install` verifies the checksum before decompressing ✅ (always-on) — impact M / cost L
 

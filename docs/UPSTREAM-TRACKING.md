@@ -234,8 +234,12 @@ If the check reports drift:
 >   `cli-download-timeout` config key. **Off by default (`0` = no bound), and OFF is
 >   the parity position** — measured, the reference was still downloading at 400 s
 >   against a body that never arrives, and it completes a slowly-dribbled one that
->   takes 14 s, exactly as claustrum now does. (The 14 s row is measured on both;
->   claustrum at the new default was **not** re-run against the 400 s body.) ⚠️ **A
+>   takes **324 s**, exactly as claustrum now does — while claustrum with the
+>   retracted 5-minute value fails that same download at 300 s. That straddling run
+>   is the measurement; a 14 s dribble used earlier proves nothing, because the old
+>   always-on build would have installed it too. (The 324 s row is measured on both
+>   binaries; claustrum at the new default was **not** re-run against the 400 s
+>   never-arrives body.) ⚠️ **A
 >   D12-shaped difference on a stock claustrum is drift, not D12** — check for the
 >   key or flag first, and confirm the value parses to a positive duration: the same
 >   config-silent / flag-warns / flag-exits-2 / any-zero-accepted table as D11 above
@@ -277,7 +281,7 @@ If the check reports drift:
 >   runnability probe has no deadline and the download has no bound. D11 matches the
 >   reference on every input measured (still running at 45 s; installing a CLI that
 >   answers at 90 s; above 90 s neither binary has been probed); D12 matches on the
->   14 s dribble, with the 400 s never-arrives row measured on the reference only.
+>   324 s dribble, with the 400 s never-arrives row measured on the reference only.
 >   ⚠️ D11's three surfaces are only reachable once `-cli-probe-timeout` /
 >   `cli-probe-timeout` is set, and **one of them is silence**, so a triager who has
 >   confirmed the key IS set should not look only for an error: `installed cli at

@@ -1310,12 +1310,14 @@ left in place:
   matches the reference on every input measured. Opt in with
   `-cli-download-timeout <duration>` or the `cli-download-timeout` key in
   `claustrum.conf`; the figures below are the old hardcoded 5-minute default.
-  Measured 2026-08-07 with a valid 30-byte zstd blob dribbled over ~14 s and a
-  correct `-cli-checksum`: the reference installs it at 14 s with no `cliError`,
-  claustrum at the new default installs it at 15 s with no `cliError`, and the
-  control at `-cli-download-timeout 2s` fails at 2 s with `cliError "download
-  failed: context deadline exceeded (Client.Timeout or context cancellation while
-  reading body)"`. ⚠️ A D12 probe **must** use a valid zstd body: with an invalid
+  Measured 2026-08-07 with a valid 30-byte zstd blob dribbled one byte at a time
+  over ~324 s and a correct `-cli-checksum`: the reference installs it at 324 s
+  with no `cliError`, claustrum at the new default installs it at 324 s with no
+  `cliError`, and claustrum with `-cli-download-timeout 5m` — the value that
+  shipped — fails the same download at 300 s with `cliError "download failed:
+  context deadline exceeded (Client.Timeout or context cancellation while reading
+  body)"`. The fixture straddles the retracted bound on purpose; a shorter dribble
+  cannot discriminate, since the old build would have installed it too. ⚠️ A D12 probe **must** use a valid zstd body: with an invalid
   one the reference answers `decompressing: invalid input: magic number mismatch`
   at 0 s, which is D13's ordering, not a download bound. The
   reference showed no bound at or below 400 s: measured against a server that
@@ -1326,8 +1328,10 @@ left in place:
   body completes on both. But `http.Client.Timeout` bounds the whole exchange, so
   an honest download merely too slow to finish in 5 minutes trips it as surely as
   a black hole does — the control passed because it arrived in time, not because
-  it was honest. (That half is derived from the Client.Timeout semantics; only the
-  stalled-download row was measured.)
+  it was honest. (That half is **no longer derived**: the 324 s straddling run in
+  the D12 bullet below measures it directly — an honest download failed at 300 s by
+  the value that shipped and completed by the reference. The never-arrives row
+  remains measured on the reference only.)
 - **The `--version` runnability probe can be bounded, but is NOT by default —
   opt-in divergence (D11).** With `-cli-probe-timeout` unset (or `0`) the probe
   runs with **no deadline at all**, matching the reference on every input measured
