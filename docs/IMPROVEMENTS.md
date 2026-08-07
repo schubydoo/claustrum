@@ -63,7 +63,23 @@ value coincide:
 
 So the `libc` field moves only on a host where `ldd` *reports* musl while
 `/lib/ld-musl-*.so.*` does **not** match — close to unreachable in practice.
-Recorded as a real but very narrow divergence, **not measured on either binary**.
+
+🔴 **But that is only the honest-but-slow direction, and the bound is NOT narrow
+overall.** Against the *stalled* `ldd` this cap exists for, the divergence is
+total: `detectLibc()` is called unconditionally in the facts literal
+(`install.go`, before any branch), so claustrum returns `"glibc"` at 5 s and then
+goes on to install the CLI and print a **complete `__INSTALL_RESULT__` line**,
+where the reference — assumed unbounded here, not probed — emits **nothing at
+all**. A facts
+line, a `cliWasPresent`, an installed binary versus silence. That is the same
+shape D11 and D12 lead with, on this bound's own motivating path.
+
+⚠️ And the cap addresses the *stall* half only. A **hostile** `ldd` resolved
+earlier in `PATH` that answers in 1 s is untouched by the deadline, and
+`classifyLibc` then trusts its `musl` banner verbatim — so "security fix S4"
+overstates what a timeout can buy.
+
+Neither direction is measured on either binary.
 
 The fixture that would settle it must use a **musl** banner, not a glibc one: a
 stand-in `ldd` on `PATH` that sleeps 6 s, prints `musl libc (x86_64)` **and exits
@@ -872,7 +888,8 @@ completes it with `git.worktree_remove`, which shares the predicate
 ### D11 · `-install` bounds the runnability probe at 15 s ✅ (always-on) — impact M / cost L
 
 - `isRunnable` runs `<cli> --version` to decide whether an installed CLI works.
-  **The reference showed no deadline at or below 45 s.** Measured with a planted
+  **The reference showed no deadline at or below 45 s on a CLI that never answers,
+  and none at or below 90 s on one that eventually does.** Measured with a planted
   CLI that hangs on `--version`:
 
   | binary | outcome |
@@ -888,13 +905,24 @@ completes it with `git.worktree_remove`, which shares the predicate
   path" framing this entry was drafted with is FALSE.** `isRunnable` is a wall-clock deadline, so it cannot separate "never
   answers" from "answers slowly" — and a CLI that answers honestly in 20 s (a cold
   binary on a network filesystem, a first run behind Gatekeeper, a loaded host)
-  is not a broken one. **Measured 2026-08-07 on the same fixture, both binaries**,
-  with a CLI that sleeps 20 s and then prints its version and exits 0:
+  is not a broken one. **Measured 2026-08-07.** The 20 s rows and the control were
+  run on **both** binaries with a CLI that sleeps, prints its version and exits 0;
+  the 90 s row is **reference-only** — claustrum was not re-run, since its 15 s
+  bound makes the outcome identical to the 20 s row:
 
   | scenario | reference `5db5e4a` | claustrum |
   |---|---|---|
   | 20 s CLI, installed via `-cli-zst` | **installs it**, no `cliError`, returns at 20 s | **fails** at 15 s: `cliError "installed cli at <path> is not runnable"`, staged binary deleted, cli-dir left **empty** — **and the blob is consumed anyway**, so a re-run has nothing to install from |
+  | **90 s** CLI, same fixture shape | **installs it**, waiting 91 s | (not run) |
   | *control:* the same fixture with a CLI that answers instantly | installs, 0 s | installs, 0 s |
+
+  The 90 s row is why the flip below is the parity-correct answer rather than a
+  larger constant: it moves the reference from "no deadline at or below 45 s" to
+  **no deadline at or below 90 s**, so any claustrum deadline at or below 90 s
+  diverges for some honest input and picking 30 s or 60 s only moves the boundary.
+  (What the reference does above 90 s is still unmeasured — "effectively
+  unbounded for any real CLI" is the practical reading, not a result.) The instant-CLI row is its control too: same fixture family,
+  same harness, and it completes on both.
 
   The control is what makes it attributable: the only variable between the rows is
   how long the CLI takes to answer. The reference column above is the **no-cache**
@@ -946,9 +974,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   equivalent 15 s cut-off to trip. Worth more attention than the `cliError`
   wording: a client reads this field, it does not parse prose.
 - **Trade:** matching means reintroducing an *unbounded wait* in `-install` — not a
-  hang, per this section's own rule. ⚠️ The recovery half is unobserved: the harness
-  killed the reference at 45 s, so "it answers as soon as the CLI does" is the
-  natural reading of an unbounded wait, not a measurement. That is
+  hang, per this section's own rule. The recovery half **is** observed, twice: the
+  reference answered a 20 s CLI at 20 s and a 90 s CLI at 91 s, so "it answers as
+  soon as the CLI does" is measured up to 90 s, not merely the natural reading. That is
   still the right call, but the cost is higher than this entry used to admit — it
   is not only "a hanging CLI is handled", it is also "a slow-but-working CLI can
   fail its install and lose **both** its binary and the blob it came from" (on the
@@ -958,7 +986,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   without giving up the first; 15 s was never measured against anything.
 - **Why always-on, and why that is now under review.** It clears the bar this
   section sets — the reference's behaviour on the motivating path is an apparently
-  unbounded wait (no bound at or below the harness kill) rather than a frame, which is the same justification D4 and D5 use
+  unbounded wait (no bound at or below 90 s) rather than a frame, which is the same justification D4 and D5 use
   explicitly, D12 restates in its Trade bullet, and D13 supplies in a different
   form ("an input no honest caller produces"). So the ground is consistent across
   the group; what varies is only how plainly each entry names it. What
@@ -1005,8 +1033,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   the same thing from the code side. Treat it as the strongest available claim,
   not as a measurement.
 - **Trade:** matching means an `-install` that waits without bound on a network
-  path the caller does not control — an *unbounded wait*, not a hang. ⚠️ As with
-  D11, the recovery half is unobserved: the stall fixture never sent a body.
+  path the caller does not control — an *unbounded wait*, not a hang. ⚠️ Unlike D11 — whose 20 s and 90 s rows
+  observe the reference recovering — D12's recovery half is unobserved: the stall
+  fixture never sent a body.
 - ⚠️ **This bounds the exchange, not the throughput.** A server dribbling bytes
   slower than 5 minutes' worth still trips it, and one that finishes in 4:59 does
   not — so it is a deadline, not a stall detector.

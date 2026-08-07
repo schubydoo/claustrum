@@ -50,8 +50,8 @@ func (p *gitParams) repoDir() string {
 	return "."
 }
 
-// gitTimeout bounds every git invocation. The reference daemon runs git with no
-// deadline, so a wedged git — an index/config lock, a credential prompt, a stalled
+// gitTimeout bounds every git invocation. The reference daemon showed no deadline
+// at or below the 75 s probed, so a wedged git — an index/config lock, a credential prompt, a stalled
 // network or filesystem, a hung checkout hook — leaves the request goroutine
 // waiting without bound. We cap it. (var, not const, so tests can shrink it.)
 //

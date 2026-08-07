@@ -130,10 +130,17 @@ type branchesResult struct {
 //	claustrum's gitTimeout fired                          (claustrum-only)
 //	worktreePath is/contains the home directory           (claustrum-only)
 //
-// The last two are frames the reference cannot emit — it runs git with no
-// deadline, and it hands a home directory straight to the delete. All three are
-// confined to pathological paths; every reference-reachable reply is still the
-// bare {"success":true}, which is what the committed goldens pin.
+// The last two are frames the reference cannot emit — it showed no deadline at or
+// below the 75 s probed, and it hands a home directory straight to the delete.
+//
+// ⚠️ This comment used to add "all three are confined to pathological paths;
+// every reference-reachable reply is still the bare {"success":true}". Both
+// halves are wrong. Row one is reference-reachable BY ITS OWN DESCRIPTION and
+// populates error. And gitTimeout is a wall-clock bound, not a
+// pathological-input detector: an honest large repo on a loaded host or a cold
+// network filesystem can trip 60 s, which is D5's whole point. What the goldens
+// pin is the bare {"success":true} on the inputs the battery exercises — not a
+// property of every reachable input.
 type worktreeRemoveResult struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`

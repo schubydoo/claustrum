@@ -242,10 +242,15 @@ If the check reports drift:
 >
 > **This list covers the D/CT-numbered divergences only.** Several claustrum-only
 > behaviors are catalogued by *tier number* instead and are just as real:
-> **item 5** (**linux only** — the `ldd --version` libc probe is capped at 5 s; a
-> `libc` difference on linux MAY be this, though the fallback usually matches the
-> true value, so rule out the loader-glob path first. Off linux there is no probe
-> at all, so a `libc` difference there is NOT this. The `gitTimeout` half of that
+> **item 5** (**linux only** — the `ldd --version` libc probe is capped at 5 s.
+> Two symptoms, not one: a `libc` difference on linux MAY be this (though the
+> fallback usually matches the true value, so rule out the loader-glob path
+> first), **and — more likely — "the reference's `-install` never returned while
+> claustrum's did"**, because a stalled `ldd` caps at 5 s here and is assumed to
+> block there — **not measured on either binary**, unlike D11's 45 s/90 s and
+> D12's 400 s runs (other rows in those entries are derived too).
+> Check this before concluding D11 or D12 on an `ldd`-slow host. Off linux there
+> is no probe at all, so a `libc` difference there is NOT this. The `gitTimeout` half of that
 > tier item is **D5** and is listed above), **item 16** (`-metrics-addr`), **item 17** (the orphaned
 > previous process tree is torn down), **item 18** (`-token-fd`), **item 21** (the
 > signal is skipped when the child has already exited). Check both indexes before

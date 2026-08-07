@@ -1313,8 +1313,9 @@ run fails after ~30 s with the cached binary left in place:
   divergence (D11).** The reference showed no deadline at or below 45 s: measured
   with a CLI that hangs on `--version`, it was still running when the harness
   stopped it at 45 s, where claustrum returns at 15 s (control: a CLI that answers
-  instantly returns at 0 s on both). Both figures bound the reference's deadline
-  *above* the kill time; neither shows it is absent. **A CLI answering within 15 s
+  instantly returns at 0 s on both). It also **installed a 90 s CLI, waiting 91 s**.
+  Those figures bound the reference's deadline above 90 s; none shows it is
+  absent. **A CLI answering within 15 s
   is expected to behave identically — derived from the constant, not bisected;
   slower ones diverge, and not only broken ones.** This is a
   wall-clock deadline, not a hang detector — measured 2026-08-07 with a CLI that
@@ -1341,11 +1342,14 @@ run fails after ~30 s with the cached binary left in place:
   Off linux the probe never runs (`libc_other.go` returns `""`), so no bound
   exists there. No deadline has been measured on the reference. `libc` is a field of the
   `__INSTALL_RESULT__` facts, so a fallback is wire-visible in principle — but in
-  practice the fallback and the true value coincide: a musl host returns `"musl"`
-  from the loader glob without spawning `ldd` at all, and a glibc host's fallback
-  *is* `"glibc"`. The field moves only where `ldd` reports musl while
-  `/lib/ld-musl-*.so.*` does not match. Not measured on either binary; see
-  IMPROVEMENTS tier item 5 for the discriminating fixture.
+  practice the fallback and the true value coincide for an honest-but-slow `ldd`: a
+  musl host returns `"musl"` from the loader glob without spawning `ldd` at all,
+  and a glibc host's fallback *is* `"glibc"`. The field moves only where `ldd`
+  reports musl while `/lib/ld-musl-*.so.*` does not match.
+  🔴 **Against a stalled `ldd` the divergence is total, not narrow:**
+  `detectLibc()` runs unconditionally, so claustrum falls back at 5 s and goes on
+  to emit a complete `__INSTALL_RESULT__` where the reference emits nothing.
+  Neither direction is measured on either binary; see IMPROVEMENTS tier item 5.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
   on a fully successful install. An extracted CLI that fails the `--version`
   runnability check still costs you the blob. A blob that is not valid zstd is

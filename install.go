@@ -703,9 +703,15 @@ func isRegularFile(p string) bool {
 // observable: on a musl host detectLibcWith returns "musl" from the loader glob
 // without ever spawning ldd, and on a glibc host the fallback IS "glibc". The
 // reported value moves only where ldd says musl and the loader glob misses, which
-// is close to unreachable. Narrower than D11's 15 s runnability probe, which is
-// the same shape but where the fallback genuinely differs. Not measured on either
-// binary; see IMPROVEMENTS tier item 5 for the discriminating fixture.
+// is close to unreachable.
+//
+// 🔴 That is only the honest-but-slow direction. Against the STALLED ldd this cap
+// exists for, the divergence is total, not narrow: detectLibc() runs
+// unconditionally in the installFacts literal, so claustrum falls back at 5s and
+// then installs the CLI and prints a complete __INSTALL_RESULT__ where the
+// reference emits nothing. A hostile ldd answering in 1s is untouched by the
+// deadline either way. Neither direction is measured on either binary; see
+// IMPROVEMENTS tier item 5 for the discriminating fixture.
 // (The libc VALUE itself is a separate matter: see classifyLibc for the loader
 // glob, and libc_other.go for why the probe does not run off linux at all.)
 const lddProbeTimeout = 5 * time.Second

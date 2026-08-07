@@ -196,8 +196,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   probe entirely off linux). D13 is **not** a bound — it is verify-before-decompress
   ordering, which no slow input trips. **No bound here is a hang detector**: each is
   a threshold, so an honest-but-slow input trips it too. For D11 and D12 the
-  reference showed no deadline at or below the harness kill time (45 s and 400 s),
-  which bounds it *above* that, not at absent; the ldd bound has never been probed
+  reference showed no deadline at or below 45 s (400 s for D12) on an input that
+  never answers, and **(D11 only)** it INSTALLED a 90 s CLI, waiting
+  91 s — which bounds D11's above 90 s, not at absent; the ldd bound has never been probed
   on either binary.
   **Measured (D11, claustrum side):** a CLI answering honestly in 20 s diverges,
   and *how* depends on the shape — `installed cli at <path> is not runnable` with
@@ -212,9 +213,12 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   shape. **Derived:** on the cached shapes it should cache-hit and report
   `cliWasPresent:true` having installed nothing, since its guard has no 15 s
   cut-off — not separately measured. Also derived: a download slower than 5 minutes
-  (`http.Client.Timeout` bounds the whole exchange). The ldd bound is narrower than
-  it looks — fallback and true value coincide except where `ldd` reports musl and
-  the loader glob misses. D13 differs on the one combined-failure input of the
+  (`http.Client.Timeout` bounds the whole exchange). The ldd bound's *value* delta is narrow —
+  fallback and true value coincide except where `ldd` reports musl and the loader
+  glob misses. But a **stalled** `ldd` makes it total on **any host without a musl
+  loader** — i.e. every ordinary glibc host, since that is exactly when `ldd` is
+  spawned at all: claustrum falls back at 5 s and emits a full
+  `__INSTALL_RESULT__` where the reference is assumed to block (not probed). D13 differs on the one combined-failure input of the
   three measured — corrupt *and* wrong-checksummed — not on every possible input.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
