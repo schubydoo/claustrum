@@ -853,7 +853,7 @@ completes it with `git.worktree_remove`, which shares the predicate
 
   | scenario | reference `5db5e4a` | claustrum |
   |---|---|---|
-  | 20 s CLI, installed via `-cli-zst` | **installs it**, no `cliError`, returns at 20 s | **fails** at 15 s: `cliError "installed cli at <path> is not runnable"`, and the staged binary is deleted — the cli-dir is left **empty** |
+  | 20 s CLI, installed via `-cli-zst` | **installs it**, no `cliError`, returns at 20 s | **fails** at 15 s: `cliError "installed cli at <path> is not runnable"`, staged binary deleted, cli-dir left **empty** — **and the blob is consumed anyway**, so a re-run has nothing to install from |
   | *control:* the same fixture with a CLI that answers instantly | installs, 0 s | installs, 0 s |
 
   The control is what makes it attributable: the only variable between the rows is
@@ -872,8 +872,14 @@ completes it with `git.worktree_remove`, which shares the predicate
   | shape | claustrum | note |
   |---|---|---|
   | cached slow CLI, **no** source flag | `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, 15 s | the working CLI is still on disk and is reported missing; a plainly absent file produces this string too, so it does not identify a timeout |
-  | cached slow CLI **+** a source flag | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error |
-  | slow CLI arriving via `-cli-zst` | `cliError "installed cli at <path> is not runnable"`, 15 s | install fails, staged binary deleted |
+  | cached slow CLI **+** a source supplying a CLI that answers **in time** | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error |
+  | cached slow CLI **+** a source supplying the **same slow** CLI | `cliError "installed cli at <path> is not runnable"`, **30 s** | both probes time out. The cached working binary **survives** — the rename never runs — and the blob is consumed. Arguably the likeliest shape in practice: a CLI is usually slow because the *host* is, and the fresh copy runs on the same host |
+  | no cache, slow CLI arriving via `-cli-zst` | `cliError "installed cli at <path> is not runnable"`, 15 s | staged binary deleted, cli-dir empty, blob consumed |
+
+  Silent recovery therefore needs the *replacement* to be fast; it is the
+  stale-hanging-CLI story, not the slow-CLI one. An earlier version of this table
+  claimed all rows came from one 20 s fixture — the 15 s in row two was the tell,
+  since one probe's worth of wall clock cannot cover two timeouts.
 
 - **`cliWasPresent` flips, and it is a structured field rather than a string.**
   In both cached shapes above it comes back `false` for a CLI that is present and
@@ -883,7 +889,9 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Trade:** matching means reintroducing an unbounded hang in `-install`. That is
   still the right call, but the cost is higher than this entry used to admit — it
   is not only "a hanging CLI is handled", it is also "a slow-but-working CLI can
-  fail its install and lose its binary". Raising the deadline reduces the second
+  fail its install and lose **both** its binary and the blob it came from" —
+  recovery then needs a fresh upload, because the consume rule keys on
+  decompression succeeding, not on the install succeeding. Raising the deadline reduces the second
   without giving up the first; 15 s was never measured against anything.
 
 ### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L

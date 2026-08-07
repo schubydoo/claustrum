@@ -195,9 +195,11 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   at 5 minutes (still downloading at 400 s), and the checksum is verified
   **before** decompressing where the reference decompresses first. None differs on
   an honest path *within the bound* — but **neither timeout is a hang detector**.
-  Measured: a CLI answering honestly in 20 s makes claustrum fail the install with
-  `installed cli at <path> is not runnable` and delete the binary, where the
-  reference installs it. Same shape for a download slower than 5 minutes. D13
+  **Measured:** a CLI answering honestly in 20 s makes claustrum fail the install
+  with `installed cli at <path> is not runnable`, delete the binary **and consume
+  the blob**, where the reference installs it. **Derived, not measured:** the same
+  for a download slower than 5 minutes, since `http.Client.Timeout` bounds the
+  whole exchange. D13
   shows only against a blob that is corrupt *and* wrong-checksummed.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local

@@ -1291,8 +1291,9 @@ the facts (`cliError`), not via the exit code.
 Four `-install` behaviours are easy to miss. The first two are bounds the
 reference does not appear to apply; the last two have no frame at all. Only the
 download bound *always* surfaces a `cliError` — a timed-out runnability probe on
-the cache-hit check often surfaces as the **absence** of an error, since the
-install simply proceeds and succeeds on a fresh binary:
+the cache-hit check can surface as the **absence** of an error — but only when the
+replacement answers in time; if it is just as slow, both probes time out and the
+run fails after ~30 s with the cached binary left in place:
 
 - **The download is bounded at 5 minutes — intentional divergence (D12).** The
   reference showed no bound at or below 400 s: measured against a server that
