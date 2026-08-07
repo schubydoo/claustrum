@@ -194,8 +194,11 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   probe is capped at 15 s (the reference was still running at 45 s), the download
   at 5 minutes (still downloading at 400 s), and the checksum is verified
   **before** decompressing where the reference decompresses first. None differs on
-  an honest path — they only show against a CLI that never answers, a download
-  that never arrives, or a blob that is corrupt *and* wrong-checksummed.
+  an honest path *within the bound* — but **neither timeout is a hang detector**.
+  Measured: a CLI answering honestly in 20 s makes claustrum fail the install with
+  `installed cli at <path> is not runnable` and delete the binary, where the
+  reference installs it. Same shape for a download slower than 5 minutes. D13
+  shows only against a blob that is corrupt *and* wrong-checksummed.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

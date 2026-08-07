@@ -1300,14 +1300,24 @@ install simply proceeds and succeeds on a fresh binary:
   harness stopped it at 400 s while claustrum
   returned at 300 s with `cliError "download failed: context deadline exceeded
   (Client.Timeout or context cancellation while reading body)"`. A real 629 MB
-  body completes on both, so only a stalled or black-holed download differs.
+  body completes on both. But `http.Client.Timeout` bounds the whole exchange, so
+  an honest download merely too slow to finish in 5 minutes trips it as surely as
+  a black hole does — the control passed because it arrived in time, not because
+  it was honest. (That half is derived from the Client.Timeout semantics; only the
+  stalled-download row was measured.)
 - **The `--version` runnability probe is bounded at 15 s — intentional
   divergence (D11).** The reference showed no deadline at or below 45 s: measured
   with a CLI that hangs on `--version`, it was still running when the harness
   stopped it at 45 s, where claustrum returns at 15 s (control: a CLI that answers
   instantly returns at 0 s on both). Both figures bound the reference's deadline
-  *above* the kill time; neither shows it is absent. No honest path differs — a
-  CLI that answers behaves identically. What a timeout reports depends on which of
+  *above* the kill time; neither shows it is absent. **A CLI answering within 15 s
+  behaves identically; slower ones diverge, and not only broken ones.** This is a
+  wall-clock deadline, not a hang detector — measured 2026-08-07 with a CLI that
+  answers honestly in 20 s, the reference installs it (no `cliError`, 20 s) while
+  claustrum fails at 15 s with `cliError "installed cli at <path> is not
+  runnable"` and deletes the staged binary, leaving the cli-dir empty. A control
+  CLI answering instantly installs on both. So that string is reachable on a
+  working CLI, not only a broken one. What a timeout reports depends on which of
   the two probe sites hit it: after extraction it is
   `cliError "installed cli at <path> is not runnable"`, while on the cache-hit
   check a timeout is indistinguishable from a cache miss and the install simply

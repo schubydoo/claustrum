@@ -844,30 +844,47 @@ completes it with `git.worktree_remove`, which shares the predicate
   The control is what makes the 45 s mean something: without it, "the reference
   did not finish" is indistinguishable from a fixture that could never finish.
   This bounds the reference's deadline at *above 45 s*, not at *absent*.
-- **No observable delta on any honest path.** A CLI that answers `--version`
-  behaves identically. The divergence appears only when a CLI never answers, and
-  there the reference was still wedged when the harness killed it at 45 s.
-- **Trade:** matching means reintroducing an unbounded hang in `-install`, which
-  is why this stays.
-- ⚠️ **There are TWO probe sites and they fail differently, so "the second
-  observable" is not one string.** `isRunnable` is called on the cache-hit check
-  (`install.go`, the `isRegularFile && isRunnable` guard) and again after
-  extraction. A timeout at the first is indistinguishable from a cache miss, so
-  what happens next depends on the flags, not on the timeout: with `-cli-url` or
-  `-cli-zst` the install simply proceeds and re-installs, and only with **no
-  source flag** does it end at `cliError "cli <v> missing and no --cli-url or
-  --cli-zst provided"` — a string a plainly missing file produces just as well,
-  timeout or not. A timeout at the second site reports
-  `installed cli at <path> is not runnable`. An earlier version of this entry
-  quoted the first string as *the* timeout observable; it is neither unique to a
-  timeout nor reachable on the common path.
-- **The most reachable shape emits no `cliError` at all.** A cached CLI that hangs
-  on `--version` fails the cache-hit guard after 15 s and drops into `ensureCLI`;
-  with `-cli-url` present the run downloads, installs, passes the probe on the
-  fresh binary and reports `cliWasPresent:false`. So the divergence at its purest
-  is claustrum recovering *silently* from a stale hanging CLI, where the reference
-  was still wedged on it when the harness stopped the probe — the observable is
-  the **absence** of an error, not the presence of one.
+- 🔴 **"No observable delta on any honest path" was FALSE, and this entry used to
+  say it.** `isRunnable` is a wall-clock deadline, so it cannot separate "never
+  answers" from "answers slowly" — and a CLI that answers honestly in 20 s (a cold
+  binary on a network filesystem, a first run behind Gatekeeper, a loaded host)
+  is not a broken one. **Measured 2026-08-07 on the same fixture, both binaries**,
+  with a CLI that sleeps 20 s and then prints its version and exits 0:
+
+  | scenario | reference `5db5e4a` | claustrum |
+  |---|---|---|
+  | 20 s CLI, installed via `-cli-zst` | **installs it**, no `cliError`, returns at 20 s | **fails** at 15 s: `cliError "installed cli at <path> is not runnable"`, and the staged binary is deleted — the cli-dir is left **empty** |
+  | *control:* the same fixture with a CLI that answers instantly | installs, 0 s | installs, 0 s |
+
+  The control is what makes it attributable: the only variable between the rows is
+  how long the CLI takes to answer. So the divergence is not confined to a broken
+  CLI — claustrum **fails an install the reference completes, and discards a
+  working binary**, on an input no one would call adversarial.
+- **The delta is bounded by the deadline, not by honesty.** A CLI answering within
+  15 s behaves identically on both. Everything slower diverges, and how it
+  diverges depends on which probe site sees it — see the two-site bullet below.
+- ⚠️ **TWO probe sites, three different outcomes — "the observable" is not one
+  string.** `isRunnable` is called on the cache-hit guard (`isRegularFile &&
+  isRunnable`) and again after extraction. A timeout on the first is
+  indistinguishable from a cache miss, so what follows depends on the flags rather
+  than on the timeout. All three measured 2026-08-07 with the same 20 s CLI:
+
+  | shape | claustrum | note |
+  |---|---|---|
+  | cached slow CLI, **no** source flag | `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, 15 s | the working CLI is still on disk and is reported missing; a plainly absent file produces this string too, so it does not identify a timeout |
+  | cached slow CLI **+** a source flag | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error |
+  | slow CLI arriving via `-cli-zst` | `cliError "installed cli at <path> is not runnable"`, 15 s | install fails, staged binary deleted |
+
+- **`cliWasPresent` flips, and it is a structured field rather than a string.**
+  In both cached shapes above it comes back `false` for a CLI that is present and
+  works. The reference, which showed no deadline at or below 45 s, has no
+  equivalent 15 s cut-off to trip. Worth more attention than the `cliError`
+  wording: a client reads this field, it does not parse prose.
+- **Trade:** matching means reintroducing an unbounded hang in `-install`. That is
+  still the right call, but the cost is higher than this entry used to admit — it
+  is not only "a hanging CLI is handled", it is also "a slow-but-working CLI can
+  fail its install and lose its binary". Raising the deadline reduces the second
+  without giving up the first; 15 s was never measured against anything.
 
 ### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
 
@@ -887,9 +904,19 @@ completes it with `git.worktree_remove`, which shares the predicate
   discriminates. The control matters for the same reason as D11's: a stall probe
   where nothing can ever succeed cannot tell "no deadline" from "broken fixture",
   and the D10 measurement supplies exactly that positive case on the same path.
-- **No observable delta on any honest path.** A server that sends its body
-  behaves identically. The divergence appears only against a stalled or
-  black-holed download, where the reference was still waiting at 400 s.
+- **No observable delta on a download that completes inside 5 minutes.** A server
+  sending its body at any usable rate behaves identically. The divergence appears
+  against a stalled or black-holed download — where the reference was still
+  waiting at 400 s — **and, by the same argument as D11, against an honest
+  download that is merely too slow.** `http.Client.Timeout` bounds the whole
+  exchange including the body read, so a real 600 MiB body over a link that needs
+  six minutes trips it exactly as a black hole does. The 629 MB control passed
+  because it *arrived in time*, not because it was honest.
+- ⚠️ **That last half is DERIVED from `http.Client.Timeout` semantics, not
+  measured** — unlike D11's, whose slow-CLI row was run on both binaries. A probe
+  would need a >5-minute run to discriminate, and the deadline caveat below says
+  the same thing from the code side. Treat it as the strongest available claim,
+  not as a measurement.
 - **Trade:** matching means an `-install` that can hang forever on a network path
   the caller does not control.
 - ⚠️ **This bounds the exchange, not the throughput.** A server dribbling bytes
@@ -911,8 +938,10 @@ completes it with `git.worktree_remove`, which shares the predicate
 
   Both controls come back identical, which is why the single differing row is
   attributable to ordering rather than to the fixture. Measured at `5db5e4a`.
-- **Observable delta:** the `cliError` string, on that one combined-failure input
-  only.
+- **Observable delta:** the `cliError` string. Of the three combinations measured
+  it differs on one — the combined failure; the other two are identical. That is a
+  claim about the three rows above, not about every possible input, and D11 is the
+  reminder of why the distinction matters.
 - **Trade:** matching means feeding unverified bytes to the decompressor — giving
   up a verify-then-use property for parity on an input no honest caller produces.
 - **The memory cost of verifying first is one pass, not a buffer.** The download
