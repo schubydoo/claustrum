@@ -194,9 +194,26 @@ value instead. Probe-verified against the reference at `5db5e4a`.
 | `-32600` | `Invalid JSON-RPC version` — `jsonrpc` absent or != `"2.0"` |
 | `-32601` | `Invalid method format: <m>` (method has no `.`), `Unknown namespace: <ns>` (well-formed but unknown namespace), or `Unknown method: <ns>.<m>` (known namespace, unknown method) |
 | `-32602` | invalid params (see per-method messages) |
-| `-32603` | internal error (e.g. `open <path>: no such file or directory`) |
+| `-32603` | internal error (e.g. `open <path>: no such file or directory`); also a **recovered handler panic** → `recovered panic: <v>`, see below |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` — `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
 | `-32001` | unauthorized |
+
+### Handler panic recovery
+
+The per-request goroutine wraps dispatch in `recover()`, so a panic in any
+handler is caught rather than crashing the daemon. The reply is
+`{"error":{"code":-32603,"message":"recovered panic: <v>"}}` and the daemon logs
+`[Server] recovered panic: method=<m> id=<id>: <v>`.
+
+⚠️ **This frame is claustrum's own, and it is the one entry in this document that
+is not a statement about the wire.** No input is known to reach a handler panic
+(extensive fuzzing found none, and claustrum's own panic sites are each either an
+unreachable stdlib guard or an already-bounds-guarded slice), so the path is
+unreachable and no client can provoke the frame. `-32603` is `codeInternal`, the
+JSON-RPC 2.0 standard *Internal error* code; the message prefix, the log line and
+the id rendering are claustrum's own conventions. It is documented here so an
+operator who somehow sees it knows what it means — not as a compatibility
+guarantee, and not as a claim about any other implementation.
 
 ### Validation precedence (probe-verified)
 
@@ -859,8 +876,15 @@ unknown id is not an error):
       the only round value in it. The ceiling is not new in `5db5e4a`: `7c2f88d`,
       the build that added the method, answers at ~30 s for the same input.
     - **`escalate`** (default `true`) decides what happens if the process is still
-      alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
-      and add `"escalated":true` to the reply. `false` → leave the process running
+      alive after the grace. `true` → **escalate** to `SIGKILL`, wait up to
+      **7 s** for the reap, and add `"escalated":true` to the reply. That 7 s is
+      itself measured against the reference (2026-08-06, black-box): with
+      `timeoutMs: 500` against a child `SIGKILL` cannot reap, the reference
+      replies at 7.51 s. It is client-observable twice over — in when the reply
+      arrives, and in whether a child reaped between 5 s and 7 s reports
+      `"died":true` rather than `false`. A pipe-holding grandchild cannot measure
+      it: the exit drain closes the read ends at 5 s first, so both binaries
+      answer at 5.01 s regardless. `false` → leave the process running
       and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
       The escalation `SIGKILL` goes to the **process group**, so it sweeps up the
       child tree the graceful signal spared — and it is sent even when the
