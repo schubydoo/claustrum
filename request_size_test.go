@@ -2,6 +2,8 @@ package main
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -76,5 +78,130 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 	dispatchRequest = old
 	if reply := sendRaw(t, sock, `{"jsonrpc":"2.0","id":8,"method":"server.ping","auth":"`+testToken+`"}`); !strings.Contains(reply, `"pong":true`) {
 		t.Errorf("daemon dead after a handler panic: reply=%q, want a pong", reply)
+	}
+}
+
+// serveConnOnPipe runs one connection's read loop over a net.Pipe against a
+// minimal server, returning the log output once serveConn has returned. Driving
+// serveConn directly (rather than through the socket harness) keeps the capture
+// buffer to a single connection's lines and makes the ordering assertion below
+// deterministic: fn only returns after the deferred "Connection closed" ran.
+// A net.Pipe address renders as "pipe" on every platform, so the assertions can
+// scope themselves to this connection.
+func serveConnOnPipe(t *testing.T, write func(net.Conn)) string {
+	t.Helper()
+	s := &server{
+		token:    testToken,
+		procs:    newTestProcManager(t),
+		conns:    make(map[*conn]struct{}),
+		shutdown: make(chan struct{}),
+	}
+	cli, srv := net.Pipe()
+	return captureLog(t, func() {
+		done := make(chan struct{})
+		go func() { defer close(done); s.serveConn(&conn{nc: srv}) }()
+		write(cli)
+		_ = cli.Close()
+		<-done
+	})
+}
+
+// An over-cap request line ends the read loop with a scanner error rather than a
+// clean EOF, and that arm is otherwise silent — no reply goes out. The daemon
+// reports it the way the reference does, in the reference's measured order: the
+// scanner error precedes "Connection closed", which comes from claustrum's
+// cleanup defer.
+func TestOversizeRequestLogsScannerError(t *testing.T) {
+	out := serveConnOnPipe(t, func(cli net.Conn) {
+		// Deliberately unterminated: bufio gives up at the cap either way, and the
+		// client-side write unblocks when serveConn's defer closes its end.
+		_, _ = cli.Write([]byte(strings.Repeat("x", 1024*1024)))
+	})
+
+	i := strings.Index(out, "[Server] scanner error on pipe")
+	if i < 0 {
+		t.Fatalf("no scanner error logged; got:\n%s", out)
+	}
+	if !strings.Contains(out[i:], "bufio.Scanner: token too long") {
+		t.Errorf("scanner error carries the wrong cause; got:\n%s", out)
+	}
+	j := strings.Index(out, "[Server] Connection closed: pipe")
+	if j < 0 {
+		t.Fatalf("no close line logged; got:\n%s", out)
+	}
+	if j < i {
+		t.Errorf("scanner error must precede Connection closed; got:\n%s", out)
+	}
+}
+
+// The counterpart: sc.Err() is nil on a clean EOF, so an ordinary disconnect
+// stays as quiet as it was before the check existed.
+func TestCleanDisconnectLogsNoScannerError(t *testing.T) {
+	out := serveConnOnPipe(t, func(net.Conn) {})
+	// Positive control FIRST: this test asserts an absence, so it would pass just
+	// as happily if captureLog saw nothing at all. Anchoring on the line that must
+	// always be there proves the capture window actually covered this connection.
+	if !strings.Contains(out, "[Server] Connection closed: pipe") {
+		t.Fatalf("captured no output for this connection, so the absence below proves nothing; got:\n%s", out)
+	}
+	if strings.Contains(out, "scanner error") {
+		t.Errorf("clean disconnect logged a scanner error; got:\n%s", out)
+	}
+}
+
+// The other quiet arm, and the reason for the net.ErrClosed exclusion: when the
+// DAEMON closes the connection — which closeAll does to every client on the
+// graceful-shutdown path — the pending read fails with net.ErrClosed. Measured
+// on a server.shutdown with two connections open, the reference's log carries no
+// scanner-error line; an unfiltered sc.Err() check made claustrum emit one per
+// connected client. It needs a real socket, because a net.Pipe close reports
+// io.ErrClosedPipe instead.
+func TestServerInitiatedCloseLogsNoScannerError(t *testing.T) {
+	// Short socket path on purpose — see newRunningServer.
+	dir, err := os.MkdirTemp("", "cl")
+	if err != nil {
+		t.Fatalf("tempdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	ln, err := net.Listen("unix", filepath.Join(dir, "s.sock"))
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	type accepted struct {
+		nc  net.Conn
+		err error
+	}
+	ch := make(chan accepted, 1)
+	go func() { nc, err := ln.Accept(); ch <- accepted{nc, err} }()
+	cli, err := net.Dial("unix", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer cli.Close()
+	a := <-ch
+	if a.err != nil {
+		t.Fatalf("accept: %v", a.err)
+	}
+
+	s := &server{
+		token:    testToken,
+		procs:    newTestProcManager(t),
+		conns:    make(map[*conn]struct{}),
+		shutdown: make(chan struct{}),
+	}
+	out := captureLog(t, func() {
+		done := make(chan struct{})
+		go func() { defer close(done); s.serveConn(&conn{nc: a.nc}) }()
+		_ = a.nc.Close() // what closeAll does on server.shutdown
+		<-done
+	})
+	// Positive control, same reasoning as TestCleanDisconnectLogsNoScannerError.
+	if !strings.Contains(out, "[Server] Connection closed") {
+		t.Fatalf("captured no output for this connection, so the absence below proves nothing; got:\n%s", out)
+	}
+	if strings.Contains(out, "scanner error") {
+		t.Errorf("daemon-initiated close logged a scanner error; got:\n%s", out)
 	}
 }
