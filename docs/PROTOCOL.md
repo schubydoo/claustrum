@@ -1404,7 +1404,13 @@ Staging and cleanup (probe-verified):
 - The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
   into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
   matches `.fetch-*`, so an interrupted install's litter is reclaimed.
-- A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`**, and the
+- A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`** when the
+  cli-dir already exists — on a **first install it lands at
+  `$TMPDIR/claustrum-fetch-<random>` instead**, because `fetchToFile` runs before
+  `ensureCLI` creates the directory, so the in-cli-dir `os.CreateTemp` fails and
+  falls back. In that case the notes below about the sweep and the prune do not
+  apply, since the file is not in the cli-dir at all. Where it does land beside the
+  destination, the
   different prefix is deliberate — the sweep must **not** claim it. The sweep runs
   after every attempted install, so a `.fetch-*` blob could be removed by a
   concurrent install's sweep together with the staging file, leaving the

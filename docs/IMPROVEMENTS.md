@@ -836,7 +836,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   `-install` unbounded in memory — measured on claustrum, and reason enough on its
   own; the reference's own memory behaviour was never measured and no claim about
   it is needed here. So the blob is a
-  **path** throughout: the download streams to `<cli-dir>/.blob-<random>` and is
+  **path** throughout: the download streams to `<cli-dir>/.blob-<random>` — or to
+  `$TMPDIR/claustrum-fetch-<random>` on a first install, since `fetchToFile` runs
+  before the cli-dir is created — and is
   hashed as it arrives, the local blob is hashed in one bounded pass, and
   `zstdDecompress` opens the path. A path rather than a reader because `ensureCLI`
   retries `stageAndInstall` once and needs a source readable **twice**.
@@ -1017,10 +1019,14 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **No observable delta in the facts frame for a download that completes inside
   5 minutes** — derived from the constant, not bisected, exactly as D11's boundary
   is. A server sending its body at any usable rate is expected to behave
-  identically. (On disk claustrum does create `<cli-dir>/.blob-<random>`, which a
-  SIGKILL can leave behind. No claim is made here about whether the reference
-  creates anything equivalent — that was never measured, as D10 and PROTOCOL both
-  record.) The divergence appears
+  identically. (On disk claustrum does create a download temp a SIGKILL can leave
+  behind — `<cli-dir>/.blob-<random>` when the cli-dir already exists, and
+  **`$TMPDIR/claustrum-fetch-<random>` when it does not, which is the first-install
+  case**: `fetchToFile` runs *before* `ensureCLI`'s `os.MkdirAll`, so its
+  `os.CreateTemp` in the cli-dir fails and falls back — putting the blob on the
+  very `/tmp` that keeping it beside the destination exists to avoid. No claim is
+  made here about whether the reference creates anything equivalent — that was
+  never measured, as D10 and PROTOCOL both record.) The divergence appears
   against a stalled or black-holed download — where the reference was still
   waiting at 400 s — **and, by the same argument as D11, against an honest
   download that is merely too slow.** `http.Client.Timeout` bounds the whole
@@ -1064,8 +1070,8 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Trade:** matching means feeding unverified bytes to the decompressor — giving
   up a verify-then-use property for parity on an input no honest caller produces.
 - **The memory cost of verifying first is one pass, not a buffer.** The download
-  streams to `<cli-dir>/.blob-<random>` and is hashed on the way past (D10), so
-  peak memory is flat in the blob size — measured 886 MB → 10 MB on a 400 MiB
+  streams to a temp file and is hashed on the way past (D10), so peak **RSS** is
+  flat in the blob size — measured 886 MB → 10 MB on a 400 MiB
   payload. Verifying before decompressing therefore costs one full read of the
   blob from disk before decompression starts, and nothing resident. **No claim is
   made here about the reference's own memory behaviour**: whether it streams,

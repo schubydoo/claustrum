@@ -558,6 +558,14 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 	// in RAM and undo the streaming this change exists for. The cost is that the
 	// sweep can no longer reclaim a blob left by a SIGKILLed install; the caller's
 	// own defer removes it on every other path.
+	//
+	// ⚠️ On a FIRST install that argument does not hold, and the fallback below is
+	// why: ensureCLI creates the cli-dir AFTER this runs, so the CreateTemp here
+	// fails with ENOENT and the blob goes to $TMPDIR after all — onto the tmpfs
+	// this paragraph exists to avoid, and out of reach of the sweep and the prune.
+	// Peak RSS stays flat either way (tmpfs pages are page cache, not process
+	// RSS), so the 886 MB -> 10 MB figure is unaffected; the host is still holding
+	// the blob in memory though, and that number alone does not say so.
 	f, err := os.CreateTemp(dir, blobTempPrefix+"*")
 	if err != nil {
 		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
