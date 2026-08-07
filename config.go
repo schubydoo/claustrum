@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // configFileName is an optional key=value file read from the directory that holds
@@ -61,6 +62,10 @@ type config struct {
 	// config key matters more than the flag for the same reason: Claude Desktop
 	// owns the argv on the -install invocation too.
 	maxCLIBytes *int64
+	// cliProbeTimeout mirrors -cli-probe-timeout; nil means "not set in the file".
+	// Same reachability argument as maxCLIBytes: it applies on -install, whose
+	// argv Claude Desktop owns.
+	cliProbeTimeout *time.Duration
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
@@ -152,6 +157,14 @@ func applyConfigKey(cfg *config, key, val string) {
 		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
 			cfg.maxCLIBytes = &n
 		}
+	case "cli-probe-timeout":
+		// A Go duration ("20s", "2m"); 0 disables the deadline (the default).
+		// Negative and unparseable values are rejected, so a typo can never
+		// silently impose a deadline the reference does not have. A bare number
+		// is unparseable on purpose — "15" meaning 15ns would be a trap.
+		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
+			cfg.cliProbeTimeout = &d
+		}
 	}
 	// Unknown keys are intentionally ignored (forward-compatibility).
 }
@@ -226,6 +239,21 @@ func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 		// [Install], not [Server]: this cap governs zstdDecompress and fetchToFile,
 		// and effectiveMaxCLIBytes is reached only from the -install arm.
 		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		return 0
+	}
+	return cliVal
+}
+
+// effectiveCLIProbeTimeout applies the same precedence for -cli-probe-timeout,
+// and the same negative handling as the two size caps: normalise to the disabled
+// value rather than letting the flag and config paths disagree about a negative.
+func (cfg config) effectiveCLIProbeTimeout(cliVal time.Duration, cliSet bool) time.Duration {
+	if !cliSet && cfg.cliProbeTimeout != nil {
+		return *cfg.cliProbeTimeout
+	}
+	if cliVal < 0 {
+		// [Install], not [Server]: isRunnable is reached only from the -install arm.
+		logWarnf("[Install] -cli-probe-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
 		return 0
 	}
 	return cliVal

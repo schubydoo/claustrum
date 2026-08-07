@@ -89,7 +89,7 @@ One binary, mode-switched by flag:
 claustrum -serve   -socket <path> -token-file <path>   # self-daemonize, run the RPC server
 claustrum -bridge  -socket <path>                       # dumb stdio<->socket relay (what SSH attaches)
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
-claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>] [-max-cli-bytes <n>]
+claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>] [-max-cli-bytes <n>] [-cli-probe-timeout <dur>]
 claustrum -version
 ```
 
@@ -144,7 +144,12 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   `-max-extract-bytes` (D3) opts into a `files.extract_tar` size cap — **off by default**,
   because a cap fails an extraction the reference completes (measured to 629 MB). This one
   **is** wire-visible when enabled: exceeding it returns an error frame the reference has no
-  way to produce.
+  way to produce. Two `-install` knobs are off by default for the same reason:
+  `-max-cli-bytes` (D10) caps the decompressed CLI and the download body, and
+  `-cli-probe-timeout` (D11) bounds the `<cli> --version` runnability probe — measured, the
+  reference installs a CLI that answers in 90 s, so any deadline fails an install it
+  completes. Each also has a `claustrum.conf` key, which is the reachable one when Claude
+  Desktop owns the argv.
 - **Protocol extensions** (claustrum-only, opt-in — **additions**, *not* part of the reference
   contract it mimics): `process.spawn` / `process.reattach` accept `"wantPid":true`, which adds
   `pid` + `startTime` to the result for PID-reuse / orphan detection (CT-1). These are pure
@@ -169,7 +174,8 @@ method, error path, and the full process lifecycle, then diffs normalized frames
 deliberate divergences** — see
 [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity); the bounds
 D11/D12 in particular are wall-clock thresholds, so an honest-but-slow CLI or download diverges
-by design. The harness lives in `scratch/` (local, not published).
+once they apply — which for D11 means only when `-cli-probe-timeout` is opted into, since it is
+off by default. The harness lives in `scratch/` (local, not published).
 
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same
 contract without the reference binary: a socket-integration battery boots the daemon and asserts

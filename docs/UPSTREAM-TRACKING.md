@@ -193,10 +193,23 @@ If the check reports drift:
 >   config key, governing both the decompressed CLI and the download body. **Off by
 >   default**, same reasoning as D3: measured, the reference takes a 600 MiB payload
 >   all the way to the runnability check.
+> - **D11** — the `-install` runnability-probe deadline, `-cli-probe-timeout` / the
+>   `cli-probe-timeout` config key. **Off by default (`0` = no deadline), and OFF is
+>   the parity position** — measured, the reference was still running at 45 s
+>   against a CLI that never answers and INSTALLED one that answered at 90 s, so
+>   any finite default fails an install the reference completes. ⚠️ **A probe that
+>   sees a D11-shaped difference on a stock claustrum is drift, not D11** — check
+>   for a `cli-probe-timeout` key in `claustrum.conf` or a `-cli-probe-timeout`
+>   flag first, **and confirm the value actually parses to a positive duration**:
+>   a bare number or a negative leaves the deadline off, silently on the config
+>   path and with only a stderr warning on the flag path, so a key being *present*
+>   does not mean a deadline is *in force*. Once genuinely opted in, the three
+>   surfaces below apply.
 > - **CT-1** — `wantPid` adds `pid`/`startTime` to spawn/reattach replies.
 > - **CT-2** — `-keep-children` leaves children running across shutdown.
 > - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /
->   `metrics-addr` / `listen-pipe` / `max-extract-bytes` / `max-cli-bytes`).
+>   `metrics-addr` / `listen-pipe` / `max-extract-bytes` / `max-cli-bytes` /
+>   `cli-probe-timeout`).
 > - **CT-5** — `-listen-pipe`, the additional Windows named-pipe transport.
 >
 > **Always-on and measured — a probe that reaches the path sees a real
@@ -216,26 +229,25 @@ If the check reports drift:
 >   it alone and falls back to inherited stdio.
 > - **D9** — namespace-wide params binding rejects a type-mismatched field the
 >   reference ignores. Adversarial params only.
-> - **D11 / D12** — `-install` bounds the `<cli> --version` runnability probe at
->   15 s and the download at 5 minutes. The reference was still running at 45 s and
->   still downloading at 400 s respectively. **A fixture that never answers is NOT
->   required for D11**: a CLI that honestly answers in 20 s already diverges — the
->   reference does not apply a 15 s cut-off while claustrum does — but **D11 has
->   three different surfaces and one of them is silence**, so do not look only for
->   an error. (On the no-cache shape the reference installs the CLI outright,
+> - **D12** — `-install` bounds the download at 5 minutes; the reference was still
+>   downloading at 400 s. An honest download merely too slow to finish trips it as
+>   surely as a stalled one does, derived from `http.Client.Timeout` bounding the
+>   whole exchange rather than measured.
+> - **D11 is NOT in this group any more** — it moved to the opt-in list above when
+>   its deadline was defaulted off. On a stock claustrum the runnability probe has
+>   no deadline and matches the reference. ⚠️ Its three surfaces are only reachable
+>   once `-cli-probe-timeout` / `cli-probe-timeout` is set, and **one of them is
+>   silence**, so a triager who has confirmed the key IS set should not look only
+>   for an error: `installed cli at <path> is not runnable` (staged binary deleted,
+>   blob consumed on `-cli-zst`), `cli <v> missing and no --cli-url or --cli-zst
+>   provided` with the working CLI still on disk, or **no `cliError` at all** —
+>   where `cliWasPresent:false` is the only FACTS field that moves, but the cli-dir
+>   moves too: every cached shape runs the orphan sweep and the silent one runs the
+>   prune, where the reference cache-hits and touches nothing. All three surfaces
+>   measured 2026-08-07 against the then-hardcoded 15 s; the sweep/prune contrast is
+>   derived. (On the no-cache shape the reference installs the CLI outright,
 >   measured; on the cached shapes it should simply cache-hit with
->   `cliWasPresent:true` and install nothing — derived, not separately measured.) It can
->   appear as `installed cli at <path> is not runnable` (staged binary deleted,
->   blob consumed on `-cli-zst`), as `cli <v> missing and no --cli-url or
->   --cli-zst provided` with the working CLI still on disk, or as **no `cliError`
->   at all** — where `cliWasPresent:false` is the only FACTS field that moves, but
->   the cli-dir moves too: every cached shape runs the orphan sweep and the silent
->   one runs the prune, where the reference cache-hits and touches nothing. All
->   three surfaces measured 2026-08-07; the sweep/prune contrast is derived. So a
->   20 s-CLI difference IS D11, not drift — including when the only difference is
->   a field, not a message. The same is
->   expected of a too-slow download, derived from `http.Client.Timeout` rather than
->   measured.
+>   `cliWasPresent:true` and install nothing — derived, not separately measured.)
 > - **D13** — `-install` verifies the download's checksum BEFORE decompressing,
 >   where the reference decompresses first. Of the three combinations measured, one
 >   tells them apart: a blob that is both corrupt zstd and wrong-checksummed.
@@ -249,7 +261,9 @@ If the check reports drift:
 > claustrum's did"**, because a stalled `ldd` caps at 5 s here and is assumed to
 > block there — **not measured on either binary**, unlike D11's 45 s/90 s and
 > D12's 400 s runs (other rows in those entries are derived too).
-> Check this before concluding D11 or D12 on an `ldd`-slow host. Off linux there
+> Check this before concluding D12 on an `ldd`-slow host — and before concluding
+> D11 at all, which on a stock claustrum is not a live suspect, since its deadline
+> is off by default. Off linux there
 > is no probe at all, so a `libc` difference there is NOT this. The `gitTimeout` half of that
 > tier item is **D5** and is listed above), **item 16** (`-metrics-addr`), **item 17** (the orphaned
 > previous process tree is torn down), **item 18** (`-token-fd`), **item 21** (the

@@ -164,6 +164,19 @@ func runHelper(mode string, args []string) int {
 		fmt.Print("early\n")
 		return 7
 	default:
+		// "slow:N": sleep N seconds, then exit 0. The honest-but-slow CLI shape
+		// divergence D11 is about — correct output, correct exit code, just not
+		// fast. Windows counterpart of the `sleep N; exit 0` sh script slowCLI
+		// writes elsewhere.
+		if secs, ok := strings.CutPrefix(mode, "slow:"); ok {
+			n, err := strconv.Atoi(secs)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			time.Sleep(time.Duration(n) * time.Second)
+			return 0
+		}
 		// "exit:N": exit with code N (a stand-in CLI for the -install tests,
 		// where the invocation is fixed at `<cli> --version`).
 		if code, ok := strings.CutPrefix(mode, "exit:"); ok {

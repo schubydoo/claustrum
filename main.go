@@ -137,6 +137,8 @@ func main() {
 		cliZst      = flag.String("cli-zst", "", "Path to an already-uploaded CLI .zst (SFTP fallback)")
 		cliKeep     = flag.Int("cli-keep", 3, "How many most-recent CLI versions to keep")
 		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
+
+		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the `<cli> --version` runnability probe with this wall-clock deadline (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
 	)
 	flag.Parse()
 	resolveVersion()
@@ -174,6 +176,10 @@ func main() {
 		// no other mode performs. Set before runInstall because the value is read
 		// deep in those helpers, not carried through installOpts.
 		maxCLIBytes = cfg.effectiveMaxCLIBytes(*maxCLI, cliSet["max-cli-bytes"])
+		// Same reasoning for the runnability probe's deadline: isRunnable is
+		// called from the runInstall path's two call sites (the cache-hit guard
+		// here, and stageAndInstall via ensureCLI), not handed an option struct.
+		cliProbeTimeout = cfg.effectiveCLIProbeTimeout(*cliProbe, cliSet["cli-probe-timeout"])
 		runInstall(installOpts{
 			cliDir: *cliDir, cliVersion: *cliVersion, cliURL: *cliURL,
 			cliChecksum: *cliChecksum, cliZst: *cliZst, cliKeep: *cliKeep,

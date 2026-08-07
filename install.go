@@ -426,16 +426,42 @@ func sha256File(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// isRunnable reports whether `<path> --version` exits 0 (the real binary's CLI
-// validity check), bounded by a wall-clock deadline.
+// cliProbeTimeout bounds the `<cli> --version` runnability probe in isRunnable.
 //
-// ⚠️ NOT a hang detector, though this comment used to call it one. The deadline
-// cannot separate "never answers" from "answers slowly": measured 2026-08-07, a
-// CLI that answers honestly in 20 s is installed by the reference and REJECTED
-// here — and at the post-extraction call site that deletes the staged binary and
-// fails the install. See divergence D11.
+// ZERO (the default) DISABLES IT, which is the parity position: the reference
+// showed no deadline at or below 45 s against a CLI that never answers, and it
+// INSTALLED a CLI that answers in 90 s, waiting 91 s for it.
+//
+// ⚠️ A deadline is NOT a hang detector. It cannot separate "never answers" from
+// "answers slowly", so any non-zero value rejects some honest CLI. Measured at
+// 5db5e4a with a CLI that sleeps 20 s, prints its version and exits 0: the
+// reference installs it, while claustrum with the old hardcoded 15 s answered
+//
+//	cliError "installed cli at <path> is not runnable"
+//
+// and deleted the staged binary, leaving the cli-dir empty. That is why raising
+// the constant was rejected in favour of disabling it — every finite deadline
+// invents a boundary the reference does not have, it only moves where.
+//
+// The probe shipped bounded at a hardcoded 15 s and is the sibling of the
+// files.extract_tar and -install size caps, which were flipped the same way in
+// PRs 236 and 238. Opt in with -cli-probe-timeout or the cli-probe-timeout key
+// in claustrum.conf; the config key is the reachable one, because Claude Desktop
+// owns the argv on -install. Also set directly by tests. Divergence D11.
+var cliProbeTimeout time.Duration
+
+// isRunnable reports whether `<path> --version` exits 0 (the real binary's CLI
+// validity check).
+//
+// With cliProbeTimeout disabled the probe runs with NO deadline at all — the
+// context is not created, rather than created with a large timeout. Same rule as
+// the two size caps: the bypass is the parity behaviour, and a huge-but-finite
+// deadline is a different thing that merely looks equivalent.
 func isRunnable(path string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if cliProbeTimeout <= 0 {
+		return exec.Command(path, "--version").Run() == nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cliProbeTimeout)
 	defer cancel()
 	return exec.CommandContext(ctx, path, "--version").Run() == nil
 }
