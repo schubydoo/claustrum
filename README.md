@@ -144,11 +144,13 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   `-max-extract-bytes` (D3) opts into a `files.extract_tar` size cap — **off by default**,
   because a cap fails an extraction the reference completes (measured to 629 MB). This one
   **is** wire-visible when enabled: exceeding it returns an error frame the reference has no
-  way to produce. Two `-install` knobs are off by default for the same reason:
-  `-max-cli-bytes` (D10) caps the decompressed CLI and the download body, and
+  way to produce. Three `-install` knobs are off by default for the same reason:
+  `-max-cli-bytes` (D10) caps the decompressed CLI and the download body,
   `-cli-probe-timeout` (D11) bounds the `<cli> --version` runnability probe — measured, the
   reference installs a CLI that answers in 90 s, so any deadline at or below that fails an
-  install it completes. Each also has a `claustrum.conf` key, which is the reachable one when Claude
+  install it completes — and `-cli-download-timeout` (D12) bounds the download, where the
+  reference completes one taking 324 s that the retracted 5-minute default failed at 300 s.
+  Each also has a `claustrum.conf` key, which is the reachable one when Claude
   Desktop owns the argv.
 - **Protocol extensions** (claustrum-only, opt-in — **additions**, *not* part of the reference
   contract it mimics): `process.spawn` / `process.reattach` accept `"wantPid":true`, which adds

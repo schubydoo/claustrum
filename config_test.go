@@ -356,8 +356,11 @@ func TestPrecedenceCLIProbeTimeout(t *testing.T) {
 	}
 }
 
-// The download bound is the first duration-valued key, so a bare number must be
-// REJECTED rather than silently meaning nanoseconds — with the zero exception.
+// The download bound is the second duration-valued key (cli-probe-timeout, D11,
+// came first), so a bare number must be REJECTED rather than silently meaning
+// nanoseconds — with the zero exception. Kept separate from the probe-timeout test
+// on purpose: these two are the pair a careless merge would collapse into one
+// case, and two independent tests are what would catch that.
 func TestParseConfig_CLIDownloadTimeout(t *testing.T) {
 	cases := []struct {
 		name, body string

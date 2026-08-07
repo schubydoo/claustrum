@@ -489,6 +489,35 @@ decision a flag would improve.** *Unbounded wait*, not "hang" — the reference
 recovers the moment the wait's cause clears, and saying otherwise is a correction
 D4 already had to make once.
 
+🔴 **That test is necessary and NOT sufficient, and four entries proved it.**
+D3, D10, D11 and D12 all *cleared* the unbounded-wait bar and were flipped to
+opt-in anyway — their own entries say so in as many words. Applied literally the
+bar returns the wrong answer for all four, so it is no longer a decision rule on
+its own. The second question an always-on entry must answer:
+
+> **Who pays when the guard fires on an honest input, and can they decline?**
+
+A bound is a *threshold*, so it cannot separate "hostile" from "merely slow or
+large" — an honest input trips it too. If that input is reachable **and** the
+caller cannot turn the guard off, always-on is not justified no matter how the
+reference behaves on the hostile path. On `-install` and `files.extract_tar`
+Claude Desktop owns the argv, so the person who pays has no way to decline; that
+is what flipped all four, and it is why every one of them ships a
+`claustrum.conf` key rather than a flag alone.
+
+The always-on entries that survive both tests do so because the *trigger itself*
+is unreachable on an honest path — D2 and D6/D7 (a destructive target no honest
+caller names), D8 (not reachable on the deployed path), D9 (adversarial params
+only), D13 (an input no honest caller produces). Those are arguments about
+reachability, which is the right form. ⚠️ **D5's is not**: its 60 s `gitTimeout` is
+a wall-clock threshold with a wire-visible cost (a claustrum-only `-32603
+"signal: killed"`), it has no flag and no config key, and its stated reason —
+"no opt-in default can improve on [an unbounded wait] for a caller who does not
+know the flag exists" — is the exact argument these four rejected. An honest 61 s
+git on a large repo has never been measured on either binary. D4's `/dev/null`
+row is a narrower instance of the same shape. Both are open, and neither is
+resolved by this section.
+
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
 carries the evidence that was already in [`PROTOCOL.md`](PROTOCOL.md) rather than
 a new claim — **with one exception: D8's reference behaviour was unmeasured when
@@ -518,9 +547,12 @@ carry a new claim, and says so.**
 completes it with `git.worktree_remove`, which shares the predicate
 (`homeguard.go`).
 
-- **Not opt-in, and deliberately so.** Every other entry in this section is off by
-  default; this one is always on, because the thing it prevents is unrecoverable
-  and a flag to re-arm it would be a footgun with a switch.
+- **Not opt-in, and deliberately so.** This one is always on because the thing it
+  prevents is unrecoverable and a flag to re-arm it would be a footgun with a
+  switch — it clears both tests in the preamble, since no honest caller names a
+  destructive target that is or contains home. (An earlier version of this bullet
+  said "every other entry in this section is off by default", which was never
+  true: D4, D5, D6, D7, D8, D9 and D13 are always-on too.)
 - Two methods hand a caller-supplied path to `os.RemoveAll`: `files.extract_tar`
   wipes `destDir` before unpacking, and `git.worktree_remove` deletes
   `worktreePath` when git exits non-zero. **Both are `~`-expanded first**
@@ -1079,17 +1111,23 @@ completes it with `git.worktree_remove`, which shares the predicate
   far-future deadline is a different thing that merely looks equivalent, and it
   would keep `exec.CommandContext`'s kill-on-cancel path in play where the
   reference showed no such cut-off.
-- **What still ships bounded on the `-install` path:** only the linux-only `ldd`
-  probe (tier item 5), which is not a D-number and is not proposed for a flip.
-  D12's download bound took this same flip alongside it.
+- **What still ships bounded on the `-install` path:** of the *D-numbered,
+  claustrum-chosen* bounds, only the linux-only `ldd` probe (tier item 5), which is
+  not a D-number and is not proposed for a flip — D12's download bound took this
+  same flip alongside D11's. ⚠️ Not the same as "nothing bounds an `-install`":
+  `http.DefaultTransport`'s `net.Dialer{Timeout: 30s}` and
+  `TLSHandshakeTimeout: 10s` still apply on the `-cli-url` path, on every platform,
+  and a SYN-black-holed host fails at 30 s at the default.
 
 ### D12 · Make the `-install` CLI download bound opt-in ✅ (opt-in) — impact M / cost L
 
-> ⚠️ **The same flip D11 took is proposed for this bound in a follow-up PR** (default
-> off = unbounded = parity). It has not been made; everything below describes what
-> ships today, which is always-on.
+> **This bound took the same flip D11 took** — default off = unbounded = parity.
+> Everything below describes what an operator opts INTO, except where a sentence
+> says otherwise; the figures are the retracted 5-minute default.
 
-- The download runs with `http.Client{Timeout: 5 * time.Minute}` (added in PR 59
+- The download RAN with `http.Client{Timeout: 5 * time.Minute}` — the old always-on
+  default, now `http.Client{Timeout: cliDownloadTimeout}` with `cliDownloadTimeout`
+  defaulting to `0` (added in PR 59
   on `httpGet`, now `fetchToFile` after the streaming change in D10), which bounds
   the whole exchange. **The reference showed no bound at or below 400 s.**
   Measured against a server that sends `200 OK` with a `Content-Length` and then
@@ -1101,14 +1139,15 @@ completes it with `git.worktree_remove`, which shares the predicate
   | claustrum | returns at **300 s** with `cliError "download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)"` |
   | *control:* the same server style serving a real 629 MB body | completes on both |
 
-  400 s is deliberately past claustrum's own 300 s bound, so the run
+  400 s is deliberately past the retracted 300 s default bound, so the run
   discriminates. The control matters for the same reason as D11's: a stall probe
   where nothing can ever succeed cannot tell "no deadline" from "broken fixture",
   and the D10 measurement supplies exactly that positive case on the same path.
-- **No observable delta in the facts frame for a download that completes inside
-  5 minutes** — derived from the constant, not bisected, exactly as D11's boundary
-  is. A server sending its body at any usable rate is expected to behave
-  identically. (On disk claustrum does create a download temp a SIGKILL can leave
+- **With the bound opted in, no observable delta in the facts frame for a download
+  that completes inside the configured duration** — derived from the constant, not
+  bisected, exactly as D11's boundary is. At the shipped default there is no delta
+  at any duration, because there is no bound. A server sending its body at any
+  usable rate is expected to behave identically. (On disk claustrum does create a download temp a SIGKILL can leave
   behind — `<cli-dir>/.blob-<random>` when the cli-dir already exists, and
   **`$TMPDIR/claustrum-fetch-<random>` when it does not, which is the first-install
   case**: `fetchToFile` runs *before* `ensureCLI`'s `os.MkdirAll`, so its
@@ -1135,9 +1174,17 @@ completes it with `git.worktree_remove`, which shares the predicate
 
   | arm | elapsed | facts |
   |---|---|---|
-  | reference `5db5e4a` | **324 s** | installs, **no `cliError`** |
-  | claustrum, `-cli-download-timeout 5m` (the retracted default) | **300 s** | `cliError "download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)"` |
-  | claustrum, bound **off** (new default) | **324 s** | installs, **no `cliError`** |
+  | reference `5db5e4a` | **324 s** / **325.7 s** | installs, **no `cliError`** |
+  | claustrum, `-cli-download-timeout 5m` (the retracted default) | **300.0 s** in both | `cliError "download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)"` |
+  | claustrum, bound **off** (new default) | **324 s** / **325.7 s** | installs, **no `cliError`** |
+
+  Two figures per row because the fixture was run **twice, independently** — a
+  30-byte blob and a 36-byte one, different ports, different sessions. They agree
+  on every observable and on the conclusion. Only the second run's raw output
+  survives, at `scratch/d12-straddle-2026-08-07/long.out` (gitignored); the first
+  run's was lost to a failed copy, so the 324 s column is traceable to a transcript
+  rather than to a file. Recorded that way rather than quoting one number as if a
+  single artifact backed it.
 
   Row 2 is what the 14 s fixture could not produce: an **honest** download, failed
   by the value that shipped, completed by the reference and by the new default. The

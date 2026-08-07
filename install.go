@@ -557,8 +557,8 @@ func (e *httpStatusError) Error() string {
 // needs six minutes trips it exactly as a black hole does, and one that finishes
 // in 4:59 does not. That is the same threshold-not-intent problem D3 and D10 were
 // flipped for, and Claude Desktop owns the argv on `-install`, so the caller who
-// pays cannot decline. (D11's runnability probe has the same shape and the same
-// flip proposed, on its own branch — it is still always-on here.)
+// pays cannot decline. (D11's runnability probe has the same shape and took the
+// same flip; both are opt-in and default-off now.)
 //
 // Zero is the stdlib's own "no timeout" sentinel, so assigning it straight through
 // IS the bypass — no huge-but-finite value stands in for "off", which is the same

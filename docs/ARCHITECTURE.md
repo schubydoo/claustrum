@@ -187,7 +187,7 @@ is grouped by phase rather than left as prose:
 | | `cli version "<v>" collides with the install temp sweep` |
 | source | `cli <v> missing and no --cli-url or --cli-zst provided` — also reached when a **present, working** CLI answers `--version` more slowly than an opted-in `-cli-probe-timeout` and no source flag was given (D11; unreachable at the default, which has no deadline) |
 | | `opening input: <err>` (`-cli-zst` read) |
-| download | `download failed: <err>` — **transport** failure only |
+| download | `download failed: <err>` — **transport** failure only, plus `context deadline exceeded (…)` when the opt-in `-cli-download-timeout` bound fires (D12; off by default, so unreachable unless asked for) |
 | | `download failed with status <code>` — **non-200**, no URL, no reason phrase |
 | | `response exceeds <n> bytes` |
 | verify | `checksum mismatch: expected=<a>, actual=<b>` |

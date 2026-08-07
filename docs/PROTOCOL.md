@@ -1293,12 +1293,13 @@ the facts (`cliError`), not via the exit code.
 Five `-install` behaviours are easy to miss. Three are wall-clock bounds: the
 `--version` runnability probe (D11), the download (D12), and — **on linux only** —
 the `libc` probe. The reference does not appear to apply the first two (measured);
-the third has never been probed on it either way. **D11's is the one that is off by
-default**, so a stock claustrum applies two of the three on linux and one of the
-two that exist off it. The last two behaviours have no frame at all.
+the third has never been probed on it either way. **D11's and D12's are BOTH off by
+default now**, so a stock claustrum applies just one of the three on linux — the
+`ldd` one — and **none** off linux. The last two behaviours have no frame at all.
 
-D11's deadline became opt-in (default off = no deadline), so the D11 bullet below
-describes what an operator turns on, except where it says otherwise. The download bound *always* surfaces a `cliError`; an opted-in
+Both the D11 and D12 bullets below therefore describe what an operator turns on,
+except where a sentence says otherwise. An opted-in download bound always surfaces
+a `cliError` when it fires — at the shipped default it fires never; an opted-in
 runnability timeout on the cache-hit check can surface as the **absence** of an
 error — but only when the replacement answers in time; if it is just as slow, both
 probes time out and the run fails after ~2× the deadline with the cached binary
@@ -1435,6 +1436,15 @@ Checksum + error framing (probe-verified):
   `download failed: response exceeds 536870912 bytes`, proving the probe reaches
   that limit. (Both disprove a cap at or below ~600 MiB; neither proves the
   reference has none above it.)
+- **A download slower than the opt-in bound** → `cliError "download failed: context
+  deadline exceeded (Client.Timeout or context cancellation while reading body)"`.
+  **Not reachable by default** — the bound is `0` (off), matching the reference,
+  which was still downloading at 400 s against a body that never arrives and
+  completes one that takes 324 s. **Intentional divergence** (D12), enabled with
+  `-cli-download-timeout <dur>` or `cli-download-timeout = <dur>` in
+  `claustrum.conf`. It bounds the whole exchange, so an honest download merely
+  slower than the value trips it: measured, `-cli-download-timeout 5m` fails a
+  324 s download that the reference and the new default both complete.
 - **A CLI slower than the opt-in runnability deadline** → `cliError "installed cli
   at <path> is not runnable"` from the post-extraction probe, or (from the
   cache-hit probe) `"cli <v> missing and no --cli-url or --cli-zst provided"`, or
