@@ -1333,6 +1333,14 @@ Staging and cleanup (probe-verified):
 - The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
   into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
   matches `.fetch-*`, so an interrupted install's litter is reclaimed.
+- A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`**, and the
+  different prefix is deliberate — the sweep must **not** claim it. The sweep runs
+  after every attempted install, so a `.fetch-*` blob could be removed by a
+  concurrent install's sweep together with the staging file, leaving the
+  retry-on-`errStagingVanished` with no source to re-read. It is removed by the
+  install itself on every path; only a SIGKILLed download leaves it behind, and
+  nothing reclaims that. (Claustrum-only: the reference buffers the download in
+  memory, so it has no such file. No frame changes.)
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as

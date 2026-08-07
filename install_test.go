@@ -80,13 +80,6 @@ func TestZstdDecompress(t *testing.T) {
 	}
 }
 
-// zstdDecompress must reject a blob that decompresses beyond the cap. Without
-// this guard a tiny .zst file expands unbounded on disk (a zstd bomb): the
-// reference was measured writing past 200 MB from a small blob and still going
-// when the probe was stopped — S6.
-//
-// The comment used to say "hundreds of GB". Nothing measured that; the probe was
-// stopped at 200 MB. The unbounded direction is what S6 supports, not a figure.
 // fetchBytes runs the production download path and returns the bytes it landed,
 // so the assertions below keep testing what they always did now that
 // fetchToFile streams to a file instead of returning a buffer.
@@ -244,6 +237,13 @@ func TestCLISizeCapDefaultsOff(t *testing.T) {
 	})
 }
 
+// zstdDecompress must reject a blob that decompresses beyond the cap. Without
+// this guard a tiny .zst file expands unbounded on disk (a zstd bomb): the
+// reference was measured writing past 200 MB from a small blob and still going
+// when the probe was stopped — S6.
+//
+// The comment used to say "hundreds of GB". Nothing measured that; the probe was
+// stopped at 200 MB. The unbounded direction is what S6 supports, not a figure.
 func TestZstdDecompressSizeLimit(t *testing.T) {
 	old := maxCLIBytes
 	maxCLIBytes = 1024
@@ -801,6 +801,61 @@ func TestEnsureCLIErrorWrapping(t *testing.T) {
 	// pass every other test.
 	if !isRegularFile(badZst) {
 		t.Error("a blob that failed to decompress was consumed; it must be kept")
+	}
+	// A DIRECTORY at -cli-zst must still report "opening input:", and this is the
+	// case an os.Open alone does not catch: open succeeds on a directory on both
+	// Unix and Windows, EISDIR arriving only on the first Read. Asserted WITHOUT a
+	// -cli-checksum because that is the default -cli-zst shape (the reference never
+	// verifies that blob); with a checksum, sha256File's read would have caught it
+	// anyway, which is why the gap survived.
+	asDir := filepath.Join(dir, "adir.zst")
+	if err := os.Mkdir(asDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureCLI(installOpts{cliZst: asDir}, filepath.Join(dir, "out3")); err == nil ||
+		!strings.HasPrefix(err.Error(), "opening input:") {
+		t.Errorf("directory as zst = %v, want an 'opening input:' error", err)
+	}
+	// An EMPTY blob must NOT be rejected by that one-byte read: os.ReadFile
+	// succeeded on one, so io.EOF has to stay a non-failure. Measured, it gets all
+	// the way past decompress (an empty zstd stream yields no bytes) and fails at
+	// the runnability check — so the assertion is that it is NOT "opening input:",
+	// which is exactly the regression treating io.EOF as an error would cause.
+	emptyZst := filepath.Join(dir, "empty.zst")
+	if err := os.WriteFile(emptyZst, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureCLI(installOpts{cliZst: emptyZst}, filepath.Join(dir, "out4")); err == nil ||
+		strings.HasPrefix(err.Error(), "opening input:") {
+		t.Errorf("empty zst = %v, want a later failure, not 'opening input:'", err)
+	}
+}
+
+// The downloaded blob must not carry a name the cli-dir sweep claims. If it does,
+// a concurrent install's sweep removes the blob the errStagingVanished retry
+// re-reads — and can fail the first attempt outright by landing between
+// fetchToFile and zstdDecompress. This asserts the invariant the retry's
+// correctness rests on, at the one place a rename would break it.
+func TestDownloadBlobIsNotSwept(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("payload"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	blobPath, _, err := fetchToFile(srv.URL, dir)
+	if err != nil {
+		t.Fatalf("fetchToFile: %v", err)
+	}
+	defer func() { _ = os.Remove(blobPath) }()
+
+	if isSweptName(filepath.Base(blobPath)) {
+		t.Fatalf("download blob %q matches isSweptName; the sweep would delete it", filepath.Base(blobPath))
+	}
+	// Belt and braces: run the real sweep and confirm the blob survives it.
+	sweepFetchTemps(dir)
+	if !isRegularFile(blobPath) {
+		t.Errorf("sweepFetchTemps removed the download blob %q", blobPath)
 	}
 }
 

@@ -223,7 +223,9 @@ func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 		return *cfg.maxCLIBytes
 	}
 	if cliVal < 0 {
-		logWarnf("[Server] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		// [Install], not [Server]: this cap governs zstdDecompress and fetchToFile,
+		// and effectiveMaxCLIBytes is reached only from the -install arm.
+		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
 		return 0
 	}
 	return cliVal

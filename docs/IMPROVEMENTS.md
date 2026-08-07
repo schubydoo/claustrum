@@ -778,10 +778,20 @@ completes it with `git.worktree_remove`, which shares the predicate
   not separable from it.** Turning the cap off removes the only bound on what used
   to be `io.ReadAll` (download) and `os.ReadFile` (local blob), which would leave
   `-install` unbounded in memory where the reference streams. So the blob is a
-  **path** throughout: the download streams to a temp file beside the destination
-  and is hashed as it arrives, the local blob is hashed in one bounded pass, and
+  **path** throughout: the download streams to `<cli-dir>/.blob-<random>` and is
+  hashed as it arrives, the local blob is hashed in one bounded pass, and
   `zstdDecompress` opens the path. A path rather than a reader because `ensureCLI`
   retries `stageAndInstall` once and needs a source readable **twice**.
+- ⚠️ **`.blob-`, not `.fetch-`, and that is load-bearing.** Giving the blob a
+  lifetime on disk put it in reach of `sweepFetchTemps`, which runs after every
+  attempted install and claims `.fetch-*` and `*.zst`. A `.fetch-*` blob would be
+  deleted by a concurrent install's sweep in the same pass as the staging file,
+  so the retry that the sweep is *supposed* to trigger would re-enter with no
+  source — defeating `errStagingVanished` in exactly the case it exists for. The
+  invariant is that **`blobPath` must not be a name `isSweptName` claims**, and a
+  test asserts it at the one place a rename would break it. Kept beside the
+  destination rather than in the OS temp dir because `/tmp` is a tmpfs on many
+  hosts, which would put the blob back in RAM and undo this whole change.
 - **Measured, peak RSS, 400 MiB incompressible payload** (`/proc/<pid>/status`
   `VmHWM`, polled):
 

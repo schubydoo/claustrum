@@ -127,16 +127,29 @@ func ensureCLI(o installOpts, cliPath string) error {
 		// mismatch" error as the -cli-url path. An ABSENT/empty checksum stays
 		// trusting — matching the reference — so honest callers are unaffected.
 		//
-		// Opened and closed immediately, purely to keep `opening input: ` attached
-		// to the same conditions os.ReadFile reported it for (missing, permission,
-		// is-a-directory). A mid-read I/O error now surfaces later, at decompress,
-		// as `decompressing: ` — an unprovoked path, recorded rather than claimed
+		// Opened and read one byte, purely to keep `opening input: ` attached to
+		// the same conditions os.ReadFile reported it for (missing, permission,
+		// is-a-directory). The read is not optional: os.Open SUCCEEDS on a
+		// directory on both Unix and Windows — EISDIR surfaces on the first Read —
+		// and os.ReadFile opened AND read, so an open alone would move
+		// `-cli-zst <dir>` to `decompressing: `. That is the DEFAULT -cli-zst
+		// shape (no -cli-checksum, which is what the reference does), and it is
+		// provokable with mkdir. One byte reproduces the condition in the same
+		// place with the OS's own wording. io.EOF is not a failure: os.ReadFile
+		// succeeds on an empty file.
+		//
+		// A mid-read I/O error still surfaces later, at decompress, as
+		// `decompressing: ` — an unprovoked path, recorded rather than claimed
 		// identical.
 		f, oerr := os.Open(o.cliZst)
 		if oerr != nil {
 			return fmt.Errorf("opening input: %v", oerr)
 		}
+		_, rerr := f.Read(make([]byte, 1))
 		_ = f.Close()
+		if rerr != nil && !errors.Is(rerr, io.EOF) {
+			return fmt.Errorf("opening input: %v", rerr)
+		}
 		blobPath = o.cliZst
 		if o.cliChecksum != "" {
 			if blobSum, err = sha256File(blobPath); err != nil {
@@ -509,7 +522,20 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 		// line, and a signed URL would land in whatever captures that output.
 		return "", "", &httpStatusError{code: resp.StatusCode}
 	}
-	f, err := os.CreateTemp(dir, ".fetch-*")
+	// ⚠️ The prefix must be one isSweptName does NOT claim. sweepFetchTemps runs
+	// after EVERY attempted install and takes ".fetch-*" and "*.zst" from the
+	// cli-dir, so naming the blob ".fetch-*" would let a concurrent install's
+	// sweep delete the staging file AND the blob the retry re-reads — defeating
+	// errStagingVanished in exactly the case it exists for, and able to fail the
+	// first attempt too if the sweep lands between here and zstdDecompress. That
+	// invariant is what the retry's correctness now rests on.
+	//
+	// Kept beside the destination rather than moved to the OS temp dir: /tmp is a
+	// tmpfs on many hosts, so downloading a 600 MiB blob there would put it back
+	// in RAM and undo the streaming this change exists for. The cost is that the
+	// sweep can no longer reclaim a blob left by a SIGKILLed install; the caller's
+	// own defer removes it on every other path.
+	f, err := os.CreateTemp(dir, ".blob-*")
 	if err != nil {
 		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
 			return "", "", err
