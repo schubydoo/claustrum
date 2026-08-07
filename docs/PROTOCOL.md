@@ -1274,7 +1274,7 @@ against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — s
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
 `metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes` and
-`cli-probe-timeout` defaults (precedence: explicit CLI flag > config > default). See
+`cli-probe-timeout` and `cli-download-timeout` defaults (precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1283,7 +1283,7 @@ hardening.
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
           [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>]
+          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
 ```
 
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
@@ -1293,28 +1293,47 @@ the facts (`cliError`), not via the exit code.
 Five `-install` behaviours are easy to miss. Three are wall-clock bounds: the
 `--version` runnability probe (D11), the download (D12), and — **on linux only** —
 the `libc` probe. The reference does not appear to apply the first two (measured);
-the third has never been probed on it either way. **D11's is the one that is off by
-default**, so a stock claustrum applies two of the three on linux and one of the
-two that exist off it. The last two behaviours have no frame at all.
+the third has never been probed on it either way. **D11's and D12's are BOTH off by
+default now**, so a stock claustrum applies just one of the three on linux — the
+`ldd` one — and **none** off linux. The last two behaviours have no frame at all.
 
-D11's deadline became opt-in (default off = no deadline), so the D11 bullet below
-describes what an operator turns on, except where it says otherwise. The download bound *always* surfaces a `cliError`; an opted-in
+Both the D11 and D12 bullets below therefore describe what an operator turns on,
+except where a sentence says otherwise. An opted-in download bound always surfaces
+a `cliError` when it fires — at the shipped default it fires never; an opted-in
 runnability timeout on the cache-hit check can surface as the **absence** of an
 error — but only when the replacement answers in time; if it is just as slow, both
 probes time out and the run fails after ~2× the deadline with the cached binary
 left in place:
 
-- **The download is bounded at 5 minutes — intentional divergence (D12).** The
+- **The download can be bounded, but is NOT by default — opt-in divergence
+  (D12).** With `-cli-download-timeout` unset (or `0`) the download has **no bound
+  at all** — `http.Client{Timeout: 0}` is the stdlib's own "no timeout" — which
+  matches the reference on every input measured. Opt in with
+  `-cli-download-timeout <duration>` or the `cli-download-timeout` key in
+  `claustrum.conf`. Only the `-cli-download-timeout 5m` row below is the old
+  hardcoded default; the other two are the reference and claustrum at the new one.
+  Measured 2026-08-07 with a valid 30-byte zstd blob dribbled one byte at a time
+  over ~324 s and a correct `-cli-checksum`: the reference installs it at 324 s
+  with no `cliError`, claustrum at the new default installs it at 324 s with no
+  `cliError`, and claustrum with `-cli-download-timeout 5m` — the value that
+  shipped — fails the same download at 300 s with `cliError "download failed:
+  context deadline exceeded (Client.Timeout or context cancellation while reading
+  body)"`. The fixture straddles the retracted bound on purpose; a shorter dribble
+  cannot discriminate, since the old build would have installed it too. ⚠️ A D12 probe **must** use a valid zstd body: with an invalid
+  one the reference answers `decompressing: invalid input: magic number mismatch`
+  at 0 s, which is D13's ordering, not a download bound. The
   reference showed no bound at or below 400 s: measured against a server that
   sends headers and then never sends the body, it was still downloading when the
   harness stopped it at 400 s while claustrum
   returned at 300 s with `cliError "download failed: context deadline exceeded
   (Client.Timeout or context cancellation while reading body)"`. A real 629 MB
   body completes on both. But `http.Client.Timeout` bounds the whole exchange, so
-  an honest download merely too slow to finish in 5 minutes trips it as surely as
-  a black hole does — the control passed because it arrived in time, not because
-  it was honest. (That half is derived from the Client.Timeout semantics; only the
-  stalled-download row was measured.)
+  an honest download merely too slow to finish within the configured duration trips
+  it as surely as a black hole does — the control passed because it arrived in time, not because
+  it was honest. (That half is **no longer derived**: the 324 s straddling run in
+  the D12 bullet above measures it directly — an honest download failed at 300 s by
+  the value that shipped and completed by the reference. The never-arrives row
+  remains measured on the reference only.)
 - **The `--version` runnability probe can be bounded, but is NOT by default —
   opt-in divergence (D11).** With `-cli-probe-timeout` unset (or `0`) the probe
   runs with **no deadline at all**, matching the reference on every input measured
@@ -1418,6 +1437,15 @@ Checksum + error framing (probe-verified):
   `download failed: response exceeds 536870912 bytes`, proving the probe reaches
   that limit. (Both disprove a cap at or below ~600 MiB; neither proves the
   reference has none above it.)
+- **A download slower than the opt-in bound** → `cliError "download failed: context
+  deadline exceeded (Client.Timeout or context cancellation while reading body)"`.
+  **Not reachable by default** — the bound is `0` (off), matching the reference,
+  which was still downloading at 400 s against a body that never arrives and
+  completes one that takes 324 s. **Intentional divergence** (D12), enabled with
+  `-cli-download-timeout <dur>` or `cli-download-timeout = <dur>` in
+  `claustrum.conf`. It bounds the whole exchange, so an honest download merely
+  slower than the value trips it: measured, `-cli-download-timeout 5m` fails a
+  324 s download that the reference and the new default both complete.
 - **A CLI slower than the opt-in runnability deadline** → `cliError "installed cli
   at <path> is not runnable"` from the post-extraction probe, or (from the
   cache-hit probe) `"cli <v> missing and no --cli-url or --cli-zst provided"`, or

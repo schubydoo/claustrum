@@ -66,6 +66,10 @@ type config struct {
 	// Same reachability argument as maxCLIBytes: it applies on -install, whose
 	// argv Claude Desktop owns.
 	cliProbeTimeout *time.Duration
+	// cliDownloadTimeout mirrors -cli-download-timeout; nil means "not set in the
+	// file". Same reachability argument as maxCLIBytes: it applies on -install,
+	// whose argv Claude Desktop owns.
+	cliDownloadTimeout *time.Duration
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
@@ -172,6 +176,19 @@ func applyConfigKey(cfg *config, key, val string) {
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.cliProbeTimeout = &d
 		}
+	case "cli-download-timeout":
+		// A Go duration ("10m", "90s"); 0 disables the bound (the default).
+		// Negative and unparseable values are rejected, so a typo can never
+		// silently impose a deadline the reference does not have. A bare number is
+		// unparseable on purpose — "300" meaning 300ns would be a trap — EXCEPT for
+		// zero, of which there are unboundedly many spellings ("0"/"+0"/"-0" via
+		// ParseDuration's special case, every zero-valued duration with a unit, and
+		// a negative that truncates like "-0.4ns"). All reach d == 0 and pass the
+		// guard, which is harmless: zero IS the disabled value, so nothing accepted
+		// here can switch the bound ON.
+		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
+			cfg.cliDownloadTimeout = &d
+		}
 	}
 	// Unknown keys are intentionally ignored (forward-compatibility).
 }
@@ -261,6 +278,20 @@ func (cfg config) effectiveCLIProbeTimeout(cliVal time.Duration, cliSet bool) ti
 	if cliVal < 0 {
 		// [Install], not [Server]: isRunnable is reached only from the -install arm.
 		logWarnf("[Install] -cli-probe-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
+		return 0
+	}
+	return cliVal
+}
+
+// effectiveCLIDownloadTimeout applies the same precedence for
+// -cli-download-timeout, and the same negative handling as the size caps.
+func (cfg config) effectiveCLIDownloadTimeout(cliVal time.Duration, cliSet bool) time.Duration {
+	if !cliSet && cfg.cliDownloadTimeout != nil {
+		return *cfg.cliDownloadTimeout
+	}
+	if cliVal < 0 {
+		// [Install], not [Server]: fetchToFile is reached only from the -install arm.
+		logWarnf("[Install] -cli-download-timeout %s is negative; treating it as 0 (no timeout)", cliVal)
 		return 0
 	}
 	return cliVal

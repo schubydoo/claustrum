@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // lastMainFlagSet is the FlagSet the most recent runMain handed to main(), kept
@@ -19,7 +20,8 @@ var lastMainFlagSet *flag.FlagSet
 // -install output doesn't pollute the test log.
 //
 // The -install and -serve arms of main() also WRITE package globals
-// (cliProbeTimeout, maxCLIBytes, maxExtractBytes) and never restore them, so
+// (cliProbeTimeout, cliDownloadTimeout, maxCLIBytes, maxExtractBytes) and never
+// restore them, so
 // without the save/restore below a `-install` run here leaks its resolved values
 // into every later test. Reproduced 2026-08-07: with a claustrum.conf holding
 // `cli-probe-timeout = 30s` beside a pre-built test binary, 4 of 6 -test.shuffle
@@ -37,9 +39,11 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// t.Cleanup, NOT the defer below: the defer runs when runMain returns, which
 	// would put the globals back before the caller can assert on what main()
 	// actually resolved. t.Cleanup still contains the leak to this one test.
-	oldProbe, oldMaxCLI, oldMaxExtract := cliProbeTimeout, maxCLIBytes, maxExtractBytes
+	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
+	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
 	t.Cleanup(func() {
-		cliProbeTimeout, maxCLIBytes, maxExtractBytes = oldProbe, oldMaxCLI, oldMaxExtract
+		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
+		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -60,6 +64,59 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 		_ = devnull.Close()
 	}()
 	return catchExit(main)
+}
+
+// The -install arm's flag-to-global wiring, which nothing else covers. Setting
+// the deadline directly (as the isRunnable/fetchToFile tests do) exercises the
+// READ; asserting flag.DefValue covers the DECLARED default. The line joining
+// them — main() resolving each flag into its own global — was unasserted, and
+// swapping the two assignment targets passed the whole suite, `-race` included,
+// while shipping a binary where -cli-download-timeout set the probe deadline and
+// vice versa.
+//
+// Distinct values on purpose: equal ones would pass under a swap.
+func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
+	if _, exited := runMain(t, "-install", "-cli-probe-timeout", "7s", "-cli-download-timeout", "42s"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	if cliProbeTimeout != 7*time.Second {
+		t.Errorf("cliProbeTimeout = %s, want 7s (-cli-probe-timeout must reach it, not the download global)", cliProbeTimeout)
+	}
+	if cliDownloadTimeout != 42*time.Second {
+		t.Errorf("cliDownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, not the probe global)", cliDownloadTimeout)
+	}
+}
+
+// runMain restores the globals main() writes, and that restore is load-bearing:
+// without it a -install run here leaks its resolved values into every later test.
+// Asserting it needs the cleanup to have RUN, so the call goes in a subtest and
+// the assertion follows it — t.Cleanup fires at the subtest's end.
+func TestRunMainRestoresInstallGlobals(t *testing.T) {
+	cliProbeTimeout, cliDownloadTimeout = 3*time.Second, 4*time.Second
+	maxCLIBytes, maxExtractBytes = 11, 22
+	t.Cleanup(func() {
+		cliProbeTimeout, cliDownloadTimeout = 0, 0
+		maxCLIBytes, maxExtractBytes = 0, 0
+	})
+	t.Run("inner", func(t *testing.T) {
+		if _, exited := runMain(t, "-install", "-cli-probe-timeout", "9s", "-cli-download-timeout", "8s", "-max-cli-bytes", "99"); exited {
+			t.Fatal("-install should return, not exit")
+		}
+	})
+	for _, c := range []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"cliProbeTimeout", cliProbeTimeout, 3 * time.Second},
+		{"cliDownloadTimeout", cliDownloadTimeout, 4 * time.Second},
+		{"maxCLIBytes", maxCLIBytes, int64(11)},
+		{"maxExtractBytes", maxExtractBytes, int64(22)},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)
+		}
+	}
 }
 
 // The non-daemonizing dispatch arms of main: each mode flag must route to its
