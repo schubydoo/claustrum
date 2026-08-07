@@ -38,12 +38,46 @@ error).
 
 ### 5 · Timeouts on `git`/`exec` calls ✅ — impact M / cost L
 
+(The `ldd` half is **linux-only**: `libc_other.go` returns `""` without probing
+off linux, so no such bound exists on darwin or windows.)
+
 `git.*` and the `-install` libc probe shelled out with no deadline; a wedged
-git/ldd hung a request goroutine forever. Both are now wrapped in
-`exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, security
-fix S4) and every `git` invocation (`gitTimeout` 60s). Happy-path results/frames unchanged; an
-attack/pathological-path-only divergence from the reference (which has no
-deadline).
+git/ldd left a request goroutine waiting with no bound. Both are now wrapped in
+`exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, 5 s,
+security fix S4) and every `git` invocation (`gitTimeout` 60 s).
+
+⚠️ **For the `ldd` half, the honest-path cost is far narrower than D11's — but the
+entry used to state that absolutely, which a wall-clock deadline cannot support.**
+(The `gitTimeout` half is a different matter and is owned by **D5**, which records
+a claustrum-only `-32603` carrying `signal: killed` when the deadline fires — a
+real on-wire cost, not a narrow one.) `lddProbeTimeout` is a wall-clock deadline and so
+cannot separate a hostile `ldd` from a slow one — but unlike D11, a timeout
+usually changes **nothing observable**, because the fallback value and the true
+value coincide:
+
+- On a **musl** host the probe is never spawned at all: `detectLibcWith` returns
+  `"musl"` on the loader glob before reaching `ldd`, so it cannot time out.
+- On a **glibc** host the timeout fallback is `"glibc"` (`classifyLibc`: no musl
+  loader, `lddErr != nil` → `"glibc"`) — the same answer the probe would have
+  given.
+
+So the `libc` field moves only on a host where `ldd` *reports* musl while
+`/lib/ld-musl-*.so.*` does **not** match — close to unreachable in practice.
+Recorded as a real but very narrow divergence, **not measured on either binary**.
+
+The fixture that would settle it must use a **musl** banner, not a glibc one: a
+stand-in `ldd` on `PATH` that sleeps 6 s, prints `musl libc (x86_64)` **and exits
+0**, with the musl loader glob masked. The exit code is load-bearing:
+`classifyLibc` takes the musl banner only when `lddErr == nil`, and a real musl
+`ldd --version` prints to stderr and exits 1 — a faithful stand-in would fail the
+control for a reason unrelated to the timeout. (It also narrows the divergence set
+further — glob misses ∧ exits 0 ∧ output says musl ∧ slower than 5 s — so
+"close to unreachable" is if anything understated.) Expected: reference `libc:"musl"`, claustrum
+`libc:"glibc"`. **Control that must fire:** the same stand-in answering instantly
+must give `"musl"` on *both*, proving the fixture can produce the non-default
+value at all — a control that merely "gives the same value on both" is satisfied
+by a broken fixture. A glibc-banner slow arm is worth a second row, and must show
+`"glibc"` on both.
 
 ⚠️ **A timeout is NOT interchangeable with an ordinary git failure**, though this
 entry used to say so. That held only while "failure" meant *nothing happened*.
@@ -58,8 +92,8 @@ stdout-only fix) `git.list_branches` REPORT the failure as `-32603` carrying the
 Go error string, so when our deadline kills git they put a claustrum-only frame
 on the wire: measured, `err.Error()` is **`signal: killed`**, not `context
 deadline exceeded` — `Cmd.Wait` prefers the SIGKILLed process's `ExitError` over
-the context error. The reference has no deadline and simply blocks, emitting
-nothing. Unreachable for it, so not a parity break, but it is ours and it is on
+the context error. The reference showed no deadline at or below the 75 s probed
+and simply blocks, emitting nothing. Unreachable for it, so not a parity break, but it is ours and it is on
 the wire.
 
 ⚠️ **The 60 s bound is softer than it reads.** `CombinedOutput` waits for the
@@ -74,15 +108,18 @@ not promise a bound the code does not deliver.
 The timeout reply shape is also not unchanged: `git.worktree_remove` answers
 `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
 was attempted, and git may have partially removed the worktree"}`, a frame the
-reference never emits. It is confined to this pathological path, and **no OTHER
-frame moves because of the deadline** — which is the scoped form of a claim that
-used to read "every reference-reachable frame stays byte-identical". That whole-
-wire version was false for the entire window between the deadline work and the
-stdout-only fix, for the reason recorded in the CORRECTION above: `git.status`
-and `git.list_branches` put a claustrum-only `-32603` on the wire when our own
-deadline killed git. It is arguably true again now, which is exactly the trap —
-it was restated as scope rather than deleted so the two copies cannot drift apart
-a second time.
+reference never emits. ⚠️ This used to add that **no other frame moves because of
+the deadline**. That is false, and it is the second time this sentence has had to
+be walked back — the first version claimed "every reference-reachable frame stays
+byte-identical", which was false for the whole window between the deadline work
+and the stdout-only fix, and the "scoped" replacement is false too. The deadline
+is the shared `gitTimeout`, applied independently at all three helpers (`git`,
+`gitStdoutErr`, `gitDeadline`), so a kill can surface through **any** call site:
+`gitStdoutErr` turns it into a claustrum-only `-32603 "signal: killed"` on
+`git.status` and `git.list_branches`, and the repo-detection calls can answer
+`isRepo:false` instead. More than one arm moves, and the full set has not been
+enumerated against the code — so no count is asserted here. `methods_git.go`
+carries the same retraction.
 
 The wording deliberately claims only what the daemon can observe — the SIGKILLed
 git unlinks as it goes, so the directory state is not knowable from here.
@@ -592,8 +629,9 @@ completes it with `git.worktree_remove`, which shares the predicate
 
 ### D5 · 60 s `gitTimeout` on every git invocation ✅ (always-on) — impact M / cost L
 
-- claustrum caps every git invocation at 60 s (`methods_git.go`, all three call
-  sites). **The reference showed no deadline at or below 75 s** on
+- claustrum caps every git invocation at 60 s (`methods_git.go` — the shared
+  `gitTimeout`, applied independently at all three helpers: `git`, `gitStdoutErr`,
+  `gitDeadline`, so every call site through them is covered). **The reference showed no deadline at or below 75 s** on
   `git.worktree_remove`: measured, no reply at 75 s where claustrum answered at
   60.1 s, with a fast-git control proving the fixture could answer at all. (This
   was pointer-class until that run.) That is the measured scope — one method, one
@@ -611,13 +649,15 @@ completes it with `git.worktree_remove`, which shares the predicate
   deletion **plus** `{"success":true}` — an outcome the reference cannot reach.
 - ⚠️ **The cap is softer than it reads**: it waits on git's output pipe, so a git
   that spawns a surviving child stays blocked past the deadline (§5 above).
-- **A second arm reaches the wire and this entry used to omit it:** on `git.status`
-  and `git.list_branches` the same cap surfaces as `-32603` with `err.Error()` =
-  **`signal: killed`** (§5 above). Unreachable on the reference, so not a parity
-  break — but it is ours and it is on the wire.
+- **A further arm reaches the wire and this entry used to omit it:** on
+  `git.status` and `git.list_branches` the same cap surfaces as `-32603` with
+  `err.Error()` = **`signal: killed`** (§5 above). It is not the only one — a
+  killed repo-detection call answers `isRepo:false` where the reference emits
+  nothing — and §5 records why no total is asserted. Unreachable on the reference,
+  so not a parity break, but it is ours and it is on the wire.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`, and →
   `git.list_branches` for the `signal: killed` arm — that bullet is the only
-  PROTOCOL record of the one claustrum-only *frame* in D5, and `git.status`
+  PROTOCOL record of the `signal: killed` *frame*, and `git.status`
   carries the identical frame for the identical reason.
 
 ### D6 · `-cli-version` must name a single path component ✅ (always-on) — impact H / cost L
@@ -844,8 +884,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   The control is what makes the 45 s mean something: without it, "the reference
   did not finish" is indistinguishable from a fixture that could never finish.
   This bounds the reference's deadline at *above 45 s*, not at *absent*.
-- 🔴 **"No observable delta on any honest path" was FALSE, and this entry used to
-  say it.** `isRunnable` is a wall-clock deadline, so it cannot separate "never
+- 🔴 **A bound is not a hang detector, and the "no observable delta on any honest
+  path" framing this entry was drafted with is FALSE.** `isRunnable` is a wall-clock deadline, so it cannot separate "never
   answers" from "answers slowly" — and a CLI that answers honestly in 20 s (a cold
   binary on a network filesystem, a first run behind Gatekeeper, a loaded host)
   is not a broken one. **Measured 2026-08-07 on the same fixture, both binaries**,
@@ -857,12 +897,17 @@ completes it with `git.worktree_remove`, which shares the predicate
   | *control:* the same fixture with a CLI that answers instantly | installs, 0 s | installs, 0 s |
 
   The control is what makes it attributable: the only variable between the rows is
-  how long the CLI takes to answer. So the divergence is not confined to a broken
+  how long the CLI takes to answer. The reference column above is the **no-cache**
+  shape. On the three cached shapes it is expected to cache-hit and report
+  `cliWasPresent:true` having installed nothing, since its guard has no 15 s
+  cut-off — **derived, not separately measured**. So the divergence is not confined to a broken
   CLI — claustrum **fails an install the reference completes, and discards a
   working binary**, on an input no one would call adversarial.
 - **The delta is bounded by the deadline, not by honesty.** A CLI answering within
-  15 s behaves identically on both. Everything slower diverges, and how it
-  diverges depends on which probe site sees it — see the two-site bullet below.
+  15 s is expected to behave identically on both — **derived, not measured**: only
+  0 s and 20 s were run, so the boundary itself is inferred from the constant
+  rather than bisected. Everything slower diverges, and how it diverges depends on
+  which probe site sees it — see the two-site bullet below.
 - ⚠️ **TWO probe sites, three different outcomes — "the observable" is not one
   string.** `isRunnable` is called on the cache-hit guard (`isRegularFile &&
   isRunnable`) and again after extraction. A timeout on the first is
@@ -874,25 +919,54 @@ completes it with `git.worktree_remove`, which shares the predicate
   | shape | claustrum | note |
   |---|---|---|
   | cached slow CLI, **no** source flag | `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, 15 s | the working CLI is still on disk and is reported missing; a plainly absent file produces this string too, so it does not identify a timeout |
-  | cached slow CLI **+** a source (`-cli-zst` or `-cli-url`) supplying a CLI that answers **in time** | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error |
+  | cached slow CLI **+** a source (`-cli-zst` or `-cli-url`) supplying a CLI that answers **in time** | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error, plus `cliWasPresent:false`. On `-cli-zst` the blob is consumed here too: the consume rule keys on decompression succeeding, not on which shape ran |
   | cached slow CLI **+** a source supplying the **same slow** CLI | `cliError "installed cli at <path> is not runnable"`, **30 s** | both probes time out. The cached working binary **survives** — the rename never runs. With `-cli-zst` the operator's blob is consumed as well; with `-cli-url` there is none to lose, since the download temp is removed by its own defer either way. Arguably the likeliest shape in practice: a CLI is usually slow because the *host* is, and the fresh copy runs on the same host |
   | no cache, slow CLI arriving via `-cli-zst` | `cliError "installed cli at <path> is not runnable"`, 15 s | staged binary deleted, cli-dir empty, blob consumed |
 
   Silent recovery therefore needs the *replacement* to be fast: it is the
   stale-hanging-CLI story, not the slow-CLI one.
 
+- ⚠️ **The facts frame is not the whole end state: the cache-hit shapes also run
+  the sweep, and the silent one runs the prune.** The reference touches the cli-dir
+  only when it attempts an install, so on a cache hit it touches nothing
+  (`install.go` records that contrast itself). Claustrum's cache-hit guard fails
+  instead, so it falls into `ensureCLI` and `sweepFetchTemps` runs on every cached
+  shape — removing `.fetch-*` and `*.zst` litter — and on the silent shape the
+  install succeeds, so `pruneCLI` runs too and can **evict a CLI version the
+  reference would leave in place** under `-cli-keep`. Derived from the call order,
+  **not measured**. The fixture: a cli-dir with four versions, `-cli-keep 3`, a
+  `leftover.zst` and a `.fetch-orphan`, the 20 s CLI cached, and `-cli-zst`
+  supplying a fast replacement — claustrum should sweep and prune, the reference
+  leave all six. **Control that must fire:** the same directory with an instant
+  CLI, where both must cache-hit and leave all six.
 - **`cliWasPresent` flips, and it is a structured field rather than a string.**
-  In both cached shapes above it comes back `false` for a CLI that is present and
-  works. The reference, which showed no deadline at or below 45 s, has no
+  In all three cached shapes above it comes back `false` for a CLI that is present
+  and works — including the silent one, where it is the ONLY field in the facts
+  that moves. The reference, which showed no deadline at or below 45 s, has no
   equivalent 15 s cut-off to trip. Worth more attention than the `cliError`
   wording: a client reads this field, it does not parse prose.
-- **Trade:** matching means reintroducing an unbounded hang in `-install`. That is
+- **Trade:** matching means reintroducing an *unbounded wait* in `-install` — not a
+  hang, per this section's own rule. ⚠️ The recovery half is unobserved: the harness
+  killed the reference at 45 s, so "it answers as soon as the CLI does" is the
+  natural reading of an unbounded wait, not a measurement. That is
   still the right call, but the cost is higher than this entry used to admit — it
   is not only "a hanging CLI is handled", it is also "a slow-but-working CLI can
-  fail its install and lose **both** its binary and the blob it came from" —
+  fail its install and lose **both** its binary and the blob it came from" (on the
+  `-cli-zst` shape; the cached shapes leave the working binary in place) —
   recovery then needs a fresh upload, because the consume rule keys on
   decompression succeeding, not on the install succeeding. Raising the deadline reduces the second
   without giving up the first; 15 s was never measured against anything.
+- **Why always-on, and why that is now under review.** It clears the bar this
+  section sets — the reference's behaviour on the motivating path is an apparently
+  unbounded wait (no bound at or below the harness kill) rather than a frame, which is the same justification D4 and D5 use
+  explicitly, D12 restates in its Trade bullet, and D13 supplies in a different
+  form ("an input no honest caller produces"). So the ground is consistent across
+  the group; what varies is only how plainly each entry names it. What
+  the measurement adds is a *cost* the bar does not weigh: an honest-but-slow CLI
+  pays for it, and Desktop owns the argv so a caller cannot decline. That argument
+  applies equally to D12 and to D5, so it is a question about the bar rather than
+  about D11 alone. Flipping these to opt-in (default off = unbounded = parity, the
+  shape D3 and D10 took) is a live proposal; this entry records what ships today.
 
 ### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
 
@@ -912,8 +986,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   discriminates. The control matters for the same reason as D11's: a stall probe
   where nothing can ever succeed cannot tell "no deadline" from "broken fixture",
   and the D10 measurement supplies exactly that positive case on the same path.
-- **No observable delta on a download that completes inside 5 minutes.** A server
-  sending its body at any usable rate behaves identically. The divergence appears
+- **No observable delta in the facts frame for a download that completes inside
+  5 minutes** — derived from the constant, not bisected, exactly as D11's boundary
+  is. A server sending its body at any usable rate is expected to behave
+  identically. (On disk claustrum does create `<cli-dir>/.blob-<random>`, which a
+  SIGKILL can leave behind. No claim is made here about whether the reference
+  creates anything equivalent — that was never measured, as D10 and PROTOCOL both
+  record.) The divergence appears
   against a stalled or black-holed download — where the reference was still
   waiting at 400 s — **and, by the same argument as D11, against an honest
   download that is merely too slow.** `http.Client.Timeout` bounds the whole
@@ -925,8 +1004,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   would need a >5-minute run to discriminate, and the deadline caveat below says
   the same thing from the code side. Treat it as the strongest available claim,
   not as a measurement.
-- **Trade:** matching means an `-install` that can hang forever on a network path
-  the caller does not control.
+- **Trade:** matching means an `-install` that waits without bound on a network
+  path the caller does not control — an *unbounded wait*, not a hang. ⚠️ As with
+  D11, the recovery half is unobserved: the stall fixture never sent a body.
 - ⚠️ **This bounds the exchange, not the throughput.** A server dribbling bytes
   slower than 5 minutes' worth still trips it, and one that finishes in 4:59 does
   not — so it is a deadline, not a stall detector.
@@ -935,8 +1015,9 @@ completes it with `git.worktree_remove`, which shares the predicate
 
 - On the `-cli-url` path the **reference decompresses first** and aborts on the
   first invalid bytes; **claustrum hashes the response as it streams to disk,
-  verifies the checksum, then decompresses**. Exactly one input reveals the order — a blob that is
-  **both** corrupt zstd **and** wrong-checksummed:
+  verifies the checksum, then decompresses**. Of the three combinations measured,
+  one reveals the order — a blob that is **both** corrupt zstd **and**
+  wrong-checksummed:
 
   | input | reference | claustrum |
   |---|---|---|
@@ -946,7 +1027,8 @@ completes it with `git.worktree_remove`, which shares the predicate
 
   Both controls come back identical, which is why the single differing row is
   attributable to ordering rather than to the fixture. Measured at `5db5e4a`.
-- **Observable delta:** the `cliError` string. Of the three combinations measured
+- **Observable delta:** the `cliError` string, and only that — the two controls
+  compared reply strings, not on-disk end state. Of the three combinations measured
   it differs on one — the combined failure; the other two are identical. That is a
   claim about the three rows above, not about every possible input, and D11 is the
   reminder of why the distinction matters.

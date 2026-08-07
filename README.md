@@ -39,7 +39,9 @@ host. It isn't a network relay — it's **local plumbing**:
 `claustrum` is a from-scratch, behaviorally-compatible implementation of that daemon, so it can
 be used **independently** — e.g. as a building block for self-hosted tooling like
 [clauster](https://github.com/schubydoo/clauster). It is validated to produce
-**byte-identical** JSON-RPC frames for every method (see [Validation](#validation)).
+**byte-identical** JSON-RPC frames for every method, apart from a small set of documented,
+deliberate divergences (see [Validation](#validation) and
+[IMPROVEMENTS](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity)).
 
 > **Status: stable (v1.0+).** The JSON-RPC/process/file/git surface is complete and validated; the
 > CLI-version installer is implemented and behavior-checked. No telemetry, ever.
@@ -163,8 +165,11 @@ isolated in `*_unix.go` / `*_windows.go` files; the JSON-RPC surface is identica
 
 `claustrum` is checked against a reference daemon with a request **battery** that exercises every
 method, error path, and the full process lifecycle, then diffs normalized frames. Current status:
-**byte-identical across all methods**, plus a behavior-identical `-install` path. The harness
-lives in `scratch/` (local, not published).
+**byte-identical on every method the battery exercises, apart from a small set of documented,
+deliberate divergences** — see
+[`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity); the bounds
+D11/D12 in particular are wall-clock thresholds, so an honest-but-slow CLI or download diverges
+by design. The harness lives in `scratch/` (local, not published).
 
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same
 contract without the reference binary: a socket-integration battery boots the daemon and asserts

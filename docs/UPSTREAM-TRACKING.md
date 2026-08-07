@@ -220,20 +220,36 @@ If the check reports drift:
 >   15 s and the download at 5 minutes. The reference was still running at 45 s and
 >   still downloading at 400 s respectively. **A fixture that never answers is NOT
 >   required for D11**: a CLI that honestly answers in 20 s already diverges — the
->   reference installs it, claustrum fails the install and deletes the binary
->   (measured 2026-08-07). So a 20 s-CLI difference IS D11, not drift. The same is
+>   reference does not apply a 15 s cut-off while claustrum does — but **D11 has
+>   three different surfaces and one of them is silence**, so do not look only for
+>   an error. (On the no-cache shape the reference installs the CLI outright,
+>   measured; on the cached shapes it should simply cache-hit with
+>   `cliWasPresent:true` and install nothing — derived, not separately measured.) It can
+>   appear as `installed cli at <path> is not runnable` (staged binary deleted,
+>   blob consumed on `-cli-zst`), as `cli <v> missing and no --cli-url or
+>   --cli-zst provided` with the working CLI still on disk, or as **no `cliError`
+>   at all** — where `cliWasPresent:false` is the only FACTS field that moves, but
+>   the cli-dir moves too: every cached shape runs the orphan sweep and the silent
+>   one runs the prune, where the reference cache-hits and touches nothing. All
+>   three surfaces measured 2026-08-07; the sweep/prune contrast is derived. So a
+>   20 s-CLI difference IS D11, not drift — including when the only difference is
+>   a field, not a message. The same is
 >   expected of a too-slow download, derived from `http.Client.Timeout` rather than
 >   measured.
 > - **D13** — `-install` verifies the download's checksum BEFORE decompressing,
->   where the reference decompresses first. Exactly one input tells them apart: a
->   blob that is both corrupt zstd and wrong-checksummed.
+>   where the reference decompresses first. Of the three combinations measured, one
+>   tells them apart: a blob that is both corrupt zstd and wrong-checksummed.
 >
 > **This list covers the D/CT-numbered divergences only.** Several claustrum-only
 > behaviors are catalogued by *tier number* instead and are just as real:
-> **item 16** (`-metrics-addr`), **item 17** (the orphaned previous process tree
-> is torn down), **item 18** (`-token-fd`), **item 21** (the signal is skipped
-> when the child has already exited). Check both indexes before concluding that
-> something is drift.
+> **item 5** (**linux only** — the `ldd --version` libc probe is capped at 5 s; a
+> `libc` difference on linux MAY be this, though the fallback usually matches the
+> true value, so rule out the loader-glob path first. Off linux there is no probe
+> at all, so a `libc` difference there is NOT this. The `gitTimeout` half of that
+> tier item is **D5** and is listed above), **item 16** (`-metrics-addr`), **item 17** (the orphaned
+> previous process tree is torn down), **item 18** (`-token-fd`), **item 21** (the
+> signal is skipped when the child has already exited). Check both indexes before
+> concluding that something is drift.
 >
 > **CT-3 is the one the static check *can* flag:** it diffs `-version` format, so
 > a deploy carrying a `claustrum.conf` with `version-override` reports the

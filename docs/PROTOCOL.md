@@ -659,7 +659,8 @@ Errors:
 - **Claustrum-only frame.** If claustrum's 60 s `gitTimeout` kills git instead,
   the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
   SIGKILLed process's exit error over the context error. The reference runs git
-  with no deadline and simply blocks, so it never emits this. `git.status` has
+  with no deadline at or below the 75 s that was probed, and simply blocks, so it
+  never emits this. `git.status` has
   the identical frame for the identical reason. Intentional divergence **(D5)** —
   see IMPROVEMENTS §5 and the D5 entry.
 
@@ -780,7 +781,8 @@ the daemon then seeds the new worktree:
 - **`gitTimeout` does NOT authorise the deletion — claustrum-only (D5).** (The cap is
   also softer than it reads: it waits on git's output pipe, so a git that spawns a
   surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
-  on git is a claustrum divergence (the reference runs git with no deadline and
+  on git is a claustrum divergence (the reference showed no deadline at or below
+  the 75 s probed, and
   blocks — measured: no reply at 75 s against claustrum's 60.1 s, with a fast-git
   control proving the fixture could answer at all; this was pointer-class until
   that run), so a timeout must not be read as "git refused". It answers
@@ -1288,8 +1290,9 @@ Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
-Four `-install` behaviours are easy to miss. The first two are bounds the
-reference does not appear to apply; the last two have no frame at all. Only the
+Five `-install` behaviours are easy to miss. The first two are wall-clock bounds
+the reference does not appear to apply, a third bounds the `libc` probe, and the
+last two have no frame at all. Only the
 download bound *always* surfaces a `cliError` — a timed-out runnability probe on
 the cache-hit check can surface as the **absence** of an error — but only when the
 replacement answers in time; if it is just as slow, both probes time out and the
@@ -1312,7 +1315,8 @@ run fails after ~30 s with the cached binary left in place:
   stopped it at 45 s, where claustrum returns at 15 s (control: a CLI that answers
   instantly returns at 0 s on both). Both figures bound the reference's deadline
   *above* the kill time; neither shows it is absent. **A CLI answering within 15 s
-  behaves identically; slower ones diverge, and not only broken ones.** This is a
+  is expected to behave identically — derived from the constant, not bisected;
+  slower ones diverge, and not only broken ones.** This is a
   wall-clock deadline, not a hang detector — measured 2026-08-07 with a CLI that
   answers honestly in 20 s, the reference installs it (no `cliError`, 20 s) while
   claustrum fails at 15 s with `cliError "installed cli at <path> is not
@@ -1333,10 +1337,20 @@ run fails after ~30 s with the cached binary left in place:
   silently from a stale hanging CLI, where the reference was still wedged on it
   when the harness stopped the probe. The observable is the absence of an error,
   not the presence of one.
+- **The `ldd --version` libc probe is bounded at 5 s (tier item 5) — linux only.**
+  Off linux the probe never runs (`libc_other.go` returns `""`), so no bound
+  exists there. No deadline has been measured on the reference. `libc` is a field of the
+  `__INSTALL_RESULT__` facts, so a fallback is wire-visible in principle — but in
+  practice the fallback and the true value coincide: a musl host returns `"musl"`
+  from the loader glob without spawning `ldd` at all, and a glibc host's fallback
+  *is* `"glibc"`. The field moves only where `ldd` reports musl while
+  `/lib/ld-musl-*.so.*` does not match. Not measured on either binary; see
+  IMPROVEMENTS tier item 5 for the discriminating fixture.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
   on a fully successful install. An extracted CLI that fails the `--version`
   runnability check still costs you the blob. A blob that is not valid zstd is
-  left alone, because decompression never produced a staged file. Measured
+  left alone, because decompression never succeeded (the staging file is created
+  before decompression runs, so its existence is not the boundary). Measured
   against the reference on four fixtures that bracket the decompress step, where
   it behaves the same way on all four. The narrow window between decompression
   and the rename (`chmod`, the destination clear) was not provoked — it sits on
@@ -1354,13 +1368,15 @@ Checksum + error framing (probe-verified):
   **unconditionally** — an empty `-cli-checksum` still fails
   (`checksum mismatch: expected=, actual=<sha>`).
 - **Verify happens BEFORE decompress — intentional divergence (D13).** The
-  reference decompresses first and aborts on the first invalid bytes, so exactly
-  one input tells them apart: a blob that is **both** corrupt zstd **and**
-  wrong-checksummed. Measured at `5db5e4a` — reference
+  reference decompresses first and aborts on the first invalid bytes. Of the three
+  combinations measured at `5db5e4a`, one tells them apart — a blob that is
+  **both** corrupt zstd **and** wrong-checksummed: reference
   `decompressing: invalid input: magic number mismatch`, claustrum
-  `checksum mismatch: expected=…, actual=…`. Every other combination is
-  order-blind and identical on both (verified with two controls). Matching would
-  mean feeding unverified bytes to the decompressor.
+  `checksum mismatch: expected=…, actual=…`. The other two came back identical,
+  which is what makes the differing row attributable to ordering rather than to the
+  fixture. That is a claim about those three rows, not about every possible input,
+  and the controls compared reply strings rather than on-disk end state. Matching
+  would mean feeding unverified bytes to the decompressor.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →

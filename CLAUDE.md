@@ -189,18 +189,33 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   blob is **streamed, never buffered** (a path, not a `[]byte`, so the staging
   retry can re-read it); that is what keeps "cap off" from meaning "unbounded
   memory".
-- **Three always-on `-install` bounds are claustrum's, not the reference's**
-  (D11/D12/D13, all measured with controls): the `<cli> --version` runnability
-  probe is capped at 15 s (the reference was still running at 45 s), the download
-  at 5 minutes (still downloading at 400 s), and the checksum is verified
-  **before** decompressing where the reference decompresses first. None differs on
-  an honest path *within the bound* — but **neither timeout is a hang detector**.
-  **Measured:** a CLI answering honestly in 20 s makes claustrum fail the install
-  with `installed cli at <path> is not runnable`, delete the binary **and consume
-  the blob**, where the reference installs it. **Derived, not measured:** the same
-  for a download slower than 5 minutes, since `http.Client.Timeout` bounds the
-  whole exchange. D13
-  shows only against a blob that is corrupt *and* wrong-checksummed.
+- **`-install` applies wall-clock bounds the reference does not appear to, plus one
+  ordering difference.** Two everywhere — the `<cli> --version` runnability probe
+  at 15 s (D11) and the download at 5 minutes (D12) — plus a third on linux only,
+  the `ldd --version` libc probe at 5 s (tier item 5; `libc_other.go` skips the
+  probe entirely off linux). D13 is **not** a bound — it is verify-before-decompress
+  ordering, which no slow input trips. **No bound here is a hang detector**: each is
+  a threshold, so an honest-but-slow input trips it too. For D11 and D12 the
+  reference showed no deadline at or below the harness kill time (45 s and 400 s),
+  which bounds it *above* that, not at absent; the ldd bound has never been probed
+  on either binary.
+  **Measured (D11, claustrum side):** a CLI answering honestly in 20 s diverges,
+  and *how* depends on the shape — `installed cli at <path> is not runnable` with
+  the staged binary deleted; or `cli <v> missing and no --cli-url or --cli-zst
+  provided`; or **no error at all**, silently reinstalled. On `-cli-zst` the blob is
+  consumed whenever decompression succeeded, which includes the silent shape. Of
+  the shapes that attempt an install, the cached binary survives only when both
+  probes time out (the rename is never reached) — a fast replacement does replace
+  it; with no source flag `ensureCLI` still runs but returns before any install
+  step, so the cached binary survives (the orphan sweep does still run).
+  **Measured (reference):** it installs the 20 s CLI outright on the no-cache
+  shape. **Derived:** on the cached shapes it should cache-hit and report
+  `cliWasPresent:true` having installed nothing, since its guard has no 15 s
+  cut-off — not separately measured. Also derived: a download slower than 5 minutes
+  (`http.Client.Timeout` bounds the whole exchange). The ldd bound is narrower than
+  it looks — fallback and true value coincide except where `ldd` reports musl and
+  the loader glob misses. D13 differs on the one combined-failure input of the
+  three measured — corrupt *and* wrong-checksummed — not on every possible input.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is
