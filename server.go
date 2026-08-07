@@ -729,6 +729,25 @@ func (s *server) serveConn(c *conn) {
 			}
 		}()
 	}
+
+	// The read loop also ends on a scanner error — a request line over the 1 MiB
+	// cap, or a read failure that is not a clean EOF — and that arm is otherwise
+	// silent: no reply goes out and the connection just closes. Measured, the
+	// reference emits the scanner error *before* its "Connection closed" line, so
+	// the check goes at the end of this body: claustrum's own "Connection closed"
+	// comes from the defer above, which runs last.
+	//
+	// isOurClose is excluded because that is OUR close, not a read failure:
+	// closeAll drops every client connection on the graceful-shutdown path, and
+	// counting that as an error made claustrum log one ERROR line per connected
+	// client where the reference's log carries none (measured, both binaries, on
+	// a server.shutdown with two connections open). sc.Err() is nil on a clean
+	// EOF, so an ordinary client disconnect stays quiet on both. The predicate is
+	// per-OS because the -listen-pipe transport's conns are served by this same
+	// serveConn but do not report a close as net.ErrClosed.
+	if err := sc.Err(); err != nil && !isOurClose(err) {
+		logErrorf("[Server] scanner error on %s: %v", c.nc.RemoteAddr(), err)
+	}
 }
 
 // signalShutdown requests a graceful stop exactly once.
