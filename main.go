@@ -126,6 +126,8 @@ func main() {
 
 		keepChildren = flag.Bool("keep-children", false, "On graceful shutdown, leave spawned child processes running instead of killing them, so they survive a daemon restart/upgrade. Off by default; -serve only; POSIX-only (ignored with a warning on Windows, where children are confined to a Job Object that the OS terminates on daemon exit). The new daemon does not re-adopt the survivors.")
 
+		maxExtract = flag.Int64("max-extract-bytes", 0, "Cap the total uncompressed bytes files.extract_tar will write, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the max-extract-bytes key in claustrum.conf is usually the reachable way to set this.")
+
 		listenPipe = flag.Bool("listen-pipe", false, "Additionally serve the same JSON-RPC over a Windows named pipe (claustrum picks the name and writes it to rpc.pipe beside the socket) so clients that cannot consume the AF_UNIX socket on Windows can still connect. Off by default; -serve only; Windows-only (ignored with a warning elsewhere). Strictly additive — the AF_UNIX socket and the wire contract are unchanged.")
 
 		cliDir      = flag.String("cli-dir", "", "Directory for per-version CLI binaries")
@@ -188,6 +190,10 @@ func main() {
 		}
 		return
 	case *serve:
+		// -serve only: the cap governs files.extract_tar, which only the daemon
+		// serves. Set before runServe because the value is read deep in the
+		// method, not carried through the server struct.
+		maxExtractBytes = cfg.effectiveMaxExtractBytes(*maxExtract, cliSet["max-extract-bytes"])
 		runServe(resolveSocket(), *tokenFile, *tokenFd,
 			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
 			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]),

@@ -52,10 +52,14 @@ type config struct {
 	listenPipe *bool
 	// metricsAddr mirrors -metrics-addr; "" means "not set in the file".
 	metricsAddr string
+	// maxExtractBytes mirrors -max-extract-bytes; nil means "not set in the file".
+	// This is the key that matters most in practice: the cap applies to
+	// files.extract_tar, whose caller is Claude Desktop, which owns the argv — so
+	// a flag alone would be unreachable for the people who need it.
+	maxExtractBytes *int64
 	// maxCLIBytes mirrors -max-cli-bytes; nil means "not set in the file". The
-	// config key matters more than the flag: Claude Desktop owns the argv on the
-	// -install invocation too, so a flag alone would be unreachable for the
-	// people who need it.
+	// config key matters more than the flag for the same reason: Claude Desktop
+	// owns the argv on the -install invocation too.
 	maxCLIBytes *int64
 }
 
@@ -130,10 +134,21 @@ func applyConfigKey(cfg *config, key, val string) {
 		if val != "" && isPrintableASCII(val) {
 			cfg.metricsAddr = val
 		}
-	case "max-cli-bytes":
+	// ⚠️ These two cases are deliberately written out in full rather than sharing
+	// a body. They arrived on separate branches whose conflict hunks share the
+	// parse line as context, so the tempting union — an empty `case
+	// "max-extract-bytes":` stacked above `case "max-cli-bytes":` — reads like a
+	// fallthrough and is not one. Go would make the first key a silent no-op and
+	// let the second set both caps, and gofmt / vet / lint / the suite all pass.
+	case "max-extract-bytes":
 		// A plain byte count; 0 disables the cap (the default). Negative values
 		// and anything unparseable are rejected, so a typo can never silently
 		// enable a cap the operator did not ask for.
+		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
+			cfg.maxExtractBytes = &n
+		}
+	case "max-cli-bytes":
+		// Same shape as max-extract-bytes above, same reasoning.
 		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
 			cfg.maxCLIBytes = &n
 		}
@@ -180,12 +195,36 @@ func (cfg config) effectiveMetricsAddr(cliVal string, cliSet bool) string {
 	return cliVal
 }
 
-// effectiveMaxCLIBytes applies the same precedence for -max-cli-bytes. Unlike the
-// string/bool keys there is no "empty means unset" ambiguity to dodge: 0 is a
+// effectiveMaxExtractBytes applies the same precedence for -max-extract-bytes.
+// Unlike the others there is no "empty means unset" ambiguity to dodge: 0 is a
 // meaningful value (cap disabled, the default), so the config side is a pointer.
+func (cfg config) effectiveMaxExtractBytes(cliVal int64, cliSet bool) int64 {
+	if !cliSet && cfg.maxExtractBytes != nil {
+		return *cfg.maxExtractBytes
+	}
+	// The config path rejects a negative outright so a typo can never silently
+	// enable a cap; the flag had no validation at all, so -max-extract-bytes -1
+	// reached the daemon as a negative. It disabled the cap either way (the copy
+	// site tests maxExtractBytes > 0), but the two paths disagreeing about the
+	// same input is the kind of gap that survives until something depends on it.
+	// Normalised to the disabled value, with a line saying so.
+	if cliVal < 0 {
+		logWarnf("[Server] -max-extract-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		return 0
+	}
+	return cliVal
+}
+
+// effectiveMaxCLIBytes applies the same precedence for -max-cli-bytes, and the
+// same negative handling — the asymmetry fixed for max-extract-bytes would
+// otherwise be reintroduced here by its sibling.
 func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 	if !cliSet && cfg.maxCLIBytes != nil {
 		return *cfg.maxCLIBytes
+	}
+	if cliVal < 0 {
+		logWarnf("[Server] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
+		return 0
 	}
 	return cliVal
 }
