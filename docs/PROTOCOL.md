@@ -861,8 +861,15 @@ unknown id is not an error):
       the only round value in it. The ceiling is not new in `5db5e4a`: `7c2f88d`,
       the build that added the method, answers at ~30 s for the same input.
     - **`escalate`** (default `true`) decides what happens if the process is still
-      alive after the grace. `true` → **escalate** to `SIGKILL`, wait for the reap,
-      and add `"escalated":true` to the reply. `false` → leave the process running
+      alive after the grace. `true` → **escalate** to `SIGKILL`, wait up to
+      **7 s** for the reap, and add `"escalated":true` to the reply. That 7 s is
+      itself measured against the reference (2026-08-06, black-box): with
+      `timeoutMs: 500` against a child `SIGKILL` cannot reap, the reference
+      replies at 7.51 s. It is client-observable twice over — in when the reply
+      arrives, and in whether a child reaped between 5 s and 7 s reports
+      `"died":true` rather than `false`. A pipe-holding grandchild cannot measure
+      it: the exit drain closes the read ends at 5 s first, so both binaries
+      answer at 5.01 s regardless. `false` → leave the process running
       and report `{"found":true,"died":false}` (no `escalated`, no SIGKILL).
       The escalation `SIGKILL` goes to the **process group**, so it sweeps up the
       child tree the graceful signal spared — and it is sent even when the
