@@ -218,8 +218,12 @@ If the check reports drift:
 >   reference ignores. Adversarial params only.
 > - **D11 / D12** — `-install` bounds the `<cli> --version` runnability probe at
 >   15 s and the download at 5 minutes. The reference was still running at 45 s and
->   still downloading at 400 s respectively, so a probe needs a fixture that never
->   answers to see either.
+>   still downloading at 400 s respectively. **A fixture that never answers is NOT
+>   required for D11**: a CLI that honestly answers in 20 s already diverges — the
+>   reference installs it, claustrum fails the install and deletes the binary
+>   (measured 2026-08-07). So a 20 s-CLI difference IS D11, not drift. The same is
+>   expected of a too-slow download, derived from `http.Client.Timeout` rather than
+>   measured.
 > - **D13** — `-install` verifies the download's checksum BEFORE decompressing,
 >   where the reference decompresses first. Exactly one input tells them apart: a
 >   blob that is both corrupt zstd and wrong-checksummed.

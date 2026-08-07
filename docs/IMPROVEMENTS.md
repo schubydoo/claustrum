@@ -867,19 +867,19 @@ completes it with `git.worktree_remove`, which shares the predicate
   string.** `isRunnable` is called on the cache-hit guard (`isRegularFile &&
   isRunnable`) and again after extraction. A timeout on the first is
   indistinguishable from a cache miss, so what follows depends on the flags rather
-  than on the timeout. All three measured 2026-08-07 with the same 20 s CLI:
+  than on the timeout. All four measured 2026-08-07. The cached CLI is the same
+  20 s fixture throughout — what varies is what the source flag supplies, which is
+  why row two needs a replacement that answers in time:
 
   | shape | claustrum | note |
   |---|---|---|
   | cached slow CLI, **no** source flag | `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, 15 s | the working CLI is still on disk and is reported missing; a plainly absent file produces this string too, so it does not identify a timeout |
-  | cached slow CLI **+** a source supplying a CLI that answers **in time** | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error |
-  | cached slow CLI **+** a source supplying the **same slow** CLI | `cliError "installed cli at <path> is not runnable"`, **30 s** | both probes time out. The cached working binary **survives** — the rename never runs — and the blob is consumed. Arguably the likeliest shape in practice: a CLI is usually slow because the *host* is, and the fresh copy runs on the same host |
+  | cached slow CLI **+** a source (`-cli-zst` or `-cli-url`) supplying a CLI that answers **in time** | **no `cliError` at all**, 15 s | silently reinstalled — the observable is the *absence* of an error |
+  | cached slow CLI **+** a source supplying the **same slow** CLI | `cliError "installed cli at <path> is not runnable"`, **30 s** | both probes time out. The cached working binary **survives** — the rename never runs. With `-cli-zst` the operator's blob is consumed as well; with `-cli-url` there is none to lose, since the download temp is removed by its own defer either way. Arguably the likeliest shape in practice: a CLI is usually slow because the *host* is, and the fresh copy runs on the same host |
   | no cache, slow CLI arriving via `-cli-zst` | `cliError "installed cli at <path> is not runnable"`, 15 s | staged binary deleted, cli-dir empty, blob consumed |
 
-  Silent recovery therefore needs the *replacement* to be fast; it is the
-  stale-hanging-CLI story, not the slow-CLI one. An earlier version of this table
-  claimed all rows came from one 20 s fixture — the 15 s in row two was the tell,
-  since one probe's worth of wall clock cannot cover two timeouts.
+  Silent recovery therefore needs the *replacement* to be fast: it is the
+  stale-hanging-CLI story, not the slow-CLI one.
 
 - **`cliWasPresent` flips, and it is a structured field rather than a string.**
   In both cached shapes above it comes back `false` for a CLI that is present and

@@ -1324,9 +1324,12 @@ run fails after ~30 s with the cached binary left in place:
   check a timeout is indistinguishable from a cache miss and the install simply
   proceeds — ending at `"cli <v> missing and no --cli-url or --cli-zst provided"`
   only when no source flag was given, which a plainly missing file produces too.
-  **With `-cli-url` present that shape emits no `cliError` at all**: the run
-  downloads, installs, passes the probe on the fresh binary and reports
-  `cliWasPresent:false`. That is the divergence at its purest — claustrum recovers
+  **With `-cli-url` present, and the downloaded CLI answering in time, that shape
+  emits no `cliError` at all**: the run downloads, installs, passes the probe on
+  the fresh binary and reports `cliWasPresent:false`. If the replacement is just as
+  slow, both probes time out and the run ends after ~30 s at `installed cli at
+  <path> is not runnable`, with the cached binary left in place because the rename
+  is never reached. That is the divergence at its purest — claustrum recovers
   silently from a stale hanging CLI, where the reference was still wedged on it
   when the harness stopped the probe. The observable is the absence of an error,
   not the presence of one.
