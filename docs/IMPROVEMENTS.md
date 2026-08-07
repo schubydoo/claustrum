@@ -489,11 +489,16 @@ decision a flag would improve.** *Unbounded wait*, not "hang" — the reference
 recovers the moment the wait's cause clears, and saying otherwise is a correction
 D4 already had to make once.
 
-🔴 **That test is necessary and NOT sufficient, and four entries proved it.**
-D3, D10, D11 and D12 all *cleared* the unbounded-wait bar and were flipped to
-opt-in anyway — their own entries say so in as many words. Applied literally the
-bar returns the wrong answer for all four, so it is no longer a decision rule on
-its own. The second question an always-on entry must answer:
+🔴 **That test is necessary and NOT sufficient.** **D11 and D12** both *cleared*
+the unbounded-wait bar — their entries say so in as many words — and were flipped
+to opt-in anyway, so for those two the bar returns the wrong answer applied
+literally. **D3 and D10 are a different case and it is worth not conflating them:**
+they are *size* caps, and the reference's behaviour on their motivating path is a
+629 MB extraction and a 600 MiB install that both **complete** — a frame, not an
+unbounded wait. The bar was not wrong about them; it was **silent**, because it
+never asked about cost. Two entries where it misfires and two where it says
+nothing are the same gap seen from either side, and it is the reason for the
+second question an always-on entry must answer:
 
 > **Who pays when the guard fires on an honest input, and can they decline?**
 
@@ -1111,9 +1116,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   far-future deadline is a different thing that merely looks equivalent, and it
   would keep `exec.CommandContext`'s kill-on-cancel path in play where the
   reference showed no such cut-off.
-- **What still ships bounded on the `-install` path:** of the *D-numbered,
-  claustrum-chosen* bounds, only the linux-only `ldd` probe (tier item 5), which is
-  not a D-number and is not proposed for a flip — D12's download bound took this
+- **What still ships bounded on the `-install` path:** of the *claustrum-chosen*
+  bounds, only the linux-only `ldd` probe (tier item 5), which carries no D-number
+  and is not proposed for a flip — D12's download bound took this
   same flip alongside D11's. ⚠️ Not the same as "nothing bounds an `-install`":
   `http.DefaultTransport`'s `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s` still apply on the `-cli-url` path, on every platform,

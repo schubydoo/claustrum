@@ -1310,7 +1310,8 @@ left in place:
   at all** — `http.Client{Timeout: 0}` is the stdlib's own "no timeout" — which
   matches the reference on every input measured. Opt in with
   `-cli-download-timeout <duration>` or the `cli-download-timeout` key in
-  `claustrum.conf`; the figures below are the old hardcoded 5-minute default.
+  `claustrum.conf`. Only the `-cli-download-timeout 5m` row below is the old
+  hardcoded default; the other two are the reference and claustrum at the new one.
   Measured 2026-08-07 with a valid 30-byte zstd blob dribbled one byte at a time
   over ~324 s and a correct `-cli-checksum`: the reference installs it at 324 s
   with no `cliError`, claustrum at the new default installs it at 324 s with no
@@ -1327,10 +1328,10 @@ left in place:
   returned at 300 s with `cliError "download failed: context deadline exceeded
   (Client.Timeout or context cancellation while reading body)"`. A real 629 MB
   body completes on both. But `http.Client.Timeout` bounds the whole exchange, so
-  an honest download merely too slow to finish in 5 minutes trips it as surely as
-  a black hole does — the control passed because it arrived in time, not because
+  an honest download merely too slow to finish within the configured duration trips
+  it as surely as a black hole does — the control passed because it arrived in time, not because
   it was honest. (That half is **no longer derived**: the 324 s straddling run in
-  the D12 bullet below measures it directly — an honest download failed at 300 s by
+  the D12 bullet above measures it directly — an honest download failed at 300 s by
   the value that shipped and completed by the reference. The never-arrives row
   remains measured on the reference only.)
 - **The `--version` runnability probe can be bounded, but is NOT by default —

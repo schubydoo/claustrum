@@ -201,8 +201,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   the stdlib's own "no timeout". ⚠️ D12's zero frees the **body read only** —
   `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s`, both always-on, unnumbered and unprobed on the
-  reference. So at the shipped defaults the only D-numbered `-install` wall-clock
-  bound claustrum applies is the linux `ldd` one — the stdlib transport clocks
+  reference. So at the shipped defaults the only *claustrum-chosen* `-install`
+  wall-clock bound that still applies is the linux `ldd` one (tier item 5 — not a
+  D-number) — the stdlib transport clocks
   above still apply on `-cli-url` everywhere — and even that cannot fire **where the
   musl loader glob matches**, because `detectLibcWith` returns before spawning
   `ldd` — the predicate is the glob, not the host, so a musl box whose loader the
