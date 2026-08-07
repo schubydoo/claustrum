@@ -372,35 +372,39 @@ lives in `scratch/`, gitignored). The third finding from the same sweep —
 to be **byte-identical** even on symlink/dangling/self entries, so it needs no
 divergence note.
 
-### 23 · Recover from handler panics (parity with the reference) ✅ — impact M / cost S
+### 23 · Recover from handler panics ✅ — impact M / cost S
 
 The per-request goroutine now wraps dispatch in `defer recover()`. Before this, a
 panic in any handler crashed the **whole** daemon — an unrecovered panic in any
 goroutine takes the process down — orphaning managed children and leaving a stale
 socket, so reconnects failed `connection refused` rather than `no such file`.
 
-**This is parity, not a divergence: the reference already recovers from a panic
-per request in the equivalent per-request goroutine.** claustrum lacked it; this
-catches up.
+Surviving the request is strictly better than dying on it, and that is the whole
+justification: a daemon that supervises child processes should not lose them to a
+bug in one handler.
 
-⚠️ **The frame and log line are INFERRED from static inspection of the reference,
-not measured, and the entry must not pretend otherwise.** The reply code
-(**−32603**, claustrum's `codeInternal`), the message prefix
-(**`internal panic: `**) and the log format
-(`[Server] handler panic: method=%s id=%v: %v`) match the reference's, read from
-the binary; the id rendering uses claustrum's own `idForLog`, matching its other
-log lines. Not probe-verified — the panic path is unreachable, so the exact
-reference bytes cannot be confirmed on the wire.
+**The reply frame is claustrum's own, and it is NOT a parity claim.** The reply
+code is **−32603**, which is `codeInternal` — the JSON-RPC 2.0 standard *Internal
+error* code, not something specific to this protocol. The message prefix
+(**`recovered panic: `**), the log line
+(`[Server] recovered panic: method=%s id=%v: %v`) and the id rendering
+(`idForLog`, matching claustrum's other log lines) are all claustrum's own
+conventions.
 
-**Why it cannot be measured:** no input is known to reach a handler panic on
-either binary. Two fuzz waves (the 3481-case run plus a gap-closing run over
-malformed frames, `auth`/`jsonrpc`, and multi-param combos) found zero, and a
-read of the handler bodies accounts for every panic site as either an unreachable
-stdlib guard (`time.Timer.Stop/Reset` on an uninitialised timer, which
-`time.NewTimer` precludes) or an already-bounds-guarded slice (`WriteStdin`'s
-offset/dedup, `frameSink`'s eviction). **So the reference's recover is itself
-blanket-defensive**, and this matches that engineering posture rather than a
-measured frame.
+**Nothing about this frame is probe-verified, and nothing about it needs to be:**
+the path is unreachable, so no client can observe the frame and it cannot diverge
+from anything. No input is known to reach a handler panic — two fuzz waves (the
+3481-case run plus a gap-closing run over malformed frames, `auth`/`jsonrpc`, and
+multi-param combos) found zero, and claustrum's own panic sites are each either
+an unreachable stdlib guard (`time.Timer.Stop/Reset` on an uninitialised timer,
+which `time.NewTimer` precludes) or an already-bounds-guarded slice
+(`WriteStdin`'s offset/dedup, `frameSink`'s eviction). The recover is therefore
+blanket-defensive by design.
+
+The recover is scoped to **dispatch only** — the response write stays outside it,
+so a panic in `writeResponse` cannot produce a second frame for one id — and
+`server.shutdown`, which must reply nothing, still replies nothing even if its
+handler panics.
 
 - **Default path byte-identical:** the recover fires only on a panic, which does
   not occur on any reachable input, so the differential battery is unchanged

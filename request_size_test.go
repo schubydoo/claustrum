@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net"
 	"os"
 	"path/filepath"
@@ -50,16 +51,24 @@ func TestRequestSizeCap(t *testing.T) {
 }
 
 // A panicking handler must not take the daemon down — the per-request goroutine
-// recovers, replies -32603 "internal panic: <v>", and the connection stays
-// usable for the next request. Matches the reference's per-request panic
-// isolation; the path is otherwise unreachable, so it is provoked here through
-// the dispatchRequest seam. Reverting the recover makes this CRASH the test
+// recovers, replies -32603 "recovered panic: <v>", and the connection stays
+// usable for the next request. The frame is claustrum's own (the path is
+// unreachable, so nothing about it is probe-verified); it is provoked here
+// through the dispatchRequest seam. Reverting the recover makes this CRASH the test
 // binary (an unrecovered goroutine panic kills the process), which is the
 // mutant signal — run it isolated when checking.
 func TestHandlerPanicIsRecovered(t *testing.T) {
+	// The seam is written ONCE, before the server starts, and never again: the
+	// request goroutine reads it while serving, so a mid-test write would be
+	// unordered against that read (a socket round-trip carries the reply but is
+	// not a happens-before edge). Which request panics is decided inside the
+	// replacement instead, so the second call needs no restore.
 	old := dispatchRequest
 	dispatchRequest = func(s *server, c *conn, raw []byte) *response {
-		panic("boom-" + string(raw[:0]))
+		if bytes.Contains(raw, []byte(`"id":7`)) {
+			panic("boom")
+		}
+		return s.dispatch(c, raw)
 	}
 	t.Cleanup(func() { dispatchRequest = old })
 
@@ -68,16 +77,16 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 	// First request hits the panicking dispatch: expect the -32603 frame, not a
 	// dropped connection or a dead daemon.
 	reply := sendRaw(t, sock, `{"jsonrpc":"2.0","id":7,"method":"server.ping","auth":"`+testToken+`"}`)
-	for _, want := range []string{`"id":7`, `"code":-32603`, "internal panic:"} {
+	for _, want := range []string{`"id":7`, `"code":-32603`, "recovered panic:"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("panic reply = %q, missing %q", reply, want)
 		}
 	}
 
-	// The daemon is still alive: restore normal dispatch and a fresh request works.
-	dispatchRequest = old
+	// The daemon is still alive: a fresh request (a different id, so the seam
+	// delegates to the real dispatch) still works.
 	if reply := sendRaw(t, sock, `{"jsonrpc":"2.0","id":8,"method":"server.ping","auth":"`+testToken+`"}`); !strings.Contains(reply, `"pong":true`) {
-		t.Errorf("daemon dead after a handler panic: reply=%q, want a pong", reply)
+		t.Errorf("daemon dead after a recovered panic: reply=%q, want a pong", reply)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -712,27 +713,20 @@ func (s *server) serveConn(c *conn) {
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
 		go func() {
-			// Per-request panic isolation, matching the reference: without this a
-			// panic in any handler crashes the whole daemon (an unrecovered panic
-			// in ANY goroutine takes the process down), orphaning managed children
-			// and leaving a stale socket. The reference recovers per request in the
-			// equivalent goroutine.
+			// Per-request panic isolation: without this a panic in any handler
+			// crashes the whole daemon (an unrecovered panic in ANY goroutine takes
+			// the process down), orphaning managed children and leaving a stale
+			// socket. Surviving the request is strictly better than dying on it.
 			//
-			// The frame and log line are INFERRED from static analysis of the
-			// reference (code -32603, message "internal panic: <v>", log
-			// "[Server] handler panic: method=%s id=%v: %v"), NOT measured: no
-			// input is known to reach a handler panic on either binary — extensive
-			// fuzzing and a read of the handler bodies found every panic site
-			// either unreachable (stdlib timer guards) or already bounds-guarded,
-			// so the reference's recover is itself blanket-defensive. This matches
-			// that engineering posture; the exact bytes are unverifiable precisely
-			// because the path is unreachable. See docs/IMPROVEMENTS.md.
-			defer func() {
-				if r := recover(); r != nil {
-					logErrorf("[Server] handler panic: method=%s id=%v: %v", peek.Method, idForLog(peek.ID), r)
-					c.writeResponse(errResult(peek.ID, codeInternal, fmt.Sprintf("internal panic: %v", r)))
-				}
-			}()
+			// THIS FRAME IS CLAUSTRUM'S OWN, and it is not a parity claim. No input
+			// is known to reach a handler panic — two fuzz waves found none, and
+			// claustrum's own panic sites are each either an unreachable stdlib
+			// timer guard or an already-bounds-guarded slice — so the path is
+			// unreachable and the frame is unobservable on the wire. -32603 is
+			// codeInternal, the JSON-RPC 2.0 standard "Internal error"; the message
+			// and log line follow claustrum's own conventions. Nothing here can be
+			// probe-verified, and nothing here needs to be: an unreachable frame
+			// cannot diverge from anything. See docs/IMPROVEMENTS.md.
 			// The stdin ticket covers DISPATCH ONLY, never the response write.
 			// dispatch appends the chunk to the process's existing stdin FIFO
 			// (applyStdin) before it returns, so byte order is already fixed by
@@ -746,6 +740,34 @@ func (s *server) serveConn(c *conn) {
 			// dispatch cannot strand the ticket and deadlock the connection.
 			var resp *response
 			func() {
+				// Registered FIRST, so it unwinds LAST — after doneStdinTurn below,
+				// which means a panicking dispatch cannot strand a stdin ticket and
+				// deadlock the connection.
+				//
+				// Scoped to dispatch on purpose. Covering the response write too
+				// would let a panic *inside* writeResponse produce a SECOND frame
+				// for one id — the one failure mode a wire-contract daemon least
+				// wants from its safety net. The recover only sets resp; the single
+				// write stays below, outside the recovered region.
+				defer func() {
+					r := recover()
+					if r == nil {
+						return
+					}
+					logErrorf("[Server] recovered panic: method=%s id=%v: %v", peek.Method, idForLog(peek.ID), r)
+					// The stack goes to DEBUG so the ERROR line keeps its shape while
+					// the operator can still get the fault location — a recovered
+					// panic here means an unreachable path became reachable, and
+					// method+id locate the request but not the fault.
+					logDebugf("[Server] recovered panic stack: method=%s id=%v\n%s", peek.Method, idForLog(peek.ID), debug.Stack())
+					// server.shutdown must produce NO reply (dispatch returns nil for
+					// it). Replying here would emit a frame where the daemon otherwise
+					// emits none, so the no-reply contract holds even under a panic.
+					if peek.Method == methodShutdown {
+						return
+					}
+					resp = ptr(errResult(peek.ID, codeInternal, fmt.Sprintf("recovered panic: %v", r)))
+				}()
 				if ordered {
 					c.awaitStdinTurn(ticket)
 					defer c.doneStdinTurn(ticket)

@@ -2,4 +2,4 @@
 default: minor
 ---
 
-The daemon now recovers from a panic in any request handler instead of crashing, replying with a `-32603` "internal panic" error and staying up for other connections, matching the reference daemon's per-request panic isolation.
+The daemon now recovers from a panic in any request handler instead of crashing, replying `-32603 "recovered panic: <v>"` and staying up for other connections, so a bug in one handler can no longer orphan managed child processes or leave a stale socket behind.
