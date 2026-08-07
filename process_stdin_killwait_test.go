@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Tests for the process-side wire surface added by the reference daemon in
@@ -86,6 +87,16 @@ func TestClampKillWaitMs(t *testing.T) {
 	// round value in it. See maxKillWaitMs in process.go.
 	if maxKillWaitMs != 30000 {
 		t.Errorf("maxKillWaitMs = %d, want 30000 (reference bracket (29500, 30500] at 5db5e4a)", maxKillWaitMs)
+	}
+	// Same argument for the post-SIGKILL reap grace, and it needs the pin MORE
+	// than the ceiling does: the branch killReapGrace bounds is unreachable in
+	// this suite (it needs a child SIGKILL cannot reap, which took a dm-delay
+	// device on a VM to build), so every escalation test reaps promptly, p.done
+	// wins the select, and the timeout arm is never taken. A refactor that puts
+	// this back to 5s — or folds it into exitDrainGrace, which it equalled until
+	// the parity fix — would stay green with nothing else to catch it.
+	if killReapGrace != 7*time.Second {
+		t.Errorf("killReapGrace = %v, want 7s (measured against the reference 2026-08-06: reply at 7.51s with timeoutMs 500)", killReapGrace)
 	}
 }
 

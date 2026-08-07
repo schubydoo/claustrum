@@ -824,9 +824,10 @@ var maxKillWaitMs = 30000 // 30s
 // proves nothing. The fixture that works is real uninterruptible sleep — a read
 // against a dm-delay device on an ephemeral VM. With timeoutMs 500:
 //
-//	reference : reply at 7.51s   -> 7s grace
-//	claustrum : reply at 5.51s   -> 5s grace (was)
-//	control   : an ordinary sleeper, 0.00s on both
+//	reference        : reply at 7.51s  -> 7s grace
+//	claustrum (was)  : reply at 5.51s  -> 5s grace
+//	claustrum (this) : reply at 7.51s  -> 7s grace, re-measured on the same fixture
+//	control          : an ordinary sleeper, 0.00s on both
 //
 // The reply JSON is the same shape on both ({"found":true,"died":false,
 // "escalated":true}); what differed was when it arrived — and, for a child that
