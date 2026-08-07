@@ -190,7 +190,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   retry can re-read it); that is what keeps "cap off" from meaning "unbounded
   memory".
 - **`-install` applies wall-clock bounds the reference does not appear to, plus one
-  ordering difference.** Three exist, of which **two are on by default** — the
+  ordering difference.** Three exist — the
   `<cli> --version` runnability probe
   (D11), the download at 5 minutes (D12), and, on linux only, the `ldd --version`
   libc probe at 5 s (tier item 5; `libc_other.go` skips the probe entirely off
@@ -201,8 +201,11 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   one, since Desktop owns the argv; disabled bypasses `context.WithTimeout`
   entirely, so do not "simplify" it into a huge duration. Everything below about
   D11 therefore describes what an operator opts INTO, measured against the old
-  hardcoded 15 s. D12's is still unconditional; the ldd bound is not flipped but is
-  linux-only and cannot fire on a musl host.
+  hardcoded 15 s — except where it says "with the deadline off". D12's is still
+  unconditional; the ldd bound is not flipped but is linux-only, and even there it
+  cannot fire **where the musl loader glob matches**, because `detectLibcWith`
+  returns before spawning `ldd`. The predicate is the glob, not the host: a musl
+  box whose loader the glob misses still reaches the 5 s bound.
   D13 is **not** a bound — it is verify-before-decompress
   ordering, which no slow input trips. **No bound here is a hang detector**: each is
   a threshold, so an honest-but-slow input trips it too. For D11 and D12 the

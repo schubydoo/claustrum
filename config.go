@@ -162,10 +162,13 @@ func applyConfigKey(cfg *config, key, val string) {
 		// Negative and unparseable values are rejected, so a typo can never
 		// silently impose a deadline the reference does not have. A bare number is
 		// unparseable on purpose — "15" meaning 15ns would be a trap — EXCEPT for
-		// zero: time.ParseDuration accepts "0", "+0", "-0" and "-0s", all of which
-		// reach d == 0 and pass the guard below. Harmless (zero is the disabled
-		// value either way), but it means "a bare number is always rejected" is
-		// not true, and "-0s" slips past the negative check as well.
+		// zero, of which there are unboundedly many spellings: "0"/"+0"/"-0" via
+		// ParseDuration's special case, plus every zero-valued duration carrying a
+		// unit ("0s", "-0m", "0h0m0s", "-0.0s"), plus "-0.4ns", a negative that
+		// truncates to zero. All reach d == 0 and pass the guard below. Harmless —
+		// zero IS the disabled value, so nothing here can switch the deadline on —
+		// but "a bare number is always rejected" and "a negative is always
+		// dropped" are both false at the edges. Do not special-case "-0s".
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.cliProbeTimeout = &d
 		}

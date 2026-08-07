@@ -76,8 +76,11 @@ line, a `cliWasPresent`, an installed binary versus silence. That is the same
 shape D11 and D12 lead with, on this bound's own motivating path — and now that
 D11's deadline defaults off, D12's download timeout is the only `-install`
 wall-clock bound applied unconditionally everywhere. This one is *not*
-unconditional twice over: it is linux-only, and even on linux a musl host returns
-from the loader glob before `ldd` is spawned, so it cannot fire there.
+unconditional twice over: it is linux-only, and even on linux `detectLibcWith`
+returns on a matching `/lib/ld-musl-*.so.*` glob before `ldd` is spawned, so it
+cannot fire there. The predicate is the **glob**, not the host — a musl box whose
+loader that glob misses does reach the bound, which is exactly the narrow case this
+entry's own `libc`-delta argument turns on.
 
 ⚠️ And the cap addresses the *stall* half only. A **hostile** `ldd` resolved
 earlier in `PATH` that answers in 1 s is untouched by the deadline, and
@@ -959,8 +962,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   The control is what makes it attributable: the only variable between the rows is
   how long the CLI takes to answer. The reference column above is the **no-cache**
   shape. On the three cached shapes it is expected to cache-hit and report
-  `cliWasPresent:true` having installed nothing, since its guard has no 15 s
-  cut-off — **derived, not separately measured**. So the divergence is not confined to a broken
+  `cliWasPresent:true` having installed nothing, since its guard showed no cut-off
+  at or below 90 s — **derived, not separately measured**, and above 90 s neither
+  binary has been probed. So the divergence is not confined to a broken
   CLI — claustrum **fails an install the reference completes, and discards a
   working binary**, on an input no one would call adversarial.
 - **The delta is bounded by the deadline, not by honesty.** A CLI answering within
@@ -973,8 +977,11 @@ completes it with `git.worktree_remove`, which shares the predicate
   isRunnable`) and again after extraction. A timeout on the first is
   indistinguishable from a cache miss, so what follows depends on the flags rather
   than on the timeout. All four measured 2026-08-07 **against the then-hardcoded
-  15 s**, which is now what `-cli-probe-timeout 15s` reproduces; at the default
-  there is no deadline and none of these four shapes occurs. The cached CLI is the
+  15 s**; at the default there is no deadline and none of these four shapes occurs.
+  Rows 1 and 4 were re-run on the flip branch with `-cli-probe-timeout` and
+  reproduced (row 1 at both 15 s and 5 s, row 4 at 15 s); rows 2 and 3 were not
+  re-run, and that the flag reproduces them follows from the code — it sets the same
+  `cliProbeTimeout` the old constant occupied — rather than from a measurement. The cached CLI is the
   same 20 s fixture throughout — what varies is what the source flag supplies,
   which is why row two needs a replacement that answers in time:
 
@@ -988,8 +995,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   Silent recovery therefore needs the *replacement* to be fast: it is the
   stale-hanging-CLI story, not the slow-CLI one.
 
-- ⚠️ **The facts frame is not the whole end state: the cache-hit shapes also run
-  the sweep, and the silent one runs the prune.** The reference touches the cli-dir
+- ⚠️ **The facts frame is not the whole end state: with the deadline opted in, the
+  cache-hit shapes also run the sweep, and the silent one runs the prune.** (At the
+  default the cache-hit guard passes, so none of this is reached.) The reference touches the cli-dir
   only when it attempts an install, so on a cache hit it touches nothing
   (`install.go` records that contrast itself). Claustrum's cache-hit guard fails
   instead, so it falls into `ensureCLI` and `sweepFetchTemps` runs on every cached
@@ -1002,8 +1010,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   leave all six. **Control that must fire:** the same directory with an instant
   CLI, where both must cache-hit and leave all six.
 - **`cliWasPresent` flips, and it is a structured field rather than a string.**
-  In all three cached shapes above it comes back `false` for a CLI that is present
-  and works — including the silent one, where it is the ONLY field in the facts
+  With the deadline opted in, in all three cached shapes above it comes back
+  `false` for a CLI that is present and works — including the silent one, where it is the ONLY field in the facts
   that moves. The reference, which showed no deadline at or below 45 s, has no
   equivalent 15 s cut-off to trip. Worth more attention than the `cliError`
   wording: a client reads this field, it does not parse prose.
@@ -1029,6 +1037,22 @@ completes it with `git.worktree_remove`, which shares the predicate
   Desktop owns the argv on `-install`, so the caller who pays cannot decline. That
   is the same argument D3 and D10 used, and it is why this took the same shape they
   did rather than a larger constant.
+- ✅ **The flip was verified against the reference, not just argued.** Measured
+  2026-08-07 on the cached-slow shape, cli-dir seeded with a 20 s `v1` plus a
+  `.fetch-orphan` and a `leftover.zst`, no source flag:
+
+  | arm | elapsed | facts | cli-dir after |
+  |---|---|---|---|
+  | reference `5db5e4a` | 21 s | `cliWasPresent:true`, no `cliError` | `.fetch-orphan leftover.zst v1` |
+  | claustrum, deadline **off** (new default) | 20 s | `cliWasPresent:true`, no `cliError` | `.fetch-orphan leftover.zst v1` |
+  | *control:* claustrum, `-cli-probe-timeout 5s` | 5 s | `cliWasPresent:false`, `cliError "cli v1 missing and no --cli-url or --cli-zst provided"` | `v1` |
+
+  The control is what makes row 2 a measurement rather than blindness: it moves
+  **every** observable — elapsed, `cliWasPresent`, `cliError`, and the directory,
+  where the sweep removes the litter the other two arms leave in place. So this run
+  also settles the **sweep half** of the sweep/prune contrast below on D11's own
+  fixture: the reference cache-hits and touches nothing, and at the new default so
+  does claustrum. The prune half is still derived.
 - **Shipped as: default `0` = no deadline**, which matches the reference on every
   input measured (still running at 45 s on a CLI that never answers; installing one
   that answers at 90 s). What it does above 90 s remains unmeasured, so this is
@@ -1038,10 +1062,15 @@ completes it with `git.worktree_remove`, which shares the predicate
   The config key is the one that matters, for the same reason as `max-cli-bytes`:
   Desktop owns the argv on `-install`. The value is a Go duration (`30s`, `2m`);
   `time.ParseDuration` rejects a bare number rather than reading it as nanoseconds
-  — **except zero, which Go accepts in four spellings (`0`, `+0`, `-0`, `-0s`)**
-  and which means disabled anyway, so the trap the rejection exists to prevent is
-  not reachable. `-0s` also slips past the negative check, arriving as an accepted
-  zero rather than a rejected negative. The two paths differ
+  — **except for zero, and the set of zeroes is unbounded.** Two halves: *unitless*
+  zero is exactly `0`, `+0` and `-0` (Go's parser special-cases the string `"0"`);
+  *with a unit*, every zero-valued duration parses whatever its sign, so `0s`,
+  `0h0m0s`, `-0m` and `-0.0s` all arrive as `0`. So does `-0.4ns`, which is a
+  genuinely negative input truncated to zero rather than a spelling of zero at all.
+  Every one of them slips past the `d >= 0` guard and lands on the disabled value,
+  which is why this is a documentation problem and not a safety one: **no accepted
+  input turns the deadline ON by accident.** Do not special-case `-0s` in a later
+  reader — `-0m` behaves identically. The two paths differ
   on a negative: `-cli-probe-timeout -1s` normalises to disabled and logs an
   `[Install]` warning, while `cli-probe-timeout = -1s` in the config is **dropped
   silently**, leaving the default. Either way the deadline ends up off.
@@ -1051,11 +1080,15 @@ completes it with `git.worktree_remove`, which shares the predicate
   would keep `exec.CommandContext`'s kill-on-cancel path in play where the
   reference showed no such cut-off.
 - **What still ships bounded on the `-install` path:** D12's download timeout —
-  the same flip is **proposed** for it in its own PR, not yet made — and the
+  the same flip is **proposed** for it in a follow-up PR, not yet made — and the
   linux-only `ldd` probe (tier item 5), which is not a D-number and is not
   proposed for a flip.
 
 ### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
+
+> ⚠️ **The same flip D11 took is proposed for this bound in a follow-up PR** (default
+> off = unbounded = parity). It has not been made; everything below describes what
+> ships today, which is always-on.
 
 - The download runs with `http.Client{Timeout: 5 * time.Minute}` (added in PR 59
   on `httpGet`, now `fetchToFile` after the streaming change in D10), which bounds
@@ -1208,8 +1241,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   - `max-cli-bytes = <n>` — default for D10; `0` (the default) is no cap.
   - `cli-probe-timeout = <duration>` — default for D11; `0` (the default) is no
     deadline. A Go duration (`30s`, `2m`); a bare number is rejected rather than
-    read as nanoseconds, except zero — `0`, `+0`, `-0` and `-0s` all parse and are
-    accepted, and all mean disabled. A negative is dropped silently here; on the
+    read as nanoseconds, except zero, which parses in unboundedly many spellings
+    (`0`, `+0`, `-0`, plus any zero-valued duration with a unit, plus a negative
+    that truncates to zero like `-0.4ns`) and always means disabled. A negative is dropped silently here; on the
     flag path a negative warns and normalises, while a bare number is rejected by
     `flag.Duration` before any mode runs (usage + exit 2, no facts line). Every
     one of these leaves the deadline off.

@@ -205,16 +205,27 @@ If the check reports drift:
 >   flag first, **and confirm the value actually parses to a positive duration** —
 >   a key being *present* does not mean a deadline is *in force*, and the two paths
 >   fail differently:
->   - **config key**, e.g. `cli-probe-timeout = 15` or `= -1s`: dropped **silently**,
->     the run proceeds with no deadline and a normal `__INSTALL_RESULT__` line. This
->     is the shape that looks like drift.
->   - **flag**, e.g. `-cli-probe-timeout 15`: `flag.Duration` rejects it before any
->     mode runs, so claustrum prints `invalid value "15" for flag
+>   - **config key, unparseable** (`cli-probe-timeout = 15`) **or negative**
+>     (`= -1s`): dropped **silently** — no log line at all — and the run proceeds
+>     with no deadline and a normal `__INSTALL_RESULT__`. This is the shape that
+>     looks like drift.
+>   - **flag, negative** (`-cli-probe-timeout -1s`): normalises to 0 with an
+>     `[Install]` warning on stderr, then runs normally and **does** print a facts
+>     line, exit 0. Not the same as the config path — measured both ways.
+>   - **flag, unparseable** (`-cli-probe-timeout 15`): `flag.Duration` rejects it
+>     before any mode runs, so claustrum prints `invalid value "15" for flag
 >     -cli-probe-timeout: parse error` plus usage and **exits 2 with no facts line
->     at all** (measured). A missing `__INSTALL_RESULT__` on claustrum is therefore
->     a malformed flag, not a divergence — do not chase it as one.
->   - `0`, `+0`, `-0` and `-0s` all parse to zero and are *accepted*, so they read as
->     opted-in but leave the deadline off.
+>     at all** (measured).
+>     ⚠️ **A missing `__INSTALL_RESULT__` does NOT by itself mean a malformed
+>     flag.** A stock claustrum blocked on a CLI that never answers also emits no
+>     facts line — that is the deadline-off behaviour, and it is the row this very
+>     entry documents at 45 s. Discriminate on the exit: **2 plus `parse error` on
+>     stderr** is the bad flag; **still running until the harness kills it, nothing
+>     on stderr** is the parity wait.
+>   - **any zero** (`0`, `+0`, `-0`, `0s`, `-0m`, and a negative that truncates to
+>     zero such as `-0.4ns`) parses and is *accepted*, so it reads as opted-in while
+>     leaving the deadline off. `0s` is the spelling an operator most often writes
+>     meaning "disabled".
 >
 >   Once genuinely opted in, the three surfaces below apply — but note the same
 >   strings are also produced by a genuinely broken or absent CLI on both binaries,
@@ -249,7 +260,9 @@ If the check reports drift:
 >   whole exchange rather than measured.
 > - **D11 is NOT in this group any more** — it moved to the opt-in list above when
 >   its deadline was defaulted off. On a stock claustrum the runnability probe has
->   no deadline and matches the reference. ⚠️ Its three surfaces are only reachable
+>   no deadline, matching the reference on every input measured (still running at
+>   45 s; installing a CLI that answers at 90 s) — above 90 s neither binary has
+>   been probed. ⚠️ Its three surfaces are only reachable
 >   once `-cli-probe-timeout` / `cli-probe-timeout` is set, and **one of them is
 >   silence**, so a triager who has confirmed the key IS set should not look only
 >   for an error: `installed cli at <path> is not runnable` (staged binary deleted,

@@ -37,7 +37,8 @@ Ensures the pinned `claude` CLI is present under `-cli-dir`.
 
 - If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
   exits 0), it's kept as-is. The probe has **no deadline by default**, matching the
-  reference; `-cli-probe-timeout` / the `cli-probe-timeout` config key opts into
+  reference on every input measured (it was still running at 45 s on a CLI that
+  never answers, and installed one that answered at 90 s; above that, unprobed); `-cli-probe-timeout` / the `cli-probe-timeout` config key opts into
   one, and then a slower but working CLI fails this guard — see divergence D11.
 - Otherwise the blob is acquired from one of two sources:
     - `-cli-zst` — a local `.zst` (consumed once **decompression** succeeds, even if the install then fails the runnability probe); checksum-verified

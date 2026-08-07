@@ -296,6 +296,12 @@ func TestParseConfig_CLIProbeTimeout(t *testing.T) {
 		// "a negative is rejected" is otherwise read as covering them.
 		{"negative zero is accepted, not dropped", "cli-probe-timeout = -0", durp(0)},
 		{"negative zero with a unit likewise", "cli-probe-timeout = -0s", durp(0)},
+		{"any zero-valued duration, any sign", "cli-probe-timeout = -0m", durp(0)},
+		// A genuinely negative value that truncates to zero. Not a spelling of
+		// zero — it is why "a negative is rejected" is false at the edge.
+		{"negative truncating to zero is accepted", "cli-probe-timeout = -0.4ns", durp(0)},
+		// The spelling an operator most often writes meaning "disabled".
+		{"plain 0s", "cli-probe-timeout = 0s", durp(0)},
 		{"non-duration rejected", "cli-probe-timeout = soon", nil},
 		{"empty rejected", "cli-probe-timeout =", nil},
 		{"case-insensitive key", "CLI-PROBE-TIMEOUT = 45s", durp(45 * time.Second)},

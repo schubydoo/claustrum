@@ -1290,14 +1290,15 @@ Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
-Five `-install` behaviours are easy to miss. Three are wall-clock bounds the
-reference does not appear to apply: the `--version` runnability probe (D11), the
-download (D12), and — **on linux only** — the `libc` probe. **D11's is the one
-that is off by default**, so a stock claustrum applies two of the three on linux
-and one of the two that exist off it. The last two behaviours have no frame at
-all: the runnability probe's deadline became opt-in (default off = no
-deadline = parity) and everything the D11 bullet describes is reachable only once
-it is turned on. The download bound *always* surfaces a `cliError`; an opted-in
+Five `-install` behaviours are easy to miss. Three are wall-clock bounds: the
+`--version` runnability probe (D11), the download (D12), and — **on linux only** —
+the `libc` probe. The reference does not appear to apply the first two (measured);
+the third has never been probed on it either way. **D11's is the one that is off by
+default**, so a stock claustrum applies two of the three on linux and one of the
+two that exist off it. The last two behaviours have no frame at all.
+
+D11's deadline became opt-in (default off = no deadline), so the D11 bullet below
+describes what an operator turns on, except where it says otherwise. The download bound *always* surfaces a `cliError`; an opted-in
 runnability timeout on the cache-hit check can surface as the **absence** of an
 error — but only when the replacement answers in time; if it is just as slow, both
 probes time out and the run fails after ~2× the deadline with the cached binary
@@ -1319,16 +1320,19 @@ left in place:
   runs with **no deadline at all**, matching the reference on every input measured
   (still running at 45 s on a CLI that never answers; installing one that answers
   at 90 s). Above 90 s the reference is unmeasured, so this is parity with the
-  observed behaviour rather than a proof that it has no deadline at all. Everything below describes what an operator opts into
+  observed behaviour rather than a proof that it has no deadline at all. Except
+  where a sentence says "at the default", everything below describes what an
+  operator opts into
   by passing `-cli-probe-timeout <duration>` or setting the `cli-probe-timeout` key
-  in `claustrum.conf`; the figures are the old hardcoded 15 s default, which is what
-  shipped through 1.7.3.
+  in `claustrum.conf`; the figures are the old hardcoded 15 s default, which shipped
+  in every release up to and including 1.7.3 and in every build before this change.
 
   The reference showed no deadline at or below 45 s: measured
   with a CLI that hangs on `--version`, it was still running when the harness
   stopped it at 45 s, where claustrum bounded at 15 s returns at 15 s (control: a
   CLI that answers instantly returns at 0 s on both; claustrum with the deadline
-  off is likewise still running at 45 s). It also **installed a 90 s CLI, waiting 91 s**.
+  off is likewise still running when cut at 45 s — but on a planted `sleep 120` in
+  a separate run, not the reference row's hang-forever CLI under the same probe). It also **installed a 90 s CLI, waiting 91 s**.
   Those figures bound the reference's deadline above 90 s; none shows it is
   absent. **A CLI answering within the configured deadline
   is expected to behave identically — derived from the constant, not bisected;
