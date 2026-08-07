@@ -131,6 +131,15 @@ func TestIsRunnable_ProbeTimeoutOptIn(t *testing.T) {
 	if isRunnable(slow) {
 		t.Error("with a 100ms deadline opted in, a 1s CLI must be rejected")
 	}
+
+	// Third arm, and it is not redundant: the two above only ever assert
+	// "rejected", so they cannot tell an applied deadline from one that always
+	// expires. A negated duration and a duration divided by 1000 both satisfy them.
+	// This arm asserts the deadline is honoured at the value the operator gave.
+	setCLIProbeTimeout(t, 5*time.Second)
+	if !isRunnable(slow) {
+		t.Error("a 1s CLI must still be runnable under a 5s opted-in deadline")
+	}
 }
 
 // The default must be 0 — no deadline — because that is the parity position and
@@ -142,6 +151,26 @@ func TestCLIProbeTimeoutDefaultsOff(t *testing.T) {
 	}
 	if got := (config{}).effectiveCLIProbeTimeout(0, false); got != 0 {
 		t.Fatalf("resolved default = %s, want 0", got)
+	}
+	// The package variable and the resolver are not the value a user gets — the
+	// flag's own DECLARED default is. Moving the 15 s into flag.Duration's default
+	// argument survives both assertions above while shipping a binary that
+	// deadlines every -install.
+	//
+	// Assert the declared default, not the resolved value: a real claustrum.conf
+	// beside the binary sets the resolved one legitimately, and a test that reads
+	// it fails for a correct reason. (Measured — with `cli-probe-timeout = 30s`
+	// beside a pre-built test binary, the resolved-value form of this assertion
+	// failed exactly as the config intended.)
+	if _, exited := runMain(t, "-install"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	f := lastMainFlagSet.Lookup("cli-probe-timeout")
+	if f == nil {
+		t.Fatal("main() did not register -cli-probe-timeout")
+	}
+	if f.DefValue != "0s" {
+		t.Fatalf("-cli-probe-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
 	}
 }
 

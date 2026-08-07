@@ -321,7 +321,9 @@ func TestParseConfig_CLIProbeTimeout(t *testing.T) {
 	}
 	// Same non-aliasing assertion the two byte-count keys carry: this key must not
 	// reach either of them, and neither of them must reach it.
-	if got := parse(t, "cli-probe-timeout = 30s"); got.maxCLIBytes != nil || got.maxExtractBytes != nil {
+	// "0" on purpose, not "30s": a duration-only spelling fails ParseInt, so it
+	// could never observe a leak into the int64 keys. 0 parses both ways.
+	if got := parse(t, "cli-probe-timeout = 0"); got.maxCLIBytes != nil || got.maxExtractBytes != nil {
 		t.Errorf("cli-probe-timeout leaked into a size cap: cli=%v extract=%v", got.maxCLIBytes, got.maxExtractBytes)
 	}
 	if got := parse(t, "max-cli-bytes = 4096"); got.cliProbeTimeout != nil {

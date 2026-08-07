@@ -25,12 +25,22 @@ import (
 // beside os.Executable(), the build-cache temp dir), but it goes live with
 // -shuffle, with a pre-built binary run from a directory holding a conf, or as
 // soon as a case here passes one of those flags.
+// lastMainFlagSet is the FlagSet the most recent runMain handed to main(), kept
+// after runMain restores flag.CommandLine so a test can inspect flag defaults.
+var lastMainFlagSet *flag.FlagSet
+
 func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	t.Helper()
 	stubOsExit(t)
 	oldArgs, oldFS := os.Args, flag.CommandLine
 	oldVersion, oldBuildTime := Version, BuildTime
+	// t.Cleanup, NOT the defer below: the defer runs when runMain returns, which
+	// would put the globals back before the caller can assert on what main()
+	// actually resolved. t.Cleanup still contains the leak to this one test.
 	oldProbe, oldMaxCLI, oldMaxExtract := cliProbeTimeout, maxCLIBytes, maxExtractBytes
+	t.Cleanup(func() {
+		cliProbeTimeout, maxCLIBytes, maxExtractBytes = oldProbe, oldMaxCLI, oldMaxExtract
+	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
@@ -38,11 +48,14 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	}
 	os.Args = append([]string{"claustrum"}, args...)
 	flag.CommandLine = flag.NewFlagSet("claustrum", flag.ExitOnError)
+	// Kept for assertions on the DECLARED defaults main() registers, which is a
+	// different question from the value it resolves: a claustrum.conf beside the
+	// binary legitimately changes the latter and must not fail such a test.
+	lastMainFlagSet = flag.CommandLine
 	os.Stdout = devnull
 	defer func() {
 		os.Args, flag.CommandLine = oldArgs, oldFS
 		Version, BuildTime = oldVersion, oldBuildTime
-		cliProbeTimeout, maxCLIBytes, maxExtractBytes = oldProbe, oldMaxCLI, oldMaxExtract
 		os.Stdout = oldStdout
 		_ = devnull.Close()
 	}()
