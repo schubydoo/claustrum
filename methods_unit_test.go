@@ -599,13 +599,6 @@ func TestFilesExtractTarCreateFailureReportsZeroCount(t *testing.T) {
 	}
 }
 
-// The cap is OFF by default, which is the parity position: measured, the
-// reference applies no cap at any size the probe could reach (629 MB), so any
-// non-zero default makes claustrum fail an extraction the reference completes.
-// That measurement disproves a 512 MiB cap; it does not prove there is none
-// above 629 MB, and this comment must not say otherwise. This asserts the
-// default itself, because that constant IS the divergence —
-// TestFilesExtractTarSizeLimit is the one test that overrides it.
 // A cap of MaxInt64 must behave like a very large cap, not like a zero-byte one.
 // The bound is maxExtractBytes-totalWritten+1, and Go WRAPS signed overflow: at
 // MaxInt64 that sum used to become MinInt64, io.LimitReader returns EOF for any
@@ -637,6 +630,14 @@ func TestFilesExtractTarCapMaxInt64DoesNotOverflow(t *testing.T) {
 	}
 }
 
+// The cap is OFF by default, which is the parity position: measured, the
+// reference applies no cap at any size the probe could reach (629 MB), so any
+// non-zero default makes claustrum fail an extraction the reference completes.
+// That measurement disproves a 512 MiB cap; it does not prove there is none
+// above 629 MB, and this comment must not say otherwise. This asserts the
+// default itself, because that constant IS the divergence —
+// TestFilesExtractTarSizeLimit and TestFilesExtractTarCapMaxInt64DoesNotOverflow
+// are the two tests that override it.
 func TestFilesExtractTarCapDefaultsOff(t *testing.T) {
 	if maxExtractBytes != 0 {
 		t.Fatalf("maxExtractBytes default = %d, want 0 (cap off = reference parity)", maxExtractBytes)
