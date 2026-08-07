@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -411,10 +412,13 @@ const daemonLogName = "remote-server.log"
 // O_EXCL is the backstop. If the remove failed — a sticky directory holding
 // another user's file — the create fails too and this returns nil, so
 // daemonizeWithToken falls back to inherited stdio rather than writing the
-// daemon's output into a file someone else owns. That case is unmeasured on the
-// reference (its remove succeeded in the probe above, the directory not being
-// sticky), so it is a deliberate, attack-path-only divergence in the same class
-// as the -install checksum hardening: on any honest path the two are identical.
+// daemon's output into a file someone else owns. That case IS measured as of
+// 2026-08-06: in a sticky directory the reference truncates the foreign file and
+// writes into it. Declining is therefore a deliberate divergence, filed as D8 in
+// docs/IMPROVEMENTS.md. It is always-on rather than opt-in — unlike the -install
+// checksum hardening (D1), which is opt-in — because the trigger is unreachable
+// on the deployed path: the per-user session directory is not sticky, so no
+// honest caller reaches this branch at all.
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it
 // outlives the daemon, so a post-mortem is still readable.
@@ -663,6 +667,12 @@ func (s *server) acceptLoop(ln net.Listener) {
 	}
 }
 
+// dispatchRequest is the seam serveConn dispatches through. A var so a test can
+// force a handler panic and prove the per-request recover keeps the daemon alive
+// (the panic path is otherwise unreachable, so it cannot be provoked by input).
+// Production never reassigns it.
+var dispatchRequest = func(s *server, c *conn, raw []byte) *response { return s.dispatch(c, raw) }
+
 func (s *server) serveConn(c *conn) {
 	defer func() {
 		c.wmu.Lock()
@@ -694,7 +704,8 @@ func (s *server) serveConn(c *conn) {
 		// malformed line yields an empty method and is simply not ordered — it has
 		// no stdin payload to misplace.
 		var peek struct {
-			Method string `json:"method"`
+			Method string      `json:"method"`
+			ID     interface{} `json:"id"`
 		}
 		_ = json.Unmarshal(raw, &peek)
 		ordered := peek.Method == "process.stdin"
@@ -705,6 +716,20 @@ func (s *server) serveConn(c *conn) {
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
 		go func() {
+			// Per-request panic isolation: without this a panic in any handler
+			// crashes the whole daemon (an unrecovered panic in ANY goroutine takes
+			// the process down), orphaning managed children and leaving a stale
+			// socket. Surviving the request is strictly better than dying on it.
+			//
+			// THIS FRAME IS CLAUSTRUM'S OWN, and it is not a parity claim. No input
+			// is known to reach a handler panic — two fuzz waves found none, and
+			// claustrum's own panic sites are each either an unreachable stdlib
+			// timer guard or an already-bounds-guarded slice — so the path is
+			// unreachable and the frame is unobservable on the wire. -32603 is
+			// codeInternal, the JSON-RPC 2.0 standard "Internal error"; the message
+			// and log line follow claustrum's own conventions. Nothing here can be
+			// probe-verified, and nothing here needs to be: an unreachable frame
+			// cannot diverge from anything. See docs/IMPROVEMENTS.md.
 			// The stdin ticket covers DISPATCH ONLY, never the response write.
 			// dispatch appends the chunk to the process's existing stdin FIFO
 			// (applyStdin) before it returns, so byte order is already fixed by
@@ -718,16 +743,63 @@ func (s *server) serveConn(c *conn) {
 			// dispatch cannot strand the ticket and deadlock the connection.
 			var resp *response
 			func() {
+				// Registered FIRST, so it unwinds LAST — after doneStdinTurn below,
+				// which means a panicking dispatch cannot strand a stdin ticket and
+				// deadlock the connection.
+				//
+				// Scoped to dispatch on purpose. Covering the response write too
+				// would let a panic *inside* writeResponse produce a SECOND frame
+				// for one id — the one failure mode a wire-contract daemon least
+				// wants from its safety net. The recover only sets resp; the single
+				// write stays below, outside the recovered region.
+				defer func() {
+					r := recover()
+					if r == nil {
+						return
+					}
+					logErrorf("[Server] recovered panic: method=%s id=%v: %v", peek.Method, idForLog(peek.ID), r)
+					// The stack goes to DEBUG so the ERROR line keeps its shape while
+					// the operator can still get the fault location — a recovered
+					// panic here means an unreachable path became reachable, and
+					// method+id locate the request but not the fault.
+					logDebugf("[Server] recovered panic stack: method=%s id=%v\n%s", peek.Method, idForLog(peek.ID), debug.Stack())
+					// server.shutdown must produce NO reply (dispatch returns nil for
+					// it). Replying here would emit a frame where the daemon otherwise
+					// emits none, so the no-reply contract holds even under a panic.
+					if peek.Method == methodShutdown {
+						return
+					}
+					resp = ptr(errResult(peek.ID, codeInternal, fmt.Sprintf("recovered panic: %v", r)))
+				}()
 				if ordered {
 					c.awaitStdinTurn(ticket)
 					defer c.doneStdinTurn(ticket)
 				}
-				resp = s.dispatch(c, raw)
+				resp = dispatchRequest(s, c, raw)
 			}()
 			if resp != nil {
 				c.writeResponse(*resp)
 			}
 		}()
+	}
+
+	// The read loop also ends on a scanner error — a request line over the 1 MiB
+	// cap, or a read failure that is not a clean EOF — and that arm is otherwise
+	// silent: no reply goes out and the connection just closes. Measured, the
+	// reference emits the scanner error *before* its "Connection closed" line, so
+	// the check goes at the end of this body: claustrum's own "Connection closed"
+	// comes from the defer above, which runs last.
+	//
+	// isOurClose is excluded because that is OUR close, not a read failure:
+	// closeAll drops every client connection on the graceful-shutdown path, and
+	// counting that as an error made claustrum log one ERROR line per connected
+	// client where the reference's log carries none (measured, both binaries, on
+	// a server.shutdown with two connections open). sc.Err() is nil on a clean
+	// EOF, so an ordinary client disconnect stays quiet on both. The predicate is
+	// per-OS because the -listen-pipe transport's conns are served by this same
+	// serveConn but do not report a close as net.ErrClosed.
+	if err := sc.Err(); err != nil && !isOurClose(err) {
+		logErrorf("[Server] scanner error on %s: %v", c.nc.RemoteAddr(), err)
 	}
 }
 

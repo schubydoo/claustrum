@@ -372,12 +372,68 @@ lives in `scratch/`, gitignored). The third finding from the same sweep —
 to be **byte-identical** even on symlink/dangling/self entries, so it needs no
 divergence note.
 
-## Deliberate divergences (post-parity, opt-in)
+### 23 · Recover from handler panics ✅ — impact M / cost S
+
+The per-request goroutine now wraps dispatch in `defer recover()`. Before this, a
+panic in any handler crashed the **whole** daemon — an unrecovered panic in any
+goroutine takes the process down — orphaning managed children and leaving a stale
+socket, so reconnects failed `connection refused` rather than `no such file`.
+
+Surviving the request is strictly better than dying on it, and that is the whole
+justification: a daemon that supervises child processes should not lose them to a
+bug in one handler.
+
+**The reply frame is claustrum's own, and it is NOT a parity claim.** The reply
+code is **−32603**, which is `codeInternal` — the JSON-RPC 2.0 standard *Internal
+error* code, not something specific to this protocol. The message prefix
+(**`recovered panic: `**), the log line
+(`[Server] recovered panic: method=%s id=%v: %v`) and the id rendering
+(`idForLog`, matching claustrum's other log lines) are all claustrum's own
+conventions.
+
+**Nothing about this frame is probe-verified, and nothing about it needs to be:**
+the path is unreachable, so no client can observe the frame and it cannot diverge
+from anything. No input is known to reach a handler panic — two fuzz waves (the
+3481-case run plus a gap-closing run over malformed frames, `auth`/`jsonrpc`, and
+multi-param combos) found zero, and claustrum's own panic sites are each either
+an unreachable stdlib guard (`time.Timer.Stop/Reset` on an uninitialised timer,
+which `time.NewTimer` precludes) or an already-bounds-guarded slice
+(`WriteStdin`'s offset/dedup, `frameSink`'s eviction). The recover is therefore
+blanket-defensive by design.
+
+The recover is scoped to **dispatch only** — the response write stays outside it,
+so a panic in `writeResponse` cannot produce a second frame for one id — and
+`server.shutdown`, which must reply nothing, still replies nothing even if its
+handler panics.
+
+- **Default path byte-identical:** the recover fires only on a panic, which does
+  not occur on any reachable input, so the differential battery is unchanged
+  (612/612).
+- Provoked in test through the `dispatchRequest` seam (`server.go`); reverting the
+  recover makes the test crash the binary (an unrecovered goroutine panic), which
+  is the mutant signal.
+
+## Deliberate divergences (post-parity)
 
 Unlike everything above, these **knowingly change a frame/behavior** from the
 reference. They follow the "match upstream first, then improve" plan: only
 consider them now that the harness proves parity, and document each as an
 *intentional* divergence in [`PROTOCOL.md`](PROTOCOL.md) + the PR if adopted.
+
+**Most are opt-in; some are always-on, and the entry says which.** An always-on
+divergence needs a reason the opt-in shape does not work — usually that the thing
+it prevents is unrecoverable (D2) or that the reference's own behavior on that
+path is an **unbounded wait** rather than a frame (D4, D5) — **or that it is an
+accepted artifact no honest caller can reach, which is D9's case rather than a
+decision a flag would improve.** *Unbounded wait*, not "hang" — the reference
+recovers the moment the wait's cause clears, and saying otherwise is a correction
+D4 already had to make once.
+
+D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
+carries the evidence that was already in [`PROTOCOL.md`](PROTOCOL.md) rather than
+a new claim — **with one exception: D8's reference behaviour was unmeasured when
+this catalogue was written and was measured on 2026-08-06, so that entry does
+carry a new claim, and says so.**
 
 ### D1 · Re-harden `-cli-zst` checksum ✅ (Option A) — impact M / cost L
 
@@ -471,7 +527,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   at a `t.TempDir()` home, so the suite is safe to run against an **unfixed**
   tree — verified by reverting both guards and watching it fail.
 
-### D3 · Make the `files.extract_tar` size cap opt-in ✅ — impact H / cost M
+### D3 · Make the `files.extract_tar` size cap opt-in ✅ (opt-in) — impact H / cost M
 
 - `maxExtractBytes` shipped as a hardcoded **512 MiB, on by default**, with no
   flag and no config key. It arrived with PR 56 as a size-bomb hardening; the
@@ -510,6 +566,172 @@ completes it with `git.worktree_remove`, which shares the predicate
   the direct parity evidence. (Deliberately no frame count: a run's size changes as
   the battery grows, so a number quoted here goes stale the way `496/496` did.
   Recount at the time of writing if you need one.)
+### D4 · `files.read` refuses a non-regular file ✅ (always-on) — impact M / cost L
+
+- **Shipped in PR 56, unnumbered until now.** `files.read` rejects anything that
+  is not a regular file with `-32602 files.read: not a regular file`
+  (`methods_files.go`, `Mode().IsRegular()`); **the reference does not refuse
+  it.** Two shapes were measured, and they behave differently from each other: a
+  FIFO (the reference *blocks* rather than reading) and `/dev/null` (it reads,
+  answering `{"content":"","exists":true}`). Sockets and block devices were not
+  measured — "does not refuse" is the claim, not "reads".
+- **Always-on, because the reference's behavior on the motivating path is not a
+  frame.** A read of a FIFO with no writer blocks in `open`, so the reference
+  emits nothing for as long as that holds — a frame-diffing comparison cannot even
+  see the request. claustrum turns that into an immediate, actionable error.
+- **It is not a permanent hang on the reference, and PROTOCOL.md used to say it
+  was.** Measured: the reference replies the instant a writer opens and stays
+  responsive throughout. The correction stands with the divergence; the guard's
+  justification is "unbounded wait", not "deadlock".
+- **`/dev/null` is the cost, not a second decision.** The check is
+  `Mode().IsRegular()`, so it also rejects character devices the reference reads
+  happily (`{"content":"","exists":true}`). Narrowing it to permit *some* would
+  reopen the hazard on `/dev/zero` and `/dev/random`, which are unbounded reads
+  the reference has no protection against either.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → `files.read` → *Non-regular files*.
+
+### D5 · 60 s `gitTimeout` on every git invocation ✅ (always-on) — impact M / cost L
+
+- claustrum caps every git invocation at 60 s (`methods_git.go`, all three call
+  sites). **The reference showed no deadline at or below 75 s** on
+  `git.worktree_remove`: measured, no reply at 75 s where claustrum answered at
+  60.1 s, with a fast-git control proving the fixture could answer at all. (This
+  was pointer-class until that run.) That is the measured scope — one method, one
+  ceiling; "the reference runs git with no deadline" is the natural reading of it,
+  not a second measurement.
+- **Always-on for the same reason as D4** — the behavior being replaced is an
+  unbounded wait, which no opt-in default can improve on for a caller who does not
+  know the flag exists.
+- **A timeout must not be read as "git refused".** On `git.worktree_remove` it
+  answers `{"success":false,"error":"git worktree remove timed out after 1m0s;
+  no cleanup was attempted, and git may have partially removed the worktree"}`
+  and the daemon removes nothing. The wording claims only what the daemon can
+  observe: the git it SIGKILLed unlinks as it goes, so the on-disk state is not
+  knowable from here. Before that was separated out, a wedged git produced a
+  deletion **plus** `{"success":true}` — an outcome the reference cannot reach.
+- ⚠️ **The cap is softer than it reads**: it waits on git's output pipe, so a git
+  that spawns a surviving child stays blocked past the deadline (§5 above).
+- **A second arm reaches the wire and this entry used to omit it:** on `git.status`
+  and `git.list_branches` the same cap surfaces as `-32603` with `err.Error()` =
+  **`signal: killed`** (§5 above). Unreachable on the reference, so not a parity
+  break — but it is ours and it is on the wire.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`, and →
+  `git.list_branches` for the `signal: killed` arm — that bullet is the only
+  PROTOCOL record of the one claustrum-only *frame* in D5, and `git.status`
+  carries the identical frame for the identical reason.
+
+### D6 · `-cli-version` must name a single path component ✅ (always-on) — impact H / cost L
+
+- The install's clearing step is an `os.RemoveAll` on
+  `filepath.Join(cliDir, cliVersion)`, so a version that reaches outside the
+  cli-dir deletes unrelated data recursively. Two escapes, both measured against
+  `5db5e4a`, and **the reference destroys the target on both**: `../victim`
+  (`Join` cleans, so the path lands beside the cli-dir) and `link/1.0.0` (an
+  intermediate symlink under the cli-dir, followed at open time).
+- claustrum answers `cli version "…" must be a single path component` in
+  `cliError` and touches nothing. `.` and `..` are refused for the same reason,
+  and both `/` and `\` are rejected on every OS so the accepted set does not
+  change with the platform.
+- **A single component rather than a containment check**, because a *lexical*
+  containment check accepts `link/1.0.0` — it is lexically inside — and
+  `EvalSymlinks` would only add a TOCTOU window before the `RemoveAll`. Nesting
+  costs nothing to give up: the reference does not support a nested version
+  either, failing `sub/2.0.0` at temp-file creation because it never creates the
+  parent. **A final component that is itself a symlink stays legal and safe** —
+  `os.RemoveAll` unlinks a symlink rather than following it — so the rule is
+  narrower than "no symlinks".
+- **Every honest path is byte-identical** (the `-install` CLI transcript, not a
+  JSON-RPC frame) — the real client passes a bare version
+  string (`1.0.86`, `2.0.0-beta.1`, a commit sha, `latest`, `1.0.86+build.5`, all
+  measured as accepted). Same shape as D8 and D1.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → `-install`.
+
+### D7 · `-cli-version` must not collide with the install temp sweep ✅ (always-on) — impact M / cost L
+
+- The orphan sweep claims `.fetch-*` and `*.zst` and runs after *every* attempted
+  install, so `-cli-version .fetch-x` or `1.0.zst` installs correctly and is
+  deleted moments later in the same run. Measured at `5db5e4a`: reference **and**
+  claustrum both finished with an empty cli-dir and **no `cliError`** — reporting
+  success while having installed nothing.
+- claustrum answers `cli version "…" collides with the install temp sweep`
+  instead. **Unlike D6 this gives up exact parity**, on the grounds that an error
+  beats a success that installed nothing.
+- The sweep predicate and this check **share one definition**, so they cannot
+  drift apart.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → `-install`.
+
+### D8 · `remote-server.log` is declined rather than shared ✅ (always-on) — impact M / cost L
+
+- ⚠️ **Only the DECLINE is the divergence.** Recreating `remote-server.log` fresh
+  on every start (unlink + create, not truncate in place) is **measured parity** —
+  `server.go` records the probe: a planted `666 root` log came back `600 claude`
+  on the reference (the *owner* changed, so it recreated the file) and `666 root`
+  on claustrum, which truncated and wrote into it. claustrum was changed to match.
+  The owner is the right observable precisely because `chmod` cannot forge it.
+- The divergence is the **fallback**: when the existing log cannot be replaced —
+  a sticky directory holding another user's file — claustrum declines the log
+  entirely and the daemon's output falls back to the launcher's inherited stdio.
+- ✅ **MEASURED 2026-08-06 — the reference writes into the foreign file.** This
+  entry used to say the reference had never been measured here; it has been now,
+  on an ephemeral VM. Socket dir `1777` (sticky, so a non-owner cannot unlink),
+  holding a **root-owned, mode 0666** `remote-server.log` — world-writable on
+  purpose, because at `0644` the daemon could not write for a trivial permission
+  reason and the run would prove nothing about intent. Daemon started as an
+  unprivileged user:
+
+  | | log after start | canary | launcher stdio |
+  |---|---|---|---|
+  | reference `5db5e4a` | `root` `0666`, **162 B of its own output** | **destroyed** | quiet |
+  | claustrum | `root` `0666`, 24 B (untouched) | **intact** | **carries the banner** |
+  | *control:* the same fixture in a NON-sticky dir | both → `schuby` `0600`, recreated | gone on both | quiet |
+
+  The control is what makes the sticky row readable: it shows both binaries doing
+  the known unlink-and-recreate when replacement is *possible*, so the sticky
+  difference is about the refused replacement and not about a daemon that failed
+  to start.
+- **So the divergence is real**: the reference truncates and writes its
+  diagnostics into a file owned by another user; claustrum declines and falls back
+  to inherited stdio.
+- ⚠️ **It is hardening, NOT a defect claim, and the entry should not read as one.**
+  Reaching it needs a local user who can already plant a file in that directory —
+  the same class of precondition claustrum's own
+  [SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)
+  puts out of scope ("reports that … amount to 'the operator can run commands on
+  their own host'"). The justification for D8 does not depend on the reference
+  being wrong: **a daemon should not write into a file it does not own.** That is
+  a design position, and it is the whole of it.
+- The log-handling behavior is otherwise identical — though the *contents* never
+  were, since the banner word and the level tag are an intentional rebrand.
+- **Why always-on rather than opt-in**, against the rule that opt-in is the
+  default: the trigger is **unreachable on the deployed path**. The socket
+  directory is `~/.claude/remote/`, per-user and not world-writable, so a foreign
+  log cannot be planted there and the fallback never fires — Desktop sees
+  identical behaviour either way. It fires only in a shared directory, which is
+  also the only place the reference's behaviour is a disclosure risk. A flag would
+  gate a branch no honest deployment reaches.
+- **Reopen trigger** (the old one — "any measurement of that log path" — is spent):
+  a deployment that puts the socket directory somewhere shared *and* needs the log
+  file, since there the fallback sends diagnostics to the launcher's stdio instead.
+  If that stream is one a client parses, D8's fallback becomes visible to it.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → *Daemon log*.
+
+### D9 · Namespace-wide params binding is stricter than the reference's ✅ (always-on) — impact L / cost L
+
+- **The only divergence in the repo that had a single record.** It was documented
+  in [PROTOCOL.md](PROTOCOL.md) → *Params* and nowhere else — no number, no
+  backlog entry, no catalogue line — so nothing pointed at it from either index.
+- claustrum binds `params` into **one struct per namespace** (`pathParams`,
+  `gitParams`), so a field that is valid for the *namespace* but unused by *this
+  method* still participates in decoding: a type-mismatched value there answers
+  `-32602` (e.g. `files.stat {"maxBytes":"{"}`, `git.status
+  {"baseRepo":[1,2]}`). The reference binds only the field the specific method
+  reads, ignores the rest regardless of type, and runs with defaults.
+- A genuinely unknown key — in neither struct — is ignored by both.
+- **Found by differential fuzzing, and accepted rather than fixed**: it surfaces
+  only under adversarial params, and a real client never sends them. Wire-visible
+  and always-on, which is why it earns a number even though no honest caller can
+  reach it.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → *Params are bound per namespace*.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach ✅ — impact M / cost L
 
@@ -525,7 +747,8 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Default path is byte-identical:** absent/false, both fields are omitted
   (`omitempty`) and the frame is exactly the old `{"success":true}` /
   `{found,running,firstSeq,lastSeq}` — battery **496/496** vs reference
-  `d20a77da`.
+  `d20a77da` (see *About the 496/496 figure* below — it is historical, and its
+  unit is not what today's harness counts).
 - The fields live on a dedicated `spawnResult` struct, so they can never leak
   into the `successResult` shared by `process.stdin`/`process.kill`.
 - Tolerant both directions: an older daemon ignores the unknown param; an older
@@ -556,7 +779,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   the main goroutine. It previously ran in a goroutine that raced the accept
   loop's return out of `run()`/`main` — `main` could exit the process first,
   skipping child teardown entirely. So this also makes the *default* "kill on
-  shutdown" reliable (it was racy before). No wire effect — battery stays 496/496.
+  shutdown" reliable (it was racy before). No wire effect — battery stays 496/496
+  (again historical; see the note below).
 - Documented in [PROTOCOL.md](PROTOCOL.md) (`-serve` flags); verified end-to-end
   on POSIX (child survives with the flag, killed without) plus per-OS unit tests.
 
@@ -673,6 +897,30 @@ shipped or scheduled.
   reason reaches only the child's own log — reference parity, measured at 10.02 s
   against 10.07 s. Keeping the old parent-side check answered in 0.03 s and named
   the actual problem. That is better operator experience and a divergence.
+
+## About the 496/496 figure
+
+Two entries above quote "battery **496/496**". **The figure is historical: it is
+not reproducible, and its unit is not what the harness counts today.** It is kept
+rather than rewritten because those lines record what was claimed at the time.
+
+- **It was real and contemporaneous.** PR 97 (June 2026) reports it as
+  "byte-identical, **496/496 frames**" from `scratch/probe/validate.sh` — the same
+  harness path in use today.
+- **It cannot mean "frames" in today's sense.** A complete run measured
+  2026-08-06 is **59 responses + 7 frames** (66 objects) across **612 lines** of
+  output. 496 is nowhere near any object count and is the same order as the line
+  count, so the most economical reading is that it counted output lines and was
+  labelled "frames". **That is a reconstruction, not a measurement.**
+- **The battery has grown since**, which fits the direction: process-frame capture
+  was fixed and the tilde fixtures were added after that figure was recorded.
+- **The June harness is gone.** `scratch/probe/validate.sh` and `battery.js` are
+  gitignored, so no commit holds an earlier version, and the file has been
+  overwritten in place. Nothing else in the tree preserves a copy or a saved run.
+
+**Recount at the time of writing rather than quoting any figure from here** — a
+replacement number recorded in July (48 responses + 7 frames) had already drifted
+by August for exactly this reason.
 
 ## Explicitly out of scope (would break compatibility)
 

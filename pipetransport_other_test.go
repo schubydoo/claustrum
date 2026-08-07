@@ -3,6 +3,8 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -67,5 +69,22 @@ func TestEnablePipeClearsStaleFileOnError(t *testing.T) {
 	}
 	if s.pipeLn != nil {
 		t.Fatal("failed enablePipe must leave pipeLn nil")
+	}
+}
+
+// TestIsOurCloseNonWindows: off Windows the only transport is the AF_UNIX socket,
+// so the net-package sentinel is the whole predicate. A wrapped sentinel must
+// still match (serveConn sees whatever bufio.Scanner surfaced), and an ordinary
+// read failure must NOT — suppressing that would silently re-open the hole the
+// scanner-error line exists to close.
+func TestIsOurCloseNonWindows(t *testing.T) {
+	if !isOurClose(net.ErrClosed) {
+		t.Error("isOurClose(net.ErrClosed) = false, want true")
+	}
+	if !isOurClose(fmt.Errorf("read: %w", net.ErrClosed)) {
+		t.Error("isOurClose(wrapped net.ErrClosed) = false, want true")
+	}
+	if isOurClose(fmt.Errorf("bufio.Scanner: token too long")) {
+		t.Error("isOurClose(a real read failure) = true, want false")
 	}
 }

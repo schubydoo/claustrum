@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os/user"
@@ -13,6 +14,19 @@ import (
 // honorListenPipe reports the effective -listen-pipe setting. On Windows the
 // named-pipe transport is meaningful, so the flag is returned unchanged.
 func honorListenPipe(requested bool) bool { return requested }
+
+// isOurClose reports whether a connection read failed because the daemon itself
+// closed the connection rather than because the read genuinely failed. Windows
+// needs two sentinels, not one: a -listen-pipe conn is served by the same
+// serveConn as a socket conn and is dropped by the same closeAll, but go-winio
+// reports a read against a closed pipe as its own winio.ErrFileClosed, which is a
+// plain error value and does not satisfy errors.Is(err, net.ErrClosed). Without
+// this arm, a server.shutdown with -listen-pipe set would log one spurious
+// scanner-error line per connected client — the exact noise this predicate exists
+// to suppress on the socket.
+func isOurClose(err error) bool {
+	return errors.Is(err, net.ErrClosed) || errors.Is(err, winio.ErrFileClosed)
+}
 
 // startPipeTransport creates the additional Windows named-pipe listener and
 // publishes its (claustrum-chosen, client-opaque) name to rpc.pipe beside the

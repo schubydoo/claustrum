@@ -148,7 +148,7 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   `pid` + `startTime` to the result for PID-reuse / orphan detection (CT-1). These are pure
   additions — a client that doesn't opt in sees **byte-identical** frames, so the guarantee below
   is unaffected. See [docs/PROTOCOL.md](docs/PROTOCOL.md) and the
-  [divergence catalog](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity-opt-in).
+  [divergence catalog](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity).
 
 Full details: **[docs/PROTOCOL.md](docs/PROTOCOL.md)** and **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
