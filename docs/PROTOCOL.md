@@ -1337,9 +1337,12 @@ Staging and cleanup (probe-verified):
   different prefix is deliberate — the sweep must **not** claim it. The sweep runs
   after every attempted install, so a `.fetch-*` blob could be removed by a
   concurrent install's sweep together with the staging file, leaving the
-  retry-on-`errStagingVanished` with no source to re-read. It is removed by the
-  install itself on every path; only a SIGKILLed download leaves it behind, and
-  nothing reclaims that. (Claustrum-only: the reference buffers the download in
+  retry-on-`errStagingVanished` with no source to re-read. The orphan **prune**
+  skips it for the same reason: `pruneCLI` counts every non-directory in the
+  cli-dir as a CLI version, so an in-flight blob would sort newest, consume a
+  `-cli-keep` slot and evict a real binary. It is removed by the install itself on
+  every path; only a SIGKILLed download leaves it behind, and nothing reclaims
+  that. (Claustrum-only: the reference buffers the download in
   memory, so it has no such file. No frame changes.)
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install

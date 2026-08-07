@@ -831,12 +831,14 @@ func TestEnsureCLIErrorWrapping(t *testing.T) {
 	}
 }
 
-// The downloaded blob must not carry a name the cli-dir sweep claims. If it does,
-// a concurrent install's sweep removes the blob the errStagingVanished retry
-// re-reads — and can fail the first attempt outright by landing between
-// fetchToFile and zstdDecompress. This asserts the invariant the retry's
-// correctness rests on, at the one place a rename would break it.
-func TestDownloadBlobIsNotSwept(t *testing.T) {
+// The download blob must be invisible to BOTH cli-dir housekeeping passes, and
+// they fail differently. If the sweep claims it, a concurrent install removes the
+// blob the errStagingVanished retry re-reads — and can fail the first attempt
+// outright by landing between fetchToFile and zstdDecompress. If the prune
+// censuses it, the blob sorts newest, takes a -cli-keep slot and evicts a real
+// version. Escaping only the sweep converts the first failure into the second,
+// which is why this asserts both.
+func TestDownloadBlobSurvivesHousekeeping(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("payload"))
 	}))
@@ -856,6 +858,28 @@ func TestDownloadBlobIsNotSwept(t *testing.T) {
 	sweepFetchTemps(dir)
 	if !isRegularFile(blobPath) {
 		t.Errorf("sweepFetchTemps removed the download blob %q", blobPath)
+	}
+
+	// Surviving the sweep is only half of it. pruneCLI has no name predicate of
+	// its own — it counts every non-directory in the cli-dir as a CLI version —
+	// so a blob that escapes the sweep is the first file claustrum creates that
+	// reaches the prune census. Being newest, it sorts to the front, takes a
+	// -cli-keep slot and evicts a real version instead.
+	realVersion := filepath.Join(dir, "1.0.0")
+	if err := os.WriteFile(realVersion, []byte("cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Make the blob the NEWEST entry, which is the in-flight-download case.
+	now := time.Now()
+	if err := os.Chtimes(realVersion, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	pruneCLI(dir, 1)
+	if !isRegularFile(realVersion) {
+		t.Error("pruneCLI evicted the real version; the download blob took its -cli-keep slot")
+	}
+	if !isRegularFile(blobPath) {
+		t.Errorf("pruneCLI removed the download blob %q, which a retry would re-read", blobPath)
 	}
 }
 

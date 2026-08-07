@@ -535,7 +535,7 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 	// in RAM and undo the streaming this change exists for. The cost is that the
 	// sweep can no longer reclaim a blob left by a SIGKILLed install; the caller's
 	// own defer removes it on every other path.
-	f, err := os.CreateTemp(dir, ".blob-*")
+	f, err := os.CreateTemp(dir, blobTempPrefix+"*")
 	if err != nil {
 		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
 			return "", "", err
@@ -597,6 +597,24 @@ func sweepFetchTemps(cliDir string) {
 	}
 }
 
+// blobTempPrefix names the -cli-url download blob. It must be a prefix that
+// NEITHER cli-dir housekeeping pass acts on — isSweptName must not claim it, and
+// pruneCLI must not count it as a version. Both halves matter and they failed one
+// at a time: ".fetch-" let the sweep delete the blob out from under the
+// errStagingVanished retry, and a name merely absent from isSweptName still let
+// pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
+// slot and evicts a real version instead.
+//
+// The reference gets this property for free by buffering the download in memory
+// and never creating the file; claustrum streams, so it has to be stated. Defined
+// once here so the creator and both passes read the same rule — the same reason
+// isSweptName is factored out below.
+const blobTempPrefix = ".blob-"
+
+// isDownloadBlobName reports whether a cli-dir entry is an in-flight download
+// blob, which is neither litter to sweep nor a CLI version to prune.
+func isDownloadBlobName(name string) bool { return strings.HasPrefix(name, blobTempPrefix) }
+
 // isSweptName reports whether the sweep above claims a cli-dir entry.
 //
 // ".fetch-*" AND "*.zst": the reference sweeps both. Measured at 5db5e4a with a
@@ -624,6 +642,14 @@ func pruneCLI(cliDir string, keep int) {
 	var vs []ver
 	for _, e := range ents {
 		if e.IsDir() {
+			continue
+		}
+		// A concurrent install's in-flight download blob is not a CLI version.
+		// It is the only file claustrum creates in the cli-dir that survives the
+		// sweep, so without this it would sort NEWEST, take a -cli-keep slot and
+		// evict a real binary — the exact defect isSweptName was introduced to
+		// stop for .fetch-* staging files.
+		if isDownloadBlobName(e.Name()) {
 			continue
 		}
 		if fi, err := e.Info(); err == nil {

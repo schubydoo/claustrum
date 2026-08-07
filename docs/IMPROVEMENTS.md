@@ -788,8 +788,12 @@ completes it with `git.worktree_remove`, which shares the predicate
   deleted by a concurrent install's sweep in the same pass as the staging file,
   so the retry that the sweep is *supposed* to trigger would re-enter with no
   source — defeating `errStagingVanished` in exactly the case it exists for. The
-  invariant is that **`blobPath` must not be a name `isSweptName` claims**, and a
-  test asserts it at the one place a rename would break it. Kept beside the
+  invariant is that **the blob must be invisible to BOTH cli-dir housekeeping
+  passes** — `isSweptName` must not claim it *and* `pruneCLI` must not census it.
+  Those fail differently, and fixing only the first converts one into the other:
+  a name the sweep ignores still reaches the prune, where an in-flight blob sorts
+  newest, takes a `-cli-keep` slot and evicts a real version. `blobTempPrefix` is
+  defined once and read by the creator and both passes; one test asserts both. Kept beside the
   destination rather than in the OS temp dir because `/tmp` is a tmpfs on many
   hosts, which would put the blob back in RAM and undo this whole change.
 - **Measured, peak RSS, 400 MiB incompressible payload** (`/proc/<pid>/status`
