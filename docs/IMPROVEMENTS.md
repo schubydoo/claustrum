@@ -777,7 +777,9 @@ completes it with `git.worktree_remove`, which shares the predicate
 - 🔧 **The blob is now STREAMED, never buffered — this ships with the flip and is
   not separable from it.** Turning the cap off removes the only bound on what used
   to be `io.ReadAll` (download) and `os.ReadFile` (local blob), which would leave
-  `-install` unbounded in memory where the reference streams. So the blob is a
+  `-install` unbounded in memory — measured on claustrum, and reason enough on its
+  own; the reference's own memory behaviour was never measured and no claim about
+  it is needed here. So the blob is a
   **path** throughout: the download streams to `<cli-dir>/.blob-<random>` and is
   hashed as it arrives, the local blob is hashed in one bounded pass, and
   `zstdDecompress` opens the path. A path rather than a reader because `ensureCLI`
@@ -830,8 +832,8 @@ completes it with `git.worktree_remove`, which shares the predicate
 ### D11 · `-install` bounds the runnability probe at 15 s ✅ (always-on) — impact M / cost L
 
 - `isRunnable` runs `<cli> --version` to decide whether an installed CLI works.
-  **The reference has no deadline there.** Measured with a planted CLI that hangs
-  on `--version`:
+  **The reference showed no deadline at or below 45 s.** Measured with a planted
+  CLI that hangs on `--version`:
 
   | binary | outcome |
   |---|---|
@@ -847,14 +849,24 @@ completes it with `git.worktree_remove`, which shares the predicate
   there the reference wedges `-install` indefinitely.
 - **Trade:** matching means reintroducing an unbounded hang in `-install`, which
   is why this stays.
-- Note the second observable: after the probe times out claustrum reports
-  `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, because a
-  CLI that fails the runnability check is treated as absent.
+- ⚠️ **There are TWO probe sites and they fail differently, so "the second
+  observable" is not one string.** `isRunnable` is called on the cache-hit check
+  (`install.go`, the `isRegularFile && isRunnable` guard) and again after
+  extraction. A timeout at the first is indistinguishable from a cache miss, so
+  what happens next depends on the flags, not on the timeout: with `-cli-url` or
+  `-cli-zst` the install simply proceeds and re-installs, and only with **no
+  source flag** does it end at `cliError "cli <v> missing and no --cli-url or
+  --cli-zst provided"` — a string a plainly missing file produces just as well,
+  timeout or not. A timeout at the second site reports
+  `installed cli at <path> is not runnable`. An earlier version of this entry
+  quoted the first string as *the* timeout observable; it is neither unique to a
+  timeout nor reachable on the common path.
 
 ### D12 · `-install` bounds the CLI download at 5 minutes ✅ (always-on) — impact M / cost L
 
-- `httpGet` runs with `http.Client{Timeout: 5 * time.Minute}` (PR 59), which
-  bounds the whole exchange. **The reference showed no bound at or below 400 s.**
+- The download runs with `http.Client{Timeout: 5 * time.Minute}` (added in PR 59
+  on `httpGet`, now `fetchToFile` after the streaming change in D10), which bounds
+  the whole exchange. **The reference showed no bound at or below 400 s.**
   Measured against a server that sends `200 OK` with a `Content-Length` and then
   never sends the body:
 
@@ -896,14 +908,14 @@ completes it with `git.worktree_remove`, which shares the predicate
   only.
 - **Trade:** matching means feeding unverified bytes to the decompressor — giving
   up a verify-then-use property for parity on an input no honest caller produces.
-- ⚠️ **This entry used to say the reference's approach was better on memory, and
-  that is no longer true.** It said claustrum "holds the whole response in memory
-  (`io.ReadAll`)" and that D10 flipping the cap off left the buffer unbounded —
-  correct when written, and the reason D10 ships the streaming with the flip
-  rather than after it. The download now streams to `<cli-dir>/.blob-<random>` and
-  is hashed on the way past, so peak memory is flat in the blob size (886 MB → 10
-  MB, measured). The remaining cost of verify-before-decompress is one full pass
-  over the blob on disk before decompression starts, not a resident buffer.
+- **The memory cost of verifying first is one pass, not a buffer.** The download
+  streams to `<cli-dir>/.blob-<random>` and is hashed on the way past (D10), so
+  peak memory is flat in the blob size — measured 886 MB → 10 MB on a 400 MiB
+  payload. Verifying before decompressing therefore costs one full read of the
+  blob from disk before decompression starts, and nothing resident. **No claim is
+  made here about the reference's own memory behaviour**: whether it streams,
+  buffers, or decompresses concurrently was never measured, and the trade above
+  stands without it.
 - **Not the same thing as D1.** D1 is about *whether* the local `-cli-zst` blob is
   verified at all; D13 is about the *order* of verify and decompress on the
   `-cli-url` download.

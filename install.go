@@ -615,8 +615,9 @@ func sweepFetchTemps(cliDir string) {
 // pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
 // slot and evicts a real version instead.
 //
-// The reference gets this property for free by buffering the download in memory
-// and never creating the file; claustrum streams, so it has to be stated. Defined
+// This is claustrum's problem to state because claustrum is what creates the
+// file — no claim is made here about how the reference handles its download, which
+// was never measured. Defined
 // once here so the creator, BOTH housekeeping passes and validateCLIVersion read
 // the same rule — the same reason isSweptName is factored out below, and with the
 // same fourth reader. A rule the validator does not consult is one an operator can

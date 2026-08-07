@@ -1288,22 +1288,28 @@ Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
-Two side effects have no frame and are easy to miss:
+Four `-install` behaviours are easy to miss — the first two are bounds the
+reference does not appear to apply, and both DO surface a `cliError`:
 
 - **The download is bounded at 5 minutes — intentional divergence (D12).** The
-  reference has no bound there: measured against a server that sends headers and
-  then never sends the body, it was still downloading at 400 s while claustrum
+  reference showed no bound at or below 400 s: measured against a server that
+  sends headers and then never sends the body, it was still downloading when the
+  harness stopped it at 400 s while claustrum
   returned at 300 s with `cliError "download failed: context deadline exceeded
   (Client.Timeout or context cancellation while reading body)"`. A real 629 MB
   body completes on both, so only a stalled or black-holed download differs.
 - **The `--version` runnability probe is bounded at 15 s — intentional
-  divergence (D11).** The reference has no deadline there: measured with a CLI
-  that hangs on `--version`, it was still running when the harness stopped it at
-  45 s, where claustrum returns at 15 s (control: a CLI that answers instantly
-  returns at 0 s on both). No honest path differs — a CLI that answers behaves
-  identically. After the probe times out, claustrum reports
-  `cliError "cli <v> missing and no --cli-url or --cli-zst provided"`, since a CLI
-  that fails the check is treated as absent.
+  divergence (D11).** The reference showed no deadline at or below 45 s: measured
+  with a CLI that hangs on `--version`, it was still running when the harness
+  stopped it at 45 s, where claustrum returns at 15 s (control: a CLI that answers
+  instantly returns at 0 s on both). Both figures bound the reference's deadline
+  *above* the kill time; neither shows it is absent. No honest path differs — a
+  CLI that answers behaves identically. What a timeout reports depends on which of
+  the two probe sites hit it: after extraction it is
+  `cliError "installed cli at <path> is not runnable"`, while on the cache-hit
+  check a timeout is indistinguishable from a cache miss and the install simply
+  proceeds — ending at `"cli <v> missing and no --cli-url or --cli-zst provided"`
+  only when no source flag was given, which a plainly missing file produces too.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
   on a fully successful install. An extracted CLI that fails the `--version`
   runnability check still costs you the blob. A blob that is not valid zstd is
@@ -1368,8 +1374,9 @@ Staging and cleanup (probe-verified):
   forever, never counted against `-cli-keep` and never evicted. That is the mirror
   of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
   every path; only a SIGKILLed download leaves it behind, and nothing reclaims
-  that. (Claustrum-only: the reference buffers the download in
-  memory, so it has no such file. No frame changes.)
+  that. (This staging file is claustrum's own; no claim is made
+  here about how the reference handles its download, which was never measured. No
+  frame changes either way.)
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
