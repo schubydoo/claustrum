@@ -220,15 +220,22 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// on a fully successful install.
 	//
 	// Measured against 5db5e4a with four fixtures, which bracket the boundary
-	// tightly around the decompress step:
+	// tightly around the decompress step. The "claustrum" column below is the
+	// PRE-FIX state that motivated this rule — it is what claustrum did before the
+	// consume condition was changed to key on decompression, NOT what it does now:
 	//
 	//	extracted CLI runs           reference consumed   claustrum consumed
-	//	extracted CLI exits 1        reference CONSUMED   claustrum kept
+	//	extracted CLI exits 1        reference CONSUMED   claustrum kept  <- fixed
 	//	blob is not valid zstd       reference kept       claustrum kept
 	//	blob does not exist          nothing to consume on either
 	//
-	// So a failure BEFORE the staged file exists leaves the blob alone, and a
-	// failure after it exists does not. The cliError strings are byte-identical
+	// Today claustrum consumes wherever decompression succeeded, so row two now
+	// matches the reference — which is the whole point of the change.
+	//
+	// So a failure BEFORE decompression succeeds leaves the blob alone, and a
+	// failure after it does not. (Not "before the staged file exists":
+	// os.CreateTemp makes that file before zstdDecompress runs, so the bad-zstd
+	// row has a staged file and still keeps the blob.) The cliError strings are byte-identical
 	// on all four. The failures between decompression and rename (chmod, the
 	// destination clear) were not provoked; they sit on the consumed side of the
 	// measured boundary by construction, not by observation.
@@ -420,7 +427,13 @@ func sha256File(path string) (string, error) {
 }
 
 // isRunnable reports whether `<path> --version` exits 0 (the real binary's CLI
-// validity check). A generous timeout guards against a hung binary.
+// validity check), bounded by a wall-clock deadline.
+//
+// ⚠️ NOT a hang detector, though this comment used to call it one. The deadline
+// cannot separate "never answers" from "answers slowly": measured 2026-08-07, a
+// CLI that answers honestly in 20 s is installed by the reference and REJECTED
+// here — and at the post-extraction call site that deletes the staged binary and
+// fails the install. See divergence D11.
 func isRunnable(path string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -545,6 +558,14 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 	// in RAM and undo the streaming this change exists for. The cost is that the
 	// sweep can no longer reclaim a blob left by a SIGKILLed install; the caller's
 	// own defer removes it on every other path.
+	//
+	// ⚠️ On a FIRST install that argument does not hold, and the fallback below is
+	// why: ensureCLI creates the cli-dir AFTER this runs, so the CreateTemp here
+	// fails with ENOENT and the blob goes to $TMPDIR after all — onto the tmpfs
+	// this paragraph exists to avoid, and out of reach of the sweep and the prune.
+	// Peak RSS stays flat either way (tmpfs pages are page cache, not process
+	// RSS), so the 886 MB -> 10 MB figure is unaffected; the host is still holding
+	// the blob in memory though, and that number alone does not say so.
 	f, err := os.CreateTemp(dir, blobTempPrefix+"*")
 	if err != nil {
 		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
@@ -615,8 +636,9 @@ func sweepFetchTemps(cliDir string) {
 // pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
 // slot and evicts a real version instead.
 //
-// The reference gets this property for free by buffering the download in memory
-// and never creating the file; claustrum streams, so it has to be stated. Defined
+// This is claustrum's problem to state because claustrum is what creates the
+// file — no claim is made here about how the reference handles its download, which
+// was never measured. Defined
 // once here so the creator, BOTH housekeeping passes and validateCLIVersion read
 // the same rule — the same reason isSweptName is factored out below, and with the
 // same fourth reader. A rule the validator does not consult is one an operator can
@@ -679,13 +701,25 @@ func isRegularFile(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-// lddProbeTimeout bounds the `ldd --version` libc probe. The reference daemon
-// runs it with no deadline, so a stalled or hostile `ldd` resolved earlier in
-// PATH hangs `-install` forever. We cap
-// it and fall back to the default classification on timeout: identical output on
-// every normal host (ldd returns in well under a second), defensive only when it
-// would otherwise hang. This is a deliberate, attack-path-only divergence from the
-// reference — normal-path frames and `__INSTALL_RESULT__` facts are unchanged.
+// lddProbeTimeout bounds the `ldd --version` libc probe. No deadline here has been
+// measured on the reference, so a stalled or hostile `ldd` resolved earlier in
+// PATH is assumed to leave `-install` waiting without bound. We cap it and fall
+// back to the default classification on timeout.
+//
+// A wall-clock deadline cannot separate a hostile `ldd` from a slow one, so an
+// honest-but-slow `ldd` falls back too — but that usually changes NOTHING
+// observable: on a musl host detectLibcWith returns "musl" from the loader glob
+// without ever spawning ldd, and on a glibc host the fallback IS "glibc". The
+// reported value moves only where ldd says musl and the loader glob misses, which
+// is close to unreachable.
+//
+// 🔴 That is only the honest-but-slow direction. Against the STALLED ldd this cap
+// exists for, the divergence is total, not narrow: detectLibc() runs
+// unconditionally in the installFacts literal, so claustrum falls back at 5s and
+// then installs the CLI and prints a complete __INSTALL_RESULT__ where the
+// reference emits nothing. A hostile ldd answering in 1s is untouched by the
+// deadline either way. Neither direction is measured on either binary; see
+// IMPROVEMENTS tier item 5 for the discriminating fixture.
 // (The libc VALUE itself is a separate matter: see classifyLibc for the loader
 // glob, and libc_other.go for why the probe does not run off linux at all.)
 const lddProbeTimeout = 5 * time.Second

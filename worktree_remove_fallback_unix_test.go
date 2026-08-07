@@ -106,9 +106,9 @@ var errRe = regexp.MustCompile(
 
 // OUR gitTimeout must not authorise the destructive fallback.
 //
-// gitTimeout is a claustrum-only divergence: the reference runs git with no
-// deadline and simply blocks, so it never reaches a delete on this path. Before
-// the fix a wedged git produced exactly what the reference cannot — the
+// gitTimeout is a claustrum-only divergence: the reference showed no deadline at
+// or below the 75 s probed and simply blocks, so it never reaches a delete on
+// this path. Before the fix a wedged git produced exactly what the reference cannot — the
 // directory removed and a bare {"success":true} — which turns a safety measure
 // into data loss.
 //

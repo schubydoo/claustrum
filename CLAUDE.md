@@ -189,6 +189,39 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   blob is **streamed, never buffered** (a path, not a `[]byte`, so the staging
   retry can re-read it); that is what keeps "cap off" from meaning "unbounded
   memory".
+- **`-install` applies wall-clock bounds the reference does not appear to, plus one
+  ordering difference.** Two everywhere — the `<cli> --version` runnability probe
+  at 15 s (D11) and the download at 5 minutes (D12) — plus a third on linux only,
+  the `ldd --version` libc probe at 5 s (tier item 5; `libc_other.go` skips the
+  probe entirely off linux). D13 is **not** a bound — it is verify-before-decompress
+  ordering, which no slow input trips. **No bound here is a hang detector**: each is
+  a threshold, so an honest-but-slow input trips it too. For D11 and D12 the
+  reference showed no deadline at or below 45 s (400 s for D12) on an input that
+  never answers, and **(D11 only)** it INSTALLED a 90 s CLI, waiting
+  91 s — which bounds D11's above 90 s, not at absent; the ldd bound has never been probed
+  on either binary.
+  **Measured (D11, claustrum side):** a CLI answering honestly in 20 s diverges,
+  and *how* depends on the shape — `installed cli at <path> is not runnable` with
+  the staged binary deleted; or `cli <v> missing and no --cli-url or --cli-zst
+  provided`; or **no error at all**, silently reinstalled. On `-cli-zst` the blob is
+  consumed whenever decompression succeeded, which includes the silent shape. The
+  cached binary survives **every** failure before the rename — both probes timing
+  out is one of them, and so are a 404, a checksum mismatch, a `mkdir cli dir:`
+  error and a bad-zstd blob, none of which reach the second probe at all. Only a
+  replacement that gets as far as the rename replaces it. With no source flag
+  `ensureCLI` still runs but returns before any install step (the orphan sweep
+  does still run).
+  **Measured (reference):** it installs the 20 s CLI outright on the no-cache
+  shape. **Derived:** on the cached shapes it should cache-hit and report
+  `cliWasPresent:true` having installed nothing, since its guard has no 15 s
+  cut-off — not separately measured. Also derived: a download slower than 5 minutes
+  (`http.Client.Timeout` bounds the whole exchange). The ldd bound's *value* delta is narrow —
+  fallback and true value coincide except where `ldd` reports musl and the loader
+  glob misses. But a **stalled** `ldd` makes it total on **any host without a musl
+  loader** — i.e. every ordinary glibc host, since that is exactly when `ldd` is
+  spawned at all: claustrum falls back at 5 s and emits a full
+  `__INSTALL_RESULT__` where the reference is assumed to block (not probed). D13 differs on the one combined-failure input of the
+  three measured — corrupt *and* wrong-checksummed — not on every possible input.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

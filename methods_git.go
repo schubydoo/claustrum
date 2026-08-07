@@ -50,27 +50,43 @@ func (p *gitParams) repoDir() string {
 	return "."
 }
 
-// gitTimeout bounds every git invocation. The reference daemon runs git with no
-// deadline, so a wedged git — an index/config lock, a credential prompt, a stalled
-// network or filesystem, a hung checkout hook — hangs the request goroutine
-// forever. We cap it. Normal git ops finish in well under this bound, so
-// happy-path frames stay byte-identical — an attack/pathological-path-only
-// divergence from the reference. (var, not const, so tests can shrink it.)
+// gitTimeout bounds every git invocation. The reference daemon showed no deadline
+// at or below the 75 s probed, so a wedged git — an index/config lock, a credential prompt, a stalled
+// network or filesystem, a hung checkout hook — leaves the request goroutine
+// waiting without bound. We cap it. (var, not const, so tests can shrink it.)
+//
+// ⚠️ NOT "attack/pathological-path-only", though this comment used to say so. A
+// wall-clock deadline cannot separate a hostile git from an honestly slow one, so
+// a large repo on a loaded host or a cold network filesystem trips it too — and
+// unlike the ldd probe, the fallback here IS observable — on git.status and
+// git.list_branches the killed process surfaces as -32603 carrying
+// "signal: killed" (docs/PROTOCOL.md -> git.list_branches; IMPROVEMENTS D5).
+// Normal git ops finish well under the bound, but "well under" is a statement
+// about typical hosts, not a property of the predicate: a large repo on a loaded
+// host or a cold network filesystem CAN trip it (not measured). This is D5.
 //
 // ⚠️ A TIMEOUT IS NOT "the same as any other git failure". That is what this
 // comment used to say, and it was true only while failure meant NOTHING HAPPENED.
 // gitWorktreeRemove now treats a failed git as permission to delete the worktree
 // itself, so a caller that ACTS on failure must distinguish our deadline from
 // git's verdict — otherwise our own safety cap authorises a destructive act the
-// reference cannot perform, since it has no deadline and simply blocks.
+// reference cannot perform, since it showed no deadline at or below 75 s and
+// simply blocks (measured on one method; see D5 for the scope).
 //
 //	read-only callers (isRepo, gitInfo, gitStatus, …)  ok=false is enough
 //	callers with a side effect (gitWorktreeRemove)     MUST use gitDeadline
 //
 // The reply shape is NOT unchanged either: the timeout branch answers
 // {"success":false,"error":"git worktree remove timed out after …"}, a frame the
-// reference never emits. That is confined to this pathological path — no OTHER
-// frame moves because of the deadline.
+// reference never emits.
+//
+// ⚠️ This used to add "no OTHER frame moves because of the deadline". That is
+// false: the deadline is the shared gitTimeout, applied independently at all
+// three helpers (git, gitStdoutErr, gitDeadline), so a kill can surface through
+// ANY call site. gitStdoutErr turns it into -32603 "signal: killed" on
+// git.status and git.list_branches, and the repo-detection calls can answer
+// isRepo:false instead. More than one arm moves; the full set has not been
+// enumerated against the code, so do not restate a count here.
 //
 // CORRECTION, 2026-08-02: that last clause used to read "every reference-reachable
 // frame is still byte-identical", which is a claim about the whole wire and was
@@ -165,7 +181,8 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 //
 // It exists for exactly one caller. gitWorktreeRemove treats a failed git as
 // permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
-// divergence — the reference runs git with no deadline and simply blocks. So
+// divergence — the reference showed no deadline at or below 75 s and simply
+// blocks. So
 // without this distinction a wedged git turns a claustrum safety measure into a
 // recursive delete the reference would never perform. Measured before the fix,
 // with a stub git that sleeps and gitTimeout shrunk: the directory was deleted

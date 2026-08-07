@@ -36,9 +36,10 @@ files differ.
 Ensures the pinned `claude` CLI is present under `-cli-dir`.
 
 - If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
-  exits 0), it's kept as-is.
+  exits 0 **within 15 s** — see divergence D11; a slower but working CLI fails
+  this guard), it's kept as-is.
 - Otherwise the blob is acquired from one of two sources:
-    - `-cli-zst` — a local `.zst` (consumed on success); checksum-verified
+    - `-cli-zst` — a local `.zst` (consumed once **decompression** succeeds, even if the install then fails the runnability probe); checksum-verified
       **only when a `-cli-checksum` is supplied** — an opt-in divergence from
       the reference, see [PROTOCOL.md](PROTOCOL.md).
     - `-cli-url` — downloaded, SHA-256-verified against `-cli-checksum`
@@ -165,9 +166,10 @@ sits in front of those calls so operators can quiet the daemon:
   "serverVersion": "<daemon id>",
   "os":   "linux",            // GOOS
   "arch": "amd64",            // GOARCH
-  "libc": "glibc",            // or "musl"
+  "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux a >5s
+                              // ldd falls back to glibc (tier item 5)
   "cliPath": "<cli-dir>/<cli-version>",
-  "cliWasPresent": false,     // true only if it already existed AND was runnable
+  "cliWasPresent": false,     // true only if it existed AND answered --version within 15s (D11)
   "cliError": "…"             // omitted on success
 }
 ```
@@ -180,7 +182,7 @@ is grouped by phase rather than left as prose:
 |---|---|
 | version check | `cli version "<v>" must be a single path component` |
 | | `cli version "<v>" collides with the install temp sweep` |
-| source | `cli <v> missing and no --cli-url or --cli-zst provided` |
+| source | `cli <v> missing and no --cli-url or --cli-zst provided` — also reached when a **present, working** CLI answers `--version` too slowly and no source flag was given (D11) |
 | | `opening input: <err>` (`-cli-zst` read) |
 | download | `download failed: <err>` — **transport** failure only |
 | | `download failed with status <code>` — **non-200**, no URL, no reason phrase |

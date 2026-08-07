@@ -659,7 +659,8 @@ Errors:
 - **Claustrum-only frame.** If claustrum's 60 s `gitTimeout` kills git instead,
   the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
   SIGKILLed process's exit error over the context error. The reference runs git
-  with no deadline and simply blocks, so it never emits this. `git.status` has
+  with no deadline at or below the 75 s that was probed, and simply blocks, so it
+  never emits this. `git.status` has
   the identical frame for the identical reason. Intentional divergence **(D5)** —
   see IMPROVEMENTS §5 and the D5 entry.
 
@@ -780,7 +781,8 @@ the daemon then seeds the new worktree:
 - **`gitTimeout` does NOT authorise the deletion — claustrum-only (D5).** (The cap is
   also softer than it reads: it waits on git's output pipe, so a git that spawns a
   surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
-  on git is a claustrum divergence (the reference runs git with no deadline and
+  on git is a claustrum divergence (the reference showed no deadline at or below
+  the 75 s probed, and
   blocks — measured: no reply at 75 s against claustrum's 60.1 s, with a fast-git
   control proving the fixture could answer at all; this was pointer-class until
   that run), so a timeout must not be read as "git refused". It answers
@@ -1288,12 +1290,71 @@ Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
 facts line. `-install` itself always exits `0` — failures are reported inside
 the facts (`cliError`), not via the exit code.
 
-Two side effects have no frame and are easy to miss:
+Five `-install` behaviours are easy to miss. The first two are wall-clock bounds
+the reference does not appear to apply, a third bounds the `libc` probe, and the
+last two have no frame at all. Only the
+download bound *always* surfaces a `cliError` — a timed-out runnability probe on
+the cache-hit check can surface as the **absence** of an error — but only when the
+replacement answers in time; if it is just as slow, both probes time out and the
+run fails after ~30 s with the cached binary left in place:
 
+- **The download is bounded at 5 minutes — intentional divergence (D12).** The
+  reference showed no bound at or below 400 s: measured against a server that
+  sends headers and then never sends the body, it was still downloading when the
+  harness stopped it at 400 s while claustrum
+  returned at 300 s with `cliError "download failed: context deadline exceeded
+  (Client.Timeout or context cancellation while reading body)"`. A real 629 MB
+  body completes on both. But `http.Client.Timeout` bounds the whole exchange, so
+  an honest download merely too slow to finish in 5 minutes trips it as surely as
+  a black hole does — the control passed because it arrived in time, not because
+  it was honest. (That half is derived from the Client.Timeout semantics; only the
+  stalled-download row was measured.)
+- **The `--version` runnability probe is bounded at 15 s — intentional
+  divergence (D11).** The reference showed no deadline at or below 45 s: measured
+  with a CLI that hangs on `--version`, it was still running when the harness
+  stopped it at 45 s, where claustrum returns at 15 s (control: a CLI that answers
+  instantly returns at 0 s on both). It also **installed a 90 s CLI, waiting 91 s**.
+  Those figures bound the reference's deadline above 90 s; none shows it is
+  absent. **A CLI answering within 15 s
+  is expected to behave identically — derived from the constant, not bisected;
+  slower ones diverge, and not only broken ones.** This is a
+  wall-clock deadline, not a hang detector — measured 2026-08-07 with a CLI that
+  answers honestly in 20 s, the reference installs it (no `cliError`, 20 s) while
+  claustrum fails at 15 s with `cliError "installed cli at <path> is not
+  runnable"` and deletes the staged binary, leaving the cli-dir empty. A control
+  CLI answering instantly installs on both. So that string is reachable on a
+  working CLI, not only a broken one. What a timeout reports depends on which of
+  the two probe sites hit it: after extraction it is
+  `cliError "installed cli at <path> is not runnable"`, while on the cache-hit
+  check a timeout is indistinguishable from a cache miss and the install simply
+  proceeds — ending at `"cli <v> missing and no --cli-url or --cli-zst provided"`
+  only when no source flag was given, which a plainly missing file produces too.
+  **With `-cli-url` present, and the downloaded CLI answering in time, that shape
+  emits no `cliError` at all**: the run downloads, installs, passes the probe on
+  the fresh binary and reports `cliWasPresent:false`. If the replacement is just as
+  slow, both probes time out and the run ends after ~30 s at `installed cli at
+  <path> is not runnable`, with the cached binary left in place because the rename
+  is never reached. That is the divergence at its purest — claustrum recovers
+  silently from a stale hanging CLI, where the reference was still wedged on it
+  when the harness stopped the probe. The observable is the absence of an error,
+  not the presence of one.
+- **The `ldd --version` libc probe is bounded at 5 s (tier item 5) — linux only.**
+  Off linux the probe never runs (`libc_other.go` returns `""`), so no bound
+  exists there. No deadline has been measured on the reference. `libc` is a field of the
+  `__INSTALL_RESULT__` facts, so a fallback is wire-visible in principle — but in
+  practice the fallback and the true value coincide for an honest-but-slow `ldd`: a
+  musl host returns `"musl"` from the loader glob without spawning `ldd` at all,
+  and a glibc host's fallback *is* `"glibc"`. The field moves only where `ldd`
+  reports musl while `/lib/ld-musl-*.so.*` does not match.
+  🔴 **Against a stalled `ldd` the divergence is total, not narrow:**
+  `detectLibc()` runs unconditionally, so claustrum falls back at 5 s and goes on
+  to emit a complete `__INSTALL_RESULT__` where the reference emits nothing.
+  Neither direction is measured on either binary; see IMPROVEMENTS tier item 5.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
   on a fully successful install. An extracted CLI that fails the `--version`
   runnability check still costs you the blob. A blob that is not valid zstd is
-  left alone, because decompression never produced a staged file. Measured
+  left alone, because decompression never succeeded (the staging file is created
+  before decompression runs, so its existence is not the boundary). Measured
   against the reference on four fixtures that bracket the decompress step, where
   it behaves the same way on all four. The narrow window between decompression
   and the rename (`chmod`, the destination clear) was not provoked — it sits on
@@ -1310,6 +1371,16 @@ Checksum + error framing (probe-verified):
 - `-cli-checksum` is verified on the download (`-cli-url`) path
   **unconditionally** — an empty `-cli-checksum` still fails
   (`checksum mismatch: expected=, actual=<sha>`).
+- **Verify happens BEFORE decompress — intentional divergence (D13).** The
+  reference decompresses first and aborts on the first invalid bytes. Of the three
+  combinations measured at `5db5e4a`, one tells them apart — a blob that is
+  **both** corrupt zstd **and** wrong-checksummed: reference
+  `decompressing: invalid input: magic number mismatch`, claustrum
+  `checksum mismatch: expected=…, actual=…`. The other two came back identical,
+  which is what makes the differing row attributable to ordering rather than to the
+  fixture. That is a claim about those three rows, not about every possible input,
+  and the controls compared reply strings rather than on-disk end state. Matching
+  would mean feeding unverified bytes to the decompressor.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →
@@ -1333,7 +1404,13 @@ Staging and cleanup (probe-verified):
 - The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
   into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
   matches `.fetch-*`, so an interrupted install's litter is reclaimed.
-- A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`**, and the
+- A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`** when the
+  cli-dir already exists — on a **first install it lands at
+  `$TMPDIR/claustrum-fetch-<random>` instead**, because `fetchToFile` runs before
+  `ensureCLI` creates the directory, so the in-cli-dir `os.CreateTemp` fails and
+  falls back. In that case the notes below about the sweep and the prune do not
+  apply, since the file is not in the cli-dir at all. Where it does land beside the
+  destination, the
   different prefix is deliberate — the sweep must **not** claim it. The sweep runs
   after every attempted install, so a `.fetch-*` blob could be removed by a
   concurrent install's sweep together with the staging file, leaving the
@@ -1346,8 +1423,9 @@ Staging and cleanup (probe-verified):
   forever, never counted against `-cli-keep` and never evicted. That is the mirror
   of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
   every path; only a SIGKILLed download leaves it behind, and nothing reclaims
-  that. (Claustrum-only: the reference buffers the download in
-  memory, so it has no such file. No frame changes.)
+  that. (This staging file is claustrum's own; no claim is made
+  here about how the reference handles its download, which was never measured. No
+  frame changes either way.)
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
