@@ -41,9 +41,15 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// actually resolved. t.Cleanup still contains the leak to this one test.
 	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
 	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
+	// gitTimeout joined this list with D5's flip: the -serve arm writes it too, so
+	// without the restore a -serve case here would leak a deadline into every later
+	// test — and the tests that assert the shipped default is 0 would fail under
+	// -shuffle depending on the seed, exactly as the cli-probe-timeout leak did.
+	oldGitTimeout := gitTimeout
 	t.Cleanup(func() {
 		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
 		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
+		gitTimeout = oldGitTimeout
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -156,3 +162,43 @@ func TestMainDispatch(t *testing.T) {
 // os.Stdout/os.Stdin globals — so any runMain-style swap-and-restore of those
 // globals races with the leaked goroutine (caught by -race in CI). The happy
 // path is covered by bridge_test.go against the real fds.
+
+// The -serve arm's flag-to-global wiring, the mirror of
+// TestInstallArmWiresEachFlagToItsOwnGlobal above. Without it,
+// `_ = cfg.effectiveGitTimeout(...)` — the flag and config key fully disconnected
+// from the runtime var — builds, vets and passes the whole suite, because
+// effectiveGitTimeout is tested in isolation and gitTimeout is tested in
+// isolation and nothing joins them.
+//
+// The daemon-child sentinel makes this safe to drive: runServe takes the child
+// path, finds no token source, and exits 1 within milliseconds — after main() has
+// already resolved both globals. No socket is bound and nothing daemonizes.
+//
+// Distinct values on purpose: equal ones would pass under a swap.
+func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
+	t.Setenv(daemonChildEnv, "1")
+	if _, exited := runMain(t, "-serve",
+		"-socket", filepath.Join(t.TempDir(), "s.sock"),
+		"-git-timeout", "37s", "-max-extract-bytes", "4096"); !exited {
+		t.Fatal("-serve with no token source should exit, not return")
+	}
+	if gitTimeout != 37*time.Second {
+		t.Errorf("gitTimeout = %s, want 37s — -git-timeout must reach the runtime var", gitTimeout)
+	}
+	if maxExtractBytes != 4096 {
+		t.Errorf("maxExtractBytes = %d, want 4096 — the two -serve knobs must not be crossed", maxExtractBytes)
+	}
+	// The DECLARED default, not the package var and not the resolver — the same
+	// assertion -cli-probe-timeout and -cli-download-timeout each carry. Moving a
+	// 60s into flag.Duration's default argument survives every other gitTimeout
+	// assertion in the suite while shipping a binary that deadlines every -serve
+	// git. Declared, not resolved: a real claustrum.conf beside the binary sets the
+	// resolved value legitimately.
+	f := lastMainFlagSet.Lookup("git-timeout")
+	if f == nil {
+		t.Fatal("main() did not register -git-timeout")
+	}
+	if f.DefValue != "0s" {
+		t.Fatalf("-git-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
+	}
+}

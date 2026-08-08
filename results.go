@@ -127,7 +127,9 @@ type branchesResult struct {
 // THREE inputs DO populate `error` now; this comment used to say none did:
 //
 //	git refused AND the daemon's own cleanup also failed  (matches the reference)
-//	claustrum's gitTimeout fired                          (claustrum-only)
+//	claustrum's gitTimeout fired  (claustrum-only, and OPT-IN since D5's flip:
+//	                              unreachable unless -git-timeout / the git-timeout
+//	                              config key is set)
 //	worktreePath is/contains the home directory           (claustrum-only)
 //
 // The last two are frames the reference cannot emit — it showed no deadline at or
@@ -138,7 +140,8 @@ type branchesResult struct {
 // halves are wrong. Row one is reference-reachable BY ITS OWN DESCRIPTION and
 // populates error. And gitTimeout is a wall-clock bound, not a
 // pathological-input detector: an honest large repo on a loaded host or a cold
-// network filesystem can trip 60 s, which is D5's whole point. What the goldens
+// network filesystem can trip an opted-in value, which is why D5 was flipped to
+// off-by-default rather than given a bigger number. What the goldens
 // pin is the bare {"success":true} on the inputs the battery exercises — not a
 // property of every reachable input.
 type worktreeRemoveResult struct {

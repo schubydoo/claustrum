@@ -50,20 +50,22 @@ func (p *gitParams) repoDir() string {
 	return "."
 }
 
-// gitTimeout bounds every git invocation. The reference daemon showed no deadline
-// at or below the 75 s probed, so a wedged git — an index/config lock, a credential prompt, a stalled
-// network or filesystem, a hung checkout hook — leaves the request goroutine
-// waiting without bound. We cap it. (var, not const, so tests can shrink it.)
+// gitTimeout optionally bounds every git invocation. **It is OFF by default (0),
+// which is the parity position**: the reference daemon showed no deadline at or
+// below the 75 s probed, so a wedged git — an index/config lock, a credential
+// prompt, a stalled network or filesystem, a hung checkout hook — leaves the
+// request goroutine waiting without bound there, and now here too.
 //
-// ⚠️ NOT "attack/pathological-path-only", though this comment used to say so. A
+// ⚠️ Everything below describes what an operator opts INTO, measured against the
+// retracted 60 s default. It shipped always-on and that failed rule 3: a
 // wall-clock deadline cannot separate a hostile git from an honestly slow one, so
 // a large repo on a loaded host or a cold network filesystem trips it too — and
 // unlike the ldd probe, the fallback here IS observable — on git.status and
 // git.list_branches the killed process surfaces as -32603 carrying
 // "signal: killed" (docs/PROTOCOL.md -> git.list_branches; IMPROVEMENTS D5).
-// Normal git ops finish well under the bound, but "well under" is a statement
-// about typical hosts, not a property of the predicate: a large repo on a loaded
-// host or a cold network filesystem CAN trip it (not measured). This is D5.
+// Normal git ops finish well under any sane bound, but "well under" is a statement
+// about typical hosts, not a property of the predicate, and an honest 61 s git has
+// never been measured on either binary. This is D5.
 //
 // ⚠️ A TIMEOUT IS NOT "the same as any other git failure". That is what this
 // comment used to say, and it was true only while failure meant NOTHING HAPPENED.
@@ -72,6 +74,13 @@ func (p *gitParams) repoDir() string {
 // git's verdict — otherwise our own safety cap authorises a destructive act the
 // reference cannot perform, since it showed no deadline at or below 75 s and
 // simply blocks (measured on one method; see D5 for the scope).
+//
+// ⚠️ The flip does not retire that distinction, it narrows when it can fire. With
+// the bound off, gitCtx hands back a context that never expires, so gitDeadline's
+// timedOut is false by construction and the destructive fallback is reached only
+// on git's own verdict. Opt the bound back in and the hazard returns exactly as
+// measured. Do NOT collapse gitDeadline into git() while "the default is off" —
+// it guards a recursive delete.
 //
 //	read-only callers (isRepo, gitInfo, gitStatus, …)  ok=false is enough
 //	callers with a side effect (gitWorktreeRemove)     MUST use gitDeadline
@@ -100,7 +109,31 @@ func (p *gitParams) repoDir() string {
 // 300ms gitTimeout, while the same stub as `exec sleep 30` returned promptly.
 // Closing it means reading the streams explicitly instead of CombinedOutput,
 // which is more code and more divergence, so it is recorded rather than fixed.
-var gitTimeout = 60 * time.Second
+//
+// D5 FLIP: the default is now 0 = NO DEADLINE, matching the reference. A non-zero
+// value is opt-in via -git-timeout or the git-timeout key in claustrum.conf (the
+// config key is the reachable one — Claude Desktop owns the argv). At 0 the
+// deadline is not merely large: gitCtx below bypasses context.WithTimeout
+// entirely, so no cancel path is armed and exec.CommandContext cannot kill git.
+// Do NOT "simplify" that into a huge duration — the bypass is what makes "off"
+// mean off, exactly as D3 and D10 bypass their io.LimitReaders.
+// (var, not const, so tests can shrink it and -serve can set it.)
+var gitTimeout time.Duration
+
+// gitCtx returns the context every git invocation runs under: bounded when
+// gitTimeout is positive, unbounded when it is 0 (the default).
+//
+// The zero case returns context.Background() rather than a WithTimeout carrying a
+// huge value, so exec.CommandContext has nothing to fire and gitDeadline's
+// ctx.Err() is nil by construction — a wedged git then blocks, as the reference
+// did at every duration probed (no deadline at or below 75 s, measured on
+// git.worktree_remove only; above that, unmeasured on both binaries).
+func gitCtx() (context.Context, context.CancelFunc) {
+	if gitTimeout <= 0 {
+		return context.Background(), func() {}
+	}
+	return context.WithTimeout(context.Background(), gitTimeout)
+}
 
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
 //
@@ -144,7 +177,7 @@ var gitTimeout = 60 * time.Second
 // split: choosing between the helpers is a per-caller decision about whether
 // stderr is data or noise, not an inconsistency to tidy away.
 func git(dir string, args ...string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	ctx, cancel := gitCtx()
 	defer cancel()
 	return gitContext(ctx, dir, args...)
 }
@@ -169,7 +202,7 @@ func gitContext(ctx context.Context, dir string, args ...string) (string, bool) 
 // path is unaffected: the caller reports err.Error(), which for an ExitError is
 // "exit status N" and never includes stderr.
 func gitStdoutErr(dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	ctx, cancel := gitCtx()
 	defer cancel()
 	full := append([]string{"-C", dir}, args...)
 	out, err := exec.CommandContext(ctx, "git", full...).Output()
@@ -188,7 +221,7 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 // with a stub git that sleeps and gitTimeout shrunk: the directory was deleted
 // and the reply was {"success":true}.
 func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	ctx, cancel := gitCtx()
 	defer cancel()
 	out, ok = gitContext(ctx, dir, args...)
 	return out, ok, ctx.Err() != nil

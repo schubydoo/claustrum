@@ -44,12 +44,13 @@ off linux, so no such bound exists on darwin or windows.)
 `git.*` and the `-install` libc probe shelled out with no deadline; a wedged
 git/ldd left a request goroutine waiting with no bound. Both are now wrapped in
 `exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, 5 s,
-security fix S4) and every `git` invocation (`gitTimeout` 60 s).
+security fix S4) and every `git` invocation (`gitTimeout` — **opt-in since D5's
+flip; 0 = no deadline by default**, and 60 s when set to the retracted value).
 
 **Both halves are now numbered divergences, and the detail lives with them, not
-here.** The `gitTimeout` half is **D5** — which records a claustrum-only `-32603`
+here.** The `gitTimeout` half is **D5** — now **opt-in, default off**, which records a claustrum-only `-32603`
 carrying `signal: killed` when the deadline fires, a real on-wire cost, and which
-the preamble notes currently fails rule 3. The `ldd` half is **D14**, numbered
+failed rule 3 while it was always-on — which is why it was flipped. The `ldd` half is **D14**, numbered
 after the reference was finally probed on it.
 
 ⚠️ The cap addresses the *stall* half only. A **hostile** `ldd` resolved
@@ -94,7 +95,7 @@ the context error. The reference showed no deadline at or below the 75 s probed
 and simply blocks, emitting nothing. Unreachable for it, so not a parity break, but it is ours and it is on
 the wire.
 
-⚠️ **The 60 s bound is softer than it reads.** `CombinedOutput` waits for the
+⚠️ **An opted-in bound is softer than it reads.** `CombinedOutput` waits for the
 output pipe to close, not just for git to exit, so a git that spawns a child which
 outlives it stays blocked past the deadline — the orphan holds the pipe open.
 Measured: a stub `sleep 30` under `sh` took the full 30 s against a 300 ms cap,
@@ -104,7 +105,7 @@ more code and more divergence; recorded here rather than fixed, so the entry doe
 not promise a bound the code does not deliver.
 
 The timeout reply shape is also not unchanged: `git.worktree_remove` answers
-`{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
+`{"success":false,"error":"git worktree remove timed out after <dur>; no cleanup
 was attempted, and git may have partially removed the worktree"}`, a frame the
 reference never emits. ⚠️ This used to add that **no other frame moves because of
 the deadline**. That is false, and it is the second time this sentence has had to
@@ -112,7 +113,7 @@ be walked back — the first version claimed "every reference-reachable frame st
 byte-identical", which was false for the whole window between the deadline work
 and the stdout-only fix, and the "scoped" replacement is false too. The deadline
 is the shared `gitTimeout`, applied independently at all three helpers (`git`,
-`gitStdoutErr`, `gitDeadline`), so a kill can surface through **any** call site:
+`gitStdoutErr`, `gitDeadline`), so an opted-in kill can surface through **any** call site:
 `gitStdoutErr` turns it into a claustrum-only `-32603 "signal: killed"` on
 `git.status` and `git.list_branches`, and the repo-detection calls can answer
 `isRepo:false` instead. More than one arm moves, and the full set has not been
@@ -505,13 +506,13 @@ and restoring the AND is what closes it. The question it forces:
 A bound is a *threshold*, so it cannot separate "hostile" from "merely slow or
 large" — an honest input trips it too. If that input is reachable **and** the
 caller cannot turn the guard off, always-on is not justified no matter how the
-reference behaves on the hostile path. On `-install` and `files.extract_tar`
-Claude Desktop owns the argv, so the person who pays has no way to decline; that
-is what flipped all four, and it is why every one of them ships a
+reference behaves on the hostile path. On both argv surfaces — `-serve` and
+`-install` — Claude Desktop owns the argv, so the person who pays has no way to
+decline; that is what flipped all five, and it is why every one of them ships a
 `claustrum.conf` key rather than a flag alone.
 
 ⚠️ **"Desktop owns the argv" is a claim about the driver, and it is the premise
-under D3, D10, D11, D12 and the "(opt-in)" tag itself — so it is tracked rather than
+under D3, D5, D10, D11, D12 and the "(opt-in)" tag itself — so it is tracked rather than
 assumed.** Provenance and its reopen trigger live in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*: the shipped client's setup UI
 offers SSH connection fields and a remote folder browser, and no way to pass
@@ -551,7 +552,8 @@ read these as unenumerated, not as established.
 does not meet it. It therefore justifies no entry in this file today.** Two things
 a reader should not take on trust:
 
-- **What keeps D4, D5 and D14 out of clause (c):** the reference does not fail the
+- **What keeps D4 and D14 out of clause (c)** (and kept D5 there before its flip)**:**
+  the reference does not fail the
   operation and report it — it **blocks** (D4's FIFO row), emits **nothing** (D5,
   D14), or **succeeds** (D4's `/dev/null` row, where it reads the device happily and
   answers `{"content":"","exists":true}`). Blocking and silence are clause (a)'s
@@ -566,7 +568,7 @@ a reader should not take on trust:
   state the caller keeps: a `files.stat` on the cli-dir after a failed install
   tells the two binaries apart, through this same daemon and with no special
   fixture. **Settled 2026-08-07: the clause keeps its literal
-  wording and D13 joins D4, D5 and D14 in the unresolved group.** Widening it to
+  wording and D13 joins D4 and D14 in the unresolved group.** Widening it to
   "differences confined to the error text and to state neither binary leaves
   usable" was considered and rejected: relaxing a clause so that the one entry it
   was written for still passes is the same demotion this preamble exists to
@@ -590,33 +592,30 @@ user is told, whatever the rules say about frames. *(That is a claim about the
 limits that come with it. That paragraph lists this rider as a dependent that
 carries **no reopen trigger** — a known gap, not an oversight.)*
 
-🔴 **Four entries do not currently clear rule 3, and are recorded here rather
-than explained away.** They fail it in **two** ways, not one. **D5** and **D14**
-are wall-clock thresholds, and fail because a threshold cannot separate a hostile
+🔴 **Three entries do not currently clear rule 3, and are recorded here rather
+than explained away.** They fail it in **two** ways, not one. **D14** is a
+wall-clock threshold, and fails because a threshold cannot separate a hostile
 input from a merely slow one — the honest-but-over-threshold caller *would* pay and
-could not decline. (Derived from the code and from the reference's measured
+could not decline. (**D5** was the second threshold here until it was flipped to
+opt-in; its entry keeps the argument, which is why the flip happened.) (Derived from the code and from the reference's measured
 no-deadline results; the honest-path cost itself is unmeasured on both, as each
 entry says.) **D4** and **D13** are not thresholds at all and no clock is involved
 in either: they fail because an honest input *can* reach the guard, and what the
 guard does is observable — either its own output or the state it skips: a `-32602`
 where the reference reads `/dev/null` happily, an empty cli-dir where claustrum
 leaves none. D4's guard is a file-mode predicate (`Mode().IsRegular()`), which fires
-identically on a fast FIFO and a slow one. **D5**'s 60 s `gitTimeout` is
-a wall-clock threshold with a
-wire-visible cost (a claustrum-only `-32603` carrying `signal: killed`), it has no
-flag and no config key, and its stated reason — "no opt-in default can improve on
-[an unbounded wait] for a caller who does not know the flag exists" — is the exact
-argument the four flipped caps rejected. An honest 61 s git on a large repo has
-never been measured on either binary. **D14**'s 5 s `ldd` bound is the other
-threshold, and like D5 it has no flag and no config key. What differs is the
-evidence: D5's cost has a **measured shape** — the claustrum-only `-32603` frame —
-even though the honest input that would trip it has never been run; D14's is
-**untested in either direction**, shape included. **D4**'s `/dev/null` row is the first of the two non-thresholds:
+identically on a fast FIFO and a slow one. **D14**'s 5 s `ldd` bound is the
+threshold, and it has no flag and no `claustrum.conf` key, so nobody who pays for
+it can decline; its honest-path cost is **untested in either direction**, shape
+included. (D5's 60 s `gitTimeout` was the other threshold and had the same shape
+with a measured cost *shape* — the claustrum-only `-32603` carrying
+`signal: killed` — though the honest 61 s git that would trip it was never run.
+It was flipped to opt-in rather than argued for, which is what D14 still owes.) **D4**'s `/dev/null` row is the first of the two non-thresholds:
 the reference reads a character device happily and claustrum refuses it, so an
 honest caller *can* observe the difference — no clock, just a mode check. **D13**
 is the second: verify-before-decompress ordering, which fails clause (c) because the
 two measured rows differ on disk as well as in text (the reference creates an empty
-cli-dir, claustrum creates none). None of the four is resolved by this section.
+cli-dir, claustrum creates none). None of the three is resolved by this section.
 
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
 carries the evidence that was already in [`PROTOCOL.md`](PROTOCOL.md) rather than
@@ -679,7 +678,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   deleting home, which is why the reopen trigger below is worded the same way. Same
   narrowing D9 now carries. (An earlier version of this bullet
   said "every other entry in this section is off by default", which was never
-  true: D4, D5, D6, D7, D8, D9, D13 and D14 are always-on too.)
+  true: D4, D6, D7, D8, D9, D13 and D14 are always-on too. D5 was, until it was
+  flipped to opt-in.)
 - Two methods hand a caller-supplied path to `os.RemoveAll`: `files.extract_tar`
   wipes `destDir` before unpacking, and `git.worktree_remove` deletes
   `worktreePath` when git exits non-zero. **Both are `~`-expanded first**
@@ -826,9 +826,17 @@ completes it with `git.worktree_remove`, which shares the predicate
   in hand, which is why the preamble lists D4 as failing rather than as at risk.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `files.read` → *Non-regular files*.
 
-### D5 · 60 s `gitTimeout` on every git invocation ✅ (always-on) — impact M / cost L
+### D5 · Make the `gitTimeout` deadline opt-in ✅ (opt-in) — impact M / cost L
 
-- claustrum caps every git invocation at 60 s (`methods_git.go` — the shared
+- **Flipped: the deadline is now OFF by default (`0`), which is the parity
+  position.** Opt in with `-git-timeout <dur>` or the `git-timeout` key in
+  `claustrum.conf` — the config key is the reachable one, since Claude Desktop owns
+  the argv on `-serve` too. Disabled **bypasses `context.WithTimeout` entirely**
+  (`gitCtx`), so no cancel path is armed and `exec.CommandContext` has nothing to
+  fire; do not "simplify" that into a huge duration, for the same reason D3 and D10
+  bypass their `io.LimitReader`s.
+- **What it did before the flip, and what an operator now opts INTO:** cap every
+  git invocation at 60 s (`methods_git.go` — the shared
   `gitTimeout`, applied independently at all three helpers: `git`, `gitStdoutErr`,
   `gitDeadline`, so every call site through them is covered). **The reference showed no deadline at or below 75 s** on
   `git.worktree_remove`: measured, no reply at 75 s where claustrum answered at
@@ -836,18 +844,17 @@ completes it with `git.worktree_remove`, which shares the predicate
   was pointer-class until that run.) That is the measured scope — one method, one
   ceiling; "the reference runs git with no deadline" is the natural reading of it,
   not a second measurement.
-- **Always-on for the same reason as D4** — the behavior being replaced is an
-  unbounded wait, which no opt-in default can improve on for a caller who does not
-  know the flag exists.
-  🔴 **Both halves of that sentence are now on the record as insufficient.** It is
-  the first half of rule 3 clause (a), which is an AND, and D5 fails the second
-  half — the `-32603 signal: killed` arm below is an honest caller observing the
-  difference. The second half of the sentence — "no opt-in default can improve on
-  an unbounded wait" — is verbatim the argument D3, D10, D11 and D12 each rejected
-  on the way to being flipped. Kept here because it is what the entry originally
-  argued, annotated because it no longer carries the decision.
+- **Why it stopped being always-on.** The entry used to argue "the behavior being
+  replaced is an unbounded wait, which no opt-in default can improve on for a
+  caller who does not know the flag exists". Both halves were insufficient: the
+  first is only the **not-a-frame half of clause (a)**, which is an AND, and D5
+  failed the second half — the `-32603 signal: killed` arm below is an honest
+  caller observing the difference. The second half is verbatim the argument D3,
+  D10, D11 and D12 each rejected on the way to being flipped. An honest 61 s git
+  has still never been measured on either binary, which is why the flip is the
+  parity-safe move rather than a smaller number.
 - **A timeout must not be read as "git refused".** On `git.worktree_remove` it
-  answers `{"success":false,"error":"git worktree remove timed out after 1m0s;
+  answers `{"success":false,"error":"git worktree remove timed out after <dur>;
   no cleanup was attempted, and git may have partially removed the worktree"}`
   and the daemon removes nothing. The wording claims only what the daemon can
   observe: the git it SIGKILLed unlinks as it goes, so the on-disk state is not
@@ -859,13 +866,24 @@ completes it with `git.worktree_remove`, which shares the predicate
   `git.status` and `git.list_branches` the same cap surfaces as `-32603` with
   `err.Error()` = **`signal: killed`** (§5 above). It is not the only one — a
   killed repo-detection call answers `isRepo:false` where the reference emits
-  nothing — and §5 records why no total is asserted. Unreachable on the reference,
-  so not a parity break, but it is ours and it is on the wire.
-- **Reopen trigger:** an honest git invocation on a large or slow repository
-  taking longer than 60 s — the `-32603` arm makes that observable on the wire, so
-  a single user report is enough. Unlike the other entries here this one is
-  already **overdue**: the preamble records that D5 fails rule 3 today, and no
-  honest 61 s git has been measured on either binary.
+  nothing — and §5 records why no total is asserted.
+- 🔴 **One arm loses data and puts NOTHING on the wire, which is why it is called
+  out separately.** `copyWorktreeIncludes` (`worktreecopy.go`) selects the files a
+  `.worktreeinclude` manifest names by running `git ls-files` through the same
+  helper. An opted-in deadline kills it, `err != nil` takes the early return, and
+  `populateWorktree` is best-effort — so `git.worktree_create` still answers
+  `{"success":true,…}` while **every manifest-selected file is missing** from the
+  new worktree. No frame moves, no error is reported, and the frame battery cannot
+  see it. Same class of evidence as D13's empty cli-dir: state the caller keeps,
+  observable only by looking at the filesystem. Unreachable on the reference,
+  so not a parity break, but it is ours and it is on the wire. ⚠️ **At the shipped
+  default none of these arms exist**: with no deadline armed, nothing is killed.
+  They are the cost of opting in.
+- **Reopen trigger** (for the opt-in shape, not the flip — that is done): an
+  operator who sets `-git-timeout` reporting an honest git on a large or slow
+  repository killed by it. The `-32603` arm makes that observable on the wire, so a
+  single report is enough, and it would say the opt-in value is a footgun rather
+  than that the default is wrong.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`, and →
   `git.list_branches` for the `signal: killed` arm — that bullet is the only
   PROTOCOL record of the `signal: killed` *frame*, and `git.status`
@@ -1295,8 +1313,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   because every finite value merely moves the boundary.
 - **Why it stopped being always-on.** It did clear the **not-a-frame half of clause (a)** —
   the reference's behaviour on the motivating path is an apparently unbounded wait
-  (no bound at or below 90 s) rather than a frame, the same justification D4 and D5
-  use explicitly and D12 restates in its Trade bullet. (D13 used to be cited here
+  (no bound at or below 90 s) rather than a frame, the same justification D4 uses
+  explicitly (and D5 used, until that argument was judged insufficient and D5 was
+  flipped) and D12 restates in its Trade bullet. (D13 used to be cited here
   as a third form of the same argument — "an input no honest caller produces" —
   but that claim has since been **measured wrong**, and D13 does not meet clause
   (c) either — it is now in the unresolved group, so it supports nothing here.)
@@ -1542,7 +1561,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   ⚠️ **Neither binary leaves a usable CLI** — but the on-disk state a caller keeps
   is not identical either (an empty cli-dir versus none, observable with a
   `files.stat`), so "the only delta is diagnostic text" is false as written, and
-  clause (c) says that. **So D13 sits with D4, D5 and D14 in the unresolved group** (settled
+  clause (c) says that. **So D13 sits with D4 and D14 in the unresolved group** (settled
   2026-08-07; see the preamble for why the clause was not widened to fit it). It
   stays in the code, labelled, rather than justified by a rule bent around it.
 - ⚠️ **The "cost-free" reading leans on a claim about the driver, and that claim is
@@ -1622,13 +1641,13 @@ completes it with `git.worktree_remove`, which shares the predicate
     the musl-banner fixture (§5 above names it), so "no honest caller observes this"
     is an **untested conjunction, not a demonstrated impossibility**.
   - ⚠️ **And there is no escape hatch.** `lddProbeTimeout` is a `const` with no flag
-    and no `claustrum.conf` key — the same shape the preamble flags as D5's failure.
+    and no `claustrum.conf` key — the shape that got D5 flipped, and D14 is now the
+    only entry still carrying it.
     Nobody who pays for it can decline.
-- **So D14 sits with D4, D5 and D13 in the unresolved group, and the difference is
+- **So D14 sits with D4 and D13 in the unresolved group, and the difference is
   evidential rather than principled.** D4's honest-path cost is measured (the
-  `/dev/null` row); D5's cost *shape* is measured — the claustrum-only `-32603` —
-  though the honest 61 s git that would trip it never has been; D14's is untested in
-  either direction, shape included. It is numbered here so it can be argued about at
+  `/dev/null` row); D14's is untested in either direction, shape included. D5 left
+  this group by being flipped, not by being justified — the option D14 still has. It is numbered here so it can be argued about at
   all — being unnumbered is what let it avoid the question.
 - 🔴 **The bound is narrower than it reads, and this entry used to overstate it.**
   It fired in only one of the two stall shapes measured. The probe waits on `ldd`'s
@@ -1741,6 +1760,10 @@ completes it with `git.worktree_remove`, which shares the predicate
     bound. Same duration parsing and the same zero/negative edges as
     `cli-probe-timeout` above, with the same consequence: every accepted oddity
     leaves the bound off, so none of them can switch it on.
+  - `git-timeout = <duration>` — default for D5; `0` (the default) is no deadline.
+    Same duration parsing and the same zero/negative edges as `cli-probe-timeout`
+    above, and the same consequence: every accepted oddity leaves the deadline off.
+    ⚠️ The only `-serve` key of the three durations — the other two are `-install`.
 - **`version-override` — make claustrum a permanent drop-in.** The desktop client
   decides whether to re-upload the daemon by running `<bin> --version` on the
   cached `~/.claude/remote/srv/<pinned-sha>/server` and matching

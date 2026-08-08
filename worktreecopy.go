@@ -70,6 +70,12 @@ func copyWorktreeIncludes(repo, worktree string) {
 	// into paths, so a warning on stderr becomes a bogus path. No wire impact —
 	// the bogus path simply fails Lstat and is skipped — but it is the identical
 	// defect and there is no reason to leave one of the two behind.
+	//
+	// ⚠️ An OPTED-IN gitTimeout (D5) kills this call, and the failure is silent: the
+	// early return below skips every manifest-selected file while gitWorktreeCreate
+	// still answers {"success":true}. Nothing reaches the wire, so no frame test and
+	// no battery run can see it. Off by default since D5's flip, which is the only
+	// reason it is not reachable today.
 	out, err := gitStdoutErr(repo, "ls-files", "--others", "--ignored",
 		"--exclude-from="+worktreeIncludeFile)
 	if err != nil || out == "" {

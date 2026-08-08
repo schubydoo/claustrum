@@ -179,6 +179,21 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `io.LimitReader` entirely — do not "simplify" it into a huge limit, because the
   `max-total+1` arithmetic is what defines the boundary. Divergence D3; see
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md) + [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
+- **The `git` deadline is OFF by default, and that is the parity position (D5).**
+  `gitTimeout` bounded every git invocation at a hardcoded 60 s; the reference
+  showed **no deadline at or below the 75 s probed** on `git.worktree_remove`, and
+  an honest 61 s git has never been measured on either binary. It now defaults to
+  `0` = no deadline, opt-in via `-git-timeout` **or** the `git-timeout` key in
+  `claustrum.conf` (the config key is the reachable one — Desktop owns the `-serve`
+  argv too). Disabled bypasses `context.WithTimeout` entirely (`gitCtx`) — do not
+  "simplify" it into a huge duration, because an unarmed cancel path is what makes
+  `gitDeadline`'s `timedOut` false *by construction*. ⚠️ **That third bit guards a
+  destructive path**: `git.worktree_remove` treats a failed git as permission to
+  delete `worktreePath`, so a deadline must never be read as "git refused". Opted
+  in, the cost is wire-visible — `-32603` carrying `signal: killed` on `git.status`
+  and `git.list_branches`, an `isRepo:false` arm, and a `timed out after <dur>`
+  reply — and the bound is **softer than it looks**: `CombinedOutput` waits on the
+  output pipe, so a git leaving a surviving child blocks past the deadline anyway.
 - **The `-install` CLI size cap is OFF by default (D10).** `maxCLIBytes` governs
   both the decompressed CLI and the download body; measured on both paths, the
   reference took a 600 MiB payload all the way to the runnability check, so a
@@ -261,7 +276,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   it**. Saying the divergence is "total" is wrong, and this file used to say it.
   ⚠️ **D14 is NOT settled**: it is a threshold with no flag and no config key, its
   honest-path cost is untested in either direction, and IMPROVEMENTS lists it beside
-  D4, D5 and D13 as unresolved rather than justified.
+  D4 and D13 as unresolved rather than justified.
   **D13 is verify-before-decompress ordering and its trigger is REACHABLE** — the
   claim that no honest caller produces the input lived in `IMPROVEMENTS.md`, not
   here, and is now retracted there. The reachable case is narrower than "flaky
@@ -281,7 +296,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
   outright that the list has been incomplete every time it was checked). **Three
   driver claims are tracked there**, the third being **"Desktop owns the argv"** —
-  the premise under D3, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
+  the premise under D3, D5, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
   evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
   argument field there, but Desktop's own config files and forwarded env were never
   examined, and a config file it turns into argv is one of the two routes that would

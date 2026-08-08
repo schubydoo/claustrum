@@ -659,13 +659,15 @@ Errors:
 - A `for-each-ref` that **fails** (e.g. a corrupt `packed-refs`, exit 128) is
   reported as `-32603` carrying the Go error string — `exit status 128`, not
   git's `fatal: …` text. Same rule as `git.status`.
-- **Claustrum-only frame.** If claustrum's 60 s `gitTimeout` kills git instead,
+- **Claustrum-only frame.** If claustrum's opt-in `gitTimeout` kills git instead,
   the same `-32603` carries **`signal: killed`** — `Cmd.Wait` prefers the
   SIGKILLed process's exit error over the context error. The reference runs git
   with no deadline at or below the 75 s that was probed, and simply blocks, so it
   never emits this. `git.status` has
-  the identical frame for the identical reason. Intentional divergence **(D5)** —
-  see IMPROVEMENTS §5 and the D5 entry.
+  the identical frame for the identical reason. Intentional divergence **(D5)**,
+  and ⚠️ **not reachable at the shipped default** — `gitTimeout` is `0` (no
+  deadline) unless an operator sets `-git-timeout` or the `git-timeout` key in
+  `claustrum.conf`. See IMPROVEMENTS §5 and the D5 entry.
 
 #### git.worktree_create
 
@@ -713,7 +715,10 @@ the daemon then seeds the new worktree:
   deliberately private source (say `0400`) is widened to whatever the umask
   allows. This matches the reference and is reproduced deliberately; treat the
   manifest as naming configuration, not secrets or scripts.
-- Copy failures are best-effort and never fail the request.
+- ⚠️ An **opted-in** `-git-timeout` (D5) kills the `git ls-files` that performs the
+selection, and the early return then skips **every** manifest-selected file while
+the reply is still `{"success":true}` — a silent, wire-invisible loss distinct from
+the per-file case below. Off by default. Copy failures are best-effort and never fail the request.
 #### git.worktree_remove
 
 `{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)
@@ -781,15 +786,16 @@ the daemon then seeds the new worktree:
   deleted the decoy and left `<repo>/wt` in place.** Parity, and alarming — send
   an absolute `worktreePath`. The reference client does: it tilde-expands every
   remote path before sending.
-- **`gitTimeout` does NOT authorise the deletion — claustrum-only (D5).** (The cap is
+- **`gitTimeout` does NOT authorise the deletion — claustrum-only (D5), and off by
+  default since the flip, so this whole arm needs an opt-in to reach.** (The cap is
   also softer than it reads: it waits on git's output pipe, so a git that spawns a
-  surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The 60 s cap
-  on git is a claustrum divergence (the reference showed no deadline at or below
+  surviving child stays blocked past the deadline — see IMPROVEMENTS §5.) The git cap
+  is a claustrum divergence (the reference showed no deadline at or below
   the 75 s probed, and
   blocks — measured: no reply at 75 s against claustrum's 60.1 s, with a fast-git
   control proving the fixture could answer at all; this was pointer-class until
   that run), so a timeout must not be read as "git refused". It answers
-  `{"success":false,"error":"git worktree remove timed out after 1m0s; no cleanup
+  `{"success":false,"error":"git worktree remove timed out after <dur>; no cleanup
   was attempted, and git may have partially removed the worktree"}` and the daemon
   itself removes nothing. The wording claims only what the daemon can observe: the
   git it SIGKILLed unlinks files as it goes, so the directory state is not knowable
@@ -1040,7 +1046,7 @@ reference unless marked **claustrum-only**.
 ### -serve — run the daemon
 
 ```text
-claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>]
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>] [-git-timeout <dur>]
 ```
 
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
@@ -1281,8 +1287,8 @@ up-to-date — it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\
 against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — so the
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
-`metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes` and
-`cli-probe-timeout` and `cli-download-timeout` defaults (precedence: explicit CLI flag > config > default). See
+`metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes`,
+`cli-probe-timeout`, `cli-download-timeout` and `git-timeout` defaults (precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1393,7 +1399,7 @@ left in place:
   happens: claustrum waits with the reference.**
 - **The `ldd --version` libc probe is bounded at 5 s — intentional divergence
   (D14), always-on, linux only. ⚠️ Always-on is its current state, not a settled
-  one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside D4, D5
+  one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside D4
   and D13 — a wall-clock threshold with no flag and no `claustrum.conf` key, so
   nobody who pays for it can decline. Off linux the probe never runs
   (`libc_other.go` returns `""`), so no bound exists there; on linux
@@ -1482,7 +1488,7 @@ Checksum + error framing (probe-verified):
   transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
-  beside D4, D5 and D14 rather than justified.
+  beside D4 and D14 rather than justified.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →
