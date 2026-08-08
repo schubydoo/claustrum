@@ -523,6 +523,20 @@ Claude Desktop owns the argv, so the person who pays has no way to decline; that
 is what flipped all four, and it is why every one of them ships a
 `claustrum.conf` key rather than a flag alone.
 
+⚠️ **"Desktop owns the argv" is a claim about the driver, and it is the premise
+under D3, D10, D11, D12 and the "(opt-in)" tag itself — so it is tracked rather than
+assumed.** Provenance and its reopen trigger live in
+[`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*: the shipped client's setup UI
+offers SSH connection fields and a remote folder browser, and no way to pass
+arguments to the daemon — observed by the maintainer as a daily user, 2026-08-07,
+**UI only**; Desktop's own config files and any forwarded environment were not
+examined. Unlike the `cliError` and `libc` claims it needs no contrived fixture to
+check, which is a different thing from the parity harness being able to settle it —
+it cannot. It reopens if Desktop gains a way for an operator to influence the
+daemon's argv, which would make a flag-only opt-in sufficient **for Desktop-driven
+hosts** — not moot the config key, which is read beside the executable and serves
+every other driver.
+
 **Clause (b) is the right *form* of argument** and most surviving always-on entries
 use it — but each has its own trigger, and the glosses are not interchangeable:
 D2 and D6 (a destructive target no honest caller names), **D7** (a `-cli-version`
@@ -631,7 +645,11 @@ carry a new claim, and says so.**
   is byte-identical to the reference.
 - ⚠️ **Tagged "conditional" rather than "(opt-in)" on purpose.** Everywhere else in
   this section "(opt-in)" means *operator-declinable* — a flag **and** a
-  `claustrum.conf` key, because Claude Desktop owns the argv. D1 has neither: what
+  `claustrum.conf` key, because Claude Desktop owns the argv — the tracked driver
+  claim (see the rule-3 preamble above and [`ARCHITECTURE.md`](ARCHITECTURE.md) →
+  *Provenance*), which makes this **definition** one of its dependents: if Desktop
+  ever grew an argv affordance, "operator-declinable" would no longer require the
+  config key on Desktop-driven hosts. D1 has neither: what
   activates it is the caller supplying `-cli-checksum`, and on `-install` that
   caller is Desktop. The reason it still does not need an operator switch is that
   the delta requires a checksum that is **wrong** — supplying a correct one is

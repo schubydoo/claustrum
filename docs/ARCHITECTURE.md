@@ -219,24 +219,62 @@ above — or adding a guard whose error pre-empts one — can change what a user
 told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
 
 ⚠️ **Provenance, because these are a different class of claim from the rest of
-these docs.** Two of them are load-bearing here: the `cliError` classification
-above, and **`libc` deciding which CLI build the driver downloads**. Both describe a
-**third binary** — the driver — not the reference daemon and not claustrum, so the
-reference-vs-claustrum harness cannot confirm or refute either and no `scratch/`
-fixture covers them. Both are derived from how the shipped Desktop client handles
-the field, not from a differential probe. *(The `cliError` and `libc` claims are
-not the only driver claims in these docs — D6's and D7's clause-(b) evidence rests
-on what Desktop emits as `-cli-version`, and "Desktop owns the argv" is the same
-class. The two named here are the ones the entries below depend on.)*
+these docs.** **Three** are load-bearing: the `cliError` classification above,
+**`libc` deciding which CLI build the driver downloads**, and **"Desktop owns the
+argv"**. All three describe a **third binary** — the driver — not the reference
+daemon and not claustrum, so the reference-vs-claustrum harness cannot confirm or
+refute any of them and no `scratch/` fixture covers them.
+
+⚠️ **"The harness cannot settle it" is not the same as "unverifiable".** All three
+are outside the differential harness, but they differ in what it takes to observe
+them: `cliError` and `libc` need a **contrived fixture** (fail an `-install` twice
+against the same `-cli-dir` and compare Desktop's retry path; find a musl host whose
+loader glob misses). The argv claim needs **no fixture at all** — the client's own
+setup UI either offers a way to pass arguments or it does not.
+
+**Evidence for the argv claim, scoped to what was actually looked at:** the shipped
+client's "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and
+*Identity File*, and its folder step is a remote directory browser — **no field for
+daemon arguments in either**. Reported by the maintainer as a daily user of the
+shipped client, 2026-08-07; the client build was not recorded. ⚠️ **That covers the
+UI only.** Whether Desktop reads a config file of its own, or forwards environment
+variables, was **not examined** — so this is "no argv affordance in the setup UI I
+can see", not "no argv affordance exists".
+
+- **Reopen trigger for the argv claim:** Claude Desktop gaining a way for an
+  operator to influence the daemon's argv — a settings field, or a config file it
+  reads and turns into argv. That would make a flag-only opt-in sufficient **for
+  Desktop-driven hosts**. ⚠️ It would *not* moot the `claustrum.conf` key: the key
+  is read from the executable's own directory (`os.Executable`), so it serves any
+  other driver — including `clauster`, named as a supported one below — regardless
+  of what Desktop grows. An env var Desktop forwarded would not qualify either;
+  nothing in `config.go` or `main.go` reads the environment for these knobs, so
+  forwarding one changes nothing.
+- **What rests on it:** **D3, D10, D11 and D12** — every "why it stopped being
+  always-on" argument turns on the person who pays having no way to decline — plus
+  the **"(opt-in)" tagging convention** in IMPROVEMENTS, which *defines* opt-in as a
+  flag **and** a config key on exactly this ground, and so binds every future entry.
+  The trigger is recorded once here rather than five times, because it is one claim
+  shared by all of them.
+
+*(Not the only other driver claims in these docs — D6's and D7's clause-(b)
+evidence rests on what Desktop emits as `-cli-version`. That one is still untracked
+and unprovenanced.)*
 
 Treat them as design constraints worth respecting, not as measured parity results;
 anything that depends on one should say so and carry a reopen trigger **that would
 falsify the claim it rests on** — a trigger that fires on something else does not
 count, which is the standard applied after the list. ⚠️ **The
 list below is maintained by hand and has been incomplete every time it was
-checked** — at `0841bcd` it named two while four already existed. Treat it as the
-best-known set, not as a proof of completeness, and add to it rather than trusting
-it:
+checked** — at `0841bcd` it named two while four already existed, and it omitted
+the argv claim's four dependents entirely until a review found them. Treat it as
+the best-known set, not as a proof of completeness, and add to it rather than
+trusting it.
+
+**The argv claim's dependents are recorded with the claim above, not here**,
+because one trigger covers all of them. The list below is the dependents of the
+`cliError` and `libc` claims, where each entry needs its own. *(D10 and D11 appear
+in both roles — below for the `cliError` claim, above for the argv one.)*
 
 - **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
   always-on justification — it is in IMPROVEMENTS' unresolved group).
@@ -261,6 +299,8 @@ on**. D13's, D10's and D11's do. ⚠️ **This paragraph said "one" at `99f53e3`
 that was wrong** — D11's entry had no reopen trigger at all, and D14's fires on
 something that would not falsify the `libc` claim. D11's was added in the same
 change that corrected this count, which is why the number is two rather than three.
+*(The argv claim's four dependents are not counted here — their shared trigger is
+recorded with the claim, which is a deliberate exception to "its own entry".)*
 The two that remain:
 
 - **clause (c)'s rider** — provenance pointer, no reopen trigger at all.

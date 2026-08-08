@@ -276,7 +276,12 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   disk-full-shaped message as terminal and everything else as retryable — which the
   parity harness cannot settle (ARCHITECTURE → Provenance keeps the best-known list
   of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
-  outright that the list has been incomplete every time it was checked).
+  outright that the list has been incomplete every time it was checked). **Three
+  driver claims are tracked there**, the third being **"Desktop owns the argv"** —
+  the premise under D3, D10, D11, D12 and the "(opt-in)" tagging convention, and the
+  only one that needs no contrived fixture to check (the client's setup UI either
+  offers a way to pass arguments or it does not; as of 2026-08-07 it does not, UI
+  only — Desktop's own config files and forwarded env were never examined).
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

@@ -1189,7 +1189,11 @@ unset in the child before it spawns anything, so it never leaks downstream.
   cap is removed rather than left truncated; entries already written are not.
 - The cap **shipped on by default at 512 MiB** and that was a live user-facing
   break: a caller with a tree over the cap got an error with no way through,
-  because Claude Desktop owns the argv. Flipping the default to `0` is the parity
+  because Claude Desktop owns the argv (a **driver** claim, tracked with its
+  provenance and reopen trigger in [`ARCHITECTURE.md`](ARCHITECTURE.md) →
+  *Provenance* — unlike the `cliError` and `libc` claims, this one needs no
+  contrived fixture to check: the client's setup UI either offers a way to pass
+  arguments or it does not). Flipping the default to `0` is the parity
   fix; the cap itself survives as an opt-in for hosts that want it.
 - Also settable in `claustrum.conf` as `max-extract-bytes = <n>` (an explicit
   `-max-extract-bytes` flag wins). **That is the reachable knob** — see the argv
