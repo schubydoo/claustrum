@@ -1704,8 +1704,9 @@ Staging and cleanup (probe-verified):
   | claustrum, cli-dir absent | `$TMPDIR/claustrum-fetch-<random>` | zstd magic — the **compressed body** |
   | claustrum, cli-dir pre-created | `<cli-dir>/.blob-<random>` | zstd magic — the **compressed body** |
 
-  So the reference creates the cli-dir before the download **completes** and writes
-  decompressed output into it as the stream arrives, in both pre-states — which is
+  So the reference writes decompressed output into the cli-dir as the stream
+  arrives, in both pre-states, and (from the P0 row, where the directory did not
+  exist) creates it before the download **completes** — which is
   the same behaviour D13's entry infers from `decompressing: <transport error>`
   surfacing on an interrupted transfer. Claustrum instead has the *compressed body*
   on disk, in `$TMPDIR` on a first install and in the cli-dir once it exists.
@@ -1776,8 +1777,10 @@ Staging and cleanup (probe-verified):
   files (a `README`) survive. The sweep runs whenever an install was attempted,
   succeeded or not; the `-cli-keep` prune runs only on success.
   - The sweep is **unconditional**, matching the reference. claustrum stages its
-    extract at `.fetch-<random>` in this same namespace (the reference extracts in
-    place and has no in-flight file here), so a concurrent install can reclaim
+    extract at `.fetch-<random>` in this same namespace and holds it across the
+    `--version` probe, where the reference shows only the installed version
+    (mid-*download* the reference does have a `.fetch-<random>` of its own — see
+    the staging table above; the difference is the window), so a concurrent install can reclaim
     another's staging file. That is handled by a **single retry** of the
     stage-verify-rename step rather than by narrowing the sweep: a name-only guard
     cannot tell a staggered peer's in-flight file from litter, and narrowing it

@@ -254,11 +254,20 @@ var errStagingVanished = errors.New("staging file vanished")
 // runs, and renames it into place.
 //
 // The staging step ITSELF is a pre-existing claustrum divergence (IMPROVEMENTS
-// #4): the reference extracts in place, so an interrupted install can leave a
-// half-written or non-runnable cliPath, while here cliPath only ever appears as a
-// complete, 0755, verified binary. The end state is identical — same facts, same
-// "not runnable" error — so nothing on the wire changes. Everything below about
-// losing a staging file follows from that choice, not from a new one.
+// #4). Here cliPath only ever appears as a complete, 0755, verified binary. The
+// end state is identical — same facts, same "not runnable" error — so nothing on
+// the wire changes. Everything below about losing a staging file follows from that
+// choice, not from a new one.
+//
+// This used to say flatly that "the reference extracts in place". Measured
+// 2026-08-08 on -cli-url, that is wrong as a general statement: mid-download the
+// reference's cli-dir holds a ".fetch-<random>" whose first bytes are the
+// DECOMPRESSED CLI's. What the original measurement actually established is
+// narrower and still holds — across the post-extraction --version window the
+// reference shows only the installed version, where claustrum still holds a
+// staging file. So the windows differ, not the presence of staging as such, and
+// the divergence this comment describes is about how long cliPath's replacement
+// stays incomplete. Unmeasured on -cli-zst.
 //
 // Staged under the reference's own temp name, ".fetch-<random>" in the cli-dir,
 // rather than "<cliPath>.tmp": sweepFetchTemps reaps ".fetch-*" but knew nothing
@@ -277,8 +286,9 @@ var errStagingVanished = errors.New("staging file vanished")
 // mid-DOWNLOAD against a deliberately slow origin, the reference's cli-dir holds
 // a ".fetch-<random>" of its own (decompressed output, by its first bytes). The
 // original measurement only ever looked at the post-extraction probe window, so
-// it could not have seen this. The retry below is what makes the difference
-// survivable either way.
+// it could not have seen this. The retry below is what makes CLAUSTRUM's own loss
+// survivable in either window; it does nothing about the reference's exposure,
+// which is the reference's to carry.
 //
 // The caller retries once on errStagingVanished, which is what actually fixes
 // that. A smarter sweep cannot: skipping entries that postdate our own start

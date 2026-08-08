@@ -32,9 +32,12 @@ contract so refactors can't drift silently.
 `ensureCLI` now decompresses + chmods + verifies at `cliPath.tmp`, then
 `os.Rename`s into place, so an interrupted install never leaves a half-written
 or non-runnable cliPath. Behavior-compatible — the end state and
-`__INSTALL_RESULT__` facts are identical to the reference's in-place extract
-(cliPath appears only as a complete 0755 verified binary; same "not runnable"
-error).
+`__INSTALL_RESULT__` facts are identical (cliPath appears only as a complete 0755
+verified binary; same "not runnable" error). ⚠️ This entry used to call the
+reference's behaviour an "in-place extract". Measured 2026-08-08 on `-cli-url`,
+the reference has an in-flight `.fetch-<random>` of its own mid-download; what is
+established is that it shows none across the `--version` window, where claustrum
+does. The end-state compatibility above is unaffected.
 
 ### 5 · Timeouts on `git`/`exec` calls ✅ — impact M / cost L
 
@@ -590,8 +593,9 @@ a reader should not take on trust:
   cli-dir that did not already exist** — pre-create it and both binaries leave the
   same *end state* behind, so in the steady state (a cli-dir present because
   something installed before) a stat taken after the install does *not* tell them
-  apart. (During one, it still can: the two stage different things in different
-  places — PROTOCOL → Staging and cleanup.) It still fails the clause, because
+  apart. (During one, a `files.list` of the cli-dir still can — the two stage
+  different things in different places, PROTOCOL → Staging and cleanup. A `stat`
+  cannot: the staging names carry a random suffix, so there is no path to name.) It still fails the clause, because
   the first-install case is real and the delta there is not text. **Settled 2026-08-07: the clause keeps its literal
   wording and D13 joins the unresolved group** (D4 and D14 were in it on that date
   too, and both later left by being flipped rather than argued for, leaving D13
@@ -609,8 +613,9 @@ a reader should not take on trust:
   identical in all four (rows in D13's entry). That rules out the leftover directory
   changing what the driver's **next successful install produces** — the obvious way
   it could have mattered. It does not rule out every route: a driver that stats the
-  cli-dir itself is untouched by the result, and a stat taken *during* an install
-  still discriminates, since the two stage different things in different places. ⚠️ None
+  cli-dir itself is untouched by the result, and a `files.list` taken *during* an
+  install still discriminates, since the two stage different things in different
+  places. ⚠️ None
   of it is evidence about Desktop, and the parity harness cannot produce any. The
   clause stands unused rather than stretched.
 
@@ -1690,13 +1695,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   | claustrum | P0 | `checksum mismatch: …` · **nothing** | **installs** · cli-dir + the CLI |
   | reference | P1 | `decompressing: unexpected EOF` · empty cli-dir | **installs** · cli-dir + the CLI |
   | claustrum | P1 | `checksum mismatch: …` · **empty cli-dir** | **installs** · cli-dir + the CLI |
-  | *control:* a **successful `-cli-url` install** (not a retry), each binary × each pre-state | — | **identical in all four** |
 
-  ⚠️ The control varies the source as well as the outcome, so read it as "the
-  pre-state changes nothing on a clean success", not as a fourth retry row. Two
-  cells the fixture does **not** contain: a successful `-cli-zst` install from each
-  pre-state, and a *failing* retry from each — the second is why the row above is
-  scoped to successful installs.
+  **Control, run separately:** a successful `-cli-url` install (not a retry), each
+  binary × each pre-state — **identical in all four cells**. ⚠️ It varies the source
+  as well as the outcome, so read it as "the pre-state changes nothing on a clean
+  success", not as a fifth row of the table. The cell the fixture does **not**
+  contain is a *failing* retry from either pre-state, which is why the finding below
+  is scoped to successful installs.
 
   Three things follow, and one does not. **The retry's reply and on-disk end state
   are identical in all four cells**, so the leftover directory cannot change what a
@@ -1705,7 +1710,10 @@ completes it with `git.worktree_remove`, which shares the predicate
   fail→fail pair below shows the split persisting. **The on-disk delta is
   conditional on the cli-dir being absent:** pre-create it and claustrum's *failing*
   install leaves exactly what the reference leaves, so the delta is narrower than a
-  flat reading of "creates nothing" suggests. **It does not self-heal** — measured
+  flat reading of "creates nothing" suggests. ⚠️ Measured on the **short-artifact**
+  row; for the interrupted-transfer row it is derived (neither binary removes a
+  pre-existing cli-dir, and claustrum's download temp is removed on the error path),
+  not run. **It does not self-heal** — measured
   with a fail→fail pair from a fresh cli-dir, where the reference leaves the empty
   directory after both and claustrum leaves nothing after both. ⚠️ The reason is
   *not* that claustrum never creates the directory (it does — `os.MkdirAll`); it is
@@ -1723,16 +1731,18 @@ completes it with `git.worktree_remove`, which shares the predicate
   "empty version dir" has a second reading. Pre-existing as an empty directory, as
   an empty file, and as an executable exiting 3: both binaries report
   `cliWasPresent:false` and install over it — six cells, all identical.
-- **The cache-hit predicate keys on the probe's exit status on both binaries**
-  (same run), which is what makes the rows above readable. Pre-placing an executable
+- **The cache-hit predicate keys on the probe's exit status, and on neither
+  output-based reading tested** (same run), which is what makes the rows above
+  readable. Pre-placing an executable
   `cliDir/<version>`: one that prints a version and exits 0 → `cliWasPresent:true`,
   not replaced; one that exits 0 printing **nothing** → also `cliWasPresent:true`,
   not replaced; one that exits 0 printing a **contradicting** version (`9.9.9` under
   `-cli-version 1.0.0`) → also `cliWasPresent:true`, not replaced; one that exits 3
   → `cliWasPresent:false` and replaced. Identical on both binaries in all four. So
-  the reference requires **runnability**, not mere presence, and keys on the exit
-  status rather than on the probe's output — the silent and contradicting rows are
-  what exclude the two output-based readings. ⚠️ The first row is also the
+  the reference requires **runnability**, not mere presence. The silent row
+  excludes "needs non-empty output" and the contradicting row excludes "needs a
+  matching version"; all three cells exit 0, so output-independence in general is
+  not established — only those two readings are. ⚠️ The first row is also the
   **positive control**: nothing else in this run moved `cliWasPresent` off `false`,
   so without it "all identical" would have rested on an instrument never shown able
   to say "present".
@@ -1758,9 +1768,11 @@ completes it with `git.worktree_remove`, which shares the predicate
   flat in the blob size — measured 886 MB → 10 MB on a 400 MiB
   payload. Verifying before decompressing therefore costs one full read of the
   blob from disk before decompression starts, and nothing resident. **No claim is
-  made here about the reference's own memory behaviour**: whether it streams,
-  buffers, or decompresses concurrently was never measured, and the trade above
-  stands without it.
+  made here about the reference's own memory behaviour**: whether it streams or
+  buffers was never measured, and the trade above stands without it. (The
+  *concurrency* half is no longer open — measured 2026-08-08, decompressed output
+  is already in the cli-dir mid-download, so it does decompress as the stream
+  arrives. That says nothing about resident size.)
 - **Not the same thing as D1.** D1 is about *whether* the local `-cli-zst` blob is
   verified at all; D13 is about the *order* of verify and decompress on the
   `-cli-url` download.
