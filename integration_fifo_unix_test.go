@@ -207,6 +207,15 @@ func mustMkfifo(t *testing.T, path string) {
 // shows it; the count is deliberately left unstated.) Same reasoning as
 // harness_test.go's own socket dir, and the same silent-skip shape mustMkfifo
 // exists to prevent — which is why the bind failure is now fatal.
+//
+// ⚠️ BOTH guards in this test are unprotected, measured by mutation: reverting the
+// bind t.Fatalf to a t.Skipf, or flipping the GOOS gate to `== "linux"`, deletes
+// this test with a fully green suite and no red run anywhere. That is inherent —
+// no assertion can observe a test that never ran — and it is the same exposure
+// mustMkfifo and TestSocketListNonDirErrorText carry, not new debt here. The only
+// real mitigation is a CI check on the skip LIST (the macOS leg runs 4 skips and
+// origin/main runs 3; a change in that count is the signal). Recorded so the next
+// person to touch these two lines knows nothing will stop them.
 func TestSocketFilesReadSocketErrorText(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("open() errno on a socket is platform-specific (linux ENXIO / darwin EOPNOTSUPP)")
