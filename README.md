@@ -144,7 +144,10 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   `-max-extract-bytes` (D3) opts into a `files.extract_tar` size cap — **off by default**,
   because a cap fails an extraction the reference completes (measured to 629 MB). This one
   **is** wire-visible when enabled: exceeding it returns an error frame the reference has no
-  way to produce. Three `-install` knobs are off by default for the same reason:
+  way to produce. `-git-timeout` (D5) opts into a deadline on every git invocation —
+  also **off by default**, because the reference showed no such deadline at the
+  durations probed; opted in it is wire-visible too (a `-32603` carrying
+  `signal: killed`, among other arms). Three `-install` knobs are off by default for the same reason:
   `-max-cli-bytes` (D10) caps the decompressed CLI and the download body,
   `-cli-probe-timeout` (D11) bounds the `<cli> --version` runnability probe — measured, the
   reference installs a CLI that answers in 90 s, so any deadline at or below that fails an
@@ -178,9 +181,10 @@ deliberate divergences** — see
 [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity); the bounds
 D11/D12 in particular are wall-clock thresholds, so an honest-but-slow CLI or download diverges
 once they apply — which now means only when `-cli-probe-timeout` (D11) or
-`-cli-download-timeout` (D12) is opted into, since both are off by default. Two
-wall-clock thresholds DO still apply by default: D5's 60 s git cap (all platforms)
-and D14's 5 s `ldd` cap (linux). The harness
+`-cli-download-timeout` (D12) is opted into, since both are off by default. One
+wall-clock threshold DOES still apply by default: D14's 5 s `ldd` cap (linux).
+D5's 60 s git cap was flipped to opt-in (`-git-timeout` / the `git-timeout` config
+key) and is off unless asked for. The harness
 lives in `scratch/` (local, not published).
 
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same

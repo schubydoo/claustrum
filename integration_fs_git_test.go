@@ -910,8 +910,9 @@ func TestSocketWorktreeCreateFailureCarriesGitStderr(t *testing.T) {
 //
 // gitTimeout is deliberately NOT overridden here. An earlier version set it to
 // 30s, which read as "exercise the deadline" and asserted nothing: the test
-// passes identically without the override, because the production default is
-// already 60s and git finishes in milliseconds either way.
+// passes identically without the override. Since D5's flip the production default
+// is 0 — no deadline armed at all — so there is even less to exercise; what this
+// pins is the success path, which must not be reported as a timeout either way.
 //
 // Cross-platform on purpose. Nothing here is POSIX — real git, the daemon's own
 // dispatch — and it lived in the unix-gated file only by accident of where it was

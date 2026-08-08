@@ -259,20 +259,16 @@ If the check reports drift:
 > - **CT-2** — `-keep-children` leaves children running across shutdown.
 > - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /
 >   `metrics-addr` / `listen-pipe` / `max-extract-bytes` / `max-cli-bytes` /
->   `cli-probe-timeout` / `cli-download-timeout`).
+>   `cli-probe-timeout` / `cli-download-timeout` / `git-timeout`).
 > - **CT-5** — `-listen-pipe`, the additional Windows named-pipe transport.
 >
 > **Always-on and measured — a probe that reaches the path *may* see a real
-> difference**, and that is expected, not drift. ⚠️ Two members have probe shapes
-> that show **nothing**: D5 (both ways, flagged inline) and D14 (the surviving-child
-> stall, where neither binary replies). A null result there does not rule them out:
+> difference**, and that is expected, not drift. ⚠️ One member has a probe shape
+> that shows **nothing**: D14 (the surviving-child
+> stall, where neither binary replies). A null result there does not rule it out:
 > - **D2** — a destructive path target that is or contains the home directory is
 >   refused (`files.extract_tar` `destDir`, `git.worktree_remove` `worktreePath`).
 > - **D4** — `files.read` refuses a non-regular file.
-> - **D5** — every git invocation is capped at 60 s. **Two ways to probe this and
->   see nothing:** a harness deadline under 60 s records "no reply" for both
->   binaries, and a git that spawns a surviving child blocks claustrum past its
->   own cap too.
 > - **D6 / D7** — `-cli-version` must be a single path component, and must not
 >   collide with the install temp sweep.
 > - **D8** — `remote-server.log` is declined rather than shared with another user.
@@ -308,7 +304,7 @@ If the check reports drift:
 >   trigger unreachable by honest callers — it is not, and that is retracted there.
 >   ⚠️ **D13's always-on status is UNRESOLVED** — the two measured rows differ on disk
 >   too (the reference creates an empty cli-dir, claustrum creates none), so it is
->   listed in IMPROVEMENTS beside D4, D5 and D14, not justified.
+>   listed in IMPROVEMENTS beside D4 and D14, not justified.
 >   ⚠️ **Two different honest
 >   shapes, and a triager must not merge them:**
 >   **(1) an origin serving a SHORT or truncated artifact** (bad mirror, partial
@@ -337,14 +333,14 @@ If the check reports drift:
 >   45 s reference result comes from the discriminating shape only; the
 >   surviving-child arm cannot support it, since claustrum has a deadline and looks
 >   identical there.) ⚠️ **D14's always-on status is UNRESOLVED** — a threshold with
->   no flag and no config key, listed in IMPROVEMENTS beside D4, D5 and D13.
+>   no flag and no config key, listed in IMPROVEMENTS beside D4 and D13.
 >   Check this before concluding D11 or D12 on an `ldd`-slow host — though on a stock
 >   claustrum neither is a live suspect, since both bounds are off by default. Off linux there
 >   is no probe at all, so a `libc` difference there is NOT this.
 >
 > **This list covers the D/CT-numbered divergences only.** Several claustrum-only
 > behaviors are catalogued by *tier number* instead and are just as real:
-> (tier item 5 is now fully numbered — its `gitTimeout` half is **D5** and its
+> (tier item 5 is now fully numbered — its `gitTimeout` half is **D5**, now opt-in, and its
 > `ldd` half is **D14**, both listed above), **item 16** (`-metrics-addr`), **item 17** (the orphaned
 > previous process tree is torn down), **item 18** (`-token-fd`), **item 21** (the
 > signal is skipped when the child has already exited). Check both indexes before

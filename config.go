@@ -70,6 +70,11 @@ type config struct {
 	// file". Same reachability argument as maxCLIBytes: it applies on -install,
 	// whose argv Claude Desktop owns.
 	cliDownloadTimeout *time.Duration
+	// gitTimeout mirrors -git-timeout; nil means "not set in the file". This one
+	// applies to -serve rather than -install, but the reachability argument is the
+	// same: Claude Desktop owns that argv too, so the config key is how an operator
+	// actually opts in.
+	gitTimeout *time.Duration
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
@@ -189,6 +194,15 @@ func applyConfigKey(cfg *config, key, val string) {
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.cliDownloadTimeout = &d
 		}
+	case "git-timeout":
+		// A Go duration ("60s", "2m"); 0 disables the deadline (the default).
+		// Negative and unparseable values are rejected on the same reasoning as the
+		// two -install durations above, including the zero-spelling edge cases: all
+		// of them reach d == 0, which IS the disabled value, so nothing accepted here
+		// can switch the deadline on by accident.
+		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
+			cfg.gitTimeout = &d
+		}
 	}
 	// Unknown keys are intentionally ignored (forward-compatibility).
 }
@@ -278,6 +292,20 @@ func (cfg config) effectiveCLIProbeTimeout(cliVal time.Duration, cliSet bool) ti
 	if cliVal < 0 {
 		// [Install], not [Server]: isRunnable is reached only from the -install arm.
 		logWarnf("[Install] -cli-probe-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
+		return 0
+	}
+	return cliVal
+}
+
+// effectiveGitTimeout applies the same precedence for -git-timeout, and the same
+// negative handling. [Server], not [Install]: this bound governs the git.* methods,
+// which only the daemon serves.
+func (cfg config) effectiveGitTimeout(cliVal time.Duration, cliSet bool) time.Duration {
+	if !cliSet && cfg.gitTimeout != nil {
+		return *cfg.gitTimeout
+	}
+	if cliVal < 0 {
+		logWarnf("[Server] -git-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
 		return 0
 	}
 	return cliVal
