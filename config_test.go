@@ -77,6 +77,34 @@ func TestParseConfig_KeepChildren(t *testing.T) {
 	}
 }
 
+func TestParseConfig_FilesReadRegularOnly(t *testing.T) {
+	cases := []struct {
+		body string
+		want *bool
+	}{
+		{"files-read-regular-only = true", boolp(true)},
+		{"files-read-regular-only = ON", boolp(true)},
+		{"files-read-regular-only = 1", boolp(true)},
+		{"files-read-regular-only = false", boolp(false)},
+		{"files-read-regular-only = 0", boolp(false)},
+		// An unrecognised value leaves the key unset, so the guard stays OFF —
+		// the direction that matters, since a typo must never switch a divergence on.
+		{"files-read-regular-only = maybe", nil},
+		{"files-read-regular-only =", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.body, func(t *testing.T) {
+			got := parse(t, tc.body).filesReadRegularOnly
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("filesReadRegularOnly = %v, want nil", *got)
+			case tc.want != nil && (got == nil || *got != *tc.want):
+				t.Fatalf("filesReadRegularOnly = %v, want %v", got, *tc.want)
+			}
+		})
+	}
+}
+
 func TestParseConfig_ListenPipe(t *testing.T) {
 	cases := []struct {
 		body string
@@ -636,6 +664,36 @@ func TestGitCtxArmsNoDeadlineWhenOff(t *testing.T) {
 	}
 	if remaining := time.Until(dl); remaining <= 0 || remaining > 30*time.Second {
 		t.Errorf("deadline is %s away, want (0, 30s]", remaining)
+	}
+}
+
+func TestPrecedenceFilesReadRegularOnly(t *testing.T) {
+	withFile := config{filesReadRegularOnly: boolp(true)}
+	if got := withFile.effectiveFilesReadRegularOnly(false, true); got {
+		t.Error("explicit CLI -files-read-regular-only=false should win over config true")
+	}
+	if got := withFile.effectiveFilesReadRegularOnly(false, false); !got {
+		t.Error("config files-read-regular-only=true should apply when CLI unset")
+	}
+	if got := (config{filesReadRegularOnly: boolp(false)}).effectiveFilesReadRegularOnly(true, true); !got {
+		t.Error("explicit CLI true should win over config false")
+	}
+	if got := (config{}).effectiveFilesReadRegularOnly(false, false); got {
+		t.Error("empty config should leave the guard OFF — that is the parity default")
+	}
+}
+
+// The SHIPPED default, pinned. Every test that exercises the guard assigns
+// filesReadRegularOnly explicitly, and effectiveFilesReadRegularOnly is only ever
+// asked what to do with a false flag value — so without this, reinstating
+// `var filesReadRegularOnly = true` would pass the rest of the suite and silently
+// resurrect the -32602 D4's flip removed.
+//
+// Order-safe: every test that changes filesReadRegularOnly restores it with
+// t.Cleanup, and none of them call t.Parallel.
+func TestFilesReadRegularOnlyDefaultIsOff(t *testing.T) {
+	if filesReadRegularOnly {
+		t.Error("package default filesReadRegularOnly = true, want false — the guard must ship OFF (D4)")
 	}
 }
 

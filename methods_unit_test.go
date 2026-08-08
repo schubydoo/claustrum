@@ -141,10 +141,18 @@ func TestFilesReadDirectoryAndMissing(t *testing.T) {
 	}
 }
 
-// files.read must reject non-regular files (character devices, FIFOs, sockets)
-// without reading from them. Without this guard, os.ReadFile on /dev/urandom or
-// /dev/zero loops until the process OOMs (probe-verified against reference binary).
-func TestFilesReadRejectsNonRegular(t *testing.T) {
+// D4, both arms on one input. Opted in, files.read refuses a character device
+// without reading from it — that guard exists because os.ReadFile on /dev/urandom
+// or /dev/zero never reaches EOF and grows until the process OOMs. At the SHIPPED
+// default it is off, and /dev/null reads as the reference reads it:
+// {"content":"","exists":true}. That row is the divergence D4's flip removed, so
+// it is asserted rather than left to the socket golden alone.
+//
+// /dev/null is deliberately the input for both arms: it is the one non-regular
+// file whose unguarded read terminates, so the off arm can assert a reply instead
+// of a timeout. The blocking shape (a FIFO) is covered in
+// integration_fifo_unix_test.go, where a writer is supplied.
+func TestFilesReadNonRegular(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("character devices not applicable on Windows")
 	}
@@ -152,10 +160,20 @@ func TestFilesReadRejectsNonRegular(t *testing.T) {
 	if err != nil || fi.Mode().IsRegular() {
 		t.Skip("/dev/null unavailable or unexpectedly regular")
 	}
+	old := filesReadRegularOnly
+	t.Cleanup(func() { filesReadRegularOnly = old })
 	s := newTestServer(t)
+
+	filesReadRegularOnly = false
 	got := dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": "/dev/null"}))
+	if !strings.Contains(got, `"content":"","exists":true`) || strings.Contains(got, `"error"`) {
+		t.Errorf("files.read(/dev/null) off = %s, want the reference's empty-content result", got)
+	}
+
+	filesReadRegularOnly = true
+	got = dispatchRaw(t, s, rpcLine(t, "files.read", map[string]any{"path": "/dev/null"}))
 	if !strings.Contains(got, "not a regular file") {
-		t.Errorf("files.read(/dev/null) = %s, want not-a-regular-file error", got)
+		t.Errorf("files.read(/dev/null) on = %s, want not-a-regular-file error", got)
 	}
 }
 

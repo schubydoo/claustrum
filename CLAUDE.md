@@ -194,6 +194,21 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   and `git.list_branches`, an `isRepo:false` arm, and a `timed out after <dur>`
   reply — and the bound is **softer than it looks**: `CombinedOutput` waits on the
   output pipe, so a git leaving a surviving child blocks past the deadline anyway.
+- **The `files.read` regular-file guard is OFF by default, and that is the parity
+  position (D4).** `filesReadRegularOnly` refused every non-regular path with
+  `-32602 files.read: not a regular file`; measured, the reference reads
+  `/dev/null` as `{"content":"","exists":true}` and blocks on a writerless FIFO
+  until one opens, refusing neither — so an honest caller reading a character
+  device got an error the reference never produces, with no way through (Desktop
+  owns the `-serve` argv). Opt in via `-files-read-regular-only` **or** the
+  `files-read-regular-only` key in `claustrum.conf` (the config key is the
+  reachable one). Off, the predicate is **not evaluated at all** — there is no
+  "narrower check" to write, because `/dev/null` and `/dev/zero` are
+  indistinguishable by mode, which is exactly why this is a flag. ⚠️ **The default
+  costs two bounds**: a writerless FIFO parks a request goroutine and an fd, and
+  `os.ReadFile` on `/dev/zero` never reaches EOF. Both are the reference's own
+  behavior — the FIFO row measured on it, the OOM row **derived** from it having no
+  mode check, not measured.
 - **The `-install` CLI size cap is OFF by default (D10).** `maxCLIBytes` governs
   both the decompressed CLI and the download body; measured on both paths, the
   reference took a 600 MiB payload all the way to the runnability check, so a
@@ -276,7 +291,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   it**. Saying the divergence is "total" is wrong, and this file used to say it.
   ⚠️ **D14 is NOT settled**: it is a threshold with no flag and no config key, its
   honest-path cost is untested in either direction, and IMPROVEMENTS lists it beside
-  D4 and D13 as unresolved rather than justified.
+  D13 as unresolved rather than justified. D4 was in that group until its flip, and
+  is the closer precedent: its honest-path cost *was* measured and it was flipped
+  anyway, not argued for.
   **D13 is verify-before-decompress ordering and its trigger is REACHABLE** — the
   claim that no honest caller produces the input lived in `IMPROVEMENTS.md`, not
   here, and is now retracted there. The reachable case is narrower than "flaky

@@ -452,21 +452,32 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
   "unlimited".** Probe-measured: 262144 bytes reads, 262145 errors. A positive
   `maxBytes` is honored verbatim, above or below that default — so the 256 KiB
   figure is a fallback, not a ceiling.
-- **Any non-regular file → `-32602 files.read: not a regular file`.** This is an
-  intentional divergence (D4), and the only one on this method — see below.
+- **Non-regular files (FIFOs, sockets, devices) read exactly as the reference
+  reads them** at the shipped default. An **opt-in** guard refuses them instead
+  with `-32602 files.read: not a regular file` — divergence D4, off by default,
+  see below.
 
-##### Non-regular files (intentional divergence, D4)
+##### Non-regular files (opt-in divergence, D4)
 
-claustrum refuses to read anything that is not a regular file. The reference does
-not, and the difference is visible two ways (probe-measured against `5db5e4a`):
+**Off by default, and off is the parity position.** With
+`-files-read-regular-only` (or `files-read-regular-only = true` in
+`claustrum.conf`) claustrum refuses to read anything that is not a regular file.
+The reference does not refuse them, and the difference an operator opts into is
+visible two ways (probe-measured against `5db5e4a`):
 
-| path | reference | claustrum |
+| path | reference · **claustrum at the default** | claustrum with `-files-read-regular-only` |
 |---|---|---|
 | a FIFO | **no frame while the FIFO has no writer**; the reply arrives normally once one opens | `-32602 files.read: not a regular file` |
 | `/dev/null` | `{"content":"","exists":true}` | `-32602 files.read: not a regular file` |
 
-The FIFO case is why the guard exists. A read of a FIFO with no writer blocks in
-`open`, so the reference emits no frame for as long as that holds and a
+⚠️ **The predicate is `Mode().IsRegular()`, so the guard is whole — on or off, never
+narrowed.** Permitting *only* the harmless character devices is not an option a
+config key can express: `/dev/null` and `/dev/zero` are indistinguishable by mode,
+so any predicate that admits the first admits the second. That is why D4 is a flag
+rather than a smarter check.
+
+The FIFO case is why the guard was written. A read of a FIFO with no writer blocks
+in `open`, so the reference emits no frame for as long as that holds and a
 frame-diffing comparison cannot see the request at all.
 
 **It is not a permanent hang, and this document used to say it was.** Measured:
@@ -481,18 +492,25 @@ that wrapped the read in `timeout 8` and never opened a writer; a harness
 deadline shorter than the subject's own blocking behaviour records "no reply" by
 construction.
 
-So the divergence is real but narrower than stated: a client that reads a FIFO
-nothing ever writes to waits indefinitely on the reference, and claustrum turns
-that into an immediate, actionable error instead.
+So the guard's own case is real but narrower than stated: a client that reads a
+FIFO nothing ever writes to waits indefinitely on the reference, and an opted-in
+claustrum turns that into an immediate, actionable error instead.
 
-The `/dev/null` row is the cost of that guard rather than a second decision: the
-check is `Mode().IsRegular()`, so it also rejects character devices the reference
-reads happily. Narrowing it to permit *some* character devices would reopen the
-same hazard on others — `/dev/zero` and `/dev/random` are unbounded reads, and
-the reference has no protection against those either.
+The `/dev/null` row is the cost of the guard rather than a second decision, and it
+is what made D4 opt-in: a client reading a character device is an **honest**
+caller, the reference answers it, and Claude Desktop owns the `-serve` argv — so
+with the guard always on there was no way through. ⚠️ Turning it off is a trade,
+not a free fix. What an operator gives up is the two bounds the guard supplied:
 
-So a client that needs `/dev/null` semantics should treat an empty file as the
-portable spelling. Everything else about `files.read` is byte-identical.
+- a FIFO with no writer parks a request goroutine and an fd until one opens;
+- `os.ReadFile` on `/dev/zero` or `/dev/urandom` never reaches EOF, so the daemon
+  grows until it OOMs.
+
+**Both are the reference's behavior, not a claustrum regression** — it has no
+protection against either. An operator who would rather have the bound than the
+parity sets the flag or the config key.
+
+Everything else about `files.read` is byte-identical either way.
 
 #### files.validate
 
@@ -1046,7 +1064,7 @@ reference unless marked **claustrum-only**.
 ### -serve — run the daemon
 
 ```text
-claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>] [-git-timeout <dur>]
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>] [-git-timeout <dur>] [-files-read-regular-only]
 ```
 
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
@@ -1207,6 +1225,29 @@ unset in the child before it spawns anything, so it never leaks downstream.
   point above. Negative or unparseable values are ignored, so a typo can never
   silently enable a cap.
 
+**`-files-read-regular-only`** *(claustrum-only, D4)* — opt-in `files.read` guard:
+
+- **Off by default**, which is what the reference does: it reads `/dev/null` as
+  `{"content":"","exists":true}` and blocks on a writerless FIFO rather than
+  refusing either. claustrum's default answers the identical frames.
+- Set it and any non-regular path answers
+  `-32602 files.read: not a regular file` — a frame the reference never produces,
+  hence the divergence. In exchange the daemon stops parking a goroutine on a
+  writerless FIFO and stops OOMing on `/dev/zero`.
+- The guard is **whole**: the predicate is `Mode().IsRegular()`, and `/dev/null`
+  and `/dev/zero` are indistinguishable by mode, so there is no narrower setting
+  to offer. Full detail and the measured rows: [files.read → *Non-regular
+  files*](#non-regular-files-opt-in-divergence-d4).
+- The guard **shipped on by default** (PR 56) and Claude Desktop owns the argv
+  (the same **driver** claim recorded under `-max-extract-bytes` above, with its
+  provenance and reopen trigger in [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver
+  claims and their provenance*), so a caller reading a character device had no way
+  through. Flipping the default to off is the parity fix.
+- Also settable in `claustrum.conf` as `files-read-regular-only = true|false` (an
+  explicit `-files-read-regular-only` flag wins). **That is the reachable knob** —
+  see the argv point above. Unrecognised values are ignored, so a typo leaves the
+  guard off rather than switching a divergence on.
+
 ### -bridge — stdio↔socket relay
 
 ```text
@@ -1288,7 +1329,8 @@ against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — s
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
 `metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes`,
-`cli-probe-timeout`, `cli-download-timeout` and `git-timeout` defaults (precedence: explicit CLI flag > config > default). See
+`cli-probe-timeout`, `cli-download-timeout`, `git-timeout` and
+`files-read-regular-only` defaults (precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 

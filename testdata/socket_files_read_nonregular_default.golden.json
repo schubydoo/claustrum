@@ -1,0 +1,26 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "content": "regular content\n",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "content": "fifo content\n",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "content": "",
+      "exists": true
+    }
+  }
+]

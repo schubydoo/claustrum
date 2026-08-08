@@ -140,6 +140,8 @@ func main() {
 
 		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the <cli> --version runnability probe with this wall-clock `duration` (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
 
+		readRegularOnly = flag.Bool("files-read-regular-only", false, "Make files.read refuse anything that is not a regular file (FIFO, socket, character/block device) with -32602 \"files.read: not a regular file\". Off by default, which is what the reference does — it reads /dev/null happily and blocks on a writerless FIFO; on is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the files-read-regular-only key in claustrum.conf is usually the reachable way to set this.")
+
 		gitTimeoutFlag = flag.Duration("git-timeout", 0, "Bound every git invocation with this wall-clock `duration` (e.g. 60s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that kills any git slower than it, honest or not, and is wire-visible (e.g. -32603 \"signal: killed\"). -serve only. Claude Desktop owns the argv, so the git-timeout key in claustrum.conf is usually the reachable way to set this.")
 
 		cliDownload = flag.Duration("cli-download-timeout", 0, "Bound the whole -cli-url download exchange with this wall-clock `duration` (e.g. 10m). 0 (the default) means no bound, which is what the reference does; a non-zero value is an opt-in divergence that fails any download slower than it, honest or not. -install only. Claude Desktop owns the argv, so the cli-download-timeout key in claustrum.conf is usually the reachable way to set this.")
@@ -211,6 +213,9 @@ func main() {
 		// read the package var directly rather than taking it through the server
 		// struct, and only -serve reaches them.
 		gitTimeout = cfg.effectiveGitTimeout(*gitTimeoutFlag, cliSet["git-timeout"])
+		// Same reasoning for the files.read regular-file guard: filesRead reads the
+		// package var directly, and only -serve dispatches the method.
+		filesReadRegularOnly = cfg.effectiveFilesReadRegularOnly(*readRegularOnly, cliSet["files-read-regular-only"])
 		runServe(resolveSocket(), *tokenFile, *tokenFd,
 			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
 			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]),

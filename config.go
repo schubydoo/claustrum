@@ -75,6 +75,11 @@ type config struct {
 	// same: Claude Desktop owns that argv too, so the config key is how an operator
 	// actually opts in.
 	gitTimeout *time.Duration
+	// filesReadRegularOnly mirrors -files-read-regular-only; nil means "not set in
+	// the file". A bool rather than a threshold: the guard it gates is a predicate
+	// on the file's mode, so there is no value to tune — only on or off. Same
+	// reachability argument as the rest, on the -serve argv.
+	filesReadRegularOnly *bool
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
@@ -203,6 +208,14 @@ func applyConfigKey(cfg *config, key, val string) {
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.gitTimeout = &d
 		}
+	case "files-read-regular-only":
+		// A bool, not a threshold — false disables the guard (the default) and is
+		// the parity position. parseConfigBool rejects anything it does not
+		// recognise, so a typo leaves the guard off rather than switching on a
+		// divergence the operator did not ask for.
+		if b, ok := parseConfigBool(val); ok {
+			cfg.filesReadRegularOnly = &b
+		}
 	}
 	// Unknown keys are intentionally ignored (forward-compatibility).
 }
@@ -307,6 +320,17 @@ func (cfg config) effectiveGitTimeout(cliVal time.Duration, cliSet bool) time.Du
 	if cliVal < 0 {
 		logWarnf("[Server] -git-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
 		return 0
+	}
+	return cliVal
+}
+
+// effectiveFilesReadRegularOnly applies the same precedence for
+// -files-read-regular-only. No negative-value normalisation to do here: a bool has
+// only the two states, and false — the zero value, the declared flag default and
+// what an unrecognised config value leaves in place — is the parity position.
+func (cfg config) effectiveFilesReadRegularOnly(cliVal, cliSet bool) bool {
+	if !cliSet && cfg.filesReadRegularOnly != nil {
+		return *cfg.filesReadRegularOnly
 	}
 	return cliVal
 }

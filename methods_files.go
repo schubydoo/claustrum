@@ -137,6 +137,28 @@ func filesList(req *request) response {
 	return okResult(req.ID, listResult{Entries: out})
 }
 
+// filesReadRegularOnly makes filesRead refuse anything that is not a regular
+// file. It bounds two real hazards: a read of a FIFO with no writer blocks in
+// open, and os.ReadFile on /dev/zero or /dev/urandom never reaches EOF, so the
+// daemon grows until it OOMs.
+//
+// FALSE (the default) DISABLES IT, which is what the reference does. Measured: it
+// reads /dev/null and answers {"content":"","exists":true} where a guarded
+// claustrum answers -32602, and it replies normally the instant a FIFO's writer
+// opens rather than refusing the read. The guard shipped on by default in PR 56
+// and Claude Desktop owns the -serve argv, so a caller reading a character device
+// had no way through. It is now opt-in: divergence D4, set via
+// -files-read-regular-only or the files-read-regular-only key in claustrum.conf.
+// Also set directly by tests.
+//
+// ⚠️ The two hazards are the COST of turning it off, and they are the reference's
+// behavior, not a claustrum regression — the same trade the other five flips make.
+// Do not "improve" the off path by narrowing the predicate to permit only some
+// character devices: /dev/null would pass and so would /dev/zero and /dev/random,
+// which is the unbounded read. On or off, whole — that is why this is a flag and
+// not a smarter check.
+var filesReadRegularOnly bool
+
 func filesRead(req *request) response {
 	var p pathParams
 	if bad := bindParams(req, &p); bad != nil {
@@ -152,7 +174,10 @@ func filesRead(req *request) response {
 	if fi.IsDir() {
 		return errResult(req.ID, codeInvalidParam, "files.read: path is a directory")
 	}
-	if !fi.Mode().IsRegular() {
+	// D4 FLIP: opted in only. Off (the default), the predicate is not evaluated at
+	// all and the read proceeds exactly as the reference's does — including the
+	// blocking and unbounded cases documented on the var above.
+	if filesReadRegularOnly && !fi.Mode().IsRegular() {
 		return errResult(req.ID, codeInvalidParam, "files.read: not a regular file")
 	}
 	// An absent, zero, or negative maxBytes is NOT "no limit" — the reference

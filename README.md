@@ -147,7 +147,10 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   way to produce. `-git-timeout` (D5) opts into a deadline on every git invocation —
   also **off by default**, because the reference showed no such deadline at the
   durations probed; opted in it is wire-visible too (a `-32603` carrying
-  `signal: killed`, among other arms). Three `-install` knobs are off by default for the same reason:
+  `signal: killed`, among other arms). `-files-read-regular-only` (D4) opts into
+  refusing a `files.read` of a FIFO, socket or device — **off by default**, because
+  the reference reads `/dev/null` happily and blocks on a writerless FIFO rather
+  than refusing either; opted in it is wire-visible as a `-32602`. Three `-install` knobs are off by default for the same reason:
   `-max-cli-bytes` (D10) caps the decompressed CLI and the download body,
   `-cli-probe-timeout` (D11) bounds the `<cli> --version` runnability probe — measured, the
   reference installs a CLI that answers in 90 s, so any deadline at or below that fails an
@@ -184,7 +187,10 @@ once they apply — which now means only when `-cli-probe-timeout` (D11) or
 `-cli-download-timeout` (D12) is opted into, since both are off by default. One
 wall-clock threshold DOES still apply by default: D14's 5 s `ldd` cap (linux).
 D5's 60 s git cap was flipped to opt-in (`-git-timeout` / the `git-timeout` config
-key) and is off unless asked for. The harness
+key) and is off unless asked for, as was D4's `files.read` regular-file guard
+(`-files-read-regular-only` / the `files-read-regular-only` key) — that one is not
+a threshold but a mode check, so what it refused was an honest read of a character
+device. The harness
 lives in `scratch/` (local, not published).
 
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same
