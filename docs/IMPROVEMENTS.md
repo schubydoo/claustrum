@@ -29,8 +29,9 @@ contract so refactors can't drift silently.
 
 ### 4 · Atomic `-install` extract ✅ — impact M / cost L
 
-`ensureCLI` now decompresses + chmods + verifies at `cliPath.tmp`, then
-`os.Rename`s into place, so an interrupted install never leaves a half-written
+`ensureCLI` now decompresses + chmods + verifies at a staging file beside
+`cliPath` — `.fetch-<random>`, deliberately **not** `<cliPath>.tmp`, so the orphan
+sweep can reclaim it — then `os.Rename`s into place, so an interrupted install never leaves a half-written
 or non-runnable cliPath. Behavior-compatible — the end state and
 `__INSTALL_RESULT__` facts are identical (cliPath appears only as a complete 0755
 verified binary; same "not runnable" error). ⚠️ This entry used to call the
@@ -1525,9 +1526,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   **`$TMPDIR/claustrum-fetch-<random>` when it does not, which is the first-install
   case**: `fetchToFile` runs *before* `ensureCLI`'s `os.MkdirAll`, so its
   `os.CreateTemp` in the cli-dir fails and falls back — putting the blob on the
-  very `/tmp` that keeping it beside the destination exists to avoid. No claim is
-  made here about whether the reference creates anything equivalent — that was
-  never measured, as D10 and PROTOCOL both record.) The divergence appears
+  very `/tmp` that keeping it beside the destination exists to avoid. The reference's
+  mid-download file is **not** equivalent: measured 2026-08-08 its
+  `<cli-dir>/.fetch-<random>` holds decompressed output, not a download blob, so
+  there is nothing there for this fallback to correspond to. Whether a SIGKILL
+  leaves it behind is unmeasured — though `.fetch-*` is the swept namespace, so a
+  leftover would be reclaimed by the next install's sweep where claustrum's
+  `.blob-` is not, which is why that naming rule exists. Derived, not run.) The divergence appears
   against a stalled or black-holed download — where the reference was still
   waiting at 400 s — **and, by the same argument as D11, against an honest
   download that is merely too slow.** `http.Client.Timeout` bounds the whole

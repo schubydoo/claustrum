@@ -1623,10 +1623,12 @@ Checksum + error framing (probe-verified):
   ⚠️ The two rows measured for disk state — the short artifact and the interrupted
   transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
-  ⚠️ **That holds only when the cli-dir did not already exist** (measured
-  2026-08-08): pre-create it and claustrum's failing install leaves exactly what the
-  reference leaves, because the diverging path returns at the checksum comparison
-  before the cli-dir would be created. It does not self-heal — two failing installs
+  ⚠️ **That holds only when the cli-dir did not already exist:** pre-create it and
+  claustrum's failing install leaves exactly what the reference leaves. Measured
+  2026-08-08 on the **short-artifact** row, where the diverging path returns at the
+  checksum comparison before the cli-dir would be created; **derived** for the
+  interrupted transfer, which returns even earlier — `io.Copy`'s error, with the
+  partial download removed on that path — and was not run pre-created. It does not self-heal — two failing installs
   from a fresh cli-dir leave the same split — and a *successful* install is
   identical on both binaries in either pre-state.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
@@ -1711,8 +1713,8 @@ Staging and cleanup (probe-verified):
   surfacing on an interrupted transfer. Claustrum instead has the *compressed body*
   on disk, in `$TMPDIR` on a first install and in the cli-dir once it exists.
   ⚠️ **These are different artifacts, so do not read the rows as a like-for-like
-  location difference** — an earlier version of this bullet called the reference's
-  file "the download body", which the probe had not established. Claustrum's two
+  location difference:** the probe read each file's name and first bytes, never its
+  provenance, and the two do not hold the same thing. Claustrum's two
   rows are the control that makes the reference row readable: the same instrument
   reads zstd magic there, so it can tell the two apart.
   The **end state is identical on both binaries in both pre-states**, so no frame
