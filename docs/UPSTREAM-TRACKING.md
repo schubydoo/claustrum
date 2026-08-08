@@ -179,9 +179,12 @@ If the check reports drift:
 > on 2026-08-06. Re-add it if another entry ever needs it: an unmeasured
 > divergence must not sit silently among measured ones.)
 >
-> **Opt-in — off the default path.** The JSON-RPC battery (`validate.sh` /
+> **Off the default path.** The JSON-RPC battery (`validate.sh` /
 > `battery.js`) never exercises these, so they won't show as a diff there:
 > - **D1** — `-cli-zst` SHA-256 verification when a `-cli-checksum` is supplied.
+>   ⚠️ **D1 is caller-activated, NOT operator-declinable** — it fires whenever the
+>   caller supplies `-cli-checksum`, and on `-install` that caller is Desktop. Do not
+>   rule it out as "nobody opted in"; see IMPROVEMENTS D1.
 >   ⚠️ Unlike the rest of this group, `scratch/probe/cli_probe.sh` **does** drive
 >   this path on both binaries — the JSON-RPC battery is not the only instrument.
 > - **D3** — the `files.extract_tar` size cap, `-max-extract-bytes` / the
@@ -259,8 +262,10 @@ If the check reports drift:
 >   `cli-probe-timeout` / `cli-download-timeout`).
 > - **CT-5** — `-listen-pipe`, the additional Windows named-pipe transport.
 >
-> **Always-on and measured — a probe that reaches the path sees a real
-> difference**, and that is expected, not drift:
+> **Always-on and measured — a probe that reaches the path *may* see a real
+> difference**, and that is expected, not drift. ⚠️ Two members have probe shapes
+> that show **nothing**: D5 (both ways, flagged inline) and D14 (the surviving-child
+> stall, where neither binary replies). A null result there does not rule them out:
 > - **D2** — a destructive path target that is or contains the home directory is
 >   refused (`files.extract_tar` `destDir`, `git.worktree_remove` `worktreePath`).
 > - **D4** — `files.read` refuses a non-regular file.
@@ -280,7 +285,7 @@ If the check reports drift:
 >   ⚠️ "No real client sends that" is an assertion, not a measurement — Desktop's
 >   per-method param set has never been enumerated against this binding.
 > - **Neither D11 nor D12 is in this group any more** — both bounds moved to the
->   opt-in list above and are off by default, so on a stock claustrum the
+>   off-the-default-path list above and are off by default, so on a stock claustrum the
 >   runnability probe has no deadline and the download has no bound. D11 matches the
 >   reference on every input measured (still running at 45 s; installing a CLI that
 >   answers at 90 s; above 90 s neither binary has been probed); D12 matches on the
@@ -301,7 +306,7 @@ If the check reports drift:
 > - **D13** — `-install` verifies the download's checksum BEFORE decompressing,
 >   where the reference decompresses first. `IMPROVEMENTS.md` used to call the
 >   trigger unreachable by honest callers — it is not, and that is retracted there.
->   ⚠️ **D13's always-on status is UNRESOLVED** — the failing rows differ on disk
+>   ⚠️ **D13's always-on status is UNRESOLVED** — the two measured rows differ on disk
 >   too (the reference creates an empty cli-dir, claustrum creates none), so it is
 >   listed in IMPROVEMENTS beside D4, D5 and D14, not justified.
 >   ⚠️ **Two different honest
@@ -321,7 +326,7 @@ If the check reports drift:
 >   (though the fallback usually matches the true value, so rule out the
 >   loader-glob path first — and note `libc` selects which CLI build Desktop
 >   downloads, so this symptom is not cosmetic; that last part is a **driver**
->   claim the parity harness cannot settle, see ARCHITECTURE → Provenance), **and — more likely — "the
+>   claim the parity harness cannot settle, see ARCHITECTURE → Driver claims and their provenance), **and — more likely — "the
 >   reference's `-install` never returned while claustrum's did"**. ✅ **Both sides
 >   are now measured** (the reference showed no deadline at or below 45 s), which
 >   this entry previously said was not the case. ⚠️ **But the bound fires in only

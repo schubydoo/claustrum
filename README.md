@@ -151,7 +151,8 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   install it completes — and `-cli-download-timeout` (D12) bounds the download, where the
   reference completes one taking 324 s that the retracted 5-minute default failed at 300 s.
   Each also has a `claustrum.conf` key, which is the reachable one when Claude
-  Desktop owns the argv.
+  Desktop owns the argv (a claim about the driver, not the reference — see
+  `docs/ARCHITECTURE.md` → Driver claims and their provenance).
 - **Protocol extensions** (claustrum-only, opt-in — **additions**, *not* part of the reference
   contract it mimics): `process.spawn` / `process.reattach` accept `"wantPid":true`, which adds
   `pid` + `startTime` to the result for PID-reuse / orphan detection (CT-1). These are pure
@@ -177,7 +178,9 @@ deliberate divergences** — see
 [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity); the bounds
 D11/D12 in particular are wall-clock thresholds, so an honest-but-slow CLI or download diverges
 once they apply — which now means only when `-cli-probe-timeout` (D11) or
-`-cli-download-timeout` (D12) is opted into, since both are off by default. The harness
+`-cli-download-timeout` (D12) is opted into, since both are off by default. Two
+wall-clock thresholds DO still apply by default: D5's 60 s git cap (all platforms)
+and D14's 5 s `ldd` cap (linux). The harness
 lives in `scratch/` (local, not published).
 
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same

@@ -9,7 +9,7 @@ import "path/filepath"
 //
 // ⚠️ "decides which CLI build to fetch" is a claim about the DRIVER, not about the
 // reference daemon — the parity harness cannot settle it. See
-// docs/ARCHITECTURE.md → Provenance.
+// docs/ARCHITECTURE.md → Driver claims and their provenance.
 func detectLibc() string {
 	return detectLibcWith(lddProbeTimeout, runLddVersion, filepath.Glob)
 }

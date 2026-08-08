@@ -122,7 +122,8 @@ func ensureCLI(o installOpts, cliPath string) error {
 	case o.cliZst != "":
 		// SFTP fallback: the blob arrives over an already-authenticated channel,
 		// so the reference NEVER verifies -cli-checksum here. Claustrum diverges as
-		// an opt-in hardening (IMPROVEMENTS D1): when a -cli-checksum IS supplied we
+		// a conditional hardening (IMPROVEMENTS D1), activated by the caller supplying
+		// -cli-checksum rather than by an operator: when a -cli-checksum IS supplied we
 		// verify it and reject a corrupt/tampered blob with the same "checksum
 		// mismatch" error as the -cli-url path. An ABSENT/empty checksum stays
 		// trusting — matching the reference — so honest callers are unaffected.
@@ -399,7 +400,7 @@ func isSingleComponent(name string) bool {
 // verifyChecksum returns a "checksum mismatch" error (byte-identical to the
 // reference's -cli-url path) when got does not equal expected. The -cli-url path
 // calls it unconditionally; the -cli-zst path only when a checksum is supplied
-// (IMPROVEMENTS D1, an opt-in divergence from the reference).
+// (IMPROVEMENTS D1, a conditional divergence from the reference — caller-activated).
 //
 // It takes the hex digest rather than the bytes so no caller has to hold the
 // whole blob in memory to check it: the download hashes as it streams, and the
@@ -777,7 +778,7 @@ func isRegularFile(p string) bool {
 // consequence is the wrong build being fetched, not a cosmetic field. ⚠️ That last
 // sentence is a claim about the DRIVER, not about the reference daemon — the
 // parity harness cannot confirm or refute it. See docs/ARCHITECTURE.md →
-// Provenance.
+// Driver claims and their provenance.
 //
 // 🔴 The bound is narrower than it reads, and this comment used to overstate it by
 // calling the divergence "total". MEASURED, against a STALLED ldd:

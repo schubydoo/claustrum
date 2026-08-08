@@ -1191,9 +1191,10 @@ unset in the child before it spawns anything, so it never leaks downstream.
   break: a caller with a tree over the cap got an error with no way through,
   because Claude Desktop owns the argv (a **driver** claim, tracked with its
   provenance and reopen trigger in [`ARCHITECTURE.md`](ARCHITECTURE.md) →
-  *Provenance* — unlike the `cliError` and `libc` claims, this one needs no
-  contrived fixture to check: the client's setup UI either offers a way to pass
-  arguments or it does not). Flipping the default to `0` is the parity
+  *Provenance*. ⚠️ The evidence behind it is **one look at the setup UI on one
+  unrecorded build, 2026-08-07** — Desktop's own config files and any forwarded
+  environment were never examined, and a config file it turns into argv is one of
+  the two routes that would falsify it). Flipping the default to `0` is the parity
   fix; the cap itself survives as an opt-in for hosts that want it.
 - Also settable in `claustrum.conf` as `max-extract-bytes = <n>` (an explicit
   `-max-extract-bytes` flag wins). **That is the reachable knob** — see the argv
@@ -1300,7 +1301,8 @@ the facts (`cliError`), not via the exit code.
 Five `-install` behaviours are easy to miss. Three are wall-clock bounds: the
 `--version` runnability probe (D11), the download (D12), and — **on linux only** —
 the `libc` probe (D14). **The reference showed no deadline at the durations
-probed** — none at or below 45 s for D11 and D14, 400 s for D12. That is a floor,
+probed** — none at or below 45 s for D11 and D14 (D14 in one stall shape only; see
+its bullet below), 400 s for D12. That is a floor,
 not a demonstration of absence: D11 is additionally bounded **above 90 s, not shown
 absent**, since the reference installed a CLI that answered at 90 s.
 **D11's and D12's are BOTH off by default now**, so a stock claustrum applies just
@@ -1405,7 +1407,7 @@ left in place:
   reports musl while `/lib/ld-musl-*.so.*` does not match — ⚠️ narrow, but not
   cosmetic, since Claude Desktop uses `libc` to choose which CLI build to download
   (a **driver** claim the parity harness cannot settle; see
-  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*).
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*).
   🔴 **The bound fires in only one of the two stall shapes**, and this bullet used
   to claim the divergence was total. Measured: with a stalled `ldd` that leaves
   nothing holding its output pipe, claustrum falls back at 5 s and emits a complete
@@ -1434,17 +1436,25 @@ Checksum + error framing (probe-verified):
   **unconditionally** — an empty `-cli-checksum` still fails
   (`checksum mismatch: expected=, actual=<sha>`).
 - **Verify happens BEFORE decompress — intentional divergence (D13).** The
-  reference decompresses first and aborts on the first invalid bytes. Any blob that
-  is **both** undecompressable **and** wrong-checksummed tells them apart, measured
-  at `5db5e4a`:
+  reference decompresses first and aborts on the first invalid bytes. A blob that is
+  **both** undecompressable **and** wrong-checksummed tells them apart — but ⚠️ **the
+  divergent string is not always `checksum mismatch`**: a transfer that dies
+  mid-stream never reaches the checksum on claustrum at all. Measured at `5db5e4a`:
 
   | input | reference | claustrum |
   |---|---|---|
-  | **truncated** blob, checksum of the intended full blob | `decompressing: unexpected EOF` | `checksum mismatch: expected=…, actual=…` |
+  | origin serves a **short artifact** (`Content-Length` matches the short body), checksum of the intended full blob | `decompressing: unexpected EOF` | `checksum mismatch: expected=…, actual=…` |
   | bad-magic blob + wrong checksum | `decompressing: invalid input: magic number mismatch` | `checksum mismatch: expected=…, actual=…` |
+  | **interrupted transfer** — `Content-Length` says full, connection reset at 60 % | `decompressing: read tcp …: connection reset by peer` | `download failed: read tcp …: connection reset by peer` |
   | *control:* corrupt blob + correct checksum | `decompressing: invalid input: …` | **same** |
   | *control:* valid blob + wrong checksum | `checksum mismatch: …` | **same** |
+  | *control:* short artifact + checksum **of the short bytes** | `decompressing: unexpected EOF` | **same** |
   | *control:* valid blob + correct checksum | **installs** | **installs** |
+
+  The short-bytes control is what makes the rows readable: giving claustrum a checksum that
+  *matches the short bytes* makes it answer exactly like the reference, which is how
+  we know the `checksum mismatch` above comes from the **ordering** and not from the
+  truncation.
 
   🔴 **The trigger is REACHABLE on an honest path, and this bullet used to imply
   otherwise** by naming only the bad-magic shape. But the reachable case is
@@ -1462,7 +1472,8 @@ Checksum + error framing (probe-verified):
   It stays always-on — not because a rule clears it, but because matching would mean
   feeding unverified bytes to the decompressor, and **both binaries fail the install**
   anyway, so neither leaves a usable CLI.
-  ⚠️ The failing rows are **not** identical on disk: the reference creates an empty
+  ⚠️ The two rows measured for disk state — the short artifact and the interrupted
+  transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
   beside D4, D5 and D14 rather than justified.
@@ -1470,7 +1481,7 @@ Checksum + error framing (probe-verified):
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →
   `cliError "decompressing: decompressed CLI exceeds <n> bytes"` /
-  `"response exceeds <n> bytes"`. **Not reachable by default** — the cap is `0`
+  `"download failed: response exceeds <n> bytes"`. **Not reachable by default** — the cap is `0`
   (off), matching the reference. **Intentional divergence** (D10), enabled with
   `-max-cli-bytes <n>` or `max-cli-bytes = <n>` in `claustrum.conf`. Measured at
   `5db5e4a` on the `-cli-zst` path with a 600 MiB payload (21 KB compressed): the

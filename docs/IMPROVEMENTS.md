@@ -52,42 +52,25 @@ carrying `signal: killed` when the deadline fires, a real on-wire cost, and whic
 the preamble notes currently fails rule 3. The `ldd` half is **D14**, numbered
 after the reference was finally probed on it.
 
-Two things this section used to get wrong, corrected in D14 and repeated here only
-so a reader who lands on the tier item is not misled:
-
-- **The reference's unbounded wait is measured now, not assumed** — but only in
-  the stall shape where nothing survives the kill. ⚠️ The surviving-child shape is
-  **uninformative about the reference**: claustrum has a 5 s deadline and produced
-  the identical "no reply at 45 s" there, so that arm cannot tell a missing
-  deadline from one the pipe wait swallows.
-- **"The divergence is total" was written unconditionally and is false as such.**
-  The bound fires only when the stalled `ldd` leaves nothing holding its output
-  pipe; with a surviving child, claustrum blocks past the deadline exactly like the
-  reference. The `libc`-value delta is separately narrow — a host **whose loader
-  the glob matches** never reaches the probe, and a glibc host's fallback *is*
-  `"glibc"`; note the predicate is the glob, not the host, so a musl box the glob
-  misses does reach it — but **not costless**,
-  because Claude Desktop uses `libc` to choose which CLI build to download (a
-  **driver** claim the parity harness cannot settle; see
-  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*).
-
-⚠️ And the cap addresses the *stall* half only. A **hostile** `ldd` resolved
+⚠️ The cap addresses the *stall* half only. A **hostile** `ldd` resolved
 earlier in `PATH` that answers in 1 s is untouched by the deadline, and
 `classifyLibc` then trusts its `musl` banner verbatim — so "security fix S4"
 overstates what a timeout can buy.
 
 **One question here is still open, and it is the `libc`-value one, not the
 unbounded-wait one.** D14's probe settled whether the reference bounds this call
-(it does not, at or below 45 s) using a glibc-banner stub. Whether the *reported
+(it does not, at or below 45 s — established in the stall shape where nothing
+survives the kill; the surviving-child arm is non-discriminating) using a
+glibc-banner stub. Whether the *reported
 value* ever diverges is untested, and the fixture that would settle **that** must
 use a **musl** banner, not a glibc one: a
 stand-in `ldd` on `PATH` that sleeps 6 s, prints `musl libc (x86_64)` **and exits
 0**, with the musl loader glob masked. The exit code is load-bearing:
 `classifyLibc` takes the musl banner only when `lddErr == nil`, and a real musl
 `ldd --version` prints to stderr and exits 1 — a faithful stand-in would fail the
-control for a reason unrelated to the timeout. (It also narrows the divergence set
-further — glob misses ∧ exits 0 ∧ output says musl ∧ slower than 5 s — so
-"close to unreachable" is if anything understated.) Expected: reference `libc:"musl"`, claustrum
+control for a reason unrelated to the timeout. (The divergence set is narrow — glob
+misses ∧ exits 0 ∧ output says musl ∧ slower than 5 s — but per D14 that
+conjunction is **untested, not a demonstrated impossibility**.) Expected: reference `libc:"musl"`, claustrum
 `libc:"glibc"`. **Control that must fire:** the same stand-in answering instantly
 must give `"musl"` on *both*, proving the fixture can produce the non-default
 value at all — a control that merely "gives the same value on both" is satisfied
@@ -471,7 +454,9 @@ reference. They follow the "match upstream first, then improve" plan: only
 consider them now that the harness proves parity, and document each as an
 *intentional* divergence in [`PROTOCOL.md`](PROTOCOL.md) + the PR if adopted.
 
-**Most are opt-in; some are always-on, and the entry says which.** Which shape an
+**Each entry is opt-in, always-on, or — for D1 alone — *conditional*, activated by
+the caller supplying `-cli-checksum` rather than by an operator. The entry says
+which.** Which shape an
 entry may take is not per-entry taste. It comes from **THE RULE** — the standard
 this project judges every divergence against, in priority order:
 
@@ -526,20 +511,23 @@ is what flipped all four, and it is why every one of them ships a
 ⚠️ **"Desktop owns the argv" is a claim about the driver, and it is the premise
 under D3, D10, D11, D12 and the "(opt-in)" tag itself — so it is tracked rather than
 assumed.** Provenance and its reopen trigger live in
-[`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*: the shipped client's setup UI
+[`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*: the shipped client's setup UI
 offers SSH connection fields and a remote folder browser, and no way to pass
 arguments to the daemon — observed by the maintainer as a daily user, 2026-08-07,
 **UI only**; Desktop's own config files and any forwarded environment were not
-examined. Unlike the `cliError` and `libc` claims it needs no contrived fixture to
-check, which is a different thing from the parity harness being able to settle it —
-it cannot. It reopens if Desktop gains a way for an operator to influence the
+examined — and a config file Desktop turns into argv is one of the two routes this
+claim's own trigger names, so the UI look covers one half of it. All three driver
+claims sit outside the parity harness and **none has been observed end-to-end**;
+`ARCHITECTURE.md` names the fixture that would settle each. It reopens if Desktop
+gains a way for an operator to influence the
 daemon's argv, which would make a flag-only opt-in sufficient **for Desktop-driven
 hosts** — not moot the config key, which is read beside the executable and serves
 every other driver.
 
 **Clause (b) is the right *form* of argument** and most surviving always-on entries
 use it — but each has its own trigger, and the glosses are not interchangeable:
-D2 and D6 (a destructive target no honest caller names), **D7** (a `-cli-version`
+D6 (a destructive target no honest caller names — D2 clears clause (a) as well, and
+its entry argues (a); it is listed there, not here), **D7** (a `-cli-version`
 colliding with the install temp sweep — a *name* collision, not a destructive
 target), D8 (not reachable on the deployed path), D9 (a params type error no
 *correct* client sends).
@@ -559,12 +547,10 @@ read these as unenumerated, not as established.
 does not meet it. It therefore justifies no entry in this file today.** Two things
 a reader should not take on trust:
 
-- 🔴 **An early draft justified its narrowness by saying "everywhere else the
-  reference *succeeds* where claustrum errors". That is false**, and three entries
-  in this file refute it: D4's FIFO row (the reference **blocks**), D5 and D14 (the
-  reference emits **nothing**). What actually keeps those three out of clause (c)
-  is that the reference does not *fail the operation and report it* — it hangs or
-  says nothing, which is clause (a)'s territory, not clause (c)'s.
+- **What keeps D4, D5 and D14 out of clause (c):** the reference does not fail the
+  operation and report it — it **blocks** (D4's FIFO row) or emits **nothing** (D5,
+  D14). That is clause (a)'s territory. ⚠️ It is *not* that "the reference succeeds
+  everywhere else"; those three entries refute that reading.
 - 🔴 **D13 does not strictly satisfy clause (c) as worded, measured.** On both
   honest-path rows the reference **creates an empty cli-dir** and claustrum
   **creates nothing** — so the delta is not confined to diagnostic text. Both
@@ -593,7 +579,7 @@ terminal failure with an actionable code and treating everything else as a
 retryable one. A divergence that moves a string across that line changes what the
 user is told, whatever the rules say about frames. *(That is a claim about the
 **driver**, not about the reference — the parity harness cannot settle it; see
-[ARCHITECTURE.md](ARCHITECTURE.md) → *Provenance* for its provenance and the
+[ARCHITECTURE.md](ARCHITECTURE.md) → *Driver claims and their provenance* for its provenance and the
 limits that come with it. That paragraph lists this rider as a dependent that
 carries **no reopen trigger** — a known gap, not an oversight.)*
 
@@ -607,23 +593,22 @@ entry says.) **D4** and **D13** are not thresholds at all and no clock is involv
 in either: they fail because an honest input *can* reach the guard, and what the
 guard does is observable — either its own output or the state it skips: a `-32602`
 where the reference reads `/dev/null` happily, an empty cli-dir where claustrum
-leaves none. ⚠️ This paragraph used to say three of
-the four were thresholds "which is not a coincidence", counting D4 among them; D4's
-guard is a file-mode predicate (`Mode().IsRegular()`) that fires identically on a
-fast FIFO and a slow one. **D5**'s 60 s `gitTimeout` is
+leaves none. D4's guard is a file-mode predicate (`Mode().IsRegular()`), which fires
+identically on a fast FIFO and a slow one. **D5**'s 60 s `gitTimeout` is
 a wall-clock threshold with a
 wire-visible cost (a claustrum-only `-32603` carrying `signal: killed`), it has no
 flag and no config key, and its stated reason — "no opt-in default can improve on
 [an unbounded wait] for a caller who does not know the flag exists" — is the exact
 argument the four flipped caps rejected. An honest 61 s git on a large repo has
 never been measured on either binary. **D14**'s 5 s `ldd` bound is the other
-threshold, and it differs from D5 only in evidence: its honest-path cost
-is **untested in either direction** rather than measured, and like D5 it has no flag
-and no config key. **D4**'s `/dev/null` row is the first of the two non-thresholds:
+threshold, and like D5 it has no flag and no config key. What differs is the
+evidence: D5's cost has a **measured shape** — the claustrum-only `-32603` frame —
+even though the honest input that would trip it has never been run; D14's is
+**untested in either direction**, shape included. **D4**'s `/dev/null` row is the first of the two non-thresholds:
 the reference reads a character device happily and claustrum refuses it, so an
 honest caller *can* observe the difference — no clock, just a mode check. **D13**
 is the second: verify-before-decompress ordering, which fails clause (c) because the
-failing rows differ on disk as well as in text (the reference creates an empty
+two measured rows differ on disk as well as in text (the reference creates an empty
 cli-dir, claustrum creates none). None of the four is resolved by this section.
 
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
@@ -637,7 +622,7 @@ carry a new claim, and says so.**
 - The reference verifies `-cli-checksum` only on the `-cli-url` download path,
   **not** on the local `-cli-zst` (SFTP) blob; PR #29 dropped our verification
   there to stay 1:1.
-- **Shipped** as an opt-in divergence: `-cli-zst` is now SHA-256-verified
+- **Shipped** as a conditional divergence: `-cli-zst` is now SHA-256-verified
   **when (and only when) a `-cli-checksum` is supplied** — a mismatch is
   rejected with the same `checksum mismatch: …` error (source blob left
   intact).
@@ -659,6 +644,12 @@ carry a new claim, and says so.**
   returns `checksum mismatch` (was success), and a corrupt blob returns
   `checksum mismatch` instead of `decompressing: …`.
 - Verified by a live ref-vs-claustrum differential.
+- **Reopen trigger:** Claude Desktop supplying a `-cli-checksum` that does not match
+  the blob it uploaded over SFTP — that would make an honest caller pay for the
+  hardening, which is the premise this entry rests on ("no honest caller pays for
+  it"). ⚠️ Recorded because **conditional is not the same as unreachable**: the
+  activating flag is supplied by the *caller*, and on `-install` that caller is
+  Desktop, not an operator.
 
 ### D2 · Refuse a home directory as a destructive path target ✅ (always-on) — impact H / cost L
 
@@ -995,7 +986,7 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Reopen trigger:** any real client observed sending a type-mismatched value in
   a namespace field the target method does not read — which is also the
   measurement this entry owes and does not have.
-- Documented in [PROTOCOL.md](PROTOCOL.md) → *Params are bound per namespace*.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → *Params presence and typing*.
 
 ### D10 · Make the `-install` CLI size cap opt-in ✅ (opt-in) — impact H / cost M
 
@@ -1003,7 +994,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   shipped as a hardcoded **512 MiB, on by default**, with no flag and no config
   key, in PRs 57 and 59 — the same hardening round as the extract cap. It
   governs **two** reads: the decompressed size written by `zstdDecompress` and the
-  HTTP response body in `httpGet`. It had no PROTOCOL.md entry either.
+  HTTP response body in `fetchToFile` (then named `httpGet`). It had no PROTOCOL.md entry either.
 - **Measured at `5db5e4a`** on the `-cli-zst` path with a 600 MiB payload
   (21 KB compressed):
 
@@ -1023,7 +1014,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   server: the reference downloads it all and reaches the same runnability check,
   and claustrum with the cap off matches. The **control** — the same fixture with
   `-max-cli-bytes 536870912` — answers `download failed: response exceeds
-  536870912 bytes`, which is what proves the probe reaches `httpGet`'s limit at
+  536870912 bytes`, which is what proves the probe reaches `fetchToFile`'s limit at
   all rather than passing for an unrelated reason.
 - **`maxCLIBytes` shipped as a hardcoded 512 MiB in PRs 57 and 59** — the same
   hardening round as the `files.extract_tar` cap, which gets the same flip
@@ -1062,19 +1053,15 @@ completes it with `git.worktree_remove`, which shares the predicate
   **free-space hint**, not just a different string — but that is a statement about a
   **third binary**, which the reference-vs-claustrum harness cannot confirm or
   refute and a size-limited filesystem cannot observe. See
-  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*, where D10 is enumerated as a
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*, where D10 is enumerated as a
   dependent.
   **Reopen trigger:** Desktop ceasing to treat a disk-full message as terminal —
   that removes the cost entirely. Desktop *also* matching `decompressing:
   decompressed CLI exceeds <n> bytes` as terminal removes only part of it: the
   install stops being retried, but the cap's message still says nothing about
-  space, so the free-space hint is still lost. ⚠️ **Do not restate this as "the same
-  trigger as D13" or as "the opposite of D13".** Both were tried here and both are
-  wrong: the two entries rest on the same driver claim but name different strings,
-  and a single plausible change — Desktop broadening its terminal match to any
-  `decompressing:` error — would fire **both** triggers at once, since the cap's own
-  message is itself a `decompressing:` error. Read each entry's trigger on its own
-  terms.
+  space, so the free-space hint is still lost. ⚠️ One plausible Desktop change —
+  broadening its terminal match to any `decompressing:` error — fires this trigger
+  and D13's at once, since the cap's own message is a `decompressing:` error.
 
   **At the shipped default the disk-full report is preserved and matches the
   reference**, so this is a cost of opting in, not a defect. *(The table is the
@@ -1274,7 +1261,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   `cliError` after all.** That would vindicate the half of the retracted sentence
   that said "it does not parse prose", and this bullet would owe a re-retraction.
   It would not touch the other half — whether any client reads `cliWasPresent`
-  remains unprobed either way. `ARCHITECTURE.md` → *Provenance* lists this
+  remains unprobed either way. `ARCHITECTURE.md` → *Driver claims and their provenance* lists this
   retraction as a dependent of the `cliError` claim.
 - **Trade:** matching means reintroducing an *unbounded wait* in `-install` — not a
   hang, per this section's own rule. The recovery half **is** observed, twice: the
@@ -1289,7 +1276,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   would have reduced the second without giving up the first — 15 s was never
   measured against anything — but that was rejected in favour of defaulting it off,
   because every finite value merely moves the boundary.
-- **Why it stopped being always-on.** It did clear the bar this section sets —
+- **Why it stopped being always-on.** It did clear the **not-a-frame half of clause (a)** —
   the reference's behaviour on the motivating path is an apparently unbounded wait
   (no bound at or below 90 s) rather than a frame, the same justification D4 and D5
   use explicitly and D12 restates in its Trade bullet. (D13 used to be cited here
@@ -1459,9 +1446,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   SYN still fails at 30 s with this bound off. Both are stdlib defaults, always-on
   and **unnumbered** — neither probed on the reference, so whether they diverge is
   open. Named here so "unbounded" is not read wider than it is.
-- **Why it stopped being always-on.** Identical to D11's argument: the bar this
-  section sets is cleared (the reference's behaviour on the motivating path is an
-  apparently unbounded wait rather than a frame), but the bar does not weigh the
+- **Why it stopped being always-on.** Identical to D11's argument: the **not-a-frame
+  half of clause (a)** is cleared (the reference's behaviour on the motivating path
+  is an apparently unbounded wait rather than a frame), but that half does not weigh the
   *cost* — an honest-but-slow download pays it, and Desktop owns the argv, so the
   caller who pays cannot decline. The 324 s row makes that cost a measurement
   rather than an inference.
@@ -1490,8 +1477,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   attributable to ordering rather than to the fixture. Measured at `5db5e4a`.
   ⚠️ **Rows 1 and 3 — the short artifact and the interrupted transfer — are
   different failures, and the distinction is the whole point of the fixture.**
-  (They are not adjacent, and they are not the last two rows: those are controls
-  where both binaries agree.) A *short artifact* reaches the checksum comparison, so
+  A *short artifact* reaches the checksum comparison, so
   the ordering shows as `checksum mismatch` vs a decompression error. A *genuine
   interrupted transfer* never gets that far on claustrum: `fetchToFile` returns
   `io.Copy`'s error before any checksum runs, so it surfaces as `download failed:
@@ -1499,7 +1485,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   the identical transport error as `decompressing: <transport error>`. Same
   architectural cause, two different observable shapes.
 - **Observable delta:** the `cliError` string **and the on-disk end state** — on the
-  failing rows the reference leaves an empty cli-dir where claustrum leaves none.
+  two rows measured for it the reference leaves an empty cli-dir where claustrum leaves none.
   ⚠️ This bullet used to read "the string, and only that", hedged by the fact that
   the controls compared reply strings and never looked at disk. The disk state has
   since been measured (table below) and it differs, so the hedge became a wrong
@@ -1601,11 +1587,10 @@ completes it with `git.worktree_remove`, which shares the predicate
   reference spawning a PATH-resolved `ldd` once the glob is masked. Without that
   prior result this table would not establish what it is cited for.
 - 🔴 **D14's always-on status is UNRESOLVED, and this entry does not claim
-  otherwise.** A first draft justified it under rule 3 clause (b) as "the trigger is
-  a stalled `ldd`, which no honest deployment has". That is the bound described by
-  *intent*, and the code implements a **5 s wall-clock threshold** — the same
-  defect that cost D11 three review rounds. A threshold cannot separate a stalled
-  `ldd` from a slow one. Stated honestly, against rule 3:
+  otherwise.** Clause (b) does not carry it: the code implements a **5 s wall-clock
+  threshold**, and a threshold cannot separate a stalled `ldd` from a merely slow
+  one — describing the bound by its *intent* is the D11 defect. Stated honestly,
+  against rule 3:
   - **Clause (a), first half — MET and measured.** The reference's behaviour on the
     motivating path is not a frame; see the table above (discriminating shape).
   - **Clause (a), second half — UNTESTED.** For the reported `libc` to move, four
@@ -1621,9 +1606,11 @@ completes it with `git.worktree_remove`, which shares the predicate
     and no `claustrum.conf` key — the same shape the preamble flags as D5's failure.
     Nobody who pays for it can decline.
 - **So D14 sits with D4, D5 and D13 in the unresolved group, and the difference is
-  evidential rather than principled.** D4's and D5's honest-path costs are
-  *measured*; D14's is *untested in either direction*. It is numbered here so it can
-  be argued about at all — being unnumbered is what let it avoid the question.
+  evidential rather than principled.** D4's honest-path cost is measured (the
+  `/dev/null` row); D5's cost *shape* is measured — the claustrum-only `-32603` —
+  though the honest 61 s git that would trip it never has been; D14's is untested in
+  either direction, shape included. It is numbered here so it can be argued about at
+  all — being unnumbered is what let it avoid the question.
 - 🔴 **The bound is narrower than it reads, and this entry used to overstate it.**
   It fired in only one of the two stall shapes measured. The probe waits on `ldd`'s
   output pipe, so a stalled `ldd` that leaves a surviving child keeps claustrum
@@ -1633,7 +1620,7 @@ completes it with `git.worktree_remove`, which shares the predicate
 - ⚠️ **The residual delta is not cosmetic.** Claude Desktop uses the reported
   `libc` to choose which CLI build it downloads — a claim about the **driver**,
   which the parity harness cannot confirm or refute; see
-  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*, which lists this entry as a
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*, which lists this entry as a
   dependent. So on
   the one host shape where the value *does* move — `ldd` reports musl while the
   loader glob misses, and it is slow — the consequence is Desktop fetching a glibc

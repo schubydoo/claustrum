@@ -415,9 +415,8 @@ const daemonLogName = "remote-server.log"
 // daemon's output into a file someone else owns. That case IS measured as of
 // 2026-08-06: in a sticky directory the reference truncates the foreign file and
 // writes into it. Declining is therefore a deliberate divergence, filed as D8 in
-// docs/IMPROVEMENTS.md. It is always-on rather than opt-in — unlike the -install
-// checksum hardening (D1), which is opt-in — because the trigger is unreachable
-// on the deployed path: the per-user session directory is not sticky, so no
+// docs/IMPROVEMENTS.md. It is always-on because the trigger is unreachable
+// on the deployed path (rule 3 clause (b)): the per-user session directory is not sticky, so no
 // honest caller reaches this branch at all.
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it

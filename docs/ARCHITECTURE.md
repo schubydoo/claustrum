@@ -42,8 +42,8 @@ Ensures the pinned `claude` CLI is present under `-cli-dir`.
   one, and then a slower but working CLI fails this guard — see divergence D11.
 - Otherwise the blob is acquired from one of two sources:
     - `-cli-zst` — a local `.zst` (consumed once **decompression** succeeds, even if the install then fails the runnability probe); checksum-verified
-      **only when a `-cli-checksum` is supplied** — an opt-in divergence from
-      the reference, see [PROTOCOL.md](PROTOCOL.md).
+      **only when a `-cli-checksum` is supplied** — a conditional divergence from
+      the reference, activated by the caller; see [PROTOCOL.md](PROTOCOL.md).
     - `-cli-url` — downloaded, SHA-256-verified against `-cli-checksum`
       *unconditionally* (even an empty checksum fails).
 - The blob is zstd-decompressed, `chmod 0755`, and re-checked for runnability
@@ -181,10 +181,8 @@ sits in front of those calls so operators can quiet the daemon:
 
 **`cliError` strings.** Every error `ensureCLI` returns lands here verbatim,
 **with the wrapping prefix its phase adds** — that is the form a driver actually
-sees, and two rows below used to be listed unprefixed. The
-list had drifted — it named four of these while the code produced more — so it
-is grouped by phase rather than left as prose (no count is quoted: the last one
-went stale, and it is cheaper to re-derive from `ensureCLI` than to maintain):
+sees. Grouped by phase rather than left as prose, and no count is quoted; re-derive
+from `ensureCLI` if you need one:
 
 | phase | string |
 |---|---|
@@ -213,33 +211,42 @@ Go error.
 
 ⚠️ **These strings are not free-form diagnostics — the driver reads them.** Claude
 Desktop classifies `cliError` by *text*: a message shaped like a disk-full failure
-is surfaced as a terminal error with an actionable code, and every other message is
-treated as retryable and re-attempted over the SFTP path. So changing the wording of a row
-above — or adding a guard whose error pre-empts one — can change what a user is
+is surfaced as a terminal error with an actionable code, and messages that do not
+match are, on the evidence, retried over the SFTP path. So changing the wording of a
+row above — or adding a guard whose error pre-empts one — can change what a user is
 told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
 
-⚠️ **Provenance, because these are a different class of claim from the rest of
-these docs.** **Three** are load-bearing: the `cliError` classification above,
-**`libc` deciding which CLI build the driver downloads**, and **"Desktop owns the
-argv"**. All three describe a **third binary** — the driver — not the reference
-daemon and not claustrum, so the reference-vs-claustrum harness cannot confirm or
-refute any of them and no `scratch/` fixture covers them.
+### Driver claims and their provenance
 
-⚠️ **"The harness cannot settle it" is not the same as "unverifiable".** All three
-are outside the differential harness, but they differ in what it takes to observe
-them: `cliError` and `libc` need a **contrived fixture** (fail an `-install` twice
-against the same `-cli-dir` and compare Desktop's retry path; find a musl host whose
-loader glob misses). The argv claim needs **no fixture at all** — the client's own
-setup UI either offers a way to pass arguments or it does not.
+⚠️ **These are a different class of claim from the rest of these docs.** Three are
+load-bearing: the `cliError` classification above, **`libc` deciding which CLI build
+the driver downloads**, and **"Desktop owns the argv"**. All three describe a
+**third binary** — the driver — not the reference daemon and not claustrum, so the
+reference-vs-claustrum harness cannot confirm or refute any of them and no
+`scratch/` fixture covers them.
 
-**Evidence for the argv claim, scoped to what was actually looked at:** the shipped
-client's "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and
-*Identity File*, and its folder step is a remote directory browser — **no field for
-daemon arguments in either**. Reported by the maintainer as a daily user of the
-shipped client, 2026-08-07; the client build was not recorded. ⚠️ **That covers the
-UI only.** Whether Desktop reads a config file of its own, or forwards environment
-variables, was **not examined** — so this is "no argv affordance in the setup UI I
-can see", not "no argv affordance exists".
+⚠️ **"The harness cannot settle it" is not the same as "unverifiable", and none of
+the three has been settled.** Each has a fixture that would, run against the driver
+rather than against the reference. Each needs a control, for the reason every other
+table in these docs does — an arm that must come out the same tells you the fixture
+could produce a difference at all:
+
+| claim | fixture | control that must fire |
+|---|---|---|
+| `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe retry-over-SFTP vs terminal report | a third failure both binaries already agree on, which must be classified identically |
+| `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | the same stub answering instantly, which must report `musl` on both binaries — otherwise the fixture never took effect |
+| argv | the setup UI **and** an enumeration of Desktop's own config files and forwarded environment | a config key the client is *known* to read must appear in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI half done (below); the rest unrun |
+
+**Evidence for the argv claim, scoped to what was looked at:** the shipped client's
+"Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
+File*, and its folder step is a remote directory browser — **no field for daemon
+arguments in either**. Reported by the maintainer as a daily user of the shipped
+client, 2026-08-07; the client build was not recorded. ⚠️ **That covers the UI only,
+and the UI is not the whole claim.** Whether Desktop reads a config file of its own,
+or forwards environment variables, was **not examined** — and a config file it turns
+into argv is **one of the two routes** this claim's own reopen trigger names. So the
+evidence supports "no argv affordance in the setup UI, on one build, seen once", not
+"no argv affordance exists".
 
 - **Reopen trigger for the argv claim:** Claude Desktop gaining a way for an
   operator to influence the daemon's argv — a settings field, or a config file it
@@ -264,50 +271,33 @@ and unprovenanced.)*
 Treat them as design constraints worth respecting, not as measured parity results;
 anything that depends on one should say so and carry a reopen trigger **that would
 falsify the claim it rests on** — a trigger that fires on something else does not
-count, which is the standard applied after the list. ⚠️ **The
-list below is maintained by hand and has been incomplete every time it was
-checked** — at `0841bcd` it named two while four already existed, and it omitted
-the argv claim's four dependents entirely until a review found them. Treat it as
-the best-known set, not as a proof of completeness, and add to it rather than
-trusting it.
+count. ⚠️ **The dependents list below is maintained by hand and has been incomplete
+every time it was checked.** Treat it as the best-known set, not a proof of completeness, and add
+to it rather than trusting it.
 
-**The argv claim's dependents are recorded with the claim above, not here**,
-because one trigger covers all of them. The list below is the dependents of the
-`cliError` and `libc` claims, where each entry needs its own. *(D10 and D11 appear
-in both roles — below for the `cliError` claim, above for the argv one.)*
+Below are the dependents of the `cliError` and `libc` claims, where each entry needs
+its own trigger. *(The argv claim's dependents are recorded with the claim above
+instead, because one trigger covers all of them. D10 and D11 appear in both roles —
+below for the `cliError` claim, above for the argv one.)*
 
 - **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
   always-on justification — it is in IMPROVEMENTS' unresolved group).
 - **D14's residual delta** is only more than cosmetic because of the `libc` claim.
+  🔴 **No falsifying reopen trigger:** its entry has one, but it fires on a musl host
+  the loader glob misses and on a measurement of the reference's bound — neither
+  bears on whether Desktop uses `libc` to pick the build.
 - **D10's opt-in cap** — the worked example above — rests on the `cliError` claim
   too: what a caller loses by capping below free space is the disk-full
-  *classification*, not the string alone. ⚠️ Its reopen trigger and D13's are
-  neither the same nor opposites — read each on its own terms; one change to
-  Desktop's matching can fire both.
+  *classification*, not the string alone. ⚠️ One plausible Desktop change —
+  broadening its terminal match to any `decompressing:` error — fires this entry's
+  trigger and D13's at once, since the cap's own message is a `decompressing:` error.
 - **Clause (c)'s "error strings are not free" rider** in IMPROVEMENTS — a
   *rule-level* dependent rather than a D-number, since it binds every future
-  clause-(c) entry.
+  clause-(c) entry. 🔴 **No reopen trigger at all.**
 - **D11's retraction of "a client reads this field, it does not parse prose"** — if
   Desktop turned out not to parse `cliError`, half of that retraction collapses.
   (Only half: the other half rests on a separate absence — nothing on record shows
   any client behaving differently when `cliWasPresent` changes.)
-
-🔴 **Two of those five do not satisfy that standard, and that is recorded rather
-than glossed.** Stated so the count is checkable: a dependent satisfies it when its
-own entry carries a reopen trigger that would **falsify the driver claim it rests
-on**. D13's, D10's and D11's do. ⚠️ **This paragraph said "one" at `99f53e3`, and
-that was wrong** — D11's entry had no reopen trigger at all, and D14's fires on
-something that would not falsify the `libc` claim. D11's was added in the same
-change that corrected this count, which is why the number is two rather than three.
-*(The argv claim's four dependents are not counted here — their shared trigger is
-recorded with the claim, which is a deliberate exception to "its own entry".)*
-The two that remain:
-
-- **clause (c)'s rider** — provenance pointer, no reopen trigger at all.
-- **D14's residual delta** — its entry *has* a trigger, but it fires on a musl host
-  the loader glob misses and on a measurement of the reference's bound. Neither
-  would falsify the `libc` claim the delta rests on, so it does not meet the
-  standard above even though it looks like it does.
 
 ## Deployment lifecycle (how a driver uses it)
 

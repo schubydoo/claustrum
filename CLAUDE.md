@@ -67,7 +67,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   opt-in part.
 - **`install.go`** — `-install`: CLI download / verify (SHA-256 — **`-cli-url`
   downloads unconditionally; the local `-cli-zst` SFTP blob is verified only when a
-  `-cli-checksum` is supplied**, an opt-in divergence from the reference, see D1) /
+  `-cli-checksum` is supplied**, a conditional divergence from the reference —
+  activated by the caller, not by an operator; see D1) /
   extract (zstd) / prune.
 - OS-specific behavior is isolated in `*_unix.go` / `*_windows.go` (daemonize,
   process groups / Windows Job Objects for whole-tree kill, login-shell PATH
@@ -217,7 +218,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   never answers, and **(D11 only)** it INSTALLED a 90 s CLI, waiting
   91 s — which bounds D11's above 90 s, not at absent. **D14's bound is now probed
   too:** the reference likewise showed no deadline at or below 45 s against a
-  stalled `ldd`.
+  stalled `ldd` — established in the `exec sleep 120` shape ONLY; the
+  surviving-child arm is non-discriminating.
   **Measured (D11, claustrum side):** a CLI answering honestly in 20 s diverges,
   and *how* depends on the shape — `installed cli at <path> is not runnable` with
   the staged binary deleted; or `cli <v> missing and no --cli-url or --cli-zst
@@ -247,7 +249,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   **D14's *value* delta is narrow** — fallback and true value coincide except where
   `ldd` reports musl and the loader glob misses — but ⚠️ **not cosmetic**, because
   Desktop uses `libc` to choose which CLI build it downloads (a **driver** claim the
-  parity harness cannot settle — ARCHITECTURE → Provenance; same class as the
+  parity harness cannot settle — ARCHITECTURE → Driver claims and their provenance; same class as the
   `cliError` one below). **And the bound fires
   in only ONE of the two stall shapes, measured:** against a stalled `ldd` that
   leaves nothing holding its output pipe, claustrum falls back at 5 s and emits a
@@ -270,22 +272,23 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   the *prefix* instead (`download failed: <transport err>` vs the reference's
   `decompressing: <transport err>`). ⚠️ **D13 is NOT settled either**: "only the
   diagnostic text differs" is false — measured, the reference creates an empty
-  cli-dir on the failing rows where claustrum creates none — so it stays always-on
+  cli-dir on the two measured rows where claustrum creates none — so it stays always-on
   but is listed unresolved, not justified. What keeps the delta cheap meanwhile is a
   claim about the *driver*: **Desktop parses `cliError`**, treating a
   disk-full-shaped message as terminal and everything else as retryable — which the
-  parity harness cannot settle (ARCHITECTURE → Provenance keeps the best-known list
+  parity harness cannot settle (ARCHITECTURE → Driver claims and their provenance keeps the best-known list
   of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
   outright that the list has been incomplete every time it was checked). **Three
   driver claims are tracked there**, the third being **"Desktop owns the argv"** —
-  the premise under D3, D10, D11, D12 and the "(opt-in)" tagging convention, and the
-  only one that needs no contrived fixture to check (the client's setup UI either
-  offers a way to pass arguments or it does not; as of 2026-08-07 it does not, UI
-  only — Desktop's own config files and forwarded env were never examined).
+  the premise under D3, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
+  evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
+  argument field there, but Desktop's own config files and forwarded env were never
+  examined, and a config file it turns into argv is one of the two routes that would
+  falsify it. **None of the three claims has been observed end-to-end.**
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is
-  supplied** — an *intentional* opt-in divergence from the reference (which never
+  supplied** — an *intentional* conditional divergence from the reference (which never
   verifies it), documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) +
   [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D1; an absent checksum stays
   trusting, so honest callers are byte-identical. `-serve` makes no outbound connections.
