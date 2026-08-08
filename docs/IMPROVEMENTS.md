@@ -868,13 +868,19 @@ completes it with `git.worktree_remove`, which shares the predicate
   is inferred from its frames rather than inspected; the opted-in column for the
   socket and device rows is entailed by `Mode().IsRegular()` rather than run; and
   the two shapes in the bullet below are unmeasured outright.
-  The OOM row was promoted by running it: under a 512 MiB cgroup cap,
+  The OOM row was promoted by running it: under a **2 GiB** cgroup cap,
   `files.read {"path":"/dev/zero"}` dropped the connection on **both** binaries
-  inside 0.3 s, and the kernel logged `Memory cgroup out of memory: Killed process`
-  naming each binary at ~520 MB anon-rss — so "OOM-killed" is the observation, not a
-  reading of a dropped connection. `/dev/null` through the same contained launcher
+  with no frame, and the kernel logged `Memory cgroup out of memory: Killed process`
+  naming each binary at ~2091 MB anon-rss — so "OOM-killed" is the observation, not
+  a reading of a dropped connection. `/dev/null` through the same contained launcher
   answered on both and logged nothing, which is what rules out "the launcher never
-  worked". Claustrum's *unpaired* FIFO block was the last derived row and is
+  worked". ⚠️ **The first run used a 512 MiB cap and that number must not be quoted
+  as the evidence**: 512 MiB sits below any plausible internal bound, so a reference
+  that capped its own read at ~1 GiB and answered a frame there would have produced
+  an identical observation — the cgroup kill lands first either way. It is the
+  straddle failure this file warns about elsewhere, committed by the very entry that
+  warns about it, and caught in review. 2 GiB clears the range; neither binary caps
+  at or below it. Above 2 GiB is unmeasured on both. Claustrum's *unpaired* FIFO block was the last derived row and is
   measured too: a non-blocking `open(O_WRONLY)` of the same FIFO succeeds only if a
   reader is present, and it succeeds against stock claustrum and the reference while
   returning `ENXIO` against an opted-in claustrum — with a FIFO nobody read as the

@@ -72,20 +72,26 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //	       were 100 bytes at maxBytes:4 and 300000 bytes at the 256 KiB default —
 //	       the second is the one that proves the cap is INERT rather than merely
 //	       unhit, since it exceeds a pipe buffer and forces the reader to drain
-//	       while the writer streams. ⚠️ That 300000-byte row is NOT in the
-//	       battery and is NOT in this suite — it lives only in the one-off
-//	       session recorded in docs/PROTOCOL.md's D4 table. The battery gained
-//	       exactly one D4 case, /dev/null (battery.js id 70); every other shape
-//	       stayed one-off, and docs/UPSTREAM-TRACKING.md says so. So CI locks the
-//	       40-byte case for want of a committed home for the larger one, NOT
-//	       because a larger payload would deadlock here — the writers are
-//	       goroutines and the in-process daemon drains concurrently, so 300000
-//	       bytes completes fine. (Two earlier versions of this sentence were
-//	       wrong: one gave the deadlock as the reason, the next said the battery
-//	       owned the load-bearing row. Both were caught in review. If you touch
-//	       it again, check where that row actually lives.) It is parity, not a
-//	       claustrum property. Row 1 is its control: the same maxBytes on a
-//	       regular file still errors.
+//	       while the writer streams. ⚠️ Only the 40-byte size is committed
+//	       anywhere. The 300000-byte measurement is one-off: it is recorded in
+//	       the maxBytes paragraph BELOW docs/PROTOCOL.md's D4 table, not in the
+//	       table itself, which calls this shape "measured but not tabled". The
+//	       battery has no FIFO case at all — its one D4 case is /dev/null
+//	       (battery.js id 70). So CI locks the 40-byte case for want of a
+//	       committed home for the larger one, NOT because a larger payload would
+//	       deadlock here: the writers are goroutines and the in-process daemon
+//	       drains concurrently, so 300000 bytes completes fine.
+//
+//	       ⚠️ THREE earlier versions of this sentence were wrong — deadlock as
+//	       the reason; then "the battery owns the load-bearing row"; then a
+//	       pointer at PROTOCOL's table plus "every other shape stayed one-off",
+//	       which is false for the three shapes this suite's own goldens lock.
+//	       Each was caught in review. The claim that survives is narrow on
+//	       purpose: where the 300000-byte row lives, and nothing about any other
+//	       shape. Keep it that way.
+//
+//	       It is parity, not a claustrum property. Row 1 is its control: the same
+//	       maxBytes on a regular file still errors.
 //
 // Deliberately NOT here, two kinds:
 //

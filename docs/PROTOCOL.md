@@ -573,7 +573,7 @@ is the observable each produces):
 | row | the reference | how we know |
 |---|---|---|
 | the FIFO park | blocks until a writer opens | frame absence, then a reply the instant a writer arrives — plus a non-blocking open-for-write of the same FIFO, which on POSIX succeeds only if a reader is already present, and does |
-| the device OOM | **is OOM-killed the same way** | on `path:"/dev/zero"` under a 512 MiB cgroup cap, both binaries dropped the connection inside 0.3 s and the kernel logged `Memory cgroup out of memory: Killed process` naming each binary at ~520 MB anon-rss; the `/dev/null` control through the same launcher answered on both and logged nothing |
+| the device OOM | **is OOM-killed the same way** | on `path:"/dev/zero"` under a **2 GiB** cgroup cap, both binaries dropped the connection with no frame and the kernel logged `Memory cgroup out of memory: Killed process` naming each binary at ~2091 MB anon-rss; the `/dev/null` control through the same launcher answered on both and logged nothing. ⚠️ The cap is 2 GiB and not the 512 MiB first run **because 512 MiB cannot discriminate**: it sits below any plausible internal bound, so a reference that capped its own read at, say, 1 GiB and answered a frame there would have looked identical. 2 GiB clears that range; neither binary caps at or below it |
 
 ⚠️ **`maxBytes` does not bound any of this, on either binary.** The cap keys off the
 stat size, and that is `0` for every non-regular kind — measured on linux for a

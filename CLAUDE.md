@@ -211,9 +211,11 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `os.ReadFile` on `/dev/zero` never reaches EOF. `maxBytes` cannot save you: the
   cap keys off the stat size, `0` for every non-regular kind on linux, so it is
   inert there on **both** binaries. **Both costs are the reference's own behavior
-  and both are measured** — under a 512 MiB cgroup cap the kernel OOM-killed both
-  daemons on `/dev/zero` within 0.3 s (`Killed process` in the kernel log, naming
-  each binary), with `/dev/null` as the control. **Nine shapes were run, and the
+  and both are measured** — under a **2 GiB** cgroup cap the kernel OOM-killed both
+  daemons on `/dev/zero` with no frame (`Killed process` in the kernel log, naming
+  each binary at ~2091 MB), with `/dev/null` as the control. ⚠️ 2 GiB, not the
+  512 MiB first run: 512 MiB sits below any plausible internal bound, so a reference
+  capping at ~1 GiB would have looked identical. Don't quote the smaller number. **Nine shapes were run, and the
   default-behaviour column is measured on both binaries throughout**: two
   regular-file controls (plain, and over `maxBytes`), paired + unpaired FIFO, a FIFO
   over `maxBytes`, `/dev/null`, a bound `AF_UNIX` socket, an unreadable char device,
