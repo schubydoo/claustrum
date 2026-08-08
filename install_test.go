@@ -565,6 +565,11 @@ func TestDetectLibc(t *testing.T) {
 // classification when `ldd` hangs, instead of blocking forever. A runner that
 // blocks until ctx is cancelled stands in for a stalled ldd; detectLibcWith must
 // still return within its deadline.
+//
+// ⚠️ This is the OPTED-IN path since D14's flip: it passes an explicit 20ms, and at
+// the shipped default (0) no deadline is armed at all. Do not "simplify" it to use
+// lddProbeTimeout — with Background's nil Done channel the hung runner below would
+// block forever, which is precisely the behaviour the default now restores.
 func TestDetectLibcWithTimeout(t *testing.T) {
 	hung := func(ctx context.Context) ([]byte, error) {
 		<-ctx.Done() // mimic a stalled `ldd`: unblocks only when the deadline fires
@@ -593,6 +598,52 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("detectLibcWith did not return after its deadline — ldd timeout not enforced")
+	}
+}
+
+// D14's flip, both arms, on ONE fixture that straddles the deadline — which is the
+// point. A probe answering in 200ms is honest, not stalled, and a wall-clock
+// threshold cannot tell the two apart.
+//
+// ⚠️ SCOPE: `run` is an injected closure, not a spawned process. No `ldd` is
+// resolved, `runLddVersion`/`exec.CommandContext`/`CombinedOutput` are never on the
+// path, and nothing is killed — the closure's ctx arm returns ctx.Err() of its own
+// accord. What this pins is that lddCtx arms (or does not arm) a deadline and that
+// detectLibcWith propagates the result through classifyLibc. It CANNOT show the
+// real probe's surviving-child softness, where CombinedOutput waits on the inherited
+// pipe past the deadline — see the D14 entry in IMPROVEMENTS. A fixture faster than the deadline would
+// answer the same either way and prove nothing (see the D12 straddle lesson).
+//
+// The runner returns a musl banner AND exits 0, because that conjunction is the only
+// one where the reported VALUE moves: classifyLibc only believes the banner when
+// lddErr == nil, and a faithful musl `ldd --version` exits 1. Paired with a glob that
+// misses, this is exactly the host shape D14's entry says is untested in the wild —
+// so it is at least pinned here.
+func TestDetectLibcTimeoutOptInVersusDefault(t *testing.T) {
+	slowMusl := func(ctx context.Context) ([]byte, error) {
+		select {
+		case <-time.After(200 * time.Millisecond):
+			return []byte("musl libc (x86_64)\nVersion 1.2.4"), nil
+		case <-ctx.Done():
+			// Never taken at the default: Background's Done() is nil, and a receive
+			// on a nil channel blocks forever, so the timer arm always wins there.
+			return nil, ctx.Err()
+		}
+	}
+	noMusl := func(string) ([]string, error) { return nil, nil }
+
+	// Default (0) — nothing armed, so the honest-but-slow ldd is waited for and its
+	// answer stands. This is the reference's measured behaviour and the parity position.
+	if got := detectLibcWith(0, slowMusl, noMusl); got != "musl" {
+		t.Errorf("at the shipped default detectLibcWith = %q, want musl — a 200ms ldd must be "+
+			"waited for, not killed; the flip exists so this answer survives", got)
+	}
+
+	// Opted in below the runner's latency — the same honest ldd is killed and the
+	// answer becomes the fallback. That value change is what an operator opts INTO.
+	if got := detectLibcWith(20*time.Millisecond, slowMusl, noMusl); got != "glibc" {
+		t.Errorf("opted in at 20ms detectLibcWith = %q, want the glibc fallback — the deadline "+
+			"must kill a 200ms probe", got)
 	}
 }
 

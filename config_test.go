@@ -603,12 +603,21 @@ func TestParseConfig_GitTimeout(t *testing.T) {
 			}
 		})
 	}
-	// Non-aliasing against the other two duration keys, which is the pair that
-	// could plausibly be crossed: a fused switch case passes gofmt, vet, lint and
-	// the rest of this suite while making one key a dead no-op.
-	if got := parse(t, "git-timeout = 60s"); got.cliProbeTimeout != nil || got.cliDownloadTimeout != nil {
-		t.Errorf("git-timeout leaked into an -install duration: probe=%v download=%v",
-			got.cliProbeTimeout, got.cliDownloadTimeout)
+	// Non-aliasing against the other duration keys, which is the set that could
+	// plausibly be crossed: a fused switch case passes gofmt, vet, lint and the rest
+	// of this suite while making one key a dead no-op.
+	//
+	// ⚠️ libcProbeTimeout is checked here as well as in
+	// TestParseConfig_ProbeTimeoutsDoNotCross, because that test only covers the
+	// libc→git direction. Without this the REVERSE mutant survives: a fused
+	// `case "git-timeout":` that also set cfg.libcProbeTimeout leaves every other
+	// assertion green, since TestParseConfig_LibcProbeTimeout only ever feeds
+	// libc-probe-timeout bodies. The libc case sits directly beneath git-timeout in
+	// applyConfigKey, so this is the adjacency most likely to be copy-pasted.
+	if got := parse(t, "git-timeout = 60s"); got.cliProbeTimeout != nil ||
+		got.cliDownloadTimeout != nil || got.libcProbeTimeout != nil {
+		t.Errorf("git-timeout leaked into an -install duration: probe=%v download=%v libc=%v",
+			got.cliProbeTimeout, got.cliDownloadTimeout, got.libcProbeTimeout)
 	}
 	if got := parse(t, "cli-probe-timeout = 20s"); got.gitTimeout != nil {
 		t.Errorf("cli-probe-timeout also set gitTimeout = %s, want unset", *got.gitTimeout)
@@ -668,6 +677,135 @@ func TestGitCtxArmsNoDeadlineWhenOff(t *testing.T) {
 	}
 	if remaining := time.Until(dl); remaining <= 0 || remaining > 30*time.Second {
 		t.Errorf("deadline is %s away, want (0, 30s]", remaining)
+	}
+}
+
+func TestParseConfig_LibcProbeTimeout(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       *time.Duration
+	}{
+		{"seconds", "libc-probe-timeout = 5s", durp(5 * time.Second)},
+		{"minutes", "libc-probe-timeout = 1m", durp(time.Minute)},
+		{"zero disables", "libc-probe-timeout = 0", durp(0)},
+		{"zero with a unit", "libc-probe-timeout = 0s", durp(0)},
+		{"negative rejected", "libc-probe-timeout = -1s", nil},
+		{"bare number rejected", "libc-probe-timeout = 5", nil},
+		{"garbage rejected", "libc-probe-timeout = soon", nil},
+		{"empty rejected", "libc-probe-timeout =", nil},
+		{"case-insensitive key", "LIBC-PROBE-TIMEOUT = 5s", durp(5 * time.Second)},
+		// The zero spellings the case comment cross-references when it says "the
+		// same zero/negative edges as cli-probe-timeout above". All of them reach
+		// d == 0, which IS the disabled value, so none can switch the deadline on.
+		{"negative zero accepted", "libc-probe-timeout = -0", durp(0)},
+		{"negative zero with a unit accepted", "libc-probe-timeout = -0m", durp(0)},
+		{"negative that truncates to zero accepted", "libc-probe-timeout = -0.4ns", durp(0)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parse(t, tc.body).libcProbeTimeout
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("libcProbeTimeout = %s, want unset (value rejected)", *got)
+			case tc.want != nil && (got == nil || *got != *tc.want):
+				t.Fatalf("libcProbeTimeout = %v, want %s", got, *tc.want)
+			}
+		})
+	}
+}
+
+// The two probe keys are one letter apart and the same type, so a copy-paste in
+// applyConfigKey would have one key populate the other's field. Assert the
+// separation at the parse layer, as max-cli-bytes/max-extract-bytes already do.
+func TestParseConfig_ProbeTimeoutsDoNotCross(t *testing.T) {
+	got := parse(t, "libc-probe-timeout = 5s")
+	if got.cliProbeTimeout != nil {
+		t.Errorf("libc-probe-timeout also set cliProbeTimeout = %s, want unset", *got.cliProbeTimeout)
+	}
+	got = parse(t, "cli-probe-timeout = 5s")
+	if got.libcProbeTimeout != nil {
+		t.Errorf("cli-probe-timeout also set libcProbeTimeout = %s, want unset", *got.libcProbeTimeout)
+	}
+	// ⚠️ The pair above is the FLAG-swap hazard. The COPY-PASTE hazard is a
+	// different neighbour: in applyConfigKey the libc case is written directly
+	// beneath `git-timeout`, not beneath `cli-probe-timeout`, so the git case is
+	// the one physically adjacent to it. A body that sets only the wrong field is
+	// already caught by TestParseConfig_LibcProbeTimeout; the mutant that survives
+	// is a body that sets BOTH — which is exactly the union the cli-probe-timeout
+	// case warns is "not a dead no-op".
+	got = parse(t, "libc-probe-timeout = 5s")
+	if got.gitTimeout != nil || got.cliDownloadTimeout != nil {
+		t.Errorf("libc-probe-timeout leaked into a neighbour: gitTimeout=%v cliDownloadTimeout=%v",
+			got.gitTimeout, got.cliDownloadTimeout)
+	}
+}
+
+func TestPrecedenceLibcProbeTimeout(t *testing.T) {
+	withFile := config{libcProbeTimeout: durp(5 * time.Second)}
+	if got := withFile.effectiveLibcProbeTimeout(9*time.Second, true); got != 9*time.Second {
+		t.Errorf("explicit CLI should win, got %s", got)
+	}
+	if got := withFile.effectiveLibcProbeTimeout(0, false); got != 5*time.Second {
+		t.Errorf("config value should apply when CLI unset, got %s", got)
+	}
+	if got := withFile.effectiveLibcProbeTimeout(0, true); got != 0 {
+		t.Errorf("explicit CLI 0 should disable the deadline, got %s", got)
+	}
+	if got := (config{}).effectiveLibcProbeTimeout(0, false); got != 0 {
+		t.Errorf("empty config should leave the deadline OFF — that is the parity default, got %s", got)
+	}
+	if got := (config{}).effectiveLibcProbeTimeout(-1*time.Second, true); got != 0 {
+		t.Errorf("negative CLI should normalise to 0, got %s", got)
+	}
+}
+
+// The bypass, asserted directly — the assertion a "simplify 0 into 100 years"
+// refactor fails. Off must mean context.WithTimeout is never called, so
+// exec.CommandContext has no cancel path and cannot kill a slow ldd at all.
+func TestLddCtxArmsNoDeadlineWhenOff(t *testing.T) {
+	for _, off := range []time.Duration{0, -1 * time.Second} {
+		ctx, cancel := lddCtx(off)
+		_, hasDeadline := ctx.Deadline()
+		done := ctx.Done()
+		cancel()
+		if hasDeadline {
+			t.Errorf("lddCtx(%s): context carries a deadline, want none armed at all", off)
+		}
+		if done != nil {
+			t.Errorf("lddCtx(%s): context is cancellable, want a plain Background context", off)
+		}
+	}
+	ctx, cancel := lddCtx(30 * time.Second)
+	defer cancel()
+	dl, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("lddCtx(30s): no deadline armed, want one")
+	}
+	if remaining := time.Until(dl); remaining <= 0 || remaining > 30*time.Second {
+		t.Errorf("deadline is %s away, want (0, 30s]", remaining)
+	}
+}
+
+// The SHIPPED default, pinned. Every other test that exercises the probe injects a
+// timeout into detectLibcWith directly, so without this, reinstating
+// `var lddProbeTimeout = 5 * time.Second` would pass the whole suite.
+//
+// ⚠️ Scope, and the same scoping TestFilesReadRegularOnlyDefaultIsOff carries — this
+// comment got it wrong once already and is corrected here: that mutation is a
+// TEST-SUITE hazard, not a shipped-binary one. main.go's -install arm assigns
+// lddProbeTimeout unconditionally before runInstall, and detectLibc has exactly one
+// non-test caller (inside runInstall), so the package-var initialiser is overwritten
+// on every real -install and never reaches production. The detector for the SHIPPED
+// default is the f.DefValue != "0s" assertion in main_dispatch_test.go. Both are
+// worth having; they catch different mutations.
+func TestLddProbeTimeoutDefaultIsOff(t *testing.T) {
+	if lddProbeTimeout != 0 {
+		t.Errorf("package default lddProbeTimeout = %s, want 0 — the deadline must ship OFF (D14)", lddProbeTimeout)
+	}
+	ctx, cancel := lddCtx(lddProbeTimeout)
+	defer cancel()
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		t.Error("the default context carries a deadline; at the shipped default none may be armed")
 	}
 }
 

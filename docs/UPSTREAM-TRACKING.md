@@ -288,8 +288,8 @@ If the check reports drift:
 >   the run, `/dev/zero` OOMs the daemon, and the socket and device rows are uid- and
 >   platform-dependent — so those stay in the one-off session.
 >   ⚠️ **A D4-shaped difference on a stock claustrum is drift, not D4** — check for
->   the key or flag first. The parse table differs from the three durations above
->   (D5, D11, D12) because this key is a **bool**: an unrecognised config value
+>   the key or flag first. The parse table differs from the four durations
+>   (D5, D11, D12, D14) because this key is a **bool**: an unrecognised config value
 >   (`files-read-regular-only = maybe`) is dropped **silently**, leaving the key
 >   unset so the flag value stands — off, unless a flag was also passed — while an
 >   unrecognised *flag* value (`-files-read-regular-only=maybe`) is rejected by
@@ -303,7 +303,7 @@ If the check reports drift:
 >   ⚠️ **One spelling ARMS it, but look for the right symptom**:
 >   `-files-read-regular-only maybe` (a space, not `=`). Go's `flag` never lets a
 >   bool consume the next argument, so the guard goes **on** and `maybe` becomes a
->   positional — where the same typo on any of the three durations exits 2. But
+>   positional — where the same typo on any of the four durations exits 2. But
 >   `flag` also **stops parsing at the first non-flag argument**, so every flag AFTER
 >   the typo is silently dropped (measured: `-files-read-regular-only maybe -version`
 >   exits 2 with `one of --version/--install/--serve/--bridge/--stop is required`).
@@ -317,18 +317,43 @@ If the check reports drift:
 >   non-discriminating shape that produced this file's retracted "never replies"
 >   claim in the first place. `/dev/null` is the discriminating input: both binaries
 >   answer immediately, and only a guarded claustrum answers `-32602`.
+> - **D14** — **linux only** — the `ldd --version` libc probe deadline,
+>   `-libc-probe-timeout` / the `libc-probe-timeout` config key. **Off by default
+>   (`0` = no deadline), and OFF is the parity position** — measured, the reference
+>   showed no deadline at or below 45 s against a stalled `ldd`. ⚠️ **Do not confuse
+>   the key with `cli-probe-timeout`** (D11): that one bounds `<cli> --version` on
+>   every platform, this one bounds `ldd --version` on linux only. They are one
+>   letter apart and the same type.
+>   ⚠️ **A D14-shaped difference on a stock claustrum is drift, not D14** — check for
+>   the key or flag first, and confirm the value parses to a positive duration: the
+>   same config-silent / flag-warns / flag-exits-2 / any-zero-accepted table as D11
+>   above applies verbatim, with `libc-probe-timeout` substituted.
+>   Once genuinely opted in, two symptoms, not one: a `libc` difference on linux MAY
+>   be this (though the fallback usually matches the true value, so rule out the
+>   loader-glob path first — and note `libc` selects which CLI build Desktop
+>   downloads, so this symptom is not cosmetic; that last part is a **driver** claim
+>   the parity harness cannot settle, see ARCHITECTURE → Driver claims and their provenance), **and — more likely —
+>   "the reference's `-install` never returned while claustrum's did"**.
+>   ⚠️ **Even opted in, the bound fires in only one of the two stall shapes:** if the
+>   stalled `ldd` leaves a child holding its output pipe, NEITHER binary replies — so
+>   "claustrum returned and the reference did not" is **consistent with** D14 (confirm
+>   with the `libc` field and whether the loader glob matches), while "neither
+>   returned" does not rule it out. (The 45 s reference result comes from the
+>   discriminating shape only; the surviving-child arm cannot support it, since
+>   claustrum had a deadline and looked identical there.)
+>   ⚠️ **Off linux there is no probe at all**, so a `libc` difference there is NOT
+>   this — and on a host whose `/lib/ld-musl-*.so.*` glob matches, `ldd` is never
+>   spawned, so the deadline cannot fire however it is set.
 > - **CT-1** — `wantPid` adds `pid`/`startTime` to spawn/reattach replies.
 > - **CT-2** — `-keep-children` leaves children running across shutdown.
 > - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /
 >   `metrics-addr` / `listen-pipe` / `max-extract-bytes` / `max-cli-bytes` /
->   `cli-probe-timeout` / `cli-download-timeout` / `git-timeout` /
+>   `cli-probe-timeout` / `cli-download-timeout` / `libc-probe-timeout` / `git-timeout` /
 >   `files-read-regular-only`).
 > - **CT-5** — `-listen-pipe`, the additional Windows named-pipe transport.
 >
 > **Always-on and measured — a probe that reaches the path *may* see a real
-> difference**, and that is expected, not drift. ⚠️ One member has a probe shape
-> that shows **nothing**: D14 (the surviving-child
-> stall, where neither binary replies). A null result there does not rule it out:
+> difference**, and that is expected, not drift.
 > - **D2** — a destructive path target that is or contains the home directory is
 >   refused (`files.extract_tar` `destDir`, `git.worktree_remove` `worktreePath`).
 > - **D6 / D7** — `-cli-version` must be a single path component, and must not
@@ -342,6 +367,10 @@ If the check reports drift:
 >   target method does not read; a correctly typed extra field is ignored by both.
 >   ⚠️ "No real client sends that" is an assertion, not a measurement — Desktop's
 >   per-method param set has never been enumerated against this binding.
+> - **D14 is no longer in this group either** — the `ldd` probe deadline moved to the
+>   off-the-default-path list above when it was flipped on 2026-08-08, so on a stock
+>   claustrum the libc probe has no deadline at all and a `libc` difference is NOT D14
+>   unless the key or flag is set. Look for it above, not here.
 > - **Neither D11 nor D12 is in this group any more** — both bounds moved to the
 >   off-the-default-path list above and are off by default, so on a stock claustrum the
 >   runnability probe has no deadline and the download has no bound. D11 matches the
@@ -366,7 +395,9 @@ If the check reports drift:
 >   trigger unreachable by honest callers — it is not, and that is retracted there.
 >   ⚠️ **D13's always-on status is UNRESOLVED** — the two measured rows differ on disk
 >   too (the reference creates an empty cli-dir, claustrum creates none), so it is
->   listed in IMPROVEMENTS beside D14, not justified.
+>   listed in IMPROVEMENTS as unresolved rather than justified — and since D14's
+>   flip it is the ONLY entry there. D4, D5 and D14 all left that group by being
+>   flipped to opt-in, which is the option still open here.
 >   ⚠️ **Two different honest
 >   shapes, and a triager must not merge them:**
 >   **(1) an origin serving a SHORT or truncated artifact** (bad mirror, partial
@@ -379,27 +410,6 @@ If the check reports drift:
 >   claustrum `download failed: <transport error>`, reference
 >   `decompressing: <transport error>`. Same architectural cause, different
 >   observable. "Flaky network ⇒ checksum mismatch" is the wrong generalisation.
-> - **D14** — **linux only** — the `ldd --version` libc probe is capped at 5 s,
->   always-on. Two symptoms, not one: a `libc` difference on linux MAY be this
->   (though the fallback usually matches the true value, so rule out the
->   loader-glob path first — and note `libc` selects which CLI build Desktop
->   downloads, so this symptom is not cosmetic; that last part is a **driver**
->   claim the parity harness cannot settle, see ARCHITECTURE → Driver claims and their provenance), **and — more likely — "the
->   reference's `-install` never returned while claustrum's did"**. ✅ **Both sides
->   are now measured** (the reference showed no deadline at or below 45 s), which
->   this entry previously said was not the case. ⚠️ **But the bound fires in only
->   one of the two stall shapes:** if the stalled `ldd` leaves a child holding its
->   output pipe, NEITHER binary replies — so "claustrum returned and the reference
->   did not" is **consistent with** D14 (confirm with the `libc` field and whether
->   the loader glob matches), while "neither returned" does not rule it out. (The
->   45 s reference result comes from the discriminating shape only; the
->   surviving-child arm cannot support it, since claustrum has a deadline and looks
->   identical there.) ⚠️ **D14's always-on status is UNRESOLVED** — a threshold with
->   no flag and no config key, listed in IMPROVEMENTS beside D13. **D4 and D5 both
->   left that group by being flipped to opt-in**, which is the option still open here.
->   Check this before concluding D11 or D12 on an `ldd`-slow host — though on a stock
->   claustrum neither is a live suspect, since both bounds are off by default. Off linux there
->   is no probe at all, so a `libc` difference there is NOT this.
 >
 > **This list covers the D/CT-numbered divergences only.** Several claustrum-only
 > behaviors are catalogued by *tier number* instead and are just as real:

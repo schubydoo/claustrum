@@ -239,23 +239,26 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   memory".
 - **`-install` applies wall-clock bounds the reference does not appear to, plus one
   ordering difference.** Three exist — the `<cli> --version` runnability probe
-  (D11), the download (D12), and, on linux only, the `ldd --version` libc probe at
-  5 s (**D14**; `libc_other.go` skips the probe entirely off linux). **D11 and
-  D12 are BOTH off by default now**, opt-in via `-cli-probe-timeout` /
-  `-cli-download-timeout` or the matching `claustrum.conf` keys — the config keys
-  are the reachable ones, since Desktop owns the argv. Each disables differently
-  and neither may be "simplified" into a huge duration: D11 bypasses
-  `context.WithTimeout` entirely, and D12 relies on `http.Client{Timeout: 0}` being
+  (D11), the download (D12), and, on linux only, the `ldd --version` libc probe
+  (**D14**; `libc_other.go` skips the probe entirely off linux). **ALL THREE are
+  off by default now**, opt-in via `-cli-probe-timeout` / `-cli-download-timeout` /
+  `-libc-probe-timeout` or the matching `claustrum.conf` keys — the config keys
+  are the reachable ones, since Desktop owns the argv. ⚠️ `-cli-probe-timeout` and
+  `-libc-probe-timeout` are one letter apart, the same type, and resolved two lines
+  apart in main's `-install` arm; a swap compiles and passes every isolated test,
+  which is what `TestInstallArmWiresEachFlagToItsOwnGlobal` is for. Each disables
+  differently and none may be "simplified" into a huge duration: D11 and D14 bypass
+  `context.WithTimeout` entirely (`lddCtx` for D14), and D12 relies on
+  `http.Client{Timeout: 0}` being
   the stdlib's own "no timeout". ⚠️ D12's zero frees the **body read only** —
   `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s`, both always-on, unnumbered and unprobed on the
-  reference. So at the shipped defaults the only *claustrum-chosen* `-install`
-  wall-clock bound that still applies is the linux `ldd` one (**D14**) — the stdlib
-  transport clocks
-  above still apply on `-cli-url` everywhere — and even that cannot fire **where the
+  reference. **So at the shipped defaults NO *claustrum-chosen* `-install`
+  wall-clock bound applies at all** — only those stdlib transport clocks, and only
+  on `-cli-url`. (D14's, when opted in, still cannot fire **where the
   musl loader glob matches**, because `detectLibcWith` returns before spawning
   `ldd` — the predicate is the glob, not the host, so a musl box whose loader the
-  glob misses still reaches it. Everything below about D11 and D12 therefore
+  glob misses still reaches it.) Everything below about D11, D12 and D14 therefore
   describes what an operator opts INTO, measured against the old hardcoded 15 s and
   5 minutes, except where a sentence says otherwise.
   D13 is **not** a bound — it is verify-before-decompress
@@ -300,17 +303,22 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   parity harness cannot settle — ARCHITECTURE → Driver claims and their provenance; same class as the
   `cliError` one below). **And the bound fires
   in only ONE of the two stall shapes, measured:** against a stalled `ldd` that
-  leaves nothing holding its output pipe, claustrum falls back at 5 s and emits a
+  leaves nothing holding its output pipe, an opted-in claustrum falls back at its
+  deadline and emits a
   full `__INSTALL_RESULT__` where the reference emits nothing at 45 s; against one
   that leaves a surviving child, **neither binary replies at 45 s**. For claustrum
   the cause is `CombinedOutput` waiting on the inherited pipe — the same softness
   `gitTimeout` has; **the reference's cause is unmeasured and that arm cannot show
   it**. Saying the divergence is "total" is wrong, and this file used to say it.
-  ⚠️ **D14 is NOT settled**: it is a threshold with no flag and no config key, its
-  honest-path cost is untested in either direction, and IMPROVEMENTS lists it beside
-  D13 as unresolved rather than justified. D4 was in that group until its flip, and
-  is the closer precedent: its honest-path cost *was* measured and it was flipped
-  anyway, not argued for.
+  ✅ **D14 was flipped 2026-08-08 and is now opt-in** (`-libc-probe-timeout` / the
+  `libc-probe-timeout` key), so the paragraph above describes what an operator turns
+  ON. It was a threshold with no escape hatch whose honest-path cost was untested in
+  **either** direction — and an untested conjunction is not a justification, which is
+  what settled it rather than another round of argument. **D13 is now the only entry
+  left in the unresolved group**, and there are no wall-clock thresholds in it at all.
+  ⚠️ The value delta is still unmeasured **across binaries**: the flip's own
+  `TestDetectLibcTimeoutOptInVersusDefault` pins the musl-banner-plus-exit-0
+  conjunction in the suite, but the cross-binary form has never been run.
   **D13 is verify-before-decompress ordering and its trigger is REACHABLE** — the
   claim that no honest caller produces the input lived in `IMPROVEMENTS.md`, not
   here, and is now retracted there. The reachable case is narrower than "flaky
@@ -330,7 +338,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
   outright that the list has been incomplete every time it was checked). **Three
   driver claims are tracked there**, the third being **"Desktop owns the argv"** —
-  the premise under D3, D4, D5, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
+  the premise under D3, D4, D5, D10, D11, D12, D14 and the "(opt-in)" tagging convention. ⚠️ Its
   evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
   argument field there, but Desktop's own config files and forwarded env were never
   examined, and a config file it turns into argv is one of the two routes that would

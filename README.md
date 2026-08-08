@@ -89,7 +89,7 @@ One binary, mode-switched by flag:
 claustrum -serve   -socket <path> -token-file <path>   # self-daemonize, run the RPC server
 claustrum -bridge  -socket <path>                       # dumb stdio<->socket relay (what SSH attaches)
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
-claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>] [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
+claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>] [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>] [-libc-probe-timeout <dur>]
 claustrum -version
 ```
 
@@ -150,12 +150,15 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   `signal: killed`, among other arms). `-files-read-regular-only` (D4) opts into
   refusing a `files.read` of a FIFO, socket or device — **off by default**, because
   the reference reads `/dev/null` happily and blocks on a writerless FIFO rather
-  than refusing either; opted in it is wire-visible as a `-32602`. Three `-install` knobs are off by default for the same reason:
+  than refusing either; opted in it is wire-visible as a `-32602`. Four `-install` knobs are off by default for the same reason:
   `-max-cli-bytes` (D10) caps the decompressed CLI and the download body,
   `-cli-probe-timeout` (D11) bounds the `<cli> --version` runnability probe — measured, the
   reference installs a CLI that answers in 90 s, so any deadline at or below that fails an
   install it completes — and `-cli-download-timeout` (D12) bounds the download, where the
   reference completes one taking 324 s that the retracted 5-minute default failed at 300 s.
+  `-libc-probe-timeout` (D14, linux only) bounds the `ldd --version` libc probe — it was
+  flipped because its honest-path cost was untested in either direction, and an untested
+  conjunction is not a justification. ⚠️ Not the same knob as `-cli-probe-timeout`.
   Each also has a `claustrum.conf` key, which is the reachable one when Claude
   Desktop owns the argv (a claim about the driver, not the reference — see
   `docs/ARCHITECTURE.md` → Driver claims and their provenance).
@@ -184,8 +187,9 @@ deliberate divergences** — see
 [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity); the bounds
 D11/D12 in particular are wall-clock thresholds, so an honest-but-slow CLI or download diverges
 once they apply — which now means only when `-cli-probe-timeout` (D11) or
-`-cli-download-timeout` (D12) is opted into, since both are off by default. One
-wall-clock threshold DOES still apply by default: D14's 5 s `ldd` cap (linux).
+`-cli-download-timeout` (D12) is opted into, since both are off by default. Since
+D14's flip there is **no claustrum-chosen wall-clock bound left on by default** on
+either `-serve` or `-install`.
 D5's 60 s git cap was flipped to opt-in (`-git-timeout` / the `git-timeout` config
 key) and is off unless asked for, as was D4's `files.read` regular-file guard
 (`-files-read-regular-only` / the `files-read-regular-only` key) — that one is not

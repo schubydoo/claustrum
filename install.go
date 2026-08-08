@@ -758,15 +758,19 @@ func isRegularFile(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-// lddProbeTimeout bounds the `ldd --version` libc probe. This is divergence D14;
-// see IMPROVEMENTS.md for the measured tables.
+// lddProbeTimeout bounds the `ldd --version` libc probe WHEN SET; it is 0 by
+// default and then bounds nothing. This is divergence D14; see IMPROVEMENTS.md for
+// the measured tables.
 //
 // MEASURED: the reference applies no deadline here at or below 45 s — probed with
 // a stub ldd on PATH and the musl loader glob masked. That result comes from the
 // `exec sleep 120` shape below ONLY; the surviving-child shape cannot support it,
-// because claustrum has a deadline and looks identical there. An earlier version
+// because the PRE-FLIP claustrum had a deadline and looked identical there. An earlier version
 // of this comment said the unbounded wait was "assumed"; it is measured now, in
-// that one shape. We cap it and fall back to the default classification on timeout.
+// that one shape. When a deadline IS set we cap the probe and fall back to the
+// default classification on timeout; at the shipped default none is set — see the
+// D14 FLIP paragraph at the bottom of this comment, which is the current default and
+// not an afterthought.
 //
 // A wall-clock deadline cannot separate a hostile `ldd` from a slow one, so an
 // honest-but-slow `ldd` falls back too — but that usually changes NOTHING
@@ -787,6 +791,9 @@ func isRegularFile(p string) bool {
 //
 //	stub `exec sleep 120` (nothing survives the kill) -> claustrum falls back at 5s
 //	  and prints a complete __INSTALL_RESULT__; the reference emits nothing at 45s.
+//	  ⚠️ The claustrum column is the PRE-FLIP always-on build (the retracted 5s
+//	  default). At the shipped default it does not fall back at all and this row's
+//	  claustrum column becomes the reference's.
 //	stub `sleep 120` (a child survives holding the output pipe) -> NEITHER binary
 //	  replies at 45s (measured). For CLAUSTRUM the cause is CombinedOutput waiting
 //	  on the inherited pipe after the deadline kills the shell — the same softness
@@ -798,7 +805,22 @@ func isRegularFile(p string) bool {
 // classifyLibc for the loader glob, libc_other.go for why the probe does not run
 // off linux at all, and IMPROVEMENTS tier item 5 for the musl-banner fixture that
 // would settle it.)
-const lddProbeTimeout = 5 * time.Second
+// D14 FLIP: ZERO (the default) DISABLES IT, which is the parity position. Opt in
+// with -libc-probe-timeout or the libc-probe-timeout key in claustrum.conf; the
+// config key is the reachable one, since Claude Desktop owns the -install argv.
+// Disabled bypasses context.WithTimeout ENTIRELY (see lddCtx) rather than passing a
+// huge duration, for the same reason D3 and D10 bypass their io.LimitReaders and D5
+// bypasses gitCtx: an unarmed cancel path is what makes exec.CommandContext have
+// nothing to fire.
+//
+// ⚠️ What turning it OFF costs, stated plainly: against a stalled `ldd` claustrum
+// now waits as the reference does, so `-install` can block indefinitely instead of
+// falling back at 5 s. That is the trade — it is the reference's measured behaviour
+// (no reply at 45 s in the discriminating shape), and the caller who wants the bound
+// can ask for it. It was flipped rather than argued for because the honest-path cost
+// was never measured in EITHER direction and the caller could not decline it; D4 is
+// the precedent, where the cost WAS measured and it was flipped anyway.
+var lddProbeTimeout time.Duration
 
 // runLddVersion runs `ldd --version` under ctx; the process is killed if ctx expires.
 func runLddVersion(ctx context.Context) ([]byte, error) {
@@ -839,10 +861,23 @@ func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, er
 	if hasMuslLoader(glob) {
 		return "musl" // run() is deliberately never called on this path
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := lddCtx(timeout)
 	defer cancel()
 	out, err := run(ctx)
 	return classifyLibc(out, err, glob)
+}
+
+// lddCtx builds the context for the `ldd` probe, arming a deadline only when one is
+// asked for. At the shipped default (0) it returns a plain Background context, so
+// nothing is armed and exec.CommandContext has no cancel path — NOT a huge-but-finite
+// deadline. Do not "simplify" the two into one: a context with a far-off deadline
+// still reports one, still spawns the timer goroutine, and still kills the probe
+// eventually, which is the divergence this flip removes. Mirrors gitCtx (D5).
+func lddCtx(timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.Background(), func() {}
+	}
+	return context.WithTimeout(context.Background(), timeout)
 }
 
 // muslLoaderGlob matches the musl dynamic loader for ANY architecture. The

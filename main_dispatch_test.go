@@ -51,11 +51,16 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// socket goldens read the package var, so a -serve case leaking `true` turns
 	// three unrelated tests into seed-dependent failures under -shuffle.
 	oldRegularOnly := filesReadRegularOnly
+	// lddProbeTimeout joined with D14's flip. Same -install arm as cliProbeTimeout,
+	// and the two are one letter apart in both flag and global, so a leak here would
+	// masquerade as a cli-probe-timeout leak while reading TestLddProbeTimeoutDefaultIsOff.
+	oldLddTimeout := lddProbeTimeout
 	t.Cleanup(func() {
 		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
 		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 		gitTimeout = oldGitTimeout
 		filesReadRegularOnly = oldRegularOnly
+		lddProbeTimeout = oldLddTimeout
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -88,14 +93,33 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 //
 // Distinct values on purpose: equal ones would pass under a swap.
 func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
-	if _, exited := runMain(t, "-install", "-cli-probe-timeout", "7s", "-cli-download-timeout", "42s"); exited {
+	if _, exited := runMain(t, "-install", "-cli-probe-timeout", "7s",
+		"-cli-download-timeout", "42s", "-libc-probe-timeout", "23s"); exited {
 		t.Fatal("-install should return, not exit")
 	}
 	if cliProbeTimeout != 7*time.Second {
-		t.Errorf("cliProbeTimeout = %s, want 7s (-cli-probe-timeout must reach it, not the download global)", cliProbeTimeout)
+		t.Errorf("cliProbeTimeout = %s, want 7s (-cli-probe-timeout must reach it, not the download or libc global)", cliProbeTimeout)
 	}
 	if cliDownloadTimeout != 42*time.Second {
 		t.Errorf("cliDownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, not the probe global)", cliDownloadTimeout)
+	}
+	// ⚠️ The sharpest of the three. -libc-probe-timeout and -cli-probe-timeout differ
+	// by one letter, both are flag.Duration, and both are resolved two lines apart in
+	// main's -install arm — so a swap compiles, vets, and passes every test that
+	// exercises either deadline in isolation. Only distinct values here catch it.
+	if lddProbeTimeout != 23*time.Second {
+		t.Errorf("lddProbeTimeout = %s, want 23s (-libc-probe-timeout must reach it, not the CLI probe global)", lddProbeTimeout)
+	}
+	// The DECLARED default, the one-character regression the other assertions miss:
+	// flipping flag.Duration's default argument back to 5*time.Second survives every
+	// explicit-value test in the suite while shipping a binary that deadlines every
+	// linux -install.
+	f := lastMainFlagSet.Lookup("libc-probe-timeout")
+	if f == nil {
+		t.Fatal("main() did not register -libc-probe-timeout")
+	}
+	if f.DefValue != "0s" {
+		t.Fatalf("-libc-probe-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
 	}
 }
 
@@ -104,14 +128,18 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 // Asserting it needs the cleanup to have RUN, so the call goes in a subtest and
 // the assertion follows it — t.Cleanup fires at the subtest's end.
 func TestRunMainRestoresInstallGlobals(t *testing.T) {
+	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
+	oldMaxCLI, oldMaxExtract, oldLdd := maxCLIBytes, maxExtractBytes, lddProbeTimeout
 	cliProbeTimeout, cliDownloadTimeout = 3*time.Second, 4*time.Second
-	maxCLIBytes, maxExtractBytes = 11, 22
+	maxCLIBytes, maxExtractBytes, lddProbeTimeout = 11, 22, 6*time.Second
 	t.Cleanup(func() {
-		cliProbeTimeout, cliDownloadTimeout = 0, 0
-		maxCLIBytes, maxExtractBytes = 0, 0
+		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
+		maxCLIBytes, maxExtractBytes, lddProbeTimeout = oldMaxCLI, oldMaxExtract, oldLdd
 	})
 	t.Run("inner", func(t *testing.T) {
-		if _, exited := runMain(t, "-install", "-cli-probe-timeout", "9s", "-cli-download-timeout", "8s", "-max-cli-bytes", "99"); exited {
+		if _, exited := runMain(t, "-install", "-cli-probe-timeout", "9s",
+			"-cli-download-timeout", "8s", "-max-cli-bytes", "99",
+			"-libc-probe-timeout", "7s"); exited {
 			t.Fatal("-install should return, not exit")
 		}
 	})
@@ -124,6 +152,13 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 		{"cliDownloadTimeout", cliDownloadTimeout, 4 * time.Second},
 		{"maxCLIBytes", maxCLIBytes, int64(11)},
 		{"maxExtractBytes", maxExtractBytes, int64(22)},
+		// lddProbeTimeout joined runMain's save/restore with D14's flip and had no
+		// row here — repeating exactly the omission TestRunMainRestoresServeGlobals
+		// was written to close for gitTimeout and filesReadRegularOnly. Measured
+		// without this row: dropping the restore leaks 7s and is caught on only
+		// 2 of 10 shuffle seeds, and CI passes no -shuffle at all, so it would
+		// never have gone red.
+		{"lddProbeTimeout", lddProbeTimeout, 6 * time.Second},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)

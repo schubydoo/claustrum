@@ -1414,7 +1414,7 @@ against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — s
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
 `metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes`,
-`cli-probe-timeout`, `cli-download-timeout`, `git-timeout` and
+`cli-probe-timeout`, `cli-download-timeout`, `libc-probe-timeout`, `git-timeout` and
 `files-read-regular-only` defaults (precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
@@ -1424,7 +1424,8 @@ hardening.
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
           [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
+          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>] \
+          [-libc-probe-timeout <dur>]
 ```
 
 Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>`
@@ -1438,11 +1439,11 @@ probed** — none at or below 45 s for D11 and D14 (D14 in one stall shape only;
 its bullet below), 400 s for D12. That is a floor,
 not a demonstration of absence: D11 is additionally bounded **above 90 s, not shown
 absent**, since the reference installed a CLI that answered at 90 s.
-**D11's and D12's are BOTH off by default now**, so a stock claustrum applies just
-one of the three on linux — D14's `ldd` bound — and **none** off linux. The last
-two behaviours have no frame at all.
+**All three are off by default now** — D11's, D12's and, since D14's flip, the
+`ldd` one too — so a stock claustrum applies **none** of them, on linux or
+anywhere else. The last two behaviours have no frame at all.
 
-Both the D11 and D12 bullets below therefore describe what an operator turns on,
+The D11, D12 and D14 bullets below therefore describe what an operator turns on,
 except where a sentence says otherwise. An opted-in download bound always surfaces
 a `cliError` when it fires — at the shipped default it fires never; an opted-in
 runnability timeout on the cache-hit check can surface as the **absence** of an
@@ -1524,12 +1525,16 @@ left in place:
   still wedged on it when the harness stopped the probe. The observable is the
   absence of an error, not the presence of one. **At the default, none of this
   happens: claustrum waits with the reference.**
-- **The `ldd --version` libc probe is bounded at 5 s — intentional divergence
-  (D14), always-on, linux only. ⚠️ Always-on is its current state, not a settled
-  one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside
-  D13 — a wall-clock threshold with no flag and no `claustrum.conf` key, so
-  nobody who pays for it can decline. (D4 was in that group until it was flipped
-  to opt-in, which is the option still open here.) Off linux the probe never runs
+- **The `ldd --version` libc probe deadline is OFF by default — intentional
+  divergence (D14), opt-in, linux only.** Set it with `-libc-probe-timeout <dur>` or
+  the `libc-probe-timeout` key in `claustrum.conf`; at the default no deadline is
+  armed at all, so an `ldd` of any latency is waited for, as the reference waits.
+  ⚠️ **Do not confuse the key with `cli-probe-timeout`** — that one bounds the
+  `<cli> --version` runnability probe (D11) and applies on every platform; this one
+  bounds `ldd --version` and only exists on linux. It was flipped rather than
+  justified: it was a threshold with no escape hatch whose honest-path cost was
+  untested in either direction, and an untested conjunction is not a justification.
+  Off linux the probe never runs
   (`libc_other.go` returns `""`), so no bound exists there; on linux
   `detectLibcWith` returns `"musl"` from the loader glob **before** spawning `ldd`,
   so it cannot fire on a host that glob matches. **Measured: the reference applies
@@ -1550,8 +1555,11 @@ left in place:
   [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*).
   🔴 **The bound fires in only one of the two stall shapes**, and this bullet used
   to claim the divergence was total. Measured: with a stalled `ldd` that leaves
-  nothing holding its output pipe, claustrum falls back at 5 s and emits a complete
-  `__INSTALL_RESULT__` where the reference emits nothing at 45 s; with one that
+  nothing holding its output pipe, an **opted-in** claustrum falls back at its
+  deadline and emits a complete
+  `__INSTALL_RESULT__` where the reference emits nothing at 45 s (the measured run
+  used the retracted 5 s default; at the shipped default claustrum does not fall back
+  at all, and this row's claustrum column becomes the reference's); with one that
   leaves a surviving child, **neither binary replies at 45 s**. See IMPROVEMENTS
   → D14.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
@@ -1616,7 +1624,8 @@ Checksum + error framing (probe-verified):
   transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
-  beside D14 rather than justified.
+  as unresolved rather than justified — and since D14's flip it is the ONLY entry
+  there.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →

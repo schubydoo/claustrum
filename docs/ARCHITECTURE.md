@@ -168,8 +168,10 @@ sits in front of those calls so operators can quiet the daemon:
   "serverVersion": "<daemon id>",
   "os":   "linux",            // GOOS
   "arch": "amd64",            // GOARCH
-  "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux a >5s
-                              // ldd falls back to glibc (D14). The driver uses
+  "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux an ldd
+                              // slower than -libc-probe-timeout falls back to glibc
+                              // when that is set; no deadline by default (D14).
+                              // The driver uses
                               // this field to pick which CLI build to download —
                               // a third-binary claim; see the provenance note below.
   "cliPath": "<cli-dir>/<cli-version>",
@@ -257,16 +259,16 @@ evidence supports "no argv affordance in the setup UI, on one build, seen once",
   of what Desktop grows. An env var Desktop forwarded would not qualify either;
   nothing in `config.go` or `main.go` reads the environment for these knobs, so
   forwarding one changes nothing.
-- **What rests on it:** **D3, D4, D5, D10, D11 and D12** — every "why it stopped
-  being always-on" argument turns on the person who pays having no way to decline.
-  The claim is load-bearing on both argv surfaces: D3, D4 and D5 are `-serve`
-  flags, D10, D11 and D12 are `-install` ones — plus
+- **What rests on it:** **D3, D4, D5, D10, D11, D12 and D14** — every "why it
+  stopped being always-on" argument turns on the person who pays having no way to
+  decline. The claim is load-bearing on both argv surfaces: D3, D4 and D5 are
+  `-serve` flags, D10, D11, D12 and D14 are `-install` ones — plus
   the **"(opt-in)" tagging convention** in IMPROVEMENTS, which *defines* opt-in as a
   flag **and** a config key on exactly this ground, and so binds every future
   **D-numbered** entry. (The CT block uses the tag in a looser "off unless asked
   for" sense — CT-1 is caller-activated and CT-3 is the config mechanism itself —
   so it does not rest on this claim.)
-  The trigger is recorded once here rather than seven times, because it is one
+  The trigger is recorded once here rather than eight times, because it is one
   claim shared by all of them.
 
 *(Not the only other driver claims in these docs — D6's and D7's clause-(b)
@@ -282,8 +284,9 @@ to it rather than trusting it.
 
 Below are the dependents of the `cliError` and `libc` claims, where each entry needs
 its own trigger. *(The argv claim's dependents are recorded with the claim above
-instead, because one trigger covers all of them. D10 and D11 appear in both roles —
-below for the `cliError` claim, above for the argv one.)*
+instead, because one trigger covers all of them. D10, D11 and D14 appear in both
+roles — below for the `cliError` (D10, D11) or `libc` (D14) claim, above for the
+argv one. D14 joined the argv list when it was flipped on 2026-08-08.)*
 
 - **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
   always-on justification — it is in IMPROVEMENTS' unresolved group).
