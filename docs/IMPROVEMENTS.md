@@ -454,9 +454,11 @@ reference. They follow the "match upstream first, then improve" plan: only
 consider them now that the harness proves parity, and document each as an
 *intentional* divergence in [`PROTOCOL.md`](PROTOCOL.md) + the PR if adopted.
 
-**Each entry is opt-in, always-on, or — for D1 alone — *conditional*, activated by
-the caller supplying `-cli-checksum` rather than by an operator. The entry says
-which.** Which shape an
+**Each D-numbered entry is opt-in, always-on, or — for D1 alone — *conditional*,
+activated by the caller supplying `-cli-checksum` rather than by an operator. The
+entry says which.** (The CT block uses "(opt-in)" in the looser "off unless asked
+for" sense — CT-1 is caller-activated too, and CT-3 is the config mechanism itself;
+see D1's entry.) Which shape an
 entry may take is not per-entry taste. It comes from **THE RULE** — the standard
 this project judges every divergence against, in priority order:
 
@@ -1336,8 +1338,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   would keep `exec.CommandContext`'s kill-on-cancel path in play where the
   reference showed no such cut-off.
 - **What still ships bounded on the `-install` path:** of the *claustrum-chosen*
-  bounds, only the linux-only `ldd` probe (**D14**), which is not proposed for a
-  flip — D12's download bound took this
+  bounds, only the linux-only `ldd` probe (**D14**), which has **not** been flipped —
+  its always-on status is unresolved rather than settled, and a flip is queued behind
+  D5's and D4's. D12's download bound took this
   same flip alongside D11's. ⚠️ Not the same as "nothing bounds an `-install`":
   `http.DefaultTransport`'s `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s` still apply on the `-cli-url` path, on every platform,
@@ -1466,8 +1469,10 @@ completes it with `git.worktree_remove`, which shares the predicate
 
 - On the `-cli-url` path the **reference decompresses first** and aborts on the
   first invalid bytes; **claustrum hashes the response as it streams to disk,
-  verifies the checksum, then decompresses**. The order shows on any blob that is
-  **both** undecompressable **and** wrong-checksummed:
+  verifies the checksum, then decompresses**. The order shows on a blob that is
+  **both** undecompressable **and** wrong-checksummed — ⚠️ but the divergent string
+  is **not always** `checksum mismatch`: a transfer that dies mid-stream never
+  reaches the checksum on claustrum at all (row 3, and the bullet below the table):
 
   | input | reference | claustrum |
   |---|---|---|
