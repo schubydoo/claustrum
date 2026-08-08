@@ -590,7 +590,8 @@ a reader should not take on trust:
   clause says "diagnostic text", and an empty directory is not text. It is also
   state the caller keeps: a `files.stat` on the cli-dir after a failed install
   tells the two binaries apart, through this same daemon and with no special
-  fixture. ⚠️ **Measured 2026-08-08, that stat discriminates only from a
+  fixture. ⚠️ **Measured 2026-08-08 on the short-artifact row (derived for the
+  interrupted transfer), that stat discriminates only from a
   cli-dir that did not already exist** — pre-create it and both binaries leave the
   same *end state* behind, so in the steady state (a cli-dir present because
   something installed before) a stat taken after the install does *not* tell them
@@ -635,7 +636,8 @@ than explained away.** **D13** is not a threshold and no clock is
 involved: it fails because an honest input *can* reach the guard, and what the
 guard does is observable — here the state it skips, an empty cli-dir where
 claustrum leaves none **when the cli-dir did not already exist** (pre-create it and
-both leave it alone — measured 2026-08-08). It is verify-before-decompress ordering,
+both leave it alone — measured 2026-08-08 on the short-artifact row, derived for the
+interrupted transfer). It is verify-before-decompress ordering,
 and it fails clause (c) because the two measured rows differ on disk as well as in
 text. It is not resolved by this section.
 
@@ -1202,8 +1204,9 @@ completes it with `git.worktree_remove`, which shares the predicate
 
   ⚠️ **What that costs the *user* is a DRIVER claim, not a measured one.** Claude
   Desktop *parses* `cliError`: a disk-full-shaped message is reported as a terminal
-  failure with an actionable code, and anything else is treated as retryable and
-  re-attempted over SFTP. So the cap's message is expected to cost the user the
+  failure with an actionable code, and anything else is treated as retryable rather
+  than terminal (the claim is about that classification; the retry's *shape* is
+  unobserved). So the cap's message is expected to cost the user the
   **free-space hint**, not just a different string — but that is a statement about a
   **third binary**, which the reference-vs-claustrum harness cannot confirm or
   refute and a size-limited filesystem cannot observe. See
@@ -1646,7 +1649,10 @@ completes it with `git.worktree_remove`, which shares the predicate
   the identical transport error as `decompressing: <transport error>`. Same
   architectural cause, two different observable shapes.
 - **Observable delta:** the `cliError` string **and the on-disk end state** — on the
-  two rows measured for it the reference leaves an empty cli-dir where claustrum leaves none.
+  two rows measured for it, and **only when the cli-dir did not already exist**, the
+  reference leaves an empty cli-dir where claustrum leaves none. ⚠️ That condition is
+  **measured on the short-artifact row and derived for the interrupted transfer**,
+  which was never run pre-created.
   ⚠️ This bullet used to read "the string, and only that", hedged by the fact that
   the controls compared reply strings and never looked at disk. The disk state has
   since been measured (table below) and it differs, so the hedge became a wrong
@@ -1690,11 +1696,12 @@ completes it with `git.worktree_remove`, which shares the predicate
   2026-08-07; see the preamble for why the clause was not widened to fit it). It
   stays in the code, labelled, rather than justified by a rule bent around it.
 - **The reopen fixture was run on 2026-08-08. It did not meet the condition, and
-  D13 stays unresolved.** A failing `-install` followed by the SFTP retry against
+  D13 stays unresolved.** A failing `-install` followed by a `-cli-zst` retry (the
+  fixture's own choice of follow-up, not an observed one) against
   the same `-cli-dir`, with the cli-dir absent (P0) and pre-created empty (P1),
   both binaries — evidence in `scratch/d13-clidir-2026-08-08/` (gitignored):
 
-  | binary | pre | failing install → on disk | SFTP retry → on disk |
+  | binary | pre | failing install → on disk | `-cli-zst` retry → on disk |
   |---|---|---|---|
   | reference | P0 | `decompressing: unexpected EOF` · empty cli-dir | **installs** · cli-dir + the CLI |
   | claustrum | P0 | `checksum mismatch: …` · **nothing** | **installs** · cli-dir + the CLI |
@@ -1726,8 +1733,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   that point.
   ⚠️ **What does not follow is the reopen condition**, which asks about **Desktop** —
   whether it stats the cli-dir itself is a driver claim the parity harness cannot
-  settle, and modelling the retry as `-cli-zst` is *derived from* the `cliError`
-  driver claim rather than independent of it.
+  settle, and modelling the retry as `-cli-zst` was an **assumption of the
+  fixture's design** — the `cliError` claim is about how Desktop *classifies* the
+  string, not how it retries, and the retry's shape is unobserved.
   ⚠️ **And "inert to the install path" would be too strong**, measured: the *staging
   location* does depend on the pre-state (see PROTOCOL → Staging and cleanup). Only
   the end state is identical.
@@ -1753,17 +1761,19 @@ completes it with `git.worktree_remove`, which shares the predicate
   to say "present".
 - ⚠️ **The "cost-free" reading leans on a claim about the driver, and that claim is
   not parity-measured.** Neither binary's string is disk-full-shaped, so Claude
-  Desktop classifies both the same way and retries over SFTP — which is what makes
-  the delta cheap even though the entry is unresolved. That is a statement about a
-  **third binary**, derived from how the shipped Desktop client handles the field
-  rather than from a reference-vs-claustrum probe, and the parity harness cannot
-  settle it. If it is ever falsified, the cheapness argument fails too and this
+  Desktop classifies both the same way and retries rather than failing terminally —
+  which is what makes the delta cheap even though the entry is unresolved. **That
+  classification** is a statement about a **third binary**, derived from how the
+  shipped Desktop client handles the field rather than from a reference-vs-claustrum
+  probe, and the parity harness cannot settle it. ⚠️ The claim covers the
+  classification **only**; *how* Desktop retries is a separate, unobserved question,
+  so do not read a particular retry shape out of it. If it is ever falsified, the cheapness argument fails too and this
   entry owes an opt-in flip outright. The reopen trigger below is exactly that
   observation.
 - **Trade:** matching would mean feeding unverified bytes to the decompressor,
   giving up a verify-then-use property to change which error a *failing* install
-  reports **and whether it leaves an empty cli-dir behind**. That is why the
-  reachability correction above does not flip it.
+  reports **and, when the cli-dir did not already exist, whether it leaves an empty
+  one behind**. That is why the reachability correction above does not flip it.
 - **Reopen trigger:** any change to how Claude Desktop classifies `cliError` — if a
   future client distinguished `checksum mismatch` from a decompression error, or
   matched either as terminal, the delta would stop being cheap and this entry would

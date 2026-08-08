@@ -1674,8 +1674,12 @@ Checksum + error framing (probe-verified):
 Staging and cleanup (probe-verified):
 
 - The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
-  into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
-  matches `.fetch-*`, so an interrupted install's litter is reclaimed.
+  into place, never at `<cliPath>.tmp`. This is **claustrum's own staging, on both
+  source paths** — one code path serves `-cli-url` and `-cli-zst` alike. The name
+  matters: the orphan sweep below matches `.fetch-*`, so an interrupted install's
+  litter is reclaimed. (That the *reference* uses the same name rests on the sweep
+  measurement, and separately on the mid-download table above, which is `-cli-url`
+  only.)
 - A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`** when the
   cli-dir already exists — on a **first install it lands at
   `$TMPDIR/claustrum-fetch-<random>` instead**, because `fetchToFile` runs before
@@ -1696,9 +1700,11 @@ Staging and cleanup (probe-verified):
   of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
   every path; only a SIGKILLed download leaves it behind, and nothing reclaims
   that. (This staging file is claustrum's own. No frame changes either way.)
-- **What each binary has on disk mid-download — measured 2026-08-08, filling the
-  gap this bullet used to record as never measured.** Listing the cli-dir against a
-  deliberately slow origin, then reading the first bytes of whatever is in flight:
+- **What each binary has on disk mid-download (`-cli-url` only) — measured
+  2026-08-08, filling the gap this bullet used to record as never measured.**
+  Listing the cli-dir against a deliberately slow origin, then reading the first
+  bytes of whatever is in flight. ⚠️ The `-cli-zst` path is **not** covered here —
+  the reference's `.fetch-<random>` must not be carried over to it:
 
   | | in-flight file | first bytes |
   |---|---|---|

@@ -214,7 +214,9 @@ Go error.
 ⚠️ **These strings are not free-form diagnostics — the driver reads them.** Claude
 Desktop classifies `cliError` by *text*: a message shaped like a disk-full failure
 is surfaced as a terminal error with an actionable code, and messages that do not
-match are, on the evidence, retried over the SFTP path. So changing the wording of a
+match are treated as retryable rather than terminal. ⚠️ **The claim is about that
+classification only** — *how* the driver retries is unobserved, so do not read a
+particular retry shape out of it. So changing the wording of a
 row above — or adding a guard whose error pre-empts one — can change what a user is
 told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
 
@@ -235,7 +237,7 @@ proves nothing:
 
 | claim | fixture | control that must fire |
 |---|---|---|
-| `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe retry-over-SFTP vs terminal report | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
+| `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe **a retry of any shape** vs terminal report — the claim is about classification, so keying the discriminator to one retry shape would read a differently-shaped retry as a falsification | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
 | `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
 | argv | the setup UI **and** an enumeration of Desktop's own config files and forwarded environment | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI half done (below); the rest unrun |
 
@@ -292,11 +294,14 @@ argv one. D14 joined the argv list when it was flipped on 2026-08-08.)*
   always-on justification — it is in IMPROVEMENTS' unresolved group).
 - **D13's 2026-08-08 reopen measurement** rests on it a second time, and this is a
   *different* dependency from the one above: the fixture modelled the driver's next
-  move after a failed install as a `-cli-zst` retry, which is what the `cliError`
-  claim says Desktop does. If Desktop does not retry over SFTP, that run measured
-  the wrong follow-up and its "same end state either way" result says nothing about
-  the driver. The result still stands as a claim about **the two binaries**; only
-  its bearing on the reopen condition depends on this. 🔴 **Reopen trigger:** any
+  move after a failed install as a `-cli-zst` retry. ⚠️ **That was an assumption of
+  the fixture's design, not something the `cliError` claim establishes and not
+  something anyone has observed** — the claim says Desktop treats a non-disk-full
+  `cliError` as retryable, which does not say *how* it retries. If the follow-up is
+  some other shape, that run measured the wrong one and its "same end state either
+  way" result says nothing about the driver. The result still stands as a claim
+  about **the two binaries**; only its bearing on the reopen condition depends on
+  this. 🔴 **Reopen trigger:** any
   observation of what Desktop actually does after an `-install` reports a
   `cliError` — D13's own trigger fires on how Desktop *classifies* the string, which
   is a different half and would not catch a Desktop that classifies as assumed but

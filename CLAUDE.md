@@ -337,8 +337,10 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   end state** on both binaries either way, and the on-disk delta is **conditional on
   the cli-dir being absent** (it does not self-heal across repeated failures). Both
   results narrow the divergence and neither is evidence about Desktop, which is what
-  the condition asks for — and modelling that retry as `-cli-zst` is *derived from*
-  the `cliError` driver claim below, not independent of it. ⚠️ Don't upgrade this to
+  the condition asks for — and modelling that retry as `-cli-zst` was an
+  **assumption of the fixture's design**, which the `cliError` claim below does not
+  establish: that claim is about how Desktop *classifies* the string, not how it
+  retries, and the retry's shape has never been observed. ⚠️ Don't upgrade this to
   "the leftover dir is inert": the *staging location* does depend on the pre-state,
   and only the end state is identical. What keeps the delta cheap meanwhile is a
   claim about the *driver*: **Desktop parses `cliError`**, treating a

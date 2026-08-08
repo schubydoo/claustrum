@@ -403,8 +403,9 @@ If the check reports drift:
 >   binaries whether or not the cli-dir was pre-created, and the on-disk delta is
 >   **conditional on the cli-dir being absent** (pre-create it and claustrum's
 >   failing install leaves what the reference leaves; it does not self-heal across
->   repeated failures). ⚠️ That last part is measured on the **short-artifact** row
->   and **derived** for the interrupted transfer, which was never run pre-created —
+>   repeated failures). ⚠️ **The pre-created result** is measured on the
+>   **short-artifact** row and **derived** for the interrupted transfer, which was
+>   never run pre-created —
 >   so it does not rule an interrupted-transfer report out of D13. That narrows the divergence; it does **not** resolve it, and
 >   it is not evidence about Desktop, which is what the reopen condition asks for.
 >   ⚠️ Do **not** upgrade this to "the leftover directory is inert" — the *staging

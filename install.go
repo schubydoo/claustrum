@@ -290,8 +290,8 @@ var errStagingVanished = errors.New("staging file vanished")
 // it could not have seen this. Claustrum's exposure is the STAGING window —
 // decompress, chmod, probe, rename — not the download, and the retry below covers
 // all of it, since a loss is only detected at the rename anyway. The download blob
-// is covered separately, by being outside isSweptName so no sweep claims it.  The reference's own exposure is
-// the reference's to carry.
+// is covered separately, by being outside isSweptName so no sweep claims it.
+// The reference's own exposure is the reference's to carry.
 //
 // The caller retries once on errStagingVanished, which is what actually fixes
 // that. A smarter sweep cannot: skipping entries that postdate our own start
