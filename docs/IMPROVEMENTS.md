@@ -51,7 +51,8 @@ flip; 0 = no deadline by default**, and 60 s when set to the retracted value).
 here.** The `gitTimeout` half is **D5** — now **opt-in, default off**, which records a claustrum-only `-32603`
 carrying `signal: killed` when the deadline fires, a real on-wire cost, and which
 failed rule 3 while it was always-on — which is why it was flipped. The `ldd` half is **D14**, numbered
-after the reference was finally probed on it.
+after the reference was finally probed on it and **now opt-in too, default off** —
+so at the shipped defaults neither half of this item applies.
 
 ⚠️ The cap addresses the *stall* half only. A **hostile** `ldd` resolved
 earlier in `PATH` that answers in 1 s is untouched by the deadline, and
@@ -65,13 +66,19 @@ survives the kill; the surviving-child arm is non-discriminating) using a
 glibc-banner stub. Whether the *reported
 value* ever diverges is untested, and the fixture that would settle **that** must
 use a **musl** banner, not a glibc one: a
-stand-in `ldd` on `PATH` that sleeps 6 s, prints `musl libc (x86_64)` **and exits
+stand-in `ldd` on `PATH` that sleeps longer than the configured deadline, prints
+`musl libc (x86_64)` **and exits
 0**, with the musl loader glob masked. The exit code is load-bearing:
 `classifyLibc` takes the musl banner only when `lddErr == nil`, and a real musl
 `ldd --version` prints to stderr and exits 1 — a faithful stand-in would fail the
 control for a reason unrelated to the timeout. (The divergence set is narrow — glob
-misses ∧ exits 0 ∧ output says musl ∧ slower than 5 s — but per D14 that
-conjunction is **untested, not a demonstrated impossibility**.) Expected: reference `libc:"musl"`, claustrum
+misses ∧ exits 0 ∧ output says musl ∧ slower than the deadline — but per D14 that
+conjunction is **untested in the wild, not a demonstrated impossibility**.)
+⚠️ **Since D14's flip this needs `-libc-probe-timeout` set to reproduce at all** —
+at the shipped default no deadline is armed, so claustrum waits and reports `"musl"`
+like the reference. The in-suite version of exactly this conjunction is
+`TestDetectLibcTimeoutOptInVersusDefault`; what remains unrun is the cross-binary
+form. Expected, opted in: reference `libc:"musl"`, claustrum
 `libc:"glibc"`. **Control that must fire:** the same stand-in answering instantly
 must give `"musl"` on *both*, proving the fixture can produce the non-default
 value at all — a control that merely "gives the same value on both" is satisfied
@@ -552,9 +559,9 @@ read these as unenumerated, not as established.
 does not meet it. It therefore justifies no entry in this file today.** Two things
 a reader should not take on trust:
 
-- **What keeps D14 out of clause (c)** (and kept D5 out before its flip)**:** the
+- **What kept D5 and D14 out of clause (c) before their flips:** the
   reference does not fail the
-  operation and report it — it emits **nothing** (D5, D14). Silence is clause (a)'s
+  operation and report it — it emits **nothing**. Silence is clause (a)'s
   territory, not clause (c)'s, which needs *both* binaries to fail and report.
   ⚠️ **D4 is no longer a clean example here, and this bullet used to offer it as
   one.** Its FIFO row blocks and its `/dev/null` row succeeds — both disqualifying,
@@ -579,8 +586,9 @@ a reader should not take on trust:
   state the caller keeps: a `files.stat` on the cli-dir after a failed install
   tells the two binaries apart, through this same daemon and with no special
   fixture. **Settled 2026-08-07: the clause keeps its literal
-  wording and D13 joins D14 in the unresolved group** (D4 was in it too on that
-  date, and left by being flipped rather than argued for)**.** Widening it to
+  wording and D13 joins the unresolved group** (D4 and D14 were in it on that date
+  too, and both later left by being flipped rather than argued for, leaving D13
+  alone in it)**.** Widening it to
   "differences confined to the error text and to state neither binary leaves
   usable" was considered and rejected: relaxing a clause so that the one entry it
   was written for still passes is the same demotion this preamble exists to
@@ -604,23 +612,25 @@ user is told, whatever the rules say about frames. *(That is a claim about the
 limits that come with it. That paragraph lists this rider as a dependent that
 carries **no reopen trigger** — a known gap, not an oversight.)*
 
-🔴 **Two entries do not currently clear rule 3, and are recorded here rather
-than explained away.** They fail it in **two different** ways, not one. **D14** is a
-wall-clock threshold, and fails because a threshold cannot separate a hostile
-input from a merely slow one — the honest-but-over-threshold caller *would* pay and
-could not decline. (Derived from the code and from the reference's measured
-no-deadline results; the honest-path cost itself is unmeasured on both, as the
-entry says.) D14's 5 s `ldd` bound has no flag and no `claustrum.conf` key, so
-nobody who pays for it can decline; its honest-path cost is **untested in either
-direction**, shape included. **D13** is not a threshold at all and no clock is
+🔴 **ONE entry does not currently clear rule 3, and is recorded here rather
+than explained away.** **D13** is not a threshold and no clock is
 involved: it fails because an honest input *can* reach the guard, and what the
 guard does is observable — here the state it skips, an empty cli-dir where
 claustrum leaves none. It is verify-before-decompress ordering, and it fails
 clause (c) because the two measured rows differ on disk as well as in text.
-Neither of the two is resolved by this section.
+It is not resolved by this section.
 
-**Two entries left this group by being flipped to opt-in rather than justified,
-and that is the option D14 still has.** **D5**'s 60 s `gitTimeout` was the second
+⚠️ **There are no wall-clock thresholds left in this group.** Every one of them —
+D5, D11, D12 and finally D14 — failed for the same reason, that a threshold cannot
+separate a hostile input from a merely slow one, so the honest-but-over-threshold
+caller pays and cannot decline. All four were flipped rather than argued for. If a
+new threshold is ever proposed, that is the record it has to beat.
+
+**Three entries left this group by being flipped to opt-in rather than justified.**
+**D14**'s 5 s `ldd` bound was the last, and the barest case: no flag, no config key,
+and an honest-path cost **untested in either direction** — an untested conjunction
+is not a justification, which is what settled it.
+**D5**'s 60 s `gitTimeout` was the second
 threshold, with a measured cost *shape* — the claustrum-only `-32603` carrying
 `signal: killed` — though the honest 61 s git that would trip it was never run.
 **D4**'s regular-file guard was the second non-threshold: a file-mode predicate
@@ -690,7 +700,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   deleting home, which is why the reopen trigger below is worded the same way. Same
   narrowing D9 now carries. (An earlier version of this bullet
   said "every other entry in this section is off by default", which was never
-  true: D6, D7, D8, D9, D13 and D14 are always-on too. D4 and D5 were, until they
+  true: D6, D7, D8, D9 and D13 are always-on too. D4, D5 and D14 were, until they
   were flipped to opt-in.)
 - Two methods hand a caller-supplied path to `os.RemoveAll`: `files.extract_tar`
   wipes `destDir` before unpacking, and `git.worktree_remove` deletes
@@ -1680,13 +1690,39 @@ completes it with `git.worktree_remove`, which shares the predicate
   verified at all; D13 is about the *order* of verify and decompress on the
   `-cli-url` download.
 
-### D14 · 5 s bound on the `-install` libc probe ✅ (always-on) — impact L / cost L
+### D14 · Make the `-install` libc probe deadline opt-in ✅ (opt-in) — impact L / cost L
 
-- **Shipped in PR 63 (`8083a4a`), unnumbered until now** — it was carried as "tier
-  item 5" beside `gitTimeout` and never earned its own entry, so nothing indexed it
-  as a divergence. (Not PR 56, which is D4's; the loader-glob predicate arrived
-  later still, in PR 183.) `lddProbeTimeout` (`install.go`, 5 s) bounds the `ldd --version`
-  probe that decides musl vs glibc; on timeout `classifyLibc` falls back.
+- **Flipped: the deadline is now OFF by default (`0`), which is the parity
+  position.** Opt in with `-libc-probe-timeout <dur>` or the `libc-probe-timeout`
+  key in `claustrum.conf` — the config key is the reachable one, since Claude
+  Desktop owns the `-install` argv. Disabled **bypasses `context.WithTimeout`
+  entirely** (`lddCtx`), so no cancel path is armed and `exec.CommandContext` has
+  nothing to fire; do not "simplify" that into a huge duration, for the same reason
+  D3 and D10 bypass their `io.LimitReader`s and D5 bypasses `gitCtx`.
+- **Shipped in PR 63 (`8083a4a`), unnumbered until 2026-08-08** — it was carried as
+  "tier item 5" beside `gitTimeout` and never earned its own entry, so nothing
+  indexed it as a divergence. (Not PR 56, which is D4's; the loader-glob predicate
+  arrived later still, in PR 183.) `lddProbeTimeout` (`install.go`) bounded the
+  `ldd --version` probe that decides musl vs glibc at 5 s; on timeout
+  `classifyLibc` falls back.
+- **Why it stopped being always-on.** It cleared the **not-a-frame half of clause
+  (a)** — measured, the reference gave no reply at 45 s in the discriminating stall
+  shape — but that is only half, and the second half was **untested in either
+  direction**: nobody had run an honest-but-slow `ldd` against either binary. A
+  threshold that no measurement has cleared, on a path where the caller cannot
+  decline it, is exactly what rule 3 forbids. D4 is the precedent: its honest-path
+  cost *was* measured and it was flipped anyway.
+- **What an operator now opts INTO, measured on the flip branch and pinned by
+  `TestDetectLibcTimeoutOptInVersusDefault`:** one fixture that **straddles** the
+  bound — an `ldd` answering in 200 ms with a musl banner and exit 0, against a glob
+  that misses. At the default it is waited for and reports `musl`; opted in below its
+  latency it is killed and reports the `glibc` fallback. That value change is the
+  divergence, and it is the conjunction this entry previously called untested in the
+  wild — still untested *in the wild*, but no longer unpinned in the suite.
+- ⚠️ **What turning it off costs.** Against a stalled `ldd` claustrum now waits as
+  the reference does, so `-install` can block indefinitely instead of falling back at
+  5 s. That is the trade, it is the reference's measured behaviour, and the caller who
+  wants the bound can ask for it.
 - **Linux-only, and not even always there.** `libc_other.go` returns `""` without
   probing off linux, and on linux `detectLibcWith` returns `"musl"` from the
   loader glob **before** `ldd` is spawned — so the bound cannot fire on a host
@@ -1711,34 +1747,34 @@ completes it with `git.worktree_remove`, which shares the predicate
   `install.go` → `detectLibcWith`, where a self-recording stand-in `ldd` showed the
   reference spawning a PATH-resolved `ldd` once the glob is masked. Without that
   prior result this table would not establish what it is cited for.
-- 🔴 **D14's always-on status is UNRESOLVED, and this entry does not claim
-  otherwise.** Clause (b) does not carry it: the code implements a **5 s wall-clock
+- **The argument that used to sit here, kept because it is why the flip happened.**
+  Clause (b) never carried this entry: the code implements a **wall-clock
   threshold**, and a threshold cannot separate a stalled `ldd` from a merely slow
-  one — describing the bound by its *intent* is the D11 defect. Stated honestly,
-  against rule 3:
+  one — describing the bound by its *intent* is the D11 defect. Against rule 3 while
+  it was always-on:
   - **Clause (a), first half — MET and measured.** The reference's behaviour on the
     motivating path is not a frame; see the table above (discriminating shape).
-  - **Clause (a), second half — UNTESTED.** For the reported `libc` to move, four
-    things must hold together: the loader glob misses **and** `ldd` prints a musl
-    banner **and** exits 0 **and** takes longer than 5 s. On any other honest-but-slow
-    `ldd` the fallback value and the true value coincide — a host whose loader the
-    glob **matches** never reaches the probe (the predicate is the glob, not the
-    host: a musl box the glob misses does reach it, which is precisely the
-    conjunction above), and on a glibc host the fallback **is** `"glibc"`. But nobody has run
-    the musl-banner fixture (§5 above names it), so "no honest caller observes this"
-    is an **untested conjunction, not a demonstrated impossibility**.
-  - ⚠️ **And there is no escape hatch.** `lddProbeTimeout` is a `const` with no flag
-    and no `claustrum.conf` key — the shape that got D5 flipped, and D14 is now the
-    only entry still carrying it.
-    Nobody who pays for it can decline.
-- **So D14 sits with D13 in the unresolved group, and the difference between them
-  is evidential rather than principled.** D13's honest-path rows are measured;
-  D14's cost is untested in either direction, shape included. **D4 and D5 both left
-  this group by being flipped, not by being justified** — the option D14 still has,
-  and D4 is the closer precedent: its `/dev/null` cost *was* measured and it was
-  flipped anyway, because a measured honest-path cost the caller cannot decline is
-  the thing rule 3 forbids. D14 is numbered here so it can be argued about at
-  all — being unnumbered is what let it avoid the question.
+  - **Clause (a), second half — was UNTESTED, and that is what settled it.** For the
+    reported `libc` to move, four things must hold together: the loader glob misses
+    **and** `ldd` prints a musl banner **and** exits 0 **and** takes longer than the
+    deadline. On any other honest-but-slow `ldd` the fallback value and the true
+    value coincide — a host whose loader the glob **matches** never reaches the probe
+    (the predicate is the glob, not the host: a musl box the glob misses does reach
+    it, which is precisely the conjunction above), and on a glibc host the fallback
+    **is** `"glibc"`. Nobody had run that conjunction, so "no honest caller observes
+    this" was an **untested conjunction, not a demonstrated impossibility** — and an
+    untested conjunction is not a justification. The flip's own test now pins the
+    conjunction in the suite; it remains unobserved in the wild.
+  - ⚠️ **And there was no escape hatch.** `lddProbeTimeout` was a `const` with no
+    flag and no `claustrum.conf` key — the shape that got D5 flipped, and D14 was
+    the last entry carrying it. Nobody who paid for it could decline. That is now
+    fixed: flag **and** config key, defaulting to off.
+- **D14 left the unresolved group by being flipped, not by being justified** — the
+  route D5 and D4 took before it. **D13 is now the only entry in that group**, and
+  the difference was always evidential rather than principled: D13's honest-path
+  rows are measured, D14's cost was untested in either direction, shape included.
+  D14 was numbered here so it could be argued about at all — being unnumbered is
+  what let it avoid the question for six PRs.
 - 🔴 **The bound is narrower than it reads, and this entry used to overstate it.**
   It fired in only one of the two stall shapes measured. The probe waits on `ldd`'s
   output pipe, so a stalled `ldd` that leaves a surviving child keeps claustrum
@@ -1850,10 +1886,17 @@ completes it with `git.worktree_remove`, which shares the predicate
     bound. Same duration parsing and the same zero/negative edges as
     `cli-probe-timeout` above, with the same consequence: every accepted oddity
     leaves the bound off, so none of them can switch it on.
+  - `libc-probe-timeout = <duration>` — default for D14; `0` (the default) is no
+    deadline. Same duration parsing and the same zero/negative edges as
+    `cli-probe-timeout` above, with the same consequence. ⚠️ **Not the same knob as
+    `cli-probe-timeout`**, which they are one letter apart from: that one bounds the
+    `<cli> --version` runnability probe (D11), this one bounds `ldd --version`
+    (D14), and only the latter is linux-only. `TestInstallArmWiresEachFlagToItsOwnGlobal`
+    exists because a swap between them compiles and passes every isolated test.
   - `git-timeout = <duration>` — default for D5; `0` (the default) is no deadline.
     Same duration parsing and the same zero/negative edges as `cli-probe-timeout`
     above, and the same consequence: every accepted oddity leaves the deadline off.
-    ⚠️ The only `-serve` key of the three durations — the other two are `-install`.
+    ⚠️ The only `-serve` key of the four durations — the other three are `-install`.
   - `files-read-regular-only = true|false` — default for D4; `false` (the default)
     leaves the guard off. A bool, not a duration or a count: it takes the same
     spellings as `keep-children` (`true`/`1`/`yes`/`on` and their negatives,
@@ -1884,7 +1927,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   per-key validation (`version-override` gated to `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`
   and lower-cased; `metrics-addr` printable-ASCII only; `max-extract-bytes` and
   `max-cli-bytes` parsed as a non-negative int64, `cli-probe-timeout`,
-  `cli-download-timeout` and `git-timeout` via
+  `cli-download-timeout`, `libc-probe-timeout` and `git-timeout` via
   `time.ParseDuration` and rejected if negative, `files-read-regular-only` through
   the shared bool parser, anything else ignored), values
   used as data never as a format string.

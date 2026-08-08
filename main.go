@@ -138,6 +138,8 @@ func main() {
 		cliKeep     = flag.Int("cli-keep", 3, "How many most-recent CLI versions to keep")
 		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 
+		libcProbe = flag.Duration("libc-probe-timeout", 0, "Bound the `ldd --version` libc probe with this wall-clock `duration` (e.g. 5s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that falls back to the default classification for any ldd slower than it, honest or not. -install only, linux only (the probe does not run elsewhere). Claude Desktop owns the argv, so the libc-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
+
 		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the <cli> --version runnability probe with this wall-clock `duration` (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
 
 		readRegularOnly = flag.Bool("files-read-regular-only", false, "Make files.read refuse anything that is not a regular file (FIFO, socket, character/block device) with -32602 \"files.read: not a regular file\". Off by default, which is what the reference does — it reads /dev/null happily and blocks on a writerless FIFO; on is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the files-read-regular-only key in claustrum.conf is usually the reachable way to set this.")
@@ -186,6 +188,11 @@ func main() {
 		// called from the runInstall path's two call sites (the cache-hit guard
 		// here, and stageAndInstall via ensureCLI), not handed an option struct.
 		cliProbeTimeout = cfg.effectiveCLIProbeTimeout(*cliProbe, cliSet["cli-probe-timeout"])
+		// And the same for the libc probe: detectLibc reads the package var directly
+		// (libc_linux.go), and only -install reaches it. ⚠️ Distinct from the line
+		// above — these two flags differ by one letter and share a type, so a swap
+		// here compiles, vets and passes every isolated test.
+		lddProbeTimeout = cfg.effectiveLibcProbeTimeout(*libcProbe, cliSet["libc-probe-timeout"])
 		// Same reasoning: fetchToFile reads this deep in the download path rather
 		// than taking it through installOpts.
 		cliDownloadTimeout = cfg.effectiveCLIDownloadTimeout(*cliDownload, cliSet["cli-download-timeout"])

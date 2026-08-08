@@ -798,7 +798,22 @@ func isRegularFile(p string) bool {
 // classifyLibc for the loader glob, libc_other.go for why the probe does not run
 // off linux at all, and IMPROVEMENTS tier item 5 for the musl-banner fixture that
 // would settle it.)
-const lddProbeTimeout = 5 * time.Second
+// D14 FLIP: ZERO (the default) DISABLES IT, which is the parity position. Opt in
+// with -libc-probe-timeout or the libc-probe-timeout key in claustrum.conf; the
+// config key is the reachable one, since Claude Desktop owns the -install argv.
+// Disabled bypasses context.WithTimeout ENTIRELY (see lddCtx) rather than passing a
+// huge duration, for the same reason D3 and D10 bypass their io.LimitReaders and D5
+// bypasses gitCtx: an unarmed cancel path is what makes exec.CommandContext have
+// nothing to fire.
+//
+// ⚠️ What turning it OFF costs, stated plainly: against a stalled `ldd` claustrum
+// now waits as the reference does, so `-install` can block indefinitely instead of
+// falling back at 5 s. That is the trade — it is the reference's measured behaviour
+// (no reply at 45 s in the discriminating shape), and the caller who wants the bound
+// can ask for it. It was flipped rather than argued for because the honest-path cost
+// was never measured in EITHER direction and the caller could not decline it; D4 is
+// the precedent, where the cost WAS measured and it was flipped anyway.
+var lddProbeTimeout time.Duration
 
 // runLddVersion runs `ldd --version` under ctx; the process is killed if ctx expires.
 func runLddVersion(ctx context.Context) ([]byte, error) {
@@ -839,10 +854,23 @@ func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, er
 	if hasMuslLoader(glob) {
 		return "musl" // run() is deliberately never called on this path
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := lddCtx(timeout)
 	defer cancel()
 	out, err := run(ctx)
 	return classifyLibc(out, err, glob)
+}
+
+// lddCtx builds the context for the `ldd` probe, arming a deadline only when one is
+// asked for. At the shipped default (0) it returns a plain Background context, so
+// nothing is armed and exec.CommandContext has no cancel path — NOT a huge-but-finite
+// deadline. Do not "simplify" the two into one: a context with a far-off deadline
+// still reports one, still spawns the timer goroutine, and still kills the probe
+// eventually, which is the divergence this flip removes. Mirrors gitCtx (D5).
+func lddCtx(timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.Background(), func() {}
+	}
+	return context.WithTimeout(context.Background(), timeout)
 }
 
 // muslLoaderGlob matches the musl dynamic loader for ANY architecture. The

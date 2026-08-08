@@ -671,6 +671,107 @@ func TestGitCtxArmsNoDeadlineWhenOff(t *testing.T) {
 	}
 }
 
+func TestParseConfig_LibcProbeTimeout(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       *time.Duration
+	}{
+		{"seconds", "libc-probe-timeout = 5s", durp(5 * time.Second)},
+		{"minutes", "libc-probe-timeout = 1m", durp(time.Minute)},
+		{"zero disables", "libc-probe-timeout = 0", durp(0)},
+		{"zero with a unit", "libc-probe-timeout = 0s", durp(0)},
+		{"negative rejected", "libc-probe-timeout = -1s", nil},
+		{"bare number rejected", "libc-probe-timeout = 5", nil},
+		{"garbage rejected", "libc-probe-timeout = soon", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parse(t, tc.body).libcProbeTimeout
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("libcProbeTimeout = %s, want unset (value rejected)", *got)
+			case tc.want != nil && (got == nil || *got != *tc.want):
+				t.Fatalf("libcProbeTimeout = %v, want %s", got, *tc.want)
+			}
+		})
+	}
+}
+
+// The two probe keys are one letter apart and the same type, so a copy-paste in
+// applyConfigKey would have one key populate the other's field. Assert the
+// separation at the parse layer, as max-cli-bytes/max-extract-bytes already do.
+func TestParseConfig_ProbeTimeoutsDoNotCross(t *testing.T) {
+	got := parse(t, "libc-probe-timeout = 5s")
+	if got.cliProbeTimeout != nil {
+		t.Errorf("libc-probe-timeout also set cliProbeTimeout = %s, want unset", *got.cliProbeTimeout)
+	}
+	got = parse(t, "cli-probe-timeout = 5s")
+	if got.libcProbeTimeout != nil {
+		t.Errorf("cli-probe-timeout also set libcProbeTimeout = %s, want unset", *got.libcProbeTimeout)
+	}
+}
+
+func TestPrecedenceLibcProbeTimeout(t *testing.T) {
+	withFile := config{libcProbeTimeout: durp(5 * time.Second)}
+	if got := withFile.effectiveLibcProbeTimeout(9*time.Second, true); got != 9*time.Second {
+		t.Errorf("explicit CLI should win, got %s", got)
+	}
+	if got := withFile.effectiveLibcProbeTimeout(0, false); got != 5*time.Second {
+		t.Errorf("config value should apply when CLI unset, got %s", got)
+	}
+	if got := withFile.effectiveLibcProbeTimeout(0, true); got != 0 {
+		t.Errorf("explicit CLI 0 should disable the deadline, got %s", got)
+	}
+	if got := (config{}).effectiveLibcProbeTimeout(0, false); got != 0 {
+		t.Errorf("empty config should leave the deadline OFF — that is the parity default, got %s", got)
+	}
+	if got := (config{}).effectiveLibcProbeTimeout(-1*time.Second, true); got != 0 {
+		t.Errorf("negative CLI should normalise to 0, got %s", got)
+	}
+}
+
+// The bypass, asserted directly — the assertion a "simplify 0 into 100 years"
+// refactor fails. Off must mean context.WithTimeout is never called, so
+// exec.CommandContext has no cancel path and cannot kill a slow ldd at all.
+func TestLddCtxArmsNoDeadlineWhenOff(t *testing.T) {
+	for _, off := range []time.Duration{0, -1 * time.Second} {
+		ctx, cancel := lddCtx(off)
+		_, hasDeadline := ctx.Deadline()
+		done := ctx.Done()
+		cancel()
+		if hasDeadline {
+			t.Errorf("lddProbeTimeout = %s: context carries a deadline, want none armed at all", off)
+		}
+		if done != nil {
+			t.Errorf("lddProbeTimeout = %s: context is cancellable, want a plain Background context", off)
+		}
+	}
+	ctx, cancel := lddCtx(30 * time.Second)
+	defer cancel()
+	dl, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("lddProbeTimeout = 30s: no deadline armed, want one")
+	}
+	if remaining := time.Until(dl); remaining <= 0 || remaining > 30*time.Second {
+		t.Errorf("deadline is %s away, want (0, 30s]", remaining)
+	}
+}
+
+// The SHIPPED default, pinned. Every other test that exercises the probe injects a
+// timeout into detectLibcWith directly, so without this, reinstating
+// `var lddProbeTimeout = 5 * time.Second` would pass the whole suite and silently
+// restore the divergence D14's flip removed.
+func TestLddProbeTimeoutDefaultIsOff(t *testing.T) {
+	if lddProbeTimeout != 0 {
+		t.Errorf("package default lddProbeTimeout = %s, want 0 — the deadline must ship OFF (D14)", lddProbeTimeout)
+	}
+	ctx, cancel := lddCtx(lddProbeTimeout)
+	defer cancel()
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		t.Error("the default context carries a deadline; at the shipped default none may be armed")
+	}
+}
+
 func TestPrecedenceFilesReadRegularOnly(t *testing.T) {
 	withFile := config{filesReadRegularOnly: boolp(true)}
 	if got := withFile.effectiveFilesReadRegularOnly(false, true); got {

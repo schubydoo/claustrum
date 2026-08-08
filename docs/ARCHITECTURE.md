@@ -257,16 +257,16 @@ evidence supports "no argv affordance in the setup UI, on one build, seen once",
   of what Desktop grows. An env var Desktop forwarded would not qualify either;
   nothing in `config.go` or `main.go` reads the environment for these knobs, so
   forwarding one changes nothing.
-- **What rests on it:** **D3, D4, D5, D10, D11 and D12** — every "why it stopped
-  being always-on" argument turns on the person who pays having no way to decline.
-  The claim is load-bearing on both argv surfaces: D3, D4 and D5 are `-serve`
-  flags, D10, D11 and D12 are `-install` ones — plus
+- **What rests on it:** **D3, D4, D5, D10, D11, D12 and D14** — every "why it
+  stopped being always-on" argument turns on the person who pays having no way to
+  decline. The claim is load-bearing on both argv surfaces: D3, D4 and D5 are
+  `-serve` flags, D10, D11, D12 and D14 are `-install` ones — plus
   the **"(opt-in)" tagging convention** in IMPROVEMENTS, which *defines* opt-in as a
   flag **and** a config key on exactly this ground, and so binds every future
   **D-numbered** entry. (The CT block uses the tag in a looser "off unless asked
   for" sense — CT-1 is caller-activated and CT-3 is the config mechanism itself —
   so it does not rest on this claim.)
-  The trigger is recorded once here rather than seven times, because it is one
+  The trigger is recorded once here rather than eight times, because it is one
   claim shared by all of them.
 
 *(Not the only other driver claims in these docs — D6's and D7's clause-(b)
