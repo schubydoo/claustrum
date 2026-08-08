@@ -586,7 +586,11 @@ a reader should not take on trust:
   clause says "diagnostic text", and an empty directory is not text. It is also
   state the caller keeps: a `files.stat` on the cli-dir after a failed install
   tells the two binaries apart, through this same daemon and with no special
-  fixture. **Settled 2026-08-07: the clause keeps its literal
+  fixture. ⚠️ **Measured 2026-08-08, that stat discriminates only from a
+  cli-dir that did not already exist** — pre-create it and both binaries leave it
+  alone, so in the steady state (a cli-dir present because something installed
+  before) the stat does *not* tell them apart. It still fails the clause, because
+  the first-install case is real and the delta there is not text. **Settled 2026-08-07: the clause keeps its literal
   wording and D13 joins the unresolved group** (D4 and D14 were in it on that date
   too, and both later left by being flipped rather than argued for, leaving D13
   alone in it)**.** Widening it to
@@ -595,14 +599,15 @@ a reader should not take on trust:
   was written for still passes is the same demotion this preamble exists to
   correct. Widening becomes arguable again only on a measurement that the driver
   does not care whether the cli-dir exists. **That fixture was run on 2026-08-08 and
-  did NOT meet the condition, so the clause stays unwidened.** It failed an
-  `-install` twice against the same `-cli-dir` — once with the empty cli-dir
-  pre-created, once without — then ran the SFTP retry against that same directory,
-  with a *successful* install in both states as the third arm. The retry installed
-  identically in all four cells and the control was identical in all four, so **the
-  leftover directory is inert to the install path on both binaries** (rows in D13's
-  entry). That kills the mechanism by which it could have reached Desktop, which is
-  a narrower result than the condition asks for: it is not evidence about **Desktop**,
+  did NOT meet the condition, so the clause stays unwidened.** For each binary it
+  failed an `-install` against a fresh `-cli-dir` — once with the empty cli-dir
+  pre-created, once without — then ran the retry against *that same* directory, with
+  a *successful* install in both pre-states as the third arm. The retry's reply and
+  on-disk **end state** were identical in all four cells, and the control was
+  identical in all four (rows in D13's entry). That kills the **install-path**
+  mechanism by which the leftover directory could have changed what the driver does
+  next; a driver that stats the cli-dir itself is untouched by it, and that is the
+  half the condition actually asks about. ⚠️ It is **not** evidence about Desktop,
   and the parity harness cannot produce any. The clause stands unused rather than
   stretched.
 
@@ -620,9 +625,10 @@ carries **no reopen trigger** — a known gap, not an oversight.)*
 than explained away.** **D13** is not a threshold and no clock is
 involved: it fails because an honest input *can* reach the guard, and what the
 guard does is observable — here the state it skips, an empty cli-dir where
-claustrum leaves none. It is verify-before-decompress ordering, and it fails
-clause (c) because the two measured rows differ on disk as well as in text.
-It is not resolved by this section.
+claustrum leaves none **when the cli-dir did not already exist** (pre-create it and
+both leave it alone — measured 2026-08-08). It is verify-before-decompress ordering,
+and it fails clause (c) because the two measured rows differ on disk as well as in
+text. It is not resolved by this section.
 
 ⚠️ **There are no wall-clock thresholds left in this group.** The two that were ever
 in it — **D5** and finally **D14** — failed for the same reason, that a threshold
@@ -1663,7 +1669,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   from the truncation. It also shows the directory difference is a consequence of
   returning early, not a separate divergence.
   ⚠️ **Neither binary leaves a usable CLI** — but the on-disk state a caller keeps
-  is not identical either (an empty cli-dir versus none, observable with a
+  is not identical either (an empty cli-dir versus none **when the cli-dir did not
+  already exist**, observable with a
   `files.stat`), so "the only delta is diagnostic text" is false as written, and
   clause (c) says that. **So D13 is the unresolved group** — it sat with D14 until
   D14's flip, and is now alone in it (settled
@@ -1682,24 +1689,39 @@ completes it with `git.worktree_remove`, which shares the predicate
   | claustrum | P1 | `checksum mismatch: …` · **empty cli-dir** | **installs** · cli-dir + the CLI |
   | *control:* a **successful** install, each binary × each pre-state | | | **identical in all four** |
 
-  Two things follow, and one does not. **The leftover directory is inert to the
-  install path** — the retry installs identically in all four cells — so the
-  mechanism by which it could have changed what Desktop does next is dead. **The
-  on-disk delta is conditional on the cli-dir being absent:** pre-create it and
-  claustrum's *failing* install leaves exactly what the reference leaves, so the
-  delta is narrower than a flat reading of "creates nothing" suggests. It does not
-  self-heal, because claustrum never creates the directory. ⚠️ **What does not
-  follow is the reopen condition**, which asks about **Desktop** — whether it stats
-  the cli-dir itself is a driver claim the parity harness cannot settle, and
-  modelling the retry as `-cli-zst` is *derived from* the `cliError` driver claim
-  rather than independent of it.
+  Three things follow, and one does not. **The retry's reply and on-disk end state
+  are identical in all four cells**, so the leftover directory cannot change what a
+  subsequent install *ends up producing* on either binary. **The on-disk delta is
+  conditional on the cli-dir being absent:** pre-create it and claustrum's *failing*
+  install leaves exactly what the reference leaves, so the delta is narrower than a
+  flat reading of "creates nothing" suggests. **It does not self-heal** — measured
+  with a fail→fail pair from a fresh cli-dir, where the reference leaves the empty
+  directory after both and claustrum leaves nothing after both. ⚠️ The reason is
+  *not* that claustrum never creates the directory (it does — `os.MkdirAll`); it is
+  that the diverging failure path returns at the checksum comparison before reaching
+  that point.
+  ⚠️ **What does not follow is the reopen condition**, which asks about **Desktop** —
+  whether it stats the cli-dir itself is a driver claim the parity harness cannot
+  settle, and modelling the retry as `-cli-zst` is *derived from* the `cliError`
+  driver claim rather than independent of it.
+  ⚠️ **And "inert to the install path" would be too strong**, measured: the *staging
+  location* does depend on the pre-state (see PROTOCOL → Staging and cleanup). Only
+  the end state is identical.
 - **An empty version path poisons neither binary** (same run). `cliPath` is
   `filepath.Join(cliDir, cliVersion)` and is a regular *file* when installed, so
   "empty version dir" has a second reading. Pre-existing as an empty directory, as
-  an empty file, and as a runnable file exiting 3: both binaries report
-  `cliWasPresent:false` and install over it — six cells, all identical. The
-  `exit 3` row also shows the reference's cache-hit predicate requires
-  **runnability**, not merely presence.
+  an empty file, and as an executable exiting 3: both binaries report
+  `cliWasPresent:false` and install over it — six cells, all identical.
+- **The cache-hit predicate keys on the probe's exit status on both binaries**
+  (same run), which is what makes the rows above readable. Pre-placing an executable
+  `cliDir/<version>`: one that prints a version and exits 0 → `cliWasPresent:true`,
+  not replaced; one that exits 0 printing **nothing** → also `cliWasPresent:true`,
+  not replaced; one that exits 3 → `cliWasPresent:false` and replaced. Identical on
+  both binaries in all three. So the reference requires **runnability**, not mere
+  presence, and does not key on the probe's output. ⚠️ The first row is also the
+  **positive control**: nothing else in this run moved `cliWasPresent` off `false`,
+  so without it "all identical" would have rested on an instrument never shown able
+  to say "present".
 - ⚠️ **The "cost-free" reading leans on a claim about the driver, and that claim is
   not parity-measured.** Neither binary's string is disk-full-shaped, so Claude
   Desktop classifies both the same way and retries over SFTP — which is what makes

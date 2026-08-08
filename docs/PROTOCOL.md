@@ -1623,6 +1623,12 @@ Checksum + error framing (probe-verified):
   ⚠️ The two rows measured for disk state — the short artifact and the interrupted
   transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
+  ⚠️ **That holds only when the cli-dir did not already exist** (measured
+  2026-08-08): pre-create it and claustrum's failing install leaves exactly what the
+  reference leaves, because the diverging path returns at the checksum comparison
+  before the cli-dir would be created. It does not self-heal — two failing installs
+  from a fresh cli-dir leave the same split — and a *successful* install is
+  identical on both binaries in either pre-state.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
   as unresolved rather than justified — and since D14's flip it is the ONLY entry
   there.
@@ -1687,9 +1693,18 @@ Staging and cleanup (probe-verified):
   forever, never counted against `-cli-keep` and never evicted. That is the mirror
   of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
   every path; only a SIGKILLed download leaves it behind, and nothing reclaims
-  that. (This staging file is claustrum's own; no claim is made
-  here about how the reference handles its download, which was never measured. No
-  frame changes either way.)
+  that. (This staging file is claustrum's own. No frame changes either way.)
+- **Where the reference stages its download — measured 2026-08-08, filling the gap
+  this bullet used to record as never measured.** Listing the cli-dir *mid-download*
+  against a deliberately slow origin: the reference's cli-dir holds a single
+  `.fetch-<random>` **in both pre-states**, with `$TMPDIR` empty — so it creates the
+  cli-dir before the body arrives and stages inside it whether or not the directory
+  existed. Claustrum splits, as the bullet above describes: `$TMPDIR/claustrum-fetch-<random>`
+  on a first install, `<cli-dir>/.blob-<random>` when the cli-dir already exists. The
+  **end state is identical on both binaries in both pre-states**, so no frame moves
+  and this is not a numbered divergence. ⚠️ One consequence is worth knowing and is
+  *inferred, not measured*: on a first install with a tmpfs `$TMPDIR`, claustrum's
+  download body is RAM-backed where the reference's sits on the cli-dir's filesystem.
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as

@@ -333,11 +333,14 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   cli-dir on the two measured rows where claustrum creates none — so it stays always-on
   but is listed unresolved, not justified. ⚠️ **The reopen fixture has now been run
   (2026-08-08) and did NOT meet its condition**, so don't re-run it expecting a flip:
-  that leftover directory is **inert to the install path** — a failing install
-  followed by the SFTP retry installs identically on both binaries either way — and
-  the on-disk delta is **conditional on the cli-dir being absent**. Both results
-  narrow the divergence and neither is evidence about Desktop, which is what the
-  condition asks for. What keeps the delta cheap meanwhile is a
+  a failing install followed by the retry ends in the **same reply and same on-disk
+  end state** on both binaries either way, and the on-disk delta is **conditional on
+  the cli-dir being absent** (it does not self-heal across repeated failures). Both
+  results narrow the divergence and neither is evidence about Desktop, which is what
+  the condition asks for — and modelling that retry as `-cli-zst` is *derived from*
+  the `cliError` driver claim below, not independent of it. ⚠️ Don't upgrade this to
+  "the leftover dir is inert": the *staging location* does depend on the pre-state,
+  and only the end state is identical. What keeps the delta cheap meanwhile is a
   claim about the *driver*: **Desktop parses `cliError`**, treating a
   disk-full-shaped message as terminal and everything else as retryable — which the
   parity harness cannot settle (ARCHITECTURE → Driver claims and their provenance keeps the best-known list

@@ -290,6 +290,13 @@ argv one. D14 joined the argv list when it was flipped on 2026-08-08.)*
 
 - **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
   always-on justification — it is in IMPROVEMENTS' unresolved group).
+- **D13's 2026-08-08 reopen measurement** rests on it a second time, and this is a
+  *different* dependency from the one above: the fixture modelled the driver's next
+  move after a failed install as a `-cli-zst` retry, which is what the `cliError`
+  claim says Desktop does. If Desktop does not retry over SFTP, that run measured
+  the wrong follow-up and its "same end state either way" result says nothing about
+  the driver. The result still stands as a claim about **the two binaries**; only
+  its bearing on the reopen condition depends on this.
 - **D14's residual delta** is only more than cosmetic because of the `libc` claim.
   🔴 **No falsifying reopen trigger:** its entry has one, but it fires on a musl host
   the loader glob misses and on a measurement of the reference's bound — neither
