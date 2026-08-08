@@ -247,7 +247,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   one the reference answers `decompressing: invalid input: magic number mismatch`
   at 0 s, which is D13, not a download bound.
   **D14's *value* delta is narrow** — fallback and true value coincide except where
-  `ldd` reports musl and the loader glob misses — but ⚠️ **not cosmetic**, because
+  `ldd` reports musl **and exits 0** (a faithful musl `ldd` exits 1) and the loader
+  glob misses — but ⚠️ **not cosmetic**, because
   Desktop uses `libc` to choose which CLI build it downloads (a **driver** claim the
   parity harness cannot settle — ARCHITECTURE → Driver claims and their provenance; same class as the
   `cliError` one below). **And the bound fires

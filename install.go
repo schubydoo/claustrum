@@ -772,7 +772,9 @@ func isRegularFile(p string) bool {
 // honest-but-slow `ldd` falls back too — but that usually changes NOTHING
 // observable: on a musl host detectLibcWith returns "musl" from the loader glob
 // without ever spawning ldd, and on a glibc host the fallback IS "glibc". The
-// reported value moves only where ldd says musl and the loader glob misses.
+// reported value moves only where ldd says musl AND exits 0 and the loader glob
+// misses. The exit code is load-bearing: a faithful musl `ldd --version` prints to
+// stderr and exits 1, and classifyLibc then falls back to "glibc" regardless.
 // ⚠️ That residual is narrow but NOT costless: Claude Desktop uses the reported
 // libc to pick which CLI build it downloads, so on that one host shape the
 // consequence is the wrong build being fetched, not a cosmetic field. ⚠️ That last

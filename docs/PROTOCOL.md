@@ -1407,7 +1407,10 @@ left in place:
   host **whose loader the glob matches** returns `"musl"` without spawning `ldd` at
   all (the predicate is the glob, not the host — a musl box the glob misses does
   reach the probe), and a glibc host's fallback *is* `"glibc"`. The field moves only where `ldd`
-  reports musl while `/lib/ld-musl-*.so.*` does not match — ⚠️ narrow, but not
+  reports musl **and exits 0** while `/lib/ld-musl-*.so.*` does not match — the exit
+  code is load-bearing, since a faithful musl `ldd --version` prints to stderr and
+  exits 1, and `classifyLibc` then falls back to `"glibc"` whether or not the bound
+  fired — ⚠️ narrow, but not
   cosmetic, since Claude Desktop uses `libc` to choose which CLI build to download
   (a **driver** claim the parity harness cannot settle; see
   [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*).

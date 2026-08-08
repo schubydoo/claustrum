@@ -1639,9 +1639,12 @@ completes it with `git.worktree_remove`, which shares the predicate
   which the parity harness cannot confirm or refute; see
   [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*, which lists this entry as a
   dependent. So on
-  the one host shape where the value *does* move — `ldd` reports musl while the
-  loader glob misses, and it is slow — the consequence is Desktop fetching a glibc
-  build for a musl host, not merely a wrong string in a log line.
+  the one host shape where the value *does* move — the glob misses **∧** `ldd`
+  prints a musl banner **∧** exits 0 **∧** is slower than 5 s, all four as above —
+  the consequence is Desktop fetching a glibc
+  build for a musl host, not merely a wrong string in a log line. ⚠️ Drop the exit-0
+  conjunct and the claim is false: a faithful musl `ldd` exits 1, `classifyLibc`
+  falls back to `"glibc"` regardless, and the bound costs nothing there.
 - ⚠️ **It addresses the stall half only.** A hostile `ldd` resolved earlier in
   `PATH` that answers in 1 s is untouched by any deadline, and `classifyLibc` then
   trusts its `musl` banner verbatim.
