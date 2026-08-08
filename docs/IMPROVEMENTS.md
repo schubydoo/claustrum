@@ -587,9 +587,11 @@ a reader should not take on trust:
   state the caller keeps: a `files.stat` on the cli-dir after a failed install
   tells the two binaries apart, through this same daemon and with no special
   fixture. ⚠️ **Measured 2026-08-08, that stat discriminates only from a
-  cli-dir that did not already exist** — pre-create it and both binaries leave it
-  alone, so in the steady state (a cli-dir present because something installed
-  before) the stat does *not* tell them apart. It still fails the clause, because
+  cli-dir that did not already exist** — pre-create it and both binaries leave the
+  same *end state* behind, so in the steady state (a cli-dir present because
+  something installed before) a stat taken after the install does *not* tell them
+  apart. (During one, it still can: the two stage different things in different
+  places — PROTOCOL → Staging and cleanup.) It still fails the clause, because
   the first-install case is real and the delta there is not text. **Settled 2026-08-07: the clause keeps its literal
   wording and D13 joins the unresolved group** (D4 and D14 were in it on that date
   too, and both later left by being flipped rather than argued for, leaving D13
@@ -604,12 +606,13 @@ a reader should not take on trust:
   pre-created, once without — then ran the retry against *that same* directory, with
   a *successful* install in both pre-states as the third arm. The retry's reply and
   on-disk **end state** were identical in all four cells, and the control was
-  identical in all four (rows in D13's entry). That kills the **install-path**
-  mechanism by which the leftover directory could have changed what the driver does
-  next; a driver that stats the cli-dir itself is untouched by it, and that is the
-  half the condition actually asks about. ⚠️ It is **not** evidence about Desktop,
-  and the parity harness cannot produce any. The clause stands unused rather than
-  stretched.
+  identical in all four (rows in D13's entry). That rules out the leftover directory
+  changing what the driver's **next successful install produces** — the obvious way
+  it could have mattered. It does not rule out every route: a driver that stats the
+  cli-dir itself is untouched by the result, and a stat taken *during* an install
+  still discriminates, since the two stage different things in different places. ⚠️ None
+  of it is evidence about Desktop, and the parity harness cannot produce any. The
+  clause stands unused rather than stretched.
 
 ⚠️ Clause (c) is also not a licence to treat error strings as free: Claude Desktop
 **parses** `-install`'s `cliError`, reporting a disk-full-shaped message as a
@@ -1687,11 +1690,19 @@ completes it with `git.worktree_remove`, which shares the predicate
   | claustrum | P0 | `checksum mismatch: …` · **nothing** | **installs** · cli-dir + the CLI |
   | reference | P1 | `decompressing: unexpected EOF` · empty cli-dir | **installs** · cli-dir + the CLI |
   | claustrum | P1 | `checksum mismatch: …` · **empty cli-dir** | **installs** · cli-dir + the CLI |
-  | *control:* a **successful** install, each binary × each pre-state | | | **identical in all four** |
+  | *control:* a **successful `-cli-url` install** (not a retry), each binary × each pre-state | — | **identical in all four** |
+
+  ⚠️ The control varies the source as well as the outcome, so read it as "the
+  pre-state changes nothing on a clean success", not as a fourth retry row. Two
+  cells the fixture does **not** contain: a successful `-cli-zst` install from each
+  pre-state, and a *failing* retry from each — the second is why the row above is
+  scoped to successful installs.
 
   Three things follow, and one does not. **The retry's reply and on-disk end state
   are identical in all four cells**, so the leftover directory cannot change what a
-  subsequent install *ends up producing* on either binary. **The on-disk delta is
+  subsequent **successful** install ends up producing on either binary. ⚠️ Not what
+  a subsequent *failing* one produces — every retry cell above succeeded, and the
+  fail→fail pair below shows the split persisting. **The on-disk delta is
   conditional on the cli-dir being absent:** pre-create it and claustrum's *failing*
   install leaves exactly what the reference leaves, so the delta is narrower than a
   flat reading of "creates nothing" suggests. **It does not self-heal** — measured
@@ -1716,9 +1727,12 @@ completes it with `git.worktree_remove`, which shares the predicate
   (same run), which is what makes the rows above readable. Pre-placing an executable
   `cliDir/<version>`: one that prints a version and exits 0 → `cliWasPresent:true`,
   not replaced; one that exits 0 printing **nothing** → also `cliWasPresent:true`,
-  not replaced; one that exits 3 → `cliWasPresent:false` and replaced. Identical on
-  both binaries in all three. So the reference requires **runnability**, not mere
-  presence, and does not key on the probe's output. ⚠️ The first row is also the
+  not replaced; one that exits 0 printing a **contradicting** version (`9.9.9` under
+  `-cli-version 1.0.0`) → also `cliWasPresent:true`, not replaced; one that exits 3
+  → `cliWasPresent:false` and replaced. Identical on both binaries in all four. So
+  the reference requires **runnability**, not mere presence, and keys on the exit
+  status rather than on the probe's output — the silent and contradicting rows are
+  what exclude the two output-based readings. ⚠️ The first row is also the
   **positive control**: nothing else in this run moved `cliWasPresent` off `false`,
   so without it "all identical" would have rested on an instrument never shown able
   to say "present".

@@ -296,7 +296,11 @@ argv one. D14 joined the argv list when it was flipped on 2026-08-08.)*
   claim says Desktop does. If Desktop does not retry over SFTP, that run measured
   the wrong follow-up and its "same end state either way" result says nothing about
   the driver. The result still stands as a claim about **the two binaries**; only
-  its bearing on the reopen condition depends on this.
+  its bearing on the reopen condition depends on this. 🔴 **Reopen trigger:** any
+  observation of what Desktop actually does after an `-install` reports a
+  `cliError` — D13's own trigger fires on how Desktop *classifies* the string, which
+  is a different half and would not catch a Desktop that classifies as assumed but
+  retries some other way.
 - **D14's residual delta** is only more than cosmetic because of the `libc` claim.
   🔴 **No falsifying reopen trigger:** its entry has one, but it fires on a musl host
   the loader glob misses and on a measurement of the reference's bound — neither

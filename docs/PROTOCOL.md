@@ -1694,17 +1694,30 @@ Staging and cleanup (probe-verified):
   of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
   every path; only a SIGKILLed download leaves it behind, and nothing reclaims
   that. (This staging file is claustrum's own. No frame changes either way.)
-- **Where the reference stages its download — measured 2026-08-08, filling the gap
-  this bullet used to record as never measured.** Listing the cli-dir *mid-download*
-  against a deliberately slow origin: the reference's cli-dir holds a single
-  `.fetch-<random>` **in both pre-states**, with `$TMPDIR` empty — so it creates the
-  cli-dir before the body arrives and stages inside it whether or not the directory
-  existed. Claustrum splits, as the bullet above describes: `$TMPDIR/claustrum-fetch-<random>`
-  on a first install, `<cli-dir>/.blob-<random>` when the cli-dir already exists. The
-  **end state is identical on both binaries in both pre-states**, so no frame moves
-  and this is not a numbered divergence. ⚠️ One consequence is worth knowing and is
-  *inferred, not measured*: on a first install with a tmpfs `$TMPDIR`, claustrum's
-  download body is RAM-backed where the reference's sits on the cli-dir's filesystem.
+- **What each binary has on disk mid-download — measured 2026-08-08, filling the
+  gap this bullet used to record as never measured.** Listing the cli-dir against a
+  deliberately slow origin, then reading the first bytes of whatever is in flight:
+
+  | | in-flight file | first bytes |
+  |---|---|---|
+  | reference, cli-dir absent or pre-created | `<cli-dir>/.fetch-<random>` | the **decompressed** CLI's |
+  | claustrum, cli-dir absent | `$TMPDIR/claustrum-fetch-<random>` | zstd magic — the **compressed body** |
+  | claustrum, cli-dir pre-created | `<cli-dir>/.blob-<random>` | zstd magic — the **compressed body** |
+
+  So the reference creates the cli-dir before the download **completes** and writes
+  decompressed output into it as the stream arrives, in both pre-states — which is
+  the same behaviour D13's entry infers from `decompressing: <transport error>`
+  surfacing on an interrupted transfer. Claustrum instead has the *compressed body*
+  on disk, in `$TMPDIR` on a first install and in the cli-dir once it exists.
+  ⚠️ **These are different artifacts, so do not read the rows as a like-for-like
+  location difference** — an earlier version of this bullet called the reference's
+  file "the download body", which the probe had not established. Claustrum's two
+  rows are the control that makes the reference row readable: the same instrument
+  reads zstd magic there, so it can tell the two apart.
+  The **end state is identical on both binaries in both pre-states**, so no frame
+  moves and this is not a numbered divergence. The sampling was one listing partway
+  through the transfer, so "before it completes" is what is established; creation on
+  the first byte is not excluded.
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
