@@ -758,15 +758,19 @@ func isRegularFile(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-// lddProbeTimeout bounds the `ldd --version` libc probe. This is divergence D14;
-// see IMPROVEMENTS.md for the measured tables.
+// lddProbeTimeout bounds the `ldd --version` libc probe WHEN SET; it is 0 by
+// default and then bounds nothing. This is divergence D14; see IMPROVEMENTS.md for
+// the measured tables.
 //
 // MEASURED: the reference applies no deadline here at or below 45 s — probed with
 // a stub ldd on PATH and the musl loader glob masked. That result comes from the
 // `exec sleep 120` shape below ONLY; the surviving-child shape cannot support it,
 // because claustrum has a deadline and looks identical there. An earlier version
 // of this comment said the unbounded wait was "assumed"; it is measured now, in
-// that one shape. We cap it and fall back to the default classification on timeout.
+// that one shape. When a deadline IS set we cap the probe and fall back to the
+// default classification on timeout; at the shipped default none is set — see the
+// D14 FLIP paragraph at the bottom of this comment, which is the current default and
+// not an afterthought.
 //
 // A wall-clock deadline cannot separate a hostile `ldd` from a slow one, so an
 // honest-but-slow `ldd` falls back too — but that usually changes NOTHING
@@ -787,6 +791,9 @@ func isRegularFile(p string) bool {
 //
 //	stub `exec sleep 120` (nothing survives the kill) -> claustrum falls back at 5s
 //	  and prints a complete __INSTALL_RESULT__; the reference emits nothing at 45s.
+//	  ⚠️ The claustrum column is the PRE-FLIP always-on build (the retracted 5s
+//	  default). At the shipped default it does not fall back at all and this row's
+//	  claustrum column becomes the reference's.
 //	stub `sleep 120` (a child survives holding the output pipe) -> NEITHER binary
 //	  replies at 45s (measured). For CLAUSTRUM the cause is CombinedOutput waiting
 //	  on the inherited pipe after the deadline kills the shell — the same softness

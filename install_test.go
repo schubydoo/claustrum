@@ -602,8 +602,16 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 }
 
 // D14's flip, both arms, on ONE fixture that straddles the deadline — which is the
-// point. An `ldd` that answers in 200ms is honest, not stalled, and a wall-clock
-// threshold cannot tell the two apart. A fixture faster than the deadline would
+// point. A probe answering in 200ms is honest, not stalled, and a wall-clock
+// threshold cannot tell the two apart.
+//
+// ⚠️ SCOPE: `run` is an injected closure, not a spawned process. No `ldd` is
+// resolved, `runLddVersion`/`exec.CommandContext`/`CombinedOutput` are never on the
+// path, and nothing is killed — the closure's ctx arm returns ctx.Err() of its own
+// accord. What this pins is that lddCtx arms (or does not arm) a deadline and that
+// detectLibcWith propagates the result through classifyLibc. It CANNOT show the
+// real probe's surviving-child softness, where CombinedOutput waits on the inherited
+// pipe past the deadline — see the D14 entry in IMPROVEMENTS. A fixture faster than the deadline would
 // answer the same either way and prove nothing (see the D12 straddle lesson).
 //
 // The runner returns a musl banner AND exits 0, because that conjunction is the only

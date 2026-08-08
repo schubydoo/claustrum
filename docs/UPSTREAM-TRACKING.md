@@ -288,8 +288,8 @@ If the check reports drift:
 >   the run, `/dev/zero` OOMs the daemon, and the socket and device rows are uid- and
 >   platform-dependent — so those stay in the one-off session.
 >   ⚠️ **A D4-shaped difference on a stock claustrum is drift, not D4** — check for
->   the key or flag first. The parse table differs from the three durations above
->   (D5, D11, D12) because this key is a **bool**: an unrecognised config value
+>   the key or flag first. The parse table differs from the four durations
+>   (D5, D11, D12, D14) because this key is a **bool**: an unrecognised config value
 >   (`files-read-regular-only = maybe`) is dropped **silently**, leaving the key
 >   unset so the flag value stands — off, unless a flag was also passed — while an
 >   unrecognised *flag* value (`-files-read-regular-only=maybe`) is rejected by
@@ -303,7 +303,7 @@ If the check reports drift:
 >   ⚠️ **One spelling ARMS it, but look for the right symptom**:
 >   `-files-read-regular-only maybe` (a space, not `=`). Go's `flag` never lets a
 >   bool consume the next argument, so the guard goes **on** and `maybe` becomes a
->   positional — where the same typo on any of the three durations exits 2. But
+>   positional — where the same typo on any of the four durations exits 2. But
 >   `flag` also **stops parsing at the first non-flag argument**, so every flag AFTER
 >   the typo is silently dropped (measured: `-files-read-regular-only maybe -version`
 >   exits 2 with `one of --version/--install/--serve/--bridge/--stop is required`).
@@ -367,6 +367,10 @@ If the check reports drift:
 >   target method does not read; a correctly typed extra field is ignored by both.
 >   ⚠️ "No real client sends that" is an assertion, not a measurement — Desktop's
 >   per-method param set has never been enumerated against this binding.
+> - **D14 is no longer in this group either** — the `ldd` probe deadline moved to the
+>   off-the-default-path list above when it was flipped on 2026-08-08, so on a stock
+>   claustrum the libc probe has no deadline at all and a `libc` difference is NOT D14
+>   unless the key or flag is set. Look for it above, not here.
 > - **Neither D11 nor D12 is in this group any more** — both bounds moved to the
 >   off-the-default-path list above and are off by default, so on a stock claustrum the
 >   runnability probe has no deadline and the download has no bound. D11 matches the

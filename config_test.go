@@ -683,6 +683,14 @@ func TestParseConfig_LibcProbeTimeout(t *testing.T) {
 		{"negative rejected", "libc-probe-timeout = -1s", nil},
 		{"bare number rejected", "libc-probe-timeout = 5", nil},
 		{"garbage rejected", "libc-probe-timeout = soon", nil},
+		{"empty rejected", "libc-probe-timeout =", nil},
+		{"case-insensitive key", "LIBC-PROBE-TIMEOUT = 5s", durp(5 * time.Second)},
+		// The zero spellings the case comment cross-references when it says "the
+		// same zero/negative edges as cli-probe-timeout above". All of them reach
+		// d == 0, which IS the disabled value, so none can switch the deadline on.
+		{"negative zero accepted", "libc-probe-timeout = -0", durp(0)},
+		{"negative zero with a unit accepted", "libc-probe-timeout = -0m", durp(0)},
+		{"negative that truncates to zero accepted", "libc-probe-timeout = -0.4ns", durp(0)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -708,6 +716,18 @@ func TestParseConfig_ProbeTimeoutsDoNotCross(t *testing.T) {
 	got = parse(t, "cli-probe-timeout = 5s")
 	if got.libcProbeTimeout != nil {
 		t.Errorf("cli-probe-timeout also set libcProbeTimeout = %s, want unset", *got.libcProbeTimeout)
+	}
+	// ⚠️ The pair above is the FLAG-swap hazard. The COPY-PASTE hazard is a
+	// different neighbour: in applyConfigKey the libc case is written directly
+	// beneath `git-timeout`, not beneath `cli-probe-timeout`, so the git case is
+	// the one physically adjacent to it. A body that sets only the wrong field is
+	// already caught by TestParseConfig_LibcProbeTimeout; the mutant that survives
+	// is a body that sets BOTH — which is exactly the union the cli-probe-timeout
+	// case warns is "not a dead no-op".
+	got = parse(t, "libc-probe-timeout = 5s")
+	if got.gitTimeout != nil || got.cliDownloadTimeout != nil {
+		t.Errorf("libc-probe-timeout leaked into a neighbour: gitTimeout=%v cliDownloadTimeout=%v",
+			got.gitTimeout, got.cliDownloadTimeout)
 	}
 }
 
@@ -740,17 +760,17 @@ func TestLddCtxArmsNoDeadlineWhenOff(t *testing.T) {
 		done := ctx.Done()
 		cancel()
 		if hasDeadline {
-			t.Errorf("lddProbeTimeout = %s: context carries a deadline, want none armed at all", off)
+			t.Errorf("lddCtx(%s): context carries a deadline, want none armed at all", off)
 		}
 		if done != nil {
-			t.Errorf("lddProbeTimeout = %s: context is cancellable, want a plain Background context", off)
+			t.Errorf("lddCtx(%s): context is cancellable, want a plain Background context", off)
 		}
 	}
 	ctx, cancel := lddCtx(30 * time.Second)
 	defer cancel()
 	dl, ok := ctx.Deadline()
 	if !ok {
-		t.Fatal("lddProbeTimeout = 30s: no deadline armed, want one")
+		t.Fatal("lddCtx(30s): no deadline armed, want one")
 	}
 	if remaining := time.Until(dl); remaining <= 0 || remaining > 30*time.Second {
 		t.Errorf("deadline is %s away, want (0, 30s]", remaining)
@@ -759,8 +779,16 @@ func TestLddCtxArmsNoDeadlineWhenOff(t *testing.T) {
 
 // The SHIPPED default, pinned. Every other test that exercises the probe injects a
 // timeout into detectLibcWith directly, so without this, reinstating
-// `var lddProbeTimeout = 5 * time.Second` would pass the whole suite and silently
-// restore the divergence D14's flip removed.
+// `var lddProbeTimeout = 5 * time.Second` would pass the whole suite.
+//
+// ⚠️ Scope, and the same scoping TestFilesReadRegularOnlyDefaultIsOff carries — this
+// comment got it wrong once already and is corrected here: that mutation is a
+// TEST-SUITE hazard, not a shipped-binary one. main.go's -install arm assigns
+// lddProbeTimeout unconditionally before runInstall, and detectLibc has exactly one
+// non-test caller (inside runInstall), so the package-var initialiser is overwritten
+// on every real -install and never reaches production. The detector for the SHIPPED
+// default is the f.DefValue != "0s" assertion in main_dispatch_test.go. Both are
+// worth having; they catch different mutations.
 func TestLddProbeTimeoutDefaultIsOff(t *testing.T) {
 	if lddProbeTimeout != 0 {
 		t.Errorf("package default lddProbeTimeout = %s, want 0 — the deadline must ship OFF (D14)", lddProbeTimeout)

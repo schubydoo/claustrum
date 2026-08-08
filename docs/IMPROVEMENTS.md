@@ -43,8 +43,9 @@ off linux, so no such bound exists on darwin or windows.)
 
 `git.*` and the `-install` libc probe shelled out with no deadline; a wedged
 git/ldd left a request goroutine waiting with no bound. Both are now wrapped in
-`exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout`, 5 s,
-security fix S4) and every `git` invocation (`gitTimeout` — **opt-in since D5's
+`exec.CommandContext`: the `ldd --version` probe (`lddProbeTimeout` — **opt-in
+since D14's flip; 0 = no deadline by default**, and 5 s when set to the retracted
+value; security fix S4) and every `git` invocation (`gitTimeout` — **opt-in since D5's
 flip; 0 = no deadline by default**, and 60 s when set to the retracted value).
 
 **Both halves are now numbered divergences, and the detail lives with them, not
@@ -515,11 +516,11 @@ large" — an honest input trips it too. If that input is reachable **and** the
 caller cannot turn the guard off, always-on is not justified no matter how the
 reference behaves on the hostile path. On both argv surfaces — `-serve` and
 `-install` — Claude Desktop owns the argv, so the person who pays has no way to
-decline; that is what flipped all six, and it is why every one of them ships a
+decline; that is what flipped all seven, and it is why every one of them ships a
 `claustrum.conf` key rather than a flag alone.
 
 ⚠️ **"Desktop owns the argv" is a claim about the driver, and it is the premise
-under D3, D4, D5, D10, D11, D12 and the "(opt-in)" tag itself — so it is tracked rather than
+under D3, D4, D5, D10, D11, D12, D14 and the "(opt-in)" tag itself — so it is tracked rather than
 assumed.** Provenance and its reopen trigger live in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*: the shipped client's setup UI
 offers SSH connection fields and a remote folder browser, and no way to pass
@@ -1464,9 +1465,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   would keep `exec.CommandContext`'s kill-on-cancel path in play where the
   reference showed no such cut-off.
 - **What still ships bounded on the `-install` path:** of the *claustrum-chosen*
-  bounds, only the linux-only `ldd` probe (**D14**), which has **not** been flipped —
-  its always-on status is unresolved rather than settled. D12's download bound took this
-  same flip alongside D11's. ⚠️ Not the same as "nothing bounds an `-install`":
+  bounds, **none** — D14's linux-only `ldd` probe took the same flip D11 and D12
+  took, so all three are off by default. ⚠️ Not the same as "nothing bounds an `-install`":
   `http.DefaultTransport`'s `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s` still apply on the `-cli-url` path, on every platform,
   and a SYN-black-holed host fails at 30 s at the default.
@@ -1658,7 +1658,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   ⚠️ **Neither binary leaves a usable CLI** — but the on-disk state a caller keeps
   is not identical either (an empty cli-dir versus none, observable with a
   `files.stat`), so "the only delta is diagnostic text" is false as written, and
-  clause (c) says that. **So D13 sits with D14 in the unresolved group** (settled
+  clause (c) says that. **So D13 is the unresolved group** — it sat with D14 until
+  D14's flip, and is now alone in it (settled
   2026-08-07; see the preamble for why the clause was not widened to fit it). It
   stays in the code, labelled, rather than justified by a rule bent around it.
 - ⚠️ **The "cost-free" reading leans on a claim about the driver, and that claim is

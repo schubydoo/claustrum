@@ -239,8 +239,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   memory".
 - **`-install` applies wall-clock bounds the reference does not appear to, plus one
   ordering difference.** Three exist — the `<cli> --version` runnability probe
-  (D11), the download (D12), and, on linux only, the `ldd --version` libc probe at
-  5 s (**D14**; `libc_other.go` skips the probe entirely off linux). **ALL THREE are
+  (D11), the download (D12), and, on linux only, the `ldd --version` libc probe
+  (**D14**; `libc_other.go` skips the probe entirely off linux). **ALL THREE are
   off by default now**, opt-in via `-cli-probe-timeout` / `-cli-download-timeout` /
   `-libc-probe-timeout` or the matching `claustrum.conf` keys — the config keys
   are the reachable ones, since Desktop owns the argv. ⚠️ `-cli-probe-timeout` and
@@ -338,7 +338,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
   outright that the list has been incomplete every time it was checked). **Three
   driver claims are tracked there**, the third being **"Desktop owns the argv"** —
-  the premise under D3, D4, D5, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
+  the premise under D3, D4, D5, D10, D11, D12, D14 and the "(opt-in)" tagging convention. ⚠️ Its
   evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
   argument field there, but Desktop's own config files and forwarded env were never
   examined, and a config file it turns into argv is one of the two routes that would

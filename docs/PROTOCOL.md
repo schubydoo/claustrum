@@ -1424,7 +1424,7 @@ hardening.
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
           [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
+          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>] \
           [-libc-probe-timeout <dur>]
 ```
 
@@ -1555,8 +1555,11 @@ left in place:
   [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*).
   🔴 **The bound fires in only one of the two stall shapes**, and this bullet used
   to claim the divergence was total. Measured: with a stalled `ldd` that leaves
-  nothing holding its output pipe, claustrum falls back at 5 s and emits a complete
-  `__INSTALL_RESULT__` where the reference emits nothing at 45 s; with one that
+  nothing holding its output pipe, an **opted-in** claustrum falls back at its
+  deadline and emits a complete
+  `__INSTALL_RESULT__` where the reference emits nothing at 45 s (the measured run
+  used the retracted 5 s default; at the shipped default claustrum does not fall back
+  at all, and this row's claustrum column becomes the reference's); with one that
   leaves a surviving child, **neither binary replies at 45 s**. See IMPROVEMENTS
   → D14.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
@@ -1621,7 +1624,8 @@ Checksum + error framing (probe-verified):
   transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
-  beside D14 rather than justified.
+  as unresolved rather than justified — and since D14's flip it is the ONLY entry
+  there.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →

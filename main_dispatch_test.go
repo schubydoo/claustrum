@@ -128,14 +128,18 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 // Asserting it needs the cleanup to have RUN, so the call goes in a subtest and
 // the assertion follows it — t.Cleanup fires at the subtest's end.
 func TestRunMainRestoresInstallGlobals(t *testing.T) {
+	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
+	oldMaxCLI, oldMaxExtract, oldLdd := maxCLIBytes, maxExtractBytes, lddProbeTimeout
 	cliProbeTimeout, cliDownloadTimeout = 3*time.Second, 4*time.Second
-	maxCLIBytes, maxExtractBytes = 11, 22
+	maxCLIBytes, maxExtractBytes, lddProbeTimeout = 11, 22, 6*time.Second
 	t.Cleanup(func() {
-		cliProbeTimeout, cliDownloadTimeout = 0, 0
-		maxCLIBytes, maxExtractBytes = 0, 0
+		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
+		maxCLIBytes, maxExtractBytes, lddProbeTimeout = oldMaxCLI, oldMaxExtract, oldLdd
 	})
 	t.Run("inner", func(t *testing.T) {
-		if _, exited := runMain(t, "-install", "-cli-probe-timeout", "9s", "-cli-download-timeout", "8s", "-max-cli-bytes", "99"); exited {
+		if _, exited := runMain(t, "-install", "-cli-probe-timeout", "9s",
+			"-cli-download-timeout", "8s", "-max-cli-bytes", "99",
+			"-libc-probe-timeout", "7s"); exited {
 			t.Fatal("-install should return, not exit")
 		}
 	})
@@ -148,6 +152,13 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 		{"cliDownloadTimeout", cliDownloadTimeout, 4 * time.Second},
 		{"maxCLIBytes", maxCLIBytes, int64(11)},
 		{"maxExtractBytes", maxExtractBytes, int64(22)},
+		// lddProbeTimeout joined runMain's save/restore with D14's flip and had no
+		// row here — repeating exactly the omission TestRunMainRestoresServeGlobals
+		// was written to close for gitTimeout and filesReadRegularOnly. Measured
+		// without this row: dropping the restore leaks 7s and is caught on only
+		// 2 of 10 shuffle seeds, and CI passes no -shuffle at all, so it would
+		// never have gone red.
+		{"lddProbeTimeout", lddProbeTimeout, 6 * time.Second},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)
