@@ -715,7 +715,10 @@ the daemon then seeds the new worktree:
   deliberately private source (say `0400`) is widened to whatever the umask
   allows. This matches the reference and is reproduced deliberately; treat the
   manifest as naming configuration, not secrets or scripts.
-- Copy failures are best-effort and never fail the request.
+- ⚠️ An **opted-in** `-git-timeout` (D5) kills the `git ls-files` that performs the
+selection, and the early return then skips **every** manifest-selected file while
+the reply is still `{"success":true}` — a silent, wire-invisible loss distinct from
+the per-file case below. Off by default. Copy failures are best-effort and never fail the request.
 #### git.worktree_remove
 
 `{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)

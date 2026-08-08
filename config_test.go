@@ -555,6 +555,7 @@ func TestParseConfig_GitTimeout(t *testing.T) {
 		// so none of them can switch the deadline on.
 		{"bare zero accepted", "git-timeout = 0", durp(0)},
 		{"negative zero accepted", "git-timeout = -0", durp(0)},
+		{"negative zero with a unit accepted", "git-timeout = -0m", durp(0)},
 		{"negative truncating to zero accepted", "git-timeout = -0.4ns", durp(0)},
 	}
 	for _, tc := range cases {

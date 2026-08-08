@@ -255,6 +255,24 @@ If the check reports drift:
 >   `net.Dialer{Timeout: 30s}` and `TLSHandshakeTimeout: 10s`; a SYN-black-holed
 >   host still fails at 30 s at the default. Both are unnumbered and unprobed on the
 >   reference.
+> - **D5** — the git deadline on every git invocation, `-git-timeout` / the
+>   `git-timeout` config key. **Off by default (`0` = no deadline), and OFF is the
+>   parity position** — measured on `git.worktree_remove`, the reference gave no
+>   reply at 75 s where claustrum answered at 60.1 s under the retracted cap, with a
+>   fast-git control proving the fixture could answer. Above 75 s is unmeasured on
+>   both binaries, and an honest 61 s git has never been run against either.
+>   ⚠️ **A D5-shaped difference on a stock claustrum is drift, not D5** — check for
+>   the key or flag first, and confirm the value parses to a positive duration: the
+>   same config-silent / flag-warns / flag-exits-2 / any-zero-accepted table as D11
+>   above applies verbatim, with `git-timeout` substituted.
+>   ⚠️ **Two ways to probe an opted-in D5 and see nothing:** a harness deadline
+>   under the configured value records "no reply" for both binaries, and a git that
+>   spawns a surviving child blocks claustrum past its own cap too — `CombinedOutput`
+>   waits on the output pipe, not on git's exit.
+>   ⚠️ **One arm is invisible to a client**: a killed `git ls-files` makes
+>   `git.worktree_create` answer `{"success":true}` with every `.worktreeinclude`
+>   file absent. Nothing on the wire says so, so a "no divergence" verdict from the
+>   frame battery does not cover it.
 > - **CT-1** — `wantPid` adds `pid`/`startTime` to spawn/reattach replies.
 > - **CT-2** — `-keep-children` leaves children running across shutdown.
 > - **CT-3** — the `claustrum.conf` file (`version-override` / `keep-children` /

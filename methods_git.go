@@ -109,6 +109,7 @@ func (p *gitParams) repoDir() string {
 // 300ms gitTimeout, while the same stub as `exec sleep 30` returned promptly.
 // Closing it means reading the streams explicitly instead of CombinedOutput,
 // which is more code and more divergence, so it is recorded rather than fixed.
+//
 // D5 FLIP: the default is now 0 = NO DEADLINE, matching the reference. A non-zero
 // value is opt-in via -git-timeout or the git-timeout key in claustrum.conf (the
 // config key is the reachable one — Claude Desktop owns the argv). At 0 the

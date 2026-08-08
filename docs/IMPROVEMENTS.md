@@ -866,7 +866,16 @@ completes it with `git.worktree_remove`, which shares the predicate
   `git.status` and `git.list_branches` the same cap surfaces as `-32603` with
   `err.Error()` = **`signal: killed`** (§5 above). It is not the only one — a
   killed repo-detection call answers `isRepo:false` where the reference emits
-  nothing — and §5 records why no total is asserted. Unreachable on the reference,
+  nothing — and §5 records why no total is asserted.
+- 🔴 **One arm loses data and puts NOTHING on the wire, which is why it is called
+  out separately.** `copyWorktreeIncludes` (`worktreecopy.go`) selects the files a
+  `.worktreeinclude` manifest names by running `git ls-files` through the same
+  helper. An opted-in deadline kills it, `err != nil` takes the early return, and
+  `populateWorktree` is best-effort — so `git.worktree_create` still answers
+  `{"success":true,…}` while **every manifest-selected file is missing** from the
+  new worktree. No frame moves, no error is reported, and the frame battery cannot
+  see it. Same class of evidence as D13's empty cli-dir: state the caller keeps,
+  observable only by looking at the filesystem. Unreachable on the reference,
   so not a parity break, but it is ours and it is on the wire. ⚠️ **At the shipped
   default none of these arms exist**: with no deadline armed, nothing is killed.
   They are the cost of opting in.

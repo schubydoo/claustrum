@@ -188,4 +188,17 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 	if maxExtractBytes != 4096 {
 		t.Errorf("maxExtractBytes = %d, want 4096 — the two -serve knobs must not be crossed", maxExtractBytes)
 	}
+	// The DECLARED default, not the package var and not the resolver — the same
+	// assertion -cli-probe-timeout and -cli-download-timeout each carry. Moving a
+	// 60s into flag.Duration's default argument survives every other gitTimeout
+	// assertion in the suite while shipping a binary that deadlines every -serve
+	// git. Declared, not resolved: a real claustrum.conf beside the binary sets the
+	// resolved value legitimately.
+	f := lastMainFlagSet.Lookup("git-timeout")
+	if f == nil {
+		t.Fatal("main() did not register -git-timeout")
+	}
+	if f.DefValue != "0s" {
+		t.Fatalf("-git-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
+	}
 }
