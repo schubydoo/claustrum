@@ -526,7 +526,18 @@ use it — but each has its own trigger, and the glosses are not interchangeable
 D2 and D6 (a destructive target no honest caller names), **D7** (a `-cli-version`
 colliding with the install temp sweep — a *name* collision, not a destructive
 target), D8 (not reachable on the deployed path), D9 (a params type error no
-correct client sends).
+*correct* client sends).
+
+⚠️ **Two of those triggers are asserted rather than enumerated, and this index used
+to read as though clause (b) were settled for them.** D9's own entry withdraws the
+support: "a real client never sends them" is retracted there as an assertion with
+no measurement, and Desktop's per-method param set has never been enumerated
+against that binding — which is the measurement D9 owes and does not have. D6 and
+D7 are a weaker version of the same position: an observed value plus a measured
+accepted-set, not an enumeration of everything Desktop can emit. Neither is moved
+to the unresolved group here, because "no *correct* client sends a type error" is
+close to true by construction — but rule 2 puts the burden on the divergence, so
+read these as unenumerated, not as established.
 
 **Clause (c) is deliberately narrow, was written for D13, and — measured — D13
 does not meet it. It therefore justifies no entry in this file today.** Two things
@@ -1405,8 +1416,10 @@ completes it with `git.worktree_remove`, which shares the predicate
 
   The controls come back identical, which is why the differing rows are
   attributable to ordering rather than to the fixture. Measured at `5db5e4a`.
-  ⚠️ **The last two rows are different failures and the distinction is the whole
-  point of the fixture.** A *short artifact* reaches the checksum comparison, so
+  ⚠️ **Rows 1 and 3 — the short artifact and the interrupted transfer — are
+  different failures, and the distinction is the whole point of the fixture.**
+  (They are not adjacent, and they are not the last two rows: those are controls
+  where both binaries agree.) A *short artifact* reaches the checksum comparison, so
   the ordering shows as `checksum mismatch` vs a decompression error. A *genuine
   interrupted transfer* never gets that far on claustrum: `fetchToFile` returns
   `io.Copy`'s error before any checksum runs, so it surfaces as `download failed:
@@ -1428,8 +1441,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   is **broader than the fixture it was written from**: the reference answers
   `unexpected EOF` there, not `magic number mismatch`.
   ⚠️ **Scope, because the obvious wider wording is wrong:** this is *not* the
-  generic "flaky network" case. A genuine mid-transfer interruption is the last row
-  of the table and diverges on the **prefix** instead, never reaching the checksum
+  generic "flaky network" case. A genuine mid-transfer interruption is **row 3** of
+  the table and diverges on the **prefix** instead, never reaching the checksum
   on claustrum at all.
 - 🔴 **D13's always-on status is UNRESOLVED, and this entry does not claim
   otherwise.** Clause (c) was written for it and, measured, it does not meet it:

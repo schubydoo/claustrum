@@ -170,7 +170,8 @@ sits in front of those calls so operators can quiet the daemon:
   "arch": "amd64",            // GOARCH
   "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux a >5s
                               // ldd falls back to glibc (D14). The driver uses
-                              // this field to pick which CLI build to download.
+                              // this field to pick which CLI build to download —
+                              // a third-binary claim; see the provenance note below.
   "cliPath": "<cli-dir>/<cli-version>",
   "cliWasPresent": false,     // true only if it existed AND answered --version — within
                               // -cli-probe-timeout when that is set; no deadline by default (D11)
@@ -217,14 +218,18 @@ treated as retryable and re-attempted over the SFTP path. So changing the wordin
 above — or adding a guard whose error pre-empts one — can change what a user is
 told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
 
-⚠️ **Provenance, because this is a different class of claim from the rest of these
-docs.** It describes a **third binary** — the driver — not the reference daemon and
-not claustrum, so the reference-vs-claustrum harness cannot confirm or refute it and
-no `scratch/` fixture covers it. It is derived from how the shipped Desktop client
-handles the field, not from a differential probe. Treat it as a design constraint
-worth respecting, not as a measured parity result; anything that depends on it
-(D13's cost-free reading does — D13 has no accepted always-on justification, it is
-in IMPROVEMENTS' unresolved group) should say so and carry a reopen trigger.
+⚠️ **Provenance, because these are a different class of claim from the rest of
+these docs.** Two are in this class: the `cliError` classification above, and
+**`libc` deciding which CLI build the driver downloads**. Both describe a **third
+binary** — the driver — not the reference daemon and not claustrum, so the
+reference-vs-claustrum harness cannot confirm or refute either and no `scratch/`
+fixture covers them. Both are derived from how the shipped Desktop client handles
+the field, not from a differential probe. Treat them as design constraints worth
+respecting, not as measured parity results; anything that depends on one should say
+so and carry a reopen trigger. Two things currently do: **D13's cost-free reading**
+(D13 has no accepted always-on justification — it is in IMPROVEMENTS' unresolved
+group) rests on the `cliError` claim, and **D14's residual delta** is only more than
+cosmetic because of the `libc` claim.
 
 ## Deployment lifecycle (how a driver uses it)
 
