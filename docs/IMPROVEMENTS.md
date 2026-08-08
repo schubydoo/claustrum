@@ -31,14 +31,14 @@ contract so refactors can't drift silently.
 
 `ensureCLI` now decompresses + chmods + verifies at a staging file beside
 `cliPath` — `.fetch-<random>`, deliberately **not** `<cliPath>.tmp`, so the orphan
-sweep can reclaim it — then `os.Rename`s into place, so an interrupted install never leaves a half-written
-or non-runnable cliPath. Behavior-compatible — the end state and
-`__INSTALL_RESULT__` facts are identical (cliPath appears only as a complete 0755
-verified binary; same "not runnable" error). ⚠️ This entry used to call the
-reference's behaviour an "in-place extract". Measured 2026-08-08 on `-cli-url`,
-the reference has an in-flight `.fetch-<random>` of its own mid-download; what is
-established is that it shows none across the `--version` window, where claustrum
-does. The end-state compatibility above is unaffected.
+sweep can reclaim it — then `os.Rename`s into place, so an interrupted install
+never leaves a half-written or non-runnable cliPath. Behavior-compatible — the
+end state and `__INSTALL_RESULT__` facts are identical (cliPath appears only as a
+complete 0755 verified binary; same "not runnable" error). ⚠️ This entry used to
+call the reference's behaviour an "in-place extract". Measured 2026-08-08 on
+`-cli-url`, the reference has an in-flight `.fetch-<random>` of its own
+mid-download; what is established is that it shows none across the `--version`
+window, where claustrum does. The end-state compatibility above is unaffected.
 
 ### 5 · Timeouts on `git`/`exec` calls ✅ — impact M / cost L
 

@@ -1099,10 +1099,9 @@ func TestEnsureCLINotRunnable(t *testing.T) {
 	if _, statErr := os.Stat(cliPath); statErr == nil {
 		t.Error("non-runnable cli was left in place; want it removed")
 	}
-	// Atomic extract (#4): the .tmp staging file must not leak on failure either.
-	if _, statErr := os.Stat(cliPath + ".tmp"); statErr == nil {
-		t.Error(".tmp staging file leaked after a failed install")
-	}
+	// Atomic extract (#4): the `.fetch-*` staging file must not leak on failure
+	// either.
+	assertNoStagingLeftover(t, cliPath)
 }
 
 // --- error-path coverage ---
