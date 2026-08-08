@@ -2,9 +2,9 @@
   {
     "jsonrpc": "2.0",
     "id": 1,
-    "result": {
-      "content": "regular content\n",
-      "exists": true
+    "error": {
+      "code": -32602,
+      "message": "files.read: file exceeds maxBytes"
     }
   },
   {
@@ -20,6 +20,14 @@
     "id": 3,
     "result": {
       "content": "",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "content": "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
       "exists": true
     }
   }

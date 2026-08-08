@@ -131,6 +131,52 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 	}
 }
 
+// The -serve half of the same contract, and it needs its own test rather than two
+// more rows above: the -install arm never writes gitTimeout or filesReadRegularOnly,
+// so seeding them there and asserting they survive passes even with runMain's
+// restore lines deleted. Only an inner run that actually WRITES them can detect a
+// missing restore. gitTimeout arrived with D5's flip and filesReadRegularOnly with
+// D4's; both were added to runMain's save/restore without an assertion, and this is
+// that assertion.
+//
+// A leak here is not cosmetic: TestGitTimeoutDefaultIsOff and
+// TestFilesReadRegularOnlyDefaultIsOff both read the package vars, so a -serve case
+// leaking its values turns them into seed-dependent failures under -shuffle.
+func TestRunMainRestoresServeGlobals(t *testing.T) {
+	t.Setenv(daemonChildEnv, "1")
+	// Capture on entry rather than restoring the literals 0/0/false: writing the
+	// shipped defaults back by hand couples this cleanup to what those defaults
+	// happen to be, which is precisely the thing three other tests exist to pin.
+	oldGit, oldExtract, oldRegular := gitTimeout, maxExtractBytes, filesReadRegularOnly
+	gitTimeout, maxExtractBytes, filesReadRegularOnly = 5*time.Second, 33, true
+	t.Cleanup(func() {
+		gitTimeout, maxExtractBytes, filesReadRegularOnly = oldGit, oldExtract, oldRegular
+	})
+	t.Run("inner", func(t *testing.T) {
+		// Distinct from the seeds above on purpose: equal values would pass whether
+		// or not the restore ran.
+		if _, exited := runMain(t, "-serve",
+			"-socket", filepath.Join(t.TempDir(), "s.sock"),
+			"-git-timeout", "44s", "-max-extract-bytes", "77",
+			"-files-read-regular-only=false"); !exited {
+			t.Fatal("-serve with no token source should exit, not return")
+		}
+	})
+	for _, c := range []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"gitTimeout", gitTimeout, 5 * time.Second},
+		{"maxExtractBytes", maxExtractBytes, int64(33)},
+		{"filesReadRegularOnly", filesReadRegularOnly, true},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)
+		}
+	}
+}
+
 // The non-daemonizing dispatch arms of main: each mode flag must route to its
 // runner and return (or exit) the way the CLI contract promises.
 func TestMainDispatch(t *testing.T) {

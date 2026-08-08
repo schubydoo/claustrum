@@ -205,10 +205,21 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   reachable one). Off, the predicate is **not evaluated at all** — there is no
   "narrower check" to write, because `/dev/null` and `/dev/zero` are
   indistinguishable by mode, which is exactly why this is a flag. ⚠️ **The default
-  costs two bounds**: a writerless FIFO parks a request goroutine and an fd, and
-  `os.ReadFile` on `/dev/zero` never reaches EOF. Both are the reference's own
-  behavior — the FIFO row measured on it, the OOM row **derived** from it having no
-  mode check, not measured.
+  costs two bounds**: a writerless FIFO parks a request goroutine **and a
+  descriptor** (linux reserves the fd number before blocking — measured; parked
+  reads draw down `RLIMIT_NOFILE`, and `accept()` draws on the same table), and
+  `os.ReadFile` on `/dev/zero` never reaches EOF. `maxBytes` cannot save you: the
+  cap keys off the stat size, `0` for every non-regular kind on linux, so it is
+  inert there on **both** binaries. **Both costs are the reference's own behavior
+  and both are measured** — under a 512 MiB cgroup cap the kernel OOM-killed both
+  daemons on `/dev/zero` within 0.3 s (`Killed process` in the kernel log, naming
+  each binary), with `/dev/null` as the control. **Eight shapes were run and every
+  one is measured on both binaries — nothing in D4 rests on inference**: two
+  regular-file controls (plain, and over `maxBytes`), paired + unpaired FIFO,
+  `/dev/null`, a bound `AF_UNIX` socket, an unreadable char device, an unreadable
+  block device. Two shapes are NOT measured and are named in IMPROVEMENTS: a
+  dribbling writer (holds an fd *and* grows unbounded) and thread exhaustion at Go's
+  `maxmcount`.
 - **The `-install` CLI size cap is OFF by default (D10).** `maxCLIBytes` governs
   both the decompressed CLI and the download body; measured on both paths, the
   reference took a 600 MiB payload all the way to the runnability check, so a
@@ -313,7 +324,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
   outright that the list has been incomplete every time it was checked). **Three
   driver claims are tracked there**, the third being **"Desktop owns the argv"** —
-  the premise under D3, D5, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
+  the premise under D3, D4, D5, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
   evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
   argument field there, but Desktop's own config files and forwarded env were never
   examined, and a config file it turns into argv is one of the two routes that would

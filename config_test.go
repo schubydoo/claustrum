@@ -684,10 +684,12 @@ func TestPrecedenceFilesReadRegularOnly(t *testing.T) {
 }
 
 // The SHIPPED default, pinned. Every test that exercises the guard assigns
-// filesReadRegularOnly explicitly, and effectiveFilesReadRegularOnly is only ever
-// asked what to do with a false flag value — so without this, reinstating
+// filesReadRegularOnly explicitly, and no test asks effectiveFilesReadRegularOnly
+// what to do with an UNSET flag and an unset config — the one combination that
+// yields the shipped value — so without this, reinstating
 // `var filesReadRegularOnly = true` would pass the rest of the suite and silently
-// resurrect the -32602 D4's flip removed.
+// resurrect the -32602 D4's flip removed. (Verified by mutation: this is the sole
+// detector.)
 //
 // Order-safe: every test that changes filesReadRegularOnly restores it with
 // t.Cleanup, and none of them call t.Parallel.

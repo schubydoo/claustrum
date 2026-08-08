@@ -279,13 +279,23 @@ If the check reports drift:
 >   `{"content":"","exists":true}` and blocks on a writerless FIFO until one opens,
 >   refusing neither, so a guard on by default fails a read the reference completes.
 >   ⚠️ **A D4-shaped difference on a stock claustrum is drift, not D4** — check for
->   the key or flag first. The parse table differs from the four above because this
->   key is a **bool**, not a duration: an unrecognised config value
->   (`files-read-regular-only = maybe`) is dropped **silently** and the guard stays
->   off, while an unrecognised *flag* value (`-files-read-regular-only=maybe`) is
->   rejected by `flag.Bool` before any mode runs — usage plus exit 2. There is no
->   "accepted but inert" spelling to mistake for opted-in, the way `0s` is for the
->   durations.
+>   the key or flag first. The parse table differs from the three durations above
+>   (D5, D11, D12) because this key is a **bool**: an unrecognised config value
+>   (`files-read-regular-only = maybe`) is dropped **silently**, leaving the key
+>   unset so the flag value stands — off, unless a flag was also passed — while an
+>   unrecognised *flag* value (`-files-read-regular-only=maybe`) is rejected by
+>   `flag.Bool` before any mode runs (usage plus exit 2, measured).
+>   ⚠️ **There IS an "accepted but inert" spelling here, exactly as `0s` is for the
+>   durations** — `files-read-regular-only = false` and `-files-read-regular-only=false`
+>   are both accepted and both contain the name a triager greps for. The flag form is
+>   inert unconditionally; the **config** form is inert only when no flag was passed,
+>   since the flag wins. Presence of the key is not evidence the guard is armed, and
+>   absence of a `true` is not evidence it is off — read both, and read the flag first.
+>   ⚠️ **One spelling silently ARMS it**: `-files-read-regular-only maybe` (a space,
+>   not `=`). Go's `flag` never lets a bool consume the next argument, so this sets
+>   the guard **on** and discards `maybe` as a positional, with no error — where the
+>   same typo on any of the three durations exits 2. That is the shape most likely to
+>   look like drift, because the operator believes they passed a value.
 >   ⚠️ **Probing the off state on a FIFO needs a writer.** With the guard off
 >   claustrum blocks in `open` exactly as the reference does, so a harness that
 >   never opens a writer records "no reply" for **both** binaries — the
