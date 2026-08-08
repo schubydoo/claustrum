@@ -621,23 +621,27 @@ claustrum leaves none. It is verify-before-decompress ordering, and it fails
 clause (c) because the two measured rows differ on disk as well as in text.
 It is not resolved by this section.
 
-⚠️ **There are no wall-clock thresholds left in this group.** Every one of them —
-D5, D11, D12 and finally D14 — failed for the same reason, that a threshold cannot
-separate a hostile input from a merely slow one, so the honest-but-over-threshold
-caller pays and cannot decline. All four were flipped rather than argued for. If a
-new threshold is ever proposed, that is the record it has to beat.
+⚠️ **There are no wall-clock thresholds left in this group.** The two that were ever
+in it — **D5** and finally **D14** — failed for the same reason, that a threshold
+cannot separate a hostile input from a merely slow one, so the
+honest-but-over-threshold caller pays and cannot decline. Both were flipped rather
+than argued for. ⚠️ **D11 and D12 were never members**, and an earlier version of
+this paragraph said they were: each *cleared* the not-a-frame half of clause (a)
+and was flipped on a cost this bar does not weigh, which is a different argument
+from failing rule 3. They belong here only as further thresholds that were flipped.
+If a new threshold is ever proposed, four flips are the record it has to beat.
 
 **Three entries left this group by being flipped to opt-in rather than justified.**
 **D14**'s 5 s `ldd` bound was the last, and the barest case: no flag, no config key,
 and an honest-path cost **untested in either direction** — an untested conjunction
 is not a justification, which is what settled it.
-**D5**'s 60 s `gitTimeout` was the second
+**D5**'s 60 s `gitTimeout` was the other
 threshold, with a measured cost *shape* — the claustrum-only `-32603` carrying
 `signal: killed` — though the honest 61 s git that would trip it was never run.
-**D4**'s regular-file guard was the second non-threshold: a file-mode predicate
+**D4**'s regular-file guard was the one non-threshold of the three: a file-mode predicate
 (`Mode().IsRegular()`) that fires identically on a fast FIFO and a slow one, whose
 `/dev/null` row let an honest caller observe a `-32602` where the reference reads
-the device happily — no clock, just a mode check. Both entries keep those
+the device happily — no clock, just a mode check. All three entries keep those
 arguments, which is why the flips happened.
 
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
@@ -1713,11 +1717,14 @@ completes it with `git.worktree_remove`, which shares the predicate
   threshold that no measurement has cleared, on a path where the caller cannot
   decline it, is exactly what rule 3 forbids. D4 is the precedent: its honest-path
   cost *was* measured and it was flipped anyway.
-- **What an operator now opts INTO, measured on the flip branch and pinned by
+- **What an operator now opts INTO, pinned by
   `TestDetectLibcTimeoutOptInVersusDefault`:** one fixture that **straddles** the
   bound — an `ldd` answering in 200 ms with a musl banner and exit 0, against a glob
   that misses. At the default it is waited for and reports `musl`; opted in below its
-  latency it is killed and reports the `glibc` fallback. That value change is the
+  latency the probe's context expires and the `glibc` fallback is reported.
+  ⚠️ That test injects a Go closure as the runner — no `ldd` is spawned and nothing
+  is killed — so it pins the wiring, not the kill. It structurally CANNOT show the
+  surviving-child softness recorded below. That value change is the
   divergence, and it is the conjunction this entry previously called untested in the
   wild — still untested *in the wild*, but no longer unpinned in the suite.
 - ⚠️ **What turning it off costs.** Against a stalled `ldd` claustrum now waits as
@@ -1730,8 +1737,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   whose `/lib/ld-musl-*.so.*` matches. The predicate is the **glob**, not the host.
 - ✅ **MEASURED — the reference has no deadline at or below 45 s**, from **row 2
   below only**. This was previously *assumed*, and the entry said so. ⚠️ Row 1 is
-  **non-discriminating** and supports nothing about the reference: claustrum has a
-  5 s deadline and produced the identical "no reply at 45 s" there. Probed with a
+  **non-discriminating** and supports nothing about the reference: the claustrum
+  column below is the PRE-FLIP always-on build, which had a 5 s deadline, and it
+  produced the identical "no reply at 45 s" there. Probed with a
   stub `ldd` on `PATH` and the musl glob masked, `-install` with no source flag:
 
   | stub `ldd` | claustrum | reference `5db5e4a` |
@@ -1739,6 +1747,12 @@ completes it with `git.worktree_remove`, which shares the predicate
   | `sleep 120` — shell killed, `sleep` survives holding the output pipe | **no reply at 45 s** | **no reply at 45 s** |
   | `exec sleep 120` — nothing survives the kill | **5 s**, full `__INSTALL_RESULT__`, `libc:"glibc"` | **no reply at 45 s** |
   | *control:* an `ldd` that answers instantly | 0 s, `libc:"glibc"` | 0 s, `libc:"glibc"` |
+
+  ⚠️ **The claustrum column throughout is the PRE-FLIP always-on build** (the
+  retracted 5 s default). At the shipped default it does not fall back at all, so
+  row 2's claustrum cell becomes the reference's — which is the flip. This is the
+  canonical copy of the table; `install.go` and [PROTOCOL.md](PROTOCOL.md) both
+  point here, and both already carry this annotation.
 
   The control proves both binaries can answer, and the masked glob is what lets
   `ldd` be spawned at all — unmasked, both return `"musl"` instantly and the probe
@@ -1782,13 +1796,15 @@ completes it with `git.worktree_remove`, which shares the predicate
   blocked past the deadline — the same softness D5 records for `gitTimeout`. "The
   divergence is total" was written unconditionally and is true only for the shape
   where nothing survives the kill.
-- ⚠️ **The residual delta is not cosmetic.** Claude Desktop uses the reported
+- ⚠️ **Opted in, the residual delta is not cosmetic** — at the shipped default there
+  is no residual delta at all, because no deadline is armed. Claude Desktop uses the reported
   `libc` to choose which CLI build it downloads — a claim about the **driver**,
   which the parity harness cannot confirm or refute; see
   [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*, which lists this entry as a
   dependent. So on
   the one host shape where the value *does* move — the glob misses **∧** `ldd`
-  prints a musl banner **∧** exits 0 **∧** is slower than 5 s, all four as above —
+  prints a musl banner **∧** exits 0 **∧** is slower than the configured deadline,
+  all four as above —
   the consequence is Desktop fetching a glibc
   build for a musl host, not merely a wrong string in a log line. ⚠️ Drop the exit-0
   conjunct and the claim is false: a faithful musl `ldd` exits 1, `classifyLibc`

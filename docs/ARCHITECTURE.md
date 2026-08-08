@@ -168,8 +168,10 @@ sits in front of those calls so operators can quiet the daemon:
   "serverVersion": "<daemon id>",
   "os":   "linux",            // GOOS
   "arch": "amd64",            // GOARCH
-  "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux a >5s
-                              // ldd falls back to glibc (D14). The driver uses
+  "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux an ldd
+                              // slower than -libc-probe-timeout falls back to glibc
+                              // when that is set; no deadline by default (D14).
+                              // The driver uses
                               // this field to pick which CLI build to download —
                               // a third-binary claim; see the provenance note below.
   "cliPath": "<cli-dir>/<cli-version>",
@@ -282,8 +284,9 @@ to it rather than trusting it.
 
 Below are the dependents of the `cliError` and `libc` claims, where each entry needs
 its own trigger. *(The argv claim's dependents are recorded with the claim above
-instead, because one trigger covers all of them. D10 and D11 appear in both roles —
-below for the `cliError` claim, above for the argv one.)*
+instead, because one trigger covers all of them. D10, D11 and D14 appear in both
+roles — below for the `cliError` (D10, D11) or `libc` (D14) claim, above for the
+argv one. D14 joined the argv list when it was flipped on 2026-08-08.)*
 
 - **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
   always-on justification — it is in IMPROVEMENTS' unresolved group).
