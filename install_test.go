@@ -885,7 +885,7 @@ func TestEnsureCLIFromURL(t *testing.T) {
 	}
 }
 
-// Claustrum's opt-in divergence (IMPROVEMENTS D1): the -cli-zst (SFTP) path
+// Claustrum's conditional divergence (IMPROVEMENTS D1): the -cli-zst (SFTP) path
 // verifies -cli-checksum WHEN one is supplied — a wrong checksum is rejected like
 // the -cli-url path, and the source blob is left intact. An ABSENT/empty checksum
 // stays trusting, matching the reference (which never verifies this path), so

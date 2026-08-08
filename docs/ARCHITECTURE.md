@@ -42,8 +42,8 @@ Ensures the pinned `claude` CLI is present under `-cli-dir`.
   one, and then a slower but working CLI fails this guard — see divergence D11.
 - Otherwise the blob is acquired from one of two sources:
     - `-cli-zst` — a local `.zst` (consumed once **decompression** succeeds, even if the install then fails the runnability probe); checksum-verified
-      **only when a `-cli-checksum` is supplied** — an opt-in divergence from
-      the reference, see [PROTOCOL.md](PROTOCOL.md).
+      **only when a `-cli-checksum` is supplied** — a conditional divergence from
+      the reference, activated by the caller; see [PROTOCOL.md](PROTOCOL.md).
     - `-cli-url` — downloaded, SHA-256-verified against `-cli-checksum`
       *unconditionally* (even an empty checksum fails).
 - The blob is zstd-decompressed, `chmod 0755`, and re-checked for runnability
@@ -169,7 +169,9 @@ sits in front of those calls so operators can quiet the daemon:
   "os":   "linux",            // GOOS
   "arch": "amd64",            // GOARCH
   "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux a >5s
-                              // ldd falls back to glibc (tier item 5)
+                              // ldd falls back to glibc (D14). The driver uses
+                              // this field to pick which CLI build to download —
+                              // a third-binary claim; see the provenance note below.
   "cliPath": "<cli-dir>/<cli-version>",
   "cliWasPresent": false,     // true only if it existed AND answered --version — within
                               // -cli-probe-timeout when that is set; no deadline by default (D11)
@@ -177,24 +179,26 @@ sits in front of those calls so operators can quiet the daemon:
 }
 ```
 
-**`cliError` strings.** Every error `ensureCLI` returns lands here verbatim. The
-list had drifted — it named four of these while the code produced thirteen — so it
-is grouped by phase rather than left as prose:
+**`cliError` strings.** Every error `ensureCLI` returns lands here verbatim,
+**with the wrapping prefix its phase adds** — that is the form a driver actually
+sees. Grouped by phase rather than left as prose, and no count is quoted; re-derive
+from `ensureCLI` if you need one:
 
 | phase | string |
 |---|---|
 | version check | `cli version "<v>" must be a single path component` |
 | | `cli version "<v>" collides with the install temp sweep` |
+| | `cli version "<v>" collides with the install download blob` |
 | source | `cli <v> missing and no --cli-url or --cli-zst provided` — also reached when a **present, working** CLI answers `--version` more slowly than an opted-in `-cli-probe-timeout` and no source flag was given (D11; unreachable at the default, which has no deadline) |
 | | `opening input: <err>` (`-cli-zst` read) |
 | download | `download failed: <err>` — **transport** failure only, plus `context deadline exceeded (…)` when the opt-in `-cli-download-timeout` bound fires (D12; off by default, so unreachable unless asked for) |
 | | `download failed with status <code>` — **non-200**, no URL, no reason phrase |
-| | `response exceeds <n> bytes` |
+| | `download failed: response exceeds <n> bytes` |
 | verify | `checksum mismatch: expected=<a>, actual=<b>` |
 | install | `mkdir cli dir: <err>` |
 | | `staging cli: <err>` |
 | | `decompressing: <err>` |
-| | `decompressed CLI exceeds <n> bytes` |
+| | `decompressing: decompressed CLI exceeds <n> bytes` |
 | | `installed cli at <path> is not runnable` |
 | | `clearing stale dir at <path>: <err>` |
 | | `staging file vanished before install: <err>` |
@@ -204,6 +208,99 @@ reference: only the transport failure carries the `download failed: ` prefix, an
 the status form omits the URL so a signed URL cannot reach whatever captures the
 `__INSTALL_RESULT__` line. A bare `chmod`/`rename` failure propagates as the raw
 Go error.
+
+⚠️ **These strings are not free-form diagnostics — the driver reads them.** Claude
+Desktop classifies `cliError` by *text*: a message shaped like a disk-full failure
+is surfaced as a terminal error with an actionable code, and messages that do not
+match are, on the evidence, retried over the SFTP path. So changing the wording of a
+row above — or adding a guard whose error pre-empts one — can change what a user is
+told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
+
+### Driver claims and their provenance
+
+⚠️ **These are a different class of claim from the rest of these docs.** Three are
+load-bearing: the `cliError` classification above, **`libc` deciding which CLI build
+the driver downloads**, and **"Desktop owns the argv"**. All three describe a
+**third binary** — the driver — not the reference daemon and not claustrum, so the
+reference-vs-claustrum harness cannot confirm or refute any of them and no
+`scratch/` fixture covers them.
+
+⚠️ **"The harness cannot settle it" is not the same as "unverifiable", and none of
+the three has been settled.** Each has a fixture that would settle it — run against
+the **driver**, so the arms are two inputs to one client, never two daemons. Each
+needs a control that could actually come out wrong; an arm entailed by the claim
+proves nothing:
+
+| claim | fixture | control that must fire |
+|---|---|---|
+| `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe retry-over-SFTP vs terminal report | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
+| `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
+| argv | the setup UI **and** an enumeration of Desktop's own config files and forwarded environment | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI half done (below); the rest unrun |
+
+**Evidence for the argv claim, scoped to what was looked at:** the shipped client's
+"Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
+File*, and its folder step is a remote directory browser — **no field for daemon
+arguments in either**. Reported by the maintainer as a daily user of the shipped
+client, 2026-08-07; the client build was not recorded. ⚠️ **That covers the UI only,
+and the UI is not the whole claim.** Whether Desktop reads a config file of its own,
+or forwards environment variables, was **not examined** — and a config file it turns
+into argv is **one of the two routes** this claim's own reopen trigger names. So the
+evidence supports "no argv affordance in the setup UI, on one build, seen once", not
+"no argv affordance exists".
+
+- **Reopen trigger for the argv claim:** Claude Desktop gaining a way for an
+  operator to influence the daemon's argv — a settings field, or a config file it
+  reads and turns into argv. That would make a flag-only opt-in sufficient **for
+  Desktop-driven hosts**. ⚠️ It would *not* moot the `claustrum.conf` key: the key
+  is read from the executable's own directory (`os.Executable`), so it serves any
+  other driver — including `clauster`, named as a supported one below — regardless
+  of what Desktop grows. An env var Desktop forwarded would not qualify either;
+  nothing in `config.go` or `main.go` reads the environment for these knobs, so
+  forwarding one changes nothing.
+- **What rests on it:** **D3, D10, D11 and D12** — every "why it stopped being
+  always-on" argument turns on the person who pays having no way to decline — plus
+  the **"(opt-in)" tagging convention** in IMPROVEMENTS, which *defines* opt-in as a
+  flag **and** a config key on exactly this ground, and so binds every future
+  **D-numbered** entry. (The CT block uses the tag in a looser "off unless asked
+  for" sense — CT-1 is caller-activated and CT-3 is the config mechanism itself —
+  so it does not rest on this claim.)
+  The trigger is recorded once here rather than five times, because it is one claim
+  shared by all of them.
+
+*(Not the only other driver claims in these docs — D6's and D7's clause-(b)
+evidence rests on what Desktop emits as `-cli-version`. That one is still untracked
+and unprovenanced.)*
+
+Treat them as design constraints worth respecting, not as measured parity results;
+anything that depends on one should say so and carry a reopen trigger **that would
+falsify the claim it rests on** — a trigger that fires on something else does not
+count. ⚠️ **The dependents list below is maintained by hand and has been incomplete
+every time it was checked.** Treat it as the best-known set, not a proof of completeness, and add
+to it rather than trusting it.
+
+Below are the dependents of the `cliError` and `libc` claims, where each entry needs
+its own trigger. *(The argv claim's dependents are recorded with the claim above
+instead, because one trigger covers all of them. D10 and D11 appear in both roles —
+below for the `cliError` claim, above for the argv one.)*
+
+- **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
+  always-on justification — it is in IMPROVEMENTS' unresolved group).
+- **D14's residual delta** is only more than cosmetic because of the `libc` claim.
+  🔴 **No falsifying reopen trigger:** its entry has one, but it fires on a musl host
+  the loader glob misses and on a measurement of the reference's bound — neither
+  bears on whether Desktop uses `libc` to pick the build.
+- **D10's opt-in cap** — the worked example above — rests on the `cliError` claim
+  too: what a caller loses by capping below free space is the disk-full
+  *classification*, not the string alone. ⚠️ One plausible Desktop change —
+  broadening its terminal match to any `decompressing:` error — fires this entry's
+  trigger and D13's at once, since the cap's own message is a `decompressing:` error.
+- **Clause (c)'s "error strings are not free" rider** in IMPROVEMENTS — a
+  *rule-level* dependent rather than a D-number, since it binds every future
+  clause-(c) entry. 🔴 **No reopen trigger at all.**
+- **D11's retraction of "a client reads this field, it does not parse prose"** — if
+  Desktop turned out not to parse `cliError`, half of that retraction collapses.
+  (Only half: the other half rests on a separate absence — nothing on record shows
+  any client behaving differently when `cliWasPresent` changes.)
 
 ## Deployment lifecycle (how a driver uses it)
 

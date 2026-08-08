@@ -67,7 +67,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   opt-in part.
 - **`install.go`** — `-install`: CLI download / verify (SHA-256 — **`-cli-url`
   downloads unconditionally; the local `-cli-zst` SFTP blob is verified only when a
-  `-cli-checksum` is supplied**, an opt-in divergence from the reference, see D1) /
+  `-cli-checksum` is supplied**, a conditional divergence from the reference —
+  activated by the caller, not by an operator; see D1) /
   extract (zstd) / prune.
 - OS-specific behavior is isolated in `*_unix.go` / `*_windows.go` (daemonize,
   process groups / Windows Job Objects for whole-tree kill, login-shell PATH
@@ -192,7 +193,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **`-install` applies wall-clock bounds the reference does not appear to, plus one
   ordering difference.** Three exist — the `<cli> --version` runnability probe
   (D11), the download (D12), and, on linux only, the `ldd --version` libc probe at
-  5 s (tier item 5; `libc_other.go` skips the probe entirely off linux). **D11 and
+  5 s (**D14**; `libc_other.go` skips the probe entirely off linux). **D11 and
   D12 are BOTH off by default now**, opt-in via `-cli-probe-timeout` /
   `-cli-download-timeout` or the matching `claustrum.conf` keys — the config keys
   are the reachable ones, since Desktop owns the argv. Each disables differently
@@ -202,8 +203,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s`, both always-on, unnumbered and unprobed on the
   reference. So at the shipped defaults the only *claustrum-chosen* `-install`
-  wall-clock bound that still applies is the linux `ldd` one (tier item 5 — not a
-  D-number) — the stdlib transport clocks
+  wall-clock bound that still applies is the linux `ldd` one (**D14**) — the stdlib
+  transport clocks
   above still apply on `-cli-url` everywhere — and even that cannot fire **where the
   musl loader glob matches**, because `detectLibcWith` returns before spawning
   `ldd` — the predicate is the glob, not the host, so a musl box whose loader the
@@ -215,8 +216,10 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   a threshold, so an honest-but-slow input trips it too. For D11 and D12 the
   reference showed no deadline at or below 45 s (400 s for D12) on an input that
   never answers, and **(D11 only)** it INSTALLED a 90 s CLI, waiting
-  91 s — which bounds D11's above 90 s, not at absent; the ldd bound has never been probed
-  on either binary.
+  91 s — which bounds D11's above 90 s, not at absent. **D14's bound is now probed
+  too:** the reference likewise showed no deadline at or below 45 s against a
+  stalled `ldd` — established in the `exec sleep 120` shape ONLY; the
+  surviving-child arm is non-discriminating.
   **Measured (D11, claustrum side):** a CLI answering honestly in 20 s diverges,
   and *how* depends on the shape — `installed cli at <path> is not runnable` with
   the staged binary deleted; or `cli <v> missing and no --cli-url or --cli-zst
@@ -243,17 +246,50 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   either way. And the fixture must carry a VALID zstd body, because with an invalid
   one the reference answers `decompressing: invalid input: magic number mismatch`
   at 0 s, which is D13, not a download bound.
-  The ldd bound's *value* delta is narrow —
-  fallback and true value coincide except where `ldd` reports musl and the loader
-  glob misses. But a **stalled** `ldd` makes it total on **any host without a musl
-  loader** — i.e. every ordinary glibc host, since that is exactly when `ldd` is
-  spawned at all: claustrum falls back at 5 s and emits a full
-  `__INSTALL_RESULT__` where the reference is assumed to block (not probed). D13 differs on the one combined-failure input of the
-  three measured — corrupt *and* wrong-checksummed — not on every possible input.
+  **D14's *value* delta is narrow** — fallback and true value coincide except where
+  `ldd` reports musl **and exits 0** (a faithful musl `ldd` exits 1) and the loader
+  glob misses — but ⚠️ **not cosmetic**, because
+  Desktop uses `libc` to choose which CLI build it downloads (a **driver** claim the
+  parity harness cannot settle — ARCHITECTURE → Driver claims and their provenance; same class as the
+  `cliError` one below). **And the bound fires
+  in only ONE of the two stall shapes, measured:** against a stalled `ldd` that
+  leaves nothing holding its output pipe, claustrum falls back at 5 s and emits a
+  full `__INSTALL_RESULT__` where the reference emits nothing at 45 s; against one
+  that leaves a surviving child, **neither binary replies at 45 s**. For claustrum
+  the cause is `CombinedOutput` waiting on the inherited pipe — the same softness
+  `gitTimeout` has; **the reference's cause is unmeasured and that arm cannot show
+  it**. Saying the divergence is "total" is wrong, and this file used to say it.
+  ⚠️ **D14 is NOT settled**: it is a threshold with no flag and no config key, its
+  honest-path cost is untested in either direction, and IMPROVEMENTS lists it beside
+  D4, D5 and D13 as unresolved rather than justified.
+  **D13 is verify-before-decompress ordering and its trigger is REACHABLE** — the
+  claim that no honest caller produces the input lived in `IMPROVEMENTS.md`, not
+  here, and is now retracted there. The reachable case is narrower than "flaky
+  network".
+  Measured, two different shapes: an origin serving a **short artifact** reaches the
+  checksum, so the reference answers `decompressing: unexpected EOF` where claustrum
+  answers `checksum mismatch`; a **genuine interrupted transfer** never reaches the
+  checksum on claustrum at all — `io.Copy`'s error returns first — so it diverges on
+  the *prefix* instead (`download failed: <transport err>` vs the reference's
+  `decompressing: <transport err>`). ⚠️ **D13 is NOT settled either**: "only the
+  diagnostic text differs" is false — measured, the reference creates an empty
+  cli-dir on the two measured rows where claustrum creates none — so it stays always-on
+  but is listed unresolved, not justified. What keeps the delta cheap meanwhile is a
+  claim about the *driver*: **Desktop parses `cliError`**, treating a
+  disk-full-shaped message as terminal and everything else as retryable — which the
+  parity harness cannot settle (ARCHITECTURE → Driver claims and their provenance keeps the best-known list
+  of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
+  outright that the list has been incomplete every time it was checked). **Three
+  driver claims are tracked there**, the third being **"Desktop owns the argv"** —
+  the premise under D3, D10, D11, D12 and the "(opt-in)" tagging convention. ⚠️ Its
+  evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
+  argument field there, but Desktop's own config files and forwarded env were never
+  examined, and a config file it turns into argv is one of the two routes that would
+  falsify it. **None of the three claims has been observed end-to-end.**
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is
-  supplied** — an *intentional* opt-in divergence from the reference (which never
+  supplied** — an *intentional* conditional divergence from the reference (which never
   verifies it), documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) +
   [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D1; an absent checksum stays
   trusting, so honest callers are byte-identical. `-serve` makes no outbound connections.

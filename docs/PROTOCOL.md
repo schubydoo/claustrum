@@ -265,9 +265,12 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object:
   `-32602` (e.g. `files.stat {"maxBytes":"{"}`, `git.status {"baseRepo":[1,2]}`).
   The reference binds only the field the specific method reads and ignores the
   rest regardless of type, so it runs with defaults. A genuinely unknown key (in
-  neither struct) is ignored by both. This only surfaces under adversarial params
-  — a real client never sends them; accepted divergence (D9), found by
-  differential fuzzing.
+  neither struct) is ignored by both. Accepted divergence (D9), found by
+  differential fuzzing. ⚠️ The trigger is specifically a **type error** in a
+  namespace field the target method does not read — a correctly typed extra field
+  is ignored by both binaries. This bullet used to add "a real client never sends
+  them"; that was an assertion with no measurement behind it, and Claude Desktop's
+  per-method param set has never been enumerated against this binding.
 
 ### A path must be valid UTF-8 to be addressable at all
 
@@ -1186,7 +1189,12 @@ unset in the child before it spawns anything, so it never leaks downstream.
   cap is removed rather than left truncated; entries already written are not.
 - The cap **shipped on by default at 512 MiB** and that was a live user-facing
   break: a caller with a tree over the cap got an error with no way through,
-  because Claude Desktop owns the argv. Flipping the default to `0` is the parity
+  because Claude Desktop owns the argv (a **driver** claim, tracked with its
+  provenance and reopen trigger in [`ARCHITECTURE.md`](ARCHITECTURE.md) →
+  *Driver claims and their provenance*. ⚠️ The evidence behind it is **one look at the setup UI on one
+  unrecorded build, 2026-08-07** — Desktop's own config files and any forwarded
+  environment were never examined, and a config file it turns into argv is one of
+  the two routes that would falsify it). Flipping the default to `0` is the parity
   fix; the cap itself survives as an opt-in for hosts that want it.
 - Also settable in `claustrum.conf` as `max-extract-bytes = <n>` (an explicit
   `-max-extract-bytes` flag wins). **That is the reachable knob** — see the argv
@@ -1292,10 +1300,14 @@ the facts (`cliError`), not via the exit code.
 
 Five `-install` behaviours are easy to miss. Three are wall-clock bounds: the
 `--version` runnability probe (D11), the download (D12), and — **on linux only** —
-the `libc` probe. The reference does not appear to apply the first two (measured);
-the third has never been probed on it either way. **D11's and D12's are BOTH off by
-default now**, so a stock claustrum applies just one of the three on linux — the
-`ldd` one — and **none** off linux. The last two behaviours have no frame at all.
+the `libc` probe (D14). **The reference showed no deadline at the durations
+probed** — none at or below 45 s for D11 and D14 (D14 in one stall shape only; see
+its bullet below), 400 s for D12. That is a floor,
+not a demonstration of absence: D11 is additionally bounded **above 90 s, not shown
+absent**, since the reference installed a CLI that answered at 90 s.
+**D11's and D12's are BOTH off by default now**, so a stock claustrum applies just
+one of the three on linux — D14's `ldd` bound — and **none** off linux. The last
+two behaviours have no frame at all.
 
 Both the D11 and D12 bullets below therefore describe what an operator turns on,
 except where a sentence says otherwise. An opted-in download bound always surfaces
@@ -1379,18 +1391,35 @@ left in place:
   still wedged on it when the harness stopped the probe. The observable is the
   absence of an error, not the presence of one. **At the default, none of this
   happens: claustrum waits with the reference.**
-- **The `ldd --version` libc probe is bounded at 5 s (tier item 5) — linux only.**
-  Off linux the probe never runs (`libc_other.go` returns `""`), so no bound
-  exists there. No deadline has been measured on the reference. `libc` is a field of the
+- **The `ldd --version` libc probe is bounded at 5 s — intentional divergence
+  (D14), always-on, linux only. ⚠️ Always-on is its current state, not a settled
+  one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside D4, D5
+  and D13 — a wall-clock threshold with no flag and no `claustrum.conf` key, so
+  nobody who pays for it can decline. Off linux the probe never runs
+  (`libc_other.go` returns `""`), so no bound exists there; on linux
+  `detectLibcWith` returns `"musl"` from the loader glob **before** spawning `ldd`,
+  so it cannot fire on a host that glob matches. **Measured: the reference applies
+  no deadline here at or below 45 s** — established in the stall shape where
+  nothing survives the kill; the surviving-child shape cannot show it, since
+  claustrum has a deadline and looks identical there. `libc` is a field of the
   `__INSTALL_RESULT__` facts, so a fallback is wire-visible in principle — but in
   practice the fallback and the true value coincide for an honest-but-slow `ldd`: a
-  musl host returns `"musl"` from the loader glob without spawning `ldd` at all,
-  and a glibc host's fallback *is* `"glibc"`. The field moves only where `ldd`
-  reports musl while `/lib/ld-musl-*.so.*` does not match.
-  🔴 **Against a stalled `ldd` the divergence is total, not narrow:**
-  `detectLibc()` runs unconditionally, so claustrum falls back at 5 s and goes on
-  to emit a complete `__INSTALL_RESULT__` where the reference emits nothing.
-  Neither direction is measured on either binary; see IMPROVEMENTS tier item 5.
+  host **whose loader the glob matches** returns `"musl"` without spawning `ldd` at
+  all (the predicate is the glob, not the host — a musl box the glob misses does
+  reach the probe), and a glibc host's fallback *is* `"glibc"`. The field moves only where `ldd`
+  reports musl **and exits 0** while `/lib/ld-musl-*.so.*` does not match — the exit
+  code is load-bearing, since a faithful musl `ldd --version` prints to stderr and
+  exits 1, and `classifyLibc` then falls back to `"glibc"` whether or not the bound
+  fired — ⚠️ narrow, but not
+  cosmetic, since Claude Desktop uses `libc` to choose which CLI build to download
+  (a **driver** claim the parity harness cannot settle; see
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*).
+  🔴 **The bound fires in only one of the two stall shapes**, and this bullet used
+  to claim the divergence was total. Measured: with a stalled `ldd` that leaves
+  nothing holding its output pipe, claustrum falls back at 5 s and emits a complete
+  `__INSTALL_RESULT__` where the reference emits nothing at 45 s; with one that
+  leaves a surviving child, **neither binary replies at 45 s**. See IMPROVEMENTS
+  → D14.
 - **The local `-cli-zst` blob is consumed once decompression succeeds**, not only
   on a fully successful install. An extracted CLI that fails the `--version`
   runnability check still costs you the blob. A blob that is not valid zstd is
@@ -1413,20 +1442,52 @@ Checksum + error framing (probe-verified):
   **unconditionally** — an empty `-cli-checksum` still fails
   (`checksum mismatch: expected=, actual=<sha>`).
 - **Verify happens BEFORE decompress — intentional divergence (D13).** The
-  reference decompresses first and aborts on the first invalid bytes. Of the three
-  combinations measured at `5db5e4a`, one tells them apart — a blob that is
-  **both** corrupt zstd **and** wrong-checksummed: reference
-  `decompressing: invalid input: magic number mismatch`, claustrum
-  `checksum mismatch: expected=…, actual=…`. The other two came back identical,
-  which is what makes the differing row attributable to ordering rather than to the
-  fixture. That is a claim about those three rows, not about every possible input,
-  and the controls compared reply strings rather than on-disk end state. Matching
-  would mean feeding unverified bytes to the decompressor.
+  reference decompresses first and aborts on the first invalid bytes. A blob that is
+  **both** undecompressable **and** wrong-checksummed tells them apart — but ⚠️ **the
+  divergent string is not always `checksum mismatch`**: a transfer that dies
+  mid-stream never reaches the checksum on claustrum at all. Measured at `5db5e4a`:
+
+  | input | reference | claustrum |
+  |---|---|---|
+  | origin serves a **short artifact** (`Content-Length` matches the short body), checksum of the intended full blob | `decompressing: unexpected EOF` | `checksum mismatch: expected=…, actual=…` |
+  | bad-magic blob + wrong checksum | `decompressing: invalid input: magic number mismatch` | `checksum mismatch: expected=…, actual=…` |
+  | **interrupted transfer** — `Content-Length` says full, connection reset at 60 % | `decompressing: read tcp …: connection reset by peer` | `download failed: read tcp …: connection reset by peer` |
+  | *control:* corrupt blob + correct checksum | `decompressing: invalid input: …` | **same** |
+  | *control:* valid blob + wrong checksum | `checksum mismatch: …` | **same** |
+  | *control:* short artifact + checksum **of the short bytes** | `decompressing: unexpected EOF` | **same** |
+  | *control:* valid blob + correct checksum | **installs** | **installs** |
+
+  The short-bytes control is what makes the rows readable: giving claustrum a checksum that
+  *matches the short bytes* makes it answer exactly like the reference, which is how
+  we know the `checksum mismatch` above comes from the **ordering** and not from the
+  truncation.
+
+  🔴 **The trigger is REACHABLE on an honest path, and this bullet used to imply
+  otherwise** by naming only the bad-magic shape. But the reachable case is
+  narrower than "flaky network", and the two shapes must not be merged:
+  - **An origin serving a SHORT artifact** (a bad mirror, a partial upload, a proxy
+    answering with a stale short object) reaches the checksum, so you see
+    `checksum mismatch` from claustrum where the reference reported a decompression
+    error. That is D13, not drift.
+  - **A genuine INTERRUPTED transfer never reaches the checksum on claustrum** —
+    `fetchToFile` returns `io.Copy`'s error first — so it surfaces as
+    `download failed: <transport error>` against the reference's
+    `decompressing: <transport error>`. Triaging a flaky link by looking for
+    `checksum mismatch` will therefore miss it.
+
+  It stays always-on — not because a rule clears it, but because matching would mean
+  feeding unverified bytes to the decompressor, and **both binaries fail the install**
+  anyway, so neither leaves a usable CLI.
+  ⚠️ The two rows measured for disk state — the short artifact and the interrupted
+  transfer — are **not** identical: the reference creates an empty
+  cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
+  🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
+  beside D4, D5 and D14 rather than justified.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →
   `cliError "decompressing: decompressed CLI exceeds <n> bytes"` /
-  `"response exceeds <n> bytes"`. **Not reachable by default** — the cap is `0`
+  `"download failed: response exceeds <n> bytes"`. **Not reachable by default** — the cap is `0`
   (off), matching the reference. **Intentional divergence** (D10), enabled with
   `-max-cli-bytes <n>` or `max-cli-bytes = <n>` in `claustrum.conf`. Measured at
   `5db5e4a` on the `-cli-zst` path with a 600 MiB payload (21 KB compressed): the

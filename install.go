@@ -122,7 +122,8 @@ func ensureCLI(o installOpts, cliPath string) error {
 	case o.cliZst != "":
 		// SFTP fallback: the blob arrives over an already-authenticated channel,
 		// so the reference NEVER verifies -cli-checksum here. Claustrum diverges as
-		// an opt-in hardening (IMPROVEMENTS D1): when a -cli-checksum IS supplied we
+		// a conditional hardening (IMPROVEMENTS D1), activated by the caller supplying
+		// -cli-checksum rather than by an operator: when a -cli-checksum IS supplied we
 		// verify it and reject a corrupt/tampered blob with the same "checksum
 		// mismatch" error as the -cli-url path. An ABSENT/empty checksum stays
 		// trusting — matching the reference — so honest callers are unaffected.
@@ -399,7 +400,7 @@ func isSingleComponent(name string) bool {
 // verifyChecksum returns a "checksum mismatch" error (byte-identical to the
 // reference's -cli-url path) when got does not equal expected. The -cli-url path
 // calls it unconditionally; the -cli-zst path only when a checksum is supplied
-// (IMPROVEMENTS D1, an opt-in divergence from the reference).
+// (IMPROVEMENTS D1, a conditional divergence from the reference — caller-activated).
 //
 // It takes the hex digest rather than the bytes so no caller has to hold the
 // whole blob in memory to check it: the download hashes as it streams, and the
@@ -757,27 +758,46 @@ func isRegularFile(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-// lddProbeTimeout bounds the `ldd --version` libc probe. No deadline here has been
-// measured on the reference, so a stalled or hostile `ldd` resolved earlier in
-// PATH is assumed to leave `-install` waiting without bound. We cap it and fall
-// back to the default classification on timeout.
+// lddProbeTimeout bounds the `ldd --version` libc probe. This is divergence D14;
+// see IMPROVEMENTS.md for the measured tables.
+//
+// MEASURED: the reference applies no deadline here at or below 45 s — probed with
+// a stub ldd on PATH and the musl loader glob masked. That result comes from the
+// `exec sleep 120` shape below ONLY; the surviving-child shape cannot support it,
+// because claustrum has a deadline and looks identical there. An earlier version
+// of this comment said the unbounded wait was "assumed"; it is measured now, in
+// that one shape. We cap it and fall back to the default classification on timeout.
 //
 // A wall-clock deadline cannot separate a hostile `ldd` from a slow one, so an
 // honest-but-slow `ldd` falls back too — but that usually changes NOTHING
 // observable: on a musl host detectLibcWith returns "musl" from the loader glob
 // without ever spawning ldd, and on a glibc host the fallback IS "glibc". The
-// reported value moves only where ldd says musl and the loader glob misses, which
-// is close to unreachable.
+// reported value moves only where ldd says musl AND exits 0 and the loader glob
+// misses. The exit code is load-bearing: a faithful musl `ldd --version` prints to
+// stderr and exits 1, and classifyLibc then falls back to "glibc" regardless.
+// ⚠️ That residual is narrow but NOT costless: Claude Desktop uses the reported
+// libc to pick which CLI build it downloads, so on that one host shape the
+// consequence is the wrong build being fetched, not a cosmetic field. ⚠️ That last
+// sentence is a claim about the DRIVER, not about the reference daemon — the
+// parity harness cannot confirm or refute it. See docs/ARCHITECTURE.md →
+// Driver claims and their provenance.
 //
-// 🔴 That is only the honest-but-slow direction. Against the STALLED ldd this cap
-// exists for, the divergence is total, not narrow: detectLibc() runs
-// unconditionally in the installFacts literal, so claustrum falls back at 5s and
-// then installs the CLI and prints a complete __INSTALL_RESULT__ where the
-// reference emits nothing. A hostile ldd answering in 1s is untouched by the
-// deadline either way. Neither direction is measured on either binary; see
-// IMPROVEMENTS tier item 5 for the discriminating fixture.
-// (The libc VALUE itself is a separate matter: see classifyLibc for the loader
-// glob, and libc_other.go for why the probe does not run off linux at all.)
+// 🔴 The bound is narrower than it reads, and this comment used to overstate it by
+// calling the divergence "total". MEASURED, against a STALLED ldd:
+//
+//	stub `exec sleep 120` (nothing survives the kill) -> claustrum falls back at 5s
+//	  and prints a complete __INSTALL_RESULT__; the reference emits nothing at 45s.
+//	stub `sleep 120` (a child survives holding the output pipe) -> NEITHER binary
+//	  replies at 45s (measured). For CLAUSTRUM the cause is CombinedOutput waiting
+//	  on the inherited pipe after the deadline kills the shell — the same softness
+//	  gitTimeout has (see methods_git.go). The REFERENCE's cause is unmeasured;
+//	  this arm cannot show it, and no mechanism is claimed for it here.
+//
+// A hostile ldd answering in 1s is untouched by the deadline either way.
+// (The libc VALUE itself is a separate matter and is still unmeasured: see
+// classifyLibc for the loader glob, libc_other.go for why the probe does not run
+// off linux at all, and IMPROVEMENTS tier item 5 for the musl-banner fixture that
+// would settle it.)
 const lddProbeTimeout = 5 * time.Second
 
 // runLddVersion runs `ldd --version` under ctx; the process is killed if ctx expires.
