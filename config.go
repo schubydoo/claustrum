@@ -211,8 +211,14 @@ func applyConfigKey(cfg *config, key, val string) {
 	case "files-read-regular-only":
 		// A bool, not a threshold — false disables the guard (the default) and is
 		// the parity position. parseConfigBool rejects anything it does not
-		// recognise, so a typo leaves the guard off rather than switching on a
-		// divergence the operator did not ask for.
+		// recognise, which leaves the key UNSET, so the flag value stands.
+		//
+		// ⚠️ That is NOT the same as "a typo leaves the guard off", which this
+		// comment used to say and docs/PROTOCOL.md now explicitly retracts: with
+		// -files-read-regular-only on the argv AND files-read-regular-only = maybe
+		// in the file, cliSet is true, the config side is nil, and the guard ends up
+		// ON. The exact claim — the one that holds unconditionally — is that nothing
+		// accepted here can switch the divergence on by itself.
 		if b, ok := parseConfigBool(val); ok {
 			cfg.filesReadRegularOnly = &b
 		}

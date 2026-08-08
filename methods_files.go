@@ -139,8 +139,9 @@ func filesList(req *request) response {
 
 // filesReadRegularOnly makes filesRead refuse anything that is not a regular
 // file. It bounds two real hazards: a read of a FIFO with no writer blocks in
-// open, and os.ReadFile on /dev/zero or /dev/urandom never reaches EOF, so the
-// daemon grows until it OOMs.
+// open — holding a request goroutine AND a descriptor, since linux reserves the
+// fd number before blocking — and os.ReadFile on /dev/zero or /dev/urandom never
+// reaches EOF, so the daemon grows until the kernel OOM-kills it.
 //
 // FALSE (the default) DISABLES IT, which is what the reference does. Measured: it
 // reads /dev/null and answers {"content":"","exists":true} where a guarded

@@ -278,6 +278,15 @@ If the check reports drift:
 >   position** — measured against `5db5e4a`, the reference reads `/dev/null` as
 >   `{"content":"","exists":true}` and blocks on a writerless FIFO until one opens,
 >   refusing neither, so a guard on by default fails a read the reference completes.
+>   ⚠️ **D4 is the exception to this group's heading, since 2026-08-08.** The battery
+>   DOES now drive it — `battery.js` id 70 reads `/dev/null`, added because all six
+>   of its other `files.read` cases use regular files, a directory or a missing path,
+>   so nothing standing could see this divergence. It shows no diff at the default
+>   because the guard is **off**, not because the path is unexercised, and it turns
+>   red the moment the guard is armed (verified with a `claustrum.conf` beside the
+>   binary). The other five shapes cannot go in a battery — a writerless FIFO parks
+>   the run, `/dev/zero` OOMs the daemon, and the socket and device rows are uid- and
+>   platform-dependent — so those stay in the one-off session.
 >   ⚠️ **A D4-shaped difference on a stock claustrum is drift, not D4** — check for
 >   the key or flag first. The parse table differs from the three durations above
 >   (D5, D11, D12) because this key is a **bool**: an unrecognised config value
@@ -291,11 +300,17 @@ If the check reports drift:
 >   inert unconditionally; the **config** form is inert only when no flag was passed,
 >   since the flag wins. Presence of the key is not evidence the guard is armed, and
 >   absence of a `true` is not evidence it is off — read both, and read the flag first.
->   ⚠️ **One spelling silently ARMS it**: `-files-read-regular-only maybe` (a space,
->   not `=`). Go's `flag` never lets a bool consume the next argument, so this sets
->   the guard **on** and discards `maybe` as a positional, with no error — where the
->   same typo on any of the three durations exits 2. That is the shape most likely to
->   look like drift, because the operator believes they passed a value.
+>   ⚠️ **One spelling ARMS it, but look for the right symptom**:
+>   `-files-read-regular-only maybe` (a space, not `=`). Go's `flag` never lets a
+>   bool consume the next argument, so the guard goes **on** and `maybe` becomes a
+>   positional — where the same typo on any of the three durations exits 2. But
+>   `flag` also **stops parsing at the first non-flag argument**, so every flag AFTER
+>   the typo is silently dropped (measured: `-files-read-regular-only maybe -version`
+>   exits 2 with `one of --version/--install/--serve/--bridge/--stop is required`).
+>   So the guard is actually armed only if `-serve` and the socket/token flags were
+>   already parsed *before* the typo; otherwise the operator sees "the daemon will
+>   not start" or "wrong socket", **not** a D4-shaped frame. Do not go looking for a
+>   `-32602` on this one unless the argv order puts the typo last.
 >   ⚠️ **Probing the off state on a FIFO needs a writer.** With the guard off
 >   claustrum blocks in `open` exactly as the reference does, so a harness that
 >   never opens a writer records "no reply" for **both** binaries — the

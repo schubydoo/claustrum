@@ -556,16 +556,21 @@ a reader should not take on trust:
   reference does not fail the
   operation and report it — it emits **nothing** (D5, D14). Silence is clause (a)'s
   territory, not clause (c)'s, which needs *both* binaries to fail and report.
-  ⚠️ **D4 is no longer an example here, and this bullet used to claim it was.** Its
-  FIFO row blocks and its `/dev/null` row succeeds — both disqualifying, the second
-  more strongly — but the socket and unreadable-device rows measured during its flip
-  are clause-(c)-shaped outright: the reference answers `-32603 open <p>: …`, an
-  opted-in claustrum answered `-32602 files.read: not a regular file`, both fail,
-  and only the text differs. Those rows were unreachable while the guard was
-  always-on, so nobody could have known. It changes nothing about the outcome — D4
-  is opt-in and clause (c) still justifies no entry in this file — but it is why
-  this group is read entry by entry rather than by a slogan, and why "the reference
-  never fails and reports on these paths" is not a safe generalisation.
+  ⚠️ **D4 is no longer a clean example here, and this bullet used to offer it as
+  one.** Its FIFO row blocks and its `/dev/null` row succeeds — both disqualifying,
+  the second more strongly — but the socket and unreadable-device rows measured
+  during its flip are clause-(c)-*adjacent*: the reference answers
+  `-32603 open <p>: …` and an opted-in claustrum answered
+  `-32602 files.read: not a regular file`, so both fail and report. They still do
+  **not** satisfy the clause as worded, and the reason is the same one applied to
+  D13 two bullets down: the clause says *diagnostic text*, and a JSON-RPC
+  `error.code` is not text — it is a machine-readable field a client branches on,
+  and the two rows differ in it. Read the clause the same way in both places or it
+  is not a rule. Those rows were unreachable while the guard was always-on, so
+  nobody could have known. None of it changes the outcome — D4 is opt-in and clause
+  (c) still justifies no entry in this file — but it is why this group is read entry
+  by entry rather than by a slogan, and why "the reference never fails and reports
+  on these paths" is not a safe generalisation.
 - 🔴 **D13 does not strictly satisfy clause (c) as worded, measured.** On both
   honest-path rows the reference **creates an empty cli-dir** and claustrum
   **creates nothing** — so the delta is not confined to diagnostic text. Both
@@ -835,9 +840,10 @@ completes it with `git.worktree_remove`, which shares the predicate
   otherwise keeps apart**, so "same as the other five" would be too loose: its
   `/dev/null` row is the D3/D10 shape (the reference *completes* the operation and
   emits a frame); its no-writer FIFO row is the D11/D12 shape (an unbounded wait,
-  not a frame); and its socket and device rows are **clause (c)'s** shape — both
-  binaries fail and report, and only the text differed (`-32603 open <p>: …` versus
-  the guard's `-32602`). That third one was invisible until this flip made the rows
+  not a frame); and its socket and device rows come **closest to clause (c)** —
+  both binaries fail and report — without meeting it, since the `error.code` differs
+  as well as the text (`-32603 open <p>: …` versus the guard's `-32602`), and a code
+  is not diagnostic text. That third one was invisible until this flip made the rows
   reachable and they were measured. It is settled the same way regardless: the
   second half of clause (a) is what fails, whichever part of D4 you look at, and
   being clause-(c)-shaped in part justifies nothing now that the entry is opt-in.
@@ -852,11 +858,16 @@ completes it with `git.worktree_remove`, which shares the predicate
   the same table, so enough of them stop the daemon accepting connections at all.
   Measured two ways: two parked opens push the next allocated fd from 3 to 5, and
   under `RLIMIT_NOFILE=16` one parked open costs exactly one of the 13 opens the
-  unparked control achieves. The claim that no descriptor is held came from a
-  review, was plausible, and was wrong; it is recorded here because it was believed
-  long enough to reach three files.
+  unparked control achieves. ⚠️ Worth knowing because the opposite is intuitive and
+  was briefly believed here on a review's say-so: "the open has not returned, so no
+  fd exists yet" is wrong on linux, and only a measurement settles it.
 - **Both costs are the reference's behaviour too, and BOTH ARE NOW MEASURED**, as
-  is every row of PROTOCOL's table — **nothing in D4 rests on inference any more**.
+  is every row of the *default* column of PROTOCOL's table. ⚠️ **Not "nothing rests
+  on inference"** — that absolute stood here briefly and three things falsify it,
+  all labelled where they appear: the reference's *reason* for ignoring `maxBytes`
+  is inferred from its frames rather than inspected; the opted-in column for the
+  socket and device rows is entailed by `Mode().IsRegular()` rather than run; and
+  the two shapes in the bullet below are unmeasured outright.
   The OOM row was promoted by running it: under a 512 MiB cgroup cap,
   `files.read {"path":"/dev/zero"}` dropped the connection on **both** binaries
   inside 0.3 s, and the kernel logged `Memory cgroup out of memory: Killed process`
@@ -877,9 +888,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   the read holds a descriptor **and** becomes the unbounded-growth case; no measured
   row covers it, because both fixture writers close promptly. And each parked
   `open(2)` pins an OS thread, so an authenticated client issuing enough writerless
-  FIFO reads reaches Go's `maxmcount` (10000) and the runtime aborts the daemon —
-  reachable at the shipped default with no special fixture, and whether the
-  reference shares that threading behaviour is unmeasured on it.
+  FIFO reads reaches Go's `maxmcount` (10000) and the runtime aborts the daemon.
+  ⚠️ That second one has a precondition this bullet used to omit, so do not quote it
+  as "reachable at the shipped default with no special fixture": 10000 concurrent
+  parked reads need `RLIMIT_NOFILE` above ~10000, because the bullet above
+  establishes each one also burns a descriptor. At a typical 1024 soft limit the fd
+  table binds first and `maxmcount` is never reached. Whether the reference shares
+  the threading behaviour is unmeasured on it either way.
 - **Why a flag and not a narrower predicate.** Permitting *only* the harmless
   character devices is not expressible: `/dev/null` and `/dev/zero` are
   indistinguishable by mode, so any predicate that admits the first admits the

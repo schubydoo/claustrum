@@ -213,13 +213,17 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   inert there on **both** binaries. **Both costs are the reference's own behavior
   and both are measured** — under a 512 MiB cgroup cap the kernel OOM-killed both
   daemons on `/dev/zero` within 0.3 s (`Killed process` in the kernel log, naming
-  each binary), with `/dev/null` as the control. **Eight shapes were run and every
-  one is measured on both binaries — nothing in D4 rests on inference**: two
-  regular-file controls (plain, and over `maxBytes`), paired + unpaired FIFO,
-  `/dev/null`, a bound `AF_UNIX` socket, an unreadable char device, an unreadable
-  block device. Two shapes are NOT measured and are named in IMPROVEMENTS: a
-  dribbling writer (holds an fd *and* grows unbounded) and thread exhaustion at Go's
-  `maxmcount`.
+  each binary), with `/dev/null` as the control. **Nine shapes were run, and the
+  default-behaviour column is measured on both binaries throughout**: two
+  regular-file controls (plain, and over `maxBytes`), paired + unpaired FIFO, a FIFO
+  over `maxBytes`, `/dev/null`, a bound `AF_UNIX` socket, an unreadable char device,
+  an unreadable block device. ⚠️ **Do not upgrade that to "nothing rests on
+  inference"** — it did briefly say so, and three things are entailed rather than
+  run: the reference's *reason* for ignoring `maxBytes`, the opted-in answer for the
+  socket and device rows, and two shapes measured on neither binary (a dribbling
+  writer, which holds an fd *and* grows unbounded; and thread exhaustion at Go's
+  `maxmcount`, which needs `RLIMIT_NOFILE` above ~10000 to bind before the fd table
+  does).
 - **The `-install` CLI size cap is OFF by default (D10).** `maxCLIBytes` governs
   both the decompressed CLI and the download body; measured on both paths, the
   reference took a 600 MiB payload all the way to the runnability check, so a

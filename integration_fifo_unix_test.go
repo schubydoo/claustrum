@@ -72,11 +72,14 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //	       were 100 bytes at maxBytes:4 and 300000 bytes at the 256 KiB default —
 //	       the second is the one that proves the cap is INERT rather than merely
 //	       unhit, since it exceeds a pipe buffer and forces the reader to drain
-//	       while the writer streams. A single-threaded golden cannot carry that
-//	       shape without deadlocking, so CI locks the 40-byte case and the
-//	       load-bearing row lives in the battery. It is parity, not a claustrum
-//	       property. Row 1 is its control: the same maxBytes on a regular file
-//	       still errors.
+//	       while the writer streams. CI locks the 40-byte case because the
+//	       load-bearing row already lives in the battery, NOT because a larger
+//	       payload would deadlock here — the writers are goroutines and the
+//	       in-process daemon drains concurrently, so 300000 bytes completes fine.
+//	       (An earlier version of this comment gave the deadlock as the reason;
+//	       that was wrong, and a review measured it.) It is parity, not a
+//	       claustrum property. Row 1 is its control: the same maxBytes on a
+//	       regular file still errors.
 //
 // Deliberately NOT here, two kinds:
 //
@@ -197,11 +200,13 @@ func mustMkfifo(t *testing.T, path string) {
 // ⚠️ The socket binds under os.MkdirTemp, NOT t.TempDir. Measured on macOS:
 // t.TempDir() for a test of this name is 99 bytes, resolveTestRoot's /private
 // prefix takes it to 107, and "/a.sock" to 114 — against Darwin's 104-byte
-// sun_path. Binding under t.TempDir() made net.Listen fail there, and the earlier
-// t.Skipf on that failure silently dropped ALL FIVE rows of the default golden on
-// the macOS leg while the run stayed green. Same reasoning as harness_test.go's
-// own socket dir, and the same silent-skip shape mustMkfifo exists to prevent —
-// which is why the bind failure is now fatal.
+// sun_path. Binding under t.TempDir() made net.Listen fail there, and the t.Skipf
+// that followed dropped EVERY row of the default golden on the macOS leg while the
+// run stayed green — the socket row was one of them, which is why it lives here
+// now. (That arrangement was never committed, so no golden in this repo's history
+// shows it; the count is deliberately left unstated.) Same reasoning as
+// harness_test.go's own socket dir, and the same silent-skip shape mustMkfifo
+// exists to prevent — which is why the bind failure is now fatal.
 func TestSocketFilesReadSocketErrorText(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("open() errno on a socket is platform-specific (linux ENXIO / darwin EOPNOTSUPP)")

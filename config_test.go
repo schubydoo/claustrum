@@ -87,8 +87,12 @@ func TestParseConfig_FilesReadRegularOnly(t *testing.T) {
 		{"files-read-regular-only = 1", boolp(true)},
 		{"files-read-regular-only = false", boolp(false)},
 		{"files-read-regular-only = 0", boolp(false)},
-		// An unrecognised value leaves the key unset, so the guard stays OFF —
-		// the direction that matters, since a typo must never switch a divergence on.
+		// An unrecognised value leaves the key UNSET, which is all this table
+		// asserts (nil). What the guard then does is effectiveFilesReadRegularOnly's
+		// business and is covered by TestPrecedenceFilesReadRegularOnly: the flag
+		// value stands, so "off" only when no flag was passed. Do not restate it
+		// here as "the guard stays off" — that claim is not asserted by this test
+		// and is false when -files-read-regular-only is also on the argv.
 		{"files-read-regular-only = maybe", nil},
 		{"files-read-regular-only =", nil},
 	}
@@ -687,9 +691,15 @@ func TestPrecedenceFilesReadRegularOnly(t *testing.T) {
 // filesReadRegularOnly explicitly, and no test asks effectiveFilesReadRegularOnly
 // what to do with an UNSET flag and an unset config — the one combination that
 // yields the shipped value — so without this, reinstating
-// `var filesReadRegularOnly = true` would pass the rest of the suite and silently
-// resurrect the -32602 D4's flip removed. (Verified by mutation: this is the sole
-// detector.)
+// `var filesReadRegularOnly = true` would pass the rest of the suite. (Verified by
+// mutation: this is the sole detector.)
+//
+// ⚠️ Scope, because an earlier version of this comment overstated it: that mutation
+// is a TEST-SUITE hazard, not a shipped-binary one. main.go's -serve arm assigns
+// filesReadRegularOnly unconditionally and is the only non-test writer, so the
+// package-var initialiser is dead in production. The detector for the SHIPPED
+// default is the f.DefValue != "false" assertion in main_dispatch_test.go. Both
+// are needed; they catch different mutations.
 //
 // Order-safe: every test that changes filesReadRegularOnly restores it with
 // t.Cleanup, and none of them call t.Parallel.

@@ -465,11 +465,20 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 **Off by default, and off is the parity position.** With
 `-files-read-regular-only` (or `files-read-regular-only = true` in
 `claustrum.conf`) claustrum refuses to read anything that is not a regular file.
-The reference refuses none of them. **Eight shapes, all measured on both binaries**
+The reference refuses none of them. **Every row below is measured on both binaries**
 — each run against `5db5e4a` and against claustrum at the default in the same
 session, byte-identical throughout, modulo the temp path in the socket row. Six of
-the eight are non-regular; three of those six error rather than read, which is why
-this section says the shapes *behave* as the reference does rather than *read*:
+the eight rows are non-regular; three of those six error rather than read, which is
+why this section says the shapes *behave* as the reference does rather than *read*.
+(The measured set is larger than the table: the two FIFO-over-`maxBytes` rows below
+are measured too, so nine distinct shapes were run in all.)
+
+⚠️ **Two things in this table are entailed rather than measured, and both are in the
+third column.** For the socket and the two device rows, "an opted-in claustrum
+answers `-32602`" follows from `Mode().IsRegular()` being false for them — the
+opted-in golden covers only the FIFO and `/dev/null`. And the reference's *reason*
+for ignoring `maxBytes` is inferred from its frames, not inspected. The first
+column is measured throughout.
 
 | path | reference **=** claustrum at the default | claustrum with `-files-read-regular-only` |
 |---|---|---|
@@ -478,7 +487,7 @@ this section says the shapes *behave* as the reference does rather than *read*:
 | a FIFO, writer paired | `{"content":"<the bytes written>","exists":true}` | `-32602 files.read: not a regular file` |
 | a FIFO, no writer | **no frame until a writer opens** | `-32602 files.read: not a regular file` |
 | `/dev/null` | `{"content":"","exists":true}` | `-32602 files.read: not a regular file` |
-| a bound `AF_UNIX` socket | `-32603 open <p>: no such device or address` *(linux; Darwin says `operation not supported on socket` — a per-OS stdlib difference, identical on both binaries)* | `-32602 files.read: not a regular file` |
+| a bound `AF_UNIX` socket | `-32603 open <p>: no such device or address` *(linux; on darwin/amd64 both binaries say `operation not supported on socket` instead — measured on macOS 26.5, a per-OS stdlib difference and identical between binaries on each OS. darwin/arm64 not run)* | `-32602 files.read: not a regular file` |
 | an unreadable character device (`/dev/console`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
 | an unreadable block device (`/dev/nvme0n1`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
 
@@ -539,14 +548,22 @@ not a free fix. What an operator gives up is the two bounds the guard supplied:
 
 - a FIFO with no writer parks a request goroutine **and a descriptor** until one
   arrives, plus the OS thread serving the blocking syscall. ⚠️ The fd is the part
-  that scales badly, and this document briefly claimed the opposite: linux reserves
-  the descriptor number *before* it blocks, so parked reads draw down
-  `RLIMIT_NOFILE` for the whole wait — and the listener's `accept()` draws on the
-  same table. Measured two ways: two parked opens push the next allocated fd from 3
-  to 5, and under `RLIMIT_NOFILE=16` one parked open costs exactly one of the 13
-  opens the unparked control achieves;
+  that scales badly: linux reserves the descriptor number *before* it blocks, so
+  parked reads draw down `RLIMIT_NOFILE` for the whole wait — and the listener's
+  `accept()` draws on the same table. Measured two ways: two parked opens push the
+  next allocated fd from 3 to 5, and under `RLIMIT_NOFILE=16` one parked open costs
+  exactly one of the 13 opens the unparked control achieves;
 - an unbounded device read never reaches EOF, so the daemon grows until the kernel
   kills it.
+
+⚠️ **Two further shapes are NOT measured on either binary, and are named here rather
+than left to be discovered**: a writer that opens and then dribbles or never closes
+makes the open *return*, so the read holds a descriptor **and** grows unbounded —
+neither fixture covers it, because both writers close promptly. And each parked
+`open(2)` pins an OS thread, so enough concurrent writerless-FIFO reads reach Go's
+`maxmcount` (10000) and the runtime aborts. That second one needs `RLIMIT_NOFILE`
+above ~10000 to be the binding constraint at all; at a typical 1024 soft limit the
+descriptor table runs out first, which is the row above.
 
 **Both are the reference's behavior too, and both are measured on it** (the costs
 in claustrum's own runtime terms above are ours; what was measured on the reference
@@ -1294,8 +1311,8 @@ unset in the child before it spawns anything, so it never leaks downstream.
   refusing either. claustrum's default answers the identical frames.
 - Set it and any non-regular path answers
   `-32602 files.read: not a regular file` — a frame the reference never produces,
-  hence the divergence. In exchange the daemon stops parking a goroutine on a
-  writerless FIFO and stops OOMing on `/dev/zero`.
+  hence the divergence. In exchange the daemon stops parking a goroutine **and a
+  descriptor** on a writerless FIFO and stops being OOM-killed on `/dev/zero`.
 - The guard is **whole**: the predicate is `Mode().IsRegular()`, and `/dev/null`
   and `/dev/zero` are indistinguishable by mode, so there is no narrower setting
   to offer. Full detail and the measured rows: [files.read → *Non-regular

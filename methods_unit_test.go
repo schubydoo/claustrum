@@ -148,9 +148,12 @@ func TestFilesReadDirectoryAndMissing(t *testing.T) {
 // {"content":"","exists":true}. That row is the divergence D4's flip removed, so
 // it is asserted rather than left to the socket golden alone.
 //
-// /dev/null is deliberately the input for both arms: it is the one non-regular
-// file whose unguarded read terminates, so the off arm can assert a reply instead
-// of a timeout. The blocking shape (a FIFO) is covered in
+// /dev/null is deliberately the input for both arms: it is the only non-regular
+// shape whose unguarded read terminates with a SUCCESS frame and needs no fixture
+// partner, so the off arm can assert a reply instead of a timeout. (Not the only
+// one that terminates at all — a paired FIFO returns content and a socket or
+// unreadable device returns -32603; both need a fixture this unit test has no
+// business building.) The blocking shape is covered in
 // integration_fifo_unix_test.go, where a writer is supplied.
 func TestFilesReadNonRegular(t *testing.T) {
 	if runtime.GOOS == "windows" {
