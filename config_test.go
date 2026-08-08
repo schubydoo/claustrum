@@ -603,12 +603,21 @@ func TestParseConfig_GitTimeout(t *testing.T) {
 			}
 		})
 	}
-	// Non-aliasing against the other two duration keys, which is the pair that
-	// could plausibly be crossed: a fused switch case passes gofmt, vet, lint and
-	// the rest of this suite while making one key a dead no-op.
-	if got := parse(t, "git-timeout = 60s"); got.cliProbeTimeout != nil || got.cliDownloadTimeout != nil {
-		t.Errorf("git-timeout leaked into an -install duration: probe=%v download=%v",
-			got.cliProbeTimeout, got.cliDownloadTimeout)
+	// Non-aliasing against the other duration keys, which is the set that could
+	// plausibly be crossed: a fused switch case passes gofmt, vet, lint and the rest
+	// of this suite while making one key a dead no-op.
+	//
+	// ⚠️ libcProbeTimeout is checked here as well as in
+	// TestParseConfig_ProbeTimeoutsDoNotCross, because that test only covers the
+	// libc→git direction. Without this the REVERSE mutant survives: a fused
+	// `case "git-timeout":` that also set cfg.libcProbeTimeout leaves every other
+	// assertion green, since TestParseConfig_LibcProbeTimeout only ever feeds
+	// libc-probe-timeout bodies. The libc case sits directly beneath git-timeout in
+	// applyConfigKey, so this is the adjacency most likely to be copy-pasted.
+	if got := parse(t, "git-timeout = 60s"); got.cliProbeTimeout != nil ||
+		got.cliDownloadTimeout != nil || got.libcProbeTimeout != nil {
+		t.Errorf("git-timeout leaked into an -install duration: probe=%v download=%v libc=%v",
+			got.cliProbeTimeout, got.cliDownloadTimeout, got.libcProbeTimeout)
 	}
 	if got := parse(t, "cli-probe-timeout = 20s"); got.gitTimeout != nil {
 		t.Errorf("cli-probe-timeout also set gitTimeout = %s, want unset", *got.gitTimeout)

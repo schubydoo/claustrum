@@ -765,7 +765,7 @@ func isRegularFile(p string) bool {
 // MEASURED: the reference applies no deadline here at or below 45 s — probed with
 // a stub ldd on PATH and the musl loader glob masked. That result comes from the
 // `exec sleep 120` shape below ONLY; the surviving-child shape cannot support it,
-// because claustrum has a deadline and looks identical there. An earlier version
+// because the PRE-FLIP claustrum had a deadline and looked identical there. An earlier version
 // of this comment said the unbounded wait was "assumed"; it is measured now, in
 // that one shape. When a deadline IS set we cap the probe and fall back to the
 // default classification on timeout; at the shipped default none is set — see the
