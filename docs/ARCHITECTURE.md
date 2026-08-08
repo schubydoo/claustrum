@@ -226,16 +226,16 @@ reference-vs-claustrum harness cannot confirm or refute any of them and no
 `scratch/` fixture covers them.
 
 ⚠️ **"The harness cannot settle it" is not the same as "unverifiable", and none of
-the three has been settled.** Each has a fixture that would, run against the driver
-rather than against the reference. Each needs a control, for the reason every other
-table in these docs does — an arm that must come out the same tells you the fixture
-could produce a difference at all:
+the three has been settled.** Each has a fixture that would settle it — run against
+the **driver**, so the arms are two inputs to one client, never two daemons. Each
+needs a control that could actually come out wrong; an arm entailed by the claim
+proves nothing:
 
 | claim | fixture | control that must fire |
 |---|---|---|
-| `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe retry-over-SFTP vs terminal report | a third failure both binaries already agree on, which must be classified identically |
-| `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | the same stub answering instantly, which must report `musl` on both binaries — otherwise the fixture never took effect |
-| argv | the setup UI **and** an enumeration of Desktop's own config files and forwarded environment | a config key the client is *known* to read must appear in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI half done (below); the rest unrun |
+| `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe retry-over-SFTP vs terminal report | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
+| `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
+| argv | the setup UI **and** an enumeration of Desktop's own config files and forwarded environment | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI half done (below); the rest unrun |
 
 **Evidence for the argv claim, scoped to what was looked at:** the shipped client's
 "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
@@ -260,7 +260,10 @@ evidence supports "no argv affordance in the setup UI, on one build, seen once",
 - **What rests on it:** **D3, D10, D11 and D12** — every "why it stopped being
   always-on" argument turns on the person who pays having no way to decline — plus
   the **"(opt-in)" tagging convention** in IMPROVEMENTS, which *defines* opt-in as a
-  flag **and** a config key on exactly this ground, and so binds every future entry.
+  flag **and** a config key on exactly this ground, and so binds every future
+  **D-numbered** entry. (The CT block uses the tag in a looser "off unless asked
+  for" sense — CT-1 is caller-activated and CT-3 is the config mechanism itself —
+  so it does not rest on this claim.)
   The trigger is recorded once here rather than five times, because it is one claim
   shared by all of them.
 

@@ -628,13 +628,18 @@ carry a new claim, and says so.**
   intact).
 - An absent/empty checksum stays trusting, so a caller that passes no checksum
   is byte-identical to the reference.
-- ⚠️ **Tagged "conditional" rather than "(opt-in)" on purpose.** Everywhere else in
-  this section "(opt-in)" means *operator-declinable* — a flag **and** a
+- ⚠️ **Tagged "conditional" rather than "(opt-in)" on purpose.** Among the
+  **D-numbered** entries "(opt-in)" means *operator-declinable* — a flag **and** a
   `claustrum.conf` key, because Claude Desktop owns the argv — the tracked driver
   claim (see the rule-3 preamble above and [`ARCHITECTURE.md`](ARCHITECTURE.md) →
-  *Provenance*), which makes this **definition** one of its dependents: if Desktop
-  ever grew an argv affordance, "operator-declinable" would no longer require the
-  config key on Desktop-driven hosts. D1 has neither: what
+  *Driver claims and their provenance*), which makes **that sense of the tag** one
+  of its dependents: if Desktop ever grew an argv affordance, "operator-declinable"
+  would no longer require the config key on Desktop-driven hosts.
+  ⚠️ **The CT block uses "(opt-in)" in a looser sense — "off unless asked for" — and
+  two of its entries are not operator-declinable at all:** **CT-1**'s `wantPid` is
+  activated by the *caller* sending it in `params`, which is exactly D1's shape, and
+  **CT-3** is opted into by creating `claustrum.conf`, so it cannot have a config key
+  — it *is* the mechanism. Only CT-2 and CT-5 carry a flag and a key. D1 has neither: what
   activates it is the caller supplying `-cli-checksum`, and on `-install` that
   caller is Desktop. The reason it still does not need an operator switch is that
   the delta requires a checksum that is **wrong** — supplying a correct one is
