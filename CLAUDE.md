@@ -256,7 +256,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   it**. Saying the divergence is "total" is wrong, and this file used to say it.
   ⚠️ **D14 is NOT settled**: it is a threshold with no flag and no config key, its
   honest-path cost is untested in either direction, and IMPROVEMENTS lists it beside
-  D4 and D5 as unresolved rather than justified.
+  D4, D5 and D13 as unresolved rather than justified.
   **D13 is verify-before-decompress ordering and its trigger is REACHABLE** — the
   claim that no honest caller produces the input lived in `IMPROVEMENTS.md`, not
   here, and is now retracted there. The reachable case is narrower than "flaky
@@ -266,11 +266,13 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   answers `checksum mismatch`; a **genuine interrupted transfer** never reaches the
   checksum on claustrum at all — `io.Copy`'s error returns first — so it diverges on
   the *prefix* instead (`download failed: <transport err>` vs the reference's
-  `decompressing: <transport err>`). D13 stays always-on because both binaries fail
-  the install and only the diagnostic text differs. ⚠️ That is a
-  narrow licence, not a general one: **Desktop parses `cliError`**, treating a
-  disk-full-shaped message as terminal and everything else as retryable — a claim
-  about the *driver*, which the parity harness cannot settle.
+  `decompressing: <transport err>`). ⚠️ **D13 is NOT settled either**: "only the
+  diagnostic text differs" is false — measured, the reference creates an empty
+  cli-dir on the failing rows where claustrum creates none — so it stays always-on
+  but is listed unresolved, not justified. What keeps the delta cheap meanwhile is a
+  claim about the *driver*: **Desktop parses `cliError`**, treating a
+  disk-full-shaped message as terminal and everything else as retryable — which the
+  parity harness cannot settle.
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

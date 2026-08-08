@@ -1453,11 +1453,13 @@ Checksum + error framing (probe-verified):
     `decompressing: <transport error>`. Triaging a flaky link by looking for
     `checksum mismatch` will therefore miss it.
 
-  It stays always-on because **both binaries fail the install** and neither leaves a
-  usable CLI; matching would mean feeding unverified bytes to the decompressor.
+  It stays always-on — not because a rule clears it, but because matching would mean
+  feeding unverified bytes to the decompressor, and **both binaries fail the install**
+  anyway, so neither leaves a usable CLI.
   ⚠️ The failing rows are **not** identical on disk: the reference creates an empty
-  cli-dir, claustrum creates none. See IMPROVEMENTS → D13 for why that leaves the
-  justification open.
+  cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
+  🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
+  beside D4, D5 and D14 rather than justified.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →

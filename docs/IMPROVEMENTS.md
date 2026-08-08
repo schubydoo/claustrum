@@ -528,8 +528,9 @@ colliding with the install temp sweep — a *name* collision, not a destructive
 target), D8 (not reachable on the deployed path), D9 (a params type error no
 correct client sends).
 
-**Clause (c) is deliberately narrow, was written for D13, and its status is
-currently OPEN.** Two things a reader should not take on trust:
+**Clause (c) is deliberately narrow, was written for D13, and — measured — D13
+does not meet it. It therefore justifies no entry in this file today.** Two things
+a reader should not take on trust:
 
 - 🔴 **An early draft justified its narrowness by saying "everywhere else the
   reference *succeeds* where claustrum errors". That is false**, and three entries
@@ -540,10 +541,24 @@ currently OPEN.** Two things a reader should not take on trust:
 - 🔴 **D13 does not strictly satisfy clause (c) as worded, measured.** On both
   honest-path rows the reference **creates an empty cli-dir** and claustrum
   **creates nothing** — so the delta is not confined to diagnostic text. Both
-  binaries still fail the install and neither leaves a usable CLI. Whether clause
-  (c) should be widened to "differences confined to the error text and to state
-  neither binary leaves usable", or D13 should join the unresolved group, is a
-  decision this section does not make. It is recorded, not assumed away.
+  binaries still fail the install and **neither leaves a usable CLI** — but the
+  clause says "diagnostic text", and an empty directory is not text. It is also
+  state the caller keeps: a `files.stat` on the cli-dir after a failed install
+  tells the two binaries apart, through this same daemon and with no special
+  fixture. **Settled 2026-08-07: the clause keeps its literal
+  wording and D13 joins D4, D5 and D14 in the unresolved group.** Widening it to
+  "differences confined to the error text and to state neither binary leaves
+  usable" was considered and rejected: relaxing a clause so that the one entry it
+  was written for still passes is the same demotion this preamble exists to
+  correct. Widening becomes arguable again only on a measurement that the driver
+  does not care whether the cli-dir exists. **Nobody has run it, and the fixture is
+  named here so the claim is actionable rather than rhetorical:** fail an `-install`
+  twice against the same `-cli-dir`, once with the empty version dir pre-created and
+  once without, and observe whether Desktop's retry-over-SFTP path differs. ⚠️ It
+  needs a third arm as its control — a *successful* install in both states, which
+  must come out identical — otherwise "no difference" cannot be told apart from
+  Desktop never reaching the cli-dir at all. Until then the clause stands unused
+  rather than stretched.
 
 ⚠️ Clause (c) is also not a licence to treat error strings as free: Claude Desktop
 **parses** `-install`'s `cliError`, reporting a disk-full-shaped message as a
@@ -554,9 +569,11 @@ user is told, whatever the rules say about frames. *(That is a claim about the
 [ARCHITECTURE.md](ARCHITECTURE.md) → `cliError` strings for its provenance and the
 limits that come with it.)*
 
-🔴 **Three entries do not currently clear rule 3, and are recorded here rather
-than explained away** — all three are wall-clock thresholds, which is not a
-coincidence. **D5**'s 60 s `gitTimeout` is a wall-clock threshold with a
+🔴 **Four entries do not currently clear rule 3, and are recorded here rather
+than explained away.** Three of the four are wall-clock thresholds, which is not a
+coincidence; the fourth, **D13**, is an ordering divergence and got here a
+different way — see the clause (c) discussion above. **D5**'s 60 s `gitTimeout` is
+a wall-clock threshold with a
 wire-visible cost (a claustrum-only `-32603` carrying `signal: killed`), it has no
 flag and no config key, and its stated reason — "no opt-in default can improve on
 [an unbounded wait] for a caller who does not know the flag exists" — is the exact
@@ -566,7 +583,10 @@ and narrower: the reference reads a character device happily and claustrum refus
 it, so an honest caller *can* observe the difference. **D14**'s 5 s `ldd` bound is
 the third, and it differs from the other two only in evidence: its honest-path cost
 is **untested in either direction** rather than measured, and like D5 it has no flag
-and no config key. None of the three is resolved by this section.
+and no config key. **D13** is the fourth and the odd one out: not a threshold at
+all, but verify-before-decompress ordering, which fails clause (c) because the
+failing rows differ on disk as well as in text (the reference creates an empty
+cli-dir, claustrum creates none). None of the four is resolved by this section.
 
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
 carries the evidence that was already in [`PROTOCOL.md`](PROTOCOL.md) rather than
@@ -1191,8 +1211,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   (no bound at or below 90 s) rather than a frame, the same justification D4 and D5
   use explicitly and D12 restates in its Trade bullet. (D13 used to be cited here
   as a third form of the same argument — "an input no honest caller produces" —
-  but that claim has since been **measured wrong** and D13 now rests on rule 3
-  clause (c) instead.) What the 2026-08-07 measurement added
+  but that claim has since been **measured wrong**, and D13 does not meet clause
+  (c) either — it is now in the unresolved group, so it supports nothing here.)
+  What the 2026-08-07 measurement added
   is a *cost* the bar does not weigh: an honest-but-slow CLI pays for it, and
   Desktop owns the argv on `-install`, so the caller who pays cannot decline. That
   is the same argument D3 and D10 used, and it is why this took the same shape they
@@ -1392,10 +1413,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   <transport error>` — where the reference, decompressing from the stream, reports
   the identical transport error as `decompressing: <transport error>`. Same
   architectural cause, two different observable shapes.
-- **Observable delta:** the `cliError` string, and only that — the controls
-  compared reply strings, not on-disk end state. That is a claim about the rows
-  above, not about every possible input, and D11 is the reminder of why the
-  distinction matters.
+- **Observable delta:** the `cliError` string **and the on-disk end state** — on the
+  failing rows the reference leaves an empty cli-dir where claustrum leaves none.
+  ⚠️ This bullet used to read "the string, and only that", hedged by the fact that
+  the controls compared reply strings and never looked at disk. The disk state has
+  since been measured (table below) and it differs, so the hedge became a wrong
+  claim. That is a statement about the rows above, not about every possible input,
+  and D11 is the reminder of why the distinction matters.
 - 🔴 **This entry used to say the trigger was "an input no honest caller
   produces". That is measured wrong.** An **origin serving a short or truncated
   artifact** — a bad mirror, a partial upload, a proxy answering with a stale short
@@ -1407,10 +1431,11 @@ completes it with `git.worktree_remove`, which shares the predicate
   generic "flaky network" case. A genuine mid-transfer interruption is the last row
   of the table and diverges on the **prefix** instead, never reaching the checksum
   on claustrum at all.
-- **So D13's justification is rule 3 clause (c), not clause (b) — and it does not
-  strictly meet it.** The trigger is reachable and **both binaries fail the
-  install**, but the delta is not confined to diagnostic text. Measured on both
-  honest-path rows, with the cli-dir absent beforehand:
+- 🔴 **D13's always-on status is UNRESOLVED, and this entry does not claim
+  otherwise.** Clause (c) was written for it and, measured, it does not meet it:
+  the trigger is reachable and **both binaries fail the install**, but the delta is
+  not confined to diagnostic text. Measured on both honest-path rows, with the
+  cli-dir absent beforehand:
 
   | | reference | claustrum |
   |---|---|---|
@@ -1424,24 +1449,29 @@ completes it with `git.worktree_remove`, which shares the predicate
   is how we know the `checksum mismatch` above comes from the **ordering** and not
   from the truncation. It also shows the directory difference is a consequence of
   returning early, not a separate divergence.
-  ⚠️ **Neither binary leaves a usable CLI, so nothing a caller keeps differs** — but
-  "the only delta is diagnostic text" is still false as written, and clause (c) says
-  that. See the preamble: this is an open decision, not a settled justification.
-- ⚠️ **Clause (c) here leans on a claim about the driver, and that claim is not
-  parity-measured.** Neither binary's string is disk-full-shaped, so Claude Desktop
-  classifies both the same way and retries over SFTP — which is what makes the
-  delta cost-free. That is a statement about a **third binary**, derived from how
-  the shipped Desktop client handles the field rather than from a
-  reference-vs-claustrum probe, and the parity harness cannot settle it. If it is
-  ever falsified, clause (c) fails and this entry owes an opt-in flip. The reopen
-  trigger below is exactly that observation.
+  ⚠️ **Neither binary leaves a usable CLI** — but the on-disk state a caller keeps
+  is not identical either (an empty cli-dir versus none, observable with a
+  `files.stat`), so "the only delta is diagnostic text" is false as written, and
+  clause (c) says that. **So D13 sits with D4, D5 and D14 in the unresolved group** (settled
+  2026-08-07; see the preamble for why the clause was not widened to fit it). It
+  stays in the code, labelled, rather than justified by a rule bent around it.
+- ⚠️ **The "cost-free" reading leans on a claim about the driver, and that claim is
+  not parity-measured.** Neither binary's string is disk-full-shaped, so Claude
+  Desktop classifies both the same way and retries over SFTP — which is what makes
+  the delta cheap even though the entry is unresolved. That is a statement about a
+  **third binary**, derived from how the shipped Desktop client handles the field
+  rather than from a reference-vs-claustrum probe, and the parity harness cannot
+  settle it. If it is ever falsified, the cheapness argument fails too and this
+  entry owes an opt-in flip outright. The reopen trigger below is exactly that
+  observation.
 - **Trade:** matching would mean feeding unverified bytes to the decompressor,
   giving up a verify-then-use property to change which error a *failing* install
-  reports. That is why the reachability correction above does not flip it.
+  reports **and whether it leaves an empty cli-dir behind**. That is why the
+  reachability correction above does not flip it.
 - **Reopen trigger:** any change to how Claude Desktop classifies `cliError` — if a
   future client distinguished `checksum mismatch` from a decompression error, or
-  matched either as terminal, clause (c) would no longer hold and this entry would
-  owe an opt-in flip.
+  matched either as terminal, the delta would stop being cheap and this entry would
+  owe an opt-in flip outright rather than a label.
 - **The memory cost of verifying first is one pass, not a buffer.** The download
   streams to a temp file and is hashed on the way past (D10), so peak **RSS** is
   flat in the blob size — measured 886 MB → 10 MB on a 400 MiB
@@ -1505,7 +1535,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   - ⚠️ **And there is no escape hatch.** `lddProbeTimeout` is a `const` with no flag
     and no `claustrum.conf` key — the same shape the preamble flags as D5's failure.
     Nobody who pays for it can decline.
-- **So D14 sits with D4 and D5 in the unresolved group, and the difference is
+- **So D14 sits with D4, D5 and D13 in the unresolved group, and the difference is
   evidential rather than principled.** D4's and D5's honest-path costs are
   *measured*; D14's is *untested in either direction*. It is numbered here so it can
   be argued about at all — being unnumbered is what let it avoid the question.

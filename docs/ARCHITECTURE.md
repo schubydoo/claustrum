@@ -223,7 +223,8 @@ not claustrum, so the reference-vs-claustrum harness cannot confirm or refute it
 no `scratch/` fixture covers it. It is derived from how the shipped Desktop client
 handles the field, not from a differential probe. Treat it as a design constraint
 worth respecting, not as a measured parity result; anything that depends on it
-(D13's always-on justification does) should say so and carry a reopen trigger.
+(D13's cost-free reading does — D13 has no accepted always-on justification, it is
+in IMPROVEMENTS' unresolved group) should say so and carry a reopen trigger.
 
 ## Deployment lifecycle (how a driver uses it)
 
