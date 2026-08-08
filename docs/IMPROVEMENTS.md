@@ -670,8 +670,12 @@ completes it with `git.worktree_remove`, which shares the predicate
 - **Not opt-in, and deliberately so.** This one is always on because the thing it
   prevents is unrecoverable and a flag to re-arm it would be a footgun with a
   switch — it satisfies **both halves of rule 3 clause (a)**: the reference's
-  behaviour is unrecoverable data loss, and no honest caller names a destructive
-  target that is or contains home. (An earlier version of this bullet
+  behaviour is unrecoverable data loss, and no honest caller *legitimately* names a
+  destructive target that is or contains home. ⚠️ *Legitimately*, not "never": the
+  guard exists precisely for the accidental, generated or fat-fingered path (below),
+  so an honest caller **can** reach it — what no honest caller has is a *use* for
+  deleting home, which is why the reopen trigger below is worded the same way. Same
+  narrowing D9 now carries. (An earlier version of this bullet
   said "every other entry in this section is off by default", which was never
   true: D4, D5, D6, D7, D8, D9, D13 and D14 are always-on too.)
 - Two methods hand a caller-supplied path to `os.RemoveAll`: `files.extract_tar`
@@ -1641,9 +1645,14 @@ completes it with `git.worktree_remove`, which shares the predicate
 - ⚠️ **It addresses the stall half only.** A hostile `ldd` resolved earlier in
   `PATH` that answers in 1 s is untouched by any deadline, and `classifyLibc` then
   trusts its `musl` banner verbatim.
-- **Reopen trigger:** a musl host whose loader the glob misses, reported together
-  with a slow `ldd` — that is the single configuration where the bound changes the
-  installed CLI rather than nothing. A second trigger: any measurement showing the
+- **Reopen trigger:** a musl host whose loader the glob misses **and** whose `ldd`
+  exits 0 with a musl banner, reported together with a slow `ldd` — all four
+  conjuncts above. The exit code is not a detail: a faithful musl `ldd --version`
+  prints to stderr and **exits 1**, and `classifyLibc` then falls back to `"glibc"`
+  whether or not the bound fired, so a report missing that conjunct would not
+  implicate the bound at all. That is the configuration where the reported `libc`
+  field moves — and, *if* the driver claim holds, the installed build with it.
+  A second trigger: any measurement showing the
   reference *does* bound this probe above 45 s.
 - Documented in [PROTOCOL.md](PROTOCOL.md) → `-install`.
 
