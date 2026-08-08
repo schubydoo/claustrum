@@ -1399,7 +1399,9 @@ left in place:
   all (the predicate is the glob, not the host — a musl box the glob misses does
   reach the probe), and a glibc host's fallback *is* `"glibc"`. The field moves only where `ldd`
   reports musl while `/lib/ld-musl-*.so.*` does not match — ⚠️ narrow, but not
-  cosmetic, since Claude Desktop uses `libc` to choose which CLI build to download.
+  cosmetic, since Claude Desktop uses `libc` to choose which CLI build to download
+  (a **driver** claim the parity harness cannot settle; see
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*).
   🔴 **The bound fires in only one of the two stall shapes**, and this bullet used
   to claim the divergence was total. Measured: with a stalled `ldd` that leaves
   nothing holding its output pipe, claustrum falls back at 5 s and emits a complete

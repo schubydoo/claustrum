@@ -246,7 +246,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   at 0 s, which is D13, not a download bound.
   **D14's *value* delta is narrow** — fallback and true value coincide except where
   `ldd` reports musl and the loader glob misses — but ⚠️ **not cosmetic**, because
-  Desktop uses `libc` to choose which CLI build it downloads. **And the bound fires
+  Desktop uses `libc` to choose which CLI build it downloads (a **driver** claim the
+  parity harness cannot settle — ARCHITECTURE → Provenance; same class as the
+  `cliError` one below). **And the bound fires
   in only ONE of the two stall shapes, measured:** against a stalled `ldd` that
   leaves nothing holding its output pipe, claustrum falls back at 5 s and emits a
   full `__INSTALL_RESULT__` where the reference emits nothing at 45 s; against one
@@ -272,7 +274,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   but is listed unresolved, not justified. What keeps the delta cheap meanwhile is a
   claim about the *driver*: **Desktop parses `cliError`**, treating a
   disk-full-shaped message as terminal and everything else as retryable — which the
-  parity harness cannot settle.
+  parity harness cannot settle (ARCHITECTURE → Provenance keeps the best-known list
+  of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
+  outright that the list has been incomplete every time it was checked).
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

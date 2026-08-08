@@ -320,7 +320,8 @@ If the check reports drift:
 >   always-on. Two symptoms, not one: a `libc` difference on linux MAY be this
 >   (though the fallback usually matches the true value, so rule out the
 >   loader-glob path first — and note `libc` selects which CLI build Desktop
->   downloads, so this symptom is not cosmetic), **and — more likely — "the
+>   downloads, so this symptom is not cosmetic; that last part is a **driver**
+>   claim the parity harness cannot settle, see ARCHITECTURE → Provenance), **and — more likely — "the
 >   reference's `-install` never returned while claustrum's did"**. ✅ **Both sides
 >   are now measured** (the reference showed no deadline at or below 45 s), which
 >   this entry previously said was not the case. ⚠️ **But the bound fires in only

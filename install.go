@@ -774,7 +774,10 @@ func isRegularFile(p string) bool {
 // reported value moves only where ldd says musl and the loader glob misses.
 // ⚠️ That residual is narrow but NOT costless: Claude Desktop uses the reported
 // libc to pick which CLI build it downloads, so on that one host shape the
-// consequence is the wrong build being fetched, not a cosmetic field.
+// consequence is the wrong build being fetched, not a cosmetic field. ⚠️ That last
+// sentence is a claim about the DRIVER, not about the reference daemon — the
+// parity harness cannot confirm or refute it. See docs/ARCHITECTURE.md →
+// Provenance.
 //
 // 🔴 The bound is narrower than it reads, and this comment used to overstate it by
 // calling the divergence "total". MEASURED, against a STALLED ldd:

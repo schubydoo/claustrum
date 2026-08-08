@@ -67,7 +67,9 @@ so a reader who lands on the tier item is not misled:
   the glob matches** never reaches the probe, and a glibc host's fallback *is*
   `"glibc"`; note the predicate is the glob, not the host, so a musl box the glob
   misses does reach it — but **not costless**,
-  because Claude Desktop uses `libc` to choose which CLI build to download.
+  because Claude Desktop uses `libc` to choose which CLI build to download (a
+  **driver** claim the parity harness cannot settle; see
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*).
 
 ⚠️ And the cap addresses the *stall* half only. A **hostile** `ldd` resolved
 earlier in `PATH` that answers in 1 s is untouched by the deadline, and
@@ -577,8 +579,9 @@ terminal failure with an actionable code and treating everything else as a
 retryable one. A divergence that moves a string across that line changes what the
 user is told, whatever the rules say about frames. *(That is a claim about the
 **driver**, not about the reference — the parity harness cannot settle it; see
-[ARCHITECTURE.md](ARCHITECTURE.md) → `cliError` strings for its provenance and the
-limits that come with it.)*
+[ARCHITECTURE.md](ARCHITECTURE.md) → *Provenance* for its provenance and the
+limits that come with it. That paragraph lists this rider as a dependent that
+carries **no reopen trigger** — a known gap, not an oversight.)*
 
 🔴 **Four entries do not currently clear rule 3, and are recorded here rather
 than explained away.** Three of the four are wall-clock thresholds, which is not a
@@ -1007,12 +1010,15 @@ completes it with `git.worktree_remove`, which shares the predicate
   and routing the unlimited case through it would invent one.
 - The error strings are unchanged when the cap is opted in, so a host that wants
   the bound keeps exactly the behaviour it had.
-- ⚠️ **Who pays for opting in.** Claude Desktop *parses* `cliError`: a
-  disk-full-shaped message is reported as a terminal failure with an actionable
-  code, and anything else is treated as retryable and re-attempted over SFTP. A
-  cap set **below the free space** therefore replaces a disk-full report with the
-  cap's own message, and the user is not told to free space. Measured on a
-  size-limited filesystem with a payload larger than both:
+- ⚠️ **Who pays for opting in.** A cap set **below the free space** replaces a
+  disk-full report with the cap's own message. That is a fact about claustrum's own
+  code, not a consequence of anything the driver does: with the cap on, the
+  decompressor writes at most `cap+1` bytes, so the disk never fills and the size
+  check is what fires. **Measured** on a size-limited filesystem with a payload
+  larger than both. ⚠️ **Read the arms before citing the table as parity
+  evidence:** row 1 and the control ran on **both** binaries; the two cap rows are
+  **claustrum-only**, and can only be, since the reference has no cap. The
+  divergence is anchored to the reference through row 1.
 
   | configuration | `cliError` |
   |---|---|
@@ -1020,6 +1026,27 @@ completes it with `git.worktree_remove`, which shares the predicate
   | cap **below** free space | `decompressing: decompressed CLI exceeds <n> bytes` |
   | cap **above** free space | `decompressing: write …: no space left on device` |
   | *control:* cap off, free space > payload | both **install** |
+
+  ⚠️ **What that costs the *user* is a DRIVER claim, not a measured one.** Claude
+  Desktop *parses* `cliError`: a disk-full-shaped message is reported as a terminal
+  failure with an actionable code, and anything else is treated as retryable and
+  re-attempted over SFTP. So the cap's message is expected to cost the user the
+  **free-space hint**, not just a different string — but that is a statement about a
+  **third binary**, which the reference-vs-claustrum harness cannot confirm or
+  refute and a size-limited filesystem cannot observe. See
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*, where D10 is enumerated as a
+  dependent.
+  **Reopen trigger:** Desktop ceasing to treat a disk-full message as terminal —
+  that removes the cost entirely. Desktop *also* matching `decompressing:
+  decompressed CLI exceeds <n> bytes` as terminal removes only part of it: the
+  install stops being retried, but the cap's message still says nothing about
+  space, so the free-space hint is still lost. ⚠️ **Do not restate this as "the same
+  trigger as D13" or as "the opposite of D13".** Both were tried here and both are
+  wrong: the two entries rest on the same driver claim but name different strings,
+  and a single plausible change — Desktop broadening its terminal match to any
+  `decompressing:` error — would fire **both** triggers at once, since the cap's own
+  message is itself a `decompressing:` error. Read each entry's trigger on its own
+  terms.
 
   **At the shipped default the disk-full report is preserved and matches the
   reference**, so this is a cost of opting in, not a defect. *(The table is the
@@ -1202,8 +1229,18 @@ completes it with `git.worktree_remove`, which shares the predicate
   With the deadline opted in, in all three cached shapes above it comes back
   `false` for a CLI that is present and works — including the silent one, where it is the ONLY field in the facts
   that moves. The reference, which showed no deadline at or below 45 s, has no
-  equivalent 15 s cut-off to trip. Worth more attention than the `cliError`
-  wording: a client reads this field, it does not parse prose.
+  equivalent 15 s cut-off to trip. `cliWasPresent` is a **boolean**, so acting on it
+  needs no text matching at all.
+  ⚠️ **This used to say "worth more attention than the `cliError` wording: a client
+  reads this field, it does not parse prose". Both halves were wrong.** Desktop
+  *does* parse `cliError` text (see [`ARCHITECTURE.md`](ARCHITECTURE.md) →
+  *Provenance*, and D10's who-pays bullet, which turns on exactly that). And the
+  ranking was backwards on the evidence: the `cliError` behaviour has an observation
+  behind it, while **nothing on record shows any client behaving differently when
+  `cliWasPresent` changes** — so whether it is read at all is an unsettled **driver** claim,
+  weaker than the one it was being ranked above. (Absence of evidence, not evidence
+  of absence: no probe has asked the question.) What survives is only the shape of the field, not a claim about who
+  reads it.
 - **Trade:** matching means reintroducing an *unbounded wait* in `-install` — not a
   hang, per this section's own rule. The recovery half **is** observed, twice: the
   reference answered a 20 s CLI at 20 s and a 90 s CLI at 91 s, so "it answers as
@@ -1559,7 +1596,10 @@ completes it with `git.worktree_remove`, which shares the predicate
   divergence is total" was written unconditionally and is true only for the shape
   where nothing survives the kill.
 - ⚠️ **The residual delta is not cosmetic.** Claude Desktop uses the reported
-  `libc` to choose which CLI build it downloads. So on
+  `libc` to choose which CLI build it downloads — a claim about the **driver**,
+  which the parity harness cannot confirm or refute; see
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Provenance*, which lists this entry as a
+  dependent. So on
   the one host shape where the value *does* move — `ldd` reports musl while the
   loader glob misses, and it is slow — the consequence is Desktop fetching a glibc
   build for a musl host, not merely a wrong string in a log line.

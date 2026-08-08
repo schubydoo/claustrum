@@ -219,17 +219,42 @@ above — or adding a guard whose error pre-empts one — can change what a user
 told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
 
 ⚠️ **Provenance, because these are a different class of claim from the rest of
-these docs.** Two are in this class: the `cliError` classification above, and
-**`libc` deciding which CLI build the driver downloads**. Both describe a **third
-binary** — the driver — not the reference daemon and not claustrum, so the
+these docs.** Two of them are load-bearing here: the `cliError` classification
+above, and **`libc` deciding which CLI build the driver downloads**. Both describe a
+**third binary** — the driver — not the reference daemon and not claustrum, so the
 reference-vs-claustrum harness cannot confirm or refute either and no `scratch/`
 fixture covers them. Both are derived from how the shipped Desktop client handles
-the field, not from a differential probe. Treat them as design constraints worth
-respecting, not as measured parity results; anything that depends on one should say
-so and carry a reopen trigger. Two things currently do: **D13's cost-free reading**
-(D13 has no accepted always-on justification — it is in IMPROVEMENTS' unresolved
-group) rests on the `cliError` claim, and **D14's residual delta** is only more than
-cosmetic because of the `libc` claim.
+the field, not from a differential probe. *(The `cliError` and `libc` claims are
+not the only driver claims in these docs — D6's and D7's clause-(b) evidence rests
+on what Desktop emits as `-cli-version`, and "Desktop owns the argv" is the same
+class. The two named here are the ones the entries below depend on.)*
+
+Treat them as design constraints worth respecting, not as measured parity results;
+anything that depends on one should say so and carry a reopen trigger. ⚠️ **The
+list below is maintained by hand and has been incomplete every time it was
+checked** — at `0841bcd` it named two while four already existed. Treat it as the
+best-known set, not as a proof of completeness, and add to it rather than trusting
+it:
+
+- **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
+  always-on justification — it is in IMPROVEMENTS' unresolved group).
+- **D14's residual delta** is only more than cosmetic because of the `libc` claim.
+- **D10's opt-in cap** — the worked example above — rests on the `cliError` claim
+  too: what a caller loses by capping below free space is the disk-full
+  *classification*, not the string alone. ⚠️ Its reopen trigger and D13's are
+  neither the same nor opposites — read each on its own terms; one change to
+  Desktop's matching can fire both.
+- **Clause (c)'s "error strings are not free" rider** in IMPROVEMENTS — a
+  *rule-level* dependent rather than a D-number, since it binds every future
+  clause-(c) entry.
+- **D11's retraction of "a client reads this field, it does not parse prose"** — if
+  Desktop turned out not to parse `cliError`, half of that retraction collapses.
+  (Only half: the other half rests on a separate absence — nothing on record shows
+  any client behaving differently when `cliWasPresent` changes.)
+
+🔴 **One of those five does not satisfy the sentence above, and that is recorded
+rather than glossed:** clause (c)'s rider carries the provenance pointer but **no
+reopen trigger**.
 
 ## Deployment lifecycle (how a driver uses it)
 
