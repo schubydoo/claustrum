@@ -331,7 +331,13 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   `decompressing: <transport err>`). ⚠️ **D13 is NOT settled either**: "only the
   diagnostic text differs" is false — measured, the reference creates an empty
   cli-dir on the two measured rows where claustrum creates none — so it stays always-on
-  but is listed unresolved, not justified. What keeps the delta cheap meanwhile is a
+  but is listed unresolved, not justified. ⚠️ **The reopen fixture has now been run
+  (2026-08-08) and did NOT meet its condition**, so don't re-run it expecting a flip:
+  that leftover directory is **inert to the install path** — a failing install
+  followed by the SFTP retry installs identically on both binaries either way — and
+  the on-disk delta is **conditional on the cli-dir being absent**. Both results
+  narrow the divergence and neither is evidence about Desktop, which is what the
+  condition asks for. What keeps the delta cheap meanwhile is a
   claim about the *driver*: **Desktop parses `cliError`**, treating a
   disk-full-shaped message as terminal and everything else as retryable — which the
   parity harness cannot settle (ARCHITECTURE → Driver claims and their provenance keeps the best-known list

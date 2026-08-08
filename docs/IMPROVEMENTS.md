@@ -594,14 +594,17 @@ a reader should not take on trust:
   usable" was considered and rejected: relaxing a clause so that the one entry it
   was written for still passes is the same demotion this preamble exists to
   correct. Widening becomes arguable again only on a measurement that the driver
-  does not care whether the cli-dir exists. **Nobody has run it, and the fixture is
-  named here so the claim is actionable rather than rhetorical:** fail an `-install`
-  twice against the same `-cli-dir`, once with the empty version dir pre-created and
-  once without, and observe whether Desktop's retry-over-SFTP path differs. ⚠️ It
-  needs a third arm as its control — a *successful* install in both states, which
-  must come out identical — otherwise "no difference" cannot be told apart from
-  Desktop never reaching the cli-dir at all. Until then the clause stands unused
-  rather than stretched.
+  does not care whether the cli-dir exists. **That fixture was run on 2026-08-08 and
+  did NOT meet the condition, so the clause stays unwidened.** It failed an
+  `-install` twice against the same `-cli-dir` — once with the empty cli-dir
+  pre-created, once without — then ran the SFTP retry against that same directory,
+  with a *successful* install in both states as the third arm. The retry installed
+  identically in all four cells and the control was identical in all four, so **the
+  leftover directory is inert to the install path on both binaries** (rows in D13's
+  entry). That kills the mechanism by which it could have reached Desktop, which is
+  a narrower result than the condition asks for: it is not evidence about **Desktop**,
+  and the parity harness cannot produce any. The clause stands unused rather than
+  stretched.
 
 ⚠️ Clause (c) is also not a licence to treat error strings as free: Claude Desktop
 **parses** `-install`'s `cliError`, reporting a disk-full-shaped message as a
@@ -1666,6 +1669,37 @@ completes it with `git.worktree_remove`, which shares the predicate
   D14's flip, and is now alone in it (settled
   2026-08-07; see the preamble for why the clause was not widened to fit it). It
   stays in the code, labelled, rather than justified by a rule bent around it.
+- **The reopen fixture was run on 2026-08-08. It did not meet the condition, and
+  D13 stays unresolved.** A failing `-install` followed by the SFTP retry against
+  the same `-cli-dir`, with the cli-dir absent (P0) and pre-created empty (P1),
+  both binaries — evidence in `scratch/d13-clidir-2026-08-08/` (gitignored):
+
+  | binary | pre | failing install → on disk | SFTP retry → on disk |
+  |---|---|---|---|
+  | reference | P0 | `decompressing: unexpected EOF` · empty cli-dir | **installs** · cli-dir + the CLI |
+  | claustrum | P0 | `checksum mismatch: …` · **nothing** | **installs** · cli-dir + the CLI |
+  | reference | P1 | `decompressing: unexpected EOF` · empty cli-dir | **installs** · cli-dir + the CLI |
+  | claustrum | P1 | `checksum mismatch: …` · **empty cli-dir** | **installs** · cli-dir + the CLI |
+  | *control:* a **successful** install, each binary × each pre-state | | | **identical in all four** |
+
+  Two things follow, and one does not. **The leftover directory is inert to the
+  install path** — the retry installs identically in all four cells — so the
+  mechanism by which it could have changed what Desktop does next is dead. **The
+  on-disk delta is conditional on the cli-dir being absent:** pre-create it and
+  claustrum's *failing* install leaves exactly what the reference leaves, so the
+  delta is narrower than a flat reading of "creates nothing" suggests. It does not
+  self-heal, because claustrum never creates the directory. ⚠️ **What does not
+  follow is the reopen condition**, which asks about **Desktop** — whether it stats
+  the cli-dir itself is a driver claim the parity harness cannot settle, and
+  modelling the retry as `-cli-zst` is *derived from* the `cliError` driver claim
+  rather than independent of it.
+- **An empty version path poisons neither binary** (same run). `cliPath` is
+  `filepath.Join(cliDir, cliVersion)` and is a regular *file* when installed, so
+  "empty version dir" has a second reading. Pre-existing as an empty directory, as
+  an empty file, and as a runnable file exiting 3: both binaries report
+  `cliWasPresent:false` and install over it — six cells, all identical. The
+  `exit 3` row also shows the reference's cache-hit predicate requires
+  **runnability**, not merely presence.
 - ⚠️ **The "cost-free" reading leans on a claim about the driver, and that claim is
   not parity-measured.** Neither binary's string is disk-full-shaped, so Claude
   Desktop classifies both the same way and retries over SFTP — which is what makes

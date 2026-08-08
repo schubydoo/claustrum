@@ -398,6 +398,13 @@ If the check reports drift:
 >   listed in IMPROVEMENTS as unresolved rather than justified — and since D14's
 >   flip it is the ONLY entry there. D4, D5 and D14 all left that group by being
 >   flipped to opt-in, which is the option still open here.
+>   ⚠️ **Measured 2026-08-08, so do not re-derive it:** the leftover directory is
+>   **inert to the install path** — a failing install followed by the SFTP retry
+>   installs identically on both binaries whether or not the cli-dir was
+>   pre-created — and the on-disk delta is **conditional on the cli-dir being
+>   absent** (pre-create it and claustrum's failing install leaves what the
+>   reference leaves). That narrows the divergence; it does **not** resolve it, and
+>   it is not evidence about Desktop, which is what the reopen condition asks for.
 >   ⚠️ **Two different honest
 >   shapes, and a triager must not merge them:**
 >   **(1) an origin serving a SHORT or truncated artifact** (bad mirror, partial
