@@ -217,8 +217,10 @@ func applyConfigKey(cfg *config, key, val string) {
 		// comment used to say and docs/PROTOCOL.md now explicitly retracts: with
 		// -files-read-regular-only on the argv AND files-read-regular-only = maybe
 		// in the file, cliSet is true, the config side is nil, and the guard ends up
-		// ON. The exact claim — the one that holds unconditionally — is that nothing
-		// accepted here can switch the divergence on by itself.
+		// ON. The exact claim — the one that holds unconditionally — is that no
+		// accepted ODDITY switches the divergence on: `= true` arms it deliberately,
+		// which is the whole point of the key, and nothing else this parser accepts
+		// arms it at all.
 		if b, ok := parseConfigBool(val); ok {
 			cfg.filesReadRegularOnly = &b
 		}

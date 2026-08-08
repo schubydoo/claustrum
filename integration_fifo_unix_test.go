@@ -72,12 +72,18 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //	       were 100 bytes at maxBytes:4 and 300000 bytes at the 256 KiB default —
 //	       the second is the one that proves the cap is INERT rather than merely
 //	       unhit, since it exceeds a pipe buffer and forces the reader to drain
-//	       while the writer streams. CI locks the 40-byte case because the
-//	       load-bearing row already lives in the battery, NOT because a larger
-//	       payload would deadlock here — the writers are goroutines and the
-//	       in-process daemon drains concurrently, so 300000 bytes completes fine.
-//	       (An earlier version of this comment gave the deadlock as the reason;
-//	       that was wrong, and a review measured it.) It is parity, not a
+//	       while the writer streams. ⚠️ That 300000-byte row is NOT in the
+//	       battery and is NOT in this suite — it lives only in the one-off
+//	       session recorded in docs/PROTOCOL.md's D4 table. The battery gained
+//	       exactly one D4 case, /dev/null (battery.js id 70); every other shape
+//	       stayed one-off, and docs/UPSTREAM-TRACKING.md says so. So CI locks the
+//	       40-byte case for want of a committed home for the larger one, NOT
+//	       because a larger payload would deadlock here — the writers are
+//	       goroutines and the in-process daemon drains concurrently, so 300000
+//	       bytes completes fine. (Two earlier versions of this sentence were
+//	       wrong: one gave the deadlock as the reason, the next said the battery
+//	       owned the load-bearing row. Both were caught in review. If you touch
+//	       it again, check where that row actually lives.) It is parity, not a
 //	       claustrum property. Row 1 is its control: the same maxBytes on a
 //	       regular file still errors.
 //
@@ -156,8 +162,13 @@ func TestSocketFilesReadNonRegularDefault(t *testing.T) {
 			if err != nil {
 				t.Fatalf("fifo writer: %v", err)
 			}
-		// 10s, not 30: on a healthy run both sends have already landed in the
-		// buffered channel by the time the reads above returned, so this never waits.
+		// 10s, not 30: on a healthy run both sends have almost always already
+		// landed in the buffered channel by the time the reads above returned.
+		// Not "never waits" — the daemon's os.ReadFile returns on EOF, i.e. once
+		// the writer closes, and the goroutine sends only after os.WriteFile
+		// RETURNS, so the send races the reply by a scheduling window. Harmless:
+		// the channel is buffered to its exact producer count, so no producer can
+		// park, and the wait is bounded either way.
 		// The bound only pays out on the failure path, where assertGolden has already
 		// reported the real diagnostic — measured, that mutant now says "golden
 		// mismatch" instead of "panic: test timed out".

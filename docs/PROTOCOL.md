@@ -465,20 +465,21 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 **Off by default, and off is the parity position.** With
 `-files-read-regular-only` (or `files-read-regular-only = true` in
 `claustrum.conf`) claustrum refuses to read anything that is not a regular file.
-The reference refuses none of them. **Every row below is measured on both binaries**
-— each run against `5db5e4a` and against claustrum at the default in the same
-session, byte-identical throughout, modulo the temp path in the socket row. Six of
-the eight rows are non-regular; three of those six error rather than read, which is
-why this section says the shapes *behave* as the reference does rather than *read*.
-(The measured set is larger than the table: the two FIFO-over-`maxBytes` rows below
-are measured too, so nine distinct shapes were run in all.)
+The reference refuses none of them. **Every row's default-behaviour column is
+measured on both binaries** — each run against `5db5e4a` and against claustrum at
+the default in the same session, byte-identical throughout, modulo the temp path in
+the socket row. Six of the eight rows are non-regular, and they split **three** ways
+rather than two: two read, three error, and one (the writerless FIFO) neither — it
+blocks. That three-way split is why this section says the shapes *behave* as the
+reference does rather than *read*. (One further shape is measured but not tabled —
+a FIFO over `maxBytes`, run at two sizes — so nine distinct shapes in all.)
 
-⚠️ **Two things in this table are entailed rather than measured, and both are in the
-third column.** For the socket and the two device rows, "an opted-in claustrum
-answers `-32602`" follows from `Mode().IsRegular()` being false for them — the
-opted-in golden covers only the FIFO and `/dev/null`. And the reference's *reason*
-for ignoring `maxBytes` is inferred from its frames, not inspected. The first
-column is measured throughout.
+⚠️ **Two claims here are entailed rather than measured.** One is in the table's
+third column: for the socket and the two device rows, "an opted-in claustrum
+answers `-32602`" follows from `Mode().IsRegular()` being false for them, and the
+opted-in golden covers only the FIFO and `/dev/null`. The other is not in the table
+at all — the reference's *reason* for ignoring `maxBytes` is inferred from its
+frames rather than inspected, and is discussed below the table.
 
 | path | reference **=** claustrum at the default | claustrum with `-files-read-regular-only` |
 |---|---|---|
@@ -1326,9 +1327,11 @@ unset in the child before it spawns anything, so it never leaks downstream.
   explicit `-files-read-regular-only` flag wins). **That is the reachable knob** —
   see the argv point above. An unrecognised value leaves the key **unset**, so the
   flag value stands — which is "off" only when no flag was passed. The exact claim
-  is that nothing accepted here can switch the divergence **on**; "a typo leaves
-  the guard off" is the weaker sentence that used to sit here, and it is false for
-  `-files-read-regular-only` beside `files-read-regular-only = maybe`.
+  is that no accepted **oddity** switches the divergence on: `= true` arms it
+  deliberately, which is what the key is for, and nothing else this parser accepts
+  arms it at all. ("A typo leaves the guard off" is the weaker sentence that used
+  to sit here, and it is false for `-files-read-regular-only` beside
+  `files-read-regular-only = maybe`.)
 
 ### -bridge — stdio↔socket relay
 
