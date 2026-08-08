@@ -287,9 +287,10 @@ var errStagingVanished = errors.New("staging file vanished")
 // mid-DOWNLOAD against a deliberately slow origin, the reference's cli-dir holds
 // a ".fetch-<random>" of its own (decompressed output, by its first bytes). The
 // original measurement only ever looked at the post-extraction probe window, so
-// it could not have seen this. Claustrum is only exposed in the PROBE window, and
-// the retry below is what covers that; the download blob is covered separately, by
-// being outside isSweptName so no sweep claims it.  The reference's own exposure is
+// it could not have seen this. Claustrum's exposure is the STAGING window —
+// decompress, chmod, probe, rename — not the download, and the retry below covers
+// all of it, since a loss is only detected at the rename anyway. The download blob
+// is covered separately, by being outside isSweptName so no sweep claims it.  The reference's own exposure is
 // the reference's to carry.
 //
 // The caller retries once on errStagingVanished, which is what actually fixes
