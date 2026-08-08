@@ -584,21 +584,31 @@ limits that come with it. That paragraph lists this rider as a dependent that
 carries **no reopen trigger** — a known gap, not an oversight.)*
 
 🔴 **Four entries do not currently clear rule 3, and are recorded here rather
-than explained away.** Three of the four are wall-clock thresholds, which is not a
-coincidence; the fourth, **D13**, is an ordering divergence and got here a
-different way — see the clause (c) discussion above. **D5**'s 60 s `gitTimeout` is
+than explained away.** They fail it in **two** ways, not one. **D5** and **D14**
+are wall-clock thresholds, and fail because a threshold cannot separate a hostile
+input from a merely slow one — the honest-but-over-threshold caller *would* pay and
+could not decline. (Derived from the code and from the reference's measured
+no-deadline results; the honest-path cost itself is unmeasured on both, as each
+entry says.) **D4** and **D13** are not thresholds at all and no clock is involved
+in either: they fail because an honest input *can* reach the guard, and what the
+guard does is observable — either its own output or the state it skips: a `-32602`
+where the reference reads `/dev/null` happily, an empty cli-dir where claustrum
+leaves none. ⚠️ This paragraph used to say three of
+the four were thresholds "which is not a coincidence", counting D4 among them; D4's
+guard is a file-mode predicate (`Mode().IsRegular()`) that fires identically on a
+fast FIFO and a slow one. **D5**'s 60 s `gitTimeout` is
 a wall-clock threshold with a
 wire-visible cost (a claustrum-only `-32603` carrying `signal: killed`), it has no
 flag and no config key, and its stated reason — "no opt-in default can improve on
 [an unbounded wait] for a caller who does not know the flag exists" — is the exact
 argument the four flipped caps rejected. An honest 61 s git on a large repo has
-never been measured on either binary. **D4**'s `/dev/null` row is the same shape
-and narrower: the reference reads a character device happily and claustrum refuses
-it, so an honest caller *can* observe the difference. **D14**'s 5 s `ldd` bound is
-the third, and it differs from the other two only in evidence: its honest-path cost
+never been measured on either binary. **D14**'s 5 s `ldd` bound is the other
+threshold, and it differs from D5 only in evidence: its honest-path cost
 is **untested in either direction** rather than measured, and like D5 it has no flag
-and no config key. **D13** is the fourth and the odd one out: not a threshold at
-all, but verify-before-decompress ordering, which fails clause (c) because the
+and no config key. **D4**'s `/dev/null` row is the first of the two non-thresholds:
+the reference reads a character device happily and claustrum refuses it, so an
+honest caller *can* observe the difference — no clock, just a mode check. **D13**
+is the second: verify-before-decompress ordering, which fails clause (c) because the
 failing rows differ on disk as well as in text (the reference creates an empty
 cli-dir, claustrum creates none). None of the four is resolved by this section.
 
@@ -1241,6 +1251,13 @@ completes it with `git.worktree_remove`, which shares the predicate
   weaker than the one it was being ranked above. (Absence of evidence, not evidence
   of absence: no probe has asked the question.) What survives is only the shape of the field, not a claim about who
   reads it.
+- **Reopen trigger** (for the retraction above, not for the flip — D11 is opt-in, so
+  the always-on corollary does not reach it): **Desktop turning out not to parse
+  `cliError` after all.** That would vindicate the half of the retracted sentence
+  that said "it does not parse prose", and this bullet would owe a re-retraction.
+  It would not touch the other half — whether any client reads `cliWasPresent`
+  remains unprobed either way. `ARCHITECTURE.md` → *Provenance* lists this
+  retraction as a dependent of the `cliError` claim.
 - **Trade:** matching means reintroducing an *unbounded wait* in `-install` — not a
   hang, per this section's own rule. The recovery half **is** observed, twice: the
   reference answered a 20 s CLI at 20 s and a 90 s CLI at 91 s, so "it answers as

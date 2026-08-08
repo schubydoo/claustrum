@@ -230,7 +230,9 @@ on what Desktop emits as `-cli-version`, and "Desktop owns the argv" is the same
 class. The two named here are the ones the entries below depend on.)*
 
 Treat them as design constraints worth respecting, not as measured parity results;
-anything that depends on one should say so and carry a reopen trigger. ⚠️ **The
+anything that depends on one should say so and carry a reopen trigger **that would
+falsify the claim it rests on** — a trigger that fires on something else does not
+count, which is the standard applied after the list. ⚠️ **The
 list below is maintained by hand and has been incomplete every time it was
 checked** — at `0841bcd` it named two while four already existed. Treat it as the
 best-known set, not as a proof of completeness, and add to it rather than trusting
@@ -252,9 +254,20 @@ it:
   (Only half: the other half rests on a separate absence — nothing on record shows
   any client behaving differently when `cliWasPresent` changes.)
 
-🔴 **One of those five does not satisfy the sentence above, and that is recorded
-rather than glossed:** clause (c)'s rider carries the provenance pointer but **no
-reopen trigger**.
+🔴 **Two of those five do not satisfy that standard, and that is recorded rather
+than glossed.** Stated so the count is checkable: a dependent satisfies it when its
+own entry carries a reopen trigger that would **falsify the driver claim it rests
+on**. D13's, D10's and D11's do. ⚠️ **This paragraph said "one" at `99f53e3`, and
+that was wrong** — D11's entry had no reopen trigger at all, and D14's fires on
+something that would not falsify the `libc` claim. D11's was added in the same
+change that corrected this count, which is why the number is two rather than three.
+The two that remain:
+
+- **clause (c)'s rider** — provenance pointer, no reopen trigger at all.
+- **D14's residual delta** — its entry *has* a trigger, but it fires on a musl host
+  the loader glob misses and on a measurement of the reference's bound. Neither
+  would falsify the `libc` claim the delta rests on, so it does not meet the
+  standard above even though it looks like it does.
 
 ## Deployment lifecycle (how a driver uses it)
 
