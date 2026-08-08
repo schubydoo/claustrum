@@ -528,11 +528,13 @@ every other driver.
 
 **Clause (b) is the right *form* of argument** and most surviving always-on entries
 use it — but each has its own trigger, and the glosses are not interchangeable:
-D6 (a destructive target no honest caller names — D2 clears clause (a) as well, and
-its entry argues (a); it is listed there, not here), **D7** (a `-cli-version`
+D6 (a destructive target no *correct* `-cli-version` names), **D7** (a `-cli-version`
 colliding with the install temp sweep — a *name* collision, not a destructive
 target), D8 (not reachable on the deployed path), D9 (a params type error no
-*correct* client sends).
+*correct* client sends). ⚠️ **D2 is not in this list and does not belong in it:** its
+entry argues clause (a), and it concedes that an honest caller *can* reach the guard
+by accident — what none has is a legitimate *use* for deleting home. Do not read
+D6's gloss back onto it.
 
 ⚠️ **Two of those triggers are asserted rather than enumerated, and this index used
 to read as though clause (b) were settled for them.** D9's own entry withdraws the
@@ -1263,7 +1265,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   ⚠️ **This used to say "worth more attention than the `cliError` wording: a client
   reads this field, it does not parse prose". Both halves were wrong.** Desktop
   *does* parse `cliError` text (see [`ARCHITECTURE.md`](ARCHITECTURE.md) →
-  *Provenance*, and D10's who-pays bullet, which turns on exactly that). And the
+  *Driver claims and their provenance*, and D10's who-pays bullet, which turns on
+  exactly that). And the
   ranking was backwards on the evidence: the `cliError` behaviour has an observation
   behind it, while **nothing on record shows any client behaving differently when
   `cliWasPresent` changes** — so whether it is read at all is an unsettled **driver** claim,
@@ -1346,8 +1349,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   reference showed no such cut-off.
 - **What still ships bounded on the `-install` path:** of the *claustrum-chosen*
   bounds, only the linux-only `ldd` probe (**D14**), which has **not** been flipped —
-  its always-on status is unresolved rather than settled, and a flip is queued behind
-  D5's and D4's. D12's download bound took this
+  its always-on status is unresolved rather than settled. D12's download bound took this
   same flip alongside D11's. ⚠️ Not the same as "nothing bounds an `-install`":
   `http.DefaultTransport`'s `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s` still apply on the `-cli-url` path, on every platform,

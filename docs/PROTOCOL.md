@@ -1191,7 +1191,7 @@ unset in the child before it spawns anything, so it never leaks downstream.
   break: a caller with a tree over the cap got an error with no way through,
   because Claude Desktop owns the argv (a **driver** claim, tracked with its
   provenance and reopen trigger in [`ARCHITECTURE.md`](ARCHITECTURE.md) →
-  *Provenance*. ⚠️ The evidence behind it is **one look at the setup UI on one
+  *Driver claims and their provenance*. ⚠️ The evidence behind it is **one look at the setup UI on one
   unrecorded build, 2026-08-07** — Desktop's own config files and any forwarded
   environment were never examined, and a config file it turns into argv is one of
   the two routes that would falsify it). Flipping the default to `0` is the parity
@@ -1395,7 +1395,7 @@ left in place:
   (D14), always-on, linux only. ⚠️ Always-on is its current state, not a settled
   one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside D4, D5
   and D13 — a wall-clock threshold with no flag and no `claustrum.conf` key, so
-  nobody who pays for it can decline, and an opt-in flip is queued. Off linux the probe never runs
+  nobody who pays for it can decline. Off linux the probe never runs
   (`libc_other.go` returns `""`), so no bound exists there; on linux
   `detectLibcWith` returns `"musl"` from the loader glob **before** spawning `ldd`,
   so it cannot fire on a host that glob matches. **Measured: the reference applies
