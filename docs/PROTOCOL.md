@@ -451,22 +451,74 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 - **`maxBytes` absent, `0`, or negative → the cap is `262144` (256 KiB), not
   "unlimited".** Probe-measured: 262144 bytes reads, 262145 errors. A positive
   `maxBytes` is honored verbatim, above or below that default — so the 256 KiB
-  figure is a fallback, not a ceiling.
-- **Any non-regular file → `-32602 files.read: not a regular file`.** This is an
-  intentional divergence (D4), and the only one on this method — see below.
+  figure is a fallback, not a ceiling. ⚠️ **This is a regular-file contract**: the
+  cap keys off the stat size, which is `0` for every non-regular kind measured on
+  linux, so it never bounds a FIFO, socket or device on **either** binary — see
+  below.
+- **Non-regular files behave at the shipped default exactly as they do on the
+  reference** — six such shapes measured, and "behave" not "read", because three of
+  them error on both. An **opt-in** guard refuses them all instead with
+  `-32602 files.read: not a regular file` — divergence D4, off by default, see below.
 
-##### Non-regular files (intentional divergence, D4)
+##### Non-regular files (opt-in divergence, D4)
 
-claustrum refuses to read anything that is not a regular file. The reference does
-not, and the difference is visible two ways (probe-measured against `5db5e4a`):
+**Off by default, and off is the parity position.** With
+`-files-read-regular-only` (or `files-read-regular-only = true` in
+`claustrum.conf`) claustrum refuses to read anything that is not a regular file.
+The reference refuses none of them. **Every row's default-behaviour column is
+measured on both binaries** — each run against `5db5e4a` and against claustrum at
+the default in the same session, byte-identical throughout, modulo the temp path in
+the socket row. Six of the eight rows are non-regular, and they split **three** ways
+rather than two: two read, three error, and one (the writerless FIFO) neither — it
+blocks. That three-way split is why this section says the shapes *behave* as the
+reference does rather than *read*. (One further shape is measured but not tabled —
+a FIFO over `maxBytes`, run at two sizes — so nine distinct shapes in all.)
 
-| path | reference | claustrum |
+⚠️ **Two claims here are entailed rather than measured.** One is in the table's
+third column: for the socket and the two device rows, "an opted-in claustrum
+answers `-32602`" follows from `Mode().IsRegular()` being false for them, and the
+opted-in golden covers only the FIFO and `/dev/null`. The other is not in the table
+at all — the reference's *reason* for ignoring `maxBytes` is inferred from its
+frames rather than inspected, and is discussed below the table.
+
+| path | reference **=** claustrum at the default | claustrum with `-files-read-regular-only` |
 |---|---|---|
-| a FIFO | **no frame while the FIFO has no writer**; the reply arrives normally once one opens | `-32602 files.read: not a regular file` |
+| **CONTROL** a regular file | `{"content":"…","exists":true}` | *(unchanged — the guard does not apply)* |
+| **CONTROL** a regular file over `maxBytes` | `-32602 files.read: file exceeds maxBytes` | *(unchanged)* |
+| a FIFO, writer paired | `{"content":"<the bytes written>","exists":true}` | `-32602 files.read: not a regular file` |
+| a FIFO, no writer | **no frame until a writer opens** | `-32602 files.read: not a regular file` |
 | `/dev/null` | `{"content":"","exists":true}` | `-32602 files.read: not a regular file` |
+| a bound `AF_UNIX` socket | `-32603 open <p>: no such device or address` *(linux; on darwin/amd64 both binaries say `operation not supported on socket` instead — measured on macOS 26.5, a per-OS stdlib difference and identical between binaries on each OS. darwin/arm64 not run)* | `-32602 files.read: not a regular file` |
+| an unreadable character device (`/dev/console`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
+| an unreadable block device (`/dev/nvme0n1`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
 
-The FIFO case is why the guard exists. A read of a FIFO with no writer blocks in
-`open`, so the reference emits no frame for as long as that holds and a
+⚠️ **The two CONTROL rows are load-bearing, not decoration.** A differential table
+whose every row says "identical" cannot be told apart from a harness that never
+discriminated. The first control proves the request reached both daemons; the
+second proves the `maxBytes` arm still fires where it applies — which is what
+makes "it never fires for a non-regular path" a finding rather than a broken probe.
+
+⚠️ **The two device rows assume a NON-ROOT daemon.** They are permission failures,
+so a root daemon does not merely see different text: `/dev/console` blocks on the
+tty and a block device streams the disk into memory — the unbounded-read shape with
+a descriptor attached. Reproduce them as the same unprivileged user, or expect a
+different answer and do not read it as drift.
+
+⚠️ **The `no writer` row was carried as DERIVED for claustrum and is now measured.**
+The observation that settles it does not require waiting for a reply: a non-blocking
+`open(O_WRONLY)` of the same FIFO succeeds only if a reader is already present. It
+**succeeds** against a stock claustrum and against the reference, and returns
+`ENXIO` against an opted-in claustrum — with a FIFO nobody read as the control,
+which also returns `ENXIO`. So the parked reader is directly observable on both.
+
+⚠️ **The predicate is `Mode().IsRegular()`, so the guard is whole — on or off, never
+narrowed.** Permitting *only* the harmless character devices is not an option a
+config key can express: `/dev/null` and `/dev/zero` are indistinguishable by mode,
+so any predicate that admits the first admits the second. That is why D4 is a flag
+rather than a smarter check.
+
+The FIFO case is why the guard was written. A read of a FIFO with no writer blocks
+in `open`, so the reference emits no frame for as long as that holds and a
 frame-diffing comparison cannot see the request at all.
 
 **It is not a permanent hang, and this document used to say it was.** Measured:
@@ -475,24 +527,70 @@ instant a writer opens, and stays responsive on other requests throughout. The
 control is a non-blocking
 open-for-write of the same FIFO, which on POSIX succeeds only if a reader is
 already present — it SUCCEEDS against the reference (a request goroutine really
-is parked in the FIFO) and returns `ENXIO` against claustrum (the read was
-refused, so there is no reader). The earlier "never replies" came from a probe
-that wrapped the read in `timeout 8` and never opened a writer; a harness
-deadline shorter than the subject's own blocking behaviour records "no reply" by
-construction.
+is parked in the FIFO) and returns `ENXIO` against **an opted-in** claustrum (the
+read was refused, so there is no reader). ⚠️ **That control discriminates only when
+the guard is on**; against a stock claustrum it succeeds on both sides, because
+both are parked — measured, and it is what promotes the table's `no writer` row
+from derived to measured. `/dev/null` is the input that discriminates at the
+default — instant on both, and `-32602` only when opted in. The earlier "never replies" came
+from a probe that wrapped the read in `timeout 8` and never opened a writer; a
+harness deadline shorter than the subject's own blocking behaviour records "no
+reply" by construction.
 
-So the divergence is real but narrower than stated: a client that reads a FIFO
-nothing ever writes to waits indefinitely on the reference, and claustrum turns
-that into an immediate, actionable error instead.
+So the guard's own case is real but narrower than stated: a client that reads a
+FIFO nothing ever writes to waits indefinitely on the reference, and an opted-in
+claustrum turns that into an immediate, actionable error instead.
 
-The `/dev/null` row is the cost of that guard rather than a second decision: the
-check is `Mode().IsRegular()`, so it also rejects character devices the reference
-reads happily. Narrowing it to permit *some* character devices would reopen the
-same hazard on others — `/dev/zero` and `/dev/random` are unbounded reads, and
-the reference has no protection against those either.
+The `/dev/null` row is the cost of the guard rather than a second decision, and it
+is what made D4 opt-in: a client reading a character device is an **honest**
+caller, the reference answers it, and Claude Desktop owns the `-serve` argv — so
+with the guard always on there was no way through. ⚠️ Turning it off is a trade,
+not a free fix. What an operator gives up is the two bounds the guard supplied:
 
-So a client that needs `/dev/null` semantics should treat an empty file as the
-portable spelling. Everything else about `files.read` is byte-identical.
+- a FIFO with no writer parks a request goroutine **and a descriptor** until one
+  arrives, plus the OS thread serving the blocking syscall. ⚠️ The fd is the part
+  that scales badly: linux reserves the descriptor number *before* it blocks, so
+  parked reads draw down `RLIMIT_NOFILE` for the whole wait — and the listener's
+  `accept()` draws on the same table. Measured two ways: two parked opens push the
+  next allocated fd from 3 to 5, and under `RLIMIT_NOFILE=16` one parked open costs
+  exactly one of the 13 opens the unparked control achieves;
+- an unbounded device read never reaches EOF, so the daemon grows until the kernel
+  kills it.
+
+⚠️ **Two further shapes are NOT measured on either binary, and are named here rather
+than left to be discovered**: a writer that opens and then dribbles or never closes
+makes the open *return*, so the read holds a descriptor **and** grows unbounded —
+neither fixture covers it, because both writers close promptly. And each parked
+`open(2)` pins an OS thread, so enough concurrent writerless-FIFO reads reach Go's
+`maxmcount` (10000) and the runtime aborts. That second one needs `RLIMIT_NOFILE`
+above ~10000 to be the binding constraint at all; at a typical 1024 soft limit the
+descriptor table runs out first, which is the row above.
+
+**Both are the reference's behavior too, and both are measured on it** (the costs
+in claustrum's own runtime terms above are ours; what was measured on the reference
+is the observable each produces):
+
+| row | the reference | how we know |
+|---|---|---|
+| the FIFO park | blocks until a writer opens | frame absence, then a reply the instant a writer arrives — plus a non-blocking open-for-write of the same FIFO, which on POSIX succeeds only if a reader is already present, and does |
+| the device OOM | **is OOM-killed the same way** | on `path:"/dev/zero"` under a **2 GiB** cgroup cap, both binaries dropped the connection with no frame and the kernel logged `Memory cgroup out of memory: Killed process` naming each binary at ~2091 MB anon-rss; the `/dev/null` control through the same launcher answered on both and logged nothing. ⚠️ The cap is 2 GiB and not the 512 MiB first run **because 512 MiB cannot discriminate**: it sits below any plausible internal bound, so a reference that capped its own read at, say, 1 GiB and answered a frame there would have looked identical. 2 GiB clears that range; neither binary caps at or below it |
+
+⚠️ **`maxBytes` does not bound any of this, on either binary.** The cap keys off the
+stat size, and that is `0` for every non-regular kind — measured on linux for a
+FIFO (with bytes buffered and without), a bound socket, `/dev/null`, `/dev/zero`,
+`/dev/console` and a block device. So it is inert for all of them: a FIFO carrying
+100 bytes reads in full at `maxBytes:4`, and one carrying 300000 bytes reads in
+full at the 256 KiB default, **identically on both binaries**, while the
+regular-file control errors on both at the same `maxBytes`. That claustrum keys off
+the stat size is its own `fi.Size()` check; on the reference it is what those rows
+imply, not something inspected. This is parity, not a claustrum property, and it is
+the reason the device row above is reachable at all. ⚠️ POSIX leaves a FIFO's
+`st_size` unspecified, so the "0 for every kind" measurement is a **linux** one.
+
+An operator who would rather have the bound than the parity sets the flag or the
+config key.
+
+Everything else about `files.read` is byte-identical either way.
 
 #### files.validate
 
@@ -1046,7 +1144,7 @@ reference unless marked **claustrum-only**.
 ### -serve — run the daemon
 
 ```text
-claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>] [-git-timeout <dur>]
+claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] [-keep-children] [-listen-pipe] [-max-extract-bytes <n>] [-git-timeout <dur>] [-files-read-regular-only]
 ```
 
 Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
@@ -1207,6 +1305,34 @@ unset in the child before it spawns anything, so it never leaks downstream.
   point above. Negative or unparseable values are ignored, so a typo can never
   silently enable a cap.
 
+**`-files-read-regular-only`** *(claustrum-only, D4)* — opt-in `files.read` guard:
+
+- **Off by default**, which is what the reference does: it reads `/dev/null` as
+  `{"content":"","exists":true}` and blocks on a writerless FIFO rather than
+  refusing either. claustrum's default answers the identical frames.
+- Set it and any non-regular path answers
+  `-32602 files.read: not a regular file` — a frame the reference never produces,
+  hence the divergence. In exchange the daemon stops parking a goroutine **and a
+  descriptor** on a writerless FIFO and stops being OOM-killed on `/dev/zero`.
+- The guard is **whole**: the predicate is `Mode().IsRegular()`, and `/dev/null`
+  and `/dev/zero` are indistinguishable by mode, so there is no narrower setting
+  to offer. Full detail and the measured rows: [files.read → *Non-regular
+  files*](#non-regular-files-opt-in-divergence-d4).
+- The guard **shipped on by default** (PR 56) and Claude Desktop owns the argv
+  (the same **driver** claim recorded under `-max-extract-bytes` above, with its
+  provenance and reopen trigger in [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver
+  claims and their provenance*), so a caller reading a character device had no way
+  through. Flipping the default to off is the parity fix.
+- Also settable in `claustrum.conf` as `files-read-regular-only = true|false` (an
+  explicit `-files-read-regular-only` flag wins). **That is the reachable knob** —
+  see the argv point above. An unrecognised value leaves the key **unset**, so the
+  flag value stands — which is "off" only when no flag was passed. The exact claim
+  is that no accepted **oddity** switches the divergence on: `= true` arms it
+  deliberately, which is what the key is for, and nothing else this parser accepts
+  arms it at all. ("A typo leaves the guard off" is the weaker sentence that used
+  to sit here, and it is false for `-files-read-regular-only` beside
+  `files-read-regular-only = maybe`.)
+
 ### -bridge — stdio↔socket relay
 
 ```text
@@ -1288,7 +1414,8 @@ against the pinned SHA. It is **CLI stdout only** — not a JSON-RPC frame — s
 wire contract is untouched; `server.version` / `server.capabilities` still report
 claustrum's own `<id>`. The same file also carries `keep-children`,
 `metrics-addr`, `listen-pipe`, `max-extract-bytes`, `max-cli-bytes`,
-`cli-probe-timeout`, `cli-download-timeout` and `git-timeout` defaults (precedence: explicit CLI flag > config > default). See
+`cli-probe-timeout`, `cli-download-timeout`, `git-timeout` and
+`files-read-regular-only` defaults (precedence: explicit CLI flag > config > default). See
 [IMPROVEMENTS.md](IMPROVEMENTS.md) CT-3 for the full contract, key list, and
 hardening.
 
@@ -1399,9 +1526,10 @@ left in place:
   happens: claustrum waits with the reference.**
 - **The `ldd --version` libc probe is bounded at 5 s — intentional divergence
   (D14), always-on, linux only. ⚠️ Always-on is its current state, not a settled
-  one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside D4
-  and D13 — a wall-clock threshold with no flag and no `claustrum.conf` key, so
-  nobody who pays for it can decline. Off linux the probe never runs
+  one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside
+  D13 — a wall-clock threshold with no flag and no `claustrum.conf` key, so
+  nobody who pays for it can decline. (D4 was in that group until it was flipped
+  to opt-in, which is the option still open here.) Off linux the probe never runs
   (`libc_other.go` returns `""`), so no bound exists there; on linux
   `detectLibcWith` returns `"musl"` from the loader glob **before** spawning `ldd`,
   so it cannot fire on a host that glob matches. **Measured: the reference applies
@@ -1488,7 +1616,7 @@ Checksum + error framing (probe-verified):
   transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
-  beside D4 and D14 rather than justified.
+  beside D14 rather than justified.
 - Input/decompress failures surface as `cliError` strings:
   `opening input: <err>` (zst read) and `decompressing: <err>` (bad zstd blob).
 - **A decompressed CLI (or a download body) over the opt-in cap** →

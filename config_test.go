@@ -77,6 +77,38 @@ func TestParseConfig_KeepChildren(t *testing.T) {
 	}
 }
 
+func TestParseConfig_FilesReadRegularOnly(t *testing.T) {
+	cases := []struct {
+		body string
+		want *bool
+	}{
+		{"files-read-regular-only = true", boolp(true)},
+		{"files-read-regular-only = ON", boolp(true)},
+		{"files-read-regular-only = 1", boolp(true)},
+		{"files-read-regular-only = false", boolp(false)},
+		{"files-read-regular-only = 0", boolp(false)},
+		// An unrecognised value leaves the key UNSET, which is all this table
+		// asserts (nil). What the guard then does is effectiveFilesReadRegularOnly's
+		// business and is covered by TestPrecedenceFilesReadRegularOnly: the flag
+		// value stands, so "off" only when no flag was passed. Do not restate it
+		// here as "the guard stays off" — that claim is not asserted by this test
+		// and is false when -files-read-regular-only is also on the argv.
+		{"files-read-regular-only = maybe", nil},
+		{"files-read-regular-only =", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.body, func(t *testing.T) {
+			got := parse(t, tc.body).filesReadRegularOnly
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("filesReadRegularOnly = %v, want nil", *got)
+			case tc.want != nil && (got == nil || *got != *tc.want):
+				t.Fatalf("filesReadRegularOnly = %v, want %v", got, *tc.want)
+			}
+		})
+	}
+}
+
 func TestParseConfig_ListenPipe(t *testing.T) {
 	cases := []struct {
 		body string
@@ -636,6 +668,44 @@ func TestGitCtxArmsNoDeadlineWhenOff(t *testing.T) {
 	}
 	if remaining := time.Until(dl); remaining <= 0 || remaining > 30*time.Second {
 		t.Errorf("deadline is %s away, want (0, 30s]", remaining)
+	}
+}
+
+func TestPrecedenceFilesReadRegularOnly(t *testing.T) {
+	withFile := config{filesReadRegularOnly: boolp(true)}
+	if got := withFile.effectiveFilesReadRegularOnly(false, true); got {
+		t.Error("explicit CLI -files-read-regular-only=false should win over config true")
+	}
+	if got := withFile.effectiveFilesReadRegularOnly(false, false); !got {
+		t.Error("config files-read-regular-only=true should apply when CLI unset")
+	}
+	if got := (config{filesReadRegularOnly: boolp(false)}).effectiveFilesReadRegularOnly(true, true); !got {
+		t.Error("explicit CLI true should win over config false")
+	}
+	if got := (config{}).effectiveFilesReadRegularOnly(false, false); got {
+		t.Error("empty config should leave the guard OFF — that is the parity default")
+	}
+}
+
+// The SHIPPED default, pinned. Every test that exercises the guard assigns
+// filesReadRegularOnly explicitly, and no test asks effectiveFilesReadRegularOnly
+// what to do with an UNSET flag and an unset config — the one combination that
+// yields the shipped value — so without this, reinstating
+// `var filesReadRegularOnly = true` would pass the rest of the suite. (Verified by
+// mutation: this is the sole detector.)
+//
+// ⚠️ Scope, because an earlier version of this comment overstated it: that mutation
+// is a TEST-SUITE hazard, not a shipped-binary one. main.go's -serve arm assigns
+// filesReadRegularOnly unconditionally and is the only non-test writer, so the
+// package-var initialiser is dead in production. The detector for the SHIPPED
+// default is the f.DefValue != "false" assertion in main_dispatch_test.go. Both
+// are needed; they catch different mutations.
+//
+// Order-safe: every test that changes filesReadRegularOnly restores it with
+// t.Cleanup, and none of them call t.Parallel.
+func TestFilesReadRegularOnlyDefaultIsOff(t *testing.T) {
+	if filesReadRegularOnly {
+		t.Error("package default filesReadRegularOnly = true, want false — the guard must ship OFF (D4)")
 	}
 }
 

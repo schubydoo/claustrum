@@ -508,11 +508,11 @@ large" — an honest input trips it too. If that input is reachable **and** the
 caller cannot turn the guard off, always-on is not justified no matter how the
 reference behaves on the hostile path. On both argv surfaces — `-serve` and
 `-install` — Claude Desktop owns the argv, so the person who pays has no way to
-decline; that is what flipped all five, and it is why every one of them ships a
+decline; that is what flipped all six, and it is why every one of them ships a
 `claustrum.conf` key rather than a flag alone.
 
 ⚠️ **"Desktop owns the argv" is a claim about the driver, and it is the premise
-under D3, D5, D10, D11, D12 and the "(opt-in)" tag itself — so it is tracked rather than
+under D3, D4, D5, D10, D11, D12 and the "(opt-in)" tag itself — so it is tracked rather than
 assumed.** Provenance and its reopen trigger live in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*: the shipped client's setup UI
 offers SSH connection fields and a remote folder browser, and no way to pass
@@ -552,14 +552,25 @@ read these as unenumerated, not as established.
 does not meet it. It therefore justifies no entry in this file today.** Two things
 a reader should not take on trust:
 
-- **What keeps D4 and D14 out of clause (c)** (and kept D5 there before its flip)**:**
-  the reference does not fail the
-  operation and report it — it **blocks** (D4's FIFO row), emits **nothing** (D5,
-  D14), or **succeeds** (D4's `/dev/null` row, where it reads the device happily and
-  answers `{"content":"","exists":true}`). Blocking and silence are clause (a)'s
-  territory; succeeding is a stronger disqualifier still, since clause (c) needs
-  *both* binaries to fail. ⚠️ So it is not one uniform reason — D4 alone spans two of
-  the three — which is why this group is read entry by entry rather than by a slogan.
+- **What keeps D14 out of clause (c)** (and kept D5 out before its flip)**:** the
+  reference does not fail the
+  operation and report it — it emits **nothing** (D5, D14). Silence is clause (a)'s
+  territory, not clause (c)'s, which needs *both* binaries to fail and report.
+  ⚠️ **D4 is no longer a clean example here, and this bullet used to offer it as
+  one.** Its FIFO row blocks and its `/dev/null` row succeeds — both disqualifying,
+  the second more strongly — but the socket and unreadable-device rows measured
+  during its flip are clause-(c)-*adjacent*: the reference answers
+  `-32603 open <p>: …` and an opted-in claustrum answered
+  `-32602 files.read: not a regular file`, so both fail and report. They still do
+  **not** satisfy the clause as worded, and the reason is the same one applied to
+  D13 two bullets down: the clause says *diagnostic text*, and a JSON-RPC
+  `error.code` is not text — it is a machine-readable field a client branches on,
+  and the two rows differ in it. Read the clause the same way in both places or it
+  is not a rule. Those rows were unreachable while the guard was always-on, so
+  nobody could have known. None of it changes the outcome — D4 is opt-in and clause
+  (c) still justifies no entry in this file — but it is why this group is read entry
+  by entry rather than by a slogan, and why "the reference never fails and reports
+  on these paths" is not a safe generalisation.
 - 🔴 **D13 does not strictly satisfy clause (c) as worded, measured.** On both
   honest-path rows the reference **creates an empty cli-dir** and claustrum
   **creates nothing** — so the delta is not confined to diagnostic text. Both
@@ -568,7 +579,8 @@ a reader should not take on trust:
   state the caller keeps: a `files.stat` on the cli-dir after a failed install
   tells the two binaries apart, through this same daemon and with no special
   fixture. **Settled 2026-08-07: the clause keeps its literal
-  wording and D13 joins D4 and D14 in the unresolved group.** Widening it to
+  wording and D13 joins D14 in the unresolved group** (D4 was in it too on that
+  date, and left by being flipped rather than argued for)**.** Widening it to
   "differences confined to the error text and to state neither binary leaves
   usable" was considered and rejected: relaxing a clause so that the one entry it
   was written for still passes is the same demotion this preamble exists to
@@ -592,30 +604,30 @@ user is told, whatever the rules say about frames. *(That is a claim about the
 limits that come with it. That paragraph lists this rider as a dependent that
 carries **no reopen trigger** — a known gap, not an oversight.)*
 
-🔴 **Three entries do not currently clear rule 3, and are recorded here rather
-than explained away.** They fail it in **two** ways, not one. **D14** is a
+🔴 **Two entries do not currently clear rule 3, and are recorded here rather
+than explained away.** They fail it in **two different** ways, not one. **D14** is a
 wall-clock threshold, and fails because a threshold cannot separate a hostile
 input from a merely slow one — the honest-but-over-threshold caller *would* pay and
-could not decline. (**D5** was the second threshold here until it was flipped to
-opt-in; its entry keeps the argument, which is why the flip happened.) (Derived from the code and from the reference's measured
-no-deadline results; the honest-path cost itself is unmeasured on both, as each
-entry says.) **D4** and **D13** are not thresholds at all and no clock is involved
-in either: they fail because an honest input *can* reach the guard, and what the
-guard does is observable — either its own output or the state it skips: a `-32602`
-where the reference reads `/dev/null` happily, an empty cli-dir where claustrum
-leaves none. D4's guard is a file-mode predicate (`Mode().IsRegular()`), which fires
-identically on a fast FIFO and a slow one. **D14**'s 5 s `ldd` bound is the
-threshold, and it has no flag and no `claustrum.conf` key, so nobody who pays for
-it can decline; its honest-path cost is **untested in either direction**, shape
-included. (D5's 60 s `gitTimeout` was the other threshold and had the same shape
-with a measured cost *shape* — the claustrum-only `-32603` carrying
+could not decline. (Derived from the code and from the reference's measured
+no-deadline results; the honest-path cost itself is unmeasured on both, as the
+entry says.) D14's 5 s `ldd` bound has no flag and no `claustrum.conf` key, so
+nobody who pays for it can decline; its honest-path cost is **untested in either
+direction**, shape included. **D13** is not a threshold at all and no clock is
+involved: it fails because an honest input *can* reach the guard, and what the
+guard does is observable — here the state it skips, an empty cli-dir where
+claustrum leaves none. It is verify-before-decompress ordering, and it fails
+clause (c) because the two measured rows differ on disk as well as in text.
+Neither of the two is resolved by this section.
+
+**Two entries left this group by being flipped to opt-in rather than justified,
+and that is the option D14 still has.** **D5**'s 60 s `gitTimeout` was the second
+threshold, with a measured cost *shape* — the claustrum-only `-32603` carrying
 `signal: killed` — though the honest 61 s git that would trip it was never run.
-It was flipped to opt-in rather than argued for, which is what D14 still owes.) **D4**'s `/dev/null` row is the first of the two non-thresholds:
-the reference reads a character device happily and claustrum refuses it, so an
-honest caller *can* observe the difference — no clock, just a mode check. **D13**
-is the second: verify-before-decompress ordering, which fails clause (c) because the
-two measured rows differ on disk as well as in text (the reference creates an empty
-cli-dir, claustrum creates none). None of the three is resolved by this section.
+**D4**'s regular-file guard was the second non-threshold: a file-mode predicate
+(`Mode().IsRegular()`) that fires identically on a fast FIFO and a slow one, whose
+`/dev/null` row let an honest caller observe a `-32602` where the reference reads
+the device happily — no clock, just a mode check. Both entries keep those
+arguments, which is why the flips happened.
 
 D4–D9 were shipped without numbers and are catalogued here retrospectively. Each
 carries the evidence that was already in [`PROTOCOL.md`](PROTOCOL.md) rather than
@@ -678,8 +690,8 @@ completes it with `git.worktree_remove`, which shares the predicate
   deleting home, which is why the reopen trigger below is worded the same way. Same
   narrowing D9 now carries. (An earlier version of this bullet
   said "every other entry in this section is off by default", which was never
-  true: D4, D6, D7, D8, D9, D13 and D14 are always-on too. D5 was, until it was
-  flipped to opt-in.)
+  true: D6, D7, D8, D9, D13 and D14 are always-on too. D4 and D5 were, until they
+  were flipped to opt-in.)
 - Two methods hand a caller-supplied path to `os.RemoveAll`: `files.extract_tar`
   wipes `destDir` before unpacking, and `git.worktree_remove` deletes
   `worktreePath` when git exits non-zero. **Both are `~`-expanded first**
@@ -791,40 +803,115 @@ completes it with `git.worktree_remove`, which shares the predicate
   the battery grows, so a number quoted here goes stale the way `496/496` did.
   Recount at the time of writing if you need one.)
 
-### D4 · `files.read` refuses a non-regular file ✅ (always-on) — impact M / cost L
+### D4 · Make the `files.read` regular-file guard opt-in ✅ (opt-in) — impact M / cost L
 
-- **Shipped in PR 56, unnumbered until now.** `files.read` rejects anything that
-  is not a regular file with `-32602 files.read: not a regular file`
-  (`methods_files.go`, `Mode().IsRegular()`); **the reference does not refuse
-  it.** Two shapes were measured, and they behave differently from each other: a
-  FIFO (the reference *blocks* rather than reading) and `/dev/null` (it reads,
-  answering `{"content":"","exists":true}`). Sockets and block devices were not
-  measured — "does not refuse" is the claim, not "reads".
-- **Always-on because the reference's behavior on the motivating path is not a
-  frame.** A read of a FIFO with no writer blocks in `open`, so the reference
-  emits nothing for as long as that holds — a frame-diffing comparison cannot even
-  see the request. claustrum turns that into an immediate, actionable error.
-  🔴 **That is only the FIRST half of rule 3 clause (a), which is an AND, and this
-  entry currently fails the second half** — see the `/dev/null` bullet below and
-  the preamble. The sentence is kept because it is true and it is why the guard
-  exists; it is not a sufficient justification on its own.
+- **Flipped: the guard is now OFF by default, which is the parity position.** Opt
+  in with `-files-read-regular-only` or the `files-read-regular-only` key in
+  `claustrum.conf` — the config key is the reachable one, since Claude Desktop owns
+  the `-serve` argv. Disabled means the predicate is **not evaluated at all**
+  (`filesReadRegularOnly && !fi.Mode().IsRegular()`), so the read proceeds down the
+  same path a regular file takes. There is no "large but finite" fudge available
+  here and none was invented: a mode check has two states.
+- **What it did before the flip, and what an operator now opts INTO:**
+  `files.read` rejects anything that is not a regular file with
+  `-32602 files.read: not a regular file` (`methods_files.go`,
+  `Mode().IsRegular()`); **the reference refuses none of them.** Six non-regular
+  shapes are now measured against `5db5e4a`, and they do NOT behave alike — which
+  is why the claim is "does not refuse", never "reads": a FIFO with no writer
+  *blocks*; a paired FIFO and `/dev/null` *read* (`{"content":"","exists":true}`
+  for the latter); and a bound `AF_UNIX` socket and an unreadable character and
+  block device *error* with `-32603` carrying Go's `open <p>: …` text. Claustrum at
+  the new default matches all six byte-for-byte, with two regular-file controls (a
+  plain read, and one over `maxBytes`) proving the harness discriminates — eight
+  rows in total. The socket and device rows were **unmeasured until this flip** —
+  the guard hid them, and turning it off is what made them reachable, so they were
+  run before shipping rather than assumed. Full table in
+  [PROTOCOL.md](PROTOCOL.md).
 - **It is not a permanent hang on the reference, and PROTOCOL.md used to say it
   was.** Measured: the reference replies the instant a writer opens and stays
-  responsive throughout. The correction stands with the divergence; the guard's
-  justification is "unbounded wait", not "deadlock".
-- **`/dev/null` is the cost, not a second decision.** The check is
-  `Mode().IsRegular()`, so it also rejects character devices the reference reads
-  happily (`{"content":"","exists":true}`). Narrowing it to permit *some* would
-  reopen the hazard on `/dev/zero` and `/dev/random`, which are unbounded reads
-  the reference has no protection against either.
-- **Reopen trigger — already met on the behaviour, outstanding only on the
-  deployment.** The divergence itself is measured: the reference reads `/dev/null`
-  and answers `{"content":"","exists":true}` where claustrum returns `-32602`. What
-  is not established is whether any real client reads a character device through
-  `files.read` — Desktop's use of the method has never been enumerated against it.
-  So the trigger to watch for is a *client* doing it; the *observable* is already
-  in hand, which is why the preamble lists D4 as failing rather than as at risk.
-- Documented in [PROTOCOL.md](PROTOCOL.md) → `files.read` → *Non-regular files*.
+  responsive throughout. The correction stands with the flip; the guard's
+  own case was "unbounded wait", not "deadlock". Shipped in PR 56.
+- **Why it stopped being always-on.** The entry argued the reference's behaviour on
+  the motivating path is not a frame — true of the FIFO row, and only the **first
+  half of clause (a), which is an AND**. It failed the second half on the
+  `/dev/null` row: an honest caller reading a character device gets a `-32602`
+  where the reference answers `{"content":"","exists":true}`, and with Desktop
+  owning the argv there was no way through. ⚠️ **D4 spans all THREE shapes this file
+  otherwise keeps apart**, so "same as the other five" would be too loose: its
+  `/dev/null` row is the D3/D10 shape (the reference *completes* the operation and
+  emits a frame); its no-writer FIFO row is the D11/D12 shape (an unbounded wait,
+  not a frame); and its socket and device rows come **closest to clause (c)** —
+  both binaries fail and report — without meeting it, since the `error.code` differs
+  as well as the text (`-32603 open <p>: …` versus the guard's `-32602`), and a code
+  is not diagnostic text. That third one was invisible until this flip made the rows
+  reachable and they were measured. It is settled the same way regardless: the
+  second half of clause (a) is what fails, whichever part of D4 you look at, and
+  being clause-(c)-shaped in part justifies nothing now that the entry is opt-in.
+- ⚠️ **Turning it off is a trade, not a free fix, and the two costs are the reason
+  the flag survives.** With the guard off: a read of a FIFO with no writer parks a
+  request goroutine **and a descriptor** until one arrives, plus the OS thread
+  serving the blocking syscall; and an unbounded device read never reaches EOF, so
+  the daemon grows until the kernel kills it.
+  ⚠️ **The descriptor is the part that scales badly, and this entry briefly said the
+  opposite.** Linux reserves the fd number *before* blocking, so parked reads draw
+  down `RLIMIT_NOFILE` for the whole wait — and the listener's `accept()` draws on
+  the same table, so enough of them stop the daemon accepting connections at all.
+  Measured two ways: two parked opens push the next allocated fd from 3 to 5, and
+  under `RLIMIT_NOFILE=16` one parked open costs exactly one of the 13 opens the
+  unparked control achieves. ⚠️ Worth knowing because the opposite is intuitive and
+  was briefly believed here on a review's say-so: "the open has not returned, so no
+  fd exists yet" is wrong on linux, and only a measurement settles it.
+- **Both costs are the reference's behaviour too, and BOTH ARE NOW MEASURED**, as
+  is every row of the *default* column of PROTOCOL's table. ⚠️ **Not "nothing rests
+  on inference"** — that absolute stood here briefly and three things falsify it,
+  all labelled where they appear: the reference's *reason* for ignoring `maxBytes`
+  is inferred from its frames rather than inspected; the opted-in column for the
+  socket and device rows is entailed by `Mode().IsRegular()` rather than run; and
+  the two shapes in the bullet below are unmeasured outright.
+  The OOM row was promoted by running it: under a **2 GiB** cgroup cap,
+  `files.read {"path":"/dev/zero"}` dropped the connection on **both** binaries
+  with no frame, and the kernel logged `Memory cgroup out of memory: Killed process`
+  naming each binary at ~2091 MB anon-rss — so "OOM-killed" is the observation, not
+  a reading of a dropped connection. `/dev/null` through the same contained launcher
+  answered on both and logged nothing, which is what rules out "the launcher never
+  worked". ⚠️ **The first run used a 512 MiB cap and that number must not be quoted
+  as the evidence**: 512 MiB sits below any plausible internal bound, so a reference
+  that capped its own read at ~1 GiB and answered a frame there would have produced
+  an identical observation — the cgroup kill lands first either way. It is the
+  straddle failure this file warns about elsewhere, committed by the very entry that
+  warns about it, and caught in review. 2 GiB clears the range; neither binary caps
+  at or below it. Above 2 GiB is unmeasured on both. Claustrum's *unpaired* FIFO block was the last derived row and is
+  measured too: a non-blocking `open(O_WRONLY)` of the same FIFO succeeds only if a
+  reader is present, and it succeeds against stock claustrum and the reference while
+  returning `ENXIO` against an opted-in claustrum — with a FIFO nobody read as the
+  control, also `ENXIO`. ⚠️ **`maxBytes` cannot prevent any of it on either binary**:
+  the cap keys off the stat size, `0` for every non-regular kind measured **on
+  linux** (POSIX leaves a FIFO's unspecified) — a FIFO carrying 300000 bytes reads
+  in full at the 256 KiB default on both, while the regular-file control errors on
+  both.
+- ⚠️ **Two shapes remain unmeasured, and they are named rather than glossed.** A
+  writer that opens and then dribbles or never closes makes the open *return* — so
+  the read holds a descriptor **and** becomes the unbounded-growth case; no measured
+  row covers it, because both fixture writers close promptly. And each parked
+  `open(2)` pins an OS thread, so an authenticated client issuing enough writerless
+  FIFO reads reaches Go's `maxmcount` (10000) and the runtime aborts the daemon.
+  ⚠️ That second one has a precondition this bullet used to omit, so do not quote it
+  as "reachable at the shipped default with no special fixture": 10000 concurrent
+  parked reads need `RLIMIT_NOFILE` above ~10000, because the bullet above
+  establishes each one also burns a descriptor. At a typical 1024 soft limit the fd
+  table binds first and `maxmcount` is never reached. Whether the reference shares
+  the threading behaviour is unmeasured on it either way.
+- **Why a flag and not a narrower predicate.** Permitting *only* the harmless
+  character devices is not expressible: `/dev/null` and `/dev/zero` are
+  indistinguishable by mode, so any predicate that admits the first admits the
+  second. Whole or nothing — that is what makes this a flag.
+- **Reopen trigger** (for the opt-in shape, not the flip — that is done): an
+  operator who sets `-files-read-regular-only` reporting a legitimate read refused
+  by it, or — the direction that would say the *default* is wrong — a report of the
+  daemon parked or OOMed by a non-regular read in normal use. The second has never
+  been observed on the reference either, which is the point of matching it.
+- Documented in [PROTOCOL.md](PROTOCOL.md) → `files.read` → *Non-regular files*,
+  and → `-serve` → `-files-read-regular-only`.
 
 ### D5 · Make the `gitTimeout` deadline opt-in ✅ (opt-in) — impact M / cost L
 
@@ -1313,9 +1400,9 @@ completes it with `git.worktree_remove`, which shares the predicate
   because every finite value merely moves the boundary.
 - **Why it stopped being always-on.** It did clear the **not-a-frame half of clause (a)** —
   the reference's behaviour on the motivating path is an apparently unbounded wait
-  (no bound at or below 90 s) rather than a frame, the same justification D4 uses
-  explicitly (and D5 used, until that argument was judged insufficient and D5 was
-  flipped) and D12 restates in its Trade bullet. (D13 used to be cited here
+  (no bound at or below 90 s) rather than a frame, the same justification D4 and D5
+  each used explicitly until that argument was judged insufficient and both were
+  flipped, and D12 restates in its Trade bullet. (D13 used to be cited here
   as a third form of the same argument — "an input no honest caller produces" —
   but that claim has since been **measured wrong**, and D13 does not meet clause
   (c) either — it is now in the unresolved group, so it supports nothing here.)
@@ -1561,7 +1648,7 @@ completes it with `git.worktree_remove`, which shares the predicate
   ⚠️ **Neither binary leaves a usable CLI** — but the on-disk state a caller keeps
   is not identical either (an empty cli-dir versus none, observable with a
   `files.stat`), so "the only delta is diagnostic text" is false as written, and
-  clause (c) says that. **So D13 sits with D4 and D14 in the unresolved group** (settled
+  clause (c) says that. **So D13 sits with D14 in the unresolved group** (settled
   2026-08-07; see the preamble for why the clause was not widened to fit it). It
   stays in the code, labelled, rather than justified by a rule bent around it.
 - ⚠️ **The "cost-free" reading leans on a claim about the driver, and that claim is
@@ -1644,10 +1731,13 @@ completes it with `git.worktree_remove`, which shares the predicate
     and no `claustrum.conf` key — the shape that got D5 flipped, and D14 is now the
     only entry still carrying it.
     Nobody who pays for it can decline.
-- **So D14 sits with D4 and D13 in the unresolved group, and the difference is
-  evidential rather than principled.** D4's honest-path cost is measured (the
-  `/dev/null` row); D14's is untested in either direction, shape included. D5 left
-  this group by being flipped, not by being justified — the option D14 still has. It is numbered here so it can be argued about at
+- **So D14 sits with D13 in the unresolved group, and the difference between them
+  is evidential rather than principled.** D13's honest-path rows are measured;
+  D14's cost is untested in either direction, shape included. **D4 and D5 both left
+  this group by being flipped, not by being justified** — the option D14 still has,
+  and D4 is the closer precedent: its `/dev/null` cost *was* measured and it was
+  flipped anyway, because a measured honest-path cost the caller cannot decline is
+  the thing rule 3 forbids. D14 is numbered here so it can be argued about at
   all — being unnumbered is what let it avoid the question.
 - 🔴 **The bound is narrower than it reads, and this entry used to overstate it.**
   It fired in only one of the two stall shapes measured. The probe waits on `ldd`'s
@@ -1764,6 +1854,14 @@ completes it with `git.worktree_remove`, which shares the predicate
     Same duration parsing and the same zero/negative edges as `cli-probe-timeout`
     above, and the same consequence: every accepted oddity leaves the deadline off.
     ⚠️ The only `-serve` key of the three durations — the other two are `-install`.
+  - `files-read-regular-only = true|false` — default for D4; `false` (the default)
+    leaves the guard off. A bool, not a duration or a count: it takes the same
+    spellings as `keep-children` (`true`/`1`/`yes`/`on` and their negatives,
+    case-insensitive), and anything else is ignored — which leaves the key **unset**,
+    so the flag value stands (off, unless a flag was also passed). So as with the
+    numeric and duration keys, no accepted oddity can switch a divergence on; that
+    is the exact claim, and it is stronger than "leaves it off", which is only true
+    when no flag was given.
 - **`version-override` — make claustrum a permanent drop-in.** The desktop client
   decides whether to re-upload the daemon by running `<bin> --version` on the
   cached `~/.claude/remote/srv/<pinned-sha>/server` and matching
@@ -1785,9 +1883,10 @@ completes it with `git.worktree_remove`, which shares the predicate
   symlink/FIFO/device/directory → can't block startup), `io.LimitReader` ≤ 64 KiB,
   per-key validation (`version-override` gated to `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`
   and lower-cased; `metrics-addr` printable-ASCII only; `max-extract-bytes` and
-  `max-cli-bytes` parsed as a non-negative int64, `cli-probe-timeout` and
-  `cli-download-timeout` via
-  `time.ParseDuration` and rejected if negative, anything else ignored), values
+  `max-cli-bytes` parsed as a non-negative int64, `cli-probe-timeout`,
+  `cli-download-timeout` and `git-timeout` via
+  `time.ParseDuration` and rejected if negative, `files-read-regular-only` through
+  the shared bool parser, anything else ignored), values
   used as data never as a format string.
 - Verified: unit tests (each key's valid/invalid forms, unknown-key and malformed
   lines, case-insensitive keys, CLI-over-config precedence, non-regular-directory,

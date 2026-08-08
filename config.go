@@ -75,6 +75,11 @@ type config struct {
 	// same: Claude Desktop owns that argv too, so the config key is how an operator
 	// actually opts in.
 	gitTimeout *time.Duration
+	// filesReadRegularOnly mirrors -files-read-regular-only; nil means "not set in
+	// the file". A bool rather than a threshold: the guard it gates is a predicate
+	// on the file's mode, so there is no value to tune — only on or off. Same
+	// reachability argument as the rest, on the -serve argv.
+	filesReadRegularOnly *bool
 }
 
 // loadConfig reads and validates claustrum.conf next to the executable. It never
@@ -203,12 +208,32 @@ func applyConfigKey(cfg *config, key, val string) {
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.gitTimeout = &d
 		}
+	case "files-read-regular-only":
+		// A bool, not a threshold — false disables the guard (the default) and is
+		// the parity position. parseConfigBool rejects anything it does not
+		// recognise, which leaves the key UNSET, so the flag value stands.
+		//
+		// ⚠️ That is NOT the same as "a typo leaves the guard off", which this
+		// comment used to say and docs/PROTOCOL.md now explicitly retracts: with
+		// -files-read-regular-only on the argv AND files-read-regular-only = maybe
+		// in the file, cliSet is true, the config side is nil, and the guard ends up
+		// ON. The exact claim — the one that holds unconditionally — is that no
+		// accepted ODDITY switches the divergence on: `= true` arms it deliberately,
+		// which is the whole point of the key, and nothing else this parser accepts
+		// arms it at all.
+		if b, ok := parseConfigBool(val); ok {
+			cfg.filesReadRegularOnly = &b
+		}
 	}
 	// Unknown keys are intentionally ignored (forward-compatibility).
 }
 
 // parseConfigBool accepts the common truthy/falsey spellings; anything else is
-// rejected (ok=false) so a typo leaves the default in place.
+// rejected (ok=false), which leaves the key unset — so the caller's existing
+// value stands, which is the default only when nothing else set it. (It used to
+// say "a typo leaves the default in place". Same imprecision the D4 case comment
+// above retracts, one level down: with a flag also passed, what stands is the
+// flag. Shared by every bool key, so the wording has to hold for all of them.)
 func parseConfigBool(s string) (value, ok bool) {
 	switch strings.ToLower(s) {
 	case "true", "1", "yes", "on":
@@ -307,6 +332,17 @@ func (cfg config) effectiveGitTimeout(cliVal time.Duration, cliSet bool) time.Du
 	if cliVal < 0 {
 		logWarnf("[Server] -git-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
 		return 0
+	}
+	return cliVal
+}
+
+// effectiveFilesReadRegularOnly applies the same precedence for
+// -files-read-regular-only. No negative-value normalisation to do here: a bool has
+// only the two states, and false — the zero value, the declared flag default and
+// what an unrecognised config value leaves in place — is the parity position.
+func (cfg config) effectiveFilesReadRegularOnly(cliVal, cliSet bool) bool {
+	if !cliSet && cfg.filesReadRegularOnly != nil {
+		return *cfg.filesReadRegularOnly
 	}
 	return cliVal
 }
