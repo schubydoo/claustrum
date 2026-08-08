@@ -1392,7 +1392,10 @@ left in place:
   absence of an error, not the presence of one. **At the default, none of this
   happens: claustrum waits with the reference.**
 - **The `ldd --version` libc probe is bounded at 5 s — intentional divergence
-  (D14), always-on, linux only.** Off linux the probe never runs
+  (D14), always-on, linux only. ⚠️ Always-on is its current state, not a settled
+  one:** IMPROVEMENTS records D14's always-on status as **UNRESOLVED** beside D4, D5
+  and D13 — a wall-clock threshold with no flag and no `claustrum.conf` key, so
+  nobody who pays for it can decline, and an opt-in flip is queued. Off linux the probe never runs
   (`libc_other.go` returns `""`), so no bound exists there; on linux
   `detectLibcWith` returns `"musl"` from the loader glob **before** spawning `ldd`,
   so it cannot fire on a host that glob matches. **Measured: the reference applies

@@ -550,9 +550,12 @@ does not meet it. It therefore justifies no entry in this file today.** Two thin
 a reader should not take on trust:
 
 - **What keeps D4, D5 and D14 out of clause (c):** the reference does not fail the
-  operation and report it — it **blocks** (D4's FIFO row) or emits **nothing** (D5,
-  D14). That is clause (a)'s territory. ⚠️ It is *not* that "the reference succeeds
-  everywhere else"; those three entries refute that reading.
+  operation and report it — it **blocks** (D4's FIFO row), emits **nothing** (D5,
+  D14), or **succeeds** (D4's `/dev/null` row, where it reads the device happily and
+  answers `{"content":"","exists":true}`). Blocking and silence are clause (a)'s
+  territory; succeeding is a stronger disqualifier still, since clause (c) needs
+  *both* binaries to fail. ⚠️ So it is not one uniform reason — D4 alone spans two of
+  the three — which is why this group is read entry by entry rather than by a slogan.
 - 🔴 **D13 does not strictly satisfy clause (c) as worded, measured.** On both
   honest-path rows the reference **creates an empty cli-dir** and claustrum
   **creates nothing** — so the delta is not confined to diagnostic text. Both
