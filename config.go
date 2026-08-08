@@ -229,7 +229,11 @@ func applyConfigKey(cfg *config, key, val string) {
 }
 
 // parseConfigBool accepts the common truthy/falsey spellings; anything else is
-// rejected (ok=false) so a typo leaves the default in place.
+// rejected (ok=false), which leaves the key unset — so the caller's existing
+// value stands, which is the default only when nothing else set it. (It used to
+// say "a typo leaves the default in place". Same imprecision the D4 case comment
+// above retracts, one level down: with a flag also passed, what stands is the
+// flag. Shared by every bool key, so the wording has to hold for all of them.)
 func parseConfigBool(s string) (value, ok bool) {
 	switch strings.ToLower(s) {
 	case "true", "1", "yes", "on":

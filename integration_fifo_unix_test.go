@@ -50,6 +50,17 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 		// The control: a regular file still reads normally.
 		normPath(cl.call(req(1, "files.read", map[string]any{"path": filepath.Join(root, "regular.txt")})), root),
 		// Would block on the reference until a writer opens; must return promptly here.
+		//
+		// ⚠️ No writer, by design — the guard has to refuse before open(2) can
+		// block. So the regression this row catches is the mirror of the one the
+		// default test catches, and it surfaces differently: if the guard stops
+		// arming, the daemon parks in open forever and the failure is cl.wait's
+		// generic 5s "timeout waiting for expected responses/frames" (harness_test.go),
+		// not a golden mismatch. That message on THIS test means D4. It also leaves a
+		// request goroutine and its descriptor parked for the life of the package
+		// binary; t.TempDir's unlink does not release them. Deliberately no rescue
+		// here — the test already fails, and the default test is where the bounded
+		// wait earns its keep.
 		normPath(cl.call(req(2, "files.read", map[string]any{"path": fifo})), root),
 		// The reference answers {"content":"","exists":true} for this one.
 		normPath(cl.call(req(3, "files.read", map[string]any{"path": "/dev/null"})), root),
@@ -84,11 +95,12 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //
 //	       ⚠️ THREE earlier versions of this sentence were wrong — deadlock as
 //	       the reason; then "the battery owns the load-bearing row"; then a
-//	       pointer at PROTOCOL's table plus "every other shape stayed one-off",
-//	       which is false for the three shapes this suite's own goldens lock.
-//	       Each was caught in review. The claim that survives is narrow on
-//	       purpose: where the 300000-byte row lives, and nothing about any other
-//	       shape. Keep it that way.
+//	       pointer at PROTOCOL's table plus a claim about which other shapes are
+//	       committed, which was false. Each was caught in review, and the third
+//	       was caught twice: the correction for it was itself off by one,
+//	       because it counted shapes. The claim that survives is narrow on
+//	       purpose — where the 300000-byte row lives, and nothing about any
+//	       other shape, with no tally to get wrong. Keep it that way.
 //
 //	       It is parity, not a claustrum property. Row 1 is its control: the same
 //	       maxBytes on a regular file still errors.
