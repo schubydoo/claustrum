@@ -286,83 +286,72 @@ func (cfg config) effectiveMetricsAddr(cliVal string, cliSet bool) string {
 	return cliVal
 }
 
+// effectiveNumeric applies CLI-over-config-over-default precedence for the numeric
+// flags and normalises a negative CLI value to 0 (the disabled position), calling
+// warnNeg to log it. Shared by the six size-cap / timeout flags so the precedence
+// and the negative->0 rule live in one place: a negative reached the daemon
+// unvalidated through the flag path before, disagreeing with the config path's
+// rejection, and centralising it keeps the two from drifting apart again.
+func effectiveNumeric[T int64 | time.Duration](cliVal T, cliSet bool, cfgVal *T, warnNeg func()) T {
+	if !cliSet && cfgVal != nil {
+		return *cfgVal
+	}
+	if cliVal < 0 {
+		warnNeg()
+		return 0
+	}
+	return cliVal
+}
+
 // effectiveMaxExtractBytes applies the same precedence for -max-extract-bytes.
 // Unlike the others there is no "empty means unset" ambiguity to dodge: 0 is a
 // meaningful value (cap disabled, the default), so the config side is a pointer.
 func (cfg config) effectiveMaxExtractBytes(cliVal int64, cliSet bool) int64 {
-	if !cliSet && cfg.maxExtractBytes != nil {
-		return *cfg.maxExtractBytes
-	}
-	// The config path rejects a negative outright so a typo can never silently
-	// enable a cap; the flag had no validation at all, so -max-extract-bytes -1
-	// reached the daemon as a negative. It disabled the cap either way (the copy
-	// site tests maxExtractBytes > 0), but the two paths disagreeing about the
-	// same input is the kind of gap that survives until something depends on it.
-	// Normalised to the disabled value, with a line saying so.
-	if cliVal < 0 {
+	// The flag had no validation at all, so -max-extract-bytes -1 reached the
+	// daemon as a negative while the config path rejected it; centralised in
+	// effectiveNumeric now, so the two paths cannot disagree about a negative.
+	return effectiveNumeric(cliVal, cliSet, cfg.maxExtractBytes, func() {
 		logWarnf("[Server] -max-extract-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
-		return 0
-	}
-	return cliVal
+	})
 }
 
 // effectiveMaxCLIBytes applies the same precedence for -max-cli-bytes, and the
 // same negative handling — the asymmetry fixed for max-extract-bytes would
 // otherwise be reintroduced here by its sibling.
 func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
-	if !cliSet && cfg.maxCLIBytes != nil {
-		return *cfg.maxCLIBytes
-	}
-	if cliVal < 0 {
-		// [Install], not [Server]: this cap governs zstdDecompress and fetchToFile,
-		// and effectiveMaxCLIBytes is reached only from the -install arm.
+	// [Install], not [Server]: this cap governs zstdDecompress and fetchToFile,
+	// and effectiveMaxCLIBytes is reached only from the -install arm.
+	return effectiveNumeric(cliVal, cliSet, cfg.maxCLIBytes, func() {
 		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
-		return 0
-	}
-	return cliVal
+	})
 }
 
 // effectiveCLIProbeTimeout applies the same precedence for -cli-probe-timeout,
 // and the same negative handling as the two size caps: normalise to the disabled
 // value rather than letting the flag and config paths disagree about a negative.
 func (cfg config) effectiveCLIProbeTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	if !cliSet && cfg.cliProbeTimeout != nil {
-		return *cfg.cliProbeTimeout
-	}
-	if cliVal < 0 {
-		// [Install], not [Server]: isRunnable is reached only from the -install arm.
+	// [Install], not [Server]: isRunnable is reached only from the -install arm.
+	return effectiveNumeric(cliVal, cliSet, cfg.cliProbeTimeout, func() {
 		logWarnf("[Install] -cli-probe-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
-		return 0
-	}
-	return cliVal
+	})
 }
 
 // effectiveGitTimeout applies the same precedence for -git-timeout, and the same
 // negative handling. [Server], not [Install]: this bound governs the git.* methods,
 // which only the daemon serves.
 func (cfg config) effectiveGitTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	if !cliSet && cfg.gitTimeout != nil {
-		return *cfg.gitTimeout
-	}
-	if cliVal < 0 {
+	return effectiveNumeric(cliVal, cliSet, cfg.gitTimeout, func() {
 		logWarnf("[Server] -git-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
-		return 0
-	}
-	return cliVal
+	})
 }
 
 // effectiveLibcProbeTimeout applies the same precedence for -libc-probe-timeout,
 // and the same negative handling as the other -install durations.
 func (cfg config) effectiveLibcProbeTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	if !cliSet && cfg.libcProbeTimeout != nil {
-		return *cfg.libcProbeTimeout
-	}
-	if cliVal < 0 {
-		// [Install], not [Server]: detectLibc is reached only from the -install arm.
+	// [Install], not [Server]: detectLibc is reached only from the -install arm.
+	return effectiveNumeric(cliVal, cliSet, cfg.libcProbeTimeout, func() {
 		logWarnf("[Install] -libc-probe-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
-		return 0
-	}
-	return cliVal
+	})
 }
 
 // effectiveFilesReadRegularOnly applies the same precedence for
@@ -379,15 +368,10 @@ func (cfg config) effectiveFilesReadRegularOnly(cliVal, cliSet bool) bool {
 // effectiveCLIDownloadTimeout applies the same precedence for
 // -cli-download-timeout, and the same negative handling as the size caps.
 func (cfg config) effectiveCLIDownloadTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	if !cliSet && cfg.cliDownloadTimeout != nil {
-		return *cfg.cliDownloadTimeout
-	}
-	if cliVal < 0 {
-		// [Install], not [Server]: fetchToFile is reached only from the -install arm.
+	// [Install], not [Server]: fetchToFile is reached only from the -install arm.
+	return effectiveNumeric(cliVal, cliSet, cfg.cliDownloadTimeout, func() {
 		logWarnf("[Install] -cli-download-timeout %s is negative; treating it as 0 (no timeout)", cliVal)
-		return 0
-	}
-	return cliVal
+	})
 }
 
 // versionLine returns the exact -version output. With a validated override SHA it

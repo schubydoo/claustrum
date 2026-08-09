@@ -127,8 +127,12 @@ type managedProc struct {
 	// the process is alive. Read only by pruneExited, under p.mu like running.
 	exitedAt time.Time
 	stdin    io.WriteCloser
-	cmd      *exec.Cmd
-	group    *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	// cmd is set once in spawn's composite literal and never reassigned, so it is
+	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
+	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
+	// this write-once pointer.
+	cmd   *exec.Cmd
+	group *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -521,67 +525,73 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	wg.Add(2)
 	go func() { defer wg.Done(); pumpStream(p, "stdout", stdoutR) }()
 	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
-	go func() {
-		// cmd.Wait returns the moment the process itself exits — it no longer
-		// waits on the pipes, because they are ours now.
-		err := cmd.Wait()
-		code := 0
-		if err != nil {
-			if ee, ok := err.(*exec.ExitError); ok {
-				code = ee.ExitCode() // -1 when terminated by signal
-			} else {
-				code = -1
-			}
-		}
-		// The pid is now free for the kernel to reuse, and the pgid will be too
-		// once the last group member goes. Record that BEFORE the drain window
-		// opens, so no signal path can target a recycled id while we wait.
-		p.mu.Lock()
-		p.reaped = true
-		p.mu.Unlock()
-		// A child can leave a grandchild holding the same stdout — `npm run dev &`,
-		// anything that daemonizes. The pipes then stay open long after the process
-		// we spawned is gone. The reference gives that drain exactly 5 seconds and
-		// then closes the read ends, so the exit frame lands on time and the
-		// grandchild's next write fails with EPIPE. Waiting for EOF instead (what
-		// claustrum did) means the exit frame is delayed for as long as the
-		// grandchild lives, which for a dev server is "never".
-		drained := make(chan struct{})
-		go func() { wg.Wait(); close(drained) }()
-		select {
-		case <-drained:
-		case <-time.After(grace):
-			closeAll(stdoutR, stderrR)
-		}
-		// Both pumps have returned by here: either they hit EOF on their own, or
-		// the close above turned their blocked Read into ErrClosed. That barrier
-		// is what keeps an output frame from overtaking the exit frame — no flag
-		// on the frame path required, and no seq number burnt on a dropped frame.
-		<-drained
-		closeAll(stdoutR, stderrR) // no-op on the drained path; idempotent
-		// running flips only now, not when cmd.Wait returned. Probe-measured: the
-		// reference still reports running:true two seconds into the drain window
-		// and false only once the exit frame is out.
-		p.mu.Lock()
-		p.running = false
-		p.exitedAt = time.Now() // starts the procPruneAge clock
-		p.mu.Unlock()
-		// Stop the stdin writer and wake any producer blocked on a full queue; the
-		// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
-		p.stdinMu.Lock()
-		p.stdinDone = true
-		p.stdinCond.Broadcast()
-		p.stdinMu.Unlock()
-		// Release the OS group handle now the child is gone. On Windows this drops
-		// the Job Object's last handle, reaping any descendants it left behind.
-		p.group.close()
-		logInfof("[process.Manager] Process %s exited with code %d", id, code)
-		met.processExits.Add(1)
-		p.emit(streamFrame{Stream: "exit", ExitCode: &code})
-		// Signal any killAndWait waiter now the child is fully reaped.
-		close(p.done)
-	}()
+	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
 	return p, nil
+}
+
+// waitReapAndDrain runs after spawn in its own goroutine: it waits for the child
+// to exit and reap, runs the bounded stdout/stderr drain, flips running to false,
+// tears down stdin and the OS group handle, then emits the exit frame. Extracted
+// from spawn so the lifecycle reads as one-level steps; behavior is unchanged.
+func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, grace time.Duration) {
+	// cmd.Wait returns the moment the process itself exits — it no longer
+	// waits on the pipes, because they are ours now.
+	err := p.cmd.Wait()
+	code := 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode() // -1 when terminated by signal
+		} else {
+			code = -1
+		}
+	}
+	// The pid is now free for the kernel to reuse, and the pgid will be too
+	// once the last group member goes. Record that BEFORE the drain window
+	// opens, so no signal path can target a recycled id while we wait.
+	p.mu.Lock()
+	p.reaped = true
+	p.mu.Unlock()
+	// A child can leave a grandchild holding the same stdout — `npm run dev &`,
+	// anything that daemonizes. The pipes then stay open long after the process
+	// we spawned is gone. The reference gives that drain exactly 5 seconds and
+	// then closes the read ends, so the exit frame lands on time and the
+	// grandchild's next write fails with EPIPE. Waiting for EOF instead (what
+	// claustrum did) means the exit frame is delayed for as long as the
+	// grandchild lives, which for a dev server is "never".
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	select {
+	case <-drained:
+	case <-time.After(grace):
+		closeAll(stdoutR, stderrR)
+	}
+	// Both pumps have returned by here: either they hit EOF on their own, or
+	// the close above turned their blocked Read into ErrClosed. That barrier
+	// is what keeps an output frame from overtaking the exit frame — no flag
+	// on the frame path required, and no seq number burnt on a dropped frame.
+	<-drained
+	closeAll(stdoutR, stderrR) // no-op on the drained path; idempotent
+	// running flips only now, not when cmd.Wait returned. Probe-measured: the
+	// reference still reports running:true two seconds into the drain window
+	// and false only once the exit frame is out.
+	p.mu.Lock()
+	p.running = false
+	p.exitedAt = time.Now() // starts the procPruneAge clock
+	p.mu.Unlock()
+	// Stop the stdin writer and wake any producer blocked on a full queue; the
+	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
+	p.stdinMu.Lock()
+	p.stdinDone = true
+	p.stdinCond.Broadcast()
+	p.stdinMu.Unlock()
+	// Release the OS group handle now the child is gone. On Windows this drops
+	// the Job Object's last handle, reaping any descendants it left behind.
+	p.group.close()
+	logInfof("[process.Manager] Process %s exited with code %d", p.id, code)
+	met.processExits.Add(1)
+	p.emit(streamFrame{Stream: "exit", ExitCode: &code})
+	// Signal any killAndWait waiter now the child is fully reaped.
+	close(p.done)
 }
 
 func pumpStream(p *managedProc, name string, r io.Reader) {

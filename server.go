@@ -714,72 +714,7 @@ func (s *server) serveConn(c *conn) {
 		}
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
-		go func() {
-			// Per-request panic isolation: without this a panic in any handler
-			// crashes the whole daemon (an unrecovered panic in ANY goroutine takes
-			// the process down), orphaning managed children and leaving a stale
-			// socket. Surviving the request is strictly better than dying on it.
-			//
-			// THIS FRAME IS CLAUSTRUM'S OWN, and it is not a parity claim. No input
-			// is known to reach a handler panic — two fuzz waves found none, and
-			// claustrum's own panic sites are each either an unreachable stdlib
-			// timer guard or an already-bounds-guarded slice — so the path is
-			// unreachable and the frame is unobservable on the wire. -32603 is
-			// codeInternal, the JSON-RPC 2.0 standard "Internal error"; the message
-			// and log line follow claustrum's own conventions. Nothing here can be
-			// probe-verified, and nothing here needs to be: an unreachable frame
-			// cannot diverge from anything. See docs/IMPROVEMENTS.md.
-			// The stdin ticket covers DISPATCH ONLY, never the response write.
-			// dispatch appends the chunk to the process's existing stdin FIFO
-			// (applyStdin) before it returns, so byte order is already fixed by
-			// then. Holding the ticket across writeResponse would add nothing to
-			// ordering and would couple input admission to response delivery: a
-			// client that stops reading blocks the socket write, and every later
-			// process.stdin on the connection stalls behind it — including input
-			// for OTHER processes.
-			//
-			// The inner func is what keeps the release on a defer, so a panic in
-			// dispatch cannot strand the ticket and deadlock the connection.
-			var resp *response
-			func() {
-				// Registered FIRST, so it unwinds LAST — after doneStdinTurn below,
-				// which means a panicking dispatch cannot strand a stdin ticket and
-				// deadlock the connection.
-				//
-				// Scoped to dispatch on purpose. Covering the response write too
-				// would let a panic *inside* writeResponse produce a SECOND frame
-				// for one id — the one failure mode a wire-contract daemon least
-				// wants from its safety net. The recover only sets resp; the single
-				// write stays below, outside the recovered region.
-				defer func() {
-					r := recover()
-					if r == nil {
-						return
-					}
-					logErrorf("[Server] recovered panic: method=%s id=%v: %v", peek.Method, idForLog(peek.ID), r)
-					// The stack goes to DEBUG so the ERROR line keeps its shape while
-					// the operator can still get the fault location — a recovered
-					// panic here means an unreachable path became reachable, and
-					// method+id locate the request but not the fault.
-					logDebugf("[Server] recovered panic stack: method=%s id=%v\n%s", peek.Method, idForLog(peek.ID), debug.Stack())
-					// server.shutdown must produce NO reply (dispatch returns nil for
-					// it). Replying here would emit a frame where the daemon otherwise
-					// emits none, so the no-reply contract holds even under a panic.
-					if peek.Method == methodShutdown {
-						return
-					}
-					resp = ptr(errResult(peek.ID, codeInternal, fmt.Sprintf("recovered panic: %v", r)))
-				}()
-				if ordered {
-					c.awaitStdinTurn(ticket)
-					defer c.doneStdinTurn(ticket)
-				}
-				resp = dispatchRequest(s, c, raw)
-			}()
-			if resp != nil {
-				c.writeResponse(*resp)
-			}
-		}()
+		go s.handleRequest(c, raw, peek.Method, peek.ID, ordered, ticket)
 	}
 
 	// The read loop also ends on a scanner error — a request line over the 1 MiB
@@ -799,6 +734,77 @@ func (s *server) serveConn(c *conn) {
 	// serveConn but do not report a close as net.ErrClosed.
 	if err := sc.Err(); err != nil && !isOurClose(err) {
 		logErrorf("[Server] scanner error on %s: %v", c.nc.RemoteAddr(), err)
+	}
+}
+
+// handleRequest runs one connection request in its own goroutine: the
+// per-request panic recovery and, for process.stdin, the ordering ticket.
+// Extracted from serveConn's read loop so the loop reads as peek -> order ->
+// hand off; behavior is unchanged.
+func (s *server) handleRequest(c *conn, raw []byte, method string, id interface{}, ordered bool, ticket uint64) {
+	// Per-request panic isolation: without this a panic in any handler
+	// crashes the whole daemon (an unrecovered panic in ANY goroutine takes
+	// the process down), orphaning managed children and leaving a stale
+	// socket. Surviving the request is strictly better than dying on it.
+	//
+	// THIS FRAME IS CLAUSTRUM'S OWN, and it is not a parity claim. No input
+	// is known to reach a handler panic — two fuzz waves found none, and
+	// claustrum's own panic sites are each either an unreachable stdlib
+	// timer guard or an already-bounds-guarded slice — so the path is
+	// unreachable and the frame is unobservable on the wire. -32603 is
+	// codeInternal, the JSON-RPC 2.0 standard "Internal error"; the message
+	// and log line follow claustrum's own conventions. Nothing here can be
+	// probe-verified, and nothing here needs to be: an unreachable frame
+	// cannot diverge from anything. See docs/IMPROVEMENTS.md.
+	// The stdin ticket covers DISPATCH ONLY, never the response write.
+	// dispatch appends the chunk to the process's existing stdin FIFO
+	// (applyStdin) before it returns, so byte order is already fixed by
+	// then. Holding the ticket across writeResponse would add nothing to
+	// ordering and would couple input admission to response delivery: a
+	// client that stops reading blocks the socket write, and every later
+	// process.stdin on the connection stalls behind it — including input
+	// for OTHER processes.
+	//
+	// The inner func is what keeps the release on a defer, so a panic in
+	// dispatch cannot strand the ticket and deadlock the connection.
+	var resp *response
+	func() {
+		// Registered FIRST, so it unwinds LAST — after doneStdinTurn below,
+		// which means a panicking dispatch cannot strand a stdin ticket and
+		// deadlock the connection.
+		//
+		// Scoped to dispatch on purpose. Covering the response write too
+		// would let a panic *inside* writeResponse produce a SECOND frame
+		// for one id — the one failure mode a wire-contract daemon least
+		// wants from its safety net. The recover only sets resp; the single
+		// write stays below, outside the recovered region.
+		defer func() {
+			r := recover()
+			if r == nil {
+				return
+			}
+			logErrorf("[Server] recovered panic: method=%s id=%v: %v", method, idForLog(id), r)
+			// The stack goes to DEBUG so the ERROR line keeps its shape while
+			// the operator can still get the fault location — a recovered
+			// panic here means an unreachable path became reachable, and
+			// method+id locate the request but not the fault.
+			logDebugf("[Server] recovered panic stack: method=%s id=%v\n%s", method, idForLog(id), debug.Stack())
+			// server.shutdown must produce NO reply (dispatch returns nil for
+			// it). Replying here would emit a frame where the daemon otherwise
+			// emits none, so the no-reply contract holds even under a panic.
+			if method == methodShutdown {
+				return
+			}
+			resp = ptr(errResult(id, codeInternal, fmt.Sprintf("recovered panic: %v", r)))
+		}()
+		if ordered {
+			c.awaitStdinTurn(ticket)
+			defer c.doneStdinTurn(ticket)
+		}
+		resp = dispatchRequest(s, c, raw)
+	}()
+	if resp != nil {
+		c.writeResponse(*resp)
 	}
 }
 
