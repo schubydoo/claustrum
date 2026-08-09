@@ -294,8 +294,7 @@ and a file Desktop reads outside `userData` was neither read nor ruled out. Evid
 in `scratch/` (gitignored).
 
 **So: no way for Desktop to pass arbitrary arguments to the daemon has been found —
-not in the setup UI, not in the files read.** ⚠️ If one exists today it is in the
-part not looked at. (Forwarded environment is not a route — the trigger below
+not in the setup UI, not in the files read.** (Forwarded environment is not a route — the trigger below
 disqualifies it, since nothing reads the environment for these knobs.)
 
 One further limit. **Both `-install` runs were cache hits** — each answered
@@ -321,12 +320,11 @@ what the updater *last saw available*, which need not be the build that ran.
 
 - **Reopen trigger for the argv claim:** Claude Desktop **having** a way for an
   operator to influence the daemon's argv — a settings field, or a config file it
-  reads and turns into argv. Found in the half not read, or added later; either
-  fires it. That would make a flag-only opt-in sufficient **for
+  reads and turns into argv. That would make a flag-only opt-in sufficient **for
   Desktop-driven hosts**. ⚠️ It would *not* moot the `claustrum.conf` key: the key
   is read from the executable's own directory (`os.Executable`), so it serves any
-  other driver — including `clauster`, named as a supported one below — regardless
-  of what Desktop grows. An env var Desktop forwarded would not qualify either;
+  other driver — including `clauster`, named as a supported one below. An env var
+  Desktop forwarded would not qualify either;
   nothing in `config.go` or `main.go` reads the environment for these knobs, so
   forwarding one changes nothing.
 - **What rests on it:** **D3, D4, D5, D10, D11, D12 and D14** — every "why it

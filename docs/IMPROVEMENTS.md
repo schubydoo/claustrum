@@ -537,8 +537,7 @@ not where their values came from. ✅ Desktop's settings files were then **enume
 control firing — though only three argument shapes were searched for, so a toggle
 making Desktop *add* a flag would have matched none of them; and 15 of ~30
 `userData` entries were read, chosen by name. **No way for Desktop to pass
-arbitrary argv to the daemon has been found**; an existing one would be in the
-part not read. ⚠️ Desktop
+arbitrary argv to the daemon has been found**. ⚠️ Desktop
 does store settings that look like subprocess arguments — none in the daemon argv,
 and where they go is unobserved, so do not read it as a route into this claim.
 All three driver claims sit outside the parity harness, and **the other two have no
@@ -696,7 +695,7 @@ carry a new claim, and says so.**
   `claustrum.conf` key, because Claude Desktop owns the argv — the tracked driver
   claim (see the rule-3 preamble above and [`ARCHITECTURE.md`](ARCHITECTURE.md) →
   *Driver claims and their provenance*), which makes **that sense of the tag** one
-  of its dependents: if Desktop ever grew an argv affordance, "operator-declinable"
+  of its dependents: if Desktop **has** an argv affordance, "operator-declinable"
   would no longer require the config key on Desktop-driven hosts.
   ⚠️ **The CT block uses "(opt-in)" in a looser sense — "off unless asked for" — and
   two of its entries are not operator-declinable at all:** **CT-1**'s `wantPid` is
