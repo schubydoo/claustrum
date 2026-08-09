@@ -279,13 +279,15 @@ a claim about which arguments appear, **not** about where their values came from
 cannot tell a Desktop-computed value from an operator-edited one.
 
 **Enumerated 2026-08-09.** Fifteen of about thirty entries in Desktop's `userData`
-were read whole — both config files, the SSH connection store, the remote-server
-and bridge state files, `developer_settings.json`, the daemon-binary cache,
-`Preferences`, and seven small state files — looking for a
-`keep` count, a cli directory, or an arguments field. **None holds a field of those
-shapes.** The control fired: the connection created in the
-setup dialog turns up in `ssh_configs.json`, so the files read are ones Desktop
-reads. ⚠️ One caveat, so the negative is not overstated — `claude_desktop_config.json`
+were examined, **fourteen of them read whole**: both config files, the SSH
+connection store, the remote-server and bridge state files,
+`developer_settings.json`, `Preferences`, and seven small state files. The
+fifteenth is the daemon-binary cache directory — listed, not read, and not a
+settings file. The read looked for a `keep` count, a cli directory, or an
+arguments field. **None holds a field of those shapes.**
+
+The control fired: the connection created in the setup dialog turns up in
+`ssh_configs.json`, so the files read are ones Desktop reads. ⚠️ One caveat, so the negative is not overstated — `claude_desktop_config.json`
 does turn config into a command line for its **MCP** entries (`command`, `args`);
 none of that appears in the captured daemon argv.
 
