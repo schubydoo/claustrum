@@ -239,7 +239,7 @@ proves nothing:
 |---|---|---|
 | `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe **a retry of any shape** vs terminal report — the claim is about classification, so keying the discriminator to one retry shape would read a differently-shaped retry as a falsification | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
 | `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
-| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files and forwarded environment | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI and capture done (below); the enumeration is still unrun, and the UI half is one look at one unrecorded build |
+| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI and capture done (below); the enumeration is still unrun, and the UI half is one look at one unrecorded build |
 
 **Evidence for the argv claim, scoped to what was looked at:** the shipped client's
 "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
@@ -247,11 +247,11 @@ File*, and its folder step is a remote directory browser — **no field for daem
 arguments in either**. Reported by the maintainer as a daily user of the shipped
 client, 2026-08-07; the client build was not recorded.
 
-**Measured 2026-08-08, one cold start:** the argv Desktop passes was recorded for
-every mode it invoked, by logging each invocation on the host it drives. All five
-are short and **carry none of claustrum's opt-in flags** (`--install` and
-`--bridge` were each invoked twice and were byte-identical both times; the other
-three were seen once):
+**Measured 2026-08-08, one cold start:** the argv Desktop passes was recorded by
+logging every invocation on the host it drives — seven in all, covering the five
+modes below (`--install` and `--bridge` came twice each, byte-identical both
+times). The log also kept each invocation's parent chain, and for `-install` the
+`__INSTALL_RESULT__` line it printed:
 
 | mode | argv |
 |---|---|
@@ -261,23 +261,44 @@ three were seen once):
 | `--stop` | `--socket <sock>` |
 | `--install` | `--cli-dir <dir> --cli-version <v> --cli-keep 3` |
 
-All five descend from the SSH session Desktop opened, and all spell their flags
+All seven descend from the SSH session Desktop opened, and all spell their flags
 with a double dash. The log also holds three single-dash `-stop` runs whose parent
 is a login shell instead; those are excluded on the parent chain, which is what
 justifies it — the dash spelling only corroborates.
 
-That is the direct form of the claim, and it covers the `-serve` and `-install`
-argv together — the two D3, D4, D5, D10, D11, D12 and D14 rest on. ⚠️ Two limits.
-**It observes what Desktop *emits*, not where those values come from**: whether
-Desktop reads a config file of its own, or forwards environment variables, was
-**not enumerated** — and a config file it turns into argv is **one of the two
+⚠️ **Read what this does and does not discriminate.** "No claustrum opt-in flag
+appeared" would be an **entailed arm** — those flags are claustrum's own additions,
+absent from the daemon Desktop was built against, so a client that knew nothing of
+them and a client that refused to pass them produce the same log. It proves
+nothing, and the rule at the top of this section says so. What *could* have come
+out otherwise, and did not, is the **shape**: **no argument appears that Desktop
+has no use for** — no free-form token, no `--` pass-through, no residue of an
+extra-arguments slot. Every flag present is one the daemon needs to run. ⚠️ That is
+a claim about which arguments appear, **not** about where their values came from:
+`--cli-keep 3` is exactly the shape a settings field would fill, and the capture
+cannot tell a Desktop-computed value from an operator-edited one.
+
+Two further limits follow from that. Whether Desktop reads a config file of its own
+was **not enumerated**, and a config file it turns into argv is **one of the two
 routes** this claim's own reopen trigger names, so it would change the argv above
-without contradicting a single row. And **the `-install` observed was a cache hit**
-(`cliWasPresent:true`, no source flag), so the argv of an install that actually
-fetches — the shape D10, D12 and D13 act on — is unobserved. (D11's probe runs on
-the cache-hit path too, so its argv *was* covered.) ⚠️ One cold start, one host, one
-unrecorded build: the evidence supports "Desktop passed no such flag on the
-occasions observed", not "Desktop cannot".
+without contradicting a single row. (Forwarded environment is *not* such a route —
+the trigger disqualifies it below, since nothing reads the environment for these
+knobs.) And **both `-install` runs were cache hits** — each answered
+`cliWasPresent:true`, and neither argv carried a source flag, so neither could
+have fetched anything (`install.go:49-66`). The argv of an install that actually
+fetches is unobserved.
+
+So the coverage is uneven and worth stating exactly. The **`-serve` argv** behind
+D3, D4 and D5 was seen whole. On `-install`, only the two **cache-hit**
+invocations' argv was seen; a fetching one was never observed at all. That is not a clean split
+by D-number: D11 and D14 run on **both** paths (`isRunnable` has a second site
+after decompression, and `detectLibc` sits above the branch entirely), so they were
+exercised on the shape that was observed and also on the shape that was not. D10,
+D12 and D13 become reachable only on the fetching path, so nothing about their
+argv was observed.
+
+⚠️ One cold start, one host, one unrecorded build: the evidence supports "Desktop
+passed no such argument on the occasions observed", not "Desktop cannot".
 
 - **Reopen trigger for the argv claim:** Claude Desktop gaining a way for an
   operator to influence the daemon's argv — a settings field, or a config file it

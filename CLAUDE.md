@@ -352,13 +352,19 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   the premise under D3, D4, D5, D10, D11, D12, D14 and the "(opt-in)" tagging convention. ⚠️ Its
   evidence is a look at the setup UI (2026-08-07, no argument field, one unrecorded
   build) **plus a capture of the argv Desktop actually passes** — all five modes on
-  one cold start, 2026-08-08, none carrying an opt-in flag. ⚠️ That is what Desktop
-  *emits*: its config files and forwarded env were **not enumerated**, and a config
-  file it turns into argv stays **one of the two routes** the reopen trigger names,
-  so it would falsify the claim without contradicting a single captured row. (A
-  forwarded env var would not — nothing reads the environment for these knobs.) The
-  one `-install` seen was a **cache hit**, so a fetching install's argv is
-  unobserved. **No provenance is recorded for the other two claims.**
+  one cold start, 2026-08-08, carrying **no argument the daemon has no use for**: no
+  free-form token, no pass-through, no extra-arguments residue. ⚠️ "No opt-in flag
+  appeared" would be **entailed** and proves nothing: those flags postdate the
+  daemon Desktop was built against, so a Desktop that knew nothing of them and one
+  that refused to pass them leave the same log. ⚠️ It also shows what Desktop
+  *emits*, **not** where the values came from — `--cli-keep 3` is exactly the shape
+  a settings field would fill. Its config files were **not enumerated**, and a
+  config file it turns into argv stays **one of the two routes** the reopen trigger
+  names, so it would falsify the claim without contradicting a single captured row.
+  (Forwarded env is not such a route — nothing reads the environment for these
+  knobs.) Both `-install` runs were **cache hits**, so a fetching install's argv is
+  unobserved, and D10, D12 and D13 act only there. **The other two claims still
+  have no direct observation behind them.**
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

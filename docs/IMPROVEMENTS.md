@@ -529,14 +529,15 @@ assumed.** Provenance and its reopen trigger live in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) → *Driver claims and their provenance*: the shipped client's setup UI
 offers SSH connection fields and a remote folder browser, and no way to pass
 arguments to the daemon (2026-08-07), and the argv Desktop actually passes was
-captured for all five modes on one cold start (2026-08-08), carrying no opt-in
-flag — though that `-install` was a **cache hit**, so a fetching install's argv is
-unobserved. ⚠️ Desktop's own config files and any forwarded environment were **not
-enumerated** — and a config file Desktop turns into argv is one of the two routes
-this claim's own trigger names, so it could change that argv without contradicting
-the capture. All three driver claims sit outside the parity harness, and
-**no provenance is recorded for the other two**; `ARCHITECTURE.md` names the
-fixture that would settle each. It reopens if Desktop
+captured for all five modes on one cold start (2026-08-08), carrying no argument
+the daemon has no use for — though both `-install` runs were **cache hits**, so a
+fetching install's argv is unobserved, and the capture shows which arguments appear,
+not where their values came from. ⚠️ Desktop's own config files were **not enumerated**
+— and a config file Desktop turns into argv is one of the two routes this claim's
+own trigger names, so it could change that argv without contradicting the capture.
+All three driver claims sit outside the parity harness, and **the other two have no
+direct observation behind them**; `ARCHITECTURE.md` names the fixture that would
+settle each. It reopens if Desktop
 gains a way for an operator to influence the
 daemon's argv, which would make a flag-only opt-in sufficient **for Desktop-driven
 hosts** — not moot the config key, which is read beside the executable and serves
