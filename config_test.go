@@ -303,6 +303,14 @@ func TestPrecedenceMaxCLIBytes(t *testing.T) {
 	if got := (config{}).effectiveMaxCLIBytes(0, false); got != 0 {
 		t.Errorf("empty config should leave the cap off, got %d", got)
 	}
+	// A negative flag normalises to disabled rather than reaching zstdDecompress /
+	// fetchToFile as a negative — the asymmetry effectiveNumeric centralises for
+	// all six numeric knobs. (The sibling probe/download-timeout tests cover their
+	// own negative arms; this pins maxCLIBytes's, which the precedence cases above
+	// did not exercise.)
+	if got := (config{}).effectiveMaxCLIBytes(-1, true); got != 0 {
+		t.Errorf("negative CLI should normalise to 0, got %d", got)
+	}
 }
 
 // The runnability probe's deadline is the third opt-in numeric key and the first
