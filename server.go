@@ -219,8 +219,8 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// said exactly what was wrong. Matching costs both of those.
 	//
 	// This is parity on purpose. Failing fast in the parent is recorded as a
-	// candidate divergence rather than kept — recorded in docs/IMPROVEMENTS.md
-	// under "Candidates identified but NOT taken", which is a record, not a
+	// candidate divergence rather than kept — recorded in docs/DIVERGENCES.md
+	// under "Candidates considered but not taken", which is a record, not a
 	// decision. Note
 	// the zero-byte -token-file case ALREADY behaved this way (the child rejects
 	// an empty token and the parent times out), so this only aligns the one path
@@ -415,7 +415,7 @@ const daemonLogName = "remote-server.log"
 // daemon's output into a file someone else owns. That case IS measured as of
 // 2026-08-06: in a sticky directory the reference truncates the foreign file and
 // writes into it. Declining is therefore a deliberate divergence, filed as D8 in
-// docs/IMPROVEMENTS.md. It is always-on because the trigger is unreachable
+// docs/DIVERGENCES.md. It is always-on because the trigger is unreachable
 // on the deployed path (rule 3 clause (b)): the per-user session directory is not sticky, so no
 // honest caller reaches this branch at all.
 //

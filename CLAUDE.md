@@ -89,7 +89,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - **Byte-identical wire frames are the contract.** Results are ordered structs,
   not maps. Any change to `rpc.go` / `methods_*.go` / `process.go` /
   `results.go` must keep the validation battery green. An *intentional*
-  divergence must be documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and the PR.
+  divergence must be catalogued in [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)
+  (entry + decision rules), carry its wire frames in
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md), and be called out in the PR.
 - **No new dependencies** without discussion — stdlib + zstd (`klauspost/compress`)
   + `golang.org/x/sys` and `github.com/Microsoft/go-winio` (both Windows-only),
   `CGO_ENABLED=0`.
@@ -122,25 +124,27 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 - CI gates every PR on the branch ruleset's required checks: `ci required checks
   passed` + `security required checks passed` + `conventional PR title`.
 
-## Gotchas
+## Gotchas — Part A: always-on safety (hold these before touching code)
 
 - **`process.spawn` runs arbitrary commands as the daemon's user — by design.**
   Treat socket + token as equivalent to shell access (threat model in
   [`SECURITY.md`](SECURITY.md)).
-- **Two methods `os.RemoveAll` a caller-supplied path, and both are `~`-expanded
-  first**: `files.extract_tar` wipes `destDir`, `git.worktree_remove` deletes
-  `worktreePath` when git fails. `"~"` therefore meant `os.RemoveAll($HOME)` —
-  which destroyed the maintainer's home directory on 2026-08-02. `wipesHomeDir`
-  (`homeguard.go`) refuses a target that **is or contains** home; paths **under**
-  home stay allowed, because `~/.claude/…` is the daemon's own install path.
-  Always-on, not opt-in — see [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D2.
-  **Any RPC path param that reaches a recursive delete owes this guard**, and
-  `IsAbs && !isFilesystemRoot` is not it — a home directory passes both, and
-  neither one resolves a relative path (`worktreePath:".."` from a daemon sitting
-  in home deletes it; measured). The install path has a **third** `os.RemoveAll`
-  on operator-supplied input (`filepath.Join(cliDir, cliVersion)`); it is guarded
-  by D6's single-path-component rule instead, not by `wipesHomeDir`.
-- **Auth is in-band per request** (`"auth":"<token>"`); the daemon's token comes
+- **Three code paths `os.RemoveAll` a caller- or operator-supplied path.** Two are
+  RPC paths, both `~`-expanded first — so `"~"` once meant `os.RemoveAll($HOME)`,
+  which destroyed the maintainer's home directory on 2026-08-02:
+    - `files.extract_tar` wipes `destDir` — guarded by `wipesHomeDir` (`homeguard.go`).
+    - `git.worktree_remove` deletes `worktreePath` when git fails — guarded by `wipesHomeDir`.
+    - `-install` deletes `filepath.Join(cliDir, cliVersion)` (operator input) —
+      guarded by **D6's single-path-component rule instead**, not `wipesHomeDir`.
+
+  `wipesHomeDir` refuses a target that **is or contains** home (resolving relative
+  paths with `filepath.Abs` first); paths **under** home stay allowed, because
+  `~/.claude/…` is the daemon's own install path. Always-on, not opt-in.
+  **Any RPC path param that reaches a recursive delete owes this guard** —
+  `IsAbs && !isFilesystemRoot` is *not* a substitute (home passes both, and it
+  resolves no relative path, so `worktreePath:".."` from a daemon in home still
+  deletes it; measured). See [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md) D2.
+- **Auth is in-band per request** (`"auth":"<token>"`). The daemon's token comes
   from `-token-file` (read once, then unlinked so it never lands in
   `/proc/<pid>/environ`) or `-token-fd` (read from an open descriptor, forwarded
   to the daemonized child over a pipe — never touches disk). **No mode reads
@@ -148,243 +152,87 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   and the daemon strips the variable from spawned children. **`server.shutdown`
   is the one method that is not authenticated** (parity with the reference —
   Desktop stops the daemon with no token in its environment), so `-stop` sends no
-  `auth` member; every other method still rejects an unauthenticated request
-  `-32001`.
+  `auth` member; every other method rejects an unauthenticated request `-32001`.
 - **The daemon persists its token to `daemon.token` (mode `0600`) beside the
   socket** — written atomically at startup, unlinked on graceful shutdown — so a
-  client can reconnect to a running daemon after the `-token-file` was unlinked /
-  the `-token-fd` pipe closed (`tokenpersist.go`). This is **behavioral parity
-  with the reference** (added upstream `5db5e4a`); the fixed name + socket-dir
-  location *are* the reconnect contract, so they're deliberately not
-  configurable. Known parity caveats (same as the reference, **do not "fix"**
-  without making them an opt-in divergence): two daemons sharing one directory
-  collide on the file, and on Windows `0600` is not an owner-only DACL (a Go
-  `os.CreateTemp` limitation — the per-user session dir is the confinement). See
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
+  client can reconnect after the `-token-file` was unlinked / the `-token-fd` pipe
+  closed (`tokenpersist.go`). The fixed name + socket-dir location *are* the
+  reconnect contract, so they are deliberately not configurable. **Do not "fix"**
+  the known parity caveats (two daemons in one dir collide on the file; on Windows
+  `0600` is not an owner-only DACL) without making the change an opt-in divergence.
+  See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
 - **A connection's requests dispatch concurrently** — replies can return out of
   order, matching the reference. Don't serialize them. The per-request goroutine
   **recovers from panics**, replying `-32603 "recovered panic: <v>"`. That frame
-  is **claustrum's own and is NOT a parity claim** — the path is unreachable, so
-  no client can observe it and it cannot diverge from anything. Don't add a golden
-  for it (the battery never exercises it) and don't treat it as a wire contract.
-  It is provoked in tests through the `dispatchRequest` seam.
-- **The `files.extract_tar` size cap is OFF by default, and that is the parity
-  position.** The reference applies no cap at any size the probe could reach
-  (measured: a 629 MB payload extracts fully and answers
-  `{"success":true,"fileCount":1}`), so a non-zero default fails
-  an extraction the reference completes — with no way through, since Claude
-  Desktop owns the argv. `maxExtractBytes` therefore defaults to `0` = unlimited,
-  and the cap is opt-in via `-max-extract-bytes` **or** the `max-extract-bytes`
-  key in `claustrum.conf` (the config key is the reachable one). Disabled bypasses
-  `io.LimitReader` entirely — do not "simplify" it into a huge limit, because the
-  `max-total+1` arithmetic is what defines the boundary. Divergence D3; see
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) + [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
-- **The `git` deadline is OFF by default, and that is the parity position (D5).**
-  `gitTimeout` bounded every git invocation at a hardcoded 60 s; the reference
-  showed **no deadline at or below the 75 s probed** on `git.worktree_remove`, and
-  an honest 61 s git has never been measured on either binary. It now defaults to
-  `0` = no deadline, opt-in via `-git-timeout` **or** the `git-timeout` key in
-  `claustrum.conf` (the config key is the reachable one — Desktop owns the `-serve`
-  argv too). Disabled bypasses `context.WithTimeout` entirely (`gitCtx`) — do not
-  "simplify" it into a huge duration, because an unarmed cancel path is what makes
-  `gitDeadline`'s `timedOut` false *by construction*. ⚠️ **That third bit guards a
-  destructive path**: `git.worktree_remove` treats a failed git as permission to
-  delete `worktreePath`, so a deadline must never be read as "git refused". Opted
-  in, the cost is wire-visible — `-32603` carrying `signal: killed` on `git.status`
-  and `git.list_branches`, an `isRepo:false` arm, and a `timed out after <dur>`
-  reply — and the bound is **softer than it looks**: `CombinedOutput` waits on the
-  output pipe, so a git leaving a surviving child blocks past the deadline anyway.
-- **The `files.read` regular-file guard is OFF by default, and that is the parity
-  position (D4).** `filesReadRegularOnly` refused every non-regular path with
-  `-32602 files.read: not a regular file`; measured, the reference reads
-  `/dev/null` as `{"content":"","exists":true}` and blocks on a writerless FIFO
-  until one opens, refusing neither — so an honest caller reading a character
-  device got an error the reference never produces, with no way through (Desktop
-  owns the `-serve` argv). Opt in via `-files-read-regular-only` **or** the
-  `files-read-regular-only` key in `claustrum.conf` (the config key is the
-  reachable one). Off, the predicate is **not evaluated at all** — there is no
-  "narrower check" to write, because `/dev/null` and `/dev/zero` are
-  indistinguishable by mode, which is exactly why this is a flag. ⚠️ **The default
-  costs two bounds**: a writerless FIFO parks a request goroutine **and a
-  descriptor** (linux reserves the fd number before blocking — measured; parked
-  reads draw down `RLIMIT_NOFILE`, and `accept()` draws on the same table), and
-  `os.ReadFile` on `/dev/zero` never reaches EOF. `maxBytes` cannot save you: the
-  cap keys off the stat size, `0` for every non-regular kind on linux, so it is
-  inert there on **both** binaries. **Both costs are the reference's own behavior
-  and both are measured** — under a **2 GiB** cgroup cap the kernel OOM-killed both
-  daemons on `/dev/zero` with no frame (`Killed process` in the kernel log, naming
-  each binary at ~2091 MB), with `/dev/null` as the control. ⚠️ 2 GiB, not the
-  512 MiB first run: 512 MiB sits below any plausible internal bound, so a reference
-  capping at ~1 GiB would have looked identical. Don't quote the smaller number. **Nine shapes were run, and the
-  default-behaviour column is measured on both binaries throughout**: two
-  regular-file controls (plain, and over `maxBytes`), paired + unpaired FIFO, a FIFO
-  over `maxBytes`, `/dev/null`, a bound `AF_UNIX` socket, an unreadable char device,
-  an unreadable block device. ⚠️ **Do not upgrade that to "nothing rests on
-  inference"** — it did briefly say so, and three things are entailed rather than
-  run: the reference's *reason* for ignoring `maxBytes`, the opted-in answer for the
-  socket and device rows, and two shapes measured on neither binary (a dribbling
-  writer, which holds an fd *and* grows unbounded; and thread exhaustion at Go's
-  `maxmcount`, which needs `RLIMIT_NOFILE` above ~10000 to bind before the fd table
-  does).
-- **The `-install` CLI size cap is OFF by default (D10).** `maxCLIBytes` governs
-  both the decompressed CLI and the download body; measured on both paths, the
-  reference took a 600 MiB payload all the way to the runnability check, so a
-  non-zero default fails an install the reference completes — and Claude Desktop
-  owns the argv on `-install`, so there is no way through. Opt in with
-  `-max-cli-bytes` or the `max-cli-bytes` key in `claustrum.conf`. Disabled
-  bypasses **both** `io.LimitReader`s entirely — do not "simplify" either into a
-  huge limit, because the `cap+1` arithmetic is what defines the boundary. The
-  blob is **streamed, never buffered** (a path, not a `[]byte`, so the staging
-  retry can re-read it); that is what keeps "cap off" from meaning "unbounded
-  memory".
-- **`-install` applies wall-clock bounds the reference does not appear to, plus one
-  ordering difference.** Three exist — the `<cli> --version` runnability probe
-  (D11), the download (D12), and, on linux only, the `ldd --version` libc probe
-  (**D14**; `libc_other.go` skips the probe entirely off linux). **ALL THREE are
-  off by default now**, opt-in via `-cli-probe-timeout` / `-cli-download-timeout` /
-  `-libc-probe-timeout` or the matching `claustrum.conf` keys — the config keys
-  are the reachable ones, since Desktop owns the argv. ⚠️ `-cli-probe-timeout` and
-  `-libc-probe-timeout` are one letter apart, the same type, and resolved two lines
-  apart in main's `-install` arm; a swap compiles and passes every isolated test,
-  which is what `TestInstallArmWiresEachFlagToItsOwnGlobal` is for. Each disables
-  differently and none may be "simplified" into a huge duration: D11 and D14 bypass
-  `context.WithTimeout` entirely (`lddCtx` for D14), and D12 relies on
-  `http.Client{Timeout: 0}` being
-  the stdlib's own "no timeout". ⚠️ D12's zero frees the **body read only** —
-  `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
-  `TLSHandshakeTimeout: 10s`, both always-on, unnumbered and unprobed on the
-  reference. **So at the shipped defaults NO *claustrum-chosen* `-install`
-  wall-clock bound applies at all** — only those stdlib transport clocks, and only
-  on `-cli-url`. (D14's, when opted in, still cannot fire **where the
-  musl loader glob matches**, because `detectLibcWith` returns before spawning
-  `ldd` — the predicate is the glob, not the host, so a musl box whose loader the
-  glob misses still reaches it.) Everything below about D11, D12 and D14 therefore
-  describes what an operator opts INTO, measured against the old hardcoded 15 s and
-  5 minutes, except where a sentence says otherwise.
-  D13 is **not** a bound — it is verify-before-decompress
-  ordering, which no slow input trips. **No bound here is a hang detector**: each is
-  a threshold, so an honest-but-slow input trips it too. For D11 and D12 the
-  reference showed no deadline at or below 45 s (400 s for D12) on an input that
-  never answers, and **(D11 only)** it INSTALLED a 90 s CLI, waiting
-  91 s — which bounds D11's above 90 s, not at absent. **D14's bound is now probed
-  too:** the reference likewise showed no deadline at or below 45 s against a
-  stalled `ldd` — established in the `exec sleep 120` shape ONLY; the
-  surviving-child arm is non-discriminating.
-  **Measured (D11, claustrum side):** a CLI answering honestly in 20 s diverges,
-  and *how* depends on the shape — `installed cli at <path> is not runnable` with
-  the staged binary deleted; or `cli <v> missing and no --cli-url or --cli-zst
-  provided`; or **no error at all**, silently reinstalled. On `-cli-zst` the blob is
-  consumed whenever decompression succeeded, which includes the silent shape. The
-  cached binary survives **every** failure before the rename — both probes timing
-  out is one of them, and so are a 404, a checksum mismatch, a `mkdir cli dir:`
-  error and a bad-zstd blob, none of which reach the second probe at all. Only a
-  replacement that gets as far as the rename replaces it. With no source flag
-  `ensureCLI` still runs but returns before any install step (the orphan sweep
-  does still run).
-  **Measured (reference):** it installs the 20 s CLI outright on the no-cache
-  shape. **Derived:** on the cached shapes it should cache-hit and report
-  `cliWasPresent:true` having installed nothing, since its guard has no cut-off at
-  or below 90 s — not separately measured, and what it does above 90 s is
-  unmeasured on both binaries. **Measured on the D11 flip branch:** with the
-  deadline off, claustrum is likewise still running when cut at 45 s against a
-  planted `sleep 120` CLI, with an opted-in 15 s run and an instant CLI as the two
-  controls. **D12's honest-but-slow half is measured too**, on a fixture that
-  straddles the retracted bound: a valid zstd blob dribbled over ~324 s installs on
-  the reference and on claustrum at the new default, while claustrum with
-  `-cli-download-timeout 5m` — the value that shipped — fails the same download at
-  300 s. ⚠️ A shorter dribble proves nothing: under the old bound both arms install
-  either way. And the fixture must carry a VALID zstd body, because with an invalid
-  one the reference answers `decompressing: invalid input: magic number mismatch`
-  at 0 s, which is D13, not a download bound.
-  **D14's *value* delta is narrow** — fallback and true value coincide except where
-  `ldd` reports musl **and exits 0** (a faithful musl `ldd` exits 1) and the loader
-  glob misses — but ⚠️ **not cosmetic**, because
-  Desktop uses `libc` to choose which CLI build it downloads (a **driver** claim the
-  parity harness cannot settle — ARCHITECTURE → Driver claims and their provenance; same class as the
-  `cliError` one below). **And the bound fires
-  in only ONE of the two stall shapes, measured:** against a stalled `ldd` that
-  leaves nothing holding its output pipe, an opted-in claustrum falls back at its
-  deadline and emits a
-  full `__INSTALL_RESULT__` where the reference emits nothing at 45 s; against one
-  that leaves a surviving child, **neither binary replies at 45 s**. For claustrum
-  the cause is `CombinedOutput` waiting on the inherited pipe — the same softness
-  `gitTimeout` has; **the reference's cause is unmeasured and that arm cannot show
-  it**. Saying the divergence is "total" is wrong, and this file used to say it.
-  ✅ **D14 was flipped 2026-08-08 and is now opt-in** (`-libc-probe-timeout` / the
-  `libc-probe-timeout` key), so the paragraph above describes what an operator turns
-  ON. It was a threshold with no escape hatch whose honest-path cost was untested in
-  **either** direction — and an untested conjunction is not a justification, which is
-  what settled it rather than another round of argument. **D13 is now the only entry
-  left in the unresolved group**, and there are no wall-clock thresholds in it at all.
-  ⚠️ The value delta is still unmeasured **across binaries**: the flip's own
-  `TestDetectLibcTimeoutOptInVersusDefault` pins the musl-banner-plus-exit-0
-  conjunction in the suite, but the cross-binary form has never been run.
-  **D13 is verify-before-decompress ordering and its trigger is REACHABLE** — the
-  claim that no honest caller produces the input lived in `IMPROVEMENTS.md`, not
-  here, and is now retracted there. The reachable case is narrower than "flaky
-  network".
-  Measured, two different shapes: an origin serving a **short artifact** reaches the
-  checksum, so the reference answers `decompressing: unexpected EOF` where claustrum
-  answers `checksum mismatch`; a **genuine interrupted transfer** never reaches the
-  checksum on claustrum at all — `io.Copy`'s error returns first — so it diverges on
-  the *prefix* instead (`download failed: <transport err>` vs the reference's
-  `decompressing: <transport err>`). ⚠️ **D13 is NOT settled either**: "only the
-  diagnostic text differs" is false — measured, the reference creates an empty
-  cli-dir on the two measured rows where claustrum creates none — so it stays always-on
-  but is listed unresolved, not justified. ⚠️ **The reopen fixture has now been run
-  (2026-08-08) and did NOT meet its condition**, so don't re-run it expecting a flip:
-  a failing install followed by the retry ends in the **same reply and same on-disk
-  end state** on both binaries either way, and the on-disk delta is **conditional on
-  the cli-dir being absent** (it does not self-heal across repeated failures). Both
-  results narrow the divergence and neither is evidence about Desktop, which is what
-  the condition asks for — and modelling that retry as `-cli-zst` was an
-  **assumption of the fixture's design**, which the `cliError` claim below does not
-  establish: that claim is about how Desktop *classifies* the string, not how it
-  retries, and the retry's shape has never been observed. ⚠️ Don't upgrade this to
-  "the leftover dir is inert": the *staging location* does depend on the pre-state,
-  and only the end state is identical. What keeps the delta cheap meanwhile is a
-  claim about the *driver*: **Desktop parses `cliError`**, treating a
-  disk-full-shaped message as terminal and everything else as retryable — which the
-  parity harness cannot settle (ARCHITECTURE → Driver claims and their provenance keeps the best-known list
-  of what rests on it — D13, D10, clause (c)'s rider and D11's retraction — and says
-  outright that the list has been incomplete every time it was checked). **Three
-  driver claims are tracked there**, the third being **"Desktop owns the argv"** —
-  the premise under D3, D4, D5, D10, D11, D12, D14 and the "(opt-in)" tagging convention. ⚠️ Its
-  evidence is a look at the setup UI (2026-08-07, no argument field, one unrecorded
-  build) **plus a capture of the argv Desktop actually passes** — all five modes on
-  one cold start, 2026-08-08, carrying **no argument the daemon has no use for**: no
-  free-form token, no pass-through, no extra-arguments residue. ⚠️ "No opt-in flag
-  appeared" would be **entailed** and proves nothing: those flags postdate the
-  daemon Desktop was built against, so a Desktop that knew nothing of them and one
-  that refused to pass them leave the same log. ⚠️ It also shows what Desktop
-  *emits*, **not** where the values came from — `--cli-keep 3` is exactly the shape
-  a settings field would fill. ✅ **Its settings files were then enumerated
-  (2026-08-09) and no field that could reach the daemon's argv was found** — the
-  control fired, so that negative counts **for the three argument shapes searched**;
-  a toggle making Desktop *add* a flag would match none of them even in a file that
-  was read. ⚠️ It covered 15 of ~30 `userData` entries, chosen by name, and was rooted
-  in that directory — the LevelDB stores and the user's own SSH client config were
-  not read. **No way for Desktop to pass arbitrary argv to the daemon has been
-  found**. (Forwarded env is not
-  a route either — nothing reads the environment for these knobs.) Both `-install`
-  runs were **cache hits**, so a fetching install's argv is unobserved, and D10,
-  D12 and D13 act only there. **The other two claims
-  still have no direct observation behind them.**
-- **`-install` reaches the network only with `-cli-url`** and verifies the
-  SHA-256 before extracting on that download path unconditionally. The local
-  `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is
-  supplied** — an *intentional* conditional divergence from the reference (which never
-  verifies it), documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) +
-  [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) D1; an absent checksum stays
-  trusting, so honest callers are byte-identical. `-serve` makes no outbound connections.
+  is **claustrum's own and is NOT a parity claim** — the path is unreachable, so no
+  client can observe it and it cannot diverge from anything. Don't add a golden for
+  it (the battery never exercises it), don't treat it as a wire contract. It is
+  provoked in tests through the `dispatchRequest` seam.
+- **`-serve` makes no outbound connections; `-install` reaches the network only
+  with `-cli-url`.** That download path verifies its SHA-256 before extracting,
+  unconditionally.
+- **`-cli-probe-timeout` and `-libc-probe-timeout` are a swap footgun** — one
+  letter apart, the same type, resolved two lines apart in main's `-install` arm; a
+  swap compiles and passes every isolated test. `TestInstallArmWiresEachFlagToItsOwnGlobal`
+  is the guard against it.
+- **A disabled limiter bypasses its `io.LimitReader` / `context.WithTimeout`
+  entirely — never "simplify" it into a huge value.** For the caps, the `cap+1`
+  (or `max-total+1`) arithmetic is what defines the boundary; for the deadlines, an
+  unarmed cancel path is what makes the timeout `false` by construction. A huge
+  constant is a different, observable behavior. This applies to every flag in
+  Part B.
+
+## Gotchas — Part B: the opt-in wire divergences
+
+Seven divergences are opt-in flags, and **all seven default OFF — that is the
+parity position.** The reference applies no such cap or deadline at any size or
+duration the probe could reach, so a non-zero default would fail an operation the
+reference completes. (D4 is the non-threshold one: not a cap or deadline but a
+`Mode().IsRegular()` check — the reference reads `/dev/null` and blocks on a
+writerless FIFO rather than refusing either.) Claude Desktop owns the `-serve` / `-install` argv, so the
+**`claustrum.conf` key is the reachable knob**, not the flag. Each disabled state
+bypasses its limiter entirely (see Part A's "never simplify" rule).
+
+**D5's deadline gates a destructive path:** `git.worktree_remove` treats a failed
+git as permission to delete `worktreePath`, so a `git-timeout` firing must never be
+read as "git refused". Opting it in is wire-visible.
+
+| ID | Flag | `claustrum.conf` key | Scope | Default | What it bounds / caps |
+|----|------|----------------------|-------|---------|-----------------------|
+| D3 | `-max-extract-bytes` | `max-extract-bytes` | `-serve` | off (0) | total uncompressed bytes `files.extract_tar` writes |
+| D4 | `-files-read-regular-only` | `files-read-regular-only` | `-serve` | off (false) | makes `files.read` refuse non-regular paths (FIFO / socket / char / block device) with `-32602 files.read: not a regular file` |
+| D5 | `-git-timeout` | `git-timeout` | `-serve` | off (0) | wall-clock deadline on every git invocation (gates a destructive fallback — see above) |
+| D10 | `-max-cli-bytes` | `max-cli-bytes` | `-install` | off (0) | the decompressed CLI **and** the download response body |
+| D11 | `-cli-probe-timeout` | `cli-probe-timeout` | `-install` | off (0) | wall-clock bound on the `<cli> --version` runnability probe |
+| D12 | `-cli-download-timeout` | `cli-download-timeout` | `-install` | off (0) | wall-clock bound on the whole `-cli-url` download (body read only — stdlib dial 30 s / TLS 10 s still always apply) |
+| D14 | `-libc-probe-timeout` | `libc-probe-timeout` | `-install` (linux only) | off (0) | wall-clock bound on the `ldd --version` libc probe |
+
+**The two non-flag divergences:**
+
+- **D1** — the `-cli-zst` SFTP blob is checksum-verified **only when a
+  `-cli-checksum` is supplied** (a *conditional*, caller-activated divergence, not
+  an off-by-default flag). An absent checksum stays trusting, so honest callers are
+  byte-identical.
+- **D13** — verify-before-decompress *ordering* (no wall-clock threshold); its
+  trigger is reachable, and it stays **always-on but unresolved**, not justified.
+
+For the full catalog and the governing rules (rule 1–4 + clauses (a)/(b)/(c)),
+each divergence's default / activation / cost / reopen trigger, and the measured
+forensics behind them → [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Per-method
+wire facts (params, result field order, error strings, the D5 `signal: killed`
+frames) → [`docs/PROTOCOL.md`](docs/PROTOCOL.md). The driver-claim provenance that
+some of these rest on — "Desktop owns the argv", `cliError` classification, libc
+selection → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → Driver claims and
+their provenance.
 
 ## Where detail lives
 
 - Protocol / frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
-- Internals → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- Divergence catalog + rules → [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)
+- Internals + driver-claim provenance → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Worked client examples → [`docs/EXAMPLES.md`](docs/EXAMPLES.md)
 - Keeping compatibility in sync → [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md)
-- Ideas / deferred → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
+- Shipped ledger (completed work) → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
 - Host-local agent guardrails + agent-tool routing → `CLAUDE.local.md` (gitignored)
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
   `ci` / `security` aggregators are the required checks). Releases are automated by
@@ -393,8 +241,5 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   merging it → `knope-release.yml` tags `v*` + creates the GitHub Release, and that
   tag fires `release.yml` — signed + SBOM'd + SLSA provenance via
   [`.goreleaser.yaml`](.goreleaser.yaml). Gated on the `KNOPE_ENABLED` repo var.
-
-## Documentation references
-
-For Claude Code or Anthropic API specifics, prefer current docs (context7 /
-find-docs) over memory — <https://docs.anthropic.com/en/docs/claude-code/overview>.
+- Claude Code / Anthropic API specifics → prefer current docs (context7 /
+  find-docs) over memory — <https://docs.anthropic.com/en/docs/claude-code/overview>.

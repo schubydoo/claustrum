@@ -64,7 +64,8 @@ func runStop(socket string) error {
 	//
 	// Making the unlink conditional (stat first, remove only a socket) would be a
 	// DIVERGENCE, so it is not taken here. It is recorded as a candidate in
-	// docs/IMPROVEMENTS.md, not decided.
+	// docs/DIVERGENCES.md under "Candidates considered but not taken", which is a
+	// record, not a decision.
 	defer func() { _ = os.Remove(socket) }()
 	nc, err := net.Dial("unix", socket)
 	if err != nil {

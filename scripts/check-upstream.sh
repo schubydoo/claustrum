@@ -48,7 +48,7 @@ echo "reference downloaded + checksum-verified ($(stat -c%s "$WORK/ref") bytes)"
 drift=0
 note() { echo "  DRIFT: $*"; drift=1; }
 
-# 3a) the 18 canonical methods must be present in BOTH binaries (membership check;
+# 3a) the 19 canonical methods must be present in BOTH binaries (membership check;
 # `strings` can't reliably enumerate NEW methods because Go concatenates the string
 # table — authoritative add/remove detection is the server.capabilities probe in
 # the scratch/ battery).

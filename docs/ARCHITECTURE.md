@@ -17,10 +17,9 @@ into Windows builds** — `golang.org/x/sys` (Job Object teardown) and
 | `process.go` | process manager: registry, per-process seq, replay buffer, subscribers; captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
 | `bridge.go` | `-bridge` relay and `-stop` |
 | `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |
-| `fetch`-style helpers live in `install.go` | HTTP GET + SHA-256 + in-process zstd |
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`); level tag precedes the byte-intact `[Component]` prefixes |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`; no listener by default) |
-| `sysproc_unix.go` / `sysproc_windows.go` | whole-tree kill: process group (setpgid + negative-pid signal) vs Windows Job Object (`KILL_ON_JOB_CLOSE`); the `-keep-children` POSIX-only policy (`honorKeepChildren`) |
+| `sysproc_unix.go` / `sysproc_windows.go` | whole-tree kill: process group (setpgid + negative-pid signal) vs Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`); the `-keep-children` POSIX-only policy (`honorKeepChildren`) |
 | `pipetransport.go` | `-listen-pipe` shared helpers: `rpc.pipe` name-file lifecycle (atomic write / remove), owner-only SDDL builder, pipe-name + instance-id generation (all platform-neutral) |
 | `pipetransport_windows.go` / `pipetransport_other.go` | the optional Windows named-pipe listener (`startPipeTransport` via go-winio, owner-only DACL) vs the non-Windows no-op stub + `honorListenPipe` warning |
 | `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS) |
@@ -38,12 +37,13 @@ Ensures the pinned `claude` CLI is present under `-cli-dir`.
 - If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
   exits 0), it's kept as-is. The probe has **no deadline by default**, matching the
   reference on every input measured (it was still running at 45 s on a CLI that
-  never answers, and installed one that answered at 90 s; above that, unprobed); `-cli-probe-timeout` / the `cli-probe-timeout` config key opts into
-  one, and then a slower but working CLI fails this guard — see divergence D11.
+  never answers, and installed one that answered at 90 s; above that, unprobed);
+  `-cli-probe-timeout` / the `cli-probe-timeout` config key opts into
+  one, and then a slower but working CLI fails this guard — see [D11](DIVERGENCES.md#d11).
 - Otherwise the blob is acquired from one of two sources:
     - `-cli-zst` — a local `.zst` (consumed once **decompression** succeeds, even if the install then fails the runnability probe); checksum-verified
       **only when a `-cli-checksum` is supplied** — a conditional divergence from
-      the reference, activated by the caller; see [PROTOCOL.md](PROTOCOL.md).
+      the reference, activated by the caller; see [D1](DIVERGENCES.md#d1).
     - `-cli-url` — downloaded, SHA-256-verified against `-cli-checksum`
       *unconditionally* (even an empty checksum fails).
 - The blob is zstd-decompressed, `chmod 0755`, and re-checked for runnability
@@ -94,6 +94,30 @@ catch up via `reattach`.
 (`-bridge` is a fourth, trivial mode: a dumb stdio↔socket relay — what an SSH
 session attaches to. It injects no auth.)
 
+## Concurrency & replay model
+
+- Each connection's requests run in their own goroutine; the per-connection writer
+  is mutex-serialized so responses and stream frames interleave safely.
+- Each managed process has: a monotonic `seq`, an append-only frame buffer, and a
+  set of subscriber connections. `spawn` subscribes the spawning connection;
+  `reattach` subscribes the requester and replays buffered frames with
+  `seq > fromSeq`. A dead subscriber is detached (`[frameSink] replay write
+  failed, detaching`).
+
+## Deployment lifecycle (how a driver uses it)
+
+A driver (Claude Desktop, or your own tool such as clauster) typically:
+
+1. probes the remote OS/arch,
+2. ensures the daemon binary is present on the remote (e.g. uploads it),
+3. runs `claustrum -install …` to ensure the agent CLI is present,
+4. starts `claustrum -serve -socket … -token-file …`,
+5. attaches per session with `claustrum -bridge -socket …` and speaks JSON-RPC
+   (in-band auth) through it,
+6. drives the agent and any MCP servers as `process.spawn` children, feeding each
+   child's stdin via `process.stdin` (base64) and reading its stdout via the
+   stream notifications.
+
 ## Inherited wire bytes
 
 Some of claustrum's byte-identical output is produced by **Go's standard library,
@@ -119,7 +143,7 @@ nobody looked at.
 | `chdir <p>: stat <p>: no such file or directory` | error messages built from `err.Error()` | `os` `*PathError` (`op + " " + path + ": " + errno`) | inherited |
 | Frame `data` alphabet and `=` padding | `process.*` stdout/stderr frames | `base64.StdEncoding` | inherited |
 | Result field ORDER | `results.go` | `encoding/json` emits struct fields in declaration order | **deliberate** — order is chosen to match, and results are structs, never maps, precisely because maps sort |
-| Path cleaning for `~`-prefixed paths | `expandpath.go` | `filepath.Join`/`Clean` | **deliberate** — the lexical clean was measured and matched (#205) |
+| Path cleaning for `~`-prefixed paths | `expandpath.go` | `filepath.Join`/`Clean` | **deliberate** — the lexical clean was measured and matched (PR 205) |
 
 The decode-side row is the one with a user-visible consequence: **a file whose
 name is not valid UTF-8 cannot be addressed through the protocol at all**, on
@@ -211,209 +235,58 @@ the status form omits the URL so a signed URL cannot reach whatever captures the
 `__INSTALL_RESULT__` line. A bare `chmod`/`rename` failure propagates as the raw
 Go error.
 
-⚠️ **These strings are not free-form diagnostics — the driver reads them.** Claude
-Desktop classifies `cliError` by *text*: a message shaped like a disk-full failure
-is surfaced as a terminal error with an actionable code, and messages that do not
-match are treated as retryable rather than terminal. ⚠️ **The claim is about that
-classification only** — *how* the driver retries is unobserved, so do not read a
-particular retry shape out of it. So changing the wording of a
-row above — or adding a guard whose error pre-empts one — can change what a user is
-told, even when no JSON-RPC frame moves. D10's opt-in cap is the worked example.
+These strings are not free-form diagnostics: the driver reads them. Changing a
+row's wording — or adding a guard whose error pre-empts one — can change what a
+user is told even when no JSON-RPC frame moves (D10's opt-in cap is the worked
+example). How the driver classifies them is a third-binary claim; see
+[Driver claims and their provenance](#driver-claims-and-their-provenance).
 
-### Driver claims and their provenance
+## Driver claims and their provenance
 
-⚠️ **These are a different class of claim from the rest of these docs.** Three are
-load-bearing: the `cliError` classification above, **`libc` deciding which CLI build
-the driver downloads**, and **"Desktop owns the argv"**. All three describe a
-**third binary** — the driver — not the reference daemon and not claustrum, so the
-reference-vs-claustrum harness cannot confirm or refute any of them and no
-`scratch/` fixture covers them.
+A few facts these docs rely on describe a **third binary** — the driver (Claude
+Desktop, or a tool such as clauster) — not the reference daemon and not claustrum.
+The reference-vs-claustrum harness compares two daemons, so it cannot confirm or
+refute any of them, and no `scratch/` fixture settles one. Three are load-bearing:
 
-⚠️ **"The harness cannot settle it" is not the same as "unverifiable", and none of
-the three has been settled.** Each has a fixture that would settle it — run against
-the **driver**, so the arms are two inputs to one client, never two daemons. Each
-needs a control that could actually come out wrong; an arm entailed by the claim
-proves nothing:
+- **`cliError` classification** — the driver reads `cliError` as text: a
+  disk-full-shaped message is surfaced as a terminal error with an actionable code,
+  everything else as retryable. The claim is about that classification only; *how*
+  it then retries is unobserved.
+- **`libc` build selection** — the driver uses the `__INSTALL_RESULT__` `libc`
+  field to pick which CLI build to download.
+- **"Desktop owns the argv"** — an operator has no way to influence the daemon's
+  argv, so a divergence reachable only through an argv flag is unreachable on
+  Desktop-driven hosts. This premise is what lets D3, D4, D5, D10, D11, D12 and D14
+  be opt-in, and it defines the "(opt-in)" tagging convention (a flag **and** a
+  config key, since the config key is the reachable knob).
+
+"The harness cannot settle it" is not "unverifiable": each has a fixture that
+would settle it, run against the *driver*, with a control that could come out
+wrong.
 
 | claim | fixture | control that must fire |
 |---|---|---|
-| `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe **a retry of any shape** vs terminal report — the claim is about classification, so keying the discriminator to one retry shape would read a differently-shaped retry as a falsification | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
-| `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
-| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ All three have been run and **none discharges the claim** — see below. The enumeration covered 15 of ~30 `userData` entries, chosen by name, and was rooted in that directory; it matched argument *shapes*, so a setting whose effect is to add a flag would not have matched; and no half has a directly recorded build |
+| `cliError` classification | two `-install` failures whose messages straddle the disk-full shape; observe a retry vs a terminal report | a genuine disk-full failure observed as terminal with an actionable code, proving the terminal side is reachable |
+| `libc` build selection | a stub `ldd` printing a musl banner and exiting 0, with `/lib/ld-musl-*.so.*` absent (else the glob short-circuits and `ldd` never runs); see which build the client fetches | a glibc host where the daemon reports `glibc` fetches the glibc build, so the musl arm is distinguishable from the client's default |
+| argv | the setup UI, a capture of the argv Desktop passes, and an enumeration of Desktop's config files | a setting the client is known to read must turn up in the enumeration, else a null result means the search missed everything |
 
-**Evidence for the argv claim, scoped to what was looked at:** the shipped client's
-"Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
-File*, and its folder step is a remote directory browser — **no field for daemon
-arguments in either**. Reported by the maintainer as a daily user of the shipped
-client, 2026-08-07; the client build was not recorded.
+All three fixtures have been run (2026-08-07 through 2026-08-09) and **none
+discharges its claim**: no route for Desktop to pass arbitrary argv was found, but
+the search was not exhaustive (one cold start on one host; half the `userData`
+directory skipped; both observed `-install` runs were cache hits, so a *fetching*
+install's argv is still unobserved). The argv capture, the userData enumeration,
+and the per-dependent reopen-trigger ladder live in `scratch/` (gitignored) and in
+the overhaul forensics archive.
 
-**Measured 2026-08-08, one cold start:** the argv Desktop passes was recorded by
-logging every invocation on the host it drives — seven in all, covering the five
-modes below (`--install` and `--bridge` came twice each, byte-identical both
-times). The log also kept each invocation's parent chain, and for `-install` the
-`__INSTALL_RESULT__` line it printed:
-
-| mode | argv |
-|---|---|
-| `--version` | *(no arguments)* |
-| `--bridge` | `--socket <sock>` |
-| `--serve` | `--socket <sock> --token-file <file>` |
-| `--stop` | `--socket <sock>` |
-| `--install` | `--cli-dir <dir> --cli-version <v> --cli-keep 3` |
-
-All seven descend from the SSH session Desktop opened, and all spell their flags
-with a double dash. The log also holds three single-dash `-stop` runs whose parent
-is a login shell instead; those are excluded on the parent chain, which is what
-justifies it — the dash spelling only corroborates.
-
-⚠️ **Read what this does and does not discriminate.** "No claustrum opt-in flag
-appeared" would be an **entailed arm** — those flags are claustrum's own additions,
-absent from the daemon Desktop was built against, so a client that knew nothing of
-them and a client that refused to pass them produce the same log. It proves
-nothing, and the rule at the top of this section says so. What *could* have come
-out otherwise, and did not, is the **shape**: **no argument appears that Desktop
-has no use for** — no free-form token, no `--` pass-through, no residue of an
-extra-arguments slot. Every flag present is one the daemon needs to run. ⚠️ That is
-a claim about which arguments appear, **not** about where their values came from:
-`--cli-keep 3` is exactly the shape a settings field would fill, and the capture
-cannot tell a Desktop-computed value from an operator-edited one.
-
-**Enumerated 2026-08-09.** Fifteen of about thirty entries in Desktop's `userData`
-were examined, **fourteen of them read whole**: both config files, the SSH
-connection store, the remote-server and bridge state files,
-`developer_settings.json`, `Preferences`, and seven small state files. The read
-looked for a `keep` count, a cli directory, or an arguments field, and **none of
-the fourteen holds a field of those shapes.** The fifteenth entry is the
-daemon-binary cache directory — listed, not read, and not a settings file.
-
-The control fired: the connection created in the setup dialog turns up in
-`ssh_configs.json`, so the files read are ones Desktop reads. ⚠️ One caveat, so
-the negative is not overstated — `claude_desktop_config.json`
-does turn config into a command line for its **MCP** entries (`command`, `args`);
-none of that appears in the captured daemon argv.
-
-⚠️ Not exhaustive: half the directory was skipped on a name judgement, the LevelDB
-stores need a reader this run lacked, the user's own SSH client config was not read,
-and a file Desktop reads outside `userData` was neither read nor ruled out. Evidence
-in `scratch/` (gitignored).
-
-**So: no way for Desktop to pass arbitrary arguments to the daemon has been found —
-not in the setup UI, not in the files read.** (Forwarded environment is not a
-route — the trigger below disqualifies it, since nothing reads the environment
-for these knobs.)
-
-One further limit. **Both `-install` runs were cache hits** — each answered
-`cliWasPresent:true`, and neither argv carried a source flag, so neither could
-have fetched anything (`install.go:49-66`). The argv of an install that actually
-fetches is unobserved.
-
-So the coverage is uneven and worth stating exactly. The **`-serve` argv** behind
-D3, D4 and D5 was seen whole. On `-install`, only the two **cache-hit**
-invocations' argv was seen; a fetching one was never observed at all. That is not a clean split
-by D-number: D11 and D14 run on **both** paths (`isRunnable` has a second site
-after decompression, and `detectLibc` sits above the branch entirely), so they were
-exercised on the shape that was observed and also on the shape that was not. D10,
-D12 and D13 become reachable only on the fetching path, so nothing about their
-argv was observed.
-
-⚠️ One cold start, one host: the evidence supports "Desktop passed no such argument
-on the occasions observed, and no setting of that shape was found in the files
-read", not "Desktop cannot". The enumeration was on a client reporting
-`updaterLastSeenVersion` 1.26832.0; the capture was the day before, on the same
-install; the UI look was earlier still, on an unrecorded build. ⚠️ That field is
-what the updater *last saw available*, which need not be the build that ran.
-
-- **Reopen trigger for the argv claim:** Claude Desktop **having** a way for an
-  operator to influence the daemon's argv — a settings field, or a config file it
-  reads and turns into argv. That would make a flag-only opt-in sufficient **for
-  Desktop-driven hosts**. ⚠️ It would *not* moot the `claustrum.conf` key: the key
-  is read from the executable's own directory (`os.Executable`), so it serves any
-  other driver — including `clauster`, named as a supported one below. An env var
-  Desktop forwarded would not qualify either;
-  nothing in `config.go` or `main.go` reads the environment for these knobs, so
-  forwarding one changes nothing.
-- **What rests on it:** **D3, D4, D5, D10, D11, D12 and D14** — every "why it
-  stopped being always-on" argument turns on the person who pays having no way to
-  decline. The claim is load-bearing on both argv surfaces: D3, D4 and D5 are
-  `-serve` flags, D10, D11, D12 and D14 are `-install` ones — plus
-  the **"(opt-in)" tagging convention** in IMPROVEMENTS, which *defines* opt-in as a
-  flag **and** a config key on exactly this ground, and so binds every future
-  **D-numbered** entry. (The CT block uses the tag in a looser "off unless asked
-  for" sense — CT-1 is caller-activated and CT-3 is the config mechanism itself —
-  so it does not rest on this claim.)
-  The trigger is recorded once here rather than eight times, because it is one
-  claim shared by all of them.
-
-*(Not the only other driver claims in these docs — D6's and D7's clause-(b)
-evidence rests on what Desktop emits as `-cli-version`. That one is still untracked
-and unprovenanced.)*
-
-Treat them as design constraints worth respecting, not as measured parity results;
-anything that depends on one should say so and carry a reopen trigger **that would
-falsify the claim it rests on** — a trigger that fires on something else does not
-count. ⚠️ **The dependents list below is maintained by hand and has been incomplete
-every time it was checked.** Treat it as the best-known set, not a proof of completeness, and add
-to it rather than trusting it.
-
-Below are the dependents of the `cliError` and `libc` claims, where each entry needs
-its own trigger. *(The argv claim's dependents are recorded with the claim above
-instead, because one trigger covers all of them. D10, D11 and D14 appear in both
-roles — below for the `cliError` (D10, D11) or `libc` (D14) claim, above for the
-argv one. D14 joined the argv list when it was flipped on 2026-08-08.)*
-
-- **D13's cost-free reading** rests on the `cliError` claim (D13 has no accepted
-  always-on justification — it is in IMPROVEMENTS' unresolved group).
-- **D13's 2026-08-08 reopen measurement** rests on it a second time, and this is a
-  *different* dependency from the one above: the fixture modelled the driver's next
-  move after a failed install as a `-cli-zst` retry. ⚠️ **That was an assumption of
-  the fixture's design, not something the `cliError` claim establishes and not
-  something anyone has observed** — the claim says Desktop treats a non-disk-full
-  `cliError` as retryable, which does not say *how* it retries. If the follow-up is
-  some other shape, that run measured the wrong one and its "same end state either
-  way" result says nothing about the driver. The result still stands as a claim
-  about **the two binaries**; only its bearing on the reopen condition depends on
-  this. 🔴 **Reopen trigger:** any
-  observation of what Desktop actually does after an `-install` reports a
-  `cliError` — D13's own trigger fires on how Desktop *classifies* the string, which
-  is a different half and would not catch a Desktop that classifies as assumed but
-  retries some other way.
-- **D14's residual delta** is only more than cosmetic because of the `libc` claim.
-  🔴 **No falsifying reopen trigger:** its entry has one, but it fires on a musl host
-  the loader glob misses and on a measurement of the reference's bound — neither
-  bears on whether Desktop uses `libc` to pick the build.
-- **D10's opt-in cap** — the worked example above — rests on the `cliError` claim
-  too: what a caller loses by capping below free space is the disk-full
-  *classification*, not the string alone. ⚠️ One plausible Desktop change —
-  broadening its terminal match to any `decompressing:` error — fires this entry's
-  trigger and D13's at once, since the cap's own message is a `decompressing:` error.
-- **Clause (c)'s "error strings are not free" rider** in IMPROVEMENTS — a
-  *rule-level* dependent rather than a D-number, since it binds every future
-  clause-(c) entry. 🔴 **No reopen trigger at all.**
-- **D11's retraction of "a client reads this field, it does not parse prose"** — if
-  Desktop turned out not to parse `cliError`, half of that retraction collapses.
-  (Only half: the other half rests on a separate absence — nothing on record shows
-  any client behaving differently when `cliWasPresent` changes.)
-
-## Deployment lifecycle (how a driver uses it)
-
-A driver (Claude Desktop, or your own tool such as clauster) typically:
-
-1. probes the remote OS/arch,
-2. ensures the daemon binary is present on the remote (e.g. uploads it),
-3. runs `claustrum -install …` to ensure the agent CLI is present,
-4. starts `claustrum -serve -socket … -token-file …`,
-5. attaches per session with `claustrum -bridge -socket …` and speaks JSON-RPC
-   (in-band auth) through it,
-6. drives the agent and any MCP servers as `process.spawn` children, feeding each
-   child's stdin via `process.stdin` (base64) and reading its stdout via the
-   stream notifications.
-
-## Concurrency & replay model
-
-- Each connection's requests run in their own goroutine; the per-connection writer
-  is mutex-serialized so responses and stream frames interleave safely.
-- Each managed process has: a monotonic `seq`, an append-only frame buffer, and a
-  set of subscriber connections. `spawn` subscribes the spawning connection;
-  `reattach` subscribes the requester and replays buffered frames with
-  `seq > fromSeq`. A dead subscriber is detached (`[frameSink] replay write
-  failed, detaching`).
+Treat these as design constraints, not measured parity results. Anything that
+depends on one carries a reopen trigger that would falsify *that* claim; the
+per-divergence triggers live in [DIVERGENCES.md](DIVERGENCES.md). The argv claim
+reopens if Desktop turns out to have a route to influence the daemon's argv — a settings
+field, or a config file it turns into argv (a forwarded env var does not qualify:
+nothing in `config.go` or `main.go` reads the environment for these knobs). The
+dependents list is maintained by hand and has been incomplete every time it was
+checked, so treat it as best-known, not complete: the argv claim underpins D3, D4,
+D5, D10, D11, D12 and D14; `cliError` underpins D10, D11 (retraction rider), D13 and clause (c)'s
+error-string rider; `libc` underpins D14's residual delta. Two further driver
+claims — D6's and D7's clause-(b) evidence, resting on what Desktop emits as
+`-cli-version` — are untracked and unprovenanced.

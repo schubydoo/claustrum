@@ -150,7 +150,7 @@ func setCLIProbeTimeout(t *testing.T, d time.Duration) {
 // no context at all, because a 0 deadline expires before exec. The "on" arm
 // fails if the deadline stops being applied. Neither arm re-measures the 15 s
 // constant this replaced — a test that slow would be its own problem; that
-// number is settled by the differential run recorded in IMPROVEMENTS.md D11.
+// number is settled by the differential run recorded in docs/DIVERGENCES.md D11.
 func TestIsRunnable_ProbeTimeoutOptIn(t *testing.T) {
 	dir := t.TempDir()
 	// .exe suffix for the same reason as TestIsRunnable: Go's exec on Windows
@@ -649,7 +649,7 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 // accord. What this pins is that lddCtx arms (or does not arm) a deadline and that
 // detectLibcWith propagates the result through classifyLibc. It CANNOT show the
 // real probe's surviving-child softness, where CombinedOutput waits on the inherited
-// pipe past the deadline — see the D14 entry in IMPROVEMENTS. A fixture faster than the deadline would
+// pipe past the deadline — see the D14 entry in docs/DIVERGENCES.md. A fixture faster than the deadline would
 // answer the same either way and prove nothing (see the D12 straddle lesson).
 //
 // The runner returns a musl banner AND exits 0, because that conjunction is the only
@@ -973,7 +973,7 @@ func TestEnsureCLIFromURL(t *testing.T) {
 	}
 }
 
-// Claustrum's conditional divergence (IMPROVEMENTS D1): the -cli-zst (SFTP) path
+// Claustrum's conditional divergence (docs/DIVERGENCES.md D1): the -cli-zst (SFTP) path
 // verifies -cli-checksum WHEN one is supplied — a wrong checksum is rejected like
 // the -cli-url path, and the source blob is left intact. An ABSENT/empty checksum
 // stays trusting, matching the reference (which never verifies this path), so
