@@ -418,6 +418,9 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
   | an unreadable block device (`/dev/nvme0n1`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
 
   The two device rows assume a **non-root** daemon (they are permission failures).
+  The opted-in column is **measured** for the FIFO and `/dev/null` rows; for the
+  socket and the two device rows it is **entailed** by `Mode().IsRegular()` being
+  false, not separately run.
   What the default gives up: a writerless FIFO parks a request goroutine and a
   descriptor until a writer arrives, and an unbounded device read
   (`/dev/zero`) grows the daemon until the kernel OOM-kills it — both the
@@ -447,7 +450,10 @@ unless noted):
   rejected before the archive is opened, so it is **not** consumed. "Root" is the
   platform's own notion (`/` on Unix; a drive root `C:\` or UNC share root
   `\\server\share\` on Windows). The root and `filepath.IsAbs` tests share one
-  branch and message.
+  branch and message. Whether the reference refuses a root `destDir` at all is
+  **not measured** — the guard is justified by our own consequence (a recursive
+  delete of the volume), not a claim about the reference, so it is neither parity
+  nor a divergence entry.
 - **`destDir` is, or contains, the home directory** → `destDir must not be or
   contain the home directory: …` — **intentional divergence D2** (the reference
   wipes `$HOME` on `"destDir":"~"`). The test is *containment*: home and any
@@ -674,9 +680,12 @@ reports the outcome as a *result* (an unknown id is not an error):
     - **`timeoutMs`** sets the grace. Non-positive or absent → the **3000 ms**
       default; positive values honored verbatim **up to a 30000 ms ceiling** (a
       larger value is clamped, so `timeoutMs:45000` against a signal-ignoring child
-      answers after ~30 s).
+      answers after ~30 s). The `30000` ceiling is a black-box bracket `(29500,
+      30500]` — the only round value in it, not a measured-exact figure.
     - **`escalate`** (default `true`): if still alive after the grace, `true` →
-      escalate to a **process-group** `SIGKILL`, wait up to **7 s** for the reap,
+      escalate to a **process-group** `SIGKILL`, wait up to **7 s** for the reap
+      (measured: `timeoutMs:500` against an unreapable child → the reference
+      replies at 7.51 s),
       add `"escalated":true`. It is sent even when the graceful signal already killed
       the child, since a grandchild holding the stdout pipe can keep the drain
       pending past the grace. `false` → leave the process running, report
@@ -697,12 +706,14 @@ reports the outcome as a *result* (an unknown id is not an error):
   connection and is absent from the new one's replay — which is what `fromSeq` is
   for.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
-- **Exited processes are retained for 15 minutes, then dropped** — with their replay
+- **Exited processes are retained for ~15 minutes, then dropped** — with their replay
   buffers — so an id last seen longer ago answers exactly like an unknown one (and
   `process.kill` on it still reports `{"success":true}`). A **running** process is
-  never dropped. The sweep runs on a 60-second timer *and* inline on every
-  `process.spawn`. Treat `found:false` after a long gap as "finished and forgotten",
-  not "never existed".
+  never dropped. The sweep runs on a ~60-second timer *and* inline on every
+  `process.spawn`. Wire-observed, retention only brackets to `(45 s, 960 s]`; the
+  exact 15 min and 60 s are pointer-class — no wire observable distinguishes them
+  from other values in the bracket. Treat `found:false` after a long gap as
+  "finished and forgotten", not "never existed".
 - **`stdinApplied`** (added `7c2f88d`): the process's cumulative applied-stdin byte
   count (§`process.stdin`), always present after `lastSeq`. A reconnecting client
   resumes stdin from this offset. **It is an acknowledgement, not a delivery

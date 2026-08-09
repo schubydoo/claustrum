@@ -187,7 +187,9 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
 Seven divergences are opt-in flags, and **all seven default OFF — that is the
 parity position.** The reference applies no such cap or deadline at any size or
 duration the probe could reach, so a non-zero default would fail an operation the
-reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
+reference completes. (D4 is the non-threshold one: not a cap or deadline but a
+`Mode().IsRegular()` check — the reference reads `/dev/null` and blocks on a
+writerless FIFO rather than refusing either.) Claude Desktop owns the `-serve` / `-install` argv, so the
 **`claustrum.conf` key is the reachable knob**, not the flag. Each disabled state
 bypasses its limiter entirely (see Part A's "never simplify" rule).
 

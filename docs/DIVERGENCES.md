@@ -246,7 +246,7 @@ CT-5 carry a flag and a key.
   and an unbounded device read (`/dev/zero`) never reaches EOF — under a 2 GiB cgroup
   cap the kernel OOM-killed both binaries. `maxBytes` cannot save you: it keys off
   the stat size, `0` for every non-regular kind on linux.
-- **Why opt-in.** Across six non-regular shapes, claustrum-off matches the
+- **Why opt-in.** Across seven non-regular shapes (nine in all, two regular-file controls), claustrum-off matches the
   reference byte-for-byte; the always-on guard cost an honest `/dev/null` read a
   `-32602` the reference never produces (rule 4).
 - **Reopen trigger.** An operator with the flag set reporting a legitimate read

@@ -44,8 +44,7 @@ pipe closed. Matched here in `tokenpersist.go` (wired through `runServe` /
 
 **How it was bounded.** The frame battery plus differential binary analysis
 against `7c2f88d` converge on token persistence and nothing else — no other
-method or phase changed; forensics parked in `scratch/BINARY-DIFF.md` and
-`scratch/syscall-diff.sh`.
+method or phase changed; forensics parked outside the committed tree.
 
 ### `7c2f88d13e5f269762dd4d463aa4eb3102214110` — 2026-07-02
 
@@ -80,7 +79,7 @@ the method set.
 
 **How it was bounded.** The frame battery gates all five changes; differential
 binary analysis confirmed the off-wire deltas are real source, not compiler noise
-(forensics in `scratch/BINARY-DIFF.md`). Provenance: Claude Desktop for Linux
+(forensics parked outside the committed tree). Provenance: Claude Desktop for Linux
 1.18286.0 (2026-07-02) embeds a manifest pinning this SHA and calls 15 of the 19
 methods — not `process.killAndWait` (nor `server.version` / `server.shutdown`,
 driven via the `--stop` CLI) — so a real-session capture won't exercise the new
@@ -127,7 +126,7 @@ synchronous `-32603` + Go-exec-error-string contract claustrum already emits
 one-line ledger entry can under-record a build, because an off-wire or
 failure-path change never surfaces in the frame battery — so the bump procedure
 compares more than the wire (see [Upstream tracking](UPSTREAM-TRACKING.md));
-forensics in `scratch/BINARY-DIFF.md`.
+forensics parked outside the committed tree.
 
 ### `8de85faaa11694321e937499a18c7ab88f37c76c` — 2026-05-21
 

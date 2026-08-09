@@ -18,6 +18,12 @@ docs_dir: docs
 exclude_docs: |
   requirements.txt
 
+# Fail --strict on a broken internal anchor: mkdocs 1.6 reports these at info
+# level, which --strict does not promote on its own.
+validation:
+  links:
+    anchors: warn
+
 theme:
   name: material
   icon:

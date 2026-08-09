@@ -98,9 +98,10 @@ default: minor
 Short, imperative summary of the change.
 ```
 
-`default:` sets the bump and changelog section: `major` → Breaking changes,
-`minor` → Features, `patch` → Fixes, `perf` → Performance, `build` → Build System
-& Dependencies, `revert` → Reverts. The PR number is appended to each entry
+`default:` sets the version bump and the changelog section. Three values set the
+bump: `major` → Breaking changes, `minor` → Features, `patch` → Fixes. Three custom
+types set only the changelog section (the bump stays `patch`): `perf` → Performance,
+`build` → Build System & Dependencies, `revert` → Reverts. The PR number is appended to each entry
 automatically at release time.
 
 **When you don't need one:** internal-only PRs — CI, workflows, `scripts/` tooling,
