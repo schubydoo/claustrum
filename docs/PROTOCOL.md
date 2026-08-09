@@ -1300,8 +1300,9 @@ unset in the child before it spawns anything, so it never leaks downstream.
   on one cold start (2026-08-08, both `-install` runs cache hits), plus an
   enumeration of Desktop's settings files (2026-08-09) in which no field that could
   reach the daemon's argv was found, with a control that fired — though only three
-  argument shapes were searched, 15 of ~30 `userData` entries were read, and the
-  LevelDB stores and the user's own SSH client config were not covered). Flipping
+  argument shapes were searched and 15 of ~30 `userData` entries read — the plain
+  version being that no documented way exists to make Desktop pass arbitrary argv
+  to the daemon over SSH). Flipping
   the default to `0` is the parity fix; the cap itself survives as an opt-in for
   hosts that want it.
 - Also settable in `claustrum.conf` as `max-extract-bytes = <n>` (an explicit
