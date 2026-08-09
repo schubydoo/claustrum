@@ -1403,10 +1403,5 @@ func TestEnsureCLIConsumesBlobWhenChmodFails(t *testing.T) {
 	}
 	// And the staging file must not survive the failure — the same cleanup the
 	// not-runnable branch does.
-	ents, _ := os.ReadDir(dir)
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), ".fetch-") {
-			t.Errorf("staging file %s survived a chmod failure", e.Name())
-		}
-	}
+	assertNoStagingLeftover(t, filepath.Join(dir, "out.exe"))
 }

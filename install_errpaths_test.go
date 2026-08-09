@@ -444,13 +444,5 @@ func TestEnsureCLIRenameFailureCleansUpStaging(t *testing.T) {
 		t.Errorf("error = %q, but the staging file was present", err)
 	}
 	// The staging file must not be left behind as litter.
-	ents, readErr := os.ReadDir(cliDir)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), ".fetch-") {
-			t.Errorf("staging file %q survived a failed rename", e.Name())
-		}
-	}
+	assertNoStagingLeftover(t, filepath.Join(cliDir, tooLong))
 }
