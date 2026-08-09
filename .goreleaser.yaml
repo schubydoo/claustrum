@@ -102,6 +102,15 @@ signs:
       - "--yes"
     output: true
 
+changelog:
+  # knope's curated CHANGELOG notes are the release changelog (knope-release.yml
+  # creates the GitHub Release from them). goreleaser's commit-list changelog is
+  # redundant and prints raw commit subjects verbatim, so a subject with an
+  # angle-bracket token (e.g. #197's `<code>`) renders as a broken HTML tag in
+  # the release body. Disable it; release.mode: append then adds only the signed
+  # artifacts to knope's notes.
+  disable: true
+
 release:
   github:
     owner: schubydoo
