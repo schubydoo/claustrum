@@ -537,9 +537,7 @@ not where their values came from. ✅ Desktop's settings files were then **enume
 control firing — though only three argument shapes were searched for, so a toggle
 making Desktop *add* a flag would have matched none of them; and 15 of ~30
 `userData` entries were covered, chosen by name. **No way for Desktop to pass
-arbitrary argv to the daemon has been found**. ⚠️ Desktop
-does store settings that look like subprocess arguments — none in the daemon argv,
-and where they go is unobserved, so do not read it as a route into this claim.
+arbitrary argv to the daemon has been found**.
 All three driver claims sit outside the parity harness, and **the other two have no
 direct observation behind them**; `ARCHITECTURE.md` names the fixture that would
 settle each. It reopens if Desktop **has** a way for an operator to influence

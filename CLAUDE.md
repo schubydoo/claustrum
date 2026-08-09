@@ -365,10 +365,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   was read. ⚠️ It covered 15 of ~30 `userData` entries, chosen by name, and was rooted
   in that directory — the LevelDB stores and the user's own SSH client config were
   not read. **No way for Desktop to pass arbitrary argv to the daemon has been
-  found**. ⚠️ Desktop
-  *does* store settings that look like subprocess arguments (effort level,
-  per-project permission mode) — **none in the daemon argv**, and where they go is
-  unobserved, so don't upgrade it to a route into this claim. (Forwarded env is not
+  found**. (Forwarded env is not
   a route either — nothing reads the environment for these knobs.) Both `-install`
   runs were **cache hits**, so a fetching install's argv is unobserved, and D10,
   D12 and D13 act only there. **The other two claims
