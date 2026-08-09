@@ -137,8 +137,10 @@ func TestEnsureCLIStagingFailure(t *testing.T) {
 
 // The staging file can vanish mid-install: it lives in the ".fetch-*" namespace
 // that every concurrent install's sweep claims, and claustrum holds it open for
-// the whole decompress + chmod + isRunnable window (the reference does not — it
-// extracts in place, so it has no in-flight file there to lose).
+// the whole decompress + chmod + isRunnable window (the reference shows no
+// in-flight file across the --version half of that window; measured 2026-08-08 it
+// does have one mid-download, so the difference is the window, not staging as
+// such — see stageAndInstall).
 //
 // The destination must survive that. Ordering RemoveAll before Rename destroyed
 // it: the CLI already installed at cliPath was deleted and nothing replaced it,

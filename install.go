@@ -254,23 +254,44 @@ var errStagingVanished = errors.New("staging file vanished")
 // runs, and renames it into place.
 //
 // The staging step ITSELF is a pre-existing claustrum divergence (IMPROVEMENTS
-// #4): the reference extracts in place, so an interrupted install can leave a
-// half-written or non-runnable cliPath, while here cliPath only ever appears as a
-// complete, 0755, verified binary. The end state is identical — same facts, same
-// "not runnable" error — so nothing on the wire changes. Everything below about
-// losing a staging file follows from that choice, not from a new one.
+// #4). Here cliPath only ever appears as a complete, 0755, verified binary. The
+// end state is identical — same facts, same "not runnable" error — so nothing on
+// the wire changes. Everything below about losing a staging file follows from that
+// choice, not from a new one.
+//
+// This used to say flatly that "the reference extracts in place". Measured
+// 2026-08-08 on -cli-url, that is wrong as a general statement: mid-download the
+// reference's cli-dir holds a ".fetch-<random>" whose first bytes are the
+// DECOMPRESSED CLI's. What the original measurement actually established is
+// narrower and still holds — across the post-extraction --version window the
+// reference shows only the installed version, where claustrum still holds a
+// staging file. So the windows differ, not the presence of staging as such, and
+// the divergence this comment describes is about how long cliPath's replacement
+// stays incomplete. The probe-window half was measured on BOTH source paths; the
+// mid-download finding is -cli-url only.
 //
 // Staged under the reference's own temp name, ".fetch-<random>" in the cli-dir,
 // rather than "<cliPath>.tmp": sweepFetchTemps reaps ".fetch-*" but knew nothing
 // about a ".tmp", so claustrum's own interrupted-install litter was never cleaned
 // up while the reference's was.
 //
-// That choice has a cost the reference does not pay. The reference extracts IN
-// PLACE — measured with a CLI that sleeps 3s on --version, claustrum shows
-// ".fetch-XXXX" in the cli-dir for the whole window while the reference shows
-// only the installed version, on both the -cli-zst and -cli-url paths. So the
-// reference's sweep can never hit its own in-flight file, and claustrum's can:
-// any concurrent install that finishes first sweeps ours.
+// That choice has a cost the reference does not pay in ONE window. Measured with
+// a CLI that sleeps 3s on --version, claustrum shows ".fetch-XXXX" in the cli-dir
+// for that whole probe window while the reference shows only the installed
+// version, on both the -cli-zst and -cli-url paths. So across the probe window
+// the reference has no in-flight file for its own sweep to hit, and claustrum
+// does: any concurrent install that finishes first sweeps ours.
+//
+// This used to say the reference's sweep "can NEVER hit its own in-flight file".
+// That is too strong, and a different window falsifies it: measured 2026-08-08
+// mid-DOWNLOAD against a deliberately slow origin, the reference's cli-dir holds
+// a ".fetch-<random>" of its own (decompressed output, by its first bytes). The
+// original measurement only ever looked at the post-extraction probe window, so
+// it could not have seen this. Claustrum's exposure is the STAGING window —
+// decompress, chmod, probe, rename — not the download, and the retry below covers
+// all of it, since a loss is only detected at the rename anyway. The download blob
+// is covered separately, by being outside isSweptName so no sweep claims it.
+// The reference's own exposure is the reference's to carry.
 //
 // The caller retries once on errStagingVanished, which is what actually fixes
 // that. A smarter sweep cannot: skipping entries that postdate our own start
@@ -694,8 +715,11 @@ func sweepFetchTemps(cliDir string) {
 // slot and evicts a real version instead.
 //
 // This is claustrum's problem to state because claustrum is what creates the
-// file — no claim is made here about how the reference handles its download, which
-// was never measured. Defined
+// file. What the reference does mid-download was measured 2026-08-08 and is
+// recorded in PROTOCOL (Staging and cleanup): its cli-dir holds a
+// ".fetch-<random>" whose first bytes are the DECOMPRESSED CLI's, where
+// claustrum's staging file at that moment holds the compressed body. Different
+// artifacts, so the naming rule below is claustrum's own either way. Defined
 // once here so the creator, BOTH housekeeping passes and validateCLIVersion read
 // the same rule — the same reason isSweptName is factored out below, and with the
 // same fourth reader. A rule the validator does not consult is one an operator can

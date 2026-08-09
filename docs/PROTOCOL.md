@@ -1623,6 +1623,14 @@ Checksum + error framing (probe-verified):
   ⚠️ The two rows measured for disk state — the short artifact and the interrupted
   transfer — are **not** identical: the reference creates an empty
   cli-dir, claustrum creates none — so "the only delta is diagnostic text" is false.
+  ⚠️ **That holds only when the cli-dir did not already exist:** pre-create it and
+  claustrum's failing install leaves exactly what the reference leaves. Measured
+  2026-08-08 on the **short-artifact** row, where the diverging path returns at the
+  checksum comparison before the cli-dir would be created; **derived** for the
+  interrupted transfer, which returns even earlier — `io.Copy`'s error, with the
+  partial download removed on that path — and was not run pre-created. It does not self-heal — two failing installs
+  from a fresh cli-dir leave the same split — and a *successful* install is
+  identical on both binaries in either pre-state.
   🔴 **D13's always-on status is therefore UNRESOLVED**, recorded in IMPROVEMENTS
   as unresolved rather than justified — and since D14's flip it is the ONLY entry
   there.
@@ -1666,8 +1674,12 @@ Checksum + error framing (probe-verified):
 Staging and cleanup (probe-verified):
 
 - The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
-  into place, never at `<cliPath>.tmp`. The name matters: the orphan sweep below
-  matches `.fetch-*`, so an interrupted install's litter is reclaimed.
+  into place, never at `<cliPath>.tmp`. This is **claustrum's own staging, on both
+  source paths** — one code path serves `-cli-url` and `-cli-zst` alike. The name
+  matters: the orphan sweep below matches `.fetch-*`, so an interrupted install's
+  litter is reclaimed. (That the *reference* uses the same name rests on the sweep
+  measurement, and separately on the mid-download table above, which is `-cli-url`
+  only.)
 - A `-cli-url` download lands beside it at **`<cli-dir>/.blob-<random>`** when the
   cli-dir already exists — on a **first install it lands at
   `$TMPDIR/claustrum-fetch-<random>` instead**, because `fetchToFile` runs before
@@ -1687,9 +1699,34 @@ Staging and cleanup (probe-verified):
   forever, never counted against `-cli-keep` and never evicted. That is the mirror
   of the sweep-collision refusal beside it, on the same input. It is removed by the install itself on
   every path; only a SIGKILLed download leaves it behind, and nothing reclaims
-  that. (This staging file is claustrum's own; no claim is made
-  here about how the reference handles its download, which was never measured. No
-  frame changes either way.)
+  that. (This staging file is claustrum's own. No frame changes either way.)
+- **What each binary has on disk mid-download (`-cli-url` only) — measured
+  2026-08-08, filling the gap this bullet used to record as never measured.**
+  Listing the cli-dir against a deliberately slow origin, then reading the first
+  bytes of whatever is in flight. ⚠️ The `-cli-zst` path is **not** covered here —
+  the reference's `.fetch-<random>` must not be carried over to it:
+
+  | | in-flight file | first bytes |
+  |---|---|---|
+  | reference, cli-dir absent or pre-created | `<cli-dir>/.fetch-<random>` | the **decompressed** CLI's |
+  | claustrum, cli-dir absent | `$TMPDIR/claustrum-fetch-<random>` | zstd magic — the **compressed body** |
+  | claustrum, cli-dir pre-created | `<cli-dir>/.blob-<random>` | zstd magic — the **compressed body** |
+
+  So the reference writes decompressed output into the cli-dir as the stream
+  arrives, in both pre-states, and (from the P0 row, where the directory did not
+  exist) creates it before the download **completes** — which is
+  the same behaviour D13's entry infers from `decompressing: <transport error>`
+  surfacing on an interrupted transfer. Claustrum instead has the *compressed body*
+  on disk, in `$TMPDIR` on a first install and in the cli-dir once it exists.
+  ⚠️ **These are different artifacts, so do not read the rows as a like-for-like
+  location difference:** the probe read each file's name and first bytes, never its
+  provenance, and the two do not hold the same thing. Claustrum's two
+  rows are the control that makes the reference row readable: the same instrument
+  reads zstd magic there, so it can tell the two apart.
+  The **end state is identical on both binaries in both pre-states**, so no frame
+  moves and this is not a numbered divergence. The sampling was one listing partway
+  through the transfer, so "before it completes" is what is established; creation on
+  the first byte is not excluded.
 - **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace
   a non-empty directory, so whatever sits there is removed first and the install
   succeeds. If it cannot be removed the failure is reported as
@@ -1748,8 +1785,10 @@ Staging and cleanup (probe-verified):
   files (a `README`) survive. The sweep runs whenever an install was attempted,
   succeeded or not; the `-cli-keep` prune runs only on success.
   - The sweep is **unconditional**, matching the reference. claustrum stages its
-    extract at `.fetch-<random>` in this same namespace (the reference extracts in
-    place and has no in-flight file here), so a concurrent install can reclaim
+    extract at `.fetch-<random>` in this same namespace and holds it across the
+    `--version` probe, where the reference shows only the installed version
+    (mid-*download* the reference does have a `.fetch-<random>` of its own — see
+    the staging table above; the difference is the window), so a concurrent install can reclaim
     another's staging file. That is handled by a **single retry** of the
     stage-verify-rename step rather than by narrowing the sweep: a name-only guard
     cannot tell a staggered peer's in-flight file from litter, and narrowing it
