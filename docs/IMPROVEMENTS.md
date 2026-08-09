@@ -535,8 +535,9 @@ fetching install's argv is unobserved, and the capture shows which arguments app
 not where their values came from. ✅ Desktop's settings files were then **enumerated
 (2026-08-09) and no field that could reach the daemon's argv was found**, with the
 control firing — though only three argument shapes were searched for, so a toggle
-making Desktop *add* a flag would have matched none of them; the Chromium stores
-and the user's own SSH client config were not covered. ⚠️ Desktop
+making Desktop *add* a flag would have matched none of them; and 15 of ~30
+`userData` entries were read, leaving the rest, the LevelDB stores and the user's
+own SSH client config uncovered. ⚠️ Desktop
 does store settings that look like subprocess arguments — none in the daemon argv,
 and where they go is unobserved, so do not read it as a route into this claim.
 All three driver claims sit outside the parity harness, and **the other two have no

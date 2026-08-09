@@ -239,7 +239,7 @@ proves nothing:
 |---|---|---|
 | `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe **a retry of any shape** vs terminal report — the claim is about classification, so keying the discriminator to one retry shape would read a differently-shaped retry as a falsification | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
 | `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
-| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ All three run (below); the control fired. Residual: the enumeration covered the JSON settings files, not the Chromium stores and not the user's own SSH client config; it matched only the three argument shapes, so a toggle making Desktop *add* a flag would not have matched even in a file that was read; and the UI half is one look at one unrecorded build |
+| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ All three run (below); the control fired. Residual: **15 of ~30 `userData` entries were read**, selected by name — the rest, the LevelDB stores, and the user's own SSH client config were not; it matched only the three argument shapes, so a toggle making Desktop *add* a flag would not have matched even in a file that was read; and **no half has a directly recorded build**, the UI look being the oldest and least pinned |
 
 **Evidence for the argv claim, scoped to what was looked at:** the shipped client's
 "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
@@ -279,9 +279,13 @@ a claim about which arguments appear, **not** about where their values came from
 cannot tell a Desktop-computed value from an operator-edited one.
 
 **Enumerated 2026-08-09**, on a client whose `config.json` reports
-`updaterLastSeenVersion` 1.26832.0: these files in Desktop's `userData` directory
-were read directly, looking for anything that could reach the daemon's argv — a
-`keep` count, a cli directory, or a free-form arguments field.
+`updaterLastSeenVersion` 1.26832.0. ⚠️ **How the file set was chosen matters, so
+state it plainly:** the `userData` directory *was* listed — about thirty entries —
+and the ones below were selected from that listing **by name**, as the ones whose
+names suggested settings. They were then read directly, looking for anything that
+could reach the daemon's argv: a `keep` count, a cli directory, or a free-form
+arguments field. **Each selected file was read whole**; those three shapes were the
+match criterion applied to what was read, not the limit of the reading.
 
 | file / dir | what it holds |
 |---|---|
@@ -292,6 +296,8 @@ were read directly, looking for anything that could reach the daemon's argv — 
 | `config.json` | app-level preferences: updater version, locale, theme, OAuth caches, window geometry |
 | `claude_desktop_config.json` | MCP server definitions and a large UI-preferences block |
 | `claude-ssh-remote/` | ⚠️ not settings — a cache of the **daemon binary**, in a directory named for its SHA, beside a `.verified-<platform>` marker |
+| seven small state files — `cowork-enabled-cli-ops.json`, `git-worktrees.json`, `window-state.json`, `design`, `ant-device-registry.json`, `extensions-blocklist.json`, `Local State` | window geometry, empty worktree bookkeeping, a device-key registry, an empty extension blocklist with its fetch URL, and Chromium's encrypted-key state. ⚠️ `cowork-enabled-cli-ops.json` is the cautionary one: the most argv-suggestive **name** in the directory, holding nothing but an account id |
+| `Preferences` | read whole; contents are Chromium profile state — DevTools panel state, window bounds, spellcheck dictionaries — with **no field of the three shapes**. ⚠️ That it belongs to the Chromium layer rather than to Desktop is an *inference* from its content and format, not an observation of who writes it: an Electron app can write into the Chromium prefs file, and the spellcheck dictionary list is arguably an application setting already |
 
 **No field with any of those shapes that could reach the daemon's argv was found in
 any of them.** State it with that scope, not as "the files contain nothing that
@@ -311,19 +317,36 @@ Separately, `claude_desktop_config.json` holds **argument-shaped** settings — 
 effort level, a per-project permission mode — which shows the enumeration's
 *reach* extends to fields of that shape, not merely to connection identity.
 Neither alone would do: the first shows the right files were read, the second that
-an argument-shaped field in them would have been seen. ⚠️ It does **not** show that
-a falsifying setting must be argument-shaped — a toggle that made Desktop add a
-flag would falsify the claim and match none of the three shapes searched for.
+an argument-shaped field in them is **visible** to a whole-file read. ⚠️ Two things
+it does not show. Visible is not the same as **classifiable** as daemon-bound —
+those two settings' destination is explicitly unobserved below. And a falsifying
+setting need not be argument-shaped at all: a toggle that made Desktop add a flag
+would falsify the claim while matching none of the three shapes, since a boolean's
+value looks like no argument either way.
 
-⚠️ **Two stores were not covered, not one.** The Chromium stores (`Local Storage`,
-`IndexedDB`, `Preferences`) were not read — they need a LevelDB reader. And the
-connection object carries *no port and no identity file*, though the setup dialog
-above offers both; whether they were left at defaults and omitted, or written
-somewhere else, was not established. `sshHost` being an **alias** points at the
-user's own SSH client config as the likely home, which the enumeration never
-touched. (One weak lean toward "defaulted": the token cache keys on port **22**,
-the default — though an alias could set a non-default port there too, so it does
-not settle it.)
+⚠️ **What was not covered — and this is wider than the table suggests.** Three
+distinct gaps:
+
+1. **Half the directory.** Fifteen entries were read; the listing held about
+   thirty. The unread remainder is mostly Chromium caches and stores, but **not all
+   of it** — the extension directories, the session and log directories, and a
+   handful of Desktop's own files were skipped on a **name judgement**, not because
+   anything ruled them out. ⚠️ Name judgement is unreliable in both directions, and
+   this run has an instance: `cowork-enabled-cli-ops.json` reads like the most
+   argv-relevant file in the directory and contains only an account id.
+2. **The LevelDB stores** (`Local Storage`, `IndexedDB`) — those need a reader the
+   enumeration did not have. ⚠️ Do not generalise `Preferences` to them: it turned
+   out to be Chromium-layer, but renderer-side application state is exactly what
+   these could hold.
+3. **The user's own SSH client config**, which was **not read at all**. ⚠️ The
+   uncertainty here is whether there is anything in it to find, not whether it was
+   covered. The connection object carries *no port and no identity file*, though
+   the setup dialog above offers both, and whether they were left at defaults and
+   omitted or written somewhere else was not established. On the defaults branch
+   there is nothing in that file to find; on the other, `sshHost` being an
+   **alias** points at it as the home of both. (One weak lean toward "defaulted":
+   the token cache keys on port **22**, the default — though an alias could set a
+   non-default port there too, so it does not settle it.)
 
 ⚠️ **Those argument-shaped settings are worth a second look, because they are the
 near miss.** They sit in `claude_desktop_config.json`'s preferences block. **None

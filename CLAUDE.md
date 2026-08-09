@@ -362,13 +362,15 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   (2026-08-09) and no field that could reach the daemon's argv was found** — the
   control fired, so that negative counts **for the three argument shapes searched**;
   a toggle making Desktop *add* a flag would match none of them even in a file that
-  was read. Scope is the JSON settings files, not the Chromium stores and not the
-  user's own SSH client config. ⚠️ Desktop *does* store settings that look
-  like subprocess arguments (effort level, per-project permission mode) — **none in
-  the daemon argv**, and where they go is unobserved, so don't upgrade it to a
-  route into this claim. (Forwarded env is not a route either — nothing reads the environment for
-  these knobs.) Both `-install` runs were **cache hits**, so a fetching install's
-  argv is unobserved, and D10, D12 and D13 act only there. **The other two claims
+  was read. ⚠️ Uncovered: **~15 of ~30 `userData` entries** (skipped on a name
+  judgement — unreliable in both directions), the LevelDB stores, and the user's own
+  SSH client config. ⚠️ Desktop
+  *does* store settings that look like subprocess arguments (effort level,
+  per-project permission mode) — **none in the daemon argv**, and where they go is
+  unobserved, so don't upgrade it to a route into this claim. (Forwarded env is not
+  a route either — nothing reads the environment for these knobs.) Both `-install`
+  runs were **cache hits**, so a fetching install's argv is unobserved, and D10,
+  D12 and D13 act only there. **The other two claims
   still have no direct observation behind them.**
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
