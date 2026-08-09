@@ -128,9 +128,9 @@ type managedProc struct {
 	exitedAt time.Time
 	stdin    io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
-	// safe to read without p.mu (waitReapAndDrain does). signalIfLive and
-	// killGroupAfterExit hold p.mu across their p.cmd access to make the
-	// reaped-check-and-signal atomic, not to protect this pointer.
+	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
+	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
+	// this write-once pointer.
 	cmd   *exec.Cmd
 	group *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
