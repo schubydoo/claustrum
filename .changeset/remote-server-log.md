@@ -1,5 +1,5 @@
 ---
-default: minor
+default: patch
 ---
 
-The `-serve` daemon now writes its output to `remote-server.log` beside the socket, with mode 0600, in place of the launcher's stdout and stderr. The file stays after a graceful shutdown.
+`-serve` now writes its output to `remote-server.log` beside the socket (mode 0600) instead of the launcher's stdout and stderr, and the file survives a graceful shutdown.
