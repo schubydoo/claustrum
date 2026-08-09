@@ -280,7 +280,8 @@ cannot tell a Desktop-computed value from an operator-edited one.
 
 **Enumerated 2026-08-09.** Fifteen of about thirty entries in Desktop's `userData`
 were read whole — both config files, the SSH connection store, the remote-server
-and bridge state files, `Preferences`, and seven small state files — looking for a
+and bridge state files, `developer_settings.json`, the daemon-binary cache,
+`Preferences`, and seven small state files — looking for a
 `keep` count, a cli directory, or an arguments field. **None holds a field of those
 shapes.** The control fired: the connection created in the
 setup dialog turns up in `ssh_configs.json`, so the files read are ones Desktop
