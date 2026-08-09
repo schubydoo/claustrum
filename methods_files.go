@@ -311,6 +311,38 @@ func filesExtractTar(req *request) response {
 // key in claustrum.conf. Also set directly by tests.
 var maxExtractBytes int64
 
+// cappedCopy writes one archive entry's body to out, honoring the maxExtractBytes
+// cap when it is set. It returns the bytes written; the caller applies the
+// over-cap check against the running totalWritten. Extracted from extractTarGz so
+// the saturating cap arithmetic lives in one named, testable place.
+//
+// maxExtractBytes <= 0 (the default) copies straight through, exactly as the
+// reference does — deliberately NOT a LimitReader with a huge bound, since the
+// max-total+1 arithmetic below is what defines the boundary behaviour and routing
+// the unlimited case through it would invent a boundary the reference has none of.
+// (Both paths read identically today: archive/tar's Reader.WriteTo is unexported,
+// so io.Copy falls through to the same 32 KiB generic copy either way. If a future
+// Go exports it, only the uncapped branch takes the sparse-file fast path — same
+// bytes, but no longer the same code path. Re-measure if that lands.)
+//
+// The +1 is the boundary definition: reading one byte PAST the cap is what lets
+// the caller's totalWritten > maxExtractBytes test fire at all. It must SATURATE
+// rather than wrap — Go wraps signed overflow, so at maxExtractBytes == MaxInt64
+// (reachable since the cap became settable) the sum would become MinInt64,
+// LimitReader would EOF on the first Read, io.Copy would not report it, every
+// entry would be created at 0 bytes, totalWritten would stay 0 so the cap test
+// never fires, and the reply would be success:true over a destDir of empty files.
+func cappedCopy(out io.Writer, tr io.Reader, totalWritten int64) (int64, error) {
+	if maxExtractBytes <= 0 {
+		return io.Copy(out, tr)
+	}
+	bound := maxExtractBytes - totalWritten
+	if bound < math.MaxInt64 {
+		bound++
+	}
+	return io.Copy(out, io.LimitReader(tr, bound))
+}
+
 func extractTarGz(archivePath, destDir string) (int, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -459,39 +491,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// Same shape as the mkdir-parent and zip-slip arms.
 				return 0, fmt.Errorf("create %s: %v", hdr.Name, err)
 			}
-			var n int64
-			if maxExtractBytes <= 0 {
-				// Cap disabled: copy straight through, exactly as the reference
-				// does. Deliberately NOT a LimitReader with a huge bound — the
-				// max-total+1 arithmetic below is what defines the boundary
-				// behaviour, and routing the unlimited case through it would
-				// invent a boundary where the reference has none.
-				//
-				// The two branches read identically today: archive/tar's
-				// Reader.WriteTo is unexported, so io.Copy falls through to the
-				// same 32 KiB generic copy either way. If a future Go exports it
-				// (the stdlib carries a TODO to), only this branch would take the
-				// sparse-file fast path — same bytes, but the branches would stop
-				// being the same code path. Re-measure if that lands.
-				n, err = io.Copy(out, tr)
-			} else {
-				// The +1 is the boundary definition: reading one byte PAST the
-				// cap is what makes the totalWritten > maxExtractBytes test below
-				// able to fire at all. It must SATURATE rather than wrap. Go wraps
-				// signed overflow, so at maxExtractBytes == MaxInt64 (reachable
-				// since the cap became settable) this sum becomes MinInt64,
-				// io.LimitReader returns EOF on the first Read for any N <= 0, and
-				// io.Copy does not report EOF as an error — every entry would be
-				// created at 0 bytes, totalWritten would stay 0 so the cap test
-				// never fires, and the reply would be success:true over a destDir
-				// of empty files. Measured: the bound wraps to
-				// -9223372036854775808 and io.Copy returns 0.
-				bound := maxExtractBytes - totalWritten
-				if bound < math.MaxInt64 {
-					bound++
-				}
-				n, err = io.Copy(out, io.LimitReader(tr, bound))
-			}
+			n, err := cappedCopy(out, tr, totalWritten)
 			totalWritten += n
 			out.Close()
 			if err != nil {

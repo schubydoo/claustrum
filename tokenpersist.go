@@ -49,6 +49,33 @@ var createTokenTemp = func(dir string) (tokenTempFile, error) {
 	return os.CreateTemp(dir, "daemon.token-*")
 }
 
+// writeFileViaTemp atomically writes content to dest via an O_EXCL temp file in
+// dir (from create) + rename, removing the temp on any failure so a partial file
+// is never left behind. Shared by the daemon.token and rpc.pipe writers, which
+// differ only in the temp pattern, the destination, and how they report the error
+// (persistToken logs it; writePipeNameFile returns it).
+func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, content string) error {
+	f, err := create(dir)
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
 // persistToken atomically writes the auth token to <dir(socket)>/daemon.token
 // (0600) via a temp file + rename, mirroring the reference: os.CreateTemp with
 // the "daemon.token-*" pattern yields an O_EXCL 0600 temp, and the rename makes
@@ -59,25 +86,7 @@ var createTokenTemp = func(dir string) (tokenTempFile, error) {
 // behaves the same (it logs and carries on).
 func persistToken(socket, token string) {
 	dir := persistTokenDir(socket)
-	f, err := createTokenTemp(dir)
-	if err != nil {
-		logErrorf("[daemon] failed to persist token: %v", err)
-		return
-	}
-	tmp := f.Name()
-	if _, err := f.WriteString(token); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		logErrorf("[daemon] failed to persist token: %v", err)
-		return
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		logErrorf("[daemon] failed to persist token: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, filepath.Join(dir, persistedTokenName)); err != nil {
-		_ = os.Remove(tmp)
+	if err := writeFileViaTemp(createTokenTemp, dir, filepath.Join(dir, persistedTokenName), token); err != nil {
 		logErrorf("[daemon] failed to persist token: %v", err)
 	}
 }

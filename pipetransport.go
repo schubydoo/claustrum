@@ -39,26 +39,7 @@ var createPipeTemp = func(dir string) (tokenTempFile, error) {
 // daemon.token write. The name is not a secret (the owner-only pipe DACL is the
 // access control), but the file is created 0600 for tidiness/parity.
 func writePipeNameFile(socket, name string) error {
-	dir := filepath.Dir(socket)
-	f, err := createPipeTemp(dir)
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if _, err := f.WriteString(name); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, pipeNameFilePath(socket)); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return writeFileViaTemp(createPipeTemp, filepath.Dir(socket), pipeNameFilePath(socket), name)
 }
 
 // removePipeNameFile unlinks rpc.pipe on graceful shutdown, mirroring
