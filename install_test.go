@@ -64,6 +64,44 @@ func fakeCLI(t *testing.T, exitCode int) []byte {
 	return b
 }
 
+// assertNoStagingLeftover fails if stageAndInstall's staging file survived in
+// the cli-dir — the directory holding cliPath, which is where the staging file
+// is created: os.CreateTemp(filepath.Dir(cliPath), ".fetch-*").
+//
+// The NAME is the whole point of this helper. Staging is `.fetch-<random>`, not
+// `<cliPath>.tmp`: the `.fetch-` prefix is what makes the file reclaimable by
+// sweepFetchTemps via isSweptName, and stageAndInstall says so explicitly. Both
+// call sites — TestEnsureCLIFromZst here and TestEnsureCLINotRunnable in
+// methods_unit_test.go — used to assert on `<cliPath>.tmp`, which was the real
+// staging name until 52f1431 moved it and left the assertions behind. Against a
+// name nothing creates they could not fail, which is how they survived.
+// Confirmed by mutation, each caught by ONE of the two: replacing the rename
+// with a hard link leaks past TestEnsureCLIFromZst, and dropping the
+// not-runnable branch's os.Remove leaks past TestEnsureCLINotRunnable. The old
+// assertions passed under both.
+//
+// ⚠️ Only meaningful for a test that calls ensureCLI DIRECTLY. ensureCLI does
+// not sweep — sweepFetchTemps runs in runInstall, after it returns — so a leak
+// survives to be seen here. Called from a test that goes through runInstall
+// (captureInstallFacts), the sweep erases the leftover first and this goes
+// inert again, which is the defect it was written to fix.
+//
+// Prefix-matched rather than counting entries: a caller may legitimately have
+// other files in the cli-dir (installed versions, an in-flight blobTempPrefix
+// download), and only the staging leftover is under test here.
+func assertNoStagingLeftover(t *testing.T, cliPath string) {
+	t.Helper()
+	ents, err := os.ReadDir(filepath.Dir(cliPath))
+	if err != nil {
+		t.Fatalf("reading cli-dir: %v", err)
+	}
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".fetch-") {
+			t.Errorf("staging file %q leaked into the cli-dir", e.Name())
+		}
+	}
+}
+
 // slowCLI returns the bytes of a stand-in CLI that answers `--version` with exit
 // 0 only after `seconds` — the honest-but-slow shape divergence D11 is about.
 // Same Unix/Windows split as fakeCLI above, and the same "call it right before
@@ -912,10 +950,9 @@ func TestEnsureCLIFromZst(t *testing.T) {
 	if isRegularFile(zstFile) {
 		t.Error("the source .zst should be consumed on success")
 	}
-	// Atomic extract (#4): the .tmp staging file is renamed into place, not left behind.
-	if isRegularFile(cliPath + ".tmp") {
-		t.Error("the .tmp staging file should be renamed away, not left behind")
-	}
+	// Atomic extract (#4): the `.fetch-*` staging file is renamed into place, not
+	// left behind.
+	assertNoStagingLeftover(t, cliPath)
 }
 
 func TestEnsureCLIFromURL(t *testing.T) {
@@ -1366,10 +1403,5 @@ func TestEnsureCLIConsumesBlobWhenChmodFails(t *testing.T) {
 	}
 	// And the staging file must not survive the failure — the same cleanup the
 	// not-runnable branch does.
-	ents, _ := os.ReadDir(dir)
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), ".fetch-") {
-			t.Errorf("staging file %s survived a chmod failure", e.Name())
-		}
-	}
+	assertNoStagingLeftover(t, filepath.Join(dir, "out.exe"))
 }
