@@ -350,10 +350,15 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   outright that the list has been incomplete every time it was checked). **Three
   driver claims are tracked there**, the third being **"Desktop owns the argv"** —
   the premise under D3, D4, D5, D10, D11, D12, D14 and the "(opt-in)" tagging convention. ⚠️ Its
-  evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
-  argument field there, but Desktop's own config files and forwarded env were never
-  examined, and a config file it turns into argv is one of the two routes that would
-  falsify it. **None of the three claims has been observed end-to-end.**
+  evidence is a look at the setup UI (2026-08-07, no argument field, one unrecorded
+  build) **plus a capture of the argv Desktop actually passes** — all five modes on
+  one cold start, 2026-08-08, none carrying an opt-in flag. ⚠️ That is what Desktop
+  *emits*: its config files and forwarded env were **not enumerated**, and a config
+  file it turns into argv stays **one of the two routes** the reopen trigger names,
+  so it would falsify the claim without contradicting a single captured row. (A
+  forwarded env var would not — nothing reads the environment for these knobs.) The
+  one `-install` seen was a **cache hit**, so a fetching install's argv is
+  unobserved. **No provenance is recorded for the other two claims.**
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is
