@@ -79,17 +79,7 @@ All notable changes to claustrum are documented here. The format is based on
 
 ### Fixes
 
-#### Report a build time from `-version` on `go install pkg@version` builds ([#163](https://github.com/schubydoo/claustrum/pull/163))
-
-Such builds compile the tagged source from the module cache: they embed no
-`vcs.time` setting, receive no `-ldflags`, and `debug.BuildInfo` has no timestamp
-field — so `-version` printed `built unknown`. The release pipeline now bakes the
-version and a UTC timestamp into the source it tags (`buildstamp.go`, written by
-`knope prepare-release`), and the daemon reports it when the resolved module
-version matches that release exactly. A pseudo-version install (`@main`,
-`@<sha>`) still prints `unknown` rather than inheriting the previous release's
-timestamp. `-ldflags` and `vcs.time` continue to take precedence, so release and
-local-git builds are unaffected.
+- `-version` now reports a build time on `go install pkg@version` builds — such builds embed no `vcs.time`, receive no `-ldflags`, and `debug.BuildInfo` has no timestamp field, so `-version` printed `built unknown`; the release pipeline now bakes the version and a UTC timestamp into the source it tags (`buildstamp.go`, written by `knope prepare-release`) and reports it when the resolved module version matches that release exactly, while a pseudo-version install (`@main`, `@<sha>`) still prints `unknown` and `-ldflags`/`vcs.time` continue to take precedence. ([#163](https://github.com/schubydoo/claustrum/pull/163))
 
 ## 1.7.2 (2026-07-25)
 
@@ -97,14 +87,7 @@ local-git builds are unaffected.
 
 ### Fixes
 
-#### Report the module version from `-version` for `go install pkg@version` builds ([#161](https://github.com/schubydoo/claustrum/pull/161))
-
-Such builds carry no `vcs.*` build settings — they compile from the module cache,
-which has no VCS context — so the version fallback found nothing and `-version`
-reported the `claustrum-dev` sentinel even for a binary installed at a real tag.
-It now falls back to `debug.BuildInfo.Main.Version`, keeping the precedence
-`-ldflags` > `vcs.revision` > module version > sentinel. Downstream version
-checks that parse `-version` can now confirm a `go install` build's version.
+- `-version` now reports the module version for `go install pkg@version` builds — such builds carry no `vcs.*` build settings (they compile from the module cache, which has no VCS context), so the fallback found nothing and reported the `claustrum-dev` sentinel even for a binary installed at a real tag; it now falls back to `debug.BuildInfo.Main.Version`, keeping the precedence `-ldflags` > `vcs.revision` > module version > sentinel, so downstream version checks that parse `-version` can confirm a `go install` build's version. ([#161](https://github.com/schubydoo/claustrum/pull/161))
 
 ## 1.7.1 (2026-07-12)
 
