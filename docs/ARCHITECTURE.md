@@ -294,8 +294,9 @@ and a file Desktop reads outside `userData` was neither read nor ruled out. Evid
 in `scratch/` (gitignored).
 
 **So: no way for Desktop to pass arbitrary arguments to the daemon has been found —
-not in the setup UI, not in the files read.** (Forwarded environment is not a route — the trigger below
-disqualifies it, since nothing reads the environment for these knobs.)
+not in the setup UI, not in the files read.** (Forwarded environment is not a
+route — the trigger below disqualifies it, since nothing reads the environment
+for these knobs.)
 
 One further limit. **Both `-install` runs were cache hits** — each answered
 `cliWasPresent:true`, and neither argv carried a source flag, so neither could
