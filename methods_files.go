@@ -332,6 +332,8 @@ var maxExtractBytes int64
 // LimitReader would EOF on the first Read, io.Copy would not report it, every
 // entry would be created at 0 bytes, totalWritten would stay 0 so the cap test
 // never fires, and the reply would be success:true over a destDir of empty files.
+// Measured: the bound wraps to -9223372036854775808 and io.Copy returns 0.
+// (`TestFilesExtractTarCapMaxInt64DoesNotOverflow` pins this.)
 func cappedCopy(out io.Writer, tr io.Reader, totalWritten int64) (int64, error) {
 	if maxExtractBytes <= 0 {
 		return io.Copy(out, tr)

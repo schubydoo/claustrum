@@ -127,8 +127,12 @@ type managedProc struct {
 	// the process is alive. Read only by pruneExited, under p.mu like running.
 	exitedAt time.Time
 	stdin    io.WriteCloser
-	cmd      *exec.Cmd
-	group    *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	// cmd is set once in spawn's composite literal and never reassigned, so it is
+	// safe to read without p.mu (waitReapAndDrain does). signalIfLive and
+	// killGroupAfterExit hold p.mu across their p.cmd access to make the
+	// reaped-check-and-signal atomic, not to protect this pointer.
+	cmd   *exec.Cmd
+	group *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -521,7 +525,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	wg.Add(2)
 	go func() { defer wg.Done(); pumpStream(p, "stdout", stdoutR) }()
 	go func() { defer wg.Done(); pumpStream(p, "stderr", stderrR) }()
-	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace, id)
+	go p.waitReapAndDrain(&wg, stdoutR, stderrR, grace)
 	return p, nil
 }
 
@@ -529,7 +533,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 // to exit and reap, runs the bounded stdout/stderr drain, flips running to false,
 // tears down stdin and the OS group handle, then emits the exit frame. Extracted
 // from spawn so the lifecycle reads as one-level steps; behavior is unchanged.
-func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, grace time.Duration, id string) {
+func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.File, grace time.Duration) {
 	// cmd.Wait returns the moment the process itself exits — it no longer
 	// waits on the pipes, because they are ours now.
 	err := p.cmd.Wait()
@@ -583,7 +587,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// Release the OS group handle now the child is gone. On Windows this drops
 	// the Job Object's last handle, reaping any descendants it left behind.
 	p.group.close()
-	logInfof("[process.Manager] Process %s exited with code %d", id, code)
+	logInfof("[process.Manager] Process %s exited with code %d", p.id, code)
 	met.processExits.Add(1)
 	p.emit(streamFrame{Stream: "exit", ExitCode: &code})
 	// Signal any killAndWait waiter now the child is fully reaped.
