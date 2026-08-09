@@ -350,10 +350,21 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   outright that the list has been incomplete every time it was checked). **Three
   driver claims are tracked there**, the third being **"Desktop owns the argv"** —
   the premise under D3, D4, D5, D10, D11, D12, D14 and the "(opt-in)" tagging convention. ⚠️ Its
-  evidence is **one look at the setup UI on one unrecorded build, 2026-08-07** — no
-  argument field there, but Desktop's own config files and forwarded env were never
-  examined, and a config file it turns into argv is one of the two routes that would
-  falsify it. **None of the three claims has been observed end-to-end.**
+  evidence is a look at the setup UI (2026-08-07, no argument field, one unrecorded
+  build) **plus a capture of the argv Desktop actually passes** — all five modes on
+  one cold start, 2026-08-08, carrying **no argument the daemon has no use for**: no
+  free-form token, no pass-through, no extra-arguments residue. ⚠️ "No opt-in flag
+  appeared" would be **entailed** and proves nothing: those flags postdate the
+  daemon Desktop was built against, so a Desktop that knew nothing of them and one
+  that refused to pass them leave the same log. ⚠️ It also shows what Desktop
+  *emits*, **not** where the values came from — `--cli-keep 3` is exactly the shape
+  a settings field would fill. Its config files were **not enumerated**, and a
+  config file it turns into argv stays **one of the two routes** the reopen trigger
+  names, so it would falsify the claim without contradicting a single captured row.
+  (Forwarded env is not such a route — nothing reads the environment for these
+  knobs.) Both `-install` runs were **cache hits**, so a fetching install's argv is
+  unobserved, and D10, D12 and D13 act only there. **The other two claims still
+  have no direct observation behind them.**
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

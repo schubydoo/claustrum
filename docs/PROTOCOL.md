@@ -1295,11 +1295,12 @@ unset in the child before it spawns anything, so it never leaks downstream.
   break: a caller with a tree over the cap got an error with no way through,
   because Claude Desktop owns the argv (a **driver** claim, tracked with its
   provenance and reopen trigger in [`ARCHITECTURE.md`](ARCHITECTURE.md) →
-  *Driver claims and their provenance*. ⚠️ The evidence behind it is **one look at the setup UI on one
-  unrecorded build, 2026-08-07** — Desktop's own config files and any forwarded
-  environment were never examined, and a config file it turns into argv is one of
-  the two routes that would falsify it). Flipping the default to `0` is the parity
-  fix; the cap itself survives as an opt-in for hosts that want it.
+  *Driver claims and their provenance*. ⚠️ The evidence is a look at the setup UI
+  (2026-08-07) plus a capture of the argv Desktop actually passes, all five modes
+  on one cold start (2026-08-08, both `-install` runs cache hits) — but Desktop's
+  own config files were never enumerated, and a config file it turns into argv is
+  one of the two routes that would falsify it). Flipping the default to `0` is the
+  parity fix; the cap itself survives as an opt-in for hosts that want it.
 - Also settable in `claustrum.conf` as `max-extract-bytes = <n>` (an explicit
   `-max-extract-bytes` flag wins). **That is the reachable knob** — see the argv
   point above. Negative or unparseable values are ignored, so a typo can never
