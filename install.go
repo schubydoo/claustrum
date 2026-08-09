@@ -122,7 +122,7 @@ func ensureCLI(o installOpts, cliPath string) error {
 	case o.cliZst != "":
 		// SFTP fallback: the blob arrives over an already-authenticated channel,
 		// so the reference NEVER verifies -cli-checksum here. Claustrum diverges as
-		// a conditional hardening (IMPROVEMENTS D1), activated by the caller supplying
+		// a conditional hardening (docs/DIVERGENCES.md D1), activated by the caller supplying
 		// -cli-checksum rather than by an operator: when a -cli-checksum IS supplied we
 		// verify it and reject a corrupt/tampered blob with the same "checksum
 		// mismatch" error as the -cli-url path. An ABSENT/empty checksum stays
@@ -421,7 +421,7 @@ func isSingleComponent(name string) bool {
 // verifyChecksum returns a "checksum mismatch" error (byte-identical to the
 // reference's -cli-url path) when got does not equal expected. The -cli-url path
 // calls it unconditionally; the -cli-zst path only when a checksum is supplied
-// (IMPROVEMENTS D1, a conditional divergence from the reference — caller-activated).
+// (docs/DIVERGENCES.md D1, a conditional divergence from the reference — caller-activated).
 //
 // It takes the hex digest rather than the bytes so no caller has to hold the
 // whole blob in memory to check it: the download hashes as it streams, and the
@@ -783,8 +783,8 @@ func isRegularFile(p string) bool {
 }
 
 // lddProbeTimeout bounds the `ldd --version` libc probe WHEN SET; it is 0 by
-// default and then bounds nothing. This is divergence D14; see IMPROVEMENTS.md for
-// the measured tables.
+// default and then bounds nothing. This is divergence D14; see the D14 entry in
+// docs/DIVERGENCES.md.
 //
 // MEASURED: the reference applies no deadline here at or below 45 s — probed with
 // a stub ldd on PATH and the musl loader glob masked. That result comes from the
@@ -827,7 +827,7 @@ func isRegularFile(p string) bool {
 // A hostile ldd answering in 1s is untouched by the deadline either way.
 // (The libc VALUE itself is a separate matter and is still unmeasured: see
 // classifyLibc for the loader glob, libc_other.go for why the probe does not run
-// off linux at all, and IMPROVEMENTS tier item 5 for the musl-banner fixture that
+// off linux at all, and docs/DIVERGENCES.md D14 for the musl-banner fixture that
 // would settle it.)
 // D14 FLIP: ZERO (the default) DISABLES IT, which is the parity position. Opt in
 // with -libc-probe-timeout or the libc-probe-timeout key in claustrum.conf; the

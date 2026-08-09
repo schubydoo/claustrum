@@ -30,21 +30,34 @@ It exposes **19 methods** across the `server.*`, `files.*`, `git.*`, and
 base64 stdout/stderr frames that a late or reconnecting client can replay via
 `reattach`.
 
-Beyond the wire contract, a few **claustrum-only operational extras** (all
-opt-in and invisible to clients): leveled stderr logging via
-`CLAUSTRUM_LOG_LEVEL`, a Prometheus `/metrics` endpoint via `-metrics-addr`
-(no listener exists without it), a disk-free token handoff via `-token-fd`,
-whole-tree process kill on Windows via Job Objects, and a `-keep-children`
-flag (CT-2, POSIX-only) that leaves spawned processes running across a graceful
-shutdown so they survive a daemon restart (off by default — shutdown kills them).
-See the [protocol reference](PROTOCOL.md) for details.
+## Operational extras
 
-There is also one opt-in **protocol extension** — visible to clients but still an
-explicit **addition, not a reference behavior**: passing `"wantPid":true` to
+Beyond the wire contract, claustrum carries a few claustrum-only operational
+extras. Each is either default-off or invisible to clients, so none of them
+changes the frames a client sees. See the [protocol reference](PROTOCOL.md) for
+details.
+
+- **Logging** — leveled stderr logging, **always on** (emits everything by
+  default). `CLAUSTRUM_LOG_LEVEL` only *raises* the threshold to quiet it; it
+  never turns logging off entirely.
+- **Metrics** — a Prometheus `/metrics` endpoint via `-metrics-addr`. Off by
+  default: no listener exists unless the flag is set.
+- **Token handoff** — a disk-free token via `-token-fd` (nothing touches disk).
+- **Windows process kill** — whole-tree child kill on Windows via Job Objects.
+- **`-keep-children`** (CT-2, POSIX-only) — leaves spawned processes running
+  across a graceful shutdown so they survive a daemon restart. Off by default;
+  the default shutdown kills them.
+
+## Protocol extension
+
+claustrum has one opt-in protocol extension that is visible to clients — a
+deliberate addition, not a reference behavior. Passing `"wantPid":true` to
 `process.spawn` / `process.reattach` adds `pid` + `startTime` to the result for
-PID-reuse detection (CT-1). A client that doesn't opt in sees byte-identical
-frames, so the hard rule above still holds. It is catalogued as a deliberate
-divergence in the [improvement backlog](IMPROVEMENTS.md#deliberate-divergences-post-parity).
+PID-reuse detection (CT-1).
+
+A client that does not opt in sees byte-identical frames, so the hard rule above
+still holds. It is catalogued as a deliberate divergence in the
+[divergence catalog](DIVERGENCES.md).
 
 ## Where to go next
 
@@ -58,8 +71,10 @@ divergence in the [improvement backlog](IMPROVEMENTS.md#deliberate-divergences-p
   the socket.
 - :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)** — how
   compatibility with the reference daemon is kept in lock-step.
-- :material-format-list-checks: **[Improvement backlog](IMPROVEMENTS.md)** —
-  stack-ranked, all wire-compatible unless noted.
+- :material-source-branch: **[Divergences](DIVERGENCES.md)** — every deliberate
+  departure from the reference, its default, and how to activate it.
+- :material-format-list-checks: **[Shipped ledger](IMPROVEMENTS.md)** —
+  the completed hardening work, one line per item.
 
 </div>
 

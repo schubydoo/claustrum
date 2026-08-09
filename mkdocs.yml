@@ -79,10 +79,11 @@ nav:
   - Home: index.md
   - Architecture: ARCHITECTURE.md
   - Protocol reference: PROTOCOL.md
+  - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md
   - Upstream tracking: UPSTREAM-TRACKING.md
   - Reference builds: REFERENCE-BUILDS.md
-  - Improvement backlog: IMPROVEMENTS.md
+  - Shipped ledger: IMPROVEMENTS.md
   - Project:
       - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
       - Security policy: https://github.com/schubydoo/claustrum/blob/main/SECURITY.md

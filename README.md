@@ -38,18 +38,18 @@ host. It isn't a network relay — it's **local plumbing**:
 
 `claustrum` is a from-scratch, behaviorally-compatible implementation of that daemon, so it can
 be used **independently** — e.g. as a building block for self-hosted tooling like
-[clauster](https://github.com/schubydoo/clauster). It is validated to produce
-**byte-identical** JSON-RPC frames for every method, apart from a small set of documented,
-deliberate divergences (see [Validation](#validation) and
-[IMPROVEMENTS](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity)).
+[clauster](https://github.com/schubydoo/clauster). It produces **byte-identical** JSON-RPC
+frames for every method, apart from a small set of documented, deliberate divergences (see
+[docs/DIVERGENCES.md](docs/DIVERGENCES.md)).
 
 > **Status: stable (v1.0+).** The JSON-RPC/process/file/git surface is complete and validated; the
 > CLI-version installer is implemented and behavior-checked. No telemetry, ever.
 
 ## Install / build
 
-Requires Go 1.25+. Dependencies: `github.com/klauspost/compress` (zstd) and
-`golang.org/x/sys` (Windows Job Object teardown — only compiled into Windows builds).
+Requires Go 1.25+. Dependencies: `github.com/klauspost/compress` (zstd, cross-platform), plus
+two modules compiled into Windows builds only — `golang.org/x/sys` (Job Object teardown) and
+`github.com/Microsoft/go-winio` (the opt-in `-listen-pipe` named-pipe transport, CT-5).
 
 ```sh
 # build the native binary
@@ -63,19 +63,13 @@ go build -o claustrum .
 go install github.com/schubydoo/claustrum@latest
 ```
 
-`claustrum -version` prints `claustrum <version> (built <iso8601>)`. From a local
-`go build` the SHA/time come from the embedded VCS build info; a released binary
-carries its tag (stamped via `-ldflags`); and `go install …@vX.Y.Z` reports the
-module version it resolved plus the release timestamp baked into the tagged
-source (`buildstamp.go`) — that path builds from the module cache, which has no
-VCS context, so those two are the only stamps available. Installing a
-pseudo-version (`@main`, `@<sha>`) prints `built unknown`, since no release
-timestamp describes it.
+`claustrum -version` prints `claustrum <version> (built <iso8601>)` — a local `go build` stamps
+the SHA and time from embedded VCS build info, a released binary carries its tag, and
+`go install …@vX.Y.Z` reports the resolved module version plus the tagged release timestamp
+(`buildstamp.go`; a pseudo-version like `@main` prints `built unknown`).
 
-A `go install` binary is not flag-for-flag identical to a release artifact: it
-uses the host's defaults (cgo enabled, no `-trimpath`, unstripped), so it is
-tied to that machine's libc. Pass the release flags if you want an equivalent
-build:
+A `go install` binary is not flag-for-flag identical to a release artifact (host cgo defaults, no
+`-trimpath`, unstripped). Pass the release flags for an equivalent build:
 
 ```sh
 CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" github.com/schubydoo/claustrum@latest
@@ -89,7 +83,7 @@ One binary, mode-switched by flag:
 claustrum -serve   -socket <path> -token-file <path>   # self-daemonize, run the RPC server
 claustrum -bridge  -socket <path>                       # dumb stdio<->socket relay (what SSH attaches)
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
-claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>] [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>] [-libc-probe-timeout <dur>]
+claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>]
 claustrum -version
 ```
 
@@ -124,50 +118,43 @@ catch up via the replay buffer, extracting a plugin tarball — are in
 
 - **Transport:** NDJSON over `AF_UNIX` `SOCK_STREAM` (mode `0600`); one persistent connection;
   requests dispatched concurrently.
-- **Auth:** every request carries an in-band `"auth":"<token>"`; the daemon's token comes from
-  `-token-file` (read once, then unlinked) or `-token-fd` (read from an open descriptor —
-  never touches disk). claustrum reads `CLAUDE_RPC_TOKEN` **nowhere** — `-bridge`
-  is a dumb relay whose client supplies its own `auth`, and the daemon strips the
-  variable from spawned children. The one exception to auth itself is
-  `server.shutdown`, which is **not** authenticated (matching the reference), so
-  `-stop` sends no token at all.
+- **Auth:** every request carries an in-band `"auth":"<token>"`. The daemon's token comes from
+  `-token-file` (read once, then unlinked) or `-token-fd` (read from an open descriptor — never
+  touches disk). claustrum reads `CLAUDE_RPC_TOKEN` **nowhere**, and strips it from spawned
+  children. The one exception to auth itself is `server.shutdown`, which is **not** authenticated
+  (matching the reference), so `-stop` sends no token at all.
 - **19 methods** across `server.*`, `files.*`, `git.*`, `process.*` (`server.capabilities`
   self-describes them).
 - **process.\*** is the core: a client supplies its own `id` on `spawn`; the daemon streams
   id-less `{"type":"stream",…}` notifications (base64 stdout/stderr + an `exit`), buffers them,
   and replays on `reattach{fromSeq}`. This is how both the agent and MCP servers are hosted.
-- **Operational knobs** (claustrum-only, off the wire unless noted): `CLAUSTRUM_LOG_LEVEL` quiets the
-  leveled stderr diagnostics, `-metrics-addr` opts into a local Prometheus `/metrics`
-  endpoint (no listener exists without it), and `-keep-children` (CT-2, POSIX-only) makes a
-  graceful shutdown leave spawned children running so they survive a daemon restart (off by
-  default — shutdown kills them, unchanged; ignored with a warning on Windows).
-  `-max-extract-bytes` (D3) opts into a `files.extract_tar` size cap — **off by default**,
-  because a cap fails an extraction the reference completes (measured to 629 MB). This one
-  **is** wire-visible when enabled: exceeding it returns an error frame the reference has no
-  way to produce. `-git-timeout` (D5) opts into a deadline on every git invocation —
-  also **off by default**, because the reference showed no such deadline at the
-  durations probed; opted in it is wire-visible too (a `-32603` carrying
-  `signal: killed`, among other arms). `-files-read-regular-only` (D4) opts into
-  refusing a `files.read` of a FIFO, socket or device — **off by default**, because
-  the reference reads `/dev/null` happily and blocks on a writerless FIFO rather
-  than refusing either; opted in it is wire-visible as a `-32602`. Four `-install` knobs are off by default for the same reason:
-  `-max-cli-bytes` (D10) caps the decompressed CLI and the download body,
-  `-cli-probe-timeout` (D11) bounds the `<cli> --version` runnability probe — measured, the
-  reference installs a CLI that answers in 90 s, so any deadline at or below that fails an
-  install it completes — and `-cli-download-timeout` (D12) bounds the download, where the
-  reference completes one taking 324 s that the retracted 5-minute default failed at 300 s.
-  `-libc-probe-timeout` (D14, linux only) bounds the `ldd --version` libc probe — it was
-  flipped because its honest-path cost was untested in either direction, and an untested
-  conjunction is not a justification. ⚠️ Not the same knob as `-cli-probe-timeout`.
-  Each also has a `claustrum.conf` key, which is the reachable one when Claude
-  Desktop owns the argv (a claim about the driver, not the reference — see
-  `docs/ARCHITECTURE.md` → Driver claims and their provenance).
-- **Protocol extensions** (claustrum-only, opt-in — **additions**, *not* part of the reference
-  contract it mimics): `process.spawn` / `process.reattach` accept `"wantPid":true`, which adds
-  `pid` + `startTime` to the result for PID-reuse / orphan detection (CT-1). These are pure
-  additions — a client that doesn't opt in sees **byte-identical** frames, so the guarantee below
-  is unaffected. See [docs/PROTOCOL.md](docs/PROTOCOL.md) and the
-  [divergence catalog](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity).
+  `process.spawn` / `process.reattach` also accept `"wantPid":true` (CT-1), which adds `pid` +
+  `startTime` to the result for PID-reuse / orphan detection; a client that doesn't opt in sees
+  byte-identical frames.
+
+### Operational knobs
+
+Claustrum-only, off the wire: `CLAUSTRUM_LOG_LEVEL` raises the leveled-stderr log threshold
+(logging is always on); `-metrics-addr` opts into a local Prometheus `/metrics` endpoint (no
+listener exists without it); `-keep-children` (CT-2, POSIX-only) leaves spawned children running
+across a graceful shutdown; `-listen-pipe` (CT-5, Windows-only) additionally serves the same
+JSON-RPC over a named pipe. All are off by default.
+
+Seven flags opt into a **deliberate divergence** from the reference — each is off by default and
+has a matching `claustrum.conf` key (the reachable knob when Claude Desktop owns the argv, a
+driver claim — see
+[docs/ARCHITECTURE.md → Driver claims and their provenance](docs/ARCHITECTURE.md#driver-claims-and-their-provenance)).
+See [docs/DIVERGENCES.md](docs/DIVERGENCES.md) for the catalog, rules, and measurements.
+
+| Flag | Default | Opts into | Scope |
+|------|---------|-----------|-------|
+| `-max-extract-bytes` (D3) | off (0) | a `files.extract_tar` size cap (error frame when exceeded) | `-serve` |
+| `-files-read-regular-only` (D4) | off | refusing a non-regular `files.read` (`-32602`) | `-serve` |
+| `-git-timeout` (D5) | off (0) | a deadline on every git call (`-32603` `signal: killed`) | `-serve` |
+| `-max-cli-bytes` (D10) | off (0) | a size cap on the decompressed CLI + download body | `-install` |
+| `-cli-probe-timeout` (D11) | off (0) | a deadline on the `<cli> --version` runnability probe | `-install` |
+| `-cli-download-timeout` (D12) | off (0) | a deadline on the CLI download | `-install` |
+| `-libc-probe-timeout` (D14) | off (0) | a deadline on the `ldd --version` libc probe | `-install`, linux only |
 
 Full details: **[docs/PROTOCOL.md](docs/PROTOCOL.md)** and **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
@@ -175,27 +162,19 @@ Full details: **[docs/PROTOCOL.md](docs/PROTOCOL.md)** and **[docs/ARCHITECTURE.
 
 Cross-compiles to **linux**, **macOS (darwin)**, and **windows** on **amd64** and **arm64** (6
 targets). It's a static `CGO_ENABLED=0` Go binary. OS-specific behavior (daemonize, process
-groups on Unix / Job Objects on Windows for whole-tree kill, login-shell PATH extraction) is
-isolated in `*_unix.go` / `*_windows.go` files; the JSON-RPC surface is identical everywhere.
+groups on Unix / Job Objects on Windows for whole-tree kill, login-shell PATH extraction, the
+Windows-only `-listen-pipe` transport) is isolated in `*_unix.go` / `*_windows.go` files; the
+JSON-RPC surface is identical everywhere.
 
 ## Validation
 
 `claustrum` is checked against a reference daemon with a request **battery** that exercises every
 method, error path, and the full process lifecycle, then diffs normalized frames. Current status:
-**byte-identical on every method the battery exercises, apart from a small set of documented,
-deliberate divergences** — see
-[`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md#deliberate-divergences-post-parity); the bounds
-D11/D12 in particular are wall-clock thresholds, so an honest-but-slow CLI or download diverges
-once they apply — which now means only when `-cli-probe-timeout` (D11) or
-`-cli-download-timeout` (D12) is opted into, since both are off by default. Since
-D14's flip there is **no claustrum-chosen wall-clock bound left on by default** on
-either `-serve` or `-install`.
-D5's 60 s git cap was flipped to opt-in (`-git-timeout` / the `git-timeout` config
-key) and is off unless asked for, as was D4's `files.read` regular-file guard
-(`-files-read-regular-only` / the `files-read-regular-only` key) — that one is not
-a threshold but a mode check, so what it refused was an honest read of a character
-device. The harness
-lives in `scratch/` (local, not published).
+**byte-identical on every method the battery exercises, apart from the documented, deliberate
+divergences** — catalogued in
+[docs/DIVERGENCES.md](docs/DIVERGENCES.md) — most opt-in and off by default, a few
+always-on or conditional. The battery harness lives in `scratch/` (local, not
+published).
 
 An **in-repo test suite** (run in CI on every PR, on linux, macOS, and Windows) locks the same
 contract without the reference binary: a socket-integration battery boots the daemon and asserts

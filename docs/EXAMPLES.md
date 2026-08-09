@@ -96,16 +96,20 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
 # {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":4,"stdinApplied":0}}
 ```
 
-A process survives the disconnect of the connection that spawned it — a *new*
-connection can `reattach` to it and keep streaming. That is the reconnect path.
+The `firstSeq`/`lastSeq` values are illustrative: stdout framing is chunk-based,
+not line-per-frame, so the three `echo`es can arrive in one frame and shift
+`lastSeq`. A process survives the disconnect of the connection that spawned
+it — a *new* connection can `reattach` to it and keep streaming. That is the
+reconnect path.
 
 ## Opt into `pid` + `startTime` — `wantPid` (claustrum extension)
 
 !!! note "An addition, not reference behavior"
     The reference daemon has no `wantPid`; this is an opt-in **claustrum
-    extension** (CT-1). Omit it — the default — and every frame is byte-identical
-    to the reference. It does not change the original `spawn`/`reattach`
-    behavior; it only *adds* fields when explicitly requested.
+    extension** (CT-1; see [DIVERGENCES.md](DIVERGENCES.md)). Omit it — the
+    default — and every frame is byte-identical to the reference. It does not
+    change the original `spawn`/`reattach` behavior; it only *adds* fields when
+    explicitly requested.
 
 `process.spawn` and `process.reattach` accept `"wantPid":true`. When set, the
 result carries the child's OS `pid` plus a `startTime` token, returned
@@ -140,6 +144,12 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"files.extract_tar\",
 # {"id":1,"result":{"success":true,"fileCount":N}}   (expects a gzip tarball; destDir must be absolute, non-root)
 ```
 
+`destDir` is also refused if it *is or contains* your home directory — the
+`wipesHomeDir` guard, not just the absolute/non-root check the comment shows.
+`extract_tar` wipes `destDir` before extracting, and `"~"` expands to `$HOME`,
+so the home guard is what stops a bare `"~"` from deleting it. See
+[DIVERGENCES.md](DIVERGENCES.md) (D2).
+
 ## Shut it down
 
 ```sh
@@ -157,7 +167,14 @@ claustrum -install -cli-dir "$D/cli" -cli-version 1.2.3 \
 #                            "cliPath":"…/cli/1.2.3","cliWasPresent":false,"cliError":"…"}
 ```
 
+`cliError` is `omitempty`: a successful install omits it. It appears above only
+because `https://example.invalid` is unreachable, so the download fails and the
+error lands in the field. `libc` is `glibc` on a glibc linux host and `musl` on a musl linux host; off
+linux it is empty (`""`).
+
 ## Operational knobs (claustrum-only, all off the wire)
+
+### Token on a file descriptor
 
 Start the daemon with the token on a file descriptor instead of a temp file —
 the token never touches disk (fd `0` works too, for piping it on stdin):
@@ -165,6 +182,8 @@ the token never touches disk (fd `0` works too, for piping it on stdin):
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-fd 3 3< <(printf '%s' "$TOK")
 ```
+
+### Prometheus metrics
 
 Opt into Prometheus counters (connections, spawns/exits, reattaches,
 stream/stdin bytes). No listener exists unless the flag is set; it serves
@@ -178,6 +197,8 @@ curl -s http://127.0.0.1:9090/metrics | grep claustrum_
 # …
 ```
 
+### Log level
+
 Quiet the daemon's stderr diagnostics (default emits everything, matching the
 reference; the `[Server]`/`[process.Manager]`/… prefixes stay grep-able at any
 level):
@@ -186,17 +207,25 @@ level):
 CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token"
 ```
 
+### `-keep-children`
+
 Survive a daemon restart with `-keep-children` (CT-2, POSIX-only): a graceful
 shutdown leaves spawned children running instead of killing them, so they
-outlive a daemon restart/upgrade. Off by default (shutdown kills the tree); the
-new daemon does **not** re-adopt the survivors — reconcile them out-of-band via
-the CT-1 `pid`/`startTime`. Survivors lose their stdio (stdin EOF; stdout/stderr
-writes hit a closed pipe → SIGPIPE/EPIPE — see PROTOCOL.md), so only children
-that tolerate that genuinely outlive the daemon. On Windows the flag is ignored
-with a warning (a Job Object tears the children down on daemon exit regardless):
+outlive a daemon restart/upgrade.
+
+- **Off by default** — shutdown kills the whole process tree.
+- **No re-adoption** — the new daemon does not re-adopt the survivors; reconcile
+  them out-of-band via the CT-1 `pid`/`startTime`.
+- **Survivors lose stdio** — stdin hits EOF and stdout/stderr writes hit a
+  closed pipe (SIGPIPE/EPIPE, see [PROTOCOL.md](PROTOCOL.md)), so only children
+  that tolerate that genuinely outlive the daemon.
+- **Windows ignores it** — the flag is dropped with a warning; a Job Object
+  tears the children down on daemon exit regardless.
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children
 # on graceful shutdown the daemon logs, instead of killing them:
 #   [Server] -keep-children: leaving 2 running child process(es) alive across shutdown
 ```
+
+See [DIVERGENCES.md](DIVERGENCES.md) for the CT-2 catalog entry.

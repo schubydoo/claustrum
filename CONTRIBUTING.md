@@ -12,17 +12,17 @@ green (see below).
 ```sh
 git clone https://github.com/schubydoo/claustrum
 cd claustrum
-go build ./...            # Go 1.25+; deps: klauspost/compress + golang.org/x/sys (Windows-only)
+go build ./...            # Go 1.25+; deps: klauspost/compress, golang.org/x/sys + Microsoft/go-winio (both Windows-only)
 make build               # -> ./claustrum
 make hooks               # one-time: install the pre-commit hook (see below)
 ```
 
 `make hooks` points `core.hooksPath` at the tracked `.githooks/` dir, so a
 zero-dependency `pre-commit` hook runs the same fast checks CI gates on —
-`gofmt`, `go vet`, `go mod tidy` cleanliness, and `golangci-lint` if it's
-installed — before each commit. It needs no external tooling (no Python
-`pre-commit` framework); bypass it for an in-progress commit with
-`git commit --no-verify`.
+`gofmt`, `go vet`, `go mod tidy` cleanliness, `golangci-lint` if it's installed,
+and a changeset-shape check when you stage a `.changeset/` fragment — before each
+commit. It needs no external tooling (no Python `pre-commit` framework); bypass
+it for an in-progress commit with `git commit --no-verify`.
 
 ## Before opening a PR
 
@@ -41,7 +41,8 @@ installed — before each commit. It needs no external tooling (no Python
 - **Compatibility** — if you touch the wire surface (`rpc.go`, `methods_*.go`,
   `process.go`, `results.go`), re-run the validation battery in `scratch/` and
   confirm frames stay **byte-identical**. A change that intentionally diverges
-  must say so in the PR and update [docs/PROTOCOL.md](docs/PROTOCOL.md).
+  must say so in the PR and add an entry to the divergence catalog in
+  [docs/DIVERGENCES.md](docs/DIVERGENCES.md).
 - **Docs** — update `docs/` for any user-visible behavior change. The site is
   built with mkdocs-material and published to GitHub Pages; CI runs
   `mkdocs build --strict` on every docs change (a broken link or bad nav fails
@@ -68,15 +69,22 @@ installed — before each commit. It needs no external tooling (no Python
   (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, …). PRs are squash-merged, so the
   title becomes the commit subject. Titles are for a clean history only — they do
   **not** drive releases (see [Changesets](#changesets)).
-- **Changeset** — if your PR is user-facing, add a `.changeset/*.md` fragment
-  (see [Changesets](#changesets)). No fragment ⇒ no changelog entry and no version
-  bump. Internal-only PRs (CI, tooling, refactor, tests) don't need one.
+- **Changeset** — user-facing PRs add a `.changeset/*.md` fragment; internal-only
+  PRs don't (see [Changesets](#changesets)).
 
 ## Changesets
 
-Releases are **changesets-only** (knope): the `.changeset/*.md` fragments — not
-commit messages — drive both the version bump and the CHANGELOG
-(`knope.toml` sets `ignore_conventional_commits = true`).
+Releases are **changesets-only** (knope): `.changeset/*.md` fragments — not commit
+messages — drive both the version bump and the CHANGELOG (`knope.toml` sets
+`ignore_conventional_commits = true`).
+
+**A changeset body must be a single line.** knope takes the first line as the
+entry summary; any further content — a second line, or a blank-line-separated
+paragraph such as an "Upgrade note" — makes it render as a `####` heading block
+instead of a bullet, and a lone heading among bullets is what breaks the
+changelog. This already shipped twice, in the 1.7.2 and 1.7.3 release notes. Fold
+every detail into that one sentence. `scripts/lint_changesets.py` enforces it, in
+CI and in the `make hooks` pre-commit hook.
 
 On a user-facing PR, add a fragment — run `knope document-change`, or create
 `.changeset/<short-slug>.md`:
@@ -88,14 +96,6 @@ default: minor
 
 Short, imperative summary of the change.
 ```
-
-**The body must be a single line.** knope takes the first line as the entry
-summary; any further content — a second line, or a blank-line-separated
-paragraph such as an "Upgrade note" — makes it render the entry as a `####`
-heading block instead of a bullet, and a lone heading among bullets is what
-breaks the changelog. This already shipped twice, in the 1.7.2 and 1.7.3 release
-notes. Fold every detail into that one sentence. `scripts/lint_changesets.py`
-enforces it, in CI and in the `make hooks` pre-commit hook.
 
 `default:` sets the bump and changelog section: `major` → Breaking changes,
 `minor` → Features, `patch` → Fixes, `perf` → Performance, `build` → Build System
@@ -114,17 +114,16 @@ and creates the GitHub Release, which triggers the signed `release.yml` build
 (goreleaser). Merging the release PR is the human approval gate.
 
 **`buildstamp.go` is generated — don't edit it by hand.** `scripts/write_build_stamp.py`
-rewrites its two consts during `prepare-release`, so the tagged source carries the
-release version and timestamp. That exists solely for `go install pkg@vX.Y.Z`
-builds, which compile from the module cache: they embed no `vcs.*` settings and
-receive no `-ldflags`, so the source is the only channel that can tell them when
-they were released. The script fails loudly if the file's shape has changed.
+rewrites its two consts during `prepare-release` so `go install pkg@vX.Y.Z` builds
+(which compile from the module cache and carry no `vcs.*` metadata or `-ldflags`)
+can still report their release version and time. See `buildstamp.go` for the full
+rationale.
 
 ## Scope notes
 
 - **No new dependencies** without discussion — the binary is deliberately
-  stdlib + zstd (`klauspost/compress`) + `golang.org/x/sys` (Windows-only),
-  `CGO_ENABLED=0`.
+  stdlib + zstd (`klauspost/compress`) + `golang.org/x/sys` and
+  `github.com/Microsoft/go-winio` (both Windows-only), `CGO_ENABLED=0`.
 - **No telemetry, ever.**
 - Keep host-specific or reverse-engineering working notes out of the repo (the
   `scratch/` tree is gitignored on purpose).
