@@ -543,8 +543,8 @@ and where they go is unobserved, so do not read it as a route into this claim.
 All three driver claims sit outside the parity harness, and **the other two have no
 direct observation behind them**; `ARCHITECTURE.md` names the fixture that would
 settle each. It reopens if Desktop **has** a way for an operator to influence
-the daemon's argv — found in the unread half or added later. That would make a
-flag-only opt-in sufficient **for Desktop-driven
+the daemon's argv. That would make a flag-only opt-in sufficient **for
+Desktop-driven
 hosts** — not moot the config key, which is read beside the executable and serves
 every other driver.
 
