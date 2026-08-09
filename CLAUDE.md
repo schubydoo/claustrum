@@ -358,13 +358,18 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   daemon Desktop was built against, so a Desktop that knew nothing of them and one
   that refused to pass them leave the same log. ⚠️ It also shows what Desktop
   *emits*, **not** where the values came from — `--cli-keep 3` is exactly the shape
-  a settings field would fill. Its config files were **not enumerated**, and a
-  config file it turns into argv stays **one of the two routes** the reopen trigger
-  names, so it would falsify the claim without contradicting a single captured row.
-  (Forwarded env is not such a route — nothing reads the environment for these
-  knobs.) Both `-install` runs were **cache hits**, so a fetching install's argv is
-  unobserved, and D10, D12 and D13 act only there. **The other two claims still
-  have no direct observation behind them.**
+  a settings field would fill. ✅ **Its settings files were then enumerated
+  (2026-08-09) and no field that could reach the daemon's argv was found** — the
+  control fired, so that negative counts **for the three argument shapes searched**;
+  a toggle making Desktop *add* a flag would match none of them even in a file that
+  was read. Scope is the JSON settings files, not the Chromium stores and not the
+  user's own SSH client config. ⚠️ Desktop *does* store settings that look
+  like subprocess arguments (effort level, per-project permission mode) — **none in
+  the daemon argv**, and where they go is unobserved, so don't upgrade it to a
+  route into this claim. (Forwarded env is not a route either — nothing reads the environment for
+  these knobs.) Both `-install` runs were **cache hits**, so a fetching install's
+  argv is unobserved, and D10, D12 and D13 act only there. **The other two claims
+  still have no direct observation behind them.**
 - **`-install` reaches the network only with `-cli-url`** and verifies the
   SHA-256 before extracting on that download path unconditionally. The local
   `-cli-zst` (SFTP) blob is checksum-verified **only when a `-cli-checksum` is

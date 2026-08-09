@@ -239,7 +239,7 @@ proves nothing:
 |---|---|---|
 | `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe **a retry of any shape** vs terminal report — the claim is about classification, so keying the discriminator to one retry shape would read a differently-shaped retry as a falsification | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
 | `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
-| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI and capture done (below); the enumeration is still unrun, and the UI half is one look at one unrecorded build |
+| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ All three run (below); the control fired. Residual: the enumeration covered the JSON settings files, not the Chromium stores and not the user's own SSH client config; it matched only the three argument shapes, so a toggle making Desktop *add* a flag would not have matched even in a file that was read; and the UI half is one look at one unrecorded build |
 
 **Evidence for the argv claim, scoped to what was looked at:** the shipped client's
 "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
@@ -278,12 +278,68 @@ a claim about which arguments appear, **not** about where their values came from
 `--cli-keep 3` is exactly the shape a settings field would fill, and the capture
 cannot tell a Desktop-computed value from an operator-edited one.
 
-Two further limits follow from that. Whether Desktop reads a config file of its own
-was **not enumerated**, and a config file it turns into argv is **one of the two
-routes** this claim's own reopen trigger names, so it would change the argv above
-without contradicting a single row. (Forwarded environment is *not* such a route —
-the trigger disqualifies it below, since nothing reads the environment for these
-knobs.) And **both `-install` runs were cache hits** — each answered
+**Enumerated 2026-08-09**, on a client whose `config.json` reports
+`updaterLastSeenVersion` 1.26832.0: these files in Desktop's `userData` directory
+were read directly, looking for anything that could reach the daemon's argv — a
+`keep` count, a cli directory, or a free-form arguments field.
+
+| file / dir | what it holds |
+|---|---|
+| `ssh_configs.json` | the SSH connection store: a display name, an SSH host **alias**, an id, and a trusted-host list |
+| `ssh-remote-server-state.json` | a token cache keyed by host and port |
+| `bridge-state.json` | ⚠️ despite the name, session bookkeeping — **not** `--bridge` arguments |
+| `developer_settings.json` | one boolean (dev tools) |
+| `config.json` | app-level preferences: updater version, locale, theme, OAuth caches, window geometry |
+| `claude_desktop_config.json` | MCP server definitions and a large UI-preferences block |
+| `claude-ssh-remote/` | ⚠️ not settings — a cache of the **daemon binary**, in a directory named for its SHA, beside a `.verified-<platform>` marker |
+
+**No field with any of those shapes that could reach the daemon's argv was found in
+any of them.** State it with that scope, not as "the files contain nothing that
+becomes argv" — which would be plainly false, because `claude_desktop_config.json`
+holds an MCP server block whose entries carry `command` and `args`: config in the
+shape of a command line. None of it appears in the captured daemon argv, and where
+those entries are consumed was **not observed** — the lifecycle sketch below has a
+driver running MCP servers as `process.spawn` children, but that is this document's
+model of a driver, not something this enumeration saw. The search matched *shapes*
+against the daemon argv, so it can only support the absence of what it looked for.
+
+⚠️ **The control fired on two different axes**, which is what makes the negative
+worth anything. The fixture's stated criterion — a setting the client is *known*
+to read must turn up — is met by the connection created through the setup dialog,
+present in `ssh_configs.json`: the files read really are ones Desktop reads.
+Separately, `claude_desktop_config.json` holds **argument-shaped** settings — an
+effort level, a per-project permission mode — which shows the enumeration's
+*reach* extends to fields of that shape, not merely to connection identity.
+Neither alone would do: the first shows the right files were read, the second that
+an argument-shaped field in them would have been seen. ⚠️ It does **not** show that
+a falsifying setting must be argument-shaped — a toggle that made Desktop add a
+flag would falsify the claim and match none of the three shapes searched for.
+
+⚠️ **Two stores were not covered, not one.** The Chromium stores (`Local Storage`,
+`IndexedDB`, `Preferences`) were not read — they need a LevelDB reader. And the
+connection object carries *no port and no identity file*, though the setup dialog
+above offers both; whether they were left at defaults and omitted, or written
+somewhere else, was not established. `sshHost` being an **alias** points at the
+user's own SSH client config as the likely home, which the enumeration never
+touched. (One weak lean toward "defaulted": the token cache keys on port **22**,
+the default — though an alias could set a non-default port there too, so it does
+not settle it.)
+
+⚠️ **Those argument-shaped settings are worth a second look, because they are the
+near miss.** They sit in `claude_desktop_config.json`'s preferences block. **None
+of them appears in the daemon argv captured above**, which is the only thing that
+bears on this claim. Where they *do* go was **not observed**: the plausible route is the
+CLI, whose arguments would arrive in the `args` param of `process.spawn` (PROTOCOL
+→ `process.spawn`), but no RPC frame was captured and Desktop's param set has never
+been enumerated against this binding. Do not upgrade that to an observation — it
+would be a **fourth driver claim**, owing its own fixture and control.
+
+So a config file Desktop turns into daemon argv remains **one of the two routes**
+this claim's reopen trigger names — now looked for and not found, rather than
+unexamined. (Forwarded environment is *not* such a route — the trigger disqualifies
+it below, since nothing reads the environment for these knobs.)
+
+One further limit. **Both `-install` runs were cache hits** — each answered
 `cliWasPresent:true`, and neither argv carried a source flag, so neither could
 have fetched anything (`install.go:49-66`). The argv of an install that actually
 fetches is unobserved.
@@ -297,8 +353,12 @@ exercised on the shape that was observed and also on the shape that was not. D10
 D12 and D13 become reachable only on the fetching path, so nothing about their
 argv was observed.
 
-⚠️ One cold start, one host, one unrecorded build: the evidence supports "Desktop
-passed no such argument on the occasions observed", not "Desktop cannot".
+⚠️ One cold start, one host: the evidence supports "Desktop passed no such argument
+on the occasions observed, and no setting of that shape was found in the files
+read", not "Desktop cannot". The enumeration was on a client reporting
+`updaterLastSeenVersion` 1.26832.0; the capture was the day before, on the same
+install; the UI look was earlier still, on an unrecorded build. ⚠️ That field is
+what the updater *last saw available*, which need not be the build that ran.
 
 - **Reopen trigger for the argv claim:** Claude Desktop gaining a way for an
   operator to influence the daemon's argv — a settings field, or a config file it

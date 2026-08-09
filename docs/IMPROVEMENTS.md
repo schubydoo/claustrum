@@ -532,9 +532,13 @@ arguments to the daemon (2026-08-07), and the argv Desktop actually passes was
 captured for all five modes on one cold start (2026-08-08), carrying no argument
 the daemon has no use for — though both `-install` runs were **cache hits**, so a
 fetching install's argv is unobserved, and the capture shows which arguments appear,
-not where their values came from. ⚠️ Desktop's own config files were **not enumerated**
-— and a config file Desktop turns into argv is one of the two routes this claim's
-own trigger names, so it could change that argv without contradicting the capture.
+not where their values came from. ✅ Desktop's settings files were then **enumerated
+(2026-08-09) and no field that could reach the daemon's argv was found**, with the
+control firing — though only three argument shapes were searched for, so a toggle
+making Desktop *add* a flag would have matched none of them; the Chromium stores
+and the user's own SSH client config were not covered. ⚠️ Desktop
+does store settings that look like subprocess arguments — none in the daemon argv,
+and where they go is unobserved, so do not read it as a route into this claim.
 All three driver claims sit outside the parity harness, and **the other two have no
 direct observation behind them**; `ARCHITECTURE.md` names the fixture that would
 settle each. It reopens if Desktop
