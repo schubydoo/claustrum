@@ -239,7 +239,7 @@ proves nothing:
 |---|---|---|
 | `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe **a retry of any shape** vs terminal report — the claim is about classification, so keying the discriminator to one retry shape would read a differently-shaped retry as a falsification | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
 | `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
-| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ UI and capture done (below); the enumeration is still unrun, and the UI half is one look at one unrecorded build |
+| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ All three have been run and **none discharges the claim** — see below. The enumeration covered 15 of ~30 `userData` entries, chosen by name, and was rooted in that directory; it matched argument *shapes*, so a setting whose effect is to add a flag would not have matched; and no half has a directly recorded build |
 
 **Evidence for the argv claim, scoped to what was looked at:** the shipped client's
 "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
@@ -278,12 +278,31 @@ a claim about which arguments appear, **not** about where their values came from
 `--cli-keep 3` is exactly the shape a settings field would fill, and the capture
 cannot tell a Desktop-computed value from an operator-edited one.
 
-Two further limits follow from that. Whether Desktop reads a config file of its own
-was **not enumerated**, and a config file it turns into argv is **one of the two
-routes** this claim's own reopen trigger names, so it would change the argv above
-without contradicting a single row. (Forwarded environment is *not* such a route —
-the trigger disqualifies it below, since nothing reads the environment for these
-knobs.) And **both `-install` runs were cache hits** — each answered
+**Enumerated 2026-08-09.** Fifteen of about thirty entries in Desktop's `userData`
+were examined, **fourteen of them read whole**: both config files, the SSH
+connection store, the remote-server and bridge state files,
+`developer_settings.json`, `Preferences`, and seven small state files. The read
+looked for a `keep` count, a cli directory, or an arguments field, and **none of
+the fourteen holds a field of those shapes.** The fifteenth entry is the
+daemon-binary cache directory — listed, not read, and not a settings file.
+
+The control fired: the connection created in the setup dialog turns up in
+`ssh_configs.json`, so the files read are ones Desktop reads. ⚠️ One caveat, so
+the negative is not overstated — `claude_desktop_config.json`
+does turn config into a command line for its **MCP** entries (`command`, `args`);
+none of that appears in the captured daemon argv.
+
+⚠️ Not exhaustive: half the directory was skipped on a name judgement, the LevelDB
+stores need a reader this run lacked, the user's own SSH client config was not read,
+and a file Desktop reads outside `userData` was neither read nor ruled out. Evidence
+in `scratch/` (gitignored).
+
+**So: no way for Desktop to pass arbitrary arguments to the daemon has been found —
+not in the setup UI, not in the files read.** (Forwarded environment is not a
+route — the trigger below disqualifies it, since nothing reads the environment
+for these knobs.)
+
+One further limit. **Both `-install` runs were cache hits** — each answered
 `cliWasPresent:true`, and neither argv carried a source flag, so neither could
 have fetched anything (`install.go:49-66`). The argv of an install that actually
 fetches is unobserved.
@@ -297,16 +316,20 @@ exercised on the shape that was observed and also on the shape that was not. D10
 D12 and D13 become reachable only on the fetching path, so nothing about their
 argv was observed.
 
-⚠️ One cold start, one host, one unrecorded build: the evidence supports "Desktop
-passed no such argument on the occasions observed", not "Desktop cannot".
+⚠️ One cold start, one host: the evidence supports "Desktop passed no such argument
+on the occasions observed, and no setting of that shape was found in the files
+read", not "Desktop cannot". The enumeration was on a client reporting
+`updaterLastSeenVersion` 1.26832.0; the capture was the day before, on the same
+install; the UI look was earlier still, on an unrecorded build. ⚠️ That field is
+what the updater *last saw available*, which need not be the build that ran.
 
-- **Reopen trigger for the argv claim:** Claude Desktop gaining a way for an
+- **Reopen trigger for the argv claim:** Claude Desktop **having** a way for an
   operator to influence the daemon's argv — a settings field, or a config file it
   reads and turns into argv. That would make a flag-only opt-in sufficient **for
   Desktop-driven hosts**. ⚠️ It would *not* moot the `claustrum.conf` key: the key
   is read from the executable's own directory (`os.Executable`), so it serves any
-  other driver — including `clauster`, named as a supported one below — regardless
-  of what Desktop grows. An env var Desktop forwarded would not qualify either;
+  other driver — including `clauster`, named as a supported one below. An env var
+  Desktop forwarded would not qualify either;
   nothing in `config.go` or `main.go` reads the environment for these knobs, so
   forwarding one changes nothing.
 - **What rests on it:** **D3, D4, D5, D10, D11, D12 and D14** — every "why it
