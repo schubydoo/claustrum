@@ -286,7 +286,7 @@ field, or a config file it turns into argv (a forwarded env var does not qualify
 nothing in `config.go` or `main.go` reads the environment for these knobs). The
 dependents list is maintained by hand and has been incomplete every time it was
 checked, so treat it as best-known, not complete: the argv claim underpins D3, D4,
-D5, D10, D11, D12 and D14; `cliError` underpins D10, D13 and clause (c)'s
+D5, D10, D11, D12 and D14; `cliError` underpins D10, D11 (retraction rider), D13 and clause (c)'s
 error-string rider; `libc` underpins D14's residual delta. Two further driver
 claims — D6's and D7's clause-(b) evidence, resting on what Desktop emits as
 `-cli-version` — are untracked and unprovenanced.

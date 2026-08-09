@@ -110,7 +110,7 @@ On timeout the launcher prints
 `claustrum: timeout waiting for daemon to accept on <socket>` to **stderr**, exit
 `1`. On success it prints the ready banner and exits `0`. The practical guarantee:
 after a successful `-serve`, the socket is accepting before `-serve` returns.
-(Measurement detail parked in `scratch/.../forensics/docs_PROTOCOL.md`.)
+(Measurement detail condensed out of this reference.)
 
 ### Daemon log (`remote-server.log`)
 
@@ -421,7 +421,7 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
   What the default gives up: a writerless FIFO parks a request goroutine and a
   descriptor until a writer arrives, and an unbounded device read
   (`/dev/zero`) grows the daemon until the kernel OOM-kills it — both the
-  reference's own behaviour, both measured (forensics parked in scratch).
+  reference's own behaviour, both measured (forensics condensed out of the committed docs).
 
 #### files.validate
 `{path}` → `{"valid":bool,"isDir":bool[,"error"]}`

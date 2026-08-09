@@ -200,11 +200,11 @@ frame battery never drives at all.
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
 
 **Check both indexes.** Beyond the D/CT catalog above, several claustrum-only
-behaviors are numbered by *tier item* in the improvements ledger
+behaviors are numbered as items in the shipped ledger
 ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md)) and are just as real: item 16
 (`-metrics-addr`), item 17 (the orphaned previous process tree is torn down), item
 18 (`-token-fd`), item 21 (the kill signal is skipped when the child has already
-exited). Check both the divergence catalog and the tier index before concluding
+exited). Check both the divergence catalog and the shipped ledger before concluding
 that something is drift.
 
 ### Drift, or an activated opt-in? — the parse-behaviour table

@@ -91,13 +91,13 @@ claustrum -version
 
 ```sh
 # 1. a private socket + auth token
-D=$(mktemp -d); printf '%s' "$(uuidgen)" > "$D/token"
+D=$(mktemp -d); TOK=$(uuidgen); printf '%s' "$TOK" > "$D/token"
 
 # 2. start the daemon (self-daemonizes; reads + unlinks the token file)
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" &
 
 # 3. speak JSON-RPC over the socket (auth is in-band, per request)
-TOK=$(cat "$D/token" 2>/dev/null || true)   # already unlinked; use the value you generated
+# reuse the token generated in step 1 (the daemon unlinked the file when it read it)
 printf '{"jsonrpc":"2.0","id":1,"method":"server.ping","auth":"%s"}\n' "$TOK" \
   | socat - UNIX-CONNECT:"$D/rpc.sock"
 # -> {"jsonrpc":"2.0","id":1,"result":{"pong":true}}

@@ -12,8 +12,7 @@ conditional — is not a matter of taste; it follows from them.
 Per-method wire facts (params, result field order, error strings) live in
 [PROTOCOL.md](PROTOCOL.md). Driver-claim provenance lives in
 [ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance). Exhaustive
-measurement forensics for each entry are parked in
-`scratch/docs-overhaul-2026-08-08/forensics/docs_DIVERGENCES.md`.
+per-entry measurement forensics were condensed out of the committed docs.
 
 ## The one hard rule
 

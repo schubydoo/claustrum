@@ -41,8 +41,9 @@ it for an in-progress commit with `git commit --no-verify`.
 - **Compatibility** — if you touch the wire surface (`rpc.go`, `methods_*.go`,
   `process.go`, `results.go`), re-run the validation battery in `scratch/` and
   confirm frames stay **byte-identical**. A change that intentionally diverges
-  must say so in the PR and add an entry to the divergence catalog in
-  [docs/DIVERGENCES.md](docs/DIVERGENCES.md).
+  must say so in the PR, add an entry to the divergence catalog in
+  [docs/DIVERGENCES.md](docs/DIVERGENCES.md), and record its wire frames in
+  [docs/PROTOCOL.md](docs/PROTOCOL.md).
 - **Docs** — update `docs/` for any user-visible behavior change. The site is
   built with mkdocs-material and published to GitHub Pages; CI runs
   `mkdocs build --strict` on every docs change (a broken link or bad nav fails

@@ -26,8 +26,7 @@ instead of buried at the bottom of a done backlog. Per-method wire facts are in
 
 Impact/cost ratings are H/M/L/S as originally triaged. "Where" points at the
 artifact that carries each item; the exhaustive measurement and correction notes
-condensed out of this table are parked in
-`scratch/docs-overhaul-2026-08-08/forensics/docs_IMPROVEMENTS.md`.
+were condensed out of this table.
 
 | # | Item | I/C | What shipped · where |
 |---|------|-----|----------------------|
