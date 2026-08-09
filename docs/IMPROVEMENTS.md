@@ -57,9 +57,8 @@ condensed out of this table are parked in
 
 ---
 
-*Footnote — the "496/496" figure.* Older records (and the CT-1/CT-2 entries now
-in [DIVERGENCES.md](DIVERGENCES.md)) quote a battery result of "496/496 frames".
-That figure is **historical and not reproducible**: its unit is not what the
+*Footnote — the "496/496" figure.* Older records quote a battery result of
+"496/496 frames". That figure is **historical and not reproducible**: its unit is not what the
 harness counts today (a reconstruction puts it at output lines, not frames), the
 June 2026 harness that produced it has been overwritten, and the battery has
 grown since. **Recount at the time of writing rather than quoting any figure.**

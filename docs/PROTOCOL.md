@@ -878,8 +878,8 @@ and no daemon was reached. This is matched to the reference and is destructive o
 two arms: a stale socket with no listener, and a **live foreign listener** — `-stop`
 removes a socket path it did not create, so a new client dialing by path cannot
 reach that listener afterwards (the listener itself stays alive). Making the unlink
-conditional would be a divergence, so it is a candidate not taken. (3-arm
-measurement parked in scratch.)
+conditional would be a divergence, so it is a candidate not taken — recorded under
+[Candidates considered but not taken](DIVERGENCES.md#candidates-considered-but-not-taken).
 
 > **Upgrading a live daemon.** A daemon still running from a build that predates the
 > shutdown-auth-exemption change *does* require auth on `server.shutdown`, answers

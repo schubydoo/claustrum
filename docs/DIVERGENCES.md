@@ -624,7 +624,9 @@ decision is implied**, and nothing here is shipped or scheduled.
 
 - **Conditional `-stop` socket unlink.** `-stop` removes the socket path on every
   exit, including when no daemon answered — matching the reference (measured on three
-  arms). That means removing a path it did not create and cannot identify the owner
+  arms, two of them attributing: the live-daemon control says nothing, because the
+  daemon removes the socket itself). That means removing a path it did not create
+  and cannot identify the owner
   of; `os.Remove` does not distinguish shapes, so a regular file or empty directory
   at the `-socket` path goes the same way. A `stat`-first variant that removed only a
   socket would be strictly safer **and a divergence**.
