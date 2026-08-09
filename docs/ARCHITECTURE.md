@@ -239,7 +239,7 @@ proves nothing:
 |---|---|---|
 | `cliError` classification | two `-install` failures whose **messages** straddle the disk-full shape; observe **a retry of any shape** vs terminal report — the claim is about classification, so keying the discriminator to one retry shape would read a differently-shaped retry as a falsification | a genuine disk-full failure — the shape the claim is built on — observed as **terminal with an actionable code**, proving the terminal side is reachable at all |
 | `libc` build selection | a stub `ldd` printing a musl banner and **exiting 0**, with `/lib/ld-musl-*.so.*` absent or masked (otherwise the glob short-circuits and `ldd` never runs); then see which build the client fetches | point the client at an ordinary glibc host, where the daemon reports `glibc`, and confirm it fetches the **glibc** build — otherwise the musl arm cannot be told apart from the client's default. *(That the stub took effect is a precondition on the fixture, not the control.)* |
-| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ All three have been run and **none discharges the claim** — see below. The enumeration read 15 of ~30 `userData` entries, chosen by name, and was rooted in that directory; it matched argument *shapes*, so a setting whose effect is to add a flag would not have matched; and no half has a directly recorded build |
+| argv | the setup UI, **a capture of the argv Desktop actually passes**, and an enumeration of Desktop's own config files | a setting the client is *known* to read must turn up in the enumeration — otherwise a null result means the enumeration missed everything. ⚠️ All three have been run and **none discharges the claim** — see below. The enumeration covered 15 of ~30 `userData` entries, chosen by name, and was rooted in that directory; it matched argument *shapes*, so a setting whose effect is to add a flag would not have matched; and no half has a directly recorded build |
 
 **Evidence for the argv claim, scoped to what was looked at:** the shipped client's
 "Add SSH connection" dialog offers *Name*, *SSH Host*, *SSH Port* and *Identity
@@ -281,13 +281,14 @@ cannot tell a Desktop-computed value from an operator-edited one.
 **Enumerated 2026-08-09.** Fifteen of about thirty entries in Desktop's `userData`
 were examined, **fourteen of them read whole**: both config files, the SSH
 connection store, the remote-server and bridge state files,
-`developer_settings.json`, `Preferences`, and seven small state files. The
-fifteenth is the daemon-binary cache directory — listed, not read, and not a
-settings file. The read looked for a `keep` count, a cli directory, or an
-arguments field. **None holds a field of those shapes.**
+`developer_settings.json`, `Preferences`, and seven small state files. The read
+looked for a `keep` count, a cli directory, or an arguments field, and **none of
+the fourteen holds a field of those shapes.** The fifteenth entry is the
+daemon-binary cache directory — listed, not read, and not a settings file.
 
 The control fired: the connection created in the setup dialog turns up in
-`ssh_configs.json`, so the files read are ones Desktop reads. ⚠️ One caveat, so the negative is not overstated — `claude_desktop_config.json`
+`ssh_configs.json`, so the files read are ones Desktop reads. ⚠️ One caveat, so
+the negative is not overstated — `claude_desktop_config.json`
 does turn config into a command line for its **MCP** entries (`command`, `args`);
 none of that appears in the captured daemon argv.
 

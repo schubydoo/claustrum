@@ -362,7 +362,7 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   (2026-08-09) and no field that could reach the daemon's argv was found** — the
   control fired, so that negative counts **for the three argument shapes searched**;
   a toggle making Desktop *add* a flag would match none of them even in a file that
-  was read. ⚠️ It read 15 of ~30 `userData` entries, chosen by name, and was rooted
+  was read. ⚠️ It covered 15 of ~30 `userData` entries, chosen by name, and was rooted
   in that directory — the LevelDB stores and the user's own SSH client config were
   not read. **No way for Desktop to pass arbitrary argv to the daemon has been
   found**. ⚠️ Desktop

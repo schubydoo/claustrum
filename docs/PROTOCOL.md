@@ -1300,7 +1300,7 @@ unset in the child before it spawns anything, so it never leaks downstream.
   on one cold start (2026-08-08, both `-install` runs cache hits), plus an
   enumeration of Desktop's settings files (2026-08-09) in which no field that could
   reach the daemon's argv was found, with a control that fired — though only three
-  argument shapes were searched and 15 of ~30 `userData` entries read — no way for
+  argument shapes were searched and 15 of ~30 `userData` entries covered — no way for
   Desktop to pass arbitrary argv to the daemon having been found). Flipping
   the default to `0` is the parity fix; the cap itself survives as an opt-in for
   hosts that want it.
