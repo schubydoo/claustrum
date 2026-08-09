@@ -293,11 +293,10 @@ stores need a reader this run lacked, the user's own SSH client config was not r
 and a file Desktop reads outside `userData` was neither read nor ruled out. Evidence
 in `scratch/` (gitignored).
 
-**The short version, and the honest one: there is no documented way to make Claude
-Desktop pass arbitrary arguments to the daemon over SSH** — no field in the setup
-UI, nothing in its settings files. The reopen trigger below is armed on Desktop
-*gaining* such a route. (Forwarded environment is not one — the trigger disqualifies
-it, since nothing reads the environment for these knobs.)
+**So: no way for Desktop to pass arbitrary arguments to the daemon has been found —
+not in the setup UI, not in the files read.** ⚠️ If one exists today it is in the
+part not looked at. (Forwarded environment is not a route — the trigger below
+disqualifies it, since nothing reads the environment for these knobs.)
 
 One further limit. **Both `-install` runs were cache hits** — each answered
 `cliWasPresent:true`, and neither argv carried a source flag, so neither could
@@ -320,9 +319,10 @@ read", not "Desktop cannot". The enumeration was on a client reporting
 install; the UI look was earlier still, on an unrecorded build. ⚠️ That field is
 what the updater *last saw available*, which need not be the build that ran.
 
-- **Reopen trigger for the argv claim:** Claude Desktop gaining a way for an
+- **Reopen trigger for the argv claim:** Claude Desktop **having** a way for an
   operator to influence the daemon's argv — a settings field, or a config file it
-  reads and turns into argv. That would make a flag-only opt-in sufficient **for
+  reads and turns into argv. Found in the half not read, or added later; either
+  fires it. That would make a flag-only opt-in sufficient **for
   Desktop-driven hosts**. ⚠️ It would *not* moot the `claustrum.conf` key: the key
   is read from the executable's own directory (`os.Executable`), so it serves any
   other driver — including `clauster`, named as a supported one below — regardless

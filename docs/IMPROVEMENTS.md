@@ -536,15 +536,16 @@ not where their values came from. ✅ Desktop's settings files were then **enume
 (2026-08-09) and no field that could reach the daemon's argv was found**, with the
 control firing — though only three argument shapes were searched for, so a toggle
 making Desktop *add* a flag would have matched none of them; and 15 of ~30
-`userData` entries were read, chosen by name. **The plain version: no documented
-way exists to make Desktop pass arbitrary argv to the daemon over SSH.** ⚠️ Desktop
+`userData` entries were read, chosen by name. **No way for Desktop to pass
+arbitrary argv to the daemon has been found**; an existing one would be in the
+part not read. ⚠️ Desktop
 does store settings that look like subprocess arguments — none in the daemon argv,
 and where they go is unobserved, so do not read it as a route into this claim.
 All three driver claims sit outside the parity harness, and **the other two have no
 direct observation behind them**; `ARCHITECTURE.md` names the fixture that would
-settle each. It reopens if Desktop
-gains a way for an operator to influence the
-daemon's argv, which would make a flag-only opt-in sufficient **for Desktop-driven
+settle each. It reopens if Desktop **has** a way for an operator to influence
+the daemon's argv — found in the unread half or added later. That would make a
+flag-only opt-in sufficient **for Desktop-driven
 hosts** — not moot the config key, which is read beside the executable and serves
 every other driver.
 

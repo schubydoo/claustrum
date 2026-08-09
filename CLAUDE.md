@@ -364,8 +364,8 @@ One binary, mode-switched by flag (`main.go`): `-serve`, `-bridge`, `-stop`,
   a toggle making Desktop *add* a flag would match none of them even in a file that
   was read. ⚠️ It read 15 of ~30 `userData` entries, chosen by name, and was rooted
   in that directory — the LevelDB stores and the user's own SSH client config were
-  not read. **The plain version: there is no documented way to make Desktop pass
-  arbitrary argv to the daemon over SSH.** ⚠️ Desktop
+  not read. **No way for Desktop to pass arbitrary argv to the daemon has been
+  found**; an existing one would be in the part not read. ⚠️ Desktop
   *does* store settings that look like subprocess arguments (effort level,
   per-project permission mode) — **none in the daemon argv**, and where they go is
   unobserved, so don't upgrade it to a route into this claim. (Forwarded env is not
