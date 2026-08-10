@@ -27,6 +27,16 @@ type wireLog struct {
 	f      *os.File
 	maxStr int // longest string value kept verbatim; longer ones are summarized
 
+	// pid stamps every record. Connection ids come from a per-process counter
+	// (server.go's connSeq), so they are unique only within one daemon — while
+	// the capture is opened O_APPEND and outlives any restart. Two daemons, or
+	// one daemon restarted, therefore both number their connections from 1 into
+	// the same file. Without pid a reader cannot tell those apart, and anything
+	// correlating a reply to its request by (conn, id) silently mis-pairs across
+	// the boundary. Measured on a live capture 2026-08-10: conn 2 held 20,222
+	// frames from one daemon and 10,638 from its successor.
+	pid int
+
 	dropped atomic.Uint64 // frames a write error lost, reported once at Close
 }
 
@@ -55,7 +65,8 @@ type wireLogOptions struct {
 // newWireLog opens path for append, creating it 0600: a capture contains whatever
 // the client sent, which for files.write or process.stdin is arbitrary user data.
 // Append rather than truncate so a daemon restart during a capture session (the
-// reference respawns instantly) does not silently discard the earlier half.
+// reference respawns instantly) does not silently discard the earlier half — which
+// is exactly why each record carries pid; see the field's comment.
 func newWireLog(path string, maxString int) (*wireLog, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -64,7 +75,7 @@ func newWireLog(path string, maxString int) (*wireLog, error) {
 	if maxString < 0 {
 		maxString = 0
 	}
-	return &wireLog{f: f, maxStr: maxString}, nil
+	return &wireLog{f: f, maxStr: maxString, pid: os.Getpid()}, nil
 }
 
 // record writes one frame. dir is "in" for a client request and "out" for
@@ -79,6 +90,7 @@ func (w *wireLog) record(connID uint64, dir string, b []byte) {
 	}
 	rec := map[string]interface{}{
 		"ts":   time.Now().UTC().Format(time.RFC3339Nano),
+		"pid":  w.pid,
 		"conn": connID,
 		"dir":  dir,
 		"n":    len(b),

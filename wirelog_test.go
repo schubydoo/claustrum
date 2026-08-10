@@ -236,3 +236,45 @@ func TestEffectiveWireLogPrecedence(t *testing.T) {
 		t.Errorf("neither set: got %q, want \"\" (off)", got)
 	}
 }
+
+// Connection ids come from a per-process counter, while the capture is opened
+// O_APPEND and outlives a restart — so two daemons writing one file both number
+// their connections from 1. Without pid, a reader correlating a reply to its
+// request by (conn, id) mis-pairs across the boundary. This asserts the record
+// carries the discriminator, and that two writers on one file stay separable.
+func TestWireLogRecordsPIDSoConnIDsStaySeparable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wire.jsonl")
+
+	w1, err := newWireLog(path, wireLogMaxString)
+	if err != nil {
+		t.Fatalf("newWireLog: %v", err)
+	}
+	w1.record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))
+
+	// A second writer on the same path, standing in for a restarted daemon: it
+	// reuses conn 1, which is precisely the collision pid exists to resolve.
+	w2, err := newWireLog(path, wireLogMaxString)
+	if err != nil {
+		t.Fatalf("newWireLog (second writer): %v", err)
+	}
+	w2.record(1, "in", []byte(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))
+	w1.Close()
+	w2.Close()
+
+	recs := readWireLog(t, path)
+	if len(recs) != 2 {
+		t.Fatalf("got %d records, want 2 — the second writer must append, not truncate", len(recs))
+	}
+	for i, rec := range recs {
+		pid, ok := rec["pid"].(float64)
+		if !ok {
+			t.Fatalf("record %d has no numeric pid field: %v", i, rec)
+		}
+		if int(pid) != os.Getpid() {
+			t.Errorf("record %d pid = %d, want %d", i, int(pid), os.Getpid())
+		}
+		if got := rec["conn"]; got != float64(1) {
+			t.Errorf("record %d conn = %v, want 1 (the collision this test models)", i, got)
+		}
+	}
+}
