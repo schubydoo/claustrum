@@ -1,13 +1,13 @@
 # claustrum
 
-A tiny, **dependency-light Go daemon** — a clean-room reimplementation of the
-small daemon that hosts a remote Claude Code session over SSH. It is, in one
-binary: a local CLI-version manager, a process supervisor, and a JSON-RPC
-multiplexer (with a replay buffer) over an `AF_UNIX` socket.
+A tiny, **dependency-light Go daemon**. It is a clean-room reimplementation of
+the small daemon that hosts a remote Claude Code session over SSH. One binary
+holds three parts: a local CLI-version manager, a process supervisor, and a
+JSON-RPC multiplexer with a replay buffer over an `AF_UNIX` socket.
 
-It was built to a behavioral contract captured by probing the reference binary
-at the wire level — no code was copied, and no decompiler output was
-transcribed into the implementation (see
+Wire-level probes of the reference binary captured a behavioral contract, and
+the daemon is built to that contract. This project copied no code. It also
+transcribed no decompiler output into the implementation (see
 [`NOTICE`](https://github.com/schubydoo/claustrum/blob/main/NOTICE)).
 
 !!! note "The one hard rule"
@@ -16,61 +16,68 @@ transcribed into the implementation (see
 
 ## What it does
 
-The daemon is one binary, mode-switched by flag:
+The daemon is one binary. A flag selects the mode:
 
-- **`-serve`** — the daemon: an `AF_UNIX` listener (mode `0600`), a per-connection
-  read loop, concurrent request dispatch, self-daemonization, and graceful
-  shutdown.
-- **`-bridge`** — a dumb stdio↔socket relay (what an SSH session attaches to).
-- **`-install`** — CLI download / SHA-256 verify / zstd extract / prune.
-- **`-stop`** / **`-version`** — send `server.shutdown`; report the build.
+- **`-serve`** — the daemon. It opens an `AF_UNIX` listener with mode `0600` and
+  runs one read loop for each connection. It dispatches requests concurrently,
+  daemonizes itself, and shuts down gracefully.
+- **`-bridge`** — a simple relay between stdio and the socket. An SSH session
+  attaches to this mode.
+- **`-install`** — the installer. It downloads the CLI, verifies the SHA-256,
+  extracts the zstd archive, and prunes old CLI versions.
+- **`-stop`** / **`-version`** — `-stop` sends `server.shutdown`. `-version`
+  reports the build.
 
-It exposes **19 methods** across the `server.*`, `files.*`, `git.*`, and
-`process.*` namespaces. Auth is in-band per request; spawned processes stream
-base64 stdout/stderr frames that a late or reconnecting client can replay via
-`reattach`.
+The daemon supplies **19 methods** across the `server.*`, `files.*`, `git.*`,
+and `process.*` namespaces. Auth is in-band per request. Spawned processes
+stream base64 stdout and stderr frames. A client that connects late, or that
+connects again, can replay those frames with `reattach`.
 
 ## Operational extras
 
-Beyond the wire contract, claustrum carries a few claustrum-only operational
-extras. Each is either default-off or invisible to clients, so none of them
-changes the frames a client sees. See the [protocol reference](PROTOCOL.md) for
-details.
+claustrum carries a few claustrum-only operational extras that the wire contract
+does not cover. Each extra is either off by default or invisible to clients.
+Thus no extra changes the frames that a client sees. For details, see the
+[protocol reference](PROTOCOL.md).
 
-- **Logging** — leveled stderr logging, **always on** (emits everything by
-  default). `CLAUSTRUM_LOG_LEVEL` only *raises* the threshold to quiet it; it
-  never turns logging off entirely.
-- **Metrics** — a Prometheus `/metrics` endpoint via `-metrics-addr`. Off by
-  default: no listener exists unless the flag is set.
-- **Token handoff** — a disk-free token via `-token-fd` (nothing touches disk).
-- **Windows process kill** — whole-tree child kill on Windows via Job Objects.
-- **`-keep-children`** (CT-2, POSIX-only) — leaves spawned processes running
-  across a graceful shutdown so they survive a daemon restart. Off by default;
-  the default shutdown kills them.
+- **Logging** — leveled stderr logging, **always on**. It emits everything by
+  default. `CLAUSTRUM_LOG_LEVEL` only *raises* the threshold and makes the
+  daemon quieter. It never turns logging off entirely.
+- **Metrics** — a Prometheus `/metrics` endpoint that `-metrics-addr` supplies.
+  It is off by default: no listener exists unless you set the flag.
+- **Token handoff** — `-token-fd` supplies the token on a file descriptor, so
+  you write no token file. The daemon still persists `daemon.token` beside the
+  socket (see [PROTOCOL.md](PROTOCOL.md)).
+- **Windows process kill** — on Windows, Job Objects kill the full tree of child
+  processes.
+- **`-keep-children`** (CT-2, POSIX-only) — this flag keeps spawned processes
+  alive across a graceful shutdown, so the processes survive a daemon restart.
+  The flag is off by default, and the default shutdown kills the processes.
 
 ## Protocol extension
 
-claustrum has one opt-in protocol extension that is visible to clients — a
-deliberate addition, not a reference behavior. Passing `"wantPid":true` to
-`process.spawn` / `process.reattach` adds `pid` + `startTime` to the result for
-PID-reuse detection (CT-1).
+claustrum has one opt-in protocol extension that clients can see. It is a
+deliberate addition, and not a reference behavior. A client that passes
+`"wantPid":true` to `process.spawn` or `process.reattach` gets `pid` and
+`startTime` in the result. These two fields let the client detect PID reuse
+(CT-1).
 
-A client that does not opt in sees byte-identical frames, so the hard rule above
-still holds. It is catalogued as a deliberate divergence in the
-[divergence catalog](DIVERGENCES.md).
+A client that does not opt in sees byte-identical frames. Thus the hard rule
+above still holds. The [divergence catalog](DIVERGENCES.md) records this
+extension as a deliberate divergence.
 
 ## Where to go next
 
 <div class="grid cards" markdown>
 
 - :material-sitemap: **[Architecture](ARCHITECTURE.md)** — the three runtime
-  roles, the concurrency & replay model, and how a driver uses it.
+  roles, the concurrency and replay model, and how a driver uses it.
 - :material-protocol: **[Protocol reference](PROTOCOL.md)** — every method, its
   params, result shape, and error codes.
 - :material-console: **[Examples](EXAMPLES.md)** — worked client sessions over
   the socket.
-- :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)** — how
-  compatibility with the reference daemon is kept in lock-step.
+- :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)** — how the
+  project keeps compatibility with the reference daemon in lock-step.
 - :material-source-branch: **[Divergences](DIVERGENCES.md)** — every deliberate
   departure from the reference, its default, and how to activate it.
 - :material-format-list-checks: **[Shipped ledger](IMPROVEMENTS.md)** —
@@ -80,8 +87,7 @@ still holds. It is catalogued as a deliberate divergence in the
 
 ## Safety model
 
-`process.spawn` runs arbitrary commands as the daemon's user **by design** —
-treat the socket + token as equivalent to shell access. The full threat model
-lives in the
-[security policy](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md).
-There is **no telemetry, ever**.
+`process.spawn` runs arbitrary commands as the daemon's user **by design**.
+Treat the socket and the token as equivalent to shell access. The
+[security policy](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)
+holds the full threat model. There is **no telemetry, ever**.
