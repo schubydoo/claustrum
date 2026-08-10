@@ -102,14 +102,14 @@ flag-only knob and the `claustrum.conf` key (read beside the executable) is the
 reachable one. It is the premise under D3, D4, D5, D10, D11, D12, D14 and the
 "(opt-in)" tag itself.
 
-Because it is load-bearing, it is *tracked*, not assumed. Its provenance, current
-evidence, and reopen trigger are canonical in
+Because it is load-bearing, its provenance, current evidence and reopen trigger
+are canonical in
 [ARCHITECTURE.md → Driver claims and their provenance](ARCHITECTURE.md#driver-claims-and-their-provenance),
 alongside the other two driver claims (Desktop parses `cliError`; Desktop uses the
-reported `libc` to choose which CLI build it downloads). It reopens if Desktop
-turns out to have a way for an operator to influence the daemon's argv — which
-would make a flag-only opt-in sufficient for Desktop-driven hosts, without mooting
-the config key (which serves every other driver).
+reported `libc` to choose which CLI build it downloads). It reopens if a way for an
+operator to influence the daemon's argv is found, or a Desktop release adds one —
+which would make a flag-only opt-in sufficient for Desktop-driven hosts, without
+mooting the config key (which serves every other driver).
 
 ## Conventions for opt-in divergences
 
@@ -178,6 +178,11 @@ CT-5 carry a flag and a key.
 - **Observable delta** (supplied-wrong checksum only): a valid blob the reference
   would install returns `checksum mismatch`; a corrupt blob returns `checksum
   mismatch` instead of `decompressing: …`.
+- **Observed once** (2026-08-10, on a download failure forced by the probe — the
+  only capture in which the SFTP rung was reached): the captured Desktop `-cli-zst`
+  invocation supplied no `-cli-checksum`, where the `-cli-url` call seconds earlier
+  did, so the condition was false and no verification ran. One instance of one
+  failure shape.
 - **Reopen trigger.** Desktop supplying a `-cli-checksum` that does not match the
   blob it uploaded over SFTP — conditional is not the same as unreachable.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`; `install.go`.
