@@ -119,8 +119,8 @@ catch up via the replay buffer, extracting a plugin tarball — are in
 - **Transport:** NDJSON over `AF_UNIX` `SOCK_STREAM` (mode `0600`); one persistent connection;
   requests dispatched concurrently.
 - **Auth:** every request carries an in-band `"auth":"<token>"`. The daemon's token comes from
-  `-token-file` (read once, then unlinked) or `-token-fd` (read from an open descriptor — never
-  touches disk). claustrum reads `CLAUDE_RPC_TOKEN` **nowhere**, and strips it from spawned
+  `-token-file` (read once, then unlinked) or `-token-fd` (read from an open descriptor — the
+  handoff never touches disk). claustrum reads `CLAUDE_RPC_TOKEN` **nowhere**, and strips it from spawned
   children. The one exception to auth itself is `server.shutdown`, which is **not** authenticated
   (matching the reference), so `-stop` sends no token at all.
 - **19 methods** across `server.*`, `files.*`, `git.*`, `process.*` (`server.capabilities`
