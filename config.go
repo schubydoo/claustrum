@@ -79,7 +79,7 @@ type config struct {
 	// Same reachability argument as the rest of the -install knobs: Desktop owns
 	// that argv. ⚠️ NOT the same knob as cliProbeTimeout — that one bounds the
 	// `<cli> --version` runnability probe (D11); this one bounds `ldd --version`
-	// (D14). The names are one letter apart and the types identical, which is
+	// (D14). The names differ only in their cli/libc prefix and the types identical, which is
 	// exactly the crossing TestInstallArmWiresEachFlagToItsOwnGlobal exists to catch.
 	libcProbeTimeout *time.Duration
 	// filesReadRegularOnly mirrors -files-read-regular-only; nil means "not set in

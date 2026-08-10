@@ -208,9 +208,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**
   (`filepath.Abs`) before it compares them. Without that resolution,
-  `"worktreePath":".."` from a daemon whose cwd is home or under home destroys
-  the home directory (measured — from home itself, `..` resolves to home's
-  parent, and the delete takes home with it). `git.worktree_remove` is the more exposed of the two methods:
+  `"worktreePath":".."` from a daemon whose cwd is home destroys the home
+  directory (measured — `..` resolves to home's parent, and the delete takes
+  home with it). `git.worktree_remove` is the more exposed of the two methods:
   `wipesHomeDir` is its *only* gate, while `extract_tar` also keeps `IsAbs` +
   `isFilesystemRoot` behind it.
 - **This fired.** On 2026-08-02 an in-repo fuzzer sent `"destDir":"~"` at a live

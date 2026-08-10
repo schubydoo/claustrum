@@ -721,7 +721,8 @@ reports the outcome as a *result*. An unknown id is not an error:
 #### process.reattach
 `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
 - A missing or empty `id` → `-32602 Process ID is required`, the same frame
-  `spawn` and `killAndWait` document (probed with `"id":""`).
+  `spawn` and `killAndWait` document (probed both ways: `"id":""` and `id`
+  absent).
 - The daemon replays buffered frames with **seq > fromSeq** (exclusive) to this
   connection, **transfers** the frame stream to it, and then returns the result.
 - **The transfer is exclusive.** A reattach does not add a second listener. Any
