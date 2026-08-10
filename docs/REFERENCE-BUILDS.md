@@ -83,10 +83,11 @@ binary analysis confirmed the off-wire deltas are real source, not compiler nois
 1.18286.0 (2026-07-02) embeds a manifest pinning this SHA and calls 15 of the 19
 methods — not `process.killAndWait` (nor `server.version` / `server.shutdown`,
 driven via the `--stop` CLI) — so a real-session capture won't exercise the new
-method and the synthetic battery stays its gate. That client also confirms D1's
-trust boundary: `--install` carries `--cli-checksum` on the `--cli-url` download
-but ships the `--cli-zst` SFTP fallback unverified, exactly what claustrum mirrors
-by default (see the [divergence catalog](DIVERGENCES.md), D1).
+method and the synthetic battery stays its gate. That client also bears on D1's
+trust boundary — `--install` carries `--cli-checksum` on the `--cli-url` download —
+and a later argv capture (2026-08-10, two cold starts on one host) independently
+confirms it. What Desktop supplies on the `--cli-zst` SFTP
+fallback is recorded, with its limits, at [D1](DIVERGENCES.md#d1).
 
 ### `d20a77da22b7d4822f758654b226299ad7021c22` — 2026-06-09
 

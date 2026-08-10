@@ -246,12 +246,16 @@ example). How the driver classifies them is a third-binary claim; see
 A few facts these docs rely on describe a **third binary** — the driver (Claude
 Desktop, or a tool such as clauster) — not the reference daemon and not claustrum.
 The reference-vs-claustrum harness compares two daemons, so it cannot confirm or
-refute any of them, and no `scratch/` fixture settles one. Three are load-bearing:
+refute any of them. Three are load-bearing:
 
 - **`cliError` classification** — the driver reads `cliError` as text: a
   disk-full-shaped message is surfaced as a terminal error with an actionable code,
-  everything else as retryable. The claim is about that classification only; *how*
-  it then retries is unobserved.
+  everything else as retryable. The claim is about that classification only. A
+  `-cli-url` rung whose download was forced to fail returned a non-disk-full
+  `cliError`, and Desktop answered it with a further rung rather than a terminal
+  report. That shows escalation on a failed rung; it does not distinguish reading
+  the `cliError` text from reacting to any non-success, and the terminal arm is
+  still unobserved.
 - **`libc` build selection** — the driver uses the `__INSTALL_RESULT__` `libc`
   field to pick which CLI build to download.
 - **"Desktop owns the argv"** — an operator has no way to influence the daemon's
@@ -260,32 +264,35 @@ refute any of them, and no `scratch/` fixture settles one. Three are load-bearin
   be opt-in, and it defines the "(opt-in)" tagging convention (a flag **and** a
   config key, since the config key is the reachable knob).
 
-"The harness cannot settle it" is not "unverifiable": each has a fixture that
-would settle it, run against the *driver*, with a control that could come out
-wrong.
+"The harness cannot confirm or refute it" is not "unverifiable": each has a fixture
+that can settle it, run against the *driver*, with a control that could come out
+wrong. The argv row's fixtures have been run; the `cliError` and `libc` fixtures
+have not.
 
 | claim | fixture | control that must fire |
 |---|---|---|
 | `cliError` classification | two `-install` failures whose messages straddle the disk-full shape; observe a retry vs a terminal report | a genuine disk-full failure observed as terminal with an actionable code, proving the terminal side is reachable |
 | `libc` build selection | a stub `ldd` printing a musl banner and exiting 0, with `/lib/ld-musl-*.so.*` absent (else the glob short-circuits and `ldd` never runs); see which build the client fetches | a glibc host where the daemon reports `glibc` fetches the glibc build, so the musl arm is distinguishable from the client's default |
-| argv | the setup UI, a capture of the argv Desktop passes, and an enumeration of Desktop's config files | a setting the client is known to read must turn up in the enumeration, else a null result means the search missed everything |
+| argv | inspect the shipped client for where the daemon's argv is built; corroborate with the setup UI, a capture of the argv Desktop passes (cache-hit and fetching), and an enumeration of Desktop's config files | if the argv is assembled from a setting or a config file, the claim is false |
 
-All three fixtures have been run (2026-08-07 through 2026-08-09) and **none
-discharges its claim**: no route for Desktop to pass arbitrary argv was found, but
-the search was not exhaustive (one cold start on one host; half the `userData`
-directory skipped; both observed `-install` runs were cache hits, so a *fetching*
-install's argv is still unobserved). The argv capture, the userData enumeration,
-and the per-dependent reopen-trigger ladder live in `scratch/` (gitignored) and in
-the overhaul forensics archive.
+The argv claim is **discharged**: the daemon's argv is built in Claude Desktop from
+a **fixed set of flags** — only their operands (the download URL, its checksum, the
+uploaded blob path) are runtime values — with no operator-reachable route to add or
+change a flag. Found by inspecting the shipped client (2026-08-09). The fetching
+`-install` argv is observed over two cold starts on one host (2026-08-10): bare,
+then `-cli-url` + `-cli-checksum`; and once, with that download forced to fail, an
+SFTP upload re-invoked as `-cli-zst`. Both records live in `scratch/` (gitignored).
 
-Treat these as design constraints, not measured parity results. Anything that
-depends on one carries a reopen trigger that would falsify *that* claim; the
-per-divergence triggers live in [DIVERGENCES.md](DIVERGENCES.md). The argv claim
-reopens if Desktop turns out to have a route to influence the daemon's argv — a settings
-field, or a config file it turns into argv (a forwarded env var does not qualify:
-nothing in `config.go` or `main.go` reads the environment for these knobs). The
-dependents list is maintained by hand and has been incomplete every time it was
-checked, so treat it as best-known, not complete: the argv claim underpins D3, D4,
+The `cliError` and `libc` claims remain design constraints; the argv claim is a
+driver result, not a parity one. Five argv dependents (D3, D4, D5, D12, D14) carry
+reopen triggers for their own behaviour; the other two (D10, D11) carry riders about
+the `cliError` claim, as does D13. All live in [DIVERGENCES.md](DIVERGENCES.md). The
+argv claim reopens if a route to influence the daemon's argv is found, or a Desktop
+release adds one — a settings field, or a config file it turns into argv (a
+forwarded env var does not qualify: nothing in `config.go` or `main.go` reads the
+environment for these knobs). The dependents list is maintained by hand and has been
+incomplete every time it was checked, so treat it as best-known, not complete: the
+argv claim underpins D3, D4,
 D5, D10, D11, D12 and D14; `cliError` underpins D10, D11 (retraction rider), D13 and clause (c)'s
 error-string rider; `libc` underpins D14's residual delta. Two further driver
 claims — D6's and D7's clause-(b) evidence, resting on what Desktop emits as
