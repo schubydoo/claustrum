@@ -151,7 +151,8 @@ There is one binary. A flag (`main.go`) selects the mode: `-serve`, `-bridge`,
   always-on, not opt-in. **Any RPC path param that reaches a recursive delete
   owes this guard.** `IsAbs && !isFilesystemRoot` is *not* a substitute: home
   passes both tests, and that check resolves no relative path, so
-  `worktreePath:".."` from a daemon in home still deletes it (measured). See
+  `worktreePath:".."` from a daemon in home still destroys home through its
+  parent (measured). See
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md) D2.
 - **Auth is in-band per request** (`"auth":"<token>"`). The daemon's token comes
   from `-token-file` or from `-token-fd`. With `-token-file` the daemon reads the
@@ -186,8 +187,9 @@ There is one binary. A flag (`main.go`) selects the mode: `-serve`, `-bridge`,
   with `-cli-url`.** That download path verifies its SHA-256 before it extracts,
   unconditionally.
 - **`-cli-probe-timeout` and `-libc-probe-timeout` are a swap footgun.** The two
-  names are one letter apart, they have the same type, and main's `-install` arm
-  resolves them two lines apart. A swap compiles and passes every isolated test.
+  names differ only in their `cli`/`libc` prefix, they have the same type, and
+  main's `-install` arm resolves them in consecutive statements. A swap compiles
+  and passes every isolated test.
   `TestInstallArmWiresEachFlagToItsOwnGlobal` is the guard against it.
 - **A disabled limiter bypasses its `io.LimitReader` / `context.WithTimeout`
   entirely. Never "simplify" it into a huge value.** For the caps, the `cap+1`

@@ -208,8 +208,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**
   (`filepath.Abs`) before it compares them. Without that resolution,
-  `"worktreePath":".."` from a daemon whose cwd is under home deletes it
-  (measured). `git.worktree_remove` is the more exposed of the two methods:
+  `"worktreePath":".."` from a daemon whose cwd is home or under home destroys
+  the home directory (measured — from home itself, `..` resolves to home's
+  parent, and the delete takes home with it). `git.worktree_remove` is the more exposed of the two methods:
   `wipesHomeDir` is its *only* gate, while `extract_tar` also keeps `IsAbs` +
   `isFilesystemRoot` behind it.
 - **This fired.** On 2026-08-02 an in-repo fuzzer sent `"destDir":"~"` at a live
@@ -252,8 +253,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** With the guard on, `files.read` refuses any non-regular path with
   `-32602 files.read: not a regular file`. The reference refuses none. With the
-  guard off, the predicate (`filesReadRegularOnly && !fi.Mode().IsRegular()`) is
-  not evaluated at all.
+  guard off, the flag short-circuits the predicate
+  (`filesReadRegularOnly && !fi.Mode().IsRegular()`), so the mode check never
+  runs.
 - **Default.** Off (byte-identical). **Activate:** `-files-read-regular-only` or
   the key.
 - **Why a flag and not a narrower predicate.** `/dev/null` and `/dev/zero` are
@@ -355,10 +357,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   already plant a file in that directory. The justification is a design position: a
   daemon should not write into a file it does not own. The justification does not
   depend on the reference being wrong.
-- **Why always-on.** Rule 3 clause (b) — unreachable on the deployed path
-  (`~/.claude/remote/` is per-user, not world-writable), which is also the only
-  place the reference's behaviour is a disclosure risk. A flag would gate a branch
-  that no honest deployment reaches.
+- **Why always-on.** Rule 3 clause (b) — the trigger is unreachable on the
+  deployed path (`~/.claude/remote/` is per-user, not world-writable). The shared
+  directory that reaches the trigger is also the only place where the reference's
+  behaviour is a disclosure risk, so the guard and the risk live in the same
+  unreachable place. A flag would gate a branch that no honest deployment reaches.
 - **Reopen trigger.** A deployment that puts the socket directory somewhere shared
   *and* needs the log file. In that deployment the fallback sends diagnostics to
   the launcher's stdio, which a client may parse.
@@ -515,7 +518,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   host whose loader the glob matches. The predicate is the glob, not the host.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-libc-probe-timeout
   <dur>` or the key; disabled bypasses `context.WithTimeout` (`lddCtx`). **Not the
-  same knob as `-cli-probe-timeout`** (D11), which it is one letter apart from.
+  same knob as `-cli-probe-timeout`** (D11), whose name differs only in the
+  `cli`/`libc` prefix.
   `-cli-probe-timeout` bounds `<cli> --version`; `-libc-probe-timeout` bounds
   `ldd --version`. `TestInstallArmWiresEachFlagToItsOwnGlobal` exists because a swap
   compiles and passes every isolated test.

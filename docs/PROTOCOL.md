@@ -720,6 +720,8 @@ reports the outcome as a *result*. An unknown id is not an error:
 
 #### process.reattach
 `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
+- A missing or empty `id` → `-32602 Process ID is required`, the same frame
+  `spawn` and `killAndWait` document (probed with `"id":""`).
 - The daemon replays buffered frames with **seq > fromSeq** (exclusive) to this
   connection, **transfers** the frame stream to it, and then returns the result.
 - **The transfer is exclusive.** A reattach does not add a second listener. Any
@@ -1030,9 +1032,10 @@ probed. See [`DIVERGENCES.md`](DIVERGENCES.md):
 - **`-libc-probe-timeout <dur>` (D14; linux only).** `0` = no deadline on `ldd
   --version`. Off linux the probe never runs. On linux it cannot fire on a host
   whose musl loader glob matches, because `detectLibcWith` returns before it spawns
-  `ldd`. **Do not confuse it with `-cli-probe-timeout`.** The two names are one
-  letter apart, they have the same type, and main's `-install` arm resolves them two
-  lines apart (pinned by `TestInstallArmWiresEachFlagToItsOwnGlobal`). `libc` build
+  `ldd`. **Do not confuse it with `-cli-probe-timeout`.** The two names differ only in
+  their `cli`/`libc` prefix, they have the same type, and main's `-install` arm
+  resolves them in consecutive statements (pinned by
+  `TestInstallArmWiresEachFlagToItsOwnGlobal`). `libc` build
   selection is a driver claim — see
   [ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance).
 

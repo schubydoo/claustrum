@@ -24,7 +24,8 @@ The daemon is one binary. A flag selects the mode:
 - **`-bridge`** — a simple relay between stdio and the socket. An SSH session
   attaches to this mode.
 - **`-install`** — the installer. It downloads the CLI, verifies the SHA-256,
-  extracts the zstd archive, and prunes old CLI versions.
+  extracts the zstd archive, and prunes old CLI versions. (A local `-cli-zst`
+  blob is verified only when a checksum is supplied — [D1](DIVERGENCES.md#d1).)
 - **`-stop`** / **`-version`** — `-stop` sends `server.shutdown`. `-version`
   reports the build.
 

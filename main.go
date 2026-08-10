@@ -190,7 +190,7 @@ func main() {
 		cliProbeTimeout = cfg.effectiveCLIProbeTimeout(*cliProbe, cliSet["cli-probe-timeout"])
 		// And the same for the libc probe: detectLibc reads the package var directly
 		// (libc_linux.go), and only -install reaches it. ⚠️ Distinct from the line
-		// above — these two flags differ by one letter and share a type, so a swap
+		// above — these two flags differ only in their cli/libc prefix and share a type, so a swap
 		// here compiles, vets and passes every isolated test.
 		lddProbeTimeout = cfg.effectiveLibcProbeTimeout(*libcProbe, cliSet["libc-probe-timeout"])
 		// Same reasoning: fetchToFile reads this deep in the download path rather
