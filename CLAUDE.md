@@ -25,69 +25,37 @@ frames.** The wire surface *is* the product.
 
 - Use Go 1.25+ and `CGO_ENABLED=0`. One dependency is cross-platform:
   `github.com/klauspost/compress` (zstd). Two more go into Windows builds only:
-  `golang.org/x/sys` (Job Object teardown) and `github.com/Microsoft/go-winio`
-  (the opt-in `-listen-pipe` named-pipe transport).
-- In-repo tests (`*_test.go`) cover the wire surface two ways. The first way is
-  fast unit tests: frame encoding, dispatch / auth / error routing, the replay
-  buffer, env merging, and the `-install` pipeline. The second way is a
-  socket-integration suite (`harness_test.go` + `integration*_test.go`). That
-  suite boots the daemon on a temp `AF_UNIX` socket. It then asserts every
-  method's frames against committed golden fixtures
-  (`testdata/socket_*.golden.json`). Thus CI gates compatibility without the
-  reference binary. The suite runs on linux, macOS, **and Windows** in CI.
-  Process fixtures come from the test binary itself (`helperproc_test.go`,
-  `CLAUSTRUM_TEST_HELPER`), never from `/bin/*`, so the stream bytes match the
-  goldens on every OS. Statement coverage is approximately 98%. The
-  cross-binary battery that diffs against the reference daemon lives in
-  `scratch/`.
+  `golang.org/x/sys` and `github.com/Microsoft/go-winio`.
+- In-repo tests cover the wire surface two ways: fast unit tests, and a
+  socket-integration suite (`harness_test.go` + `integration*_test.go`) that
+  boots the daemon on a temp `AF_UNIX` socket and asserts every method's frames
+  against golden fixtures (`testdata/socket_*.golden.json`) — so CI gates
+  compatibility without the reference binary, on linux, macOS **and** Windows.
+  Process fixtures come from the test binary itself (`helperproc_test.go`),
+  never from `/bin/*`, so stream bytes match the goldens on every OS. Statement
+  coverage is approximately 98%. The cross-binary battery that diffs against
+  the reference daemon lives in `scratch/`.
 
 ## Architecture
 
-There is one binary. A flag (`main.go`) selects the mode: `-serve`, `-bridge`,
-`-stop`, `-version`, `-install`.
+One binary; a flag selects the mode (`main.go`): `-serve`, `-bridge`, `-stop`,
+`-version`, `-install`.
 
-- **`rpc.go`** — request/response types, error codes, `dispatch` (parse →
-  auth → version → route by namespace; `dispatch` checks auth *before* the
-  jsonrpc version — probe-verified). Mistyped params → `-32602 Invalid params`.
-- **`server.go`** — the `-serve` daemon: AF_UNIX listener (mode `0600`),
-  per-conn read loop, **concurrent** dispatch, self-daemonize, graceful shutdown.
-- **`methods_server.go` · `methods_files.go` · `methods_git.go` ·
-  `methods_process.go`** — the 19 methods across `server.*` / `files.*` /
-  `git.*` / `process.*`.
-- **`results.go`** — result structs. Declare their fields in the exact order
-  the reference emits. **Never use a map** (a map sorts its keys and diverges
-  from the wire contract).
-- **`process.go`** — `procManager` / `managedProc`: spawn in own process group,
-  stream base64 stdout/stderr frames, async stdin writer (bounded queue +
-  backpressure), per-process replay buffer, `reattach`.
-- **`bridge.go`** — `-bridge`: a dumb stdio↔socket relay (what SSH attaches to).
-- **`logging.go`** — tiny leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`, defaults
-  to emit-everything). The logger puts the level tag *before* the `[Component]`
-  prefixes, so existing greps continue to match.
-- **`metrics.go`** — opt-in Prometheus counters at `/metrics`. A stdlib
-  `net/http` listener serves them **only** when `-metrics-addr` is set (off by
-  default; not part of the JSON-RPC wire). The daemon always does the counting,
-  with atomics. Only the endpoint is opt-in.
-- **`install.go`** — `-install`: CLI download / verify (SHA-256) / extract
-  (zstd) / prune. **claustrum verifies a `-cli-url` download unconditionally.
-  It verifies the local `-cli-zst` SFTP blob only when a `-cli-checksum` is
-  supplied** — a conditional divergence from the reference, which the caller
-  activates and an operator does not; see D1.
-- `*_unix.go` / `*_windows.go` hold the OS-specific behavior: daemonize,
-  process groups / Windows Job Objects for whole-tree kill, login-shell PATH
-  extraction, the `-keep-children` POSIX-only policy via `honorKeepChildren`,
-  and the Windows-only `-listen-pipe` named-pipe transport via
-  `startPipeTransport` / `honorListenPipe` in `pipetransport_windows.go`. The
-  JSON-RPC surface is identical everywhere.
-- **`pipetransport.go`** — the opt-in, default-off, Windows-only `-listen-pipe`
-  transport (CT-5). When the flag is set, `-serve` *additionally* serves the
-  identical JSON-RPC dispatch over a Windows named pipe. That pipe is a second
-  `acceptLoop` over the same `serveConn`, so there is no wire change. The
-  daemon publishes the chosen pipe name to `rpc.pipe` beside the socket. The
-  pipe has an owner-only DACL and the same `daemon.token` auth. Off ⇒
-  byte-for-byte identical to the reference. The platform-neutral helpers are
-  here. The go-winio wiring is in `pipetransport_windows.go`, and the
-  non-Windows no-op stub is in `pipetransport_other.go`.
+| File | Role |
+|------|------|
+| `rpc.go` | request/response types, error codes, `dispatch` (parse → auth → version → route; auth is checked *before* the jsonrpc version — probe-verified) |
+| `server.go` | the `-serve` daemon: `AF_UNIX` listener (mode `0600`), per-conn read loop, **concurrent** dispatch, self-daemonize, graceful shutdown |
+| `methods_*.go` | the 19 methods across `server.*` / `files.*` / `git.*` / `process.*` |
+| `results.go` | result structs, fields declared in the exact order the reference emits — **never a map** (a map sorts its keys and diverges from the wire contract) |
+| `process.go` | `procManager` / `managedProc`: spawn in own process group, base64 stream frames, async stdin writer (bounded queue + backpressure), per-process replay buffer, `reattach` |
+| `bridge.go` | `-bridge`: a stdio↔socket relay — what SSH attaches to; it injects no auth |
+| `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`, default emit-everything); the level tag goes *before* the `[Component]` prefixes, so existing greps keep matching |
+| `metrics.go` | opt-in Prometheus counters at `/metrics` — a listener exists **only** when `-metrics-addr` is set; counting is always-on atomics |
+| `install.go` | `-install`: CLI download / verify (SHA-256) / extract (zstd) / prune — a `-cli-url` download is verified unconditionally; the local `-cli-zst` blob only when a `-cli-checksum` is supplied (D1) |
+| `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups / Windows Job Objects, login-shell PATH, the POSIX-only `-keep-children`) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5) |
+
+The JSON-RPC surface is identical on every OS. Full internals →
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Conventions
 
@@ -115,15 +83,14 @@ There is one binary. A flag (`main.go`) selects the mode: `-serve`, `-bridge`,
   subject. Titles are hygiene only — they do **not** drive releases.
 - **Releases are changesets-only** (knope, not release-please). For a
   user-facing change, add a `.changeset/*.md` fragment with
-  `knope document-change`. The fragment drives the version bump and the
-  changelog. No fragment ⇒ no release. An internal PR (CI / tooling / refactor
-  / tests) needs no fragment — apply the `no-changelog` label instead. See
-  [`.changeset/`](.changeset/) and CONTRIBUTING.md → Changesets.
+  `knope document-change`; the fragment drives the version bump and the
+  changelog. No fragment ⇒ no release. An internal PR needs no fragment —
+  apply the `no-changelog` label instead. See [`.changeset/`](.changeset/) and
+  CONTRIBUTING.md → Changesets.
 - **A changeset body is ONE line.** knope renders any multi-line body as a
   `####` heading block instead of a bullet. That breaks the changelog, and it
   already broke it in 1.7.2 and 1.7.3. Fold every detail into the single
-  sentence — never a second line, never a second paragraph.
-  `scripts/lint_changesets.py` gates this in CI and pre-commit.
+  sentence. `scripts/lint_changesets.py` gates this in CI and pre-commit.
 - Before a PR, make all four of these true: `gofmt -l .` prints nothing,
   `go vet ./...` is clean, `golangci-lint run` is clean, and
   `go test -race ./...` is green. For a **wire-surface** change, also re-run the
@@ -200,51 +167,31 @@ There is one binary. A flag (`main.go`) selects the mode: `-serve`, `-bridge`,
 
 ## Gotchas — Part B: the opt-in wire divergences
 
-Seven divergences are opt-in flags. **All seven default OFF — that is the
-parity position.** The reference applies no such cap and no such deadline at any
-size or duration the probe could reach. A non-zero default would thus fail an
-operation that the reference completes. (D4 is the non-threshold one. It is not
-a cap and not a deadline but a `Mode().IsRegular()` check — the reference reads
-`/dev/null` and blocks on a writerless FIFO instead of refusing either one.)
-Claude Desktop owns the `-serve` / `-install` argv, so the **`claustrum.conf`
-key is the reachable knob**, not the flag. Each disabled state bypasses its
-limiter entirely (see Part A's "never simplify" rule).
+Seven divergences are opt-in flags — D3 (`max-extract-bytes`), D4
+(`files-read-regular-only`), D5 (`git-timeout`), D10 (`max-cli-bytes`), D11
+(`cli-probe-timeout`), D12 (`cli-download-timeout`), D14 (`libc-probe-timeout`)
+— and **all seven default OFF: that is the parity position.** The reference
+applies no such cap, deadline, or refusal at any input the probe could reach,
+so any non-off default would fail an operation the reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
+**`claustrum.conf` key is the reachable knob**, not the flag. Each disabled
+state bypasses its limiter entirely (Part A's "never simplify" rule).
 
 **D5's deadline gates a destructive path.** `git.worktree_remove` treats a
 failed git as permission to delete `worktreePath`. Therefore never read a fired
 `git-timeout` as "git refused". Opting D5 in is wire-visible.
 
-| ID | Flag | `claustrum.conf` key | Scope | Default | What it bounds / caps |
-|----|------|----------------------|-------|---------|-----------------------|
-| D3 | `-max-extract-bytes` | `max-extract-bytes` | `-serve` | off (0) | total uncompressed bytes `files.extract_tar` writes |
-| D4 | `-files-read-regular-only` | `files-read-regular-only` | `-serve` | off (false) | makes `files.read` refuse non-regular paths (FIFO / socket / char / block device) with `-32602 files.read: not a regular file` |
-| D5 | `-git-timeout` | `git-timeout` | `-serve` | off (0) | wall-clock deadline on every git invocation (gates a destructive fallback — see above) |
-| D10 | `-max-cli-bytes` | `max-cli-bytes` | `-install` | off (0) | the decompressed CLI **and** the download response body |
-| D11 | `-cli-probe-timeout` | `cli-probe-timeout` | `-install` | off (0) | wall-clock bound on the `<cli> --version` runnability probe |
-| D12 | `-cli-download-timeout` | `cli-download-timeout` | `-install` | off (0) | wall-clock bound on the whole `-cli-url` download (body read only — stdlib dial 30 s / TLS 10 s still always apply) |
-| D14 | `-libc-probe-timeout` | `libc-probe-timeout` | `-install` (linux only) | off (0) | wall-clock bound on the `ldd --version` libc probe |
+The two non-flag divergences: **D1** — claustrum verifies the `-cli-zst` SFTP
+blob **only when a `-cli-checksum` is supplied** (conditional and
+caller-activated; an absent checksum stays trusting, so honest callers get
+byte-identical behavior). **D13** — verify-before-decompress *ordering*;
+always-on but **unresolved**, not justified.
 
-**The two non-flag divergences:**
-
-- **D1** — claustrum verifies the `-cli-zst` SFTP blob against a checksum **only
-  when a `-cli-checksum` is supplied**. This is a *conditional*,
-  caller-activated divergence, not an off-by-default flag. With no checksum
-  claustrum stays trusting, so honest callers get byte-identical behavior.
-- **D13** — verify-before-decompress *ordering*, with no wall-clock threshold.
-  Its trigger is reachable. It stays **always-on but unresolved**, not
-  justified.
-
-Three documents hold the rest:
-
-- The full catalog, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
-  divergence's default / activation / cost / reopen trigger, and the measured
-  forensics behind them → [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md).
-- The per-method wire facts (params, result field order, error strings, the D5
-  `signal: killed` frames) → [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
-- The driver-claim provenance that some of these rest on — "Desktop owns the
-  argv", `cliError` classification, libc selection →
-  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → Driver claims and their
-  provenance.
+The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
+divergence's default / activation / cost / reopen trigger →
+[`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Per-method wire frames →
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md). Driver-claim provenance ("Desktop owns
+the argv", `cliError` classification, libc selection) →
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Where detail lives
 
@@ -256,14 +203,10 @@ Three documents hold the rest:
 - Shipped ledger (completed work) → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
 - Host-local agent guardrails + agent-tool routing → `CLAUDE.local.md` (gitignored)
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the
-  `ci` / `security` aggregators are the required checks). **knope**
-  (`knope.toml`) automates the releases in three steps. First, pending
-  `.changeset/` fragments make `knope-prepare.yml` open a
-  `chore: prepare release X.Y.Z` PR, which bumps `VERSION` + `CHANGELOG.md`.
-  Second, a merge of that PR makes `knope-release.yml` tag `v*` and create the
-  GitHub Release. Third, that tag fires `release.yml`, which signs the artifacts
-  and adds the SBOM and the SLSA provenance via
-  [`.goreleaser.yaml`](.goreleaser.yaml). The `KNOPE_ENABLED` repo var gates
-  this release automation.
+  `ci` / `security` aggregators are the required checks). Releases: pending
+  `.changeset/` fragments → **knope** opens a version PR (`knope-prepare.yml`);
+  merging it tags `v*` (`knope-release.yml`), and the tag fires `release.yml` —
+  signed + SBOM + SLSA via [`.goreleaser.yaml`](.goreleaser.yaml). Gated on the
+  `KNOPE_ENABLED` repo var.
 - Claude Code / Anthropic API specifics → prefer current docs (context7 /
   find-docs) over memory — <https://docs.anthropic.com/en/docs/claude-code/overview>.
