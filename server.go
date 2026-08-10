@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -65,6 +66,9 @@ type server struct {
 	metricsLn    net.Listener // optional Prometheus listener; nil unless -metrics-addr set
 	pipeLn       net.Listener // optional Windows named-pipe listener; nil unless -listen-pipe set (Windows-only)
 	keepChildren bool         // -keep-children: leave child processes running on graceful shutdown (POSIX-only)
+
+	wlog    *wireLog      // optional JSON-RPC frame recorder; nil unless -wire-log set
+	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -73,6 +77,13 @@ type conn struct {
 	nc     net.Conn
 	wmu    sync.Mutex
 	closed bool
+
+	// id correlates this connection's frames in a -wire-log capture. It has no
+	// wire meaning and is never sent to the client.
+	id uint64
+	// wlog is the server's recorder (nil when off), held here so the write paths
+	// can record without reaching back through the server.
+	wlog *wireLog
 
 	// process.stdin is the one method whose ARRIVAL ORDER is part of its meaning:
 	// the chunks are a byte stream, and delivering them out of order corrupts it.
@@ -145,6 +156,9 @@ func (c *conn) writeJSON(v interface{}) error {
 // subscribers be marshaled once (see managedProc.emit) instead of once per conn.
 // Write does not mutate b, so the same slice is safe to hand to every conn.
 func (c *conn) writeLine(b []byte) error {
+	// Stream and replay frames. A frame fanned out to N subscribers is recorded
+	// once per conn, which is intended: the capture is a per-connection view.
+	c.wlog.record(c.id, "out", b)
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	if c.closed {
@@ -167,6 +181,10 @@ func (c *conn) writeResponse(v interface{}) {
 		return
 	}
 	b = append(b, '\n')
+	// Recorded before the write, and from the already-marshaled bytes, so the
+	// capture is exactly what goes on the wire. record neither retains nor
+	// mutates b.
+	c.wlog.record(c.id, "out", b)
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	if c.closed {
@@ -182,7 +200,7 @@ func (c *conn) writeResponse(v interface{}) {
 // runServe self-daemonizes (reparenting to init) then runs the RPC server. The
 // child is marked with daemonChildEnv (CLAUSTRUM_DAEMON_CHILD) so we re-exec
 // exactly once — see that const for why it is not CLAUDE_SSH_DAEMON_CHILD.
-func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChildren, listenPipe bool) {
+func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt wireLogOptions, keepChildren, listenPipe bool) {
 	if os.Getenv(daemonChildEnv) != "1" {
 		// Parent. An fd is only valid in this process and would not survive the
 		// re-exec, so read it now and forward the token to the child over an
@@ -245,7 +263,7 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, keepChi
 	// never fork a login shell (which mutates the test process's PATH).
 	startLoginPATH()
 
-	s, err := newServerOnSocket(socket, token, metricsAddr, keepChildren, listenPipe)
+	s, err := newServerOnSocket(socket, token, metricsAddr, wlopt, keepChildren, listenPipe)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
 		osExit(1)
@@ -308,7 +326,15 @@ func childToken(tokenFile string) (string, error) {
 // metrics and pipe listeners — and hands back the ready-to-run server. Split
 // out of runServe (same pattern as enablePipe/startAcceptLoops) so the whole
 // boot sequence is testable without the daemonize/osExit shell.
-func newServerOnSocket(socket, token, metricsAddr string, keepChildren, listenPipe bool) (*server, error) {
+func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, keepChildren, listenPipe bool) (*server, error) {
+	// Opened before the listener so a bad -wire-log path fails the boot rather
+	// than producing a daemon that serves happily and records nothing — an empty
+	// capture reads as "the client sent nothing", the worst failure for a
+	// diagnostic tool.
+	wlog, err := openWireLog(wlopt)
+	if err != nil {
+		return nil, err
+	}
 	_ = os.Remove(socket) // clear a stale socket
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
@@ -344,6 +370,7 @@ func newServerOnSocket(socket, token, metricsAddr string, keepChildren, listenPi
 		conns:        make(map[*conn]struct{}),
 		shutdown:     make(chan struct{}),
 		keepChildren: keepChildren,
+		wlog:         wlog,
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
@@ -656,7 +683,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 			continue
 		}
 		tempDelay = 0
-		c := &conn{nc: nc}
+		c := &conn{nc: nc, id: s.connSeq.Add(1), wlog: s.wlog}
 		met.connections.Add(1)
 		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
 		s.mu.Lock()
@@ -698,6 +725,11 @@ func (s *server) serveConn(c *conn) {
 		}
 		raw := make([]byte, len(line))
 		copy(raw, line)
+		// Record inbound here, in the read loop, so the capture preserves WIRE
+		// ORDER. Recording inside handleRequest would order frames by goroutine
+		// scheduling instead, which is exactly the property a capture is used to
+		// study (see the stdin-ticket note above).
+		c.wlog.record(c.id, "in", raw)
 		// Peek at the method while still in the read loop, so a stdin request can
 		// take its ticket in wire order before dispatch goes concurrent. A
 		// malformed line yields an empty method and is simply not ordered — it has
@@ -842,6 +874,10 @@ func (s *server) closeAll(socket string) {
 		c.nc.Close()
 	}
 	s.mu.Unlock()
+	// Closed last, after every connection is down, so frames written during
+	// teardown still land in the capture. Unlike the socket and daemon.token, the
+	// file itself is left in place — it is the artifact the operator asked for.
+	s.wlog.Close()
 }
 
 // stopChildren implements the -keep-children policy on graceful shutdown. By
