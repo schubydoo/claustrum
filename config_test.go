@@ -722,7 +722,7 @@ func TestParseConfig_LibcProbeTimeout(t *testing.T) {
 	}
 }
 
-// The two probe keys are one letter apart and the same type, so a copy-paste in
+// The two probe keys are near-twins (cli/libc prefix) and the same type, so a copy-paste in
 // applyConfigKey would have one key populate the other's field. Assert the
 // separation at the parse layer, as max-cli-bytes/max-extract-bytes already do.
 func TestParseConfig_ProbeTimeoutsDoNotCross(t *testing.T) {

@@ -175,9 +175,10 @@ func filesRead(req *request) response {
 	if fi.IsDir() {
 		return errResult(req.ID, codeInvalidParam, "files.read: path is a directory")
 	}
-	// D4 FLIP: opted in only. Off (the default), the predicate is not evaluated at
-	// all and the read proceeds exactly as the reference's does — including the
-	// blocking and unbounded cases documented on the var above.
+	// D4 FLIP: opted in only. Off (the default), the flag short-circuits the
+	// predicate — the mode check never runs — and the read proceeds exactly as
+	// the reference's does, including the blocking and unbounded cases
+	// documented on the var above.
 	if filesReadRegularOnly && !fi.Mode().IsRegular() {
 		return errResult(req.ID, codeInvalidParam, "files.read: not a regular file")
 	}

@@ -1,43 +1,45 @@
 # claustrum protocol reference
 
-claustrum speaks newline-delimited **JSON-RPC 2.0** over an `AF_UNIX`
-`SOCK_STREAM` socket. This document is the complete wire contract, and the same
-contract the validation battery checks byte-for-byte. All reference behaviour was
-probed at `5db5e4a` unless a line says otherwise; the divergence catalog, its
-rules, and the reopen triggers live in [`DIVERGENCES.md`](DIVERGENCES.md).
+claustrum uses newline-delimited **JSON-RPC 2.0** over an `AF_UNIX`
+`SOCK_STREAM` socket. This document is the complete wire contract. The validation
+battery checks that same contract byte-for-byte. All reference behaviour was
+probed at `5db5e4a` unless a line says otherwise. The divergence catalog, its
+rules, and the reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Transport
 
 - One JSON object per line (NDJSON). No length prefix, no binary framing.
-- A single request line is capped at **1 MiB** (`bufio` max token = `1024*1024`):
-  a line up to 1048575 bytes is served, 1048576+ closes the connection with no
-  reply. Large `process.stdin` payloads must be chunked under this.
+- A single request line has a cap of **1 MiB** (`bufio` max token = `1024*1024`).
+  The daemon serves a line up to 1048575 bytes. A line of 1048576 bytes or more
+  closes the connection with no reply. Chunk large `process.stdin` payloads below
+  this cap.
 - `AF_UNIX` stream socket, created mode `0600` (owner only).
-- The connection is **persistent**: it stays open after a response, and id-less
+- The connection is **persistent**. It stays open after a response, and id-less
   stream notifications arrive on it asynchronously.
-- A connection's requests are dispatched **concurrently** — responses may arrive
-  out of request order; match them by `id`.
+- The daemon dispatches a connection's requests **concurrently**. Responses can
+  arrive out of request order. Match them by `id`.
 
 ### Named-pipe transport (Windows, opt-in)
 
 A strictly additive claustrum extension (CT-5) — the reference daemon has no such
-transport. Off by default and byte-for-byte identical to the reference when off.
-Enabled with `-serve -listen-pipe` (or `listen-pipe = true` in `claustrum.conf`),
-claustrum *additionally* serves the **exact same** NDJSON JSON-RPC dispatch over a
-**Windows named pipe**, concurrently with the socket — same wire contract, field
-ordering, framing, and `"auth"` handshake. It exists so a Windows client that
-cannot consume `AF_UNIX` (notably Python `asyncio`, whose Unix transports are
-Unix-loop-only) can still connect.
+transport. It is off by default, and claustrum is byte-for-byte identical to the
+reference when it is off. Set `-serve -listen-pipe` (or `listen-pipe = true` in
+`claustrum.conf`), and claustrum *additionally* serves the **exact same** NDJSON
+JSON-RPC dispatch over a **Windows named pipe**, concurrently with the socket. The
+wire contract, field ordering, framing, and `"auth"` handshake are the same. It
+exists so that a Windows client that cannot consume `AF_UNIX` can still connect
+(notably Python `asyncio`, whose Unix transports are Unix-loop-only).
 
-- **Windows-only.** Ignored with a warning on other platforms.
+- **Windows-only.** Other platforms ignore it and log a warning.
 - **Name + discovery.** claustrum chooses the name
-  (`\\.\pipe\claustrum-<random-instance-id>`) and publishes it to **`rpc.pipe`** in
-  the socket's directory (beside `rpc.sock` / `daemon.token`), written atomically
-  before the pipe accepts and before the ready banner, removed on graceful
-  shutdown. The client reads that file to learn the opaque name.
-- **Stale-file invariant.** Because the name is per-boot-random, `rpc.pipe` exists
-  **iff** a pipe is actively served this boot; any leftover from an unclean crash
-  is removed at startup, so a client can never dial a stale name.
+  (`\\.\pipe\claustrum-<random-instance-id>`). It publishes that name to
+  **`rpc.pipe`** in the socket's directory (beside `rpc.sock` / `daemon.token`).
+  claustrum writes the file atomically before the pipe accepts and before the ready
+  banner, and removes it on graceful shutdown. The client reads that file to learn
+  the opaque name.
+- **Stale-file invariant.** The name is random for each boot. Therefore `rpc.pipe`
+  exists **if and only if** a pipe is actively served this boot. Startup removes any
+  leftover file from an unclean crash, so a client can never dial a stale name.
 - **Owner-only + local**, by two independent mechanisms: an owner-only DACL (SDDL
   `D:P(A;;GA;;;<current-user-SID>)`, the named-pipe analogue of the socket's
   `0600`) **and** remote-client rejection at creation
@@ -49,56 +51,58 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → CT-5 for the full contract.
 ## Authentication
 
 Every request carries a top-level `"auth":"<token>"` — **except `server.shutdown`,
-which is not authenticated at all.** A shutdown frame whose `auth` member is
-absent, empty, wrong, or valid all stop the daemon, and `-stop` sends no `auth`
-member. This matches the reference and is load-bearing: the Desktop client tears
-the daemon down with `server --stop --socket <sock>` from a bare SSH command line,
-with no `CLAUDE_RPC_TOKEN` in its environment. The exemption covers auth **only** —
-a shutdown frame with a bad or absent `jsonrpc` version is still rejected `-32600`
-and the daemon stays up. Every other method rejects an unauthenticated request
-with `-32001 Unauthorized: invalid or missing auth token` (also logged
-`[Server] Unauthorized request: method=…, id=…`).
+which is not authenticated at all.** A shutdown frame stops the daemon whether its
+`auth` member is absent, empty, wrong, or valid, and `-stop` sends no `auth`
+member. This matches the reference and is load-bearing: the Desktop client stops
+the daemon with `server --stop --socket <sock>` from a bare SSH command line, with
+no `CLAUDE_RPC_TOKEN` in its environment. The exemption covers auth **only**. The
+daemon still rejects a shutdown frame with a bad or absent `jsonrpc` version with
+`-32600`, and the daemon stays up. Every other method rejects an unauthenticated
+request with `-32001 Unauthorized: invalid or missing auth token`, and also logs
+`[Server] Unauthorized request: method=…, id=…`.
 
 The server's expected token comes from `-token-file` (read once at startup, then
 **unlinked**) or `-token-fd` (read from an open descriptor, forwarded to the
-detached child over a pipe — no temp file).
+detached child over a pipe — this handoff never touches disk).
 
 **No claustrum mode reads `CLAUDE_RPC_TOKEN`** — not `-serve`, not `-bridge`, not
-`-stop`. `-bridge` is a dumb relay and does not inject auth: whatever speaks
-through it must include `"auth"` itself (from the `daemon.token` handshake below or
-from its launcher). claustrum's only remaining dealings with the variable are to
-*remove* it — unset before daemonizing, stripped from every spawned child — so a
-token never reaches a child through the environment.
+`-stop`. `-bridge` is a simple relay and does not add auth. The client that speaks
+through it must include `"auth"` itself, from the `daemon.token` handshake below or
+from its launcher. claustrum only *removes* the variable: it unsets the variable
+before it daemonizes, and it strips the variable from every spawned child.
+Therefore a token never reaches a child through the environment.
 
 ### Token persistence (`daemon.token`)
 
 Once the socket is listenable, the daemon writes the token to **`daemon.token`** in
 the socket's directory (mode `0600`, written atomically via a `daemon.token-*` temp
-file + rename), and **unlinks it on graceful shutdown**. This lets a client
+file + rename), and **unlinks it on graceful shutdown**. A client can therefore
 reconnect to an already-running daemon and re-authenticate after the original
-`-token-file` was unlinked / the `-token-fd` pipe closed. The write is
-token-source-agnostic (it uses the in-memory token) and best-effort: a failure is
-logged (`[daemon] failed to persist token: …`) and non-fatal. Added by reference
-build `5db5e4a` and matched here (off the JSON-RPC wire — the file sits beside the
-socket, not on it). An unclean kill (`SIGKILL`/crash) leaves the file behind, since
-removal runs only on the graceful `server.shutdown` / `SIGTERM` path.
+`-token-file` was unlinked / the `-token-fd` pipe closed. The write does not depend
+on the token source, because it uses the in-memory token. The write is also
+best-effort: the daemon logs a failure (`[daemon] failed to persist token: …`) and
+continues. Reference build `5db5e4a` added this, and claustrum matches it. It is
+off the JSON-RPC wire, because the file sits beside the socket, not on it. An
+unclean kill (`SIGKILL`/crash) leaves the file behind, because the daemon removes
+it only on the graceful `server.shutdown` / `SIGTERM` path.
 
 The fixed name + socket-dir location are the reconnect contract, so they are not
-configurable. Two parity caveats match the reference and are deliberately not
-"fixed": two daemons sharing one directory collide on the file, and on Windows
-`0600` is not an owner-only DACL (a Go `os.CreateTemp` limitation — the per-user
-session dir is the confinement).
+configurable. Two parity caveats match the reference, and claustrum deliberately
+does not "fix" them: two daemons that share one directory collide on the file, and
+on Windows `0600` is not an owner-only DACL (a Go `os.CreateTemp` limitation — the
+per-user session dir is the confinement).
 
 ### Daemon startup (`-serve`)
 
-The `-serve` launcher **creates the socket's parent directory** if missing (mode
-`0700`) and then **does not return until the socket path exists** — polled every
-20 ms, bounded at **10 seconds**. It confirms readiness by dialing the socket and
-closing again, so a freshly started daemon's log opens with a `New connection from:
-@` / `Connection closed: @` pair from the launcher's own probe.
+The `-serve` launcher **creates the socket's parent directory** if it is missing
+(mode `0700`). The launcher then **does not return until the socket path exists**.
+It polls every 20 ms, up to a bound of **10 seconds**. To confirm readiness it
+dials the socket and closes the connection again. A freshly started daemon's log
+therefore opens with a `New connection from: @` / `Connection closed: @` pair from
+the launcher's own probe.
 
-It waits for the **path to exist**, not a successful dial, and does not give up
-early when the child dies. Both are measured against `5db5e4a`:
+It waits for the **path to exist**, not for a successful dial. It also does not
+give up early when the child dies. Both behaviours are measured against `5db5e4a`:
 
 | start | what the launcher sees | outcome |
 |---|---|---|
@@ -106,37 +110,37 @@ early when the child dies. Both are measured against `5db5e4a`:
 | socket path occupied by a directory | path exists **immediately** | exit `0` (~0.01 s; reference 0.08 s) |
 | child can never bind (uncreatable parent dir) | path never appears | exit `1` at ~10.04 s (reference 10.06 s) |
 
-On timeout the launcher prints
-`claustrum: timeout waiting for daemon to accept on <socket>` to **stderr**, exit
-`1`. On success it prints the ready banner and exits `0`. The practical guarantee:
-after a successful `-serve`, the socket is accepting before `-serve` returns.
-(Measurement detail condensed out of this reference.)
+On a timeout the launcher prints
+`claustrum: timeout waiting for daemon to accept on <socket>` to **stderr** and
+exits `1`. On success it prints the ready banner and exits `0`. After a successful
+`-serve`, the socket accepts connections before `-serve` returns. (Measurement
+detail condensed out of this reference.)
 
 ### Daemon log (`remote-server.log`)
 
 The launcher creates **`remote-server.log`** in the socket's directory (mode
-`0600`, a **fresh file on every start** — any existing log is unlinked and
-recreated, not truncated in place) and redirects the daemonized child's stdout and
-stderr into it, so the launcher's own streams stay empty. The first line is the
-ready banner (no timestamp):
+`0600`, a **fresh file on every start** — the launcher unlinks and recreates any
+existing log, and does not truncate it in place). The launcher redirects the
+daemonized child's stdout and stderr into that file, so the launcher's own streams
+stay empty. The first line is the ready banner (no timestamp):
 
 ```
 Claustrum remote server listening on /run/user/1000/claude/rpc.sock
 2026/07/31 00:17:30 INFO  [Server] New connection from: @
 ```
 
-If the existing log cannot be replaced (a sticky directory holding another user's
-file), claustrum **declines the log entirely** and the daemon's output falls back
-to inherited stdio, rather than writing into a file another user can read. This is
-**intentional divergence D8** (always-on): the reference truncates a root-owned,
-world-writable log and writes into it; claustrum leaves it untouched. Not reachable
-on the deployed path — the socket directory (`~/.claude/remote/`) is per-user and
-not world-writable — which is why it is always-on rather than opt-in. See
-[`DIVERGENCES.md`](DIVERGENCES.md) → D8.
+If claustrum cannot replace the existing log (a sticky directory that holds another
+user's file), it **declines the log entirely**. The daemon's output then falls back
+to inherited stdio. claustrum does not write into a file another user can read.
+This is **intentional divergence D8** (always-on): the reference truncates a
+root-owned, world-writable log and writes into it, while claustrum leaves that file
+untouched. The trigger is not reachable on the deployed path, because the socket
+directory (`~/.claude/remote/`) is per-user and not world-writable. That is why D8
+is always-on and not opt-in. See [`DIVERGENCES.md`](DIVERGENCES.md) → D8.
 
-Unlike the socket and `daemon.token`, the log is **not removed on graceful
-shutdown** — it outlives the daemon so a post-mortem stays readable. The fixed name
-and location are the deployment contract, not configurable.
+Unlike the socket and `daemon.token`, claustrum does **not remove the log on
+graceful shutdown**. The log outlives the daemon, so a post-mortem stays readable.
+The fixed name and location are the deployment contract, not configurable.
 
 ## Message shapes
 
@@ -151,13 +155,13 @@ and location are the deployment contract, not configurable.
 {"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>}
 ```
 
-The reply's `id` is the request's id **decoded and re-encoded**, not the bytes the
-client sent. Any JSON value is accepted and comes back canonicalized: a number
-round-trips through a float64 (`1.0` → `1`, `1e2` → `100`,
-`12345678901234567890` → `12345678901234567000`) and an object comes back with keys
-sorted (`{"b":1,"a":2}` → `{"a":2,"b":1}`). Integers, strings, arrays and `null`
-are unchanged. A client that matches replies by comparing the id *text* must
-compare the decoded value instead.
+The reply's `id` is the request's id **decoded and re-encoded**. It is not the
+bytes the client sent. The daemon accepts any JSON value and returns it
+canonicalized: a number round-trips through a float64
+(`1.0` → `1`, `1e2` → `100`, `12345678901234567890` → `12345678901234567000`), and
+an object comes back with its keys sorted (`{"b":1,"a":2}` → `{"a":2,"b":1}`).
+Integers, strings, arrays and `null` are unchanged. A client that matches replies
+by the id *text* must compare the decoded value instead.
 
 Results are **ordered structs, never maps** — field order below is the wire
 contract.
@@ -176,9 +180,8 @@ contract.
 
 ### Error-string catalogue
 
-Every method-level error string, verbatim, in one place. Per-method sections below
-give the trigger and result shape; this table is the searchable index. Codes are
-`-32602` unless noted.
+Every method-level error string, verbatim, in one place. The per-method sections
+below give the trigger and the result shape. Codes are `-32602` unless noted.
 
 | namespace / context | error string | code / notes |
 |---|---|---|
@@ -214,7 +217,7 @@ give the trigger and result shape; this table is the searchable index. Codes are
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | (checked in that order after decode) |
 | process.stdin | `stdin offset gap: offset ahead of applied bytes` | -32003 |
-| process.killAndWait | `Process ID is required` / `Invalid params` | |
+| process.killAndWait / process.reattach | `Process ID is required` / `Invalid params` | |
 
 `-install` reports failures inside the `__INSTALL_RESULT__` facts line as
 `cliError` strings, not via exit code — catalogued in the `-install` section
@@ -222,51 +225,52 @@ below.
 
 ### Handler panic recovery
 
-The per-request goroutine wraps dispatch in `recover()`, so a panic in any handler
-is caught rather than crashing the daemon. The reply is
-`{"error":{"code":-32603,"message":"recovered panic: <v>"}}` and the daemon logs
+The per-request goroutine wraps dispatch in `recover()`. It therefore catches a
+panic in any handler, and the daemon does not crash. The reply is
+`{"error":{"code":-32603,"message":"recovered panic: <v>"}}`, and the daemon logs
 `[Server] recovered panic: method=<m> id=<id>: <v>`.
 
-**This frame is claustrum's own, not a statement about the wire.** No input is known
-to reach a handler panic (extensive fuzzing found none, and claustrum's own panic
-sites are each an unreachable stdlib guard or an already-bounds-guarded slice), so
-no client is known to provoke it. `-32603` is the JSON-RPC 2.0 *Internal error*
-code; the message prefix, log line, and id rendering are claustrum's own
-conventions, documented so an operator who sees it knows what it means — not as a
-compatibility guarantee.
+**This frame is claustrum's own. It is not a statement about the wire.** No input
+is known to reach a handler panic: extensive fuzzing found none, and each of
+claustrum's own panic sites is an unreachable stdlib guard or an
+already-bounds-guarded slice. `-32603` is the JSON-RPC 2.0 *Internal error* code.
+The message prefix, log line, and id rendering are claustrum's own conventions.
+They are documented so that an operator who sees the frame knows what it means.
+They are not a compatibility guarantee.
 
 ### Validation precedence
 
-A request is checked in the order **parse → auth → version → method → params**:
+The daemon checks a request in the order **parse → auth → version → method →
+params**:
 
-- Auth is validated *before* the `jsonrpc` version: a request that fails both (no
-  `auth` *and* a missing/wrong `jsonrpc`) reports `-32001 Unauthorized`, not the
-  version error.
-- Only once auth passes is `jsonrpc == "2.0"` enforced.
-- **`server.shutdown` is the exception**: auth is skipped for it entirely, so a
-  shutdown frame missing both `auth` and `jsonrpc` surfaces `-32600 Invalid
-  JSON-RPC version` (the version gate still applies) and the daemon stays up.
+- The daemon validates auth *before* the `jsonrpc` version. A request that fails
+  both (no `auth` *and* a missing/wrong `jsonrpc`) reports `-32001 Unauthorized`,
+  not the version error.
+- **`server.shutdown` is the exception.** The daemon skips auth for it entirely, so
+  a shutdown frame that is missing both `auth` and `jsonrpc` gets `-32600 Invalid
+  JSON-RPC version` (the version gate still applies), and the daemon stays up.
 
 ### Params presence and typing
 
-Every `files.*` / `git.*` / `process.*` method requires a `params` object;
-`server.*` methods take none (a mistyped `params` on them is ignored and the call
-succeeds).
+Every `files.*` / `git.*` / `process.*` method requires a `params` object.
+`server.*` methods take no `params`. The daemon ignores a mistyped `params` on a
+`server.*` method, and the call succeeds.
 
-- **Absent** `params` → `-32602 Invalid params` — checked *after* method existence,
-  so an unknown method is `-32601` regardless.
-- An **empty** `{}` is accepted and runs the method's own validation.
+- **Absent** `params` → `-32602 Invalid params`. The daemon checks this *after*
+  method existence, so an unknown method is `-32601` regardless.
+- The daemon accepts an **empty** `{}` and then runs the method's own validation.
 - **Mistyped** `params` — a wrong field type (`"maxBytes":"4"`, `"path":123`) or a
-  non-object value (`"params":"x"` / `[…]`) — is `-32602 Invalid params`; the daemon
-  does not coerce or ignore the decode error.
-- **Unknown extra fields are ignored**, with one divergence in *how strictly* (D9).
-  claustrum binds `params` into one struct per namespace (`pathParams`,
-  `gitParams`), so a field valid for the *namespace* but unused by *this* method
-  still participates in decoding: a **type-mismatched** value there → `-32602`
-  (e.g. `files.stat {"maxBytes":"{"}`, `git.status {"baseRepo":[1,2]}`). The
-  reference binds only the field the specific method reads and ignores the rest, so
-  it runs with defaults. A genuinely unknown key (in neither struct) is ignored by
-  both. Accepted divergence D9; see [`DIVERGENCES.md`](DIVERGENCES.md).
+  non-object value (`"params":"x"` / `[…]`) — is `-32602 Invalid params`. The daemon
+  does not coerce the value, and it does not ignore the decode error.
+- **The daemon ignores unknown extra fields**, with one divergence in *how strictly*
+  (D9). claustrum binds `params` into one struct per namespace (`pathParams`,
+  `gitParams`). A field that is valid for the *namespace* but unused by *this*
+  method therefore still takes part in the decode: a **type-mismatched** value there
+  → `-32602` (e.g. `files.stat {"maxBytes":"{"}`, `git.status
+  {"baseRepo":[1,2]}`). The reference binds only the field the specific method
+  reads and ignores the rest, so it runs with defaults. Both daemons ignore a
+  genuinely unknown key (a key in neither struct). Accepted divergence D9; see
+  [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Path handling
 
@@ -274,19 +278,20 @@ succeeds).
 
 Before any expansion or method logic, the JSON decoder replaces bytes that are not
 valid UTF-8 with `U+FFFD`. A file whose **name** contains such bytes therefore
-cannot be named in any request: the daemon answers about a path that does not exist
-— `exists:false`, or a `chdir`/`stat` error quoting the substituted name. This is
-**parity, not a divergence** — both daemons inherit it from the JSON decoder. See
+cannot be named in any request. The daemon answers about a path that does not
+exist: `exists:false`, or a `chdir`/`stat` error that quotes the substituted name.
+This is **parity, not a divergence** — both daemons inherit it from the JSON
+decoder. See
 [ARCHITECTURE.md → Inherited wire bytes](ARCHITECTURE.md#inherited-wire-bytes).
 
 ### Tilde expansion in path params
 
-Every path-bearing param is tilde-expanded before the method runs — `files.*`
-`path`, `extract_tar`'s `archivePath` / `destDir`, `git.*` `path` / `baseRepo` /
-`worktreePath`, and `process.spawn`'s `cwd`. Branch names are refs, not paths, and
-are never expanded. A leading `~` is replaced with the daemon user's home
-directory, and **the remainder is then cleaned lexically** — except bare `~`, which
-returns home verbatim (uncleaned).
+claustrum expands a leading tilde in every path-bearing param before the method
+runs: `files.*` `path`, `extract_tar`'s `archivePath` / `destDir`, `git.*` `path` /
+`baseRepo` / `worktreePath`, and `process.spawn`'s `cwd`. Branch names are refs,
+not paths, so claustrum never expands them. claustrum replaces a leading `~` with
+the daemon user's home directory, and **then cleans the remainder lexically**. Bare
+`~` is the exception: it returns home verbatim (uncleaned).
 
 | sent | reference replies | absolute-form control |
 |------|-------------------|-----------------------|
@@ -318,15 +323,15 @@ Two consequences:
 | `~//a6` | `<home>\a6` |
 | `~` | `<home>` verbatim — a home of `C:\h\` keeps its trailing `\` |
 
-**The expanded spelling is wire-visible on eight frames**, so it is contract:
-`git.worktree_create` reflects `worktreePath` into `result.path` and git's error
-text, and the expanded string appears in the error text of `files.stat`,
+**The expanded spelling is wire-visible on eight frames**, so it is contract.
+`git.worktree_create` reflects `worktreePath` into `result.path` and into git's
+error text. The expanded string also appears in the error text of `files.stat`,
 `files.read`, `files.list`, `files.validate`, `files.extract_tar` and
-`process.spawn`. Two places that do *not* carry the spelling: `files.list` entry
-paths are re-joined, and `git.info`'s `root` comes from git's own output. On a
-trailing-separator spelling the difference is a change of *verdict*: POSIX
-`stat("f.txt/")` is `ENOTDIR`, so cleaning the separator away turns a `-32603` error
-frame into a success frame. Pinned by ids 15, 16, 18 and 19 of
+`process.spawn`. Two places do *not* carry the spelling: `files.list` entry paths
+are re-joined, and `git.info`'s `root` comes from git's own output. On a
+trailing-separator spelling the difference is a change of *verdict*. POSIX
+`stat("f.txt/")` gives `ENOTDIR`, so when the daemon removes the separator, a
+`-32603` error frame becomes a success frame. Pinned by ids 15, 16, 18 and 19 of
 `testdata/socket_tilde_expansion.golden.json` (id 17 sends `~//` to `files.list`
 and is documentary only).
 
@@ -338,11 +343,12 @@ and is documentary only).
 - A genuine `ENOENT` is the "does not exist" answer in each method's own shape —
   `exists:false`, `content:"" exists:false`, and `valid:false` with
   `error:"Path does not exist"` respectively.
-- **Any other stat failure is reported** with the underlying message. `files.stat`
-  and `files.read` return `-32603 stat <path>: <reason>`; `files.validate` keeps its
-  result shape and puts that text in its `error` field instead. Reachable reasons
-  include `not a directory` (a path component is a regular file), `file name too
-  long`, and `invalid argument` (a NUL byte in the path).
+- **The daemon reports any other stat failure** with the underlying message.
+  `files.stat` and `files.read` return `-32603 stat <path>: <reason>`.
+  `files.validate` keeps its result shape and puts that text in its `error` field
+  instead. Reachable reasons include `not a directory` (a path component is a
+  regular file), `file name too long`, and `invalid argument` (a NUL byte in the
+  path).
 
 ## Methods (19)
 
@@ -355,8 +361,8 @@ git.info     git.status      git.list_branches  git.worktree_create  git.worktre
 process.spawn  process.stdin  process.kill  process.killAndWait  process.reattach
 ```
 
-`process.killAndWait` was added by reference `7c2f88d` (between `process.kill` and
-`process.reattach`), bringing the set to 19.
+Reference `7c2f88d` added `process.killAndWait` between `process.kill` and
+`process.reattach`. That brought the set to 19.
 
 ### server.*
 
@@ -367,9 +373,9 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 | `server.capabilities` | — | `{"version":"<id>","methods":[…19…],"features":["process.stdin.offset"]}` |
 | `server.shutdown` | — | *no response* — the daemon stops and the connection closes |
 
-- **`features` array** (added `7c2f88d`) follows `methods`, advertising optional
-  extensions. Sole entry `process.stdin.offset` (the resumable/idempotent stdin
-  contract), always present.
+- **`features` array** (added `7c2f88d`) follows `methods` and advertises optional
+  extensions. Its sole entry is `process.stdin.offset` (the resumable/idempotent
+  stdin contract), and it is always present.
 - **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
 
 ### files.* (param: `path`)
@@ -380,10 +386,10 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 
 #### files.list
 `{path}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted)
-- **Hidden entries omitted** — any name beginning `.` (`.git`, `.env`) is skipped,
-  matching the reference.
-- `isDir` is resolved by **`Stat` — symlinks are FOLLOWED**: a symlink to a
-  directory is `isDir:true`, a dangling symlink `isDir:false`.
+- **The daemon omits hidden entries.** It skips any name that begins with `.`
+  (`.git`, `.env`), which matches the reference.
+- The daemon resolves `isDir` with **`Stat`, so it FOLLOWS symlinks**: a symlink to
+  a directory is `isDir:true`, and a dangling symlink is `isDir:false`.
 - Missing dir → `-32603 open …: no such file or directory`.
 
 #### files.read
@@ -393,18 +399,18 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 - A directory → `-32602 files.read: path is a directory`.
 - Size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`.
 - **`maxBytes` absent, `0`, or negative → the cap is `262144` (256 KiB), not
-  "unlimited".** 262144 bytes reads, 262145 errors. A positive `maxBytes` is
-  honored verbatim, above or below the default — the 256 KiB figure is a fallback,
-  not a ceiling. The cap keys off the stat size, which is `0` for every non-regular
-  kind on linux, so it never bounds a FIFO, socket or device on either binary.
+  "unlimited".** A file of 262144 bytes reads, and a file of 262145 bytes errors.
+  The daemon honors a positive `maxBytes` verbatim, above or below the default.
+  The cap uses the stat size. On linux that size is `0` for every non-regular
+  kind, so the cap never bounds a FIFO, socket or device on either binary.
 - **Non-regular files: opt-in guard D4.** Off by default (parity): the reference
   reads `/dev/null` as `{"content":"","exists":true}` and blocks on a writerless
-  FIFO rather than refusing either. Set `-files-read-regular-only` (or the
-  `files-read-regular-only` config key) and every non-regular path answers
+  FIFO, and it refuses neither. Set `-files-read-regular-only` (or the
+  `files-read-regular-only` config key), and every non-regular path answers
   `-32602 files.read: not a regular file` — a frame the reference never produces.
-  The predicate is `Mode().IsRegular()` (whole, not narrowable: `/dev/null` and
-  `/dev/zero` are indistinguishable by mode). See table below; full measurement
-  and rationale in [`DIVERGENCES.md`](DIVERGENCES.md) → D4.
+  The predicate is `Mode().IsRegular()`. It is whole and not narrowable, because
+  `/dev/null` and `/dev/zero` are indistinguishable by mode. The full measurement
+  and rationale are in [`DIVERGENCES.md`](DIVERGENCES.md) → D4.
 
   | path | reference **=** claustrum at the default | with `-files-read-regular-only` |
   |---|---|---|
@@ -417,14 +423,14 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
   | an unreadable character device (`/dev/console`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
   | an unreadable block device (`/dev/nvme0n1`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
 
-  The two device rows assume a **non-root** daemon (they are permission failures).
-  The opted-in column is **measured** for the FIFO and `/dev/null` rows; for the
-  socket and the two device rows it is **entailed** by `Mode().IsRegular()` being
-  false, not separately run.
-  What the default gives up: a writerless FIFO parks a request goroutine and a
-  descriptor until a writer arrives, and an unbounded device read
-  (`/dev/zero`) grows the daemon until the kernel OOM-kills it — both the
-  reference's own behaviour, both measured (forensics condensed out of the committed docs).
+  The two device rows assume a **non-root** daemon, because they are permission
+  failures. The opted-in column is **measured** for the FIFO and `/dev/null` rows.
+  For the socket row and the two device rows it is **entailed** by a false
+  `Mode().IsRegular()`, and was not run separately.
+  The default gives up two things. A writerless FIFO parks a request goroutine and
+  a descriptor until a writer arrives. An unbounded device read (`/dev/zero`) grows
+  the daemon until the kernel OOM-kills it. Both are the reference's own behaviour,
+  and both are measured (forensics condensed out of the committed docs).
 
 #### files.validate
 `{path}` → `{"valid":bool,"isDir":bool[,"error"]}`
@@ -434,296 +440,315 @@ process.spawn  process.stdin  process.kill  process.killAndWait  process.reattac
 `{archivePath,destDir}` → extracts a **gzip** tar → `{"success":true,"fileCount":<n>}`
 
 Side effects — deliberate, **not visible in the frame**:
-1. **`destDir` is wiped** (`os.RemoveAll`) then recreated before unpacking —
-   extraction is idempotent and destructive.
-2. Entries get **owner-only fixed modes** — files `0600`, dirs `0700` (an
-   executable `0755` entry still lands `0600`).
-3. On success an **empty `.synced` marker** is written at `destDir` root (not
-   counted in `fileCount`).
-4. **`archivePath` is consumed** — removed on *every* outcome once opened (success,
-   bad gzip, or unsafe path).
+1. **The daemon wipes `destDir`** (`os.RemoveAll`) and then recreates it before it
+   unpacks. Extraction is idempotent and destructive.
+2. Entries get **owner-only fixed modes**: files `0600`, dirs `0700`. An executable
+   `0755` entry still lands `0600`.
+3. On success the daemon writes an **empty `.synced` marker** at the `destDir`
+   root. It does not count that marker in `fileCount`.
+4. **The daemon consumes `archivePath`.** Once it opens the archive, it removes the
+   file on *every* outcome (success, bad gzip, or unsafe path).
 
-Errors (all in the `error` field with `fileCount:0`, which has no `omitempty`,
-unless noted):
+Errors. Unless a line says otherwise, each error goes in the `error` field with
+`fileCount:0`, which has no `omitempty`:
 - Missing params → `-32602 archivePath and destDir are required`.
-- Non-absolute/root `destDir` → `destDir must be an absolute, non-root path: …` —
-  rejected before the archive is opened, so it is **not** consumed. "Root" is the
-  platform's own notion (`/` on Unix; a drive root `C:\` or UNC share root
-  `\\server\share\` on Windows). The root and `filepath.IsAbs` tests share one
-  branch and message. Whether the reference refuses a root `destDir` at all is
-  **not measured** — the guard is justified by our own consequence (a recursive
-  delete of the volume), not a claim about the reference, so it is neither parity
-  nor a divergence entry.
+- Non-absolute/root `destDir` → `destDir must be an absolute, non-root path: …`.
+  The daemon rejects this before it opens the archive, so it does **not** consume
+  the archive. "Root" is the platform's own notion (`/` on Unix; a drive root `C:\`
+  or UNC share root `\\server\share\` on Windows). The root test and the
+  `filepath.IsAbs` test share one branch and one message. Whether the reference
+  refuses a root `destDir` at all is **not measured**. Our own consequence — a
+  recursive delete of the volume — justifies the guard, not a claim about the
+  reference, so it is neither parity nor a divergence entry.
 - **`destDir` is, or contains, the home directory** → `destDir must not be or
-  contain the home directory: …` — **intentional divergence D2** (the reference
-  wipes `$HOME` on `"destDir":"~"`). The test is *containment*: home and any
-  ancestor are refused; anything **under** home (`~/.claude/…`) is accepted. See
-  [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
+  contain the home directory: …`. This is **intentional divergence D2**: the
+  reference wipes `$HOME` on `"destDir":"~"`. The test is *containment*. The daemon
+  refuses home and any ancestor of home, and accepts anything **under** home
+  (`~/.claude/…`). See [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
 - Bad gzip → `gzip: …`.
-- Zip slip → `unsafe path in archive: <entry>` (a `../` that resolves back inside
-  `destDir` is allowed).
+- Zip slip → `unsafe path in archive: <entry>`. The daemon allows a `../` that
+  resolves back inside `destDir`.
 - Non-regular/non-directory entry (symlink, hardlink, device, fifo) →
-  `unsupported tar entry type <c>: <entry>` — `<c>` is the tar typeflag char
+  `unsupported tar entry type <c>: <entry>`. `<c>` is the tar typeflag char
   (symlink=`2`, hardlink=`1`).
 - **Total uncompressed bytes over the opt-in cap** → `extraction size limit
-  exceeded`. **Not reachable by default** — the cap is `0` (off), matching the
-  reference. Intentional divergence D3; see the flags table under `-serve` and
-  [`DIVERGENCES.md`](DIVERGENCES.md) → D3.
+  exceeded`. This is **not reachable by default**, because the cap is `0` (off),
+  which matches the reference. Intentional divergence D3; see the flags table under
+  `-serve` and [`DIVERGENCES.md`](DIVERGENCES.md) → D3.
 - clean/mkdir/marker failures → `clean destDir: …` / `mkdir destDir: …` /
   `write .synced: …`.
 - Target is an existing directory → `create <entry>: open <target>: is a
   directory`.
-- Parent cannot be created (e.g. an earlier entry wrote a file where this one needs
-  a directory) → `mkdir parent <entry>: <os error>`. Only the `mkdir parent
-  <entry>: ` prefix is contract; the tail is the OS's. Both `create <entry>: ` and
-  `mkdir parent <entry>: ` name the **archive entry**, not the resolved target.
+- The daemon cannot create the parent (e.g. an earlier entry wrote a file where
+  this entry needs a directory) → `mkdir parent <entry>: <os error>`. Only the
+  `mkdir parent <entry>: ` prefix is contract. The tail is the OS's. Both `create
+  <entry>: ` and `mkdir parent <entry>: ` name the **archive entry**, not the
+  resolved target.
 
 ### git.* (param: `path` = repo dir; worktree ops use `baseRepo`)
 
 #### git.info
 `{path}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""}`
 
-- `branch` via `symbolic-ref`, so it works on an **unborn HEAD** (empty repo → init
-  branch name, e.g. `master`). A **detached HEAD** → `branch:"detached:<short-sha>"`.
-- `root` is the absolute repo top-level (`git rev-parse --show-toplevel`), stable
-  even when `path` is a subdirectory (added by reference `7cbfa471`).
-- `repoSlug` and `defaultBranch` added by `7c2f88d`, both **always present** (empty
-  string when undeterminable), including on the non-repo body.
-- `repoSlug` is `owner/repo` from `remote.origin.url`, populated **only for a
-  canonical `github.com` remote**. Rules (measured across 42 URL shapes):
+- The daemon reads `branch` with `symbolic-ref`, so it works on an **unborn HEAD**
+  (an empty repo gives the init branch name, e.g. `master`). A **detached HEAD**
+  gives `branch:"detached:<short-sha>"`.
+- `root` is the absolute repo top-level (`git rev-parse --show-toplevel`). It stays
+  the same even when `path` is a subdirectory (added by reference `7cbfa471`).
+- `7c2f88d` added `repoSlug` and `defaultBranch`. Both are **always present** (an
+  empty string when undeterminable), including on the non-repo body.
+- `repoSlug` is `owner/repo` from `remote.origin.url`. The daemon populates it
+  **only for a canonical `github.com` remote**. Rules (measured across 42 URL
+  shapes):
     - **Scheme** must be `https`, `http`, `ssh`, `git`, or absent (scp-like
       `[user@]host:owner/repo`). `git+ssh://` and `file://` → `""`.
     - **Host** must equal `github.com` case-insensitively. `www.github.com`,
       trailing-dot `github.com.`, a port (`github.com:443`), GitLab, Bitbucket and
-      self-hosted GHE all → `""`. Userinfo is stripped.
+      self-hosted GHE all → `""`. The daemon strips userinfo.
     - **Path** must be exactly two non-empty segments after one optional trailing
       `/` and one optional `.git`.
     - **Owner**: alphanumerics with *interior* hyphens only (`ac-me`, `ac--me`
       pass; `-acme`, `acme-`, `acme_corp`, `acme.co` do not).
-    - **Repo**: alphanumerics plus `.`, `_`, `-`; not starting `-`; not `.`/`..`;
-      not ending in a **lowercase** `.wiki` (case-sensitive, suffix-only — `GIZMO.WIKI`
-      and a repo named `wiki` are accepted).
-- `defaultBranch` is what `refs/remotes/origin/HEAD` points to; empty when unset.
+    - **Repo**: alphanumerics plus `.`, `_`, `-`. It must not start with `-`, must
+      not be `.` or `..`, and must not end in a **lowercase** `.wiki` (the check is
+      case-sensitive and suffix-only, so `GIZMO.WIKI` and a repo named `wiki` are
+      accepted).
+- `defaultBranch` is what `refs/remotes/origin/HEAD` points to. It is empty when
+  `refs/remotes/origin/HEAD` is unset.
 
 #### git.status
 `{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
 
-- `changes` is `git status --porcelain` **stdout only**; stderr warnings never
+- `changes` is `git status --porcelain` **stdout only**. Stderr warnings never
   appear. Lines are verbatim minus the line ending. The two-character XY column is
-  **positional**, so the leading space of an unstaged-only change is data (`"M  a.txt"`
-  staged vs `" M b.txt"` unstaged).
-- **The first line is the exception**: the daemon trims the whole porcelain blob
-  before splitting, so a leading space is stripped from entry 0 only. `[" M a1"," M
-  a2"]` returns `["M a1"," M a2"]`. Clients parsing by column must handle entry 0
-  separately.
-- Non-repo → `{"isRepo":false,"clean":false}` (full shape, unlike `git.info`).
-- A failing git → `-32603` carrying the Go error string (`exit status 128`, not
+  **positional**, so the leading space of an unstaged-only change is data
+  (`"M  a.txt"` staged vs `" M b.txt"` unstaged).
+- **The first line is the exception.** The daemon trims the whole porcelain blob
+  before it splits the blob, so only entry 0 loses a leading space. `[" M a1"," M
+  a2"]` returns `["M a1"," M a2"]`. A client that parses by column must handle
+  entry 0 separately.
+- Non-repo → `{"isRepo":false,"clean":false}` (the full shape, unlike `git.info`).
+- A failing git → `-32603` that carries the Go error string (`exit status 128`, not
   git's `fatal:` text). With opt-in D5 the same `-32603` can carry `signal: killed`.
 
 #### git.list_branches
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`
 - Non-repo → `{"isRepo":false,"branches":[]}`.
-- **stdout only** (a broken-ref `for-each-ref` warning must not become a branch).
-- A failing `for-each-ref` → `-32603 exit status 128`; with opt-in D5, `signal:
-  killed` (see D5 below).
+- **stdout only.** A broken-ref `for-each-ref` warning must not become a branch.
+- A failing `for-each-ref` → `-32603 exit status 128`. With opt-in D5 it can carry
+  `signal: killed` (see D5 below).
 
 #### git.worktree_create
 `{baseRepo,branchName,worktreePath[,sourceBranch]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`
-- Repo is **`baseRepo`** (not `path`); absent → the daemon's cwd repo.
+- The repo is **`baseRepo`**, not `path`. When `baseRepo` is absent, the daemon
+  uses its cwd repo.
 - Missing `branchName` → `-32602 branchName is required`.
-- Resolved repo isn't git → `{success:false,error:"not a git
-  repository",errorCode:"not_a_repo"}` — checked before the add.
+- The resolved repo is not git → `{success:false,error:"not a git
+  repository",errorCode:"not_a_repo"}`. The daemon checks this before the add.
 - Other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
-  The tail is git's **combined** output (add writes fatal to stderr, stdout empty),
-  e.g. `"git worktree add failed: Preparing worktree (new branch
-  'dup')\nfatal: a branch named 'dup' already exists"`.
-- `sourceBranch` omitted → defaults to the repo's current branch (echoed back). On
-  an **unborn HEAD** the source resolves empty, the add infers an orphan branch and
-  succeeds, and `sourceBranch` is omitted from the result.
+  The tail is git's **combined** output, because the add writes its fatal to stderr
+  and leaves stdout empty. For example: `"git worktree add failed: Preparing
+  worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"`.
+- `sourceBranch` omitted → the source defaults to the repo's current branch, and
+  the daemon echoes it back. On an **unborn HEAD** the source resolves empty, the
+  add infers an orphan branch and succeeds, and the result omits `sourceBranch`.
 
 **Worktree population.** `git worktree add` checks out tracked files only, so the
-daemon then seeds the new worktree (copies are best-effort; failures never fail the
-request):
-- **`.claude/` is copied recursively and unconditionally**; an absent one is
-  skipped silently.
+daemon then seeds the new worktree. The copies are best-effort, and a failure never
+fails the request:
+- **The daemon copies `.claude/` recursively and unconditionally.** It skips an
+  absent `.claude/` silently.
 - **`.worktreeinclude`** (repo root, `.gitignore` syntax) is an **include**
   manifest: `git ls-files --others --ignored --exclude-from=.worktreeinclude`
-  (without `--exclude-standard`), so a gitignored file the manifest doesn't name is
-  *not* copied. Without the manifest, no untracked file is copied.
-- **Symlinks are skipped.** **Manifest entries must be plain filenames** — a path
-  `git ls-files` C-quotes (tab, quote, backslash, non-ASCII) is silently not
-  copied (a reference limitation reproduced for parity).
-- **Copies do not preserve source mode** (created 0666-subject-to-umask): an
-  executable arrives non-executable, a `0400` source is widened. Matches the
-  reference; treat the manifest as naming configuration, not secrets or scripts.
-- An **opted-in `-git-timeout`** (D5) killing the `git ls-files` skips **every**
-  manifest-selected file while the reply is still `{"success":true}` — a silent,
+  (without `--exclude-standard`). The daemon therefore does *not* copy a gitignored
+  file that the manifest does not name. Without the manifest, the daemon copies no
+  untracked file.
+- **The daemon skips symlinks.** **Manifest entries must be plain filenames.** The
+  daemon silently skips a path that `git ls-files` C-quotes (tab, quote, backslash,
+  non-ASCII). This is a reference limitation reproduced for parity.
+- **The copies do not preserve the source mode.** The daemon creates them
+  0666-subject-to-umask, so an executable arrives non-executable and a `0400`
+  source is widened. This matches the reference. Treat the manifest as a way to
+  name configuration, not secrets or scripts.
+- An **opted-in `-git-timeout`** (D5) that kills the `git ls-files` skips **every**
+  manifest-selected file, and the reply is still `{"success":true}` — a silent,
   wire-invisible loss. Off by default.
 
 #### git.worktree_remove
 `{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)
 
-- Runs `git worktree remove --force`. **Whenever git exits non-zero — for any
-  reason — the daemon then removes `worktreePath` itself, recursively, and still
-  answers `{"success":true}`.** So this method is a recursive delete of the
-  caller-supplied `worktreePath` whenever git is unhappy (a locked worktree, an
-  ordinary directory, a non-repo `baseRepo`). That is **reference behavior**,
-  matched deliberately — treat `worktreePath` as a path you are asking to have
-  removed, not as a filter. Only when the manual cleanup *also* fails does the reply
-  carry `{"success":false,"error":"failed to remove worktree: <git output>; manual
-  cleanup also failed: <err>"}`.
-- Naming a non-existent branch still answers a bare `{"success":true}` — hence
-  "lenient".
-- **One input is exempt — claustrum-only hardening D2.** A `worktreePath` that
-  **is, or contains, the home directory** is refused before git runs:
+- The daemon runs `git worktree remove --force`. **Whenever git exits non-zero —
+  for any reason — the daemon then removes `worktreePath` itself, recursively, and
+  still answers `{"success":true}`.** This method is therefore a recursive delete
+  of the caller-supplied `worktreePath` whenever git is unhappy (a locked worktree,
+  an ordinary directory, a non-repo `baseRepo`). That is **reference behavior**,
+  matched deliberately. Treat `worktreePath` as a path you ask the daemon to
+  remove, not as a filter. The reply carries `{"success":false,"error":"failed to
+  remove worktree: <git output>; manual cleanup also failed: <err>"}` only when the
+  manual cleanup *also* fails.
+- A request that names a non-existent branch still answers a bare
+  `{"success":true}` — hence "lenient".
+- **One input is exempt — claustrum-only hardening D2.** The daemon refuses a
+  `worktreePath` that **is, or contains, the home directory** before git runs:
   `{"success":false,"error":"worktreePath must not be or contain the home
-  directory: …"}`. Containment is judged **after** the path is resolved against the
-  daemon's working directory, so `"."` / `".."` are refused too when that cwd is
-  home or a descendant — the verdict on a relative `worktreePath` is not predictable
-  without knowing where the daemon started, so **send an absolute path**. An empty
-  or omitted `worktreePath` is exempt (`os.RemoveAll("")` is a no-op). Same
-  containment test as `files.extract_tar`. See [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
-- **A relative `worktreePath` is resolved twice**, against different roots: git runs
-  with `-C <baseRepo>` (repo-relative), the manual cleanup resolves against the
-  **daemon's working directory**. So the fallback can delete a directory git never
-  looked at — parity, and alarming; send an absolute path.
-- The worktree stays **registered** — deleting the directory does not remove
-  `$GIT_DIR/worktrees/<name>`, so `git worktree list` still shows it and a later
+  directory: …"}`. The daemon judges containment **after** it resolves the path
+  against its own working directory. It therefore also refuses `"."` / `".."` when
+  that cwd is home or a descendant of home. You cannot predict the verdict on a
+  relative `worktreePath` without knowledge of where the daemon started, so **send
+  an absolute path**. An empty or omitted `worktreePath` is exempt, because
+  `os.RemoveAll("")` is a no-op. The containment test is the same one
+  `files.extract_tar` uses. See [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
+- **The daemon resolves a relative `worktreePath` twice**, against different roots.
+  git runs with `-C <baseRepo>` (repo-relative), and the manual cleanup resolves
+  against the **daemon's working directory**. The fallback can therefore delete a
+  directory git never looked at. This is parity, and it is alarming. Send an
+  absolute path.
+- The worktree stays **registered**. Deletion of the directory does not remove
+  `$GIT_DIR/worktrees/<name>`, so `git worktree list` still shows it, and a later
   create at the same path fails `already registered`. Neither binary prunes.
-- **`gitTimeout` (D5) does NOT authorise the deletion**, and off by default this
-  whole timeout arm needs an opt-in. When armed it answers
+- **`gitTimeout` (D5) does NOT authorise the deletion**, and this whole timeout arm
+  is off by default. When armed it answers
   `{"success":false,"error":"git worktree remove timed out after <dur>; no cleanup
   was attempted, and git may have partially removed the worktree"}` and removes
   nothing. See [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
 
 ### process.* (the agent/MCP-hosting core)
 
-The client supplies its own `id` (any string). Output is delivered as id-less
-stream notifications, **buffered** for later replay.
+The client supplies its own `id` (any string). The daemon delivers output as
+id-less stream notifications, and **buffers** them for a later replay.
 
 #### process.spawn
 `{id,command[,args][,cwd][,env][,wantPid]}` → `{"success":true}`, then stream frames
-- `args`: string[]. `env`: `{KEY:VAL}` merged over the daemon environment.
-- Missing `id` → `-32602 Process ID is required`; missing `command` →
+- `args`: string[]. `env`: `{KEY:VAL}`, merged over the daemon environment.
+- Missing `id` → `-32602 Process ID is required`. Missing `command` →
   `-32602 Command is required`.
-- Reusing a still-live `id` succeeds and replaces the registry entry (like the
-  reference). **Divergence:** claustrum also tears down the now-orphaned previous
-  process tree (subscribers dropped first so no stray frames arrive under the reused
-  id) — OS-level only, no wire change; the reference leaves the old process running.
+- A request that reuses a still-live `id` succeeds and replaces the registry entry,
+  like the reference. **Divergence:** claustrum also kills the now-orphaned previous
+  process tree. It drops the subscribers first, so no stray frame arrives under the
+  reused id. This is OS-level only and changes no wire byte. The reference leaves
+  the old process running.
 - **`wantPid` opt-in (CT-1, claustrum-only).** With `"wantPid":true` the reply gains
   two fields **after** `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
-  `pid` is the child's OS pid; `startTime` is the **daemon's wall clock (epoch
-  seconds) captured at spawn**, returned identically on spawn and reattach for the
-  same process. It is an **opaque token** for PID-reuse / orphan detection — compare
-  a persisted daemon value against a later daemon value for the **same id**; **do
-  not** equality-compare it against an OS-read process start time (`psutil
-  create_time`) — the derivations differ. Absent or `false`, both fields are omitted
-  (`omitempty`) and the frame is byte-identical to `{"success":true}`. An older
-  daemon ignores the unknown param (tolerant decode). See
-  [`DIVERGENCES.md`](DIVERGENCES.md) → CT-1.
+  `pid` is the child's OS pid. `startTime` is the **daemon's wall clock (epoch
+  seconds) captured at spawn**, and spawn and reattach return the identical value
+  for the same process. It is an **opaque token** for PID-reuse / orphan detection.
+  Compare a persisted daemon value against a later daemon value for the **same
+  id**. **Do not** equality-compare it against an OS-read process start time
+  (`psutil create_time`), because the two derivations differ. When `wantPid` is
+  absent or `false`, the daemon omits both fields (`omitempty`), and the frame is
+  byte-identical to `{"success":true}`. An older daemon ignores the unknown param
+  (tolerant decode). See [`DIVERGENCES.md`](DIVERGENCES.md) → CT-1.
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`
-- `data` is **base64**, written to the child's stdin.
-- Checks run in a fixed order (**decode → exists → running → offset**):
-    - Invalid base64 → `-32602 Invalid base64 data` — returned *before* the process
-      is looked up, so an unknown id with a bad payload still reports the decode
-      error.
+- `data` is **base64**. The daemon writes it to the child's stdin.
+- The checks run in a fixed order (**decode → exists → running → offset**):
+    - Invalid base64 → `-32602 Invalid base64 data`. The daemon returns this
+      *before* it looks up the process, so an unknown id with a bad payload still
+      reports the decode error.
     - Unknown id → `-32602 Process not found`.
     - Known but **exited** → `-32602 Process not running`.
 - **`offset` / `applied` — the resumable-stdin contract** (added `7c2f88d`,
   advertised as `process.stdin.offset`). The reply **always** carries `applied`: the
-  cumulative count of stdin bytes accepted for delivery (high-water mark). `offset`
-  is the byte position the caller believes this `data` starts at, making stdin
-  idempotent across reconnects:
-    - **absent** `offset`, or `offset == applied` → append; `applied` grows by
-      `len(data)`.
-    - `offset > applied` → `-32003 stdin offset gap: offset ahead of applied bytes`
-      (a hole that would drop input — resend from `applied`). Nothing enqueued.
-    - `offset + len(data) <= applied` (wholly applied) → **no-op**, reply adds
-      `"duplicate":true`, `applied` unchanged, nothing reaches the child.
-    - partial overlap (`offset < applied < offset+len`) → only the fresh tail
-      `data[applied-offset:]` is written, `applied` advances to `offset+len(data)`
-      (not flagged duplicate).
-  `applied` counts base64-**decoded** bytes and is never `omitempty` (emitted at 0);
-  `duplicate` is dropped when false. A legacy client that never sends `offset` still
-  works — it just always appends.
+  cumulative count of stdin bytes accepted for delivery (the high-water mark).
+  `offset` is the byte position the caller believes this `data` starts at. `offset`
+  makes stdin idempotent across reconnects:
+    - **absent** `offset`, or `offset == applied` → the daemon appends, and
+      `applied` grows by `len(data)`.
+    - `offset > applied` → `-32003 stdin offset gap: offset ahead of applied bytes`.
+      This is a hole that would drop input — resend from `applied`. The daemon
+      enqueues nothing.
+    - `offset + len(data) <= applied` (wholly applied) → **no-op**. The reply adds
+      `"duplicate":true`, `applied` does not change, and nothing reaches the child.
+    - partial overlap (`offset < applied < offset+len`) → the daemon writes only the
+      fresh tail `data[applied-offset:]`, and `applied` advances to
+      `offset+len(data)`. The daemon does not flag this as a duplicate.
+  `applied` counts base64-**decoded** bytes, and it is never `omitempty` (the daemon
+  emits it at 0). The daemon drops `duplicate` when it is false. A legacy client
+  that never sends `offset` still works: it always appends.
 
 #### process.kill
 `{id[,signal]}` → `{"success":true}`
-- Best-effort, **fire-and-forget** — does not wait for the child to exit (contrast
-  `process.killAndWait`).
+- Best-effort and **fire-and-forget**. It does not wait for the child to exit
+  (contrast `process.killAndWait`).
 - **How wide the signal reaches depends on the signal**, on Unix:
-    - `KILL` goes to the whole **process group** (negative pid) — the entire child
-      tree dies.
+    - `KILL` goes to the whole **process group** (a negative pid), so the entire
+      child tree dies.
     - **Every other signal** (`TERM`, `INT`, `HUP`, default) goes to the **direct
-      child only**; a backgrounded grandchild keeps running. A graceful
-      `process.kill` is **not** a tree teardown — use `signal:"KILL"` or
+      child only**, and a backgrounded grandchild keeps running. A graceful
+      `process.kill` does **not** kill the tree. Use `signal:"KILL"` or
       `killAndWait` with `escalate:true`.
-  On Windows the split does not apply — the Job Object is terminated, taking the
-  tree either way.
-- **Divergence:** claustrum skips the signal when the child has already exited (a
-  reaped pgid can be recycled) — OS-level only, reply identical.
+  The split does not apply on Windows. There claustrum terminates the Job Object,
+  which takes the tree either way.
+- **Divergence:** claustrum skips the signal when the child has already exited,
+  because the OS can recycle a reaped pgid. This is OS-level only, and the reply is
+  identical.
 
 #### process.killAndWait
 `{id[,signal][,timeoutMs][,escalate]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true]}`
 
-Added by `7c2f88d`. **Blocks until the process is gone** (up to the grace) and
-reports the outcome as a *result* (an unknown id is not an error):
-- Missing `id` → `-32602 Process ID is required`; absent `params` → `-32602 Invalid
+Added by `7c2f88d`. It **blocks until the process is gone** (up to the grace) and
+reports the outcome as a *result*. An unknown id is not an error:
+- Missing `id` → `-32602 Process ID is required`. Absent `params` → `-32602 Invalid
   params`.
 - Unknown id → `{"found":false,"died":false}`.
-- Already exited → `{"found":true,"died":true,"alreadyExited":true}` (no signal
-  sent).
-- Live process → the graceful `signal` (default `SIGTERM`) is sent, then it waits up
-  to the grace:
-    - **`timeoutMs`** sets the grace. Non-positive or absent → the **3000 ms**
-      default; positive values honored verbatim **up to a 30000 ms ceiling** (a
-      larger value is clamped, so `timeoutMs:45000` against a signal-ignoring child
-      answers after ~30 s). The `30000` ceiling is a black-box bracket `(29500,
-      30500]` — the only round value in it, not a measured-exact figure.
-    - **`escalate`** (default `true`): if still alive after the grace, `true` →
-      escalate to a **process-group** `SIGKILL`, wait up to **7 s** for the reap
-      (measured: `timeoutMs:500` against an unreapable child → the reference
-      replies at 7.51 s),
-      add `"escalated":true`. It is sent even when the graceful signal already killed
-      the child, since a grandchild holding the stdout pipe can keep the drain
-      pending past the grace. `false` → leave the process running, report
-      `{"found":true,"died":false}` (no `escalated`, no SIGKILL), sparing the tree.
+- Already exited → `{"found":true,"died":true,"alreadyExited":true}`. The daemon
+  sends no signal.
+- Live process → the daemon sends the graceful `signal` (default `SIGTERM`), and
+  then waits up to the grace:
+    - **`timeoutMs`** sets the grace. A non-positive or absent value gives the
+      **3000 ms** default. The daemon honors a positive value verbatim **up to a
+      30000 ms ceiling**, and clamps a larger value. `timeoutMs:45000` against a
+      signal-ignoring child therefore answers after ~30 s. The `30000` ceiling is a
+      black-box bracket `(29500, 30500]`. It is the only round value in that
+      bracket, not a measured-exact figure.
+    - **`escalate`** (default `true`). If the process is still alive after the
+      grace, `true` escalates to a **process-group** `SIGKILL`, waits up to **7 s**
+      for the reap, and adds `"escalated":true`. (Measured: `timeoutMs:500` against
+      an unreapable child → the reference replies at 7.51 s.) The daemon sends the
+      SIGKILL even when the graceful signal already killed the child, because a
+      grandchild that holds the stdout pipe can keep the drain pending past the
+      grace. `false` leaves the process running and reports
+      `{"found":true,"died":false}` (no `escalated`, no SIGKILL), which spares the
+      tree.
 - A process that dies within the grace → `{"found":true,"died":true}` (no
   `escalated`).
 
 #### process.reattach
 `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
-- Replays buffered frames with **seq > fromSeq** (exclusive) to this connection,
-  **transfers** the frame stream to it, then returns the result.
-- **The transfer is exclusive.** A reattach does not add a second listener: any
-  previously attached connection stops receiving frames for that process. This is
-  what makes resume safe.
-- **The cut is by `seq`, not wall-clock.** The transfer point is the reported
-  `lastSeq`: the old connection can still receive a frame `<= lastSeq` slightly
-  after the reply, never one above it. There is no frame that reaches the old
-  connection and is absent from the new one's replay — which is what `fromSeq` is
-  for.
+- A missing or empty `id` → `-32602 Process ID is required`, the same frame
+  `spawn` and `killAndWait` document (probed both ways: `"id":""` and `id`
+  absent).
+- The daemon replays buffered frames with **seq > fromSeq** (exclusive) to this
+  connection, **transfers** the frame stream to it, and then returns the result.
+- **The transfer is exclusive.** A reattach does not add a second listener. Any
+  connection attached before stops receiving frames for that process. This is what
+  makes a resume safe.
+- **The cut is by `seq`, not by wall-clock.** The transfer point is the reported
+  `lastSeq`. The old connection can still receive a frame `<= lastSeq` slightly
+  after the reply, and never one above it. No frame reaches the old connection and
+  is also absent from the new connection's replay. That is what `fromSeq` is for.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
-- **Exited processes are retained for ~15 minutes, then dropped** — with their replay
-  buffers — so an id last seen longer ago answers exactly like an unknown one (and
-  `process.kill` on it still reports `{"success":true}`). A **running** process is
-  never dropped. The sweep runs on a ~60-second timer *and* inline on every
-  `process.spawn`. Wire-observed, retention only brackets to `(45 s, 960 s]`; the
-  exact 15 min and 60 s are pointer-class — no wire observable distinguishes them
-  from other values in the bracket. Treat `found:false` after a long gap as
-  "finished and forgotten", not "never existed".
-- **`stdinApplied`** (added `7c2f88d`): the process's cumulative applied-stdin byte
-  count (§`process.stdin`), always present after `lastSeq`. A reconnecting client
-  resumes stdin from this offset. **It is an acknowledgement, not a delivery
-  receipt** — `process.stdin` returns before the child reads, so bytes accepted just
-  before exit are counted even though the writer never delivered them. A client that
-  must know data arrived confirms it in-band.
+- **The daemon retains an exited process for ~15 minutes and then drops it**,
+  together with its replay buffer. An id last seen longer ago therefore answers
+  exactly like an unknown one, and `process.kill` on it still reports
+  `{"success":true}`. The daemon never drops a **running** process. The sweep runs
+  on a ~60-second timer *and* inline on every `process.spawn`. On the wire, the
+  retention brackets only to `(45 s, 960 s]`. The exact 15 min and 60 s are
+  pointer-class: no wire observable distinguishes them from other values in that
+  bracket. Read `found:false` after a long gap as "finished and forgotten", not as
+  "never existed".
+- **`stdinApplied`** (added `7c2f88d`) is the process's cumulative applied-stdin
+  byte count (§`process.stdin`). It is always present after `lastSeq`. A
+  reconnecting client resumes stdin from this offset. **It is an acknowledgement,
+  not a delivery receipt.** `process.stdin` returns before the child reads, so the
+  daemon counts bytes accepted just before exit even though the writer never
+  delivered them. A client that must know that data arrived confirms it in-band.
 - **`wantPid` opt-in (CT-1).** With `"wantPid":true` **and** the process found, the
-  reply appends `"pid":<int>,"startTime":<number>` **after** `stdinApplied`,
-  reporting the same pid/startTime the spawn did (so a client can confirm it
-  reattached to the same process, not a pid-reuse). Omitted otherwise.
+  reply appends `"pid":<int>,"startTime":<number>` **after** `stdinApplied`. It
+  reports the same pid and startTime the spawn reported, so a client can confirm
+  that it reattached to the same process and not to a pid-reuse. The daemon omits
+  both fields otherwise.
 
 ### Stream notifications
 
@@ -733,44 +758,49 @@ reports the outcome as a *result* (an unknown id is not an error):
 {"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":0}
 ```
 
-- `seq` is **per-process**, starts at 1, monotonic across stdout/stderr/exit.
+- `seq` is **per-process**. It starts at 1 and is monotonic across
+  stdout/stderr/exit.
 - `data` is base64 for stdout/stderr. The `exit` frame carries `exitCode` and no
-  `data`. A signal-terminated child reports `exitCode: -1` (not `128+signo`).
+  `data`. A signal-terminated child reports `exitCode: -1`, not `128+signo`.
 - The `exit` frame waits at most **5 seconds** after the process exits for
-  stdout/stderr to reach EOF, then the daemon closes the read ends and emits it
-  anyway. This matters when the command leaves a **grandchild holding the same pipe**
-  (`npm run dev &`): output that grandchild writes after the cap is **not** forwarded
-  (its write fails `EPIPE`). Until the frame is emitted, `process.reattach` still
-  reports `running: true` — the flag flips with the frame, not the process.
-- Each stdout/stderr frame carries at most one **32 KiB** read; larger output splits
-  across frames. Reassemble by concatenating `data` in `seq` order. Exact frame
-  *boundaries* depend on pipe scheduling and are not stable — only the reassembled
-  bytes are.
-- The replay buffer is **bounded at 16 MiB per process**, counted as the
+  stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
+  frame anyway. This matters when the command leaves a **grandchild that holds the
+  same pipe** (`npm run dev &`). The daemon does **not** forward output that the
+  grandchild writes after the cap, because that write fails `EPIPE`. Until the
+  daemon emits the frame, `process.reattach` still reports `running: true`. The flag
+  flips with the frame, not with the process.
+- Each stdout/stderr frame carries at most one **32 KiB** read. Larger output splits
+  across frames. Concatenate `data` in `seq` order to reassemble it. The exact
+  frame *boundaries* depend on pipe scheduling and are not stable. Only the
+  reassembled bytes are stable.
+- The replay buffer has a **bound of 16 MiB per process**. The daemon counts the
   **serialized frame including its trailing newline** (the bytes a subscriber would
-  receive), not the base64 `data` alone — so an exit frame costs its envelope though
-  it carries no `data`. Frames drop oldest-first, whole frames at a time, once a new
-  frame would exceed the cap; at least one frame is always retained (even one larger
-  than the cap). So `reattach{fromSeq:0}` replays everything **still retained**, not
-  necessarily everything ever emitted — `firstSeq` is the floor; compare it against
-  the last `seq` you saw to detect a gap.
-- A process **survives** the disconnect of the connection that spawned it; another
-  connection picks it up via `reattach`. This is the multi-attach / reconnect
+  receive), not the base64 `data` alone. An exit frame therefore costs its envelope
+  although it carries no `data`. The daemon drops frames oldest-first, whole frames
+  at a time, once a new frame would exceed the cap. It always retains at least one
+  frame, even a frame larger than the cap. `reattach{fromSeq:0}` therefore replays
+  everything **still retained**, and not necessarily everything ever emitted.
+  `firstSeq` is the floor. Compare it against the last `seq` you saw to detect a
+  gap.
+- A process **survives** the disconnect of the connection that spawned it. Another
+  connection picks it up with `reattach`. This is the multi-attach / reconnect
   mechanism.
 
 ## Daemon lifecycle (flags)
 
 One binary, five modes (`-serve`, `-bridge`, `-stop`, `-version`, `-install`).
-Everything is probe-verified against the reference unless marked **claustrum-only**.
+Everything here is probe-verified against the reference unless it is marked
+**claustrum-only**.
 
 ### Flags and config keys
 
-Every opt-in divergence flag defaults to its zero value = **OFF** (byte-identical to
-the reference), and each has a matching `claustrum.conf` key. Because Claude Desktop
-owns the `-serve` / `-install` argv (a driver claim — see [ARCHITECTURE.md → Driver
-claims and their provenance](ARCHITECTURE.md#driver-claims-and-their-provenance)),
-**the config key is the reachable knob.** Precedence: explicit CLI flag > config >
-default. A disabled bound **bypasses the guard entirely** — it is never "a huge
+Every opt-in divergence flag defaults to its zero value = **OFF**, which is
+byte-identical to the reference. Each flag has a matching `claustrum.conf` key.
+Claude Desktop owns the `-serve` / `-install` argv (a driver claim — see
+[ARCHITECTURE.md → Driver claims and their
+provenance](ARCHITECTURE.md#driver-claims-and-their-provenance)), so **the config
+key is the reachable knob.** The precedence is: explicit CLI flag > config >
+default. A disabled bound **bypasses the guard entirely**. It is never "a huge
 limit".
 
 | flag | config key | default | effect when set | mode |
@@ -790,10 +820,10 @@ limit".
 | `-cli-keep <n>` | — | `3` | versions to retain on prune | -install |
 | — (config only) | `version-override` | — | `-version` stdout rebrand (CT-3) | -version |
 
-Config-value parsing: bool keys accept `true/1/yes/on` and `false/0/no/off`;
-negative or unparseable numeric values are ignored (so a typo can never silently
-enable a cap); an unrecognised bool value leaves the key unset (the flag value, or
-the default, stands).
+Config-value parsing: bool keys accept `true/1/yes/on` and `false/0/no/off`. The
+parser ignores a negative or unparseable numeric value, so a typo can never
+silently enable a cap. An unrecognised bool value leaves the key unset, and the
+flag value, or the default, stands.
 
 ### -serve — run the daemon
 
@@ -803,61 +833,64 @@ claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a
           [-files-read-regular-only]
 ```
 
-Self-daemonizes (reparents to init / detached), extracts the login-shell PATH
-(Unix), then runs the RPC server. On success it prints `Claustrum remote server
-listening on <socket>` to stdout.
+The binary self-daemonizes (it reparents to init / detaches), extracts the
+login-shell PATH (Unix), and then runs the RPC server. On success it prints
+`Claustrum remote server listening on <socket>` to stdout.
 
 **Login-shell PATH extraction** (Unix) runs `$SHELL -l -i -c …` when `$SHELL` is an
-executable file, else the first usable of `/bin/zsh`, `/bin/bash`, `/bin/sh` (**zsh
-first**, matching the reference). The value reaches `process.spawn` children as
-their `PATH` only — never the daemon's own environment, so it never changes how the
-daemon resolves a `command`. Extraction is capped at **4 s**; a timeout **discards**
-whatever the shell printed (even a valid PATH) and children fall back to the
-inherited PATH.
+executable file. Otherwise it runs the first usable of `/bin/zsh`, `/bin/bash`,
+`/bin/sh` (**zsh first**, which matches the reference). The value reaches
+`process.spawn` children as their `PATH` only. It never reaches the daemon's own
+environment, so it never changes how the daemon resolves a `command`. The extraction
+has a cap of **4 s**. On a timeout the daemon **discards** whatever the shell
+printed, even a valid PATH, and children fall back to the inherited PATH.
 
-**Token source** — required, checked **in the detached child**, not the launcher:
-- Missing both flags → the launcher daemonizes anyway, the child refuses to start,
+**Token source** — required, and checked **in the detached child**, not in the
+launcher:
+- Both flags missing → the launcher daemonizes anyway, the child refuses to start,
   and the launcher reports its accept timeout after ~10 s: `claustrum: timeout
   waiting for daemon to accept on <socket>`, exit `1`. The specific reason
   (`claustrum: daemonized child requires --token-file or --token-fd`) reaches only
-  the child's detached stderr. This is deliberate parity (the reference exits 1 at
-  ~10 s the same way). A zero-byte `-token-file` behaves identically.
-- The token is read as a **line**: one trailing `\n`/`\r\n` is stripped; other
-  surrounding whitespace is preserved verbatim.
+  the child's detached stderr. This is deliberate parity, because the reference
+  exits 1 at ~10 s the same way. A zero-byte `-token-file` behaves identically.
+- The daemon reads the token as a **line**. It strips one trailing `\n`/`\r\n`, and
+  preserves other surrounding whitespace verbatim.
 - A bad `-token-file` → `claustrum: read --token-file: <err>`, exit `1`.
 - `-token-fd <n>` *(claustrum-only)* reads from an already-open fd (`0` = stdin), so
-  the token never touches disk; the launcher forwards it to the detached child over
-  an inherited pipe.
+  this handoff never touches disk. The launcher forwards it to the detached
+  child over an inherited pipe.
 
 **Daemonize sentinel** *(internal; claustrum-namespaced)* — the re-exec marker is
 **`CLAUSTRUM_DAEMON_CHILD`**, not the reference's `CLAUDE_SSH_DAEMON_CHILD`. The
-reference name can't serve here: a host running *inside* a real claude-ssh session
-exports `CLAUDE_SSH_DAEMON_CHILD=1` ambiently, so the launcher would mistake itself
-for the already-daemonized child. Observable parity is preserved separately —
-`daemonizeWithToken` still sets `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ
-so it propagates into `process.spawn` children (pinned by
-`TestSpawnInheritsDaemonChildMarker`); the internal marker is unset before spawning.
+reference name cannot serve here. A host that runs *inside* a real claude-ssh
+session exports `CLAUDE_SSH_DAEMON_CHILD=1` ambiently, so the launcher would mistake
+itself for the already-daemonized child. claustrum keeps the observable parity
+separately: `daemonizeWithToken` still sets `CLAUDE_SSH_DAEMON_CHILD=1` in the
+daemon's environ, so that variable propagates into `process.spawn` children (pinned
+by `TestSpawnInheritsDaemonChildMarker`). claustrum unsets the internal marker
+before it spawns.
 
 **Claustrum-only extras** (off the wire; canonical detail in
 [`DIVERGENCES.md`](DIVERGENCES.md)):
 - **`-metrics-addr <a>` (CT-3).** Prometheus counters at `http://<a>/metrics`
-  (connections, spawns/exits, reattaches, stream/stdin bytes). Off by default (no
-  listener); counts only, **no auth** — bind to loopback. Bind failure logged
-  (`[Server] metrics: …`), non-fatal.
-- **`-keep-children` (CT-2; POSIX-only).** Off by default (graceful shutdown kills
-  the whole child tree). Set, it leaves spawned children running across a restart
-  (logs `[Server] -keep-children: leaving <n> running child process(es) alive across
-  shutdown`); the new daemon does **not** re-adopt them, and **survivors lose their
-  stdio** (stdin EOF; stdout/stderr writes → SIGPIPE, or EPIPE for a child that
-  ignores it, e.g. Node), so it suits only children that tolerate dead stdio.
-  Windows ignores it with a warning (`[Server] -keep-children is not supported on
-Windows …`; the Job Object terminates children regardless).
+  (connections, spawns/exits, reattaches, stream/stdin bytes). Off by default, with
+  no listener. It counts only, and has **no auth**, so bind it to loopback. The
+  daemon logs a bind failure (`[Server] metrics: …`), which is non-fatal.
+- **`-keep-children` (CT-2; POSIX-only).** Off by default, so a graceful shutdown
+  kills the whole child tree. When set, it leaves spawned children running across a
+  restart, and logs `[Server] -keep-children: leaving <n> running child process(es)
+  alive across shutdown`. The new daemon does **not** re-adopt them, and **the
+  survivors lose their stdio** (stdin EOF; a stdout/stderr write gets SIGPIPE, or
+  EPIPE for a child that ignores SIGPIPE, e.g. Node). It therefore suits only
+  children that tolerate dead stdio. Windows ignores it and logs a warning
+  (`[Server] -keep-children is not supported on Windows …`), because the Job Object
+  terminates children regardless.
 - **`-listen-pipe` (CT-5; Windows-only).** See [Named-pipe
-  transport](#named-pipe-transport-windows-opt-in). Setup failure logged (`[Server]
-  named-pipe transport: …`), non-fatal — the socket still serves.
+  transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
+  (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.
 
-**Opt-in divergences on this mode** are `-max-extract-bytes` (D3),
-`-git-timeout` (D5) and `-files-read-regular-only` (D4). Off = parity; their wire
+**The opt-in divergences on this mode** are `-max-extract-bytes` (D3),
+`-git-timeout` (D5) and `-files-read-regular-only` (D4). Off = parity. Their wire
 frames appear in the method sections above (`files.extract_tar`, `git.status` /
 `git.list_branches` / `git.worktree_remove`, `files.read`). See the flags table and
 [`DIVERGENCES.md`](DIVERGENCES.md).
@@ -868,9 +901,9 @@ frames appear in the method sections above (`files.extract_tar`, `git.status` /
 claustrum -bridge -socket <p>
 ```
 
-A dumb relay — what an SSH session attaches to. It injects **no** auth; whatever
-speaks through it supplies `"auth"` itself. **Strict**: a dial failure is a hard
-error — `claustrum: dial server: <err>` on stderr, exit `1`.
+A simple relay — the thing an SSH session attaches to. It adds **no** auth. The
+client that speaks through it supplies `"auth"` itself. It is **strict**: a dial
+failure is a hard error — `claustrum: dial server: <err>` on stderr, exit `1`.
 
 ### -stop — ask a running daemon to shut down
 
@@ -878,25 +911,26 @@ error — `claustrum: dial server: <err>` on stderr, exit `1`.
 claustrum -stop -socket <p>          # no token needed, and none is read
 ```
 
-Sends `server.shutdown` with **no `auth` member** — that method is not
-authenticated (see [Authentication](#authentication)). **Best-effort**: a missing or
-unreachable daemon is a silent no-op (exit `0`, no output); any reply is read and
-discarded. Against a current daemon there is no reply, since `server.shutdown`
-answers nothing and closes.
+`-stop` sends `server.shutdown` with **no `auth` member**, because that method is
+not authenticated (see [Authentication](#authentication)). It is **best-effort**: a
+missing or unreachable daemon is a silent no-op (exit `0`, no output), and `-stop`
+reads and discards any reply. A current daemon sends no reply, because
+`server.shutdown` answers nothing and closes.
 
-**The socket path is unlinked on every exit path**, including where the dial fails
-and no daemon was reached. This is matched to the reference and is destructive on
-two arms: a stale socket with no listener, and a **live foreign listener** — `-stop`
-removes a socket path it did not create, so a new client dialing by path cannot
-reach that listener afterwards (the listener itself stays alive). Making the unlink
-conditional would be a divergence, so it is a candidate not taken — recorded under
-[Candidates considered but not taken](DIVERGENCES.md#candidates-considered-but-not-taken).
+**`-stop` unlinks the socket path on every exit path**, including when the dial
+fails and it reached no daemon. This matches the reference, and it is destructive
+on two arms: a stale socket with no listener, and a **live foreign
+listener**. `-stop` removes a socket path it did not create, so a new client that
+dials by path cannot reach that listener afterwards. The listener itself stays
+alive. A conditional unlink would be a divergence, so it is a candidate not taken —
+recorded under [Candidates considered but not
+taken](DIVERGENCES.md#candidates-considered-but-not-taken).
 
 > **Upgrading a live daemon.** A daemon still running from a build that predates the
-> shutdown-auth-exemption change *does* require auth on `server.shutdown`, answers
-> `-32001`, and keeps running. `-stop` discards the reply and exits `0` either way,
-> so the caller sees success while the old daemon survives. Stop the old daemon
-> before upgrading, or kill it by PID once.
+> shutdown-auth-exemption change *does* require auth on `server.shutdown`. It
+> answers `-32001` and keeps running. `-stop` discards the reply and exits `0`
+> either way, so the caller sees success while the old daemon survives. Stop the old
+> daemon before you upgrade, or kill it by PID once.
 
 ### -version
 
@@ -905,20 +939,22 @@ claustrum -version                   # → claustrum <id> (built <time>)
 ```
 
 **Intentional divergence: `version-override` via `claustrum.conf` (claustrum-only,
-CT-3).** An optional `key = value` file named `claustrum.conf`, read from the
-directory holding the binary, gates the opt-in divergences above; **absent/malformed
-⇒ stock**. If it sets `version-override` to a bare commit SHA (40-hex git SHA-1, the
-string the desktop client pins; 64-hex also accepted; anything else is a no-op), the
-output becomes:
+CT-3).** `claustrum.conf` is an optional `key = value` file. claustrum reads it from
+the directory that holds the binary, and it gates the opt-in divergences above. An
+**absent or malformed file gives stock behaviour**. If the file sets
+`version-override` to a bare commit SHA (a 40-hex git SHA-1, the string the desktop
+client pins; claustrum also accepts 64-hex; anything else is a no-op), the output
+becomes:
 
 ```text
 claustrum -version                   # → claude-ssh <sha> (via Claustrum <id>, built <time>)
 ```
 
-This exists so the desktop client treats an already-deployed claustrum as
-up-to-date (it keys re-upload on `<bin> --version` matching `/claude-ssh\s+(\S+)/`).
-It is **CLI stdout only** — not a JSON-RPC frame — so the wire contract is untouched;
-`server.version` / `server.capabilities` still report claustrum's own `<id>`. See
+This exists so that the desktop client treats an already-deployed claustrum as
+up-to-date. That client decides whether to re-upload from a `<bin> --version` output
+that matches `/claude-ssh\s+(\S+)/`. The override is **CLI stdout only**, not a
+JSON-RPC frame, so it does not touch the wire contract. `server.version` /
+`server.capabilities` still report claustrum's own `<id>`. See
 [`DIVERGENCES.md`](DIVERGENCES.md) → CT-3.
 
 ### -install — ensure the agent CLI
@@ -930,10 +966,11 @@ claustrum -install -cli-dir <d> -cli-version <v> \
           [-libc-probe-timeout <dur>]
 ```
 
-Download / verify / extract / prune, then print one `__INSTALL_RESULT__<json>` facts
-line (schema in [ARCHITECTURE.md](ARCHITECTURE.md)). `-install` always exits `0` —
-failures are reported inside the facts as `cliError`, not via the exit code.
-`-install` reaches the network **only with `-cli-url`**.
+`-install` downloads, verifies, extracts and prunes, and then prints one
+`__INSTALL_RESULT__<json>` facts line (schema in
+[ARCHITECTURE.md](ARCHITECTURE.md)). `-install` always exits `0`. It reports a
+failure inside the facts as `cliError`, not through the exit code. `-install`
+reaches the network **only with `-cli-url`**.
 
 **`cliError` catalogue:**
 
@@ -956,116 +993,122 @@ failures are reported inside the facts as `cliError`, not via the exit code.
 | `staging file vanished before install: <err>` | a concurrent sweep took the staging file |
 
 **Checksum + verify ordering:**
-- `-cli-checksum` is verified on the `-cli-url` path **unconditionally** — an empty
-  checksum still fails.
+- claustrum verifies `-cli-checksum` on the `-cli-url` path **unconditionally**. An
+  empty checksum still fails.
 - **Verify happens BEFORE decompress — intentional divergence D13** (always-on,
-  **unresolved**). The reference decompresses first; claustrum checksums first. A
-  blob both undecompressable and wrong-checksummed diverges on the string: a short
-  artifact yields `checksum mismatch` where the reference says `decompressing:
-  unexpected EOF`; a genuine interrupted transfer never reaches the checksum on
-  claustrum at all (`download failed: <transport>` vs `decompressing: <transport>`).
-  Both binaries fail the install either way. See [`DIVERGENCES.md`](DIVERGENCES.md)
-  → D13.
+  **unresolved**). The reference decompresses first, and claustrum checksums first.
+  A blob that is both undecompressable and wrong-checksummed diverges on the
+  string. A short artifact yields `checksum mismatch` where the reference says
+  `decompressing: unexpected EOF`. A genuine interrupted transfer never reaches the
+  checksum on claustrum at all (`download failed: <transport>` vs `decompressing:
+  <transport>`). Both binaries fail the install either way. See
+  [`DIVERGENCES.md`](DIVERGENCES.md) → D13.
 - **`-cli-zst` checksum — intentional conditional divergence D1.** The reference
   never checksum-verifies the local SFTP-upload blob. claustrum verifies it **only
-  when a `-cli-checksum` is supplied** (same `checksum mismatch` error, source blob
-  left intact); an absent/empty checksum stays trusting, so honest callers are
-  byte-identical. See [`DIVERGENCES.md`](DIVERGENCES.md) → D1.
+  when a `-cli-checksum` is supplied**, with the same `checksum mismatch` error, and
+  it leaves the source blob intact. An absent or empty checksum stays trusting, so
+  honest callers are byte-identical. See [`DIVERGENCES.md`](DIVERGENCES.md) → D1.
 
-**Opt-in wall-clock bounds** — all three off by default, so a stock claustrum
-applies **none** of them (on linux or anywhere); at the shipped defaults no
-claustrum-chosen `-install` bound applies, only the stdlib transport clocks
-(`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) on `-cli-url`. Off = parity
-(the reference showed no deadline at the durations probed). See
-[`DIVERGENCES.md`](DIVERGENCES.md):
-- **`-cli-download-timeout <dur>` (D12).** `0` = `http.Client{Timeout:0}` (no
-  bound). Armed, it bounds the whole exchange, so an honest download merely too slow
-  trips `download failed: context deadline exceeded (…)` as surely as a black hole
-  does.
+**Opt-in wall-clock bounds** — all three are off by default, so a stock claustrum
+applies **none** of them, on linux or anywhere. At the shipped defaults no
+claustrum-chosen `-install` bound applies. Only the stdlib transport clocks
+(`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply, and only on
+`-cli-url`. Off = parity, because the reference showed no deadline at the durations
+probed. See [`DIVERGENCES.md`](DIVERGENCES.md):
+- **`-cli-download-timeout <dur>` (D12).** `0` = `http.Client{Timeout:0}`, which is
+  no bound. When armed, it bounds the whole exchange. An honest download that is
+  merely too slow therefore trips `download failed: context deadline exceeded (…)`
+  as surely as a black hole does.
 - **`-cli-probe-timeout <dur>` (D11).** `0` = no deadline on the `<cli> --version`
-  runnability probe (every platform). Armed, a CLI slower than the deadline diverges
-  — after extraction as `installed cli at <path> is not runnable` (staged binary
-  deleted); on the cache-hit check as a silent reinstall or, with `-cli-url` and a
-  timely replacement, no `cliError` at all. A threshold, not a hang detector: an
-  honest-but-slow CLI trips it too. The cached binary survives every failure before
-  the rename.
+  runnability probe, on every platform. When armed, a CLI slower than the deadline
+  diverges. After extraction it diverges as `installed cli at <path> is not
+  runnable`, and claustrum deletes the staged binary. On the cache-hit check it
+  diverges as a silent reinstall, or, with `-cli-url` and a timely replacement, as
+  no `cliError` at all. It is a threshold, not a hang detector: an honest-but-slow
+  CLI trips it too. The cached binary survives every failure before the rename.
 - **`-libc-probe-timeout <dur>` (D14; linux only).** `0` = no deadline on `ldd
-  --version`. Off linux the probe never runs; on linux it cannot fire on a host
-  whose musl loader glob matches (`detectLibcWith` returns before spawning `ldd`).
-  **Do not confuse with `-cli-probe-timeout`** (they are one letter apart, same type,
-  resolved two lines apart in main's `-install` arm — pinned by
-  `TestInstallArmWiresEachFlagToItsOwnGlobal`). `libc` build selection is a driver
-  claim — see [ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance).
+  --version`. Off linux the probe never runs. On linux it cannot fire on a host
+  whose musl loader glob matches, because `detectLibcWith` returns before it spawns
+  `ldd`. **Do not confuse it with `-cli-probe-timeout`.** The two names differ only in
+  their `cli`/`libc` prefix, they have the same type, and main's `-install` arm
+  resolves them in consecutive statements (pinned by
+  `TestInstallArmWiresEachFlagToItsOwnGlobal`). `libc` build
+  selection is a driver claim — see
+  [ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance).
 
-**Opt-in size cap (D10).** `-max-cli-bytes <n>` (or `max-cli-bytes` config) governs
-**both** the decompressed CLI and the download body; `0` = off (parity — the
-reference took a 600 MiB payload to the runnability check). The blob is **streamed,
-never buffered** (a path, not a `[]byte`, so the staging retry can re-read it), which
-keeps "cap off" from meaning unbounded memory. See
-[`DIVERGENCES.md`](DIVERGENCES.md) → D10.
+**Opt-in size cap (D10).** `-max-cli-bytes <n>` (or the `max-cli-bytes` config key)
+governs **both** the decompressed CLI and the download body. `0` = off, which is
+parity: the reference took a 600 MiB payload to the runnability check. claustrum
+**streams the blob and never buffers it** — it keeps a path, not a `[]byte`, so the
+staging retry can re-read it. "Cap off" therefore does not mean unbounded memory.
+See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
 
 **`-cli-version` hardening (claustrum-only):**
 - **D6: must name a single path component.** The clearing step is an `os.RemoveAll`
-  on `filepath.Join(cliDir, cliVersion)`, so a version escaping the cli-dir
-  (`../victim`, or `link/1.0.0` via an intermediate symlink) deletes unrelated data
-  — the reference destroys the target on both. claustrum answers `cli version "…"
-  must be a single path component` and touches nothing. `.`, `..`, `/` and `\` are
-  refused on every OS. A single-component check (not lexical containment) is used
-  because containment accepts `link/1.0.0` and `EvalSymlinks` would add a TOCTOU
-  window. A final component that is itself a symlink stays legal (`os.RemoveAll`
-  unlinks it rather than following). The real client passes bare versions (`1.0.86`,
-  `2.0.0-beta.1`, a commit sha, `latest`, `1.0.86+build.5` — all measured accepted).
+  on `filepath.Join(cliDir, cliVersion)`. A version that escapes the cli-dir
+  (`../victim`, or `link/1.0.0` through an intermediate symlink) therefore deletes
+  unrelated data, and the reference destroys the target on both shapes. claustrum
+  answers `cli version "…" must be a single path component` and touches nothing. It
+  refuses `.`, `..`, `/` and `\` on every OS. claustrum uses a single-component
+  check and not lexical containment, because containment accepts `link/1.0.0`, and
+  `EvalSymlinks` would add a TOCTOU window. A final component that is itself a
+  symlink stays legal, because `os.RemoveAll` unlinks it and does not follow it. The
+  real client passes bare versions (`1.0.86`, `2.0.0-beta.1`, a commit sha,
+  `latest`, `1.0.86+build.5` — all measured as accepted).
 - **D7: must not collide with the orphan sweep.** The sweep claims `.fetch-*` and
-  `*.zst` and runs after *every* attempted install, so `-cli-version .fetch-x` or
-  `1.0.zst` would install and be deleted moments later (both binaries finish with an
-  empty cli-dir and no `cliError`, reporting a success that installed nothing).
-  claustrum now answers `cli version "…" collides with the install temp sweep`. The
-  sweep predicate and this check share one definition.
+  `*.zst`, and it runs after *every* attempted install. `-cli-version .fetch-x` or
+  `1.0.zst` would therefore install, and the sweep would delete it moments later.
+  Both binaries finish with an empty cli-dir and no `cliError`, and report a
+  success that installed nothing. claustrum now answers `cli version "…" collides
+  with the install temp sweep`. The sweep predicate and this check share one
+  definition.
 
 **Staging and cleanup:**
-- The CLI is staged at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and renamed
-  into place, never at `<cliPath>.tmp` — one code path for `-cli-url` and `-cli-zst`
-  alike. The orphan sweep matches `.fetch-*`, so an interrupted install's litter is
-  reclaimed.
+- claustrum stages the CLI at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and
+  renames it into place. It never stages at `<cliPath>.tmp`. This is one code path
+  for `-cli-url` and `-cli-zst` alike. The orphan sweep matches `.fetch-*`, so it
+  reclaims the litter of an interrupted install.
 - A `-cli-url` download lands at **`<cli-dir>/.blob-<random>`** when the cli-dir
-  exists; on a **first install it lands at `$TMPDIR/claustrum-fetch-<random>`**
+  exists. On a **first install it lands at `$TMPDIR/claustrum-fetch-<random>`**,
   because `fetchToFile` (`install.go`) runs before `ensureCLI` creates the
-  directory. The `.blob-` prefix is deliberately different so the sweep and the
-  `-cli-keep` prune (which counts every non-directory as a version) do not claim an
-  in-flight blob — which is also why a `-cli-version` starting `.blob-` is refused.
-  The blob is removed by the install on every path; only a SIGKILLed download leaves
-  it behind. No frame changes either way.
-- **The `-cli-zst` blob is consumed once decompression succeeds**, not only on a
-  fully successful install — an extracted CLI that fails the runnability check still
-  costs the blob. A blob that is not valid zstd is left alone.
-- **An occupied `cliPath` is cleared, not fatal.** `rename(2)` refuses to replace a
-  non-empty directory, so it is removed first (only when `cliPath` is a directory — a
-  regular file, which an installed CLI always is, is replaced atomically); if it
-  cannot be removed → `clearing stale dir at <path>: <err>`. If the staging file has
-  vanished → `staging file vanished before install: <err>`, `cliPath` untouched. End
-  states match the reference for every destination shape (absent, regular file,
-  non-empty directory).
-- **The orphan sweep** removes `.fetch-*` and `*.zst` entries with `os.Remove` per
-  entry (so it clears files and *empty* directories, leaving a non-empty
-  `.fetch-dir/`); unrelated files survive. It runs whenever an install was attempted;
-  the `-cli-keep` prune runs only on success. claustrum stages its extract in this
-  same `.fetch-*` namespace and holds it across the probe, so a concurrent install
-  can reclaim another's staging file — handled by a **single retry** of the
-  stage-verify-rename step rather than by narrowing the sweep.
-- `ldd` is executed **only when the musl loader glob does not match** — on a host
-  carrying `/lib/ld-musl-*.so.*` the marker decides and no `ldd` starts.
+  directory. The `.blob-` prefix is deliberately different, so that the sweep and
+  the `-cli-keep` prune (which counts every non-directory as a version) do not claim
+  an in-flight blob. That is also why claustrum refuses a `-cli-version` that starts
+  with `.blob-`. The install removes the blob on every path. Only a SIGKILLed
+  download leaves it behind. No frame changes either way.
+- **claustrum consumes the `-cli-zst` blob once decompression succeeds**, and not
+  only on a fully successful install. An extracted CLI that fails the runnability
+  check still costs the blob. claustrum leaves a blob that is not valid zstd alone.
+- **claustrum clears an occupied `cliPath`, and that is not fatal.** `rename(2)`
+  refuses to replace a non-empty directory, so claustrum removes it first. It
+  removes it only when `cliPath` is a directory; a regular file, which an
+  installed CLI always is, is replaced atomically. If claustrum cannot remove it →
+  `clearing stale dir at <path>: <err>`. If the staging file has vanished →
+  `staging file vanished before install: <err>`, and `cliPath` stays untouched. The
+  end states match the reference for every destination shape (absent, regular
+  file, non-empty directory).
+- **The orphan sweep** removes `.fetch-*` and `*.zst` entries with one `os.Remove`
+  per entry. It therefore clears files and *empty* directories, and leaves a
+  non-empty `.fetch-dir/`. Unrelated files survive. The sweep runs whenever an
+  install was attempted, and the `-cli-keep` prune runs only on success. claustrum
+  stages its extract in this same `.fetch-*` namespace and holds it across the
+  probe, so a concurrent install can reclaim another install's staging file.
+  claustrum handles that with a **single retry** of the stage-verify-rename step,
+  and does not narrow the sweep.
+- claustrum runs `ldd` **only when the musl loader glob does not match**. On a host
+  that carries `/lib/ld-musl-*.so.*` the marker decides, and no `ldd` starts.
 
 ### Behavior shared by every mode
 
 - **Default socket** — when `-socket` is omitted, all modes fall back to
   `~/.claude/remote/rpc.sock`. `-serve` **creates** the parent directory (mode
-  `0700`) if missing, so a bare `-serve` on a fresh machine works. `-bridge` /
-  `-stop` do not create it and fail with `connect: no such file or directory` when
-  no daemon has run.
+  `0700`) if it is missing, so a bare `-serve` on a fresh machine works. `-bridge`
+  and `-stop` do not create it. They fail with `connect: no such file or directory`
+  when no daemon has run.
 - **No mode given** →
   `claustrum: one of --version/--install/--serve/--bridge/--stop is required` on
-  stderr, exit `2` — no usage dump. An *unknown flag* gets the stdlib `flag` error +
-  usage, exit `2`.
+  stderr, exit `2`, and no usage dump. An *unknown flag* gets the stdlib `flag`
+  error plus the usage, exit `2`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the
 deployment lifecycle, [`DIVERGENCES.md`](DIVERGENCES.md) for the full divergence

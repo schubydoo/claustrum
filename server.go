@@ -436,8 +436,8 @@ func openDaemonLog(socket string) *os.File {
 
 // daemonizeWithToken re-execs the binary detached from the terminal. If
 // forwardToken is non-empty (the -token-fd path) it is handed to the child over
-// an inherited pipe (child fd 3, named by tokenPipeEnv) so the token never lands
-// on disk, in argv, or in the environment; an empty forwardToken means the child
+// an inherited pipe (child fd 3, named by tokenPipeEnv), so this handoff writes
+// the token to no disk, no argv, and no environment; an empty forwardToken means the child
 // reads its own -token-file as before.
 // daemonStartTimeout caps how long the -serve launcher waits for the daemonized
 // child to start accepting before it returns anyway. The reference uses 10s

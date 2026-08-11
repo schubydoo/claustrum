@@ -1,9 +1,9 @@
 # claustrum examples
 
-Runnable snippets against a local daemon. They assume `claustrum` is on your
-`PATH`. Because a connection stays open (stream notifications follow a response),
-the streaming examples use a tiny Node helper that reads for a fixed window; the
-simple request/response ones use `socat`.
+These snippets run against a local daemon. They assume that `claustrum` is on
+your `PATH`. A connection stays open, because stream notifications come after a
+response. Thus the streaming examples use a small Node helper that reads for a
+fixed time window. The simple request/response examples use `socat`.
 
 ## Start a private daemon
 
@@ -80,10 +80,11 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"process.spawn\",\"params\":{\"i
 # stdout frame decodes to "ping\n"; exit frame has exitCode -1 (signalled)
 ```
 
-`process.stdin` also accepts an `offset` (the byte position the data starts at)
-for idempotent replay across reconnects: re-sending already-applied bytes is a
-no-op flagged `"duplicate":true`, and an `offset` past the applied count is a
-`-32003 stdin offset gap` error. See [PROTOCOL.md](PROTOCOL.md).
+`process.stdin` also accepts an `offset`, the byte position at which the data
+starts. The `offset` makes replay across reconnects idempotent. If you send only
+bytes that the daemon applied before, the daemon does nothing and flags the reply
+`"duplicate":true`. If the `offset` is past the applied count, the daemon returns
+a `-32003 stdin offset gap` error. See [PROTOCOL.md](PROTOCOL.md).
 
 ## Reattach / catch up via the replay buffer
 
@@ -96,25 +97,25 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
 # {"id":2,"result":{"found":true,"running":false,"firstSeq":1,"lastSeq":4,"stdinApplied":0}}
 ```
 
-The `firstSeq`/`lastSeq` values are illustrative: stdout framing is chunk-based,
-not line-per-frame, so the three `echo`es can arrive in one frame and shift
-`lastSeq`. A process survives the disconnect of the connection that spawned
-it — a *new* connection can `reattach` to it and keep streaming. That is the
-reconnect path.
+The `firstSeq` and `lastSeq` values are examples only. The daemon frames stdout
+in chunks, not one frame per line. Thus the three `echo` outputs can arrive in
+one frame and change `lastSeq`. A process continues to run when the connection
+that spawned it disconnects. A *new* connection can `reattach` to that process
+and continue to read the stream. This is the reconnect path.
 
 ## Opt into `pid` + `startTime` — `wantPid` (claustrum extension)
 
 !!! note "An addition, not reference behavior"
-    The reference daemon has no `wantPid`; this is an opt-in **claustrum
-    extension** (CT-1; see [DIVERGENCES.md](DIVERGENCES.md)). Omit it — the
-    default — and every frame is byte-identical to the reference. It does not
-    change the original `spawn`/`reattach` behavior; it only *adds* fields when
-    explicitly requested.
+    The reference daemon has no `wantPid`. This is an opt-in **claustrum
+    extension** (CT-1; see [DIVERGENCES.md](DIVERGENCES.md)). If you omit it,
+    which is the default, every frame stays byte-identical to the reference.
+    `wantPid` does not change the original `spawn` and `reattach` behavior. It
+    only *adds* fields when you ask for them.
 
-`process.spawn` and `process.reattach` accept `"wantPid":true`. When set, the
-result carries the child's OS `pid` plus a `startTime` token, returned
-identically on spawn and reattach for the same `id`, for PID-reuse / orphan
-detection:
+`process.spawn` and `process.reattach` accept `"wantPid":true`. When you set it,
+the result carries the child's OS `pid` and a `startTime` token. The daemon
+returns the same two values on spawn and on reattach for the same `id`. Use them
+to detect PID reuse and orphans:
 
 ```sh
 run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
@@ -127,14 +128,14 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
 ```
 
 Without `wantPid`, those same two replies are exactly `{"success":true}` and
-`{"found":…,"running":…,"firstSeq":…,"lastSeq":…,"stdinApplied":…}` — the
-`pid`/`startTime` fields are simply absent (`omitempty`).
+`{"found":…,"running":…,"firstSeq":…,"lastSeq":…,"stdinApplied":…}`. The
+`pid` and `startTime` fields are absent (`omitempty`).
 
-`startTime` is an **opaque token**: persist it, then compare a daemon value
+`startTime` is an **opaque token**. Store it. Then compare a daemon value
 against a *later* daemon value for the **same `id`** to detect PID reuse. Do
-**not** equality-compare it against an OS-read process start time (e.g. psutil
-`create_time`) — it is the daemon's spawn-moment wall clock, not the kernel's
-process-creation time.
+**not** compare it for equality against a process start time that you read from
+the OS (for example, psutil `create_time`). `startTime` is the daemon's wall
+clock at the moment of the spawn, not the kernel's process-creation time.
 
 ## Extract a plugin tarball
 
@@ -144,11 +145,11 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"files.extract_tar\",
 # {"id":1,"result":{"success":true,"fileCount":N}}   (expects a gzip tarball; destDir must be absolute, non-root)
 ```
 
-`destDir` is also refused if it *is or contains* your home directory — the
-`wipesHomeDir` guard, not just the absolute/non-root check the comment shows.
-`extract_tar` wipes `destDir` before extracting, and `"~"` expands to `$HOME`,
-so the home guard is what stops a bare `"~"` from deleting it. See
-[DIVERGENCES.md](DIVERGENCES.md) (D2).
+The daemon also refuses a `destDir` that *is or contains* your home directory.
+This is the `wipesHomeDir` guard, not only the absolute/non-root check that the
+comment shows. `extract_tar` deletes `destDir` before it extracts, and `"~"`
+expands to `$HOME`. Thus the home guard stops a bare `"~"` from deleting your
+home directory. See [DIVERGENCES.md](DIVERGENCES.md) (D2).
 
 ## Shut it down
 
@@ -167,17 +168,18 @@ claustrum -install -cli-dir "$D/cli" -cli-version 1.2.3 \
 #                            "cliPath":"…/cli/1.2.3","cliWasPresent":false,"cliError":"…"}
 ```
 
-`cliError` is `omitempty`: a successful install omits it. It appears above only
-because `https://example.invalid` is unreachable, so the download fails and the
-error lands in the field. `libc` is `glibc` on a glibc linux host and `musl` on a musl linux host; off
-linux it is empty (`""`).
+`cliError` is `omitempty`. A successful install omits it. It appears above only
+because `https://example.invalid` is unreachable. The download thus fails.
+`libc` is `glibc` on a glibc linux host and `musl` on a musl linux host. Off
+linux, `libc` is empty (`""`).
 
 ## Operational knobs (claustrum-only, all off the wire)
 
 ### Token on a file descriptor
 
-Start the daemon with the token on a file descriptor instead of a temp file —
-the token never touches disk (fd `0` works too, for piping it on stdin):
+Start the daemon with the token on a file descriptor instead of a temp file
+(fd `0` also works, to pipe the token on stdin). The daemon itself still
+persists `daemon.token` beside the socket ([PROTOCOL.md](PROTOCOL.md)):
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-fd 3 3< <(printf '%s' "$TOK")
@@ -185,9 +187,9 @@ claustrum -serve -socket "$D/rpc.sock" -token-fd 3 3< <(printf '%s' "$TOK")
 
 ### Prometheus metrics
 
-Opt into Prometheus counters (connections, spawns/exits, reattaches,
-stream/stdin bytes). No listener exists unless the flag is set; it serves
-counts only and has no auth, so bind it to loopback:
+Opt into Prometheus counters for connections, spawns, exits, reattaches, and
+stream and stdin bytes. No listener exists unless you set the flag. The endpoint
+serves counts only and has no auth. Thus bind it to loopback:
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -metrics-addr 127.0.0.1:9090
@@ -199,9 +201,9 @@ curl -s http://127.0.0.1:9090/metrics | grep claustrum_
 
 ### Log level
 
-Quiet the daemon's stderr diagnostics (default emits everything, matching the
-reference; the `[Server]`/`[process.Manager]`/… prefixes stay grep-able at any
-level):
+Make the daemon's stderr diagnostics quieter. The default emits everything,
+which matches the reference. The `[Server]`, `[process.Manager]` and the other
+prefixes stay grep-able at every level:
 
 ```sh
 CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token"
@@ -209,18 +211,17 @@ CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/
 
 ### `-keep-children`
 
-Survive a daemon restart with `-keep-children` (CT-2, POSIX-only): a graceful
-shutdown leaves spawned children running instead of killing them, so they
-outlive a daemon restart/upgrade.
+Use `-keep-children` (CT-2, POSIX-only) to let child processes survive a daemon
+restart or upgrade. A graceful shutdown leaves the spawned children running.
 
-- **Off by default** — shutdown kills the whole process tree.
-- **No re-adoption** — the new daemon does not re-adopt the survivors; reconcile
-  them out-of-band via the CT-1 `pid`/`startTime`.
-- **Survivors lose stdio** — stdin hits EOF and stdout/stderr writes hit a
-  closed pipe (SIGPIPE/EPIPE, see [PROTOCOL.md](PROTOCOL.md)), so only children
-  that tolerate that genuinely outlive the daemon.
-- **Windows ignores it** — the flag is dropped with a warning; a Job Object
-  tears the children down on daemon exit regardless.
+- **Off by default** — a shutdown kills the whole process tree.
+- **No re-adoption** — the new daemon does not re-adopt the survivors. Reconcile
+  them out-of-band with the CT-1 `pid` and `startTime`.
+- **Survivors lose stdio** — stdin gets EOF, and writes to stdout and stderr hit
+  a closed pipe (SIGPIPE/EPIPE, see [PROTOCOL.md](PROTOCOL.md)). Thus only
+  children that tolerate this condition genuinely outlive the daemon.
+- **Windows ignores it** — Windows drops the flag and prints a warning. A Job
+  Object kills the children when the daemon exits, in every case.
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children

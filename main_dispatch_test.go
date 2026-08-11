@@ -52,7 +52,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// three unrelated tests into seed-dependent failures under -shuffle.
 	oldRegularOnly := filesReadRegularOnly
 	// lddProbeTimeout joined with D14's flip. Same -install arm as cliProbeTimeout,
-	// and the two are one letter apart in both flag and global, so a leak here would
+	// and the two are near-twins (cli/libc prefix) in both flag and global, so a leak here would
 	// masquerade as a cli-probe-timeout leak while reading TestLddProbeTimeoutDefaultIsOff.
 	oldLddTimeout := lddProbeTimeout
 	t.Cleanup(func() {
@@ -103,8 +103,9 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 	if cliDownloadTimeout != 42*time.Second {
 		t.Errorf("cliDownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, not the probe global)", cliDownloadTimeout)
 	}
-	// ⚠️ The sharpest of the three. -libc-probe-timeout and -cli-probe-timeout differ
-	// by one letter, both are flag.Duration, and both are resolved two lines apart in
+	// ⚠️ The sharpest of the three. -libc-probe-timeout and -cli-probe-timeout
+	// differ only in their cli/libc prefix, both are flag.Duration, and both are
+	// resolved in consecutive statements in
 	// main's -install arm — so a swap compiles, vets, and passes every test that
 	// exercises either deadline in isolation. Only distinct values here catch it.
 	if lddProbeTimeout != 23*time.Second {
