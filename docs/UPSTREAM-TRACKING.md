@@ -31,7 +31,7 @@ sources, easiest first:
    ```
 2. **The Desktop app bundle** — the app contains the pinned SHA, and all six
    per-platform checksums and sizes, as a **build-time constant**. You can read
-   that constant offline, and you connect to nothing. In the Linux `.deb` it is a
+   that constant offline; it needs no network. In the Linux `.deb` it is a
    `JSON.parse('{"version":"<sha>","manifest":{…},"baseUrl":".../claude-ssh-releases"}')`
    literal inside `resources/app.asar`. That file is a minified
    `.vite/build/index.chunk-*.js`, so the chunk name and the wrapper function are
@@ -205,13 +205,12 @@ activated opt-in?**
 | CT-3 | Opt-in (`claustrum.conf`) | Only `version-override`, via the static check's `-version` diff | the config file itself |
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
 
-**Check both indexes.** The D/CT catalog above is not the only index. The shipped
-ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md)) numbers several more
-claustrum-only behaviors, and they are just as real: item 16 (`-metrics-addr`),
-item 17 (the orphaned previous process tree is torn down), item 18 (`-token-fd`),
-item 21 (the kill signal is skipped when the child has already exited). Check both
-the divergence catalog and the shipped ledger before you conclude that something is
-drift.
+**Check both indexes.** The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
+numbers several more claustrum-only behaviors, and they are just as real: item 16
+(`-metrics-addr`), item 17 (claustrum tears down the orphaned previous process
+tree), item 18 (`-token-fd`), item 21 (claustrum skips the kill signal when the
+child has already exited). Check both the divergence catalog and the shipped ledger
+before you conclude that something is drift.
 
 ### Drift, or an activated opt-in? — the parse-behaviour table
 
@@ -219,7 +218,7 @@ An opt-in key that is *present* is not a deadline that is *in force*. A mistyped
 inert value leaves the divergence off, and the parity behavior that results reads
 exactly like drift. So when a symptom matches a D-shaped divergence on a stock
 claustrum, **check for the key or flag first, and confirm the value parses to a
-positive duration.** There are four duration knobs: D5 (`git-timeout`), D11
+positive duration.** Four knobs take a duration: D5 (`git-timeout`), D11
 (`cli-probe-timeout`), D12 (`cli-download-timeout`), and D14
 (`libc-probe-timeout`). D5 logs under `[Server]`; the last three log under
 `[Install]`. All four parse the same way:
@@ -290,4 +289,4 @@ traps that matter when you tell drift from expected:
   same per-SHA CDN artifacts, so they give a redundant cross-check rather than a
   new signal. Extraction from those bundles is a possible follow-up.
 - You can still run `check-upstream.sh` by hand against any SHA — for example, a
-  SHA you just found, or a check that a re-published build hasn't shifted.
+  SHA you just found, or to check that a re-published build hasn't shifted.
