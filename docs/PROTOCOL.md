@@ -63,7 +63,7 @@ request with `-32001 Unauthorized: invalid or missing auth token`, and also logs
 
 The server's expected token comes from `-token-file` (read once at startup, then
 **unlinked**) or `-token-fd` (read from an open descriptor, forwarded to the
-detached child over a pipe — no temp file).
+detached child over a pipe — this handoff never touches disk).
 
 **No claustrum mode reads `CLAUDE_RPC_TOKEN`** — not `-serve`, not `-bridge`, not
 `-stop`. `-bridge` is a simple relay and does not add auth. The client that speaks
