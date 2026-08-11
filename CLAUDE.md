@@ -43,7 +43,7 @@ One binary; a flag selects the mode (`main.go`): `-serve`, `-bridge`, `-stop`,
 
 | File | Role |
 |------|------|
-| `rpc.go` | request/response types, error codes, `dispatch` (parse → auth → version → route; auth is checked *before* the jsonrpc version — probe-verified) |
+| `rpc.go` | request/response types, error codes, `dispatch` (parse → auth → version → route; auth is checked *before* the jsonrpc version, except on the unauthenticated `server.shutdown` — probe-verified) |
 | `server.go` | the `-serve` daemon: `AF_UNIX` listener (mode `0600`), per-conn read loop, **concurrent** dispatch, self-daemonize, graceful shutdown |
 | `methods_*.go` | the 19 methods across `server.*` / `files.*` / `git.*` / `process.*` |
 | `results.go` | result structs, fields declared in the exact order the reference emits — **never a map** (a map sorts its keys and diverges from the wire contract) |
