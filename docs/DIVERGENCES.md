@@ -357,8 +357,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Why always-on.** Rule 3 clause (b) — the trigger is unreachable on the
   deployed path (`~/.claude/remote/` is per-user, not world-writable). The shared
   directory that reaches the trigger is also the only place where the reference's
-  behaviour is a disclosure risk, so the guard and the risk live in the same
-  unreachable place. A flag would gate a branch that no honest deployment reaches.
+  behaviour is a disclosure risk. A flag would gate a branch that no honest
+  deployment reaches.
 - **Reopen trigger.** A deployment that puts the socket directory somewhere shared
   *and* needs the log file. In that deployment the fallback sends diagnostics to
   the launcher's stdio, which a client may parse.

@@ -37,9 +37,8 @@ This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
 
 - If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
   exits 0), claustrum keeps it as it is. The probe has **no deadline by
-  default**. That matches the reference on every input measured: the reference's probe was
-  still running at 45 s on a CLI that never answers, and the reference installed
-  a CLI that answered at 90 s. Above 90 s, nothing was probed. The `-cli-probe-timeout`
+  default**. That matches the reference on every input measured: the reference
+  installed a CLI that answered at 90 s. Above 90 s, nothing was probed. The `-cli-probe-timeout`
   flag, or the `cli-probe-timeout` config key, opts into a deadline. A CLI that
   works but is slower than that deadline then fails this guard — see
   [D11](DIVERGENCES.md#d11).

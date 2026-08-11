@@ -32,8 +32,8 @@ whatever the daemon's user can.
 
 - Auth is an in-band per-request token. The `-serve` daemon takes it from
   `-token-file` (unlinked immediately after reading) or `-token-fd` (read from an
-  open descriptor and forwarded to the detached daemon over a pipe — never on
-  disk, in argv, or in the environment).
+  open descriptor and forwarded to the detached daemon over a pipe — this
+  handoff never on disk, in argv, or in the environment).
 - claustrum never reads a token from the environment. `CLAUDE_RPC_TOKEN` is read
   by no mode; `-bridge` is a dumb relay whose client carries its own `auth`; and
   the daemon unsets the variable before daemonizing and strips it from every

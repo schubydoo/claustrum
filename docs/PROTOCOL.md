@@ -217,7 +217,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | (checked in that order after decode) |
 | process.stdin | `stdin offset gap: offset ahead of applied bytes` | -32003 |
-| process.killAndWait | `Process ID is required` / `Invalid params` | |
+| process.killAndWait / process.reattach | `Process ID is required` / `Invalid params` | |
 
 `-install` reports failures inside the `__INSTALL_RESULT__` facts line as
 `cliError` strings, not via exit code — catalogued in the `-install` section
