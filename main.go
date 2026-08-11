@@ -120,7 +120,7 @@ func main() {
 		install   = flag.Bool("install", false, "Ensure CLI present, prune old versions, print JSON facts")
 		socket    = flag.String("socket", "", "Path to the daemon's Unix socket")
 		tokenFile = flag.String("token-file", "", "Read auth token from this file at startup, then unlink it. Used by the daemonized child so the token never appears in /proc/<pid>/environ.")
-		tokenFd   = flag.Int("token-fd", -1, "Read the auth token from this already-open file descriptor (e.g. 0 for stdin) instead of -token-file — no temp file touches disk. -serve only.")
+		tokenFd   = flag.Int("token-fd", -1, "Read the auth token from this already-open file descriptor (e.g. 0 for stdin) instead of -token-file — this handoff never touches disk. -serve only.")
 
 		metricsAddr = flag.String("metrics-addr", "", "If set (e.g. 127.0.0.1:9090), serve Prometheus counters at /metrics on this address. Off by default; -serve only. Counts only, no auth — bind to a trusted interface.")
 

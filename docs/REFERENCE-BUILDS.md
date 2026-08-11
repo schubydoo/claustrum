@@ -85,9 +85,10 @@ wire methods; `server.capabilities` is authoritative on the method set.
 binary analysis confirmed that the off-wire deltas are real source, and not
 compiler noise. The forensics stay outside the committed tree. Provenance: Claude
 Desktop for Linux 1.18286.0 (2026-07-02) embeds a manifest that pins this SHA,
-and it calls 15 of the 19 methods. It does not call `process.killAndWait`,
-`server.version` or `server.shutdown` — the `--stop` CLI drives shutdown, and
-the client reads the version from `--version` CLI stdout, not over RPC. A
+and it calls 15 of the 19 methods. The uncalled four include
+`process.killAndWait`, `server.version` and `server.shutdown` — the `--stop`
+CLI drives shutdown, and the client reads the version from `--version` CLI
+stdout, not over RPC. A
 capture of a real session will therefore not exercise the new method, and the
 synthetic battery stays the gate for it. That client also bears on D1's trust
 boundary: `--install` carries `--cli-checksum` on the `--cli-url` download. A
