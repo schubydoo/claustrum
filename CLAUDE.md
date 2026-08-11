@@ -89,7 +89,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   CONTRIBUTING.md → Changesets.
 - **A changeset body is ONE line.** knope renders any multi-line body as a
   `####` heading block instead of a bullet. That breaks the changelog, and it
-  already broke it in 1.7.2 and 1.7.3. Fold every detail into the single
+  already did so in 1.7.2 and 1.7.3. Fold every detail into the single
   sentence. `scripts/lint_changesets.py` gates this in CI and pre-commit.
 - Before a PR, make all four of these true: `gofmt -l .` prints nothing,
   `go vet ./...` is clean, `golangci-lint run` is clean, and
@@ -134,14 +134,13 @@ The JSON-RPC surface is identical on every OS. Full internals →
   method rejects an unauthenticated request `-32001`.
 - **The daemon persists its token to `daemon.token` (mode `0600`) beside the
   socket.** It writes the file atomically at startup and unlinks it on graceful
-  shutdown (`tokenpersist.go`). A client can thus reconnect after the
-  `-token-file` was unlinked, or after the `-token-fd` pipe closed. The fixed
+  shutdown (`tokenpersist.go`). A client can thus reconnect after the daemon
+  unlinked the `-token-file`, or after the `-token-fd` pipe closed. The fixed
   name and the socket-dir location *are* the reconnect contract, so they are
   deliberately not configurable. **Do not "fix"** the known parity caveats
-  without making the change an opt-in divergence. There are two such caveats:
-  two daemons in one dir collide on the file, and on Windows `0600` is not an
-  owner-only DACL. See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token
-  persistence.
+  without making the change an opt-in divergence: two daemons in one dir
+  collide on the file, and on Windows `0600` is not an owner-only DACL. See
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
 - **A connection's requests dispatch concurrently.** Replies can return out of
   order, which matches the reference. Do not serialize them. The per-request
   goroutine **recovers from panics**. It replies with
@@ -172,9 +171,10 @@ Seven divergences are opt-in flags — D3 (`max-extract-bytes`), D4
 (`cli-probe-timeout`), D12 (`cli-download-timeout`), D14 (`libc-probe-timeout`)
 — and **all seven default OFF: that is the parity position.** The reference
 applies no such cap, deadline, or refusal at any input the probe could reach,
-so any non-off default would fail an operation the reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
-**`claustrum.conf` key is the reachable knob**, not the flag. Each disabled
-state bypasses its limiter entirely (Part A's "never simplify" rule).
+so any non-off default would fail an operation the reference completes. Claude
+Desktop owns the `-serve` / `-install` argv, so the **`claustrum.conf` key is
+the reachable knob**, not the flag. Each disabled state bypasses its limiter
+entirely (Part A's "never simplify" rule).
 
 **D5's deadline gates a destructive path.** `git.worktree_remove` treats a
 failed git as permission to delete `worktreePath`. Therefore never read a fired

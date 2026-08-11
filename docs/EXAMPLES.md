@@ -148,8 +148,8 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"files.extract_tar\",
 The daemon also refuses a `destDir` that *is or contains* your home directory.
 This is the `wipesHomeDir` guard, not only the absolute/non-root check that the
 comment shows. `extract_tar` deletes `destDir` before it extracts, and `"~"`
-expands to `$HOME`. Thus the home guard is what stops a bare `"~"` from deleting
-your home directory. See [DIVERGENCES.md](DIVERGENCES.md) (D2).
+expands to `$HOME`. Thus the home guard stops a bare `"~"` from deleting your
+home directory. See [DIVERGENCES.md](DIVERGENCES.md) (D2).
 
 ## Shut it down
 
@@ -169,18 +169,17 @@ claustrum -install -cli-dir "$D/cli" -cli-version 1.2.3 \
 ```
 
 `cliError` is `omitempty`. A successful install omits it. It appears above only
-because `https://example.invalid` is unreachable. The download thus fails, and
-the error goes into the field. `libc` is `glibc` on a glibc linux host and `musl`
-on a musl linux host. Off linux, `libc` is empty (`""`).
+because `https://example.invalid` is unreachable. The download thus fails.
+`libc` is `glibc` on a glibc linux host and `musl` on a musl linux host. Off
+linux, `libc` is empty (`""`).
 
 ## Operational knobs (claustrum-only, all off the wire)
 
 ### Token on a file descriptor
 
-Start the daemon with the token on a file descriptor instead of a temp file.
-You then write no token file (fd `0` also works, to pipe the token on stdin).
-The daemon itself still persists `daemon.token` beside the socket
-([PROTOCOL.md](PROTOCOL.md)):
+Start the daemon with the token on a file descriptor instead of a temp file
+(fd `0` also works, to pipe the token on stdin). The daemon itself still
+persists `daemon.token` beside the socket ([PROTOCOL.md](PROTOCOL.md)):
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-fd 3 3< <(printf '%s' "$TOK")
@@ -213,8 +212,7 @@ CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/
 ### `-keep-children`
 
 Use `-keep-children` (CT-2, POSIX-only) to let child processes survive a daemon
-restart. A graceful shutdown leaves the spawned children running and does not
-kill them. Thus the children outlive a daemon restart or upgrade.
+restart or upgrade. A graceful shutdown leaves the spawned children running.
 
 - **Off by default** — a shutdown kills the whole process tree.
 - **No re-adoption** — the new daemon does not re-adopt the survivors. Reconcile

@@ -6,8 +6,8 @@ holds three parts: a local CLI-version manager, a process supervisor, and a
 JSON-RPC multiplexer with a replay buffer over an `AF_UNIX` socket.
 
 Wire-level probes of the reference binary captured a behavioral contract, and
-the daemon is built to that contract. This project copied no code. It also
-transcribed no decompiler output into the implementation (see
+the daemon implements it. This project copied no code. It also transcribed no
+decompiler output into the implementation (see
 [`NOTICE`](https://github.com/schubydoo/claustrum/blob/main/NOTICE)).
 
 !!! note "The one hard rule"
@@ -24,8 +24,9 @@ The daemon is one binary. A flag selects the mode:
 - **`-bridge`** — a simple relay between stdio and the socket. An SSH session
   attaches to this mode.
 - **`-install`** — the installer. It downloads the CLI, verifies the SHA-256,
-  extracts the zstd archive, and prunes old CLI versions. (A local `-cli-zst`
-  blob is verified only when a checksum is supplied — [D1](DIVERGENCES.md#d1).)
+  extracts the zstd archive, and prunes old CLI versions. (It verifies a local
+  `-cli-zst` blob only when the caller supplies a checksum —
+  [D1](DIVERGENCES.md#d1).)
 - **`-stop`** / **`-version`** — `-stop` sends `server.shutdown`. `-version`
   reports the build.
 
@@ -58,14 +59,14 @@ Thus no extra changes the frames that a client sees. For details, see the
 ## Protocol extension
 
 claustrum has one opt-in protocol extension that clients can see. It is a
-deliberate addition, and not a reference behavior. A client that passes
+deliberate addition, not a reference behavior. A client that passes
 `"wantPid":true` to `process.spawn` or `process.reattach` gets `pid` and
 `startTime` in the result. These two fields let the client detect PID reuse
 (CT-1).
 
-A client that does not opt in sees byte-identical frames. Thus the hard rule
-above still holds. The [divergence catalog](DIVERGENCES.md) records this
-extension as a deliberate divergence.
+A client that does not opt in sees byte-identical frames. The
+[divergence catalog](DIVERGENCES.md) records this extension as a deliberate
+divergence.
 
 ## Where to go next
 

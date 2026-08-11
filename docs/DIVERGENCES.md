@@ -9,7 +9,6 @@ The [catalog table](#catalog) is the fast path. It gives one row per divergence,
 with its default, how to activate it, and its reopen trigger. The
 [rules](#how-we-decide-the-rules) come first for a reason: they decide which
 shape an entry may take. The three shapes are always-on, opt-in, and conditional.
-Taste does not decide the shape; the rules decide it.
 
 Per-method wire facts (params, result field order, error strings) live in
 [PROTOCOL.md](PROTOCOL.md). Driver-claim provenance lives in
@@ -220,8 +219,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Why always-on.** D2 satisfies both halves of rule 3 clause (a). The
   reference's behaviour is unrecoverable data loss: measured, it destroys home on
   *both* methods. And no honest caller has a legitimate *use* for deleting home. A
-  caller can still reach that path by accident, which is the point. What no honest
-  caller has is a use for it.
+  caller can still reach that path by accident, which is the point.
 - **Not a security boundary.** The socket + token already grant `process.spawn`
   ([SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
   This guard stops the accidental, generated, or mistyped path. It does not
@@ -242,8 +240,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   (`io.Copy(out, tr)`).
 - **Why opt-in.** Measured, the reference completes a 629 MB extraction with no cap
   at the pin. That is a frame, not an unbounded wait, so a non-zero default fails an
-  extraction the reference completes, and Desktop owns the argv. This cap cleared
-  clause (a)'s not-a-frame half; the who-pays cost flips it (rule 4).
+  extraction the reference completes, and Desktop owns the argv (rule 4).
 - **Reopen trigger.** An operator's cap refusing a legitimate extraction, or the
   default letting a size bomb through in normal use.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md); `methods_files.go`. Measurement:
@@ -260,7 +257,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   the key.
 - **Why a flag and not a narrower predicate.** `/dev/null` and `/dev/zero` are
   indistinguishable by mode, so any predicate that admits the first also admits the
-  second. It must be all or nothing.
+  second.
 - **The default has two measured costs** (both are the reference's own behaviour
   too). First, a writerless FIFO parks a request goroutine *and* a descriptor:
   linux reserves the fd number before it blocks, which draws down `RLIMIT_NOFILE`,
@@ -288,7 +285,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   A killed repo-detection call answers `isRepo:false`.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key; disabled bypasses `context.WithTimeout`.
-- **A timeout must never be read as "git refused."** `git.worktree_remove` treats a
+- **Never read a timeout as "git refused."** `git.worktree_remove` treats a
   failed git as permission to delete `worktreePath`, so claustrum keeps the timeout
   reply separate from the failure arm. The cap is also softer than it reads:
   `CombinedOutput` waits on git's output pipe, so a git that leaves a surviving

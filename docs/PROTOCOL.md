@@ -83,8 +83,8 @@ on the token source, because it uses the in-memory token. The write is also
 best-effort: the daemon logs a failure (`[daemon] failed to persist token: …`) and
 continues. Reference build `5db5e4a` added this, and claustrum matches it. It is
 off the JSON-RPC wire, because the file sits beside the socket, not on it. An
-unclean kill (`SIGKILL`/crash) leaves the file behind, because removal runs only on
-the graceful `server.shutdown` / `SIGTERM` path.
+unclean kill (`SIGKILL`/crash) leaves the file behind, because the daemon removes
+it only on the graceful `server.shutdown` / `SIGTERM` path.
 
 The fixed name + socket-dir location are the reconnect contract, so they are not
 configurable. Two parity caveats match the reference, and claustrum deliberately
@@ -112,9 +112,9 @@ give up early when the child dies. Both behaviours are measured against `5db5e4a
 
 On a timeout the launcher prints
 `claustrum: timeout waiting for daemon to accept on <socket>` to **stderr** and
-exits `1`. On success it prints the ready banner and exits `0`. The practical
-guarantee is this: after a successful `-serve`, the socket accepts connections
-before `-serve` returns. (Measurement detail condensed out of this reference.)
+exits `1`. On success it prints the ready banner and exits `0`. After a successful
+`-serve`, the socket accepts connections before `-serve` returns. (Measurement
+detail condensed out of this reference.)
 
 ### Daemon log (`remote-server.log`)
 
@@ -157,11 +157,11 @@ The fixed name and location are the deployment contract, not configurable.
 
 The reply's `id` is the request's id **decoded and re-encoded**. It is not the
 bytes the client sent. The daemon accepts any JSON value and returns it
-canonicalized: a number round-trips through a float64 (`1.0` → `1`, `1e2` → `100`,
-`12345678901234567890` → `12345678901234567000`), and an object comes back with its
-keys sorted (`{"b":1,"a":2}` → `{"a":2,"b":1}`). Integers, strings, arrays and
-`null` are unchanged. A client that matches replies by a comparison of the id
-*text* must compare the decoded value instead.
+canonicalized: a number round-trips through a float64
+(`1.0` → `1`, `1e2` → `100`, `12345678901234567890` → `12345678901234567000`), and
+an object comes back with its keys sorted (`{"b":1,"a":2}` → `{"a":2,"b":1}`).
+Integers, strings, arrays and `null` are unchanged. A client that matches replies
+by the id *text* must compare the decoded value instead.
 
 Results are **ordered structs, never maps** — field order below is the wire
 contract.
@@ -181,8 +181,7 @@ contract.
 ### Error-string catalogue
 
 Every method-level error string, verbatim, in one place. The per-method sections
-below give the trigger and the result shape. This table is the searchable index.
-Codes are `-32602` unless noted.
+below give the trigger and the result shape. Codes are `-32602` unless noted.
 
 | namespace / context | error string | code / notes |
 |---|---|---|
@@ -226,18 +225,18 @@ below.
 
 ### Handler panic recovery
 
-The per-request goroutine wraps dispatch in `recover()`. A panic in any handler is
-therefore caught, and it does not crash the daemon. The reply is
+The per-request goroutine wraps dispatch in `recover()`. It therefore catches a
+panic in any handler, and the daemon does not crash. The reply is
 `{"error":{"code":-32603,"message":"recovered panic: <v>"}}`, and the daemon logs
 `[Server] recovered panic: method=<m> id=<id>: <v>`.
 
 **This frame is claustrum's own. It is not a statement about the wire.** No input
 is known to reach a handler panic: extensive fuzzing found none, and each of
 claustrum's own panic sites is an unreachable stdlib guard or an
-already-bounds-guarded slice. Therefore no client is known to provoke it. `-32603`
-is the JSON-RPC 2.0 *Internal error* code. The message prefix, log line, and id
-rendering are claustrum's own conventions. They are documented so that an operator
-who sees the frame knows what it means. They are not a compatibility guarantee.
+already-bounds-guarded slice. `-32603` is the JSON-RPC 2.0 *Internal error* code.
+The message prefix, log line, and id rendering are claustrum's own conventions.
+They are documented so that an operator who sees the frame knows what it means.
+They are not a compatibility guarantee.
 
 ### Validation precedence
 
@@ -247,7 +246,6 @@ params**:
 - The daemon validates auth *before* the `jsonrpc` version. A request that fails
   both (no `auth` *and* a missing/wrong `jsonrpc`) reports `-32001 Unauthorized`,
   not the version error.
-- The daemon enforces `jsonrpc == "2.0"` only after auth passes.
 - **`server.shutdown` is the exception.** The daemon skips auth for it entirely, so
   a shutdown frame that is missing both `auth` and `jsonrpc` gets `-32600 Invalid
   JSON-RPC version` (the version gate still applies), and the daemon stays up.
@@ -255,8 +253,8 @@ params**:
 ### Params presence and typing
 
 Every `files.*` / `git.*` / `process.*` method requires a `params` object.
-`server.*` methods take no `params`. A mistyped `params` on a `server.*` method is
-ignored, and the call succeeds.
+`server.*` methods take no `params`. The daemon ignores a mistyped `params` on a
+`server.*` method, and the call succeeds.
 
 - **Absent** `params` → `-32602 Invalid params`. The daemon checks this *after*
   method existence, so an unknown method is `-32601` regardless.
@@ -332,8 +330,8 @@ error text. The expanded string also appears in the error text of `files.stat`,
 `process.spawn`. Two places do *not* carry the spelling: `files.list` entry paths
 are re-joined, and `git.info`'s `root` comes from git's own output. On a
 trailing-separator spelling the difference is a change of *verdict*. POSIX
-`stat("f.txt/")` gives `ENOTDIR`, so removal of the separator turns a `-32603`
-error frame into a success frame. Pinned by ids 15, 16, 18 and 19 of
+`stat("f.txt/")` gives `ENOTDIR`, so when the daemon removes the separator, a
+`-32603` error frame becomes a success frame. Pinned by ids 15, 16, 18 and 19 of
 `testdata/socket_tilde_expansion.golden.json` (id 17 sends `~//` to `files.list`
 and is documentary only).
 
@@ -402,19 +400,17 @@ Reference `7c2f88d` added `process.killAndWait` between `process.kill` and
 - Size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`.
 - **`maxBytes` absent, `0`, or negative → the cap is `262144` (256 KiB), not
   "unlimited".** A file of 262144 bytes reads, and a file of 262145 bytes errors.
-  The daemon honors a positive `maxBytes` verbatim, above or below the default. The
-  256 KiB figure is a fallback, not a ceiling. The cap uses the stat size. On linux
-  that size is `0` for every non-regular kind, so the cap never bounds a FIFO,
-  socket or device on either binary.
+  The daemon honors a positive `maxBytes` verbatim, above or below the default.
+  The cap uses the stat size. On linux that size is `0` for every non-regular
+  kind, so the cap never bounds a FIFO, socket or device on either binary.
 - **Non-regular files: opt-in guard D4.** Off by default (parity): the reference
   reads `/dev/null` as `{"content":"","exists":true}` and blocks on a writerless
   FIFO, and it refuses neither. Set `-files-read-regular-only` (or the
   `files-read-regular-only` config key), and every non-regular path answers
   `-32602 files.read: not a regular file` — a frame the reference never produces.
   The predicate is `Mode().IsRegular()`. It is whole and not narrowable, because
-  `/dev/null` and `/dev/zero` are indistinguishable by mode. See the table below.
-  The full measurement and rationale are in
-  [`DIVERGENCES.md`](DIVERGENCES.md) → D4.
+  `/dev/null` and `/dev/zero` are indistinguishable by mode. The full measurement
+  and rationale are in [`DIVERGENCES.md`](DIVERGENCES.md) → D4.
 
   | path | reference **=** claustrum at the default | with `-files-read-regular-only` |
   |---|---|---|
@@ -568,8 +564,8 @@ fails the request:
   file that the manifest does not name. Without the manifest, the daemon copies no
   untracked file.
 - **The daemon skips symlinks.** **Manifest entries must be plain filenames.** The
-  daemon silently does not copy a path that `git ls-files` C-quotes (tab, quote,
-  backslash, non-ASCII). This is a reference limitation reproduced for parity.
+  daemon silently skips a path that `git ls-files` C-quotes (tab, quote, backslash,
+  non-ASCII). This is a reference limitation reproduced for parity.
 - **The copies do not preserve the source mode.** The daemon creates them
   0666-subject-to-umask, so an executable arrives non-executable and a `0400`
   source is widened. This matches the reference. Treat the manifest as a way to
@@ -611,7 +607,7 @@ fails the request:
   `$GIT_DIR/worktrees/<name>`, so `git worktree list` still shows it, and a later
   create at the same path fails `already registered`. Neither binary prunes.
 - **`gitTimeout` (D5) does NOT authorise the deletion**, and this whole timeout arm
-  is off by default and needs an opt-in. When armed it answers
+  is off by default. When armed it answers
   `{"success":false,"error":"git worktree remove timed out after <dur>; no cleanup
   was attempted, and git may have partially removed the worktree"}` and removes
   nothing. See [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
@@ -726,8 +722,8 @@ reports the outcome as a *result*. An unknown id is not an error:
 - The daemon replays buffered frames with **seq > fromSeq** (exclusive) to this
   connection, **transfers** the frame stream to it, and then returns the result.
 - **The transfer is exclusive.** A reattach does not add a second listener. Any
-  connection that was attached before stops receiving frames for that process. This
-  is what makes a resume safe.
+  connection attached before stops receiving frames for that process. This is what
+  makes a resume safe.
 - **The cut is by `seq`, not by wall-clock.** The transfer point is the reported
   `lastSeq`. The old connection can still receive a frame `<= lastSeq` slightly
   after the reply, and never one above it. No frame reaches the old connection and
@@ -774,8 +770,8 @@ reports the outcome as a *result*. An unknown id is not an error:
   daemon emits the frame, `process.reattach` still reports `running: true`. The flag
   flips with the frame, not with the process.
 - Each stdout/stderr frame carries at most one **32 KiB** read. Larger output splits
-  across frames. Reassemble it by a concatenation of `data` in `seq` order. The
-  exact frame *boundaries* depend on pipe scheduling and are not stable. Only the
+  across frames. Concatenate `data` in `seq` order to reassemble it. The exact
+  frame *boundaries* depend on pipe scheduling and are not stable. Only the
   reassembled bytes are stable.
 - The replay buffer has a **bound of 16 MiB per process**. The daemon counts the
   **serialized frame including its trailing newline** (the bytes a subscriber would
@@ -921,9 +917,9 @@ missing or unreachable daemon is a silent no-op (exit `0`, no output), and `-sto
 reads and discards any reply. A current daemon sends no reply, because
 `server.shutdown` answers nothing and closes.
 
-**`-stop` unlinks the socket path on every exit path**, including the path where
-the dial fails and it reached no daemon. This matches the reference, and it is
-destructive on two arms: a stale socket with no listener, and a **live foreign
+**`-stop` unlinks the socket path on every exit path**, including when the dial
+fails and it reached no daemon. This matches the reference, and it is destructive
+on two arms: a stale socket with no listener, and a **live foreign
 listener**. `-stop` removes a socket path it did not create, so a new client that
 dials by path cannot reach that listener afterwards. The listener itself stays
 alive. A conditional unlink would be a divergence, so it is a candidate not taken —
@@ -1061,10 +1057,11 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   `latest`, `1.0.86+build.5` — all measured as accepted).
 - **D7: must not collide with the orphan sweep.** The sweep claims `.fetch-*` and
   `*.zst`, and it runs after *every* attempted install. `-cli-version .fetch-x` or
-  `1.0.zst` would therefore install and then be deleted moments later. Both binaries
-  finish with an empty cli-dir and no `cliError`, and report a success that
-  installed nothing. claustrum now answers `cli version "…" collides with the
-  install temp sweep`. The sweep predicate and this check share one definition.
+  `1.0.zst` would therefore install, and the sweep would delete it moments later.
+  Both binaries finish with an empty cli-dir and no `cliError`, and report a
+  success that installed nothing. claustrum now answers `cli version "…" collides
+  with the install temp sweep`. The sweep predicate and this check share one
+  definition.
 
 **Staging and cleanup:**
 - claustrum stages the CLI at **`<cli-dir>/.fetch-<random>`** (mode `0600`) and
@@ -1082,13 +1079,14 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
 - **claustrum consumes the `-cli-zst` blob once decompression succeeds**, and not
   only on a fully successful install. An extracted CLI that fails the runnability
   check still costs the blob. claustrum leaves a blob that is not valid zstd alone.
-- **An occupied `cliPath` is cleared, and is not fatal.** `rename(2)` refuses to
-  replace a non-empty directory, so claustrum removes it first. It removes it only
-  when `cliPath` is a directory; a regular file, which an installed CLI always is,
-  is replaced atomically. If claustrum cannot remove it → `clearing stale dir at
-  <path>: <err>`. If the staging file has vanished → `staging file vanished before
-  install: <err>`, and `cliPath` stays untouched. The end states match the reference
-  for every destination shape (absent, regular file, non-empty directory).
+- **claustrum clears an occupied `cliPath`, and that is not fatal.** `rename(2)`
+  refuses to replace a non-empty directory, so claustrum removes it first. It
+  removes it only when `cliPath` is a directory; a regular file, which an
+  installed CLI always is, is replaced atomically. If claustrum cannot remove it →
+  `clearing stale dir at <path>: <err>`. If the staging file has vanished →
+  `staging file vanished before install: <err>`, and `cliPath` stays untouched. The
+  end states match the reference for every destination shape (absent, regular
+  file, non-empty directory).
 - **The orphan sweep** removes `.fetch-*` and `*.zst` entries with one `os.Remove`
   per entry. It therefore clears files and *empty* directories, and leaves a
   non-empty `.fetch-dir/`. Unrelated files survive. The sweep runs whenever an

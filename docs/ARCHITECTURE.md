@@ -33,7 +33,7 @@ The JSON-RPC surface is the same on every OS. Only the `*_unix.go` /
 
 ### 1 · CLI-version manager (`-install`)
 
-This mode makes sure that the pinned `claude` CLI is present under `-cli-dir`.
+This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
 
 - If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
   exits 0), claustrum keeps it as it is. The probe has **no deadline by
@@ -63,7 +63,7 @@ This mode makes sure that the pinned `claude` CLI is present under `-cli-dir`.
 
 Claustrum daemonizes itself: it detaches from the controlling session and, on
 Unix, reparents to init. It then opens the `0600` socket. It supervises the
-children that it spawns.
+children it spawns.
 
 - The auth token arrives through `-token-file` or `-token-fd`. With
   `-token-file`, claustrum reads the file once and then unlinks it. With
@@ -92,7 +92,7 @@ children that it spawns.
   through a second `acceptLoop` over the same `serveConn`. Before it accepts on
   the pipe, the daemon publishes the chosen pipe name to `rpc.pipe` beside the
   socket. It removes `rpc.pipe` on graceful shutdown. The transport is strictly
-  additive — the socket path is unchanged.
+  additive — the socket path does not change.
 - The daemon makes **no** outbound network connections. It opens no inbound
   listener beyond the socket unless the operator opts into `-metrics-addr` (TCP)
   or `-listen-pipe` (a local, owner-only Windows named pipe).
@@ -134,8 +134,8 @@ A driver (Claude Desktop, or your own tool such as clauster) typically:
 
 **Go's standard library, not claustrum's code**, produces some of claustrum's
 byte-identical output. The reference is also a Go program, so its stdlib does
-unpaid parity work for us. That is a real asset. It is also worth stating
-clearly, because inherited agreement is agreement nobody verified.
+unpaid parity work for us. That is a real asset, but inherited agreement is
+agreement nobody verified.
 
 Two things follow. First, a Go upgrade that changes an escaping rule moves the
 wire, and this repo shows no diff. Second, a reimplementation in another language
@@ -168,7 +168,7 @@ the same route.
 `inherited_encoding_test.go` and `inherited_encoding_unix_test.go` pin these
 rules against regression. For the encode-side rules they assert escape TEXT
 (`\ufffd`). For the decode-side rule they assert the U+FFFD CHARACTER. Which side
-substituted is exactly what distinguishes them.
+substituted is what distinguishes them.
 
 ## Operational logging
 
@@ -181,8 +181,8 @@ The logging mirrors the reference daemon:
   are the `[Server]` connection lifecycle, the `[process.Manager]` spawn, stream
   and exit lines, `[shellenv]`, and `[frameSink]`.
 - These logs are not part of the JSON-RPC wire contract. Claustrum still keeps
-  them byte-faithful (sans timestamp/PID), so anything tailing the daemon log
-  behaves identically.
+  them byte-faithful (minus the timestamp and PID), so anything tailing the
+  daemon log behaves identically.
 
 A tiny leveled logger
 ([`logging.go`](https://github.com/schubydoo/claustrum/blob/main/logging.go))
@@ -197,8 +197,7 @@ sits in front of those calls so operators can quiet the daemon:
 - The threshold **defaults to `debug`**. An unset (or unrecognized) value emits
   exactly what the daemon always has. A higher threshold drops everything below
   the chosen level.
-- The level is purely a local diagnostic knob. It touches stderr only, never the
-  wire.
+- The level is a local diagnostic knob. It touches stderr only, never the wire.
 
 ## `__INSTALL_RESULT__` facts
 
@@ -222,8 +221,8 @@ sits in front of those calls so operators can quiet the daemon:
 
 **`cliError` strings.** Every error that `ensureCLI` returns lands here
 verbatim, **with the wrapping prefix that its phase adds**. That is the form a
-driver actually sees. The table below groups the strings by phase and quotes no
-count. Re-derive a count from `ensureCLI` if you need one:
+driver sees. The table below groups the strings by phase and quotes no count.
+Re-derive a count from `ensureCLI` if you need one:
 
 | phase | string |
 |---|---|
@@ -252,16 +251,16 @@ Go error.
 
 These strings are not free-form diagnostics: the driver reads them. A change to a
 row's wording — or a new guard whose error pre-empts a row — can change what a
-user is told even when no JSON-RPC frame moves (D10's opt-in cap is the worked
+user sees even when no JSON-RPC frame moves (D10's opt-in cap is the worked
 example). How the driver classifies them is a third-binary claim; see
 [Driver claims and their provenance](#driver-claims-and-their-provenance).
 
 ## Driver claims and their provenance
 
 A few facts these docs rely on describe a **third binary** — the driver (Claude
-Desktop, or a tool such as clauster). They describe neither the reference daemon
-nor claustrum. The reference-vs-claustrum harness compares two daemons, so it
-cannot confirm or refute any of these facts. Three of them are load-bearing:
+Desktop, or a tool such as clauster). The reference-vs-claustrum harness compares
+two daemons, so it cannot confirm or refute any of these facts. Three of them are
+load-bearing:
 
 - **`cliError` classification** — the driver reads `cliError` as text. It
   surfaces a disk-full-shaped message as a terminal error with an actionable
@@ -275,8 +274,8 @@ cannot confirm or refute any of these facts. Three of them are load-bearing:
   field to pick which CLI build to download.
 - **"Desktop owns the argv"** — an operator has no way to influence the daemon's
   argv. A divergence reachable only through an argv flag is therefore unreachable
-  on Desktop-driven hosts. This premise is what lets D3, D4, D5, D10, D11, D12 and
-  D14 be opt-in. It also defines the "(opt-in)" tagging convention (a flag **and**
+  on Desktop-driven hosts. This premise lets D3, D4, D5, D10, D11, D12 and D14 be
+  opt-in. It also defines the "(opt-in)" tagging convention (a flag **and**
   a config key, since the config key is the reachable knob).
 
 "The harness cannot confirm or refute it" is not "unverifiable". Each claim has a
