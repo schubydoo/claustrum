@@ -278,3 +278,60 @@ func TestWireLogRecordsPIDSoConnIDsStaySeparable(t *testing.T) {
 		}
 	}
 }
+
+// The RPC "auth" member is not the only credential a frame carries. Claude
+// Desktop drives the remote CLI through process.spawn and puts
+// CLAUDE_CODE_OAUTH_TOKEN in params.env, so before this guard an untruncated
+// capture held a live OAuth token in plaintext. The frame below is the shape
+// measured on a live capture 2026-08-13.
+//
+// The scopes assertion is the other half: over-redaction would quietly destroy
+// the diagnostic value a capture exists for, so a key that merely LOOKS adjacent
+// to a secret must survive verbatim.
+func TestWireLogRedactsSpawnEnvCredentialsButKeepsDiagnosticKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wire.jsonl")
+	w, err := newWireLog(path, 0) // untruncated: the capture mode that leaked
+	if err != nil {
+		t.Fatalf("newWireLog: %v", err)
+	}
+	const oauth = "sk-ant-oat01-EXAMPLE-do-not-log"
+	const scopes = "user:inference user:profile"
+	w.record(1, "in", []byte(`{"jsonrpc":"2.0","id":60,"method":"process.spawn","params":{`+
+		`"command":"/home/u/.claude/remote/ccd-cli/2.1.227",`+
+		`"env":{"CLAUDE_CODE_OAUTH_TOKEN":"`+oauth+`","CLAUDE_CODE_OAUTH_SCOPES":"`+scopes+`",`+
+		`"ANTHROPIC_API_KEY":"ak-EXAMPLE","ANTHROPIC_BASE_URL":"https://api.anthropic.com"}}}`))
+	w.Close()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read capture: %v", err)
+	}
+	if strings.Contains(string(raw), oauth) {
+		t.Fatalf("capture contains the OAuth token:\n%s", raw)
+	}
+	if strings.Contains(string(raw), "ak-EXAMPLE") {
+		t.Fatalf("capture contains the API key:\n%s", raw)
+	}
+
+	recs := readWireLog(t, path)
+	if len(recs) != 1 {
+		t.Fatalf("got %d records, want 1", len(recs))
+	}
+	body, _ := recs[0]["body"].(map[string]interface{})
+	params, _ := body["params"].(map[string]interface{})
+	env, ok := params["env"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("params.env missing from record: %v", body)
+	}
+	for _, k := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"} {
+		if got := env[k]; got != "[redacted]" {
+			t.Errorf("env[%s] = %v, want %q — the KEY must survive so a capture still shows the var was set", k, got, "[redacted]")
+		}
+	}
+	if got := env["CLAUDE_CODE_OAUTH_SCOPES"]; got != scopes {
+		t.Errorf("env[CLAUDE_CODE_OAUTH_SCOPES] = %v, want %q verbatim — over-redaction destroys what a capture is for", got, scopes)
+	}
+	if got := env["ANTHROPIC_BASE_URL"]; got != "https://api.anthropic.com" {
+		t.Errorf("env[ANTHROPIC_BASE_URL] = %v, want the URL verbatim", got)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -132,15 +133,48 @@ func (w *wireLog) record(connID uint64, dir string, b []byte) {
 	}
 }
 
-// redact returns a copy of v with the auth token removed and long strings
-// summarized. It must never return the token: a capture is a plain file, and the
-// token is equivalent to shell access on this host (see SECURITY.md).
+// secretKeyParts name the substrings that mark a map key as carrying a
+// credential. The RPC "auth" member is not the only secret a frame can hold:
+// Claude Desktop drives the remote CLI through process.spawn and passes
+// CLAUDE_CODE_OAUTH_TOKEN in params.env, so an untruncated capture stores a live
+// OAuth credential in plaintext — measured on a live capture 2026-08-13.
+//
+// Matching is on the key, case-insensitively, at any depth. No result struct or
+// request field claustrum defines is named for any of these (rpc.go's "auth" is
+// the repo's only such json tag), so the rule can only ever fire on a key the
+// CLIENT chose — an env var name or free-form JSON — which is the target.
+var secretKeyParts = []string{"token", "secret", "password", "passwd", "credential", "api_key"}
+
+// isSecretKey reports whether a map key names a credential. "auth" is matched
+// exactly; the rest are substrings, so CLAUDE_CODE_OAUTH_TOKEN is caught while
+// CLAUDE_CODE_OAUTH_SCOPES — which is diagnostic, not secret — is not.
+func isSecretKey(k string) bool {
+	lower := strings.ToLower(k)
+	if lower == "auth" {
+		return true
+	}
+	for _, part := range secretKeyParts {
+		if strings.Contains(lower, part) {
+			return true
+		}
+	}
+	return false
+}
+
+// redact returns a copy of v with credentials removed and long strings
+// summarized. It must never return the auth token: a capture is a plain file, and
+// the token is equivalent to shell access on this host (see SECURITY.md).
+//
+// ⚠️ Redaction is BY KEY, not by value. A secret that a client embeds inside a
+// free-form string — a process.stdin payload, a --settings JSON blob — is not
+// caught, because finding it would mean scanning every byte of every stream frame.
+// A capture is therefore still sensitive: treat it as such rather than as scrubbed.
 func (w *wireLog) redact(v interface{}) interface{} {
 	switch t := v.(type) {
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(t))
 		for k, val := range t {
-			if k == "auth" {
+			if isSecretKey(k) {
 				// Recorded as present-but-withheld rather than dropped, so a
 				// capture still shows WHICH requests carried a token — that is
 				// the interesting part (server.shutdown carries none).
