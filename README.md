@@ -138,7 +138,8 @@ Claustrum-only, off the wire: `CLAUSTRUM_LOG_LEVEL` raises the leveled-stderr lo
 (logging is always on); `-metrics-addr` opts into a local Prometheus `/metrics` endpoint (no
 listener exists without it); `-keep-children` (CT-2, POSIX-only) leaves spawned children running
 across a graceful shutdown; `-listen-pipe` (CT-5, Windows-only) additionally serves the same
-JSON-RPC over a named pipe. All are off by default.
+JSON-RPC over a named pipe; `-wire-log` (CT-3) appends every JSON-RPC frame to a file for
+diagnostics, redacting credentials by key only. All are off by default.
 
 Seven flags opt into a **deliberate divergence** from the reference — each is off by default and
 has a matching `claustrum.conf` key (the reachable knob when Claude Desktop owns the argv, a

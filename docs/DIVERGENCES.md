@@ -587,7 +587,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   unknown keys and invalid values, which keeps the format forward-compatible and
   fail-safe. Precedence: **explicit CLI flag > config > default**.
 - **Keys mirror the flags:** `version-override`, `keep-children`, `metrics-addr`,
-  `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10), `cli-probe-timeout`
+  `wire-log`, `wire-log-max-string`, `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10), `cli-probe-timeout`
   (D11), `cli-download-timeout` (D12), `libc-probe-timeout` (D14), `git-timeout`
   (D5), `files-read-regular-only` (D4). Durations use `time.ParseDuration`, which
   rejects a bare number, except zero; zero parses in unboundedly many spellings and

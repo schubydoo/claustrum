@@ -808,6 +808,8 @@ limit".
 | `-token-file <p>` | — | — | token source (read once, unlinked) | -serve |
 | `-token-fd <n>` | — | `-1` | token from an open fd (claustrum-only) | -serve |
 | `-metrics-addr <a>` | `metrics-addr` | `""` | Prometheus `/metrics` (claustrum-only, CT-3) | -serve |
+| `-wire-log <p>` | `wire-log` | `""` | append every JSON-RPC frame to `<p>` as JSONL (claustrum-only, CT-3) | -serve |
+| `-wire-log-max-string <n>` | `wire-log-max-string` | `512` | bytes kept per string value; `0` = whole payloads | -serve |
 | `-keep-children` | `keep-children` | off | survive restart, POSIX-only (CT-2) | -serve |
 | `-listen-pipe` | `listen-pipe` | off | named-pipe transport, Windows-only (CT-5) | -serve |
 | `-max-extract-bytes <n>` | `max-extract-bytes` | `0` | cap `files.extract_tar` bytes (D3) | -serve |
@@ -829,8 +831,8 @@ flag value, or the default, stands.
 
 ```text
 claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] \
-          [-keep-children] [-listen-pipe] [-max-extract-bytes <n>] [-git-timeout <dur>] \
-          [-files-read-regular-only]
+          [-keep-children] [-listen-pipe] [-wire-log <p> [-wire-log-max-string <n>]] \
+          [-max-extract-bytes <n>] [-git-timeout <dur>] [-files-read-regular-only]
 ```
 
 The binary self-daemonizes (it reparents to init / detaches), extracts the
@@ -876,6 +878,16 @@ before it spawns.
   (connections, spawns/exits, reattaches, stream/stdin bytes). Off by default, with
   no listener. It counts only, and has **no auth**, so bind it to loopback. The
   daemon logs a bind failure (`[Server] metrics: …`), which is non-fatal.
+- **`-wire-log <p>` (CT-3).** Appends every JSON-RPC frame, both directions, to `<p>`
+  as JSONL — a diagnostic side channel that observes already-marshaled bytes, so a
+  daemon logging emits frames byte-identical to one not. Off by default (no file, no
+  work). `-wire-log-max-string <n>` bounds each string value (default 512; `0` keeps
+  whole payloads, needed to reconstruct a session from stream frames). Credentials
+  are redacted **by key** — the `auth` member and token-like env keys — but a secret
+  a client embeds inside a payload string is not caught, so redaction is best-effort,
+  not a guarantee. A capture holds whatever the client sent (`files.write`,
+  `process.stdin`, the spawn env), so it is written `0600` and belongs somewhere
+  private. An unopenable path is fatal, not silent.
 - **`-keep-children` (CT-2; POSIX-only).** Off by default, so a graceful shutdown
   kills the whole child tree. When set, it leaves spawned children running across a
   restart, and logs `[Server] -keep-children: leaving <n> running child process(es)
