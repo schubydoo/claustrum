@@ -2,7 +2,7 @@ module github.com/schubydoo/claustrum
 
 go 1.25.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require github.com/klauspost/compress v1.19.2
 
