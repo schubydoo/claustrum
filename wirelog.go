@@ -100,6 +100,12 @@ func (w *wireLog) record(connID uint64, dir string, b []byte) {
 	if err := json.Unmarshal(b, &body); err != nil {
 		// A frame that is not JSON is still worth recording — it is exactly the
 		// kind of thing a capture exists to catch. Keep it as a bounded string.
+		//
+		// This raw fallback is NOT key-redacted: redaction (see redact) walks a
+		// decoded JSON object by key, and an unparseable frame has none. That is
+		// the same by-key boundary the docs state — a credential outside a
+		// recognised key is not caught (SECURITY.md). A real credential rides in a
+		// well-formed, dispatchable frame, so it takes the redacted branch below.
 		rec["parse_error"] = err.Error()
 		rec["raw"] = w.clampString(string(b))
 	} else {
