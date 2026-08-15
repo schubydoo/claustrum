@@ -202,12 +202,12 @@ func isSecretKey(k string) bool {
 // on a lone backslash. A terminated value cannot reach the $ branch because
 // `[^"\\]` stops at its closing quote first, so a single pass covers both.
 //
-// Two residues stay best-effort by construction, both narrower than any real
-// credential shape and both still covered by the map walk in shape mode: a key
-// written with a JSON escape (`"token"`), and a secret whose VALUE is not a
-// string (`"token":123`, or an object). A credential is a high-entropy string
+// Two residues stay best-effort, both still masked by the map walk in shape mode:
+// a key name spelled with a JSON unicode escape (the map walk decodes it to the
+// real key, the raw text keeps the escape), and a secret whose VALUE is not a
+// string (`"token":123`, or an object). A real credential is a high-entropy string
 // under a literal key in every frame the probe has seen, so this is not widened
-// into fragile value-type or unescaping logic.
+// into fragile unescaping or value-type logic.
 var rawSecretRe = regexp.MustCompile(
 	`(?i)("(?:auth|[^"]*(?:` + strings.Join(secretKeyParts, "|") +
 		`)[^"]*)"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|\\?$)`)
