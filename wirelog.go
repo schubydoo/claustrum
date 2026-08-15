@@ -312,10 +312,13 @@ func openWireLog(opt wireLogOptions) (*wireLog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("wire log %s: %w", opt.path, err)
 	}
-	if opt.maxString == 0 {
+	// Log against the normalised bound (w.maxStr), not opt.maxString: newWireLog
+	// clamps a negative to 0 (unlimited), so a negative CLI value must read as
+	// "untruncated" rather than "strings over -5 bytes truncated".
+	if w.maxStr == 0 {
 		logInfof("[WireLog] recording JSON-RPC frames to %s (untruncated)", opt.path)
 	} else {
-		logInfof("[WireLog] recording JSON-RPC frames to %s (strings over %d bytes truncated)", opt.path, opt.maxString)
+		logInfof("[WireLog] recording JSON-RPC frames to %s (strings over %d bytes truncated)", opt.path, w.maxStr)
 	}
 	return w, nil
 }
