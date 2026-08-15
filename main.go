@@ -124,6 +124,10 @@ func main() {
 
 		metricsAddr = flag.String("metrics-addr", "", "If set (e.g. 127.0.0.1:9090), serve Prometheus counters at /metrics on this address. Off by default; -serve only. Counts only, no auth — bind to a trusted interface.")
 
+		wireLogMax = flag.Int64("wire-log-max-string", wireLogMaxString, "With -wire-log, keep at most this many `bytes` of any single string value; longer ones are replaced by a prefix plus their true length. 0 keeps every string whole — needed to reconstruct a session, since the remote CLI's whole stdio protocol rides inside process stream payloads, but the capture then grows at the rate of that session's output. -serve only; the wire-log-max-string key in claustrum.conf is the reachable way to set it.")
+
+		wireLogPath = flag.String("wire-log", "", "If set, append every JSON-RPC frame (both directions) to this `path` as JSONL. Off by default; -serve only. Pure side channel — frames on the wire are byte-identical either way. Credentials are redacted by key (the auth member and token-like env vars) and long strings are truncated, but a capture still contains whatever the client sent, so it is set 0600 on every open and belongs somewhere private. Claude Desktop owns the argv, so the wire-log key in claustrum.conf is usually the reachable way to set this.")
+
 		keepChildren = flag.Bool("keep-children", false, "On graceful shutdown, leave spawned child processes running instead of killing them, so they survive a daemon restart/upgrade. Off by default; -serve only; POSIX-only (ignored with a warning on Windows, where children are confined to a Job Object that the OS terminates on daemon exit). The new daemon does not re-adopt the survivors.")
 
 		maxExtract = flag.Int64("max-extract-bytes", 0, "Cap the total uncompressed bytes files.extract_tar will write, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the max-extract-bytes key in claustrum.conf is usually the reachable way to set this.")
@@ -225,6 +229,10 @@ func main() {
 		filesReadRegularOnly = cfg.effectiveFilesReadRegularOnly(*readRegularOnly, cliSet["files-read-regular-only"])
 		runServe(resolveSocket(), *tokenFile, *tokenFd,
 			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
+			wireLogOptions{
+				path:      cfg.effectiveWireLog(*wireLogPath, cliSet["wire-log"]),
+				maxString: int(cfg.effectiveWireLogMaxString(*wireLogMax, cliSet["wire-log-max-string"])),
+			},
 			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]),
 			cfg.effectiveListenPipe(*listenPipe, cliSet["listen-pipe"]))
 		return

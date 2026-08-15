@@ -53,6 +53,14 @@ type config struct {
 	listenPipe *bool
 	// metricsAddr mirrors -metrics-addr; "" means "not set in the file".
 	metricsAddr string
+	// wireLog mirrors -wire-log; "" means "not set in the file". Claude Desktop
+	// owns the -serve argv, so this key is the reachable way to turn a capture on
+	// for a daemon Desktop launches — the same reason metrics-addr has one.
+	wireLog string
+	// wireLogMaxString mirrors -wire-log-max-string; nil means "not set in the
+	// file". 0 keeps every string whole, which is what reconstructing a session
+	// needs — the CLI's entire stdio protocol rides inside those payloads.
+	wireLogMaxString *int64
 	// maxExtractBytes mirrors -max-extract-bytes; nil means "not set in the file".
 	// This is the key that matters most in practice: the cap applies to
 	// files.extract_tar, whose caller is Claude Desktop, which owns the argv — so
@@ -159,6 +167,20 @@ func applyConfigKey(cfg *config, key, val string) {
 		// can't reach a log line or listen call; net.Listen validates the rest.
 		if val != "" && isPrintableASCII(val) {
 			cfg.metricsAddr = val
+		}
+	case "wire-log":
+		// A filesystem path for the opt-in frame capture. Same printable-ASCII
+		// gate as metrics-addr; os.OpenFile validates the rest, and a path that
+		// cannot be opened fails the boot rather than recording nothing.
+		if val != "" && isPrintableASCII(val) {
+			cfg.wireLog = val
+		}
+	case "wire-log-max-string":
+		// Bytes of one string value kept verbatim in a capture; 0 means keep
+		// everything. Negative and unparseable values are rejected, the same
+		// shape as the byte caps above.
+		if n, err := strconv.ParseInt(val, 10, 64); err == nil && n >= 0 {
+			cfg.wireLogMaxString = &n
 		}
 	// ⚠️ These two cases are deliberately written out in full rather than sharing
 	// a body. They arrived on separate branches whose conflict hunks share the
@@ -282,6 +304,33 @@ func (cfg config) effectiveListenPipe(cliVal, cliSet bool) bool {
 func (cfg config) effectiveMetricsAddr(cliVal string, cliSet bool) string {
 	if !cliSet && cfg.metricsAddr != "" {
 		return cfg.metricsAddr
+	}
+	return cliVal
+}
+
+// effectiveWireLog applies the same precedence for -wire-log, then ~-expands the
+// resolved path. The config key is sold as the reachable knob for a Desktop-launched
+// daemon, so `wire-log = ~/wire.jsonl` is a natural thing to write; without
+// expansion os.OpenFile fails with ENOENT and, because an unopenable path is
+// deliberately fatal, a diagnostic knob would stop the daemon booting. expandPath
+// only rewrites the path (no delete), so wipesHomeDir does not apply.
+func (cfg config) effectiveWireLog(cliVal string, cliSet bool) string {
+	p := cliVal
+	if !cliSet && cfg.wireLog != "" {
+		p = cfg.wireLog
+	}
+	if p == "" {
+		return ""
+	}
+	return expandPath(p)
+}
+
+// effectiveWireLogMaxString applies the same precedence for -wire-log-max-string.
+// Unlike the byte caps, 0 here is a meaningful setting ("keep everything"), not
+// "disabled" — so a config value of 0 must win over the non-zero default.
+func (cfg config) effectiveWireLogMaxString(cliVal int64, cliSet bool) int64 {
+	if !cliSet && cfg.wireLogMaxString != nil {
+		return *cfg.wireLogMaxString
 	}
 	return cliVal
 }
