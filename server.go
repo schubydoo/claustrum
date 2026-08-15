@@ -156,14 +156,17 @@ func (c *conn) writeJSON(v interface{}) error {
 // subscribers be marshaled once (see managedProc.emit) instead of once per conn.
 // Write does not mutate b, so the same slice is safe to hand to every conn.
 func (c *conn) writeLine(b []byte) error {
-	// Stream and replay frames. A frame fanned out to N subscribers is recorded
-	// once per conn, which is intended: the capture is a per-connection view.
-	c.wlog.record(c.id, "out", b)
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	if c.closed {
 		return net.ErrClosed
 	}
+	// Recorded here — under wmu, past the closed check, just before the write — so
+	// the capture holds only frames that actually go on the wire, in wire order.
+	// Recording before the lock would let two writers log in one order and write
+	// in another, and would log a frame the closed check then drops. A frame
+	// fanned out to N subscribers is recorded once per conn: a per-connection view.
+	c.wlog.record(c.id, "out", b)
 	_, err := c.nc.Write(b)
 	return err
 }
@@ -181,15 +184,15 @@ func (c *conn) writeResponse(v interface{}) {
 		return
 	}
 	b = append(b, '\n')
-	// Recorded before the write, and from the already-marshaled bytes, so the
-	// capture is exactly what goes on the wire. record neither retains nor
-	// mutates b.
-	c.wlog.record(c.id, "out", b)
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	if c.closed {
 		return
 	}
+	// Recorded under wmu, past the closed check, just before the write, so the
+	// capture is exactly what goes on the wire — in wire order, and never a frame
+	// the closed check dropped. record neither retains nor mutates b.
+	c.wlog.record(c.id, "out", b)
 	n, err := c.nc.Write(b)
 	if err != nil {
 		logDebugf("[Server] writeResponse: wrote %d/%d bytes, error=%v", n, len(b), err)
@@ -335,6 +338,16 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	if err != nil {
 		return nil, err
 	}
+	// Close the capture if boot fails after this point. The daemon exits on any
+	// such error, but the in-process boot tests — and any future caller that
+	// recovers from a boot failure — would otherwise leak the open file. Close is
+	// nil-safe, so this is a no-op when logging is off.
+	ok := false
+	defer func() {
+		if !ok {
+			wlog.Close()
+		}
+	}()
 	_ = os.Remove(socket) // clear a stale socket
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
@@ -385,6 +398,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 
 	// Optional additional Windows named-pipe listener (opt-in via -listen-pipe).
 	s.enablePipe(socket, listenPipe)
+	ok = true // boot succeeded; keep the capture open (server owns it now)
 	return s, nil
 }
 

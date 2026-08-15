@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // wireLog is the opt-in JSON-RPC frame recorder behind -wire-log. It is a pure
@@ -89,25 +91,28 @@ func (w *wireLog) record(connID uint64, dir string, b []byte) {
 	if w == nil {
 		return
 	}
+	// Outbound frames reach record with the framing '\n' appended; inbound do not.
+	// Strip one so n and the recorded frame mean the same in both directions.
+	frame := b
+	if n := len(frame); n > 0 && frame[n-1] == '\n' {
+		frame = frame[:n-1]
+	}
 	rec := map[string]interface{}{
 		"ts":   time.Now().UTC().Format(time.RFC3339Nano),
 		"pid":  w.pid,
 		"conn": connID,
 		"dir":  dir,
-		"n":    len(b),
+		"n":    len(frame),
 	}
 	var body interface{}
-	if err := json.Unmarshal(b, &body); err != nil {
+	if err := json.Unmarshal(frame, &body); err != nil {
 		// A frame that is not JSON is still worth recording — it is exactly the
-		// kind of thing a capture exists to catch. Keep it as a bounded string.
-		//
-		// This raw fallback is NOT key-redacted: redaction (see redact) walks a
-		// decoded JSON object by key, and an unparseable frame has none. That is
-		// the same by-key boundary the docs state — a credential outside a
-		// recognised key is not caught (SECURITY.md). A real credential rides in a
-		// well-formed, dispatchable frame, so it takes the redacted branch below.
+		// kind of thing a capture exists to catch. Keep it as a bounded string,
+		// with credential values masked textually: the by-key map walk cannot run
+		// on bytes that do not parse, and a truncated or control-char frame can
+		// still carry the auth member verbatim.
 		rec["parse_error"] = err.Error()
-		rec["raw"] = w.clampString(string(b))
+		rec["raw"] = w.clampString(redactRawSecrets(string(frame)))
 	} else {
 		if m, ok := body.(map[string]interface{}); ok {
 			if v, ok := m["method"].(string); ok {
@@ -120,7 +125,18 @@ func (w *wireLog) record(connID uint64, dir string, b []byte) {
 				rec["is_error"] = true
 			}
 		}
-		rec["body"] = w.redact(body)
+		if w.maxStr == 0 {
+			// Reconstruct mode: nothing is truncated, so keep the frame verbatim
+			// (credential values masked) as raw. Unlike the decoded body it
+			// preserves field order and number formatting — which for this daemon
+			// IS the wire contract a capture exists to check (results.go).
+			rec["raw"] = redactRawSecrets(string(frame))
+		} else {
+			// Shape mode: a per-value-truncated, by-key-redacted decode. json.Marshal
+			// sorts map keys, so body is a NORMALISED view — field order is not
+			// significant here; use -wire-log-max-string=0 when order matters.
+			rec["body"] = w.redact(body)
+		}
 	}
 	line, err := json.Marshal(rec)
 	if err != nil {
@@ -167,6 +183,24 @@ func isSecretKey(k string) bool {
 	return false
 }
 
+// rawSecretRe masks the string VALUE of a credential-named key in raw frame text.
+// It is the textual analogue of isSecretKey, built from the same key names, for
+// the two paths the by-key map walk cannot reach: a frame that fails to parse,
+// and the maxString=0 raw field (which is kept verbatim to preserve wire order).
+// Best-effort by construction — it matches "<key>":"<value>" pairs and cannot see
+// a secret that is not a recognised key's string value. Key match mirrors
+// isSecretKey exactly: "auth" whole, the rest as substrings (so OAUTH_TOKEN is
+// caught and OAUTH_SCOPES is not).
+var rawSecretRe = regexp.MustCompile(
+	`(?i)("(?:auth|[a-z0-9_]*(?:` + strings.Join(secretKeyParts, "|") +
+		`)[a-z0-9_]*)"\s*:\s*)"(?:[^"\\]|\\.)*"`)
+
+// redactRawSecrets replaces the value of each credential-named key with
+// [redacted], leaving the surrounding bytes — and their order — untouched.
+func redactRawSecrets(s string) string {
+	return rawSecretRe.ReplaceAllString(s, `${1}"[redacted]"`)
+}
+
 // redact returns a copy of v with credentials removed and long strings
 // summarized. It must never return the auth token: a capture is a plain file, and
 // the token is equivalent to shell access on this host (see SECURITY.md).
@@ -210,6 +244,11 @@ func (w *wireLog) clampString(s string) string {
 	limit := w.maxStr
 	if limit <= 0 || len(s) <= limit {
 		return s
+	}
+	// Back off to a rune boundary so the kept prefix is the exact leading bytes the
+	// client sent, not a split rune json.Marshal would rewrite to U+FFFD.
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
 	}
 	return s[:limit] + "…[truncated, " + strconv.Itoa(len(s)) + " bytes total]"
 }

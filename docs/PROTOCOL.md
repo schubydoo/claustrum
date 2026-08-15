@@ -887,7 +887,11 @@ before it spawns.
   a client embeds inside a payload string is not caught, so redaction is best-effort,
   not a guarantee. A capture holds whatever the client sent (`files.write`,
   `process.stdin`, the spawn env), so it is written `0600` and belongs somewhere
-  private. An unopenable path is fatal, not silent.
+  private. Each record carries the frame as a decoded `body` (structured, per-value
+  truncated — a normalized view, so field order is not significant) or, at
+  `-wire-log-max-string=0`, as `raw` (the frame verbatim, preserving the field order
+  and number formatting that *is* the wire contract). An unopenable path is fatal,
+  not silent.
 - **`-keep-children` (CT-2; POSIX-only).** Off by default, so a graceful shutdown
   kills the whole child tree. When set, it leaves spawned children running across a
   restart, and logs `[Server] -keep-children: leaving <n> running child process(es)

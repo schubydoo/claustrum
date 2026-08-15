@@ -578,6 +578,62 @@ func TestEffectiveMaxExtractBytesNormalisesNegative(t *testing.T) {
 	}
 }
 
+// effectiveWireLog ~-expands the resolved path. The config key is sold as the
+// reachable knob for a Desktop-launched daemon, so `wire-log = ~/wire.jsonl` is a
+// natural thing to write, and an unexpanded ~ would fail the (deliberately fatal)
+// open and stop the daemon booting.
+func TestEffectiveWireLogExpandsTilde(t *testing.T) {
+	cfg := config{wireLog: "~/captures/wire.jsonl"}
+	got := cfg.effectiveWireLog("", false)
+	if strings.HasPrefix(got, "~") {
+		t.Errorf("effectiveWireLog did not expand ~: %q", got)
+	}
+	if !strings.HasSuffix(got, filepath.Join("captures", "wire.jsonl")) {
+		t.Errorf("effectiveWireLog = %q, want it to end in captures/wire.jsonl", got)
+	}
+	// An explicit CLI value wins and is also expanded.
+	if got := cfg.effectiveWireLog("~/cli.jsonl", true); strings.HasPrefix(got, "~") {
+		t.Errorf("CLI value not expanded: %q", got)
+	}
+	// Off stays off (no path, no expansion).
+	if got := (config{}).effectiveWireLog("", false); got != "" {
+		t.Errorf("empty path became %q, want empty", got)
+	}
+}
+
+func TestParseConfig_WireLog(t *testing.T) {
+	if got := parse(t, "wire-log = /var/log/wire.jsonl").wireLog; got != "/var/log/wire.jsonl" {
+		t.Errorf("wireLog = %q, want the path", got)
+	}
+	if got := parse(t, "wire-log =").wireLog; got != "" {
+		t.Errorf("empty wire-log accepted: %q", got)
+	}
+	i64p := func(n int64) *int64 { return &n }
+	cases := []struct {
+		name, body string
+		want       *int64
+	}{
+		{"zero keeps everything", "wire-log-max-string = 0", i64p(0)},
+		{"positive kept", "wire-log-max-string = 256", i64p(256)},
+		{"negative rejected", "wire-log-max-string = -1", nil},
+		{"non-numeric rejected", "wire-log-max-string = lots", nil},
+		{"empty rejected", "wire-log-max-string =", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parse(t, tc.body).wireLogMaxString
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("wireLogMaxString = %d, want unset (rejected)", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("wireLogMaxString unset, want %d", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("wireLogMaxString = %d, want %d", *got, *tc.want)
+			}
+		})
+	}
+}
+
 func TestParseConfig_GitTimeout(t *testing.T) {
 	cases := []struct {
 		name, body string

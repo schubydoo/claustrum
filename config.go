@@ -308,12 +308,21 @@ func (cfg config) effectiveMetricsAddr(cliVal string, cliSet bool) string {
 	return cliVal
 }
 
-// effectiveWireLog applies the same precedence for -wire-log.
+// effectiveWireLog applies the same precedence for -wire-log, then ~-expands the
+// resolved path. The config key is sold as the reachable knob for a Desktop-launched
+// daemon, so `wire-log = ~/wire.jsonl` is a natural thing to write; without
+// expansion os.OpenFile fails with ENOENT and, because an unopenable path is
+// deliberately fatal, a diagnostic knob would stop the daemon booting. expandPath
+// only rewrites the path (no delete), so wipesHomeDir does not apply.
 func (cfg config) effectiveWireLog(cliVal string, cliSet bool) string {
+	p := cliVal
 	if !cliSet && cfg.wireLog != "" {
-		return cfg.wireLog
+		p = cfg.wireLog
 	}
-	return cliVal
+	if p == "" {
+		return ""
+	}
+	return expandPath(p)
 }
 
 // effectiveWireLogMaxString applies the same precedence for -wire-log-max-string.
