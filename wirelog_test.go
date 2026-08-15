@@ -500,6 +500,37 @@ func TestWireLogFlagsErrorFrames(t *testing.T) {
 	}
 }
 
+// A credential key carrying a byte outside [A-Za-z0-9_] — a hyphen, a dot, the
+// HTTP-header spellings a client can send — is masked by the map walk (isSecretKey
+// runs strings.Contains over the whole key), so the raw path must mask it too, or
+// the same frame redacts weaker at -wire-log-max-string=0 (the reconstruct mode)
+// than at the default. The key arm's [^"] class mirrors isSecretKey.
+func TestWireLogRawFallbackRedactsNonWordKeys(t *testing.T) {
+	cases := map[string]string{
+		"hyphen":    `{"method":"process.spawn","params":{"env":{"AUTH-TOKEN":"HY-SECRET"}}}`,
+		"dot":       `{"api.token":"DOT-SECRET"}`,
+		"x-prefix":  `{"x-auth-token":"XP-SECRET"}`,
+		"mixed-sep": `{"AWS_SECRET.KEY":"AWS-SECRET"}`,
+	}
+	for name, frame := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "w.jsonl")
+			w, err := newWireLog(path, 0) // reconstruct mode: the weaker path
+			if err != nil {
+				t.Fatalf("newWireLog: %v", err)
+			}
+			w.record(1, "in", []byte(frame))
+			w.Close()
+			b, _ := os.ReadFile(path)
+			for _, secret := range []string{"HY-SECRET", "DOT-SECRET", "XP-SECRET", "AWS-SECRET"} {
+				if strings.Contains(frame, secret) && strings.Contains(string(b), secret) {
+					t.Fatalf("raw mode leaked a non-word-key credential:\n%s", b)
+				}
+			}
+		})
+	}
+}
+
 // A frame truncated INSIDE a credential value (a client dying mid-write, which the
 // read loop delivers as an unterminated final token) has no closing quote, so the
 // mask must also fire on a value that runs to end-of-frame — bare or on a lone

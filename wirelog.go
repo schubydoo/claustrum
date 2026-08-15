@@ -187,19 +187,30 @@ func isSecretKey(k string) bool {
 // It is the textual analogue of isSecretKey, built from the same key names, for
 // the two paths the by-key map walk cannot reach: a frame that fails to parse,
 // and the maxString=0 raw field (which is kept verbatim to preserve wire order).
-// Best-effort by construction — it matches "<key>":"<value>" pairs and cannot see
-// a secret that is not a recognised key's string value. Key match mirrors
-// isSecretKey exactly: "auth" whole, the rest as substrings (so OAUTH_TOKEN is
-// caught and OAUTH_SCOPES is not).
+//
+// The key arm uses `[^"]` — the closing quote is the fence — so it mirrors
+// isSecretKey's whole-key substring match rather than a narrower character class:
+// `auth-token`, `x-auth-token`, `api.token` are masked here just as the map walk
+// masks them, and an *embedded* \"api_key\": inside a payload string still does not
+// match, because that value's opening quote is escaped and the value arm's literal
+// `"` fails. "auth" stays a whole-key match; the rest are substrings (OAUTH_TOKEN
+// caught, OAUTH_SCOPES not).
 //
 // The value arm closes on either the terminating quote OR end-of-frame (`\\?$`),
 // so a value truncated mid-write — the read loop hands an unterminated final token
 // to record before anything validates it — is masked too, whether it ends bare or
 // on a lone backslash. A terminated value cannot reach the $ branch because
 // `[^"\\]` stops at its closing quote first, so a single pass covers both.
+//
+// Two residues stay best-effort by construction, both narrower than any real
+// credential shape and both still covered by the map walk in shape mode: a key
+// written with a JSON escape (`"token"`), and a secret whose VALUE is not a
+// string (`"token":123`, or an object). A credential is a high-entropy string
+// under a literal key in every frame the probe has seen, so this is not widened
+// into fragile value-type or unescaping logic.
 var rawSecretRe = regexp.MustCompile(
-	`(?i)("(?:auth|[a-z0-9_]*(?:` + strings.Join(secretKeyParts, "|") +
-		`)[a-z0-9_]*)"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|\\?$)`)
+	`(?i)("(?:auth|[^"]*(?:` + strings.Join(secretKeyParts, "|") +
+		`)[^"]*)"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|\\?$)`)
 
 // redactRawSecrets replaces the value of each credential-named key with
 // [redacted], leaving the surrounding bytes — and their order — untouched.
