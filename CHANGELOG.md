@@ -4,6 +4,14 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.9.0 (2026-08-15)
+
+[Compare with 1.8.0](https://github.com/schubydoo/claustrum/compare/v1.8.0...v1.9.0)
+
+### Features
+
+- The daemon can now append every JSON-RPC frame in both directions to a JSONL capture file for diagnostics, opt-in via `-wire-log` (with `-wire-log-max-string` bounding how much of each string value is kept, 0 for whole payloads) or the matching `wire-log` / `wire-log-max-string` keys in `claustrum.conf`, off by default, with credentials redacted by key only (best-effort — a secret inside a payload string is not caught); it is a pure side channel, so frames on the wire are byte-identical whether or not it is on. ([#268](https://github.com/schubydoo/claustrum/pull/268))
+
 ## 1.8.0 (2026-08-09)
 
 [Compare with 1.7.3](https://github.com/schubydoo/claustrum/compare/v1.7.3...v1.8.0)
