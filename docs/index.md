@@ -50,7 +50,7 @@ Thus no extra changes the frames that a client sees. For details, see the
 - **Wire log** — `-wire-log <path>` appends every JSON-RPC frame to a JSONL file
   for diagnostics, off by default and with no effect on the wire. It captures frame
   payloads and redacts credentials by key only, so a capture is sensitive — see
-  [PROTOCOL.md](PROTOCOL.md) and [SECURITY.md](../SECURITY.md).
+  [PROTOCOL.md](PROTOCOL.md).
 - **Token handoff** — `-token-fd` supplies the token on a file descriptor, so
   you write no token file. The daemon still persists `daemon.token` beside the
   socket (see [PROTOCOL.md](PROTOCOL.md)).
