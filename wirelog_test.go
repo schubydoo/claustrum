@@ -311,6 +311,32 @@ func TestWireLogFileIsOwnerOnly(t *testing.T) {
 	}
 }
 
+// The 0600 must hold on APPEND too, not only creation: O_APPEND onto a file an
+// operator pre-created (or an earlier run left) keeps that file's mode, which under
+// the usual umask is world-readable. newWireLog re-chmods on every open.
+func TestWireLogTightensPreExistingFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX mode bits are not an owner-only DACL on Windows")
+	}
+	path := filepath.Join(t.TempDir(), "wire.jsonl")
+	// A world-readable file left in place, as `touch` under a 022 umask produces.
+	if err := os.WriteFile(path, []byte("{\"pre\":1}\n"), 0o644); err != nil {
+		t.Fatalf("pre-create: %v", err)
+	}
+	w, err := newWireLog(path, wireLogMaxString) // appends onto the existing path
+	if err != nil {
+		t.Fatalf("newWireLog: %v", err)
+	}
+	defer w.Close()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Errorf("mode = %04o, want 0600 — append onto a pre-existing file must tighten it", got)
+	}
+}
+
 // Config precedence mirrors -metrics-addr: CLI wins when explicitly set,
 // otherwise the file value applies.
 func TestEffectiveWireLogPrecedence(t *testing.T) {

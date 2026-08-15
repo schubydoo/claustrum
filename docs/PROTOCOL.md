@@ -886,7 +886,7 @@ before it spawns.
   are redacted **by key** — the `auth` member and token-like env keys — but a secret
   a client embeds inside a payload string is not caught, so redaction is best-effort,
   not a guarantee. A capture holds whatever the client sent (`files.write`,
-  `process.stdin`, the spawn env), so it is written `0600` and belongs somewhere
+  `process.stdin`, the spawn env), so it is forced to `0600` on every open (append included) and belongs somewhere
   private. Each record carries the frame as a decoded `body` (structured, per-value
   truncated — a normalized view, so field order is not significant) or, at
   `-wire-log-max-string=0`, as `raw` (the frame verbatim, preserving the field order

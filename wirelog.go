@@ -65,15 +65,26 @@ type wireLogOptions struct {
 	maxString int
 }
 
-// newWireLog opens path for append, creating it 0600: a capture contains whatever
-// the client sent, which for files.write or process.stdin is arbitrary user data.
-// Append rather than truncate so a daemon restart during a capture session (the
-// reference respawns instantly) does not silently discard the earlier half — which
-// is exactly why each record carries pid; see the field's comment.
+// newWireLog opens path for append and forces it to 0600: a capture contains
+// whatever the client sent, which for files.write or process.stdin is arbitrary
+// user data. Append rather than truncate so a daemon restart during a capture
+// session (the reference respawns instantly) does not silently discard the earlier
+// half — which is exactly why each record carries pid; see the field's comment.
+//
+// The 0600 on OpenFile applies ONLY when O_CREATE makes the file; appending onto an
+// existing path — a restart mid-capture, or a file an operator pre-created — keeps
+// that file's mode, which under the usual 022 umask is 0644. Redaction is by-key
+// and best-effort, so a capture can hold a credential nothing masked; the mode is
+// load-bearing, not tidiness. Chmod re-asserts it on every open, non-fatal like the
+// socket's chmod (and, like the socket, POSIX-only — not an owner-only DACL on
+// Windows).
 func newWireLog(path string, maxString int) (*wireLog, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		logWarnf("[WireLog] chmod %s 0600: %v", path, err)
 	}
 	if maxString < 0 {
 		maxString = 0

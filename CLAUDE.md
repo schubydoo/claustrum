@@ -51,7 +51,7 @@ One binary; a flag selects the mode (`main.go`): `-serve`, `-bridge`, `-stop`,
 | `bridge.go` | `-bridge`: a stdio↔socket relay — what SSH attaches to; it injects no auth |
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`, default emit-everything); the level tag goes *before* the `[Component]` prefixes, so existing greps keep matching |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` — a listener exists **only** when `-metrics-addr` is set; counting is always-on atomics |
-| `wirelog.go` | opt-in `-wire-log` JSON-RPC frame capture (CT-3) — a pure side channel over already-marshaled bytes, off by default; redacts credentials **by key** only (not payload contents), writes `0600` |
+| `wirelog.go` | opt-in `-wire-log` JSON-RPC frame capture (CT-3) — a pure side channel over already-marshaled bytes, off by default; redacts credentials **by key** only (not payload contents), forces `0600` on every open |
 | `install.go` | `-install`: CLI download / verify (SHA-256) / extract (zstd) / prune — a `-cli-url` download is verified unconditionally; the local `-cli-zst` blob only when a `-cli-checksum` is supplied (D1) |
 | `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups / Windows Job Objects, login-shell PATH, the POSIX-only `-keep-children`) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5) |
 

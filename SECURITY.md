@@ -92,7 +92,7 @@ enables it.
 | `-metrics-addr` | off | all | Adds an inbound HTTP listener serving Prometheus counters only, with **no authentication** — bind it to loopback. |
 | `-listen-pipe` | off | Windows | Serves the same JSON-RPC over a Windows named pipe (same in-band token auth) for clients that cannot use the `AF_UNIX` socket; owner-only and local-only (see below). |
 | `-keep-children` | off | POSIX | Adds no listener or auth path; children run as the daemon's user. On graceful shutdown they are left running and orphaned (reparented to init), so the operator owns their eventual cleanup. |
-| `-wire-log` | off | all | Appends every JSON-RPC frame to a file for diagnostics — the inverse of `-metrics-addr`: it captures frame payloads (`files.write`, `process.stdin`, the spawn env; truncated at 512 bytes unless `-wire-log-max-string=0`). Credentials are redacted **by key** only, so a secret inside a payload string is not caught. The file is `0600`; treat it as sensitive. |
+| `-wire-log` | off | all | Appends every JSON-RPC frame to a file for diagnostics — the inverse of `-metrics-addr`: it captures frame payloads (`files.write`, `process.stdin`, the spawn env; truncated at 512 bytes unless `-wire-log-max-string=0`). Credentials are redacted **by key** only, so a secret inside a payload string is not caught. The file is forced to `0600` on every open (append included); treat it as sensitive. |
 | `wantPid` (CT-1) | off | all | When an already-authenticated caller opts in, the result carries the child `pid` plus an opaque daemon `startTime` (for PID-reuse / orphan detection, not a credential) — no new secret. |
 
 Details for the two surfaces that need more than a row:
