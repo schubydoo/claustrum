@@ -500,6 +500,40 @@ func TestWireLogFlagsErrorFrames(t *testing.T) {
 	}
 }
 
+// A frame truncated INSIDE a credential value (a client dying mid-write, which the
+// read loop delivers as an unterminated final token) has no closing quote, so the
+// mask must also fire on a value that runs to end-of-frame — bare or on a lone
+// backslash — not only on a fully quoted one.
+func TestWireLogRawFallbackRedactsTruncatedValue(t *testing.T) {
+	const token = "SECRET-TOKEN-do-not-log"
+	cases := map[string]string{
+		"eof mid-value":  `{"jsonrpc":"2.0","method":"files.write","auth":"` + token,
+		"lone backslash": `{"jsonrpc":"2.0","method":"files.write","auth":"` + token + `\`,
+	}
+	for name, frame := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "wire.jsonl")
+			w, err := newWireLog(path, wireLogMaxString)
+			if err != nil {
+				t.Fatalf("newWireLog: %v", err)
+			}
+			w.record(1, "in", []byte(frame))
+			w.Close()
+
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read capture: %v", err)
+			}
+			if strings.Contains(string(b), token) {
+				t.Fatalf("truncated-value frame stored the token verbatim:\n%s", b)
+			}
+			if raw, _ := readWireLog(t, path)[0]["raw"].(string); !strings.Contains(raw, `"auth":"[redacted]"`) {
+				t.Errorf("auth value not masked in truncated raw: %q", raw)
+			}
+		})
+	}
+}
+
 // n counts the frame body, not the framing newline, in both directions — otherwise
 // throughput read out of a capture is biased by one byte per outbound frame.
 func TestWireLogNExcludesFramingNewline(t *testing.T) {

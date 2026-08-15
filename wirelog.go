@@ -191,9 +191,15 @@ func isSecretKey(k string) bool {
 // a secret that is not a recognised key's string value. Key match mirrors
 // isSecretKey exactly: "auth" whole, the rest as substrings (so OAUTH_TOKEN is
 // caught and OAUTH_SCOPES is not).
+//
+// The value arm closes on either the terminating quote OR end-of-frame (`\\?$`),
+// so a value truncated mid-write — the read loop hands an unterminated final token
+// to record before anything validates it — is masked too, whether it ends bare or
+// on a lone backslash. A terminated value cannot reach the $ branch because
+// `[^"\\]` stops at its closing quote first, so a single pass covers both.
 var rawSecretRe = regexp.MustCompile(
 	`(?i)("(?:auth|[a-z0-9_]*(?:` + strings.Join(secretKeyParts, "|") +
-		`)[a-z0-9_]*)"\s*:\s*)"(?:[^"\\]|\\.)*"`)
+		`)[a-z0-9_]*)"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|\\?$)`)
 
 // redactRawSecrets replaces the value of each credential-named key with
 // [redacted], leaving the surrounding bytes — and their order — untouched.
