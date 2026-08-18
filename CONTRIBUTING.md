@@ -38,6 +38,10 @@ it for an in-progress commit with `git commit --no-verify`.
   against golden fixtures in `testdata/` — CI gates this on every PR. The
   cross-binary validation battery that diffs frames against the reference daemon
   lives in `scratch/` (gitignored — see Compatibility below).
+
+  **Add tests for new or changed behavior in the same PR.** CI enforces this with
+  a 95% statement-coverage floor (`coverage` job in `.github/workflows/ci.yml`) —
+  the suite currently sits near 98%, so an untested change shows up as a drop.
 - **Compatibility** — if you touch the wire surface (`rpc.go`, `methods_*.go`,
   `process.go`, `results.go`), re-run the validation battery in `scratch/` and
   confirm frames stay **byte-identical**. A change that intentionally diverges
