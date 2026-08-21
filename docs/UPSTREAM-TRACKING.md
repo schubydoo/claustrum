@@ -275,6 +275,39 @@ traps that matter when you tell drift from expected:
   binaries), and there is **no libc probe off linux at all** — so a `libc`
   difference off linux is not D14.
 
+## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
+
+Reference drift is not the only way the wire can move. claustrum inherits some of
+its frame bytes straight from Go's `encoding/json` (see
+[docs/ARCHITECTURE.md → "Inherited wire bytes"](ARCHITECTURE.md#inherited-wire-bytes) and
+`inherited_encoding_test.go`), so a change in the Go **toolchain** claustrum is
+built with can move those bytes even when the reference has not changed at all.
+
+Go 1.27 does exactly that. It enables the `jsonv2` GOEXPERIMENT by default
+(`internal/buildcfg/exp.go` sets `JSONv2: true`), which reimplements
+`encoding/json`'s `Marshal` on the v2 engine. That engine renders an invalid
+UTF-8 byte as the **literal U+FFFD character** (bytes `EF BF BD`) where Go 1.26
+and earlier — and the pinned reference daemon at `5db5e4a` — emit the six-ASCII
+`\ufffd` escape. `files.read` puts raw file bytes into the `content` string, so
+under Go 1.27 every read of a file holding a non-UTF-8 byte diverges from the
+reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
+`TestInheritedLoneSurrogateBecomesThreeReplacements` fail under 1.27 for this
+reason — the guard working as intended, not a stale expectation.
+
+**Current stance: hold the build toolchain at 1.26.x.** The hold lives in the
+Renovate preset (`schubydoo/renovate-config` → `claustrum.json`,
+`allowedVersions: <1.27` on the `go` dep), so 1.26.x patch and security bumps
+still flow while 1.27+ is blocked. `GOEXPERIMENT=nojsonv2` restores the `\ufffd`
+escape under a 1.27 toolchain (measured), so it is the compensating knob if a
+future constraint forces the build onto 1.27 before the trigger below fires.
+
+**Revisit trigger:** if the reference daemon itself rebuilds on Go 1.27, it flips
+to the literal U+FFFD too — at which point claustrum must **follow**, not resist:
+drop the toolchain hold, and flip the two guard-test expectations to the literal
+form. Until a drift check (Steps 2–3) confirms the reference has moved, holding at
+1.26.x is the parity-preserving position. This is a temporary hold, not a
+divergence — it carries no D-number.
+
 ## Automating it
 
 - **[`.github/workflows/upstream-desktop-watch.yml`](https://github.com/schubydoo/claustrum/blob/main/.github/workflows/upstream-desktop-watch.yml)**
