@@ -19,3 +19,14 @@ linters:
     generated: lax
     presets:
       - std-error-handling
+    rules:
+      # startPipeTransport's non-Windows stub (pipetransport_other.go) returns a
+      # non-nil error unconditionally so server.go cross-compiles; the named-pipe
+      # transport is Windows-only. On the Linux lint leg that makes enablePipe's
+      # `err != nil` provably always true, which staticcheck v2.13.1+ flags as
+      # SA4023. The branch is intentional and unreachable off Windows, so exclude
+      # SA4023 for this file rather than distort the stub.
+      - path: server.go
+        linters:
+          - staticcheck
+        text: SA4023
