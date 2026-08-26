@@ -119,6 +119,7 @@ func (p *gitParams) expandPaths() {
 	p.Path = expandPath(p.Path)
 	p.BaseRepo = expandPath(p.BaseRepo)
 	p.WorktreePath = expandPath(p.WorktreePath)
+	p.WorktreeRoot = expandPath(p.WorktreeRoot)
 	// BranchName and SourceBranch are refs, not paths — never expanded.
 }
 func (p *spawnParams) expandPaths() { p.Cwd = expandPath(p.Cwd) }

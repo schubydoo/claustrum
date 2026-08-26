@@ -38,6 +38,7 @@ type gitParams struct {
 	BranchName   string `json:"branchName"`
 	WorktreePath string `json:"worktreePath"`
 	SourceBranch string `json:"sourceBranch"`
+	WorktreeRoot string `json:"worktreeRoot,omitempty"`
 }
 
 // repoDir is the repo a worktree op runs against: baseRepo, or the daemon's cwd
@@ -615,22 +616,44 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "not_a_repo",
 		})
 	}
-	// worktree-location containment, added by the reference in 7d193f89: the
-	// session folder must be a fresh directory strictly inside the repo. Empty is
-	// not a relative-path refusal — the reference fails it as a non-directory at
-	// the parent-creation step, with its own worktreePath echoed (measured).
-	if p.WorktreePath == "" {
-		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     fmt.Sprintf("failed to create parent directory: %q does not name a directory", p.WorktreePath),
-			ErrorCode: "mkdir_failed",
-		})
-	}
-	if msg := worktreePathRefusal(repo, p.WorktreePath, "create"); msg != "" {
-		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
-	}
-	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
-		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "symlinked_component"})
+	// With a worktreeRoot the session folder is created OUTSIDE the repo, so the
+	// in-repo containment is replaced by the external-location checks: absolute /
+	// no-".." spelling of the root and path, 2-level containment, ownership /
+	// writability of the root, and the <directory> must start out empty (or already
+	// be a managed worktree directory). Order measured against 7d193f89; an empty
+	// worktreePath is judged here as a relative path, not the in-repo mkdir failure.
+	if p.WorktreeRoot != "" {
+		root := filepath.Clean(p.WorktreeRoot)
+		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := worktreeRootShareRefusal(root); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := externalWorktreeDirNotEmptyRefusal(p.WorktreePath); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+	} else {
+		// worktree-location containment, added by the reference in 7d193f89: the
+		// session folder must be a fresh directory strictly inside the repo. Empty is
+		// not a relative-path refusal — the reference fails it as a non-directory at
+		// the parent-creation step, with its own worktreePath echoed (measured).
+		if p.WorktreePath == "" {
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     fmt.Sprintf("failed to create parent directory: %q does not name a directory", p.WorktreePath),
+				ErrorCode: "mkdir_failed",
+			})
+		}
+		if msg := worktreePathRefusal(repo, p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "symlinked_component"})
+		}
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
 		return okResult(req.ID, worktreeResult{
@@ -648,6 +671,13 @@ func gitWorktreeCreate(req *request) response {
 			Error:     fmt.Sprintf("failed to create parent directory: %v", err),
 			ErrorCode: "mkdir_failed",
 		})
+	}
+	// For an external worktreeRoot, tag the <directory> level as holding managed
+	// session worktrees before git runs (7d193f89 writes the marker even if the add
+	// later fails). This is the same marker baseRepoUnderManagedWorktrees looks for,
+	// so a later create whose baseRepo sits under here is refused as a nested repo.
+	if p.WorktreeRoot != "" {
+		_ = ensureManagedWorktreesMarker(filepath.Dir(p.WorktreePath))
 	}
 	// 7d193f89 also creates the worktree directory ITSELF before `git worktree add`
 	// (git adds into the pre-made empty dir). It does so by opening the parent and
@@ -745,14 +775,31 @@ func gitWorktreeRemove(req *request) response {
 			Error:   fmt.Sprintf("failed to remove worktree: %q does not name a directory", p.WorktreePath),
 		})
 	}
-	if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
-		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
-	}
-	// A symlinked component under .claude/worktrees is refused before the removal —
-	// this is what keeps the os.RemoveAll fallback below from following a planted
-	// link out of the repo (matches 7d193f89; no errorCode on remove).
-	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "remove"); msg != "" {
-		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+	// With a worktreeRoot the worktree lives OUTSIDE the repo, so the in-repo
+	// containment is replaced by the external checks: 2-level containment, then a
+	// non-destructive `.git`-file gate — an external path that is not a real
+	// worktree is refused and LEFT IN PLACE, where an in-repo remove would fall back
+	// to a recursive delete. Measured against 7d193f89 on an ephemeral VM.
+	if p.WorktreeRoot != "" {
+		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+		if msg := externalWorktreeMissingGitRefusal(repo, p.WorktreePath); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+	} else {
+		if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+		// A symlinked component under .claude/worktrees is refused before the removal —
+		// this is what keeps the os.RemoveAll fallback below from following a planted
+		// link out of the repo (matches 7d193f89; no errorCode on remove).
+		if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
 	}
 	// ⚠️ INTENTIONAL DIVERGENCE, and the only one on this method — refused before
 	// git is run at all, so neither the removal nor the branch delete happens.
