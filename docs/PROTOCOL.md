@@ -214,9 +214,11 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `branchName is required` | |
 | git.worktree_create | `not a git repository` | in `error`, `errorCode:"not_a_repo"` |
 | git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment) |
+| git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"` — a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
 | git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"` |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / is not inside the repository <repo>; …}` | in `error` (no `errorCode`; `7d193f89` containment) |
+| git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error` (no `errorCode`) — gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
 | git.worktree_remove | `failed to remove worktree: <git output>; manual cleanup also failed: <err>` | in `error` (only if manual cleanup also fails) |
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error` — now behind `7d193f89` containment (fires only if a repo is an ancestor of home) |

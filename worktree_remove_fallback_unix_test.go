@@ -87,6 +87,55 @@ func TestWorktreeRemovePrunesRegistration(t *testing.T) {
 	}
 }
 
+// 7d193f89 refuses a worktree whose path crosses a symlinked component under the
+// repo (.claude / .claude/worktrees or below) — a planted link could carry a
+// create outside the repo or point the remove fallback's os.RemoveAll at an
+// external target. Create carries errorCode "symlinked_component"; remove carries
+// none. Measured against the reference on an ephemeral VM.
+func TestWorktreeSymlinkedComponentRefused(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(cmd.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	run("commit", "-q", "--allow-empty", "-m", "init")
+	// .claude/worktrees is a symlink escaping the repo — a planted link.
+	if err := os.Symlink(base, filepath.Join(repo, ".claude", "worktrees")); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(repo, ".claude", "worktrees", "wt")
+	const want = "is a symbolic link; a symlinked .claude or .claude/worktrees inside the " +
+		"repository is not supported for SSH sessions, because a repository can plant such a " +
+		"link and a planted one cannot reliably be told apart from your own. Replace it with a " +
+		"real directory (or delete it and it will be recreated)"
+
+	s := newTestServer(t)
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wt}))
+	if !strings.Contains(got, want) || !strings.Contains(got, `"errorCode":"symlinked_component"`) {
+		t.Errorf("create = %s, want the symlinked_component refusal", got)
+	}
+	got = dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+	if !strings.Contains(got, want) || strings.Contains(got, `"errorCode"`) {
+		t.Errorf("remove = %s, want the symlinked_component refusal with no errorCode", got)
+	}
+}
+
 // When the manual cleanup ALSO fails, the reference reports it in the result's
 // error field with success:false. Measured at 5db5e4a:
 //

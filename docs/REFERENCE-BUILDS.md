@@ -57,10 +57,13 @@ registration prune) that the off-wire git rewrite surfaced.
    does not sit strictly under `baseRepo` is refused with an `errorCode:"unsafe_path"`
    message ("is a relative path" / "contains a \"..\" component" / "is not inside the
    repository … under `<repository>/.claude/worktrees`"); on create an already-existing
-   target is refused as "already exists … a fresh directory". `worktree_remove` applies
-   the same location checks (no `errorCode` field). The success shapes are unchanged.
-   Create now makes the parent directory before `git worktree add`, so a nested session
-   path succeeds on a fresh repository.
+   target is refused as "already exists … a fresh directory". Both also refuse a path
+   that crosses a symlinked component under the repo (a planted `.claude` /
+   `.claude/worktrees` link) with `errorCode:"symlinked_component"` on create, so the
+   create cannot escape and the remove fallback's `os.RemoveAll` cannot follow the link
+   out of the repo. `worktree_remove` applies the same location checks (no `errorCode`
+   field). The success shapes are unchanged. Create now makes the parent directory
+   before `git worktree add`, so a nested session path succeeds on a fresh repository.
 4. **`files.list` fails at the open for a non-directory.** A regular file — readable
    or not — now answers `open <p>: not a directory` and an unreadable directory answers
    `open <p>: permission denied`, where the build before said `readdirent <p>: not a

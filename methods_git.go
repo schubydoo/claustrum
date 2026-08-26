@@ -477,6 +477,14 @@ func gitStatus(req *request) response {
 // isRepo verdict on all six probed shapes; git failing at path (absent, not a
 // repo) falls through to false.
 func gitStatusWorktreeOf(path, baseRepo string) bool {
+	// git canonicalizes the paths it reports (--show-toplevel / --git-common-dir
+	// resolve symlinks — macOS /tmp -> /private/tmp — and expand Windows 8.3 short
+	// names), so canonicalize our own operands the same way before comparing.
+	// Without this a valid worktree under a symlinked or short-named directory
+	// never matches git's output and status wrongly answers isRepo:false. No-op on
+	// Linux paths with no symlinks, so the frame battery stays byte-identical.
+	path = canonicalPath(path)
+	baseRepo = canonicalPath(baseRepo)
 	out, ok := hardenedGit(path, false, "rev-parse", "--path-format=absolute",
 		"--show-toplevel", "--git-dir", "--git-common-dir")
 	if !ok {
@@ -492,9 +500,11 @@ func gitStatusWorktreeOf(path, baseRepo string) bool {
 		samePath(filepath.Dir(commonDir), baseRepo)
 }
 
-// samePath compares two paths after lexical cleaning. Symlinks are not resolved:
-// the reference matches spellings, and resolving here would cost an EvalSymlinks
-// on a path that may not exist.
+// canonicalPath resolves p to the spelling git reports — symlinks resolved and
+// (on Windows) 8.3 short names expanded. Defined per-OS in pathcanon_{unix,windows}.go.
+
+// samePath compares two paths after lexical cleaning. Callers that compare against
+// git's output canonicalize their operands first (see gitStatusWorktreeOf).
 func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
@@ -573,6 +583,9 @@ func gitWorktreeCreate(req *request) response {
 	}
 	if msg := worktreePathRefusal(repo, p.WorktreePath, "create"); msg != "" {
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+	}
+	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
+		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "symlinked_component"})
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
 		return okResult(req.ID, worktreeResult{
@@ -665,6 +678,12 @@ func gitWorktreeRemove(req *request) response {
 		})
 	}
 	if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+	}
+	// A symlinked component under .claude/worktrees is refused before the removal —
+	// this is what keeps the os.RemoveAll fallback below from following a planted
+	// link out of the repo (matches 7d193f89; no errorCode on remove).
+	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "remove"); msg != "" {
 		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
 	}
 	// ⚠️ INTENTIONAL DIVERGENCE, and the only one on this method — refused before
@@ -786,8 +805,11 @@ func gitWorktreeRemove(req *request) response {
 		hardenedGit(repo, false, "branch", "-D", p.BranchName)
 	}
 	// Prune the registration (see above). A no-op when `git worktree remove`
-	// already dropped it; the fix for the fallback path.
-	if adminDir != "" {
+	// already dropped it; the fix for the fallback path. A legitimate admin dir is
+	// `<repo>/.git/worktrees/<name>` — strictly inside the repo — so require that
+	// (resolving symlinks) before the delete: a stale or forged worktree `.git`
+	// pointer must not turn the prune into an os.RemoveAll of unrelated data.
+	if adminDir != "" && pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(repo)) {
 		_ = os.RemoveAll(adminDir)
 	}
 	return okResult(req.ID, worktreeRemoveResult{Success: true})

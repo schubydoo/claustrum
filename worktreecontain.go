@@ -47,6 +47,47 @@ func worktreePathRefusal(repo, worktreePath, verb string) string {
 	return ""
 }
 
+// worktreeSymlinkRefusal returns the reference's refusal when a component of
+// worktreePath BELOW baseRepo — excluding the leaf — is a symbolic link, or "" if
+// none is. A planted `.claude` / `.claude/worktrees` symlink could carry a create
+// outside the repo or point the destructive remove fallback at an external target,
+// so 7d193f89 refuses it by name (verb is "create" or "remove"). A symlinked LEAF
+// is not caught here — it exists, so the caller's freshness check refuses it as
+// "already exists" instead (measured). Confirmed byte-for-byte against 7d193f89.
+func worktreeSymlinkRefusal(repo, worktreePath, verb string) string {
+	link := symlinkedComponent(repo, worktreePath)
+	if link == "" {
+		return ""
+	}
+	return fmt.Sprintf("refusing to %s worktree: %s is a symbolic link; a symlinked "+
+		".claude or .claude/worktrees inside the repository is not supported for SSH "+
+		"sessions, because a repository can plant such a link and a planted one cannot "+
+		"reliably be told apart from your own. Replace it with a real directory (or "+
+		"delete it and it will be recreated)", verb, link)
+}
+
+// symlinkedComponent walks the components of worktreePath below repo, EXCLUDING the
+// leaf, and returns the first one that exists and is a symbolic link (or ""). Runs
+// only after the caller has confirmed worktreePath is strictly inside repo.
+func symlinkedComponent(repo, worktreePath string) string {
+	rel, err := filepath.Rel(repo, worktreePath)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	cur := repo
+	for _, part := range parts[:len(parts)-1] {
+		cur = filepath.Join(cur, part)
+		if fi, err := os.Lstat(cur); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return cur
+		}
+	}
+	return ""
+}
+
 // pathHasDotDot reports whether any path segment is exactly "..". The check is on
 // the raw (already ~-expanded) path, before any cleaning — the reference reports
 // the ".." as present, so a filepath.Clean that resolved it away would change the
