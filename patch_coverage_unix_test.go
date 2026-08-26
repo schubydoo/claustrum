@@ -31,9 +31,12 @@ func TestCopyClaudeDirUnreadableSource(t *testing.T) {
 	}
 }
 
-// copyDirRecursive recurses into a nested directory and skips a symlink within it
-// — the two branches copyClaudeDir's own top-level loop does not reach. The tree
-// is .claude/sub/deeper/{f.txt, link}, copied through copyClaudeDir.
+// copyDirRecursive recurses into a nested directory — the real oracle here, since
+// breaking recursion drops the nested file — and skips a symlink within it. The
+// symlink-skip assertion is belt-and-suspenders: copyFile's IsRegular guard already
+// refuses the link (TestCopyFileSkipsNonRegular is the primary guard), so removing
+// copyDirRecursive's explicit skip does not change this outcome; it stays for coverage
+// of that branch. The tree is .claude/sub/deeper/{f.txt, link}, copied via copyClaudeDir.
 func TestCopyClaudeDirRecursesAndSkipsNestedSymlink(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, claudeDirName, "sub", "deeper", "f.txt"), "x\n", 0o644)
