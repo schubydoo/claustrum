@@ -69,6 +69,12 @@ type server struct {
 
 	wlog    *wireLog      // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
+
+	// idleTimeout closes a connection with no read/write activity for this long.
+	// 7d193f89 uses a fixed 5-minute idle timeout (idleConnTimeout) with no flag or
+	// env to disable it, so this is always-on to match; a test overrides it to a
+	// short value.
+	idleTimeout time.Duration
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -77,6 +83,10 @@ type conn struct {
 	nc     net.Conn
 	wmu    sync.Mutex
 	closed bool
+
+	// done is closed when serveConn returns, so the per-connection idle watcher
+	// (closeWhenIdle) exits promptly instead of lingering until the idle timeout.
+	done chan struct{}
 
 	// id correlates this connection's frames in a -wire-log capture. It has no
 	// wire meaning and is never sent to the client.
@@ -384,6 +394,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		shutdown:     make(chan struct{}),
 		keepChildren: keepChildren,
 		wlog:         wlog,
+		idleTimeout:  idleConnTimeout,
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
@@ -697,12 +708,16 @@ func (s *server) acceptLoop(ln net.Listener) {
 			continue
 		}
 		tempDelay = 0
-		c := &conn{nc: nc, id: s.connSeq.Add(1), wlog: s.wlog}
+		// Wrap in an activity-stamping conn so the idle watcher can see the last
+		// read/write. 7d193f89 closes a connection idle for idleConnTimeout.
+		ac := newActivityConn(nc)
+		c := &conn{nc: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{})}
 		met.connections.Add(1)
 		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
 		s.mu.Lock()
 		s.conns[c] = struct{}{}
 		s.mu.Unlock()
+		go s.closeWhenIdle(ac, c.done)
 		go s.serveConn(c)
 	}
 }
@@ -719,6 +734,9 @@ func (s *server) serveConn(c *conn) {
 		c.closed = true
 		c.wmu.Unlock()
 		c.nc.Close()
+		if c.done != nil {
+			close(c.done) // stop the idle watcher (nil when a test builds a conn directly)
+		}
 		s.mu.Lock()
 		delete(s.conns, c)
 		s.mu.Unlock()
