@@ -68,8 +68,8 @@ func (p *gitParams) repoDir() string {
 //
 // ⚠️ A TIMEOUT IS NOT "the same as any other git failure". That is what this
 // comment used to say, and it was true only while failure meant NOTHING HAPPENED.
-// gitWorktreeRemove now treats a failed git as permission to delete the worktree
-// itself, so a caller that ACTS on failure must distinguish our deadline from
+// gitWorktreeRemove now treats a NON-LOCKED git failure as permission to delete the
+// worktree itself, so a caller that ACTS on failure must distinguish our deadline from
 // git's verdict — otherwise our own safety cap authorises a destructive act the
 // reference cannot perform, since it showed no deadline at or below 75 s and
 // simply blocks (measured on one method; see D5 for the scope).
@@ -211,8 +211,8 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 // gitDeadline is git() plus one extra bit: whether OUR deadline killed the
 // process, as opposed to git exiting non-zero on its own.
 //
-// It exists for exactly one caller. gitWorktreeRemove treats a failed git as
-// permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
+// It exists for exactly one caller. gitWorktreeRemove treats a NON-LOCKED git failure
+// as permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
 // divergence — the reference showed no deadline at or below 75 s and simply
 // blocks. So
 // without this distinction a wedged git turns a claustrum safety measure into a
@@ -735,30 +735,27 @@ func gitWorktreeRemove(req *request) response {
 	// cleanly. Capture the admin dir now, before the removal deletes the pointer,
 	// and prune it after a successful removal.
 	adminDir := worktreeAdminDir(p.WorktreePath)
-	// When `git worktree remove --force` fails for ANY reason, the reference
+	// When `git worktree remove --force` fails for a NON-LOCKED reason, the reference
 	// removes worktreePath itself and still answers {"success":true}; it reports
-	// failure only when that manual cleanup ALSO fails.
+	// failure only when that manual cleanup ALSO fails. A LOCKED worktree is the
+	// exception — 7d193f89 refuses it (the branch above) rather than deleting it.
 	//
-	// ⚠️ "any reason" is literal, and it is measured — not inferred from the one
-	// fixture that motivated this. Reviewed on PR #204, which pointed out that the
-	// original measurement covered only a locked worktree while the code deletes on
-	// every non-zero exit. Re-probed at 5db5e4a, checking the DIRECTORY afterwards
-	// rather than the reply, and claustrum matches on all three:
+	// Measured: at 5db5e4a, checking the DIRECTORY after each git failure; at
+	// 7d193f89, re-probing the locked case on an ephemeral VM (both binaries):
 	//
-	//	fixture      git fails because            reference: dir after
-	//	locked       the worktree is locked       DELETED
-	//	plain-dir    the path was never a worktree  DELETED
-	//	bogus-repo   baseRepo is not a repo at all  DELETED
+	//	fixture      git fails because             reference at 7d193f89
+	//	locked       the worktree is locked        REFUSED, dir left in place
+	//	plain-dir    the path was never a worktree DELETED (fallback)
+	//	bogus-repo   baseRepo is not a repo at all DELETED (fallback)
 	//
-	// So `git.worktree_remove` is a recursive delete of the caller-supplied
-	// worktreePath whenever git is unhappy, and that is parity, not a claustrum
-	// invention. Documented in PROTOCOL.md because it will otherwise read as a bug.
-	// The caller did name the path and ask for it to be removed, which is why this
-	// is not treated like the -cli-version escape in #196 — there the deletion
-	// reached a path the caller never named.
-	//
-	// The registration is NOT cleaned up either: after a locked removal the repo
-	// still lists the worktree (measured: 2 entries, on both binaries).
+	// So for a NON-LOCKED failure `git.worktree_remove` is a recursive delete of the
+	// caller-supplied worktreePath, and that is parity, not a claustrum invention.
+	// Documented in PROTOCOL.md because it will otherwise read as a bug. The caller
+	// did name the path and ask for it to be removed, which is why this is not
+	// treated like the -cli-version escape in PR 196 — there the deletion reached a
+	// path the caller never named. (Pre-7d193f89 the reference deleted the locked
+	// worktree too and did NOT prune, so the repo kept listing it; 7d193f89 both
+	// refuses the locked case and prunes the registration on a completed removal.)
 	//
 	// git() not a bespoke helper — it is already CombinedOutput, and the only
 	// differences were error-vs-ok and a trailing-newline trim that the
@@ -788,6 +785,27 @@ func gitWorktreeRemove(req *request) response {
 						"and git may have partially removed the worktree", gitTimeout),
 			})
 		}
+		// 7d193f89 REFUSES a LOCKED worktree rather than falling back to a delete:
+		// `git worktree remove --force` fails with "cannot remove a locked working
+		// tree", and the reference answers success:false with its own fixed message
+		// (independent of the lock reason) and leaves the directory in place. Only the
+		// OTHER git-failure modes (an ordinary non-worktree directory) reach the
+		// os.RemoveAll fallback below. Before 7d193f89 the reference DELETED a locked
+		// worktree here — a wire change, measured against 7d193f89 on an ephemeral VM
+		// (the frame battery never removes a locked worktree, so it did not catch it).
+		// Anchor on git's FULL phrase, not the bare "locked working tree": git echoes
+		// the caller's path in the non-locked failure ("'<path>' is not a working
+		// tree"), so a worktreePath literally containing "locked working tree" would
+		// substring-match and be wrongly refused (leaving a directory the reference
+		// would delete). The full phrase cannot appear in that path-echo. Raised by
+		// wire-byte review.
+		if strings.Contains(out, "cannot remove a locked working tree") {
+			return okResult(req.ID, worktreeRemoveResult{
+				Success: false,
+				Error: fmt.Sprintf("refusing to remove worktree: %s is locked "+
+					"(git worktree lock); unlock it to remove it", p.WorktreePath),
+			})
+		}
 		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
 			return okResult(req.ID, worktreeRemoveResult{
 				Success: false,
@@ -805,11 +823,17 @@ func gitWorktreeRemove(req *request) response {
 		hardenedGit(repo, false, "branch", "-D", p.BranchName)
 	}
 	// Prune the registration (see above). A no-op when `git worktree remove`
-	// already dropped it; the fix for the fallback path. A legitimate admin dir is
-	// `<repo>/.git/worktrees/<name>` — strictly inside the repo — so require that
-	// (resolving symlinks) before the delete: a stale or forged worktree `.git`
-	// pointer must not turn the prune into an os.RemoveAll of unrelated data.
-	if adminDir != "" && pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(repo)) {
+	// already dropped it; the fix for the fallback path. The ONLY legitimate admin
+	// dir is `<repo>/.git/worktrees/<name>`, so require the pruned path to resolve
+	// strictly inside `<repo>/.git/worktrees` before the delete — not merely inside
+	// the repo. worktreeAdminDir returns the `.git` pointer's contents verbatim, and
+	// those contents are attacker-writable, so a stale or forged pointer such as
+	// `gitdir: <repo>/src` or `<repo>/.git/objects` (or a `..` variant that Clean or
+	// EvalSymlinks collapses back under the repo) would otherwise turn the prune into
+	// an os.RemoveAll of unrelated repo data. Constraining to `.git/worktrees` rejects
+	// every such target while still pruning a real registration. Off-wire: the result
+	// is discarded and the reply is success:true either way. Raised by review on PR 286.
+	if adminDir != "" && pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(repo, ".git", "worktrees"))) {
 		_ = os.RemoveAll(adminDir)
 	}
 	return okResult(req.ID, worktreeRemoveResult{Success: true})
