@@ -17,10 +17,9 @@
   {
     "jsonrpc": "2.0",
     "id": 2,
-    "result": {
-      "version": "<V>",
-      "platform": "<OS>",
-      "arch": "<ARCH>"
+    "error": {
+      "code": -32601,
+      "message": "Unknown method: server.version"
     }
   },
   {
@@ -30,7 +29,6 @@
       "version": "<V>",
       "methods": [
         "server.ping",
-        "server.version",
         "server.capabilities",
         "server.shutdown",
         "files.list",
@@ -50,7 +48,9 @@
         "process.reattach"
       ],
       "features": [
-        "process.stdin.offset"
+        "process.stdin.offset",
+        "git.status.baseRepo",
+        "git.worktree.external_root"
       ]
     }
   },

@@ -801,19 +801,21 @@ func TestFilesListSkipsDotfiles(t *testing.T) {
 	}
 }
 
-// On a non-repo path, git.info returns the bare {isRepo:false}, but git.status
-// and git.list_branches return their FULL shapes (clean:false / branches:[]),
-// matching the reference. git.worktree_create reports a clean not_a_repo error
-// instead of leaking git's raw "not a git repository" output.
+// On a non-repo path, git.info returns the bare {isRepo:false} and
+// git.list_branches its full branches:[] shape, matching the reference. Since
+// 7d193f89 git.status instead REQUIRES baseRepo, so a path-only call rejects with
+// -32602 before any repo check. git.worktree_create reports a clean not_a_repo
+// error instead of leaking git's raw "not a git repository" output.
 func TestGitNonRepoResults(t *testing.T) {
 	s := newTestServer(t)
 	dir := t.TempDir() // under /tmp — not a git repo
 
 	for _, tc := range []struct{ method, wantResult string }{
 		// git.info gained repoSlug/defaultBranch in 7c2f88d — always present, empty
-		// for a non-repo. git.status/list_branches keep their own non-repo shapes.
+		// for a non-repo. git.list_branches keeps its own non-repo shape; git.status
+		// now demands baseRepo first.
 		{"git.info", `"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`},
-		{"git.status", `"result":{"isRepo":false,"clean":false}}`},
+		{"git.status", `"error":{"code":-32602,"message":"baseRepo is required"}`},
 		{"git.list_branches", `"result":{"isRepo":false,"branches":[]}}`},
 	} {
 		got := dispatchRaw(t, s, rpcLine(t, tc.method, map[string]any{"path": dir}))
@@ -877,7 +879,7 @@ func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGit(t, base, "init", "-b", "trunk")
-	wt := filepath.Join(t.TempDir(), "wt")
+	wt := filepath.Join(base, ".claude", "worktrees", "wt") // 7d193f89: inside the repo
 	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": base, "branchName": "newbr", "worktreePath": wt,
 	}))
@@ -1184,7 +1186,7 @@ func TestGitWorktreeCreateFailed(t *testing.T) {
 	runGit(t, repo, "commit", "-m", "init")
 	s := newTestServer(t)
 	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
-		"baseRepo": repo, "branchName": "main", "worktreePath": filepath.Join(root, "wt"),
+		"baseRepo": repo, "branchName": "main", "worktreePath": filepath.Join(repo, ".claude", "worktrees", "wt"),
 	}))
 	if !strings.Contains(got, "worktree_add_failed") {
 		t.Errorf("worktree_create with existing branch = %s, want worktree_add_failed", got)

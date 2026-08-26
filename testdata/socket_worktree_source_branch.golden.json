@@ -4,7 +4,7 @@
     "id": 1,
     "result": {
       "success": true,
-      "path": "<DIR>/wt0",
+      "path": "<DIR>/repo/.claude/worktrees/wt0",
       "sourceBranch": "feature"
     }
   },
@@ -13,7 +13,7 @@
     "id": 2,
     "result": {
       "success": true,
-      "path": "<DIR>/wt1",
+      "path": "<DIR>/repo/.claude/worktrees/wt1",
       "sourceBranch": "diverged"
     }
   },
@@ -22,7 +22,7 @@
     "id": 3,
     "result": {
       "success": true,
-      "path": "<DIR>/wt2",
+      "path": "<DIR>/repo/.claude/worktrees/wt2",
       "sourceBranch": "master"
     }
   },
@@ -31,7 +31,7 @@
     "id": 4,
     "result": {
       "success": true,
-      "path": "<DIR>/wt3",
+      "path": "<DIR>/repo/.claude/worktrees/wt3",
       "sourceBranch": "master"
     }
   },
@@ -40,7 +40,7 @@
     "id": 5,
     "result": {
       "success": true,
-      "path": "<DIR>/wt4",
+      "path": "<DIR>/repo/.claude/worktrees/wt4",
       "sourceBranch": "master"
     }
   },
@@ -49,7 +49,7 @@
     "id": 6,
     "result": {
       "success": true,
-      "path": "<DIR>/wt5",
+      "path": "<DIR>/repo/.claude/worktrees/wt5",
       "sourceBranch": "master"
     }
   },
@@ -58,7 +58,7 @@
     "id": 7,
     "result": {
       "success": true,
-      "path": "<DIR>/wt6",
+      "path": "<DIR>/repo/.claude/worktrees/wt6",
       "sourceBranch": "master"
     }
   },
@@ -67,7 +67,7 @@
     "id": 8,
     "result": {
       "success": true,
-      "path": "<DIR>/wt7",
+      "path": "<DIR>/repo/.claude/worktrees/wt7",
       "sourceBranch": "master"
     }
   }

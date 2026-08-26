@@ -14,12 +14,6 @@ type pongResult struct {
 	Pong bool `json:"pong"`
 }
 
-type versionResult struct {
-	Version  string `json:"version"`
-	Platform string `json:"platform"`
-	Arch     string `json:"arch"`
-}
-
 type capabilitiesResult struct {
 	Version string   `json:"version"`
 	Methods []string `json:"methods"`

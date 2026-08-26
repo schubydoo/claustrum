@@ -21,7 +21,10 @@ func lockedWorktree(t *testing.T) (repo, wt string) {
 	}
 	base := t.TempDir()
 	repo = filepath.Join(base, "repo")
-	holder := filepath.Join(base, "holder")
+	// 7d193f89 confines worktrees to inside the repo; holder is the immediate
+	// parent (still the directory TestWorktreeRemoveReportsWhenCleanupAlsoFails
+	// chmods to make the manual cleanup fail).
+	holder := filepath.Join(repo, ".claude", "worktrees")
 	wt = filepath.Join(holder, "wt")
 	if err := os.MkdirAll(repo, 0o700); err != nil {
 		t.Fatal(err)
@@ -61,6 +64,26 @@ func TestWorktreeRemoveFallsBackToManualCleanup(t *testing.T) {
 	}
 	if _, err := os.Stat(wt); err == nil {
 		t.Error("the worktree directory survived — the manual cleanup fallback did not run")
+	}
+}
+
+// 7d193f89 prunes the worktree registration on removal, so a re-create at the same
+// path succeeds even after the locked-worktree fallback ran (which used to leave
+// the registration, making the re-create fail "is already registered"). Measured
+// against the reference on an ephemeral VM.
+func TestWorktreeRemovePrunesRegistration(t *testing.T) {
+	repo, wt := lockedWorktree(t)
+	s := newTestServer(t)
+
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt, "branchName": "wtb"}))
+	if !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("remove = %s, want success:true", raw)
+	}
+	raw = dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": repo, "branchName": "again", "worktreePath": wt}))
+	if !strings.Contains(raw, `"success":true`) {
+		t.Errorf("re-create at the same path = %s, want success:true (registration should have been pruned)", raw)
 	}
 }
 

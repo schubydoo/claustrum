@@ -1,25 +1,28 @@
 package main
 
-import "runtime"
-
 var capabilityMethods = []string{
-	"server.ping", "server.version", "server.capabilities", methodShutdown,
+	"server.ping", "server.capabilities", methodShutdown,
 	"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 	"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 	"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
 }
 
-// capabilityFeatures advertises optional protocol extensions. Added by the
-// reference daemon in 7c2f88d; the sole entry is the stdin-offset idempotency
-// contract (see process.stdin / stdinResult). Always emitted.
-var capabilityFeatures = []string{"process.stdin.offset"}
+// capabilityFeatures advertises optional protocol extensions, in the reference's
+// order. process.stdin.offset (the stdin-offset idempotency contract, see
+// process.stdin / stdinResult) landed in 7c2f88d; 7d193f89 added two more:
+// git.status.baseRepo (git.status now keys off a session worktree of baseRepo)
+// and git.worktree.external_root (session worktrees confined to inside the repo).
+// Always emitted.
+var capabilityFeatures = []string{
+	"process.stdin.offset",
+	"git.status.baseRepo",
+	"git.worktree.external_root",
+}
 
 func (s *server) handleServer(c *conn, req *request) *response {
 	switch req.Method {
 	case "server.ping":
 		return ptr(okResult(req.ID, pongResult{Pong: true}))
-	case "server.version":
-		return ptr(okResult(req.ID, versionResult{Version: Version, Platform: runtime.GOOS, Arch: runtime.GOARCH}))
 	case "server.capabilities":
 		return ptr(okResult(req.ID, capabilitiesResult{Version: Version, Methods: capabilityMethods, Features: capabilityFeatures}))
 	case methodShutdown:

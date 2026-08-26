@@ -297,16 +297,20 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 			if !filepath.IsAbs(tc.worktreePath) && tc.worktreePath != "~" {
 				t.Chdir(home)
 			}
-			// baseRepo is a real directory but not a repository, so git fails and the
-			// destructive fallback is the arm under test.
+			// baseRepo is a real directory but not a repository; the home path is
+			// outside it, so 7d193f89's location containment refuses it — with the
+			// reference's own "refusing to remove worktree:" wording — before git,
+			// the os.RemoveAll fallback, or the wipesHomeDir guard is ever reached.
+			// Containment is what protects home here now; the guard remains as
+			// defense-in-depth (and as the primary guard for files.extract_tar).
 			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
 				map[string]any{"baseRepo": t.TempDir(), "worktreePath": tc.worktreePath}))
 
 			if _, err := os.Stat(keep); err != nil {
 				t.Errorf("worktreePath %q deleted the home directory: %v", tc.worktreePath, err)
 			}
-			if !strings.Contains(got, "worktreePath must not be or contain the home directory") {
-				t.Errorf("worktree_remove %q = %s, want the home-directory refusal", tc.worktreePath, got)
+			if !strings.Contains(got, "refusing to remove worktree:") {
+				t.Errorf("worktree_remove %q = %s, want a containment refusal", tc.worktreePath, got)
 			}
 			if strings.Contains(got, `"success":true`) {
 				t.Errorf("worktree_remove %q = %s, want success:false — nothing was removed", tc.worktreePath, got)
@@ -315,28 +319,25 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 	}
 }
 
-// An OMITTED worktreePath must keep its pre-guard reply, and this row exists
-// because the guard got it wrong once.
+// An OMITTED worktreePath is refused by the reference's own non-directory check,
+// NOT by claustrum's wipesHomeDir guard — and this row pins that ordering.
 //
-// gitWorktreeRemove has no required-param check — unlike filesExtractTar, which
-// answers "archivePath and destDir are required" long before the guard runs. So
-// an empty worktreePath reaches wipesHomeDir, where filepath.Abs("") resolves to
-// the daemon's working directory. On a daemon started in the user's home — which
-// is what an SSH-launched daemon inherits, and the same premise the ".." rows
-// above rest on — that equals home and the guard refused.
-//
-// Refusing it is wrong on both counts: os.RemoveAll("") is a documented no-op
-// returning nil, so nothing was ever going to be deleted, and the refusal also
-// skipped the branchName delete that the reference still performs. The frame it
-// produced varied with the daemon's cwd, which no golden can observe because the
-// harness runs from a temp dir. Raised in review on #232.
-func TestWorktreeRemoveEmptyPathIsNotRefused(t *testing.T) {
+// 7d193f89 added a worktree-location check to git.worktree_remove that fails an
+// empty worktreePath as `failed to remove worktree: "" does not name a directory`
+// before anything is deleted. claustrum matches that frame, and matches it
+// FIRST: the empty case returns before the containment check, the wipesHomeDir
+// guard, and git. So even with the daemon's cwd and HOME set to the same
+// directory — the cwd that once made filepath.Abs("") resolve to home and the old
+// guard refuse — the reply is the reference's non-directory message, never a
+// "home directory" one. That the home-directory wording is absent is what proves
+// the empty branch wins the race with the guard. Ordering issue raised on #232.
+func TestWorktreeRemoveEmptyPathFailsAsNonDirectory(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home", "someone")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(homeEnvVar(), home)
-	// The cwd is what makes this bite: an empty path resolves to it.
+	// The cwd is what made this bite once: an empty path resolved to it.
 	t.Chdir(home)
 
 	s := newTestServer(t)
@@ -344,10 +345,12 @@ func TestWorktreeRemoveEmptyPathIsNotRefused(t *testing.T) {
 		map[string]any{"baseRepo": t.TempDir(), "branchName": "b1"}))
 
 	if strings.Contains(got, "home directory") {
-		t.Errorf("worktree_remove with no worktreePath = %s, want the pre-guard reply — "+
-			"os.RemoveAll(\"\") is a no-op, so there is nothing here to guard", got)
+		t.Errorf("worktree_remove with no worktreePath = %s, want the reference's "+
+			"non-directory refusal, not the home-directory guard", got)
 	}
-	if !strings.Contains(got, `"success":true`) {
-		t.Errorf("worktree_remove with no worktreePath = %s, want the bare success:true", got)
+	if !strings.Contains(got, `does not name a directory`) ||
+		!strings.Contains(got, `"success":false`) {
+		t.Errorf("worktree_remove with no worktreePath = %s, want the bare "+
+			`failed to remove worktree: "" does not name a directory`, got)
 	}
 }

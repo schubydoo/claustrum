@@ -4,7 +4,7 @@
     "id": 1,
     "error": {
       "code": -32603,
-      "message": "readdirent <DIR>/regular.txt: not a directory"
+      "message": "open <DIR>/regular.txt: not a directory"
     }
   },
   {
@@ -12,7 +12,7 @@
     "id": 2,
     "error": {
       "code": -32603,
-      "message": "readdirent <DIR>/link: not a directory"
+      "message": "open <DIR>/link: not a directory"
     }
   }
 ]

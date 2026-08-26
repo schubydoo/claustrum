@@ -76,12 +76,9 @@
   {
     "jsonrpc": "2.0",
     "id": 7,
-    "result": {
-      "isRepo": true,
-      "clean": false,
-      "changes": [
-        "?? dirty.txt"
-      ]
+    "error": {
+      "code": -32602,
+      "message": "baseRepo is required"
     }
   },
   {
@@ -99,7 +96,7 @@
     "id": 9,
     "result": {
       "success": true,
-      "path": "<DIR>/wt",
+      "path": "<DIR>/repo/.claude/worktrees/wt",
       "sourceBranch": "main"
     }
   },
@@ -188,11 +185,6 @@
           "isDir": true
         },
         {
-          "name": "wt",
-          "path": "<DIR>/wt",
-          "isDir": true
-        },
-        {
           "name": "~",
           "path": "<DIR>/~",
           "isDir": true
@@ -205,7 +197,7 @@
     "id": 18,
     "result": {
       "success": true,
-      "path": "<DIR>/wt2",
+      "path": "<DIR>/repo/.claude/worktrees/wt2",
       "sourceBranch": "main"
     }
   },
@@ -214,7 +206,7 @@
     "id": 19,
     "result": {
       "success": true,
-      "path": "<DIR>/wt3",
+      "path": "<DIR>/repo/.claude/worktrees/wt3",
       "sourceBranch": "main"
     }
   },

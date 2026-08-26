@@ -18,6 +18,7 @@ This lets a reader tell a re-published SHA from a real release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `7d193f89…` | 2026-08-25 | 6 changes + off-wire git rewrite — see below | [PR 285](https://github.com/schubydoo/claustrum/pull/285) |
 | `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | [PR 131](https://github.com/schubydoo/claustrum/pull/131) |
 | `7c2f88d1…` | 2026-07-02 | 5 changes — see below | [PR 120](https://github.com/schubydoo/claustrum/pull/120) |
 | `d20a77da…` | 2026-06-09 | none (pure rebuild) | [PR 97](https://github.com/schubydoo/claustrum/pull/97) (pin bump only) |
@@ -28,6 +29,86 @@ Each per-build section has three parts. The **wire delta** is what claustrum
 must match byte-for-byte. **Off-wire churn** is any source that moved but never
 reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
 confirmed that nothing else changed.
+
+### `7d193f89fc02cf1035a391245312e34ad419f63e` — 2026-08-25
+
+Pinned by Claude Desktop for Linux `1.37937.1`. A large build that rebuilt the
+session-worktree surface. Six wire changes, all matched byte-for-byte — the four
+below, plus two more (the `git.status` untracked handling and the `worktree_remove`
+registration prune) that the off-wire git rewrite surfaced.
+
+**Wire delta.**
+
+1. **`server.version` removed.** The method is gone; calling it now answers
+   `-32601 "Unknown method: server.version"`. `server.capabilities` drops it from
+   `methods` (18 methods now) and adds two `features`: `git.status.baseRepo` and
+   `git.worktree.external_root`. (The `-version` CLI flag is unaffected — it is not
+   the RPC method.)
+2. **`git.status` requires `baseRepo` and keys off a session worktree.** The
+   params are now `{path, baseRepo}`; an absent `baseRepo` answers
+   `-32602 "baseRepo is required"`. Status is reported only when `path` is a linked
+   worktree whose main repository is `baseRepo` — a plain path, a plain subdirectory,
+   a nested repository, the repository root itself, a worktree of a *different*
+   repository, and the right worktree named against the wrong `baseRepo` all answer
+   the bare `{"isRepo":false,"clean":false}`. The porcelain shape is otherwise
+   unchanged.
+3. **`git.worktree_create` / `git.worktree_remove` confine worktrees to inside the
+   repository.** A `worktreePath` that is not absolute, carries a `..` component, or
+   does not sit strictly under `baseRepo` is refused with an `errorCode:"unsafe_path"`
+   message ("is a relative path" / "contains a \"..\" component" / "is not inside the
+   repository … under `<repository>/.claude/worktrees`"); on create an already-existing
+   target is refused as "already exists … a fresh directory". `worktree_remove` applies
+   the same location checks (no `errorCode` field). The success shapes are unchanged.
+   Create now makes the parent directory before `git worktree add`, so a nested session
+   path succeeds on a fresh repository.
+4. **`files.list` fails at the open for a non-directory.** A regular file — readable
+   or not — now answers `open <p>: not a directory` and an unreadable directory answers
+   `open <p>: permission denied`, where the build before said `readdirent <p>: not a
+   directory`. On the wire this is one op-name change on the error path.
+
+The empty `worktreePath` messages ("failed to create parent directory: \"\" does not
+name a directory" on create, "failed to remove worktree: \"\" does not name a directory"
+on remove) are matched too.
+
+Two of these — the `git.status` untracked handling and the `worktree_remove`
+registration prune — were found by matching the OFF-wire git-invocation rewrite
+(below) rather than by the frame battery, which the top-level untracked and
+non-locked-worktree fixtures did not exercise.
+
+- **`git.status` untracked files.** `--untracked-files=all` lists an untracked file
+  inside an untracked directory individually (`?? sub/u.txt`) rather than as the
+  directory (`?? sub/`).
+- **`git.worktree_remove` registration prune.** The removal now drops
+  `$GIT_DIR/worktrees/<name>`, so a re-create at the same path succeeds where it
+  previously failed `already registered` (the divergence surfaced only on the
+  locked-worktree fallback path).
+
+**Off-wire churn.** The Go toolchain moved `go1.23` → `go1.25`, which accounts for
+most of the size growth. The build also **rewrote the entire git layer**: every git
+operation now runs under one of two `-c` hardening profiles (a light set and a heavy
+set forbidding all transport protocols and clearing credential/askpass helpers), with
+a `config -z --list --name-only` precursor and config-hook pinning
+(`GIT_CONFIG_KEY_0=hook.enabled=false`) injected on each command; `git.status` and
+`git.worktree_create` are additionally reimplemented as multi-command plumbing in an
+isolated temporary gitdir. claustrum matches the hardening profiles, the precursor,
+the base hook pins, and the wire-visible flags across every git method; the
+isolated-gitdir status assembly and the read-tree worktree checkout are process-shape
+that produces identical output, matched for the observable and security behaviour but
+not reproduced command-for-command. Beyond git: a daemon-to-daemon reconnect handoff
+and idle-connection management (the SSH-reliability items in the Desktop changelog),
+install stale-partial pruning, and a trust-root validation for worktrees rooted
+OUTSIDE `.claude/worktrees` (the `git.worktree.external_root` feature). That
+external-root path is reachable only when `baseRepo` is itself a managed worktree — a
+nested case Desktop's normal usage does not produce, so `git.worktree_create` never
+validates a trust root for an ordinary repository. It is a bounded gap rather than
+reproduced.
+
+**How it was bounded.** The cross-binary frame battery reports **claustrum ≡
+`7d193f89` byte-identical** across the method suite. Every worktree/status/list edge
+shape above was additionally probed per-method against the reference on an ephemeral
+VM — the containment ordering, the `git.status` worktree gate over six repository
+shapes, and the `files.list` open error over file/link/directory and the unreadable
+cases.
 
 ### `5db5e4a12f88487e47c2c48259b69a2d630bb3f7` — 2026-07-06
 

@@ -16,8 +16,6 @@ func TestResultMarshalingIsByteExact(t *testing.T) {
 		want string
 	}{
 		{"pong", pongResult{Pong: true}, `{"pong":true}`},
-		{"version", versionResult{Version: "v1", Platform: "linux", Arch: "amd64"},
-			`{"version":"v1","platform":"linux","arch":"amd64"}`},
 		{"capabilities", capabilitiesResult{Version: "v1", Methods: []string{"server.ping"}, Features: []string{"process.stdin.offset"}},
 			`{"version":"v1","methods":["server.ping"],"features":["process.stdin.offset"]}`},
 

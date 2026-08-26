@@ -101,7 +101,7 @@ func TestClampKillWaitMs(t *testing.T) {
 }
 
 // server.capabilities advertises process.killAndWait (between kill and reattach)
-// and the process.stdin.offset feature.
+// and, since 7d193f89, the three features in the reference's order.
 func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "server.capabilities", map[string]any{}))
@@ -112,8 +112,9 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	if !strings.Contains(joined, "process.kill,process.killAndWait,process.reattach") {
 		t.Errorf("methods missing killAndWait in the right slot: %v", got.Methods)
 	}
-	if len(got.Features) != 1 || got.Features[0] != "process.stdin.offset" {
-		t.Errorf("features = %v, want [process.stdin.offset]", got.Features)
+	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree.external_root"}
+	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
+		t.Errorf("features = %v, want %v", got.Features, wantFeatures)
 	}
 }
 

@@ -4,7 +4,7 @@
     "id": 3,
     "error": {
       "code": -32603,
-      "message": "open <DIR>/noperm.txt: permission denied"
+      "message": "open <DIR>/noperm: permission denied"
     }
   }
 ]

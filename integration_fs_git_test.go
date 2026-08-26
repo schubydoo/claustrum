@@ -171,6 +171,14 @@ func TestSocketGitBattery(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "plain"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// git.status reports for a session worktree of baseRepo now (7d193f89); a clean
+	// one exercises the empty-porcelain path. Its untracked dirty.txt is not
+	// checked out into the worktree, so the worktree is clean.
+	statWt := filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", "stat"))
+	if err := os.MkdirAll(filepath.Join(repo, ".claude", "worktrees"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "worktree", "add", "-q", "--detach", statWt) // --detach: no branch to pollute list_branches
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -181,10 +189,12 @@ func TestSocketGitBattery(t *testing.T) {
 	// Slash form: worktree_create echoes the request path verbatim in its
 	// result, so a native backslash on Windows would leak past normPath into
 	// the golden ("<DIR>\\wt"); git and the OS both accept forward slashes.
-	wtPath := filepath.ToSlash(filepath.Join(root, "wt"))
+	// 7d193f89 confines session worktrees to inside the repo; a sibling path is
+	// now refused as "not inside the repository". Place it under the repo.
+	wtPath := filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", "wt"))
 	calls := []string{
 		req(1, "git.info", map[string]any{"path": repo}),
-		req(2, "git.status", map[string]any{"path": repo}),
+		req(2, "git.status", map[string]any{"path": statWt, "baseRepo": repo}),
 		req(3, "git.list_branches", map[string]any{"path": repo}),
 		req(4, "git.worktree_create", map[string]any{
 			"baseRepo": repo, "branchName": "wt", "worktreePath": wtPath,
@@ -228,26 +238,35 @@ func TestSocketGitStatusPorcelain(t *testing.T) {
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "init")
 
+	// 7d193f89 reports status for a session worktree, not the repo root, so the
+	// mutations go in a worktree and status is asked against it. The porcelain
+	// shapes — and thus the golden's changes[] — are identical either way.
+	if err := os.MkdirAll(filepath.Join(repo, ".claude", "worktrees"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(repo, ".claude", "worktrees", "wt")
+	runGit(t, repo, "worktree", "add", "-q", wt)
+
 	// One mutation per XY shape. a_mod_unstaged.txt is the first porcelain line,
 	// so its leading space is the one the reference eats.
-	writeFile(t, filepath.Join(repo, "a_mod_unstaged.txt"), "two\n", 0o644) // " M", first line
-	writeFile(t, filepath.Join(repo, "mod_unstaged.txt"), "two\n", 0o644)   // " M"
-	writeFile(t, filepath.Join(repo, "mod_both.txt"), "two\n", 0o644)       // staged half of "MM"
-	runGit(t, repo, "add", "mod_both.txt")
-	writeFile(t, filepath.Join(repo, "mod_both.txt"), "three\n", 0o644) // unstaged half of "MM"
-	if err := os.Remove(filepath.Join(repo, "del_unstaged.txt")); err != nil {
+	writeFile(t, filepath.Join(wt, "a_mod_unstaged.txt"), "two\n", 0o644) // " M", first line
+	writeFile(t, filepath.Join(wt, "mod_unstaged.txt"), "two\n", 0o644)   // " M"
+	writeFile(t, filepath.Join(wt, "mod_both.txt"), "two\n", 0o644)       // staged half of "MM"
+	runGit(t, wt, "add", "mod_both.txt")
+	writeFile(t, filepath.Join(wt, "mod_both.txt"), "three\n", 0o644) // unstaged half of "MM"
+	if err := os.Remove(filepath.Join(wt, "del_unstaged.txt")); err != nil {
 		t.Fatal(err) // " D"
 	}
-	runGit(t, repo, "rm", "-q", "del_staged.txt")                     // "D "
-	runGit(t, repo, "mv", "rename_src.txt", "rename_dst.txt")         // "R "
-	writeFile(t, filepath.Join(repo, "staged_new.txt"), "n\n", 0o644) // "A "
-	runGit(t, repo, "add", "staged_new.txt")
-	writeFile(t, filepath.Join(repo, "untracked.txt"), "u\n", 0o644) // "??"
+	runGit(t, wt, "rm", "-q", "del_staged.txt")                     // "D "
+	runGit(t, wt, "mv", "rename_src.txt", "rename_dst.txt")         // "R "
+	writeFile(t, filepath.Join(wt, "staged_new.txt"), "n\n", 0o644) // "A "
+	runGit(t, wt, "add", "staged_new.txt")
+	writeFile(t, filepath.Join(wt, "untracked.txt"), "u\n", 0o644) // "??"
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	got := []json.RawMessage{
-		normPath(cl.call(req(1, "git.status", map[string]any{"path": repo})), root),
+		normPath(cl.call(req(1, "git.status", map[string]any{"path": wt, "baseRepo": repo})), root),
 	}
 	assertGolden(t, "socket_git_status.golden.json", encodeGolden(t, got))
 }
@@ -316,18 +335,18 @@ func TestSocketErrorTextParity(t *testing.T) {
 	assertGolden(t, "socket_error_text_parity.golden.json", encodeGolden(t, got))
 }
 
-// TestSocketListNonDirErrorText pins the W5 non-directory wording, which is
-// linux-only because the syscall op name is platform-specific: Go reports
-// "readdirent" on Linux and "fdopendir" on Darwin for the same failure.
+// TestSocketListNonDirErrorText pins the W5 non-directory wording. Since 7d193f89
+// files.list opens with O_DIRECTORY, so a non-directory now fails AT the open with
+// ENOTDIR — `open <p>: not a directory` — rather than reaching the readdir. That
+// is a real wire change from the earlier `readdirent <p>: not a directory`, and
+// claustrum matches it (odirectory_unix.go).
 //
-// That is NOT a claustrum-vs-reference divergence. The reference daemon is also
-// Go, so it goes through the same stdlib path and reports the same op on each
-// platform; claustrum matches it per-OS. What is pinned here is that we reach
-// the readdir stage at all — the bug this replaced reported an "open" error,
-// because os.ReadDir collapses both failures into one PathError.
+// Gated to linux: the wording is verified against the reference on linux, and on
+// Windows there is no O_DIRECTORY (the flag is 0, so the failure lands elsewhere).
+// The reference is also Go, so it takes the same stdlib path per-OS.
 func TestSocketListNonDirErrorText(t *testing.T) {
 	if runtime.GOOS != "linux" {
-		t.Skip("syscall op name is platform-specific (linux readdirent / darwin fdopendir)")
+		t.Skip("O_DIRECTORY open wording verified on linux; Windows has no O_DIRECTORY")
 	}
 	root := resolveTestRoot(t, t.TempDir())
 	writeFile(t, filepath.Join(root, "regular.txt"), "x\n", 0o644)
@@ -344,9 +363,11 @@ func TestSocketListNonDirErrorText(t *testing.T) {
 }
 
 // TestSocketListPermissionDeniedErrorText pins the remaining W5 case: an
-// unreadable file must report the open failure ("permission denied"), where the
-// old os.ReadDir path reported "not a directory" for it — describing the wrong
-// problem entirely.
+// unreadable DIRECTORY reports the open failure ("permission denied"). Under
+// 7d193f89's O_DIRECTORY open this is the ONLY shape that still yields
+// permission-denied — an unreadable regular file now fails the O_DIRECTORY type
+// check first and reports "not a directory" (covered by the non-dir test), so
+// the fixture is a mode-000 directory rather than a file.
 //
 // Split out because it is the ONLY assertion in this group that depends on the
 // running uid; keeping it inside the shared test made a root environment skip
@@ -359,11 +380,15 @@ func TestSocketListPermissionDeniedErrorText(t *testing.T) {
 		t.Skip("runs as root; mode 000 is readable so the open would succeed")
 	}
 	root := resolveTestRoot(t, t.TempDir())
-	writeFile(t, filepath.Join(root, "noperm.txt"), "x\n", 0o000)
+	noperm := filepath.Join(root, "noperm")
+	if err := os.Mkdir(noperm, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(noperm, 0o700) })
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
 	got := []json.RawMessage{
-		normPath(cl.call(req(3, "files.list", map[string]any{"path": filepath.Join(root, "noperm.txt")})), root),
+		normPath(cl.call(req(3, "files.list", map[string]any{"path": noperm})), root),
 	}
 	assertGolden(t, "socket_list_permission_denied.golden.json", encodeGolden(t, got))
 }
@@ -432,7 +457,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 		req(7, "git.status", map[string]any{"path": "~/repo"}),
 		req(8, "git.list_branches", map[string]any{"path": "~/repo"}),
 		req(9, "git.worktree_create", map[string]any{ // both params expand
-			"baseRepo": "~/repo", "branchName": "wt", "worktreePath": "~/wt",
+			"baseRepo": "~/repo", "branchName": "wt", "worktreePath": "~/repo/.claude/worktrees/wt",
 		}),
 		// Bare "~" and a trailing slash both expand. Asserted with validate,
 		// not stat: a directory's reported size is filesystem-dependent (140
@@ -464,10 +489,10 @@ func TestSocketTildeExpansion(t *testing.T) {
 		// as coverage.
 		req(17, "files.list", map[string]any{"path": "~//"}),
 		req(18, "git.worktree_create", map[string]any{
-			"baseRepo": "~/repo", "branchName": "wt2", "worktreePath": "~/wt2/",
+			"baseRepo": "~/repo", "branchName": "wt2", "worktreePath": "~/repo/.claude/worktrees/wt2/",
 		}),
 		req(19, "git.worktree_create", map[string]any{
-			"baseRepo": "~/repo", "branchName": "wt3", "worktreePath": "~//wt3",
+			"baseRepo": "~/repo", "branchName": "wt3", "worktreePath": "~/repo/.claude/worktrees//wt3",
 		}),
 		// The remaining frames that carry an expanded path. #205 pinned the four
 		// above and left these unpinned, which is the same gap in a smaller form:
@@ -523,13 +548,19 @@ func TestSocketTildeExpansion(t *testing.T) {
 	// id 18 above. Note this leaves branch "wt4" behind — a failed
 	// `worktree add -b` creates the branch before it validates the path — so
 	// anything appended after this point inherits it.
+	// Under 7d193f89 the freshness check ("already exists … fresh directory")
+	// fires before git is ever run, so this now asserts that the REFUSAL echoes
+	// the expanded, trailing-separator-cleaned path — the same wire-visibility the
+	// row has always pinned, one refusal earlier. The path expands under the repo
+	// (containment), and expandPath strips the trailing "/" for the tilde form.
+	const wtBase = "<DIR>/repo/.claude/worktrees/wt2"
 	wtErr := string(normPath(cl.call(req(22, "git.worktree_create", map[string]any{
-		"baseRepo": "~/repo", "branchName": "wt4", "worktreePath": "~/wt2/",
+		"baseRepo": "~/repo", "branchName": "wt4", "worktreePath": "~/repo/.claude/worktrees/wt2/",
 	})), home))
-	if strings.Contains(wtErr, "<DIR>/wt2/") {
+	if strings.Contains(wtErr, wtBase+"/") {
 		t.Errorf("worktree_create error kept the trailing separator: %s", wtErr)
 	}
-	if !strings.Contains(wtErr, "<DIR>/wt2") {
+	if !strings.Contains(wtErr, wtBase) {
 		t.Errorf("worktree_create error does not name the expanded path: %s", wtErr)
 	}
 
@@ -667,7 +698,10 @@ func TestSocketGitRepoDetection(t *testing.T) {
 	cl := dial(t, sock)
 	var calls []string
 	id := 0
-	for _, m := range []string{"git.info", "git.status", "git.list_branches"} {
+	// git.status dropped plain repo detection in 7d193f89 (it now needs baseRepo
+	// and reports only for a session worktree of it), so it is covered by the
+	// dedicated status tests rather than this repo-shape sweep.
+	for _, m := range []string{"git.info", "git.list_branches"} {
 		for _, dir := range []string{
 			work,                            // ordinary work tree
 			filepath.Join(root, "bare.git"), // bare: no work tree
@@ -722,7 +756,7 @@ func TestSocketWorktreeSourceBranch(t *testing.T) {
 		params := map[string]any{
 			"baseRepo":     repo,
 			"branchName":   fmt.Sprintf("w%d", i),
-			"worktreePath": filepath.ToSlash(filepath.Join(root, fmt.Sprintf("wt%d", i))),
+			"worktreePath": filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", fmt.Sprintf("wt%d", i))),
 		}
 		if src != "" {
 			params["sourceBranch"] = src
@@ -768,16 +802,18 @@ func TestSocketWorktreeRemoveBranch(t *testing.T) {
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	wt := func(n string) string { return filepath.ToSlash(filepath.Join(root, n)) }
+	// 7d193f89 confines session worktrees to inside the repo.
+	wt := func(n string) string { return filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", n)) }
+	wtDir := func(n string) string { return filepath.Join(repo, ".claude", "worktrees", n) }
 
 	// Two worktrees: one whose branch stays at master, one that diverges.
 	cl.call(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "merged", "worktreePath": wt("wtm")}))
 	cl.call(req(2, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "unmerged", "worktreePath": wt("wtu")}))
-	writeFile(t, filepath.Join(root, "wtu", "z.txt"), "z\n", 0o644)
-	runGit(t, filepath.Join(root, "wtu"), "add", "z.txt")
-	runGit(t, filepath.Join(root, "wtu"), "commit", "-m", "diverge")
+	writeFile(t, filepath.Join(wtDir("wtu"), "z.txt"), "z\n", 0o644)
+	runGit(t, wtDir("wtu"), "add", "z.txt")
+	runGit(t, wtDir("wtu"), "commit", "-m", "diverge")
 
 	got := []json.RawMessage{
 		// before: master + both worktree branches
@@ -842,14 +878,15 @@ func TestSocketWorktreeCreatePopulates(t *testing.T) {
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	wt := filepath.ToSlash(filepath.Join(root, "wt"))
+	wtDir := filepath.Join(repo, ".claude", "worktrees", "wt")
+	wt := filepath.ToSlash(wtDir)
 	reply := cl.call(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "wt", "worktreePath": wt}))
 	if !strings.Contains(string(reply), `"success":true`) {
 		t.Fatalf("worktree_create failed: %s", reply)
 	}
 
-	got := treeOf(t, filepath.Join(root, "wt"))
+	got := treeOf(t, wtDir)
 	want := []string{".claude", ".claude/settings.json", "local.env", "tracked.txt"}
 	eqTree(t, got, want, "worktree_create over the socket")
 }
@@ -883,7 +920,7 @@ func TestSocketWorktreeCreateFailureCarriesGitStderr(t *testing.T) {
 
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
-	wt := filepath.ToSlash(filepath.Join(root, "wt"))
+	wt := filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", "wt"))
 	reply := string(cl.call(req(1, "git.worktree_create", map[string]any{
 		"baseRepo": repo, "branchName": "dup", "worktreePath": wt})))
 
@@ -923,7 +960,11 @@ func TestWorktreeRemoveSuccessIsNotReportedAsTimeout(t *testing.T) {
 	repo := filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "main", "repo")
 	runGit(t, repo, "commit", "--allow-empty", "-m", "init")
-	wt := filepath.ToSlash(filepath.Join(root, "wt"))
+	// Inside the repo now (7d193f89 containment); git won't make the leading dirs.
+	if err := os.MkdirAll(filepath.Join(repo, ".claude", "worktrees"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", "wt"))
 	runGit(t, repo, "worktree", "add", "-b", "gone", wt)
 
 	s := newTestServer(t)
