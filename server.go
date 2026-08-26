@@ -75,6 +75,11 @@ type server struct {
 	// env to disable it, so this is always-on to match; a test overrides it to a
 	// short value.
 	idleTimeout time.Duration
+
+	// sockInfo is the socket file's identity at bind time, so teardown can unlink it
+	// only if it is still the inode this daemon bound (removeSocketIfOwned) — a
+	// restart's successor may have rebound the path to a new inode.
+	sockInfo os.FileInfo
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -386,6 +391,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// in the daemonized child so any warning logs once from the running daemon.
 	listenPipe = honorListenPipe(listenPipe)
 
+	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for removeSocketIfOwned)
 	s := &server{
 		token:        token,
 		ln:           ln,
@@ -395,6 +401,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		keepChildren: keepChildren,
 		wlog:         wlog,
 		idleTimeout:  idleConnTimeout,
+		sockInfo:     sockFI,
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
@@ -559,6 +566,10 @@ func daemonizeWithToken(socket, forwardToken string) {
 		defer pr.Close() // parent's copy of the read end; the child has its own
 	}
 
+	// Record whether a LIVE predecessor daemon is already on this socket, and its
+	// inode, BEFORE the child rebinds the path — so the wait below can tell the
+	// successor's fresh socket from the predecessor's (7d193f89 handoff).
+	predInfo := livePredecessorIdent(socket)
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "daemonize: %v\n", err)
 		osExit(1)
@@ -572,12 +583,18 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// immediately always finds a listening socket; claustrum returned the moment
 	// the fork succeeded and lost that race. Measured at 5db5e4a — socket present
 	// at the instant the launcher returned: reference YES, claustrum NO.
-	if !waitForDaemonAccept(socket) {
-		// The socket never appeared. The reference reports exactly this and exits
-		// 1 — measured with a zero-byte -token-file, where its child refuses to
-		// start: "claude-ssh: timeout waiting for daemon to accept on <socket>",
-		// exit 1, after the full 10.06s deadline.
-		fmt.Fprintf(os.Stderr, "claustrum: timeout waiting for daemon to accept on %s\n", socket)
+	if !waitForDaemonAccept(socket, predInfo) {
+		// The socket never appeared (or a live predecessor never handed off). The
+		// reference reports exactly this and exits 1 — measured with a zero-byte
+		// -token-file, where its child refuses to start:
+		// "claude-ssh: timeout waiting for daemon to accept on <socket>", exit 1,
+		// after the full 10.06s deadline. When a predecessor was still holding the
+		// socket, 7d193f89 reports the distinct "daemon did not take over" instead.
+		if predInfo != nil {
+			fmt.Fprintf(os.Stderr, "claustrum: daemon did not take over %s (predecessor still owns it)\n", socket)
+		} else {
+			fmt.Fprintf(os.Stderr, "claustrum: timeout waiting for daemon to accept on %s\n", socket)
+		}
 		osExit(1)
 	}
 	osExit(0)
@@ -599,14 +616,20 @@ func daemonizeWithToken(socket, forwardToken string) {
 // occupied path (nothing ever accepts there) and it would give up early on any
 // child that dies, where the reference keeps waiting. The confirming dial's
 // result is deliberately ignored for the same reason.
-func waitForDaemonAccept(socket string) bool {
+func waitForDaemonAccept(socket string, pred os.FileInfo) bool {
 	deadline := time.Now().Add(daemonStartTimeout)
 	for {
-		if _, err := os.Stat(socket); err == nil {
-			if c, err := net.Dial("unix", socket); err == nil {
-				_ = c.Close()
+		if fi, err := os.Stat(socket); err == nil {
+			// A socket is present. When a LIVE predecessor was on this path, wait
+			// until the inode differs — the successor has unlinked the old socket and
+			// bound a fresh one (handoff complete). With no predecessor, any present
+			// socket is the child's, exactly as before.
+			if pred == nil || !os.SameFile(fi, pred) {
+				if c, err := net.Dial("unix", socket); err == nil {
+					_ = c.Close()
+				}
+				return true
 			}
-			return true
 		}
 		if time.Now().After(deadline) {
 			return false
@@ -894,7 +917,10 @@ func (s *server) closeAll(socket string) {
 	if s.pipeLn != nil {
 		_ = s.pipeLn.Close()
 	}
-	_ = os.Remove(socket)
+	// Unlink the socket only if it is still the inode we bound: a restart's successor
+	// may already have rebound the path, and 7d193f89 leaves a successor's socket
+	// alone rather than deleting it out from under the new daemon.
+	removeSocketIfOwned(socket, s.sockInfo)
 	removePersistedToken(socket)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token. No-op if
 	// the pipe was never started (unconditional, matching removePersistedToken).
