@@ -226,8 +226,11 @@ var errRe = regexp.MustCompile(
 // unix-only because it relies on a shell stub and an executable bit.
 func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 	bin := t.TempDir()
+	// Sleep on every git command EXCEPT the hook-config enumeration 7d193f89 runs
+	// before each one (`git config …`), which must succeed fast, else the
+	// hostile-config gate would time out before the removal under test.
 	if err := os.WriteFile(filepath.Join(bin, "git"),
-		[]byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		[]byte("#!/bin/sh\ncase \"$*\" in *config*) exit 0 ;; *) exec sleep 30 ;; esac\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))

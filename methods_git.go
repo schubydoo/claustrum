@@ -239,6 +239,12 @@ func gitInfo(req *request) response {
 	// 7d193f89 opens git.info with the excludesFile probe (GIT_DIR=/dev/null),
 	// reproduced for parity though its result is not on the wire.
 	gitExcludesProbe(p.Path)
+	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
+	// reference cannot pin its config-defined hooks off and refuses with -32603
+	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
+	if msg, bad := hostileConfigRefusal(p.Path); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
 	// isRepo now requires BOTH a git dir and a work tree, under the light hardening
 	// profile: a bare repo has a git dir but no work tree, so --show-toplevel fails
 	// and it reports the bare notRepoResult (matching the old --is-inside-work-tree
@@ -420,6 +426,13 @@ func gitStatus(req *request) response {
 	if p.BaseRepo == "" {
 		return errResult(req.ID, codeInvalidParam, "baseRepo is required")
 	}
+	// A repo whose config cannot be enumerated is refused with -32603 before status
+	// runs (7d193f89). The enumeration is on baseRepo — where git reports the config
+	// path relative (".git/config"), matching the reference; the worktree path would
+	// resolve to the same config but git would report it absolute. Measured on VM.
+	if msg, bad := hostileConfigRefusal(p.BaseRepo); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
 	if !gitStatusWorktreeOf(p.Path, p.BaseRepo) {
 		// The reference returns the full status shape (clean:false), not the
 		// bare notRepoResult that git.info uses.
@@ -520,6 +533,11 @@ func gitListBranches(req *request) response {
 	if baseRepoUnderManagedWorktrees(p.repoDir()) {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
+	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
+	// measured on an ephemeral VM.
+	if msg, bad := hostileConfigRefusal(p.Path); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
 	// 7d193f89 runs this under the light hardening profile with the config
 	// precursor; the repo gate is `rev-parse --git-dir` (true for a bare repo and
 	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
@@ -575,6 +593,16 @@ func gitWorktreeCreate(req *request) response {
 			Success:   false,
 			Error:     managedWorktreesRefusal,
 			ErrorCode: "nested_base_repo",
+		})
+	}
+	// A repo whose config cannot be enumerated is refused before git runs — the
+	// reference surfaces the same "config-defined hooks could not be pinned off"
+	// detail under errorCode worktree_add_failed. Measured on an ephemeral VM.
+	if msg, bad := hostileConfigRefusal(repo); bad {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     msg,
+			ErrorCode: "worktree_add_failed",
 		})
 	}
 	// The reference checks the target is a repo BEFORE attempting the worktree
@@ -774,6 +802,17 @@ func gitWorktreeRemove(req *request) response {
 	// path would then fail "already registered" where the reference re-creates
 	// cleanly. Capture the admin dir now, before the removal deletes the pointer,
 	// and prune it after a successful removal.
+	// If the repo's config cannot be enumerated, the reference cannot examine the
+	// worktree's registrations to tell whether it is locked, so it refuses with its
+	// own message (a corrupt config, not the read methods' -32603). Measured against
+	// 7d193f89 on an ephemeral VM.
+	if _, bad := hostileConfigRefusal(repo); bad {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error: "failed to remove worktree: could not check whether " + p.WorktreePath +
+				" is locked (its registrations could not be examined); retry",
+		})
+	}
 	adminDir := worktreeAdminDir(p.WorktreePath)
 	// When `git worktree remove --force` fails for a NON-LOCKED reason, the reference
 	// removes worktreePath itself and still answers {"success":true}; it reports

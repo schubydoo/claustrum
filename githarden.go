@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -165,6 +166,36 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	cmd.Env = hardenedGitEnv(heavy)
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
+}
+
+// hostileConfigRefusal runs the config-hook enumeration 7d193f89 performs before
+// every git command (`git config -z --list --name-only`). When that enumeration
+// FAILS — e.g. a corrupt `.git/config` — the reference cannot pin the repo's
+// config-defined hooks off, so it refuses the whole method rather than run git.
+// Returns the refusal detail and true on failure; "" and false when the config is
+// enumerable. Callers phrase the method-specific frame (a -32603 for the read
+// methods, a worktreeResult for worktree_create, its own message for
+// worktree_remove). Measured byte-for-byte against 7d193f89 on an ephemeral VM.
+func hostileConfigRefusal(dir string) (string, bool) {
+	ctx, cancel := gitCtx()
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "config", "-z", "--list", "--name-only")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
+	_, err := cmd.Output()
+	if err == nil {
+		return "", false
+	}
+	// The reference wraps the git error as "<exit status>: <stderr>", then as
+	// "listing the configuration in force: <that>", then as the hooks refusal.
+	detail := err.Error()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if s := strings.TrimSpace(string(ee.Stderr)); s != "" {
+			detail = err.Error() + ": " + s
+		}
+	}
+	return "config-defined hooks could not be pinned off; git not run: " +
+		"listing the configuration in force: " + detail, true
 }
 
 // stderrHeadCap is the byte cap 7d193f89 applies to captured git output before it
