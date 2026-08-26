@@ -678,7 +678,7 @@ func gitWorktreeCreate(req *request) response {
 	if !ok {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
-			Error:     "git worktree add failed: " + out,
+			Error:     "git worktree add failed: " + boundedStderrHead(out),
 			ErrorCode: "worktree_add_failed",
 		})
 	}

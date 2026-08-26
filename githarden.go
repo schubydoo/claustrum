@@ -166,3 +166,20 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
 }
+
+// stderrHeadCap is the byte cap 7d193f89 applies to captured git output before it
+// reaches an error frame (its bounded stderr sink keeps only the first 512 bytes).
+const stderrHeadCap = 512
+
+// boundedStderrHead caps s at its first stderrHeadCap BYTES and trims surrounding
+// whitespace, matching 7d193f89: a git failure whose output exceeds 512 bytes is
+// reported with only the head, so an error frame (e.g. "git worktree add failed: …")
+// cannot balloon with a huge git message. The cap is on bytes, not runes, so a
+// multi-byte rune split at the boundary is kept as-is — exactly as the reference's
+// byte-bounded buffer does.
+func boundedStderrHead(s string) string {
+	if len(s) > stderrHeadCap {
+		s = s[:stderrHeadCap]
+	}
+	return strings.TrimSpace(s)
+}
