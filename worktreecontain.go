@@ -88,6 +88,42 @@ func symlinkedComponent(repo, worktreePath string) string {
 	return ""
 }
 
+// managedWorktreesMarker is the file 7d193f89 uses to tag a directory as holding
+// managed session worktrees. A baseRepo beneath such a directory (or beneath a
+// literal `.claude/worktrees`) is refused as an invalid trust root — a session
+// worktree must be created from a real top-level repository, never from inside
+// another session's worktree tree.
+const managedWorktreesMarker = ".claude-managed-worktrees"
+
+// managedWorktreesRefusal is the fixed message 7d193f89 returns when a baseRepo is
+// not a valid trust root, byte-for-byte.
+const managedWorktreesRefusal = "baseRepo is inside a managed worktrees directory " +
+	"(beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees " +
+	"marker), or could not be validated as a trust root"
+
+// baseRepoUnderManagedWorktrees reports whether repo sits inside a managed
+// worktrees tree: beneath a `.claude/worktrees` directory, or beneath any ancestor
+// directory that holds a `.claude-managed-worktrees` marker file. 7d193f89 refuses
+// such a baseRepo on git.worktree_create (errorCode "nested_base_repo"),
+// git.worktree_remove (no errorCode), and git.list_branches (bare isRepo:false).
+// Confirmed byte-for-byte against 7d193f89 on an ephemeral VM.
+func baseRepoUnderManagedWorktrees(repo string) bool {
+	p := canonicalPath(repo)
+	for {
+		if fi, err := os.Stat(filepath.Join(p, managedWorktreesMarker)); err == nil && !fi.IsDir() {
+			return true
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return false
+		}
+		if filepath.Base(p) == worktreesSubdir && filepath.Base(parent) == claudeDirName {
+			return true
+		}
+		p = parent
+	}
+}
+
 // pathHasDotDot reports whether any path segment is exactly "..". The check is on
 // the raw (already ~-expanded) path, before any cleaning — the reference reports
 // the ".." as present, so a filepath.Clean that resolved it away would change the

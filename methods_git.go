@@ -514,6 +514,12 @@ func gitListBranches(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
+	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree before
+	// listing anything, answering the bare isRepo:false shape (branches:[]). Measured
+	// against 7d193f89 on an ephemeral VM.
+	if baseRepoUnderManagedWorktrees(p.repoDir()) {
+		return okResult(req.ID, branchesResult{Branches: []string{}})
+	}
 	// 7d193f89 runs this under the light hardening profile with the config
 	// precursor; the repo gate is `rev-parse --git-dir` (true for a bare repo and
 	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
@@ -560,6 +566,17 @@ func gitWorktreeCreate(req *request) response {
 		return errResult(req.ID, codeInvalidParam, "branchName is required")
 	}
 	repo := p.repoDir()
+	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
+	// invalid trust root, before the repo check. Measured against 7d193f89 on an
+	// ephemeral VM. A session worktree must be created from a real top-level repo,
+	// never from inside another session's worktree tree.
+	if baseRepoUnderManagedWorktrees(repo) {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     managedWorktreesRefusal,
+			ErrorCode: "nested_base_repo",
+		})
+	}
 	// The reference checks the target is a repo BEFORE attempting the worktree
 	// add, returning a clean not_a_repo error rather than leaking git's raw
 	// "fatal: not a git repository …" output as a worktree_add_failed.
@@ -665,6 +682,15 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
+	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid
+	// trust root (no errorCode on remove). Measured against 7d193f89 on an ephemeral
+	// VM. Comes before the containment/removal below.
+	if baseRepoUnderManagedWorktrees(repo) {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error:   managedWorktreesRefusal,
+		})
+	}
 	// worktree-location containment, added by the reference in 7d193f89 and matched
 	// here byte-for-byte (verb "remove", no errorCode field). It gates the
 	// os.RemoveAll fallback below: only a path strictly inside the repo survives to
