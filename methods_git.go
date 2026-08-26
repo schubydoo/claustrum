@@ -621,6 +621,20 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "mkdir_failed",
 		})
 	}
+	// 7d193f89 also creates the worktree directory ITSELF before `git worktree add`
+	// (git adds into the pre-made empty dir). It does so by opening the parent and
+	// `mkdirat`-ing the leaf, so an unwritable/foreign-owned parent fails HERE as
+	// `failed to create worktree directory: mkdirat <leaf>: <errno>` with errorCode
+	// mkdir_failed — where claustrum used to reach git and return worktree_add_failed.
+	// mkdirWorktreeLeaf reproduces the `mkdirat <leaf>` wording byte-for-byte (unix;
+	// os.MkdirAll on Windows). Measured against 7d193f89 on an ephemeral VM.
+	if err := mkdirWorktreeLeaf(p.WorktreePath); err != nil {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     fmt.Sprintf("failed to create worktree directory: %v", err),
+			ErrorCode: "mkdir_failed",
+		})
+	}
 	// Default the source to the repo's current branch. On an unborn HEAD
 	// (no-commit repo) abbrev-ref fails — leave source empty rather than capturing
 	// git's error text, and let `git worktree add` infer an orphan branch (it
