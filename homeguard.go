@@ -14,7 +14,8 @@ import (
 // Why this exists, precisely. Two methods hand a caller-supplied path to
 // os.RemoveAll: files.extract_tar wipes destDir before unpacking
 // (methods_files.go), and git.worktree_remove deletes worktreePath when git
-// refuses (methods_git.go). Both paths are `~`-expanded first — bindParams
+// refuses for a non-locked reason (methods_git.go; a locked worktree is refused,
+// not deleted). Both paths are `~`-expanded first — bindParams
 // calls expandPaths on EVERY request (rpc.go), and expandPath returns the home
 // directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` reaches
 // os.RemoveAll($HOME).

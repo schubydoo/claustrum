@@ -77,7 +77,7 @@ whatever the daemon's user can.
 `files.*` and `git.*` read and act on paths the caller supplies; they are as
 privileged as the daemon's user. Two of those paths reach a recursive delete
 (`os.RemoveAll`): `files.extract_tar` wipes its destination before unpacking, and
-`git.worktree_remove` deletes the worktree path when git fails. `wipesHomeDir`
+`git.worktree_remove` deletes the worktree path when git fails for a non-locked reason (a locked worktree is refused, not deleted). `wipesHomeDir`
 (`homeguard.go`) refuses any target that is or contains the home directory — an
 always-on guard (D2; see [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)). Paths
 under home stay allowed, because the daemon's own install path lives there.

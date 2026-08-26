@@ -33,9 +33,10 @@ confirmed that nothing else changed.
 ### `7d193f89fc02cf1035a391245312e34ad419f63e` — 2026-08-25
 
 Pinned by Claude Desktop for Linux `1.37937.1`. A large build that rebuilt the
-session-worktree surface. Six wire changes, all matched byte-for-byte — the four
-below, plus two more (the `git.status` untracked handling and the `worktree_remove`
-registration prune) that the off-wire git rewrite surfaced.
+session-worktree surface. Seven wire changes, all matched byte-for-byte — the four
+below, plus three more (the `git.status` untracked handling, the `worktree_remove`
+registration prune, and the `worktree_remove` locked-worktree refusal) that the
+off-wire git rewrite and VM probes surfaced.
 
 **Wire delta.**
 
@@ -73,18 +74,25 @@ The empty `worktreePath` messages ("failed to create parent directory: \"\" does
 name a directory" on create, "failed to remove worktree: \"\" does not name a directory"
 on remove) are matched too.
 
-Two of these — the `git.status` untracked handling and the `worktree_remove`
-registration prune — were found by matching the OFF-wire git-invocation rewrite
-(below) rather than by the frame battery, which the top-level untracked and
-non-locked-worktree fixtures did not exercise.
+Three of these — the `git.status` untracked handling, the `worktree_remove`
+registration prune, and the `worktree_remove` locked-worktree refusal — were found
+by matching the OFF-wire git-invocation rewrite (below) and by VM probes, rather than
+by the frame battery, whose top-level-untracked and non-locked-worktree fixtures did
+not exercise them.
 
 - **`git.status` untracked files.** `--untracked-files=all` lists an untracked file
   inside an untracked directory individually (`?? sub/u.txt`) rather than as the
   directory (`?? sub/`).
-- **`git.worktree_remove` registration prune.** The removal now drops
+- **`git.worktree_remove` refuses a LOCKED worktree.** A locked worktree now answers
+  `{"success":false,"error":"refusing to remove worktree: <p> is locked (git worktree
+  lock); unlock it to remove it"}` (message fixed regardless of the lock reason) and
+  the directory survives. Pre-`7d193f89` the reference DELETED it via the recursive
+  fallback and answered `{"success":true}`. Any OTHER non-zero git exit (an ordinary
+  directory, a non-repo `baseRepo`) still reaches that fallback. Measured on an
+  ephemeral VM against `7d193f89`; the frame battery never removes a locked worktree.
+- **`git.worktree_remove` registration prune.** A completed removal drops
   `$GIT_DIR/worktrees/<name>`, so a re-create at the same path succeeds where it
-  previously failed `already registered` (the divergence surfaced only on the
-  locked-worktree fallback path).
+  previously failed `already registered`.
 
 **Off-wire churn.** The Go toolchain moved `go1.23` → `go1.25`, which accounts for
 most of the size growth. The build also **rewrote the entire git layer**: every git
@@ -94,10 +102,17 @@ a `config -z --list --name-only` precursor and config-hook pinning
 (`GIT_CONFIG_KEY_0=hook.enabled=false`) injected on each command; `git.status` and
 `git.worktree_create` are additionally reimplemented as multi-command plumbing in an
 isolated temporary gitdir. claustrum matches the hardening profiles, the precursor,
-the base hook pins, and the wire-visible flags across every git method; the
-isolated-gitdir status assembly and the read-tree worktree checkout are process-shape
-that produces identical output, matched for the observable and security behaviour but
-not reproduced command-for-command. Beyond git: a daemon-to-daemon reconnect handoff
+the base hook pins, and the wire-visible flags across `git.status`, `git.info`,
+`git.list_branches`, and `git.worktree_create`; the isolated-gitdir status assembly and
+the read-tree worktree checkout are process-shape that produces identical output,
+matched for the observable and security behaviour but not reproduced command-for-command.
+**`git.worktree_remove` is an off-wire exception:** the reference implements it as a
+hardened `rev-parse --absolute-git-dir`, a direct filesystem delete of the worktree and
+its `$GIT_DIR/worktrees/<name>` registration, and a hardened `update-ref` branch delete
+— no `git worktree remove` at all — whereas claustrum runs an **unhardened**
+`git worktree remove --force` with an `os.RemoveAll` fallback plus a hardened branch
+delete. Both yield byte-identical frames on every probed case (locked refusal,
+non-worktree delete, stale re-create, normal removal), so the difference is off-wire. Beyond git: a daemon-to-daemon reconnect handoff
 and idle-connection management (the SSH-reliability items in the Desktop changelog),
 install stale-partial pruning, and a trust-root validation for worktrees rooted
 OUTSIDE `.claude/worktrees` (the `git.worktree.external_root` feature). That

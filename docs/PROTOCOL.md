@@ -219,6 +219,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"` |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / is not inside the repository <repo>; …}` | in `error` (no `errorCode`; `7d193f89` containment) |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error` (no `errorCode`) — gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
+| git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error` (no `errorCode`) — `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place; the message is fixed regardless of the lock reason. Pre-`7d193f89` the reference deleted it via the fallback and answered `success:true`. |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
 | git.worktree_remove | `failed to remove worktree: <git output>; manual cleanup also failed: <err>` | in `error` (only if manual cleanup also fails) |
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error` — now behind `7d193f89` containment (fires only if a repo is an ancestor of home) |
@@ -623,15 +624,20 @@ fails the request:
   remove worktree: \"\" does not name a directory"}`. Only a path that passes these
   checks reaches git and the recursive-delete fallback below — so the fallback can
   only ever target a path inside the repository.
-- The daemon runs `git worktree remove --force`. **Whenever git exits non-zero —
-  for any reason — the daemon then removes `worktreePath` itself, recursively, and
-  still answers `{"success":true}`.** This method is therefore a recursive delete
-  of the caller-supplied `worktreePath` whenever git is unhappy (a locked worktree,
-  an ordinary directory, a non-repo `baseRepo`). That is **reference behavior**,
-  matched deliberately. Treat `worktreePath` as a path you ask the daemon to
-  remove, not as a filter. The reply carries `{"success":false,"error":"failed to
-  remove worktree: <git output>; manual cleanup also failed: <err>"}` only when the
-  manual cleanup *also* fails.
+- The daemon runs `git worktree remove --force`. **`7d193f89` refuses a LOCKED
+  worktree here:** git fails with `cannot remove a locked working tree`, and the
+  reply is `{"success":false,"error":"refusing to remove worktree: <p> is locked
+  (git worktree lock); unlock it to remove it"}` (message fixed regardless of the
+  lock reason), leaving the directory in place. **For any OTHER non-zero git exit —
+  an ordinary directory, a non-repo `baseRepo` — the daemon then removes
+  `worktreePath` itself, recursively, and still answers `{"success":true}`.** So on
+  a non-locked failure this method is a recursive delete of the caller-supplied
+  `worktreePath`; treat `worktreePath` as a path you ask the daemon to remove, not
+  as a filter. Both are **reference behavior**, matched deliberately — though the
+  lock refusal is a `7d193f89` change (pre-`7d193f89` the reference deleted the
+  locked worktree too, via the fallback). The reply carries
+  `{"success":false,"error":"failed to remove worktree: <git output>; manual cleanup
+  also failed: <err>"}` only when the manual cleanup *also* fails.
 - A request that names a non-existent branch still answers a bare
   `{"success":true}` — hence "lenient".
 - **A home-directory `worktreePath` is refused — now by the `7d193f89` containment,

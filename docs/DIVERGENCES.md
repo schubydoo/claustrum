@@ -202,7 +202,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** Two methods hand a caller-supplied, `~`-expanded path to
   `os.RemoveAll`: `files.extract_tar` wipes `destDir`, and `git.worktree_remove`
-  deletes `worktreePath` when git exits non-zero. `wipesHomeDir` (`homeguard.go`)
+  deletes `worktreePath` when git exits non-zero for a non-locked reason (a locked
+  worktree is refused, not deleted). `wipesHomeDir` (`homeguard.go`)
   refuses any target that **is or contains** the home directory. Descendants stay
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**
@@ -300,7 +301,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key; disabled bypasses `context.WithTimeout`.
 - **Never read a timeout as "git refused."** `git.worktree_remove` treats a
-  failed git as permission to delete `worktreePath`, so claustrum keeps the timeout
+  non-locked git failure as permission to delete `worktreePath`, so claustrum keeps the timeout
   reply separate from the failure arm. The cap is also softer than it reads:
   `CombinedOutput` waits on git's output pipe, so a git that leaves a surviving
   child stays blocked past the deadline.
