@@ -128,19 +128,3 @@ func TestWorktreeRemoveForgedGitdirDoesNotDeleteRepoData(t *testing.T) {
 		t.Errorf("the forged .git pointer turned the prune into a delete of repo data: %v", err)
 	}
 }
-
-// copyClaudeDir's MkdirAll-fail give-up path: the worktree itself is a regular file,
-// so MkdirAll(worktree/.claude) fails. This branch has NO observable output difference
-// — without the guard the downstream copies fail just as silently — so this is a
-// no-panic / smoke guard, not a behavioral oracle (same spirit as the existing
-// TestWorktreeCopyFailuresAreSilent). It exists to exercise the give-up branch.
-func TestCopyClaudeDirUndestinable(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, claudeDirName, "settings.json"), "{}\n", 0o644)
-	wtFile := filepath.Join(dir, "wt") // a FILE, not a directory
-	writeFile(t, wtFile, "x\n", 0o644)
-	copyClaudeDir(dir, wtFile)
-	if _, err := os.Stat(filepath.Join(wtFile, claudeDirName)); err == nil {
-		t.Error("copyClaudeDir created .claude under a file destination")
-	}
-}

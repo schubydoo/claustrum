@@ -869,7 +869,10 @@ func TestSocketWorktreeCreatePopulates(t *testing.T) {
 	repo := filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "master", "repo")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "tracked\n", 0o644)
-	runGit(t, repo, "add", "tracked.txt")
+	writeFile(t, filepath.Join(repo, ".gitignore"), "local.env\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt", ".gitignore")
+	// .claude/ is NOT copied by 7d193f89, and a manifest match is copied only when
+	// git also ignores it — so local.env is both git-ignored and in the manifest.
 	writeFile(t, filepath.Join(repo, ".claude", "settings.json"), "{}\n", 0o644)
 	writeFile(t, filepath.Join(repo, ".worktreeinclude"), "local.env\n", 0o644)
 	writeFile(t, filepath.Join(repo, "local.env"), "K=V\n", 0o644)
@@ -887,7 +890,7 @@ func TestSocketWorktreeCreatePopulates(t *testing.T) {
 	}
 
 	got := treeOf(t, wtDir)
-	want := []string{".claude", ".claude/settings.json", "local.env", "tracked.txt"}
+	want := []string{".gitignore", "local.env", "tracked.txt"}
 	eqTree(t, got, want, "worktree_create over the socket")
 }
 

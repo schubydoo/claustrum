@@ -593,15 +593,16 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
 **Worktree population.** `git worktree add` checks out tracked files only, so the
 daemon then seeds the new worktree. The copies are best-effort, and a failure never
 fails the request:
-- **The daemon copies `.claude/` recursively and unconditionally**, except for its
-  `worktrees/` child. It skips an absent `.claude/` silently. Since `7d193f89`
-  places session worktrees under `.claude/worktrees/`, copying that subtree into a
-  worktree seeded there would recurse without bound, so it is skipped.
-- **`.worktreeinclude`** (repo root, `.gitignore` syntax) is an **include**
-  manifest: `git ls-files --others --ignored --exclude-from=.worktreeinclude`
-  (without `--exclude-standard`). The daemon therefore does *not* copy a gitignored
-  file that the manifest does not name. Without the manifest, the daemon copies no
-  untracked file.
+- **`.worktreeinclude`** (repo root, `.gitignore` syntax) is an **include** filter
+  over the git-ignored set: the daemon copies an untracked file only when it is
+  **both** named by the manifest **and** ignored by git's standard rules — the
+  intersection of `git ls-files --others --ignored --exclude-from=.worktreeinclude`
+  and `git ls-files --others --ignored --exclude-standard`. A manifest match that
+  git does not ignore is **not** copied, and without the manifest the daemon copies
+  no untracked file. (`7d193f89`; at `5db5e4a` the daemon also copied every manifest
+  match and copied `.claude/` recursively and unconditionally — `7d193f89` dropped
+  both, so `.claude/` is now subject to the same manifest-and-ignored rule as any
+  other path.)
 - **The daemon skips symlinks.** **Manifest entries must be plain filenames.** The
   daemon silently skips a path that `git ls-files` C-quotes (tab, quote, backslash,
   non-ASCII). This is a reference limitation reproduced for parity.
