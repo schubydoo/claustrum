@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,13 +61,19 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	}
 
 	// A directory with a DIFFERENT identity at the same path: "was not populated by git
-	// worktree add". A delete-then-recreate at the same path is NOT a reliable way to
-	// force a distinct identity — a freed inode (POSIX) or file index (Windows NTFS) can
-	// be reused for the new directory, so os.SameFile reports the two identical
-	// (measured: flaky on the ubuntu CI runner, not just Windows NTFS). Instead create
-	// the replacement ALONGSIDE the original, so the two coexist and their identities
-	// cannot collide, then move it into place after the original is gone — deterministic
-	// on every OS, so this sub-case no longer needs an OS skip.
+	// worktree add". Two filesystem hazards make this sub-case OS-specific:
+	//   - POSIX: a delete-then-recreate at the same path can reuse the freed inode, so
+	//     os.SameFile reports the two identical (measured: flaky on the ubuntu CI runner).
+	//     Creating the replacement ALONGSIDE the original (below) forces a distinct inode,
+	//     making the check deterministic on POSIX rather than luck-of-the-allocator.
+	//   - Windows: os.SameFile does NOT reliably distinguish two directories here at all —
+	//     measured, the windows-latest runner reports the swapped directory as identical
+	//     even when the two coexisted. So the identity check, and this sub-case, is
+	//     POSIX-only; production verifyCreatedWorktree inherits that Windows limitation,
+	//     exactly as dahandoff's removeSocketIfOwned does.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	orig := filepath.Join(base, "e", "wt")
 	if err := os.MkdirAll(orig, 0o755); err != nil {
 		t.Fatal(err)
