@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,7 +61,14 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	}
 
 	// A fresh directory at the same path — resolves and is a dir, but a different
-	// identity: "was not populated by git worktree add".
+	// identity: "was not populated by git worktree add". Windows os.SameFile cannot
+	// distinguish a delete-recreate at the same path (NTFS reuses the file index) — the
+	// same limitation dahandoff's removeSocketIfOwned test skips for — so this identity
+	// sub-case is POSIX-only. Production verifyCreatedWorktree inherits that Windows
+	// limitation exactly as removeSocketIfOwned does.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	if err := os.MkdirAll(wt, 0o755); err != nil {
 		t.Fatal(err)
 	}

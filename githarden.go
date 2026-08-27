@@ -175,10 +175,11 @@ var (
 	userExcludesCached string
 )
 
-// userExcludesFile resolves the user's global git excludes file once, matching
-// 7d193f89's lookupUserExcludesFile: the configured core.excludesFile if it is an
-// absolute path, else $XDG_CONFIG_HOME/git/ignore or $HOME/.config/git/ignore when
-// that file exists, else "/dev/null". hardenedArgs substitutes it for every git op.
+// userExcludesFile resolves the user's global git excludes file once: the configured
+// core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or
+// $HOME/.config/git/ignore when that file exists, else "/dev/null". This is the
+// excludes path 7d193f89 passes as core.excludesFile on every git invocation (observed
+// via a git-argv trace). hardenedArgs substitutes it for every git op.
 func userExcludesFile() string {
 	userExcludesOnce.Do(func() { userExcludesCached = resolveUserExcludesFile() })
 	return userExcludesCached
@@ -235,19 +236,29 @@ func hostileConfigRefusal(dir string) (string, bool) {
 	if err == nil {
 		return "", false
 	}
+	// A failure to CHDIR into dir — it does not exist, is a non-directory, or a parent
+	// is not traversable — is NOT a hostile config: git never reached a repo, so there
+	// are no config-defined hooks to pin off. This is a fully client-controlled honest
+	// input (a stale or mistyped path), so detect it locale-independently with os.Stat,
+	// BEFORE parsing git's localizable "cannot change to" text — a git build whose
+	// translation covers that message would otherwise flip this honest path to the
+	// -32603 refusal. The reference lets such an input fall through to its normal
+	// not-a-repo shape (measured against 7d193f89: a nonexistent path/baseRepo answers
+	// isRepo:false on the read methods, not_a_repo on worktree_create, and success on
+	// worktree_remove — NOT this refusal). Only a config git CAN reach but cannot parse
+	// (a corrupt .git/config) is refused here.
+	if fi, statErr := os.Stat(dir); statErr != nil || !fi.IsDir() {
+		return "", false
+	}
 	var stderr string
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		stderr = strings.TrimSpace(string(ee.Stderr))
 	}
-	// A failure to CHDIR into dir — it does not exist, or is not readable/traversable
-	// — is NOT a hostile config: git could not even reach the repo, so there are no
-	// config-defined hooks to pin off. The reference lets such an input fall through
-	// to its normal not-a-repo shape (measured against 7d193f89: a nonexistent
-	// path/baseRepo answers isRepo:false on the read methods, not_a_repo on
-	// worktree_create, and success on worktree_remove — NOT this refusal). Only a
-	// config that git CAN reach but cannot parse (a corrupt .git/config) is refused
-	// here. git's -C chdir failure is the one that reads "cannot change to '<dir>'".
+	// Residual fallback for the one chdir failure os.Stat cannot see: dir exists and is
+	// a directory, but git still cannot chdir into it (dir itself lacks +x). git's -C
+	// chdir failure reads "cannot change to '<dir>'". This stays behavioural for that
+	// exotic, non-honest input; the honest nonexistent-path case never reaches it.
 	if strings.Contains(stderr, "cannot change to") {
 		return "", false
 	}

@@ -222,7 +222,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error` (no `errorCode`) — `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place; the message is fixed regardless of the lock reason. Pre-`7d193f89` the reference deleted it via the fallback and answered `success:true`. |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
 | git.worktree_remove | `failed to remove worktree: <git output>; manual cleanup also failed: <err>` | in `error` (only if manual cleanup also fails) |
-| git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error` — now behind `7d193f89` containment (fires only if a repo is an ancestor of home) |
+| git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error` — behind `7d193f89` containment on the default branch (fires only if a repo is an ancestor of home); the active home guard on the `external_root` branch |
 | git.worktree_remove | `git worktree remove timed out after <dur>; no cleanup was attempted, and git may have partially removed the worktree` | D5 opt-in, in `error` |
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | (checked in that order after decode) |
@@ -563,13 +563,14 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   `signal: killed` (see D5 below).
 
 #### git.worktree_create
-`{baseRepo,branchName,worktreePath[,sourceBranch]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`
+`{baseRepo,branchName,worktreePath[,sourceBranch][,worktreeRoot]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`
 - The repo is **`baseRepo`**, not `path`. When `baseRepo` is absent, the daemon
   uses its cwd repo.
 - Missing `branchName` → `-32602 branchName is required`.
 - The resolved repo is not git → `{success:false,error:"not a git
   repository",errorCode:"not_a_repo"}`. The daemon checks this before the add.
-- **`7d193f89` confines the worktree to inside the repository.** After the repo
+- **By default (no `worktreeRoot`), `7d193f89` confines the worktree to inside the
+  repository.** After the repo
   check, `worktreePath` must be absolute, carry no `..` component, sit strictly
   under `baseRepo`, and not already exist. Each failure is
   `{success:false,error:"refusing to create worktree: …",errorCode:"unsafe_path"}`:
@@ -582,6 +583,22 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   directory: \"\" does not name a directory",errorCode:"mkdir_failed"}`. The daemon
   creates the parent directory before the add, so a nested path succeeds on a fresh
   repo.
+- **`worktreeRoot` (the `external_root` capability).** When the client supplies
+  `worktreeRoot`, the worktree is placed OUTSIDE the repository, at
+  `<worktreeRoot>/<directory>/<name>` (exactly two levels under the root); the in-repo
+  containment above is replaced by these checks (each `errorCode:"unsafe_path"`):
+  `worktreeRoot` and `worktreePath` must be absolute and `..`-free, and `worktreePath`
+  must sit exactly two levels under the root (`"<p> is not <worktree
+  location>/<directory>/<name> beneath <root>"`). The root must be owned by the
+  daemon's user (`"<root> is owned by uid <o>, not by you (uid <u>); …"`) and not
+  writable by its group or by every user on the host (`"<root> is writable by <who>
+  (mode <perm>); … chmod go-w"`). The `<directory>` level must not be a symlink and,
+  unless already marked, must start out empty (`"<dir> already exists, is not marked as
+  a worktree directory, and holds other files (for example \"<name>\"); … must start
+  out empty …"`). On success the daemon writes a 285-byte `.claude-managed-worktrees`
+  marker at the `<directory>` level. Independently, a `baseRepo` that itself sits under
+  a managed-worktrees marker is refused `{success:false,error:"baseRepo is inside a
+  managed worktrees directory …",errorCode:"nested_base_repo"}`.
 - Other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
   The tail is git's **combined** output, because the add writes its fatal to stderr
   and leaves stdout empty. For example: `"git worktree add failed: Preparing
@@ -615,16 +632,21 @@ fails the request:
   wire-invisible loss. Off by default.
 
 #### git.worktree_remove
-`{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)
+`{baseRepo,worktreePath[,branchName][,worktreeRoot]}` → `{"success":true}` (lenient)
 
-- **`7d193f89` confines the removal to inside the repository.** Before git runs,
+- **By default (no `worktreeRoot`), `7d193f89` confines the removal to inside the
+  repository.** Before git runs,
   `worktreePath` must be absolute, carry no `..` component, and sit strictly under
   `baseRepo`; otherwise the reply is `{"success":false,"error":"refusing to remove
   worktree: <p> …"}` (no `errorCode`), with the same three reasons as
   `worktree_create`. An empty `worktreePath` is `{"success":false,"error":"failed to
   remove worktree: \"\" does not name a directory"}`. Only a path that passes these
-  checks reaches git and the recursive-delete fallback below — so the fallback can
-  only ever target a path inside the repository.
+  checks reaches git and the recursive-delete fallback below — so the fallback targets
+  a path inside the repository, or, when `worktreeRoot` is supplied, one two levels
+  under that root (the same external containment as `worktree_create`). An external
+  remove additionally refuses a path with no `.git` file and leaves it in place
+  (`"<p> is not a worktree of <repo> (<p> has no .git file), so it is left in place; …"`)
+  rather than falling back to a recursive delete.
 - The daemon runs `git worktree remove --force`. **`7d193f89` refuses a LOCKED
   worktree here:** git fails with `cannot remove a locked working tree`, and the
   reply is `{"success":false,"error":"refusing to remove worktree: <p> is locked
@@ -645,8 +667,10 @@ fails the request:
   as parity.** A `~`-expanded home path is not strictly under `baseRepo`, so it is
   refused with the reference's `"…is not inside the repository…"` wording before git
   or the fallback. The claustrum-only D2 frame (`"worktreePath must not be or contain
-  the home directory: …"`) is now behind that containment on this method and fires
-  only in the exotic case of a repository that is itself an ancestor of home. D2
+  the home directory: …"`) is now behind that containment on this method's **default**
+  branch and fires only in the exotic case of a repository that is itself an ancestor
+  of home. On the `worktreeRoot` / `external_root` branch the in-repo containment does
+  not apply, so there D2 is the **active** home guard. D2
   remains the primary guard for `files.extract_tar`, which gained no containment. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
 - **A relative `worktreePath` is refused upfront** (`"…is a relative path…"`), so it

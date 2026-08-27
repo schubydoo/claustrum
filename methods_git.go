@@ -773,8 +773,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
 			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+p.BranchName)
 	}
-	// Post-condition (7d193f89): the add must have populated the directory claustrum
-	// created, not one swapped in during the add. Empty on an unraced create.
+	// Post-condition: the add must have populated the directory claustrum created, not
+	// one swapped in during the add. claustrum's own guard; empty on an unraced create.
 	if msg := verifyCreatedWorktree(p.WorktreePath, checkpoint); msg != "" {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,

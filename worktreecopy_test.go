@@ -225,7 +225,7 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 
 // safeOverlayDest creates missing intermediate directories for a manifest copy but
 // refuses to traverse a ".." or a symlinked component, so a planted link inside the
-// worktree cannot carry a copy outside it. Matches 7d193f89's safeOverlayDest.
+// worktree cannot carry a copy outside it.
 func TestSafeOverlayDest(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs privileges on Windows")

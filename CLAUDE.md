@@ -112,8 +112,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - `git.worktree_remove` deletes `worktreePath` when git fails **for a non-locked
       reason** (a LOCKED worktree is refused, not deleted, since `7d193f89`) — and
       since `7d193f89` the reference's own containment (worktreePath must be strictly
-      inside `baseRepo`) refuses a home path first, so `wipesHomeDir` is now
-      defense-in-depth here; it still fires only if a repo is an ancestor of home.
+      inside `baseRepo`) refuses a home path first, so on the **default** branch
+      `wipesHomeDir` is defense-in-depth, firing only if a repo is an ancestor of home.
+      On the `worktreeRoot` / `external_root` branch that in-repo containment does not
+      apply, so there `wipesHomeDir` is the **active** home guard (both branches run it
+      before the delete).
     - `-install` deletes `filepath.Join(cliDir, cliVersion)` (operator input) —
       guarded by **D6's single-path-component rule instead**, not `wipesHomeDir`.
 

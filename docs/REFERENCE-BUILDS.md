@@ -54,8 +54,9 @@ off-wire git rewrite and VM probes surfaced.
    the bare `{"isRepo":false,"clean":false}`. The porcelain shape is otherwise
    unchanged.
 3. **`git.worktree_create` / `git.worktree_remove` confine worktrees to inside the
-   repository.** A `worktreePath` that is not absolute, carries a `..` component, or
-   does not sit strictly under `baseRepo` is refused with an `errorCode:"unsafe_path"`
+   repository** (unless a `worktreeRoot` is supplied — see the `external_root` feature
+   in the off-wire notes below). A `worktreePath` that is not absolute, carries a `..`
+   component, or does not sit strictly under `baseRepo` is refused with an `errorCode:"unsafe_path"`
    message ("is a relative path" / "contains a \"..\" component" / "is not inside the
    repository … under `<repository>/.claude/worktrees`"); on create an already-existing
    target is refused as "already exists … a fresh directory". Both also refuse a path
@@ -114,12 +115,16 @@ its `$GIT_DIR/worktrees/<name>` registration, and a hardened `update-ref` branch
 delete. Both yield byte-identical frames on every probed case (locked refusal,
 non-worktree delete, stale re-create, normal removal), so the difference is off-wire. Beyond git: a daemon-to-daemon reconnect handoff
 and idle-connection management (the SSH-reliability items in the Desktop changelog),
-install stale-partial pruning, and a trust-root validation for worktrees rooted
-OUTSIDE `.claude/worktrees` (the `git.worktree.external_root` feature). That
-external-root path is reachable only when `baseRepo` is itself a managed worktree — a
-nested case Desktop's normal usage does not produce, so `git.worktree_create` never
-validates a trust root for an ordinary repository. It is a bounded gap rather than
-reproduced.
+install stale-partial pruning, and the `git.worktree.external_root` feature — when a
+client supplies `worktreeRoot`, the session worktree is placed OUTSIDE the repository,
+under `<worktreeRoot>/<directory>/<name>`, guarded by containment (absolute, no `..`,
+exactly two levels under the root), an ownership/writability check on the root, a
+requirement that the `<directory>` level start out empty, and a 285-byte
+`.claude-managed-worktrees` marker written at that `<directory>` level; a separate
+check refuses a `baseRepo` that itself sits under a managed-worktrees marker
+(`errorCode:"nested_base_repo"`). Both are reproduced and measured byte-for-byte
+against `7d193f89` on an ephemeral VM (the external-worktree refusals and the marker
+body, and the nested-base-repo refusal via a planted marker).
 
 **How it was bounded.** The cross-binary frame battery reports **claustrum ≡
 `7d193f89` byte-identical** across the method suite. Every worktree/status/list edge

@@ -93,9 +93,9 @@ func copyWorktreeIncludes(repo, worktree string) {
 
 // safeOverlayDest resolves the destination for a manifest-copied file inside the
 // worktree, creating missing intermediate directories (0755) but REFUSING to
-// traverse a ".." or a symlinked component — 7d193f89's safeOverlayDest. A planted
-// symlink inside the worktree must not carry a copy outside it. Returns the
-// destination path, or "" if the path is unsafe. rel is worktree-relative.
+// traverse a ".." or a symlinked component. A planted symlink inside the worktree
+// must not carry a copy outside it. Returns the destination path, or "" if the path
+// is unsafe. rel is worktree-relative.
 func safeOverlayDest(worktree, rel string) string {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
 	cur := worktree

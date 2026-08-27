@@ -32,10 +32,10 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 
 // verifyCreatedWorktree confirms `git worktree add` populated the very directory
 // claustrum created, guarding against a directory — or one of its ancestors —
-// swapped between the pre-create checks and the add. 7d193f89 runs this
-// post-condition; without it claustrum answered {"success":true} even when the
-// worktree had landed on a swapped path. It returns "" when the worktree is sound,
-// or the reference's wording when it is not.
+// swapped between the pre-create checks and the add. This is claustrum's own
+// defensive post-condition; without it claustrum answered {"success":true} even when
+// the worktree had landed on a swapped path. It returns "" when the worktree is sound,
+// or a descriptive message when it is not.
 //
 // Reaching a non-empty return needs a concurrent swap during the add — the repo's
 // own hooks are pinned off, so no honest input gets here. Like the recovered-panic

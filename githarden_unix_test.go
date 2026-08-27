@@ -7,10 +7,13 @@ import (
 	"testing"
 )
 
-// resolveUserExcludesFile mirrors 7d193f89's lookupUserExcludesFile: a configured
-// absolute core.excludesFile wins, else the XDG or HOME default when it exists, else
-// /dev/null. Each branch is exercised with a controlled environment. GIT_CONFIG_SYSTEM
-// is neutralised so the host's own config cannot leak in.
+// resolveUserExcludesFile resolves the user's global excludes as 7d193f89 does
+// (observed via a git-argv trace): a configured absolute core.excludesFile wins, else
+// the XDG or HOME default when it exists, else /dev/null. Each branch is exercised with
+// a controlled environment. GIT_CONFIG_SYSTEM is neutralised so the host's own config
+// cannot leak in. Unix-gated deliberately: the fixtures assert POSIX-absolute paths
+// (/abs/ignore, /dev/null) that the resolver's filepath.IsAbs check only treats as
+// absolute on POSIX — on Windows they are relative and the selected branch differs.
 func TestResolveUserExcludesFile(t *testing.T) {
 	requireGit(t)
 	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
