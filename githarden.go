@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // Git-invocation hardening, matching reference build 7d193f89. That build stopped
@@ -166,6 +168,70 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	cmd.Env = hardenedGitEnv(heavy)
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
+}
+
+// hardenedWorktreeGit runs a worktree git subcommand (worktree add, read-tree, the
+// population ls-files) with the user's global git excludes restored — 7d193f89's
+// hardenedWorktreeGit profile. It is the light profile with core.excludesFile pointed
+// at the user's ~/.config/git/ignore instead of /dev/null (the appended -c wins), so
+// `ls-files --exclude-standard` during population honours the user's global ignores.
+// Only worktree ops use it; git.info/git.status keep the /dev/null profile.
+func hardenedWorktreeGit(dir string, args ...string) (string, bool) {
+	return hardenedGit(dir, false, worktreeExcludesArg(args)...)
+}
+
+// hardenedWorktreeGitStdout is hardenedWorktreeGit returning stdout only.
+func hardenedWorktreeGitStdout(dir string, args ...string) (string, error) {
+	return hardenedGitStdout(dir, false, worktreeExcludesArg(args)...)
+}
+
+func worktreeExcludesArg(args []string) []string {
+	return append([]string{"-c", "core.excludesFile=" + userExcludesFile()}, args...)
+}
+
+var (
+	userExcludesOnce   sync.Once
+	userExcludesCached string
+)
+
+// userExcludesFile resolves the user's global git excludes file once, matching
+// 7d193f89's lookupUserExcludesFile: the configured core.excludesFile if it is an
+// absolute path, else $XDG_CONFIG_HOME/git/ignore or $HOME/.config/git/ignore when
+// that file exists, else "/dev/null".
+func userExcludesFile() string {
+	userExcludesOnce.Do(func() { userExcludesCached = resolveUserExcludesFile() })
+	return userExcludesCached
+}
+
+func resolveUserExcludesFile() string {
+	// The configured value wins if absolute. Read it with the hardened environment
+	// but WITHOUT the profile's own core.excludesFile=/dev/null override, so git
+	// reports the real global setting rather than the pin.
+	ctx, cancel := gitCtx()
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "config", "--global", "--get", "core.excludesFile")
+	cmd.Env = hardenedGitEnv(false)
+	if out, err := cmd.Output(); err == nil {
+		if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
+			return p
+		}
+	}
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		if p := filepath.Join(xdg, "git", "ignore"); fileExists(p) {
+			return p
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if p := filepath.Join(home, ".config", "git", "ignore"); fileExists(p) {
+			return p
+		}
+	}
+	return "/dev/null"
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
 }
 
 // hostileConfigRefusal runs the config-hook enumeration 7d193f89 performs before

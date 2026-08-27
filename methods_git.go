@@ -732,27 +732,45 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// is accepted although it is NOT an ancestor of HEAD, which rules out an
 	// ancestry check here.
 	source := p.SourceBranch
+	sourceRef := ""
 	if source != "" {
-		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+source); !ok {
-			source = "" // fall through to HEAD below
+		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+source); ok {
+			sourceRef = "refs/heads/" + source
+		} else {
+			source = "" // ignored; fall back to HEAD
 		}
 	}
 	if source == "" {
 		if s, ok := hardenedGit(repo, false, "rev-parse", "--abbrev-ref", "HEAD"); ok {
-			source = s
+			source = s // echoed as sourceBranch; the add itself defaults to HEAD
 		}
 	}
-	addArgs := []string{"worktree", "add", "-b", p.BranchName, p.WorktreePath}
-	if source != "" {
-		addArgs = append(addArgs, source)
+	// 7d193f89 creates the branch WITHOUT checking out (--no-track --no-checkout),
+	// then populates the working tree with a separate read-tree --reset. A plain
+	// `worktree add` that checks out leaves an ORIG_HEAD in the worktree's admin dir
+	// that the two-step does not — wire-visible via files.read. An explicit ref is
+	// passed only for an accepted sourceBranch; otherwise -b defaults to HEAD.
+	addArgs := []string{"worktree", "add", "--no-track", "--no-checkout", "-b", p.BranchName, p.WorktreePath}
+	if sourceRef != "" {
+		addArgs = append(addArgs, sourceRef)
 	}
-	out, ok := hardenedGit(repo, false, addArgs...)
+	out, ok := hardenedWorktreeGit(repo, addArgs...)
 	if !ok {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     "git worktree add failed: " + boundedStderrHead(out),
 			ErrorCode: "worktree_add_failed",
 		})
+	}
+	// Second half of the two-step: populate the working tree from the new branch
+	// without a checkout, writing the WORKTREE's own index (its .git points at
+	// <repo>/.git/worktrees/<name>) — using the main .git here would wipe the linked
+	// index. Best-effort — an unborn/orphan branch has nothing to read, leaving the
+	// worktree empty just as the reference does.
+	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
+		hardenedWorktreeGit(repo, "-c", "core.splitIndex=false",
+			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
+			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+p.BranchName)
 	}
 	// Post-condition (7d193f89): the add must have populated the directory claustrum
 	// created, not one swapped in during the add. Empty on an unraced create.

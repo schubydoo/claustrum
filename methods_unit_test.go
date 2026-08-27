@@ -868,9 +868,11 @@ func TestGitInfoBranchEdges(t *testing.T) {
 	}
 }
 
-// worktree_create off an empty (unborn-HEAD) repo with no sourceBranch succeeds —
-// git infers an orphan branch — and the result omits sourceBranch, rather than
-// failing on the unresolvable HEAD.
+// worktree_create off an empty (unborn-HEAD) repo FAILS at 7d193f89 (it succeeded
+// with an orphan branch at 5db5e4a). The two-step create passes --no-track, and on
+// an unborn HEAD git infers --orphan, which cannot be combined with --track — so git
+// worktree add fails and the daemon surfaces that. Measured byte-for-byte against the
+// pinned 7d193f89 reference.
 func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
 	requireGit(t)
 	s := newTestServer(t)
@@ -883,11 +885,9 @@ func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
 	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": base, "branchName": "newbr", "worktreePath": wt,
 	}))
-	if !strings.Contains(got, `"success":true`) {
-		t.Errorf("worktree off empty repo = %s, want success", got)
-	}
-	if strings.Contains(got, `"sourceBranch"`) {
-		t.Errorf("worktree off empty repo should omit sourceBranch: %s", got)
+	if !strings.Contains(got, `"errorCode":"worktree_add_failed"`) ||
+		!strings.Contains(got, `options '--orphan' and '--track' cannot be used together`) {
+		t.Errorf("worktree off empty repo = %s, want the --orphan/--track failure", got)
 	}
 }
 
