@@ -662,6 +662,11 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "unsafe_path",
 		})
 	}
+	// The target is confirmed missing above, so any worktree registration still
+	// naming it is stale (its session folder was deleted out from under git). Drop
+	// just that registration so the add below recreates cleanly, the way 7d193f89
+	// does — where claustrum otherwise failed "missing but already registered".
+	dropStaleWorktreeRegistration(repo, p.WorktreePath)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo.
