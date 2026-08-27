@@ -24,6 +24,10 @@ import (
 
 // gitHardenLight is the `-c` set for repo-local reads and mutations that never
 // reach a remote (git.info's tree walks, git.list_branches, git.worktree_create).
+// The core.excludesFile entry is a PLACEHOLDER: hardenedArgs substitutes the user's
+// resolved global excludes (userExcludesFile) for it — 7d193f89 keeps the user's
+// ~/.config/git/ignore in force, and the literal /dev/null is only the fallback when
+// none exists.
 var gitHardenLight = []string{
 	"core.hooksPath=/dev/null",
 	"core.fsmonitor=false",
@@ -34,7 +38,7 @@ var gitHardenLight = []string{
 	"alias.remote-https=",
 	"alias.remote-http=",
 	"alias.remote-ssh=",
-	"core.excludesFile=/dev/null",
+	"core.excludesFile=/dev/null", // placeholder — see hardenedArgs / userExcludesFile
 	"submodule.recurse=false",
 	"fetch.recurseSubmodules=false",
 	"push.recurseSubmodules=false",
@@ -47,7 +51,7 @@ var gitHardenHeavy = []string{
 	"core.fsmonitor=false",
 	"core.hooksPath=/dev/null",
 	"core.attributesFile=/dev/null",
-	"core.excludesFile=/dev/null",
+	"core.excludesFile=/dev/null", // placeholder — see hardenedArgs / userExcludesFile
 	"core.longpaths=true",
 	"protocol.allow=never",
 	"protocol.ext.allow=never",
@@ -102,15 +106,23 @@ func hardenedGitEnv(heavy bool) []string {
 }
 
 // hardenedArgs prefixes the `-C dir` selector and the profile's `-c` overrides
-// before the git subcommand.
+// before the git subcommand. The profile's placeholder core.excludesFile is filled
+// in with the user's resolved global excludes (userExcludesFile) — 7d193f89 runs
+// every git op with the user's ~/.config/git/ignore in force, not /dev/null, so that
+// e.g. git.status classifies a globally-ignored file as ignored. On a host with no
+// global excludes the resolver returns /dev/null, leaving the old behaviour.
 func hardenedArgs(dir string, heavy bool, args ...string) []string {
 	profile := gitHardenLight
 	if heavy {
 		profile = gitHardenHeavy
 	}
+	excludes := userExcludesFile()
 	full := make([]string, 0, 2+2*len(profile)+len(args))
 	full = append(full, "-C", dir)
 	for _, c := range profile {
+		if strings.HasPrefix(c, "core.excludesFile=") {
+			c = "core.excludesFile=" + excludes
+		}
 		full = append(full, "-c", c)
 	}
 	return append(full, args...)
@@ -125,18 +137,6 @@ func hardenedArgs(dir string, heavy bool, args ...string) []string {
 func hookPrecursor(ctx context.Context, dir string) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "config", "-z", "--list", "--name-only")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
-	_, _ = cmd.Output()
-}
-
-// gitExcludesProbe reproduces the `config --includes --path core.excludesFile`
-// call (env GIT_DIR=/dev/null) that 7d193f89 issues at the start of git.info to
-// read the user's global excludes setting. Its result is not on the wire; the
-// call is reproduced for invocation parity.
-func gitExcludesProbe(dir string) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "config", "--includes", "--path", "core.excludesFile")
-	cmd.Env = append(os.Environ(), "GIT_DIR=/dev/null")
 	_, _ = cmd.Output()
 }
 
@@ -170,25 +170,6 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
-// hardenedWorktreeGit runs a worktree git subcommand (worktree add, read-tree, the
-// population ls-files) with the user's global git excludes restored — 7d193f89's
-// hardenedWorktreeGit profile. It is the light profile with core.excludesFile pointed
-// at the user's ~/.config/git/ignore instead of /dev/null (the appended -c wins), so
-// `ls-files --exclude-standard` during population honours the user's global ignores.
-// Only worktree ops use it; git.info/git.status keep the /dev/null profile.
-func hardenedWorktreeGit(dir string, args ...string) (string, bool) {
-	return hardenedGit(dir, false, worktreeExcludesArg(args)...)
-}
-
-// hardenedWorktreeGitStdout is hardenedWorktreeGit returning stdout only.
-func hardenedWorktreeGitStdout(dir string, args ...string) (string, error) {
-	return hardenedGitStdout(dir, false, worktreeExcludesArg(args)...)
-}
-
-func worktreeExcludesArg(args []string) []string {
-	return append([]string{"-c", "core.excludesFile=" + userExcludesFile()}, args...)
-}
-
 var (
 	userExcludesOnce   sync.Once
 	userExcludesCached string
@@ -197,20 +178,23 @@ var (
 // userExcludesFile resolves the user's global git excludes file once, matching
 // 7d193f89's lookupUserExcludesFile: the configured core.excludesFile if it is an
 // absolute path, else $XDG_CONFIG_HOME/git/ignore or $HOME/.config/git/ignore when
-// that file exists, else "/dev/null".
+// that file exists, else "/dev/null". hardenedArgs substitutes it for every git op.
 func userExcludesFile() string {
 	userExcludesOnce.Do(func() { userExcludesCached = resolveUserExcludesFile() })
 	return userExcludesCached
 }
 
 func resolveUserExcludesFile() string {
-	// The configured value wins if absolute. Read it with the hardened environment
-	// but WITHOUT the profile's own core.excludesFile=/dev/null override, so git
-	// reports the real global setting rather than the pin.
+	// The configured value wins if absolute. `config --includes --path` follows
+	// includes and expands a leading ~, matching the reference. It runs WITHOUT the
+	// hardening profile so git reports the real global setting, not the pin.
 	ctx, cancel := gitCtx()
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "--global", "--get", "core.excludesFile")
-	cmd.Env = hardenedGitEnv(false)
+	// GIT_DIR=/dev/null makes this read only the user's global/system config, never a
+	// repo's own core.excludesFile — a repo must not be able to inject excludes. This
+	// is the once-cached read that replaced the reference's per-call excludes probe.
+	cmd := exec.CommandContext(ctx, "git", "config", "--includes", "--path", "core.excludesFile")
+	cmd.Env = append(os.Environ(), "GIT_DIR=/dev/null", "GIT_TERMINAL_PROMPT=0")
 	if out, err := cmd.Output(); err == nil {
 		if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
 			return p

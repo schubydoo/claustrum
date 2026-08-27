@@ -237,9 +237,10 @@ func gitInfo(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	// 7d193f89 opens git.info with the excludesFile probe (GIT_DIR=/dev/null),
-	// reproduced for parity though its result is not on the wire.
-	gitExcludesProbe(p.Path)
+	// The excludesFile the reference reads at git.info is now resolved once (cached)
+	// and applied to every git op via hardenedArgs/userExcludesFile, rather than
+	// probed here and discarded.
+	//
 	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603
 	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
@@ -754,7 +755,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if sourceRef != "" {
 		addArgs = append(addArgs, sourceRef)
 	}
-	out, ok := hardenedWorktreeGit(repo, addArgs...)
+	out, ok := hardenedGit(repo, false, addArgs...)
 	if !ok {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
@@ -768,7 +769,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// index. Best-effort — an unborn/orphan branch has nothing to read, leaving the
 	// worktree empty just as the reference does.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		hardenedWorktreeGit(repo, "-c", "core.splitIndex=false",
+		hardenedGit(repo, false, "-c", "core.splitIndex=false",
 			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
 			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+p.BranchName)
 	}
