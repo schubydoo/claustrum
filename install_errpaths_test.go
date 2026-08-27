@@ -453,3 +453,32 @@ func TestSha256FileMissing(t *testing.T) {
 		t.Fatal("expected an error for a missing file")
 	}
 }
+
+// zstdDecompress cannot create its output when the destination directory does not
+// exist; the os.Create error surfaces instead of a silent no-op.
+func TestZstdDecompressCreateError(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "missing-dir", "cli")
+	if err := zstdDecompressBytes(t, zstdOf(t, []byte("payload")), dest); err == nil {
+		t.Fatal("decompress into a nonexistent directory succeeded, want an error")
+	}
+}
+
+// When the CLI dir is unusable AND the OS temp dir is too, fetchToFile has nowhere
+// to land the blob and reports the second CreateTemp error. os.TempDir reads TMPDIR
+// on Unix and TMP/TEMP on Windows (GetTempPath does not verify the path exists —
+// measured on the Windows VM), so pointing all three at a missing dir fails the
+// fallback on every leg.
+func TestFetchToFileFailsWhenNoTempDirUsable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("payload"))
+	}))
+	defer srv.Close()
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	tmp := filepath.Join(missing, "tmp")
+	t.Setenv("TMPDIR", tmp)
+	t.Setenv("TMP", tmp)
+	t.Setenv("TEMP", tmp)
+	if _, _, err := fetchToFile(srv.URL, missing); err == nil {
+		t.Fatal("fetchToFile with no usable temp dir succeeded, want an error")
+	}
+}
