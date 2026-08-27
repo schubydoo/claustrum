@@ -51,7 +51,7 @@ func TestCloseWhenIdle(t *testing.T) {
 		// pipe would return an error immediately instead of timing out).
 		_ = ac.SetReadDeadline(time.Now().Add(30 * time.Millisecond))
 		var ne net.Error
-		if _, err := ac.Read(make([]byte, 1)); err == nil || !(errors.As(err, &ne) && ne.Timeout()) {
+		if _, err := ac.Read(make([]byte, 1)); err == nil || !errors.As(err, &ne) || !ne.Timeout() {
 			t.Errorf("connection was closed despite steady activity: err=%v", err)
 		}
 	})
