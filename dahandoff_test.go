@@ -73,6 +73,12 @@ func TestRemoveSocketIfOwned(t *testing.T) {
 // isSocketDead classifies a dial error: a missing socket file or a refused
 // connection means nothing is listening (stale socket), anything else is treated as
 // "possibly live" so the launcher keeps waiting for a genuine handoff.
+//
+// The "wrapped not exist" row is the one that guards the OpError-unwrap bug:
+// net.DialTimeout wraps its errno in *net.OpError, which os.IsNotExist does not
+// unwrap, so the old os.IsNotExist(err) arm returned false for the ENOENT a vanished
+// socket produces. errors.Is walks the chain and syscall.Errno.Is maps ENOENT onto
+// fs.ErrNotExist on every OS.
 func TestIsSocketDead(t *testing.T) {
 	cases := []struct {
 		name string
@@ -80,6 +86,7 @@ func TestIsSocketDead(t *testing.T) {
 		want bool
 	}{
 		{"not exist", os.ErrNotExist, true},
+		{"wrapped not exist", &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ENOENT}}, true},
 		{"refused", &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}}, true},
 		{"timeout", context.DeadlineExceeded, false},
 		{"opaque", errors.New("something else"), false},
