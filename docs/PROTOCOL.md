@@ -213,11 +213,11 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
 | git.worktree_create | `branchName is required` | |
 | git.worktree_create | `not a git repository` | in `error`, `errorCode:"not_a_repo"` |
-| git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment) |
+| git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment; the spelling refusal is Windows-only and precedes containment) |
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"` — a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
 | git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"` |
-| git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / is not inside the repository <repo>; …}` | in `error` (no `errorCode`; `7d193f89` containment) |
+| git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error` (no `errorCode`; `7d193f89` containment; the spelling refusal is Windows-only and precedes containment) |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error` (no `errorCode`) — gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error` (no `errorCode`) — `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place; the message is fixed regardless of the lock reason. Pre-`7d193f89` the reference deleted it via the fallback and answered `success:true`. |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
@@ -574,7 +574,9 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   check, `worktreePath` must be absolute, carry no `..` component, sit strictly
   under `baseRepo`, and not already exist. Each failure is
   `{success:false,error:"refusing to create worktree: …",errorCode:"unsafe_path"}`:
-  `"<p> is a relative path; …"`, `"<p> contains a \"..\" component; …"`, `"<p> is not
+  `"<p> is a relative path; …"`, `"<p> contains a \"..\" component; …"`, `"<p> has a
+  component Windows reads as a different name (trailing dot or space, or a colon); …"`
+  (Windows only, before the containment check), `"<p> is not
   inside the repository <repo>; session worktrees are only created and removed under
   <repository>/.claude/worktrees"`, and `"<p> already exists, and a new worktree is
   only ever created in a fresh directory"`. The recommended location is

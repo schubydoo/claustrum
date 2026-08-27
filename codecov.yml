@@ -111,6 +111,9 @@ component_management:
         # git.worktree_* machinery (containment, external roots, staleness, verify,
         # per-repo lock, leaf mkdir) + git hardening + the destructive-path guard.
         - worktreecontain.go
+        # Windows-only worktree-path spelling guard (trailing dot/space, colon).
+        - spelling_windows.go
+        - spelling_other.go
         - worktreeexternal.go
         - worktreeexternal_unix.go
         - worktreeexternal_windows.go
