@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"syscall"
@@ -40,8 +41,13 @@ func livePredecessorIdent(socket string) os.FileInfo {
 // isSocketDead reports whether a dial error means nothing is listening (a stale
 // socket file: the path exists but no process is accepting), as opposed to a
 // transient error where a live daemon may still be present.
+//
+// net.DialTimeout wraps its errno in *net.OpError, which os.IsNotExist does not
+// unwrap — so a dial that fails ENOENT (the socket vanished between the os.Stat
+// and the dial) reads as os.IsNotExist=false. errors.Is walks the OpError chain
+// and syscall.Errno.Is maps ENOENT onto fs.ErrNotExist, so use that instead.
 func isSocketDead(err error) bool {
-	return os.IsNotExist(err) || errors.Is(err, syscall.ECONNREFUSED)
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // removeSocketIfOwned unlinks the socket on graceful shutdown ONLY when the socket
