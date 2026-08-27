@@ -42,6 +42,14 @@ func TestGitStatusIgnoresGitStderr(t *testing.T) {
 	run("config", "user.name", "t")
 	run("commit", "-q", "--allow-empty", "-m", "init")
 
+	// 7d193f89 reports status for a session worktree of baseRepo; make one now,
+	// before the excludes file is locked, so worktree add itself does not trip it.
+	wt := filepath.Join(dir, ".claude", "worktrees", "wt")
+	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run("worktree", "add", "-q", wt)
+
 	// An unreadable excludes file makes git warn on stderr and still exit 0.
 	locked := filepath.Join(dir, "locked")
 	if err := os.Mkdir(locked, 0o700); err != nil {
@@ -69,7 +77,7 @@ func TestGitStatusIgnoresGitStderr(t *testing.T) {
 	}
 
 	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": dir}))
+	raw := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": wt, "baseRepo": dir}))
 	var got gitStatusResult
 	decodeReply(t, []byte(raw), &got)
 

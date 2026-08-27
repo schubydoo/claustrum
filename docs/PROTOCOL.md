@@ -195,6 +195,8 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.read | `files.read: file exceeds maxBytes` | |
 | files.read | `files.read: not a regular file` | D4 opt-in only |
 | files.list | `open …: no such file or directory` | -32603 (missing dir) |
+| files.list | `open <p>: not a directory` | -32603 (a non-directory; `7d193f89` opens with `O_DIRECTORY`, was `readdirent …`) |
+| files.list | `open <p>: permission denied` | -32603 (an unreadable directory) |
 | files.validate | `Path does not exist` | in `error` field, `valid:false` |
 | files.extract_tar | `archivePath and destDir are required` | |
 | files.extract_tar | `destDir must be an absolute, non-root path: …` | in `error` field |
@@ -206,13 +208,21 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.extract_tar | `clean destDir: …` / `mkdir destDir: …` / `write .synced: …` | in `error` field |
 | files.extract_tar | `create <entry>: open <target>: is a directory` | in `error` field |
 | files.extract_tar | `mkdir parent <entry>: <os error>` | in `error` field (prefix is contract) |
+| git.status | `baseRepo is required` | -32602 (`7d193f89`; `baseRepo` is now required) |
 | git.status / git.list_branches | `<go error>` e.g. `exit status 128` | -32603 (git failed, stdout parse) |
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
 | git.worktree_create | `branchName is required` | |
 | git.worktree_create | `not a git repository` | in `error`, `errorCode:"not_a_repo"` |
+| git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment) |
+| git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"` — a symlinked ancestor component under the repo (`7d193f89`) |
+| git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
 | git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"` |
+| git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / is not inside the repository <repo>; …}` | in `error` (no `errorCode`; `7d193f89` containment) |
+| git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error` (no `errorCode`) — gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
+| git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error` (no `errorCode`) — `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place; the message is fixed regardless of the lock reason. Pre-`7d193f89` the reference deleted it via the fallback and answered `success:true`. |
+| git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
 | git.worktree_remove | `failed to remove worktree: <git output>; manual cleanup also failed: <err>` | in `error` (only if manual cleanup also fails) |
-| git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error` |
+| git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error` — now behind `7d193f89` containment (fires only if a repo is an ancestor of home) |
 | git.worktree_remove | `git worktree remove timed out after <dur>; no cleanup was attempted, and git may have partially removed the worktree` | D5 opt-in, in `error` |
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | (checked in that order after decode) |
@@ -355,27 +365,32 @@ and is documentary only).
 `server.capabilities` self-describes the set. Order as returned:
 
 ```
-server.ping  server.version  server.capabilities  server.shutdown
+server.ping  server.capabilities  server.shutdown
 files.list   files.validate  files.stat  files.read  files.extract_tar
 git.info     git.status      git.list_branches  git.worktree_create  git.worktree_remove
 process.spawn  process.stdin  process.kill  process.killAndWait  process.reattach
 ```
 
 Reference `7c2f88d` added `process.killAndWait` between `process.kill` and
-`process.reattach`. That brought the set to 19.
+`process.reattach` (19 methods). `7d193f89` then removed `server.version`,
+bringing the set to 18: calling `server.version` now answers
+`-32601 "Unknown method: server.version"`. (The `-version` CLI flag is a separate
+surface and still prints the daemon's version.)
 
 ### server.*
 
 | method | params | result |
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
-| `server.version` | — | `{"version":"<id>","platform":"<goos>","arch":"<goarch>"}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…19…],"features":["process.stdin.offset"]}` |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root"]}` |
 | `server.shutdown` | — | *no response* — the daemon stops and the connection closes |
 
+- **`server.version` was removed in `7d193f89`** — it now answers
+  `-32601 "Unknown method: server.version"` like any other unknown method.
 - **`features` array** (added `7c2f88d`) follows `methods` and advertises optional
-  extensions. Its sole entry is `process.stdin.offset` (the resumable/idempotent
-  stdin contract), and it is always present.
+  extensions. `process.stdin.offset` (the resumable/idempotent stdin contract)
+  landed first; `7d193f89` added `git.status.baseRepo` and
+  `git.worktree.external_root`. All three are always present, in this order.
 - **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
 
 ### files.* (param: `path`)
@@ -517,17 +532,26 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   `refs/remotes/origin/HEAD` is unset.
 
 #### git.status
-`{path}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
+`{path,baseRepo}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
 
-- `changes` is `git status --porcelain` **stdout only**. Stderr warnings never
-  appear. Lines are verbatim minus the line ending. The two-character XY column is
-  **positional**, so the leading space of an unstaged-only change is data
-  (`"M  a.txt"` staged vs `" M b.txt"` unstaged).
+- **`7d193f89` rebuilt this method around session worktrees.** `baseRepo` is now
+  **required** — an absent one answers `-32602 baseRepo is required`. Status is
+  reported only when `path` is a linked worktree whose main repository is
+  `baseRepo`. Everything else — a plain path, a plain subdirectory, a nested
+  repository, the repository root itself, a worktree of a *different* repository,
+  and the right worktree named against the wrong `baseRepo` — answers the bare
+  `{"isRepo":false,"clean":false}` (the full shape, unlike `git.info`).
+- `changes` is `git status --porcelain --untracked-files=all --ignore-submodules=all`
+  **stdout only**. Stderr warnings never appear. Lines are verbatim minus the line
+  ending. The two-character XY column is **positional**, so the leading space of an
+  unstaged-only change is data (`"M  a.txt"` staged vs `" M b.txt"` unstaged).
+  `--untracked-files=all` is wire-visible: an untracked file inside an untracked
+  directory is listed individually (`"?? sub/u.txt"`), not as the directory
+  (`"?? sub/"`).
 - **The first line is the exception.** The daemon trims the whole porcelain blob
   before it splits the blob, so only entry 0 loses a leading space. `[" M a1"," M
   a2"]` returns `["M a1"," M a2"]`. A client that parses by column must handle
   entry 0 separately.
-- Non-repo → `{"isRepo":false,"clean":false}` (the full shape, unlike `git.info`).
 - A failing git → `-32603` that carries the Go error string (`exit status 128`, not
   git's `fatal:` text). With opt-in D5 the same `-32603` can carry `signal: killed`.
 
@@ -545,6 +569,19 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
 - Missing `branchName` → `-32602 branchName is required`.
 - The resolved repo is not git → `{success:false,error:"not a git
   repository",errorCode:"not_a_repo"}`. The daemon checks this before the add.
+- **`7d193f89` confines the worktree to inside the repository.** After the repo
+  check, `worktreePath` must be absolute, carry no `..` component, sit strictly
+  under `baseRepo`, and not already exist. Each failure is
+  `{success:false,error:"refusing to create worktree: …",errorCode:"unsafe_path"}`:
+  `"<p> is a relative path; …"`, `"<p> contains a \"..\" component; …"`, `"<p> is not
+  inside the repository <repo>; session worktrees are only created and removed under
+  <repository>/.claude/worktrees"`, and `"<p> already exists, and a new worktree is
+  only ever created in a fresh directory"`. The recommended location is
+  `<repo>/.claude/worktrees/<id>`, but the enforced rule is only containment in the
+  repo. An empty `worktreePath` is `{success:false,error:"failed to create parent
+  directory: \"\" does not name a directory",errorCode:"mkdir_failed"}`. The daemon
+  creates the parent directory before the add, so a nested path succeeds on a fresh
+  repo.
 - Other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
   The tail is git's **combined** output, because the add writes its fatal to stderr
   and leaves stdout empty. For example: `"git worktree add failed: Preparing
@@ -556,8 +593,10 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
 **Worktree population.** `git worktree add` checks out tracked files only, so the
 daemon then seeds the new worktree. The copies are best-effort, and a failure never
 fails the request:
-- **The daemon copies `.claude/` recursively and unconditionally.** It skips an
-  absent `.claude/` silently.
+- **The daemon copies `.claude/` recursively and unconditionally**, except for its
+  `worktrees/` child. It skips an absent `.claude/` silently. Since `7d193f89`
+  places session worktrees under `.claude/worktrees/`, copying that subtree into a
+  worktree seeded there would recurse without bound, so it is skipped.
 - **`.worktreeinclude`** (repo root, `.gitignore` syntax) is an **include**
   manifest: `git ls-files --others --ignored --exclude-from=.worktreeinclude`
   (without `--exclude-standard`). The daemon therefore does *not* copy a gitignored
@@ -577,35 +616,48 @@ fails the request:
 #### git.worktree_remove
 `{baseRepo,worktreePath[,branchName]}` → `{"success":true}` (lenient)
 
-- The daemon runs `git worktree remove --force`. **Whenever git exits non-zero —
-  for any reason — the daemon then removes `worktreePath` itself, recursively, and
-  still answers `{"success":true}`.** This method is therefore a recursive delete
-  of the caller-supplied `worktreePath` whenever git is unhappy (a locked worktree,
-  an ordinary directory, a non-repo `baseRepo`). That is **reference behavior**,
-  matched deliberately. Treat `worktreePath` as a path you ask the daemon to
-  remove, not as a filter. The reply carries `{"success":false,"error":"failed to
-  remove worktree: <git output>; manual cleanup also failed: <err>"}` only when the
-  manual cleanup *also* fails.
+- **`7d193f89` confines the removal to inside the repository.** Before git runs,
+  `worktreePath` must be absolute, carry no `..` component, and sit strictly under
+  `baseRepo`; otherwise the reply is `{"success":false,"error":"refusing to remove
+  worktree: <p> …"}` (no `errorCode`), with the same three reasons as
+  `worktree_create`. An empty `worktreePath` is `{"success":false,"error":"failed to
+  remove worktree: \"\" does not name a directory"}`. Only a path that passes these
+  checks reaches git and the recursive-delete fallback below — so the fallback can
+  only ever target a path inside the repository.
+- The daemon runs `git worktree remove --force`. **`7d193f89` refuses a LOCKED
+  worktree here:** git fails with `cannot remove a locked working tree`, and the
+  reply is `{"success":false,"error":"refusing to remove worktree: <p> is locked
+  (git worktree lock); unlock it to remove it"}` (message fixed regardless of the
+  lock reason), leaving the directory in place. **For any OTHER non-zero git exit —
+  an ordinary directory, a non-repo `baseRepo` — the daemon then removes
+  `worktreePath` itself, recursively, and still answers `{"success":true}`.** So on
+  a non-locked failure this method is a recursive delete of the caller-supplied
+  `worktreePath`; treat `worktreePath` as a path you ask the daemon to remove, not
+  as a filter. Both are **reference behavior**, matched deliberately — though the
+  lock refusal is a `7d193f89` change (pre-`7d193f89` the reference deleted the
+  locked worktree too, via the fallback). The reply carries
+  `{"success":false,"error":"failed to remove worktree: <git output>; manual cleanup
+  also failed: <err>"}` only when the manual cleanup *also* fails.
 - A request that names a non-existent branch still answers a bare
   `{"success":true}` — hence "lenient".
-- **One input is exempt — claustrum-only hardening D2.** The daemon refuses a
-  `worktreePath` that **is, or contains, the home directory** before git runs:
-  `{"success":false,"error":"worktreePath must not be or contain the home
-  directory: …"}`. The daemon judges containment **after** it resolves the path
-  against its own working directory. It therefore also refuses `"."` / `".."` when
-  that cwd is home or a descendant of home. You cannot predict the verdict on a
-  relative `worktreePath` without knowledge of where the daemon started, so **send
-  an absolute path**. An empty or omitted `worktreePath` is exempt, because
-  `os.RemoveAll("")` is a no-op. The containment test is the same one
-  `files.extract_tar` uses. See [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
-- **The daemon resolves a relative `worktreePath` twice**, against different roots.
-  git runs with `-C <baseRepo>` (repo-relative), and the manual cleanup resolves
-  against the **daemon's working directory**. The fallback can therefore delete a
-  directory git never looked at. This is parity, and it is alarming. Send an
-  absolute path.
-- The worktree stays **registered**. Deletion of the directory does not remove
-  `$GIT_DIR/worktrees/<name>`, so `git worktree list` still shows it, and a later
-  create at the same path fails `already registered`. Neither binary prunes.
+- **A home-directory `worktreePath` is refused — now by the `7d193f89` containment,
+  as parity.** A `~`-expanded home path is not strictly under `baseRepo`, so it is
+  refused with the reference's `"…is not inside the repository…"` wording before git
+  or the fallback. The claustrum-only D2 frame (`"worktreePath must not be or contain
+  the home directory: …"`) is now behind that containment on this method and fires
+  only in the exotic case of a repository that is itself an ancestor of home. D2
+  remains the primary guard for `files.extract_tar`, which gained no containment. See
+  [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
+- **A relative `worktreePath` is refused upfront** (`"…is a relative path…"`), so it
+  never reaches git or the fallback. Before `7d193f89` the daemon resolved a relative
+  path twice — git with `-C <baseRepo>`, the manual cleanup against the daemon's
+  working directory — and the fallback could delete a directory git never looked at.
+  Containment closes that: **send an absolute path under the repository.**
+- **The registration is pruned.** `7d193f89` removes `$GIT_DIR/worktrees/<name>`
+  along with the directory, so `git worktree list` no longer shows it and a later
+  create at the same path succeeds. (Before `7d193f89` neither binary pruned on the
+  fallback path, so a re-create failed `already registered`; claustrum now reads the
+  worktree's `.git` pointer before removal and drops the admin directory too.)
 - **`gitTimeout` (D5) does NOT authorise the deletion**, and this whole timeout arm
   is off by default. When armed it answers
   `{"success":false,"error":"git worktree remove timed out after <dur>; no cleanup
@@ -969,8 +1021,9 @@ claustrum -version                   # → claude-ssh <sha> (via Claustrum <id>,
 This exists so that the desktop client treats an already-deployed claustrum as
 up-to-date. That client decides whether to re-upload from a `<bin> --version` output
 that matches `/claude-ssh\s+(\S+)/`. The override is **CLI stdout only**, not a
-JSON-RPC frame, so it does not touch the wire contract. `server.version` /
-`server.capabilities` still report claustrum's own `<id>`. See
+JSON-RPC frame, so it does not touch the wire contract. `server.capabilities`
+still reports claustrum's own `<id>` (`server.version` was removed in `7d193f89`).
+See
 [`DIVERGENCES.md`](DIVERGENCES.md) → CT-3.
 
 ### -install — ensure the agent CLI

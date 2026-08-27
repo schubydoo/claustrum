@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"testing"
 	"time"
@@ -87,7 +86,7 @@ func TestSocketResponseBattery(t *testing.T) {
 	// Drive the deterministic request set: happy server.* methods + every
 	// error path (parse / version / auth / namespace / method / params).
 	cl.send(authed(`{"jsonrpc":"2.0","id":1,"method":"server.ping"}`))
-	cl.send(authed(`{"jsonrpc":"2.0","id":2,"method":"server.version"}`))
+	cl.send(authed(`{"jsonrpc":"2.0","id":2,"method":"server.version"}`)) // removed upstream -> unknown method
 	cl.send(authed(`{"jsonrpc":"2.0","id":3,"method":"server.capabilities"}`))
 	cl.send(authed(`{"jsonrpc":"1.0","id":4,"method":"server.ping"}`))       // bad jsonrpc version
 	cl.send(`{"jsonrpc":"2.0","id":5,"method":"server.ping"}`)               // missing auth
@@ -109,30 +108,6 @@ func TestSocketResponseBattery(t *testing.T) {
 		normalized[i] = normResp(r)
 	}
 	assertGolden(t, "socket_responses.golden.json", encodeGolden(t, normalized))
-}
-
-// The golden tokenizes platform/arch, so assert their real values separately.
-func TestSocketVersionReportsHostPlatform(t *testing.T) {
-	sock := startSocketServer(t)
-	cl := dial(t, sock)
-	cl.send(authed(`{"jsonrpc":"2.0","id":1,"method":"server.version"}`))
-
-	raw := cl.waitResponses(1)
-	var env struct {
-		Result versionResult `json:"result"`
-	}
-	if err := json.Unmarshal(raw[0], &env); err != nil {
-		t.Fatalf("unmarshal version: %v", err)
-	}
-	if env.Result.Platform != runtime.GOOS {
-		t.Errorf("platform = %q, want %q", env.Result.Platform, runtime.GOOS)
-	}
-	if env.Result.Arch != runtime.GOARCH {
-		t.Errorf("arch = %q, want %q", env.Result.Arch, runtime.GOARCH)
-	}
-	if env.Result.Version != Version {
-		t.Errorf("version = %q, want %q", env.Result.Version, Version)
-	}
 }
 
 func TestSocketProcessSpawnStreamsStdout(t *testing.T) {

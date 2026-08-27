@@ -21,7 +21,9 @@ func lockedWorktree(t *testing.T) (repo, wt string) {
 	}
 	base := t.TempDir()
 	repo = filepath.Join(base, "repo")
-	holder := filepath.Join(base, "holder")
+	// 7d193f89 confines worktrees to inside the repo, so the holder is under
+	// .claude/worktrees.
+	holder := filepath.Join(repo, ".claude", "worktrees")
 	wt = filepath.Join(holder, "wt")
 	if err := os.MkdirAll(repo, 0o700); err != nil {
 		t.Fatal(err)
@@ -46,44 +48,152 @@ func lockedWorktree(t *testing.T) (repo, wt string) {
 	return repo, wt
 }
 
-// When git refuses the removal, the reference removes the directory itself and
-// still answers {"success":true}. claustrum used to answer success:true while
-// leaving the directory in place — the same reply for the opposite outcome.
-// Measured at 5db5e4a.
-func TestWorktreeRemoveFallsBackToManualCleanup(t *testing.T) {
+// 7d193f89 REFUSES a locked worktree removal — success:false with a fixed message
+// (independent of the lock reason), leaving the directory in place. Before 7d193f89
+// the reference DELETED it and answered success:true; that older behavior is the
+// wire divergence this reconciles. Measured against 7d193f89 on an ephemeral VM,
+// both binaries returning byte-identical frames.
+func TestWorktreeRemoveLockedWorktreeIsRefused(t *testing.T) {
 	repo, wt := lockedWorktree(t)
 	s := newTestServer(t)
 
 	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+	const want = "is locked (git worktree lock); unlock it to remove it"
+	if !strings.Contains(raw, `"success":false`) || !strings.Contains(raw, want) {
+		t.Errorf("reply = %s, want success:false with the locked refusal", raw)
+	}
+	if _, err := os.Stat(wt); err != nil {
+		t.Errorf("the locked worktree was deleted (%v); 7d193f89 leaves it in place", err)
+	}
+}
+
+// A git failure that is NOT a lock still reaches the os.RemoveAll fallback and
+// answers success:true: an ordinary non-worktree directory inside the repo is
+// deleted. 7d193f89 does the same (measured on an ephemeral VM) — only the locked
+// case is refused — so this pins that the fallback survives the locked-refusal
+// change and did not accidentally start refusing every git failure.
+func TestWorktreeRemoveDeletesNonWorktreeDir(t *testing.T) {
+	requireGit(t)
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	nd := filepath.Join(repo, ".claude", "worktrees", "nd") // never a worktree
+	writeFile(t, filepath.Join(nd, "KEEP.txt"), "x\n", 0o600)
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": nd}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Errorf("reply = %s, want success:true", raw)
 	}
-	if _, err := os.Stat(wt); err == nil {
-		t.Error("the worktree directory survived — the manual cleanup fallback did not run")
+	if _, err := os.Stat(nd); err == nil {
+		t.Error("the non-worktree directory survived — the fallback delete did not run")
+	}
+}
+
+// A non-worktree directory whose PATH contains "locked working tree" must still be
+// deleted (success:true), not misclassified as a locked worktree. git echoes the
+// path in its "'<p>' is not a working tree" error, so a bare "locked working tree"
+// substring match would wrongly refuse it; the detection anchors on git's full
+// "cannot remove a locked working tree" phrase instead. Raised by wire-byte review.
+func TestWorktreeRemoveNonWorktreeDirNamedLikeLock(t *testing.T) {
+	requireGit(t)
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	nd := filepath.Join(repo, ".claude", "worktrees", "locked working tree")
+	writeFile(t, filepath.Join(nd, "KEEP.txt"), "x\n", 0o600)
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": nd}))
+	if !strings.Contains(raw, `"success":true`) {
+		t.Errorf("reply = %s, want success:true (path-name collision must not read as locked)", raw)
+	}
+	if _, err := os.Stat(nd); err == nil {
+		t.Error("the directory survived — a path-name collision was treated as a locked worktree")
+	}
+}
+
+// 7d193f89 refuses a worktree whose path crosses a symlinked component under the
+// repo (.claude / .claude/worktrees or below) — a planted link could carry a
+// create outside the repo or point the remove fallback's os.RemoveAll at an
+// external target. Create carries errorCode "symlinked_component"; remove carries
+// none. Measured against the reference on an ephemeral VM.
+func TestWorktreeSymlinkedComponentRefused(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	base := t.TempDir()
+	repo := filepath.Join(base, "repo")
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(cmd.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@t")
+	run("config", "user.name", "t")
+	run("commit", "-q", "--allow-empty", "-m", "init")
+	// .claude/worktrees is a symlink escaping the repo — a planted link.
+	if err := os.Symlink(base, filepath.Join(repo, ".claude", "worktrees")); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(repo, ".claude", "worktrees", "wt")
+	const want = "is a symbolic link; a symlinked .claude or .claude/worktrees inside the " +
+		"repository is not supported for SSH sessions, because a repository can plant such a " +
+		"link and a planted one cannot reliably be told apart from your own. Replace it with a " +
+		"real directory (or delete it and it will be recreated)"
+
+	s := newTestServer(t)
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wt}))
+	if !strings.Contains(got, want) || !strings.Contains(got, `"errorCode":"symlinked_component"`) {
+		t.Errorf("create = %s, want the symlinked_component refusal", got)
+	}
+	got = dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+	if !strings.Contains(got, want) || strings.Contains(got, `"errorCode"`) {
+		t.Errorf("remove = %s, want the symlinked_component refusal with no errorCode", got)
 	}
 }
 
 // When the manual cleanup ALSO fails, the reference reports it in the result's
-// error field with success:false. Measured at 5db5e4a:
+// error field with success:false. The reachable case at 7d193f89 is a NON-worktree
+// directory (a locked worktree is refused earlier, before any cleanup runs): git
+// fails "not a working tree", the os.RemoveAll fallback runs, and an unwritable
+// parent makes that fallback fail too. Measured shape:
 //
-//	{"success":false,"error":"failed to remove worktree: fatal: cannot remove a
-//	 locked working tree;\nuse 'remove -f -f' to override or unlock first;
-//	 manual cleanup also failed: unlinkat <path>: permission denied"}
+//	{"success":false,"error":"failed to remove worktree: fatal: '<p>' is not a
+//	 working tree; manual cleanup also failed: unlinkat <path>: permission denied"}
 func TestWorktreeRemoveReportsWhenCleanupAlsoFails(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: a 0500 directory is still writable")
 	}
-	repo, wt := lockedWorktree(t)
-	holder := filepath.Dir(wt)
-	if err := os.Chmod(holder, 0o500); err != nil { // cleanup cannot unlink wt
+	requireGit(t)
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	holder := filepath.Join(repo, ".claude", "worktrees")
+	nd := filepath.Join(holder, "nd") // never a worktree
+	if err := os.MkdirAll(nd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(holder, 0o500); err != nil { // cleanup cannot unlink nd
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(holder, 0o700) })
 
 	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
-		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+		map[string]any{"baseRepo": repo, "worktreePath": nd}))
 
 	if !strings.Contains(raw, `"success":false`) {
 		t.Errorf("reply = %s, want success:false", raw)

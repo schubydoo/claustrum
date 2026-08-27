@@ -76,14 +76,49 @@ func TestGitStatusCleanRepo(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "a.txt"), "hi\n", 0o644)
 	runGit(t, dir, "add", ".")
 	runGit(t, dir, "commit", "-q", "-m", "init")
+	// 7d193f89 reports status for a session worktree of baseRepo, not the repo.
+	wt := filepath.Join(dir, ".claude", "worktrees", "wt")
+	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "worktree", "add", "-q", wt)
 
 	s := newTestServer(t)
-	got := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": dir}))
+	got := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": wt, "baseRepo": dir}))
 	if !strings.Contains(got, `"clean":true`) {
 		t.Errorf("git.status clean repo = %s, want clean:true", got)
 	}
 	if strings.Contains(got, `"changes"`) {
 		t.Errorf("git.status clean repo = %s, want no changes field", got)
+	}
+}
+
+// 7d193f89 runs status with --untracked-files=all, so an untracked file inside an
+// untracked directory is listed individually ("?? sub/u.txt") rather than as the
+// directory ("?? sub/"). Plain `git status --porcelain` reports the directory, so
+// this is a wire change the frame battery (top-level untracked only) did not
+// cover. Measured against the reference on an ephemeral VM.
+func TestGitStatusUntrackedSubdirListsFiles(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q")
+	writeFile(t, filepath.Join(dir, "a.txt"), "hi\n", 0o644)
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-q", "-m", "init")
+	wt := filepath.Join(dir, ".claude", "worktrees", "wt")
+	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "worktree", "add", "-q", wt)
+	writeFile(t, filepath.Join(wt, "sub", "u.txt"), "u\n", 0o644) // untracked, one dir deep
+
+	s := newTestServer(t)
+	got := dispatchRaw(t, s, rpcLine(t, "git.status", map[string]any{"path": wt, "baseRepo": dir}))
+	if !strings.Contains(got, `?? sub/u.txt`) {
+		t.Errorf("git.status = %s, want the file listed individually (?? sub/u.txt)", got)
+	}
+	if strings.Contains(got, `?? sub/"`) {
+		t.Errorf("git.status = %s, listed the directory (?? sub/) — --untracked-files=all is missing", got)
 	}
 }
 

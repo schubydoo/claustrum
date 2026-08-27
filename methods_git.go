@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -69,8 +68,8 @@ func (p *gitParams) repoDir() string {
 //
 // ⚠️ A TIMEOUT IS NOT "the same as any other git failure". That is what this
 // comment used to say, and it was true only while failure meant NOTHING HAPPENED.
-// gitWorktreeRemove now treats a failed git as permission to delete the worktree
-// itself, so a caller that ACTS on failure must distinguish our deadline from
+// gitWorktreeRemove now treats a NON-LOCKED git failure as permission to delete the
+// worktree itself, so a caller that ACTS on failure must distinguish our deadline from
 // git's verdict — otherwise our own safety cap authorises a destructive act the
 // reference cannot perform, since it showed no deadline at or below 75 s and
 // simply blocks (measured on one method; see D5 for the scope).
@@ -212,8 +211,8 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 // gitDeadline is git() plus one extra bit: whether OUR deadline killed the
 // process, as opposed to git exiting non-zero on its own.
 //
-// It exists for exactly one caller. gitWorktreeRemove treats a failed git as
-// permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
+// It exists for exactly one caller. gitWorktreeRemove treats a NON-LOCKED git failure
+// as permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
 // divergence — the reference showed no deadline at or below 75 s and simply
 // blocks. So
 // without this distinction a wedged git turns a claustrum safety measure into a
@@ -227,25 +226,8 @@ func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool
 	return out, ok, ctx.Err() != nil
 }
 
-// isRepoGitDir is the repo test used by git.status and git.list_branches. The
-// reference gates those two on `rev-parse --git-dir`, which succeeds for a BARE
-// repo and from inside a `.git` directory, where `--is-inside-work-tree` (still
-// used by git.info) reports false.
-//
-// Measured against the reference at 5db5e4a — only these two methods diverged,
-// so this deliberately does not replace isRepo everywhere:
-//
-//	                    bare repo                inside .git
-//	git.info            isRepo:false (agrees)    isRepo:false (agrees)
-//	git.status          -32603 exit status 128   -32603 exit status 128
-//	git.list_branches   isRepo:true, []          isRepo:true, [master …]
-func isRepoGitDir(dir string) bool {
-	_, ok := git(dir, "rev-parse", "--git-dir")
-	return ok
-}
-
 func isRepo(dir string) bool {
-	out, ok := git(dir, "rev-parse", "--is-inside-work-tree")
+	out, ok := hardenedGit(dir, false, "rev-parse", "--is-inside-work-tree")
 	return ok && out == "true"
 }
 
@@ -254,17 +236,28 @@ func gitInfo(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if !isRepo(p.Path) {
+	// 7d193f89 opens git.info with the excludesFile probe (GIT_DIR=/dev/null),
+	// reproduced for parity though its result is not on the wire.
+	gitExcludesProbe(p.Path)
+	// isRepo now requires BOTH a git dir and a work tree, under the light hardening
+	// profile: a bare repo has a git dir but no work tree, so --show-toplevel fails
+	// and it reports the bare notRepoResult (matching the old --is-inside-work-tree
+	// verdict via a different pair of commands).
+	if _, ok := hardenedGit(p.Path, false, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, notRepoResult{})
 	}
-	top, _ := git(p.Path, "rev-parse", "--show-toplevel")
-	// Resolve the branch the way the reference does: symbolic-ref reports the
-	// branch for both normal and unborn (no-commit) HEADs, where
-	// `rev-parse --abbrev-ref HEAD` would fail/return "HEAD". A detached HEAD
-	// (symbolic-ref fails) is reported as "detached:<short-sha>".
-	branch, ok := git(p.Path, "symbolic-ref", "--short", "HEAD")
+	top, ok := hardenedGit(p.Path, false, "rev-parse", "--show-toplevel")
 	if !ok {
-		sha, _ := git(p.Path, "rev-parse", "--short", "HEAD")
+		return okResult(req.ID, notRepoResult{})
+	}
+	// slug and defaultBranch come before the branch, matching the reference order.
+	slug := gitRepoSlug(p.Path)
+	defBranch := gitDefaultBranch(p.Path)
+	// The branch is `branch --show-current` (works on a normal and an unborn HEAD),
+	// empty on a detached HEAD → reported as "detached:<short-sha>".
+	branch, _ := hardenedGit(p.Path, false, "branch", "--show-current")
+	if branch == "" {
+		sha, _ := hardenedGit(p.Path, false, "rev-parse", "--short", "HEAD")
 		branch = "detached:" + sha
 	}
 	return okResult(req.ID, gitInfoResult{
@@ -272,8 +265,8 @@ func gitInfo(req *request) response {
 		Repo:          filepath.Base(top),
 		Branch:        branch,
 		Root:          top,
-		RepoSlug:      gitRepoSlug(p.Path),
-		DefaultBranch: gitDefaultBranch(p.Path),
+		RepoSlug:      slug,
+		DefaultBranch: defBranch,
 	})
 }
 
@@ -291,7 +284,7 @@ func gitRepoSlug(dir string) string {
 	// github.com host, so reading it would drop the slug for every developer who
 	// uses an insteadOf rewrite. Without the gate the old call happened to give
 	// the right answer, which is why this looked like a no-op before.
-	url, ok := git(dir, "remote", "get-url", "origin")
+	url, ok := hardenedGit(dir, false, "remote", "get-url", "origin")
 	if !ok || url == "" {
 		return ""
 	}
@@ -406,7 +399,7 @@ func validSlugRepo(s string) bool {
 // "main"), or "" when origin/HEAD is unset. Added by the reference daemon in
 // 7c2f88d.
 func gitDefaultBranch(dir string) string {
-	ref, ok := git(dir, "symbolic-ref", "refs/remotes/origin/HEAD")
+	ref, ok := hardenedGit(dir, false, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if !ok {
 		return ""
 	}
@@ -418,15 +411,30 @@ func gitStatus(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if !isRepoGitDir(p.Path) {
+	// 7d193f89 rebuilt git.status around session worktrees. baseRepo is now
+	// required, and status is reported ONLY when path is a linked worktree that
+	// belongs to baseRepo. A plain path, a plain subdir, a nested repo, the repo
+	// root itself, a worktree of another repo, or the right worktree named against
+	// the wrong baseRepo all answer the bare isRepo:false shape — confirmed
+	// byte-for-byte against the reference. The check comes before status runs.
+	if p.BaseRepo == "" {
+		return errResult(req.ID, codeInvalidParam, "baseRepo is required")
+	}
+	if !gitStatusWorktreeOf(p.Path, p.BaseRepo) {
 		// The reference returns the full status shape (clean:false), not the
 		// bare notRepoResult that git.info uses.
 		return okResult(req.ID, gitStatusResult{})
 	}
-	// A bare repo and a `.git` directory pass the gate above but have no work
-	// tree, so `git status` exits 128. The reference propagates that as -32603
-	// carrying the Go error string, not git's "fatal: …" output.
-	out, err := gitStdoutErr(p.Path, "status", "--porcelain")
+	// 7d193f89 runs status under the heavy hardening profile with
+	// `--untracked-files=all --ignore-submodules=all`. `--untracked-files=all` is
+	// wire-visible: an untracked file inside an untracked directory is listed
+	// individually (`?? sub/u.txt`) rather than as the directory (`?? sub/`).
+	// (The reference builds this in an isolated gitdir to avoid refreshing the real
+	// index; that isolation is output-neutral, so status runs against the worktree
+	// here.) A path with no work tree still exits 128 → the reference propagates
+	// the bare Go error string, not git's "fatal: …" output.
+	out, err := hardenedGitStdout(p.Path, true, "status", "--porcelain",
+		"--untracked-files=all", "--ignore-submodules=all")
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
@@ -459,16 +467,59 @@ func gitStatus(req *request) response {
 	return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: false, Changes: changes})
 }
 
+// gitStatusWorktreeOf reports whether path is a linked git worktree whose main
+// repository is baseRepo — the gate 7d193f89's git.status applies before it will
+// run status. One `git rev-parse` at path yields the three facts that decide it:
+// path must be the worktree's own top level (so a subdir inside a worktree is
+// rejected), it must be a LINKED worktree (git-dir differs from the common dir,
+// so the main checkout is rejected), and the common dir's parent must be baseRepo
+// (so a worktree of another repository is rejected). Reproduces the reference's
+// isRepo verdict on all six probed shapes; git failing at path (absent, not a
+// repo) falls through to false.
+func gitStatusWorktreeOf(path, baseRepo string) bool {
+	// git canonicalizes the paths it reports (--show-toplevel / --git-common-dir
+	// resolve symlinks — macOS /tmp -> /private/tmp — and expand Windows 8.3 short
+	// names), so canonicalize our own operands the same way before comparing.
+	// Without this a valid worktree under a symlinked or short-named directory
+	// never matches git's output and status wrongly answers isRepo:false. No-op on
+	// Linux paths with no symlinks, so the frame battery stays byte-identical.
+	path = canonicalPath(path)
+	baseRepo = canonicalPath(baseRepo)
+	out, ok := hardenedGit(path, false, "rev-parse", "--path-format=absolute",
+		"--show-toplevel", "--git-dir", "--git-common-dir")
+	if !ok {
+		return false
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 {
+		return false
+	}
+	top, gitDir, commonDir := lines[0], lines[1], lines[2]
+	return samePath(top, path) &&
+		!samePath(gitDir, commonDir) &&
+		samePath(filepath.Dir(commonDir), baseRepo)
+}
+
+// canonicalPath resolves p to the spelling git reports — symlinks resolved and
+// (on Windows) 8.3 short names expanded. Defined per-OS in pathcanon_{unix,windows}.go.
+
+// samePath compares two paths after lexical cleaning. Callers that compare against
+// git's output canonicalize their operands first (see gitStatusWorktreeOf).
+func samePath(a, b string) bool {
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
 func gitListBranches(req *request) response {
 	var p gitParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	if !isRepoGitDir(p.Path) {
-		// The reference returns the full branches shape (branches:[]), not the
-		// bare notRepoResult that git.info uses. Gated on --git-dir, so a bare
-		// repo and a `.git` directory both list their branches (see
-		// isRepoGitDir).
+	// 7d193f89 runs this under the light hardening profile with the config
+	// precursor; the repo gate is `rev-parse --git-dir` (true for a bare repo and
+	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
+	// reference returns the full branches shape (branches:[]) on a non-repo, not
+	// git.info's bare notRepoResult.
+	if _, ok := hardenedGit(p.Path, false, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// stdout only, AND propagate a failure — the same two rules git.status
@@ -483,7 +534,11 @@ func gitListBranches(req *request) response {
 	// Reading stdout alone fixes only the first: it turns the second into an empty
 	// branches[], which is a different wrong answer. Discarding the error was the
 	// other half of the bug.
-	out, err := gitStdoutErr(p.Path, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	//
+	// The reference sorts refs in git itself (`--sort=refname` over `refs/heads/`),
+	// so the branch order matches without a Go sort.
+	out, err := hardenedGitStdout(p.Path, false, "for-each-ref",
+		"--format=%(refname:short)", "--sort=refname", "refs/heads/")
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
@@ -493,7 +548,6 @@ func gitListBranches(req *request) response {
 			branches = append(branches, t)
 		}
 	}
-	sort.Strings(branches)
 	return okResult(req.ID, branchesResult{IsRepo: true, Branches: branches})
 }
 
@@ -514,6 +568,40 @@ func gitWorktreeCreate(req *request) response {
 			Success:   false,
 			Error:     "not a git repository",
 			ErrorCode: "not_a_repo",
+		})
+	}
+	// worktree-location containment, added by the reference in 7d193f89: the
+	// session folder must be a fresh directory strictly inside the repo. Empty is
+	// not a relative-path refusal — the reference fails it as a non-directory at
+	// the parent-creation step, with its own worktreePath echoed (measured).
+	if p.WorktreePath == "" {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     fmt.Sprintf("failed to create parent directory: %q does not name a directory", p.WorktreePath),
+			ErrorCode: "mkdir_failed",
+		})
+	}
+	if msg := worktreePathRefusal(repo, p.WorktreePath, "create"); msg != "" {
+		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+	}
+	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
+		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "symlinked_component"})
+	}
+	if _, err := os.Lstat(p.WorktreePath); err == nil {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     fmt.Sprintf("refusing to create worktree: %s already exists, and a new worktree is only ever created in a fresh directory", p.WorktreePath),
+			ErrorCode: "unsafe_path",
+		})
+	}
+	// `git worktree add` does not create leading directories, so the reference
+	// makes the parent before adding — this is what lets a nested session path
+	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo.
+	if err := os.MkdirAll(filepath.Dir(p.WorktreePath), 0o755); err != nil {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     fmt.Sprintf("failed to create parent directory: %v", err),
+			ErrorCode: "mkdir_failed",
 		})
 	}
 	// Default the source to the repo's current branch. On an unborn HEAD
@@ -542,12 +630,12 @@ func gitWorktreeCreate(req *request) response {
 	// ancestry check here.
 	source := p.SourceBranch
 	if source != "" {
-		if _, ok := git(repo, "show-ref", "--verify", "--quiet", "refs/heads/"+source); !ok {
+		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+source); !ok {
 			source = "" // fall through to HEAD below
 		}
 	}
 	if source == "" {
-		if s, ok := git(repo, "rev-parse", "--abbrev-ref", "HEAD"); ok {
+		if s, ok := hardenedGit(repo, false, "rev-parse", "--abbrev-ref", "HEAD"); ok {
 			source = s
 		}
 	}
@@ -555,7 +643,7 @@ func gitWorktreeCreate(req *request) response {
 	if source != "" {
 		addArgs = append(addArgs, source)
 	}
-	out, ok := git(repo, addArgs...)
+	out, ok := hardenedGit(repo, false, addArgs...)
 	if !ok {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
@@ -577,6 +665,27 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
+	// worktree-location containment, added by the reference in 7d193f89 and matched
+	// here byte-for-byte (verb "remove", no errorCode field). It gates the
+	// os.RemoveAll fallback below: only a path strictly inside the repo survives to
+	// reach it, so a "~"-expanded home path is refused here — with the reference's
+	// wording — before the wipesHomeDir guard is consulted. Empty is failed as a
+	// non-directory, not as a relative path (measured against 7d193f89).
+	if p.WorktreePath == "" {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to remove worktree: %q does not name a directory", p.WorktreePath),
+		})
+	}
+	if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+	}
+	// A symlinked component under .claude/worktrees is refused before the removal —
+	// this is what keeps the os.RemoveAll fallback below from following a planted
+	// link out of the repo (matches 7d193f89; no errorCode on remove).
+	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+	}
 	// ⚠️ INTENTIONAL DIVERGENCE, and the only one on this method — refused before
 	// git is run at all, so neither the removal nor the branch delete happens.
 	//
@@ -619,30 +728,34 @@ func gitWorktreeRemove(req *request) response {
 			Error:   fmt.Sprintf("worktreePath must not be or contain the home directory: %q", p.WorktreePath),
 		})
 	}
-	// When `git worktree remove --force` fails for ANY reason, the reference
+	// 7d193f89 prunes the worktree registration on every removal. `git worktree
+	// remove` already drops it when it succeeds, but the manual-cleanup fallback
+	// below (a locked worktree, exit 128) leaves it, so a re-create at the same
+	// path would then fail "already registered" where the reference re-creates
+	// cleanly. Capture the admin dir now, before the removal deletes the pointer,
+	// and prune it after a successful removal.
+	adminDir := worktreeAdminDir(p.WorktreePath)
+	// When `git worktree remove --force` fails for a NON-LOCKED reason, the reference
 	// removes worktreePath itself and still answers {"success":true}; it reports
-	// failure only when that manual cleanup ALSO fails.
+	// failure only when that manual cleanup ALSO fails. A LOCKED worktree is the
+	// exception — 7d193f89 refuses it (the branch above) rather than deleting it.
 	//
-	// ⚠️ "any reason" is literal, and it is measured — not inferred from the one
-	// fixture that motivated this. Reviewed on PR #204, which pointed out that the
-	// original measurement covered only a locked worktree while the code deletes on
-	// every non-zero exit. Re-probed at 5db5e4a, checking the DIRECTORY afterwards
-	// rather than the reply, and claustrum matches on all three:
+	// Measured: at 5db5e4a, checking the DIRECTORY after each git failure; at
+	// 7d193f89, re-probing the locked case on an ephemeral VM (both binaries):
 	//
-	//	fixture      git fails because            reference: dir after
-	//	locked       the worktree is locked       DELETED
-	//	plain-dir    the path was never a worktree  DELETED
-	//	bogus-repo   baseRepo is not a repo at all  DELETED
+	//	fixture      git fails because             reference at 7d193f89
+	//	locked       the worktree is locked        REFUSED, dir left in place
+	//	plain-dir    the path was never a worktree DELETED (fallback)
+	//	bogus-repo   baseRepo is not a repo at all DELETED (fallback)
 	//
-	// So `git.worktree_remove` is a recursive delete of the caller-supplied
-	// worktreePath whenever git is unhappy, and that is parity, not a claustrum
-	// invention. Documented in PROTOCOL.md because it will otherwise read as a bug.
-	// The caller did name the path and ask for it to be removed, which is why this
-	// is not treated like the -cli-version escape in #196 — there the deletion
-	// reached a path the caller never named.
-	//
-	// The registration is NOT cleaned up either: after a locked removal the repo
-	// still lists the worktree (measured: 2 entries, on both binaries).
+	// So for a NON-LOCKED failure `git.worktree_remove` is a recursive delete of the
+	// caller-supplied worktreePath, and that is parity, not a claustrum invention.
+	// Documented in PROTOCOL.md because it will otherwise read as a bug. The caller
+	// did name the path and ask for it to be removed, which is why this is not
+	// treated like the -cli-version escape in PR 196 — there the deletion reached a
+	// path the caller never named. (Pre-7d193f89 the reference deleted the locked
+	// worktree too and did NOT prune, so the repo kept listing it; 7d193f89 both
+	// refuses the locked case and prunes the registration on a completed removal.)
 	//
 	// git() not a bespoke helper — it is already CombinedOutput, and the only
 	// differences were error-vs-ok and a trailing-newline trim that the
@@ -672,6 +785,27 @@ func gitWorktreeRemove(req *request) response {
 						"and git may have partially removed the worktree", gitTimeout),
 			})
 		}
+		// 7d193f89 REFUSES a LOCKED worktree rather than falling back to a delete:
+		// `git worktree remove --force` fails with "cannot remove a locked working
+		// tree", and the reference answers success:false with its own fixed message
+		// (independent of the lock reason) and leaves the directory in place. Only the
+		// OTHER git-failure modes (an ordinary non-worktree directory) reach the
+		// os.RemoveAll fallback below. Before 7d193f89 the reference DELETED a locked
+		// worktree here — a wire change, measured against 7d193f89 on an ephemeral VM
+		// (the frame battery never removes a locked worktree, so it did not catch it).
+		// Anchor on git's FULL phrase, not the bare "locked working tree": git echoes
+		// the caller's path in the non-locked failure ("'<path>' is not a working
+		// tree"), so a worktreePath literally containing "locked working tree" would
+		// substring-match and be wrongly refused (leaving a directory the reference
+		// would delete). The full phrase cannot appear in that path-echo. Raised by
+		// wire-byte review.
+		if strings.Contains(out, "cannot remove a locked working tree") {
+			return okResult(req.ID, worktreeRemoveResult{
+				Success: false,
+				Error: fmt.Sprintf("refusing to remove worktree: %s is locked "+
+					"(git worktree lock); unlock it to remove it", p.WorktreePath),
+			})
+		}
 		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
 			return okResult(req.ID, worktreeRemoveResult{
 				Success: false,
@@ -686,7 +820,56 @@ func gitWorktreeRemove(req *request) response {
 	// left both behind). Best-effort: naming a branch that does not exist still
 	// answers {"success":true}, so a failed delete is not surfaced.
 	if p.BranchName != "" {
-		git(repo, "branch", "-D", p.BranchName)
+		hardenedGit(repo, false, "branch", "-D", p.BranchName)
+	}
+	// Prune the registration (see above). A no-op when `git worktree remove`
+	// already dropped it; the fix for the fallback path. The ONLY legitimate admin
+	// dir is `<repo>/.git/worktrees/<name>`, so require the pruned path to resolve
+	// strictly inside `<repo>/.git/worktrees` before the delete — not merely inside
+	// the repo. worktreeAdminDir returns the `.git` pointer's contents verbatim, and
+	// those contents are attacker-writable, so a stale or forged pointer such as
+	// `gitdir: <repo>/src` or `<repo>/.git/objects` (or a `..` variant that Clean or
+	// EvalSymlinks collapses back under the repo) would otherwise turn the prune into
+	// an os.RemoveAll of unrelated repo data. Constraining to `.git/worktrees` rejects
+	// every such target while still pruning a real registration. Off-wire: the result
+	// is discarded and the reply is success:true either way. Raised by review on PR 286.
+	if adminDir != "" && worktreeAdminBelongsTo(adminDir, p.WorktreePath) &&
+		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(repo, ".git", "worktrees"))) {
+		_ = os.RemoveAll(adminDir)
 	}
 	return okResult(req.ID, worktreeRemoveResult{Success: true})
+}
+
+// worktreeAdminDir reads a linked worktree's `.git` pointer file
+// ("gitdir: <mainGitDir>/worktrees/<name>") and returns that admin directory, or
+// "" when worktreePath is not a linked worktree. Removing it drops the worktree's
+// registration from the main repository.
+func worktreeAdminDir(worktreePath string) string {
+	b, err := os.ReadFile(filepath.Join(worktreePath, ".git"))
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(b))
+	const prefix = "gitdir:"
+	if !strings.HasPrefix(line, prefix) {
+		return ""
+	}
+	return strings.TrimSpace(line[len(prefix):])
+}
+
+// worktreeAdminBelongsTo reports whether adminDir's `gitdir` back-pointer resolves to
+// worktreePath's own `.git` file. git writes `<adminDir>/gitdir` holding the absolute
+// path of the linked worktree's `.git`, so a genuine registration points back at the
+// worktree being removed. Without this, a forged or stale `<worktreePath>/.git` that
+// names a SIBLING worktree's admin dir (still under `.git/worktrees`, so the
+// containment check alone passes) would let the prune delete that unrelated
+// registration. Measured against 7d193f89: the reference leaves the sibling's
+// registration in place, so requiring the back-pointer to match keeps claustrum's
+// prune to the worktree the caller actually named.
+func worktreeAdminBelongsTo(adminDir, worktreePath string) bool {
+	b, err := os.ReadFile(filepath.Join(adminDir, "gitdir"))
+	if err != nil {
+		return false
+	}
+	return canonicalPath(strings.TrimSpace(string(b))) == canonicalPath(filepath.Join(worktreePath, ".git"))
 }

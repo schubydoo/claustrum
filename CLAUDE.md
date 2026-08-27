@@ -45,7 +45,7 @@ One binary; a flag selects the mode (`main.go`): `-serve`, `-bridge`, `-stop`,
 |------|------|
 | `rpc.go` | request/response types, error codes, `dispatch` (parse → auth → version → route; auth is checked *before* the jsonrpc version, except on the unauthenticated `server.shutdown` — probe-verified) |
 | `server.go` | the `-serve` daemon: `AF_UNIX` listener (mode `0600`), per-conn read loop, **concurrent** dispatch, self-daemonize, graceful shutdown |
-| `methods_*.go` | the 19 methods across `server.*` / `files.*` / `git.*` / `process.*` |
+| `methods_*.go` | the 18 methods across `server.*` / `files.*` / `git.*` / `process.*` (`7d193f89` removed `server.version`) |
 | `results.go` | result structs, fields declared in the exact order the reference emits — **never a map** (a map sorts its keys and diverges from the wire contract) |
 | `process.go` | `procManager` / `managedProc`: spawn in own process group, base64 stream frames, async stdin writer (bounded queue + backpressure), per-process replay buffer, `reattach` |
 | `bridge.go` | `-bridge`: a stdio↔socket relay — what SSH attaches to; it injects no auth |
@@ -109,7 +109,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
   those paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
   the maintainer's home directory on 2026-08-02:
     - `files.extract_tar` wipes `destDir` — guarded by `wipesHomeDir` (`homeguard.go`).
-    - `git.worktree_remove` deletes `worktreePath` when git fails — guarded by `wipesHomeDir`.
+    - `git.worktree_remove` deletes `worktreePath` when git fails **for a non-locked
+      reason** (a LOCKED worktree is refused, not deleted, since `7d193f89`) — and
+      since `7d193f89` the reference's own containment (worktreePath must be strictly
+      inside `baseRepo`) refuses a home path first, so `wipesHomeDir` is now
+      defense-in-depth here; it still fires only if a repo is an ancestor of home.
     - `-install` deletes `filepath.Join(cliDir, cliVersion)` (operator input) —
       guarded by **D6's single-path-component rule instead**, not `wipesHomeDir`.
 
@@ -178,7 +182,8 @@ the reachable knob**, not the flag. Each disabled state bypasses its limiter
 entirely (Part A's "never simplify" rule).
 
 **D5's deadline gates a destructive path.** `git.worktree_remove` treats a
-failed git as permission to delete `worktreePath`. Therefore never read a fired
+non-locked git failure as permission to delete `worktreePath` (a LOCKED worktree is
+refused before the delete, since `7d193f89`). Therefore never read a fired
 `git-timeout` as "git refused". Opting D5 in is wire-visible.
 
 The two non-flag divergences: **D1** — claustrum verifies the `-cli-zst` SFTP

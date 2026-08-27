@@ -202,24 +202,39 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** Two methods hand a caller-supplied, `~`-expanded path to
   `os.RemoveAll`: `files.extract_tar` wipes `destDir`, and `git.worktree_remove`
-  deletes `worktreePath` when git exits non-zero. `wipesHomeDir` (`homeguard.go`)
+  deletes `worktreePath` when git exits non-zero for a non-locked reason (a locked
+  worktree is refused, not deleted). `wipesHomeDir` (`homeguard.go`)
   refuses any target that **is or contains** the home directory. Descendants stay
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**
-  (`filepath.Abs`) before it compares them. Without that resolution,
-  `"worktreePath":".."` from a daemon whose cwd is home destroys the home
-  directory (measured — `..` resolves to home's parent, and the delete takes
-  home with it). `git.worktree_remove` is the more exposed of the two methods:
-  `wipesHomeDir` is its *only* gate, while `extract_tar` also keeps `IsAbs` +
-  `isFilesystemRoot` behind it.
+  (`filepath.Abs`) before it compares them. This is why `wipesHomeDir` resolves
+  the path: without it, `"worktreePath":".."` from a daemon whose cwd is home
+  reached `os.RemoveAll` on home's parent (measured pre-`7d193f89`). On
+  `git.worktree_remove` that `..` no longer reaches the delete — the containment
+  check below refuses a `".."` component first — but the resolution still guards
+  `files.extract_tar`, and it is the guard's own design invariant regardless.
+- **Since `7d193f89`, `git.worktree_remove` refuses a home path on its own — as
+  parity, not as this divergence.** That build confined session worktrees to
+  inside the repository, so a `worktreePath` that is not strictly under `baseRepo`
+  — which every `~`-expanded home path is — is refused *with the reference's own
+  "not inside the repository" wording* before git, the `os.RemoveAll` fallback, or
+  `wipesHomeDir` is reached. On that method `wipesHomeDir` is now defense-in-depth
+  behind the reference's containment; it can still fire only in the exotic case of
+  a repository that is itself an ancestor of home. `files.extract_tar` gained no
+  such containment, so there `wipesHomeDir` remains the primary — and only —
+  home-directory guard, which is why this divergence stays always-on.
 - **This fired.** On 2026-08-02 an in-repo fuzzer sent `"destDir":"~"` at a live
   daemon and destroyed the maintainer's home directory. `"~"` is the first value in
   the adversarial list that survives the old `IsAbs && !isFilesystemRoot` gate. A
   home directory is exactly "absolute and not a filesystem root".
-- **Why always-on.** D2 satisfies both halves of rule 3 clause (a). The
-  reference's behaviour is unrecoverable data loss: measured, it destroys home on
-  *both* methods. And no honest caller has a legitimate *use* for deleting home. A
-  caller can still reach that path by accident, which is the point.
+- **Why always-on.** D2 satisfies both halves of rule 3 clause (a). At `7d193f89`
+  the reference's behaviour is still unrecoverable data loss on `files.extract_tar`:
+  measured, `"destDir":"~"` wipes the home directory and answers `{"success":true}`,
+  and that method gained no containment. (`git.worktree_remove` no longer reaches it
+  — its own containment refuses the home path first — so there `wipesHomeDir` is
+  defense-in-depth for the exotic repo-is-an-ancestor-of-home case.) And no honest
+  caller has a legitimate *use* for deleting home. A caller can still reach that path
+  by accident, which is the point.
 - **Not a security boundary.** The socket + token already grant `process.spawn`
   ([SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
   This guard stops the accidental, generated, or mistyped path. It does not
@@ -286,7 +301,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key; disabled bypasses `context.WithTimeout`.
 - **Never read a timeout as "git refused."** `git.worktree_remove` treats a
-  failed git as permission to delete `worktreePath`, so claustrum keeps the timeout
+  non-locked git failure as permission to delete `worktreePath`, so claustrum keeps the timeout
   reply separate from the failure arm. The cap is also softer than it reads:
   `CombinedOutput` waits on git's output pipe, so a git that leaves a surviving
   child stays blocked past the deadline.
@@ -601,7 +616,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `claude-ssh <sha> (via Claustrum …)`, the client hits the cache, and it stops
   overwriting.
 - **Off the wire, off by default.** `-version` is CLI stdout, not a JSON-RPC frame;
-  `server.version` / `server.capabilities` still report claustrum's own version.
+  `server.capabilities` still reports claustrum's own version (`server.version`
+  was removed in `7d193f89`).
 - **Fail-safe & hardened:** regular-file-only via `Lstat`, `io.LimitReader` ≤ 64 KiB,
   per-key validation (`version-override` gated to
   `^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$` and lower-cased). claustrum uses every

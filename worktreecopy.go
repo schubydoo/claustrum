@@ -14,6 +14,11 @@ const worktreeIncludeFile = ".worktreeinclude"
 // claudeDirName is copied into every new worktree regardless of the manifest.
 const claudeDirName = ".claude"
 
+// worktreesSubdir is the child of .claude that holds session worktrees under
+// 7d193f89. It is skipped when seeding a new worktree: the worktree being
+// populated lives inside it, so copying it in would recurse without bound.
+const worktreesSubdir = "worktrees"
+
 // populateWorktree seeds a freshly created worktree the way the reference does.
 // A `git worktree add` gives a clean checkout of tracked files only, so anything
 // untracked — agent configuration, local env files — is missing unless copied.
@@ -35,14 +40,37 @@ func populateWorktree(repo, worktree string) {
 	copyWorktreeIncludes(repo, worktree)
 }
 
-// copyClaudeDir copies <repo>/.claude into the worktree. Absent ⇒ nothing to do.
+// copyClaudeDir copies <repo>/.claude into the worktree, skipping the
+// worktrees/ child (which holds the very worktree being seeded — copying it in
+// would recurse without bound). Absent ⇒ nothing to do.
 func copyClaudeDir(repo, worktree string) {
 	src := filepath.Join(repo, claudeDirName)
 	fi, err := os.Stat(src)
 	if err != nil || !fi.IsDir() {
 		return
 	}
-	copyDirRecursive(src, filepath.Join(worktree, claudeDirName))
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		return
+	}
+	dst := filepath.Join(worktree, claudeDirName)
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return
+	}
+	for _, e := range ents {
+		if e.Name() == worktreesSubdir {
+			continue
+		}
+		s, d := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
+		switch {
+		case e.Type()&os.ModeSymlink != 0:
+			continue
+		case e.IsDir():
+			copyDirRecursive(s, d)
+		default:
+			copyFile(s, d)
+		}
+	}
 }
 
 // copyWorktreeIncludes copies the untracked files the manifest selects.
@@ -76,7 +104,7 @@ func copyWorktreeIncludes(repo, worktree string) {
 	// still answers {"success":true}. Nothing reaches the wire, so no frame test and
 	// no battery run can see it. Off by default since D5's flip, which is the only
 	// reason it is not reachable today.
-	out, err := gitStdoutErr(repo, "ls-files", "--others", "--ignored",
+	out, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
 		"--exclude-from="+worktreeIncludeFile)
 	if err != nil || out == "" {
 		return

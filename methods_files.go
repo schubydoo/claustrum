@@ -96,13 +96,14 @@ func filesList(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	// Open then read, rather than os.ReadDir, to match the reference's error
-	// text and call order. os.ReadDir collapses both failures into an "open"
-	// PathError, so a regular file reported `open <p>: not a directory` where
-	// the reference says `readdirent <p>: not a directory`, and an unreadable
-	// file reported `not a directory` where the reference says
-	// `permission denied`. Splitting the calls reproduces both.
-	f, err := os.Open(p.Path)
+	// Open with O_DIRECTORY (oDirectoryFlag) then read. 7d193f89's files.list
+	// fails at the open for anything that is not a directory, so a regular file —
+	// readable or not — reports `open <p>: not a directory` and an unreadable
+	// directory reports `open <p>: permission denied`. Both are matched
+	// byte-for-byte; before 7d193f89 the reference reached the readdir and said
+	// `readdirent <p>: not a directory` instead. On Windows the flag is 0 (no
+	// O_DIRECTORY) and this is os.Open, whose non-dir wording is not pinned there.
+	f, err := os.OpenFile(p.Path, os.O_RDONLY|oDirectoryFlag, 0)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}

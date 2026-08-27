@@ -16,10 +16,7 @@
     "id": 2,
     "result": {
       "isRepo": true,
-      "clean": false,
-      "changes": [
-        "?? dirty.txt"
-      ]
+      "clean": true
     }
   },
   {
@@ -38,7 +35,7 @@
     "id": 4,
     "result": {
       "success": true,
-      "path": "<DIR>/wt",
+      "path": "<DIR>/myrepo/.claude/worktrees/wt",
       "sourceBranch": "main"
     }
   },
