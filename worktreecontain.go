@@ -96,13 +96,21 @@ func pathHasDotDot(p string) bool {
 	return slices.Contains(strings.Split(filepath.ToSlash(p), "/"), "..")
 }
 
-// pathStrictlyUnder reports whether p cleans to a path strictly below root. Equal
-// paths return false: worktreePath == repo is "not inside" the repo, matching the
-// reference and keeping the repository root out of reach of the remove fallback.
-// By the time this runs the caller has already refused "..", so cleaning cannot
-// resolve p out of the tree.
+// pathStrictlyUnder reports whether p resolves to a path strictly below root. It uses
+// filepath.Rel + filepath.IsLocal rather than a byte-wise strings.HasPrefix so the
+// predicate follows the platform's own path-equality rules: filepath.Rel compares
+// path components case-insensitively on Windows, so a worktreePath that differs from
+// baseRepo only in drive-letter or directory-name case is still judged inside. This
+// matches the reference's observable containment — a case-variant worktreePath under
+// baseRepo is accepted on Windows (measured on the Windows 7d193f89 build) — where the
+// earlier case-sensitive strings.HasPrefix wrongly refused it. p is under root iff
+// Rel(root, p) succeeds, is not "." (equal paths are "not inside" the repo, keeping the
+// repository root out of reach of the remove fallback), and is filepath-local (no ".."
+// escape). By the time this runs the caller has already refused a raw ".." component.
 func pathStrictlyUnder(p, root string) bool {
-	cp := filepath.Clean(p)
-	cr := filepath.Clean(root)
-	return cp != cr && strings.HasPrefix(cp, cr+string(os.PathSeparator))
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
+		return false
+	}
+	return rel != "." && filepath.IsLocal(rel)
 }

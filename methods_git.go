@@ -833,7 +833,8 @@ func gitWorktreeRemove(req *request) response {
 	// an os.RemoveAll of unrelated repo data. Constraining to `.git/worktrees` rejects
 	// every such target while still pruning a real registration. Off-wire: the result
 	// is discarded and the reply is success:true either way. Raised by review on PR 286.
-	if adminDir != "" && pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(repo, ".git", "worktrees"))) {
+	if adminDir != "" && worktreeAdminBelongsTo(adminDir, p.WorktreePath) &&
+		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(repo, ".git", "worktrees"))) {
 		_ = os.RemoveAll(adminDir)
 	}
 	return okResult(req.ID, worktreeRemoveResult{Success: true})
@@ -854,4 +855,21 @@ func worktreeAdminDir(worktreePath string) string {
 		return ""
 	}
 	return strings.TrimSpace(line[len(prefix):])
+}
+
+// worktreeAdminBelongsTo reports whether adminDir's `gitdir` back-pointer resolves to
+// worktreePath's own `.git` file. git writes `<adminDir>/gitdir` holding the absolute
+// path of the linked worktree's `.git`, so a genuine registration points back at the
+// worktree being removed. Without this, a forged or stale `<worktreePath>/.git` that
+// names a SIBLING worktree's admin dir (still under `.git/worktrees`, so the
+// containment check alone passes) would let the prune delete that unrelated
+// registration. Measured against 7d193f89: the reference leaves the sibling's
+// registration in place, so requiring the back-pointer to match keeps claustrum's
+// prune to the worktree the caller actually named.
+func worktreeAdminBelongsTo(adminDir, worktreePath string) bool {
+	b, err := os.ReadFile(filepath.Join(adminDir, "gitdir"))
+	if err != nil {
+		return false
+	}
+	return canonicalPath(strings.TrimSpace(string(b))) == canonicalPath(filepath.Join(worktreePath, ".git"))
 }
