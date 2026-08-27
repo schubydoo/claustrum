@@ -18,14 +18,18 @@ import (
 // target does not exist, so a matching registration is necessarily stale.
 //
 // A registration lives at <repo>/.git/worktrees/<name>/gitdir and points at
-// "<worktree>/.git". Best-effort: any failure leaves git to report its own error.
+// "<worktree>/.git". Both paths are compared through resolveAsFarAsExists so a
+// symlinked ancestor matches: on macOS git records the RESOLVED worktree path
+// (/private/var/…) in gitdir while the caller passes the unresolved one (/var/…),
+// and a plain filepath.Clean would never match. Best-effort: any failure leaves git
+// to report its own error.
 func dropStaleWorktreeRegistration(repo, worktreePath string) {
 	base := filepath.Join(repo, ".git", "worktrees")
 	ents, err := os.ReadDir(base)
 	if err != nil {
 		return
 	}
-	target := filepath.Clean(worktreePath)
+	target := resolveAsFarAsExists(worktreePath)
 	for _, e := range ents {
 		if !e.IsDir() {
 			continue
@@ -35,9 +39,25 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) {
 			continue
 		}
 		// gitdir names the worktree's own ".git" file; its parent is the worktree.
-		if filepath.Dir(filepath.Clean(strings.TrimSpace(string(gitdir)))) == target {
+		if resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(gitdir)))) == target {
 			_ = os.RemoveAll(filepath.Join(base, e.Name()))
 			return
 		}
 	}
+}
+
+// resolveAsFarAsExists canonicalises p by resolving the symlinks of its deepest
+// existing ancestor and re-attaching the non-existent tail — so a path whose leaf is
+// gone (a deleted worktree) still resolves a symlinked ancestor such as macOS
+// /var -> /private/var, where canonicalPath alone falls back to the raw path.
+func resolveAsFarAsExists(p string) string {
+	p = filepath.Clean(p)
+	if r := canonicalPath(p); r != p {
+		return r // p itself exists and had symlinks to resolve
+	}
+	dir, base := filepath.Split(p)
+	if dir == "" {
+		return p
+	}
+	return filepath.Join(canonicalPath(filepath.Clean(dir)), base)
 }
