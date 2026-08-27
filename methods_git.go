@@ -38,6 +38,7 @@ type gitParams struct {
 	BranchName   string `json:"branchName"`
 	WorktreePath string `json:"worktreePath"`
 	SourceBranch string `json:"sourceBranch"`
+	WorktreeRoot string `json:"worktreeRoot,omitempty"`
 }
 
 // repoDir is the repo a worktree op runs against: baseRepo, or the daemon's cwd
@@ -236,9 +237,16 @@ func gitInfo(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	// 7d193f89 opens git.info with the excludesFile probe (GIT_DIR=/dev/null),
-	// reproduced for parity though its result is not on the wire.
-	gitExcludesProbe(p.Path)
+	// The excludesFile the reference reads at git.info is now resolved once (cached)
+	// and applied to every git op via hardenedArgs/userExcludesFile, rather than
+	// probed here and discarded.
+	//
+	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
+	// reference cannot pin its config-defined hooks off and refuses with -32603
+	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
+	if msg, bad := hostileConfigRefusal(p.Path); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
 	// isRepo now requires BOTH a git dir and a work tree, under the light hardening
 	// profile: a bare repo has a git dir but no work tree, so --show-toplevel fails
 	// and it reports the bare notRepoResult (matching the old --is-inside-work-tree
@@ -420,6 +428,13 @@ func gitStatus(req *request) response {
 	if p.BaseRepo == "" {
 		return errResult(req.ID, codeInvalidParam, "baseRepo is required")
 	}
+	// A repo whose config cannot be enumerated is refused with -32603 before status
+	// runs (7d193f89). The enumeration is on baseRepo — where git reports the config
+	// path relative (".git/config"), matching the reference; the worktree path would
+	// resolve to the same config but git would report it absolute. Measured on VM.
+	if msg, bad := hostileConfigRefusal(p.BaseRepo); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
 	if !gitStatusWorktreeOf(p.Path, p.BaseRepo) {
 		// The reference returns the full status shape (clean:false), not the
 		// bare notRepoResult that git.info uses.
@@ -514,6 +529,17 @@ func gitListBranches(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
+	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree before
+	// listing anything, answering the bare isRepo:false shape (branches:[]). Measured
+	// against 7d193f89 on an ephemeral VM.
+	if baseRepoUnderManagedWorktrees(p.repoDir()) {
+		return okResult(req.ID, branchesResult{Branches: []string{}})
+	}
+	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
+	// measured on an ephemeral VM.
+	if msg, bad := hostileConfigRefusal(p.Path); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
 	// 7d193f89 runs this under the light hardening profile with the config
 	// precursor; the repo gate is `rev-parse --git-dir` (true for a bare repo and
 	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
@@ -560,6 +586,33 @@ func gitWorktreeCreate(req *request) response {
 		return errResult(req.ID, codeInvalidParam, "branchName is required")
 	}
 	repo := p.repoDir()
+	return withWorktreeRepoLock(repo, func() response {
+		return gitWorktreeCreateLocked(req, &p, repo)
+	})
+}
+
+func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
+	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
+	// invalid trust root, before the repo check. Measured against 7d193f89 on an
+	// ephemeral VM. A session worktree must be created from a real top-level repo,
+	// never from inside another session's worktree tree.
+	if baseRepoUnderManagedWorktrees(repo) {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     managedWorktreesRefusal,
+			ErrorCode: "nested_base_repo",
+		})
+	}
+	// A repo whose config cannot be enumerated is refused before git runs — the
+	// reference surfaces the same "config-defined hooks could not be pinned off"
+	// detail under errorCode worktree_add_failed. Measured on an ephemeral VM.
+	if msg, bad := hostileConfigRefusal(repo); bad {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     msg,
+			ErrorCode: "worktree_add_failed",
+		})
+	}
 	// The reference checks the target is a repo BEFORE attempting the worktree
 	// add, returning a clean not_a_repo error rather than leaking git's raw
 	// "fatal: not a git repository …" output as a worktree_add_failed.
@@ -570,22 +623,44 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "not_a_repo",
 		})
 	}
-	// worktree-location containment, added by the reference in 7d193f89: the
-	// session folder must be a fresh directory strictly inside the repo. Empty is
-	// not a relative-path refusal — the reference fails it as a non-directory at
-	// the parent-creation step, with its own worktreePath echoed (measured).
-	if p.WorktreePath == "" {
-		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     fmt.Sprintf("failed to create parent directory: %q does not name a directory", p.WorktreePath),
-			ErrorCode: "mkdir_failed",
-		})
-	}
-	if msg := worktreePathRefusal(repo, p.WorktreePath, "create"); msg != "" {
-		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
-	}
-	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
-		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "symlinked_component"})
+	// With a worktreeRoot the session folder is created OUTSIDE the repo, so the
+	// in-repo containment is replaced by the external-location checks: absolute /
+	// no-".." spelling of the root and path, 2-level containment, ownership /
+	// writability of the root, and the <directory> must start out empty (or already
+	// be a managed worktree directory). Order measured against 7d193f89; an empty
+	// worktreePath is judged here as a relative path, not the in-repo mkdir failure.
+	if p.WorktreeRoot != "" {
+		root := filepath.Clean(p.WorktreeRoot)
+		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := worktreeRootShareRefusal(root); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := externalWorktreeDirNotEmptyRefusal(p.WorktreePath); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+	} else {
+		// worktree-location containment, added by the reference in 7d193f89: the
+		// session folder must be a fresh directory strictly inside the repo. Empty is
+		// not a relative-path refusal — the reference fails it as a non-directory at
+		// the parent-creation step, with its own worktreePath echoed (measured).
+		if p.WorktreePath == "" {
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     fmt.Sprintf("failed to create parent directory: %q does not name a directory", p.WorktreePath),
+				ErrorCode: "mkdir_failed",
+			})
+		}
+		if msg := worktreePathRefusal(repo, p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "symlinked_component"})
+		}
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
 		return okResult(req.ID, worktreeResult{
@@ -594,6 +669,11 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "unsafe_path",
 		})
 	}
+	// The target is confirmed missing above, so any worktree registration still
+	// naming it is stale (its session folder was deleted out from under git). Drop
+	// just that registration so the add below recreates cleanly, the way 7d193f89
+	// does — where claustrum otherwise failed "missing but already registered".
+	dropStaleWorktreeRegistration(repo, p.WorktreePath)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo.
@@ -604,6 +684,30 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "mkdir_failed",
 		})
 	}
+	// For an external worktreeRoot, tag the <directory> level as holding managed
+	// session worktrees before git runs (7d193f89 writes the marker even if the add
+	// later fails). This is the same marker baseRepoUnderManagedWorktrees looks for,
+	// so a later create whose baseRepo sits under here is refused as a nested repo.
+	if p.WorktreeRoot != "" {
+		_ = ensureManagedWorktreesMarker(filepath.Dir(p.WorktreePath))
+	}
+	// 7d193f89 also creates the worktree directory ITSELF before `git worktree add`
+	// (git adds into the pre-made empty dir). It does so by opening the parent and
+	// `mkdirat`-ing the leaf, so an unwritable/foreign-owned parent fails HERE as
+	// `failed to create worktree directory: mkdirat <leaf>: <errno>` with errorCode
+	// mkdir_failed — where claustrum used to reach git and return worktree_add_failed.
+	// mkdirWorktreeLeaf reproduces the `mkdirat <leaf>` wording byte-for-byte (unix;
+	// os.MkdirAll on Windows). Measured against 7d193f89 on an ephemeral VM.
+	if err := mkdirWorktreeLeaf(p.WorktreePath); err != nil {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     fmt.Sprintf("failed to create worktree directory: %v", err),
+			ErrorCode: "mkdir_failed",
+		})
+	}
+	// Record the leaf's identity now, to confirm below that `git worktree add`
+	// populated this same directory and nothing swapped it during the add.
+	checkpoint := checkpointCreatedWorktree(p.WorktreePath)
 	// Default the source to the repo's current branch. On an unborn HEAD
 	// (no-commit repo) abbrev-ref fails — leave source empty rather than capturing
 	// git's error text, and let `git worktree add` infer an orphan branch (it
@@ -629,32 +733,60 @@ func gitWorktreeCreate(req *request) response {
 	// is accepted although it is NOT an ancestor of HEAD, which rules out an
 	// ancestry check here.
 	source := p.SourceBranch
+	sourceRef := ""
 	if source != "" {
-		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+source); !ok {
-			source = "" // fall through to HEAD below
+		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+source); ok {
+			sourceRef = "refs/heads/" + source
+		} else {
+			source = "" // ignored; fall back to HEAD
 		}
 	}
 	if source == "" {
 		if s, ok := hardenedGit(repo, false, "rev-parse", "--abbrev-ref", "HEAD"); ok {
-			source = s
+			source = s // echoed as sourceBranch; the add itself defaults to HEAD
 		}
 	}
-	addArgs := []string{"worktree", "add", "-b", p.BranchName, p.WorktreePath}
-	if source != "" {
-		addArgs = append(addArgs, source)
+	// 7d193f89 creates the branch WITHOUT checking out (--no-track --no-checkout),
+	// then populates the working tree with a separate read-tree --reset. A plain
+	// `worktree add` that checks out leaves an ORIG_HEAD in the worktree's admin dir
+	// that the two-step does not — wire-visible via files.read. An explicit ref is
+	// passed only for an accepted sourceBranch; otherwise -b defaults to HEAD.
+	addArgs := []string{"worktree", "add", "--no-track", "--no-checkout", "-b", p.BranchName, p.WorktreePath}
+	if sourceRef != "" {
+		addArgs = append(addArgs, sourceRef)
 	}
 	out, ok := hardenedGit(repo, false, addArgs...)
 	if !ok {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
-			Error:     "git worktree add failed: " + out,
+			Error:     "git worktree add failed: " + boundedStderrHead(out),
 			ErrorCode: "worktree_add_failed",
 		})
 	}
-	// `git worktree add` checks out tracked files only, so the reference seeds
-	// the new worktree with .claude/ and the .worktreeinclude matches — without
-	// this the worktree comes up bare, with no agent configuration. Best-effort:
-	// the worktree exists and the reference reports success regardless.
+	// Second half of the two-step: populate the working tree from the new branch
+	// without a checkout, writing the WORKTREE's own index (its .git points at
+	// <repo>/.git/worktrees/<name>) — using the main .git here would wipe the linked
+	// index. Best-effort — an unborn/orphan branch has nothing to read, leaving the
+	// worktree empty just as the reference does.
+	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
+		hardenedGit(repo, false, "-c", "core.splitIndex=false",
+			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
+			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+p.BranchName)
+	}
+	// Post-condition: the add must have populated the directory claustrum created, not
+	// one swapped in during the add. claustrum's own guard; empty on an unraced create.
+	if msg := verifyCreatedWorktree(p.WorktreePath, checkpoint); msg != "" {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     msg,
+			ErrorCode: "worktree_add_failed",
+		})
+	}
+	// `git worktree add` checks out tracked files only, so the reference seeds the
+	// new worktree with the untracked files that .worktreeinclude names AND git also
+	// ignores (see copyWorktreeIncludes). .claude/ is no longer copied unconditionally
+	// (7d193f89 dropped that). Best-effort: the worktree exists and the reference
+	// reports success regardless.
 	populateWorktree(repo, p.WorktreePath)
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source})
 }
@@ -665,6 +797,21 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
+	return withWorktreeRepoLock(repo, func() response {
+		return gitWorktreeRemoveLocked(req, &p, repo)
+	})
+}
+
+func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
+	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid
+	// trust root (no errorCode on remove). Measured against 7d193f89 on an ephemeral
+	// VM. Comes before the containment/removal below.
+	if baseRepoUnderManagedWorktrees(repo) {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error:   managedWorktreesRefusal,
+		})
+	}
 	// worktree-location containment, added by the reference in 7d193f89 and matched
 	// here byte-for-byte (verb "remove", no errorCode field). It gates the
 	// os.RemoveAll fallback below: only a path strictly inside the repo survives to
@@ -677,14 +824,41 @@ func gitWorktreeRemove(req *request) response {
 			Error:   fmt.Sprintf("failed to remove worktree: %q does not name a directory", p.WorktreePath),
 		})
 	}
-	if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
-		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
-	}
-	// A symlinked component under .claude/worktrees is refused before the removal —
-	// this is what keeps the os.RemoveAll fallback below from following a planted
-	// link out of the repo (matches 7d193f89; no errorCode on remove).
-	if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "remove"); msg != "" {
-		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+	// With a worktreeRoot the worktree lives OUTSIDE the repo, so the in-repo
+	// containment is replaced by the external checks: 2-level containment, then a
+	// full registration verify (externalWorktreeVerify) — a path that is not a
+	// genuine registered worktree of baseRepo is refused and LEFT IN PLACE (or, when
+	// baseRepo's worktrees dir is unreadable, reported as a transient "could not
+	// verify … retry"), where an in-repo remove would fall back to a recursive
+	// delete. Measured against 7d193f89 on an ephemeral VM.
+	if p.WorktreeRoot != "" {
+		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+		if reason, transient := externalWorktreeVerify(repo, p.WorktreePath); reason != "" {
+			wp := filepath.Clean(p.WorktreePath)
+			if transient {
+				return okResult(req.ID, worktreeRemoveResult{Success: false,
+					Error: fmt.Sprintf("failed to remove worktree: could not verify that %s is a "+
+						"worktree of %s (%s); retry", wp, repo, reason)})
+			}
+			return okResult(req.ID, worktreeRemoveResult{Success: false,
+				Error: fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%s), "+
+					"so it is left in place; remove it by hand if it is a leftover", wp, repo, reason)})
+		}
+	} else {
+		if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+		// A symlinked component under .claude/worktrees is refused before the removal —
+		// this is what keeps the os.RemoveAll fallback below from following a planted
+		// link out of the repo (matches 7d193f89; no errorCode on remove).
+		if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
 	}
 	// ⚠️ INTENTIONAL DIVERGENCE, and the only one on this method — refused before
 	// git is run at all, so neither the removal nor the branch delete happens.
@@ -734,7 +908,31 @@ func gitWorktreeRemove(req *request) response {
 	// path would then fail "already registered" where the reference re-creates
 	// cleanly. Capture the admin dir now, before the removal deletes the pointer,
 	// and prune it after a successful removal.
+	// If the repo's config cannot be enumerated, the reference cannot examine the
+	// worktree's registrations to tell whether it is locked, so it refuses with its
+	// own message (a corrupt config, not the read methods' -32603). Measured against
+	// 7d193f89 on an ephemeral VM.
+	if _, bad := hostileConfigRefusal(repo); bad {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error: "failed to remove worktree: could not check whether " + p.WorktreePath +
+				" is locked (its registrations could not be examined); retry",
+		})
+	}
 	adminDir := worktreeAdminDir(p.WorktreePath)
+	// 7d193f89 detects a locked worktree by reading its `locked` marker
+	// (<admin>/locked) — it does not run `git worktree remove` at all, so its lock
+	// check is locale-independent. Refuse here, before the destructive `git worktree
+	// remove --force` + os.RemoveAll fallback below, so a non-C locale (where the
+	// "cannot remove a locked working tree" stderr match would miss) cannot delete a
+	// locked worktree the reference refuses. Same fixed message as the stderr branch.
+	if adminDir != "" && fileExists(filepath.Join(adminDir, "locked")) {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error: fmt.Sprintf("refusing to remove worktree: %s is locked "+
+				"(git worktree lock); unlock it to remove it", p.WorktreePath),
+		})
+	}
 	// When `git worktree remove --force` fails for a NON-LOCKED reason, the reference
 	// removes worktreePath itself and still answers {"success":true}; it reports
 	// failure only when that manual cleanup ALSO fails. A LOCKED worktree is the

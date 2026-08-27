@@ -20,7 +20,10 @@ import (
 func stubSlowGit(t *testing.T, sleep string) {
 	t.Helper()
 	bin := t.TempDir()
-	script := "#!/bin/sh\nexec sleep " + sleep + "\n"
+	// Sleep on every git command EXCEPT the hook-config enumeration 7d193f89 runs
+	// before each one (`git config …`), which must succeed fast — otherwise the
+	// hostile-config gate would time out before the git call under test.
+	script := "#!/bin/sh\ncase \"$*\" in *config*) exit 0 ;; *) exec sleep " + sleep + " ;; esac\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

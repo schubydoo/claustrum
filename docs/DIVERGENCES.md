@@ -218,11 +218,15 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   inside the repository, so a `worktreePath` that is not strictly under `baseRepo`
   — which every `~`-expanded home path is — is refused *with the reference's own
   "not inside the repository" wording* before git, the `os.RemoveAll` fallback, or
-  `wipesHomeDir` is reached. On that method `wipesHomeDir` is now defense-in-depth
-  behind the reference's containment; it can still fire only in the exotic case of
-  a repository that is itself an ancestor of home. `files.extract_tar` gained no
-  such containment, so there `wipesHomeDir` remains the primary — and only —
-  home-directory guard, which is why this divergence stays always-on.
+  `wipesHomeDir` is reached. On that method's **default** branch `wipesHomeDir` is now
+  defense-in-depth behind the reference's containment; it can still fire only in the
+  exotic case of a repository that is itself an ancestor of home. On the
+  `worktreeRoot` / `external_root` branch the in-repo containment does not apply — the
+  worktree is placed under the caller's root — so there `wipesHomeDir` is again the
+  **active** home guard, running (like on the default branch) before the delete.
+  `files.extract_tar` gained no such containment, so there too `wipesHomeDir` remains
+  the primary — and only — home-directory guard, which is why this divergence stays
+  always-on.
 - **This fired.** On 2026-08-02 an in-repo fuzzer sent `"destDir":"~"` at a live
   daemon and destroyed the maintainer's home directory. `"~"` is the first value in
   the adversarial list that survives the old `IsAbs && !isFilesystemRoot` gate. A
@@ -232,7 +236,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   measured, `"destDir":"~"` wipes the home directory and answers `{"success":true}`,
   and that method gained no containment. (`git.worktree_remove` no longer reaches it
   — its own containment refuses the home path first — so there `wipesHomeDir` is
-  defense-in-depth for the exotic repo-is-an-ancestor-of-home case.) And no honest
+  defense-in-depth on the default branch for the exotic repo-is-an-ancestor-of-home
+  case, and the active guard on the `external_root` branch, which skips that
+  containment.) And no honest
   caller has a legitimate *use* for deleting home. A caller can still reach that path
   by accident, which is the point.
 - **Not a security boundary.** The socket + token already grant `process.spawn`

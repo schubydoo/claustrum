@@ -50,19 +50,22 @@ func eqTree(t *testing.T, got, want []string, what string) {
 	}
 }
 
-// TestPopulateWorktree pins sweep gap F1 across its three shapes. `git worktree
-// add` checks out tracked files only, so without this a worktree comes up bare —
-// no agent config, no declared env files.
+// TestPopulateWorktree pins 7d193f89's worktree seeding. `git worktree add` checks
+// out tracked files only, so a declared untracked file is missing unless copied.
+// 7d193f89 copies exactly the untracked files that are BOTH named by the manifest
+// AND git-ignored — no `.claude/` (5db5e4a copied it; 7d193f89 does not), and no
+// manifest match that git does not ignore.
 //
-// Every expectation was probe-measured against the reference at 5db5e4a.
+// Every expectation was probe-measured against the reference at 7d193f89. In this
+// fixture only `secret.env` is both git-ignored and in the manifest; `notes/` and
+// `plain-untracked.txt` are in the manifest but not ignored, `logs/` is ignored but
+// not in the manifest, and `.claude/` is never copied regardless.
 func TestPopulateWorktree(t *testing.T) {
 	requireGit(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture uses symlinks and POSIX modes")
 	}
 
-	// fixture builds a repo exercising every axis: manifest match, gitignore
-	// status, directory vs file, symlink, and .claude/.
 	fixture := func(t *testing.T, withClaude, withManifest bool) (repo, wt string) {
 		t.Helper()
 		root := t.TempDir()
@@ -84,10 +87,10 @@ func TestPopulateWorktree(t *testing.T) {
 			writeFile(t, filepath.Join(repo, ".worktreeinclude"),
 				"secret.env\nnotes/\nplain-untracked.txt\nlink.txt\n", 0o644)
 		}
-		writeFile(t, filepath.Join(repo, "secret.env"), "S\n", 0o644)          // gitignored + in manifest
-		writeFile(t, filepath.Join(repo, "notes", "n1.txt"), "n\n", 0o644)     // in manifest (dir)
-		writeFile(t, filepath.Join(repo, "plain-untracked.txt"), "p\n", 0o644) // in manifest
-		writeFile(t, filepath.Join(repo, "other-untracked.txt"), "o\n", 0o644) // NOT in manifest
+		writeFile(t, filepath.Join(repo, "secret.env"), "S\n", 0o644)          // gitignored + in manifest -> copied
+		writeFile(t, filepath.Join(repo, "notes", "n1.txt"), "n\n", 0o644)     // in manifest, NOT ignored
+		writeFile(t, filepath.Join(repo, "plain-untracked.txt"), "p\n", 0o644) // in manifest, NOT ignored
+		writeFile(t, filepath.Join(repo, "other-untracked.txt"), "o\n", 0o644) // in neither
 		writeFile(t, filepath.Join(repo, "logs", "l1.txt"), "l\n", 0o644)      // gitignored, NOT in manifest
 		if err := os.Symlink("tracked.txt", filepath.Join(repo, "link.txt")); err != nil {
 			t.Fatal(err)
@@ -96,35 +99,30 @@ func TestPopulateWorktree(t *testing.T) {
 		return repo, filepath.Join(root, "wt")
 	}
 
-	t.Run("claude_and_manifest", func(t *testing.T) {
+	// The seeded tree is the same whether or not `.claude/` exists — it is never
+	// copied — and holds only the tracked files plus the one git-ignored manifest
+	// match.
+	withManifest := []string{".gitignore", "secret.env", "tracked.txt"}
+
+	t.Run("claude_present_is_not_copied", func(t *testing.T) {
 		repo, wt := fixture(t, true, true)
 		runGit(t, repo, "worktree", "add", "-b", "b1", wt)
 		populateWorktree(repo, wt)
-		eqTree(t, treeOf(t, wt), []string{
-			".claude", ".claude/.hidden", ".claude/nested", ".claude/nested/deep.txt",
-			".claude/settings.json", ".gitignore", "notes", "notes/n1.txt",
-			"plain-untracked.txt", "secret.env", "tracked.txt",
-		}, "claude+manifest")
+		eqTree(t, treeOf(t, wt), withManifest, "claude-present")
 	})
 
-	t.Run("no_manifest_copies_only_claude", func(t *testing.T) {
+	t.Run("no_manifest_copies_nothing", func(t *testing.T) {
 		repo, wt := fixture(t, true, false)
 		runGit(t, repo, "worktree", "add", "-b", "b2", wt)
 		populateWorktree(repo, wt)
-		eqTree(t, treeOf(t, wt), []string{
-			".claude", ".claude/.hidden", ".claude/nested", ".claude/nested/deep.txt",
-			".claude/settings.json", ".gitignore", "tracked.txt",
-		}, "no-manifest")
+		eqTree(t, treeOf(t, wt), []string{".gitignore", "tracked.txt"}, "no-manifest")
 	})
 
-	t.Run("no_claude_dir_is_silent", func(t *testing.T) {
+	t.Run("no_claude_dir", func(t *testing.T) {
 		repo, wt := fixture(t, false, true)
 		runGit(t, repo, "worktree", "add", "-b", "b3", wt)
 		populateWorktree(repo, wt)
-		eqTree(t, treeOf(t, wt), []string{
-			".gitignore", "notes", "notes/n1.txt", "plain-untracked.txt",
-			"secret.env", "tracked.txt",
-		}, "no-claude")
+		eqTree(t, treeOf(t, wt), withManifest, "no-claude")
 	})
 }
 
@@ -210,28 +208,6 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 		copyFile(src, filepath.Join(blocked, "sub", "a.txt")) // must not panic
 	})
 
-	t.Run("copyDirRecursive_unreadable_source", func(t *testing.T) {
-		dir := t.TempDir()
-		src := filepath.Join(dir, "src")
-		if err := os.Mkdir(src, 0o000); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(src, 0o700) })
-		copyDirRecursive(src, filepath.Join(dir, "dst"))
-	})
-
-	t.Run("copyDirRecursive_undestinable_target", func(t *testing.T) {
-		dir := t.TempDir()
-		src := filepath.Join(dir, "src")
-		writeFile(t, filepath.Join(src, "f.txt"), "x\n", 0o644)
-		blocked := filepath.Join(dir, "ro")
-		if err := os.Mkdir(blocked, 0o500); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
-		copyDirRecursive(src, filepath.Join(blocked, "dst"))
-	})
-
 	// A manifest present but git failing (not a repo) must be a no-op.
 	t.Run("copyWorktreeIncludes_git_fails", func(t *testing.T) {
 		dir := t.TempDir()
@@ -245,20 +221,43 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 			t.Errorf("worktree got %v, want nothing copied when git fails", got)
 		}
 	})
+}
 
-	// A .claude that is a FILE, not a directory, is skipped rather than copied.
-	t.Run("claude_is_a_file", func(t *testing.T) {
-		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, claudeDirName), "not a dir\n", 0o644)
-		wt := filepath.Join(dir, "wt")
-		if err := os.Mkdir(wt, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		copyClaudeDir(dir, wt)
-		if got := treeOf(t, wt); len(got) != 0 {
-			t.Errorf("worktree got %v, want nothing when .claude is a regular file", got)
-		}
-	})
+// safeOverlayDest creates missing intermediate directories for a manifest copy but
+// refuses to traverse a ".." or a symlinked component, so a planted link inside the
+// worktree cannot carry a copy outside it.
+func TestSafeOverlayDest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	wt := t.TempDir()
+
+	// A nested path with a "." segment: the "." is skipped, intermediate dirs are
+	// created, and the leaf dest returned.
+	dst := safeOverlayDest(wt, "a/./b/file.txt")
+	if want := filepath.Join(wt, "a", "b", "file.txt"); dst != want {
+		t.Errorf("nested dest = %q, want %q", dst, want)
+	}
+	if fi, err := os.Stat(filepath.Join(wt, "a", "b")); err != nil || !fi.IsDir() {
+		t.Errorf("intermediate dirs not created: %v", err)
+	}
+
+	// A ".." component is refused outright.
+	if got := safeOverlayDest(wt, "x/../../etc/passwd"); got != "" {
+		t.Errorf(`".." dest = %q, want "" (refused)`, got)
+	}
+
+	// A symlinked intermediate is refused, and nothing is written through it.
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(wt, "link")); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	if got := safeOverlayDest(wt, "link/evil.txt"); got != "" {
+		t.Errorf("symlinked-intermediate dest = %q, want %q (refused)", got, "")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "evil.txt")); err == nil {
+		t.Error("safeOverlayDest wrote through a symlink out of the worktree")
+	}
 }
 
 // TestWorktreeIncludeSkipsQuotedNames pins a REFERENCE LIMITATION that claustrum
@@ -279,7 +278,11 @@ func TestWorktreeIncludeSkipsQuotedNames(t *testing.T) {
 	repo := filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "master", "repo")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "t\n", 0o644)
-	runGit(t, repo, "add", "tracked.txt")
+	// The weird files must be git-ignored to be copy candidates at all (7d193f89
+	// copies only manifest matches that git also ignores); the quoted-name skip is
+	// what this test isolates on top of that.
+	writeFile(t, filepath.Join(repo, ".gitignore"), "weird*\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt", ".gitignore")
 	writeFile(t, filepath.Join(repo, worktreeIncludeFile), "weird*\n", 0o644)
 	for _, name := range []string{
 		"weird-plain.txt",  // printed bare      -> copied
@@ -297,7 +300,7 @@ func TestWorktreeIncludeSkipsQuotedNames(t *testing.T) {
 	populateWorktree(repo, wt)
 
 	eqTree(t, treeOf(t, wt),
-		[]string{"tracked.txt", "weird space.txt", "weird-plain.txt"},
+		[]string{".gitignore", "tracked.txt", "weird space.txt", "weird-plain.txt"},
 		"quoted-name manifest matches")
 }
 
