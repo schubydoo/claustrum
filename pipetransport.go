@@ -59,6 +59,30 @@ func removePipeNameFile(socket string) {
 	}
 }
 
+// removePipeNameFileIfOwned unlinks rpc.pipe on graceful shutdown ONLY when the file
+// on disk is still the inode this daemon published (os.SameFile against owned) — the
+// same handoff protection removePersistedToken/removeSocketIfOwned apply to the token
+// and socket. rpc.pipe is claustrum's own CT-5 artifact, but a restart's successor can
+// republish it before this predecessor tears down, so it earns the same guard so the
+// departing daemon cannot delete the successor's pipe pointer. A nil owned (no pipe
+// served this boot) is a no-op; the unconditional removePipeNameFile above is used for
+// the startup stale-clear, where there is no successor to protect.
+func removePipeNameFileIfOwned(socket string, owned os.FileInfo) {
+	if owned == nil {
+		return
+	}
+	path := pipeNameFilePath(socket)
+	cur, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if os.SameFile(cur, owned) {
+		if err := os.Remove(path); err != nil {
+			logErrorf("[Server] failed to remove pipe-name file: %v", err)
+		}
+	}
+}
+
 // ownerOnlySDDL builds the security descriptor for the named pipe: a protected
 // DACL (P — no inheritance) granting GENERIC_ALL (GA) to exactly one principal,
 // the daemon user's SID, and to no one else. There is no ACE for Everyone

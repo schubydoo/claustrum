@@ -84,26 +84,47 @@ func writeFileViaTemp(create func(string) (tokenTempFile, error), dir, dest, con
 // Best-effort by design: a failure is logged and non-fatal — the daemon still
 // serves every request; only file-based reconnect is unavailable. The reference
 // behaves the same (it logs and carries on).
-func persistToken(socket, token string) {
+// It returns the written file's identity (os.FileInfo) so teardown can unlink it
+// only if it is still the inode THIS daemon wrote — a restart's successor may have
+// republished daemon.token to a new inode before this predecessor shuts down, and
+// deleting it would break the successor's reconnect auth. Returns nil on failure
+// (nothing was persisted to own). This mirrors the socket's sockInfo handoff.
+func persistToken(socket, token string) os.FileInfo {
 	dir := persistTokenDir(socket)
-	if err := writeFileViaTemp(createTokenTemp, dir, filepath.Join(dir, persistedTokenName), token); err != nil {
+	dest := filepath.Join(dir, persistedTokenName)
+	if err := writeFileViaTemp(createTokenTemp, dir, dest, token); err != nil {
 		logErrorf("[daemon] failed to persist token: %v", err)
+		return nil
 	}
+	fi, err := os.Stat(dest)
+	if err != nil {
+		logErrorf("[daemon] failed to stat persisted token: %v", err)
+		return nil
+	}
+	return fi
 }
 
-// removePersistedToken unlinks the persisted token file on graceful shutdown,
-// mirroring the reference's stat-then-unlink sequence. Absent file → silent
-// (persist may have failed, or shutdown ran twice); any other stat error, or a
-// failed unlink, is logged. Best-effort: the process is exiting regardless.
-func removePersistedToken(socket string) {
-	path := filepath.Join(persistTokenDir(socket), persistedTokenName)
-	if _, err := os.Stat(path); err != nil {
-		if !os.IsNotExist(err) {
-			logErrorf("[daemon] failed to stat persisted token: %v", err)
-		}
+// removePersistedToken unlinks the persisted token file on graceful shutdown ONLY
+// when the file on disk is still the inode this daemon wrote (os.SameFile against
+// owned) — the same inode-ownership protection removeSocketIfOwned already gives the
+// socket in the handoff. daemon.token is the socket's companion reconnect artifact, so
+// a restart's successor that already republished it keeps its own inode, and this
+// departing predecessor cannot delete it out from under the new daemon (which would
+// break the successor's reconnect auth — the whole point of the handoff). A nil owned
+// (persist failed → nothing to own) is a no-op, and a stat error (absent, or
+// unreadable) is silent; only a failed unlink of a file we DO own is logged.
+func removePersistedToken(socket string, owned os.FileInfo) {
+	if owned == nil {
 		return
 	}
-	if err := os.Remove(path); err != nil {
-		logErrorf("[daemon] failed to remove persisted token: %v", err)
+	path := filepath.Join(persistTokenDir(socket), persistedTokenName)
+	cur, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if os.SameFile(cur, owned) {
+		if err := os.Remove(path); err != nil {
+			logErrorf("[daemon] failed to remove persisted token: %v", err)
+		}
 	}
 }

@@ -7,9 +7,9 @@ import (
 )
 
 // idleConnTimeout is how long a connection may go with no read/write activity
-// before the daemon closes it. 7d193f89 hardcodes 5 minutes in its server
-// constructor with no flag or env to change or disable it, so claustrum matches
-// that value and keeps it always-on.
+// before the daemon closes it. 7d193f89 uses a fixed 5-minute idle timeout with no
+// flag or env to change or disable it, so claustrum matches that value and keeps it
+// always-on.
 const idleConnTimeout = 5 * time.Minute
 
 // activityConn wraps a net.Conn and records the time of the last Read or Write, so
@@ -46,10 +46,10 @@ func (a *activityConn) idleFor() time.Duration {
 }
 
 // closeWhenIdle closes the connection once it has been idle for the server's
-// idleTimeout, then returns. It polls at idleTimeout/4 clamped to [1ms, 30s] — the
-// same cadence as 7d193f89 (300s/4 = 75s → clamped to 30s at the default). The
-// watcher exits when the connection closes normally (done) or the daemon shuts
-// down, so it never outlives its connection.
+// idleTimeout, then returns. It polls at idleTimeout/4 clamped to [1ms, 30s] (at the
+// default idleConnTimeout that is 75s → clamped to 30s). The watcher exits when the
+// connection closes normally (done) or the daemon shuts down, so it never outlives
+// its connection.
 func (s *server) closeWhenIdle(a *activityConn, done <-chan struct{}) {
 	if s.idleTimeout <= 0 {
 		return

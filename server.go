@@ -76,10 +76,15 @@ type server struct {
 	// short value.
 	idleTimeout time.Duration
 
-	// sockInfo is the socket file's identity at bind time, so teardown can unlink it
-	// only if it is still the inode this daemon bound (removeSocketIfOwned) — a
-	// restart's successor may have rebound the path to a new inode.
-	sockInfo os.FileInfo
+	// sockInfo / tokenInfo / pipeInfo are the identities of the socket, daemon.token
+	// and rpc.pipe files this daemon published, so teardown unlinks each only if it is
+	// still the inode this daemon wrote (removeSocketIfOwned / removePersistedToken /
+	// removePipeNameFileIfOwned) — a restart's successor may have republished any of
+	// them to a new inode, and deleting a successor's file would break its handoff.
+	// tokenInfo/pipeInfo are nil when nothing was published (persist failed / no pipe).
+	sockInfo  os.FileInfo
+	tokenInfo os.FileInfo
+	pipeInfo  os.FileInfo
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -374,9 +379,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 
 	// Persist the token beside the now-listenable socket so a client can
 	// reconnect to this daemon and re-authenticate after the original -token-file
-	// was unlinked / the -token-fd pipe closed. Removed again in teardown. Matches
-	// the reference daemon (upstream 5db5e4a); best-effort and non-fatal.
-	persistToken(socket, token)
+	// was unlinked / the -token-fd pipe closed. Removed again in teardown, but only if
+	// still our inode (tokenInfo). Matches the reference daemon (upstream 5db5e4a);
+	// best-effort and non-fatal.
+	tokenFI := persistToken(socket, token)
 
 	// -keep-children is POSIX-only. honorKeepChildren returns the flag unchanged on
 	// Unix and false-with-a-warning on Windows (where children live in a Job Object
@@ -402,6 +408,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		wlog:         wlog,
 		idleTimeout:  idleConnTimeout,
 		sockInfo:     sockFI,
+		tokenInfo:    tokenFI,
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
@@ -669,6 +676,9 @@ func (s *server) enablePipe(socket string, listenPipe bool) {
 		return
 	}
 	s.pipeLn = pln
+	// Record rpc.pipe's identity so teardown removes it only if it is still ours
+	// (removePipeNameFileIfOwned), like the socket and daemon.token.
+	s.pipeInfo, _ = os.Stat(pipeNameFilePath(socket))
 	logInfof("[Server] also listening on named pipe %s", pln.Addr())
 }
 
@@ -921,10 +931,11 @@ func (s *server) closeAll(socket string) {
 	// may already have rebound the path, and 7d193f89 leaves a successor's socket
 	// alone rather than deleting it out from under the new daemon.
 	removeSocketIfOwned(socket, s.sockInfo)
-	removePersistedToken(socket)
-	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token. No-op if
-	// the pipe was never started (unconditional, matching removePersistedToken).
-	removePipeNameFile(socket)
+	removePersistedToken(socket, s.tokenInfo)
+	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the
+	// same ownership guard: only if it is still the inode we published, so a successor's
+	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
+	removePipeNameFileIfOwned(socket, s.pipeInfo)
 	s.stopChildren()
 	s.procs.close() // end the prune sweep; idempotent
 	s.mu.Lock()

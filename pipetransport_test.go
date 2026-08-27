@@ -4,9 +4,54 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+// removePipeNameFileIfOwned removes rpc.pipe only when it is still the inode this
+// daemon published (os.SameFile) — so a restart's successor that republished it keeps
+// its own pointer. Mirrors removePersistedToken / removeSocketIfOwned. POSIX-only:
+// os.SameFile cannot distinguish two files on Windows.
+func TestRemovePipeNameFileIfOwned(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.SameFile cannot distinguish two files on Windows")
+	}
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "rpc.sock")
+	if err := writePipeNameFile(sock, `\\.\pipe\x`); err != nil {
+		t.Fatal(err)
+	}
+	path := pipeNameFilePath(sock)
+	owned, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removePipeNameFileIfOwned(sock, nil) // nil owned → no-op
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("nil owned should be a no-op")
+	}
+	// A successor republishes rpc.pipe with a distinct inode (coexist + rename).
+	succ := filepath.Join(dir, "rpc.pipe.succ")
+	if err := os.WriteFile(succ, []byte(`\\.\pipe\y`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(succ, path); err != nil {
+		t.Fatal(err)
+	}
+	removePipeNameFileIfOwned(sock, owned) // predecessor's identity → must leave it
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("successor's rpc.pipe was deleted by the predecessor")
+	}
+	cur, _ := os.Stat(path)
+	removePipeNameFileIfOwned(sock, cur) // current owner removes it
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("removePipeNameFileIfOwned did not remove its own file")
+	}
+}
 
 // TestOwnerOnlySDDL asserts the pipe's security descriptor is the exact owner-only
 // DACL the AF_UNIX socket's 0600 mode is analogous to: a protected DACL granting

@@ -8,16 +8,17 @@ import (
 )
 
 // removeSocketIfOwned must NOT delete a socket a successor rebound (different inode)
-// but MUST remove one this daemon still owns — 7d193f89's guard against a departing
-// daemon deleting the new daemon's socket. Exercised with regular files, since
-// os.SameFile keys on inode identity regardless of file type.
+// but MUST remove one this daemon still owns. Matches the reference: 7d193f89 leaves a
+// successor's rebound socket alone rather than deleting it out from under the new
+// daemon. Exercised with regular files, since os.SameFile keys on inode identity
+// regardless of file type.
 //
 // Unix only: the successor-rebind arm relies on a delete-and-recreate at the same
 // path yielding a DIFFERENT identity, which holds for a POSIX inode but not on
 // Windows, where NTFS reuses the file index so os.SameFile reports the recreated
-// file as the same. The production guard uses os.SameFile exactly as the reference
-// does, so it inherits that same Windows limitation — this test just cannot assert
-// the rebind distinction there.
+// file as the same. The production guard keys on inode identity (os.SameFile); the
+// reference's socket handoff is likewise inode-based, so both inherit that same
+// Windows limitation — this test just cannot assert the rebind distinction there.
 func TestRemoveSocketIfOwned(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("os.SameFile cannot distinguish a same-path delete-recreate on Windows (NTFS file-index reuse)")
