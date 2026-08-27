@@ -68,6 +68,31 @@ func TestWorktreeRemoveLockedWorktreeIsRefused(t *testing.T) {
 	}
 }
 
+// The locked refusal reads the `locked` marker file (matching 7d193f89, which does
+// not run `git worktree remove` at all), not git's localised stderr — so it holds
+// under any locale. Proven with a stub git that EXITS 0 on every call: only the
+// marker-file check stands between the caller and a deletion, so a refusal here means
+// the file-based path fired, not git's output. Without that check the stub "succeeds"
+// and the remove answers success:true.
+func TestWorktreeRemoveLockedByMarkerNotStderr(t *testing.T) {
+	repo, wt := lockedWorktree(t) // real git creates the worktree + the `locked` marker
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+	if !strings.Contains(raw, "is locked (git worktree lock); unlock it to remove it") {
+		t.Errorf("reply = %s, want the marker-file locked refusal (stub git exits 0, so only the file check can refuse)", raw)
+	}
+	if _, err := os.Stat(wt); err != nil {
+		t.Errorf("locked worktree deleted (%v); the marker-file check must leave it in place", err)
+	}
+}
+
 // A git failure that is NOT a lock still reaches the os.RemoveAll fallback and
 // answers success:true: an ordinary non-worktree directory inside the repo is
 // deleted. 7d193f89 does the same (measured on an ephemeral VM) — only the locked

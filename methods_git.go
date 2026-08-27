@@ -910,6 +910,19 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		})
 	}
 	adminDir := worktreeAdminDir(p.WorktreePath)
+	// 7d193f89 detects a locked worktree by reading its `locked` marker
+	// (<admin>/locked) — it does not run `git worktree remove` at all, so its lock
+	// check is locale-independent. Refuse here, before the destructive `git worktree
+	// remove --force` + os.RemoveAll fallback below, so a non-C locale (where the
+	// "cannot remove a locked working tree" stderr match would miss) cannot delete a
+	// locked worktree the reference refuses. Same fixed message as the stderr branch.
+	if adminDir != "" && fileExists(filepath.Join(adminDir, "locked")) {
+		return okResult(req.ID, worktreeRemoveResult{
+			Success: false,
+			Error: fmt.Sprintf("refusing to remove worktree: %s is locked "+
+				"(git worktree lock); unlock it to remove it", p.WorktreePath),
+		})
+	}
 	// When `git worktree remove --force` fails for a NON-LOCKED reason, the reference
 	// removes worktreePath itself and still answers {"success":true}; it reports
 	// failure only when that manual cleanup ALSO fails. A LOCKED worktree is the
