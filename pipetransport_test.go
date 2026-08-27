@@ -270,3 +270,21 @@ func assertNoPipeTemps(t *testing.T, dir string) {
 		}
 	}
 }
+
+// removePipeNameFileIfOwned with an identity to protect but no file on disk is a
+// silent no-op (the successor, or a crash, already took it).
+func TestRemovePipeNameFileIfOwnedAbsent(t *testing.T) {
+	dir := t.TempDir()
+	other := filepath.Join(dir, "other")
+	if err := os.WriteFile(other, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	owned, err := os.Stat(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removePipeNameFileIfOwned(filepath.Join(dir, "rpc.sock"), owned)
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("an unrelated file was touched: %v", err)
+	}
+}

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 )
 
@@ -63,5 +67,26 @@ func TestRemoveSocketIfOwned(t *testing.T) {
 	removeSocketIfOwned(sock, nil)
 	if _, err := os.Stat(sock); err == nil {
 		t.Error("removeSocketIfOwned(nil) should unlink unconditionally")
+	}
+}
+
+// isSocketDead classifies a dial error: a missing socket file or a refused
+// connection means nothing is listening (stale socket), anything else is treated as
+// "possibly live" so the launcher keeps waiting for a genuine handoff.
+func TestIsSocketDead(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"not exist", os.ErrNotExist, true},
+		{"refused", &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}}, true},
+		{"timeout", context.DeadlineExceeded, false},
+		{"opaque", errors.New("something else"), false},
+	}
+	for _, c := range cases {
+		if got := isSocketDead(c.err); got != c.want {
+			t.Errorf("%s: isSocketDead(%v) = %v, want %v", c.name, c.err, got, c.want)
+		}
 	}
 }

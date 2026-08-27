@@ -446,3 +446,10 @@ func TestEnsureCLIRenameFailureCleansUpStaging(t *testing.T) {
 	// The staging file must not be left behind as litter.
 	assertNoStagingLeftover(t, filepath.Join(cliDir, tooLong))
 }
+
+// sha256File surfaces the open error for a missing blob instead of hashing nothing.
+func TestSha256FileMissing(t *testing.T) {
+	if _, err := sha256File(filepath.Join(t.TempDir(), "absent.zst")); err == nil {
+		t.Fatal("expected an error for a missing file")
+	}
+}
