@@ -223,6 +223,42 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 	})
 }
 
+// safeOverlayDest creates missing intermediate directories for a manifest copy but
+// refuses to traverse a ".." or a symlinked component, so a planted link inside the
+// worktree cannot carry a copy outside it. Matches 7d193f89's safeOverlayDest.
+func TestSafeOverlayDest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	wt := t.TempDir()
+
+	// A nested path: intermediate dirs are created and the leaf dest returned.
+	dst := safeOverlayDest(wt, "a/b/file.txt")
+	if want := filepath.Join(wt, "a", "b", "file.txt"); dst != want {
+		t.Errorf("nested dest = %q, want %q", dst, want)
+	}
+	if fi, err := os.Stat(filepath.Join(wt, "a", "b")); err != nil || !fi.IsDir() {
+		t.Errorf("intermediate dirs not created: %v", err)
+	}
+
+	// A ".." component is refused outright.
+	if got := safeOverlayDest(wt, "x/../../etc/passwd"); got != "" {
+		t.Errorf(`".." dest = %q, want "" (refused)`, got)
+	}
+
+	// A symlinked intermediate is refused, and nothing is written through it.
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(wt, "link")); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	if got := safeOverlayDest(wt, "link/evil.txt"); got != "" {
+		t.Errorf("symlinked-intermediate dest = %q, want %q (refused)", got, "")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "evil.txt")); err == nil {
+		t.Error("safeOverlayDest wrote through a symlink out of the worktree")
+	}
+}
+
 // TestWorktreeIncludeSkipsQuotedNames pins a REFERENCE LIMITATION that claustrum
 // reproduces on purpose. `git ls-files` C-quotes any path containing a tab, a
 // quote, a backslash or a non-ASCII byte, and the line-delimited output is

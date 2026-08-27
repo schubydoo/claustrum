@@ -83,10 +83,43 @@ func copyWorktreeIncludes(repo, worktree string) {
 		// blank element reaches this loop.
 		if rel = strings.TrimRight(rel, "\r"); rel != "" {
 			if _, ok := ignoredSet[rel]; ok {
-				copyFile(filepath.Join(repo, rel), filepath.Join(worktree, rel))
+				if dst := safeOverlayDest(worktree, rel); dst != "" {
+					copyFile(filepath.Join(repo, rel), dst)
+				}
 			}
 		}
 	}
+}
+
+// safeOverlayDest resolves the destination for a manifest-copied file inside the
+// worktree, creating missing intermediate directories (0755) but REFUSING to
+// traverse a ".." or a symlinked component — 7d193f89's safeOverlayDest. A planted
+// symlink inside the worktree must not carry a copy outside it. Returns the
+// destination path, or "" if the path is unsafe. rel is worktree-relative.
+func safeOverlayDest(worktree, rel string) string {
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	cur := worktree
+	for _, part := range parts[:len(parts)-1] { // intermediate directories only
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			return ""
+		}
+		cur = filepath.Join(cur, part)
+		fi, err := os.Lstat(cur)
+		switch {
+		case err == nil && fi.Mode()&os.ModeSymlink != 0:
+			return "" // a symlinked component would carry the copy elsewhere
+		case err == nil:
+			// a real directory (or file — copyFile will then decline); continue
+		default:
+			if mkErr := os.Mkdir(cur, 0o755); mkErr != nil && !os.IsExist(mkErr) {
+				return ""
+			}
+		}
+	}
+	return filepath.Join(cur, parts[len(parts)-1])
 }
 
 // copyFile copies one regular file, creating parent directories as needed.
