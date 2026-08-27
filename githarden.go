@@ -235,14 +235,27 @@ func hostileConfigRefusal(dir string) (string, bool) {
 	if err == nil {
 		return "", false
 	}
+	var stderr string
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		stderr = strings.TrimSpace(string(ee.Stderr))
+	}
+	// A failure to CHDIR into dir — it does not exist, or is not readable/traversable
+	// — is NOT a hostile config: git could not even reach the repo, so there are no
+	// config-defined hooks to pin off. The reference lets such an input fall through
+	// to its normal not-a-repo shape (measured against 7d193f89: a nonexistent
+	// path/baseRepo answers isRepo:false on the read methods, not_a_repo on
+	// worktree_create, and success on worktree_remove — NOT this refusal). Only a
+	// config that git CAN reach but cannot parse (a corrupt .git/config) is refused
+	// here. git's -C chdir failure is the one that reads "cannot change to '<dir>'".
+	if strings.Contains(stderr, "cannot change to") {
+		return "", false
+	}
 	// The reference wraps the git error as "<exit status>: <stderr>", then as
 	// "listing the configuration in force: <that>", then as the hooks refusal.
 	detail := err.Error()
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		if s := strings.TrimSpace(string(ee.Stderr)); s != "" {
-			detail = err.Error() + ": " + s
-		}
+	if stderr != "" {
+		detail = err.Error() + ": " + stderr
 	}
 	return "config-defined hooks could not be pinned off; git not run: " +
 		"listing the configuration in force: " + detail, true

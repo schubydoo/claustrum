@@ -11,7 +11,8 @@ var capabilityMethods = []string{
 // order. process.stdin.offset (the stdin-offset idempotency contract, see
 // process.stdin / stdinResult) landed in 7c2f88d; 7d193f89 added two more:
 // git.status.baseRepo (git.status now keys off a session worktree of baseRepo)
-// and git.worktree.external_root (session worktrees confined to inside the repo).
+// and git.worktree.external_root (a worktreeRoot param places the session worktree
+// OUTSIDE the repo, under that caller-chosen root, instead of inside it).
 // Always emitted.
 var capabilityFeatures = []string{
 	"process.stdin.offset",
