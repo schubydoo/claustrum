@@ -836,8 +836,16 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
 		}
-		if msg := externalWorktreeMissingGitRefusal(repo, p.WorktreePath); msg != "" {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		if reason, transient := externalWorktreeVerify(repo, p.WorktreePath); reason != "" {
+			wp := filepath.Clean(p.WorktreePath)
+			if transient {
+				return okResult(req.ID, worktreeRemoveResult{Success: false,
+					Error: fmt.Sprintf("failed to remove worktree: could not verify that %s is a "+
+						"worktree of %s (%s); retry", wp, repo, reason)})
+			}
+			return okResult(req.ID, worktreeRemoveResult{Success: false,
+				Error: fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%s), "+
+					"so it is left in place; remove it by hand if it is a leftover", wp, repo, reason)})
 		}
 	} else {
 		if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {

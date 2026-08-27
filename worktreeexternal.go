@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // External worktrees (the "Worktree location" capability, added by reference build
@@ -71,40 +72,73 @@ func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
 	return ""
 }
 
-// externalWorktreeMissingGitRefusal is the reference's non-destructive guard on an
-// external remove: a path under a worktreeRoot whose `.git` is not a regular file is
-// not a managed worktree, so it is refused and LEFT IN PLACE — unlike an in-repo
-// remove, whose git failure falls back to a recursive delete (measured: an in-repo
-// plain directory is still deleted at 7d193f89, an external one is not). A linked
-// worktree's `.git` is a `gitdir:` pointer FILE, never a directory, so requiring a
-// REGULAR file is what stops an external remove aimed at an ordinary repository (a
-// `.git` DIRECTORY) or any other non-worktree from recursively deleting it. Two refusal
-// shapes, both measured byte-for-byte against 7d193f89: a missing `.git` names the
-// worktree ("<wp> has no .git file"); a `.git` that exists but is not a regular file
-// names the pointer ("<wp>/.git is not a regular file"). Returns "" only when
-// worktreePath's `.git` is a regular file — a real worktree to remove.
-func externalWorktreeMissingGitRefusal(repo, worktreePath string) string {
+// externalWorktreeVerify reproduces 7d193f89's "is worktreePath a registered worktree
+// of baseRepo" check on the external-remove path, whose non-locked git failure would
+// otherwise recursively os.RemoveAll the path. The reference REFUSES (leaves the path in
+// place) unless it can positively confirm a genuine registration — unlike an in-repo
+// remove, which deletes a plain directory as a fallback (measured: in-repo plain dir is
+// deleted at 7d193f89, an external one is not). It returns:
+//   - ("", false) when the path may be removed: a genuine registration, a GHOST whose
+//     admin dir is gone (the reference cleans those up), or a path already gone;
+//   - (reason, false) to REFUSE and leave it in place — the caller wraps it as
+//     "... is not a worktree of <baseRepo> (<reason>), so it is left in place; ...";
+//   - (detail, true) when the daemon cannot decide (baseRepo's worktrees dir is
+//     unreadable) — the caller wraps it as "could not verify that ... (<detail>); retry".
+//
+// A linked worktree's `.git` is a `gitdir:` pointer FILE naming an admin directory
+// <gitdir>/worktrees/<name> under baseRepo, whose own `gitdir` record points back at this
+// worktree. Each reason string, and the delete/leave/transient split, was measured
+// byte-for-byte against 7d193f89 on an ephemeral VM.
+func externalWorktreeVerify(baseRepo, worktreePath string) (reason string, transient bool) {
 	wp := filepath.Clean(worktreePath)
 	if _, err := os.Stat(wp); err != nil {
-		// The path is already gone — nothing to gate. The reference answers
-		// success:true for a missing external worktree (measured); letting this
-		// through reaches the normal removal, whose os.RemoveAll of a nonexistent
-		// path is a nil no-op, so the reply is success:true to match.
-		return ""
+		// Already gone — os.RemoveAll of a missing path is a nil no-op → success:true.
+		return "", false
 	}
-	gitPath := filepath.Join(wp, ".git")
-	fi, err := os.Stat(gitPath)
-	if err == nil && fi.Mode().IsRegular() {
-		return ""
-	}
+	gp := filepath.Join(wp, ".git")
+	fi, err := os.Stat(gp)
 	if err != nil {
-		return fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s "+
-			"(%s has no .git file), so it is left in place; remove it by hand if it is a leftover",
-			wp, repo, wp)
+		return wp + " has no .git file", false
 	}
-	return fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s "+
-		"(%s is not a regular file), so it is left in place; remove it by hand if it is a leftover",
-		wp, repo, gitPath)
+	if !fi.Mode().IsRegular() {
+		return gp + " is not a regular file", false
+	}
+	b, err := os.ReadFile(gp)
+	if err != nil {
+		return gp + " does not name a git dir", false
+	}
+	line := strings.TrimSpace(string(b))
+	const prefix = "gitdir:"
+	if !strings.HasPrefix(line, prefix) {
+		return gp + " does not name a git dir", false
+	}
+	admin := filepath.Clean(strings.TrimSpace(line[len(prefix):]))
+	const notOurs = " carries a .git file that does not name this repository's own worktree admin directory"
+	// A worktree admin dir is <gitdir>/worktrees/<name>; if the parent component is not
+	// "worktrees" it cannot be one, and the reference does not even consult baseRepo.
+	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
+		return wp + notOurs, false
+	}
+	// It is shaped like a worktree admin — confirm it is baseRepo's OWN. The reference
+	// opens baseRepo's worktrees directory; if that fails it cannot decide → transient.
+	baseWT := filepath.Join(baseRepo, ".git", worktreesSubdir)
+	d, err := os.Open(baseWT)
+	if err != nil {
+		return err.Error(), true // e.g. "open <baseRepo>/.git/worktrees: no such file or directory"
+	}
+	_ = d.Close()
+	if canonicalPath(filepath.Dir(admin)) != canonicalPath(baseWT) {
+		return wp + notOurs, false
+	}
+	// Under baseRepo's own worktrees. A ghost admin dir (registration gone) may be
+	// removed as a stale leftover; a present one must record THIS worktree.
+	if _, err := os.Stat(admin); err != nil {
+		return "", false
+	}
+	if !worktreeAdminBelongsTo(admin, wp) {
+		return wp + " carries a .git file naming an admin directory whose own record is of a different worktree", false
+	}
+	return "", false
 }
 
 // externalWorktreeDirNotEmptyRefusal reports 7d193f89's refusal when the
