@@ -585,6 +585,12 @@ func gitWorktreeCreate(req *request) response {
 		return errResult(req.ID, codeInvalidParam, "branchName is required")
 	}
 	repo := p.repoDir()
+	return withWorktreeRepoLock(repo, func() response {
+		return gitWorktreeCreateLocked(req, &p, repo)
+	})
+}
+
+func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
 	// invalid trust root, before the repo check. Measured against 7d193f89 on an
 	// ephemeral VM. A session worktree must be created from a real top-level repo,
@@ -772,6 +778,12 @@ func gitWorktreeRemove(req *request) response {
 		return *bad
 	}
 	repo := p.repoDir()
+	return withWorktreeRepoLock(repo, func() response {
+		return gitWorktreeRemoveLocked(req, &p, repo)
+	})
+}
+
+func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid
 	// trust root (no errorCode on remove). Measured against 7d193f89 on an ephemeral
 	// VM. Comes before the containment/removal below.
