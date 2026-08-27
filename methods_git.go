@@ -826,9 +826,11 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	}
 	// With a worktreeRoot the worktree lives OUTSIDE the repo, so the in-repo
 	// containment is replaced by the external checks: 2-level containment, then a
-	// non-destructive `.git`-file gate — an external path that is not a real
-	// worktree is refused and LEFT IN PLACE, where an in-repo remove would fall back
-	// to a recursive delete. Measured against 7d193f89 on an ephemeral VM.
+	// full registration verify (externalWorktreeVerify) — a path that is not a
+	// genuine registered worktree of baseRepo is refused and LEFT IN PLACE (or, when
+	// baseRepo's worktrees dir is unreadable, reported as a transient "could not
+	// verify … retry"), where an in-repo remove would fall back to a recursive
+	// delete. Measured against 7d193f89 on an ephemeral VM.
 	if p.WorktreeRoot != "" {
 		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})

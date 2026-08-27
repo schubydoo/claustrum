@@ -62,7 +62,7 @@ func worktreeExternalContainmentRefusal(worktreeRoot, worktreePath, verb string)
 // that carries the create out of the chosen location. verb is "create" or "remove"
 // (create carries errorCode unsafe_path; remove carries none). Measured against
 // 7d193f89: this runs after the ownership/writability checks on create, and before
-// the .git-file gate on remove.
+// the registration verify (externalWorktreeVerify) on remove.
 func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
 	dir := filepath.Dir(worktreePath)
 	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&os.ModeSymlink != 0 {

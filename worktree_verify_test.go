@@ -69,8 +69,8 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	//   - Windows: os.SameFile does NOT reliably distinguish two directories here at all —
 	//     measured, the windows-latest runner reports the swapped directory as identical
 	//     even when the two coexisted. So the identity check, and this sub-case, is
-	//     POSIX-only; production verifyCreatedWorktree inherits that Windows limitation,
-	//     exactly as dahandoff's removeSocketIfOwned does.
+	//     POSIX-only; production verifyCreatedWorktree inherits that Windows limitation
+	//     on its os.SameFile check.
 	if runtime.GOOS == "windows" {
 		return
 	}

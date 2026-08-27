@@ -644,9 +644,21 @@ fails the request:
   checks reaches git and the recursive-delete fallback below — so the fallback targets
   a path inside the repository, or, when `worktreeRoot` is supplied, one two levels
   under that root (the same external containment as `worktree_create`). An external
-  remove additionally refuses a path with no `.git` file and leaves it in place
-  (`"<p> is not a worktree of <repo> (<p> has no .git file), so it is left in place; …"`)
-  rather than falling back to a recursive delete.
+  remove additionally **verifies that `<p>` is a genuine registered worktree of
+  `baseRepo`** before it may be deleted: `<p>/.git` must be a regular `gitdir:` pointer
+  file naming `<baseRepo>/.git/worktrees/<name>` whose own record points back at `<p>`.
+  Any other path is refused and LEFT IN PLACE — `{"success":false,"error":"refusing to
+  remove worktree: <p> is not a worktree of <repo> (<reason>), so it is left in place;
+  remove it by hand if it is a leftover"}` — where `<reason>` is one of `<p> has no
+  .git file`, `<p>/.git is not a regular file`, `<p>/.git does not name a git dir`,
+  `<p> carries a .git file that does not name this repository's own worktree admin
+  directory`, or `<p> carries a .git file naming an admin directory whose own record is
+  of a different worktree`. When `baseRepo`'s worktrees directory cannot be read the
+  daemon cannot decide, and the reply is transient — `{"success":false,"error":"failed
+  to remove worktree: could not verify that <p> is a worktree of <repo> (<detail>);
+  retry"}`. A stale registration whose admin dir is gone is still removed, as is a `<p>`
+  that is already gone (`success:true`). None of these paths reaches the recursive
+  delete of an unrelated directory.
 - The daemon runs `git worktree remove --force`. **`7d193f89` refuses a LOCKED
   worktree here:** git fails with `cannot remove a locked working tree`, and the
   reply is `{"success":false,"error":"refusing to remove worktree: <p> is locked
