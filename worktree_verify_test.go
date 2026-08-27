@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,19 +59,33 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A fresh directory at the same path — resolves and is a dir, but a different
-	// identity: "was not populated by git worktree add". Windows os.SameFile cannot
-	// distinguish a delete-recreate at the same path (NTFS reuses the file index) — the
-	// same limitation dahandoff's removeSocketIfOwned test skips for — so this identity
-	// sub-case is POSIX-only. Production verifyCreatedWorktree inherits that Windows
-	// limitation exactly as removeSocketIfOwned does.
-	if runtime.GOOS == "windows" {
-		return
-	}
-	if err := os.MkdirAll(wt, 0o755); err != nil {
+	// A directory with a DIFFERENT identity at the same path: "was not populated by git
+	// worktree add". A delete-then-recreate at the same path is NOT a reliable way to
+	// force a distinct identity — a freed inode (POSIX) or file index (Windows NTFS) can
+	// be reused for the new directory, so os.SameFile reports the two identical
+	// (measured: flaky on the ubuntu CI runner, not just Windows NTFS). Instead create
+	// the replacement ALONGSIDE the original, so the two coexist and their identities
+	// cannot collide, then move it into place after the original is gone — deterministic
+	// on every OS, so this sub-case no longer needs an OS skip.
+	orig := filepath.Join(base, "e", "wt")
+	if err := os.MkdirAll(orig, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if msg := verifyCreatedWorktree(wt, cp); !strings.Contains(msg, "was not populated by git worktree add") {
+	origCP := checkpointCreatedWorktree(orig)
+	if origCP.info == nil {
+		t.Fatal("checkpoint did not capture the leaf")
+	}
+	swap := filepath.Join(base, "e", "swap")
+	if err := os.MkdirAll(swap, 0o755); err != nil { // coexists with orig → distinct identity
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(orig); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(swap, orig); err != nil { // orig's path now holds swap's identity
+		t.Fatal(err)
+	}
+	if msg := verifyCreatedWorktree(orig, origCP); !strings.Contains(msg, "was not populated by git worktree add") {
 		t.Errorf("swapped dir = %q, want the not-populated refusal", msg)
 	}
 }
