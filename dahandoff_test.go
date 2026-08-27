@@ -30,9 +30,21 @@ func TestRemoveSocketIfOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A successor replaces the path with a NEW inode.
-	_ = os.Remove(sock)
-	write()
+	// A successor replaces the path with a NEW inode. A delete-then-recreate at the same
+	// path can reuse the freed inode (measured: flaky on the ubuntu CI runner), so create
+	// the replacement ALONGSIDE the original to force a distinct inode, then move it into
+	// place — deterministic on POSIX. (Windows is skipped above: os.SameFile cannot
+	// distinguish two files there regardless.)
+	succ := filepath.Join(filepath.Dir(sock), "succ.sock")
+	if err := os.WriteFile(succ, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(sock); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(succ, sock); err != nil {
+		t.Fatal(err)
+	}
 
 	// The old owner must leave the successor's inode alone.
 	removeSocketIfOwned(sock, owned)
