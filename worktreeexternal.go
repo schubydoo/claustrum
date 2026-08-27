@@ -72,11 +72,17 @@ func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
 }
 
 // externalWorktreeMissingGitRefusal is the reference's non-destructive guard on an
-// external remove: a path under a worktreeRoot that carries no `.git` file is not a
-// managed worktree, so it is refused and LEFT IN PLACE — unlike an in-repo remove,
-// whose git failure falls back to a recursive delete (measured: an in-repo plain
-// directory is still deleted at 7d193f89, an external one is not). Returns "" when
-// worktreePath has a `.git` and is a real worktree to remove.
+// external remove: a path under a worktreeRoot whose `.git` is not a regular file is
+// not a managed worktree, so it is refused and LEFT IN PLACE — unlike an in-repo
+// remove, whose git failure falls back to a recursive delete (measured: an in-repo
+// plain directory is still deleted at 7d193f89, an external one is not). A linked
+// worktree's `.git` is a `gitdir:` pointer FILE, never a directory, so requiring a
+// REGULAR file is what stops an external remove aimed at an ordinary repository (a
+// `.git` DIRECTORY) or any other non-worktree from recursively deleting it. Two refusal
+// shapes, both measured byte-for-byte against 7d193f89: a missing `.git` names the
+// worktree ("<wp> has no .git file"); a `.git` that exists but is not a regular file
+// names the pointer ("<wp>/.git is not a regular file"). Returns "" only when
+// worktreePath's `.git` is a regular file — a real worktree to remove.
 func externalWorktreeMissingGitRefusal(repo, worktreePath string) string {
 	wp := filepath.Clean(worktreePath)
 	if _, err := os.Stat(wp); err != nil {
@@ -86,12 +92,19 @@ func externalWorktreeMissingGitRefusal(repo, worktreePath string) string {
 		// path is a nil no-op, so the reply is success:true to match.
 		return ""
 	}
-	if _, err := os.Stat(filepath.Join(wp, ".git")); err == nil {
+	gitPath := filepath.Join(wp, ".git")
+	fi, err := os.Stat(gitPath)
+	if err == nil && fi.Mode().IsRegular() {
 		return ""
 	}
+	if err != nil {
+		return fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s "+
+			"(%s has no .git file), so it is left in place; remove it by hand if it is a leftover",
+			wp, repo, wp)
+	}
 	return fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s "+
-		"(%s has no .git file), so it is left in place; remove it by hand if it is a leftover",
-		wp, repo, wp)
+		"(%s is not a regular file), so it is left in place; remove it by hand if it is a leftover",
+		wp, repo, gitPath)
 }
 
 // externalWorktreeDirNotEmptyRefusal reports 7d193f89's refusal when the
