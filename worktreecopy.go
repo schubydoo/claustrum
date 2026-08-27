@@ -59,7 +59,7 @@ func copyWorktreeIncludes(repo, worktree string) {
 	// an early return skips the copy while gitWorktreeCreate still answers
 	// {"success":true}. Off by default since D5's flip, which is why it is not
 	// reachable today.
-	manifest, err := hardenedWorktreeGitStdout(repo, "ls-files", "--others", "--ignored",
+	manifest, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
 		"--exclude-from="+worktreeIncludeFile)
 	if err != nil || manifest == "" {
 		return
@@ -67,7 +67,7 @@ func copyWorktreeIncludes(repo, worktree string) {
 	// The git-ignored set uses the worktree profile so --exclude-standard honours the
 	// user's global excludes (~/.config/git/ignore), matching 7d193f89 — a file
 	// ignored only by the user's global config is copied when the manifest names it.
-	ignored, err := hardenedWorktreeGitStdout(repo, "ls-files", "--others", "--ignored", "--exclude-standard")
+	ignored, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored", "--exclude-standard")
 	if err != nil {
 		return
 	}
