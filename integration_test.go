@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"testing"
 	"time"
@@ -107,7 +108,14 @@ func TestSocketResponseBattery(t *testing.T) {
 	for i, r := range raw {
 		normalized[i] = normResp(r)
 	}
-	assertGolden(t, "socket_responses.golden.json", encodeGolden(t, normalized))
+	golden := "socket_responses.golden.json"
+	if runtime.GOOS == "windows" {
+		// server.capabilities drops git.worktree.external_root on Windows (the
+		// external-worktree capability is gated off there — capfeatures_windows.go), so
+		// the battery's capabilities frame differs from the unix golden on that one field.
+		golden = "socket_responses_windows.golden.json"
+	}
+	assertGolden(t, golden, encodeGolden(t, normalized))
 }
 
 func TestSocketProcessSpawnStreamsStdout(t *testing.T) {

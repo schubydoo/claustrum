@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -113,6 +114,11 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 		t.Errorf("methods missing killAndWait in the right slot: %v", got.Methods)
 	}
 	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree.external_root"}
+	if runtime.GOOS == "windows" {
+		// external_root is gated off on Windows (capfeatures_windows.go), matching the
+		// reference, which drops the feature from its Windows capabilities frame.
+		wantFeatures = wantFeatures[:2]
+	}
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)
 	}

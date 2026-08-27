@@ -104,6 +104,9 @@ component_management:
       name: methods (server/files/git/process)
       paths:
         - methods_server.go
+        # OS-split server.capabilities feature: external_root advertised on unix only.
+        - capfeatures_other.go
+        - capfeatures_windows.go
         - methods_files.go
         - methods_git.go
         - methods_process.go
@@ -114,6 +117,9 @@ component_management:
         - worktreeexternal.go
         - worktreeexternal_unix.go
         - worktreeexternal_windows.go
+        # Windows gates the custom-worktree-location (worktreeRoot) capability off.
+        - externalunsupported_windows.go
+        - externalunsupported_other.go
         - worktreelock.go
         - worktreemkdir_unix.go
         - worktreemkdir_windows.go

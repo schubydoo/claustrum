@@ -116,7 +116,9 @@ delete. Both yield byte-identical frames on every probed case (locked refusal,
 non-worktree delete, stale re-create, normal removal), so the difference is off-wire. Beyond git: a daemon-to-daemon reconnect handoff
 and idle-connection management (the SSH-reliability items in the Desktop changelog),
 install stale-partial pruning, and the `git.worktree.external_root` feature — when a
-client supplies `worktreeRoot`, the session worktree is placed OUTSIDE the repository,
+client supplies `worktreeRoot` **on a unix host**, the session worktree is placed
+OUTSIDE the repository (on Windows the reference gates this capability off, refusing any
+`worktreeRoot` with "a custom worktree location is not supported on Windows hosts yet"),
 under `<worktreeRoot>/<directory>/<name>`, guarded by containment (absolute, no `..`,
 exactly two levels under the root), an ownership/writability check on the root, a
 requirement that the `<directory>` level start out empty, and a 285-byte

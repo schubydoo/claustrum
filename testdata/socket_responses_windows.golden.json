@@ -1,0 +1,104 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": null,
+    "error": {
+      "code": -32700,
+      "message": "Parse error"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "pong": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+      "code": -32601,
+      "message": "Unknown method: server.version"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "version": "<V>",
+      "methods": [
+        "server.ping",
+        "server.capabilities",
+        "server.shutdown",
+        "files.list",
+        "files.validate",
+        "files.stat",
+        "files.read",
+        "files.extract_tar",
+        "git.info",
+        "git.status",
+        "git.list_branches",
+        "git.worktree_create",
+        "git.worktree_remove",
+        "process.spawn",
+        "process.stdin",
+        "process.kill",
+        "process.killAndWait",
+        "process.reattach"
+      ],
+      "features": [
+        "process.stdin.offset",
+        "git.status.baseRepo"
+      ]
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+      "code": -32600,
+      "message": "Invalid JSON-RPC version"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "error": {
+      "code": -32001,
+      "message": "Unauthorized: invalid or missing auth token"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "error": {
+      "code": -32001,
+      "message": "Unauthorized: invalid or missing auth token"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "error": {
+      "code": -32601,
+      "message": "Invalid method format: bogus"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 8,
+    "error": {
+      "code": -32601,
+      "message": "Unknown method: server.nope"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params"
+    }
+  }
+]
