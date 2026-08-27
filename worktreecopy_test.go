@@ -232,8 +232,9 @@ func TestSafeOverlayDest(t *testing.T) {
 	}
 	wt := t.TempDir()
 
-	// A nested path: intermediate dirs are created and the leaf dest returned.
-	dst := safeOverlayDest(wt, "a/b/file.txt")
+	// A nested path with a "." segment: the "." is skipped, intermediate dirs are
+	// created, and the leaf dest returned.
+	dst := safeOverlayDest(wt, "a/./b/file.txt")
 	if want := filepath.Join(wt, "a", "b", "file.txt"); dst != want {
 		t.Errorf("nested dest = %q, want %q", dst, want)
 	}

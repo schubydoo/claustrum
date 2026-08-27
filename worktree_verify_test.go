@@ -18,6 +18,12 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 		t.Errorf("empty checkpoint = %q, want no failure", msg)
 	}
 
+	// Checkpointing a path that does not exist captures nothing (a stat failure) — a
+	// best-effort guard, never a way to fail an honest create.
+	if cp := checkpointCreatedWorktree(filepath.Join(t.TempDir(), "absent")); cp.info != nil {
+		t.Errorf("checkpoint of a missing path captured %v, want empty", cp.info)
+	}
+
 	base := t.TempDir()
 	wt := filepath.Join(base, "d", "wt")
 	if err := os.MkdirAll(wt, 0o755); err != nil {

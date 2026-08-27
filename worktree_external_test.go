@@ -124,6 +124,22 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 		t.Errorf(`".." worktreePath = %s, want the dotdot refusal`, dd)
 	}
 
+	// A ".." in an (absolute) worktreeRoot is refused with the root wording.
+	rootDD := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": repo, "branchName": "d", "worktreePath": filepath.Join(root, "d", "wt"), "worktreeRoot": root + "/../mine"}))
+	if !strings.Contains(worktreeErrorField(t, rootDD), `contains a ".." component`) ||
+		!strings.Contains(worktreeErrorField(t, rootDD), "worktree location") {
+		t.Errorf(`".." worktreeRoot = %s, want the root dotdot refusal`, rootDD)
+	}
+
+	// A relative worktreePath (root absolute) is refused with the session-folder wording.
+	relPath := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": repo, "branchName": "e", "worktreePath": "rel/wt", "worktreeRoot": root}))
+	if !strings.Contains(worktreeErrorField(t, relPath), "rel/wt is a relative path") ||
+		!strings.Contains(worktreeErrorField(t, relPath), "session folder") {
+		t.Errorf("relative worktreePath = %s, want the path relative refusal", relPath)
+	}
+
 	// A symlinked <directory> component is refused and does NOT carry the create out
 	// of the root (the worktreeRoot itself may be a symlink, but not the dir beneath).
 	outside := filepath.Join(base, "outside")

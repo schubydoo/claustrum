@@ -40,3 +40,31 @@ func TestWorktreeCreateExternalWorldWritable(t *testing.T) {
 		t.Errorf("create with a world-writable root = %s, want the writable refusal", raw)
 	}
 }
+
+// writableWho names who beyond the owner can write. The three spellings are the
+// reference's; the combined case is not reachable in the RPC test above without a
+// shared group AND world-write, so it is pinned directly.
+func TestWritableWho(t *testing.T) {
+	cases := []struct {
+		group, world bool
+		want         string
+	}{
+		{true, true, "its group and every user on this host"},
+		{false, true, "every user on this host"},
+		{true, false, "its group"},
+		{false, false, ""},
+	}
+	for _, c := range cases {
+		if got := writableWho(c.group, c.world); got != c.want {
+			t.Errorf("writableWho(group=%v,world=%v) = %q, want %q", c.group, c.world, got, c.want)
+		}
+	}
+}
+
+// worktreeRootShareRefusal returns "" for a missing root — the create fails later at
+// the parent-creation step, not here.
+func TestWorktreeRootShareRefusalMissingRoot(t *testing.T) {
+	if got := worktreeRootShareRefusal(filepath.Join(t.TempDir(), "nonexistent")); got != "" {
+		t.Errorf("missing root = %q, want no refusal", got)
+	}
+}

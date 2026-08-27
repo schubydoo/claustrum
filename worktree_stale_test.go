@@ -47,3 +47,10 @@ func TestWorktreeCreateDropsStaleRegistration(t *testing.T) {
 		t.Errorf("wb registration was pruned too (%v); only the target's should be dropped", err)
 	}
 }
+
+// dropStaleWorktreeRegistration is a no-op on a repo that has no worktree
+// registrations at all (no .git/worktrees) — the ReadDir simply fails and returns.
+func TestDropStaleWorktreeRegistrationNoWorktrees(t *testing.T) {
+	repo := t.TempDir()                                                  // not even a git repo — .git/worktrees absent
+	dropStaleWorktreeRegistration(repo, filepath.Join(repo, "whatever")) // must not panic
+}

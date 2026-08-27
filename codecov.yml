@@ -92,6 +92,10 @@ component_management:
         - pipetransport_other.go
         - detach_unix.go
         - detach_windows.go
+        # 7d193f89 lifecycle additions: daemon-to-daemon socket handoff and the
+        # 5-minute idle-connection close.
+        - dahandoff.go
+        - idleconn.go
     - component_id: methods
       name: methods (server/files/git/process)
       paths:
@@ -100,6 +104,25 @@ component_management:
         - methods_git.go
         - methods_process.go
         - worktreecopy.go
+        # git.worktree_* machinery (containment, external roots, staleness, verify,
+        # per-repo lock, leaf mkdir) + git hardening + the destructive-path guard.
+        - worktreecontain.go
+        - worktreeexternal.go
+        - worktreeexternal_unix.go
+        - worktreeexternal_windows.go
+        - worktreelock.go
+        - worktreemkdir_unix.go
+        - worktreemkdir_windows.go
+        - worktreestale.go
+        - worktreeverify.go
+        - githarden.go
+        - homeguard.go
+        # cross-platform fs primitives for the git/files methods: path canon (git
+        # frame spelling) and the O_DIRECTORY guard used by files.list.
+        - pathcanon_unix.go
+        - pathcanon_windows.go
+        - odirectory_unix.go
+        - odirectory_windows.go
     - component_id: process
       name: process supervisor
       paths:
