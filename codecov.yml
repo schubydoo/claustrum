@@ -1,6 +1,6 @@
 # Codecov config. Coverage is REPORTED here for visibility (PR comment + trend
 # graphs + per-component breakdown); the REAL gate is the CI coverage floor in
-# .github/workflows/ci.yml (the `coverage (>= 75%)` job enforces COVERAGE_MIN on
+# .github/workflows/ci.yml (the `coverage (>= 95%)` job enforces COVERAGE_MIN on
 # the single Ubuntu cell). The `project` status is `informational: true` (nudge,
 # never block); `patch` is a real pass/fail traffic light on new-code coverage —
 # but neither is a *required* check, so a red `patch` X still leaves the merge
@@ -38,19 +38,20 @@ codecov:
 coverage:
   precision: 2
   round: down # a strict floor rounds down, matching the CI COVERAGE_MIN gate
-  range: "70...90" # red->green band tuned to a project that sits ~77%
+  range: "90...100" # red->green band tuned to a project that sits ~98%
   status:
     project:
       default:
-        target: 75% # mirror the ci.yml COVERAGE_MIN floor
+        target: 95% # mirror the ci.yml COVERAGE_MIN floor
         threshold: 1% # tolerate sub-1% drift before flagging
         informational: true # nudge, never block — ci.yml is the source of truth
     patch:
       default:
-        # New-code (diff) coverage gate. 80% sits above the ci.yml 75% floor yet
-        # well below the ~96% patch coverage recent PRs actually hit, so it flags
-        # under-tested new code without chronic red. NOT clauster's 95% — that
-        # Python repo runs ~96–100%; claustrum is Go at ~77%.
+        # New-code (diff) coverage gate. 80% flags under-tested new code without
+        # going red on a PR whose one new branch is unreachable in-process (the same
+        # class the 95% project floor already tolerates). Deliberately below the
+        # project floor: a diff is a small sample, and one such branch is a large
+        # share of it.
         target: 80%
         threshold: 0% # no slack — new code meets the target or the status goes red
         informational: false # a real pass/fail traffic light (still a non-required check)
