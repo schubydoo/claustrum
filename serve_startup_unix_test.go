@@ -37,7 +37,7 @@ func TestWaitForDaemonAcceptReturnsWhenListening(t *testing.T) {
 	}()
 
 	done := make(chan bool, 1)
-	go func() { done <- waitForDaemonAccept(sock) }()
+	go func() { done <- waitForDaemonAccept(sock, nil) }()
 	select {
 	case ok := <-done:
 		if !ok {
@@ -63,7 +63,7 @@ func TestWaitForDaemonAcceptReturnsForAnOccupiedPath(t *testing.T) {
 	}
 
 	start := time.Now()
-	ok := waitForDaemonAccept(occupied)
+	ok := waitForDaemonAccept(occupied, nil)
 	if !ok {
 		t.Error("waitForDaemonAccept = false for an existing path, want true")
 	}
@@ -80,7 +80,7 @@ func TestWaitForDaemonAcceptGivesUpAtDeadline(t *testing.T) {
 	t.Cleanup(func() { daemonStartTimeout = old })
 
 	start := time.Now()
-	if waitForDaemonAccept(filepath.Join(t.TempDir(), "never-exists.sock")) {
+	if waitForDaemonAccept(filepath.Join(t.TempDir(), "never-exists.sock"), nil) {
 		t.Error("waitForDaemonAccept = true for a socket that never appears, want false")
 	}
 	el := time.Since(start)
