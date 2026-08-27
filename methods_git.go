@@ -698,6 +698,9 @@ func gitWorktreeCreate(req *request) response {
 			ErrorCode: "mkdir_failed",
 		})
 	}
+	// Record the leaf's identity now, to confirm below that `git worktree add`
+	// populated this same directory and nothing swapped it during the add.
+	checkpoint := checkpointCreatedWorktree(p.WorktreePath)
 	// Default the source to the repo's current branch. On an unborn HEAD
 	// (no-commit repo) abbrev-ref fails — leave source empty rather than capturing
 	// git's error text, and let `git worktree add` infer an orphan branch (it
@@ -742,6 +745,15 @@ func gitWorktreeCreate(req *request) response {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     "git worktree add failed: " + boundedStderrHead(out),
+			ErrorCode: "worktree_add_failed",
+		})
+	}
+	// Post-condition (7d193f89): the add must have populated the directory claustrum
+	// created, not one swapped in during the add. Empty on an unraced create.
+	if msg := verifyCreatedWorktree(p.WorktreePath, checkpoint); msg != "" {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     msg,
 			ErrorCode: "worktree_add_failed",
 		})
 	}
