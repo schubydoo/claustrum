@@ -182,3 +182,30 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 		t.Errorf("spawnParams touched a non-path field: %+v", sp)
 	}
 }
+
+// The process-control params carry no filesystem paths; their expandPaths is an
+// explicit no-op. Pin that nothing — not even a "~"-shaped id — is rewritten.
+func TestExpandPathsProcessControlParamsAreNoOps(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	st := &stdinParams{ID: "~id", Data: "~/data"}
+	st.expandPaths()
+	if st.ID != "~id" || st.Data != "~/data" {
+		t.Errorf("stdinParams mutated: %+v", st)
+	}
+	k := &killParams{ID: "~id", Signal: "~/TERM"}
+	k.expandPaths()
+	if k.ID != "~id" || k.Signal != "~/TERM" {
+		t.Errorf("killParams mutated: %+v", k)
+	}
+	kw := &killAndWaitParams{ID: "~id", Signal: "~/TERM"}
+	kw.expandPaths()
+	if kw.ID != "~id" || kw.Signal != "~/TERM" {
+		t.Errorf("killAndWaitParams mutated: %+v", kw)
+	}
+	r := &reattachParams{ID: "~id", FromSeq: 7}
+	r.expandPaths()
+	if r.ID != "~id" || r.FromSeq != 7 {
+		t.Errorf("reattachParams mutated: %+v", r)
+	}
+}

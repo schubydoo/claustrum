@@ -422,3 +422,15 @@ func stubLoginPATHExtractor(t *testing.T) {
 		loginPATHExtractor = old
 	})
 }
+
+// When byte shellOutputLogLimit lands mid-rune the cut walks back to the rune
+// start, so the logged prefix never carries a torn code point.
+func TestTruncateShellOutputWalksBackToRuneBoundary(t *testing.T) {
+	// 199 ASCII bytes + a 2-byte rune: byte 200 is the rune's continuation byte.
+	s := strings.Repeat("a", shellOutputLogLimit-1) + "é"
+	got := truncateShellOutput(s)
+	want := strings.Repeat("a", shellOutputLogLimit-1) + "..."
+	if got != want {
+		t.Errorf("truncateShellOutput = %q (len %d), want %q", got, len(got), want)
+	}
+}

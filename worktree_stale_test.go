@@ -54,3 +54,32 @@ func TestDropStaleWorktreeRegistrationNoWorktrees(t *testing.T) {
 	repo := t.TempDir()                                                  // not even a git repo — .git/worktrees absent
 	dropStaleWorktreeRegistration(repo, filepath.Join(repo, "whatever")) // must not panic
 }
+
+// The stale-registration scan skips non-directory entries and directories with no
+// gitdir file rather than failing; unrelated registrations survive untouched.
+func TestDropStaleWorktreeRegistrationSkipsMalformedEntries(t *testing.T) {
+	repo := t.TempDir()
+	base := filepath.Join(repo, ".git", "worktrees")
+	if err := os.MkdirAll(filepath.Join(base, "nogitdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	junk := filepath.Join(base, "junk")
+	if err := os.WriteFile(junk, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dropStaleWorktreeRegistration(repo, filepath.Join(t.TempDir(), "w"))
+	for _, p := range []string{junk, filepath.Join(base, "nogitdir")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s was removed: %v", p, err)
+		}
+	}
+}
+
+// A bare leaf with no directory component has nothing to resolve; it comes back
+// unchanged instead of being joined onto ".".
+func TestResolveAsFarAsExistsBareLeaf(t *testing.T) {
+	const leaf = "claustrum-no-such-leaf"
+	if got := resolveAsFarAsExists(leaf); got != leaf {
+		t.Errorf("resolveAsFarAsExists(%q) = %q, want it unchanged", leaf, got)
+	}
+}

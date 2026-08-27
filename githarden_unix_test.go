@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -56,4 +57,20 @@ func TestResolveUserExcludesFile(t *testing.T) {
 			t.Errorf("none = %q, want /dev/null", got)
 		}
 	})
+}
+
+// A directory that exists but cannot be entered (mode 0000) passes the os.Stat
+// pre-check, so git itself fails to chdir with "cannot change to". That is still
+// not a hostile config — git never reached a repo — so no refusal is raised.
+func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
+	requireGit(t)
+	skipIfRoot(t)
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if msg, bad := hostileConfigRefusal(dir); bad || msg != "" {
+		t.Errorf("hostileConfigRefusal(unenterable dir) = (%q, %v), want (\"\", false)", msg, bad)
+	}
 }

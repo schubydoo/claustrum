@@ -304,3 +304,15 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 		t.Fatalf("-files-read-regular-only declared default = %q, want \"false\" (guard off = reference parity)", f.DefValue)
 	}
 }
+
+// main resolves the home directory before dispatching any mode and exits 1 when it
+// cannot. os.UserHomeDir reads HOME on Unix and USERPROFILE on Windows; clearing
+// both makes it fail on every CI leg.
+func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	code, exited := runMain(t, "-version")
+	if !exited || code != 1 {
+		t.Errorf("main with no resolvable home: exited=%v code=%d, want exited=true code=1", exited, code)
+	}
+}

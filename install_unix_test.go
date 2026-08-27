@@ -216,3 +216,10 @@ func TestEnsureCLIRetriesWhenStagingIsSweptOnce(t *testing.T) {
 		t.Error("the CLI was not installed after the retry")
 	}
 }
+
+// A hash over a directory fails at read time, not open time; the error surfaces.
+func TestSha256FileDirectory(t *testing.T) {
+	if _, err := sha256File(t.TempDir()); err == nil {
+		t.Fatal("expected an error hashing a directory")
+	}
+}

@@ -68,3 +68,27 @@ func TestWorktreeRootShareRefusalMissingRoot(t *testing.T) {
 		t.Errorf("missing root = %q, want no refusal", got)
 	}
 }
+
+// A `.git` file that stats as regular but cannot be read is refused with the same
+// "does not name a git dir" reason as garbage content — the fallback never deletes
+// a path whose gitdir pointer it could not examine.
+func TestExternalWorktreeVerifyUnreadableGitFile(t *testing.T) {
+	skipIfRoot(t)
+	base := t.TempDir()
+	wp := filepath.Join(base, "wt")
+	if err := os.Mkdir(wp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitFile := filepath.Join(wp, ".git")
+	if err := os.WriteFile(gitFile, []byte("gitdir: /nope\n"), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(gitFile, 0o600) })
+	reason, transient := externalWorktreeVerify(filepath.Join(base, "repo"), wp)
+	if transient || !strings.Contains(reason, "does not name a git dir") {
+		t.Errorf("externalWorktreeVerify(unreadable .git) = (%q, %v), want a non-transient \"does not name a git dir\" refusal", reason, transient)
+	}
+	if _, err := os.Stat(wp); err != nil {
+		t.Errorf("verify must not touch the path: %v", err)
+	}
+}

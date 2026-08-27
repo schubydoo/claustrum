@@ -185,3 +185,10 @@ func waitProcessGone(pid int, d time.Duration) bool {
 	}
 	return false
 }
+
+// close is a documented no-op on Unix and must be safe on a nil receiver, matching
+// the nil-receiver contract of signal.
+func TestProcGroupCloseUnixIsNoOp(t *testing.T) {
+	(*procGroup)(nil).close()
+	(&procGroup{}).close()
+}
