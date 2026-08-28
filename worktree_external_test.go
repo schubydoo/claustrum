@@ -1,3 +1,9 @@
+//go:build unix
+
+// External worktrees (worktreeRoot) are supported only on unix — on Windows the
+// reference gates the capability off (see externalunsupported_windows.go and
+// TestExternalWorktreeUnsupportedOnWindows), so these create/remove behavior tests are
+// unix-only, matching the sibling worktree_external_unix_test.go.
 package main
 
 import (

@@ -382,7 +382,7 @@ surface and still prints the daemon's version.)
 | method | params | result |
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root"]}` |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root"]}` (`git.worktree.external_root` is omitted on Windows — the capability is gated off there) |
 | `server.shutdown` | — | *no response* — the daemon stops and the connection closes |
 
 - **`server.version` was removed in `7d193f89`** — it now answers
@@ -390,7 +390,10 @@ surface and still prints the daemon's version.)
 - **`features` array** (added `7c2f88d`) follows `methods` and advertises optional
   extensions. `process.stdin.offset` (the resumable/idempotent stdin contract)
   landed first; `7d193f89` added `git.status.baseRepo` and
-  `git.worktree.external_root`. All three are always present, in this order.
+  `git.worktree.external_root`, in this order. On unix all three are present; **on
+  Windows `git.worktree.external_root` is omitted** — the reference gates the
+  external-worktree capability off on Windows (measured against `7d193f89`) and drops
+  the feature from its Windows capabilities frame, so claustrum matches.
 - **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
 
 ### files.* (param: `path`)
@@ -587,7 +590,11 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   repo.
 - **`worktreeRoot` (the `external_root` capability).** When the client supplies
   `worktreeRoot`, the worktree is placed OUTSIDE the repository, at
-  `<worktreeRoot>/<directory>/<name>` (exactly two levels under the root); the in-repo
+  `<worktreeRoot>/<directory>/<name>` (exactly two levels under the root). **On Windows
+  this capability is gated off:** any `worktreeRoot` is refused before any location
+  check with `"refusing to {create,remove} worktree: <root> cannot be used: a custom
+  worktree location is not supported on Windows hosts yet"` (`errorCode:"unsafe_path"`
+  on create, none on remove). On unix the in-repo
   containment above is replaced by these checks (each `errorCode:"unsafe_path"`):
   `worktreeRoot` and `worktreePath` must be absolute and `..`-free, and `worktreePath`
   must sit exactly two levels under the root (`"<p> is not <worktree

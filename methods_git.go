@@ -631,6 +631,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// worktreePath is judged here as a relative path, not the in-repo mkdir failure.
 	if p.WorktreeRoot != "" {
 		root := filepath.Clean(p.WorktreeRoot)
+		if msg := externalWorktreeUnsupportedRefusal(p.WorktreeRoot, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
 		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
@@ -832,6 +835,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// verify … retry"), where an in-repo remove would fall back to a recursive
 	// delete. Measured against 7d193f89 on an ephemeral VM.
 	if p.WorktreeRoot != "" {
+		if msg := externalWorktreeUnsupportedRefusal(p.WorktreeRoot, "remove"); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
 		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
 		}

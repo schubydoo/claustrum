@@ -18,10 +18,10 @@ type capabilitiesResult struct {
 	Version string   `json:"version"`
 	Methods []string `json:"methods"`
 	// Features advertises optional protocol extensions the client may rely on.
-	// Added by the reference daemon in 7c2f88d alongside process.killAndWait and
-	// the stdin-offset idempotency contract; the sole entry is
-	// "process.stdin.offset". Always present (never omitempty) — the reference
-	// emits the array unconditionally.
+	// process.stdin.offset landed in 7c2f88d; 7d193f89 added git.status.baseRepo and
+	// git.worktree.external_root — the last omitted on Windows, where the reference
+	// gates the external-worktree capability off (see capabilityFeatures). The array
+	// field itself is always present (never omitempty) — emitted on every OS.
 	Features []string `json:"features"`
 }
 
