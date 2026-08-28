@@ -96,6 +96,9 @@ component_management:
         # 7d193f89 lifecycle additions: daemon-to-daemon socket handoff and the
         # 5-minute idle-connection close.
         - dahandoff.go
+        # OS-split predecessor detection: real on unix, a nil stub on Windows (parity).
+        - livepred_unix.go
+        - livepred_windows.go
         # OS-split classifier for a refused handoff dial (ECONNREFUSED / WSAECONNREFUSED).
         - sockdead_other.go
         - sockdead_windows.go
