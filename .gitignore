@@ -8,6 +8,8 @@ scratch/
 /.venv/
 
 # Host-local agent guardrails (host specifics + agent-tool routing; never committed)
+/.claude/
+/.worktreeinclude
 CLAUDE.local.md
 
 # Go build & test artifacts
