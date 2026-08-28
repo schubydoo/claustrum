@@ -40,6 +40,10 @@ func worktreePathRefusal(repo, worktreePath, verb string) string {
 		return fmt.Sprintf("refusing to %s worktree: %s contains a %q component; choose the session folder by its absolute path, without %q",
 			verb, worktreePath, "..", "..")
 	}
+	if windowsPathSpellingHazard(worktreePath) {
+		return fmt.Sprintf("refusing to %s worktree: %s has a component Windows reads as a different name (trailing dot or space, or a colon); choose the session folder by its absolute path, without %q",
+			verb, worktreePath, "..")
+	}
 	if !pathStrictlyUnder(worktreePath, repo) {
 		return fmt.Sprintf("refusing to %s worktree: %s is not inside the repository %s; %s",
 			verb, worktreePath, repo, guidance)
