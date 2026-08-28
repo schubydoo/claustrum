@@ -886,9 +886,9 @@ func (s *server) handleRequest(c *conn, raw []byte, method string, id interface{
 			// panic here means an unreachable path became reachable, and
 			// method+id locate the request but not the fault.
 			logDebugf("[Server] recovered panic stack: method=%s id=%v\n%s", method, idForLog(id), debug.Stack())
-			// server.shutdown must produce NO reply (dispatch returns nil for
-			// it). Replying here would emit a frame where the daemon otherwise
-			// emits none, so the no-reply contract holds even under a panic.
+			// server.shutdown's own reply is {"ok":true}, produced by the normal
+			// dispatch path, not here. Under a panic we emit NO frame for it: an
+			// error frame would be a shape the reference never sends for shutdown.
 			if method == methodShutdown {
 				return
 			}

@@ -63,6 +63,18 @@ type successResult struct {
 	Success bool `json:"success"`
 }
 
+// shutdownResult is server.shutdown's reply: the reference answers {"ok":true}
+// and then stops. Delivery is best-effort on the reference — it races the
+// daemon's teardown, so a client sometimes reads an EOF instead of the frame.
+// Claustrum reproduces that observed ordering: its own signalShutdown fires
+// before the reply is written, rather than making delivery more reliable than
+// the reference. The frame is not pinned by any golden or the validation
+// battery, because the battery shuts the daemon down on a throwaway connection
+// and never reads this reply — see scratch/osparity for the sweep that measured it.
+type shutdownResult struct {
+	OK bool `json:"ok"`
+}
+
 // spawnResult is process.spawn's reply. It is deliberately distinct from the
 // successResult shared by process.stdin/process.kill: the CT-1 opt-in
 // ("wantPid":true) adds pid + startTime here only, so those fields can never
