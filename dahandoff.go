@@ -3,9 +3,7 @@ package main
 import (
 	"errors"
 	"io/fs"
-	"net"
 	"os"
-	"time"
 )
 
 // Daemon-to-daemon socket handoff, matching 7d193f89. A unix socket path cannot be
@@ -13,29 +11,11 @@ import (
 // inode; the launcher must wait for that NEW inode to accept, and a departing
 // predecessor must not delete a successor's socket. All three pieces key on
 // os.SameFile inode identity of the socket file — no pid file, signal, or lock.
-
-// livePredecessorIdent returns the socket file's identity when a LIVE daemon is
-// already serving it, or nil when there is none (missing socket, or a stale socket
-// whose dial is refused). Run before spawning the successor so waitForDaemonAccept
-// can tell the predecessor's inode from the successor's.
-func livePredecessorIdent(socket string) os.FileInfo {
-	fi, err := os.Stat(socket)
-	if err != nil {
-		return nil // no socket → no predecessor
-	}
-	c, err := net.DialTimeout("unix", socket, 200*time.Millisecond)
-	if err == nil {
-		_ = c.Close()
-		return fi // a live daemon answers → its socket inode
-	}
-	// A refused / not-yet-there dial means the socket is stale (no live daemon);
-	// treat every other dial error conservatively as "live" so we still wait for a
-	// genuine handoff rather than racing a possibly-live predecessor.
-	if isSocketDead(err) {
-		return nil
-	}
-	return fi
-}
+//
+// livePredecessorIdent is OS-split (livepred_unix.go / livepred_windows.go): the
+// dial-based detection runs on unix; on Windows it is a nil stub, since the probe has
+// no observable effect there (measured — a live-predecessor second launch is the same
+// ~0.01s either way, matching the reference).
 
 // isSocketDead reports whether a dial error means nothing is listening (a stale
 // socket file: the path exists but no process is accepting), as opposed to a
