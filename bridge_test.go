@@ -44,23 +44,21 @@ func TestRunBridgeDialError(t *testing.T) {
 	}
 }
 
-// runStop must print NOTHING, even when the daemon does reply: the reference's
-// stdout stays empty where claustrum echoed the raw JSON-RPC frame.
+// runStop must print NOTHING, even though the daemon DOES reply: -stop is a
+// control command, not a relay, so a {"ok":true} shutdown reply must never reach
+// its stdout.
 //
-// CORRECTION, 2026-08-02: this comment used to say the in-flight frame was a
-// -32001 drawn from the reference by a deliberately wrong CLAUDE_RPC_TOKEN. It
-// cannot have been. Re-measured against 5db5e4a — a server.shutdown frame with
-// absent, wrong OR valid auth stops the reference silently every time, and only
-// a bad jsonrpc version draws a reply at all (-32600). The -32001 that was
-// observed came from CLAUSTRUM's daemon of the day, which still authenticated
-// shutdown. A replying daemon is therefore something this test has to
-// CONSTRUCT, which is what the fake listener below does — and is why the test is
-// still not vacuous now that neither daemon answers a real shutdown.
-//
-// This test previously asserted the OPPOSITE — that the reply IS echoed — which
-// was claustrum's behaviour, not the reference's. The audit that first checked
-// this used the CORRECT token, where the daemon shuts down without replying, so
-// both printed nothing and the difference was invisible.
+// MEASUREMENT HISTORY. A 2026-08-02 note here claimed the reference "stops
+// silently every time" and that neither daemon answers a real shutdown. That was
+// wrong — it was reading -stop's STDOUT (empty precisely because -stop swallows
+// the reply), not the daemon's wire frame. A 2026-08-27 sweep (scratch/osparity)
+// captured the wire directly: both the reference and claustrum answer
+// server.shutdown with {"ok":true} and then stop. Delivery races the teardown on
+// both, so a real shutdown reply is nondeterministic on the wire; this test
+// removes that race with a fake listener that replies deterministically, proving
+// runStop discards the reply whether or not a real daemon's copy lands. (The
+// older -32001 it once observed came from CLAUSTRUM's daemon of the day, which
+// still authenticated shutdown — unrelated to the reply shape.)
 func TestRunStopDiscardsTheReply(t *testing.T) {
 	// Short socket dir (macOS sun_path is ~104 bytes), mirroring the harness.
 	dir, err := os.MkdirTemp("", "cl")

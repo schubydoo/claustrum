@@ -96,12 +96,14 @@ func runStop(socket string) error {
 	// request has already been written by this point, so a daemon that is merely
 	// slow to answer still stops.
 	_ = nc.SetReadDeadline(time.Now().Add(stopReplyTimeout))
-	// Read the reply and DISCARD it. The reference prints nothing, so neither do
-	// we. Against claustrum's own daemon there is now no reply to read at all —
-	// server.shutdown answers nothing and closes — so this read normally returns
-	// EOF at once. It still matters against a foreign or wedged listener, and the
-	// original measurement stands: the reference's stdout stayed empty where
-	// claustrum echoed the raw frame.
+	// Read the reply and DISCARD it. Both daemons answer server.shutdown with a
+	// {"ok":true} frame and then stop (measured 2026-08-27 — the earlier note here
+	// that "the reference prints nothing" was reading -stop's STDOUT, which is
+	// empty precisely BECAUSE -stop swallows the reply, not because the daemon is
+	// silent). Delivery races the teardown on both, so this read may see the frame
+	// or an immediate EOF; either way -stop emits nothing on stdout. The deadline
+	// still matters against a foreign or wedged listener that accepts and never
+	// answers.
 	//
 	// -stop is a control command, not a relay; a caller parsing its output should
 	// not have a JSON-RPC frame appear on any path.

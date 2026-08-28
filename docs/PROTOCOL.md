@@ -383,7 +383,7 @@ surface and still prints the daemon's version.)
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
 | `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root"]}` (`git.worktree.external_root` is omitted on Windows — the capability is gated off there) |
-| `server.shutdown` | — | *no response* — the daemon stops and the connection closes |
+| `server.shutdown` | — | `{"ok":true}` — the daemon replies, then stops and the connection closes (delivery races the teardown, so the reply is best-effort on the wire; see below) |
 
 - **`server.version` was removed in `7d193f89`** — it now answers
   `-32601 "Unknown method: server.version"` like any other unknown method.
@@ -1028,8 +1028,10 @@ claustrum -stop -socket <p>          # no token needed, and none is read
 `-stop` sends `server.shutdown` with **no `auth` member**, because that method is
 not authenticated (see [Authentication](#authentication)). It is **best-effort**: a
 missing or unreachable daemon is a silent no-op (exit `0`, no output), and `-stop`
-reads and discards any reply. A current daemon sends no reply, because
-`server.shutdown` answers nothing and closes.
+reads and discards any reply. The daemon answers `server.shutdown` with
+`{"ok":true}` and then stops — matching the reference — but delivery races the
+teardown on both, so `-stop` may read that frame or an immediate EOF; either way it
+prints nothing (it is a control command, not a relay).
 
 **`-stop` unlinks the socket path on every exit path**, including when the dial
 fails and it reached no daemon. This matches the reference, and it is destructive

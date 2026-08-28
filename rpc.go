@@ -98,8 +98,11 @@ func okResult(id interface{}, result interface{}) response {
 // reason would silently move that frame; it is not an internal identifier.
 const methodShutdown = "server.shutdown"
 
-// dispatch validates and routes one request. It returns the response to send, or
-// nil when the method must produce no reply (server.shutdown closes silently).
+// dispatch validates and routes one request and returns the response to send.
+// It can still return nil only under a handler panic (the recover in
+// handleRequest leaves resp nil for server.shutdown); every normal path,
+// server.shutdown included, returns a frame — the reference replies {"ok":true}
+// to shutdown and then stops (see handleServer).
 // Stream-producing methods (process.*) use the conn to attach the client.
 func (s *server) dispatch(c *conn, raw []byte) *response {
 	var req request
@@ -158,7 +161,7 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 
 	switch ns {
 	case "server":
-		return s.handleServer(c, &req) // may return nil (shutdown)
+		return s.handleServer(c, &req)
 	case "files":
 		return ptr(s.handleFiles(&req))
 	case "git":

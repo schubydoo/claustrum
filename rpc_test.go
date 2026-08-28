@@ -18,7 +18,8 @@ func newTestServer(tb testing.TB) *server {
 }
 
 // dispatchRaw feeds a raw line through dispatch and returns the marshaled
-// response (or "" when the method is silent, e.g. server.shutdown).
+// response (or "" only when dispatch returns nil, which no normal path does —
+// server.shutdown now replies {"ok":true}).
 func dispatchRaw(t *testing.T, s *server, line string) string {
 	t.Helper()
 	resp := s.dispatch(nil, []byte(line))
@@ -163,9 +164,10 @@ func TestDispatchHappyServerMethods(t *testing.T) {
 		t.Errorf("server.ping with mistyped params should still pong, got: %s", got)
 	}
 
-	// server.shutdown is silent: dispatch returns nil and signals stop.
-	if got := dispatchRaw(t, s, `{"jsonrpc":"2.0","id":2,"method":"server.shutdown",`+auth+`}`); got != "" {
-		t.Errorf("shutdown should be silent, got: %s", got)
+	// server.shutdown replies {"ok":true} and signals stop (the reference answers
+	// this frame then stops; measured 2026-08-27).
+	if got := dispatchRaw(t, s, `{"jsonrpc":"2.0","id":2,"method":"server.shutdown",`+auth+`}`); got != `{"jsonrpc":"2.0","id":2,"result":{"ok":true}}` {
+		t.Errorf(`shutdown reply = %s, want {"jsonrpc":"2.0","id":2,"result":{"ok":true}}`, got)
 	}
 	select {
 	case <-s.shutdown:
