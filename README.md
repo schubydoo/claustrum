@@ -48,7 +48,9 @@ frames for every method, apart from a small set of documented, deliberate diverg
 
 ## Install / build
 
-Requires Go 1.25+. Dependencies: `github.com/klauspost/compress` (zstd, cross-platform), plus
+Requires Go 1.25+, and the toolchain is held below 1.27 (Go 1.27's default `jsonv2` moves
+inherited wire bytes — see [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md)). Build with
+the `go.mod` toolchain. Dependencies: `github.com/klauspost/compress` (zstd, cross-platform), plus
 two modules compiled into Windows builds only — `golang.org/x/sys` (Job Object teardown) and
 `github.com/Microsoft/go-winio` (the opt-in `-listen-pipe` named-pipe transport, CT-5).
 
