@@ -87,9 +87,13 @@ jobs:
       - name: Verify gremlins on PATH
         # nproc is recorded so --workers can be justified against the runner
         # this job actually got, rather than against GitHub's published spec.
+        # Core count is the whole question here: the suite is a single package
+        # with no t.Parallel, so GOMAXPROCS does not affect it and is not worth
+        # reporting (`go env GOMAXPROCS` is not a go env key — it exits 0 and
+        # prints nothing, so asking for it would log a blank).
         run: |
           gremlins --version
-          echo "runner cores: $(nproc)  GOMAXPROCS: $(go env GOMAXPROCS)"
+          echo "runner cores: $(nproc)"
 
       - name: Run mutation testing
         # --integration runs the FULL suite per mutant (not gremlins' heuristic
