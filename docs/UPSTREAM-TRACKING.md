@@ -297,7 +297,18 @@ reason — the guard working as intended, not a stale expectation.
 **Current stance: hold the build toolchain at 1.26.x.** The hold lives in the
 Renovate preset (`schubydoo/renovate-config` → `claustrum.json`,
 `allowedVersions: <1.27` on the `go` dep), so 1.26.x patch and security bumps
-still flow while 1.27+ is blocked. `GOEXPERIMENT=nojsonv2` restores the `\ufffd`
+still flow while 1.27+ is blocked. That preset constrains `go.mod`, so the hold
+**follows a build path automatically only where that path resolves its toolchain
+from `go.mod`.** A `setup-go` step naming its own version sits outside it: an
+explicit `go-version: 1.26.7` still honours the hold but stops tracking it, and
+`go-version: stable` leaves it altogether. Nothing in this repo detects that \u2014
+no lint, no guard, no test reads `setup-go` inputs \u2014 so the first signal is a
+failing run, at whatever cadence that workflow runs. `mutation.yml` used
+`go-version: stable`; it is a weekly cron, so when Go 1.27.0 went stable the
+break surfaced up to a week later, on the 2026-08-24 scheduled run, and again on
+2026-08-31 (run 33387062009) before it was diagnosed. All eight `setup-go` steps
+now use `go-version-file: go.mod`.
+`GOEXPERIMENT=nojsonv2` restores the `\ufffd`
 escape under a 1.27 toolchain (measured), so it is the compensating knob if a
 future constraint forces the build onto 1.27 before the trigger below fires.
 

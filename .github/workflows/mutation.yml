@@ -46,13 +46,17 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Mutation testing is a test-quality audit, not a compatibility
-          # check, so it runs on the latest stable Go rather than the go.mod
-          # toolchain — that keeps tracking future gremlins requirements
-          # (v0.6.0 needs >= 1.25; go.mod caught up in #86) without editing
-          # go.mod.
-          go-version: stable
-          check-latest: true
+          # Follow the go.mod toolchain, like every other job that sets up Go.
+          # This job
+          # used `stable` + check-latest to track future gremlins requirements
+          # without editing go.mod, but go.mod already satisfies v0.6.0's
+          # >= 1.25 (caught up in PR 86), so `stable` bought nothing — and it
+          # opted this job out of the deliberate hold below Go 1.27, whose
+          # default jsonv2 emits a literal U+FFFD where v1 emits the ASCII
+          # \ufffd escape. The invalid-UTF-8 guards in
+          # inherited_encoding_test.go then fail and gremlins never reaches
+          # its first mutant. See docs/UPSTREAM-TRACKING.md → toolchain drift.
+          go-version-file: go.mod
           cache: true
 
       - name: Install gremlins

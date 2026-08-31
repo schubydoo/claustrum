@@ -23,7 +23,11 @@ frames.** The wire surface *is* the product.
 | Tests | `go test -race ./...` — unit + socket-integration suites |
 | Validation battery | `scratch/probe/validate.sh` — diffs frames vs the reference (gitignored) |
 
-- Use Go 1.25+ and `CGO_ENABLED=0`. One dependency is cross-platform:
+- Use Go 1.25+ and `CGO_ENABLED=0`. **The build toolchain is deliberately held
+  below 1.27** — its default `jsonv2` moves inherited wire bytes, so build and CI
+  resolve Go from `go.mod` (never `go-version: stable`). See
+  [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md) → toolchain-induced
+  drift. One dependency is cross-platform:
   `github.com/klauspost/compress` (zstd). Two more go into Windows builds only:
   `golang.org/x/sys` and `github.com/Microsoft/go-winio`.
 - In-repo tests cover the wire surface two ways: fast unit tests, and a
