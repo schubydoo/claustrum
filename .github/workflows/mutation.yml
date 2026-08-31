@@ -5,10 +5,14 @@ name: Mutation Testing
 # negate conditionals) and re-runs the suite. A passing suite against a mutation
 # = a "lived" mutant = a weak assertion somewhere.
 #
-# NOT a per-PR check — runtime is ~suite-time × number-of-mutants, well into
-# multi-minute territory. Runs on demand (workflow_dispatch) or weekly
-# (schedule) as a periodic test-quality audit. Advisory: scheduled runs are
-# report-only (threshold 0); an explicit dispatch can pin a quality bar.
+# NOT a per-PR check — it runs the suite once per mutant, which put the last
+# complete run (2026-08-03) at 25 minutes and later runs past 30. Budget in
+# tens of minutes, not minutes. `-failfast` means a KILLED mutant stops at its
+# first failing test, so suite-time × mutants is an upper bound, not the cost:
+# on 08-03 that bound was ~77 min against 25 min actual. Runs on demand
+# (workflow_dispatch) or weekly (schedule) as a periodic test-quality audit.
+# Advisory: scheduled runs are report-only (threshold 0); an explicit dispatch
+# can pin a quality bar.
 #
 # gremlins has a known Windows bug (path-separator mismatch between the cover
 # profile and the AST scanner) that misclassifies every mutant as "not covered"
@@ -36,7 +40,23 @@ jobs:
   mutation:
     name: gremlins
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 minutes stopped being enough on 2026-08-10. The 08-03 run finished in
+    # 26 min; 08-10 and 08-17 then hit the limit at 30m16s each. (08-24 and
+    # 08-31 failed inside a minute on the Go 1.27 break instead — see PR 303 —
+    # which hid this until that was fixed.) A job timeout is reported as
+    # "cancelled", not "failure", so these read as cancellations; the
+    # discriminator is the annotation "The job has exceeded the maximum
+    # execution time of 30m0s".
+    #
+    # Nothing regressed. Cost grows on both axes at once — more mutants from
+    # more source, and a longer suite per mutant — and it did: 12 min (07-13),
+    # 16, 17, 26 (08-03).
+    #
+    # 90 is margin over an estimate, not a measured bound. Extrapolating the
+    # 08-03 run over the tree's growth put a 2-worker run at ~55-65 min;
+    # --workers=4 (below) roughly halves that. Tighten this once a complete
+    # run gives a real number.
+    timeout-minutes: 90
     env:
       GREMLINS_VERSION: v0.6.0
     steps:
@@ -47,9 +67,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Follow the go.mod toolchain, like every other job that sets up Go.
-          # This job
-          # used `stable` + check-latest to track future gremlins requirements
-          # without editing go.mod, but go.mod already satisfies v0.6.0's
+          # This job used `stable` + check-latest to track future gremlins
+          # requirements without editing go.mod, but go.mod satisfies v0.6.0's
           # >= 1.25 (caught up in PR 86), so `stable` bought nothing — and it
           # opted this job out of the deliberate hold below Go 1.27, whose
           # default jsonv2 emits a literal U+FFFD where v1 emits the ASCII
@@ -66,7 +85,11 @@ jobs:
         run: go install github.com/go-gremlins/gremlins/cmd/gremlins@${GREMLINS_VERSION}
 
       - name: Verify gremlins on PATH
-        run: gremlins --version
+        # nproc is recorded so --workers can be justified against the runner
+        # this job actually got, rather than against GitHub's published spec.
+        run: |
+          gremlins --version
+          echo "runner cores: $(nproc)  GOMAXPROCS: $(go env GOMAXPROCS)"
 
       - name: Run mutation testing
         # --integration runs the FULL suite per mutant (not gremlins' heuristic
@@ -74,6 +97,15 @@ jobs:
         #   so a mutant is only "killed" if the whole suite catches it.
         # --coverpkg=./... gathers coverage across the module so gremlins knows
         #   which mutants are worth running.
+        # --workers=4 because the suite is wait-bound, not CPU-bound: measured
+        #   locally on 4 pinned cores it draws 40% of ONE core, and 4 copies
+        #   run concurrently finished in 20.9s against 24.3s for a single copy,
+        #   all passing. So 4 workers cost ~1.6 cores of the 4 a public repo's
+        #   runner provides. Do not raise this much further without re-measuring
+        #   — the suite asserts on deadlines and idle-close timing, and a mutant
+        #   whose test fails from starvation is scored KILLED (inflating
+        #   efficacy) while one that hangs past gremlins' timeout is scored
+        #   TIMED OUT and dropped from the efficacy denominator entirely.
         # --output emits machine-readable JSON for the summary + artifact.
         # --threshold-efficacy gates the exit code on the caller-supplied percent
         #   (0 = report-only). The dispatch input flows through env: (not inlined
@@ -90,7 +122,7 @@ jobs:
           gremlins unleash \
             --integration \
             --coverpkg=./... \
-            --workers=2 \
+            --workers=4 \
             --output=gremlins.json \
             --threshold-efficacy="${THRESHOLD_EFFICACY}"
 
