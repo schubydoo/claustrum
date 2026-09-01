@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -15,16 +16,74 @@ func resetLoginPATHForTest() {
 	setLoginPATH("")
 }
 
-// envValue reads key out of a buildEnv result. Windows spells the variable
-// "Path", so the key comparison is case-insensitive.
+// envValue reads key out of a buildEnv result the way the CHILD will see it,
+// which is not the same as the first matching entry.
+//
+// buildEnv appends rather than rewrites when the spellings differ: on Windows
+// os.Environ() yields "Path=...", so replaceOrAppendEnv's "PATH=" prefix test
+// misses and a second, correct "PATH=..." lands at the end. That slice is not
+// what reaches the process. exec.Cmd.environ() runs it through dedupEnv, which
+// on Windows folds keys case-insensitively and keeps the LAST occurrence
+// (os/exec: dedupEnvCase builds its output in reverse "to preserve the last
+// occurrence of each key"). The appended entry therefore wins and the child gets
+// the value buildEnv intended.
+//
+// So this must scan backwards. Reading forwards returns the stale pre-append
+// entry — a value no child ever sees — and the test then fails on any Windows
+// host whose environment block spells the key "Path". CI's windows-latest
+// happens to spell it "PATH", which is why that read passed there while failing
+// on a stock Windows 11 image.
+//
+// The case folding is deliberately NOT unconditional. dedupEnv folds only on
+// Windows, so on Unix "PATH" and "Path" are two independent variables and the
+// child receives both. Matching case-insensitively everywhere would let a
+// stray "Path" in the ambient environment shadow the real "PATH" and make this
+// test assert a value the child never uses. Mirroring dedupEnvCase's own
+// predicate keeps the reader honest on every OS.
 func envValue(env []string, key string) (string, bool) {
-	for _, kv := range env {
-		k, v, ok := strings.Cut(kv, "=")
-		if ok && strings.EqualFold(k, key) {
+	fold := runtime.GOOS == "windows"
+	for i := len(env) - 1; i >= 0; i-- {
+		k, v, ok := strings.Cut(env[i], "=")
+		if !ok {
+			continue
+		}
+		if k == key || (fold && strings.EqualFold(k, key)) {
 			return v, true
 		}
 	}
 	return "", false
+}
+
+// envValue encodes a per-OS rule and has been wrong in both directions: it read
+// forwards (returning an entry dedupEnv discards), and folding case everywhere
+// would let an unrelated Unix variable shadow the real one. These pin both ends
+// so the next edit cannot quietly reintroduce either.
+func TestEnvValueMatchesDedupEnvSemantics(t *testing.T) {
+	// A real PATH followed by a later, differently-cased Path. On Unix these are
+	// two independent variables and the child's $PATH is the "PATH" entry; on
+	// Windows they are one variable and dedupEnv keeps the last.
+	t.Run("case folding follows the OS", func(t *testing.T) {
+		env := []string{"HOME=/h", "PATH=/real", "OTHER=x", "Path=/stray"}
+		want := "/real"
+		if runtime.GOOS == "windows" {
+			want = "/stray"
+		}
+		got, ok := envValue(env, "PATH")
+		if !ok {
+			t.Fatal("envValue found no PATH")
+		}
+		if got != want {
+			t.Errorf("envValue = %q, want %q on %s", got, want, runtime.GOOS)
+		}
+	})
+
+	// The Windows shape this helper exists for: a stale "Path" that buildEnv could
+	// not rewrite, followed by the "PATH" it appended. dedupEnv keeps the last.
+	t.Run("the appended entry wins", func(t *testing.T) {
+		if got, _ := envValue([]string{"Path=/stale", "PATH=/appended"}, "PATH"); got != "/appended" {
+			t.Errorf("envValue = %q, want %q (dedupEnv keeps the last occurrence)", got, "/appended")
+		}
+	})
 }
 
 // TestBuildEnvWaitsForLoginPATH is the W10 regression test. Before the fix,
