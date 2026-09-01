@@ -929,3 +929,28 @@ func TestGitTimeoutDefaultIsOff(t *testing.T) {
 		t.Error("the default context carries a deadline; at the shipped default none may be armed")
 	}
 }
+
+// isPrintableASCII gates the `metrics-addr` and `wire-log` config values, so its
+// two bounds decide whether a legitimate setting is kept or silently dropped —
+// the key is skipped without a diagnostic, and the operator sees a daemon that
+// ignored their config. Both ends are inclusive and both are one byte wide, so a
+// test that only checks "letters pass, \x00 fails" cannot see either bound move:
+// 0x20 is SPACE and 0x7E is '~', and a wire-log path plausibly contains both.
+func TestIsPrintableASCIIBoundsAreInclusive(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"0x1f just below the low bound", "\x1f", false},
+		{"0x20 SPACE is the low bound", " ", true},
+		{"0x7e tilde is the high bound", "~", true},
+		{"0x7f DEL just above the high bound", "\x7f", false},
+		{"a realistic path keeping both bounds", "~/wire log.jsonl", true},
+		{"an embedded control byte anywhere fails", "ok\x00ok", false},
+	} {
+		if got := isPrintableASCII(tc.in); got != tc.want {
+			t.Errorf("%s: isPrintableASCII(%q) = %v, want %v", tc.name, tc.in, got, tc.want)
+		}
+	}
+}

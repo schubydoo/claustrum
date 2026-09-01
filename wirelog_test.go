@@ -628,3 +628,39 @@ func TestWireLogClampStringCutsOnRuneBoundary(t *testing.T) {
 		t.Errorf("prefix = %q, want %q (backed off to the rune boundary)", prefix, "é")
 	}
 }
+
+// clampString's guard is `limit <= 0 || len(s) <= limit`, and BOTH halves are
+// load-bearing at exactly one input each, so a fixture that only feeds it a
+// clearly-over-limit string (as the rune-boundary test above does) cannot see
+// either move:
+//
+//   - `limit <= 0` carries the "0 means unlimited" contract. Narrowed to `< 0`,
+//     maxStr 0 stops returning s and falls through to the truncation path.
+//   - `len(s) <= limit` is what stops the backoff loop indexing s[limit]. Narrowed
+//     to `<`, a string of exactly limit bytes reaches `s[limit]` and PANICS with
+//     index out of range — measured, not inferred.
+//
+// So the rows that matter are len(s) == limit and limit == 0; len(s) == limit-1
+// and limit+1 are the controls that answer the same either way.
+func TestWireLogClampStringBoundary(t *testing.T) {
+	const limit = 4
+	for _, tc := range []struct {
+		name   string
+		maxStr int
+		in     string
+		want   string
+	}{
+		{"one under the limit is kept whole", limit, "abc", "abc"},
+		{"exactly at the limit is kept whole", limit, "abcd", "abcd"},
+		{"one over the limit truncates", limit, "abcde", "abcd…[truncated, 5 bytes total]"},
+		{"maxStr 0 means unlimited", 0, "abcdefghij", "abcdefghij"},
+		{"a negative maxStr is also unlimited", -1, "abcdefghij", "abcdefghij"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &wireLog{maxStr: tc.maxStr}
+			if got := w.clampString(tc.in); got != tc.want {
+				t.Errorf("clampString(%q) at maxStr=%d = %q, want %q", tc.in, tc.maxStr, got, tc.want)
+			}
+		})
+	}
+}

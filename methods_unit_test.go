@@ -651,6 +651,49 @@ func TestFilesExtractTarCapMaxInt64DoesNotOverflow(t *testing.T) {
 	}
 }
 
+// cappedCopy's bound is `maxExtractBytes - totalWritten`, then +1 so the caller's
+// `totalWritten > maxExtractBytes` test can fire at all. The SUBTRACTION is what
+// makes the cap apply to the archive as a whole rather than to each entry: it is
+// the running total already written that shrinks the next entry's allowance.
+//
+// A single-entry fixture cannot see that operator. At totalWritten == 0 the bound
+// is the same whether the code subtracts or adds, so the multi-entry case is the
+// only one that distinguishes them — with the cap at 10 and 4 bytes already
+// written, subtracting bounds the next read at 7 (6+1) while adding bounds it at
+// 15, letting an archive overrun a cap the operator set.
+func TestFilesExtractTarCapCountsBytesAlreadyWritten(t *testing.T) {
+	old := maxExtractBytes
+	maxExtractBytes = 10
+	defer func() { maxExtractBytes = old }()
+
+	// 20 source bytes against a 10-byte cap with 4 already written: enough to
+	// overrun either bound, so the returned count IS the bound under test.
+	src := bytes.NewReader(bytes.Repeat([]byte("z"), 20))
+	var out bytes.Buffer
+	n, err := cappedCopy(&out, src, 4)
+	if err != nil {
+		t.Fatalf("cappedCopy: %v", err)
+	}
+	// 10 - 4 = 6, +1 to let the caller's over-cap test fire = 7.
+	if n != 7 {
+		t.Errorf("cappedCopy wrote %d bytes with cap=10 totalWritten=4, want 7 "+
+			"(bound = cap - written + 1); a bound of 15 means the running total is "+
+			"being added rather than subtracted, so the cap applies per entry "+
+			"instead of per archive", n)
+	}
+
+	// Control: at totalWritten == 0 both operators agree, so this row must NOT be
+	// the only one in the test — it is here to pin the no-entries-yet bound.
+	var out0 bytes.Buffer
+	n0, err := cappedCopy(&out0, bytes.NewReader(bytes.Repeat([]byte("z"), 20)), 0)
+	if err != nil {
+		t.Fatalf("cappedCopy at totalWritten=0: %v", err)
+	}
+	if n0 != 11 {
+		t.Errorf("cappedCopy wrote %d bytes with cap=10 totalWritten=0, want 11", n0)
+	}
+}
+
 // The cap is OFF by default, which is the parity position: measured, the
 // reference applies no cap at any size the probe could reach (629 MB), so any
 // non-zero default makes claustrum fail an extraction the reference completes.
