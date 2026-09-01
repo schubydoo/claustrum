@@ -35,6 +35,13 @@ func TestParseRepoSlug(t *testing.T) {
 		{"https://gitlab.com/group/sub/proj.git", ""},
 		{"", ""},
 		{"not a url", ""},
+		// Userinfo stripping is guarded by `strings.Index(u[:hostEnd], "@") >= 0`,
+		// and the ">=" is what admits an '@' at index 0 — a scheme-less URL whose
+		// userinfo is empty. Narrowing it to ">0" leaves the leading '@' on the
+		// host, so the host gate rejects it and the slug silently becomes "".
+		// These two rows are the only ones where '@' sits at index 0.
+		{"@github.com/acme/widgets", "acme/widgets"},
+		{"@github.com:acme/widgets", "acme/widgets"},
 	}
 	for _, tc := range cases {
 		if got := parseRepoSlug(tc.url); got != tc.want {
