@@ -15,11 +15,26 @@ func resetLoginPATHForTest() {
 	setLoginPATH("")
 }
 
-// envValue reads key out of a buildEnv result. Windows spells the variable
-// "Path", so the key comparison is case-insensitive.
+// envValue reads key out of a buildEnv result the way the CHILD will see it,
+// which is not the same as the first matching entry.
+//
+// buildEnv appends rather than rewrites when the spellings differ: on Windows
+// os.Environ() yields "Path=...", so replaceOrAppendEnv's "PATH=" prefix test
+// misses and a second, correct "PATH=..." lands at the end. That slice is not
+// what reaches the process. exec.Cmd.environ() runs it through dedupEnv, which
+// on Windows folds keys case-insensitively and keeps the LAST occurrence
+// (os/exec: dedupEnvCase builds its output in reverse "to preserve the last
+// occurrence of each key"). The appended entry therefore wins and the child gets
+// the value buildEnv intended.
+//
+// So this must scan backwards. Reading forwards returns the stale pre-append
+// entry — a value no child ever sees — and the test then fails on any Windows
+// host whose environment block spells the key "Path". CI's windows-latest
+// happens to spell it "PATH", which is why that read passed there while failing
+// on a stock Windows 11 image.
 func envValue(env []string, key string) (string, bool) {
-	for _, kv := range env {
-		k, v, ok := strings.Cut(kv, "=")
+	for i := len(env) - 1; i >= 0; i-- {
+		k, v, ok := strings.Cut(env[i], "=")
 		if ok && strings.EqualFold(k, key) {
 			return v, true
 		}
