@@ -4,6 +4,32 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.10.0 (2026-09-01)
+
+[Compare with 1.9.0](https://github.com/schubydoo/claustrum/compare/v1.9.0...v1.10.0)
+
+### Features
+
+- Track reference `claude-ssh` build `7d193f89`: `git.worktree_create`/`git.worktree_remove` accept a `worktreeRoot` to place the session worktree outside the repository (the `external_root` capability), guarded by an ownership/writability check, two-level containment, an empty-directory requirement, and a `.claude-managed-worktrees` marker; a `baseRepo` that itself sits under a managed-worktrees tree is refused. ([#288](https://github.com/schubydoo/claustrum/pull/288))
+- `files.list` reports `open <p>: not a directory` for a non-directory. ([#287](https://github.com/schubydoo/claustrum/pull/287))
+- Track reference `claude-ssh` build `7d193f89`: a repository whose git config cannot be enumerated is refused rather than run unhardened, `git.worktree_create` failure output is capped at 512 bytes, and git operations honour the user's global excludes file. ([#288](https://github.com/schubydoo/claustrum/pull/288))
+- `git.status` now requires `baseRepo`, reports status only for a session worktree of it, and lists untracked files in subdirectories individually (`--untracked-files=all`). ([#287](https://github.com/schubydoo/claustrum/pull/287))
+- Git reads and worktree creation run under the reference's git-invocation hardening profiles, and `server.capabilities` advertises the new `git.status.baseRepo` and `git.worktree.external_root` features. ([#287](https://github.com/schubydoo/claustrum/pull/287))
+- Track reference `claude-ssh` build `7d193f89`: the daemon closes idle client connections after five minutes of inactivity. ([#289](https://github.com/schubydoo/claustrum/pull/289))
+- Track reference `claude-ssh` build `7d193f89` (Claude Desktop for Linux 1.37937.1): `server.version` is removed and now answers `-32601`. ([#287](https://github.com/schubydoo/claustrum/pull/287))
+- Track reference `claude-ssh` build `7d193f89`: a daemon restart hands the listening socket off cleanly — the successor rebinds a fresh socket inode and a departing predecessor no longer deletes it, so reconnecting sessions are not left with a broken socket. ([#289](https://github.com/schubydoo/claustrum/pull/289))
+- Track reference `claude-ssh` build `7d193f89`: a new worktree is seeded only with untracked files named by both `.worktreeinclude` and git's ignore rules, and `.claude/` is no longer copied unconditionally. ([#288](https://github.com/schubydoo/claustrum/pull/288))
+- `git.worktree_create`/`git.worktree_remove` by default confine worktrees to inside the repository, and `git.worktree_remove` refuses a locked worktree and prunes the registration on removal. ([#287](https://github.com/schubydoo/claustrum/pull/287))
+
+### Fixes
+
+- On Windows, gate the external worktree-location capability off to match the reference: `git.worktree_create`/`worktree_remove` refuse any `worktreeRoot` with "a custom worktree location is not supported on Windows hosts yet", and `server.capabilities` drops `git.worktree.external_root` from its features on Windows. ([#297](https://github.com/schubydoo/claustrum/pull/297))
+- On Windows, skip the dial-based daemon predecessor probe: `livePredecessorIdent` returns nil (OS-split into `livepred_unix.go` / `livepred_windows.go`), since the probe has no observable effect there — a live-predecessor second launch is the same ~0.01s either way, matching the reference — with detection kept on unix only. ([#295](https://github.com/schubydoo/claustrum/pull/295))
+- `server.shutdown` now replies `{"ok":true}` before the daemon stops, matching the reference (a client that reads the shutdown reply previously saw EOF from claustrum); delivery races the teardown on both, and `-stop` still prints nothing. ([#298](https://github.com/schubydoo/claustrum/pull/298))
+- Fix `isSocketDead` so a daemon-handoff dial that fails with a wrapped `ENOENT` (the socket unlinked between the launcher's stat and its dial) is classified as a dead predecessor, closing a race that could stall the launcher until the daemon-start deadline. ([#293](https://github.com/schubydoo/claustrum/pull/293))
+- On Windows, recognise a refused AF_UNIX handoff dial (`WSAECONNREFUSED`, 10061) as a dead socket via an OS-split `isConnRefused`, so the launcher's stale-socket detection fires there as it already does on POSIX (`ECONNREFUSED`). ([#294](https://github.com/schubydoo/claustrum/pull/294))
+- On Windows, refuse a `git.worktree_create`/`worktree_remove` path whose component ends in a dot or space or contains a colon — Windows reads it as a different name — with the reference's spelling refusal, instead of letting it fall through to a later, inconsistent failure. ([#296](https://github.com/schubydoo/claustrum/pull/296))
+
 ## 1.9.0 (2026-08-15)
 
 [Compare with 1.8.0](https://github.com/schubydoo/claustrum/compare/v1.8.0...v1.9.0)
