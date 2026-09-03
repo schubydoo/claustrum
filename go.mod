@@ -4,7 +4,7 @@ go 1.25.0
 
 toolchain go1.26.8
 
-require github.com/klauspost/compress v1.19.2
+require github.com/klauspost/compress v1.20.0
 
 require golang.org/x/sys v0.47.0
 
