@@ -215,7 +215,12 @@ sits in front of those calls so operators can quiet the daemon:
   "cliPath": "<cli-dir>/<cli-version>",
   "cliWasPresent": false,     // true only if it existed AND answered --version — within
                               // -cli-probe-timeout when that is set; no deadline by default (D11)
-  "cliError": "…"             // omitted on success
+  "cliError": "…",            // omitted on success
+  "fetch": {                  // 4534d86: present (LAST) whenever a -cli-url download was
+    "bytes": 0,               // attempted, even a 0-byte 404; omitted on -cli-zst / cache hit
+    "ms": 0,                  // download duration
+    "longestPauseMs": 0       // largest gap between reads (~60000 on a read-idle stall abort)
+  }
 }
 ```
 

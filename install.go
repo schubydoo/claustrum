@@ -36,9 +36,16 @@ type installFacts struct {
 	CliPath       string `json:"cliPath"`
 	CliWasPresent bool   `json:"cliWasPresent"`
 	CliError      string `json:"cliError,omitempty"`
+	// Fetch is the download stats object 4534d86 appends LAST, whenever a -cli-url
+	// download was attempted (even a 0-byte 404). omitempty (a pointer) drops it on
+	// the -cli-zst / cache-hit / no-source paths, where the reference emits no fetch.
+	Fetch *fetchStats `json:"fetch,omitempty"`
 }
 
 func runInstall(o installOpts) {
+	// Reset the -cli-url download sink; fetchToFile fills it when a download is
+	// attempted, and it is read back into f.Fetch below (4534d86).
+	lastInstallFetch = nil
 	f := installFacts{
 		ServerVersion: Version,
 		OS:            runtime.GOOS,
@@ -81,6 +88,10 @@ func runInstall(o installOpts) {
 		}
 	}
 
+	// The reference appends the fetch object whenever a -cli-url download ran (set by
+	// fetchToFile), including a cache hit that still downloaded is impossible — a
+	// cache hit skips ensureCLI entirely, so lastInstallFetch stays nil there.
+	f.Fetch = lastInstallFetch
 	b, _ := json.Marshal(f)
 	fmt.Printf("__INSTALL_RESULT__%s\n", b)
 }
@@ -569,10 +580,19 @@ func (e *httpStatusError) Error() string {
 
 // cliDownloadTimeout bounds the whole `-cli-url` exchange in fetchToFile.
 //
-// ZERO (the default) DISABLES IT, which is the parity position: measured at
-// 5db5e4a against a server that sends 200 OK with a Content-Length and then never
-// sends a body, the reference was still downloading when the harness stopped it at
-// 400 s, where claustrum returned at 300 s.
+// ZERO (the default) DISABLES IT, which is the parity position for the TOTAL-exchange
+// deadline: no total cap was observed on the reference within the window measured. A
+// fully STALLED body (no bytes at all) is handled
+// separately by the always-on read-idle abort newWatchedBody adds (installIdleTimeout,
+// 60 s — 4534d86 parity, VM-measured), NOT by this bound. What this bound would add
+// beyond that is a cap on a slow-but-PROGRESSING download, and no total cap was
+// observed on the reference within the window measured: VM-measured against 4534d86, a
+// body trickling 1 byte every 30 s was still downloading at 150 s (each byte resets the
+// read-idle clock, so the read-idle abort never fires), so a total deadline below an
+// honest slow download's duration fails a transfer the reference does not bound in that
+// window. (The earlier 5db5e4a measurement — still downloading a never-sent body at
+// 400 s — predates the read-idle abort; on 4534d86 that same never-sent body aborts at
+// 60 s via the read-idle path, not this deadline.)
 //
 // ⚠️ `http.Client.Timeout` bounds the ENTIRE exchange including the body read, so
 // it is a deadline, not a stall detector: a real body arriving over a link that
@@ -608,13 +628,20 @@ var cliDownloadTimeout time.Duration
 // download and reports its own `mkdir cli dir: ` error there. Failing here
 // instead would move that error to a different string on a reachable path.
 func fetchToFile(url, dir string) (path, sum string, err error) {
+	// start times the whole exchange so fetch.ms matches the reference (a 404 reports
+	// ms of the request round-trip). A pre-body failure records ms with zero bytes;
+	// the watched body overwrites lastInstallFetch with real stats once the download
+	// begins. Set on every -cli-url path so runInstall always sees a fetch object.
+	start := time.Now()
 	client := &http.Client{Timeout: cliDownloadTimeout}
 	resp, err := client.Get(url)
 	if err != nil {
+		lastInstallFetch = &fetchStats{Ms: time.Since(start).Milliseconds()}
 		return "", "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		lastInstallFetch = &fetchStats{Ms: time.Since(start).Milliseconds()}
 		// "download failed with status %d" — the reference's exact wording, and it
 		// carries neither the URL nor the reason phrase. Measured at 5db5e4a: a 404
 		// gives cliError "download failed with status 404" where claustrum emitted
@@ -647,20 +674,35 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 	f, err := os.CreateTemp(dir, blobTempPrefix+"*")
 	if err != nil {
 		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
+			lastInstallFetch = &fetchStats{Ms: time.Since(start).Milliseconds()}
 			return "", "", err
 		}
 	}
 	tmp := f.Name()
 	h := sha256.New()
+	// Wrap the body so the download emits __INSTALL_PROGRESS__ ticks, aborts on a
+	// read-idle stall, and records the fetch stats — the 4534d86 instrumentation.
+	// total is the Content-Length (0 when the server sends none, which drops the
+	// progress `total` field).
+	total := resp.ContentLength
+	if total < 0 {
+		total = 0
+	}
+	wb := newWatchedBody(resp.Body, total, start)
 	// Same bypass as zstdDecompress: with the cap off the body streams straight
 	// through, hashed on the way past.
 	var n int64
 	var copyErr error
 	if maxCLIBytes <= 0 {
-		n, copyErr = io.Copy(io.MultiWriter(f, h), resp.Body)
+		n, copyErr = io.Copy(io.MultiWriter(f, h), wb)
 	} else {
-		n, copyErr = io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, maxCLIBytes+1))
+		n, copyErr = io.Copy(io.MultiWriter(f, h), io.LimitReader(wb, maxCLIBytes+1))
 	}
+	// Record fetch stats even on copyErr: the reference emits the fetch object on a
+	// stall, a cap hit, and a mid-body error, not only on success.
+	s := wb.stats()
+	lastInstallFetch = &s
+	_ = wb.Close() // stop the progress ticker
 	closeErr := f.Close()
 	switch {
 	case copyErr != nil:

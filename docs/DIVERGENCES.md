@@ -492,10 +492,19 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `TLSHandshakeTimeout: 10s` on `-cli-url`. A SYN-black-holed host therefore fails
   at 30 s with the bound off. Both clocks are always-on stdlib defaults, unnumbered
   and unprobed on the reference.
-- **Why opt-in.** The reference showed no bound at or below 400 s on a stalled body.
-  Measured on a valid zstd blob dribbled over ~324 s, the reference and claustrum at
-  its default both install it, while claustrum at the retracted 5 m fails at 300 s.
-  An honest slow download therefore pays, and Desktop owns the argv (rule 4).
+- **Why opt-in.** `4534d86` bounds a fully STALLED body itself, at a 60 s read-idle
+  abort that claustrum reproduces always-on as parity — that is NOT this divergence
+  (see [PROTOCOL.md](PROTOCOL.md) → `-install` download). What a non-zero
+  `cliDownloadTimeout` adds beyond the read-idle abort is a TOTAL-exchange cap, and no
+  total cap was observed on the reference within the window measured: VM-measured
+  against `4534d86`, a body trickling 1 byte every 30 s was still downloading at 150 s
+  (each byte resets the read-idle clock, so the read-idle abort never fires). The
+  honest slow-but-progressing case a total cap penalizes was measured on `5db5e4a`: a
+  valid blob dribbled to completion over ~324 s installed there, while claustrum at the
+  retracted 5 m failed it at 300 s. Such a download pays under a non-zero bound, and
+  Desktop owns the argv (rule 4). (The earlier "no bound at or below 400 s on a stalled
+  body" evidence was also `5db5e4a`, before the read-idle abort existed; on `4534d86`
+  that same never-sent body aborts at 60 s via the read-idle path, not this deadline.)
 - **Reopen trigger.** An operator with the bound set reporting an honest slow
   download failed by it.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md); `install.go` (`fetchToFile`). Straddle
