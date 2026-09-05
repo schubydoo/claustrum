@@ -39,6 +39,13 @@ type gitParams struct {
 	WorktreePath string `json:"worktreePath"`
 	SourceBranch string `json:"sourceBranch"`
 	WorktreeRoot string `json:"worktreeRoot,omitempty"`
+	// TimeoutMs is a caller-supplied per-request deadline (milliseconds) on the
+	// git.worktree_create add + checkout, added by the reference in 4534d86 and
+	// advertised as the git.worktree_create.timeoutMs feature. Absent or 0 arms no
+	// deadline, so the default path is byte-identical. This is caller-activated
+	// (like CT-1's wantPid), not an operator divergence. Bound namespace-wide like
+	// every gitParams field (D9); only git.worktree_create reads it.
+	TimeoutMs int `json:"timeoutMs,omitempty"`
 }
 
 // repoDir is the repo a worktree op runs against: baseRepo, or the daemon's cwd
@@ -225,6 +232,27 @@ func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool
 	defer cancel()
 	out, ok = gitContext(ctx, dir, args...)
 	return out, ok, ctx.Err() != nil
+}
+
+// worktreeCreateCtx builds the context for git.worktree_create's add + checkout.
+// It composes the D5 global git deadline (gitCtx — background when off) with the
+// caller's per-request timeoutMs (4534d86 parity). timeoutMs <= 0 arms no
+// per-request deadline, so with D5 also off the operation runs unbounded and
+// byte-identical to the reference at its default. When both are set, the tighter
+// one fires first.
+//
+// The add and the read-tree checkout share this one context, so with D5 opted in
+// AND timeoutMs 0 the read-tree now runs under the add's remaining D5 budget rather
+// than a fresh gitCtx per call. That is a change only to D5's own claustrum-only,
+// default-off path; no frame moves (at timeoutMs 0 the read-tree is best-effort and
+// its result is discarded, and an empty worktree still passes verifyCreatedWorktree).
+func worktreeCreateCtx(timeoutMs int) (context.Context, context.CancelFunc) {
+	base, baseCancel := gitCtx()
+	if timeoutMs <= 0 {
+		return base, baseCancel
+	}
+	ctx, cancel := context.WithTimeout(base, time.Duration(timeoutMs)*time.Millisecond)
+	return ctx, func() { cancel(); baseCancel() }
 }
 
 func isRepo(dir string) bool {
@@ -758,8 +786,24 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if sourceRef != "" {
 		addArgs = append(addArgs, sourceRef)
 	}
-	out, ok := hardenedGit(repo, false, addArgs...)
+	// A caller-supplied timeoutMs (4534d86) bounds the add + checkout. worktreeCreateCtx
+	// composes it with the D5 global deadline; at timeoutMs 0 with D5 off it is the same
+	// unbounded context hardenedGit uses, so the default path is byte-identical.
+	addCtx, addCancel := worktreeCreateCtx(p.TimeoutMs)
+	defer addCancel()
+	out, ok := hardenedGitContext(addCtx, repo, false, addArgs...)
 	if !ok {
+		// A fired timeoutMs reports a distinct errorCode "timeout", not
+		// worktree_add_failed — a client branches on errorCode. Guarded on
+		// p.TimeoutMs > 0 so the D5-only path (its own claustrum divergence) keeps
+		// reporting worktree_add_failed as before. Measured against 4534d86.
+		if p.TimeoutMs > 0 && addCtx.Err() != nil {
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs),
+				ErrorCode: "timeout",
+			})
+		}
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     "git worktree add failed: " + boundedStderrHead(out),
@@ -772,9 +816,29 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// index. Best-effort — an unborn/orphan branch has nothing to read, leaving the
 	// worktree empty just as the reference does.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		hardenedGit(repo, false, "-c", "core.splitIndex=false",
+		_, _, rtErr := hardenedGitContextErr(addCtx, repo, false, "-c", "core.splitIndex=false",
 			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
 			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+p.BranchName)
+		// If the caller's deadline fired, the checkout was interrupted (or the
+		// deadline expired just after it finished). The reference distinguishes the
+		// two: a killed read-tree appends git's own error ("signal: killed"), a
+		// clean read-tree whose deadline expired after reports the after-checkout
+		// variant. "during" is measured; "after" is a near-unhittable window
+		// reproduced from the reference's string.
+		if p.TimeoutMs > 0 && addCtx.Err() != nil {
+			if rtErr != nil {
+				return okResult(req.ID, worktreeResult{
+					Success:   false,
+					Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s", p.TimeoutMs, rtErr),
+					ErrorCode: "timeout",
+				})
+			}
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs),
+				ErrorCode: "timeout",
+			})
+		}
 	}
 	// Post-condition: the add must have populated the directory claustrum created, not
 	// one swapped in during the add. claustrum's own guard; empty on an unraced create.

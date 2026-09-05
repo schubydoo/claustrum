@@ -14,11 +14,14 @@ var capabilityMethods = []string{
 // and git.worktree.external_root (a worktreeRoot param places the session worktree
 // OUTSIDE the repo, under that caller-chosen root, instead of inside it). external_root
 // is unix-only: the reference gates that capability off on Windows and drops the feature
-// from its Windows features list (externalRootCapabilityFeatures is OS-split). The array
+// from its Windows features list (externalRootCapabilityFeatures is OS-split). 4534d86
+// inserted git.worktree_create.timeoutMs before external_root (a caller-supplied
+// per-request deadline on the worktree add + checkout), present on every OS. The array
 // itself is always emitted.
 var capabilityFeatures = append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
+	"git.worktree_create.timeoutMs",
 }, externalRootCapabilityFeatures...)
 
 func (s *server) handleServer(c *conn, req *request) *response {

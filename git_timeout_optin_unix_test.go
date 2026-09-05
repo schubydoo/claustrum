@@ -95,6 +95,43 @@ func TestGitDeadlineReportsNoTimeoutWhenBoundIsOff(t *testing.T) {
 	}
 }
 
+// The p.TimeoutMs>0 guard in gitWorktreeCreateLocked keeps a D5 (git-timeout)
+// deadline that fires during the `worktree add` reporting worktree_add_failed —
+// NOT the caller-facing errorCode "timeout", which is reserved for a caller-supplied
+// timeoutMs (4534d86). Without the guard a D5-only kill is misclassified as a
+// caller timeout. The stub is fast for the pre-checks and slow only on the add
+// (matched by its unique --no-checkout arg), so D5 fires on the add specifically.
+func TestWorktreeCreateD5DeadlineIsNotReportedAsTimeoutErrorCode(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\ncase \"$*\" in " +
+		"*is-inside-work-tree*) echo true; exit 0 ;; " +
+		"*abbrev-ref*) echo main; exit 0 ;; " +
+		"*no-checkout*) exec sleep 30 ;; " +
+		"*) exit 0 ;; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := gitTimeout
+	gitTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { gitTimeout = old })
+
+	base := t.TempDir()
+	wt := filepath.Join(base, ".claude", "worktrees", "wt")
+	s := newTestServer(t)
+	// No timeoutMs in the request: the fired deadline is D5's, so the guard must
+	// route it to worktree_add_failed, not errorCode "timeout".
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": base, "branchName": "b", "worktreePath": wt}))
+	if strings.Contains(raw, `"errorCode":"timeout"`) {
+		t.Errorf("D5-only kill misreported as errorCode timeout: %s", raw)
+	}
+	if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Errorf("reply = %s, want errorCode worktree_add_failed", raw)
+	}
+}
+
 // The reply text for an opted-in timeout quotes the configured duration, so it
 // must reflect the value in force rather than a hardcoded 60s.
 func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
