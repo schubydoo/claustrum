@@ -14,19 +14,26 @@ var capabilityMethods = []string{
 // and git.worktree.external_root (a worktreeRoot param places the session worktree
 // OUTSIDE the repo, under that caller-chosen root, instead of inside it). external_root
 // is unix-only: the reference gates that capability off on Windows and drops the feature
-// from its Windows features list (externalRootCapabilityFeatures is OS-split). The array
-// itself is always emitted.
-var capabilityFeatures = append([]string{
+// from its Windows features list (externalRootCapabilityFeatures is OS-split). 4534d86
+// appended server.instance_id (the capabilities reply now carries a per-boot instanceId),
+// always last and on every OS. The array itself is always emitted.
+var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
-}, externalRootCapabilityFeatures...)
+}, externalRootCapabilityFeatures...), "server.instance_id")
 
 func (s *server) handleServer(c *conn, req *request) *response {
 	switch req.Method {
 	case "server.ping":
 		return ptr(okResult(req.ID, pongResult{Pong: true}))
 	case "server.capabilities":
-		return ptr(okResult(req.ID, capabilitiesResult{Version: Version, Methods: capabilityMethods, Features: capabilityFeatures}))
+		return ptr(okResult(req.ID, capabilitiesResult{
+			Version:    Version,
+			Methods:    capabilityMethods,
+			InstanceID: s.instanceID,
+			StartedAt:  s.startedAt,
+			Features:   capabilityFeatures,
+		}))
 	case methodShutdown:
 		// The reference replies {"ok":true} and then stops (measured 2026-08-27;
 		// the standing battery never saw it because it shuts the daemon down on a

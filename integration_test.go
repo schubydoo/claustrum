@@ -29,6 +29,10 @@ var (
 	// so tokenize them like version/platform to keep the golden stable.
 	rePid       = regexp.MustCompile(`"pid":\d+`)
 	reStartTime = regexp.MustCompile(`"startTime":[0-9.eE+-]+`)
+	// server.capabilities (since 4534d86) carries a per-boot random instanceId and a
+	// wall-clock startedAt, so tokenize both like version to keep the golden stable.
+	reInstanceID = regexp.MustCompile(`"instanceId":"[^"]*"`)
+	reStartedAt  = regexp.MustCompile(`"startedAt":\d+`)
 )
 
 // normCT1 tokenizes the CT-1 pid/startTime fields so a wantPid reply golden is
@@ -49,6 +53,8 @@ func normResp(b []byte) json.RawMessage {
 	s = reVersion.ReplaceAllString(s, `"version":"<V>"`)
 	s = rePlatform.ReplaceAllString(s, `"platform":"<OS>"`)
 	s = reArch.ReplaceAllString(s, `"arch":"<ARCH>"`)
+	s = reInstanceID.ReplaceAllString(s, `"instanceId":"<IID>"`)
+	s = reStartedAt.ReplaceAllString(s, `"startedAt":"<T>"`)
 	return json.RawMessage(s)
 }
 
