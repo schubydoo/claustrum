@@ -132,6 +132,44 @@ func TestWorktreeCreateD5DeadlineIsNotReportedAsTimeoutErrorCode(t *testing.T) {
 	}
 }
 
+// When the operator opts into D5 AND a caller sends a LONGER timeoutMs, the tighter
+// D5 deadline fires first. The kill is D5's, so the reply must be worktree_add_failed
+// — not errorCode "timeout" quoting the caller's longer duration, which would blame
+// the caller for a deadline the operator set. Guards the WithTimeoutCause
+// discrimination: without it, any fired deadline with timeoutMs>0 is misreported as a
+// caller timeout. The add sleeps, D5 (100ms) fires well before the caller's 5000ms.
+func TestWorktreeCreateD5FiresBeforeLongerTimeoutMs(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\ncase \"$*\" in " +
+		"*is-inside-work-tree*) echo true; exit 0 ;; " +
+		"*abbrev-ref*) echo main; exit 0 ;; " +
+		"*no-checkout*) exec sleep 30 ;; " +
+		"*) exit 0 ;; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := gitTimeout
+	gitTimeout = 100 * time.Millisecond // D5 far tighter than the caller's timeoutMs
+	t.Cleanup(func() { gitTimeout = old })
+
+	base := t.TempDir()
+	wt := filepath.Join(base, ".claude", "worktrees", "wt")
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": base, "branchName": "b", "worktreePath": wt, "timeoutMs": 5000}))
+	if strings.Contains(raw, `"errorCode":"timeout"`) {
+		t.Errorf("D5 kill misreported as caller timeout: %s", raw)
+	}
+	if strings.Contains(raw, "5000ms") {
+		t.Errorf("reply quotes the caller's 5000ms for a deadline D5 caused: %s", raw)
+	}
+	if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Errorf("reply = %s, want errorCode worktree_add_failed", raw)
+	}
+}
+
 // The reply text for an opted-in timeout quotes the configured duration, so it
 // must reflect the value in force rather than a hardcoded 60s.
 func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {

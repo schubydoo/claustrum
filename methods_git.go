@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -246,13 +247,28 @@ func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool
 // than a fresh gitCtx per call. That is a change only to D5's own claustrum-only,
 // default-off path; no frame moves (at timeoutMs 0 the read-tree is best-effort and
 // its result is discarded, and an empty worktree still passes verifyCreatedWorktree).
+// errCallerTimeoutMs is the cause stamped on the caller's per-request deadline, so
+// a fired context can be attributed to the caller's timeoutMs specifically and not
+// to the D5 global deadline that shares the same context. When both are opted in and
+// the tighter D5 deadline fires first, context.Cause reports D5's DeadlineExceeded,
+// not this — see callerTimeoutFired.
+var errCallerTimeoutMs = errors.New("git.worktree_create caller timeoutMs deadline")
+
 func worktreeCreateCtx(timeoutMs int) (context.Context, context.CancelFunc) {
 	base, baseCancel := gitCtx()
 	if timeoutMs <= 0 {
 		return base, baseCancel
 	}
-	ctx, cancel := context.WithTimeout(base, time.Duration(timeoutMs)*time.Millisecond)
+	ctx, cancel := context.WithTimeoutCause(base, time.Duration(timeoutMs)*time.Millisecond, errCallerTimeoutMs)
 	return ctx, func() { cancel(); baseCancel() }
+}
+
+// callerTimeoutFired reports whether ctx was canceled by the caller's own timeoutMs
+// deadline, as opposed to the D5 global deadline (or any other parent cancellation).
+// Only the caller's deadline earns the 4534d86 errorCode "timeout"; a D5 kill falls
+// through to worktree_add_failed, the way a D5-only kill (no timeoutMs) already does.
+func callerTimeoutFired(ctx context.Context) bool {
+	return errors.Is(context.Cause(ctx), errCallerTimeoutMs)
 }
 
 func isRepo(dir string) bool {
@@ -793,11 +809,16 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	defer addCancel()
 	out, ok := hardenedGitContext(addCtx, repo, false, addArgs...)
 	if !ok {
-		// A fired timeoutMs reports a distinct errorCode "timeout", not
-		// worktree_add_failed — a client branches on errorCode. Guarded on
-		// p.TimeoutMs > 0 so the D5-only path (its own claustrum divergence) keeps
-		// reporting worktree_add_failed as before. Measured against 4534d86.
-		if p.TimeoutMs > 0 && addCtx.Err() != nil {
+		// The caller's timeoutMs reports a distinct errorCode "timeout", not
+		// worktree_add_failed — a client branches on errorCode, and this
+		// caller-timeout -> "timeout" mapping is measured against 4534d86.
+		// callerTimeoutFired gates on WHICH deadline fired, not merely on timeoutMs
+		// being set: a D5 global deadline that fires first (operator opted in, caller
+		// sent a longer timeoutMs) falls through to worktree_add_failed, the way a
+		// D5-only kill (no timeoutMs) already does — so the caller's longer duration is
+		// never quoted for a kill D5 caused. That D5 interaction is claustrum's own
+		// divergence, not reference behavior: the reference has no D5 global deadline.
+		if p.TimeoutMs > 0 && callerTimeoutFired(addCtx) {
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
 				Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs),
@@ -825,7 +846,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// clean read-tree whose deadline expired after reports the after-checkout
 		// variant. "during" is measured; "after" is a near-unhittable window
 		// reproduced from the reference's string.
-		if p.TimeoutMs > 0 && addCtx.Err() != nil {
+		if p.TimeoutMs > 0 && callerTimeoutFired(addCtx) {
 			if rtErr != nil {
 				return okResult(req.ID, worktreeResult{
 					Success:   false,
