@@ -8,13 +8,13 @@ history, not a backlog.
 Most of this work is **wire-neutral**. It changes tooling, tests, or OS-level
 behaviour, but it does not change a JSON-RPC frame. The exceptions are the items
 that knowingly make a frame or a behaviour different from the reference daemon.
-Those items are the numbered **deliberate divergences** (D1-D14) and the
+Those items are the numbered **deliberate divergences** (D1-D15) and the
 **client-driven extensions** (CT-1..CT-5). They no longer live here.
 
 ## Deliberate divergences and the decision rules → docs/DIVERGENCES.md
 
 The divergence catalog and **THE RULE** now live in their own canonical home:
-**[DIVERGENCES.md](DIVERGENCES.md)**. The catalog holds D1-D14 and CT-1..CT-5.
+**[DIVERGENCES.md](DIVERGENCES.md)**. The catalog holds D1-D15 and CT-1..CT-5.
 Each entry gives its default, how to activate it, why it exists, and its reopen
 trigger. THE RULE is the four-rule, clause-(a)/(b)/(c) standard, and every
 divergence is judged against it. A contributor needs two things most: the

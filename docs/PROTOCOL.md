@@ -87,10 +87,39 @@ unclean kill (`SIGKILL`/crash) leaves the file behind, because the daemon remove
 it only on the graceful `server.shutdown` / `SIGTERM` path.
 
 The fixed name + socket-dir location are the reconnect contract, so they are not
-configurable. Two parity caveats match the reference, and claustrum deliberately
-does not "fix" them: two daemons that share one directory collide on the file, and
-on Windows `0600` is not an owner-only DACL (a Go `os.CreateTemp` limitation — the
-per-user session dir is the confinement).
+configurable. On Windows `0600` is not an owner-only DACL (a Go `os.CreateTemp`
+limitation — the per-user session dir is the confinement), a parity caveat claustrum
+deliberately does not "fix". The former "two daemons in one directory collide on this
+file" caveat is now bounded: on Linux and macOS the run-dir lock (below) evicts a
+prior live daemon of the same socket before the new one binds, so two same-socket
+daemons no longer coexist to collide on the honest path. A collision survives only
+where eviction is refused (a foreign or cross-machine lock holder, or a holder that
+survives `SIGKILL`) or on Windows, which ships no run-dir lock.
+
+### Run-dir lock (`daemon.lock`)
+
+Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
+**`daemon.lock`** in the socket's directory (mode `0600`) and writes an owner record
+into it — a JSON object `{pid, role, node, instanceId, startedAt}` (`role` = `serve`;
+`node` omitted when the machine identity is unknown). Reference build `4534d86` added
+this, and claustrum matches it. It is off the JSON-RPC wire (a file beside the
+socket). On graceful shutdown the daemon **truncates the record and drops the lock but
+leaves the file in place** — unlike `daemon.token`, which is unlinked.
+
+When a prior **live** daemon still holds the lock, the newcomer evicts it (`SIGTERM`,
+then `SIGKILL` after a grace) before taking over, so a restart deterministically
+replaces its predecessor. The eviction only fires against a holder that is verifiably
+one of our own `-serve` daemons for this socket, on this machine — see the guards in
+`daemon_runlock_unix.go`. Claiming is best-effort: any failure logs a warning and the
+daemon serves without run-dir ownership rather than aborting.
+
+Platform split: the lock, the owner record, and the eviction run on **Linux and
+macOS**. The machine identity (`node`) is the boot id joined to the pid-namespace
+inode on Linux, and `sysctl kern.bootsessionuuid` on macOS. **Windows ships no run-dir
+lock** (the reference does not compile one there); mutual exclusion on Windows stays
+the socket remove-then-rebind handoff. On macOS claustrum verifies the holder via
+`sysctl KERN_PROCARGS2` where the reference skips the check — see
+[DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Daemon startup (`-serve`)
 

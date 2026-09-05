@@ -85,6 +85,12 @@ type server struct {
 	sockInfo  os.FileInfo
 	tokenInfo os.FileInfo
 	pipeInfo  os.FileInfo
+
+	// releaseRunDir drops the run-dir lock (daemon.lock) on graceful shutdown:
+	// it truncates the owner record and unlocks the fd, leaving the file in place.
+	// A no-op on Windows (which has no run-dir lock) and when the lock was not
+	// taken this boot. See daemon_runlock_unix.go.
+	releaseRunDir func()
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -363,9 +369,16 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// recovers from a boot failure — would otherwise leak the open file. Close is
 	// nil-safe, so this is a no-op when logging is off.
 	ok := false
+	// Claim the run dir BEFORE binding the socket, matching the reference order
+	// (run-dir claim -> socket bind -> token persist). This evicts a prior live
+	// sibling serve daemon so a restart deterministically replaces it. Best-effort:
+	// claimRunDir never fails the boot, only logs and serves without ownership. On
+	// Windows it is a no-op (see daemon_runlock_windows.go).
+	releaseRunDir := claimRunDir(socket, "serve")
 	defer func() {
 		if !ok {
 			wlog.Close()
+			releaseRunDir()
 		}
 	}()
 	_ = os.Remove(socket) // clear a stale socket
@@ -399,16 +412,17 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 
 	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for removeSocketIfOwned)
 	s := &server{
-		token:        token,
-		ln:           ln,
-		procs:        newProcManager(),
-		conns:        make(map[*conn]struct{}),
-		shutdown:     make(chan struct{}),
-		keepChildren: keepChildren,
-		wlog:         wlog,
-		idleTimeout:  idleConnTimeout,
-		sockInfo:     sockFI,
-		tokenInfo:    tokenFI,
+		token:         token,
+		ln:            ln,
+		procs:         newProcManager(),
+		conns:         make(map[*conn]struct{}),
+		shutdown:      make(chan struct{}),
+		keepChildren:  keepChildren,
+		wlog:          wlog,
+		idleTimeout:   idleConnTimeout,
+		sockInfo:      sockFI,
+		tokenInfo:     tokenFI,
+		releaseRunDir: releaseRunDir,
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
@@ -936,6 +950,11 @@ func (s *server) closeAll(socket string) {
 	// same ownership guard: only if it is still the inode we published, so a successor's
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
 	removePipeNameFileIfOwned(socket, s.pipeInfo)
+	// Drop the run-dir lock: truncate the owner record and unlock daemon.lock,
+	// leaving the file in place (matching the reference). No-op when not held.
+	if s.releaseRunDir != nil {
+		s.releaseRunDir()
+	}
 	s.stopChildren()
 	s.procs.close() // end the prune sweep; idempotent
 	s.mu.Lock()
