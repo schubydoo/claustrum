@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // cliSessionKey gates superseding: a non-empty key needs stream-json mode AND a
@@ -16,6 +17,7 @@ func TestCliSessionKey(t *testing.T) {
 		{"session-id equals form", []string{"--input-format=stream-json", "--session-id=abc"}, "abc"},
 		{"session-id space form", []string{"--input-format=stream-json", "--session-id", "abc"}, "abc"},
 		{"output-format stream-json + resume", []string{"--output-format=stream-json", "--resume=r1"}, "r1"},
+		{"resume space form", []string{"--output-format=stream-json", "--resume", "r2"}, "r2"},
 		{"bare stream-json token", []string{"stream-json", "--session-id=xy"}, "xy"},
 		{"resume suppressed by fork-session", []string{"--input-format=stream-json", "--resume=r1", "--fork-session"}, ""},
 		{"session-id wins over fork-session", []string{"--input-format=stream-json", "--session-id=s1", "--fork-session"}, "s1"},
@@ -34,6 +36,32 @@ func TestCliSessionKey(t *testing.T) {
 				t.Errorf("cliSessionKey(%q) = %q, want %q", tc.args, got, tc.want)
 			}
 		})
+	}
+}
+
+// supersedeSession with an empty key is a no-op and must never evict a process.
+// Production only reaches supersedeSession for a non-empty session key (spawn gates
+// the call), so this exercises the defensive empty-key guard directly. The victim's
+// sessionKey is "" — the exact value that would match supersedeSession("") if the
+// guard were absent — yet it must survive.
+func TestSupersedeSessionEmptyKeyIsNoop(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.killAll)
+	c, _ := pipeConn(t)
+	cat, env := helperCommand(t, "cat")
+	p, err := m.spawn(c, "victim", cat, nil, "", env)
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	m.supersedeSession("", "other")
+	// A lost guard would collect the victim and SIGTERM it in a goroutine; cat ends
+	// promptly on SIGTERM, so poll long enough for that kill to surface.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if !p.isRunning() {
+			t.Fatal(`supersedeSession("") killed a process; the empty-key guard did not fire`)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
