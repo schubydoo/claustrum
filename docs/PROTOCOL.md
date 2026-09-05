@@ -745,6 +745,16 @@ id-less stream notifications, and **buffers** them for a later replay.
   process tree. It drops the subscribers first, so no stray frame arrives under the
   reused id. This is OS-level only and changes no wire byte. The reference leaves
   the old process running.
+- **Session superseding (`4534d86` parity).** A `process.spawn` whose `args` name a
+  stream-json CLI session — an `--input-format=stream-json` / `--output-format=stream-json`
+  arg (or a bare `stream-json` arg) plus a valid `--session-id`/`--resume` token, the
+  resume fallback suppressed by `--fork-session` — terminates any OTHER running process
+  of the SAME session id. The superseded process is killed via the SIGTERM-then-SIGKILL
+  path, and its exit frame reaches its client (the `killedBy:"client"` marker on that
+  frame ships in a separate slice). A spawn with no session key, or a different session
+  id, supersedes nothing. The eviction, the `client` kill reason, and the session-key
+  rules above are measured against the reference; claustrum also serializes concurrent
+  spawns of one session, matching an equivalent per-key lock seen in the reference.
 - **`wantPid` opt-in (CT-1, claustrum-only).** With `"wantPid":true` the reply gains
   two fields **after** `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
   `pid` is the child's OS pid. `startTime` is the **daemon's wall clock (epoch
