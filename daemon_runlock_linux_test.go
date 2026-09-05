@@ -81,3 +81,11 @@ func TestRealIsServeCmdlineLinux(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// TestRealIsServeCmdlineAbsentPidLinux covers the read-error arm: an absent pid has no
+// /proc/<pid>/cmdline, so the reader fails and the holder cannot be our serve process.
+func TestRealIsServeCmdlineAbsentPidLinux(t *testing.T) {
+	if realIsServeCmdline(1<<30, "/run/x/s.sock") {
+		t.Error("an absent pid whose cmdline cannot be read must not match")
+	}
+}

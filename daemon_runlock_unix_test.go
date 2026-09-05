@@ -142,6 +142,116 @@ func TestHolderSignalRefusal(t *testing.T) {
 			t.Errorf("expected no refusal for a valid sibling holder, got %q", reason)
 		}
 	})
+	t.Run("not our serve process", func(t *testing.T) {
+		if self == "" {
+			t.Skip("no /proc node identity on this platform")
+		}
+		// A live sibling that passes every earlier guard but whose command line is not
+		// our -serve process for this socket must be refused (the last guard).
+		prev := isServeCmdline
+		isServeCmdline = func(int, string) bool { return false }
+		defer func() { isServeCmdline = prev }()
+		r := base
+		r.Pid = os.Getppid()
+		if r.Pid < 2 || r.Pid == os.Getpid() {
+			t.Skip("no suitable sibling pid")
+		}
+		if holderSignalRefusal(r, sock) == "" {
+			t.Error("a holder whose cmdline is not our serve process must be refused")
+		}
+	})
+}
+
+// writeRecordFile stages an owner record into path via the production writer, so the
+// eviction tests read exactly the on-disk shape claimRunDir writes.
+func writeRecordFile(t *testing.T, path string, rec ownerRecord) {
+	t.Helper()
+	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
+	if err != nil {
+		t.Fatalf("open record file: %v", err)
+	}
+	defer func() { _ = syscall.Close(fd) }()
+	writeOwnerRecord(fd, rec)
+}
+
+func TestLockRunDirFlockError(t *testing.T) {
+	// A flock failure that is not EWOULDBLOCK (here EBADF from a closed fd) is fatal to
+	// the claim: lockRunDir logs and gives up without attempting eviction.
+	fd, err := syscall.Open(filepath.Join(shortTempDir(t), runDirLockName),
+		syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	_ = syscall.Close(fd) // the fd is now invalid; flock yields EBADF, not EWOULDBLOCK.
+	if lockRunDir(fd, "/nonexistent/daemon.lock", "/nonexistent/s.sock") {
+		t.Error("lockRunDir must fail when flock returns a non-EWOULDBLOCK error")
+	}
+}
+
+func TestEvictRunDirHolderUnusableRecord(t *testing.T) {
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, runDirLockName)
+	// An empty file parses to no usable owner record: eviction refuses rather than
+	// signalling an unknown pid.
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if evictRunDirHolder(path, filepath.Join(dir, "s.sock")) {
+		t.Error("eviction must refuse when the owner record is unusable")
+	}
+}
+
+func TestEvictRunDirHolderAbsentPid(t *testing.T) {
+	if nodeID() == "" {
+		t.Skip("needs a /proc machine identity (Linux)")
+	}
+	dir := shortTempDir(t)
+	path := filepath.Join(dir, runDirLockName)
+	// A record that passes every guard but names a pid that no longer exists: the
+	// SIGTERM attempt returns ESRCH, and evictRunDirHolder resolves that via holderGone
+	// as "the holder already exited", reporting a successful eviction.
+	writeRecordFile(t, path, ownerRecord{Pid: 1 << 30, Role: "serve", Node: nodeID()})
+	oldCmd := isServeCmdline
+	isServeCmdline = func(int, string) bool { return true }
+	t.Cleanup(func() { isServeCmdline = oldCmd })
+	if !evictRunDirHolder(path, filepath.Join(dir, "s.sock")) {
+		t.Error("an absent holder pid must resolve as already gone (eviction succeeds)")
+	}
+}
+
+func TestSignalHolderNonESRCHError(t *testing.T) {
+	// A kill error that is neither success nor ESRCH (here EINVAL from an out-of-range
+	// signal number) is logged and reported as "not delivered". The invalid signal is
+	// rejected by the kernel before delivery, so signalling our own pid is safe.
+	if signalHolder(os.Getpid(), syscall.Signal(0x3fffffff)) {
+		t.Error("signalHolder must report false when kill fails with a non-ESRCH error")
+	}
+}
+
+func TestWriteOwnerRecordTruncateError(t *testing.T) {
+	path := filepath.Join(shortTempDir(t), runDirLockName)
+	if err := os.WriteFile(path, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CLOEXEC, 0o600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	_ = syscall.Close(fd) // Ftruncate on the closed fd fails; the write must bail out.
+	writeOwnerRecord(fd, ownerRecord{Pid: 2, Role: "serve"})
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "stale" {
+		t.Errorf("file changed to %q; writeOwnerRecord must bail when truncate fails", b)
+	}
+}
+
+func TestReadOwnerRecordMissingFile(t *testing.T) {
+	if _, err := readOwnerRecord(filepath.Join(shortTempDir(t), "does-not-exist")); err == nil {
+		t.Error("readOwnerRecord must return the read error for a missing file")
+	}
 }
 
 func TestClaimRunDirHappyPath(t *testing.T) {
