@@ -382,18 +382,24 @@ surface and still prints the daemon's version.)
 | method | params | result |
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root"]}` (`git.worktree.external_root` is omitted on Windows — the capability is gated off there) |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root","server.instance_id"]}` (`git.worktree.external_root` is omitted on Windows; `instanceId`/`startedAt` are present on every OS) |
 | `server.shutdown` | — | `{"ok":true}` — the daemon replies, then stops and the connection closes (delivery races the teardown, so the reply is best-effort on the wire; see below) |
 
 - **`server.version` was removed in `7d193f89`** — it now answers
   `-32601 "Unknown method: server.version"` like any other unknown method.
-- **`features` array** (added `7c2f88d`) follows `methods` and advertises optional
-  extensions. `process.stdin.offset` (the resumable/idempotent stdin contract)
-  landed first; `7d193f89` added `git.status.baseRepo` and
-  `git.worktree.external_root`, in this order. On unix all three are present; **on
-  Windows `git.worktree.external_root` is omitted** — the reference gates the
-  external-worktree capability off on Windows (measured against `7d193f89`) and drops
-  the feature from its Windows capabilities frame, so claustrum matches.
+- **`instanceId` and `startedAt`** (added `4534d86`) sit between `methods` and
+  `features`. `instanceId` is a 32-hex string and `startedAt` is the daemon's boot
+  time in unix milliseconds. Both are present on every OS. claustrum generates
+  `instanceId` from 16 crypto/rand bytes at startup and stamps `startedAt` then,
+  echoing both on the capabilities reply for parity.
+- **`features` array** (added `7c2f88d`) follows `instanceId`/`startedAt` and
+  advertises optional extensions. `process.stdin.offset` (the resumable/idempotent
+  stdin contract) landed first; `7d193f89` added `git.status.baseRepo` and
+  `git.worktree.external_root`; `4534d86` appended `server.instance_id` (always
+  last, every OS). On unix `git.worktree.external_root` is present; **on Windows it
+  is omitted** — the reference gates the external-worktree capability off on Windows
+  (measured against `7d193f89`) and drops the feature from its Windows capabilities
+  frame, so claustrum matches.
 - **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
 
 ### files.* (param: `path`)

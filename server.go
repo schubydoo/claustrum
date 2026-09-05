@@ -59,6 +59,14 @@ type server struct {
 	ln    net.Listener
 	procs *procManager
 
+	// instanceID is a per-boot 32-hex identity and startedAt is the boot time in
+	// unix milliseconds. Both are stamped once at construction and echoed on the
+	// server.capabilities reply (instanceId / startedAt), matching the reference
+	// daemon since 4534d86, which emits both fields there. claustrum generates
+	// instanceID at startup and advertises both for parity.
+	instanceID string
+	startedAt  int64
+
 	mu           sync.Mutex
 	conns        map[*conn]struct{}
 	shutdown     chan struct{}
@@ -409,6 +417,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		idleTimeout:  idleConnTimeout,
 		sockInfo:     sockFI,
 		tokenInfo:    tokenFI,
+		instanceID:   newDaemonInstanceID(),
+		startedAt:    time.Now().UnixMilli(),
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
