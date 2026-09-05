@@ -38,11 +38,13 @@ func newRunningServer(t *testing.T) (*server, string) {
 		t.Fatalf("listen %s: %v", sock, err)
 	}
 	s := &server{
-		token:    testToken,
-		ln:       ln,
-		procs:    newTestProcManager(t),
-		conns:    make(map[*conn]struct{}),
-		shutdown: make(chan struct{}),
+		token:      testToken,
+		ln:         ln,
+		procs:      newTestProcManager(t),
+		conns:      make(map[*conn]struct{}),
+		shutdown:   make(chan struct{}),
+		instanceID: testInstanceID,
+		startedAt:  testStartedAt,
 	}
 	go func() {
 		for {

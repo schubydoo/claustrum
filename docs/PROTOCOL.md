@@ -152,7 +152,7 @@ The fixed name and location are the deployment contract, not configurable.
 // error
 {"jsonrpc":"2.0","id":<n>,"error":{"code":<c>,"message":"…"}}
 // id-less stream notification (server -> client)
-{"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>}
+{"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>,"signal":"<SIG>","killedBy":"<who>"}
 ```
 
 The reply's `id` is the request's id **decoded and re-encoded**. It is not the
@@ -383,20 +383,25 @@ surface and still prints the daemon's version.)
 | method | params | result |
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root"]}` (`git.worktree.external_root` is omitted on Windows — the capability is gated off there) |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree.external_root","server.instance_id"]}` (`git.worktree.external_root` is omitted on Windows; `git.worktree_create.timeoutMs`, `instanceId`/`startedAt` are present on every OS) |
 | `server.shutdown` | — | `{"ok":true}` — the daemon replies, then stops and the connection closes (delivery races the teardown, so the reply is best-effort on the wire; see below) |
 
 - **`server.version` was removed in `7d193f89`** — it now answers
   `-32601 "Unknown method: server.version"` like any other unknown method.
-- **`features` array** (added `7c2f88d`) follows `methods` and advertises optional
-  extensions. `process.stdin.offset` (the resumable/idempotent stdin contract)
-  landed first; `7d193f89` added `git.status.baseRepo` and
+- **`instanceId` and `startedAt`** (added `4534d86`) sit between `methods` and
+  `features`. `instanceId` is a 32-hex string and `startedAt` is the daemon's boot
+  time in unix milliseconds. Both are present on every OS. claustrum generates
+  `instanceId` from 16 crypto/rand bytes at startup and stamps `startedAt` then,
+  echoing both on the capabilities reply for parity.
+- **`features` array** (added `7c2f88d`) follows `instanceId`/`startedAt` and
+  advertises optional extensions. `process.stdin.offset` (the resumable/idempotent
+  stdin contract) landed first; `7d193f89` added `git.status.baseRepo` and
   `git.worktree.external_root`; `4534d86` inserted `git.worktree_create.timeoutMs`
-  before `git.worktree.external_root`. On unix all four are present; **on Windows
-  `git.worktree.external_root` is omitted** — the reference gates the external-worktree
-  capability off on Windows (measured against `7d193f89`) and drops the feature from
-  its Windows capabilities frame, so claustrum matches. `git.worktree_create.timeoutMs`
-  is present on every OS.
+  before `git.worktree.external_root` and appended `server.instance_id` (always
+  last, every OS). On unix `git.worktree.external_root` is present; **on Windows it
+  is omitted** — the reference gates the external-worktree capability off on Windows
+  (measured against `7d193f89`) and drops the feature from its Windows capabilities
+  frame, so claustrum matches. `git.worktree_create.timeoutMs` is present on every OS.
 - **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
 
 ### files.* (param: `path`)
@@ -869,12 +874,26 @@ reports the outcome as a *result*. An unknown id is not an error:
 {"type":"stream","processId":"<id>","stream":"stdout","seq":1,"data":"<base64>"}
 {"type":"stream","processId":"<id>","stream":"stderr","seq":2,"data":"<base64>"}
 {"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":0}
+{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":-1,"signal":"SIGTERM","killedBy":"client"}
 ```
 
 - `seq` is **per-process**. It starts at 1 and is monotonic across
   stdout/stderr/exit.
 - `data` is base64 for stdout/stderr. The `exit` frame carries `exitCode` and no
   `data`. A signal-terminated child reports `exitCode: -1`, not `128+signo`.
+- **`signal` and `killedBy`** (added `4534d86`) appear on the `exit` frame only,
+  both after `exitCode` and both omitempty — a normal exit stays byte-identical.
+  `signal` is the SIG-prefixed name of the terminating signal (`SIGTERM`,
+  `SIGKILL`), read from the wait status; it is omitted on a normal exit and always
+  on Windows, which has no signal on the wait path (measured on a Windows VM: the
+  reference omits `signal` and still emits `killedBy` there). `killedBy` names who
+  asked the daemon to kill the process: `client` for `process.kill` /
+  `process.killAndWait`, `shutdown` for the shutdown/`killAll` sweep. `killedBy` is
+  emitted on every OS. The `client` values and the `SIGTERM`/`SIGKILL` names are
+  live-measured (the other mapped signal names derive from the same wait-status
+  path and are not individually measured against the reference); the `shutdown`
+  value is read from the reference by static analysis only, because the shutdown
+  exit frame races connection teardown and is not client-observable.
 - The `exit` frame waits at most **5 seconds** after the process exits for
   stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
   frame anyway. This matters when the command leaves a **grandchild that holds the
