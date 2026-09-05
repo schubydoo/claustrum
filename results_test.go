@@ -18,6 +18,9 @@ func TestResultMarshalingIsByteExact(t *testing.T) {
 		{"pong", pongResult{Pong: true}, `{"pong":true}`},
 		{"capabilities", capabilitiesResult{Version: "v1", Methods: []string{"server.ping"}, Features: []string{"process.stdin.offset"}},
 			`{"version":"v1","methods":["server.ping"],"features":["process.stdin.offset"]}`},
+		// 4534d86: instanceId + startedAt sit between methods and features.
+		{"capabilities full", capabilitiesResult{Version: "v1", Methods: []string{"server.ping"}, InstanceID: "0123456789abcdef0123456789abcdef", StartedAt: 1700000000000, Features: []string{"process.stdin.offset", "server.instance_id"}},
+			`{"version":"v1","methods":["server.ping"],"instanceId":"0123456789abcdef0123456789abcdef","startedAt":1700000000000,"features":["process.stdin.offset","server.instance_id"]}`},
 
 		{"stat zero", statResult{}, `{"exists":false,"isDir":false,"size":0,"mode":""}`},
 		{"stat full", statResult{Exists: true, IsDir: true, Size: 42, Mode: "drwxr-xr-x"},
