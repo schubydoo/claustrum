@@ -23,6 +23,19 @@ type streamFrame struct {
 	Seq       uint64 `json:"seq"`
 	Data      string `json:"data,omitempty"`
 	ExitCode  *int   `json:"exitCode,omitempty"`
+	// Signal and KilledBy were added by the reference daemon in 4534d86 and appear
+	// on an exit frame only. Signal is the SIG-prefixed name of the terminating
+	// signal (omitted on a normal exit and always on Windows, which has no signal
+	// on the wait path). KilledBy names who requested the kill: "client" for
+	// process.kill / process.killAndWait, "shutdown" for the shutdown/killAll
+	// sweep. Both omitempty, so a normal exit stays byte-identical to the pre-4534d86
+	// frame. Provenance: the "client" values and the SIGTERM/SIGKILL names are
+	// live-measured against 4534d86 (other mapped signal names are not individually
+	// measured), and the Windows signal-omission is VM-measured; the "shutdown"
+	// value is from static analysis only (the shutdown exit frame races connection
+	// teardown and is not client-observable).
+	Signal   string `json:"signal,omitempty"`
+	KilledBy string `json:"killedBy,omitempty"`
 
 	// lineBytes is the length of this frame AS SERIALIZED, including the
 	// trailing newline — the unit the replay buffer accounts in. Unexported, so
@@ -126,6 +139,15 @@ type managedProc struct {
 	// rather than the reap — the two are up to exitDrainGrace apart. Zero while
 	// the process is alive. Read only by pruneExited, under p.mu like running.
 	exitedAt time.Time
+	// killedBy records who asked the daemon to kill this process ("client" for
+	// process.kill / process.killAndWait, "shutdown" for the killAll sweep). It is
+	// stamped at the kill site (noteKilledBy) and read once in waitReapAndDrain to
+	// populate the exit frame's killedBy field (4534d86 parity). Empty when the
+	// process exited on its own or was signalled from outside the daemon, with no
+	// daemon-initiated kill in flight — the shutdown sweep (killAll) stamps every
+	// proc in the map, so a process exiting concurrently with shutdown can still
+	// report "shutdown". Read and written under p.mu.
+	killedBy string
 	stdin    io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
 	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
@@ -577,6 +599,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.mu.Lock()
 	p.running = false
 	p.exitedAt = time.Now() // starts the procPruneAge clock
+	killedBy := p.killedBy
 	p.mu.Unlock()
 	// Stop the stdin writer and wake any producer blocked on a full queue; the
 	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
@@ -589,7 +612,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.group.close()
 	logInfof("[process.Manager] Process %s exited with code %d", p.id, code)
 	met.processExits.Add(1)
-	p.emit(streamFrame{Stream: "exit", ExitCode: &code})
+	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: exitSignalName(err), KilledBy: killedBy})
 	// Signal any killAndWait waiter now the child is fully reaped.
 	close(p.done)
 }
@@ -747,11 +770,23 @@ func (p *managedProc) stdinWriter() {
 // can be recycled, so a late negative-pid signal could hit an unrelated
 // process group. (Windows is immune — the job handle pins identity.) OS-level
 // hardening only; the wire reply does not depend on the signal side effect.
+// noteKilledBy records the reason this process is being killed, for the exit
+// frame's killedBy field. The first reason wins: if a client kill races the
+// shutdown sweep, the client's "client" is not overwritten by "shutdown".
+func (p *managedProc) noteKilledBy(reason string) {
+	p.mu.Lock()
+	if p.killedBy == "" {
+		p.killedBy = reason
+	}
+	p.mu.Unlock()
+}
+
 func (m *procManager) kill(id, signal string) {
 	p := m.get(id)
 	if p == nil {
 		return
 	}
+	p.noteKilledBy("client")
 	p.signalIfLive(signal)
 }
 
@@ -903,6 +938,7 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if !p.isRunning() {
 		return true, true, true, false
 	}
+	p.noteKilledBy("client")
 	p.signalIfLive(signal)
 	select {
 	case <-p.done:
@@ -1031,6 +1067,7 @@ func (m *procManager) killAll() {
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
 		// Skip exited children — their pgid may already be recycled (see kill).
+		p.noteKilledBy("shutdown")
 		p.signalIfLive("KILL")
 	}
 }
