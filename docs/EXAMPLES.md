@@ -77,7 +77,7 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"process.spawn\",\"params\":{\"i
      {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"process.stdin\",\"params\":{\"id\":\"cat1\",\"data\":\"$DATA\"}},
      {\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"process.kill\",\"params\":{\"id\":\"cat1\",\"signal\":\"SIGTERM\"}}]"
 # the stdin reply is {"id":2,"result":{"success":true,"applied":5}} (5 = bytes of "ping\n");
-# stdout frame decodes to "ping\n"; exit frame has exitCode -1 (signalled)
+# stdout frame decodes to "ping\n"; exit frame has exitCode -1, signal "SIGTERM", killedBy "client"
 ```
 
 `process.stdin` also accepts an `offset`, the byte position at which the data

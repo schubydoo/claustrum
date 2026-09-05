@@ -152,7 +152,7 @@ The fixed name and location are the deployment contract, not configurable.
 // error
 {"jsonrpc":"2.0","id":<n>,"error":{"code":<c>,"message":"…"}}
 // id-less stream notification (server -> client)
-{"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>}
+{"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>,"signal":"<SIG>","killedBy":"<who>"}
 ```
 
 The reply's `id` is the request's id **decoded and re-encoded**. It is not the
@@ -860,12 +860,26 @@ reports the outcome as a *result*. An unknown id is not an error:
 {"type":"stream","processId":"<id>","stream":"stdout","seq":1,"data":"<base64>"}
 {"type":"stream","processId":"<id>","stream":"stderr","seq":2,"data":"<base64>"}
 {"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":0}
+{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":-1,"signal":"SIGTERM","killedBy":"client"}
 ```
 
 - `seq` is **per-process**. It starts at 1 and is monotonic across
   stdout/stderr/exit.
 - `data` is base64 for stdout/stderr. The `exit` frame carries `exitCode` and no
   `data`. A signal-terminated child reports `exitCode: -1`, not `128+signo`.
+- **`signal` and `killedBy`** (added `4534d86`) appear on the `exit` frame only,
+  both after `exitCode` and both omitempty — a normal exit stays byte-identical.
+  `signal` is the SIG-prefixed name of the terminating signal (`SIGTERM`,
+  `SIGKILL`), read from the wait status; it is omitted on a normal exit and always
+  on Windows, which has no signal on the wait path (measured on a Windows VM: the
+  reference omits `signal` and still emits `killedBy` there). `killedBy` names who
+  asked the daemon to kill the process: `client` for `process.kill` /
+  `process.killAndWait`, `shutdown` for the shutdown/`killAll` sweep. `killedBy` is
+  emitted on every OS. The `client` values and the `SIGTERM`/`SIGKILL` names are
+  live-measured (the other mapped signal names derive from the same wait-status
+  path and are not individually measured against the reference); the `shutdown`
+  value is read from the reference by static analysis only, because the shutdown
+  exit frame races connection teardown and is not client-observable.
 - The `exit` frame waits at most **5 seconds** after the process exits for
   stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
   frame anyway. This matters when the command leaves a **grandchild that holds the

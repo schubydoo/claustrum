@@ -139,7 +139,36 @@ func TestSocketProcessSpawnStreamsStdout(t *testing.T) {
 	if exit.ExitCode == nil || *exit.ExitCode != 0 {
 		t.Errorf("exit code = %v, want 0", exit.ExitCode)
 	}
+	// A normal exit carries neither signal nor killedBy — the frame stays
+	// byte-identical to the pre-4534d86 shape.
+	if exit.Signal != "" || exit.KilledBy != "" {
+		t.Errorf("clean exit carried signal=%q killedBy=%q, want both empty", exit.Signal, exit.KilledBy)
+	}
 	assertSeqMonotonic(t, frames)
+}
+
+// A process killed via process.kill carries the terminating signal and killedBy
+// on its exit frame (4534d86). killedBy is emitted on every OS; signal is derived
+// from the wait status and is unix-only (Windows has no signal on that path).
+func TestSocketProcessKillExitFrame(t *testing.T) {
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	cl.send(spawnReq(t, 1, "KB", "cat")) // blocks on stdin until killed
+	cl.waitResponses(1)
+
+	cl.send(authed(`{"jsonrpc":"2.0","id":2,"method":"process.kill","params":{"id":"KB","signal":"SIGTERM"}}`))
+	exit := lastExit(t, cl.waitExit("KB"))
+
+	if exit.KilledBy != "client" {
+		t.Errorf("killedBy = %q, want %q", exit.KilledBy, "client")
+	}
+	if runtime.GOOS == "windows" {
+		if exit.Signal != "" {
+			t.Errorf("signal = %q, want empty on Windows", exit.Signal)
+		}
+	} else if exit.Signal != "SIGTERM" {
+		t.Errorf("signal = %q, want %q", exit.Signal, "SIGTERM")
+	}
 }
 
 func TestSocketProcessStderrAndNonZeroExit(t *testing.T) {
