@@ -141,12 +141,16 @@ type managedProc struct {
 	exitedAt time.Time
 	// killedBy records who asked the daemon to kill this process ("client" for
 	// process.kill / process.killAndWait, "shutdown" for the killAll sweep). It is
-	// stamped at the kill site (noteKilledBy) and read once in waitReapAndDrain to
-	// populate the exit frame's killedBy field (4534d86 parity). Empty when the
-	// process exited on its own or was signalled from outside the daemon, with no
-	// daemon-initiated kill in flight — the shutdown sweep (killAll) stamps every
-	// proc in the map, so a process exiting concurrently with shutdown can still
-	// report "shutdown". Read and written under p.mu.
+	// stamped by signalIfLive, and only when the signal is actually delivered to a
+	// still-live process, then read once in waitReapAndDrain to populate the exit
+	// frame's killedBy field. Empty when the process exited on its own, was
+	// signalled from outside the daemon, or was already reaped when the kill
+	// arrived — a late kill inside the exit-drain window changed nothing, so it
+	// claims nothing (measured against 4534d86: a natural exit killed inside the
+	// drain window carries no killedBy on the reference). The first reason wins, so
+	// a client kill racing the shutdown sweep stays "client". Provenance for the
+	// value set is split at the KilledBy field comment above: "client" is
+	// live-measured, "shutdown" is static-analysis-only. Read and written under p.mu.
 	killedBy string
 	stdin    io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
@@ -316,10 +320,20 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 }
 
 // signalIfLive delivers signame to the process group unless the process has
-// already been reaped. p.mu is held across BOTH the check and the delivery: an
-// isReaped() that returns before the signal leaves a gap for the exit goroutine
-// to reap in between, which is the very race the check exists to prevent. Every
-// signal site goes through here for that reason.
+// already been reaped, and — only when it actually delivers — records who asked
+// for the kill in p.killedBy. Coupling the stamp to the delivery under one lock
+// is deliberate: a kill that lands on an already-reaped process changed nothing,
+// so it must not claim the exit on the wire. The reference emits no killedBy for
+// a process that exited on its own before the signal could reach it (measured
+// against 4534d86: a natural exit killed inside the drain window carries no
+// killedBy). Pass killedBy "" to signal without claiming attribution — the
+// id-reuse eviction, whose exit frame reaches no client. The first reason wins,
+// so a client kill racing the shutdown sweep stays "client".
+//
+// p.mu is held across the check, the stamp and the delivery: an isReaped() that
+// returns before the signal leaves a gap for the exit goroutine to reap in
+// between, which is the very race the check exists to prevent. Every signal site
+// goes through here for that reason.
 //
 // One window remains and cannot be closed at this layer: the kernel frees the
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
@@ -332,11 +346,14 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 // back for re-measurement it can never satisfy. What is defensible: the guard
 // can only ever suppress a signal, so claustrum's behaviour here is at most
 // narrower than the reference's, never wider.
-func (p *managedProc) signalIfLive(signame string) {
+func (p *managedProc) signalIfLive(signame, killedBy string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return
+	}
+	if killedBy != "" && p.killedBy == "" {
+		p.killedBy = killedBy
 	}
 	signalGroup(p.group, p.cmd.Process, signame)
 }
@@ -537,7 +554,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		old.subs = map[*conn]struct{}{}
 		old.mu.Unlock()
 		// Skip exited children — their pgid may already be recycled (see kill).
-		old.signalIfLive("KILL")
+		// No killedBy: this eviction's exit frame reaches no client (subs cleared).
+		old.signalIfLive("KILL", "")
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
@@ -770,24 +788,12 @@ func (p *managedProc) stdinWriter() {
 // can be recycled, so a late negative-pid signal could hit an unrelated
 // process group. (Windows is immune — the job handle pins identity.) OS-level
 // hardening only; the wire reply does not depend on the signal side effect.
-// noteKilledBy records the reason this process is being killed, for the exit
-// frame's killedBy field. The first reason wins: if a client kill races the
-// shutdown sweep, the client's "client" is not overwritten by "shutdown".
-func (p *managedProc) noteKilledBy(reason string) {
-	p.mu.Lock()
-	if p.killedBy == "" {
-		p.killedBy = reason
-	}
-	p.mu.Unlock()
-}
-
 func (m *procManager) kill(id, signal string) {
 	p := m.get(id)
 	if p == nil {
 		return
 	}
-	p.noteKilledBy("client")
-	p.signalIfLive(signal)
+	p.signalIfLive(signal, "client")
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
@@ -938,8 +944,7 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if !p.isRunning() {
 		return true, true, true, false
 	}
-	p.noteKilledBy("client")
-	p.signalIfLive(signal)
+	p.signalIfLive(signal, "client")
 	select {
 	case <-p.done:
 		if escalate {
@@ -1067,8 +1072,7 @@ func (m *procManager) killAll() {
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
 		// Skip exited children — their pgid may already be recycled (see kill).
-		p.noteKilledBy("shutdown")
-		p.signalIfLive("KILL")
+		p.signalIfLive("KILL", "shutdown")
 	}
 }
 
