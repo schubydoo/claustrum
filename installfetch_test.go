@@ -160,3 +160,41 @@ func TestFetchToFileRecordsStatsAndSurvivesSlowProgress(t *testing.T) {
 		t.Fatalf("fetch stats = %+v, want bytes=10", lastInstallFetch)
 	}
 }
+
+// TestWatchedBodyTickerEmitsPeriodically holds the body open past several ticker
+// intervals so the periodic `case <-t.C` branch fires: with a body that streams no
+// bytes, only the ticker produces __INSTALL_PROGRESS__ lines, so more than the one
+// leading bytes:0 line proves the tick branch (not just the leading emit) ran.
+func TestWatchedBodyTickerEmitsPeriodically(t *testing.T) {
+	oldProg := installProgressInterval
+	installProgressInterval = 5 * time.Millisecond
+	oldIdle := installIdleTimeout
+	installIdleTimeout = time.Hour
+	t.Cleanup(func() { installProgressInterval = oldProg; installIdleTimeout = oldIdle })
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	// Drain the read end CONCURRENTLY so a full pipe buffer can never wedge the ticker
+	// (and thus Close's join). Collect the bytes after w closes.
+	captured := make(chan string, 1)
+	go func() { b, _ := io.ReadAll(r); captured <- string(b) }()
+
+	// A body that never yields a byte: the read blocks until wb.Close closes it, so
+	// every progress line on stdout comes from the ticker, not from a read.
+	pr, _ := io.Pipe()
+	wb := newWatchedBody(pr, 0, time.Now())
+	time.Sleep(60 * time.Millisecond) // ~12 intervals: at least one <-t.C fires
+	_ = wb.Close()                    // joins the ticker; no os.Stdout write can follow
+	_ = w.Close()
+	os.Stdout = old
+
+	out := <-captured
+	// The leading emit is one line; any additional line can only be a ticker tick.
+	if n := strings.Count(out, "__INSTALL_PROGRESS__"); n < 2 {
+		t.Errorf("want >= 2 __INSTALL_PROGRESS__ lines (leading + at least one tick), got %d:\n%s", n, out)
+	}
+}
