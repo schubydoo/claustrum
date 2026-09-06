@@ -157,11 +157,13 @@ func gitCtx() (context.Context, context.CancelFunc) {
 // Combined, deliberately — do NOT "fix" this to Output() to match gitStdoutErr
 // below. git.worktree_create puts this string ON THE WIRE on failure
 // ("git worktree add failed: " + out), and `git worktree add` writes both its
-// progress and its fatal to stderr while leaving stdout empty. Measured against
-// 5db5e4a with a branch name that already exists:
+// progress and its fatal to stderr while leaving stdout empty. Measured with a
+// branch name that already exists (the wire string is single-line since 4534d86 —
+// boundedStderrHead joins git's two stderr lines with a space; 5db5e4a kept the
+// newline):
 //
-//	reference : "git worktree add failed: Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"
-//	stdout-only: "git worktree add failed: "
+//	reference (4534d86) : "git worktree add failed: Preparing worktree (new branch 'dup') fatal: a branch named 'dup' already exists"
+//	stdout-only         : "git worktree add failed: "
 //
 // This helper's remaining callers fall into four groups, and only the first two
 // are safe by argument:
@@ -845,6 +847,15 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 				ErrorCode: "timeout",
 			})
 		}
+		// Roll back the leaf claustrum pre-created (mkdirWorktreeLeaf) so a failed add
+		// leaves no partial worktree behind, matching 4534d86 (scratch/probe/wtfail:
+		// the reference removes the leaf, keeps any pre-existing branch, and a retry at
+		// the same path then succeeds). branch is "" here: the realistic add failures
+		// (branch already exists, ref lock) create no new branch, and the reference
+		// does NOT delete the branch — deleting it would corrupt the worktree already
+		// using it. undoCreatedWorktree still applies the always-on home guard and the
+		// leaf-identity re-check before the RemoveAll (D2).
+		undoCreatedWorktree(repo, p.WorktreePath, "", checkpoint)
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     "git worktree add failed: " + boundedStderrHead(out),

@@ -1253,6 +1253,7 @@ func TestProcessReattachBindParamsError(t *testing.T) {
 // git.worktree_create: trying to create a worktree with a branch that already
 // exists causes git worktree add to fail → worktree_add_failed error code.
 func TestGitWorktreeCreateFailed(t *testing.T) {
+	requireGit(t)
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "main", "repo")
@@ -1262,12 +1263,26 @@ func TestGitWorktreeCreateFailed(t *testing.T) {
 	runGit(t, repo, "add", "f")
 	runGit(t, repo, "commit", "-m", "init")
 	s := newTestServer(t)
+	wt := filepath.Join(repo, ".claude", "worktrees", "wt")
 	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
-		"baseRepo": repo, "branchName": "main", "worktreePath": filepath.Join(repo, ".claude", "worktrees", "wt"),
+		"baseRepo": repo, "branchName": "main", "worktreePath": wt,
 	}))
 	if !strings.Contains(got, "worktree_add_failed") {
 		t.Errorf("worktree_create with existing branch = %s, want worktree_add_failed", got)
 	}
+	// 4534d86 reports the git failure on a single line — it joins git's two stderr
+	// lines with a space, so the wire message carries no newline. (scratch/probe/wtfail)
+	if strings.Contains(got, `\n`) {
+		t.Errorf("worktree_add_failed error carries a newline, want single-line: %s", got)
+	}
+	// 4534d86 rolls back the leaf claustrum pre-created, so a failed add leaves no
+	// partial worktree directory behind (and a retry at the same path then works).
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Errorf("leaf %s survived a failed add (stat err=%v), want rolled back", wt, err)
+	}
+	// The failed add must NOT delete the pre-existing branch it collided with —
+	// runGit t.Fatal's if refs/heads/main is gone.
+	runGit(t, repo, "rev-parse", "--verify", "refs/heads/main")
 }
 
 // git.worktree_remove: a JSON type mismatch in params hits the bindParams error path.

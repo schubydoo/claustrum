@@ -272,7 +272,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment; the spelling refusal is Windows-only and precedes containment) |
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"` — a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
-| git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"` |
+| git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"` — git's combined output on one line (internal newlines joined with a space, capped at 512 bytes). The pre-created leaf directory is rolled back on failure; a pre-existing branch is not deleted (`4534d86`) |
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <git error> / after the checkout finished})` | in `error`, `errorCode:"timeout"` — caller-supplied `timeoutMs` (`4534d86`); absent/0 arms no deadline |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error` (no `errorCode`; `7d193f89` containment; the spelling refusal is Windows-only and precedes containment) |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error` (no `errorCode`) — gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
@@ -685,8 +685,10 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   managed worktrees directory …",errorCode:"nested_base_repo"}`.
 - Other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
   The tail is git's **combined** output, because the add writes its fatal to stderr
-  and leaves stdout empty. For example: `"git worktree add failed: Preparing
-  worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"`.
+  and leaves stdout empty. Since `4534d86` it is reported on a single line — git's
+  stderr lines joined with a space (capped at 512 bytes) — and the pre-created leaf
+  directory is rolled back. For example: `"git worktree add failed: Preparing
+  worktree (new branch 'dup') fatal: a branch named 'dup' already exists"`.
 - **`timeoutMs`** (caller-supplied, added `4534d86`) bounds the add + checkout with a
   per-request deadline in milliseconds. Absent or `0` arms no deadline, so the reply
   is byte-identical to the default. A fired deadline answers
