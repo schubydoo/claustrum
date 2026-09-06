@@ -977,6 +977,16 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if p == nil {
 		return false, false, false, false
 	}
+	return m.killAndWaitProc(p, signal, grace, escalate)
+}
+
+// killAndWaitProc is killAndWait targeting a specific process IDENTITY rather than
+// re-resolving a client-visible id. supersedeSession captures the victim
+// *managedProc under the same lock as its scan and kills THAT process, so a
+// concurrent spawn that reuses the id (which replaces m.procs[id], and via the
+// reused-id path in spawn already tears the original down) cannot redirect the kill
+// onto the innocent replacement. Do NOT re-resolve p by id here.
+func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	if !p.isRunning() {
 		return true, true, true, false
 	}

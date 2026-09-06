@@ -967,6 +967,53 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	}
 }
 
+// TestKillAndWaitProcTargetsCapturedIdentity guards the supersede reused-id race:
+// supersedeSession captures the victim *managedProc, and killAndWaitProc signals
+// THAT process, not whatever the client-visible id resolves to at kill time. A
+// concurrent spawn that reuses the id replaces m.procs[id] (and the reused-id path
+// in spawn already tears the original down), so re-resolving the id would terminate
+// the innocent replacement. The mutant (re-resolve p by id inside killAndWaitProc)
+// signals the replacement and fails this test.
+func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+	var mu sync.Mutex
+	signaledPids := map[int]bool{}
+	signalGroup = func(_ *procGroup, proc *os.Process, _ string) {
+		mu.Lock()
+		signaledPids[proc.Pid] = true
+		mu.Unlock()
+	}
+
+	m := newTestProcManager(t)
+	victim := &managedProc{
+		id: "X", sessionKey: "s", running: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 111}}, done: make(chan struct{}),
+	}
+	close(victim.done) // die promptly on the graceful-signal path
+	m.procs["X"] = victim
+
+	// A concurrent spawn reuses id "X" for an unrelated process after the scan.
+	replacement := &managedProc{
+		id: "X", sessionKey: "other", running: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 222}}, done: make(chan struct{}),
+	}
+	m.mu.Lock()
+	m.procs["X"] = replacement
+	m.mu.Unlock()
+
+	m.killAndWaitProc(victim, "SIGTERM", 20*time.Millisecond, true)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !signaledPids[111] {
+		t.Error("captured victim (pid 111) was not signaled")
+	}
+	if signaledPids[222] {
+		t.Error("reused-id replacement (pid 222) was signaled — the kill redirected to the wrong process")
+	}
+}
+
 // TestSignalIsAtomicWithTheReapedCheck pins that the check and the delivery
 // happen under one acquisition of p.mu.
 //

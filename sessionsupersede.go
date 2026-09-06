@@ -110,21 +110,26 @@ func (m *procManager) supersedeSession(key, newID string) {
 	if key == "" {
 		return
 	}
+	// Capture the victim PROCESSES, not their client-visible ids. A concurrent
+	// spawn that reuses a victim's id replaces m.procs[id] (and the reused-id path
+	// in spawn already tears the original down), so re-resolving the id in the kill
+	// goroutine could terminate the innocent replacement instead. killAndWaitProc
+	// signals the captured identity directly.
 	m.mu.Lock()
-	var victims []string
+	var victims []*managedProc
 	for id, p := range m.procs {
 		if id != newID && p.sessionKey == key && p.isRunning() {
-			victims = append(victims, id)
+			victims = append(victims, p)
 		}
 	}
 	m.mu.Unlock()
 
 	grace := time.Duration(defaultKillWaitMs) * time.Millisecond
-	for _, vid := range victims {
-		go func(vid string) {
-			_, died, alreadyExited, escalated := m.killAndWait(vid, "SIGTERM", grace, true)
+	for _, vp := range victims {
+		go func(vp *managedProc) {
+			_, died, alreadyExited, escalated := m.killAndWaitProc(vp, "SIGTERM", grace, true)
 			logInfof("[process.Manager] process %s supersedes %s for session %s: died=%v escalated=%v alreadyExited=%v",
-				newID, vid, key, died, escalated, alreadyExited)
-		}(vid)
+				newID, vp.id, key, died, escalated, alreadyExited)
+		}(vp)
 	}
 }
