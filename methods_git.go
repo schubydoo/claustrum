@@ -499,8 +499,10 @@ func gitStatus(req *request) response {
 	// individually (`?? sub/u.txt`) rather than as the directory (`?? sub/`).
 	// (The reference builds this in an isolated gitdir to avoid refreshing the real
 	// index; that isolation is output-neutral, so status runs against the worktree
-	// here.) A path with no work tree still exits 128 → the reference propagates
-	// the bare Go error string, not git's "fatal: …" output.
+	// here — and GIT_OPTIONAL_LOCKS=0 in hardenedGitEnv keeps this status from
+	// refreshing/rewriting the worktree index anyway, so the index is left untouched
+	// like the reference's.) A path with no work tree still exits 128 → the reference
+	// propagates the bare Go error string, not git's "fatal: …" output.
 	//
 	// --attr-source=<empty-tree> makes git ignore the repo's in-repo .gitattributes,
 	// matching 4534d86: without it a .gitattributes clean filter runs during status
