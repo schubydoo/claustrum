@@ -231,6 +231,7 @@ contract.
 | `-32602` | invalid params (see per-method messages) |
 | `-32603` | internal error (e.g. `open <path>: no such file or directory`); also a **recovered handler panic** → `recovered panic: <v>` |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` — `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
+| `-32002` | `stdin backpressure: queue full` — `process.stdin` when the per-process async stdin queue is already full (16 MiB). The write is rejected, not blocked. |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 
 ### Error-string catalogue
@@ -283,6 +284,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | (checked in that order after decode) |
 | process.stdin | `stdin offset gap: offset ahead of applied bytes` | -32003 |
+| process.stdin | `stdin backpressure: queue full` | -32002 (queue full, ~16 MiB) |
 | process.killAndWait / process.reattach | `Process ID is required` / `Invalid params` | |
 
 `-install` reports failures inside the `__INSTALL_RESULT__` facts line as
@@ -866,6 +868,17 @@ id-less stream notifications, and **buffers** them for a later replay.
   `applied` counts base64-**decoded** bytes, and it is never `omitempty` (the daemon
   emits it at 0). The daemon drops `duplicate` when it is false. A legacy client
   that never sends `offset` still works: it always appends.
+- **Backpressure — `-32002`.** The per-process async stdin queue is bounded at
+  16 MiB. When the queue is non-empty and this write would push it past the cap
+  (a producer outrunning a slow or non-reading child), `process.stdin` returns
+  `-32002 stdin backpressure: queue full` and enqueues nothing (`applied` does
+  not change — resend once the child drains). The request is rejected, never
+  blocked. Parity with `4534d86`: the reference emits this frame at the same
+  boundary (measured, probe `scratch/probe/stdincap`).
+  A lone write larger than the whole cap on an empty queue is exempt: claustrum
+  enqueues it rather than rejecting. This is an internal edge, not a parity
+  claim — a `data` field that large exceeds the 1 MiB request-line cap and closes
+  the connection first, so no wire client can reach it on either daemon.
 
 #### process.kill
 `{id[,signal]}` → `{"success":true}`

@@ -286,3 +286,48 @@ func TestSocketStdinOffsetUint64Edges(t *testing.T) {
 	}
 	assertGolden(t, "socket_stdin_uint64_edges.golden.json", encodeGolden(t, got))
 }
+
+// TestSocketStdinBackpressureError pins the -32002 wire contract: once the async
+// stdin queue is full, process.stdin returns {code:-32002,"stdin backpressure:
+// queue full"} instead of blocking the request. Measured against 4534d86 (probe
+// scratch/probe/stdincap): the reference rejects once the queue exceeds 16 MiB.
+// Here the cap is shrunk so the queue fills without moving megabytes.
+func TestSocketStdinBackpressureError(t *testing.T) {
+	old := stdinQueueCap
+	stdinQueueCap = 8
+	defer func() { stdinQueueCap = old }()
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	// sleep never reads its stdin, so the writer parks on the child's pipe and the
+	// queue backs up behind it.
+	cl.call(spawnReqArgs(t, 1, "BP", "sleep", "30"))
+
+	stdin := func(id, n int) *rpcEnvelope {
+		data := base64.StdEncoding.EncodeToString(make([]byte, n))
+		raw := cl.call(authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(id) +
+			`,"method":"process.stdin","params":{"id":"BP","data":"` + data + `"}}`))
+		var sr stdinResult
+		return decodeReply(t, raw, &sr)
+	}
+
+	// One chunk larger than the OS pipe buffer parks the writer inside the pipe
+	// write; then small writes accumulate in the queue. One must be rejected with
+	// -32002, and no call blocks (the fix returns immediately on a full queue).
+	stdin(2, 256*1024)
+	gotCode, gotMsg, found := 0, "", false
+	for i := 0; i < 200 && !found; i++ {
+		if env := stdin(100+i, 8); env.Error != nil {
+			gotCode, gotMsg, found = env.Error.Code, env.Error.Message, true
+		}
+	}
+	if !found {
+		t.Fatal("process.stdin never returned a backpressure error under a full queue")
+	}
+	if gotCode != codeStdinBackpressure {
+		t.Errorf("backpressure code = %d, want %d", gotCode, codeStdinBackpressure)
+	}
+	if gotMsg != "stdin backpressure: queue full" {
+		t.Errorf("backpressure message = %q, want %q", gotMsg, "stdin backpressure: queue full")
+	}
+}
