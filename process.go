@@ -119,13 +119,18 @@ type managedProc struct {
 	// derivation, so an equality check would spuriously fail.
 	pid       int
 	startTime float64
-	mu        sync.Mutex
-	seq       uint64
-	buffer    []streamFrame
-	bufBytes  int64 // sum of f.lineBytes (serialized frame + newline) in buffer
-	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
-	subs      map[*conn]struct{}
-	running   bool
+	// sessionKey is the CLI session id this process belongs to (cliSessionKey of its
+	// argv), or "" for a non-session spawn. Set once at spawn and never mutated, so
+	// it is safe to read without p.mu. supersedeSession keys on it to terminate a
+	// prior process of the same session when a new one spawns (4534d86 parity).
+	sessionKey string
+	mu         sync.Mutex
+	seq        uint64
+	buffer     []streamFrame
+	bufBytes   int64 // sum of f.lineBytes (serialized frame + newline) in buffer
+	bufCap     int64 // per-instance override; 0 means use defaultBufferCap
+	subs       map[*conn]struct{}
+	running    bool
 	// reaped is set as soon as cmd.Wait returns — the moment the kernel frees the
 	// pid, and with it the process GROUP id once the last member goes. That is up
 	// to exitDrainGrace before running clears, which is why the two fields exist
@@ -196,6 +201,20 @@ type procManager struct {
 	// goroutine.
 	pruneAge      time.Duration
 	pruneInterval time.Duration
+
+	// spawnLocks holds a per-session-key mutex so concurrent spawns of the SAME CLI
+	// session serialize (a new session process must fully register before the next
+	// same-key spawn supersedes it). Ref-counted and dropped at zero, so the map does
+	// not grow unbounded. Guarded by spawnMu. (4534d86 lockSessionSpawn.)
+	spawnMu    sync.Mutex
+	spawnLocks map[string]*sessionSpawnLock
+}
+
+// sessionSpawnLock is one per-session-key mutex plus a reference count, so the
+// entry can be removed from procManager.spawnLocks once no spawn holds or awaits it.
+type sessionSpawnLock struct {
+	mu  sync.Mutex
+	ref int
 }
 
 // procPruneAge is how long a process stays reachable after it exits. Past this,
@@ -240,6 +259,7 @@ func newProcManager() *procManager {
 		stop:          make(chan struct{}),
 		pruneAge:      procPruneAge,
 		pruneInterval: procPruneInterval,
+		spawnLocks:    make(map[string]*sessionSpawnLock),
 	}
 	go m.pruneLoop()
 	return m
@@ -458,6 +478,15 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// test that shrinks it. macOS CI caught exactly that; the same confinement is
 	// why procManager copies its prune tunables at construction.
 	grace := exitDrainGrace
+	// A stream-json session spawn serializes against other spawns of the same
+	// session (so a new session process fully registers before the next same-key
+	// spawn supersedes it) and, once registered, supersedes the prior process of
+	// that session below. Empty key (the common case) does neither. (4534d86.)
+	sessionKey := cliSessionKey(args)
+	if sessionKey != "" {
+		unlock := m.lockSessionSpawn(sessionKey)
+		defer unlock()
+	}
 	// The reference prunes inline here as well as on its ticker, so a busy daemon
 	// sheds long-dead entries without waiting for the next sweep.
 	m.pruneExited()
@@ -529,15 +558,16 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 
 	p := &managedProc{
-		id:        id,
-		pid:       cmd.Process.Pid,
-		startTime: startTime,
-		subs:      map[*conn]struct{}{c: {}},
-		running:   true,
-		stdin:     stdin,
-		cmd:       cmd,
-		group:     group,
-		done:      make(chan struct{}),
+		id:         id,
+		pid:        cmd.Process.Pid,
+		startTime:  startTime,
+		sessionKey: sessionKey,
+		subs:       map[*conn]struct{}{c: {}},
+		running:    true,
+		stdin:      stdin,
+		cmd:        cmd,
+		group:      group,
+		done:       make(chan struct{}),
 	}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
@@ -559,6 +589,12 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
+
+	// Now that the new session process is registered, evict any prior process of the
+	// same session (4534d86). Non-session spawns (empty key) skip this.
+	if sessionKey != "" {
+		m.supersedeSession(sessionKey, id)
+	}
 
 	go p.stdinWriter()
 	var wg sync.WaitGroup
@@ -941,6 +977,16 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if p == nil {
 		return false, false, false, false
 	}
+	return m.killAndWaitProc(p, signal, grace, escalate)
+}
+
+// killAndWaitProc is killAndWait targeting a specific process IDENTITY rather than
+// re-resolving a client-visible id. supersedeSession captures the victim
+// *managedProc under the same lock as its scan and kills THAT process, so a
+// concurrent spawn that reuses the id (which replaces m.procs[id], and via the
+// reused-id path in spawn already tears the original down) cannot redirect the kill
+// onto the innocent replacement. Do NOT re-resolve p by id here.
+func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	if !p.isRunning() {
 		return true, true, true, false
 	}
