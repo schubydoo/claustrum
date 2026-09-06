@@ -118,11 +118,25 @@ func (w *watchedBody) Read(p []byte) (int, error) {
 		stalled, got, total := w.stalled, w.bytes, w.total
 		w.mu.Unlock()
 		if stalled {
-			return n, fmt.Errorf("download stalled: no data for %ds after %d/%d bytes",
-				int(installIdleTimeout/time.Second), got, total)
+			return n, &stalledError{secs: int(installIdleTimeout / time.Second), got: got, total: total}
 		}
 	}
 	return n, err
+}
+
+// stalledError is a read-idle abort of a -cli-url download (4534d86 aborts a body
+// that goes silent for installIdleTimeout). It is a distinct type so ensureCLI can
+// return it as-is instead of under the "download failed: " prefix: the reference's
+// cliError for a stall is the bare "download stalled: …" string, exactly as for a
+// non-200 (httpStatusError). Measured against 4534d86
+// (scratch/probe/install-frames-4534d86.md).
+type stalledError struct {
+	secs       int
+	got, total int64
+}
+
+func (e *stalledError) Error() string {
+	return fmt.Sprintf("download stalled: no data for %ds after %d/%d bytes", e.secs, e.got, e.total)
 }
 
 // Close stops the ticker and idle timer and closes the body. It WAITS for the

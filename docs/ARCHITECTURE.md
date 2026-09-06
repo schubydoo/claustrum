@@ -236,9 +236,9 @@ Re-derive a count from `ensureCLI` if you need one:
 | | `cli version "<v>" collides with the install download blob` |
 | source | `cli <v> missing and no --cli-url or --cli-zst provided` — also reached when a **present, working** CLI answers `--version` more slowly than an opted-in `-cli-probe-timeout` and no source flag was given (D11; unreachable at the default, which has no deadline) |
 | | `opening input: <err>` (`-cli-zst` read) |
-| download | `download failed: <err>` — **transport** failure only, plus `context deadline exceeded (…)` when the opt-in `-cli-download-timeout` bound fires (D12; off by default, so unreachable unless asked for) |
-| | `download failed with status <code>` — **non-200**, no URL, no reason phrase |
-| | `download failed: response exceeds <n> bytes` |
+| download | `download failed: <err>` — the catch-all wrap for any download error that is neither a bare status nor a bare stall: a **transport** failure, a disk error while streaming the body, the D10 cap (`response exceeds <n> bytes`), or the D12 deadline (`context deadline exceeded (…)`, off by default) |
+| | `download failed with status <code>` — **non-200**, no URL, no reason phrase (bare, no prefix) |
+| | `download stalled: no data for <n>s after <got>/<total> bytes` — the 60s read-idle abort (always-on, `4534d86` parity; bare, no prefix) |
 | verify | `checksum mismatch: expected=<a>, actual=<b>` |
 | install | `mkdir cli dir: <err>` |
 | | `staging cli: <err>` |
@@ -248,8 +248,10 @@ Re-derive a count from `ensureCLI` if you need one:
 | | `clearing stale dir at <path>: <err>` |
 | | `staging file vanished before install: <err>` |
 
-The two download forms use different wording on purpose, to match the
-reference. Only the transport failure carries the `download failed: ` prefix. The
+The download forms use different wording on purpose, to match the reference. The
+status and stall forms are fully worded and go out bare. Every other download
+error — a transport failure, the D10 cap, the D12 deadline, a disk error —
+carries the `download failed: ` prefix. The
 status form omits the URL, so a signed URL cannot reach whatever captures the
 `__INSTALL_RESULT__` line. A bare `chmod`/`rename` failure propagates as the raw
 Go error.

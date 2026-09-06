@@ -1291,6 +1291,48 @@ func TestDownloadStatusErrorWording(t *testing.T) {
 	}
 }
 
+// A read-idle stall (4534d86's download abort) is reported with the reference's
+// bare wording — "download stalled: no data for Ns after G/T bytes" — and is NOT
+// prefixed "download failed: ". ensureCLI wrapped every non-status fetch error, so
+// the stall used to reach __INSTALL_RESULT__ as "download failed: download stalled:
+// …", changing the Desktop-facing bytes. Measured bare against 4534d86
+// (scratch/probe/install-frames-4534d86.md).
+func TestDownloadStallErrorWording(t *testing.T) {
+	oldIdle := installIdleTimeout
+	installIdleTimeout = time.Second
+	oldProg := installProgressInterval
+	installProgressInterval = time.Hour // only the leading bytes:0 line, quiet output
+	t.Cleanup(func() { installIdleTimeout = oldIdle; installProgressInterval = oldProg })
+
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000000")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("abcd")) // 4 bytes, then go silent
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-block // stall: never send the rest
+	}))
+	// srv.Close blocks until the handler returns, so unblock it FIRST (defers run
+	// LIFO — this runs before srv.Close).
+	defer srv.Close()
+	defer close(block)
+
+	err := ensureCLI(installOpts{cliURL: srv.URL, cliChecksum: "x"},
+		filepath.Join(t.TempDir(), "v1"))
+	if err == nil {
+		t.Fatal("ensureCLI on a stalled download succeeded")
+	}
+	const want = "download stalled: no data for 1s after 4/1000000 bytes"
+	if got := err.Error(); got != want {
+		t.Errorf("ensureCLI stall cliError = %q, want it unwrapped and exactly %q", got, want)
+	}
+	if strings.HasPrefix(err.Error(), "download failed: ") {
+		t.Errorf("stall error carries the transport-only \"download failed: \" prefix: %q", err.Error())
+	}
+}
+
 // The loader glob decides ALONE: when it matches, `ldd` is never executed.
 //
 // This is the behaviour, not an optimisation. Measured 2026-08-02 against

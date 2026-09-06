@@ -176,11 +176,20 @@ func ensureCLI(o installOpts, cliPath string) error {
 		// for why a failure there falls back rather than erroring.
 		blobPath, blobSum, err = fetchToFile(o.cliURL, filepath.Dir(cliPath))
 		if err != nil {
-			// A status failure is already fully worded; only a transport failure
-			// takes the "download failed: " prefix (see httpStatusError).
+			// A status failure and a read-idle stall are already fully worded and go
+			// out bare; every other download error (a transport failure, the D10 cap,
+			// the D12 deadline, a disk error) takes the "download failed: " prefix. The
+			// reference's cliError is "download failed with status N" for a non-200 and
+			// the bare "download stalled: …" for a stall — prefixing the stall would
+			// emit "download failed: download stalled: …", a wire divergence on
+			// __INSTALL_RESULT__ (see httpStatusError, stalledError).
 			var se *httpStatusError
 			if errors.As(err, &se) {
 				return se
+			}
+			var st *stalledError
+			if errors.As(err, &st) {
+				return err
 			}
 			return fmt.Errorf("download failed: %v", err)
 		}
@@ -568,7 +577,8 @@ func zstdDecompress(src, dest string) error {
 
 // httpStatusError is a non-200 response from the CLI download. It exists so the
 // caller can tell a STATUS failure from a TRANSPORT failure: the reference words
-// them differently, prefixing only the latter with "download failed: ".
+// them differently — the status form is bare, while a transport failure takes the
+// "download failed: " prefix (as does every other non-status, non-stall error).
 //
 //	transport : download failed: Get "http://…": dial tcp …: connection refused
 //	status    : download failed with status 404
