@@ -113,9 +113,13 @@ matched for the observable and security behaviour but not reproduced command-for
 hardened `rev-parse --absolute-git-dir`, a direct filesystem delete of the worktree and
 its `$GIT_DIR/worktrees/<name>` registration, and a hardened `update-ref` branch delete
 — no `git worktree remove` at all — whereas claustrum runs an **unhardened**
-`git worktree remove --force` with an `os.RemoveAll` fallback plus a hardened branch
-delete. Both yield byte-identical frames on every probed case (locked refusal,
-non-worktree delete, stale re-create, normal removal), so the difference is off-wire. Beyond git: a daemon-to-daemon reconnect handoff
+`git worktree remove --force` with an `os.RemoveAll` fallback for the worktree itself.
+Its branch delete now matches the reference: a raw `update-ref --no-deref -d` (it was
+`git branch -D`, which also dropped the branch's `[branch "<name>"]` config section, where
+the reference leaves it — both now spare it, measured against 4534d86). Both yield
+byte-identical frames on every probed case (locked refusal, non-worktree delete, stale
+re-create, normal removal), so the residual difference — the worktree-removal mechanism
+— is off-wire. Beyond git: a daemon-to-daemon reconnect handoff
 and idle-connection management (the SSH-reliability items in the Desktop changelog),
 install stale-partial pruning, and the `git.worktree.external_root` feature — when a
 client supplies `worktreeRoot` **on a unix host**, the session worktree is placed

@@ -170,8 +170,8 @@ func gitCtx() (context.Context, context.CancelFunc) {
 //
 //	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
 //	                     both of which a warning-prefixed string fails safely;
-//	                     show-ref --verify --quiet and branch -D, which discard
-//	                     their output entirely
+//	                     show-ref --verify --quiet and update-ref -d (the branch
+//	                     delete), which discard their output entirely
 //	wants the stderr     gitWorktreeCreate — the failure text lives there
 //	echoes it verbatim   --show-toplevel → root/repo, symbolic-ref --short HEAD →
 //	                     branch (rev-parse --short HEAD supplies only the
@@ -1156,13 +1156,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			})
 		}
 	}
-	// The reference also deletes the branch when branchName is given, and does
-	// so FORCEFULLY — an unmerged branch goes too (probe-measured at 5db5e4a:
-	// both a merged and an unmerged branch are gone afterwards, where claustrum
-	// left both behind). Best-effort: naming a branch that does not exist still
-	// answers {"success":true}, so a failed delete is not surfaced.
+	// The reference also deletes the branch when branchName is given, via a raw ref
+	// delete (update-ref --no-deref -d), NOT `git branch -D`. Both remove the ref and
+	// its reflog forcefully — an unmerged branch goes too — but `git branch -D` ALSO
+	// drops the branch's config section ([branch "<name>"]), where the reference
+	// leaves it (measured against 4534d86, scratch/probe/gitmut: after remove the ref
+	// and reflog are gone on both, but the config section survives on the reference
+	// and claustrum's `branch -D` deleted it). update-ref matches on all three and is
+	// the same primitive undoCreatedWorktree already uses. Best-effort: a branch that
+	// does not exist still answers {"success":true}, so a failed delete is not surfaced.
 	if p.BranchName != "" {
-		hardenedGit(repo, false, "branch", "-D", p.BranchName)
+		hardenedGit(repo, false, "update-ref", "--no-deref", "-d", "refs/heads/"+p.BranchName)
 	}
 	// Prune the registration (see above). A no-op when `git worktree remove`
 	// already dropped it; the fix for the fallback path. The ONLY legitimate admin
