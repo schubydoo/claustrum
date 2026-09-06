@@ -48,26 +48,69 @@ echo "reference downloaded + checksum-verified ($(stat -c%s "$WORK/ref") bytes)"
 drift=0
 note() { echo "  DRIFT: $*"; drift=1; }
 
-# 3a) the 19 canonical methods must be present in BOTH binaries (membership check;
+# 3a) the 18 canonical methods must be present in BOTH binaries (membership check;
 # `strings` can't reliably enumerate NEW methods because Go concatenates the string
 # table — authoritative add/remove detection is the server.capabilities probe in
-# the scratch/ battery).
-CANON='server.ping server.version server.capabilities server.shutdown
+# the scratch/ battery). server.version was REMOVED in 7d193f89 and is asserted
+# absent below (REMOVED), not required here.
+CANON='server.ping server.capabilities server.shutdown
 files.list files.validate files.stat files.read files.extract_tar
 git.info git.status git.list_branches git.worktree_create git.worktree_remove
 process.spawn process.stdin process.kill process.killAndWait process.reattach'
+# Methods the reference REMOVED. They must be absent from BOTH binaries: a
+# reappearance in the reference is upstream drift, one in claustrum is a
+# regression. The method name only lands in the string table when its route
+# exists, so a bare substring test is enough.
+REMOVED='server.version'
 refstr="$(strings -n 4 "$WORK/ref")"; ourstr="$(strings -n 4 "$WORK/claustrum")"
 for m in $CANON; do
   grep -qF "$m" <<<"$refstr"  || note "canonical method missing from REFERENCE: $m (renamed/removed upstream?)"
   grep -qF "$m" <<<"$ourstr"  || note "canonical method missing from claustrum: $m"
 done
+for m in $REMOVED; do
+  grep -qF "$m" <<<"$refstr"  && note "removed method reappeared in REFERENCE: $m (upstream re-added it?)"
+  grep -qF "$m" <<<"$ourstr"  && note "removed method still present in claustrum: $m (regression?)"
+done
 
-# 3b) CLI flag set from -help (safe; no daemon)
+# 3b) CLI flag set from -help (safe; no daemon). The reference flag set is the
+# baseline: a reference flag ABSENT from claustrum is real upstream drift (a new
+# flag to reconcile). claustrum also carries intentional claustrum-only flags —
+# the opt-in divergences D3/D4/D5/D10-D14 plus wire-log / metrics / listen-pipe /
+# token-fd / keep-children — which are expected and listed in CLAUSTRUM_ONLY. A
+# claustrum flag that is neither in the reference nor in the allowlist is surfaced
+# so the allowlist stays honest (add it there once it is a reviewed extra).
 flags() { "$1" -help 2>&1 | grep -oaE '^\s+-[a-z-]+' | tr -d ' ' | sort -u; }
-if ! diff <(flags "$WORK/ref") <(flags "$WORK/claustrum") >/dev/null; then
-  note "flag set differs:"
-  diff <(flags "$WORK/ref") <(flags "$WORK/claustrum") | sed 's/^/    /'
-fi
+CLAUSTRUM_ONLY='-cli-download-timeout
+-cli-probe-timeout
+-files-read-regular-only
+-git-timeout
+-keep-children
+-libc-probe-timeout
+-listen-pipe
+-max-cli-bytes
+-max-extract-bytes
+-metrics-addr
+-token-fd
+-wire-log
+-wire-log-max-string'
+refflags="$(flags "$WORK/ref")"; ourflags="$(flags "$WORK/claustrum")"
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  grep -qxF -- "$f" <<<"$ourflags" || note "reference flag missing from claustrum: $f (new upstream flag — reconcile)"
+done <<<"$refflags"
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  grep -qxF -- "$f" <<<"$refflags" && continue
+  grep -qxF -- "$f" <<<"$CLAUSTRUM_ONLY" && continue
+  note "claustrum-only flag not in the allowlist: $f (intentional extra? add it to CLAUSTRUM_ONLY)"
+done <<<"$ourflags"
+# And the reverse: an allowlisted flag that has vanished from claustrum is an
+# accidental removal of a supported flag — the loops above never visit it, so
+# assert every CLAUSTRUM_ONLY entry is still present.
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  grep -qxF -- "$f" <<<"$ourflags" || note "allowlisted claustrum-only flag missing from claustrum: $f (removed/renamed?)"
+done <<<"$CLAUSTRUM_ONLY"
 
 # 3c) -version format (token count / shape), ignoring the id value
 vshape() { "$1" -version 2>&1 | sed -E 's/[0-9a-f]{40}/<SHA>/; s/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z/<TS>/'; }
