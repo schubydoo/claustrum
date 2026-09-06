@@ -833,6 +833,47 @@ func TestSocketWorktreeRemoveBranch(t *testing.T) {
 	assertGolden(t, "socket_worktree_remove_branch.golden.json", encodeGolden(t, got))
 }
 
+// TestSocketWorktreeRemoveKeepsBranchConfig pins that git.worktree_remove deletes the
+// branch via a raw ref delete (update-ref --no-deref -d), NOT `git branch -D`: the
+// ref and reflog go, but the branch's config section survives — matching 4534d86
+// (scratch/probe/gitmut). `git branch -D` would also drop [branch "<name>"].
+func TestSocketWorktreeRemoveKeepsBranchConfig(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "a.txt"), "x\n", 0o644)
+	runGit(t, repo, "add", "a.txt")
+	runGit(t, repo, "commit", "-m", "init")
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	wt := filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", "wtb"))
+	cl.call(req(1, "git.worktree_create", map[string]any{
+		"baseRepo": repo, "branchName": "wtb", "worktreePath": wt}))
+	// Give the branch a config section that `git branch -D` would remove.
+	runGit(t, repo, "config", "branch.wtb.description", "desc")
+
+	cl.call(req(2, "git.worktree_remove", map[string]any{
+		"baseRepo": repo, "worktreePath": wt, "branchName": "wtb"}))
+
+	// The ref is still deleted (the branch goes), matching the reference.
+	if gitExitOK(repo, "show-ref", "--verify", "--quiet", "refs/heads/wtb") {
+		t.Error("refs/heads/wtb still exists after worktree_remove, want deleted")
+	}
+	// The [branch "wtb"] config section survives — runGit t.Fatal's if the key is
+	// gone, which is exactly the `git branch -D` regression this guards against.
+	runGit(t, repo, "config", "--get", "branch.wtb.description")
+}
+
+// gitExitOK reports whether `git -C repo <args>` exits 0, for assertions where a
+// non-zero exit (e.g. show-ref on a missing ref) is the expected outcome.
+func gitExitOK(repo string, args ...string) bool {
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	return cmd.Run() == nil
+}
+
 // TestWorktreeRemoveResultShape pins the declared reply shape: field ORDER, and
 // that `error` is omitted when empty. The lenient cases still answer a bare
 // {"success":true}, which is what the committed goldens pin; `error` is populated
