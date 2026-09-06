@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,6 +44,64 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 	os.Exit(runHelper(mode, os.Args[1:]))
+}
+
+// runGitLingering implements the "git-lingering" stub: it dispatches on the git
+// subcommand present in args and, for the read-tree checkout, backgrounds a
+// pipe-holding orphan. It never uses /bin/sh (greptile P2) — the orphan is this test
+// binary re-exec'd in "sleep" mode.
+func runGitLingering(args []string) int {
+	joined := strings.Join(args, " ")
+	has := func(s string) bool { return strings.Contains(joined, s) }
+	switch {
+	case has("read-tree"):
+		orphan := os.Getenv("CLAUSTRUM_GITSTUB_ORPHAN")
+		if orphan == "" {
+			orphan = "8"
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		// The orphan inherits our stdout+stderr (the daemon's combined output pipe) and
+		// outlives us, so the pipe stays open after git exits.
+		child := exec.Command(exe, orphan)
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stdout = os.Stdout
+		child.Stderr = os.Stderr
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if os.Getenv("CLAUSTRUM_GITSTUB_EXIT0") == "1" {
+			return 0 // git exits 0; the orphan keeps holding the pipe (git-exit-0 case)
+		}
+		// Still running at the caller deadline: killed DURING the checkout.
+		secs, err := strconv.Atoi(orphan)
+		if err != nil {
+			secs = 8
+		}
+		time.Sleep(time.Duration(secs) * time.Second)
+		return 0
+	case has("worktree") && has("add"):
+		// Write the linked `.git` back-pointer into the (already-created) leaf — the last
+		// positional arg — so worktreeAdminDir resolves and the checkout runs.
+		last := args[len(args)-1]
+		_ = os.WriteFile(filepath.Join(last, ".git"),
+			[]byte("gitdir: "+filepath.Join(last, ".gitadmin")+"\n"), 0o644)
+		return 0
+	case has("is-inside-work-tree"):
+		fmt.Print("true\n")
+		return 0
+	case has("abbrev-ref"):
+		fmt.Print("main\n")
+		return 0
+	default:
+		// config prechecks, ls-files (populate), and update-ref / worktree remove /
+		// branch (rollback): succeed quietly.
+		return 0
+	}
 }
 
 // helperCommand returns this test binary's path plus the env overlay that
@@ -163,6 +222,16 @@ func runHelper(mode string, args []string) int {
 		}
 		fmt.Print("early\n")
 		return 7
+	case "git-lingering":
+		// Stand-in `git` for git.worktree_create's lingering-descendant tests. Reached
+		// when this binary is invoked through a PATH symlink named `git` (see
+		// stubLingeringGit): the config prechecks and the add/rollback probes succeed
+		// fast, and the read-tree checkout spawns a `sleep` child (this binary re-exec'd)
+		// that INHERITS this process's stdout+stderr — the daemon's combined output pipe —
+		// and outlives git, exactly reproducing the P1 smudge-filter orphan. Whether git
+		// itself exits 0 (leaving the orphan to hold the pipe) or blocks past the deadline
+		// is chosen by CLAUSTRUM_GITSTUB_EXIT0.
+		return runGitLingering(args)
 	case "runlock-hold":
 		// Run-dir eviction fixture (Unix): open the lock file, take the flock, write
 		// an owner record naming this process as a serve daemon, announce readiness by

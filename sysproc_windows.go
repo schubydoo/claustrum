@@ -18,6 +18,16 @@ func newSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 }
 
+// reapProcessGroup is the Windows counterpart of the Unix kill(-pgid) that
+// git.worktree_create uses to reap a checkout descendant that outlived git and held
+// the output pipe. Windows has no POSIX process-group signal, and this git exec path
+// is not confined to a Job Object, so there is nothing to tear down here beyond what
+// cmd.WaitDelay already did (it closed the daemon's own pipe ends, so the reply is
+// bounded). The measured pipe-holding-descendant scenario is a POSIX smudge/hook
+// orphan and is not reproduced on Windows; a stray descendant is left to exit on its
+// own rather than reaped. Nil-safe no-op so the shared caller stays cross-platform.
+func reapProcessGroup(proc *os.Process) {}
+
 // honorKeepChildren forces -keep-children OFF on Windows. Children are confined to
 // a Job Object created with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (see confineProcess);
 // the daemon holds that job handle, so when it exits the OS terminates the whole

@@ -201,10 +201,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D2 · Refuse a home directory as a destructive path target (always-on) { #d2 }
 
-- **Behavior.** Two methods hand a caller-supplied, `~`-expanded path to
-  `os.RemoveAll`: `files.extract_tar` wipes `destDir`, and `git.worktree_remove`
+- **Behavior.** Three methods hand a caller-supplied, `~`-expanded path to
+  `os.RemoveAll`: `files.extract_tar` wipes `destDir`, `git.worktree_remove`
   deletes `worktreePath` when git exits non-zero for a non-locked reason (a locked
-  worktree is refused, not deleted). `wipesHomeDir` (`homeguard.go`)
+  worktree is refused, not deleted), and `git.worktree_create` deletes
+  `worktreePath` when it rolls back a worktree whose caller `timeoutMs` was
+  exceeded by the post-checkout drain (defense-in-depth behind create's own
+  containment). `wipesHomeDir` (`homeguard.go`)
   refuses any target that **is or contains** the home directory. Descendants stay
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**
@@ -309,9 +312,19 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   <dur>` or the key; disabled bypasses `context.WithTimeout`.
 - **Never read a timeout as "git refused."** `git.worktree_remove` treats a
   non-locked git failure as permission to delete `worktreePath`, so claustrum keeps the timeout
-  reply separate from the failure arm. The cap is also softer than it reads:
-  `CombinedOutput` waits on git's output pipe, so a git that leaves a surviving
-  child stays blocked past the deadline.
+  reply separate from the failure arm. The cap is also softer than it reads on the
+  general git sites: `CombinedOutput`/`Output` waits on git's output pipe, so a git
+  that leaves a surviving child stays blocked past the deadline on `git.status`,
+  `git.list_branches` and the repo probes — those paths are unmeasured for a
+  descendant-orphan case, so the drain is recorded rather than capped there. The one
+  measured exception is `git.worktree_create`'s read-tree checkout, which can run a
+  smudge/hook filter that backgrounds a pipe-holding descendant: that path alone
+  caps the post-exit drain at a fixed ~5 s from git's own exit and SIGKILLs the
+  process group (`hardenedGitWorktreeCreate` / `worktreeCreateDrainCap`),
+  reproducing `4534d86` — success when the caller `timeoutMs` exceeds that drain,
+  else `errorCode:"timeout"` ("deadline expired after the checkout finished", no
+  `signal: killed`) with the worktree rolled back. Measured in
+  `scratch/probe/wt-success-lingering-4534d86.md`; this is parity, not a divergence.
 - **One opted-in arm loses data silently.** If the deadline kills
   `copyWorktreeIncludes` (`worktreecopy.go`) during `git ls-files`, it takes the
   early return, and `populateWorktree` is best-effort. Therefore
@@ -574,9 +587,12 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   means claustrum fetches a glibc build for a musl host.
 - **Softer than it reads.** The deadline fires in only one of two stall shapes: a
   stalled `ldd` that leaves a surviving child keeps claustrum blocked past the
-  deadline (the same softness as D5). The deadline also addresses the stall half
-  only. A hostile `ldd` resolved earlier in `PATH` that answers in 1 s is untouched,
-  and `classifyLibc` then trusts its `musl` banner verbatim.
+  deadline (the same softness the general git sites have under D5). This `ldd` probe
+  (`runLddVersion`, `CombinedOutput`) does not cap the post-exit drain — only
+  `git.worktree_create`'s checkout does, where the descendant-orphan case is
+  measured. The deadline also addresses the stall half only. A hostile `ldd`
+  resolved earlier in `PATH` that answers in 1 s is untouched, and `classifyLibc`
+  then trusts its `musl` banner verbatim.
 - **Why opt-in.** The deadline cleared clause (a)'s not-a-frame half (the reference
   gave no reply at 45 s in the discriminating shape), but the honest-path cost was
   untested in either direction, and there was no escape hatch. An untested

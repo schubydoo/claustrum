@@ -201,9 +201,12 @@ func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
 // `worktree add` succeed fast (writing the linked `.git` so worktreeAdminDir resolves
 // the admin dir), then sleeps on the read-tree so the per-request deadline kills it —
 // exercising the second, post-add timeout arm the "before the checkout started" test
-// never reaches. The sibling "after the checkout finished" arm is a near-unhittable
-// race (read-tree returns clean in the microsecond window before the deadline) and is
-// reproduced from the reference string rather than force-covered.
+// never reaches. The no-lingering-descendant "after the checkout finished" sub-case
+// (read-tree returns clean in the microsecond window before the deadline) is a
+// near-unhittable race, reproduced from the reference string rather than force-covered.
+// The measured "after the checkout finished" path (a descendant holds the pipe past
+// the drain cap) is force-covered by TestWorktreeCreateLingeringDescendant in
+// git_waitdelay_unix_test.go.
 func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
 	bin := t.TempDir()
 	// The `worktree add` case writes the worktree's `.git` back-pointer into its

@@ -257,8 +257,13 @@ traps that matter when you tell drift from expected:
 
 - **D4 / D5 (writerless FIFO, surviving-child git):** a harness that records "no
   reply from both binaries" does not discriminate — the off state blocks too.
-  `/dev/null` is D4's discriminating input; a surviving child makes D5 soft
-  (`CombinedOutput` waits on the output pipe, not on git's exit).
+  `/dev/null` is D4's discriminating input; a surviving child makes the general D5
+  git sites soft (`CombinedOutput` waits on the output pipe, not on git's exit). The
+  one exception is `git.worktree_create`'s read-tree checkout, which caps the
+  post-exit drain at ~5 s and SIGKILLs the process group — parity with `4534d86`
+  (`scratch/probe/wt-success-lingering-4534d86.md`), gating success vs
+  `errorCode:"timeout"`+rollback on the caller `timeoutMs`. The off default (no
+  `timeoutMs`, D5 off) is unbounded on every path, matching the reference.
 - **D5 has a wire-invisible arm:** when the deadline kills `git ls-files`,
   `git.worktree_create` still answers `{"success":true}` and the
   `.worktreeinclude` files are absent. Nothing on the wire says so, so a clean
