@@ -317,6 +317,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `git.worktree_create` still answers
   `{"success":true}` while every manifest-selected file is missing. No frame moves.
   This arm is absent at the default.
+- **`git.worktree_create` under both deadlines.** The add and the read-tree
+  checkout run under the shared deadline. A D5 hit **on the add** answers `git
+  worktree add failed: …` with `errorCode:"worktree_add_failed"` — the same failure
+  arm as any other git error, and distinct from the 4534d86 caller-`timeoutMs` arm
+  (`errorCode:"timeout"`). A D5 hit on the read-tree checkout is discarded like any
+  best-effort step (see the loses-data-silently arm above): the error is dropped and
+  the create can still answer `{"success":true}` with an incomplete worktree. When a
+  caller supplies a `timeoutMs` LONGER than `-git-timeout`, the tighter D5 deadline
+  fires first during the add, and claustrum still answers `worktree_add_failed`: it
+  attributes the kill to the deadline that actually fired (a caller `timeoutMs` earns
+  `errorCode:"timeout"` only when it is the one that fired), so the caller's longer
+  duration is never quoted for a kill D5 caused. This interaction is claustrum-only —
+  the reference has no `-git-timeout` — and is absent at the default. Implemented with
+  a distinct context cause (`errCallerTimeoutMs`, checked by `callerTimeoutFired` in
+  `methods_git.go`).
 - **Why opt-in.** The reference showed no deadline at or below 75 s on
   `worktree_remove`; an honest 61 s git was never measured. The deadline cleared
   clause (a)'s not-a-frame half, but the `-32603 signal: killed` arm is an honest
