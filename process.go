@@ -698,17 +698,22 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 }
 
 // writeStdin enqueues data for asynchronous delivery to the child's stdin and
-// returns true if the process exists and has a stdin pipe. The actual pipe write
-// happens on the stdinWriter goroutine, so a slow/non-reading child never blocks
-// the caller (matching the reference's async stdin). Returns false for an unknown
-// process or one without stdin.
+// returns true when the write was accepted: the process exists, has a stdin pipe,
+// and the async queue had room. It returns false for an unknown process, one
+// without stdin, or when the queue is already full (backpressure) — in which case
+// nothing is enqueued and no bytes are counted, mirroring the -32002 the RPC path
+// (applyStdin) surfaces. The actual pipe write happens on the stdinWriter
+// goroutine, so a slow/non-reading child never blocks the caller (matching the
+// reference's async stdin).
 func (m *procManager) writeStdin(id string, data []byte) bool {
 	p := m.get(id)
 	if p == nil || p.stdin == nil {
 		return false
 	}
+	if p.enqueueStdin(data) {
+		return false // queue full (backpressure): nothing was enqueued
+	}
 	met.stdinBytes.Add(int64(len(data)))
-	p.enqueueStdin(data)
 	return true
 }
 

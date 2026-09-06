@@ -440,6 +440,47 @@ func TestWriteStdinReturnValue(t *testing.T) {
 	}
 }
 
+// writeStdin must surface backpressure, not a false success: once the async queue
+// is full it enqueues nothing, counts no bytes, and returns false — mirroring the
+// -32002 the RPC path returns. Before the wrapper propagated enqueueStdin's full
+// signal it returned true while silently dropping the write.
+func TestWriteStdinRejectsWhenFull(t *testing.T) {
+	old := stdinQueueCap
+	stdinQueueCap = 8
+	defer func() { stdinQueueCap = old }()
+
+	pr, pw := io.Pipe()
+	defer pr.Close() // unblocks the parked writer so its goroutine exits
+	m := newTestProcManager(t)
+	p := &managedProc{id: "wf", subs: map[*conn]struct{}{}, stdin: pw}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	m.procs["wf"] = p
+	go p.stdinWriter()
+
+	// First chunk: the writer dequeues it and parks inside pw.Write (pr is never
+	// read), leaving the queue empty but the writer busy so later writes accumulate.
+	p.enqueueStdin([]byte("X"))
+	waitStdinQueueEmpty(t, p)
+
+	before := met.stdinBytes.Load()
+	accepted, rejected := 0, false
+	for i := 0; i < 100; i++ { // 200 bytes >> 8-byte cap → one must be rejected
+		if m.writeStdin("wf", []byte("ab")) {
+			accepted++
+			continue
+		}
+		rejected = true
+		break
+	}
+	if !rejected {
+		t.Fatal("writeStdin never returned false despite an 8-byte cap — backpressure not propagated")
+	}
+	// The rejected write enqueued nothing, so only the accepted 2-byte writes count.
+	if got, want := met.stdinBytes.Load()-before, int64(accepted*2); got != want {
+		t.Fatalf("stdinBytes delta = %d, want %d (a rejected write must not count)", got, want)
+	}
+}
+
 // process.stdin is asynchronous: a write to a slow/non-reading child must not
 // block the caller (the reference returns success before the child reads). Here
 // the child's stdin (an io.Pipe never read) blocks the stdinWriter on its first
