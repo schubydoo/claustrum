@@ -769,34 +769,49 @@ func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 // data[applied-offset:] and advances applied to offset+len. The decision and the
 // enqueue happen under one stdinMu hold so concurrent stdin calls can't interleave
 // against a stale counter.
-func (p *managedProc) applyStdin(data []byte, offset *uint64) (applied uint64, duplicate, gap, full bool) {
+//
+// The idempotency verdict (gap / wholly-duplicate) is a pure function of offset
+// vs applied and is answered BEFORE the running check, matching the reference: on
+// an exited process a gap still returns gap=true and a wholly-duplicate write
+// still returns duplicate=true. Only a write that would enqueue FRESH bytes needs
+// a live process — for that case running() is consulted and notRunning=true is
+// returned when it is false. running is passed in (mp.isRunning) so the verdict
+// and the running check stay under one stdinMu hold; no path nests mu inside
+// stdinMu the other way, so the ordering is deadlock-free. On that same
+// fresh-enqueue path a queue already at the cap returns full=true and enqueues
+// nothing (the reference returns -32002 rather than parking the request).
+func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() bool) (applied uint64, duplicate, gap, full, notRunning bool) {
 	p.stdinMu.Lock()
 	cur := p.stdinApplied
 	if offset != nil {
 		off := *offset
 		if off > cur {
 			p.stdinMu.Unlock()
-			return cur, false, true, false
+			return cur, false, true, false, false
 		}
 		if skip := cur - off; skip > 0 {
 			if skip >= uint64(len(data)) {
 				p.stdinMu.Unlock()
-				return cur, true, false, false
+				return cur, true, false, false, false
 			}
 			data = data[skip:]
 		}
+	}
+	if !running() {
+		p.stdinMu.Unlock()
+		return cur, false, false, false, true
 	}
 	if p.enqueueStdinLocked(data) {
 		// Queue full: enqueue nothing and leave stdinApplied unchanged so the
 		// client can resend from the same offset once space frees.
 		p.stdinMu.Unlock()
-		return cur, false, false, true
+		return cur, false, false, true, false
 	}
 	p.stdinApplied += uint64(len(data))
 	applied = p.stdinApplied
 	p.stdinMu.Unlock()
 	met.stdinBytes.Add(int64(len(data)))
-	return applied, false, false, false
+	return applied, false, false, false, false
 }
 
 // stdinWriter drains the async queue to the child's stdin in FIFO order for the
