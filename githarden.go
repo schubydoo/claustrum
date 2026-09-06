@@ -270,7 +270,9 @@ var (
 //
 // git added --attr-source in 2.40, so support is probed once with the reference's own
 // guard — `git --attr-source=<empty> version`, which errors on older git. The option
-// is placed before the subcommand (a top-level git option), matching the reference.
+// is a top-level one, before the subcommand: the reference emits it first, claustrum
+// after the -c pins, but both are pre-subcommand and functionally identical, so the
+// status frame is unchanged by the position.
 func attrSourceArgs() []string {
 	attrSourceOnce.Do(func() {
 		cmd := exec.Command("git", "--attr-source="+gitEmptyTree, "version")
