@@ -620,6 +620,10 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   runs during status and can flip a file clean↔dirty (and execute the filter's
   command). It is a no-op on a repo with no attribute rules. It is omitted when the
   runtime git predates `--attr-source` (git 2.40).
+- The status runs with `GIT_OPTIONAL_LOCKS=0`, matching `4534d86`, so it does not
+  refresh or rewrite the worktree index and does not take `index.lock`. This is
+  off-wire (the status output is unchanged); it avoids mutating the caller's repo on
+  a read.
 - Every line is verbatim, the first included: the daemon splits on the trailing
   newline only, so entry 0 keeps its leading space (`[" M a1"," M a2"]` returns
   `[" M a1"," M a2"]`). 5db5e4a trimmed the whole blob and lost entry 0's leading

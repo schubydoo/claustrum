@@ -92,6 +92,14 @@ func hookPinEnv() []string {
 // hardenedGitEnv builds the environment for a hardened git command: the daemon's
 // own environment, the hook pins, terminal/prompt suppression, and the protocol
 // gate. heavy adds the no-lazy-fetch and askpass clearing the heavy profile uses.
+//
+// GIT_OPTIONAL_LOCKS=0 is set on the heavy profile, which is git.status only (the
+// sole heavy caller). 4534d86 sets it on its status commands; without it a plain
+// `git status` REWRITES the worktree's index (refreshing the stat cache) and takes
+// index.lock — a mutation of the caller's repo on a read. With it the status output
+// is byte-identical (measured) but the index is not touched, matching the reference.
+// If a future non-status caller uses the heavy profile, reconsider scoping this to
+// the status call.
 func hardenedGitEnv(heavy bool) []string {
 	env := append(os.Environ(), hookPinEnv()...)
 	env = append(env, "GIT_TERMINAL_PROMPT=0")
@@ -100,6 +108,7 @@ func hardenedGitEnv(heavy bool) []string {
 			"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
 			"GIT_ASKPASS=",
 			"GIT_NO_LAZY_FETCH=1",
+			"GIT_OPTIONAL_LOCKS=0",
 		)
 	} else {
 		env = append(env, "GIT_ALLOW_PROTOCOL=https:ssh")
