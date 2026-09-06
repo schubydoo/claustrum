@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -361,6 +364,82 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	}
 	if rec.Pid != os.Getpid() {
 		t.Errorf("after eviction record pid = %d, want our pid %d", rec.Pid, os.Getpid())
+	}
+}
+
+// TestClaimRunDirEvictionLogsMatchReference pins the #320 eviction log MESSAGE
+// wording against 4534d86 (runtime-captured, scratch/probe/runlock-log-4534d86.md):
+// the "[daemon] serve:" prefix, the instance id in the eviction line, and the
+// "previous owner of <rundir>: terminated" summary. Only the message text is
+// matched; claustrum keeps its own level tag. The old "[daemon] run dir:" prefix
+// must be gone.
+func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
+	if nodeID() == "" {
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
+	}
+	shrinkEvictionGraces(t)
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "s.sock")
+	lockPath := filepath.Join(dir, runDirLockName)
+	holder := spawnLockHolder(t, lockPath, "", "")
+	oldCmd := isServeCmdline
+	isServeCmdline = func(int, string) bool { return true }
+	t.Cleanup(func() { isServeCmdline = oldCmd })
+
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
+	release := claimRunDir(sock, "serve") // evicts synchronously, logging the ladder
+	log.SetOutput(oldOut)
+	t.Cleanup(release)
+	_ = waitForExit(holder.Process.Pid, 3*time.Second)
+
+	got := buf.String()
+	for _, want := range []string{
+		"[daemon] serve: run dir is held by a live daemon, pid ",
+		`(instance "`,
+		"); sending SIGTERM",
+		") exited after SIGTERM",
+		"[daemon] serve: previous owner of ",
+		": terminated",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("eviction log missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "[daemon] run dir:") || strings.Contains(got, "serving without run-dir ownership") {
+		t.Errorf("eviction log still uses the old prefix/tail\n%s", got)
+	}
+}
+
+// TestEvictRunDirHolderStopRoleLogs pins the held-by-stop wording (4534d86): a
+// holder whose record role is "stop" is left in place with the "--stop ... has not
+// let go; leaving it" line and a "previous owner of <rundir>: survivor" summary.
+func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "s.sock")
+	lockPath := filepath.Join(dir, runDirLockName)
+	fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// role=stop; the role gate returns before any signal, so the pid is never touched.
+	writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+	_ = syscall.Close(fd)
+
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
+	evicted := evictRunDirHolder(lockPath, sock)
+	log.SetOutput(oldOut)
+	if evicted {
+		t.Error("evictRunDirHolder evicted a --stop holder; want left in place")
+	}
+	got := buf.String()
+	for _, want := range []string{"is held by a --stop (pid 999999) that has not let go; leaving it", "[daemon] serve: previous owner of ", ": survivor"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stop-role log missing %q\n--- got ---\n%s", want, got)
+		}
 	}
 }
 

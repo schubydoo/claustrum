@@ -77,7 +77,7 @@ func (s *server) exitWhenOrphaned(socket string) {
 		}
 		if orphanedSince.IsZero() {
 			orphanedSince = time.Now()
-			logInfof("[Server] socket %s no longer resolves to this daemon; will shut down if that holds for %s with no client connected", socket, orphanGrace)
+			logInfof("[Server] socket path %s no longer leads to this daemon; shutting down if that holds for %s with nobody connected", socket, orphanGrace)
 			continue
 		}
 		if time.Since(orphanedSince) < orphanGrace {
@@ -91,7 +91,7 @@ func (s *server) exitWhenOrphaned(socket string) {
 		}
 		failedProbes++
 		if failedProbes < orphanProbeFailuresToExit {
-			logWarnf("[Server] socket %s did not lead back to this daemon (%d/%d); re-checking next interval", socket, failedProbes, orphanProbeFailuresToExit)
+			logWarnf("[Server] socket path %s did not lead back to this daemon (%d/%d); re-checking before acting", socket, failedProbes, orphanProbeFailuresToExit)
 			continue
 		}
 		// A client may have attached during the grace + self-probe window — after this
@@ -109,7 +109,7 @@ func (s *server) exitWhenOrphaned(socket string) {
 			reset()
 			continue
 		}
-		logWarnf("[Server] orphaned for %s (socket gone or rebound, %d self-probes failed, no clients); shutting down with %d child process group(s) running",
+		logWarnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
 			time.Since(orphanedSince).Round(time.Second), failedProbes, s.procs.runningCount())
 		s.signalShutdown()
 		return
