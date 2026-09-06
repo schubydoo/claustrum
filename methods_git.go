@@ -499,10 +499,19 @@ func gitStatus(req *request) response {
 	// individually (`?? sub/u.txt`) rather than as the directory (`?? sub/`).
 	// (The reference builds this in an isolated gitdir to avoid refreshing the real
 	// index; that isolation is output-neutral, so status runs against the worktree
-	// here.) A path with no work tree still exits 128 → the reference propagates
-	// the bare Go error string, not git's "fatal: …" output.
-	out, err := hardenedGitStdout(p.Path, true, "status", "--porcelain",
+	// here — and GIT_OPTIONAL_LOCKS=0 in hardenedGitEnv keeps this status from
+	// refreshing/rewriting the worktree index anyway, so the index is left untouched
+	// like the reference's.) A path with no work tree still exits 128 → the reference
+	// propagates the bare Go error string, not git's "fatal: …" output.
+	//
+	// --attr-source=<empty-tree> makes git ignore the repo's in-repo .gitattributes,
+	// matching 4534d86: without it a .gitattributes clean filter runs during status
+	// and flips a file's modified-ness (wire-visible) plus executes its command. It is
+	// a top-level option before the subcommand, and a no-op on a repo with no
+	// attribute rules (so ordinary status stays byte-identical).
+	statusArgs := append(attrSourceArgs(), "status", "--porcelain",
 		"--untracked-files=all", "--ignore-submodules=all")
+	out, err := hardenedGitStdout(p.Path, true, statusArgs...)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}

@@ -92,6 +92,14 @@ func hookPinEnv() []string {
 // hardenedGitEnv builds the environment for a hardened git command: the daemon's
 // own environment, the hook pins, terminal/prompt suppression, and the protocol
 // gate. heavy adds the no-lazy-fetch and askpass clearing the heavy profile uses.
+//
+// GIT_OPTIONAL_LOCKS=0 is set on the heavy profile, which is git.status only (the
+// sole heavy caller). 4534d86 sets it on its status commands; without it a plain
+// `git status` REWRITES the worktree's index (refreshing the stat cache) and takes
+// index.lock — a mutation of the caller's repo on a read. With it the status output
+// is byte-identical (measured) but the index is not touched, matching the reference.
+// If a future non-status caller uses the heavy profile, reconsider scoping this to
+// the status call.
 func hardenedGitEnv(heavy bool) []string {
 	env := append(os.Environ(), hookPinEnv()...)
 	env = append(env, "GIT_TERMINAL_PROMPT=0")
@@ -100,6 +108,7 @@ func hardenedGitEnv(heavy bool) []string {
 			"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
 			"GIT_ASKPASS=",
 			"GIT_NO_LAZY_FETCH=1",
+			"GIT_OPTIONAL_LOCKS=0",
 		)
 	} else {
 		env = append(env, "GIT_ALLOW_PROTOCOL=https:ssh")
@@ -248,6 +257,41 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	cmd.Env = hardenedGitEnv(heavy)
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
+}
+
+// gitEmptyTree is git's canonical empty-tree object (SHA-1). Passing it as
+// --attr-source makes git read gitattributes from an empty tree — i.e. ignore a
+// repository's in-repo .gitattributes.
+const gitEmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+var (
+	attrSourceOnce sync.Once
+	attrSourceOK   bool
+)
+
+// attrSourceArgs returns the `--attr-source=<empty-tree>` top-level git option when
+// the runtime git supports it, else nil. git.status runs it (4534d86 does) so a
+// repository's in-repo .gitattributes cannot influence the status: without it a
+// .gitattributes clean filter runs during `git status` and can both flip a file's
+// modified-ness (wire-visible) and execute an attacker-controlled command
+// (scratch/probe/attrsource-4534d86.md). It is a no-op on a repo with no attribute
+// rules, so status on an ordinary repo stays byte-identical.
+//
+// git added --attr-source in 2.40, so support is probed once with the reference's own
+// guard — `git --attr-source=<empty> version`, which errors on older git. The option
+// is a top-level one, before the subcommand: the reference emits it first, claustrum
+// after the -c pins, but both are pre-subcommand and functionally identical, so the
+// status frame is unchanged by the position.
+func attrSourceArgs() []string {
+	attrSourceOnce.Do(func() {
+		cmd := exec.Command("git", "--attr-source="+gitEmptyTree, "version")
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		attrSourceOK = cmd.Run() == nil
+	})
+	if attrSourceOK {
+		return []string{"--attr-source=" + gitEmptyTree}
+	}
+	return nil
 }
 
 var (
