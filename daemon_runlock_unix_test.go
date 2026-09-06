@@ -60,6 +60,8 @@ func TestMatchesServeArgv(t *testing.T) {
 		{"equals form", []string{"claustrum", "-serve", "-socket=" + sock}, true},
 		{"double dash + separate value", []string{"claustrum", "--serve", "--socket", sock}, true},
 		{"separate value", []string{"claustrum", "-serve", "-socket", sock}, true},
+		{"equivalent path, separate value", []string{"claustrum", "-serve", "-socket", "/run/x/./s.sock"}, true},
+		{"equivalent path, equals form", []string{"claustrum", "-serve", "-socket=/run/./x/s.sock"}, true},
 		{"no serve flag", []string{"claustrum", "-socket=" + sock}, false},
 		{"no socket flag", []string{"claustrum", "-serve"}, false},
 		{"wrong socket", []string{"claustrum", "-serve", "-socket=/run/y/s.sock"}, false},
@@ -203,7 +205,7 @@ func TestEvictRunDirHolderUnusableRecord(t *testing.T) {
 
 func TestEvictRunDirHolderAbsentPid(t *testing.T) {
 	if nodeID() == "" {
-		t.Skip("needs a /proc machine identity (Linux)")
+		t.Skip("needs a machine identity (nodeID)")
 	}
 	dir := shortTempDir(t)
 	path := filepath.Join(dir, runDirLockName)
@@ -333,7 +335,7 @@ func shrinkEvictionGraces(t *testing.T) {
 
 func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	if nodeID() == "" {
-		t.Skip("run-dir eviction needs a /proc machine identity (Linux)")
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
 	}
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
@@ -364,7 +366,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 
 func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	if nodeID() == "" {
-		t.Skip("run-dir eviction needs a /proc machine identity (Linux)")
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
 	}
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)
@@ -391,9 +393,73 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	}
 }
 
+// TestClaimRunDirRefusesSymlinkLock pins the O_NOFOLLOW behavior (parity with the
+// reference on linux, measured): a pre-planted daemon.lock symlink (what a local
+// attacker in a shared socket dir would leave) must NOT be followed and its target
+// must NOT be truncated. The daemon serves without run-dir ownership instead. The
+// mutant (drop O_NOFOLLOW) follows the link and
+// writeOwnerRecord truncates the victim, failing the content check.
+func TestClaimRunDirRefusesSymlinkLock(t *testing.T) {
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "s.sock")
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("precious"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dir, runDirLockName)); err != nil {
+		t.Fatal(err)
+	}
+
+	release := claimRunDir(sock, "serve")
+	t.Cleanup(release)
+
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("victim unreadable: %v", err)
+	}
+	if string(got) != "precious" {
+		t.Errorf("a planted daemon.lock symlink had its target truncated/overwritten: %q — O_NOFOLLOW did not refuse it", got)
+	}
+}
+
+// TestClaimRunDirDoesNotSIGKILLAReusedPid pins the pre-SIGKILL re-verification: if the
+// holder's pid is reused during the SIGTERM grace (its command line no longer matches
+// our serve process), the ladder must NOT SIGKILL that innocent pid. The holder ignores
+// SIGTERM so the ladder reaches the escalation; isServeCmdline passes once (pre-SIGTERM)
+// then fails (pre-SIGKILL), simulating the reuse. The mutant (drop the re-check) SIGKILLs
+// the still-alive holder, so holderGone flips true and the test fails.
+func TestClaimRunDirDoesNotSIGKILLAReusedPid(t *testing.T) {
+	if nodeID() == "" {
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
+	}
+	shrinkEvictionGraces(t)
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "s.sock")
+	lockPath := filepath.Join(dir, runDirLockName)
+	holder := spawnLockHolder(t, lockPath, "term-ignore", "")
+
+	oldCmd := isServeCmdline
+	var calls int
+	isServeCmdline = func(int, string) bool {
+		calls++
+		return calls == 1 // our serve holder before SIGTERM; a reused pid before SIGKILL
+	}
+	t.Cleanup(func() { isServeCmdline = oldCmd })
+
+	release := claimRunDir(sock, "serve")
+	t.Cleanup(release)
+
+	if calls < 2 {
+		t.Fatalf("isServeCmdline ran %d times; the pre-SIGKILL re-check did not run", calls)
+	}
+	if holderGone(holder.Process.Pid) {
+		t.Error("the reused pid was SIGKILL'd; the pre-SIGKILL re-verification did not protect it")
+	}
+}
+
 func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 	if nodeID() == "" {
-		t.Skip("needs a /proc machine identity (Linux)")
+		t.Skip("needs a machine identity (nodeID)")
 	}
 	shrinkEvictionGraces(t)
 	dir := shortTempDir(t)

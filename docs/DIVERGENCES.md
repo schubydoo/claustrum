@@ -591,8 +591,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** On the run-dir lock's eviction path, before a new `-serve` daemon
   signals a live lock holder, it confirms the holder is one of our own `-serve`
-  processes bound to this socket. On Linux both the reference and claustrum read
-  `/proc/<pid>/cmdline`. On **macOS** there is no `/proc`, and the reference does not
+  processes bound to this socket. On Linux both the reference and claustrum verify the
+  holder's command line (claustrum reads `/proc/<pid>/cmdline`). On **macOS** there is no `/proc`, and the reference does not
   verify the holder before signalling: it sends SIGTERM then SIGKILL to the recorded
   pid unverified. Measured on a macOS VM: the reference signals even a lock holder
   that is not a serve process. claustrum instead reads the holder's argument vector

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -76,7 +77,17 @@ func claimRunDir(socket, role string) func() {
 	path := filepath.Join(dir, runDirLockName)
 	noop := func() {}
 
-	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC, 0o600)
+	// O_NOFOLLOW: never follow a pre-existing daemon.lock symlink. If the socket dir is
+	// shared-writable, another local user could plant a symlink to a daemon-writable file
+	// and have startup truncate it; O_NOFOLLOW makes the open fail (ELOOP) instead. Since
+	// claimRunDir only ever creates daemon.lock as a regular file, the honest path is
+	// unaffected. This matches the reference's observable behavior: measured on linux, the
+	// reference refuses a planted daemon.lock symlink and leaves the target untouched
+	// (scratch/probe/runlock-linux-refbehavior-4534d86.md M1), where pre-fix claustrum
+	// followed the link and truncated the target. The flag is set on both unix targets;
+	// the macOS reference's symlink behavior is unmeasured, so on macOS this is
+	// off-wire defense-in-depth rather than confirmed parity.
+	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		logWarnf("[daemon] run dir: cannot open %s (%v); serving without run-dir ownership", path, err)
 		return noop
@@ -140,6 +151,20 @@ func evictRunDirHolder(path, socket string) bool {
 	}
 	if waitForExit(holder.Pid, runDirTermGrace) {
 		logInfof("[daemon] run dir: previous daemon pid %d exited after SIGTERM", holder.Pid)
+		return true
+	}
+	// The pid is still present after the SIGTERM grace. Re-verify it is STILL our serve
+	// holder before escalating: if the original exited and its pid was reused by an
+	// unrelated same-user process during the grace, waitForExit's kill(pid,0) reports it
+	// "alive" and a blind SIGKILL would terminate that innocent process. This matches the
+	// reference, which re-verifies the lock holder immediately before its SIGKILL (measured
+	// on linux — scratch/probe/runlock-linux-refbehavior-4534d86.md M2); pre-fix claustrum
+	// verified only before SIGTERM and diverged. A refusal now almost always means the pid
+	// was reused and the original holder is gone; on the rare chance the holder is still
+	// alive but a holder-inspection read failed transiently, the retry flock simply fails
+	// and we serve without ownership — never an innocent SIGKILL.
+	if reason := holderSignalRefusal(holder, socket); reason != "" {
+		logInfof("[daemon] run dir: pid %d is no longer our serve holder before SIGKILL (%s); treating the previous daemon as gone", holder.Pid, reason)
 		return true
 	}
 	logWarnf("[daemon] run dir: previous daemon pid %d ignored SIGTERM; sending SIGKILL", holder.Pid)
@@ -227,22 +252,35 @@ func holderSignalRefusal(holder ownerRecord, socket string) string {
 }
 
 // matchesServeArgv reports whether argv is one of our own daemons: argv0 basename ==
-// self, a -serve/--serve flag, and a -socket/--socket naming exactly socket (as either
-// "=value" or a separate following value). Pure, so the flag-parsing is unit-testable
-// without a live process entry, and shared by the Linux and macOS holder checks.
+// self, a -serve/--serve flag, and a -socket/--socket naming socket by its cleaned form
+// (as either "=value" or a separate following value). Pure, so the flag-parsing is
+// unit-testable without a live process entry, and shared by the Linux and macOS holder
+// checks.
 func matchesServeArgv(argv []string, socket, self string) bool {
 	if len(argv) == 0 || self == "" || filepath.Base(argv[0]) != self {
 		return false
 	}
+	// Compare socket paths by their cleaned form. claimRunDir derives the lock path with
+	// filepath.Join (which cleans) and the kernel cleans the bind path, so "/d/./rpc.sock"
+	// and "/d/rpc.sock" share one daemon.lock and one endpoint. An exact string compare
+	// would fail to recognise the holder across those equivalent spellings, refuse to
+	// evict it, and leave two daemons live on the same socket. This matches the reference,
+	// which normalizes the socket path in its holder match (measured on linux: a successor
+	// with the cleaned spelling evicts a predecessor started with "/./" —
+	// scratch/probe/runlock-linux-refbehavior-4534d86.md M3); claustrum's exact compare
+	// diverged.
+	want := filepath.Clean(socket)
 	serve, sockMatch := false, false
 	for i, a := range argv {
 		switch {
 		case a == "-serve" || a == "--serve":
 			serve = true
-		case a == "-socket="+socket || a == "--socket="+socket:
-			sockMatch = true
-		case (a == "-socket" || a == "--socket") && i+1 < len(argv) && argv[i+1] == socket:
-			sockMatch = true
+		case strings.HasPrefix(a, "-socket="):
+			sockMatch = sockMatch || filepath.Clean(strings.TrimPrefix(a, "-socket=")) == want
+		case strings.HasPrefix(a, "--socket="):
+			sockMatch = sockMatch || filepath.Clean(strings.TrimPrefix(a, "--socket=")) == want
+		case (a == "-socket" || a == "--socket") && i+1 < len(argv):
+			sockMatch = sockMatch || filepath.Clean(argv[i+1]) == want
 		}
 	}
 	return serve && sockMatch

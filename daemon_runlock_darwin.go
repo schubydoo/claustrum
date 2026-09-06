@@ -39,8 +39,8 @@ func pidNamespaceRefusal(pid int) string { return "" }
 
 // realIsServeCmdline reads pid's argument vector from sysctl KERN_PROCARGS2 and requires
 // our own executable basename as argv0, a -serve/--serve flag, and a -socket/--socket
-// naming exactly this socket — the same check the Linux path makes against
-// /proc/<pid>/cmdline.
+// naming this socket (matched by cleaned path, see matchesServeArgv) — the same check the
+// Linux path makes against /proc/<pid>/cmdline.
 func realIsServeCmdline(pid int, socket string) bool {
 	argv, ok := procArgv(pid)
 	if !ok {

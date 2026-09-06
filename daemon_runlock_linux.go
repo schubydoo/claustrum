@@ -55,7 +55,8 @@ func pidNamespaceRefusal(pid int) string {
 }
 
 // realIsServeCmdline reads /proc/<pid>/cmdline and requires our own executable basename
-// as argv0, a -serve/--serve flag, and a -socket/--socket naming exactly this socket.
+// as argv0, a -serve/--serve flag, and a -socket/--socket naming this socket (matched by
+// cleaned path, see matchesServeArgv).
 func realIsServeCmdline(pid int, socket string) bool {
 	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
 	if err != nil {
