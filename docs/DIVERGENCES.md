@@ -159,6 +159,7 @@ rather than repeating them in each entry:
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`) | always-on | always-on | **UNRESOLVED** — clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a musl host the glob misses whose `ldd` exits 0 + is slow; or the reference bounding it above 45 s |
+| [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -585,6 +586,36 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   conjuncts); or any measurement showing the reference bounds this probe above 45 s.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`; `install.go` (canonical
   stall table), `libc_linux.go`, `libc_other.go`. Full measurement: forensics.
+
+### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
+
+- **Behavior.** On the run-dir lock's eviction path, before a new `-serve` daemon
+  signals a live lock holder, it confirms the holder is one of our own `-serve`
+  processes bound to this socket. On Linux both the reference and claustrum verify the
+  holder's command line (claustrum reads `/proc/<pid>/cmdline`). On **macOS** there is no `/proc`, and the reference does not
+  verify the holder before signalling: it sends SIGTERM then SIGKILL to the recorded
+  pid unverified. Measured on a macOS VM: the reference signals even a lock holder
+  that is not a serve process. claustrum instead reads the holder's argument vector
+  from `sysctl KERN_PROCARGS2` and refuses to signal a pid whose argv is not our
+  `-serve` for this socket.
+- **Default.** Always-on, macOS only. On the honest path the live lock holder wrote
+  its own pid into the record, so the verification passes and the outcome is
+  identical to the reference (the predecessor is evicted).
+- **Why always-on (rule 3 clause (a)).** Signalling an unverified pid is
+  unrecoverable harm: a crash can leave a stale record whose pid is reused by an
+  unrelated process, or a foreign process can hold the flock, and the reference then
+  SIGKILLs that innocent process. No honest caller benefits from skipping the check,
+  and the same guard is already always-on on Linux (via `/proc`), so macOS matches
+  Linux's safety rather than the reference's macOS gap.
+- **Cost.** None on the honest path. In the one case the reference evicts and
+  claustrum does not — an un-inspectable or non-serve holder — claustrum serves
+  without run-dir ownership instead of killing the holder, which is the safe outcome.
+- **Reopen trigger.** The reference adding the same holder check on macOS (then this
+  becomes parity, not a divergence); or a legitimate macOS holder that
+  `KERN_PROCARGS2` cannot read, reported as a failed handover.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock; `daemon_runlock_unix.go`
+  (`holderSignalRefusal`), `daemon_runlock_darwin.go` (`realIsServeCmdline`,
+  `procArgv`), `daemon_runlock_linux.go`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
