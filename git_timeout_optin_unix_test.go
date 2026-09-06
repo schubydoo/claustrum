@@ -95,6 +95,81 @@ func TestGitDeadlineReportsNoTimeoutWhenBoundIsOff(t *testing.T) {
 	}
 }
 
+// The p.TimeoutMs>0 guard in gitWorktreeCreateLocked keeps a D5 (git-timeout)
+// deadline that fires during the `worktree add` reporting worktree_add_failed —
+// NOT the caller-facing errorCode "timeout", which is reserved for a caller-supplied
+// timeoutMs (4534d86). Without the guard a D5-only kill is misclassified as a
+// caller timeout. The stub is fast for the pre-checks and slow only on the add
+// (matched by its unique --no-checkout arg), so D5 fires on the add specifically.
+func TestWorktreeCreateD5DeadlineIsNotReportedAsTimeoutErrorCode(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\ncase \"$*\" in " +
+		"*is-inside-work-tree*) echo true; exit 0 ;; " +
+		"*abbrev-ref*) echo main; exit 0 ;; " +
+		"*no-checkout*) exec sleep 30 ;; " +
+		"*) exit 0 ;; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := gitTimeout
+	gitTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { gitTimeout = old })
+
+	base := t.TempDir()
+	wt := filepath.Join(base, ".claude", "worktrees", "wt")
+	s := newTestServer(t)
+	// No timeoutMs in the request: the fired deadline is D5's, so the guard must
+	// route it to worktree_add_failed, not errorCode "timeout".
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": base, "branchName": "b", "worktreePath": wt}))
+	if strings.Contains(raw, `"errorCode":"timeout"`) {
+		t.Errorf("D5-only kill misreported as errorCode timeout: %s", raw)
+	}
+	if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Errorf("reply = %s, want errorCode worktree_add_failed", raw)
+	}
+}
+
+// When the operator opts into D5 AND a caller sends a LONGER timeoutMs, the tighter
+// D5 deadline fires first. The kill is D5's, so the reply must be worktree_add_failed
+// — not errorCode "timeout" quoting the caller's longer duration, which would blame
+// the caller for a deadline the operator set. Guards the WithTimeoutCause
+// discrimination: without it, any fired deadline with timeoutMs>0 is misreported as a
+// caller timeout. The add sleeps, D5 (100ms) fires well before the caller's 5000ms.
+func TestWorktreeCreateD5FiresBeforeLongerTimeoutMs(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\ncase \"$*\" in " +
+		"*is-inside-work-tree*) echo true; exit 0 ;; " +
+		"*abbrev-ref*) echo main; exit 0 ;; " +
+		"*no-checkout*) exec sleep 30 ;; " +
+		"*) exit 0 ;; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := gitTimeout
+	gitTimeout = 100 * time.Millisecond // D5 far tighter than the caller's timeoutMs
+	t.Cleanup(func() { gitTimeout = old })
+
+	base := t.TempDir()
+	wt := filepath.Join(base, ".claude", "worktrees", "wt")
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": base, "branchName": "b", "worktreePath": wt, "timeoutMs": 5000}))
+	if strings.Contains(raw, `"errorCode":"timeout"`) {
+		t.Errorf("D5 kill misreported as caller timeout: %s", raw)
+	}
+	if strings.Contains(raw, "5000ms") {
+		t.Errorf("reply quotes the caller's 5000ms for a deadline D5 caused: %s", raw)
+	}
+	if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+		t.Errorf("reply = %s, want errorCode worktree_add_failed", raw)
+	}
+}
+
 // The reply text for an opted-in timeout quotes the configured duration, so it
 // must reflect the value in force rather than a hardcoded 60s.
 func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
@@ -117,5 +192,55 @@ func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
 	}
 	if strings.Contains(raw, "1m0s") || strings.Contains(raw, "60s") {
 		t.Errorf("reply = %s, quotes the retracted 60s default rather than the value in force", raw)
+	}
+}
+
+// A caller-supplied timeoutMs (4534d86) that fires while the read-tree checkout is
+// still running yields the "during the checkout" timeout message, with git's own
+// kill error appended and errorCode "timeout". The stub lets the pre-checks and the
+// `worktree add` succeed fast (writing the linked `.git` so worktreeAdminDir resolves
+// the admin dir), then sleeps on the read-tree so the per-request deadline kills it —
+// exercising the second, post-add timeout arm the "before the checkout started" test
+// never reaches. The sibling "after the checkout finished" arm is a near-unhittable
+// race (read-tree returns clean in the microsecond window before the deadline) and is
+// reproduced from the reference string rather than force-covered.
+func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
+	bin := t.TempDir()
+	// The `worktree add` case writes the worktree's `.git` back-pointer into its
+	// (already-created) leaf dir — the last positional arg — so worktreeAdminDir
+	// returns non-empty and the read-tree runs. read-tree then sleeps past the bound.
+	script := "#!/bin/sh\n" +
+		"last=\"\"\n" +
+		"for a in \"$@\"; do last=\"$a\"; done\n" +
+		"case \"$*\" in " +
+		"*read-tree*) exec sleep 30 ;; " +
+		"*is-inside-work-tree*) echo true; exit 0 ;; " +
+		"*abbrev-ref*) echo main; exit 0 ;; " +
+		"*--no-checkout*) printf 'gitdir: %s/.gitadmin\\n' \"$last\" > \"$last/.git\"; exit 0 ;; " +
+		"*) exit 0 ;; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// D5 off: the caller's timeoutMs is the only deadline in force.
+	old := gitTimeout
+	gitTimeout = 0
+	t.Cleanup(func() { gitTimeout = old })
+
+	base := t.TempDir()
+	wt := filepath.Join(base, ".claude", "worktrees", "wt")
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": base, "branchName": "b", "worktreePath": wt, "timeoutMs": 300}))
+
+	if !strings.Contains(raw, `"errorCode":"timeout"`) {
+		t.Errorf("reply = %s, want errorCode timeout", raw)
+	}
+	if !strings.Contains(raw, "deadline expired during the checkout") {
+		t.Errorf("reply = %s, want the during-the-checkout message", raw)
+	}
+	if !strings.Contains(raw, "git worktree add timed out after 300ms") {
+		t.Errorf("reply = %s, want it to quote the 300ms bound", raw)
 	}
 }

@@ -17,11 +17,19 @@ type pongResult struct {
 type capabilitiesResult struct {
 	Version string   `json:"version"`
 	Methods []string `json:"methods"`
+	// InstanceID and StartedAt were added by the reference daemon in 4534d86 and
+	// sit BETWEEN methods and features. InstanceID is a 32-hex per-boot identity;
+	// StartedAt is the boot time in unix milliseconds. Both are omitempty (a live
+	// daemon always populates them, so the fields always appear; omitempty only
+	// keeps a zero-value test struct byte-identical to the pre-4534d86 shape).
+	InstanceID string `json:"instanceId,omitempty"`
+	StartedAt  int64  `json:"startedAt,omitempty"`
 	// Features advertises optional protocol extensions the client may rely on.
 	// process.stdin.offset landed in 7c2f88d; 7d193f89 added git.status.baseRepo and
 	// git.worktree.external_root — the last omitted on Windows, where the reference
-	// gates the external-worktree capability off (see capabilityFeatures). The array
-	// field itself is always present (never omitempty) — emitted on every OS.
+	// gates the external-worktree capability off (see capabilityFeatures). 4534d86
+	// appended server.instance_id (always last, every OS). The array field itself is
+	// always present (never omitempty) — emitted on every OS.
 	Features []string `json:"features"`
 }
 

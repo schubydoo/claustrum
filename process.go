@@ -23,6 +23,19 @@ type streamFrame struct {
 	Seq       uint64 `json:"seq"`
 	Data      string `json:"data,omitempty"`
 	ExitCode  *int   `json:"exitCode,omitempty"`
+	// Signal and KilledBy were added by the reference daemon in 4534d86 and appear
+	// on an exit frame only. Signal is the SIG-prefixed name of the terminating
+	// signal (omitted on a normal exit and always on Windows, which has no signal
+	// on the wait path). KilledBy names who requested the kill: "client" for
+	// process.kill / process.killAndWait, "shutdown" for the shutdown/killAll
+	// sweep. Both omitempty, so a normal exit stays byte-identical to the pre-4534d86
+	// frame. Provenance: the "client" values and the SIGTERM/SIGKILL names are
+	// live-measured against 4534d86 (other mapped signal names are not individually
+	// measured), and the Windows signal-omission is VM-measured; the "shutdown"
+	// value is from static analysis only (the shutdown exit frame races connection
+	// teardown and is not client-observable).
+	Signal   string `json:"signal,omitempty"`
+	KilledBy string `json:"killedBy,omitempty"`
 
 	// lineBytes is the length of this frame AS SERIALIZED, including the
 	// trailing newline — the unit the replay buffer accounts in. Unexported, so
@@ -106,13 +119,18 @@ type managedProc struct {
 	// derivation, so an equality check would spuriously fail.
 	pid       int
 	startTime float64
-	mu        sync.Mutex
-	seq       uint64
-	buffer    []streamFrame
-	bufBytes  int64 // sum of f.lineBytes (serialized frame + newline) in buffer
-	bufCap    int64 // per-instance override; 0 means use defaultBufferCap
-	subs      map[*conn]struct{}
-	running   bool
+	// sessionKey is the CLI session id this process belongs to (cliSessionKey of its
+	// argv), or "" for a non-session spawn. Set once at spawn and never mutated, so
+	// it is safe to read without p.mu. supersedeSession keys on it to terminate a
+	// prior process of the same session when a new one spawns (4534d86 parity).
+	sessionKey string
+	mu         sync.Mutex
+	seq        uint64
+	buffer     []streamFrame
+	bufBytes   int64 // sum of f.lineBytes (serialized frame + newline) in buffer
+	bufCap     int64 // per-instance override; 0 means use defaultBufferCap
+	subs       map[*conn]struct{}
+	running    bool
 	// reaped is set as soon as cmd.Wait returns — the moment the kernel frees the
 	// pid, and with it the process GROUP id once the last member goes. That is up
 	// to exitDrainGrace before running clears, which is why the two fields exist
@@ -126,6 +144,19 @@ type managedProc struct {
 	// rather than the reap — the two are up to exitDrainGrace apart. Zero while
 	// the process is alive. Read only by pruneExited, under p.mu like running.
 	exitedAt time.Time
+	// killedBy records who asked the daemon to kill this process ("client" for
+	// process.kill / process.killAndWait, "shutdown" for the killAll sweep). It is
+	// stamped by signalIfLive, and only when the signal is actually delivered to a
+	// still-live process, then read once in waitReapAndDrain to populate the exit
+	// frame's killedBy field. Empty when the process exited on its own, was
+	// signalled from outside the daemon, or was already reaped when the kill
+	// arrived — a late kill inside the exit-drain window changed nothing, so it
+	// claims nothing (measured against 4534d86: a natural exit killed inside the
+	// drain window carries no killedBy on the reference). The first reason wins, so
+	// a client kill racing the shutdown sweep stays "client". Provenance for the
+	// value set is split at the KilledBy field comment above: "client" is
+	// live-measured, "shutdown" is static-analysis-only. Read and written under p.mu.
+	killedBy string
 	stdin    io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
 	// safe to read without p.mu (waitReapAndDrain relies on that). signalIfLive and
@@ -170,6 +201,20 @@ type procManager struct {
 	// goroutine.
 	pruneAge      time.Duration
 	pruneInterval time.Duration
+
+	// spawnLocks holds a per-session-key mutex so concurrent spawns of the SAME CLI
+	// session serialize (a new session process must fully register before the next
+	// same-key spawn supersedes it). Ref-counted and dropped at zero, so the map does
+	// not grow unbounded. Guarded by spawnMu. (4534d86 lockSessionSpawn.)
+	spawnMu    sync.Mutex
+	spawnLocks map[string]*sessionSpawnLock
+}
+
+// sessionSpawnLock is one per-session-key mutex plus a reference count, so the
+// entry can be removed from procManager.spawnLocks once no spawn holds or awaits it.
+type sessionSpawnLock struct {
+	mu  sync.Mutex
+	ref int
 }
 
 // procPruneAge is how long a process stays reachable after it exits. Past this,
@@ -214,6 +259,7 @@ func newProcManager() *procManager {
 		stop:          make(chan struct{}),
 		pruneAge:      procPruneAge,
 		pruneInterval: procPruneInterval,
+		spawnLocks:    make(map[string]*sessionSpawnLock),
 	}
 	go m.pruneLoop()
 	return m
@@ -294,10 +340,20 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 }
 
 // signalIfLive delivers signame to the process group unless the process has
-// already been reaped. p.mu is held across BOTH the check and the delivery: an
-// isReaped() that returns before the signal leaves a gap for the exit goroutine
-// to reap in between, which is the very race the check exists to prevent. Every
-// signal site goes through here for that reason.
+// already been reaped, and — only when it actually delivers — records who asked
+// for the kill in p.killedBy. Coupling the stamp to the delivery under one lock
+// is deliberate: a kill that lands on an already-reaped process changed nothing,
+// so it must not claim the exit on the wire. The reference emits no killedBy for
+// a process that exited on its own before the signal could reach it (measured
+// against 4534d86: a natural exit killed inside the drain window carries no
+// killedBy). Pass killedBy "" to signal without claiming attribution — the
+// id-reuse eviction, whose exit frame reaches no client. The first reason wins,
+// so a client kill racing the shutdown sweep stays "client".
+//
+// p.mu is held across the check, the stamp and the delivery: an isReaped() that
+// returns before the signal leaves a gap for the exit goroutine to reap in
+// between, which is the very race the check exists to prevent. Every signal site
+// goes through here for that reason.
 //
 // One window remains and cannot be closed at this layer: the kernel frees the
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
@@ -310,11 +366,14 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 // back for re-measurement it can never satisfy. What is defensible: the guard
 // can only ever suppress a signal, so claustrum's behaviour here is at most
 // narrower than the reference's, never wider.
-func (p *managedProc) signalIfLive(signame string) {
+func (p *managedProc) signalIfLive(signame, killedBy string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
 		return
+	}
+	if killedBy != "" && p.killedBy == "" {
+		p.killedBy = killedBy
 	}
 	signalGroup(p.group, p.cmd.Process, signame)
 }
@@ -419,6 +478,15 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// test that shrinks it. macOS CI caught exactly that; the same confinement is
 	// why procManager copies its prune tunables at construction.
 	grace := exitDrainGrace
+	// A stream-json session spawn serializes against other spawns of the same
+	// session (so a new session process fully registers before the next same-key
+	// spawn supersedes it) and, once registered, supersedes the prior process of
+	// that session below. Empty key (the common case) does neither. (4534d86.)
+	sessionKey := cliSessionKey(args)
+	if sessionKey != "" {
+		unlock := m.lockSessionSpawn(sessionKey)
+		defer unlock()
+	}
 	// The reference prunes inline here as well as on its ticker, so a busy daemon
 	// sheds long-dead entries without waiting for the next sweep.
 	m.pruneExited()
@@ -490,15 +558,16 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 
 	p := &managedProc{
-		id:        id,
-		pid:       cmd.Process.Pid,
-		startTime: startTime,
-		subs:      map[*conn]struct{}{c: {}},
-		running:   true,
-		stdin:     stdin,
-		cmd:       cmd,
-		group:     group,
-		done:      make(chan struct{}),
+		id:         id,
+		pid:        cmd.Process.Pid,
+		startTime:  startTime,
+		sessionKey: sessionKey,
+		subs:       map[*conn]struct{}{c: {}},
+		running:    true,
+		stdin:      stdin,
+		cmd:        cmd,
+		group:      group,
+		done:       make(chan struct{}),
 	}
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
@@ -515,10 +584,17 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		old.subs = map[*conn]struct{}{}
 		old.mu.Unlock()
 		// Skip exited children — their pgid may already be recycled (see kill).
-		old.signalIfLive("KILL")
+		// No killedBy: this eviction's exit frame reaches no client (subs cleared).
+		old.signalIfLive("KILL", "")
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
+
+	// Now that the new session process is registered, evict any prior process of the
+	// same session (4534d86). Non-session spawns (empty key) skip this.
+	if sessionKey != "" {
+		m.supersedeSession(sessionKey, id)
+	}
 
 	go p.stdinWriter()
 	var wg sync.WaitGroup
@@ -577,6 +653,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.mu.Lock()
 	p.running = false
 	p.exitedAt = time.Now() // starts the procPruneAge clock
+	killedBy := p.killedBy
 	p.mu.Unlock()
 	// Stop the stdin writer and wake any producer blocked on a full queue; the
 	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
@@ -589,7 +666,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.group.close()
 	logInfof("[process.Manager] Process %s exited with code %d", p.id, code)
 	met.processExits.Add(1)
-	p.emit(streamFrame{Stream: "exit", ExitCode: &code})
+	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: exitSignalName(err), KilledBy: killedBy})
 	// Signal any killAndWait waiter now the child is fully reaped.
 	close(p.done)
 }
@@ -752,7 +829,7 @@ func (m *procManager) kill(id, signal string) {
 	if p == nil {
 		return
 	}
-	p.signalIfLive(signal)
+	p.signalIfLive(signal, "client")
 }
 
 // defaultKillWaitMs is the graceful-signal grace killAndWait uses when the caller
@@ -900,10 +977,20 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 	if p == nil {
 		return false, false, false, false
 	}
+	return m.killAndWaitProc(p, signal, grace, escalate)
+}
+
+// killAndWaitProc is killAndWait targeting a specific process IDENTITY rather than
+// re-resolving a client-visible id. supersedeSession captures the victim
+// *managedProc under the same lock as its scan and kills THAT process, so a
+// concurrent spawn that reuses the id (which replaces m.procs[id], and via the
+// reused-id path in spawn already tears the original down) cannot redirect the kill
+// onto the innocent replacement. Do NOT re-resolve p by id here.
+func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	if !p.isRunning() {
 		return true, true, true, false
 	}
-	p.signalIfLive(signal)
+	p.signalIfLive(signal, "client")
 	select {
 	case <-p.done:
 		if escalate {
@@ -1031,7 +1118,7 @@ func (m *procManager) killAll() {
 	defer m.mu.Unlock()
 	for _, p := range m.procs {
 		// Skip exited children — their pgid may already be recycled (see kill).
-		p.signalIfLive("KILL")
+		p.signalIfLive("KILL", "shutdown")
 	}
 }
 

@@ -181,7 +181,7 @@ The fixed name and location are the deployment contract, not configurable.
 // error
 {"jsonrpc":"2.0","id":<n>,"error":{"code":<c>,"message":"…"}}
 // id-less stream notification (server -> client)
-{"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>}
+{"type":"stream","processId":"<id>","stream":"stdout|stderr|exit","seq":<n>,"data":"<base64>","exitCode":<n>,"signal":"<SIG>","killedBy":"<who>"}
 ```
 
 The reply's `id` is the request's id **decoded and re-encoded**. It is not the
@@ -246,6 +246,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"` — a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
 | git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"` |
+| git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <git error> / after the checkout finished})` | in `error`, `errorCode:"timeout"` — caller-supplied `timeoutMs` (`4534d86`); absent/0 arms no deadline |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error` (no `errorCode`; `7d193f89` containment; the spelling refusal is Windows-only and precedes containment) |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error` (no `errorCode`) — gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error` (no `errorCode`) — `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place; the message is fixed regardless of the lock reason. Pre-`7d193f89` the reference deleted it via the fallback and answered `success:true`. |
@@ -411,18 +412,25 @@ surface and still prints the daemon's version.)
 | method | params | result |
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"features":["process.stdin.offset","git.status.baseRepo","git.worktree.external_root"]}` (`git.worktree.external_root` is omitted on Windows — the capability is gated off there) |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree.external_root","server.instance_id"]}` (`git.worktree.external_root` is omitted on Windows; `git.worktree_create.timeoutMs`, `instanceId`/`startedAt` are present on every OS) |
 | `server.shutdown` | — | `{"ok":true}` — the daemon replies, then stops and the connection closes (delivery races the teardown, so the reply is best-effort on the wire; see below) |
 
 - **`server.version` was removed in `7d193f89`** — it now answers
   `-32601 "Unknown method: server.version"` like any other unknown method.
-- **`features` array** (added `7c2f88d`) follows `methods` and advertises optional
-  extensions. `process.stdin.offset` (the resumable/idempotent stdin contract)
-  landed first; `7d193f89` added `git.status.baseRepo` and
-  `git.worktree.external_root`, in this order. On unix all three are present; **on
-  Windows `git.worktree.external_root` is omitted** — the reference gates the
-  external-worktree capability off on Windows (measured against `7d193f89`) and drops
-  the feature from its Windows capabilities frame, so claustrum matches.
+- **`instanceId` and `startedAt`** (added `4534d86`) sit between `methods` and
+  `features`. `instanceId` is a 32-hex string and `startedAt` is the daemon's boot
+  time in unix milliseconds. Both are present on every OS. claustrum generates
+  `instanceId` from 16 crypto/rand bytes at startup and stamps `startedAt` then,
+  echoing both on the capabilities reply for parity.
+- **`features` array** (added `7c2f88d`) follows `instanceId`/`startedAt` and
+  advertises optional extensions. `process.stdin.offset` (the resumable/idempotent
+  stdin contract) landed first; `7d193f89` added `git.status.baseRepo` and
+  `git.worktree.external_root`; `4534d86` inserted `git.worktree_create.timeoutMs`
+  before `git.worktree.external_root` and appended `server.instance_id` (always
+  last, every OS). On unix `git.worktree.external_root` is present; **on Windows it
+  is omitted** — the reference gates the external-worktree capability off on Windows
+  (measured against `7d193f89`) and drops the feature from its Windows capabilities
+  frame, so claustrum matches. `git.worktree_create.timeoutMs` is present on every OS.
 - **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
 
 ### files.* (param: `path`)
@@ -595,7 +603,7 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   `signal: killed` (see D5 below).
 
 #### git.worktree_create
-`{baseRepo,branchName,worktreePath[,sourceBranch][,worktreeRoot]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`
+`{baseRepo,branchName,worktreePath[,sourceBranch][,worktreeRoot][,timeoutMs]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`
 - The repo is **`baseRepo`**, not `path`. When `baseRepo` is absent, the daemon
   uses its cwd repo.
 - Missing `branchName` → `-32602 branchName is required`.
@@ -641,6 +649,18 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   The tail is git's **combined** output, because the add writes its fatal to stderr
   and leaves stdout empty. For example: `"git worktree add failed: Preparing
   worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"`.
+- **`timeoutMs`** (caller-supplied, added `4534d86`) bounds the add + checkout with a
+  per-request deadline in milliseconds. Absent or `0` arms no deadline, so the reply
+  is byte-identical to the default. A fired deadline answers
+  `{success:false,error:"git worktree add timed out after <n>ms (…)",errorCode:"timeout"}`.
+  The parenthetical is `deadline expired before the checkout started` when the add is
+  killed (measured), `deadline expired during the checkout): <git error>` when the
+  checkout (a `read-tree`) is killed (measured; the tail is git's own error, e.g.
+  `signal: killed`), and `deadline expired after the checkout finished` for the
+  near-unhittable window where the deadline expires just after the checkout returns
+  (reproduced from the reference string). This is caller-activated, distinct from the
+  operator-global `-git-timeout` divergence (D5), and applies to create only, not
+  `git.worktree_remove`.
 - `sourceBranch` omitted → the source defaults to the repo's current branch, and
   the daemon echoes it back. On an **unborn HEAD** the source resolves empty, the
   add infers an orphan branch and succeeds, and the result omits `sourceBranch`.
@@ -754,6 +774,16 @@ id-less stream notifications, and **buffers** them for a later replay.
   process tree. It drops the subscribers first, so no stray frame arrives under the
   reused id. This is OS-level only and changes no wire byte. The reference leaves
   the old process running.
+- **Session superseding (`4534d86` parity).** A `process.spawn` whose `args` name a
+  stream-json CLI session — an `--input-format=stream-json` / `--output-format=stream-json`
+  arg (or a bare `stream-json` arg) plus a valid `--session-id`/`--resume` token, the
+  resume fallback suppressed by `--fork-session` — terminates any OTHER running process
+  of the SAME session id. The superseded process is killed via the SIGTERM-then-SIGKILL
+  path, and its exit frame reaches its client (the `killedBy:"client"` marker on that
+  frame ships in a separate slice). A spawn with no session key, or a different session
+  id, supersedes nothing. The eviction, the `client` kill reason, and the session-key
+  rules above are measured against the reference; claustrum also serializes concurrent
+  spawns of one session, matching an equivalent per-key lock seen in the reference.
 - **`wantPid` opt-in (CT-1, claustrum-only).** With `"wantPid":true` the reply gains
   two fields **after** `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
   `pid` is the child's OS pid. `startTime` is the **daemon's wall clock (epoch
@@ -883,12 +913,26 @@ reports the outcome as a *result*. An unknown id is not an error:
 {"type":"stream","processId":"<id>","stream":"stdout","seq":1,"data":"<base64>"}
 {"type":"stream","processId":"<id>","stream":"stderr","seq":2,"data":"<base64>"}
 {"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":0}
+{"type":"stream","processId":"<id>","stream":"exit","seq":3,"exitCode":-1,"signal":"SIGTERM","killedBy":"client"}
 ```
 
 - `seq` is **per-process**. It starts at 1 and is monotonic across
   stdout/stderr/exit.
 - `data` is base64 for stdout/stderr. The `exit` frame carries `exitCode` and no
   `data`. A signal-terminated child reports `exitCode: -1`, not `128+signo`.
+- **`signal` and `killedBy`** (added `4534d86`) appear on the `exit` frame only,
+  both after `exitCode` and both omitempty — a normal exit stays byte-identical.
+  `signal` is the SIG-prefixed name of the terminating signal (`SIGTERM`,
+  `SIGKILL`), read from the wait status; it is omitted on a normal exit and always
+  on Windows, which has no signal on the wait path (measured on a Windows VM: the
+  reference omits `signal` and still emits `killedBy` there). `killedBy` names who
+  asked the daemon to kill the process: `client` for `process.kill` /
+  `process.killAndWait`, `shutdown` for the shutdown/`killAll` sweep. `killedBy` is
+  emitted on every OS. The `client` values and the `SIGTERM`/`SIGKILL` names are
+  live-measured (the other mapped signal names derive from the same wait-status
+  path and are not individually measured against the reference); the `shutdown`
+  value is read from the reference by static analysis only, because the shutdown
+  exit frame races connection teardown and is not client-observable.
 - The `exit` frame waits at most **5 seconds** after the process exits for
   stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
   frame anyway. This matters when the command leaves a **grandchild that holds the
@@ -1131,12 +1175,30 @@ reaches the network **only with `-cli-url`**.
 | `download failed: response exceeds <n> bytes` | D10 cap on the download body, opt-in |
 | `download failed: <transport err>` | `io.Copy` transport error (e.g. `read tcp …: connection reset by peer`) |
 | `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)` | D12 download deadline, opt-in |
+| `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort — no bytes for 60 s on the `-cli-url` body (always-on, `4534d86` parity, VM-measured) |
 | `mkdir cli dir: <err>` | cli-dir uncreatable |
 | `cli version "…" must be a single path component` | D6 hardening |
 | `cli version "…" collides with the install temp sweep` | D7 hardening |
 | `cli version "…" collides with the install download blob` | version starting `.blob-` |
 | `clearing stale dir at <path>: <err>` | occupied `cliPath` directory couldn't be removed |
 | `staging file vanished before install: <err>` | a concurrent sweep took the staging file |
+
+**Download progress + `fetch` stats (`4534d86`, `-cli-url`):**
+- While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to stdout on
+  a ~1 s ticker: `{"phase":"download","bytes":<n>[,"total":<m>]}`. A leading `bytes:0`
+  line is always emitted; `total` carries the Content-Length and is dropped when the
+  server sends none (chunked). The cadence is time-driven, so byte counts jump
+  irregularly and there is no guaranteed final `bytes==total` line — a consumer treats
+  these as progress, not a byte-exact sequence.
+- The `__INSTALL_RESULT__` facts line gains a `fetch` object LAST (after `cliError`):
+  `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}` — bytes read, download duration, and
+  the largest gap between reads. It appears whenever a `-cli-url` download was
+  attempted (even a 0-byte 404) and is dropped on the `-cli-zst` / cache-hit paths.
+- The `-cli-url` body has an always-on 60 s **read-idle abort** (reset on every byte)
+  that fails the install with the `download stalled: …` cliError above. This is parity,
+  not a divergence — the reference does it. It is a read-idle bound, not a total
+  deadline, so a slow-but-progressing download completes (that total cap is the opt-in
+  D12, off by default).
 
 **Checksum + verify ordering:**
 - claustrum verifies `-cli-checksum` on the `-cli-url` path **unconditionally**. An

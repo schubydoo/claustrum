@@ -7,13 +7,21 @@ import (
 
 const testToken = "s3cret-token"
 
+// Fixed instance identity for tests so the server.capabilities reply is
+// deterministic. A live daemon generates these at boot (newDaemonInstanceID /
+// time.Now); the socket golden masks both, the way it masks version.
+const testInstanceID = "0123456789abcdef0123456789abcdef"
+const testStartedAt int64 = 1_700_000_000_000
+
 func newTestServer(tb testing.TB) *server {
 	tb.Helper()
 	return &server{
-		token:    testToken,
-		procs:    newTestProcManager(tb),
-		conns:    make(map[*conn]struct{}),
-		shutdown: make(chan struct{}),
+		token:      testToken,
+		procs:      newTestProcManager(tb),
+		conns:      make(map[*conn]struct{}),
+		shutdown:   make(chan struct{}),
+		instanceID: testInstanceID,
+		startedAt:  testStartedAt,
 	}
 }
 

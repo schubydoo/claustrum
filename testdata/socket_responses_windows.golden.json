@@ -47,9 +47,13 @@
         "process.killAndWait",
         "process.reattach"
       ],
+      "instanceId": "<IID>",
+      "startedAt": "<T>",
       "features": [
         "process.stdin.offset",
-        "git.status.baseRepo"
+        "git.status.baseRepo",
+        "git.worktree_create.timeoutMs",
+        "server.instance_id"
       ]
     }
   },

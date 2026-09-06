@@ -101,8 +101,9 @@ func TestClampKillWaitMs(t *testing.T) {
 	}
 }
 
-// server.capabilities advertises process.killAndWait (between kill and reattach)
-// and, since 7d193f89, the three features in the reference's order.
+// server.capabilities advertises process.killAndWait (between kill and reattach),
+// the features in the reference's order, and — since 4534d86 — a per-boot instanceId
+// and startedAt plus the server.instance_id feature.
 func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "server.capabilities", map[string]any{}))
@@ -113,14 +114,21 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	if !strings.Contains(joined, "process.kill,process.killAndWait,process.reattach") {
 		t.Errorf("methods missing killAndWait in the right slot: %v", got.Methods)
 	}
-	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree.external_root"}
+	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "git.worktree.external_root", "server.instance_id"}
 	if runtime.GOOS == "windows" {
 		// external_root is gated off on Windows (capfeatures_windows.go), matching the
 		// reference, which drops the feature from its Windows capabilities frame.
-		wantFeatures = wantFeatures[:2]
+		// git.worktree_create.timeoutMs is present on every OS; server.instance_id is always last.
+		wantFeatures = []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "server.instance_id"}
 	}
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)
+	}
+	if got.InstanceID != testInstanceID {
+		t.Errorf("instanceId = %q, want %q", got.InstanceID, testInstanceID)
+	}
+	if got.StartedAt != testStartedAt {
+		t.Errorf("startedAt = %d, want %d", got.StartedAt, testStartedAt)
 	}
 }
 

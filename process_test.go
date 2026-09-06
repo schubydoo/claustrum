@@ -901,6 +901,13 @@ func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
 	})
 }
 
+// killedByOf reads p.killedBy under p.mu, the way waitReapAndDrain does.
+func killedByOf(p *managedProc) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.killedBy
+}
+
 // TestReapedProcessIsNotSignalled is the guard behind the exit-drain window.
 //
 // cmd.Wait frees the pid, and on Unix the pgid too once the last group member
@@ -935,6 +942,13 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	if len(signals) != 0 {
 		t.Errorf("killAll signalled a reaped process: %v", signals)
 	}
+	// A kill that reached an already-reaped process changed nothing, so it must
+	// claim nothing on the wire: killedBy stays empty. Stamping it here is the
+	// divergence measured against 4534d86 — a natural exit killed inside the drain
+	// window carries no killedBy on the reference, but claustrum reported "client".
+	if got := killedByOf(p); got != "" {
+		t.Errorf("a kill on a reaped process stamped killedBy=%q, want empty", got)
+	}
 
 	// Not yet reaped: the same calls must still signal, or the guard has simply
 	// broken kill.
@@ -945,6 +959,58 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	m.killAll()
 	if len(signals) != 2 {
 		t.Errorf("signals for a live process = %v, want [TERM KILL]", signals)
+	}
+	// The live kill delivered, so it claims the exit; the first reason wins, so the
+	// later shutdown sweep does not overwrite "client".
+	if got := killedByOf(p); got != "client" {
+		t.Errorf("a delivered client kill stamped killedBy=%q, want %q", got, "client")
+	}
+}
+
+// TestKillAndWaitProcTargetsCapturedIdentity guards the supersede reused-id race:
+// supersedeSession captures the victim *managedProc, and killAndWaitProc signals
+// THAT process, not whatever the client-visible id resolves to at kill time. A
+// concurrent spawn that reuses the id replaces m.procs[id] (and the reused-id path
+// in spawn already tears the original down), so re-resolving the id would terminate
+// the innocent replacement. The mutant (re-resolve p by id inside killAndWaitProc)
+// signals the replacement and fails this test.
+func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+	var mu sync.Mutex
+	signaledPids := map[int]bool{}
+	signalGroup = func(_ *procGroup, proc *os.Process, _ string) {
+		mu.Lock()
+		signaledPids[proc.Pid] = true
+		mu.Unlock()
+	}
+
+	m := newTestProcManager(t)
+	victim := &managedProc{
+		id: "X", sessionKey: "s", running: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 111}}, done: make(chan struct{}),
+	}
+	close(victim.done) // die promptly on the graceful-signal path
+	m.procs["X"] = victim
+
+	// A concurrent spawn reuses id "X" for an unrelated process after the scan.
+	replacement := &managedProc{
+		id: "X", sessionKey: "other", running: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 222}}, done: make(chan struct{}),
+	}
+	m.mu.Lock()
+	m.procs["X"] = replacement
+	m.mu.Unlock()
+
+	m.killAndWaitProc(victim, "SIGTERM", 20*time.Millisecond, true)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !signaledPids[111] {
+		t.Error("captured victim (pid 111) was not signaled")
+	}
+	if signaledPids[222] {
+		t.Error("reused-id replacement (pid 222) was signaled — the kill redirected to the wrong process")
 	}
 }
 
@@ -979,7 +1045,7 @@ func TestSignalIsAtomicWithTheReapedCheck(t *testing.T) {
 		id: "LIVE", running: true,
 		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
 	}
-	p.signalIfLive("TERM")
+	p.signalIfLive("TERM", "")
 
 	if !delivered {
 		t.Fatal("no signal delivered for a live process")
