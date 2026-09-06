@@ -94,6 +94,21 @@ func (s *server) exitWhenOrphaned(socket string) {
 			logWarnf("[Server] socket %s did not lead back to this daemon (%d/%d); re-checking next interval", socket, failedProbes, orphanProbeFailuresToExit)
 			continue
 		}
+		// A client may have attached during the grace + self-probe window — after this
+		// tick's top-of-loop connCount() check. On the AF_UNIX socket the reference has,
+		// this cannot happen to us: once the path is orphaned (removed or rebound) a new
+		// client reaches the successor, not this daemon (measured against 4534d86 —
+		// scratch/probe/orphanreach-4534d86.md), so connCount() cannot rise here on that
+		// path. The one endpoint that CAN attach a client mid-window is the claustrum-only
+		// named-pipe listener (CT-5), which the socket self-probe never covers. So this
+		// re-check is claustrum-only and non-divergent by construction: it can only
+		// SUPPRESS a shutdown for a pipe client, never change behavior on a
+		// reference-reachable path. Any connected client resets orphan detection, the same
+		// invariant the top of the loop enforces.
+		if s.connCount() > 0 {
+			reset()
+			continue
+		}
 		logWarnf("[Server] orphaned for %s (socket gone or rebound, %d self-probes failed, no clients); shutting down with %d child process group(s) running",
 			time.Since(orphanedSince).Round(time.Second), failedProbes, s.procs.runningCount())
 		s.signalShutdown()

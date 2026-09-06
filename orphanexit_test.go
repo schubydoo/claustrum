@@ -203,6 +203,56 @@ func TestExitWhenOrphanedResetsWhileConnected(t *testing.T) {
 	}
 }
 
+// TestExitWhenOrphanedRechecksConnsBeforeShutdown pins the re-check added right before
+// signalShutdown: a client that attaches AFTER a tick's top-of-loop connCount() check —
+// during the multi-second self-probe window, notably via the Windows named-pipe
+// listener that the socket self-probe never covers — must still cancel the shutdown. The
+// successor answers with a foreign id so every probe fails; on the SECOND probe (after
+// that tick's top-of-loop check) it registers a connection on this daemon, mimicking the
+// late client. With the pre-shutdown re-check the daemon resets; without it (the mutant)
+// it tears down with the client attached.
+func TestExitWhenOrphanedRechecksConnsBeforeShutdown(t *testing.T) {
+	shrinkOrphanTimers(t, 10*time.Millisecond, 10*time.Millisecond)
+	s, sock := bootOrphanServer(t)
+	if err := os.Remove(sock); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	var probes int64
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// On the second probe, attach a client to THIS daemon — after this tick's
+			// top-of-loop connCount() check, so only the pre-shutdown re-check can see it.
+			if atomic.AddInt64(&probes, 1) == 2 {
+				_, srv := net.Pipe()
+				s.mu.Lock()
+				s.conns[&conn{nc: srv}] = struct{}{}
+				s.mu.Unlock()
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				_, _ = bufio.NewReader(c).ReadBytes('\n')
+				_, _ = fmt.Fprintf(c, `{"jsonrpc":"2.0","id":1,"result":{"instanceId":%q}}`+"\n", "ffffffffffffffffffffffffffffffff")
+			}(c)
+		}
+	}()
+	startOrphanLoop(t, s, sock)
+	select {
+	case <-s.shutdown:
+		t.Fatal("shut down even though a client attached during the self-probe window — the pre-shutdown connCount re-check was skipped")
+	case <-time.After(300 * time.Millisecond):
+		// the pre-shutdown re-check saw the late client and reset each interval
+	}
+}
+
 func TestExitWhenOrphanedProbeReachesUsResets(t *testing.T) {
 	shrinkOrphanTimers(t, 10*time.Millisecond, 20*time.Millisecond)
 	s, sock := bootOrphanServer(t)
