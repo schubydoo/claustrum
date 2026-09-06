@@ -104,6 +104,13 @@ while IFS= read -r f; do
   grep -qxF -- "$f" <<<"$CLAUSTRUM_ONLY" && continue
   note "claustrum-only flag not in the allowlist: $f (intentional extra? add it to CLAUSTRUM_ONLY)"
 done <<<"$ourflags"
+# And the reverse: an allowlisted flag that has vanished from claustrum is an
+# accidental removal of a supported flag — the loops above never visit it, so
+# assert every CLAUSTRUM_ONLY entry is still present.
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  grep -qxF -- "$f" <<<"$ourflags" || note "allowlisted claustrum-only flag missing from claustrum: $f (removed/renamed?)"
+done <<<"$CLAUSTRUM_ONLY"
 
 # 3c) -version format (token count / shape), ignoring the id value
 vshape() { "$1" -version 2>&1 | sed -E 's/[0-9a-f]{40}/<SHA>/; s/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z/<TS>/'; }
