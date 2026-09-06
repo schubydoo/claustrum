@@ -171,6 +171,32 @@ Unlike the socket and `daemon.token`, claustrum does **not remove the log on
 graceful shutdown**. The log outlives the daemon, so a post-mortem stays readable.
 The fixed name and location are the deployment contract, not configurable.
 
+### Orphan-exit self-probe
+
+A running `-serve` daemon periodically checks whether its socket path still leads
+back to itself and shuts down if it does not, matching reference build 4534d86. It
+exists so a predecessor whose socket a newer daemon took over retires promptly,
+instead of lingering indefinitely — the 5-minute idle timeout closes only an idle
+*connection*, never the daemon, so a client-less orphan would otherwise never exit.
+The check is off the JSON-RPC wire: the only observable effects are a self-directed
+`server.capabilities` request on the socket once orphaned (a normal authed RPC) and
+stderr log lines. In normal operation there is no self-RPC — only an `os.Stat`.
+
+Every 60 seconds the daemon `os.Stat`s its socket path and compares the file
+identity (`os.SameFile`) to the inode it bound. If the path is gone or now a
+different inode, and **no client is connected**, it starts a 10-minute grace clock.
+Any connected client, or a path that still matches, resets the clock. After the
+grace elapses with nobody connected it self-probes: it dials its own socket, sends
+an authed `server.capabilities`, and compares the reply's `instanceId` to its own. A
+probe that reaches itself resets (a changed file identity that still leads back is
+not orphaned). **Two consecutive failed probes** (60 seconds apart) trigger a
+**graceful** shutdown, closing listeners, dropping clients, and stopping child
+process groups (unless `-keep-children`), never a bare exit.
+
+The behavior is identical on every OS (`os.SameFile` gives the file-identity compare
+portably). It is a no-op when the daemon has no captured socket identity or no
+`instanceId`. This is parity with the reference, not a divergence.
+
 ## Message shapes
 
 ```jsonc

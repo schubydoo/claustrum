@@ -93,7 +93,8 @@ children it spawns.
   the pipe, the daemon publishes the chosen pipe name to `rpc.pipe` beside the
   socket. It removes `rpc.pipe` on graceful shutdown. The transport is strictly
   additive — the socket path does not change.
-- The daemon makes **no** outbound network connections. It opens no inbound
+- The daemon makes **no** outbound network connections (its only dial is the
+  orphan-exit loopback self-probe to its own `AF_UNIX` socket, not network egress). It opens no inbound
   listener beyond the socket unless the operator opts into `-metrics-addr` (TCP)
   or `-listen-pipe` (a local, owner-only Windows named pipe).
 

@@ -722,6 +722,10 @@ func (s *server) run(socket string) {
 	signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
 	go func() { <-sigc; s.signalShutdown() }()
 	s.startAcceptLoops()
+	// Retire this daemon if its socket path is taken over by a successor and no client
+	// is connected (matching 4534d86). Exits with the daemon's shutdown; no-op unless
+	// the durations, sockInfo, and instanceId are all set. See orphanexit.go.
+	go s.exitWhenOrphaned(socket)
 
 	// Block here until shutdown, then tear down synchronously on the main
 	// goroutine. teardown closes the listener (unblocking acceptLoop's Accept) and
