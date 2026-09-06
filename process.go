@@ -96,12 +96,13 @@ type streamFrame struct {
 const defaultBufferCap int64 = 16 * 1024 * 1024
 
 // stdinQueueCap bounds the per-process async stdin queue. A producer that outruns
-// a slow or non-reading child blocks (backpressure) once this much data is queued,
-// rather than letting the daemon's memory grow without bound. The reference
-// applies the same kind of bound (its "stdin backpressure: queue full" guard); the
-// exact threshold is a stderr-log edge, not part of the wire contract. var so
+// a slow or non-reading child gets a -32002 "stdin backpressure: queue full" error
+// once this much data is queued, rather than letting the daemon's memory grow
+// without bound. This is a WIRE contract, not a log edge: the reference returns
+// that error frame (measured against 4534d86, probe scratch/probe/stdincap — the
+// reject fires once the queue exceeds 16 MiB). The cap is 16 MiB to match. var so
 // tests can shrink it.
-var stdinQueueCap = 8 * 1024 * 1024
+var stdinQueueCap = 16 * 1024 * 1024
 
 type managedProc struct {
 	id string
@@ -655,7 +656,7 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.exitedAt = time.Now() // starts the procPruneAge clock
 	killedBy := p.killedBy
 	p.mu.Unlock()
-	// Stop the stdin writer and wake any producer blocked on a full queue; the
+	// Stop the stdin writer and wake it if it is parked on an empty queue; the
 	// child's stdin pipe is closed by cmd.Wait, so further writes would fail.
 	p.stdinMu.Lock()
 	p.stdinDone = true
@@ -697,49 +698,61 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 }
 
 // writeStdin enqueues data for asynchronous delivery to the child's stdin and
-// returns true if the process exists and has a stdin pipe. The actual pipe write
-// happens on the stdinWriter goroutine, so a slow/non-reading child never blocks
-// the caller (matching the reference's async stdin). Returns false for an unknown
-// process or one without stdin.
+// returns true when the write was accepted: the process exists, has a stdin pipe,
+// and the async queue had room. It returns false for an unknown process, one
+// without stdin, or when the queue is already full (backpressure) — in which case
+// nothing is enqueued and no bytes are counted, mirroring the -32002 the RPC path
+// (applyStdin) surfaces. The actual pipe write happens on the stdinWriter
+// goroutine, so a slow/non-reading child never blocks the caller (matching the
+// reference's async stdin).
 func (m *procManager) writeStdin(id string, data []byte) bool {
 	p := m.get(id)
 	if p == nil || p.stdin == nil {
 		return false
 	}
+	if p.enqueueStdin(data) {
+		return false // queue full (backpressure): nothing was enqueued
+	}
 	met.stdinBytes.Add(int64(len(data)))
-	p.enqueueStdin(data)
 	return true
 }
 
-// enqueueStdin appends data to the async stdin queue and returns immediately. If
-// the queue is already at capacity it blocks (backpressure) until the writer
-// drains enough room, logging the reference's "queue full" guard once. A single
-// write larger than the cap is still accepted when the queue is empty, so it can
-// never deadlock waiting for a drain that cannot start.
-func (p *managedProc) enqueueStdin(data []byte) {
+// enqueueStdin appends data to the async stdin queue and returns immediately. It
+// returns full=true when the queue is already at capacity, so the caller can
+// surface the reference's -32002 "stdin backpressure: queue full" error instead
+// of enqueuing. A single write larger than the cap is still accepted when the
+// queue is empty, so a lone over-cap write is never rejected.
+func (p *managedProc) enqueueStdin(data []byte) (full bool) {
 	p.stdinMu.Lock()
-	p.enqueueStdinLocked(data)
+	full = p.enqueueStdinLocked(data)
 	p.stdinMu.Unlock()
+	return full
 }
 
 // enqueueStdinLocked is enqueueStdin's body with p.stdinMu already held, so the
 // stdin-offset path (applyStdin) can decide the offset and enqueue atomically
-// under a single lock. cond.Wait releases stdinMu while parked, so the exit
-// goroutine can still set stdinDone and wake it.
-func (p *managedProc) enqueueStdinLocked(data []byte) {
-	for !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
+// under a single lock. It does not block: when the queue is already non-empty and
+// this write would push it past the cap, it returns full=true and enqueues
+// nothing (the reference returns -32002 here rather than parking the request).
+// The stdinQBytes>0 conjunct exempts a lone over-cap write on an empty queue, so
+// it is always accepted. A write after the process exited (stdinDone) is dropped,
+// not reported as full — it matches the exit-drain wart (D-note: stdin acked
+// during the drain is dropped and the high-water mark still advances).
+func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
+	if !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
 		if !p.stdinWarned {
 			logWarnf("[process.Manager] stdin backpressure: queue full for %s", p.id)
 			p.stdinWarned = true
 		}
-		p.stdinCond.Wait()
+		return true
 	}
 	if p.stdinDone {
-		return
+		return false
 	}
 	p.stdinQ = append(p.stdinQ, data)
 	p.stdinQBytes += len(data)
 	p.stdinCond.Broadcast()
+	return false
 }
 
 // applyStdin implements the stdin-offset idempotency contract (advertised as the
@@ -756,29 +769,34 @@ func (p *managedProc) enqueueStdinLocked(data []byte) {
 // data[applied-offset:] and advances applied to offset+len. The decision and the
 // enqueue happen under one stdinMu hold so concurrent stdin calls can't interleave
 // against a stale counter.
-func (p *managedProc) applyStdin(data []byte, offset *uint64) (applied uint64, duplicate, gap bool) {
+func (p *managedProc) applyStdin(data []byte, offset *uint64) (applied uint64, duplicate, gap, full bool) {
 	p.stdinMu.Lock()
 	cur := p.stdinApplied
 	if offset != nil {
 		off := *offset
 		if off > cur {
 			p.stdinMu.Unlock()
-			return cur, false, true
+			return cur, false, true, false
 		}
 		if skip := cur - off; skip > 0 {
 			if skip >= uint64(len(data)) {
 				p.stdinMu.Unlock()
-				return cur, true, false
+				return cur, true, false, false
 			}
 			data = data[skip:]
 		}
 	}
-	p.enqueueStdinLocked(data)
+	if p.enqueueStdinLocked(data) {
+		// Queue full: enqueue nothing and leave stdinApplied unchanged so the
+		// client can resend from the same offset once space frees.
+		p.stdinMu.Unlock()
+		return cur, false, false, true
+	}
 	p.stdinApplied += uint64(len(data))
 	applied = p.stdinApplied
 	p.stdinMu.Unlock()
 	met.stdinBytes.Add(int64(len(data)))
-	return applied, false, false
+	return applied, false, false, false
 }
 
 // stdinWriter drains the async queue to the child's stdin in FIFO order for the
@@ -799,7 +817,7 @@ func (p *managedProc) stdinWriter() {
 		chunk := p.stdinQ[0]
 		p.stdinQ = p.stdinQ[1:]
 		p.stdinQBytes -= len(chunk)
-		p.stdinCond.Broadcast() // wake producers blocked on a full queue
+		p.stdinCond.Broadcast() // wake the exit path / any writer waiting on the queue
 		p.stdinMu.Unlock()
 
 		_, err := p.stdin.Write(chunk)

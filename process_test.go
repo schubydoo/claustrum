@@ -440,6 +440,47 @@ func TestWriteStdinReturnValue(t *testing.T) {
 	}
 }
 
+// writeStdin must surface backpressure, not a false success: once the async queue
+// is full it enqueues nothing, counts no bytes, and returns false — mirroring the
+// -32002 the RPC path returns. Before the wrapper propagated enqueueStdin's full
+// signal it returned true while silently dropping the write.
+func TestWriteStdinRejectsWhenFull(t *testing.T) {
+	old := stdinQueueCap
+	stdinQueueCap = 8
+	defer func() { stdinQueueCap = old }()
+
+	pr, pw := io.Pipe()
+	defer pr.Close() // unblocks the parked writer so its goroutine exits
+	m := newTestProcManager(t)
+	p := &managedProc{id: "wf", subs: map[*conn]struct{}{}, stdin: pw}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	m.procs["wf"] = p
+	go p.stdinWriter()
+
+	// First chunk: the writer dequeues it and parks inside pw.Write (pr is never
+	// read), leaving the queue empty but the writer busy so later writes accumulate.
+	p.enqueueStdin([]byte("X"))
+	waitStdinQueueEmpty(t, p)
+
+	before := met.stdinBytes.Load()
+	accepted, rejected := 0, false
+	for i := 0; i < 100; i++ { // 200 bytes >> 8-byte cap → one must be rejected
+		if m.writeStdin("wf", []byte("ab")) {
+			accepted++
+			continue
+		}
+		rejected = true
+		break
+	}
+	if !rejected {
+		t.Fatal("writeStdin never returned false despite an 8-byte cap — backpressure not propagated")
+	}
+	// The rejected write enqueued nothing, so only the accepted 2-byte writes count.
+	if got, want := met.stdinBytes.Load()-before, int64(accepted*2); got != want {
+		t.Fatalf("stdinBytes delta = %d, want %d (a rejected write must not count)", got, want)
+	}
+}
+
 // process.stdin is asynchronous: a write to a slow/non-reading child must not
 // block the caller (the reference returns success before the child reads). Here
 // the child's stdin (an io.Pipe never read) blocks the stdinWriter on its first
@@ -465,9 +506,11 @@ func TestStdinIsAsync(t *testing.T) {
 	}
 }
 
-// With a tiny queue cap, a producer that outruns the (blocked) writer must hit
-// backpressure — and draining the child's stdin must relieve it. Pins the bounded
-// queue so a non-reading child can't grow daemon memory without bound.
+// With a tiny queue cap, a producer that outruns the (blocked) writer must get a
+// backpressure signal (enqueueStdin returns full=true) rather than blocking, and
+// the queue must never grow past the cap. The reference returns -32002 here and
+// the request never parks. Pins the bounded queue so a non-reading child can't
+// grow daemon memory without bound.
 func TestStdinBackpressure(t *testing.T) {
 	old := stdinQueueCap
 	stdinQueueCap = 8
@@ -479,43 +522,36 @@ func TestStdinBackpressure(t *testing.T) {
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
 
-	done := make(chan struct{})
-	go func() {
-		for i := 0; i < 100; i++ { // 200 bytes total >> 8-byte cap → must block
-			p.enqueueStdin([]byte("ab"))
+	// The writer pulls the first chunk and parks inside pw.Write (pr is never
+	// read), so every later write accumulates in the queue.
+	p.enqueueStdin([]byte("X"))
+	waitStdinQueueEmpty(t, p)
+
+	sawFull := false
+	for i := 0; i < 100; i++ { // 200 bytes >> 8-byte cap → one must be rejected
+		if p.enqueueStdin([]byte("ab")) {
+			sawFull = true
+			break
 		}
-		close(done)
-	}()
-	select {
-	case <-done:
-		t.Fatal("100 writes never blocked despite an 8-byte cap — backpressure not applied")
-	case <-time.After(300 * time.Millisecond):
-		// expected: the producer is parked on backpressure
+	}
+	if !sawFull {
+		t.Fatal("enqueue never reported full despite an 8-byte cap — backpressure not applied")
 	}
 
-	// While parked, the queue must not have grown past the cap: the gate is
-	// qBytes+len(data) > cap (an arithmetic mutant qBytes-len admits over-cap
-	// growth before parking).
+	// The rejected write enqueued nothing: the queue is at or below the cap, never
+	// past it (the gate is qBytes+len(data) > cap; an arithmetic mutant qBytes-len
+	// would admit over-cap growth).
 	p.stdinMu.Lock()
 	qb := p.stdinQBytes
 	p.stdinMu.Unlock()
 	if qb > stdinQueueCap {
-		t.Fatalf("queued bytes = %d while parked, want <= cap %d", qb, stdinQueueCap)
-	}
-
-	go func() { _, _ = io.Copy(io.Discard, pr) }() // drain the child stdin
-	select {
-	case <-done:
-		// expected: draining relieved the backpressure and the producer finished
-	case <-time.After(2 * time.Second):
-		t.Fatal("draining the child stdin did not relieve backpressure")
+		t.Fatalf("queued bytes = %d, want <= cap %d", qb, stdinQueueCap)
 	}
 }
 
-// A single write larger than the whole queue cap must be accepted immediately
-// when the queue is empty: the `stdinQBytes > 0` conjunct exempts it from
-// backpressure, so it can never deadlock waiting for a drain that cannot
-// start. A boundary mutant (`>= 0`) would park this enqueue forever.
+// A single write larger than the whole queue cap must be accepted when the queue
+// is empty: the `stdinQBytes > 0` conjunct exempts it from backpressure. A
+// boundary mutant (`>= 0`) would reject this lone over-cap write.
 func TestStdinSoleOverCapWriteAccepted(t *testing.T) {
 	old := stdinQueueCap
 	stdinQueueCap = 8
@@ -527,18 +563,14 @@ func TestStdinSoleOverCapWriteAccepted(t *testing.T) {
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	go p.stdinWriter()
 
-	done := make(chan struct{})
-	go func() { p.enqueueStdin([]byte(strings.Repeat("x", 25))); close(done) }() // 25 > cap 8
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("a sole over-cap write on an empty queue blocked — the qBytes>0 exemption regressed")
+	if p.enqueueStdin([]byte(strings.Repeat("x", 25))) { // 25 > cap 8, empty queue
+		t.Fatal("a sole over-cap write on an empty queue was rejected — the qBytes>0 exemption regressed")
 	}
 }
 
-// An enqueue that fills the queue to exactly the cap must be accepted without
-// blocking: the gate is strict (`qBytes+len(data) > cap`). The boundary mutant
-// (`>=`) would park the producer at the exact-fit point.
+// An enqueue that fills the queue to exactly the cap must be accepted: the gate is
+// strict (`qBytes+len(data) > cap`). The boundary mutant (`>=`) would reject the
+// exact-fit write.
 func TestStdinExactCapFitAccepted(t *testing.T) {
 	old := stdinQueueCap
 	stdinQueueCap = 8
@@ -555,13 +587,9 @@ func TestStdinExactCapFitAccepted(t *testing.T) {
 	p.enqueueStdin([]byte("aaaa"))
 	waitStdinQueueEmpty(t, p)
 
-	p.enqueueStdin([]byte("bb")) // queued: 2 bytes (writer is parked mid-Write)
-	done := make(chan struct{})
-	go func() { p.enqueueStdin([]byte("cccccc")); close(done) }() // 2+6 == cap exactly
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("an exact-fit enqueue (qBytes+len == cap) blocked — the strict > gate regressed to >=")
+	p.enqueueStdin([]byte("bb"))          // queued: 2 bytes (writer parked mid-Write)
+	if p.enqueueStdin([]byte("cccccc")) { // 2+6 == cap exactly, strict > gate accepts
+		t.Fatal("an exact-fit enqueue (qBytes+len == cap) was rejected — the strict > gate regressed to >=")
 	}
 }
 

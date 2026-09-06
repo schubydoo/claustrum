@@ -18,6 +18,12 @@ const (
 	// ahead of the bytes applied so far — a gap that would drop input. Added by the
 	// reference daemon in 7c2f88d with the stdin-offset idempotency contract.
 	codeStdinOffsetGap = -32003 // stdin offset ahead of applied bytes
+	// codeStdinBackpressure is the code the reference emits from process.stdin when
+	// the per-process async stdin queue is already full: it rejects the write with
+	// this frame rather than blocking the request. Measured against 4534d86 — a
+	// producer that outruns a non-reading child gets an error frame once ~16 MiB is
+	// queued (probe scratch/probe/stdincap).
+	codeStdinBackpressure = -32002 // stdin queue full (backpressure)
 )
 
 // request is one inbound JSON-RPC line.

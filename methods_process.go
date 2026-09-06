@@ -94,9 +94,12 @@ func (s *server) processStdin(req *request) response {
 	if !mp.isRunning() {
 		return errResult(req.ID, codeInvalidParam, "Process not running")
 	}
-	applied, duplicate, gap := mp.applyStdin(data, p.Offset)
+	applied, duplicate, gap, full := mp.applyStdin(data, p.Offset)
 	if gap {
 		return errResult(req.ID, codeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")
+	}
+	if full {
+		return errResult(req.ID, codeStdinBackpressure, "stdin backpressure: queue full")
 	}
 	return okResult(req.ID, stdinResult{Success: true, Applied: applied, Duplicate: duplicate})
 }
