@@ -250,6 +250,39 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
+// gitEmptyTree is git's canonical empty-tree object (SHA-1). Passing it as
+// --attr-source makes git read gitattributes from an empty tree — i.e. ignore a
+// repository's in-repo .gitattributes.
+const gitEmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+var (
+	attrSourceOnce sync.Once
+	attrSourceOK   bool
+)
+
+// attrSourceArgs returns the `--attr-source=<empty-tree>` top-level git option when
+// the runtime git supports it, else nil. git.status runs it (4534d86 does) so a
+// repository's in-repo .gitattributes cannot influence the status: without it a
+// .gitattributes clean filter runs during `git status` and can both flip a file's
+// modified-ness (wire-visible) and execute an attacker-controlled command
+// (scratch/probe/attrsource-4534d86.md). It is a no-op on a repo with no attribute
+// rules, so status on an ordinary repo stays byte-identical.
+//
+// git added --attr-source in 2.40, so support is probed once with the reference's own
+// guard — `git --attr-source=<empty> version`, which errors on older git. The option
+// is placed before the subcommand (a top-level git option), matching the reference.
+func attrSourceArgs() []string {
+	attrSourceOnce.Do(func() {
+		cmd := exec.Command("git", "--attr-source="+gitEmptyTree, "version")
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		attrSourceOK = cmd.Run() == nil
+	})
+	if attrSourceOK {
+		return []string{"--attr-source=" + gitEmptyTree}
+	}
+	return nil
+}
+
 var (
 	userExcludesOnce   sync.Once
 	userExcludesCached string
