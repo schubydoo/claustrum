@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Git-invocation hardening, matching reference build 7d193f89. That build stopped
@@ -157,17 +159,82 @@ func hardenedGit(dir string, heavy bool, args ...string) (string, bool) {
 	return hardenedGitContext(ctx, dir, heavy, args...)
 }
 
-// hardenedGitContextErr is hardenedGitContext returning the exec error too. The
-// git.worktree_create timeout path (D-less parity, 4534d86) appends this error to
-// its "during the checkout" message — the reference emits e.g.
-// "... (deadline expired during the checkout): signal: killed", where the suffix
-// is the git process's own kill error.
-func hardenedGitContextErr(ctx context.Context, dir string, heavy bool, args ...string) (string, bool, error) {
+// worktreeCreateDrainCap bounds the post-exit pipe drain of git.worktree_create's
+// read-tree checkout. Measured against 4534d86: when the checkout leaves a descendant
+// (a smudge/hook filter, or something it backgrounds) holding the daemon's combined
+// output pipe, the reference caps the drain at a FIXED ~5.0s from the checkout git's
+// OWN exit — independent of the caller timeoutMs (measured 5.004 / 5.007 / 5.009s) —
+// then reaps the descendant (so the reply arrives at ~5s, not at the descendant's
+// lifetime), and only then gates the reply on timeoutMs
+// (scratch/probe/wt-success-lingering-4534d86.md).
+//
+// This is the drain-cap grace period of exec.Cmd.WaitDelay, whose timer for a
+// pipe-drain overrun starts when the process itself exits — so the cap is measured
+// from git-exit, matching the reference. (var, not const, so tests can shrink it.)
+var worktreeCreateDrainCap = 5 * time.Second
+
+// hardenedGitWorktreeCreate runs one git subcommand of git.worktree_create's checkout
+// under the hardening profile, in its OWN process group, with the post-exit output-pipe
+// drain capped at worktreeCreateDrainCap when a deadline is armed. It is the only git
+// exec path that caps the drain and reaps the process group, because it is the only
+// path measured to need it: the read-tree checkout can run a smudge/hook filter that
+// backgrounds a descendant which inherits the daemon's combined output pipe and
+// outlives git. The reference emits e.g. "... (deadline expired during the checkout):
+// signal: killed", where that suffix is git's own kill error.
+//
+// It returns:
+//   - out: combined stdout+stderr, trailing newline trimmed;
+//   - ok: git exited 0 (a drain overrun still counts as exited-0);
+//   - drained: git EXITED 0 but a descendant held the pipe past the drain cap. Go
+//     surfaces this as exec.ErrWaitDelay. The caller routes it to the timeoutMs
+//     verdict (success if timeoutMs exceeded the drain, else timeout + rollback with
+//     the "after the checkout finished" message) — NEVER to worktree_add_failed and
+//     NEVER to "during the checkout";
+//   - err: the underlying exec error — git's own "signal: killed" *ExitError when the
+//     deadline killed a still-running git, exec.ErrWaitDelay on a drain overrun, or a
+//     non-zero *ExitError otherwise.
+//
+// With no deadline armed (D5 off and timeoutMs off) WaitDelay is left unset, so the
+// drain is unbounded and byte-identical to the reference default, which applies no cap.
+func hardenedGitWorktreeCreate(ctx context.Context, dir string, heavy bool, args ...string) (out string, ok, drained bool, err error) {
 	hookPrecursor(ctx, dir)
 	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
 	cmd.Env = hardenedGitEnv(heavy)
-	out, err := cmd.CombinedOutput()
-	return strings.TrimRight(string(out), "\n"), err == nil, err
+	// Own process group so the teardown below can SIGKILL the whole group and reap a
+	// descendant the checkout left holding the pipe — reproducing 4534d86's observed
+	// descendant reap.
+	cmd.SysProcAttr = newSysProcAttr()
+	if _, deadlined := ctx.Deadline(); deadlined {
+		// Cap the drain from git's OWN exit (WaitDelay's pipe-drain timer starts at
+		// process exit), reproducing the reference's fixed post-exit cap.
+		cmd.WaitDelay = worktreeCreateDrainCap
+		// When the deadline fires, kill git immediately and, on Unix, tear down its whole
+		// process group so a descendant is reaped too. cmd.Process.Kill() is what makes the
+		// interrupt land on every OS: reapProcessGroup is a no-op on Windows, so without the
+		// direct kill a Windows deadline would leave git running until the WaitDelay fallback
+		// and answer the caller ~worktreeCreateDrainCap late. WaitDelay still bounds any
+		// post-kill pipe drain. Returning nil marks the interrupt as successful; Wait still
+		// prefers git's own "signal: killed" *ExitError, so the wire suffix is unchanged.
+		cmd.Cancel = func() error {
+			reapProcessGroup(cmd.Process)
+			_ = cmd.Process.Kill()
+			return nil
+		}
+	}
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err = cmd.Run()
+	drained = errors.Is(err, exec.ErrWaitDelay)
+	if drained {
+		// git exited 0 but a descendant held the pipe past the cap. WaitDelay closed
+		// the daemon's own pipe ends but killed nothing; SIGKILL the group to reap the
+		// descendant, matching the reference's observed descendant reap.
+		reapProcessGroup(cmd.Process)
+	}
+	out = strings.TrimRight(buf.String(), "\n")
+	ok = err == nil || drained
+	return out, ok, drained, err
 }
 
 // hardenedGitStdout is hardenedGit but returns stdout only and the exec error,

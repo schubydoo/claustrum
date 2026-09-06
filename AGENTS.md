@@ -108,9 +108,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
 - **`process.spawn` runs arbitrary commands as the daemon's user — by design.**
   Treat socket + token as equivalent to shell access (threat model in
   [`SECURITY.md`](SECURITY.md)).
-- **Three code paths give a caller- or operator-supplied path to
-  `os.RemoveAll`.** Two of them are RPC paths. The daemon `~`-expands both of
-  those paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
+- **Four code paths give a caller- or operator-supplied path to
+  `os.RemoveAll`.** Three of them are RPC paths. The daemon `~`-expands those RPC
+  paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
   the maintainer's home directory on 2026-08-02:
     - `files.extract_tar` wipes `destDir` — guarded by `wipesHomeDir` (`homeguard.go`).
     - `git.worktree_remove` deletes `worktreePath` when git fails **for a non-locked
@@ -121,6 +121,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       On the `worktreeRoot` / `external_root` branch that in-repo containment does not
       apply, so there `wipesHomeDir` is the **active** home guard (both branches run it
       before the delete).
+    - `git.worktree_create` deletes `worktreePath` when it rolls back a worktree
+      whose caller `timeoutMs` was exceeded by the post-checkout drain — guarded by
+      `wipesHomeDir` as defense-in-depth behind create's own containment, and it
+      re-checks the leaf's checkpoint identity so a swap during the drain cannot
+      redirect the delete.
     - `-install` deletes `filepath.Join(cliDir, cliVersion)` (operator input) —
       guarded by **D6's single-path-component rule instead**, not `wipesHomeDir`.
 

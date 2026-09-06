@@ -110,13 +110,22 @@ func (p *gitParams) repoDir() string {
 // false when written — git.list_branches was folding git's stderr into branches[]
 // at the time. Scope a claim to the thing it was measured on.
 //
-// ⚠️ THE BOUND IS SOFTER THAN IT LOOKS. CombinedOutput waits for the output pipe
-// to close, not merely for git to exit, so a git that spawns a child which
-// OUTLIVES it keeps the call blocked past the deadline — the orphan still holds
-// the pipe. Measured: a stub `sleep 30` under `sh` took the full 30s against a
-// 300ms gitTimeout, while the same stub as `exec sleep 30` returned promptly.
-// Closing it means reading the streams explicitly instead of CombinedOutput,
-// which is more code and more divergence, so it is recorded rather than fixed.
+// ⚠️ THE BOUND IS SOFTER THAN IT LOOKS ON THE D5 GIT SITES. CombinedOutput waits
+// for the output pipe to close, not merely for git to exit, so a git that spawns a
+// child which OUTLIVES it keeps the call blocked past the deadline — the orphan
+// still holds the pipe. Measured: a stub `sleep 30` under `sh` took the full 30s
+// against a 300ms gitTimeout, while the same stub as `exec sleep 30` returned
+// promptly. The general git exec sites (git.status, git.list_branches, the repo
+// probes) do NOT cap that drain: closing it means a process-group teardown that is
+// unmeasured on those paths, so it is recorded rather than fixed.
+//
+// The ONE measured exception is git.worktree_create's read-tree checkout, which
+// CAN leave a smudge/hook descendant holding the pipe. Only that path caps the
+// drain — see hardenedGitWorktreeCreate / worktreeCreateDrainCap in githarden.go —
+// reproducing 4534d86's fixed ~5s post-exit cap + descendant reap and the
+// timeoutMs-gated success-vs-timeout verdict. That is wire-visible (a timeout +
+// rollback where an unbounded drain would report success), so it is scoped to the
+// one path where it was measured, not applied blanket to every git call.
 //
 // D5 FLIP: the default is now 0 = NO DEADLINE, matching the reference. A non-zero
 // value is opt-in via -git-timeout or the git-timeout key in claustrum.conf (the
@@ -837,16 +846,38 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// index. Best-effort — an unborn/orphan branch has nothing to read, leaving the
 	// worktree empty just as the reference does.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		_, _, rtErr := hardenedGitContextErr(addCtx, repo, false, "-c", "core.splitIndex=false",
+		_, _, rtDrained, rtErr := hardenedGitWorktreeCreate(addCtx, repo, false, "-c", "core.splitIndex=false",
 			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
 			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+p.BranchName)
-		// If the caller's deadline fired, the checkout was interrupted (or the
-		// deadline expired just after it finished). The reference distinguishes the
-		// two: a killed read-tree appends git's own error ("signal: killed"), a
-		// clean read-tree whose deadline expired after reports the after-checkout
-		// variant. "during" is measured; "after" is a near-unhittable window
-		// reproduced from the reference's string.
-		if p.TimeoutMs > 0 && callerTimeoutFired(addCtx) {
+		switch {
+		case rtDrained:
+			// git EXITED 0 but a checkout descendant held the daemon's output pipe past
+			// the ~5s drain cap (hardenedGitWorktreeCreate already SIGKILLed the group,
+			// reaping it). 4534d86 caps that drain independently of timeoutMs and THEN
+			// gates the frame on timeoutMs: success (worktree kept) when timeoutMs
+			// exceeds the drain, else errorCode "timeout" + rollback. By the time the
+			// fixed drain completes, the caller ctx has expired iff timeoutMs was at or
+			// below the drain, so callerTimeoutFired distinguishes the two arms — the
+			// SAME predicate the killed-during arm uses. This "after the checkout
+			// finished" arm (git exited 0 cleanly, no "signal: killed") is what the
+			// reference emits for a drain that overran the deadline.
+			if p.TimeoutMs > 0 && callerTimeoutFired(addCtx) {
+				undoCreatedWorktree(repo, p.WorktreePath, p.BranchName, checkpoint)
+				return okResult(req.ID, worktreeResult{
+					Success:   false,
+					Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs),
+					ErrorCode: "timeout",
+				})
+			}
+			// timeoutMs exceeded the drain (or none / D5-only): the worktree is kept —
+			// fall through to the success reply, matching the reference.
+		case p.TimeoutMs > 0 && callerTimeoutFired(addCtx):
+			// git was still running when the caller's deadline fired: killed DURING the
+			// checkout. A killed read-tree carries git's own "signal: killed" error; a
+			// read-tree that returned clean in the microsecond before the deadline
+			// reports the after-checkout variant (near-unhittable, reproduced from the
+			// reference string rather than force-covered — the drained arm above is the
+			// measured "after the checkout finished" path).
 			if rtErr != nil {
 				return okResult(req.ID, worktreeResult{
 					Success:   false,

@@ -30,6 +30,47 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 	return worktreeCheckpoint{info: info, resolved: resolved}
 }
 
+// undoCreatedWorktree rolls back a worktree that git.worktree_create built but whose
+// caller timeoutMs was exceeded by the post-checkout pipe drain — reproducing 4534d86,
+// which deletes the branch and removes the worktree before answering errorCode "timeout".
+// Best-effort: the reply is the timeout frame regardless of whether every step lands.
+//
+// worktreePath has already passed git.worktree_create's containment checks by the time
+// a checkout runs (strictly inside repo, or 2-level inside an external worktreeRoot;
+// never home), so removing it here is safe. The os.RemoveAll is the fallback that makes
+// the removal observable even when `git worktree remove` cannot finish the job. Because
+// the delete runs seconds after the leaf was created (the drain), the fallback re-checks
+// the always-on home guard and the leaf's checkpoint identity first, so a swap during
+// the drain cannot redirect it onto a replacement's contents.
+func undoCreatedWorktree(repo, worktreePath, branch string, cp worktreeCheckpoint) {
+	if branch != "" {
+		hardenedGit(repo, false, "update-ref", "--no-deref", "-d", "refs/heads/"+branch)
+	}
+	hardenedGit(repo, false, "worktree", "remove", "--force", worktreePath)
+	// Prune the registration, guarded exactly as gitWorktreeRemove does: the admin dir
+	// must point back at this worktree and resolve strictly inside <repo>/.git/worktrees.
+	if adminDir := worktreeAdminDir(worktreePath); adminDir != "" &&
+		worktreeAdminBelongsTo(adminDir, worktreePath) &&
+		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(repo, ".git", "worktrees"))) {
+		_ = os.RemoveAll(adminDir)
+	}
+	// The os.RemoveAll fallback is an RPC-supplied path reaching a recursive delete, so it
+	// owes the always-on home guard (AGENTS.md / D2), defense-in-depth exactly as
+	// gitWorktreeRemove applies it — even though create's containment already refused home.
+	if worktreePath != "" && wipesHomeDir(worktreePath) {
+		return
+	}
+	// Re-confirm the leaf is still the very directory create made before deleting it: a
+	// concurrent swap during the drain must not redirect this RemoveAll onto a replacement.
+	// verifyCreatedWorktree returns non-empty on a swap (and when `git worktree remove`
+	// already deleted the leaf, in which case the RemoveAll would be a no-op anyway); an
+	// empty checkpoint has nothing to compare and falls back to the guards above.
+	if msg := verifyCreatedWorktree(worktreePath, cp); msg != "" {
+		return
+	}
+	_ = os.RemoveAll(worktreePath)
+}
+
 // verifyCreatedWorktree confirms `git worktree add` populated the very directory
 // claustrum created, guarding against a directory — or one of its ancestors —
 // swapped between the pre-create checks and the add. This is claustrum's own

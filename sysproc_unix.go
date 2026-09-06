@@ -14,6 +14,21 @@ func newSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
+// reapProcessGroup SIGKILLs the whole process group led by proc — kill(-pgid) —
+// reaping any descendant proc left behind. It is how git.worktree_create's checkout
+// tears down a smudge/hook orphan that outlived git and kept the daemon's output
+// pipe open past the drain cap, matching 4534d86's observed descendant reap. The command must
+// have been started with newSysProcAttr (Setpgid), so proc is its group's leader
+// and its pid equals the pgid. Best-effort and nil-safe: a nil or already-reaped
+// process is a no-op. (The pgid stays reserved while any group member is alive, so
+// this is safe to call after proc itself has been waited on.)
+func reapProcessGroup(proc *os.Process) {
+	if proc == nil {
+		return
+	}
+	_ = syscall.Kill(-proc.Pid, syscall.SIGKILL)
+}
+
 // honorKeepChildren reports the effective -keep-children setting. On POSIX it is
 // honored verbatim: children spawn into their own process groups (Setpgid) and
 // are reparented to init when the detached daemon exits, so simply not signalling

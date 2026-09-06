@@ -682,10 +682,17 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   The parenthetical is `deadline expired before the checkout started` when the add is
   killed (measured), `deadline expired during the checkout): <git error>` when the
   checkout (a `read-tree`) is killed (measured; the tail is git's own error, e.g.
-  `signal: killed`), and `deadline expired after the checkout finished` for the
-  near-unhittable window where the deadline expires just after the checkout returns
-  (reproduced from the reference string). This is caller-activated, distinct from the
-  operator-global `-git-timeout` divergence (D5), and applies to create only, not
+  `signal: killed`), and `deadline expired after the checkout finished` when the
+  checkout git exits 0 but a descendant it left (a smudge/hook filter) holds the
+  daemon's combined output pipe past a fixed ~5s post-exit drain cap (measured
+  against `4534d86`, independent of `timeoutMs`). At that cap the daemon reaps the
+  descendant, then gates the reply on `timeoutMs`: when `timeoutMs` exceeds the drain
+  the worktree is kept and the reply is `{success:true}`; when it does not, the
+  worktree is rolled back (branch deleted, worktree removed) and the reply is the
+  `timeout` frame carrying this parenthetical. The same string also covers the
+  near-unhittable window where the deadline expires just after a checkout that left
+  no lingering descendant. This is caller-activated, distinct from the operator-global
+  `-git-timeout` divergence (D5), and applies to create only, not
   `git.worktree_remove`.
 - `sourceBranch` omitted → the source defaults to the repo's current branch, and
   the daemon echoes it back. On an **unborn HEAD** the source resolves empty, the
