@@ -212,15 +212,16 @@ func TestSocketGitBattery(t *testing.T) {
 // TestSocketGitStatusPorcelain pins every XY status column shape git.status can
 // emit, AND the position each shape appears in. The leading space is positional
 // data: " M f" (unstaged) and "M  f" (staged) differ only in where the letter
-// sits — except on the FIRST line, which the reference strips because it trims
-// the whole porcelain blob before splitting it.
+// sits. 7d193f89 passes the porcelain through verbatim, so EVERY line keeps its
+// leading space, the FIRST included. 5db5e4a trimmed the whole blob before
+// splitting, eating the first line's space; re-measured against the reference
+// daemons 7d193f89 AND 4534d86, both keep it (scratch/probe/attrsrc).
 //
-// Both halves of that need a fixture. The battery only ever produced
-// "?? dirty.txt" — an untracked entry, the one shape carrying no leading space —
-// so a per-line trim went unnoticed; the first revision of this test began with
-// "D  del_staged.txt", so removing the per-line trim then went unnoticed too.
-// a_mod_unstaged.txt sorts first and carries a leading space, which pins the
-// blob-level trim; every later entry pins the verbatim pass-through.
+// Both halves need a fixture. The battery only ever produced "?? dirty.txt" — an
+// untracked entry, the one shape carrying no leading space — so the stale
+// first-line trim went unnoticed. a_mod_unstaged.txt sorts first and carries a
+// leading space, which pins the first-line pass-through; every later entry pins
+// the rest.
 func TestSocketGitStatusPorcelain(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
@@ -248,7 +249,7 @@ func TestSocketGitStatusPorcelain(t *testing.T) {
 	runGit(t, repo, "worktree", "add", "-q", wt)
 
 	// One mutation per XY shape. a_mod_unstaged.txt is the first porcelain line,
-	// so its leading space is the one the reference eats.
+	// so its leading space is the one 5db5e4a ate and 7d193f89+ keeps.
 	writeFile(t, filepath.Join(wt, "a_mod_unstaged.txt"), "two\n", 0o644) // " M", first line
 	writeFile(t, filepath.Join(wt, "mod_unstaged.txt"), "two\n", 0o644)   // " M"
 	writeFile(t, filepath.Join(wt, "mod_both.txt"), "two\n", 0o644)       // staged half of "MM"

@@ -510,13 +510,15 @@ func gitStatus(req *request) response {
 		return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: true})
 	}
 	var changes []string
-	// The reference trims the WHOLE porcelain blob once and only then splits it,
-	// so exactly ONE line can lose its leading space: the first. Probe-measured
-	// at 5db5e4a — a repo whose first entry is " M a1.txt" and whose second is
-	// " M a2.txt" comes back as ["M a1.txt"," M a2.txt"]. Trimming every line
-	// (what claustrum did before) and trimming none (what it did after) are both
-	// wrong; the blob-level trim is what reproduces it.
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+	// 7d193f89 rebuilt git.status to pass the porcelain through verbatim: every
+	// line keeps its leading space, the FIRST included. 5db5e4a trimmed the whole
+	// blob before splitting, so its first line lost its leading space, and claustrum
+	// reproduced that. Re-measured against the reference daemons 7d193f89 AND 4534d86:
+	// a worktree whose first two entries are " M a1" and " M a2" comes back as
+	// [" M a1"," M a2"], NOT ["M a1"," M a2"] (5db5e4a). So split on the trailing
+	// newline only — never TrimSpace the blob, which eats the first line's leading
+	// space. Evidence: scratch/probe/attrsrc (git.status vs each reference build).
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		// Past the first line, pass porcelain through verbatim apart from the
 		// line ending: the XY status column is positional, so the leading space
 		// of an unstaged-only change (" M f") is data, not padding. Trimming it

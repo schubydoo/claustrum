@@ -52,7 +52,9 @@ off-wire git rewrite and VM probes surfaced.
    a nested repository, the repository root itself, a worktree of a *different*
    repository, and the right worktree named against the wrong `baseRepo` all answer
    the bare `{"isRepo":false,"clean":false}`. The porcelain shape is otherwise
-   unchanged.
+   unchanged, except that 7d193f89 stopped trimming the first change line's leading
+   space: 5db5e4a returned entry 0 without it, while 7d193f89 and 4534d86 return
+   every line verbatim (measured; claustrum reconciled in a later fix).
 3. **`git.worktree_create` / `git.worktree_remove` confine worktrees to inside the
    repository** (unless a `worktreeRoot` is supplied — see the `external_root` feature
    in the off-wire notes below). A `worktreePath` that is not absolute, carries a `..`

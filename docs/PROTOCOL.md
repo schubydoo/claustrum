@@ -614,10 +614,10 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   `--untracked-files=all` is wire-visible: an untracked file inside an untracked
   directory is listed individually (`"?? sub/u.txt"`), not as the directory
   (`"?? sub/"`).
-- **The first line is the exception.** The daemon trims the whole porcelain blob
-  before it splits the blob, so only entry 0 loses a leading space. `[" M a1"," M
-  a2"]` returns `["M a1"," M a2"]`. A client that parses by column must handle
-  entry 0 separately.
+- Every line is verbatim, the first included: the daemon splits on the trailing
+  newline only, so entry 0 keeps its leading space (`[" M a1"," M a2"]` returns
+  `[" M a1"," M a2"]`). 5db5e4a trimmed the whole blob and lost entry 0's leading
+  space; 7d193f89 and 4534d86 do not.
 - A failing git → `-32603` that carries the Go error string (`exit status 128`, not
   git's `fatal:` text). With opt-in D5 the same `-32603` can carry `signal: killed`.
 
