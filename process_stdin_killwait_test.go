@@ -331,3 +331,60 @@ func TestSocketStdinBackpressureError(t *testing.T) {
 		t.Errorf("backpressure message = %q, want %q", gotMsg, "stdin backpressure: queue full")
 	}
 }
+
+// TestSocketStdinExitedProcessPrecedence pins that process.stdin evaluates the
+// offset idempotency verdict BEFORE the running check (decode → exists → offset →
+// running), matching 4534d86 (measured, scratch/probe/stdinprec). On an EXITED
+// process a gap still returns -32003 and a wholly-duplicate write still returns
+// success{duplicate:true}; only a write that would enqueue fresh bytes reports
+// "Process not running". claustrum previously checked running first and answered
+// "Process not running" for all three.
+func TestSocketStdinExitedProcessPrecedence(t *testing.T) {
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	cl.call(spawnReqArgs(t, 1, "EX", "sleep", "30"))
+
+	stdin := func(id int, data, offset string) *rpcEnvelope {
+		off := ""
+		if offset != "" {
+			off = `,"offset":` + offset
+		}
+		raw := cl.call(authed(`{"jsonrpc":"2.0","id":` + strconv.Itoa(id) +
+			`,"method":"process.stdin","params":{"id":"EX","data":"` + data + `"` + off + `}}`))
+		return decodeReply(t, raw, nil)
+	}
+	four := base64.StdEncoding.EncodeToString([]byte("AAAA")) // 4 bytes → applied=4
+	xyz := base64.StdEncoding.EncodeToString([]byte("xyz"))   // 3 bytes
+
+	// While running: applied advances to 4.
+	if env := stdin(2, four, ""); env.Error != nil {
+		t.Fatalf("initial stdin errored: %+v", env.Error)
+	}
+	// Kill and wait for exit; stdinApplied stays 4 on the exited process.
+	var kw killAndWaitResult
+	decodeReply(t, cl.call(authed(`{"jsonrpc":"2.0","id":3,"method":"process.killAndWait","params":{"id":"EX"}}`)), &kw)
+	if !kw.Died && !kw.AlreadyExited {
+		t.Fatalf("killAndWait did not confirm exit: %+v", kw)
+	}
+
+	// gap on the EXITED process → -32003, NOT "Process not running".
+	if env := stdin(10, xyz, "99"); env.Error == nil || env.Error.Code != codeStdinOffsetGap {
+		t.Errorf("exited gap = %+v, want code %d", env.Error, codeStdinOffsetGap)
+	}
+	// wholly-duplicate on the EXITED process → success{applied:4,duplicate:true}.
+	env := stdin(11, xyz, "0")
+	if env.Error != nil {
+		t.Fatalf("exited duplicate errored: %+v, want success", env.Error)
+	}
+	var sr stdinResult
+	if err := json.Unmarshal(env.Result, &sr); err != nil {
+		t.Fatalf("decode duplicate result: %v", err)
+	}
+	if !sr.Duplicate || sr.Applied != 4 {
+		t.Errorf("exited duplicate result = %+v, want {applied:4,duplicate:true}", sr)
+	}
+	// a fresh write on the EXITED process → -32602 "Process not running".
+	if env := stdin(12, xyz, ""); env.Error == nil || env.Error.Message != "Process not running" {
+		t.Errorf("exited fresh = %+v, want Process not running", env.Error)
+	}
+}

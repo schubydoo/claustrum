@@ -282,7 +282,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error` — behind `7d193f89` containment on the default branch (fires only if a repo is an ancestor of home); the active home guard on the `external_root` branch |
 | git.worktree_remove | `git worktree remove timed out after <dur>; no cleanup was attempted, and git may have partially removed the worktree` | D5 opt-in, in `error` |
 | process.spawn | `Process ID is required` / `Command is required` | |
-| process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | (checked in that order after decode) |
+| process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | order: decode → not-found → offset verdict (`-32003`/duplicate) → not-running (fresh write only) |
 | process.stdin | `stdin offset gap: offset ahead of applied bytes` | -32003 |
 | process.stdin | `stdin backpressure: queue full` | -32002 (queue full, ~16 MiB) |
 | process.killAndWait / process.reattach | `Process ID is required` / `Invalid params` | |
@@ -844,12 +844,16 @@ id-less stream notifications, and **buffers** them for a later replay.
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`
 - `data` is **base64**. The daemon writes it to the child's stdin.
-- The checks run in a fixed order (**decode → exists → running → offset**):
+- The checks run in a fixed order (**decode → exists → offset → running**):
     - Invalid base64 → `-32602 Invalid base64 data`. The daemon returns this
       *before* it looks up the process, so an unknown id with a bad payload still
       reports the decode error.
     - Unknown id → `-32602 Process not found`.
-    - Known but **exited** → `-32602 Process not running`.
+    - The offset idempotency verdict is evaluated next, **even for an exited
+      process**: an offset gap returns `-32003` and a wholly-duplicate write
+      returns `{"success":true,…,"duplicate":true}`, regardless of running state.
+    - Known but **exited**, only when the write would enqueue fresh bytes →
+      `-32602 Process not running`.
 - **`offset` / `applied` — the resumable-stdin contract** (added `7c2f88d`,
   advertised as `process.stdin.offset`). The reply **always** carries `applied`: the
   cumulative count of stdin bytes accepted for delivery (the high-water mark).

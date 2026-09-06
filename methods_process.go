@@ -79,10 +79,13 @@ func (s *server) processStdin(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	// Precedence is decode → exists → running → offset (probe-verified against the
-	// reference): invalid base64 is rejected before the process is even looked
-	// up, so an unknown id with a bad payload still reports the decode error, and
-	// the offset gap is only checked once we know the process is live.
+	// Precedence is decode → exists → offset → running (probe-verified against
+	// 4534d86, scratch/probe/stdinprec). Invalid base64 is rejected before the
+	// process is even looked up. The offset idempotency verdict comes NEXT and is
+	// answered even for an EXITED process: a gap returns -32003 and a wholly
+	// duplicate write returns success{duplicate:true} regardless of running state.
+	// Only a write that would enqueue fresh bytes requires a live process — that is
+	// the one case that yields "Process not running".
 	data, err := base64.StdEncoding.DecodeString(p.Data)
 	if err != nil {
 		return errResult(req.ID, codeInvalidParam, "Invalid base64 data")
@@ -91,12 +94,12 @@ func (s *server) processStdin(req *request) response {
 	if mp == nil {
 		return errResult(req.ID, codeInvalidParam, "Process not found")
 	}
-	if !mp.isRunning() {
-		return errResult(req.ID, codeInvalidParam, "Process not running")
-	}
-	applied, duplicate, gap, full := mp.applyStdin(data, p.Offset)
+	applied, duplicate, gap, full, notRunning := mp.applyStdin(data, p.Offset, mp.isRunning)
 	if gap {
 		return errResult(req.ID, codeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")
+	}
+	if notRunning {
+		return errResult(req.ID, codeInvalidParam, "Process not running")
 	}
 	if full {
 		return errResult(req.ID, codeStdinBackpressure, "stdin backpressure: queue full")
