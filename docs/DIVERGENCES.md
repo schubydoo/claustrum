@@ -159,6 +159,7 @@ rather than repeating them in each entry:
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`) | always-on | always-on | **UNRESOLVED** — clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a musl host the glob misses whose `ldd` exits 0 + is slow; or the reference bounding it above 45 s |
+| [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -317,6 +318,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `git.worktree_create` still answers
   `{"success":true}` while every manifest-selected file is missing. No frame moves.
   This arm is absent at the default.
+- **`git.worktree_create` under both deadlines.** The add and the read-tree
+  checkout run under the shared deadline. A D5 hit **on the add** answers `git
+  worktree add failed: …` with `errorCode:"worktree_add_failed"` — the same failure
+  arm as any other git error, and distinct from the 4534d86 caller-`timeoutMs` arm
+  (`errorCode:"timeout"`). A D5 hit on the read-tree checkout is discarded like any
+  best-effort step (see the loses-data-silently arm above): the error is dropped and
+  the create can still answer `{"success":true}` with an incomplete worktree. When a
+  caller supplies a `timeoutMs` LONGER than `-git-timeout`, the tighter D5 deadline
+  fires first during the add, and claustrum still answers `worktree_add_failed`: it
+  attributes the kill to the deadline that actually fired (a caller `timeoutMs` earns
+  `errorCode:"timeout"` only when it is the one that fired), so the caller's longer
+  duration is never quoted for a kill D5 caused. This interaction is claustrum-only —
+  the reference has no `-git-timeout` — and is absent at the default. Implemented with
+  a distinct context cause (`errCallerTimeoutMs`, checked by `callerTimeoutFired` in
+  `methods_git.go`).
 - **Why opt-in.** The reference showed no deadline at or below 75 s on
   `worktree_remove`; an honest 61 s git was never measured. The deadline cleared
   clause (a)'s not-a-frame half, but the `-32603 signal: killed` arm is an honest
@@ -477,10 +493,19 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `TLSHandshakeTimeout: 10s` on `-cli-url`. A SYN-black-holed host therefore fails
   at 30 s with the bound off. Both clocks are always-on stdlib defaults, unnumbered
   and unprobed on the reference.
-- **Why opt-in.** The reference showed no bound at or below 400 s on a stalled body.
-  Measured on a valid zstd blob dribbled over ~324 s, the reference and claustrum at
-  its default both install it, while claustrum at the retracted 5 m fails at 300 s.
-  An honest slow download therefore pays, and Desktop owns the argv (rule 4).
+- **Why opt-in.** `4534d86` bounds a fully STALLED body itself, at a 60 s read-idle
+  abort that claustrum reproduces always-on as parity — that is NOT this divergence
+  (see [PROTOCOL.md](PROTOCOL.md) → `-install` download). What a non-zero
+  `cliDownloadTimeout` adds beyond the read-idle abort is a TOTAL-exchange cap, and no
+  total cap was observed on the reference within the window measured: VM-measured
+  against `4534d86`, a body trickling 1 byte every 30 s was still downloading at 150 s
+  (each byte resets the read-idle clock, so the read-idle abort never fires). The
+  honest slow-but-progressing case a total cap penalizes was measured on `5db5e4a`: a
+  valid blob dribbled to completion over ~324 s installed there, while claustrum at the
+  retracted 5 m failed it at 300 s. Such a download pays under a non-zero bound, and
+  Desktop owns the argv (rule 4). (The earlier "no bound at or below 400 s on a stalled
+  body" evidence was also `5db5e4a`, before the read-idle abort existed; on `4534d86`
+  that same never-sent body aborts at 60 s via the read-idle path, not this deadline.)
 - **Reopen trigger.** An operator with the bound set reporting an honest slow
   download failed by it.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md); `install.go` (`fetchToFile`). Straddle
@@ -561,6 +586,36 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   conjuncts); or any measurement showing the reference bounds this probe above 45 s.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`; `install.go` (canonical
   stall table), `libc_linux.go`, `libc_other.go`. Full measurement: forensics.
+
+### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
+
+- **Behavior.** On the run-dir lock's eviction path, before a new `-serve` daemon
+  signals a live lock holder, it confirms the holder is one of our own `-serve`
+  processes bound to this socket. On Linux both the reference and claustrum verify the
+  holder's command line (claustrum reads `/proc/<pid>/cmdline`). On **macOS** there is no `/proc`, and the reference does not
+  verify the holder before signalling: it sends SIGTERM then SIGKILL to the recorded
+  pid unverified. Measured on a macOS VM: the reference signals even a lock holder
+  that is not a serve process. claustrum instead reads the holder's argument vector
+  from `sysctl KERN_PROCARGS2` and refuses to signal a pid whose argv is not our
+  `-serve` for this socket.
+- **Default.** Always-on, macOS only. On the honest path the live lock holder wrote
+  its own pid into the record, so the verification passes and the outcome is
+  identical to the reference (the predecessor is evicted).
+- **Why always-on (rule 3 clause (a)).** Signalling an unverified pid is
+  unrecoverable harm: a crash can leave a stale record whose pid is reused by an
+  unrelated process, or a foreign process can hold the flock, and the reference then
+  SIGKILLs that innocent process. No honest caller benefits from skipping the check,
+  and the same guard is already always-on on Linux (via `/proc`), so macOS matches
+  Linux's safety rather than the reference's macOS gap.
+- **Cost.** None on the honest path. In the one case the reference evicts and
+  claustrum does not — an un-inspectable or non-serve holder — claustrum serves
+  without run-dir ownership instead of killing the holder, which is the safe outcome.
+- **Reopen trigger.** The reference adding the same holder check on macOS (then this
+  becomes parity, not a divergence); or a legitimate macOS holder that
+  `KERN_PROCARGS2` cannot read, reported as a failed handover.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock; `daemon_runlock_unix.go`
+  (`holderSignalRefusal`), `daemon_runlock_darwin.go` (`realIsServeCmdline`,
+  `procArgv`), `daemon_runlock_linux.go`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

@@ -157,6 +157,19 @@ func hardenedGit(dir string, heavy bool, args ...string) (string, bool) {
 	return hardenedGitContext(ctx, dir, heavy, args...)
 }
 
+// hardenedGitContextErr is hardenedGitContext returning the exec error too. The
+// git.worktree_create timeout path (D-less parity, 4534d86) appends this error to
+// its "during the checkout" message — the reference emits e.g.
+// "... (deadline expired during the checkout): signal: killed", where the suffix
+// is the git process's own kill error.
+func hardenedGitContextErr(ctx context.Context, dir string, heavy bool, args ...string) (string, bool, error) {
+	hookPrecursor(ctx, dir)
+	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
+	cmd.Env = hardenedGitEnv(heavy)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimRight(string(out), "\n"), err == nil, err
+}
+
 // hardenedGitStdout is hardenedGit but returns stdout only and the exec error,
 // for callers that split a warning on stderr from a real failure (git.status,
 // git.list_branches).

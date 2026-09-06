@@ -163,6 +163,13 @@ func runHelper(mode string, args []string) int {
 		}
 		fmt.Print("early\n")
 		return 7
+	case "runlock-hold":
+		// Run-dir eviction fixture (Unix): open the lock file, take the flock, write
+		// an owner record naming this process as a serve daemon, announce readiness by
+		// creating a ready-file, then linger so claimRunDir must evict it. args[0] =
+		// lock path, args[1] = "term-ignore" to swallow SIGTERM (escalation case),
+		// args[2] = ready-file path.
+		return runlockHoldFixture(args)
 	default:
 		// "slow:N": sleep N seconds, then exit 0. The honest-but-slow CLI shape
 		// divergence D11 is about — correct output, correct exit code, just not

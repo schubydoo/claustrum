@@ -149,10 +149,16 @@ The JSON-RPC surface is identical on every OS. Full internals →
   shutdown (`tokenpersist.go`). A client can thus reconnect after the daemon
   unlinked the `-token-file`, or after the `-token-fd` pipe closed. The fixed
   name and the socket-dir location *are* the reconnect contract, so they are
-  deliberately not configurable. **Do not "fix"** the known parity caveats
-  without making the change an opt-in divergence: two daemons in one dir
-  collide on the file, and on Windows `0600` is not an owner-only DACL. See
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence.
+  deliberately not configurable. **Do not "fix"** the remaining parity caveat
+  without making the change an opt-in divergence: on Windows `0600` is not an
+  owner-only DACL. The old "two daemons in one dir collide on the file" caveat
+  is now bounded by the run-dir lock (`daemon.lock`, parity with `4534d86`): on
+  Linux and macOS a new daemon evicts a prior live same-socket daemon before it
+  binds, so they no longer coexist to collide except where eviction is refused
+  or on Windows (which ships no run-dir lock). That lock is parity, not a
+  claustrum "fix"; claustrum's macOS holder-verification on it **is** a hardening
+  divergence (D15). See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token
+  persistence / Run-dir lock.
 - **A connection's requests dispatch concurrently.** Replies can return out of
   order, which matches the reference. Do not serialize them. The per-request
   goroutine **recovers from panics**. It replies with

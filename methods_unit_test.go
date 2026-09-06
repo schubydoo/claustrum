@@ -934,6 +934,40 @@ func TestGitWorktreeCreateEmptyRepo(t *testing.T) {
 	}
 }
 
+// git.worktree_create accepts a caller-supplied timeoutMs (4534d86): absent is
+// byte-identical to the pre-4534d86 success reply, and a fired deadline reports
+// errorCode "timeout" rather than worktree_add_failed. A 1ms deadline is below
+// the cost of spawning git at all, so it fires deterministically on every OS.
+func TestGitWorktreeCreateTimeoutMs(t *testing.T) {
+	requireGit(t)
+	s := newTestServer(t)
+	base := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, base, "init", "-b", "trunk")
+	runGit(t, base, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init")
+
+	// Absent timeoutMs: succeeds, byte-identical to the pre-4534d86 reply.
+	wt := filepath.Join(base, ".claude", "worktrees", "ok")
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+		"baseRepo": base, "branchName": "b1", "worktreePath": wt,
+	}))
+	if !strings.Contains(got, `"success":true`) {
+		t.Fatalf("worktree_create without timeoutMs = %s, want success", got)
+	}
+
+	// A 1ms deadline fires before git can finish, yielding errorCode "timeout".
+	wt2 := filepath.Join(base, ".claude", "worktrees", "slow")
+	got = dispatchRaw(t, s, rpcLine(t, "git.worktree_create", map[string]any{
+		"baseRepo": base, "branchName": "b2", "worktreePath": wt2, "timeoutMs": 1,
+	}))
+	if !strings.Contains(got, `"errorCode":"timeout"`) ||
+		!strings.Contains(got, "git worktree add timed out after 1ms") {
+		t.Errorf("worktree_create timeoutMs=1 = %s, want errorCode timeout", got)
+	}
+}
+
 // repoDir returns BaseRepo when set, otherwise the daemon CWD (".").
 func TestGitRepoDir(t *testing.T) {
 	if got := (&gitParams{BaseRepo: "/some/repo"}).repoDir(); got != "/some/repo" {
