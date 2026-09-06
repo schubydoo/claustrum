@@ -17,6 +17,12 @@ func TestBoundedStderrHead(t *testing.T) {
 	if got := boundedStderrHead("short"); got != "short" {
 		t.Errorf("boundedStderrHead(short) = %q, want unchanged", got)
 	}
+	// 4534d86 reports a multi-line git failure on one line: internal newlines become
+	// single spaces (scratch/probe/wtfail). Without the join the wire error keeps the
+	// newline git wrote between "Preparing worktree …" and "fatal: …".
+	if got := boundedStderrHead("Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already exists"); got != "Preparing worktree (new branch 'dup') fatal: a branch named 'dup' already exists" {
+		t.Errorf("boundedStderrHead(multiline) = %q, want newlines joined with a space", got)
+	}
 }
 
 // 7d193f89 caps git.worktree_create's failure stderr at 512 bytes (its bounded

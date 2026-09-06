@@ -400,15 +400,21 @@ func hostileConfigRefusal(dir string) (string, bool) {
 // reaches an error frame (its bounded stderr sink keeps only the first 512 bytes).
 const stderrHeadCap = 512
 
-// boundedStderrHead caps s at its first stderrHeadCap BYTES and trims surrounding
-// whitespace, matching 7d193f89: a git failure whose output exceeds 512 bytes is
-// reported with only the head, so an error frame (e.g. "git worktree add failed: …")
-// cannot balloon with a huge git message. The cap is on bytes, not runes, so a
-// multi-byte rune split at the boundary is kept as-is — exactly as the reference's
-// byte-bounded buffer does.
+// boundedStderrHead caps s at its first stderrHeadCap BYTES, collapses newlines to
+// single spaces, and trims surrounding whitespace, matching the reference: a git
+// failure whose output exceeds 512 bytes is reported with only the head (so an
+// error frame like "git worktree add failed: …" cannot balloon with a huge git
+// message), and the multi-line git error is reported on a single line. `git
+// worktree add` writes its progress and its fatal on separate stderr lines
+// ("Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already
+// exists"); 4534d86 reports the two joined by a space, where claustrum previously
+// kept the newline. Measured against 4534d86 (scratch/probe/wtfail). The byte cap
+// runs first (on the raw bytes, as the reference's byte-bounded buffer does), so a
+// multi-byte rune split at the boundary is kept as-is.
 func boundedStderrHead(s string) string {
 	if len(s) > stderrHeadCap {
 		s = s[:stderrHeadCap]
 	}
+	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.TrimSpace(s)
 }
