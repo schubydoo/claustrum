@@ -114,12 +114,12 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	if !strings.Contains(joined, "process.kill,process.killAndWait,process.reattach") {
 		t.Errorf("methods missing killAndWait in the right slot: %v", got.Methods)
 	}
-	// external_root is gated off on Windows (capfeatures_windows.go), matching the
-	// reference, which drops the feature from its Windows capabilities frame.
-	// server.instance_id is always last, on every OS.
-	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree.external_root", "server.instance_id"}
+	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "git.worktree.external_root", "server.instance_id"}
 	if runtime.GOOS == "windows" {
-		wantFeatures = []string{"process.stdin.offset", "git.status.baseRepo", "server.instance_id"}
+		// external_root is gated off on Windows (capfeatures_windows.go), matching the
+		// reference, which drops the feature from its Windows capabilities frame.
+		// git.worktree_create.timeoutMs is present on every OS; server.instance_id is always last.
+		wantFeatures = []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "server.instance_id"}
 	}
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)
