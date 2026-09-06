@@ -246,3 +246,30 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 		t.Errorf("remote-server.log did not survive graceful shutdown: %v", err)
 	}
 }
+
+// TestOpenDaemonLogDoesNotFollowSymlink pins the surviving D8 hardening: a planted
+// remote-server.log symlink is never followed. os.Rename moves the link itself to
+// .old and O_EXCL creates a fresh regular file, so the symlink's target is left
+// untouched (the reference, measured, follows the link and writes into the victim
+// in a sticky dir). A mutant that opened the path with O_TRUNC without the rename
+// would truncate the victim.
+func TestOpenDaemonLogDoesNotFollowSymlink(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "s.sock")
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("VICTIM-CONTENT"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dir, daemonLogName)); err != nil {
+		t.Fatal(err)
+	}
+	f := openDaemonLog(sock)
+	if f == nil {
+		t.Error("openDaemonLog declined instead of taking the writable-dir success path")
+	} else {
+		_ = f.Close()
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "VICTIM-CONTENT" {
+		t.Errorf("victim was followed/truncated: %q; want VICTIM-CONTENT untouched", b)
+	}
+}

@@ -23,8 +23,10 @@ coverage.*
 
 # Daemon runtime artifacts. -serve creates remote-server.log beside the socket,
 # and a bare `-serve` in the repo root puts it here. Accidentally committed once
-# (0 bytes, in #196) by a `git add -A`.
+# (0 bytes, in #196) by a `git add -A`. The launcher rotates the prior log to
+# remote-server.log.old on start (D8), so ignore that name too.
 /remote-server.log
+/remote-server.log.old
 /rpc.sock
 /rpc.pipe
 /daemon.token

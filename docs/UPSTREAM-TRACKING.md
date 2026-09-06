@@ -197,7 +197,7 @@ activated opt-in?**
 | D14 | Off (`0` = no deadline), **linux only** | No — install path | `ldd --version` libc probe deadline |
 | D2 | Always-on | Maybe, if a probe reaches the path (expected) | destructive-path home-dir refusal |
 | D6 / D7 | Always-on | Maybe, if a probe reaches the path (expected) | `-cli-version` single path component / temp-sweep collision |
-| D8 | Always-on | No — falls back to inherited stdio, not a frame | `remote-server.log` declined, not shared |
+| D8 | Always-on | No — falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched; refuse-to-follow kept) |
 | D9 | Always-on | Maybe — a type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (**unresolved** in DIVERGENCES.md) | No — install path | verify-before-decompress ordering |
 | CT-1 | Opt-in (`wantPid`) | **Yes**, when requested — adds `pid`/`startTime` | spawn/reattach reply extension |

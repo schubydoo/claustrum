@@ -152,7 +152,7 @@ rather than repeating them in each entry:
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
 | [D7](#d7) | `-cli-version` must not collide with the temp sweep | always-on | always-on | rule 3 clause (b) | Desktop passing `.fetch-*` or `*.zst` |
-| [D8](#d8) | Decline (not share) a foreign-owned `remote-server.log` | always-on | always-on | rule 3 clause (b) — unreachable on the deployed path | a shared socket dir that also needs the log file |
+| [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log` | always-on | always-on | rule 3 clause (b) — unreachable on the deployed path | a shared socket dir that also needs the log file; or the reference adding the same refuse-to-follow |
 | [D9](#d9) | Namespace-wide params binding (type error in an unread field → `-32602`) | always-on | always-on | rule 3 clause (b) | a real client sending a type-mismatched unread namespace field |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D11](#d11) | Deadline on the `<cli> --version` runnability probe | off (`0`) | `-cli-probe-timeout` / key | rule 4 | Desktop turning out not to parse `cliError` (retraction rider) |
@@ -392,27 +392,41 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `*.zst` (one observation reopens D6 too — both rest on the same evidence).
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`; `install.go`.
 
-### D8 · `remote-server.log` is declined rather than shared (always-on) { #d8 }
+### D8 · claustrum never follows or writes a foreign/symlinked `remote-server.log` (always-on) { #d8 }
 
-- **Behavior.** claustrum recreates the log fresh on every start (unlink + create,
-  not truncate in place), which is measured parity. The divergence is only the
-  fallback. When claustrum cannot replace the existing log — for example a sticky
-  directory that holds another user's file — it declines the log and falls back to
-  inherited stdio. The reference instead truncates the foreign file and writes its
-  diagnostics into it (measured 2026-08-06).
+- **Behavior.** claustrum rotates the prior log to `remote-server.log.old` and
+  creates a fresh own log (`os.Rename` then `O_EXCL` create) — matching `4534d86`,
+  which keeps the previous session's log as `.old` on every restart. That part is
+  parity, reachable on the ordinary per-restart path. The divergence is how
+  claustrum treats a log it does not own. For a planted symlink in a writable
+  directory, `os.Rename` moves the link itself (not its target) to
+  `remote-server.log.old`. `O_EXCL` then creates a fresh regular log. The link is
+  never followed, and the victim file stays untouched. On a sticky directory where
+  claustrum cannot rename the existing entry (another user's file or symlink), the
+  rename cannot proceed and the exclusive create fails. claustrum then declines the
+  log and falls back to inherited stdio. In both cases claustrum never follows the
+  link or writes into a file it does not own.
+- **The upstream state changed, and this entry was revised to match it.** Measured
+  2026-09-06 (scratch/security/disclosures.md): `4534d86` no longer plain-truncates
+  a foreign *regular* file — the pre-`4534d86` disclosure (measured 2026-08-06 on
+  `5db5e4a`) is fixed upstream, and claustrum now matches the `.old` rotation on the
+  common path. But in a root-owned sticky directory the reference still FOLLOWS a
+  planted `remote-server.log` symlink and writes its own log into the victim (or
+  refuses to start). claustrum refuses to follow it. So a narrower hardening
+  survives, and it is a D2-style case: "the reference does it too" is not a reason
+  to call it safe.
 - **Hardening, not a defect claim.** To reach it you need a local user who can
-  already plant a file in that directory. The justification is a design position: a
-  daemon should not write into a file it does not own. The justification does not
-  depend on the reference being wrong.
+  already plant a file or symlink in that directory. The justification is a design
+  position: a daemon should not follow a link it did not plant or write into a file
+  it does not own. It does not depend on the reference being wrong.
 - **Why always-on.** Rule 3 clause (b) — the trigger is unreachable on the
-  deployed path (`~/.claude/remote/` is per-user, not world-writable). The shared
-  directory that reaches the trigger is also the only place where the reference's
-  behaviour is a disclosure risk. A flag would gate a branch that no honest
-  deployment reaches.
+  deployed path (`~/.claude/remote/` is per-user, not world-writable). A flag would
+  gate a branch that no honest deployment reaches.
 - **Reopen trigger.** A deployment that puts the socket directory somewhere shared
-  *and* needs the log file. In that deployment the fallback sends diagnostics to
-  the launcher's stdio, which a client may parse.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log; `server.go`.
+  *and* needs the log file; or the reference gaining the same refuse-to-follow (then
+  this becomes parity, not a divergence).
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log; `server.go`
+  (`openDaemonLog`).
 
 ### D9 · Namespace-wide params binding is stricter than the reference's (always-on) { #d9 }
 

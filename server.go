@@ -485,29 +485,32 @@ const daemonLogName = "remote-server.log"
 // openDaemonLog creates a FRESH remote-server.log beside the socket, mode 0600,
 // returning nil when it cannot get one that is exclusively ours.
 //
-// Unlink-then-create-exclusively, not open-with-O_TRUNC. Probe-measured against
-// the reference at 5db5e4a with the log pre-planted as another user's
-// world-writable file:
+// Rotate-then-create-exclusively. The prior log is renamed to
+// remote-server.log.old rather than unlinked, matching 4534d86: the reference
+// keeps the previous session's log as .old on every restart (measured
+// 2026-09-06, scratch/security/disclosures.md — reachable on the ordinary
+// per-restart path, so this is parity, not an edge). os.Rename overwrites any
+// existing .old and is a no-op when there is no prior log. It also acts on the
+// link itself, never following a symlinked path.
 //
-//	planted:   666 root
-//	reference: 600 claude   <- the OWNER changed, so it recreated the file
-//	claustrum: 666 root     <- before this, it truncated and wrote into it
-//
-// chmod cannot change an owner, and chmod(2) on another user's file fails with
-// EPERM anyway, so truncate-and-chmod cannot reproduce that and cannot secure
-// the file. Removing first does both: it matches the reference's fresh-log
-// semantics and guarantees the daemon's stdout/stderr land somewhere only this
-// user can read.
-//
-// O_EXCL is the backstop. If the remove failed — a sticky directory holding
-// another user's file — the create fails too and this returns nil, so
-// daemonizeWithToken falls back to inherited stdio rather than writing the
-// daemon's output into a file someone else owns. That case IS measured as of
-// 2026-08-06: in a sticky directory the reference truncates the foreign file and
-// writes into it. Declining is therefore a deliberate divergence, filed as D8 in
-// docs/DIVERGENCES.md. It is always-on because the trigger is unreachable
-// on the deployed path (rule 3 clause (b)): the per-user session directory is not sticky, so no
-// honest caller reaches this branch at all.
+// O_EXCL is the backstop, and it carries the surviving D8 hardening. For a
+// planted symlink in a writable dir, the os.Rename above moves the link itself
+// (not its target) to .old and this O_EXCL create then makes a fresh regular
+// file, so it returns non-nil and the link is never followed — the victim is safe
+// on the success path, not by declining. The decline path is narrower: only when
+// the rename cannot move the existing entry — a sticky directory holding another
+// user's file or symlink — does the exclusive create fail too and this returns
+// nil, so the caller falls back to inherited stdio rather than following the link
+// or writing the daemon's output into a file someone else owns. The reference is
+// STILL unsafe here (measured 2026-09-06): in
+// a root-owned sticky directory it FOLLOWS a planted remote-server.log symlink and
+// writes its log into the victim, or refuses to start. So the plain foreign-file
+// truncation the older reference did (5db5e4a/pre-4534d86) is fixed upstream and
+// claustrum now matches the .old rotation, but the symlink/foreign-file
+// refuse-to-follow remains a deliberate divergence (D2-style "the reference does
+// it too is not a reason to call it safe"), filed as D8 in docs/DIVERGENCES.md. It
+// is unreachable on the deployed per-user path (rule 3 clause (b)): the session
+// directory is not sticky, so no honest caller reaches this branch.
 //
 // The log is NOT removed on shutdown; unlike the socket and daemon.token it
 // outlives the daemon, so a post-mortem is still readable.
@@ -516,7 +519,7 @@ func openDaemonLog(socket string) *os.File {
 		return nil
 	}
 	path := filepath.Join(filepath.Dir(socket), daemonLogName)
-	_ = os.Remove(path) // best-effort; O_EXCL below is what actually guarantees it
+	_ = os.Rename(path, path+".old") // rotate prior log to .old (parity); O_EXCL guarantees freshness
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil
