@@ -164,8 +164,12 @@ rm -rf "$D"
 ```sh
 claustrum -install -cli-dir "$D/cli" -cli-version 1.2.3 \
   -cli-url https://example.invalid/cli.zst -cli-checksum <sha256-of-the-zst>
-# prints: __INSTALL_RESULT__{"serverVersion":"…","os":"linux","arch":"amd64","libc":"glibc",
-#                            "cliPath":"…/cli/1.2.3","cliWasPresent":false,"cliError":"…"}
+# during the download it prints __INSTALL_PROGRESS__{"phase":"download","bytes":N,"total":M} on a ~1s ticker, then:
+# __INSTALL_RESULT__{"serverVersion":"…","os":"linux","arch":"amd64","libc":"glibc",
+#                    "cliPath":"…/cli/1.2.3","cliWasPresent":false,"cliError":"…",
+#                    "fetch":{"bytes":N,"ms":N,"longestPauseMs":N}}
+# (the fetch object appears whenever a -cli-url download was attempted; the -cli-url body
+#  has an always-on 60s read-idle abort → cliError "download stalled: no data for 60s after …")
 ```
 
 `cliError` is `omitempty`. A successful install omits it. It appears above only

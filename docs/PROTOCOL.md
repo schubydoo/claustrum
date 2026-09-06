@@ -1136,12 +1136,30 @@ reaches the network **only with `-cli-url`**.
 | `download failed: response exceeds <n> bytes` | D10 cap on the download body, opt-in |
 | `download failed: <transport err>` | `io.Copy` transport error (e.g. `read tcp …: connection reset by peer`) |
 | `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)` | D12 download deadline, opt-in |
+| `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort — no bytes for 60 s on the `-cli-url` body (always-on, `4534d86` parity, VM-measured) |
 | `mkdir cli dir: <err>` | cli-dir uncreatable |
 | `cli version "…" must be a single path component` | D6 hardening |
 | `cli version "…" collides with the install temp sweep` | D7 hardening |
 | `cli version "…" collides with the install download blob` | version starting `.blob-` |
 | `clearing stale dir at <path>: <err>` | occupied `cliPath` directory couldn't be removed |
 | `staging file vanished before install: <err>` | a concurrent sweep took the staging file |
+
+**Download progress + `fetch` stats (`4534d86`, `-cli-url`):**
+- While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to stdout on
+  a ~1 s ticker: `{"phase":"download","bytes":<n>[,"total":<m>]}`. A leading `bytes:0`
+  line is always emitted; `total` carries the Content-Length and is dropped when the
+  server sends none (chunked). The cadence is time-driven, so byte counts jump
+  irregularly and there is no guaranteed final `bytes==total` line — a consumer treats
+  these as progress, not a byte-exact sequence.
+- The `__INSTALL_RESULT__` facts line gains a `fetch` object LAST (after `cliError`):
+  `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}` — bytes read, download duration, and
+  the largest gap between reads. It appears whenever a `-cli-url` download was
+  attempted (even a 0-byte 404) and is dropped on the `-cli-zst` / cache-hit paths.
+- The `-cli-url` body has an always-on 60 s **read-idle abort** (reset on every byte)
+  that fails the install with the `download stalled: …` cliError above. This is parity,
+  not a divergence — the reference does it. It is a read-idle bound, not a total
+  deadline, so a slow-but-progressing download completes (that total cap is the opt-in
+  D12, off by default).
 
 **Checksum + verify ordering:**
 - claustrum verifies `-cli-checksum` on the `-cli-url` path **unconditionally**. An
