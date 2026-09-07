@@ -17,6 +17,8 @@ listed and not checked.
 Exit 0 when the two sets match, 1 (with the offending file names) otherwise. Stdlib
 only: the map is read with a line regex, not a YAML parser, because the paths are
 plain ``- name.go`` list items and CI runs this on a bare Python.
+``scripts/test_lint_codecov_components.py`` pins the parser and the three failure
+modes against fixtures.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from __future__ import annotations
 import glob
 import os
 import re
+import sys
 
 _CODECOV_YML = "codecov.yml"
 
@@ -49,24 +52,26 @@ def _listed_paths(text: str) -> list[str]:
     return paths
 
 
-def _production_files() -> set[str]:
+def _production_files(root: str) -> set[str]:
     """Return the root-level production `.go` files (everything but `_test.go`)."""
     return {
-        os.path.basename(p) for p in glob.glob("*.go") if not p.endswith("_test.go")
+        os.path.basename(p)
+        for p in glob.glob(os.path.join(root, "*.go"))
+        if not p.endswith("_test.go")
     }
 
 
-def main() -> int:
-    """Compare the two sets; print the differences and return 1 if any, else 0."""
+def lint(root: str) -> list[str]:
+    """Compare the two sets under ``root``; return one message per problem (empty = OK)."""
+    path = os.path.join(root, _CODECOV_YML)
     try:
-        with open(_CODECOV_YML, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             text = fh.read()
     except OSError as exc:
-        print(f"codecov components lint FAILED: could not read {_CODECOV_YML} ({exc}).")
-        return 1
+        return [f"could not read {_CODECOV_YML} ({exc})."]
     listed = _listed_paths(text)
     listed_set = set(listed)
-    production = _production_files()
+    production = _production_files(root)
 
     problems = []
     for name in sorted(production - listed_set):
@@ -84,15 +89,24 @@ def main() -> int:
         if name in seen:
             problems.append(f"{name}: listed more than once in {_CODECOV_YML}.")
         seen.add(name)
+    return problems
 
+
+def main(argv: list[str]) -> int:
+    """Lint the repo at argv[1] (default: the current directory); print and return 0/1."""
+    root = argv[1] if len(argv) > 1 else "."
+    problems = lint(root)
     if problems:
         print("codecov components lint FAILED:\n")
         for problem in problems:
             print(f"  x {problem}\n")
         return 1
-    print(f"codecov components lint: {len(production)} production file(s) all mapped once.")
+    print(
+        f"codecov components lint: {len(_production_files(root))} production file(s) "
+        f"all mapped once."
+    )
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv))
