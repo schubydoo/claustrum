@@ -463,6 +463,21 @@ func TestZstdDecompressCreateError(t *testing.T) {
 	}
 }
 
+// zstdDecompress takes a PATH, so a source that is not there fails at os.Open —
+// before the zstd reader and before the destination is created. ensureCLI retries
+// stageAndInstall once and re-reads that path, so a source that went away between
+// the attempts has to surface as an error.
+func TestZstdDecompressOpenError(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "cli")
+	if err := zstdDecompress(filepath.Join(dir, "absent.zst"), dest); err == nil {
+		t.Fatal("decompress of a missing source succeeded, want the os.Open error")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("destination exists after the open failure (stat err = %v), want it untouched", err)
+	}
+}
+
 // When the CLI dir is unusable AND the OS temp dir is too, fetchToFile has nowhere
 // to land the blob and reports the second CreateTemp error. os.TempDir reads TMPDIR
 // on Unix and TMP/TEMP on Windows (GetTempPath does not verify the path exists —

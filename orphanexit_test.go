@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -23,6 +24,15 @@ import (
 // instanceId is not ours.
 func fakeCapServer(t *testing.T, path, instanceID string) *int64 {
 	t.Helper()
+	return fakeCapServerReplying(t, path,
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{"instanceId":%q}}`+"\n", instanceID))
+}
+
+// fakeCapServerReplying is fakeCapServer with the reply line under the test's control:
+// it consumes each connection's request and writes reply verbatim, or — when reply is
+// empty — closes without answering, which is the probe's EOF-with-no-bytes arm.
+func fakeCapServerReplying(t *testing.T, path, reply string) *int64 {
+	t.Helper()
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatalf("fake listen %s: %v", path, err)
@@ -39,7 +49,9 @@ func fakeCapServer(t *testing.T, path, instanceID string) *int64 {
 			go func(c net.Conn) {
 				defer c.Close()
 				_, _ = bufio.NewReader(c).ReadBytes('\n') // consume the request
-				_, _ = fmt.Fprintf(c, `{"jsonrpc":"2.0","id":1,"result":{"instanceId":%q}}`+"\n", instanceID)
+				if reply != "" {
+					_, _ = io.WriteString(c, reply)
+				}
 			}(c)
 		}
 	}()
@@ -194,6 +206,50 @@ func TestPathReachesUs(t *testing.T) {
 	}
 	if s.pathReachesUs(sock + ".nope") {
 		t.Error("pathReachesUs must be false when the dial fails")
+	}
+}
+
+// The two malformed-answer arms of the probe, both of which mean "did not reach us":
+// a peer that accepts and then closes without answering (EOF with no bytes read), and
+// one that answers with a line that is not JSON. Neither may be mistaken for a reply.
+func TestPathReachesUsMalformedReplies(t *testing.T) {
+	s, sock := bootOrphanServer(t)
+	dir := filepath.Dir(sock)
+
+	eof := filepath.Join(dir, "eof.sock")
+	fakeCapServerReplying(t, eof, "") // consumes the request, then closes
+	if s.pathReachesUs(eof) {
+		t.Error("pathReachesUs must be false when the peer closes without replying")
+	}
+	bad := filepath.Join(dir, "bad.sock")
+	fakeCapServerReplying(t, bad, "not-json\n")
+	if s.pathReachesUs(bad) {
+		t.Error("pathReachesUs must be false when the reply line is not JSON")
+	}
+}
+
+// The not-orphaned arm: with the bound socket still at its own path the loop resets
+// every tick and never probes, so the daemon stays up. Every sibling test removes or
+// rebinds the socket first, which skips this branch. Staying up is not enough on its
+// own — without this arm the loop would fall through to the self-probe, which also
+// reaches this daemon and resets — so the log must show that neither the orphaned
+// notice nor the probe verdict was ever reached.
+func TestExitWhenOrphanedResetsWhileSocketIntact(t *testing.T) {
+	shrinkOrphanTimers(t, 10*time.Millisecond, 20*time.Millisecond)
+	s, sock := bootOrphanServer(t) // socket left in place: not orphaned
+	logs := captureLog(t, func() {
+		startOrphanLoop(t, s, sock)
+		select {
+		case <-s.shutdown:
+			t.Fatal("shut down while the socket path still resolves to this daemon")
+		case <-time.After(300 * time.Millisecond):
+			// ~30 intervals, each one resetting on socketLooksOrphaned == false
+		}
+	})
+	for _, line := range []string{"no longer leads to this daemon", "still reaches this daemon"} {
+		if strings.Contains(logs, line) {
+			t.Errorf("intact socket reached the %q path; the identity check must reset first:\n%s", line, logs)
+		}
 	}
 }
 

@@ -3,8 +3,12 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -57,6 +61,55 @@ func TestResolveUserExcludesFile(t *testing.T) {
 			t.Errorf("none = %q, want /dev/null", got)
 		}
 	})
+}
+
+// wantHardenedStatusOSError asserts that hardenedGitStatus failed on ITS OWN
+// pre-git step with the given errno, not on git. The fixtures here are empty
+// directories, so git itself would also fail ("not a git repository", exit 128);
+// a swallowed pre-git error therefore still yields SOME error, and only the errno
+// tells the two apart.
+func wantHardenedStatusOSError(t *testing.T, out string, err error, want error) {
+	t.Helper()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		t.Fatalf("hardenedGitStatus reached git (%v, stdout %q); want it to fail before git with %v", err, out, want)
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("hardenedGitStatus error = %v (stdout %q), want %v", err, out, want)
+	}
+}
+
+// hardenedGitStatus builds its isolated gitdir with os.MkdirTemp before it touches
+// git at all, so an unusable temp root fails the whole call. TMPDIR is the knob
+// os.TempDir reads on unix, which is why this is not a cross-platform test.
+func TestHardenedGitStatusTempDirFails(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "absent"))
+	out, err := hardenedGitStatus(t.TempDir(), t.TempDir(), t.TempDir(), "status")
+	wantHardenedStatusOSError(t, out, err, fs.ErrNotExist)
+}
+
+// The HEAD/index copy loop skips a file that is ABSENT (git rebuilds it) but
+// propagates any other stat failure rather than running status with incomplete
+// metadata. A self-referential symlink gives a stat that fails with ELOOP, not
+// ENOENT — the non-skippable arm. Unix-only: it needs a symlink and the loop.
+func TestHardenedGitStatusIndexStatFails(t *testing.T) {
+	gitDir := t.TempDir()
+	if err := os.Symlink("index", filepath.Join(gitDir, "index")); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	out, err := hardenedGitStatus(t.TempDir(), gitDir, t.TempDir(), "status")
+	wantHardenedStatusOSError(t, out, err, syscall.ELOOP)
+}
+
+// Same rule one step later: the index STATS fine but cannot be read. A directory
+// named `index` reads as EISDIR, which is not ENOENT, so it is propagated too.
+func TestHardenedGitStatusIndexReadFails(t *testing.T) {
+	gitDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(gitDir, "index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := hardenedGitStatus(t.TempDir(), gitDir, t.TempDir(), "status")
+	wantHardenedStatusOSError(t, out, err, syscall.EISDIR)
 }
 
 // A directory that exists but cannot be entered (mode 0000) passes the os.Stat

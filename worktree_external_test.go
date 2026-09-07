@@ -256,3 +256,65 @@ func TestWorktreeRemoveExternalMissingGit(t *testing.T) {
 		t.Errorf("remove(%s) = %s, want success for an already-gone external worktree", gone, rg)
 	}
 }
+
+// The 2-level containment gates REMOVE as well as create — the create arm is
+// covered by TestWorktreeCreateExternalRoot. It is what keeps a path outside the
+// chosen worktree location away from the removal below it; remove carries the same
+// wording with no errorCode.
+func TestWorktreeRemoveExternalWrongDepth(t *testing.T) {
+	requireGit(t)
+	base := t.TempDir()
+	repo := filepath.Join(base, "R")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	root := filepath.Join(base, "mine")
+	wp := filepath.Join(root, "wt") // one level below root, not <dir>/<name>
+	if err := os.MkdirAll(wp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wp, "worktreeRoot": root}))
+	if !strings.Contains(worktreeErrorField(t, raw), "is not <worktree location>/<directory>/<name> beneath "+root) ||
+		strings.Contains(raw, `"errorCode"`) {
+		t.Errorf("remove(%s) = %s, want the containment refusal with no errorCode", wp, raw)
+	}
+	if _, err := os.Stat(wp); err != nil {
+		t.Errorf("the refused path was deleted (%v); a containment refusal removes nothing", err)
+	}
+}
+
+// externalWorktreeVerify cannot decide when baseRepo's worktrees directory is
+// unreadable, and the RPC then reports a TRANSIENT "could not verify … retry"
+// rather than the flat refusal — a caller is told to retry, not that the path is
+// junk. Fixture: a freshly `git init`ed baseRepo (no .git/worktrees yet) and a
+// worktree whose `.git` names a plausible foreign admin directory.
+func TestWorktreeRemoveExternalVerifyTransient(t *testing.T) {
+	requireGit(t)
+	base := t.TempDir()
+	repo := filepath.Join(base, "R")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q") // no worktrees dir exists yet
+	wp := filepath.Join(base, "mine", "d", "wt")
+	if err := os.MkdirAll(wp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wp, ".git"), []byte("gitdir: /foreign/.git/worktrees/x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wp, "worktreeRoot": filepath.Join(base, "mine")}))
+	got := worktreeErrorField(t, raw)
+	if !strings.Contains(got, "could not verify that "+wp+" is a worktree of "+repo) ||
+		!strings.Contains(got, "); retry") {
+		t.Errorf("remove(%s) = %s, want the transient could-not-verify report", wp, raw)
+	}
+	if _, err := os.Stat(wp); err != nil {
+		t.Errorf("an undecidable verify deleted the path (%v); it must be left in place", err)
+	}
+}

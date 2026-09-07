@@ -192,3 +192,10 @@ func TestProcGroupCloseUnixIsNoOp(t *testing.T) {
 	(*procGroup)(nil).close()
 	(&procGroup{}).close()
 }
+
+// reapProcessGroup is nil-safe by the same contract: a command that never started has
+// a nil cmd.Process, and reading its Pid for the pgid would panic inside the drain
+// path, so the guard must come first.
+func TestReapProcessGroupNilIsNoOp(t *testing.T) {
+	reapProcessGroup(nil)
+}

@@ -93,6 +93,73 @@ func TestWorktreeRemoveLockedByMarkerNotStderr(t *testing.T) {
 	}
 }
 
+// The `locked` marker check preempts git's stderr on every real locked worktree, so
+// the stderr branch is only reachable where there is no admin directory to hold a
+// marker. A plain directory inside the repo plus a stub git that emits git's own
+// "cannot remove a locked working tree" gives exactly that: the marker check cannot
+// fire (worktreeAdminDir is ""), so a refusal here is the stderr branch, and the
+// directory must survive rather than fall through to the delete.
+func TestWorktreeRemoveLockedFromGitStderr(t *testing.T) {
+	repo := t.TempDir()
+	wt := filepath.Join(repo, ".claude", "worktrees", "wt")
+	keep := filepath.Join(wt, "KEEP.txt")
+	if err := os.MkdirAll(wt, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keep, []byte("must survive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	// Every other call exits 0, the config enumeration included, so the hostile-config
+	// gate does not answer first.
+	script := "#!/bin/sh\ncase \"$*\" in\n" +
+		"  *\"worktree remove\"*) echo \"fatal: cannot remove a locked working tree\" >&2; exit 1 ;;\n" +
+		"  *) exit 0 ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+	if !strings.Contains(raw, "is locked (git worktree lock); unlock it to remove it") {
+		t.Errorf("reply = %s, want the locked refusal from git's stderr", raw)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("a locked refusal deleted the directory (%v); it must be left in place", err)
+	}
+}
+
+// The registration prune is the fix for the fallback path: `git worktree remove`
+// normally drops the admin directory itself, so the prune only shows when it does
+// not. A real linked worktree with its `locked` marker deleted (so the refusal above
+// does not fire) plus a stub git that exits 0 WITHOUT removing anything leaves the
+// admin dir behind — and the prune must then take it, or a re-create at the same
+// path would fail "already registered".
+func TestWorktreeRemovePrunesLeftoverAdminDir(t *testing.T) {
+	repo, wt := lockedWorktree(t) // real git builds the registration
+	admin := filepath.Join(repo, ".git", "worktrees", "wt")
+	if err := os.Remove(filepath.Join(admin, "locked")); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": wt}))
+	if !strings.Contains(raw, `"success":true`) {
+		t.Errorf("reply = %s, want success:true", raw)
+	}
+	if _, err := os.Stat(admin); err == nil {
+		t.Errorf("the registration at %s survived; the prune did not run", admin)
+	}
+}
+
 // A git failure that is NOT a lock still reaches the os.RemoveAll fallback and
 // answers success:true: an ordinary non-worktree directory inside the repo is
 // deleted. 7d193f89 does the same (measured on an ephemeral VM) — only the locked

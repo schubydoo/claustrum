@@ -593,6 +593,34 @@ func TestStdinExactCapFitAccepted(t *testing.T) {
 	}
 }
 
+// A write that lands after the writer finished (stdinDone — the child exited or
+// the pipe closed) is DROPPED, not reported as full: full=true would surface
+// -32002 where claustrum matches the exit-drain wart instead (stdin acked during
+// the drain is dropped, and the high-water mark still advances).
+//
+// The queue is pre-loaded past the cap so the backpressure gate would fire but
+// for its `!p.stdinDone` conjunct — dropping that conjunct turns this ack into a
+// -32002. No writer goroutine runs: stdinDone means there is none.
+func TestStdinAfterDoneIsDroppedNotFull(t *testing.T) {
+	old := stdinQueueCap
+	stdinQueueCap = 8
+	defer func() { stdinQueueCap = old }()
+
+	p := &managedProc{id: "sd", subs: map[*conn]struct{}{}}
+	p.stdinCond = sync.NewCond(&p.stdinMu)
+	p.stdinDone = true
+	p.stdinQBytes = stdinQueueCap // already at the cap: the gate would fire
+
+	if p.enqueueStdin([]byte("late")) {
+		t.Fatal("a write after stdinDone reported backpressure, want it dropped (full=false)")
+	}
+	p.stdinMu.Lock()
+	defer p.stdinMu.Unlock()
+	if len(p.stdinQ) != 0 || p.stdinQBytes != stdinQueueCap {
+		t.Errorf("queue = %d chunks / %d bytes, want the write dropped and nothing counted", len(p.stdinQ), p.stdinQBytes)
+	}
+}
+
 // waitStdinQueueEmpty polls until the writer has dequeued everything (it then
 // sits parked inside the pipe Write, outside the lock).
 func waitStdinQueueEmpty(t *testing.T, p *managedProc) {
@@ -883,6 +911,19 @@ func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
 
 	closed := func(f *os.File) bool { return errors.Is(f.Close(), os.ErrClosed) }
 
+	t.Run("stdout pipe fails", func(t *testing.T) {
+		// The first pipe: nothing has been made yet, so the contract is only that
+		// the error reaches the caller unwrapped instead of spawn carrying on with
+		// nil descriptors.
+		want := errors.New("pipe: too many open files")
+		osPipe = func() (*os.File, *os.File, error) { return nil, nil, want }
+		m := newTestProcManager(t)
+		_, err := m.spawn(nil, "P", "irrelevant", nil, "", nil)
+		if !errors.Is(err, want) {
+			t.Fatalf("spawn error = %v, want the pipe error", err)
+		}
+	})
+
 	t.Run("stderr pipe fails", func(t *testing.T) {
 		var first [2]*os.File
 		calls := 0
@@ -1039,6 +1080,43 @@ func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 	}
 	if signaledPids[222] {
 		t.Error("reused-id replacement (pid 222) was signaled — the kill redirected to the wrong process")
+	}
+}
+
+// The escalation has a second deadline behind it: killReapGrace bounds the wait
+// for the SIGKILL'd group to be reaped, so a process the kernel will not release
+// (uninterruptible sleep) reports not-yet-dead instead of wedging the dispatch
+// goroutine forever.
+//
+// p.done is never closed, which IS the fixture — a genuinely unreapable child
+// took a dm-delay device on a VM to build, so the wedge is modelled directly
+// rather than provoked. killReapGrace is shrunk so the test does not sit through
+// the production wait; its real value stays pinned by TestClampKillWaitMs.
+func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
+	oldSignal := signalGroup
+	t.Cleanup(func() { signalGroup = oldSignal })
+	var signals []string
+	signalGroup = func(_ *procGroup, _ *os.Process, name string) {
+		signals = append(signals, name)
+	}
+	oldGrace := killReapGrace
+	killReapGrace = 20 * time.Millisecond
+	t.Cleanup(func() { killReapGrace = oldGrace })
+
+	m := newTestProcManager(t)
+	p := &managedProc{
+		id: "WEDGED", running: true,
+		cmd: &exec.Cmd{Process: &os.Process{Pid: 1}}, done: make(chan struct{}),
+	}
+
+	found, died, alreadyExited, escalated := m.killAndWaitProc(p, "TERM", 10*time.Millisecond, true)
+	if !found || died || alreadyExited || !escalated {
+		t.Errorf("killAndWaitProc = (found %v, died %v, alreadyExited %v, escalated %v), want (true, false, false, true)",
+			found, died, alreadyExited, escalated)
+	}
+	// The graceful signal, then the whole-group SIGKILL the grace expiry triggers.
+	if strings.Join(signals, ",") != "TERM,KILL" {
+		t.Errorf("signals = %v, want [TERM KILL]", signals)
 	}
 }
 

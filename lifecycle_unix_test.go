@@ -288,22 +288,39 @@ func TestDaemonizeWithoutForwardedToken(t *testing.T) {
 	}
 }
 
-// When the log cannot be opened — here because the socket directory does not
-// exist — daemonize must fall back to inherited stdio and still start the child,
-// rather than refusing to run. The daemon will fail on the socket itself if the
-// directory is genuinely absent; that is a clearer error than a log-file one.
+// When the log cannot be opened — here because the socket directory is not
+// writable — daemonize must fall back to inherited stdio and still start the
+// child, rather than refusing to run. The daemon will fail on the socket itself
+// if the directory is really unusable; that is a clearer error than a log one.
+//
+// The fixture used to be a MISSING socket directory, which proved nothing:
+// daemonizeWithToken MkdirAlls that directory itself before it opens the log, so
+// the log opened fine and the fallback was never reached (measured — the block
+// held zero coverage while this test passed). An unwritable directory is what
+// actually defeats openDaemonLog, and the absent log below is the control that
+// says the fallback ran.
 func TestDaemonizeFallsBackWhenLogUnopenable(t *testing.T) {
 	// The stub child is an exit-0 helper that never binds a socket, so the
 	// launcher's wait-for-accept correctly reports a failed start. Shrink the
 	// deadline so the test does not sit out the production 10s, and expect exit
 	// 1 — that is the right answer for a daemon that never came up.
 	shortDaemonStart(t)
+	skipIfRoot(t) // root creates the log in a 0500 directory regardless
 
 	stubOsExit(t)
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
-	sock := filepath.Join(t.TempDir(), "no-such-dir", "s.sock")
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "s.sock")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) // runs before shortTempDir's RemoveAll
+
 	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 1 {
 		t.Errorf("daemonizeWithToken with an unopenable log: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, daemonLogName)); !os.IsNotExist(err) {
+		t.Errorf("%s exists (err=%v): the log opened, so the inherited-stdio fallback was never taken", daemonLogName, err)
 	}
 }
 

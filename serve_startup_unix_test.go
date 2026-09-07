@@ -127,6 +127,82 @@ func TestDaemonizeTimeoutPrintsToStderr(t *testing.T) {
 	}
 }
 
+// The OTHER failure arm of the same wait, and the one the exit code cannot tell
+// apart: when a LIVE predecessor still owns the socket and the child never takes
+// the path over, the launcher reports 7d193f89's distinct "did not take over"
+// line instead of the accept timeout above. Both exit 1, so only the message
+// discriminates them.
+//
+// The predecessor here is a plain listener held by the test — livePredecessorIdent
+// only asks whether something accepts on the path — and the stub child never
+// rebinds it, so waitForDaemonAccept keeps seeing the predecessor's own inode.
+func TestDaemonizePredecessorHandoffPrintsToStderr(t *testing.T) {
+	shortDaemonStart(t)
+	stubOsExit(t)
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0") // a child that never rebinds the path
+
+	dir, err := os.MkdirTemp("", "dpr") // short path: macOS sun_path limit
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	code, exited := catchExit(func() { daemonizeWithToken(sock, "") })
+	_ = w.Close()
+	os.Stderr = old
+
+	if !exited || code != 1 {
+		t.Errorf("daemonizeWithToken: exited=%v code=%d, want exit 1", exited, code)
+	}
+	out, _ := io.ReadAll(r)
+	want := "claustrum: daemon did not take over " + sock
+	if !strings.Contains(string(out), want) {
+		t.Errorf("stderr = %q, want it to contain %q", out, want)
+	}
+}
+
+// The success tail of the launcher: a STALE socket file (a crashed daemon's
+// leftover — present on disk, nothing accepting) is not a live predecessor, and
+// waitForDaemonAccept counts any existing path as up, so the launcher exits 0.
+// Same measured reference behaviour TestWaitForDaemonAcceptReturnsForAnOccupiedPath
+// pins one level down; driven here through daemonizeWithToken so the exit-0 tail
+// is what runs. A stale SOCKET, not a plain file: a socket dials ECONNREFUSED on
+// every unix target, where a regular file's error differs by OS.
+func TestDaemonizeExitsZeroWhenTheSocketPathIsOccupied(t *testing.T) {
+	shortDaemonStart(t)
+	stubOsExit(t)
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
+
+	dir, err := os.MkdirTemp("", "doc") // short path: macOS sun_path limit
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.(*net.UnixListener).SetUnlinkOnClose(false) // leave the socket file behind
+	_ = ln.Close()
+
+	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 0 {
+		t.Errorf("daemonizeWithToken over a stale socket: exited=%v code=%d, want exit 0", exited, code)
+	}
+}
+
 // -serve must create a missing socket directory (0700) and come back only once
 // the daemon is accepting. Measured against the reference at 5db5e4a: it leaves
 // d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600) and the
