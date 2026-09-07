@@ -35,7 +35,10 @@ exists so that a Windows client that cannot consume `AF_UNIX` can still connect
   (`\\.\pipe\claustrum-<random-instance-id>`). It publishes that name to
   **`rpc.pipe`** in the socket's directory (beside `rpc.sock` / `daemon.token`).
   claustrum writes the file atomically before the pipe accepts and before the ready
-  banner, and removes it on graceful shutdown. The client reads that file to learn
+  banner, and removes it on graceful shutdown **only when the file is still the inode
+  this daemon published** (`os.SameFile`, the same handoff guard the socket and
+  `daemon.token` carry — see [Token persistence](#token-persistence-daemontoken)), so
+  a restart's successor keeps its own pointer. The client reads that file to learn
   the opaque name.
 - **Stale-file invariant.** The name is random for each boot. Therefore `rpc.pipe`
   exists **if and only if** a pipe is actively served this boot. Startup removes any
@@ -96,6 +99,19 @@ daemons no longer coexist to collide on the honest path. A collision survives on
 where eviction is refused (a foreign or cross-machine lock holder, or a holder that
 survives `SIGKILL`) or on Windows, which ships no run-dir lock.
 
+**Inode-ownership qualifier on the unlink (`7d193f89`).** On graceful shutdown the
+daemon unlinks `daemon.token` **only when the file on disk is still the inode this
+daemon wrote** — it stats the file and compares its identity (`os.SameFile`) to the
+one it recorded at startup. If a restart's successor already rebound the socket and
+republished `daemon.token` to a new inode, the departing predecessor leaves the file
+alone rather than deleting the successor's token out from under it and breaking the
+new daemon's reconnect auth. The socket file and, on Windows, the `rpc.pipe` pointer
+carry the **same** guard on the same graceful path (`removeSocketIfOwned` /
+`removePersistedToken` / `removePipeNameFileIfOwned`); a socket the daemon never
+bound, or a token/pipe it never wrote, falls back to the plain unlink. This is the
+departing-daemon half of the daemon-to-daemon handoff — the launcher half is under
+[Daemon startup](#daemon-startup--serve). It is off the JSON-RPC wire.
+
 ### Run-dir lock (`daemon.lock`)
 
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
@@ -144,6 +160,37 @@ On a timeout the launcher prints
 exits `1`. On success it prints the ready banner and exits `0`. After a successful
 `-serve`, the socket accepts connections before `-serve` returns. (Measurement
 detail condensed out of this reference.)
+
+**Daemon-to-daemon socket handoff (`7d193f89`).** A unix socket path cannot be
+rebound in place, so a restart on a live socket unlinks the old inode and binds a
+fresh one. Before it spawns the child, the launcher records whether a **live**
+predecessor is already accepting on the path and, if so, that socket's inode
+identity (a short dial probe on unix; a no-op stub on Windows, where the probe has
+no observable effect). It then waits not merely for the path to exist but for the
+inode to become **different** from the predecessor's — that is how it tells the
+successor's fresh socket from the one the predecessor is still serving. When a
+predecessor was present and the deadline passes with the inode unchanged, the
+launcher prints the distinct message
+`claustrum: daemon did not take over <socket> (predecessor still owns it)` to
+**stderr** and exits `1`, in place of the plain timeout line above. With no live
+predecessor the wait is unchanged: any present socket is the child's. This is off
+the JSON-RPC wire (launcher lifecycle); the departing daemon's matching half is the
+inode-ownership unlink under
+[Token persistence](#token-persistence-daemontoken).
+
+### Idle-connection close
+
+A `-serve` daemon closes any accepted connection that goes **5 minutes** with no
+read or write activity, matching `7d193f89`. The timeout is fixed and always-on:
+there is no flag or config key to change or disable it. The daemon stamps the last
+activity time on every read and write of the connection and a per-connection watcher
+polls for silence (at a quarter of the timeout, bounded to at most 30 s); when the
+idle span reaches the timeout it closes the socket and logs
+`[Server] closing idle connection <addr> (idle for <d>)`. The watcher stops as soon
+as the connection closes for any other reason or the daemon shuts down, so it never
+outlives its connection. This is off the JSON-RPC wire (connection lifecycle, no
+frame). It closes only an idle *connection*, never the daemon — a client-less orphan
+daemon is retired by the separate orphan-exit self-probe below.
 
 ### Daemon log (`remote-server.log`)
 
