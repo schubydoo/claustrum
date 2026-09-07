@@ -3,9 +3,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -38,6 +40,61 @@ func TestWorktreeCreateExternalWorldWritable(t *testing.T) {
 	if !strings.Contains(raw, `"errorCode":"unsafe_path"`) ||
 		!strings.Contains(raw, "every user on this host (mode 0777)") {
 		t.Errorf("create with a world-writable root = %s, want the writable refusal", raw)
+	}
+}
+
+// The uid-ownership refusal is the first check in the reference's order and needs a
+// root the daemon user does not own — the filesystem root is the one such directory
+// present on every unix host. worktreeRootShareRefusal only stats, so this touches
+// nothing. The ownership is asserted first so a host where "/" is somehow ours skips
+// rather than reporting a false negative.
+func TestWorktreeRootShareRefusalForeignOwner(t *testing.T) {
+	skipIfRoot(t)
+	root := string(os.PathSeparator)
+	fi, err := os.Stat(root)
+	if err != nil {
+		t.Skipf("cannot stat %s: %v", root, err)
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || int(st.Uid) == os.Geteuid() {
+		t.Skipf("%s is owned by the test user; the foreign-owner arm is unreachable here", root)
+	}
+	want := fmt.Sprintf("is owned by uid %d, not by you (uid %d)", st.Uid, os.Geteuid())
+	if got := worktreeRootShareRefusal(root); !strings.Contains(got, want) {
+		t.Errorf("worktreeRootShareRefusal(%s) = %q, want it to contain %q", root, got, want)
+	}
+}
+
+// The symlinked-<directory> refusal gates REMOVE as well as create (the create arm
+// is covered by TestWorktreeCreateExternalSpellingAndSymlink): a planted link at the
+// <directory> level must not carry the removal out of the worktree location.
+func TestWorktreeRemoveExternalDirSymlink(t *testing.T) {
+	requireGit(t)
+	base := t.TempDir()
+	repo := filepath.Join(base, "R")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	root := filepath.Join(base, "mine")
+	outside := filepath.Join(base, "outside", "wt")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base, "outside"), filepath.Join(root, "dlink")); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	s := newTestServer(t)
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": repo, "worktreePath": filepath.Join(root, "dlink", "wt"), "worktreeRoot": root}))
+	if !strings.Contains(worktreeErrorField(t, raw), "is a symbolic link; the directory under the worktree location must be a real directory") {
+		t.Errorf("remove through a symlinked <dir> = %s, want the symlink refusal", raw)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Errorf("the removal followed the symlink out of the root (%v)", err)
 	}
 }
 

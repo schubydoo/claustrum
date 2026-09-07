@@ -208,6 +208,19 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 		copyFile(src, filepath.Join(blocked, "sub", "a.txt")) // must not panic
 	})
 
+	// An unwritable worktree: the intermediate os.Mkdir fails, so no destination is
+	// returned and the copy is skipped rather than reported.
+	t.Run("safeOverlayDest_intermediate_cannot_be_made", func(t *testing.T) {
+		wt := t.TempDir()
+		if err := os.Chmod(wt, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(wt, 0o700) })
+		if got := safeOverlayDest(wt, "sub/f.txt"); got != "" {
+			t.Errorf("dest = %q, want %q (the intermediate could not be created)", got, "")
+		}
+	})
+
 	// A manifest present but git failing (not a repo) must be a no-op.
 	t.Run("copyWorktreeIncludes_git_fails", func(t *testing.T) {
 		dir := t.TempDir()
@@ -240,6 +253,13 @@ func TestSafeOverlayDest(t *testing.T) {
 	}
 	if fi, err := os.Stat(filepath.Join(wt, "a", "b")); err != nil || !fi.IsDir() {
 		t.Errorf("intermediate dirs not created: %v", err)
+	}
+
+	// A second manifest entry under the same prefix — the common case, since a
+	// manifest usually names several files in one directory — finds the
+	// intermediates already there as real directories and reuses them.
+	if got := safeOverlayDest(wt, "a/./b/file.txt"); got != dst {
+		t.Errorf("repeat dest = %q, want %q (existing intermediates are reused)", got, dst)
 	}
 
 	// A ".." component is refused outright.

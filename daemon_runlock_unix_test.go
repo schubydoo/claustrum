@@ -61,6 +61,7 @@ func TestMatchesServeArgv(t *testing.T) {
 		want bool
 	}{
 		{"equals form", []string{"claustrum", "-serve", "-socket=" + sock}, true},
+		{"double dash equals form", []string{"claustrum", "--serve", "--socket=" + sock}, true},
 		{"double dash + separate value", []string{"claustrum", "--serve", "--socket", sock}, true},
 		{"separate value", []string{"claustrum", "-serve", "-socket", sock}, true},
 		{"equivalent path, separate value", []string{"claustrum", "-serve", "-socket", "/run/x/./s.sock"}, true},

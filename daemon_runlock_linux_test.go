@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +45,49 @@ func TestPidNamespaceRefusalLinux(t *testing.T) {
 	}
 	if r := pidNamespaceRefusal(1 << 30); r != "" {
 		t.Errorf("pidNamespaceRefusal(absent pid) = %q, want no refusal (holder gone)", r)
+	}
+}
+
+// skipUnlessPidUninspectable skips unless /proc/<pid>/ns/pid is PRESENT but unreadable
+// — what a root-owned pid looks like to an unprivileged user, and the only way to stage
+// the "holder cannot be inspected" arm without a second pid namespace. As root every pid
+// is inspectable, and in a container the pid may not exist at all.
+func skipUnlessPidUninspectable(t *testing.T, pid int) {
+	t.Helper()
+	skipIfRoot(t)
+	if _, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/ns/pid"); err == nil || os.IsNotExist(err) {
+		t.Skipf("/proc/%d/ns/pid is not a present-but-unreadable holder here (err=%v)", pid, err)
+	}
+}
+
+// TestPidNamespaceRefusalUninspectableLinux covers the third arm, between "in our
+// namespace" and "gone": a readlink that fails for a reason OTHER than ENOENT proves
+// nothing about the holder, so it must refuse rather than wave the signal through.
+// pid 2 (kthreadd on a normal kernel) is root-owned, so the read is EACCES for us.
+func TestPidNamespaceRefusalUninspectableLinux(t *testing.T) {
+	skipUnlessPidUninspectable(t, 2)
+	if r := pidNamespaceRefusal(2); r != "holder cannot be inspected" {
+		t.Errorf("pidNamespaceRefusal(2) = %q, want the inspection refusal", r)
+	}
+}
+
+// The same fixture through the whole guard: a record that clears every earlier check
+// (serve role, a usable pid that is not ours, our own node) must still be refused when
+// the pid-namespace read cannot inspect the holder. isServeCmdline sits AFTER that
+// guard, so it is seamed true — a refusal here can only come from the namespace check.
+func TestHolderSignalRefusalUninspectablePidLinux(t *testing.T) {
+	skipUnlessPidUninspectable(t, 2)
+	self := nodeID()
+	if self == "" {
+		t.Skip("no /proc node identity on this host")
+	}
+	old := isServeCmdline
+	isServeCmdline = func(int, string) bool { return true }
+	t.Cleanup(func() { isServeCmdline = old })
+
+	r := ownerRecord{Pid: 2, Role: "serve", Node: self}
+	if got := holderSignalRefusal(r, "/run/x/s.sock"); got != "holder cannot be inspected" {
+		t.Errorf("holderSignalRefusal(uninspectable pid) = %q, want the pid-namespace refusal", got)
 	}
 }
 

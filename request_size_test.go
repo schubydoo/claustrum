@@ -90,6 +90,33 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 	}
 }
 
+// server.shutdown is the one method the recovery answers with SILENCE: an error frame
+// for a shutdown is a shape the reference never sends, so under a panic the request
+// goroutine emits no frame at all. Provoked through the same dispatchRequest seam,
+// written once before the server starts (see the note above). The connection must carry
+// no reply and the daemon must still serve afterwards.
+func TestShutdownPanicWritesNoFrame(t *testing.T) {
+	old := dispatchRequest
+	dispatchRequest = func(s *server, c *conn, raw []byte) *response {
+		if bytes.Contains(raw, []byte(`"id":11`)) {
+			panic("boom")
+		}
+		return s.dispatch(c, raw)
+	}
+	t.Cleanup(func() { dispatchRequest = old })
+
+	sock := startSocketServer(t)
+
+	// No auth member, exactly as -stop sends it: the seam panics before dispatch, so
+	// the frame's contents beyond the method and id do not matter here.
+	if reply := sendRaw(t, sock, `{"jsonrpc":"2.0","id":11,"method":"server.shutdown"}`); reply != "" {
+		t.Errorf("panicking server.shutdown replied %q, want no frame at all", reply)
+	}
+	if reply := sendRaw(t, sock, `{"jsonrpc":"2.0","id":12,"method":"server.ping","auth":"`+testToken+`"}`); !strings.Contains(reply, `"pong":true`) {
+		t.Errorf("daemon dead after a recovered shutdown panic: reply=%q, want a pong", reply)
+	}
+}
+
 // serveConnOnPipe runs one connection's read loop over a net.Pipe against a
 // minimal server, returning the log output once serveConn has returned. Driving
 // serveConn directly (rather than through the socket harness) keeps the capture

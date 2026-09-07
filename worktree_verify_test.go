@@ -96,3 +96,88 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 		t.Errorf("swapped dir = %q, want the not-populated refusal", msg)
 	}
 }
+
+// undoCreatedWorktree is git.worktree_create's rollback. The RPC reaches it on every
+// failed `git worktree add` and on a post-checkout drain overrun, but neither path
+// takes its three guarded steps — a failed add leaves no registration to prune, never
+// names home, and leaves the checkpointed leaf intact — so those steps are exercised
+// at the function seam. Every path handed to it here — including the stand-in HOME —
+// is inside a t.TempDir(), because two of the steps end in os.RemoveAll.
+func TestUndoCreatedWorktree(t *testing.T) {
+	// A leftover registration is pruned when it points back at this worktree and
+	// resolves strictly inside <repo>/.git/worktrees; the leaf itself then goes too.
+	t.Run("prunes_the_registration", func(t *testing.T) {
+		base := t.TempDir()
+		repo := filepath.Join(base, "repo")
+		wt := filepath.Join(repo, ".claude", "worktrees", "wt")
+		admin := filepath.Join(repo, ".git", "worktrees", "wt")
+		if err := os.MkdirAll(wt, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(admin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// The two halves of a genuine registration: the worktree's `.git` pointer and
+		// the admin dir's `gitdir` record pointing back at it.
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+admin+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(admin, "gitdir"), []byte(filepath.Join(wt, ".git")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		undoCreatedWorktree(repo, wt, "", worktreeCheckpoint{})
+
+		if _, err := os.Stat(admin); err == nil {
+			t.Errorf("the registration at %s survived the rollback", admin)
+		}
+		if _, err := os.Stat(wt); err == nil {
+			t.Errorf("the worktree leaf at %s survived the rollback", wt)
+		}
+	})
+
+	// The always-on home guard (D2) is re-applied here because the rollback runs
+	// seconds after the create's own containment did. A worktreePath that IS the home
+	// directory stops before any delete.
+	t.Run("refuses_the_home_directory", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv(homeEnvVar(), home)
+		keep := filepath.Join(home, "KEEP.txt")
+		if err := os.WriteFile(keep, []byte("must survive"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		undoCreatedWorktree(t.TempDir(), home, "", worktreeCheckpoint{})
+
+		if _, err := os.Stat(keep); err != nil {
+			t.Errorf("the rollback deleted the home directory: %v", err)
+		}
+	})
+
+	// The leaf identity is re-checked so a swap during the drain cannot redirect the
+	// RemoveAll onto a replacement's contents. A file where the checkpointed
+	// directory was is such a swap, and it must be left alone.
+	t.Run("refuses_a_stale_checkpoint", func(t *testing.T) {
+		base := t.TempDir()
+		wt := filepath.Join(base, "wt")
+		if err := os.MkdirAll(wt, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cp := checkpointCreatedWorktree(wt)
+		if cp.info == nil {
+			t.Fatal("checkpoint did not capture the leaf")
+		}
+		if err := os.Remove(wt); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(wt, []byte("not the directory that was created"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		undoCreatedWorktree(base, wt, "", cp)
+
+		if _, err := os.Stat(wt); err != nil {
+			t.Errorf("the rollback deleted a path that no longer matched the checkpoint: %v", err)
+		}
+	})
+}

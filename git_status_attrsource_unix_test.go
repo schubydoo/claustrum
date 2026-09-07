@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -70,5 +71,32 @@ func TestGitStatusIgnoresInRepoGitattributes(t *testing.T) {
 	}
 	if _, err := os.Stat(sentinel); err == nil {
 		t.Errorf("the .gitattributes clean filter RAN during git.status; --attr-source must suppress it")
+	}
+}
+
+// resetAttrSourceForTest clears the once-cached --attr-source probe so it re-runs
+// under a controlled PATH. Direct assignment is safe here because no test in this
+// package calls t.Parallel(), so nothing else is probing concurrently.
+func resetAttrSourceForTest() {
+	attrSourceOnce = sync.Once{}
+	attrSourceOK = false
+}
+
+// git added --attr-source in 2.40, so the option is probed with the reference's own
+// guard (`git --attr-source=<empty> version`) and simply omitted when that guard
+// fails. A stub git rejecting the option stands in for an older git. The cache is
+// reset on both sides so the real probe is not poisoned for the rest of the run.
+func TestAttrSourceArgsAbsentWhenGitRejectsIt(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"),
+		[]byte("#!/bin/sh\ncase \"$*\" in *--attr-source*) exit 129 ;; *) exit 0 ;; esac\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	resetAttrSourceForTest()
+	t.Cleanup(resetAttrSourceForTest)
+
+	if got := attrSourceArgs(); got != nil {
+		t.Errorf("attrSourceArgs() = %v, want nil when git rejects --attr-source", got)
 	}
 }
