@@ -106,9 +106,11 @@ one it recorded at startup. If a restart's successor already rebound the socket 
 republished `daemon.token` to a new inode, the departing predecessor leaves the file
 alone rather than deleting the successor's token out from under it and breaking the
 new daemon's reconnect auth. The socket file and, on Windows, the `rpc.pipe` pointer
-carry the **same** guard on the same graceful path (`removeSocketIfOwned` /
-`removePersistedToken` / `removePipeNameFileIfOwned`); a socket the daemon never
-bound, or a token/pipe it never wrote, falls back to the plain unlink. This is the
+carry the **same** identity guard on the same graceful path (`removeSocketIfOwned` /
+`removePersistedToken` / `removePipeNameFileIfOwned`): each removes its file only when the
+recorded identity still matches. They differ only in the no-identity fallback — a socket
+the daemon never recorded is removed with a plain unlink, while a token or pipe pointer
+with no recorded identity is left in place, not unlinked. This is the
 departing-daemon half of the daemon-to-daemon handoff — the launcher half is under
 [Daemon startup](#daemon-startup-serve). It is off the JSON-RPC wire.
 
@@ -173,7 +175,7 @@ predecessor was present and the deadline passes with the inode unchanged, the
 launcher prints the distinct message
 `claustrum: daemon did not take over <socket> (predecessor still owns it)` to
 **stderr** and exits `1`, in place of the plain timeout line above. With no live
-predecessor the wait is unchanged: any present socket is the child's. This is off
+predecessor the wait is unchanged: any present socket is the child's. The inode-difference wait and that distinct message are **unix-only**: on Windows the predecessor probe is a no-op that always reports no predecessor, so startup always takes the no-predecessor path and, on failure, emits only the ordinary timeout line, never the "daemon did not take over" message. This is off
 the JSON-RPC wire (launcher lifecycle); the departing daemon's matching half is the
 inode-ownership unlink under
 [Token persistence](#token-persistence-daemontoken).
