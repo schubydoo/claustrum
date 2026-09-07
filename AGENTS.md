@@ -170,7 +170,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
 - **A connection's requests dispatch concurrently.** Replies can return out of
   order, which matches the reference. Do not serialize them. The per-request
   goroutine **recovers from panics**. It replies with
-  `-32603 "recovered panic: <v>"`. That frame is **claustrum's own and is NOT a
+  `-32603 "recovered panic: <v>"`, except for `server.shutdown`, where it writes
+  no frame at all (an error frame is a shape the reference never sends for
+  shutdown). That frame is **claustrum's own and is NOT a
   parity claim** — the path is unreachable, so no client can observe it and it
   cannot diverge from anything. Do not add a golden for that frame (the battery
   never exercises it). Do not treat it as a wire contract. The tests provoke it
