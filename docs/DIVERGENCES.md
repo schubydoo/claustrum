@@ -206,9 +206,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `os.RemoveAll`: `files.extract_tar` wipes `destDir`, `git.worktree_remove`
   deletes `worktreePath` when git exits non-zero for a non-locked reason (a locked
   worktree is refused, not deleted), and `git.worktree_create` deletes
-  `worktreePath` when it rolls back a worktree whose caller `timeoutMs` was
-  exceeded by the post-checkout drain (defense-in-depth behind create's own
-  containment). `wipesHomeDir` (`homeguard.go`)
+  `worktreePath` when it rolls back a worktree, after a failed `git worktree add`
+  (unless the caller's `timeoutMs` cut the add short, which answers `timeout` and
+  leaves the leaf) or when the caller `timeoutMs` was exceeded by the post-checkout
+  drain (defense-in-depth behind create's own containment). `wipesHomeDir` (`homeguard.go`)
   refuses any target that **is or contains** the home directory. Descendants stay
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**

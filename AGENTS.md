@@ -121,11 +121,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
       On the `worktreeRoot` / `external_root` branch that in-repo containment does not
       apply, so there `wipesHomeDir` is the **active** home guard (both branches run it
       before the delete).
-    - `git.worktree_create` deletes `worktreePath` when it rolls back a worktree
-      whose caller `timeoutMs` was exceeded by the post-checkout drain — guarded by
-      `wipesHomeDir` as defense-in-depth behind create's own containment, and it
-      re-checks the leaf's checkpoint identity so a swap during the drain cannot
-      redirect the delete.
+    - `git.worktree_create` deletes `worktreePath` when it rolls back a worktree: after
+      a failed `git worktree add` (the leaf it made is removed so a retry at the same
+      path with a fresh branch succeeds; an add cut short by the caller's `timeoutMs`
+      answers `timeout` and leaves the leaf) and when the caller `timeoutMs` was
+      exceeded by the post-checkout drain — guarded by `wipesHomeDir` as
+      defense-in-depth behind create's own containment, and it re-checks the leaf's
+      checkpoint identity so a swap during the add or the drain cannot redirect the
+      delete.
     - `-install` deletes `filepath.Join(cliDir, cliVersion)` (operator input) —
       guarded by **D6's single-path-component rule instead**, not `wipesHomeDir`.
 
@@ -167,7 +170,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
 - **A connection's requests dispatch concurrently.** Replies can return out of
   order, which matches the reference. Do not serialize them. The per-request
   goroutine **recovers from panics**. It replies with
-  `-32603 "recovered panic: <v>"`. That frame is **claustrum's own and is NOT a
+  `-32603 "recovered panic: <v>"`, except for `server.shutdown`, where it writes
+  no frame at all (an error frame is a shape the reference never sends for
+  shutdown). That frame is **claustrum's own and is NOT a
   parity claim** — the path is unreachable, so no client can observe it and it
   cannot diverge from anything. Do not add a golden for that frame (the battery
   never exercises it). Do not treat it as a wire contract. The tests provoke it

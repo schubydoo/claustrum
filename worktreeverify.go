@@ -30,18 +30,20 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 	return worktreeCheckpoint{info: info, resolved: resolved}
 }
 
-// undoCreatedWorktree rolls back a worktree that git.worktree_create built but whose
-// caller timeoutMs was exceeded by the post-checkout pipe drain — reproducing 4534d86,
-// which deletes the branch and removes the worktree before answering errorCode "timeout".
-// Best-effort: the reply is the timeout frame regardless of whether every step lands.
+// undoCreatedWorktree rolls back a worktree that git.worktree_create built. Two callers:
+// a failed `git worktree add` (branch is "", the leaf is removed so a retry at the same
+// path with a fresh branch succeeds) and a caller timeoutMs exceeded by the post-checkout
+// pipe drain — the latter reproducing 4534d86, which deletes the branch and removes the worktree before
+// answering errorCode "timeout". Best-effort: the reply is sent regardless of whether
+// every step lands.
 //
 // worktreePath has already passed git.worktree_create's containment checks by the time
-// a checkout runs (strictly inside repo, or 2-level inside an external worktreeRoot;
+// the add runs (strictly inside repo, or 2-level inside an external worktreeRoot;
 // never home), so removing it here is safe. The os.RemoveAll is the fallback that makes
 // the removal observable even when `git worktree remove` cannot finish the job. Because
-// the delete runs seconds after the leaf was created (the drain), the fallback re-checks
-// the always-on home guard and the leaf's checkpoint identity first, so a swap during
-// the drain cannot redirect it onto a replacement's contents.
+// the delete can run seconds after the leaf was created (the drain), the fallback
+// re-checks the always-on home guard and the leaf's checkpoint identity first, so a
+// swap during the add or the drain cannot redirect it onto a replacement's contents.
 func undoCreatedWorktree(repo, worktreePath, branch string, cp worktreeCheckpoint) {
 	if branch != "" {
 		hardenedGit(repo, false, "update-ref", "--no-deref", "-d", "refs/heads/"+branch)
@@ -61,7 +63,8 @@ func undoCreatedWorktree(repo, worktreePath, branch string, cp worktreeCheckpoin
 		return
 	}
 	// Re-confirm the leaf is still the very directory create made before deleting it: a
-	// concurrent swap during the drain must not redirect this RemoveAll onto a replacement.
+	// concurrent swap during the add or the drain must not redirect this RemoveAll onto a
+	// replacement.
 	// verifyCreatedWorktree returns non-empty on a swap (and when `git worktree remove`
 	// already deleted the leaf, in which case the RemoveAll would be a no-op anyway); an
 	// empty checkpoint has nothing to compare and falls back to the guards above.

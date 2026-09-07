@@ -352,7 +352,9 @@ below.
 The per-request goroutine wraps dispatch in `recover()`. It therefore catches a
 panic in any handler, and the daemon does not crash. The reply is
 `{"error":{"code":-32603,"message":"recovered panic: <v>"}}`, and the daemon logs
-`[Server] recovered panic: method=<m> id=<id>: <v>`.
+`[Server] recovered panic: method=<m> id=<id>: <v>`. One method is the exception:
+a recovered `server.shutdown` panic writes no frame at all, because an error frame
+is a shape the reference never sends for shutdown (its only reply is `{"ok":true}`).
 
 **This frame is claustrum's own. It is not a statement about the wire.** No input
 is known to reach a handler panic: extensive fuzzing found none, and each of

@@ -857,9 +857,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			})
 		}
 		// Roll back the leaf claustrum pre-created (mkdirWorktreeLeaf) so a failed add
-		// leaves no partial worktree behind, matching 4534d86 (scratch/probe/wtfail:
-		// the reference removes the leaf, keeps any pre-existing branch, and a retry at
-		// the same path then succeeds). branch is "" here: the realistic add failures
+		// leaves no partial worktree behind, matching 4534d86 (scratch/probe/wtfail: the
+		// reference removes the leaf and keeps any pre-existing branch;
+		// scratch/probe/worktree-mutations-4534d86.md B: a retry at the same path with a
+		// fresh branch then succeeds). branch is "" here: the realistic add failures
 		// (branch already exists, ref lock) create no new branch, and the reference
 		// does NOT delete the branch — deleting it would corrupt the worktree already
 		// using it. undoCreatedWorktree still applies the always-on home guard and the
