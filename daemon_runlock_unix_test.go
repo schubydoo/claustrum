@@ -389,8 +389,8 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	var buf bytes.Buffer
 	oldOut := log.Writer()
 	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(oldOut) })
 	release := claimRunDir(sock, "serve") // evicts synchronously, logging the ladder
-	log.SetOutput(oldOut)
 	t.Cleanup(release)
 	_ = waitForExit(holder.Process.Pid, 3*time.Second)
 
@@ -430,8 +430,8 @@ func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
 	var buf bytes.Buffer
 	oldOut := log.Writer()
 	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(oldOut) })
 	evicted := evictRunDirHolder(lockPath, sock)
-	log.SetOutput(oldOut)
 	if evicted {
 		t.Error("evictRunDirHolder evicted a --stop holder; want left in place")
 	}
@@ -511,7 +511,8 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 			name:          "sigterm-undeliverable-holder-still-present",
 			termDelivered: false, holderGone: false,
 			wantEvicted: false,
-			notWantLog:  []string{": terminated", ": killed", ": survivor"},
+			wantLog:     []string{"[daemon] serve: previous owner of ", ": survivor"},
+			notWantLog:  []string{": terminated", ": killed"},
 		},
 		{
 			name:          "sigkill-undeliverable-holder-already-gone",
@@ -523,7 +524,8 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 			name:          "sigkill-undeliverable-holder-still-present",
 			termDelivered: true, killDelivered: false, holderGone: false,
 			wantEvicted: false,
-			notWantLog:  []string{": killed", ": survivor"},
+			wantLog:     []string{"[daemon] serve: previous owner of ", ": survivor"},
+			notWantLog:  []string{": terminated", ": killed"},
 		},
 		{
 			name:          "sigkill-delivered-but-survives",
@@ -564,8 +566,8 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 			var buf bytes.Buffer
 			oldOut := log.Writer()
 			log.SetOutput(&buf)
+			t.Cleanup(func() { log.SetOutput(oldOut) })
 			evicted := evictRunDirHolder(lockPath, sock)
-			log.SetOutput(oldOut)
 
 			if evicted != tc.wantEvicted {
 				t.Errorf("evictRunDirHolder = %v, want %v", evicted, tc.wantEvicted)

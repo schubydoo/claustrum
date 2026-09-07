@@ -191,6 +191,10 @@ func evictRunDirHolder(path, socket string) bool {
 			summary("terminated")
 			return true
 		}
+		// SIGTERM could not be delivered but the holder is still present (a non-ESRCH
+		// error): we proceed without ownership, so it is left in place — summary
+		// "survivor", per the documented outcome mapping above.
+		summary("survivor")
 		return false
 	}
 	if waitForExit(holder.Pid, runDirTermGrace) {
@@ -219,6 +223,9 @@ func evictRunDirHolder(path, socket string) bool {
 			summary("killed")
 			return true
 		}
+		// SIGKILL could not be delivered and the holder is still present: left in place,
+		// summary "survivor" (same mapping as the SIGTERM arm above).
+		summary("survivor")
 		return false
 	}
 	if waitForExit(holder.Pid, runDirKillGrace) {
