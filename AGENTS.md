@@ -121,11 +121,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
       On the `worktreeRoot` / `external_root` branch that in-repo containment does not
       apply, so there `wipesHomeDir` is the **active** home guard (both branches run it
       before the delete).
-    - `git.worktree_create` deletes `worktreePath` when it rolls back a worktree
-      whose caller `timeoutMs` was exceeded by the post-checkout drain — guarded by
-      `wipesHomeDir` as defense-in-depth behind create's own containment, and it
-      re-checks the leaf's checkpoint identity so a swap during the drain cannot
-      redirect the delete.
+    - `git.worktree_create` deletes `worktreePath` when it rolls back a worktree: after
+      a failed `git worktree add` (the leaf it made is removed so a retry at the same
+      path with a fresh branch succeeds; an add cut short by the caller's `timeoutMs`
+      answers `timeout` and leaves the leaf) and when the caller `timeoutMs` was
+      exceeded by the post-checkout drain — guarded by `wipesHomeDir` as
+      defense-in-depth behind create's own containment, and it re-checks the leaf's
+      checkpoint identity so a swap during the add or the drain cannot redirect the
+      delete.
     - `-install` deletes `filepath.Join(cliDir, cliVersion)` (operator input) —
       guarded by **D6's single-path-component rule instead**, not `wipesHomeDir`.
 
