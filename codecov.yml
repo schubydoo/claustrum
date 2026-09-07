@@ -103,6 +103,14 @@ component_management:
         - sockdead_other.go
         - sockdead_windows.go
         - idleconn.go
+        # 4534d86 lifecycle additions: the run-dir lock (daemon.lock + owner record,
+        # OS-split machine identity; a no-op on Windows, parity) and the orphan-exit
+        # self-probe.
+        - daemon_runlock_unix.go
+        - daemon_runlock_linux.go
+        - daemon_runlock_darwin.go
+        - daemon_runlock_windows.go
+        - orphanexit.go
     - component_id: methods
       name: methods (server/files/git/process)
       paths:
@@ -145,6 +153,13 @@ component_management:
         - process.go
         - sysproc_unix.go
         - sysproc_windows.go
+        # 4534d86 exit-frame `signal` name: read from the wait status on unix, always
+        # empty on Windows (parity).
+        - process_signal_unix.go
+        - process_signal_windows.go
+        # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the
+        # per-key spawn lock, and the eviction of the prior same-session process.
+        - sessionsupersede.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:
@@ -160,6 +175,8 @@ component_management:
       name: install pipeline
       paths:
         - install.go
+        # 4534d86 -install download: __INSTALL_PROGRESS__ ticker + 60 s read-idle abort.
+        - installfetch.go
         - libc_linux.go
         - libc_other.go
     - component_id: env_compat
