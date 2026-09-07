@@ -629,10 +629,17 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   runs during status and can flip a file clean↔dirty (and execute the filter's
   command). It is a no-op on a repo with no attribute rules. It is omitted when the
   runtime git predates `--attr-source` (git 2.40).
-- The status runs with `GIT_OPTIONAL_LOCKS=0`, matching `4534d86`, so it does not
-  refresh or rewrite the worktree index and does not take `index.lock`. This is
-  off-wire (the status output is unchanged); it avoids mutating the caller's repo on
-  a read.
+- The status runs in an isolated temp gitdir, matching `4534d86`: a fresh `GIT_DIR`
+  holding the worktree's own `HEAD` and `index`, with `GIT_COMMON_DIR` at the shared
+  repo and `--work-tree` at the worktree, under `GIT_OPTIONAL_LOCKS=0`. So it does not
+  refresh or rewrite the caller's index and does not take `index.lock`. On Linux and
+  macOS this is byte-identical to the reference and to a direct status.
+- **Windows divergence D16.** On Windows the reference's own `git.status` of a linked
+  worktree errors `-32603 "exit status 128"` (measured), while claustrum returns the
+  status. The reference's Windows failure mechanism is not yet pinned (an earlier
+  hardcoded-`/tmp` hypothesis is contradicted — it respects `$TMPDIR`). This is a
+  reachable, always-on Windows divergence (claustrum is more correct); see
+  [DIVERGENCES.md](DIVERGENCES.md) D16.
 - Every line is verbatim, the first included: the daemon splits on the trailing
   newline only, so entry 0 keeps its leading space (`[" M a1"," M a2"]` returns
   `[" M a1"," M a2"]`). 5db5e4a trimmed the whole blob and lost entry 0's leading

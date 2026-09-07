@@ -160,6 +160,7 @@ rather than repeating them in each entry:
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`) | always-on | always-on | **UNRESOLVED** — clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a musl host the glob misses whose `ldd` exits 0 + is slow; or the reference bounding it above 45 s |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
+| [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (Windows failure mechanism not yet pinned) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern); **REACHABLE** | the reference fixing its Windows git.status, or a decision to reproduce its failure for strict 1:1 |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -646,6 +647,45 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock; `daemon_runlock_unix.go`
   (`holderSignalRefusal`), `daemon_runlock_darwin.go` (`realIsServeCmdline`,
   `procArgv`), `daemon_runlock_linux.go`.
+
+### D16 · `git.status` of a linked worktree returns the status on Windows, where the reference errors (Windows) { #d16 }
+
+- **Behavior.** `git.status` takes a `baseRepo` and a `path` that names a linked
+  worktree of that repo, and returns the porcelain status of the worktree. Both the
+  reference and claustrum build status in an isolated temp gitdir (a fresh `GIT_DIR`
+  with the worktree's `HEAD` and `index`, `GIT_COMMON_DIR` at the shared repo, and
+  `--work-tree` at the worktree). On Linux and macOS the two are byte-identical. On
+  **Windows** the reference returns `-32603 "exit status 128"` for a linked worktree,
+  and claustrum returns the status result (`{"isRepo":true,"clean":false,"changes":[…]}`).
+- **Outcome measured 2026-09-06; mechanism not yet pinned.** The Windows divergence
+  is measured: on a Windows VM the reference returns `-32603 "exit status 128"` for a
+  linked-worktree `git.status` across runs, and claustrum returns the status result
+  (`scratch/osparity/results/win-*-4534d86.json`). The exact reason the reference's
+  assembly fails on Windows is not yet determined. An earlier hypothesis (a hardcoded
+  `/tmp` temp-gitdir path) is contradicted: the reference respects `$TMPDIR`, so its
+  temp gitdir is `<os-temp>/claude-ssh-gitdir-<random>` and resolves to `%TEMP%` on
+  Windows (captured with `scratch/probe/gitargv` under a set `TMPDIR`). claustrum's own
+  temp-gitdir assembly, with an OS-valid temp dir, returns the correct status on Windows
+  (measured: a valid temp gitdir returns ` M a.txt`). Pinning the reference's Windows
+  failure needs a git-argv capture on Windows (the shim used on Linux is POSIX-only).
+- **This is reachable, not an edge.** `git.status.baseRepo` is advertised on Windows,
+  and the reference rebuilt `git.status` around session worktrees, so a Windows client
+  that runs status on a session worktree reaches this path by design. D16 is a
+  deliberate REACHABLE wire divergence, unlike the unreachable rule 3 clause (b) cases.
+- **Why diverge (claustrum is more correct).** claustrum reproduces the reference's
+  status assembly and returns the correct status on every OS. To match, claustrum must
+  reproduce whatever makes the reference's assembly fail on Windows — an error for a
+  valid status of a session worktree, the exact operation the worktree rebuild exists to
+  serve. That is the D2 and D8 pattern: the reference doing it is not a reason to
+  reproduce a break.
+- **Cost.** A Windows client that diffs frames against the reference sees a result
+  where the reference sends an error. A client that reads the reference error as "no
+  repo or no changes" reads claustrum as reporting changes the reference hides.
+- **Reopen trigger.** The reference fixing its Windows `git.status` (then this becomes
+  parity). Or a decision to put strict 1:1 above correctness, which replaces this entry
+  with reproducing the reference's Windows failure so claustrum errors 128 too.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.status`; `methods_git.go`
+  (`gitStatus`), `githarden.go` (`hardenedGitStatus`); evidence in `scratch/osparity/`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
