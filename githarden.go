@@ -282,17 +282,25 @@ func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (stri
 	defer func() { _ = os.RemoveAll(tmp) }()
 	// Copy the worktree's own HEAD and index into the temp gitdir so status compares
 	// against the right commit and staged state; objects and refs resolve through
-	// GIT_COMMON_DIR. A missing file (a worktree with no index yet) is skipped — git
-	// rebuilds it from HEAD.
+	// GIT_COMMON_DIR. A genuinely absent file (a worktree with no index yet) is skipped
+	// — git rebuilds it from HEAD. A file that EXISTS but cannot be read (permission,
+	// I/O, transient error) is propagated, not swallowed: skipping it would run status
+	// with incomplete metadata and fabricate deletions or untracked entries.
 	for _, f := range []string{"HEAD", "index"} {
 		src := filepath.Join(gitDir, f)
 		fi, e := os.Stat(src)
 		if e != nil {
-			continue
+			if os.IsNotExist(e) {
+				continue
+			}
+			return "", e
 		}
 		b, e := os.ReadFile(src)
 		if e != nil {
-			continue
+			if os.IsNotExist(e) {
+				continue
+			}
+			return "", e
 		}
 		dst := filepath.Join(tmp, f)
 		if e := os.WriteFile(dst, b, 0o600); e != nil {

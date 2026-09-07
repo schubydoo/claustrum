@@ -667,7 +667,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   Windows (captured with `scratch/probe/gitargv` under a set `TMPDIR`). claustrum's own
   temp-gitdir assembly, with an OS-valid temp dir, returns the correct status on Windows
   (measured: a valid temp gitdir returns ` M a.txt`). Pinning the reference's Windows
-  failure needs a git-argv capture on Windows (the shim used on Linux is POSIX-only).
+  failure needs a git-argv capture on Windows (the shim used on Linux is POSIX-only). A
+  capture was attempted with a Windows `git.exe` shim on the daemon's PATH, but the
+  reference self-daemonizes and the re-exec'd child does not inherit the shim, so its git
+  calls were not intercepted. A capture needs a foreground daemon mode or an injection the
+  daemonized child inherits.
 - **This is reachable, not an edge.** `git.status.baseRepo` is advertised on Windows,
   and the reference rebuilt `git.status` around session worktrees, so a Windows client
   that runs status on a session worktree reaches this path by design. D16 is a
