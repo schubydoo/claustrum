@@ -110,7 +110,7 @@ carry the **same** guard on the same graceful path (`removeSocketIfOwned` /
 `removePersistedToken` / `removePipeNameFileIfOwned`); a socket the daemon never
 bound, or a token/pipe it never wrote, falls back to the plain unlink. This is the
 departing-daemon half of the daemon-to-daemon handoff — the launcher half is under
-[Daemon startup](#daemon-startup--serve). It is off the JSON-RPC wire.
+[Daemon startup](#daemon-startup-serve). It is off the JSON-RPC wire.
 
 ### Run-dir lock (`daemon.lock`)
 
