@@ -68,6 +68,16 @@ jobs:
       - name: changeset fragments are one-liners
         run: python3 scripts/lint_changesets.py
 
+      # Every production .go file must sit in exactly one codecov.yml component, or
+      # its lines report under no component. Nine 4534d86 files slipped through
+      # unlisted (fixed in #336); this fails the PR that adds the next one. The
+      # fixture tests run first so a parser regression cannot weaken the gate
+      # silently.
+      - name: codecov components map every production file
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          python3 scripts/lint_codecov_components.py
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
