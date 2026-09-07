@@ -51,6 +51,18 @@ var (
 // argv into a "-serve -socket=..." shape.
 var isServeCmdline = realIsServeCmdline
 
+// signalHolder, holderGone, and waitForExit are package vars over their real syscall
+// implementations, the same seam idiom as isServeCmdline above. They let the eviction
+// test drive the SIGKILL escalation arms — the holder already gone at SIGKILL, an
+// undeliverable SIGKILL, and a holder that survives SIGKILL — none of which is
+// reproducible against a live same-user process on a modern kernel (nothing survives
+// SIGKILL).
+var (
+	signalHolder = realSignalHolder
+	holderGone   = realHolderGone
+	waitForExit  = realWaitForExit
+)
+
 // ownerRecord is the JSON the daemon writes into daemon.lock. The field order and the
 // omitempty set reproduce the reference's record so a successor daemon reading it sees
 // the same shape. Pid has no omitempty (a 0 pid is still emitted); role is "serve" for
@@ -226,7 +238,7 @@ func evictRunDirHolder(path, socket string) bool {
 // signalHolder sends sig to pid. It returns true when the signal was delivered, false
 // when it could not be (already gone, or not permitted) — in which case the caller
 // resolves the outcome with holderGone.
-func signalHolder(pid int, sig syscall.Signal) bool {
+func realSignalHolder(pid int, sig syscall.Signal) bool {
 	err := syscall.Kill(pid, sig)
 	if err == nil {
 		return true
@@ -240,11 +252,11 @@ func signalHolder(pid int, sig syscall.Signal) bool {
 
 // holderGone reports whether pid is no longer present (a bare existence probe). Used to
 // distinguish "the holder already exited" (evict succeeded) from "we may not signal it".
-func holderGone(pid int) bool { return syscall.Kill(pid, 0) == syscall.ESRCH }
+func realHolderGone(pid int) bool { return syscall.Kill(pid, 0) == syscall.ESRCH }
 
 // waitForExit polls for pid's exit until grace elapses, checking every
 // runDirPollInterval. It returns true once the process is gone.
-func waitForExit(pid int, grace time.Duration) bool {
+func realWaitForExit(pid int, grace time.Duration) bool {
 	deadline := time.Now().Add(grace)
 	for {
 		if syscall.Kill(pid, 0) == syscall.ESRCH {
