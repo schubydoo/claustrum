@@ -259,6 +259,80 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
+// hardenedGitStatus runs git.status through an ISOLATED temp gitdir, the way the
+// reference does, so status never refreshes the caller's index. It builds a fresh
+// GIT_DIR (the worktree's own HEAD and index copied in) with GIT_COMMON_DIR pointing at
+// the shared repo and --work-tree at the worktree, under the heavy hardening profile.
+// Reconstructed from the reference's runtime git argv+env (scratch/probe/gitargv), which
+// showed --git-dir=<temp>, GIT_COMMON_DIR=<repo>/.git and --work-tree=<wt>.
+//
+// On Linux and macOS this is byte-identical to a direct `git -C <wt> status` (measured),
+// and to the reference. On Windows it is not identical to the reference: there the
+// reference's own git.status of a linked worktree errors (measured), while this returns
+// the status. That is the deliberate divergence D16; claustrum is more correct on
+// Windows. The reason the reference fails on Windows is not yet pinned (an earlier
+// hardcoded-/tmp hypothesis is contradicted — it respects $TMPDIR); see docs/DIVERGENCES.md.
+// Returns stdout and the raw exec error, like hardenedGitStdout, so a non-zero exit
+// surfaces as "exit status N", the same string the reference puts on the wire.
+func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (string, error) {
+	tmp, err := os.MkdirTemp("", "claustrum-gitstatus-")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	// Copy the worktree's own HEAD and index into the temp gitdir so status compares
+	// against the right commit and staged state; objects and refs resolve through
+	// GIT_COMMON_DIR. A missing file (a worktree with no index yet) is skipped — git
+	// rebuilds it from HEAD.
+	for _, f := range []string{"HEAD", "index"} {
+		src := filepath.Join(gitDir, f)
+		fi, e := os.Stat(src)
+		if e != nil {
+			continue
+		}
+		b, e := os.ReadFile(src)
+		if e != nil {
+			continue
+		}
+		dst := filepath.Join(tmp, f)
+		if e := os.WriteFile(dst, b, 0o600); e != nil {
+			return "", e
+		}
+		// Preserve the source mtime. For the index this is load-bearing: git's
+		// racy-clean check compares each work-tree file's mtime against the index's
+		// own mtime, and a fresh (newer) index would make git trust the stale stat
+		// cache and miss an unstaged modification whose size is unchanged (a "two\n"
+		// over a "one\n"). Copying the mtime keeps status byte-identical to a direct
+		// run against the worktree's real index.
+		if e := os.Chtimes(dst, fi.ModTime(), fi.ModTime()); e != nil {
+			return "", e
+		}
+	}
+	// The temp gitdir must carry a `commondir` file naming the shared repo, so git
+	// resolves a branch symref HEAD (`ref: refs/heads/<wt>`) against the common refs.
+	// GIT_COMMON_DIR alone is not enough for that ref resolution (measured): without
+	// commondir a branch worktree reports every tracked file as a fresh add.
+	if e := os.WriteFile(filepath.Join(tmp, "commondir"), []byte(commonDir+"\n"), 0o600); e != nil {
+		return "", e
+	}
+	ctx, cancel := gitCtx()
+	defer cancel()
+	hookPrecursor(ctx, worktree)
+	full := []string{"--git-dir=" + tmp, "--work-tree=" + worktree}
+	excludes := userExcludesFile()
+	for _, c := range gitHardenHeavy {
+		if strings.HasPrefix(c, "core.excludesFile=") {
+			c = "core.excludesFile=" + excludes
+		}
+		full = append(full, "-c", c)
+	}
+	full = append(full, args...)
+	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd.Env = append(hardenedGitEnv(true), "GIT_COMMON_DIR="+commonDir)
+	out, err := cmd.Output()
+	return strings.TrimRight(string(out), "\n"), err
+}
+
 // gitEmptyTree is git's canonical empty-tree object (SHA-1). Passing it as
 // --attr-source makes git read gitattributes from an empty tree — i.e. ignore a
 // repository's in-repo .gitattributes.

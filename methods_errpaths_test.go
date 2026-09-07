@@ -93,6 +93,40 @@ func TestGitStatusCleanRepo(t *testing.T) {
 	}
 }
 
+// TestGitStatusDetectsSameSizeModification pins the index-mtime preservation in the
+// isolated temp-gitdir assembly (hardenedGitStatus). status runs against a COPY of the
+// worktree's index in a temp gitdir; if the copy took a fresh (newer) mtime, git's
+// racy-clean check would be disabled and it would trust the stale stat cache, missing an
+// unstaged edit whose byte count is unchanged ("two\n" over "one\n"). The worktree is
+// modified right after checkout, so the file's stat still matches the cache, the window
+// the mtime copy protects. This is a smoke test for the shipped fix (it passes because
+// the preserved index mtime arms racy-clean). It is not a bulletproof mutant guard: on a
+// filesystem with sub-second mtimes a fresh-mtime index copy can still land in a later
+// tick and be caught anyway, so a naive "drop the Chtimes" regression may not fail here.
+// The reliable cross-timing oracle for the mtime preservation is the osparity id92
+// fixture (scratch/osparity), run at each pin bump.
+func TestGitStatusDetectsSameSizeModification(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q")
+	writeFile(t, filepath.Join(dir, "a.txt"), "one\n", 0o644)
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-q", "-m", "init")
+	wt := filepath.Join(dir, ".claude", "worktrees", "wt")
+	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "worktree", "add", "-q", wt)
+	// Same byte count as the committed content, so only a correct racy-clean check
+	// (index mtime preserved) detects it.
+	writeFile(t, filepath.Join(wt, "a.txt"), "two\n", 0o644)
+
+	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.status", map[string]any{"path": wt, "baseRepo": dir}))
+	if !strings.Contains(got, `" M a.txt"`) {
+		t.Errorf("git.status = %s, want an unstaged modification \" M a.txt\"", got)
+	}
+}
+
 // 7d193f89 runs status with --untracked-files=all, so an untracked file inside an
 // untracked directory is listed individually ("?? sub/u.txt") rather than as the
 // directory ("?? sub/"). Plain `git status --porcelain` reports the directory, so
