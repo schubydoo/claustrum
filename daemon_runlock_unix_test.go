@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -364,6 +367,82 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	}
 }
 
+// TestClaimRunDirEvictionLogsMatchReference pins the #320 eviction log MESSAGE
+// wording against 4534d86 (runtime-captured, scratch/probe/runlock-log-4534d86.md):
+// the "[daemon] serve:" prefix, the instance id in the eviction line, and the
+// "previous owner of <rundir>: terminated" summary. Only the message text is
+// matched; claustrum keeps its own level tag. The old "[daemon] run dir:" prefix
+// must be gone.
+func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
+	if nodeID() == "" {
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
+	}
+	shrinkEvictionGraces(t)
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "s.sock")
+	lockPath := filepath.Join(dir, runDirLockName)
+	holder := spawnLockHolder(t, lockPath, "", "")
+	oldCmd := isServeCmdline
+	isServeCmdline = func(int, string) bool { return true }
+	t.Cleanup(func() { isServeCmdline = oldCmd })
+
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(oldOut) })
+	release := claimRunDir(sock, "serve") // evicts synchronously, logging the ladder
+	t.Cleanup(release)
+	_ = waitForExit(holder.Process.Pid, 3*time.Second)
+
+	got := buf.String()
+	for _, want := range []string{
+		"[daemon] serve: run dir is held by a live daemon, pid ",
+		`(instance "`,
+		"); sending SIGTERM",
+		") exited after SIGTERM",
+		"[daemon] serve: previous owner of ",
+		": terminated",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("eviction log missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "[daemon] run dir:") || strings.Contains(got, "serving without run-dir ownership") {
+		t.Errorf("eviction log still uses the old prefix/tail\n%s", got)
+	}
+}
+
+// TestEvictRunDirHolderStopRoleLogs pins the held-by-stop wording (4534d86): a
+// holder whose record role is "stop" is left in place with the "--stop ... has not
+// let go; leaving it" line and a "previous owner of <rundir>: survivor" summary.
+func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "s.sock")
+	lockPath := filepath.Join(dir, runDirLockName)
+	fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// role=stop; the role gate returns before any signal, so the pid is never touched.
+	writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+	_ = syscall.Close(fd)
+
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(oldOut) })
+	evicted := evictRunDirHolder(lockPath, sock)
+	if evicted {
+		t.Error("evictRunDirHolder evicted a --stop holder; want left in place")
+	}
+	got := buf.String()
+	for _, want := range []string{"is held by a --stop (pid 999999) that has not let go; leaving it", "[daemon] serve: previous owner of ", ": survivor"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stop-role log missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+}
+
 func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	if nodeID() == "" {
 		t.Skip("run-dir eviction needs a machine identity (nodeID)")
@@ -390,6 +469,121 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	}
 	if rec.Pid != os.Getpid() {
 		t.Errorf("after escalation record pid = %d, want our pid %d", rec.Pid, os.Getpid())
+	}
+}
+
+// TestEvictRunDirHolderSignalArms drives the signal outcomes a live same-user process
+// cannot reproduce: an undeliverable SIGTERM or SIGKILL (the holder already gone, or
+// present but unsignalable) and a holder that survives SIGKILL (nothing survives SIGKILL
+// on a modern kernel). It seams signalHolder/holderGone/waitForExit and feeds a synthetic
+// owner record whose bogus pid passes holderSignalRefusal (a missing /proc entry reads as
+// "already gone" and isServeCmdline is stubbed true). Together with
+// TestClaimRunDirEscalatesToSIGKILL (the delivered-then-exits arm, on a real holder) this
+// exercises every branch of the SIGTERM and SIGKILL blocks.
+func TestEvictRunDirHolderSignalArms(t *testing.T) {
+	if nodeID() == "" {
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
+	}
+	// The seams report SIGTERM delivered and its grace expired, so evictRunDirHolder
+	// escalates past re-verification into the SIGKILL block, where the case decides.
+	restore := func() func() {
+		oc, osig, oh, ow := isServeCmdline, signalHolder, holderGone, waitForExit
+		return func() { isServeCmdline, signalHolder, holderGone, waitForExit = oc, osig, oh, ow }
+	}
+
+	cases := []struct {
+		name            string
+		termDelivered   bool // signalHolder(SIGTERM) result
+		killDelivered   bool // signalHolder(SIGKILL) result (SIGKILL reached only when termDelivered)
+		holderGone      bool // holderGone() result (read on an undeliverable signal)
+		exitedAfterKill bool // waitForExit(killGrace) result (read only when killDelivered)
+		wantEvicted     bool
+		wantLog         []string
+		notWantLog      []string
+	}{
+		{
+			name:          "sigterm-undeliverable-holder-already-gone",
+			termDelivered: false, holderGone: true,
+			wantEvicted: true,
+			wantLog:     []string{"[daemon] serve: previous owner of ", ": terminated"},
+		},
+		{
+			name:          "sigterm-undeliverable-holder-still-present",
+			termDelivered: false, holderGone: false,
+			wantEvicted: false,
+			wantLog:     []string{"[daemon] serve: previous owner of ", ": survivor"},
+			notWantLog:  []string{": terminated", ": killed"},
+		},
+		{
+			name:          "sigkill-undeliverable-holder-already-gone",
+			termDelivered: true, killDelivered: false, holderGone: true,
+			wantEvicted: true,
+			wantLog:     []string{"[daemon] serve: previous owner of ", ": killed"},
+		},
+		{
+			name:          "sigkill-undeliverable-holder-still-present",
+			termDelivered: true, killDelivered: false, holderGone: false,
+			wantEvicted: false,
+			wantLog:     []string{"[daemon] serve: previous owner of ", ": survivor"},
+			notWantLog:  []string{": terminated", ": killed"},
+		},
+		{
+			name:          "sigkill-delivered-but-survives",
+			termDelivered: true, killDelivered: true, exitedAfterKill: false,
+			wantEvicted: false,
+			wantLog:     []string{"survived SIGKILL", "[daemon] serve: previous owner of ", ": survivor"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(restore())
+			isServeCmdline = func(int, string) bool { return true }
+			signalHolder = func(_ int, sig syscall.Signal) bool {
+				if sig == syscall.SIGKILL {
+					return tc.killDelivered
+				}
+				return tc.termDelivered
+			}
+			holderGone = func(int) bool { return tc.holderGone }
+			waitForExit = func(_ int, grace time.Duration) bool {
+				if grace == runDirKillGrace {
+					return tc.exitedAfterKill
+				}
+				return false // SIGTERM grace expires -> escalate
+			}
+
+			dir := shortTempDir(t)
+			sock := filepath.Join(dir, "s.sock")
+			lockPath := filepath.Join(dir, runDirLockName)
+			fd, err := syscall.Open(lockPath, syscall.O_RDWR|syscall.O_CREAT, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
+			_ = syscall.Close(fd)
+
+			var buf bytes.Buffer
+			oldOut := log.Writer()
+			log.SetOutput(&buf)
+			t.Cleanup(func() { log.SetOutput(oldOut) })
+			evicted := evictRunDirHolder(lockPath, sock)
+
+			if evicted != tc.wantEvicted {
+				t.Errorf("evictRunDirHolder = %v, want %v", evicted, tc.wantEvicted)
+			}
+			got := buf.String()
+			for _, want := range tc.wantLog {
+				if !strings.Contains(got, want) {
+					t.Errorf("log missing %q\n--- got ---\n%s", want, got)
+				}
+			}
+			for _, no := range tc.notWantLog {
+				if strings.Contains(got, no) {
+					t.Errorf("log unexpectedly contains %q\n--- got ---\n%s", no, got)
+				}
+			}
+		})
 	}
 }
 

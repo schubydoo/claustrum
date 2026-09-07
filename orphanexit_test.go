@@ -4,10 +4,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,16 +76,39 @@ func TestExitWhenOrphanedRequiresTwoProbes(t *testing.T) {
 		t.Fatal(err)
 	}
 	probes := fakeCapServer(t, sock, "ffffffffffffffffffffffffffffffff") // successor with a foreign id
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
 	startOrphanLoop(t, s, sock)
 	select {
 	case <-s.shutdown:
 	case <-time.After(3 * time.Second):
+		log.SetOutput(oldOut)
 		t.Fatal("orphaned daemon facing a foreign successor did not shut down")
 	}
+	log.SetOutput(oldOut)
 	// Assert a literal 2, not orphanProbeFailuresToExit: comparing against the constant
 	// under test would move the expectation with any mutation of it.
 	if got := atomic.LoadInt64(probes); got != 2 {
 		t.Errorf("shut down after %d self-probes, want exactly 2", got)
+	}
+	// Pin the #321 orphan-exit log wording against 4534d86 (runtime-captured,
+	// scratch/probe/runlock-log-4534d86.md). Message text only; claustrum keeps its
+	// level tag.
+	got := buf.String()
+	for _, want := range []string{
+		"[Server] socket path ",
+		"no longer leads to this daemon; shutting down if that holds for ",
+		"with nobody connected",
+		"did not lead back to this daemon (1/2); re-checking before acting",
+		"self-probes failed, no connections); shutting down and killing ",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("orphan-exit log missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "no longer resolves to this daemon") || strings.Contains(got, "re-checking next interval") {
+		t.Errorf("orphan-exit log still uses the old wording\n%s", got)
 	}
 }
 
