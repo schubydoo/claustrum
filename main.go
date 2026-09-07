@@ -42,10 +42,15 @@ const (
 	unknownTime = "unknown"
 )
 
+// readBuildInfo is debug.ReadBuildInfo behind a seam: every Go binary that runs
+// the suite carries embedded build info, so the !ok arm below — which leaves
+// Version/BuildTime on their sentinels — is unreachable without a stand-in.
+var readBuildInfo = debug.ReadBuildInfo
+
 // resolveVersion populates Version/BuildTime from the embedded build info unless
 // they were already set at build time via -ldflags.
 func resolveVersion() {
-	bi, ok := debug.ReadBuildInfo()
+	bi, ok := readBuildInfo()
 	if !ok {
 		return
 	}

@@ -65,6 +65,13 @@ type wireLogOptions struct {
 	maxString int
 }
 
+// chmodWireLog is (*os.File).Chmod behind a seam: newWireLog's non-fatal chmod arm
+// is unreachable on a file this process just created, and the host fixtures that do
+// refuse the chmod — /dev/null, or a file another uid pre-created — are a shared
+// device a CAP_FOWNER process would really re-mode, or need a second user CI does
+// not have. Production never reassigns it.
+var chmodWireLog = (*os.File).Chmod
+
 // newWireLog opens path for append and forces it to 0600: a capture contains
 // whatever the client sent, which for files.write or process.stdin is arbitrary
 // user data. Append rather than truncate so a daemon restart during a capture
@@ -83,7 +90,7 @@ func newWireLog(path string, maxString int) (*wireLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := f.Chmod(0o600); err != nil {
+	if err := chmodWireLog(f, 0o600); err != nil {
 		logWarnf("[WireLog] chmod %s 0600: %v", path, err)
 	}
 	if maxString < 0 {

@@ -432,10 +432,16 @@ func versionLine(override string) string {
 	return "claustrum " + Version + " (built " + BuildTime + ")"
 }
 
+// osExecutable is os.Executable behind a seam: it resolves on every host this
+// suite runs on (Linux reads /proc/self/exe, so only a host without procfs fails
+// it), so the failure arm below — and loadConfig's fall back to a zero config on
+// top of it — is unreachable without an injectable stand-in.
+var osExecutable = os.Executable
+
 // executableDir returns the directory containing the running executable; ok is
 // false (callers fall back to defaults) if it cannot be resolved.
 func executableDir() (dir string, ok bool) {
-	exe, err := os.Executable()
+	exe, err := osExecutable()
 	if err != nil || exe == "" {
 		return "", false
 	}

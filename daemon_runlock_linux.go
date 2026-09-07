@@ -13,12 +13,23 @@ import (
 // namespace inode, the holder's command line comes from /proc/<pid>/cmdline, and the
 // pid-namespace guard compares /proc/<pid>/ns/pid to our own.
 
+// readBootID and osReadlink are seams over the /proc reads below. On the hosts
+// this suite runs on the boot id is readable and non-empty and the pid-namespace
+// link resolves; a procfs mounted subset=pid (systemd ProcSubset=) hides the boot
+// id — the case the "" arms exist for — but no fixture can remount /proc, so
+// nodeID's three "" arms and pidNamespaceRefusal's unreadable-self arm are
+// unreachable without stand-ins.
+var (
+	readBootID = func() ([]byte, error) { return os.ReadFile("/proc/sys/kernel/random/boot_id") }
+	osReadlink = os.Readlink
+)
+
 // nodeID builds the machine-plus-pid-namespace identity the reference writes into the
 // owner record and compares before signalling: the boot id joined to the pid-namespace
 // inode with a single "/". It returns "" when either part is unavailable, and an empty
 // node makes the signal guard refuse eviction.
 func nodeID() string {
-	boot, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	boot, err := readBootID()
 	if err != nil {
 		return ""
 	}
@@ -26,7 +37,7 @@ func nodeID() string {
 	if b == "" {
 		return ""
 	}
-	ns, err := os.Readlink("/proc/self/ns/pid")
+	ns, err := osReadlink("/proc/self/ns/pid")
 	if err != nil {
 		return ""
 	}
@@ -37,11 +48,11 @@ func nodeID() string {
 // pid namespace. A missing /proc/<pid> (ENOENT) means the holder already exited, which
 // is safe to "signal" (the kill returns ESRCH and the caller treats it as gone).
 func pidNamespaceRefusal(pid int) string {
-	self, err := os.Readlink("/proc/self/ns/pid")
+	self, err := osReadlink("/proc/self/ns/pid")
 	if err != nil {
 		return "this process's pid namespace is unreadable"
 	}
-	other, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/ns/pid")
+	other, err := osReadlink("/proc/" + strconv.Itoa(pid) + "/ns/pid")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "" // holder already gone; the signal will ESRCH harmlessly

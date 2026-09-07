@@ -96,6 +96,12 @@ func runInstall(o installOpts) {
 	fmt.Printf("__INSTALL_RESULT__%s\n", b)
 }
 
+// hashBlobFile is sha256File behind a seam, so ensureCLI's D1 hash-failure arm is
+// reachable from a test: the blob has just been opened and read a byte at that
+// point, so no fixture can make the very next hash of the same path fail.
+// Production never reassigns it.
+var hashBlobFile = sha256File
+
 // ensureCLI materializes the CLI binary from a .zst blob: either an already
 // uploaded one (-cli-zst, SFTP fallback) or a download (-cli-url), verified
 // against -cli-checksum, then zstd-decompressed to cliPath.
@@ -164,7 +170,7 @@ func ensureCLI(o installOpts, cliPath string) error {
 		}
 		blobPath = o.cliZst
 		if o.cliChecksum != "" {
-			if blobSum, err = sha256File(blobPath); err != nil {
+			if blobSum, err = hashBlobFile(blobPath); err != nil {
 				return fmt.Errorf("opening input: %v", err)
 			}
 			if err := verifyChecksum(blobSum, o.cliChecksum); err != nil {
@@ -626,6 +632,15 @@ func (e *httpStatusError) Error() string {
 // set directly by tests. Divergence D12.
 var cliDownloadTimeout time.Duration
 
+// closeFetchTemp is (*os.File).Close behind a seam over the one close whose error
+// fetchToFile checks (the temp file's; the response body and the watched body are
+// closed unchecked). That close fails only on a deferred write-back error (a full or
+// failing filesystem surfacing at close after every Write returned nil), which no
+// fixture can provoke portably — so without the seam fetchToFile's closeErr arm,
+// which must still remove the half-written temp, is unreachable. Production never
+// reassigns it.
+var closeFetchTemp = (*os.File).Close
+
 // fetchToFile downloads url to a temporary file and returns that file's path
 // together with the sha256 computed WHILE streaming, so the blob is never held in
 // memory and is never hashed in a second pass. The caller owns the temp file and
@@ -713,7 +728,7 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 	s := wb.stats()
 	lastInstallFetch = &s
 	_ = wb.Close() // stop the progress ticker
-	closeErr := f.Close()
+	closeErr := closeFetchTemp(f)
 	switch {
 	case copyErr != nil:
 		_ = os.Remove(tmp)
