@@ -170,7 +170,7 @@ If the check reports drift:
 
 Not every claustrum behavior is meant to match the reference.
 [docs/DIVERGENCES.md](DIVERGENCES.md) catalogues the **deliberate divergences**
-(D1–D15, CT-1..CT-5) and the four-rule standard that governs them. That file is the
+(D1–D16, CT-1..CT-5) and the four-rule standard that governs them. That file is the
 canonical home for what each one is, why it exists, how to activate it, and its
 reopen trigger. When the drift check flags one of them, it is expected, not drift.
 Confirm against the catalog before you "fix" it.

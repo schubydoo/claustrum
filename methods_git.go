@@ -490,7 +490,8 @@ func gitStatus(req *request) response {
 	if msg, bad := hostileConfigRefusal(p.BaseRepo); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}
-	if !gitStatusWorktreeOf(p.Path, p.BaseRepo) {
+	gitDir, commonDir, ok := gitStatusWorktreeOf(p.Path, p.BaseRepo)
+	if !ok {
 		// The reference returns the full status shape (clean:false), not the
 		// bare notRepoResult that git.info uses.
 		return okResult(req.ID, gitStatusResult{})
@@ -499,12 +500,19 @@ func gitStatus(req *request) response {
 	// `--untracked-files=all --ignore-submodules=all`. `--untracked-files=all` is
 	// wire-visible: an untracked file inside an untracked directory is listed
 	// individually (`?? sub/u.txt`) rather than as the directory (`?? sub/`).
-	// (The reference builds this in an isolated gitdir to avoid refreshing the real
-	// index; that isolation is output-neutral, so status runs against the worktree
-	// here — and GIT_OPTIONAL_LOCKS=0 in hardenedGitEnv keeps this status from
-	// refreshing/rewriting the worktree index anyway, so the index is left untouched
-	// like the reference's.) A path with no work tree still exits 128 → the reference
-	// propagates the bare Go error string, not git's "fatal: …" output.
+	//
+	// The reference builds status in an ISOLATED temp gitdir so the caller's index is
+	// never refreshed: a fresh GIT_DIR (HEAD + index copied from the worktree's own
+	// gitdir) with GIT_COMMON_DIR pointing at the shared repo, and --work-tree at the
+	// worktree. hardenedGitStatus reproduces that assembly (reconstructed from the
+	// reference's runtime git argv+env, scratch/probe/gitargv). It is byte-identical on
+	// Linux and macOS. On Windows it is NOT: the reference's own git.status of a linked
+	// worktree errors -32603 "exit status 128" there (measured), while claustrum returns
+	// the status. That is intentional divergence D16 (claustrum more correct). The exact
+	// reason the reference fails on Windows is not yet pinned; an earlier hardcoded-/tmp
+	// hypothesis is contradicted (the reference respects $TMPDIR). See docs/DIVERGENCES.md
+	// D16. A path with no work tree still exits 128, and the reference propagates the bare
+	// Go error string, not git's "fatal:" output.
 	//
 	// --attr-source=<empty-tree> makes git ignore the repo's in-repo .gitattributes,
 	// matching 4534d86: without it a .gitattributes clean filter runs during status
@@ -513,7 +521,7 @@ func gitStatus(req *request) response {
 	// attribute rules (so ordinary status stays byte-identical).
 	statusArgs := append(attrSourceArgs(), "status", "--porcelain",
 		"--untracked-files=all", "--ignore-submodules=all")
-	out, err := hardenedGitStdout(p.Path, true, statusArgs...)
+	out, err := hardenedGitStatus(p.Path, gitDir, commonDir, statusArgs...)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
@@ -557,7 +565,7 @@ func gitStatus(req *request) response {
 // (so a worktree of another repository is rejected). Reproduces the reference's
 // isRepo verdict on all six probed shapes; git failing at path (absent, not a
 // repo) falls through to false.
-func gitStatusWorktreeOf(path, baseRepo string) bool {
+func gitStatusWorktreeOf(path, baseRepo string) (gitDir, commonDir string, ok bool) {
 	// git canonicalizes the paths it reports (--show-toplevel / --git-common-dir
 	// resolve symlinks — macOS /tmp -> /private/tmp — and expand Windows 8.3 short
 	// names), so canonicalize our own operands the same way before comparing.
@@ -566,19 +574,20 @@ func gitStatusWorktreeOf(path, baseRepo string) bool {
 	// Linux paths with no symlinks, so the frame battery stays byte-identical.
 	path = canonicalPath(path)
 	baseRepo = canonicalPath(baseRepo)
-	out, ok := hardenedGit(path, false, "rev-parse", "--path-format=absolute",
+	out, o := hardenedGit(path, false, "rev-parse", "--path-format=absolute",
 		"--show-toplevel", "--git-dir", "--git-common-dir")
-	if !ok {
-		return false
+	if !o {
+		return "", "", false
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 3 {
-		return false
+		return "", "", false
 	}
-	top, gitDir, commonDir := lines[0], lines[1], lines[2]
-	return samePath(top, path) &&
-		!samePath(gitDir, commonDir) &&
-		samePath(filepath.Dir(commonDir), baseRepo)
+	top, gd, cd := lines[0], lines[1], lines[2]
+	if samePath(top, path) && !samePath(gd, cd) && samePath(filepath.Dir(cd), baseRepo) {
+		return gd, cd, true
+	}
+	return "", "", false
 }
 
 // canonicalPath resolves p to the spelling git reports — symlinks resolved and

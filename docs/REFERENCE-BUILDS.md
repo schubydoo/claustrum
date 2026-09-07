@@ -18,6 +18,7 @@ This lets a reader tell a re-published SHA from a real release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333) |
 | `7d193f89…` | 2026-08-25 | 6 changes + off-wire git rewrite — see below | [PR 286](https://github.com/schubydoo/claustrum/pull/286) |
 | `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | [PR 131](https://github.com/schubydoo/claustrum/pull/131) |
 | `7c2f88d1…` | 2026-07-02 | 5 changes — see below | [PR 120](https://github.com/schubydoo/claustrum/pull/120) |
@@ -29,6 +30,56 @@ Each per-build section has three parts. The **wire delta** is what claustrum
 must match byte-for-byte. **Off-wire churn** is any source that moved but never
 reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
 confirmed that nothing else changed.
+
+### `4534d8648b686881955c6f13baf46ae72ee72f4c` — 2026-09-04 (observed)
+
+Observed in Claude Desktop for Linux `1.46388.2`. The upstream build date is not
+published, so the date above is when this build was captured and pinned. A
+lifecycle-focused build on top of `7d193f89`. Three wire changes, all matched
+byte-for-byte, plus a large off-wire daemon-lifecycle layer and one new documented
+divergence (D16). The RPC method set is unchanged at 18.
+
+**Wire delta.**
+
+1. **`server.capabilities` gains two fields and two features.** The result adds
+   `instanceId` (32 hex characters, per boot) and `startedAt` (Unix milliseconds)
+   between `methods` and `features`. `features` gains `git.worktree_create.timeoutMs`
+   (at index 2 on every OS) and `server.instance_id` (last on every OS).
+   `git.worktree.external_root` is still dropped on Windows only.
+2. **The process exit frame gains `signal` and `killedBy` on the kill path.** A
+   process that a client killed, or that a shutdown killed, now reports the
+   terminating `signal` (omitted on Windows, which has no SIGTERM machinery) and a
+   `killedBy` value (`client` or `shutdown`). A normal exit is unchanged.
+3. **`git.worktree_create` gains a caller `timeoutMs`.** An integer millisecond
+   deadline on the add and checkout. Absent or 0 means no deadline, which is parity.
+   On fire it returns `errorCode:"timeout"`. It is create-only.
+
+`git.status` also gained `--attr-source=<empty-tree>` in this cycle, so the repo's
+in-repo `.gitattributes` no longer runs a clean filter during status. The first
+change line's leading space (dropped by `5db5e4a`, kept by `7d193f89` and `4534d86`)
+was reconciled here too, because claustrum had carried the stale `5db5e4a` trim.
+
+**New divergence D16.** On Windows the reference's own `git.status` of a linked worktree
+errors `-32603 "exit status 128"` (measured), while claustrum reproduces the same
+temp-gitdir assembly and returns the status. The reference's Windows failure mechanism
+is not yet pinned (an earlier hardcoded-`/tmp` hypothesis is contradicted — it respects
+`$TMPDIR`). Byte-identical on Linux and macOS; a reachable Windows divergence (claustrum
+more correct). See [DIVERGENCES.md](DIVERGENCES.md) D16.
+
+**Off-wire.** A daemon-lifecycle layer that does not move a client-visible frame:
+`-install` download progress plus a 60-second read-idle abort; a run-dir lock with an
+owner record; an orphan-exit self-probe; session supersede; and a bound on the
+`git.worktree_create` post-checkout drain. The macOS run-dir holder check is the
+always-on divergence D15.
+
+**How it was bounded.** Full frame captures against the new binary, VM measurements on
+Windows and macOS, two decompile passes, and the three-OS osparity sweep
+(`scratch/osparity/results/*-4534d86.json`): Linux and macOS are byte-identical between
+claustrum and the reference. Windows is byte-identical apart from the documented D16
+divergence (git.status of a linked worktree) and the shared Windows worktree-timeout
+timing race that the reference exhibits too.
+
+**Reconciled in.** PRs 314–333.
 
 ### `7d193f89fc02cf1035a391245312e34ad419f63e` — 2026-08-25
 
