@@ -32,8 +32,8 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 
 // undoCreatedWorktree rolls back a worktree that git.worktree_create built. Two callers:
 // a failed `git worktree add` (branch is "", the leaf is removed so a retry at the same
-// path succeeds) and a caller timeoutMs exceeded by the post-checkout pipe drain — the
-// latter reproducing 4534d86, which deletes the branch and removes the worktree before
+// path with a fresh branch succeeds) and a caller timeoutMs exceeded by the post-checkout
+// pipe drain — the latter reproducing 4534d86, which deletes the branch and removes the worktree before
 // answering errorCode "timeout". Best-effort: the reply is sent regardless of whether
 // every step lands.
 //
