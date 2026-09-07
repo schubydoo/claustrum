@@ -74,8 +74,9 @@ comment:
 # Per-area coverage breakdown in the dashboard + PR comment. No `statuses` are
 # defined, so components add VISIBILITY only — they do NOT create extra
 # per-component PR status checks. claustrum is a single flat `package main` at the
-# repo root, so paths are file globs; keep them roughly in sync as the wire
-# surface moves (mirrors the Architecture section of CLAUDE.md).
+# repo root, so paths are single files (mirrors the Architecture section of
+# CLAUDE.md). Every production .go file must appear here exactly once;
+# scripts/lint_codecov_components.py enforces that in CI.
 component_management:
   individual_components:
     - component_id: rpc_dispatch

@@ -7,6 +7,7 @@
 #   2. go vet ./...    (vet)
 #   3. go mod tidy     (module hygiene — checked without leaving go.mod dirty)
 #   4. golangci-lint   (only if the binary is on PATH; CI gates it regardless)
+#   5. codecov.yml     (every production .go file in one component; needs python3)
 #
 # Bypass for an in-progress commit with `git commit --no-verify`.
 set -eu
@@ -81,6 +82,13 @@ fi
 # 4. golangci-lint — opt-in locally (slower); CI always gates it.
 if command -v golangci-lint >/dev/null 2>&1; then
 	golangci-lint run ./... || fail "golangci-lint reported problems"
+fi
+
+# 5. codecov.yml components — a new production .go file must be listed under one
+#    component, or its lines report under none. Skipped without python3, like the
+#    changeset lint above; CI gates it regardless.
+if command -v python3 >/dev/null 2>&1; then
+	python3 scripts/lint_codecov_components.py || fail "add the new .go file to a codecov.yml component"
 fi
 
 exit 0
