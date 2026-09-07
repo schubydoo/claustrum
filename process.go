@@ -553,7 +553,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// Confine the child (and its descendants) so kill can tear down the whole
 	// tree. On Unix this is the process group from newSysProcAttr; on Windows a
 	// Job Object. A failure here is non-fatal — kill falls back to the parent.
-	group, err := confineProcess(cmd.Process)
+	group, err := confineProc(cmd.Process)
 	if err != nil {
 		logWarnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
 	}
@@ -970,6 +970,14 @@ var (
 	osPipe       = os.Pipe
 	cmdStdinPipe = (*exec.Cmd).StdinPipe
 )
+
+// confineProc is confineProcess behind a seam. Confinement cannot fail on Unix
+// (the process group is already set by newSysProcAttr, so the call returns a nil
+// error unconditionally) and fails on Windows only when a Job Object call, or the
+// OpenProcess it needs, fails, so spawn's non-fatal warn-and-continue arm — which warns and keeps
+// the group confinement handed back rather than aborting the spawn — is
+// otherwise unreachable. Production never reassigns it.
+var confineProc = confineProcess
 
 // closeAll closes every file, ignoring errors. Used on the spawn error paths and
 // to force a stalled drain to end. Closing an *os.File twice is safe — the second

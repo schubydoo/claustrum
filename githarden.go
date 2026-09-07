@@ -259,6 +259,20 @@ func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
+// readStatusFile, writeStatusFile and chtimesStatusFile are seams over the three
+// filesystem calls that assemble hardenedGitStatus's temp gitdir below. The read
+// after a successful Stat fails on a race (TOCTOU) or on a HEAD/index that exists
+// but is unreadable — stageable only on Unix as non-root, so the seam makes the arm
+// reachable on every CI leg; the write and the Chtimes target a directory and a file
+// this function just created, which no fixture can make fail. Swallowing any of the
+// three would run status with incomplete metadata, so the arms propagate. Production
+// never reassigns them.
+var (
+	readStatusFile    = os.ReadFile
+	writeStatusFile   = os.WriteFile
+	chtimesStatusFile = os.Chtimes
+)
+
 // hardenedGitStatus runs git.status through an ISOLATED temp gitdir, the way the
 // reference does, so status never refreshes the caller's index. It builds a fresh
 // GIT_DIR (the worktree's own HEAD and index copied in) with GIT_COMMON_DIR pointing at
@@ -295,7 +309,7 @@ func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (stri
 			}
 			return "", e
 		}
-		b, e := os.ReadFile(src)
+		b, e := readStatusFile(src)
 		if e != nil {
 			if os.IsNotExist(e) {
 				continue
@@ -303,7 +317,7 @@ func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (stri
 			return "", e
 		}
 		dst := filepath.Join(tmp, f)
-		if e := os.WriteFile(dst, b, 0o600); e != nil {
+		if e := writeStatusFile(dst, b, 0o600); e != nil {
 			return "", e
 		}
 		// Preserve the source mtime. For the index this is load-bearing: git's
@@ -312,7 +326,7 @@ func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (stri
 		// cache and miss an unstaged modification whose size is unchanged (a "two\n"
 		// over a "one\n"). Copying the mtime keeps status byte-identical to a direct
 		// run against the worktree's real index.
-		if e := os.Chtimes(dst, fi.ModTime(), fi.ModTime()); e != nil {
+		if e := chtimesStatusFile(dst, fi.ModTime(), fi.ModTime()); e != nil {
 			return "", e
 		}
 	}
@@ -320,7 +334,7 @@ func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (stri
 	// resolves a branch symref HEAD (`ref: refs/heads/<wt>`) against the common refs.
 	// GIT_COMMON_DIR alone is not enough for that ref resolution (measured): without
 	// commondir a branch worktree reports every tracked file as a fresh add.
-	if e := os.WriteFile(filepath.Join(tmp, "commondir"), []byte(commonDir+"\n"), 0o600); e != nil {
+	if e := writeStatusFile(filepath.Join(tmp, "commondir"), []byte(commonDir+"\n"), 0o600); e != nil {
 		return "", e
 	}
 	ctx, cancel := gitCtx()

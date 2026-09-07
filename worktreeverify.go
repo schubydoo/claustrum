@@ -14,6 +14,14 @@ type worktreeCheckpoint struct {
 	resolved string      // the leaf path with every symlink component resolved
 }
 
+// evalSymlinks is filepath.EvalSymlinks behind a seam, so checkpointCreatedWorktree's
+// failure arm is reachable from a test: it sits after a successful os.Stat of the same
+// path. On Unix that Stat already walked the same symlink chain, so no fixture fails
+// the resolve without failing the Stat; on Windows EvalSymlinks additionally re-lists
+// each component with FindFirstFile, so only an ACL denying List on the parent would —
+// a fixture this suite does not stage. Production never reassigns it.
+var evalSymlinks = filepath.EvalSymlinks
+
 // checkpointCreatedWorktree captures the leaf's identity for the post-add check.
 // A capture failure yields an empty checkpoint, which verifyCreatedWorktree treats
 // as "nothing to compare against" and passes — the verification is a best-effort
@@ -23,7 +31,7 @@ func checkpointCreatedWorktree(worktreePath string) worktreeCheckpoint {
 	if err != nil {
 		return worktreeCheckpoint{}
 	}
-	resolved, err := filepath.EvalSymlinks(worktreePath)
+	resolved, err := evalSymlinks(worktreePath)
 	if err != nil {
 		return worktreeCheckpoint{}
 	}

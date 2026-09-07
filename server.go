@@ -357,6 +357,14 @@ func childToken(tokenFile string) (string, error) {
 	return token, nil
 }
 
+// chmodSocket is os.Chmod behind a seam over the 0600 tightening of the socket
+// newServerOnSocket has just bound: a fresh AF_UNIX node owned by the caller does
+// not refuse chmod; without the seam the warn-and-carry-on arm fires only for a
+// Linux abstract socket (-socket @name), which has no filesystem node to chmod
+// and is not a shape Desktop passes.
+// Distinct from install.go's chmodStaged, which seams the staged CLI binary.
+var chmodSocket = os.Chmod
+
 // newServerOnSocket performs the daemonized child's startup in its exact
 // original order — clear stale socket, listen, chmod, persist the token, gate
 // the POSIX/Windows-only flags, construct the server, start the optional
@@ -394,7 +402,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	if err != nil {
 		return nil, fmt.Errorf("listen unix: %v", err)
 	}
-	if err := os.Chmod(socket, 0o600); err != nil {
+	if err := chmodSocket(socket, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
 	}
 
@@ -538,6 +546,12 @@ func openDaemonLog(socket string) *os.File {
 // for daemon to accept on %s"). var so tests can shrink it.
 var daemonStartTimeout = 10 * time.Second
 
+// startDaemonChild is cmd.Start behind a seam over the re-exec below: the
+// launcher re-execs its own executable, which fails only on resource exhaustion
+// or a binary unlinked since launch, neither of which a fixture can stage, so the
+// "daemonize: <err>" + exit 1 arm is otherwise unreachable.
+var startDaemonChild = func(cmd *exec.Cmd) error { return cmd.Start() }
+
 func daemonizeWithToken(socket, forwardToken string) {
 	// Create the socket's directory before anything opens a file in it — the
 	// reference does this in its launcher (string "mkdir parent %s: %v") and
@@ -604,7 +618,7 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// inode, BEFORE the child rebinds the path — so the wait below can tell the
 	// successor's fresh socket from the predecessor's (7d193f89 handoff).
 	predInfo := livePredecessorIdent(socket)
-	if err := cmd.Start(); err != nil {
+	if err := startDaemonChild(cmd); err != nil {
 		fmt.Fprintf(os.Stderr, "daemonize: %v\n", err)
 		osExit(1)
 	}

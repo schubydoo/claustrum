@@ -96,13 +96,18 @@ func persistToken(socket, token string) os.FileInfo {
 		logErrorf("[daemon] failed to persist token: %v", err)
 		return nil
 	}
-	fi, err := os.Stat(dest)
+	fi, err := statPersistedToken(dest)
 	if err != nil {
 		logErrorf("[daemon] failed to stat persisted token: %v", err)
 		return nil
 	}
 	return fi
 }
+
+// statPersistedToken is os.Stat behind a seam over the identity read above: the
+// rename immediately before it has just put dest in place, so that stat does not
+// fail in practice and the "nothing to own" (nil) arm is otherwise unreachable.
+var statPersistedToken = os.Stat
 
 // removePersistedToken unlinks the persisted token file on graceful shutdown ONLY
 // when the file on disk is still the inode this daemon wrote (os.SameFile against
