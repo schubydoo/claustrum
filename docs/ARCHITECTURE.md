@@ -208,8 +208,9 @@ sits in front of those calls so operators can quiet the daemon:
   "os":   "linux",            // GOOS
   "arch": "amd64",            // GOARCH
   "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux an ldd
-                              // slower than -libc-probe-timeout falls back to glibc
-                              // when that is set; no deadline by default (D14).
+                              // slower than -libc-probe-timeout falls back to the
+                              // loader-glob result when that is set; no deadline by
+                              // default (D14).
                               // The driver uses
                               // this field to pick which CLI build to download —
                               // a third-binary claim; see the provenance note below.
@@ -294,7 +295,7 @@ that could come out wrong. The argv row's fixtures were run. The `cliError` and
 | claim | fixture | control that must fire |
 |---|---|---|
 | `cliError` classification | two `-install` failures whose messages straddle the disk-full shape; observe a retry vs a terminal report | a genuine disk-full failure observed as terminal with an actionable code, proving the terminal side is reachable |
-| `libc` build selection | a stub `ldd` printing a musl banner and exiting 0, with `/lib/ld-musl-*.so.*` absent (else the glob short-circuits and `ldd` never runs); see which build the client fetches | a glibc host where the daemon reports `glibc` fetches the glibc build, so the musl arm is distinguishable from the client's default |
+| `libc` build selection | a stub `ldd` printing a musl banner (its exit code is not consulted since 3ef9370, and its output outranks the loader glob); the daemon reports `musl`, so see which build the client fetches | a glibc host where the daemon reports `glibc` fetches the glibc build, so the musl arm is distinguishable from the client's default |
 | argv | inspect the shipped client for where the daemon's argv is built; corroborate with the setup UI, a capture of the argv Desktop passes (cache-hit and fetching), and an enumeration of Desktop's config files | if the argv is assembled from a setting or a config file, the claim is false |
 
 The argv claim is **discharged**. Claude Desktop builds the daemon's argv from a

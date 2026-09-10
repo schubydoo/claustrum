@@ -18,6 +18,7 @@ This lets a reader tell a re-published SHA from a real release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `3ef9370e…` | 2026-09-03 | none (off-wire: linux libc probe reordered ldd-first) | this PR |
 | `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333) |
 | `7d193f89…` | 2026-08-25 | 6 changes + off-wire git rewrite — see below | [PR 286](https://github.com/schubydoo/claustrum/pull/286) |
 | `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | [PR 131](https://github.com/schubydoo/claustrum/pull/131) |
@@ -30,6 +31,34 @@ Each per-build section has three parts. The **wire delta** is what claustrum
 must match byte-for-byte. **Off-wire churn** is any source that moved but never
 reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
 confirmed that nothing else changed.
+
+### `3ef9370ec5b07a0e728ca5de4137d450e95eb2b6` — 2026-09-03
+
+Observed in Claude Desktop for Linux `1.49585.0`. A near-identical rebuild on top
+of `4534d86`. No wire change: the JSON-RPC surface, the 18 methods, the CLI flags
+and the `-version` format are byte-identical. One off-wire change, linux only.
+
+**Wire delta.** None.
+
+**Off-wire.** The `-install` libc probe (`detectLibc`, linux only) was reordered.
+Build 4534d86 and earlier consulted the musl loader glob (`/lib/ld-musl-*.so.*`)
+first and ran `ldd --version` only on a miss. Build 3ef9370 runs `ldd` on every
+call and lets its output decide: a "musl" banner reports `musl`, any other output
+reports `glibc`, and the loader glob is consulted only when `ldd` produced no
+output. The exit code is not consulted. This value is off the JSON-RPC wire — it
+appears only in the `__INSTALL_RESULT__` line — but claustrum matches it, because
+the driver uses `libc` to choose which CLI build to download. See
+[DIVERGENCES.md](DIVERGENCES.md) D14 and `install.go` `classifyLibc`.
+
+**How it was bounded.** The static drift check passed. A function-inventory diff
+across all six platforms found exactly one changed function (`detectLibc`, linux
+only); darwin and windows carry no `detectLibc` symbol and their recovered
+function inventory is unchanged (their
+binaries differ only by ordinary rebuild churn). String constants, `-help`,
+`-install -help` and the `-version` format are unchanged. The reorder was measured
+on both reference binaries on a mixed host (glibc `ldd` plus a musl marker):
+4534d86 reports `musl`, 3ef9370 reports `glibc`. The forensics stay outside the
+committed tree.
 
 ### `4534d8648b686881955c6f13baf46ae72ee72f4c` — 2026-09-04 (observed)
 

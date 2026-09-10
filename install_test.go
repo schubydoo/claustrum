@@ -613,19 +613,12 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 		<-ctx.Done() // mimic a stalled `ldd`: unblocks only when the deadline fires
 		return nil, ctx.Err()
 	}
-	// The glob MUST report no match here. detectLibcWith short-circuits to "musl"
-	// when the loader marker is present and never calls the runner, so on a musl
-	// host a real glob would match and this test would pass without ever entering
-	// the hung runner.
-	//
-	// The stub is load-bearing, not defensive, and that was checked rather than
-	// argued: with a real glob on a host that HAS the loader, replacing the runner
-	// with `select {}` — no deadline honoured at all, the exact regression this
-	// test exists to catch — still passed, in under a millisecond.
-	//
-	// Deliberately not phrased in terms of "this host": CI's Linux leg is glibc,
-	// so a reader who checks for the loader there finds none and could conclude
-	// the stub is unnecessary. That is the one conclusion that would re-break it.
+	// Since build 3ef9370 the runner is always called first (see classifyLibc), so
+	// the hung runner below is entered on every host, glob or not. The deadline
+	// must make it return; without an armed deadline this test would block. The
+	// hung runner returns no output, so the loader glob is the fallback here, and
+	// noMusl just fixes that fallback to a deterministic value — the assertion
+	// accepts either result, because the point is that detectLibcWith RETURNS.
 	noMusl := func(string) ([]string, error) { return nil, nil }
 	done := make(chan string, 1)
 	go func() { done <- detectLibcWith(20*time.Millisecond, hung, noMusl) }()
@@ -652,11 +645,12 @@ func TestDetectLibcWithTimeout(t *testing.T) {
 // pipe past the deadline — see the D14 entry in docs/DIVERGENCES.md. A fixture faster than the deadline would
 // answer the same either way and prove nothing (see the D12 straddle lesson).
 //
-// The runner returns a musl banner AND exits 0, because that conjunction is the only
-// one where the reported VALUE moves: classifyLibc only believes the banner when
-// lddErr == nil, and a faithful musl `ldd --version` exits 1. Paired with a glob that
-// misses, this is exactly the host shape D14's entry says is untested in the wild —
-// so it is at least pinned here.
+// The runner returns a musl banner after a delay. At the default (no deadline)
+// ldd is waited for and its output decides: musl. Opted in below that latency the
+// deadline kills it, the output is empty, and the loader glob (which misses here)
+// gives the glibc fallback. That value swing between the two arms is the point.
+// Since 3ef9370 the ldd exit code is not consulted, so the banner alone decides
+// step 1 — this fixture returns a nil error only because the delay arm has none.
 func TestDetectLibcTimeoutOptInVersusDefault(t *testing.T) {
 	slowMusl := func(ctx context.Context) ([]byte, error) {
 		select {
@@ -685,9 +679,9 @@ func TestDetectLibcTimeoutOptInVersusDefault(t *testing.T) {
 	}
 }
 
-// classifyLibc's branches with an injected glob, so the musl paths are
-// exercised on a glibc host too. The mixed-host row is the one that motivated
-// W9: a loader present while ldd SUCCEEDS and reports glibc.
+// classifyLibc's branches with an injected glob, so the musl paths are exercised
+// on a glibc host too. The order matches reference build 3ef9370: the `ldd`
+// output decides first, and the loader glob is only the empty-output fallback.
 func TestClassifyLibc(t *testing.T) {
 	found := func(string) ([]string, error) { return []string{"/lib/ld-musl-aarch64.so.1"}, nil }
 	none := func(string) ([]string, error) { return nil, nil }
@@ -695,27 +689,63 @@ func TestClassifyLibc(t *testing.T) {
 	cases := []struct {
 		name string
 		out  []byte
-		err  error
 		glob func(string) ([]string, error)
 		want string
 	}{
-		{"ldd ok, musl banner", []byte("musl libc (x86_64)\nVersion 1.2.3"), nil, none, "musl"},
-		{"ldd ok, glibc banner", []byte("ldd (GNU libc) 2.31"), nil, none, "glibc"},
-		{"ldd fails, loader present", nil, io.EOF, found, "musl"},
-		{"ldd fails, no loader", nil, io.EOF, none, "glibc"},
-		// The mixed host: glibc's ldd succeeds AND a musl loader is installed.
-		// The reference answers musl; claustrum used to answer glibc because it
-		// consulted the marker only on the ldd-failure path.
-		{"mixed host: ldd says glibc, loader present", []byte("ldd (Debian GLIBC 2.41) 2.41"), nil, found, "musl"},
-		// A non-x86_64 loader must match — the old hardcoded path could not.
-		{"arm64 loader", nil, io.EOF, found, "musl"},
-		// A glob error is not a match.
-		{"glob errors", []byte("ldd (GNU libc) 2.31"), nil, broken, "glibc"},
+		{"ldd musl banner", []byte("musl libc (x86_64)\nVersion 1.2.3"), none, "musl"},
+		{"ldd glibc banner", []byte("ldd (GNU libc) 2.31"), none, "glibc"},
+		{"no ldd output, loader present", nil, found, "musl"},
+		{"no ldd output, no loader", nil, none, "glibc"},
+		// The mixed host: glibc's ldd produces glibc output AND a musl loader is
+		// installed. Build 4534d86 answered musl (glob first); 3ef9370 answers
+		// glibc, because ldd produced non-musl output and the glob is never
+		// reached. This row flips with the ordering.
+		{"mixed host: ldd says glibc, loader present", []byte("ldd (Debian GLIBC 2.41) 2.41"), found, "glibc"},
+		// A musl banner in any ldd output outranks the loader lookup, which is not
+		// consulted while output is present.
+		{"musl banner beats loader lookup", []byte("musl libc"), found, "musl"},
+		// A non-x86_64 loader must match on the empty-output fallback — the old
+		// hardcoded path could not.
+		{"arm64 loader, no ldd output", nil, found, "musl"},
+		// A glob error on the fallback is not a match.
+		{"no ldd output, glob errors", nil, broken, "glibc"},
 	}
 	for _, tc := range cases {
-		if got := classifyLibc(tc.out, tc.err, tc.glob); got != tc.want {
+		if got := classifyLibc(tc.out, tc.glob); got != tc.want {
 			t.Errorf("%s: classifyLibc = %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestDetectLibcOrderingLddFirst pins the ldd-first ordering of build 3ef9370
+// through detectLibcWith, whose signature did not change with the reorder, so
+// reverting the reorder still compiles here and fails on these two rows — the
+// mutant-faithful discriminators. Both were measured against the 3ef9370 binary.
+//
+//   - Mixed host: glibc `ldd` output plus a musl loader marker. Build 4534d86
+//     (glob first) reports musl; 3ef9370 reports glibc, because ldd produced
+//     non-musl output and the glob is never reached.
+//   - Musl banner with a non-zero ldd exit and no loader marker. The old
+//     glob-first code gated the banner on lddErr == nil and reported glibc;
+//     3ef9370 ignores the exit code, so the banner alone gives musl.
+func TestDetectLibcOrderingLddFirst(t *testing.T) {
+	found := func(string) ([]string, error) { return []string{"/lib/ld-musl-x86_64.so.1"}, nil }
+	none := func(string) ([]string, error) { return nil, nil }
+
+	glibcLdd := func(context.Context) ([]byte, error) {
+		return []byte("ldd (Debian GLIBC 2.41) 2.41"), nil
+	}
+	if got := detectLibcWith(0, glibcLdd, found); got != "glibc" {
+		t.Errorf("mixed host: detectLibcWith = %q, want glibc — ldd output must decide "+
+			"before the loader glob is consulted", got)
+	}
+
+	muslBannerExit1 := func(context.Context) ([]byte, error) {
+		return []byte("musl libc (x86_64)\nVersion 1.2.5"), io.EOF
+	}
+	if got := detectLibcWith(0, muslBannerExit1, none); got != "musl" {
+		t.Errorf("musl banner, ldd exit 1: detectLibcWith = %q, want musl — the exit code "+
+			"must not be consulted", got)
 	}
 }
 
@@ -1333,16 +1363,14 @@ func TestDownloadStallErrorWording(t *testing.T) {
 	}
 }
 
-// The loader glob decides ALONE: when it matches, `ldd` is never executed.
+// `ldd` runs on EVERY call since build 3ef9370, and its output outranks the
+// loader glob: a glibc banner wins even when a musl loader marker is present.
 //
-// This is the behaviour, not an optimisation. Measured 2026-08-02 against
-// 5db5e4a with a stand-in `ldd` on PATH that records its own invocation: with a
-// musl loader present the reference did not run it and claustrum did. With the
-// marker masked BOTH reached the stand-in, so "not run" is an observation and
-// not a fixture that never fired. Executing a PATH-resolved binary the reference
-// does not execute on this path matters in `-install`, which is the one mode
-// with a network-facing threat model.
-func TestDetectLibcSkipsLddWhenLoaderGlobMatches(t *testing.T) {
+// This is the behaviour, not an optimisation. Build 4534d86 did the reverse — a
+// present marker skipped ldd entirely — and claustrum matched that until this
+// build. This test guarded the older skip and now guards its replacement: that
+// ldd IS executed and its output decides while any output is present.
+func TestDetectLibcRunsLddEvenWhenLoaderGlobMatches(t *testing.T) {
 	called := false
 	run := func(context.Context) ([]byte, error) {
 		called = true
@@ -1352,18 +1380,16 @@ func TestDetectLibcSkipsLddWhenLoaderGlobMatches(t *testing.T) {
 		return []string{"/lib/ld-musl-x86_64.so.1"}, nil
 	}
 
-	if got := detectLibcWith(time.Second, run, muslPresent); got != "musl" {
-		t.Errorf("detectLibcWith = %q, want musl (the loader marker decides)", got)
+	if got := detectLibcWith(time.Second, run, muslPresent); got != "glibc" {
+		t.Errorf("detectLibcWith = %q, want glibc — ldd output outranks a present loader marker", got)
 	}
-	if called {
-		t.Error("ldd was executed even though the loader glob matched — " +
-			"the reference does not run it on this path")
+	if !called {
+		t.Error("ldd was not executed — it runs on every call since 3ef9370")
 	}
 }
 
-// The control for the test above: with no marker, the probe IS run. Without this
-// row, a detectLibcWith that never ran ldd under any condition would pass the
-// skip test and still be wrong.
+// The companion: with no marker either, the probe still runs and its output
+// decides. The pair proves ldd runs regardless of the marker state.
 func TestDetectLibcRunsLddWhenLoaderGlobDoesNotMatch(t *testing.T) {
 	called := false
 	run := func(context.Context) ([]byte, error) {
@@ -1376,8 +1402,7 @@ func TestDetectLibcRunsLddWhenLoaderGlobDoesNotMatch(t *testing.T) {
 		t.Errorf("detectLibcWith = %q, want glibc", got)
 	}
 	if !called {
-		t.Error("ldd was not executed with no loader marker present — " +
-			"then the skip test above proves nothing")
+		t.Error("ldd was not executed with no loader marker present")
 	}
 }
 

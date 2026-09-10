@@ -1362,9 +1362,10 @@ probed. See [`DIVERGENCES.md`](DIVERGENCES.md):
   no `cliError` at all. It is a threshold, not a hang detector: an honest-but-slow
   CLI trips it too. The cached binary survives every failure before the rename.
 - **`-libc-probe-timeout <dur>` (D14; linux only).** `0` = no deadline on `ldd
-  --version`. Off linux the probe never runs. On linux it cannot fire on a host
-  whose musl loader glob matches, because `detectLibcWith` returns before it spawns
-  `ldd`. **Do not confuse it with `-cli-probe-timeout`.** The two names differ only in
+  --version`. Off linux the probe never runs. On linux it can fire on any host,
+  because since build 3ef9370 `detectLibcWith` runs `ldd` on every call and the
+  loader glob is only the empty-output fallback. **Do not confuse it with
+  `-cli-probe-timeout`.** The two names differ only in
   their `cli`/`libc` prefix, they have the same type, and main's `-install` arm
   resolves them in consecutive statements (pinned by
   `TestInstallArmWiresEachFlagToItsOwnGlobal`). `libc` build
@@ -1430,8 +1431,9 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   probe, so a concurrent install can reclaim another install's staging file.
   claustrum handles that with a **single retry** of the stage-verify-rename step,
   and does not narrow the sweep.
-- claustrum runs `ldd` **only when the musl loader glob does not match**. On a host
-  that carries `/lib/ld-musl-*.so.*` the marker decides, and no `ldd` starts.
+- claustrum runs `ldd` on **every** libc probe since build 3ef9370, and its output
+  decides: a "musl" banner reports `musl`, any other output reports `glibc`. The
+  `/lib/ld-musl-*.so.*` marker is consulted only when `ldd` produced no output.
 
 ### Behavior shared by every mode
 

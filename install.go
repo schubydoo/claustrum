@@ -865,13 +865,16 @@ func isRegularFile(p string) bool {
 //
 // A wall-clock deadline cannot separate a hostile `ldd` from a slow one, so an
 // honest-but-slow `ldd` falls back too — but that usually changes NOTHING
-// observable: on a musl host detectLibcWith returns "musl" from the loader glob
-// without ever spawning ldd, and on a glibc host the fallback IS "glibc". The
-// reported value moves only where ldd says musl AND exits 0 and the loader glob
-// misses. The exit code is load-bearing: a faithful musl `ldd --version` prints to
-// stderr and exits 1, and classifyLibc then falls back to "glibc" regardless.
+// observable. Since build 3ef9370 ldd runs on every call (see classifyLibc), and
+// a killed ldd returns no output, so the musl loader glob decides the fallback: a
+// musl host carrying the loader marker still reports "musl", and a glibc host with
+// no marker still reports "glibc". The reported value moves in the two shapes where
+// the empty-output fallback disagrees with the output ldd would have given: a musl
+// host the glob misses (killed reports "glibc" where the banner would have said
+// "musl"), and a mixed host carrying a marker (killed reports "musl" where the
+// glibc output would have said "glibc"). See docs/DIVERGENCES.md D14.
 // ⚠️ That residual is narrow but NOT costless: Claude Desktop uses the reported
-// libc to pick which CLI build it downloads, so on that one host shape the
+// libc to pick which CLI build it downloads, so on those host shapes the
 // consequence is the wrong build being fetched, not a cosmetic field. ⚠️ That last
 // sentence is a claim about the DRIVER, not about the reference daemon — the
 // parity harness cannot confirm or refute it. See docs/ARCHITECTURE.md →
@@ -918,44 +921,26 @@ func runLddVersion(ctx context.Context) ([]byte, error) {
 	return exec.CommandContext(ctx, "ldd", "--version").CombinedOutput()
 }
 
-// detectLibcWith answers the libc question, running the `ldd` probe ONLY when the
-// loader glob cannot answer on its own.
+// detectLibcWith answers the libc question by running the `ldd` probe FIRST and
+// consulting the musl loader glob only as a fallback. classifyLibc holds the
+// precedence and the reference measurement.
 //
-// The order is the behaviour, not a tidy-up. With the marker present the
-// reference reports musl and starts no `ldd` process; with the marker masked it
-// runs `ldd`. The ordering is INFERRED from that pair, not assumed — what was
-// observed is which process got spawned.
+// The order is the behaviour, not a tidy-up. Reference build 3ef9370 runs `ldd`
+// on every call and lets its output decide; the loader glob is reached only when
+// ldd produced nothing. Earlier builds (4534d86 and before) did the reverse —
+// glob first, ldd only on a miss — and claustrum matched that until this build.
+// Measured against both reference binaries on a mixed host (glibc ldd plus a musl
+// marker): 4534d86 reports musl, 3ef9370 reports glibc.
 //
-// claustrum ran ldd unconditionally and only then consulted the glob, so on that
-// path it executed a PATH-RESOLVED BINARY THE REFERENCE DOES NOT EXECUTE THERE,
-// and paid the probe timeout for an answer it was going to discard. That matters
-// more here than elsewhere because `-install` is the one mode with a
-// network-facing threat model.
-//
-// Measured 2026-08-02 against 5db5e4a, with a stand-in `ldd` on PATH that records
-// its own invocation:
-//
-//	musl loader present   reference: ldd NOT run, libc=musl
-//	                      claustrum: ldd RAN,     libc=musl
-//	loader masked (ctl)   both: ldd RAN, libc=glibc
-//
-// The control is what makes the first row mean something: with the marker hidden
-// both binaries reach the stand-in, so "not run" is an observation and not a
-// broken fixture.
-//
-// glob is injectable for the same reason classifyLibc takes one — the musl branch
-// is otherwise unreachable on a glibc host.
-// The timeout and runner are injected so the timeout/fallback path is exercisable
-// on any host (mirroring classifyLibc's injectable glob).
+// The runner and timeout are injected so the timeout/fallback path is exercisable
+// on any host, and glob is injectable for the same reason classifyLibc takes one:
+// the musl fallback is otherwise unreachable on a glibc host.
 func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error),
 	glob func(string) ([]string, error)) string {
-	if hasMuslLoader(glob) {
-		return "musl" // run() is deliberately never called on this path
-	}
 	ctx, cancel := lddCtx(timeout)
 	defer cancel()
-	out, err := run(ctx)
-	return classifyLibc(out, err, glob)
+	out, _ := run(ctx)
+	return classifyLibc(out, glob)
 }
 
 // lddCtx builds the context for the `ldd` probe, arming a deadline only when one is
@@ -1003,23 +988,41 @@ func hasMuslLoader(glob func(string) ([]string, error)) bool {
 
 // classifyLibc maps an `ldd --version` result to "musl" or "glibc". It is split
 // from detectLibc with an injectable glob so both branches are testable on any
-// host — a glibc box can't otherwise reach the musl paths.
+// host — a glibc box can't otherwise reach the musl fallback.
 //
-// The loader glob is consulted FIRST and outranks ldd, which is what the
-// reference does. Measured on a mixed host carrying glibc's ldd and a musl
-// loader together: `ldd --version` reports "Debian GLIBC 2.41" and succeeds, yet
-// the reference still answers "musl" — so the marker decides, and a successful
-// glibc ldd does not veto it. claustrum consulted the marker only when ldd
-// FAILED, so it answered "glibc" there, 3 runs out of 3.
+// The order matches reference build 3ef9370, which reordered this in the daemon:
+//  1. If the `ldd` output contains "musl" (case-insensitive), report musl. The
+//     ldd exit code is NOT consulted — a faithful musl `ldd --version` prints its
+//     banner to stderr and exits 1, and CombinedOutput captures that stderr, so
+//     the banner still decides. Measured against 3ef9370 with the discriminating
+//     control on a host that carries the musl marker: a stub ldd printing glibc
+//     output and exiting 1 reports glibc, not musl. If the exit code gated the
+//     decision, a non-zero exit would drop to the glob and the marker would force
+//     musl; it reports glibc, so the exit code is ignored. (A musl banner plus
+//     exit 1 cannot show this on a marker host — the glob would answer musl too.)
+//  2. Otherwise, if `ldd` produced any output, report glibc. The loader glob is
+//     NOT consulted on this path.
+//  3. Only when `ldd` produced no output at all (it is missing, or the deadline
+//     killed it) does the musl loader glob decide: present → musl, else glibc.
 //
-// Clean single-libc hosts are unaffected and were identical before this change
-// (Alpine → musl, Debian → glibc, container-verified): a Debian box has no musl
-// loader to match, and an Alpine box is caught by either rule.
-func classifyLibc(lddOut []byte, lddErr error, glob func(string) ([]string, error)) string {
-	if hasMuslLoader(glob) {
+// This reverses the ordering claustrum carried for build 4534d86 and earlier,
+// where the loader glob was consulted FIRST and outranked ldd. The mixed host is
+// where the two orderings part: a glibc box whose `ldd` succeeds and reports
+// glibc while a `/lib/ld-musl-*.so.*` marker is also installed. 4534d86 reported
+// musl there; 3ef9370 reports glibc, because ldd produced non-musl output and the
+// glob is never reached. Measured on both reference binaries on one such host.
+//
+// Clean single-libc hosts report the same value under either ordering: a Debian
+// box has no musl marker and its ldd says glibc; an Alpine box has a musl marker
+// and its ldd prints a musl banner, so step 1 catches it before the glob matters.
+func classifyLibc(lddOut []byte, glob func(string) ([]string, error)) string {
+	if strings.Contains(strings.ToLower(string(lddOut)), "musl") {
 		return "musl"
 	}
-	if lddErr == nil && strings.Contains(strings.ToLower(string(lddOut)), "musl") {
+	if len(lddOut) != 0 {
+		return "glibc"
+	}
+	if hasMuslLoader(glob) {
 		return "musl"
 	}
 	return "glibc"
