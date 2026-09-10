@@ -15,11 +15,11 @@ func detectLibc() string {
 }
 
 // lddGlob is a seam, for the same reason detectLibcWith takes a glob at all: the
-// musl branch is otherwise unreachable on a glibc host, and — the direction that
-// matters here — the ldd branch is unreachable on any host that HAS the loader.
-// This host does: `/lib/ld-musl-x86_64.so.1` exists on a glibc Debian because some
-// package installs it, so without this seam the one test that drives detectLibc's
-// production path skips silently and proves nothing. Production never reassigns it.
+// musl fallback is otherwise unreachable on a glibc host. Since build 3ef9370 the
+// glob is consulted only when `ldd` produced no output (see classifyLibc), so on
+// any host whose `ldd` answers — every real one — production never reaches the
+// fallback, and the seam is what lets a test drive that branch. Production never
+// reassigns it.
 //
 // Declared BELOW detectLibc deliberately. Above it, this comment butted straight
 // against detectLibc's own doc comment with no blank line, so godoc attached all

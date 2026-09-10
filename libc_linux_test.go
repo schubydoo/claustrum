@@ -30,20 +30,21 @@ import (
 // ignores the tiny deadline, so the stub completes and reports musl where the test
 // demands the glibc fallback.
 func TestDetectLibcHonoursThePackageVar(t *testing.T) {
-	// Mask the loader glob rather than skipping on it. detectLibc returns "musl"
-	// before spawning ldd whenever the glob matches, so on such a host this test
-	// would pass without executing a line of what it claims to test — and it is not
-	// hypothetical: this glibc development host HAS /lib/ld-musl-x86_64.so.1,
-	// installed by an unrelated package, so the first version of this test skipped
-	// silently. A skip here would have been the same coverage hole mustMkfifo exists
-	// to prevent, hidden behind a plausible guard.
+	// Mask the loader glob rather than skipping on it. This glibc development host
+	// HAS /lib/ld-musl-x86_64.so.1, installed by an unrelated package. Since build
+	// 3ef9370 ldd runs on every call, so masking is not what makes ldd execute — it
+	// makes the OPTED-IN arm deterministic. When the deadline kills ldd its output
+	// is empty and the loader glob decides the fallback, and an unmasked glob would
+	// match on this host and report musl where the arm demands the glibc fallback.
+	// A skip here would have been the same coverage hole mustMkfifo exists to
+	// prevent, hidden behind a plausible guard.
 	oldGlob := lddGlob
 	t.Cleanup(func() { lddGlob = oldGlob })
 	lddGlob = func(string) ([]string, error) { return nil, nil }
 
 	dir := t.TempDir()
-	// Prints a musl banner and exits 0 — the one conjunction where the reported
-	// value actually moves (classifyLibc believes the banner only when err == nil).
+	// Prints a musl banner: the default arm waits for it and reports musl. The exit
+	// code is not consulted since 3ef9370, so exit 0 here is incidental.
 	// sleep 1, not longer: exec.CommandContext kills the script but `sleep` is its
 	// child and survives holding the output pipe, so the opted-in arm waits for it
 	// either way. One second self-exits and leaks nothing; raising it leaks a

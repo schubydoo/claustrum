@@ -158,7 +158,7 @@ rather than repeating them in each entry:
 | [D11](#d11) | Deadline on the `<cli> --version` runnability probe | off (`0`) | `-cli-probe-timeout` / key | rule 4 | Desktop turning out not to parse `cliError` (retraction rider) |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`) | always-on | always-on | **UNRESOLVED** — clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
-| [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a musl host the glob misses whose `ldd` exits 0 + is slow; or the reference bounding it above 45 s |
+| [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a slow `ldd` on a host where the deadline changes the reported `libc` (musl host the glob misses, or a mixed host); or the reference bounding it above 45 s |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (Windows failure mechanism not yet pinned) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern); **REACHABLE** | the reference fixing its Windows git.status, or a decision to reproduce its failure for strict 1:1 |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
@@ -583,11 +583,12 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D14 · Make the `-install` libc probe deadline opt-in (linux) { #d14 }
 
-- **Behavior.** `detectLibcWith` returns `musl` from the loader glob
-  (`/lib/ld-musl-*.so.*`) *before* it spawns `ldd`. Only when the glob misses does
-  it run `ldd --version`, and the deadline applies there. Off linux,
-  `libc_other.go` returns `""` without probing. Therefore the bound cannot fire on a
-  host whose loader the glob matches. The predicate is the glob, not the host.
+- **Behavior.** Since reference build 3ef9370 `detectLibcWith` runs `ldd --version`
+  on every call and lets its output decide (see `classifyLibc`): a "musl" banner
+  reports `musl`, any other output reports `glibc`, and the loader glob
+  (`/lib/ld-musl-*.so.*`) is consulted only when `ldd` produced no output. The
+  deadline bounds that `ldd` run, which is now always in the path. Off linux,
+  `libc_other.go` returns `""` without probing, so the bound cannot fire there.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-libc-probe-timeout
   <dur>` or the key; disabled bypasses `context.WithTimeout` (`lddCtx`). **Not the
   same knob as `-cli-probe-timeout`** (D11), whose name differs only in the
@@ -595,12 +596,17 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `-cli-probe-timeout` bounds `<cli> --version`; `-libc-probe-timeout` bounds
   `ldd --version`. `TestInstallArmWiresEachFlagToItsOwnGlobal` exists because a swap
   compiles and passes every isolated test.
-- **The value delta is narrow but not cosmetic.** Fallback and true value coincide
-  except in one case: the glob misses **and** `ldd` reports musl **and** `ldd` exits
-  0 (a faithful musl `ldd` exits 1) **and** `ldd` is slower than the deadline. Per
-  the driver claim that Desktop uses `libc` to choose a CLI build
-  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)), that case
-  means claustrum fetches a glibc build for a musl host.
+- **The value delta is narrow but not cosmetic.** When the armed deadline kills
+  `ldd` before it writes anything, its output is empty, so the loader glob decides
+  the fallback: a marker present reports `musl`, else `glibc`. (A deadline that
+  fires after `ldd` wrote partial output takes that output, not the glob.) The
+  empty-output case coincides with the un-timed answer except where `ldd`'s output
+  would have disagreed with the marker — a musl host the glob misses (fallback
+  reports `glibc` where the banner would have said `musl`), or a mixed host carrying
+  a marker (fallback reports `musl` where its glibc output would have said `glibc`). Per the driver claim that Desktop uses
+  `libc` to choose a CLI build
+  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)), that
+  means the wrong build can be fetched on those host shapes.
 - **Softer than it reads.** The deadline fires in only one of two stall shapes: a
   stalled `ldd` that leaves a surviving child keeps claustrum blocked past the
   deadline (the same softness the general git sites have under D5). This `ldd` probe
@@ -613,9 +619,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   gave no reply at 45 s in the discriminating shape), but the honest-path cost was
   untested in either direction, and there was no escape hatch. An untested
   conjunction is not a justification (rule 4).
-- **Reopen trigger.** A musl host whose loader the glob misses **and** whose `ldd`
-  exits 0 with a musl banner, reported together with a slow `ldd` (all four
-  conjuncts); or any measurement showing the reference bounds this probe above 45 s.
+- **Reopen trigger.** A host where the armed deadline changes the reported `libc`
+  from its un-timed value (a musl host the glob misses, or a mixed host, in either
+  case with a slow `ldd`); or any measurement showing the reference bounds this
+  probe above 45 s.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`; `install.go` (canonical
   stall table), `libc_linux.go`, `libc_other.go`. Full measurement: forensics.
 
