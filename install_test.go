@@ -725,9 +725,10 @@ func TestClassifyLibc(t *testing.T) {
 //   - Mixed host: glibc `ldd` output plus a musl loader marker. Build 4534d86
 //     (glob first) reports musl; 3ef9370 reports glibc, because ldd produced
 //     non-musl output and the glob is never reached.
-//   - Musl banner with a non-zero ldd exit and no loader marker. The old
-//     glob-first code gated the banner on lddErr == nil and reported glibc;
-//     3ef9370 ignores the exit code, so the banner alone gives musl.
+//   - Musl banner with a non-zero ldd exit, measured in a glob-miss environment
+//     (no loader marker, so no fallback can rescue the answer). The old glob-first
+//     code gated the banner on lddErr == nil and reported glibc; 3ef9370 ignores
+//     the exit code, so the banner alone gives musl.
 func TestDetectLibcOrderingLddFirst(t *testing.T) {
 	found := func(string) ([]string, error) { return []string{"/lib/ld-musl-x86_64.so.1"}, nil }
 	none := func(string) ([]string, error) { return nil, nil }

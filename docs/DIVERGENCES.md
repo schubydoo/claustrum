@@ -597,12 +597,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `ldd --version`. `TestInstallArmWiresEachFlagToItsOwnGlobal` exists because a swap
   compiles and passes every isolated test.
 - **The value delta is narrow but not cosmetic.** When the armed deadline kills
-  `ldd` its output is empty, so the loader glob decides the fallback: a marker
-  present reports `musl`, else `glibc`. That coincides with the un-timed answer
-  except where `ldd`'s output would have disagreed with the marker — a musl host
-  the glob misses (killed `ldd` reports `glibc` where its banner would have said
-  `musl`), or a mixed host carrying a marker (killed `ldd` reports `musl` where its
-  glibc output would have said `glibc`). Per the driver claim that Desktop uses
+  `ldd` before it writes anything, its output is empty, so the loader glob decides
+  the fallback: a marker present reports `musl`, else `glibc`. (A deadline that
+  fires after `ldd` wrote partial output takes that output, not the glob.) The
+  empty-output case coincides with the un-timed answer except where `ldd`'s output
+  would have disagreed with the marker — a musl host the glob misses (fallback
+  reports `glibc` where the banner would have said `musl`), or a mixed host carrying
+  a marker (fallback reports `musl` where its glibc output would have said `glibc`). Per the driver claim that Desktop uses
   `libc` to choose a CLI build
   ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)), that
   means the wrong build can be fetched on those host shapes.

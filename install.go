@@ -865,13 +865,15 @@ func isRegularFile(p string) bool {
 //
 // A wall-clock deadline cannot separate a hostile `ldd` from a slow one, so an
 // honest-but-slow `ldd` falls back too — but that usually changes NOTHING
-// observable. Since build 3ef9370 ldd runs on every call (see classifyLibc), and
-// a killed ldd returns no output, so the musl loader glob decides the fallback: a
-// musl host carrying the loader marker still reports "musl", and a glibc host with
-// no marker still reports "glibc". The reported value moves in the two shapes where
-// the empty-output fallback disagrees with the output ldd would have given: a musl
-// host the glob misses (killed reports "glibc" where the banner would have said
-// "musl"), and a mixed host carrying a marker (killed reports "musl" where the
+// observable. Since build 3ef9370 ldd runs on every call (see classifyLibc). A
+// deadline that fires before ldd writes anything leaves empty output, so the musl
+// loader glob decides: a musl host carrying the loader marker still reports "musl",
+// and a glibc host with no marker still reports "glibc". (A deadline that fires
+// after ldd has written partial output takes that output through step 1 or 2
+// instead, not the glob.) The reported value moves in the two shapes where the
+// empty-output fallback disagrees with the output ldd would have given: a musl host
+// the glob misses (fallback reports "glibc" where the banner would have said
+// "musl"), and a mixed host carrying a marker (fallback reports "musl" where the
 // glibc output would have said "glibc"). See docs/DIVERGENCES.md D14.
 // ⚠️ That residual is narrow but NOT costless: Claude Desktop uses the reported
 // libc to pick which CLI build it downloads, so on those host shapes the
@@ -961,26 +963,14 @@ func lddCtx(timeout time.Duration) (context.Context, context.CancelFunc) {
 // "/lib/ld-musl-x86_64.so.1", which cannot see the loader on arm64 or riscv.
 const muslLoaderGlob = "/lib/ld-musl-*.so.*"
 
-// hasMuslLoader reports whether the musl dynamic loader is present. Shared by
-// detectLibcWith (which uses it to decide whether ldd is spawned AT ALL) and
-// classifyLibc (which uses it to decide the reported value), so the two are
-// definitionally the same predicate.
+// hasMuslLoader reports whether the musl dynamic loader is present. Since the
+// reorder (build 3ef9370) classifyLibc is its only caller, and only on the
+// empty-output fallback — when ldd produced nothing, the loader glob decides the
+// reported value. detectLibcWith no longer consults it before running ldd; ldd
+// runs unconditionally now, so this predicate no longer gates whether ldd spawns.
 //
-// They must not drift: the argument that this whole ordering change is
-// wire-invisible rests on the two agreeing, so an edit to one — a second loader
-// path, a match rule stronger than "any match" — would silently change WHEN ldd
-// runs relative to HOW the answer is computed. One definition removes that
-// possibility.
-//
-// It does NOT reduce the number of glob calls: on a glibc host detectLibcWith
-// asks, gets no match, runs ldd, and classifyLibc asks again — two
-// filepath.Glob calls, exactly as before. What was deduplicated is the source,
-// not the call. Said plainly because the cost is unmeasurable today and a reader
-// who trusts a "runs once" claim will not check, which matters the moment
-// something more expensive than a glob sits behind this predicate.
-//
-// A glob error is treated as "no loader", which is the same fallback both call
-// sites had: the ldd path still decides.
+// A glob error is treated as "no loader", the fallback the call site relies on:
+// with no loader match the empty-output path reports glibc.
 func hasMuslLoader(glob func(string) ([]string, error)) bool {
 	m, err := glob(muslLoaderGlob)
 	return err == nil && len(m) > 0
@@ -994,16 +984,17 @@ func hasMuslLoader(glob func(string) ([]string, error)) bool {
 //  1. If the `ldd` output contains "musl" (case-insensitive), report musl. The
 //     ldd exit code is NOT consulted — a faithful musl `ldd --version` prints its
 //     banner to stderr and exits 1, and CombinedOutput captures that stderr, so
-//     the banner still decides. Measured against 3ef9370 with the discriminating
-//     control on a host that carries the musl marker: a stub ldd printing glibc
-//     output and exiting 1 reports glibc, not musl. If the exit code gated the
-//     decision, a non-zero exit would drop to the glob and the marker would force
-//     musl; it reports glibc, so the exit code is ignored. (A musl banner plus
-//     exit 1 cannot show this on a marker host — the glob would answer musl too.)
+//     the banner still decides. Measured against 3ef9370 in a glob-miss
+//     environment (no /lib/ld-musl-* marker, so no fallback can rescue the answer):
+//     a stub ldd printing a musl banner and exiting 1 reports musl. With the marker
+//     absent the banner alone produces musl, so a non-zero exit does not gate step 1.
 //  2. Otherwise, if `ldd` produced any output, report glibc. The loader glob is
-//     NOT consulted on this path.
-//  3. Only when `ldd` produced no output at all (it is missing, or the deadline
-//     killed it) does the musl loader glob decide: present → musl, else glibc.
+//     NOT consulted on this path, and the exit code is not consulted here either:
+//     in the same glob-miss environment a stub printing glibc output and exiting 1
+//     reports glibc, not the marker's musl.
+//  3. Only when `ldd` produced no output at all does the musl loader glob decide:
+//     present → musl, else glibc. This is the missing-ldd path; a killed ldd reaches
+//     it only if it was killed before writing anything (partial output takes 1 or 2).
 //
 // This reverses the ordering claustrum carried for build 4534d86 and earlier,
 // where the loader glob was consulted FIRST and outranked ldd. The mixed host is
