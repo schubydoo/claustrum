@@ -989,9 +989,11 @@ func hasMuslLoader(glob func(string) ([]string, error)) bool {
 //     a stub ldd printing a musl banner and exiting 1 reports musl. With the marker
 //     absent the banner alone produces musl, so a non-zero exit does not gate step 1.
 //  2. Otherwise, if `ldd` produced any output, report glibc. The loader glob is
-//     NOT consulted on this path, and the exit code is not consulted here either:
-//     in the same glob-miss environment a stub printing glibc output and exiting 1
-//     reports glibc, not the marker's musl.
+//     NOT consulted on this path, and the exit code is not consulted here either.
+//     This needs the opposite environment to step 1 to discriminate: measured
+//     against 3ef9370 on a marker-PRESENT host, a stub printing glibc output and
+//     exiting 1 reports glibc. If a non-zero exit dropped to the glob, the present
+//     marker would force musl; it reports glibc, so the exit is ignored here too.
 //  3. Only when `ldd` produced no output at all does the musl loader glob decide:
 //     present → musl, else glibc. This is the missing-ldd path; a killed ldd reaches
 //     it only if it was killed before writing anything (partial output takes 1 or 2).
