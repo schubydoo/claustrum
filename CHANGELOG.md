@@ -4,6 +4,14 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.11.1 (2026-09-10)
+
+[Compare with 1.11.0](https://github.com/schubydoo/claustrum/compare/v1.11.0...v1.11.1)
+
+### Fixes
+
+- `-install` on linux now runs `ldd --version` first and reports `libc` from its output (`musl` when the banner says musl, `glibc` for any other output), consulting the `/lib/ld-musl-*.so.*` loader glob only when `ldd` produced nothing, so a glibc host that also carries a musl loader marker now reports `glibc` instead of `musl`, matching reference build 3ef9370. ([#345](https://github.com/schubydoo/claustrum/pull/345))
+
 ## 1.11.0 (2026-09-09)
 
 [Compare with 1.10.0](https://github.com/schubydoo/claustrum/compare/v1.10.0...v1.11.0)
