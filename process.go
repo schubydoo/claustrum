@@ -620,12 +620,6 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 	met.spawns.Add(1)
 
-	// Record the spawned child in the orphan registry so a later daemon can reap it
-	// if this daemon exits leaving it behind (linux, run-shaped socket only; a no-op
-	// otherwise). Best-effort and non-destructive — it writes <runDir>/children/<pid>.json
-	// and never affects the spawn result.
-	m.recordChild(cmd.Process.Pid, command)
-
 	// Confine the child (and its descendants) so kill can tear down the whole
 	// tree. On Unix this is the process group from newSysProcAttr; on Windows a
 	// Job Object. A failure here is non-fatal — kill falls back to the parent.
@@ -666,6 +660,13 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 	m.procs[id] = p
 	m.mu.Unlock()
+
+	// Record the spawned child in the orphan registry (linux, run-shaped socket only;
+	// a no-op otherwise) so a later daemon can reap it if this daemon exits leaving it
+	// behind. Done AFTER the child is in m.procs, so a concurrent server.shutdown /
+	// killAll cannot miss it during this synchronous filesystem work. Best-effort and
+	// non-destructive: errors are logged, and it never affects the spawn result.
+	m.recordChild(cmd.Process.Pid, command)
 
 	// Now that the new session process is registered, evict any prior process of the
 	// same session (4534d86). Non-session spawns (empty key) skip this.
