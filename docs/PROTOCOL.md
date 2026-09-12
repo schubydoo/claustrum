@@ -1507,9 +1507,14 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
 The bound is a fixed 30 s, always applied. It is **not** the opt-in
 `-cli-probe-timeout` (D11), which bounds only the `-install` runnability probe and is
 off by default. Matching the reference, the mode unsets `CLAUDE_RPC_TOKEN` so the
-probed child never inherits it. Like the reference, it installs no SIGINT handler, so
-a Ctrl-C during the probe terminates it (exit 130, empty stdout). Byte-for-byte
-parity with `19f30c46`, no D-number.
+probed child never inherits it. The probe runs in its own process group. On Unix the
+fixed deadline group-kills the whole subtree, so a `--version` that forks a descendant
+cannot outlive the probe. On Windows the direct child is killed and `WaitDelay` bounds
+the mode, so a stray descendant is left to exit on its own. The mode installs no SIGINT
+handler. A Ctrl-C therefore terminates the claustrum process itself (exit 130, empty
+stdout). The probed CLI runs in its own process group, so a terminal Ctrl-C is not
+delivered to it, matching the reference's process-group model. Byte-for-byte parity
+with `19f30c46`, no D-number.
 
 ### Behavior shared by every mode
 

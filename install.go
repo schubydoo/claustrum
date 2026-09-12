@@ -551,6 +551,12 @@ const probeCLIKillGrace = 2 * time.Second
 // descendant (a wrapper shell, a helper) cannot outlive the probe. A plain
 // CommandContext would SIGKILL only the direct child and leak the rest — the
 // reparented-sleeper leak slowCLI's comment measured.
+//
+// A consequence of the own-group isolation: a terminal Ctrl-C signals only the
+// foreground group (the claustrum process), NOT this child, so an interrupted probe
+// leaves the CLI to the deadline or to exit on its own rather than dying with the
+// Ctrl-C. That is intentional parity — the reference likewise groups the child and
+// installs no SIGINT handler. Do NOT add a SIGINT reaper here: it would diverge.
 func probeCLIRunnable(path string) probeCLIVerdict {
 	ctx, cancel := context.WithTimeout(context.Background(), probeCLITimeout)
 	defer cancel()
