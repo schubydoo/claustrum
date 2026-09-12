@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -41,7 +43,10 @@ func TestSiblingDaemonAlive(t *testing.T) {
 	if err != nil {
 		t.Skipf("AF_UNIX listen unsupported here: %v", err)
 	}
-	want := filepath.Join("run", sib, "rpc.sock")
+	// The return value is a wire string (embedded in the skip message), so it uses
+	// forward slashes on every OS — path.Join, matching siblingDaemonAlive. A
+	// filepath.Join here would expect "run\\...\\rpc.sock" on Windows and mismatch.
+	want := path.Join("run", sib, "rpc.sock")
 	if got := siblingDaemonAlive(base, own); got != want {
 		t.Errorf("live sibling: got %q, want %q", got, want)
 	}
@@ -177,4 +182,112 @@ func TestSocketPluginsPrune(t *testing.T) {
 		cl.call(req(4, "plugins.bogus", map[string]any{})),
 	}
 	assertGolden(t, "socket_plugins_prune.golden.json", encodeGolden(t, got))
+}
+
+// TestPluginsPruneSweepsRealRoot drives the real sweep path that the /tmp-socket
+// harness cannot reach: a daemon whose socket is shaped run/<clientId>/rpc.sock,
+// so both the per-install and the shared legacy roots are swept. It seeds four
+// plugin hash dirs — one old (pruned), one young (kept), one live (kept because
+// its hash appears in a running child's argv even though its mtime is old), and
+// one old dir in the legacy root (prunedLegacy) — and asserts the classification.
+// A mutant that ignored the live set prunes the live dir; a mutant that pruned
+// nothing (treated every dir as young) leaves the old dir; a mutant that skipped the
+// legacy sweep leaves the legacy dir. No sibling daemon runs, so legacy is "swept".
+// This test seeds no .synced marker, so it does not exercise the max(dir, .synced)
+// last-used rule — TestPrunePluginRootClassification covers that.
+func TestPluginsPruneSweepsRealRoot(t *testing.T) {
+	// A short temp root, not t.TempDir(): the AF_UNIX socket path lives under it and
+	// must stay under the macOS sockaddr_un limit (~104 bytes).
+	base, err := os.MkdirTemp("", "cl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+
+	const clientID = "c0ffee01"
+	runDir := filepath.Join(base, "run", clientID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(runDir, "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Skipf("AF_UNIX listen unsupported here: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	perInstall := filepath.Join(base, "plugins", clientID)
+	legacyRoot := filepath.Join(base, "plugins")
+	old := time.Now().Add(-60 * 24 * time.Hour)
+	young := time.Now().Add(-1 * 24 * time.Hour)
+	mk := func(root, name string, mt time.Time) {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const (
+		liveHash  = "dddddddddddddddd" // old mtime but live -> kept
+		oldHash   = "aaaaaaaaaaaaaaaa" // old -> pruned
+		youngHash = "bbbbbbbbbbbbbbbb" // young -> kept
+		legacyOld = "cccccccccccccccc" // old, in legacy root -> prunedLegacy
+	)
+	mk(perInstall, liveHash, old)
+	mk(perInstall, oldHash, old)
+	mk(perInstall, youngHash, young)
+	mk(legacyRoot, legacyOld, old)
+
+	s := &server{ln: ln, procs: newTestProcManager(t)}
+	// Inject a running child whose argv references the live plugin dir. liveArgv
+	// reads only p.running and p.cmd.Args, so a never-started exec.Cmd is enough and
+	// is deterministic (no real process to race or reap). The command name carries
+	// no 16-hex run, so the live hash is the only one livePluginRefs can find.
+	s.procs.mu.Lock()
+	s.procs.procs["live"] = &managedProc{
+		id:      "live",
+		running: true,
+		cmd:     exec.Command("claude-cli", "--plugin-dir", filepath.Join(perInstall, liveHash)),
+	}
+	s.procs.mu.Unlock()
+
+	resp := s.pluginsPrune(&request{ID: 1, Params: json.RawMessage(`{"minAgeDays":30}`)})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error frame: %+v", resp.Error)
+	}
+	res, ok := resp.Result.(pruneResult)
+	if !ok {
+		t.Fatalf("result type = %T, want pruneResult", resp.Result)
+	}
+	if res.Root != perInstall {
+		t.Errorf("Root = %q, want %q", res.Root, perInstall)
+	}
+	if res.MinAgeDays != 30 {
+		t.Errorf("MinAgeDays = %d, want 30", res.MinAgeDays)
+	}
+	if res.Legacy != "swept" {
+		t.Errorf("Legacy = %q, want %q", res.Legacy, "swept")
+	}
+	if res.Live != 1 || res.Young != 1 || res.Kept != 0 || res.StaleArchives != 0 {
+		t.Errorf("counts live=%d young=%d kept=%d stale=%d, want live=1 young=1 kept=0 stale=0",
+			res.Live, res.Young, res.Kept, res.StaleArchives)
+	}
+	if !slices.Equal(res.Pruned, []string{oldHash}) {
+		t.Errorf("Pruned = %v, want %v", res.Pruned, []string{oldHash})
+	}
+	if !slices.Equal(res.PrunedLegacy, []string{legacyOld}) {
+		t.Errorf("PrunedLegacy = %v, want %v", res.PrunedLegacy, []string{legacyOld})
+	}
+	for _, survivor := range []string{filepath.Join(perInstall, liveHash), filepath.Join(perInstall, youngHash)} {
+		if _, err := os.Stat(survivor); err != nil {
+			t.Errorf("%s should survive: %v", survivor, err)
+		}
+	}
+	for _, gone := range []string{filepath.Join(perInstall, oldHash), filepath.Join(legacyRoot, legacyOld)} {
+		if _, err := os.Stat(gone); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed", gone)
+		}
+	}
 }
