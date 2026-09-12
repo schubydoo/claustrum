@@ -40,7 +40,7 @@ jobs:
           cache-dependency-path: docs/requirements.txt
       - name: install toolchain
         # --require-hashes: docs/requirements.txt is a fully hash-pinned lock
-        # (compiled from docs/requirements.in via pip-compile --generate-hashes),
+        # (compiled from docs/requirements.in via uv pip compile --generate-hashes),
         # so a tampered/substituted package on PyPI fails the install. Satisfies
         # Scorecard Pinned-Dependencies.
         run: pip install --require-hashes -r docs/requirements.txt
