@@ -65,9 +65,8 @@ it for an in-progress commit with `git commit --no-verify`.
   the `.in` and regenerate (Renovate does this automatically for version bumps):
 
   ```sh
-  pip install pip-tools
-  pip-compile --generate-hashes --strip-extras \
-    --output-file=docs/requirements.txt docs/requirements.in
+  pip install uv
+  uv pip compile --generate-hashes docs/requirements.in -o docs/requirements.txt
   ```
 - **Conventional Commits** — PR **titles** follow
   [Conventional Commits](https://www.conventionalcommits.org/)
