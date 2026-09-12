@@ -18,11 +18,15 @@ var capabilityMethods = []string{
 // inserted git.worktree_create.timeoutMs before external_root (a caller-supplied
 // per-request deadline on the worktree add + checkout), present on every OS, and
 // appended server.instance_id (the capabilities reply now carries a per-boot instanceId),
-// always last and on every OS. The array itself is always emitted.
+// always last and on every OS. 19f30c46 inserted git.worktree_create.existingBranch
+// after timeoutMs and before external_root (worktree_create can attach an
+// already-existing branch), present on every OS like timeoutMs. The array itself is
+// always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
 	"git.worktree_create.timeoutMs",
+	"git.worktree_create.existingBranch",
 }, externalRootCapabilityFeatures...), "server.instance_id")
 
 func (s *server) handleServer(c *conn, req *request) *response {

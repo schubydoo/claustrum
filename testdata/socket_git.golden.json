@@ -36,7 +36,8 @@
     "result": {
       "success": true,
       "path": "<DIR>/myrepo/.claude/worktrees/wt",
-      "sourceBranch": "main"
+      "sourceBranch": "main",
+      "branch": "wt"
     }
   },
   {

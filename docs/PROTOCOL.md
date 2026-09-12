@@ -498,7 +498,7 @@ surface and still prints the daemon's version.)
 | method | params | result |
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree.external_root","server.instance_id"]}` (`git.worktree.external_root` is omitted on Windows; `git.worktree_create.timeoutMs`, `instanceId`/`startedAt` are present on every OS) |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree.external_root","server.instance_id"]}` (`git.worktree.external_root` is omitted on Windows; `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `instanceId`/`startedAt` are present on every OS) |
 | `server.shutdown` | — | `{"ok":true}` — the daemon replies, then stops and the connection closes (delivery races the teardown, so the reply is best-effort on the wire; see below) |
 
 - **`server.version` was removed in `7d193f89`** — it now answers
@@ -513,10 +513,13 @@ surface and still prints the daemon's version.)
   stdin contract) landed first; `7d193f89` added `git.status.baseRepo` and
   `git.worktree.external_root`; `4534d86` inserted `git.worktree_create.timeoutMs`
   before `git.worktree.external_root` and appended `server.instance_id` (always
-  last, every OS). On unix `git.worktree.external_root` is present; **on Windows it
+  last, every OS); `19f30c46` inserted `git.worktree_create.existingBranch` after
+  `git.worktree_create.timeoutMs` (worktree_create can attach an already-existing
+  branch). On unix `git.worktree.external_root` is present; **on Windows it
   is omitted** — the reference gates the external-worktree capability off on Windows
   (measured against `7d193f89`) and drops the feature from its Windows capabilities
-  frame, so claustrum matches. `git.worktree_create.timeoutMs` is present on every OS.
+  frame, so claustrum matches. `git.worktree_create.timeoutMs` and
+  `git.worktree_create.existingBranch` are present on every OS.
 - **`server.shutdown` is not authenticated** — see [Authentication](#authentication).
 
 ### files.* (param: `path`)
@@ -706,10 +709,22 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   `signal: killed` (see D5 below).
 
 #### git.worktree_create
-`{baseRepo,branchName,worktreePath[,sourceBranch][,worktreeRoot][,timeoutMs]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>"}`
+`{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}`
 - The repo is **`baseRepo`**, not `path`. When `baseRepo` is absent, the daemon
   uses its cwd repo.
-- Missing `branchName` → `-32602 branchName is required`.
+- Missing `branchName` → `-32602 branchName is required` (required even when
+  `existingBranch` is given).
+- **`branch`** (added `19f30c46`) is the branch the worktree checks out. It follows
+  `sourceBranch` on the wire and is present on every success — the created
+  `branchName`, or the attached `existingBranch`. Absent on failure.
+- **`existingBranch`** (added `19f30c46`, the `git.worktree_create.existingBranch`
+  capability) attaches the worktree to an already-existing local branch instead of
+  creating one. When `show-ref --verify refs/heads/<existingBranch>` resolves, the
+  add uses that branch as the commit-ish (`worktree add --no-checkout <path>
+  <existingBranch>`, no `-b`) and `branch` is `<existingBranch>`. When `existingBranch`
+  is empty or names no branch, the `-b <branchName>` new-branch path runs and `branch`
+  is `<branchName>` — a miss falls back silently rather than erroring. Measured
+  against `19f30c46`.
 - The resolved repo is not git → `{success:false,error:"not a git
   repository",errorCode:"not_a_repo"}`. The daemon checks this before the add.
 - **By default (no `worktreeRoot`), `7d193f89` confines the worktree to inside the
