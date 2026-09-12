@@ -944,6 +944,17 @@ id-less stream notifications, and **buffers** them for a later replay.
   reference does. Darwin links the same subsystem (with a different, inferred
   start-time source) and Windows links a trampoline shim not yet analyzed; both are
   follow-up slices.
+- **Orphan-child registry record (`19f30c46` parity, linux).** Under that same
+  `run/<clientId>/` socket, each spawned child (pid ≥ 2 with a readable start-time) is
+  recorded to `<runDir>/children/<pid>.json`, written atomically (a temp file renamed
+  into place). A later daemon reads these to reap children a since-exited daemon left
+  behind. The record is an ordered JSON object:
+  `{"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<ticks>","argv0":"<child argv0>","start":"<ticks>","at":<epoch-ms>}`.
+  The field ORDER and the string-vs-number typing (`daemonStart` and `start` are
+  clock-tick STRINGS; `pid`, `daemonPid` and `at` are numbers) are the on-disk
+  contract, measured byte-for-byte against `19f30c46`. Off-wire — it adds no JSON-RPC
+  frame. Reaping the recorded orphans, and the darwin/windows identity sources, are
+  follow-up slices.
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`

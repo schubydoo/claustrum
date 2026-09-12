@@ -93,6 +93,11 @@ children it spawns.
   darwin (a different, inferred start-time source) and Windows (a linked trampoline
   shim, not yet analyzed) are follow-ups. Off-wire — see
   [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+- Under that same socket the daemon also records each spawned child to
+  `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go`), an
+  ordered JSON record a later daemon reads to reap children a since-exited daemon left
+  behind. Written atomically, linux-only for now. Reaping the records is a follow-up.
+  Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a
   separate goroutine. A slow login shell therefore does not delay the moment the
   socket becomes available.
