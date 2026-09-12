@@ -152,6 +152,15 @@ func runHelper(mode string, args []string) int {
 		fmt.Print(wd + "\n")
 	case "printenv": // print <name>=<value> for args[0] ("" when absent)
 		fmt.Print(args[0] + "=" + os.Getenv(args[0]) + "\n")
+	case "sigpipe":
+		// Behavior fixture for TestIgnoreSigpipeSurvivesClosedStdout: ignore SIGPIPE,
+		// wait for the parent's go-ahead (sent only after it has closed the stdout read
+		// end), then write to stdout. With the ignore in place the write fails with
+		// EPIPE and we exit 0; without it SIGPIPE kills us (exit 141).
+		ignoreSigpipeDefault()
+		var b [1]byte
+		_, _ = os.Stdin.Read(b[:])
+		_, _ = os.Stdout.Write([]byte("to-a-closed-pipe"))
 	case "stdout3": // integration fixture: three stdout lines, exit 0
 		fmt.Print("l0\nl1\nl2\n")
 	case "stderr-exit5": // integration fixture: one stderr line, exit 5
