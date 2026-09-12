@@ -320,3 +320,33 @@ func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
 		t.Errorf("main with no resolvable home: exited=%v code=%d, want exited=true code=1", exited, code)
 	}
 }
+
+// TestSigpipeIgnoredForStdoutModes pins that -probe-cli and -install ignore SIGPIPE
+// (both write structured output to stdout, fd 1, where Go's default terminates the
+// process on a closed-pipe write), while -version does not — matching reference build
+// 19f30c46, which sets it in exactly those two modes. The seam counts the calls
+// without touching the test process's real signal disposition.
+func TestSigpipeIgnoredForStdoutModes(t *testing.T) {
+	old := ignoreSigpipe
+	t.Cleanup(func() { ignoreSigpipe = old })
+	var calls int
+	ignoreSigpipe = func() { calls++ }
+
+	calls = 0
+	runMain(t, "-probe-cli", filepath.Join(t.TempDir(), "nope"))
+	if calls != 1 {
+		t.Errorf("-probe-cli: ignoreSigpipe called %d times, want 1", calls)
+	}
+
+	calls = 0
+	runMain(t, "-install", "-cli-dir", t.TempDir(), "-cli-version", "nope")
+	if calls != 1 {
+		t.Errorf("-install: ignoreSigpipe called %d times, want 1", calls)
+	}
+
+	calls = 0
+	runMain(t, "-version")
+	if calls != 0 {
+		t.Errorf("-version: ignoreSigpipe called %d times, want 0 (only the stdout-protocol modes ignore SIGPIPE)", calls)
+	}
+}
