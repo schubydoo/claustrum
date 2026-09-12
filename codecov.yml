@@ -163,6 +163,13 @@ component_management:
         # 4534d86 session supersede: the argv rule that keys a spawn to a CLI session, the
         # per-key spawn lock, and the eviction of the prior same-session process.
         - sessionsupersede.go
+        # 19f30c46 exec-child trampoline: process.spawn re-execs the daemon to stamp a
+        # spawned child's identity (CLAUDE_SSH_CHILD/CLAUDE_SSH_RUN_DIR) — a stable,
+        # pid-reuse-safe marker in the child's environment. Run-dir derivation is
+        # cross-platform; the trampoline is linux-only (a no-op elsewhere for now).
+        - execchild.go
+        - execchild_linux.go
+        - execchild_other.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:

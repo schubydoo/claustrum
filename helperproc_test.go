@@ -19,6 +19,11 @@ import (
 // runs on the Windows CI leg, and keeps the streamed bytes byte-identical
 // across OSes (no CRLF translation, no cmd.exe quoting).
 func TestMain(m *testing.M) {
+	// Intercept the exec-child trampoline first, exactly as main does: a spawn under
+	// a run/<clientId>/ socket re-execs this test binary as `--exec-child …`, which
+	// must run the trampoline (stamp the child identity, restore held env, exec the
+	// real target) rather than the suite. A no-op on non-linux and for any other argv.
+	maybeRunExecChild()
 	mode := os.Getenv("CLAUSTRUM_TEST_HELPER")
 
 	// A re-exec'd daemon child must never run the suite. runServe's parent half

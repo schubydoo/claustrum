@@ -32,7 +32,15 @@ func newRunningServer(t *testing.T) (*server, string) {
 		t.Fatalf("tempdir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "s.sock")
+	return newRunningServerAt(t, filepath.Join(dir, "s.sock"))
+}
+
+// newRunningServerAt is newRunningServer on a caller-chosen socket path, so a test
+// can boot the daemon on a run/<clientId>/rpc.sock socket (which enables the
+// exec-child trampoline via procs.runDir) rather than the default bare socket. The
+// caller owns the socket's directory.
+func newRunningServerAt(t *testing.T, sock string) (*server, string) {
+	t.Helper()
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatalf("listen %s: %v", sock, err)
@@ -46,6 +54,9 @@ func newRunningServer(t *testing.T) (*server, string) {
 		instanceID: testInstanceID,
 		startedAt:  testStartedAt,
 	}
+	// Mirror production (newServerOnSocket): the run dir is derived from the socket,
+	// so a run/<clientId>/rpc.sock boot trampolines spawns and a bare socket does not.
+	s.procs.runDir = execChildRunDir(sock)
 	go func() {
 		for {
 			nc, err := ln.Accept()

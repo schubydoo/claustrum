@@ -209,6 +209,12 @@ type procManager struct {
 	// not grow unbounded. Guarded by spawnMu. (4534d86 lockSessionSpawn.)
 	spawnMu    sync.Mutex
 	spawnLocks map[string]*sessionSpawnLock
+
+	// runDir is the daemon's run/<clientId> dir (CLAUDE_SSH_RUN_DIR), or "" when the
+	// socket is not run-shaped. Set once at daemon startup (newServerOnSocket). When
+	// non-empty, spawn launches children through the exec-child trampoline; when
+	// empty (a bare or test socket) it spawns them directly. Read-only after startup.
+	runDir string
 }
 
 // sessionSpawnLock is one per-session-key mutex plus a reference count, so the
@@ -539,6 +545,12 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	}
 	cmd.Env = buildEnv(env)
 	cmd.SysProcAttr = newSysProcAttr()
+	// Under a run/<clientId>/ socket, launch through the exec-child trampoline so the
+	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux;
+	// a no-op otherwise, and a no-op for a command that would fail at Start, so its
+	// error frame is unchanged). Applied after buildEnv/SysProcAttr so it can rewrite
+	// the resolved argv and hold the Go-runtime env.
+	execErrR, execErrW := wrapCmdWithTrampoline(cmd, m.runDir)
 
 	// Deliberately os.Pipe rather than cmd.StdoutPipe/StderrPipe. cmd.Wait closes
 	// the pipes it creates itself, which forces the "drain fully, then Wait"
@@ -564,11 +576,30 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	if err := cmd.Start(); err != nil {
 		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 		closeAll(stdoutR, stdoutW, stderrR, stderrW)
+		if execErrR != nil {
+			_ = execErrR.Close()
+			_ = execErrW.Close()
+		}
 		return nil, err
 	}
 	// The child holds its own copies now. Drop ours, or the read ends never see
 	// EOF even after every process in the tree has exited.
 	closeAll(stdoutW, stderrW)
+	// When wrapped by the exec-child trampoline, cmd.Start's own exec-error pipe only
+	// saw the trampoline exec; the target exec happens in the trampoline. Read its
+	// outcome here: any bytes are the target's exec failure — surface it exactly as a
+	// direct Start failure (a missing/non-executable target then yields the same
+	// -32603 fork/exec frame, not a spurious success) — while a clean EOF means the
+	// target is running.
+	if execErrR != nil {
+		_ = execErrW.Close() // drop the parent's write end so the read below terminates
+		if execErr := readExecChildError(execErrR); execErr != nil {
+			logErrorf("[process.Manager] Failed to start process %s: %v", id, execErr)
+			_ = cmd.Wait() // reap the trampoline, which reported the error and exited
+			closeAll(stdoutR, stderrR)
+			return nil, execErr
+		}
+	}
 	// Stamp the start time the instant the child exists, so the CT-1 startTime is
 	// the process's birth moment (within ms), not a later bookkeeping point.
 	startTime := float64(time.Now().UnixNano()) / 1e9
