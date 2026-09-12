@@ -551,6 +551,14 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// error frame is unchanged). Applied after buildEnv/SysProcAttr so it can rewrite
 	// the resolved argv and hold the Go-runtime env.
 	execErrR, execErrW := wrapCmdWithTrampoline(cmd, m.runDir)
+	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
+	// below; a no-op (both ends nil) when the spawn was not trampolined.
+	closeExecErr := func() {
+		if execErrR != nil {
+			_ = execErrR.Close()
+			_ = execErrW.Close()
+		}
+	}
 
 	// Deliberately os.Pipe rather than cmd.StdoutPipe/StderrPipe. cmd.Wait closes
 	// the pipes it creates itself, which forces the "drain fully, then Wait"
@@ -560,26 +568,26 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// process exit and leaves these read ends alone, so their lifetime is ours.
 	stdoutR, stdoutW, err := osPipe()
 	if err != nil {
+		closeExecErr()
 		return nil, err
 	}
 	stderrR, stderrW, err := osPipe()
 	if err != nil {
 		closeAll(stdoutR, stdoutW)
+		closeExecErr()
 		return nil, err
 	}
 	cmd.Stdout, cmd.Stderr = stdoutW, stderrW
 	stdin, err := cmdStdinPipe(cmd)
 	if err != nil {
 		closeAll(stdoutR, stdoutW, stderrR, stderrW)
+		closeExecErr()
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
 		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 		closeAll(stdoutR, stdoutW, stderrR, stderrW)
-		if execErrR != nil {
-			_ = execErrR.Close()
-			_ = execErrW.Close()
-		}
+		closeExecErr()
 		return nil, err
 	}
 	// The child holds its own copies now. Drop ours, or the read ends never see

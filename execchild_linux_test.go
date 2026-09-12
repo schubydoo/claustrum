@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -67,6 +68,36 @@ func TestHoldRestoreGoEnvRoundTrip(t *testing.T) {
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("round-trip mismatch:\n got=%v\nwant=%v", got, want)
+	}
+}
+
+// TestRestoreHeldEnvIgnoresStrayPrefix proves restore is symmetric with holdGoEnv: it
+// un-prefixes ONLY the known Go-runtime held vars, so a CLAUDE_SSH_HELD_<other> a
+// process.spawn caller put in the env is passed through untouched and cannot smuggle
+// an arbitrary <other>=<val> into the target, nor override the target's own <other>
+// (greptile P1). The real held Go var is still restored, and its held entry consumed.
+func TestRestoreHeldEnvIgnoresStrayPrefix(t *testing.T) {
+	in := []string{
+		heldEnvPrefix + "GODEBUG=x=1", // a real held Go var -> restored to GODEBUG=x=1
+		heldEnvPrefix + "FOO=evil",    // NOT a held var -> must NOT become FOO=evil
+		"FOO=legit",
+		"PATH=/usr/bin",
+	}
+	got := restoreHeldEnv(in)
+	if !slices.Contains(got, "GODEBUG=x=1") {
+		t.Errorf("held Go var GODEBUG not restored: %v", got)
+	}
+	if slices.Contains(got, "FOO=evil") {
+		t.Errorf("stray %sFOO was un-prefixed into FOO=evil (env injection): %v", heldEnvPrefix, got)
+	}
+	if !slices.Contains(got, "FOO=legit") {
+		t.Errorf("caller's own FOO=legit must survive, not be overridden: %v", got)
+	}
+	if !slices.Contains(got, heldEnvPrefix+"FOO=evil") {
+		t.Errorf("stray held-prefix entry should pass through untouched: %v", got)
+	}
+	if slices.Contains(got, heldEnvPrefix+"GODEBUG=x=1") {
+		t.Errorf("recognized held entry should be consumed, not left as residue: %v", got)
 	}
 }
 
@@ -273,7 +304,30 @@ func TestWrapCmdWithTrampoline(t *testing.T) {
 		t.Error("held GODEBUG missing")
 	}
 	if !slices.Contains(cmd.Env, envRunDir+"="+runDir) {
-		t.Errorf("%s not appended: %v", envRunDir, cmd.Env)
+		t.Errorf("%s not set: %v", envRunDir, cmd.Env)
+	}
+
+	// A pre-existing CLAUDE_SSH_RUN_DIR (caller-supplied or inherited) is REPLACED with
+	// the daemon's authoritative run dir, not duplicated — else a getenv could resolve
+	// the child's run dir to the stale value (greptile P1).
+	dup := exec.Command("/bin/sh", "-c", "true")
+	dup.Env = []string{envRunDir + "=/caller/bogus", "PATH=/usr/bin"}
+	dr, dw := wrapCmdWithTrampoline(dup, runDir)
+	if dr == nil || dw == nil {
+		t.Fatal("a resolved command under a run dir must be wrapped")
+	}
+	t.Cleanup(func() { _ = dr.Close(); _ = dw.Close() })
+	n := 0
+	for _, e := range dup.Env {
+		if strings.HasPrefix(e, envRunDir+"=") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%s appears %d times, want exactly 1 (authoritative, replaced): %v", envRunDir, n, dup.Env)
+	}
+	if !slices.Contains(dup.Env, envRunDir+"="+runDir) || slices.Contains(dup.Env, envRunDir+"=/caller/bogus") {
+		t.Errorf("%s not replaced with the daemon's run dir: %v", envRunDir, dup.Env)
 	}
 
 	// A bare name exec.Command could not resolve (cmd.Err set) -> untouched, so Start
@@ -333,5 +387,39 @@ func TestChildIdentity(t *testing.T) {
 	}
 	if ownStartTicks() <= 0 {
 		t.Error("ownStartTicks() should be > 0")
+	}
+}
+
+// TestSpawnClosesTrampolinePipeOnConstructionFailure proves spawn closes the
+// trampoline's exec-error pipe when a later pre-Start step fails (greptile P2). Under
+// a run dir a resolved command is wrapped, which opens that pipe; if the stdout pipe
+// then fails, both ends must be closed, not leaked. Linux-only: only here does
+// wrapCmdWithTrampoline open the pipe. The assertion is on the FILES (a second Close
+// reports ErrClosed), matching TestSpawnClosesPipesOnConstructionFailure.
+func TestSpawnClosesTrampolinePipeOnConstructionFailure(t *testing.T) {
+	oldPipe, oldErrPipe := osPipe, execChildErrPipe
+	t.Cleanup(func() { osPipe, execChildErrPipe = oldPipe, oldErrPipe })
+
+	var errR, errW *os.File
+	execChildErrPipe = func() (*os.File, *os.File, error) {
+		r, w, err := oldErrPipe()
+		errR, errW = r, w
+		return r, w, err
+	}
+	// Fail the first stdout pipe, after the exec-error pipe was already opened.
+	osPipe = func() (*os.File, *os.File, error) {
+		return nil, nil, errors.New("pipe: too many open files")
+	}
+	m := newTestProcManager(t)
+	m.runDir = "/x/run/c0ffee01" // run-shaped -> a resolved command is trampolined
+	if _, err := m.spawn(nil, "P", "/bin/sh", []string{"-c", "true"}, "", nil); err == nil {
+		t.Fatal("spawn succeeded despite a stdout pipe failure")
+	}
+	if errR == nil || errW == nil {
+		t.Fatal("the trampoline exec-error pipe was never opened; the spawn was not wrapped")
+	}
+	closed := func(f *os.File) bool { return errors.Is(f.Close(), os.ErrClosed) }
+	if !closed(errR) || !closed(errW) {
+		t.Error("the trampoline exec-error pipe was left open after a pre-Start failure (fd leak)")
 	}
 }

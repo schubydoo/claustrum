@@ -57,6 +57,11 @@ var heldGoRuntimeEnv = []string{"GODEBUG", "GOGC", "GOMAXPROCS", "GOMEMLIMIT", "
 // overrides this to exercise runExecChild in-process.
 var execChildExec = syscall.Exec
 
+// execChildErrPipe is os.Pipe behind a seam, so a test can force the exec-error pipe
+// creation and capture its ends to prove spawn closes them when a later pre-Start step
+// fails (the descriptor-leak guard, same idiom as osPipe in process.go).
+var execChildErrPipe = os.Pipe
+
 // maybeRunExecChild runs the trampoline when invoked as `<self> --exec-child ...`
 // and never returns in that case. It is called at the very top of main, before flag
 // parsing, matching the reference (which intercepts the exact "--exec-child" arg
@@ -111,7 +116,7 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 	if runDir == "" || cmd.Err != nil {
 		return nil, nil
 	}
-	r, w, err := os.Pipe()
+	r, w, err := execChildErrPipe()
 	if err != nil {
 		return nil, nil // fall back to a direct spawn; the child just lacks the markers
 	}
@@ -120,7 +125,11 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 	cmd.Args = append([]string{self, execChildFlag, cmd.Path}, cmd.Args...)
 	cmd.Path = self
 	cmd.Env = holdGoEnv(cmd.Env)
-	cmd.Env = append(cmd.Env, envRunDir+"="+runDir)
+	// Authoritative: the daemon's run dir must win, so replace any existing
+	// CLAUDE_SSH_RUN_DIR (caller-supplied or inherited) rather than appending a
+	// second entry a getenv could resolve to the stale value — same as the
+	// CLAUDE_SSH_CHILD marker below.
+	cmd.Env = replaceOrAppendEnv(cmd.Env, envRunDir, runDir)
 	return r, w
 }
 
@@ -141,19 +150,26 @@ func holdGoEnv(env []string) []string {
 	return env
 }
 
-// restoreHeldEnv is the inverse of holdGoEnv: every CLAUDE_SSH_HELD_<name>=<val> is
-// un-prefixed back to <name>=<val> (overriding any bare <name>), and the held
-// entries are dropped.
+// restoreHeldEnv is the inverse of holdGoEnv: for each of the SAME Go-runtime vars
+// holdGoEnv stashes, CLAUDE_SSH_HELD_<name>=<val> is un-prefixed back to <name>=<val>
+// (overriding any bare <name>) and the held entry is dropped. It recognizes ONLY
+// those known names, symmetric with holdGoEnv — a stray CLAUDE_SSH_HELD_<other> (one a
+// process.spawn caller put in the env) is not a held var, so it is passed through
+// untouched rather than un-prefixed, and cannot smuggle an arbitrary <other>=<val>
+// into the target.
 func restoreHeldEnv(env []string) []string {
+	heldKey := make(map[string]string, len(heldGoRuntimeEnv)) // "CLAUDE_SSH_HELD_<name>" -> "<name>"
+	for _, name := range heldGoRuntimeEnv {
+		heldKey[heldEnvPrefix+name] = name
+	}
 	out := make([]string, 0, len(env))
 	var held [][2]string
 	for _, e := range env {
-		if strings.HasPrefix(e, heldEnvPrefix) {
-			if kv := e[len(heldEnvPrefix):]; strings.IndexByte(kv, '=') > 0 {
-				i := strings.IndexByte(kv, '=')
-				held = append(held, [2]string{kv[:i], kv[i+1:]})
+		if i := strings.IndexByte(e, '='); i > 0 {
+			if name, ok := heldKey[e[:i]]; ok {
+				held = append(held, [2]string{name, e[i+1:]})
+				continue
 			}
-			continue
 		}
 		out = append(out, e)
 	}
