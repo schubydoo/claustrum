@@ -183,6 +183,11 @@ component_management:
         - bridge.go
         - main.go
         - config.go
+        # 19f30c46: -probe-cli and -install ignore SIGPIPE so a closed stdout does not
+        # kill them mid-write (fd 1). OS-split: signal.Ignore on unix, a no-op on Windows.
+        - ignorepipe.go
+        - ignorepipe_unix.go
+        - ignorepipe_windows.go
         # Declaration-only (two generated consts, no statements), so Codecov
         # never reports it and its absence could not show up as a coverage gap.
         # Listed anyway: main.go's -version reads it, and the rule is that every

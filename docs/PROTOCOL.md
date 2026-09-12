@@ -1544,8 +1544,10 @@ cannot outlive the probe. On Windows the direct child is killed and `WaitDelay` 
 the mode, so a stray descendant is left to exit on its own. The mode installs no SIGINT
 handler. A Ctrl-C therefore terminates the claustrum process itself (exit 130, empty
 stdout). The probed CLI runs in its own process group, so a terminal Ctrl-C is not
-delivered to it, matching the reference's process-group model. Byte-for-byte parity
-with `19f30c46`, no D-number.
+delivered to it, matching the reference's process-group model. The mode ignores SIGPIPE
+(as does `-install`), so a stdout pipe the caller closes mid-write fails the write with
+EPIPE instead of terminating the process — the reference ignores SIGPIPE in these two
+stdout-writing modes. Byte-for-byte parity with `19f30c46`, no D-number.
 
 ### Behavior shared by every mode
 

@@ -191,6 +191,10 @@ func main() {
 		// probed child never inherits it (measured: the reference strips it). No
 		// SIGINT handler is installed: the reference's -probe-cli is terminated by
 		// SIGINT (exit 130, empty stdout, measured), which is Go's default here.
+		// Ignore SIGPIPE so a closed stdout does not kill the probe mid-write (the
+		// token goes to fd 1, which Go would otherwise let SIGPIPE terminate);
+		// matching the reference, which ignores it in this mode.
+		ignoreSigpipe()
 		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
 		writeProbeCLIResult(os.Stdout, probeCLIRunnable(*probeCLI))
 		return
@@ -215,6 +219,10 @@ func main() {
 
 	switch {
 	case *install:
+		// Ignore SIGPIPE so a closed stdout does not kill -install mid-write while it
+		// prints its progress/result to fd 1; matching the reference, which ignores it
+		// in this mode.
+		ignoreSigpipe()
 		// -install only: the cap governs the decompress and download reads, which
 		// no other mode performs. Set before runInstall because the value is read
 		// deep in those helpers, not carried through installOpts.
