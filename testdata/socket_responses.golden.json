@@ -53,6 +53,7 @@
         "process.stdin.offset",
         "git.status.baseRepo",
         "git.worktree_create.timeoutMs",
+        "git.worktree_create.existingBranch",
         "git.worktree.external_root",
         "server.instance_id"
       ]

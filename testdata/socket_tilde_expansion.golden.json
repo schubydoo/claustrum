@@ -97,7 +97,8 @@
     "result": {
       "success": true,
       "path": "<DIR>/repo/.claude/worktrees/wt",
-      "sourceBranch": "main"
+      "sourceBranch": "main",
+      "branch": "wt"
     }
   },
   {
@@ -198,7 +199,8 @@
     "result": {
       "success": true,
       "path": "<DIR>/repo/.claude/worktrees/wt2",
-      "sourceBranch": "main"
+      "sourceBranch": "main",
+      "branch": "wt2"
     }
   },
   {
@@ -207,7 +209,8 @@
     "result": {
       "success": true,
       "path": "<DIR>/repo/.claude/worktrees/wt3",
-      "sourceBranch": "main"
+      "sourceBranch": "main",
+      "branch": "wt3"
     }
   },
   {
