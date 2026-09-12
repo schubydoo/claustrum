@@ -515,6 +515,87 @@ func isRunnable(path string) bool {
 	return exec.CommandContext(ctx, path, "--version").Run() == nil
 }
 
+// probeCLIVerdict classifies the outcome of the -probe-cli bounded runnability
+// probe (reference build 19f30c46). The reference's -probe-cli mode reports exactly
+// these three states.
+type probeCLIVerdict int
+
+const (
+	probeCLIRuns probeCLIVerdict = iota // `<path> --version` exited 0 within the deadline
+	probeCLIHung                        // the deadline fired and the process had to be killed
+	probeCLIBad                         // missing, failed to start, or exited non-zero
+)
+
+// probeCLITimeout is the fixed wall-clock bound the -probe-cli mode puts on the
+// `<cli> --version` probe (reference build 19f30c46: 30s). It is deliberately NOT
+// the opt-in -cli-probe-timeout (D11) divergence: -probe-cli is a standalone mode
+// Claude Desktop drives to classify a CLI binary, and the reference always bounds it
+// at 30s. It is a var, not a const, only so tests can shrink it (same idiom as
+// stdinQueueCap in process.go).
+var probeCLITimeout = 30 * time.Second
+
+// probeCLIKillGrace is the WaitDelay the -probe-cli mode puts on the probe. Once the
+// deadline tears down the process group, the runtime waits at most this long for the
+// command's I/O to drain before it force-closes, so a descendant that inherited the
+// probe's stdout cannot keep the mode blocked past it. Fixed, like probeCLITimeout.
+const probeCLIKillGrace = 2 * time.Second
+
+// probeCLIRunnable runs `<path> --version` under probeCLITimeout and classifies the
+// outcome the way the reference's -probe-cli mode does: it exited 0 (runs), the
+// deadline had to kill it (hung), or it is missing / failed to start / exited
+// non-zero (bad). Unlike isRunnable, -probe-cli always bounds the probe, so this
+// always creates the context.
+//
+// The probe runs in its OWN process group (newSysProcAttr) and the deadline tears
+// down the WHOLE group, not just the direct child, so a `--version` that forks a
+// descendant (a wrapper shell, a helper) cannot outlive the probe. A plain
+// CommandContext would SIGKILL only the direct child and leak the rest — the
+// reparented-sleeper leak slowCLI's comment measured.
+//
+// A consequence of the own-group isolation: a terminal Ctrl-C signals only the
+// foreground group (the claustrum process), NOT this child, so an interrupted probe
+// leaves the CLI to the deadline or to exit on its own rather than dying with the
+// Ctrl-C. That is intentional parity — the reference likewise groups the child and
+// installs no SIGINT handler. Do NOT add a SIGINT reaper here: it would diverge.
+func probeCLIRunnable(path string) probeCLIVerdict {
+	ctx, cancel := context.WithTimeout(context.Background(), probeCLITimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd.SysProcAttr = newSysProcAttr()
+	cmd.Cancel = func() error {
+		// Deadline fired: SIGKILL the child's whole process group (kill(-pgid) on
+		// unix; a no-op reap on Windows, where the direct kill below plus WaitDelay
+		// bound it), then kill the direct child so it dies at once on every OS.
+		reapProcessGroup(cmd.Process)
+		_ = cmd.Process.Kill()
+		return nil
+	}
+	cmd.WaitDelay = probeCLIKillGrace
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return probeCLIHung
+		}
+		return probeCLIBad
+	}
+	return probeCLIRuns
+}
+
+// writeProbeCLIResult writes the -probe-cli mode's stdout for a verdict: nothing
+// when the CLI runs, "__CLI_HUNG__\n" when the deadline killed it, "__CLI_BAD__\n"
+// when it is missing or does not run (reference build 19f30c46: the reference emits
+// the token followed by a single trailing newline, and emits nothing at all on
+// success — measured byte-for-byte). The mode always exits 0 regardless.
+func writeProbeCLIResult(w io.Writer, v probeCLIVerdict) {
+	switch v {
+	case probeCLIHung:
+		fmt.Fprintln(w, "__CLI_HUNG__")
+	case probeCLIBad:
+		fmt.Fprintln(w, "__CLI_BAD__")
+	case probeCLIRuns:
+		// The CLI ran: print nothing.
+	}
+}
+
 // maxCLIBytes caps two install-path reads: the decompressed size written by
 // zstdDecompress, and the downloaded body in fetchToFile. A crafted .zst can be
 // tiny compressed and expand to fill the remote disk; the cap bounds that.

@@ -305,13 +305,17 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 	}
 }
 
-// main resolves the home directory before dispatching any mode and exits 1 when it
-// cannot. os.UserHomeDir reads HOME on Unix and USERPROFILE on Windows; clearing
-// both makes it fail on every CI leg.
+// main resolves the home directory for the modes that need it (install/serve/bridge/
+// stop and the no-mode error path) and exits 1 when it cannot. -version and
+// -probe-cli dispatch BEFORE home resolution and are unaffected — see
+// TestProbeCLIDispatchSurvivesUnresolvableHome. os.UserHomeDir reads HOME on Unix and
+// USERPROFILE on Windows; clearing both makes it fail on every CI leg. A bare
+// invocation reaches the home resolution before the no-mode error, so its osExit(1)
+// fires first.
 func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
-	code, exited := runMain(t, "-version")
+	code, exited := runMain(t)
 	if !exited || code != 1 {
 		t.Errorf("main with no resolvable home: exited=%v code=%d, want exited=true code=1", exited, code)
 	}

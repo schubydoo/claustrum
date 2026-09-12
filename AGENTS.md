@@ -43,7 +43,8 @@ frames.** The wire surface *is* the product.
 ## Architecture
 
 One binary; a flag selects the mode (`main.go`): `-serve`, `-bridge`, `-stop`,
-`-version`, `-install`.
+`-version`, `-install`, `-probe-cli` (`19f30c46` added the one-shot `-probe-cli`
+CLI-runnability probe).
 
 | File | Role |
 |------|------|
