@@ -30,8 +30,8 @@ The daemon is one binary. A flag selects the mode:
 - **`-stop`** / **`-version`** — `-stop` sends `server.shutdown`. `-version`
   reports the build.
 
-The daemon supplies **18 methods** across the `server.*`, `files.*`, `git.*`,
-and `process.*` namespaces. Auth is in-band per request. Spawned processes
+The daemon supplies **19 methods** across the `server.*`, `files.*`, `git.*`,
+`process.*`, and `plugins.*` namespaces. Auth is in-band per request. Spawned processes
 stream base64 stdout and stderr frames. A client that connects late, or that
 connects again, can replay those frames with `reattach`.
 

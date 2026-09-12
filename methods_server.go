@@ -5,6 +5,8 @@ var capabilityMethods = []string{
 	"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 	"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 	"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
+	// plugins.prune (19f30c46) is appended last, taking the method count to 19.
+	"plugins.prune",
 }
 
 // capabilityFeatures advertises optional protocol extensions, in the reference's

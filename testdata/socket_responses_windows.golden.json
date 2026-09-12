@@ -45,7 +45,8 @@
         "process.stdin",
         "process.kill",
         "process.killAndWait",
-        "process.reattach"
+        "process.reattach",
+        "plugins.prune"
       ],
       "instanceId": "<IID>",
       "startedAt": "<T>",

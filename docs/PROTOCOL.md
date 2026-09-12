@@ -485,20 +485,22 @@ server.ping  server.capabilities  server.shutdown
 files.list   files.validate  files.stat  files.read  files.extract_tar
 git.info     git.status      git.list_branches  git.worktree_create  git.worktree_remove
 process.spawn  process.stdin  process.kill  process.killAndWait  process.reattach
+plugins.prune
 ```
 
 Reference `7c2f88d` added `process.killAndWait` between `process.kill` and
 `process.reattach` (19 methods). `7d193f89` then removed `server.version`,
 bringing the set to 18: calling `server.version` now answers
 `-32601 "Unknown method: server.version"`. (The `-version` CLI flag is a separate
-surface and still prints the daemon's version.)
+surface and still prints the daemon's version.) `19f30c46` appended `plugins.prune`
+last, bringing the set back to 19 — the only member of the `plugins.*` namespace.
 
 ### server.*
 
 | method | params | result |
 |---|---|---|
 | `server.ping` | — | `{"pong":true}` |
-| `server.capabilities` | — | `{"version":"<id>","methods":[…18…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree.external_root","server.instance_id"]}` (`git.worktree.external_root` is omitted on Windows; `git.worktree_create.timeoutMs`, `instanceId`/`startedAt` are present on every OS) |
+| `server.capabilities` | — | `{"version":"<id>","methods":[…19…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree.external_root","server.instance_id"]}` (`plugins.prune` is the 19th method, appended last on every OS; `git.worktree.external_root` is omitted on Windows; `git.worktree_create.timeoutMs`, `instanceId`/`startedAt` are present on every OS) |
 | `server.shutdown` | — | `{"ok":true}` — the daemon replies, then stops and the connection closes (delivery races the teardown, so the reply is best-effort on the wire; see below) |
 
 - **`server.version` was removed in `7d193f89`** — it now answers
@@ -1033,6 +1035,46 @@ reports the outcome as a *result*. An unknown id is not an error:
   reports the same pid and startTime the spawn reported, so a client can confirm
   that it reattached to the same process and not to a pid-reuse. The daemon omits
   both fields otherwise.
+
+### plugins.* (added `19f30c46`)
+
+#### plugins.prune
+`{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"absent|swept","minAgeDays":<clamped>}`
+
+Prunes cached CLI plugin directories the daemon keeps under its socket's
+run-directory layout. The daemon socket is `<X>/run/<clientId>/rpc.sock`; the
+per-install root is `<X>/plugins/<clientId>` (results in `pruned`) and the shared
+legacy root is `<X>/plugins` (results in `prunedLegacy`).
+
+- A plugin directory is named by its content hash (16 lowercase hex). Its
+  **last-used** time is the newer of the directory's own mtime and its `.synced`
+  marker's mtime (the `manifest.json` mtime does not count). It is kept when it is
+  **live** — its hash appears in a running child's argv, because the agent CLI is
+  launched with `--plugin-dir <…>/<hash>` (`live` count) — or **young**, last-used
+  within `minAgeDays` (`young` count); otherwise it is removed and its hash is
+  appended to `pruned` or `prunedLegacy`, each sorted.
+- **`minAgeDays`** is the retention window, clamped to `[7, 3650]`; an absent value
+  reads as 0 and clamps up to 7. The clamped value is echoed.
+- **`keep`** is a `[]string` accepted on the params, and **`kept`** and
+  **`staleArchives`** are always-present counters. Neither `keep` (a caller list)
+  nor `staleArchives` (stale non-directory files) was observed to fire against
+  `19f30c46` — a valid old plugin whose hash was in `keep` was still pruned, and no
+  plain file was swept regardless of extension — so both counters stay 0 here. They
+  are reproduced as fields for parity; their non-zero triggers are not yet pinned.
+- **`legacy`** is `"absent"` when the shared `plugins/` directory does not exist,
+  `"swept"` once it is processed, or `"skipped: another install's daemon is running
+  (run/<clientId>/rpc.sock answers); its sessions may use the shared legacy dirs"`
+  when a sibling daemon on the host answers a 300 ms unix dial. The per-install
+  sweep (`pruned`) always runs; only the legacy sweep is skipped while a sibling is
+  alive, since that sibling's sessions may reference the shared legacy plugins. The
+  first sibling (in sorted `run/<clientId>` order) that answers is named.
+- If the socket is not `run/<clientId>/rpc.sock`, the daemon has no per-install root:
+  `root` is `""`, `minAgeDays` is 0, `legacy` is `"skipped: <reason>"`, and a
+  `skipped` field carries the reason.
+- Bad params answer `-32602 "Invalid params: <encoding/json detail>"` (with the
+  detail, unlike the other methods' bare `Invalid params`), and a `plugins.<other>`
+  method answers `-32601 "Unknown method: plugins.<x>"`. `plugins.prune` requires
+  auth like every method except `server.shutdown`.
 
 ### Stream notifications
 

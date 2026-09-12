@@ -113,9 +113,11 @@ component_management:
         - daemon_runlock_windows.go
         - orphanexit.go
     - component_id: methods
-      name: methods (server/files/git/process)
+      name: methods (server/files/git/process/plugins)
       paths:
         - methods_server.go
+        - methods_plugins.go
+        - handlers/prune.go
         # OS-split server.capabilities feature: external_root advertised on unix only.
         - capfeatures_other.go
         - capfeatures_windows.go

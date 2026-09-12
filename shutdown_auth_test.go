@@ -75,6 +75,7 @@ func TestEveryOtherMethodStillRequiresAuth(t *testing.T) {
 		"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 		"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
 		"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
+		"plugins.prune",
 	}
 
 	want := map[string]bool{}

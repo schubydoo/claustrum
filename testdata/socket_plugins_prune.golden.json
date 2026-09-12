@@ -1,0 +1,42 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "root": "",
+      "pruned": [],
+      "prunedLegacy": [],
+      "staleArchives": 0,
+      "kept": 0,
+      "live": 0,
+      "young": 0,
+      "legacy": "skipped: this daemon's socket is not under run/\u003cclientId\u003e/, so it has no per-install plugin root to prune",
+      "skipped": "this daemon's socket is not under run/\u003cclientId\u003e/, so it has no per-install plugin root to prune",
+      "minAgeDays": 0
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params: json: cannot unmarshal string into Go struct field PruneParams.minAgeDays of type int"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "error": {
+      "code": -32602,
+      "message": "Invalid params: json: cannot unmarshal array into Go value of type handlers.PruneParams"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+      "code": -32601,
+      "message": "Unknown method: plugins.bogus"
+    }
+  }
+]
