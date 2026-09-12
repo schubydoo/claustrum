@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -96,5 +97,21 @@ func TestProbeCLIDispatchUnsetsTokenAndReturns(t *testing.T) {
 	}
 	if v, ok := os.LookupEnv("CLAUDE_RPC_TOKEN"); ok {
 		t.Errorf("CLAUDE_RPC_TOKEN still set to %q after -probe-cli; the arm must unset it", v)
+	}
+}
+
+// TestProbeCLIDispatchSurvivesUnresolvableHome pins that -probe-cli runs BEFORE the
+// home-directory resolution, so a home that cannot be resolved does not pre-empt the
+// mode's always-exit-0 contract. With an empty $HOME, os.UserHomeDir fails; a build
+// that resolved home before dispatching -probe-cli would osExit(1) here instead of
+// classifying and returning. (Skipped on Windows, where UserHomeDir reads
+// %USERPROFILE% and an empty HOME does not make it fail.)
+func TestProbeCLIDispatchSurvivesUnresolvableHome(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.UserHomeDir does not use $HOME on Windows")
+	}
+	t.Setenv("HOME", "") // make os.UserHomeDir fail
+	if _, exited := runMain(t, "-probe-cli", filepath.Join(t.TempDir(), "does-not-exist")); exited {
+		t.Fatal("-probe-cli must run before home resolution: an unresolvable home must not pre-empt its exit-0 classification")
 	}
 }

@@ -168,7 +168,29 @@ func main() {
 	cliSet := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { cliSet[f.Name] = true })
 
-	// Resolve the user's home directory up front (used for default path resolution);
+	// -version and -probe-cli need no home directory, so they run BEFORE it is
+	// resolved. -probe-cli in particular must not depend on home resolution: its
+	// contract is to always exit 0 with a classification, so a home-resolution
+	// failure must never pre-empt it.
+	switch {
+	case *version:
+		fmt.Println(versionLine(cfg.versionOverride))
+		return
+	case *probeCLI != "":
+		// -probe-cli <path> (reference build 19f30c46): run the bounded
+		// `<path> --version` runnability probe and exit 0, printing nothing if it
+		// runs, __CLI_HUNG__ if the 30s deadline had to kill it, or __CLI_BAD__ if it
+		// is missing or does not run. Claude Desktop drives this to classify a CLI
+		// binary out of band. Matching the reference, unset CLAUDE_RPC_TOKEN so the
+		// probed child never inherits it (measured: the reference strips it). No
+		// SIGINT handler is installed: the reference's -probe-cli is terminated by
+		// SIGINT (exit 130, empty stdout, measured), which is Go's default here.
+		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
+		writeProbeCLIResult(os.Stdout, probeCLIRunnable(*probeCLI))
+		return
+	}
+
+	// The remaining modes resolve default paths from the user's home directory;
 	// fatal if it can't be determined.
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -186,21 +208,6 @@ func main() {
 	}
 
 	switch {
-	case *version:
-		fmt.Println(versionLine(cfg.versionOverride))
-		return
-	case *probeCLI != "":
-		// -probe-cli <path> (reference build 19f30c46): run the bounded
-		// `<path> --version` runnability probe and exit 0, printing nothing if it
-		// runs, __CLI_HUNG__ if the 30s deadline had to kill it, or __CLI_BAD__ if it
-		// is missing or does not run. Claude Desktop drives this to classify a CLI
-		// binary out of band. Matching the reference, unset CLAUDE_RPC_TOKEN so the
-		// probed child never inherits it (measured: the reference strips it). No
-		// SIGINT handler is installed: the reference's -probe-cli is terminated by
-		// SIGINT (exit 130, empty stdout, measured), which is Go's default here.
-		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
-		writeProbeCLIResult(os.Stdout, probeCLIRunnable(*probeCLI))
-		return
 	case *install:
 		// -install only: the cap governs the decompress and download reads, which
 		// no other mode performs. Set before runInstall because the value is read
