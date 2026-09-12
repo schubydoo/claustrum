@@ -534,15 +534,38 @@ const (
 // stdinQueueCap in process.go).
 var probeCLITimeout = 30 * time.Second
 
+// probeCLIKillGrace is the WaitDelay the -probe-cli mode puts on the probe. Once the
+// deadline tears down the process group, the runtime waits at most this long for the
+// command's I/O to drain before it force-closes, so a descendant that inherited the
+// probe's stdout cannot keep the mode blocked past it. Fixed, like probeCLITimeout.
+const probeCLIKillGrace = 2 * time.Second
+
 // probeCLIRunnable runs `<path> --version` under probeCLITimeout and classifies the
 // outcome the way the reference's -probe-cli mode does: it exited 0 (runs), the
 // deadline had to kill it (hung), or it is missing / failed to start / exited
 // non-zero (bad). Unlike isRunnable, -probe-cli always bounds the probe, so this
 // always creates the context.
+//
+// The probe runs in its OWN process group (newSysProcAttr) and the deadline tears
+// down the WHOLE group, not just the direct child, so a `--version` that forks a
+// descendant (a wrapper shell, a helper) cannot outlive the probe. A plain
+// CommandContext would SIGKILL only the direct child and leak the rest — the
+// reparented-sleeper leak slowCLI's comment measured.
 func probeCLIRunnable(path string) probeCLIVerdict {
 	ctx, cancel := context.WithTimeout(context.Background(), probeCLITimeout)
 	defer cancel()
-	if err := exec.CommandContext(ctx, path, "--version").Run(); err != nil {
+	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd.SysProcAttr = newSysProcAttr()
+	cmd.Cancel = func() error {
+		// Deadline fired: SIGKILL the child's whole process group (kill(-pgid) on
+		// unix; a no-op reap on Windows, where the direct kill below plus WaitDelay
+		// bound it), then kill the direct child so it dies at once on every OS.
+		reapProcessGroup(cmd.Process)
+		_ = cmd.Process.Kill()
+		return nil
+	}
+	cmd.WaitDelay = probeCLIKillGrace
+	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return probeCLIHung
 		}
