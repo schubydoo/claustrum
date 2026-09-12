@@ -88,6 +88,7 @@ claustrum -bridge  -socket <path>                       # dumb stdio<->socket re
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
 claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>]
 claustrum -version
+claustrum -probe-cli <cli>                              # probe <cli> --version (30s): empty=runs / __CLI_HUNG__ / __CLI_BAD__; exit 0
 ```
 
 ### Start a daemon and talk to it

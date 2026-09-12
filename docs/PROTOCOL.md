@@ -1143,7 +1143,8 @@ legacy root is `<X>/plugins` (results in `prunedLegacy`).
 
 ## Daemon lifecycle (flags)
 
-One binary, five modes (`-serve`, `-bridge`, `-stop`, `-version`, `-install`).
+One binary, six modes (`-serve`, `-bridge`, `-stop`, `-version`, `-install`,
+`-probe-cli`).
 Everything here is probe-verified against the reference unless it is marked
 **claustrum-only**.
 
@@ -1492,6 +1493,24 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   decides: a "musl" banner reports `musl`, any other output reports `glibc`. The
   `/lib/ld-musl-*.so.*` marker is consulted only when `ldd` produced no output.
 
+### -probe-cli — classify a CLI binary
+
+`-probe-cli <path>` runs the bounded `<path> --version` runnability probe and exits
+`0`. It is how Claude Desktop classifies a CLI binary out of band, without a full
+`-install` (reference build `19f30c46`). Its stdout is:
+
+- **nothing** when the CLI runs (exits 0 within the bound);
+- **`__CLI_HUNG__\n`** when the deadline had to kill it;
+- **`__CLI_BAD__\n`** when the binary is missing or does not run (fails to start, or
+  exits non-zero).
+
+The bound is a fixed 30 s, always applied. It is **not** the opt-in
+`-cli-probe-timeout` (D11), which bounds only the `-install` runnability probe and is
+off by default. Matching the reference, the mode unsets `CLAUDE_RPC_TOKEN` so the
+probed child never inherits it. Like the reference, it installs no SIGINT handler, so
+a Ctrl-C during the probe terminates it (exit 130, empty stdout). Byte-for-byte
+parity with `19f30c46`, no D-number.
+
 ### Behavior shared by every mode
 
 - **Default socket** — when `-socket` is omitted, all modes fall back to
@@ -1500,8 +1519,8 @@ See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   and `-stop` do not create it. They fail with `connect: no such file or directory`
   when no daemon has run.
 - **No mode given** →
-  `claustrum: one of --version/--install/--serve/--bridge/--stop is required` on
-  stderr, exit `2`, and no usage dump. An *unknown flag* gets the stdlib `flag`
+  `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required`
+  on stderr, exit `2`, and no usage dump. An *unknown flag* gets the stdlib `flag`
   error plus the usage, exit `2`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the `-install` facts schema and the

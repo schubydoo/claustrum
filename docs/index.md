@@ -27,6 +27,9 @@ The daemon is one binary. A flag selects the mode:
   extracts the zstd archive, and prunes old CLI versions. (It verifies a local
   `-cli-zst` blob only when the caller supplies a checksum —
   [D1](DIVERGENCES.md#d1).)
+- **`-probe-cli`** — runs the bounded `<cli> --version` probe on one CLI binary and
+  exits 0: nothing if it runs, `__CLI_HUNG__` if the 30 s deadline killed it, or
+  `__CLI_BAD__` if it is missing or does not run.
 - **`-stop`** / **`-version`** — `-stop` sends `server.shutdown`. `-version`
   reports the build.
 

@@ -123,6 +123,7 @@ func main() {
 		stop      = flag.Bool("stop", false, "Stop the running server (server.shutdown RPC)")
 		version   = flag.Bool("version", false, "Print version and exit")
 		install   = flag.Bool("install", false, "Ensure CLI present, prune old versions, print JSON facts")
+		probeCLI  = flag.String("probe-cli", "", "Run the bounded --version probe on this CLI binary and exit 0: prints nothing if it runs, __CLI_HUNG__ if it had to be killed, __CLI_BAD__ if it is missing or does not run")
 		socket    = flag.String("socket", "", "Path to the daemon's Unix socket")
 		tokenFile = flag.String("token-file", "", "Read auth token from this file at startup, then unlink it. Used by the daemonized child so the token never appears in /proc/<pid>/environ.")
 		tokenFd   = flag.Int("token-fd", -1, "Read the auth token from this already-open file descriptor (e.g. 0 for stdin) instead of -token-file — this handoff never touches disk. -serve only.")
@@ -188,6 +189,18 @@ func main() {
 	case *version:
 		fmt.Println(versionLine(cfg.versionOverride))
 		return
+	case *probeCLI != "":
+		// -probe-cli <path> (reference build 19f30c46): run the bounded
+		// `<path> --version` runnability probe and exit 0, printing nothing if it
+		// runs, __CLI_HUNG__ if the 30s deadline had to kill it, or __CLI_BAD__ if it
+		// is missing or does not run. Claude Desktop drives this to classify a CLI
+		// binary out of band. Matching the reference, unset CLAUDE_RPC_TOKEN so the
+		// probed child never inherits it (measured: the reference strips it). No
+		// SIGINT handler is installed: the reference's -probe-cli is terminated by
+		// SIGINT (exit 130, empty stdout, measured), which is Go's default here.
+		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
+		writeProbeCLIResult(os.Stdout, probeCLIRunnable(*probeCLI))
+		return
 	case *install:
 		// -install only: the cap governs the decompress and download reads, which
 		// no other mode performs. Set before runInstall because the value is read
@@ -242,7 +255,7 @@ func main() {
 			cfg.effectiveListenPipe(*listenPipe, cliSet["listen-pipe"]))
 		return
 	default:
-		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--serve/--bridge/--stop is required")
+		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required")
 		osExit(2)
 	}
 }
