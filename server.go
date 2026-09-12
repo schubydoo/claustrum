@@ -446,6 +446,9 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// spawn launches children through the exec-child trampoline; empty for a
 	// non-run-shaped socket, where children spawn directly (see execchild.go).
 	s.procs.runDir = execChildRunDir(socket)
+	// The daemon instance id, stamped into each child's orphan-registry record so a
+	// later daemon can tell this daemon's children from its own.
+	s.procs.instanceID = s.instanceID
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
 	if metricsAddr != "" {

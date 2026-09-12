@@ -55,8 +55,10 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 		startedAt:  testStartedAt,
 	}
 	// Mirror production (newServerOnSocket): the run dir is derived from the socket,
-	// so a run/<clientId>/rpc.sock boot trampolines spawns and a bare socket does not.
+	// so a run/<clientId>/rpc.sock boot trampolines spawns and a bare socket does not,
+	// and the daemon instance id is threaded into the proc manager for child records.
 	s.procs.runDir = execChildRunDir(sock)
+	s.procs.instanceID = s.instanceID
 	go func() {
 		for {
 			nc, err := ln.Accept()

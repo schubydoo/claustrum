@@ -170,6 +170,13 @@ component_management:
         - execchild.go
         - execchild_linux.go
         - execchild_other.go
+        # 19f30c46 orphan registry: process.spawn writes <runDir>/children/<pid>.json so a
+        # later daemon can reap a child left behind by a since-exited daemon. The record
+        # struct + atomic write are cross-platform; the identity gather (machine-id, /proc
+        # start-times) is linux-only (a no-op elsewhere for now).
+        - childrecord.go
+        - childrecord_linux.go
+        - childrecord_other.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:

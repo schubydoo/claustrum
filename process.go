@@ -215,6 +215,12 @@ type procManager struct {
 	// non-empty, spawn launches children through the exec-child trampoline; when
 	// empty (a bare or test socket) it spawns them directly. Read-only after startup.
 	runDir string
+
+	// instanceID is the daemon's per-boot instance id (== server.capabilities
+	// instance_id), threaded in at startup alongside runDir. It is stamped into each
+	// child's orphan-registry record (childRecord.Instance) so a later daemon can tell
+	// this daemon's children apart from its own. Read-only after startup.
+	instanceID string
 }
 
 // sessionSpawnLock is one per-session-key mutex plus a reference count, so the
@@ -613,6 +619,12 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	startTime := float64(time.Now().UnixNano()) / 1e9
 	logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
 	met.spawns.Add(1)
+
+	// Record the spawned child in the orphan registry so a later daemon can reap it
+	// if this daemon exits leaving it behind (linux, run-shaped socket only; a no-op
+	// otherwise). Best-effort and non-destructive — it writes <runDir>/children/<pid>.json
+	// and never affects the spawn result.
+	m.recordChild(cmd.Process.Pid, command)
 
 	// Confine the child (and its descendants) so kill can tear down the whole
 	// tree. On Unix this is the process group from newSysProcAttr; on Windows a

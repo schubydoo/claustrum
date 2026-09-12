@@ -203,12 +203,20 @@ func ownStartTicks() int64 {
 	if err != nil {
 		return 0
 	}
-	s := string(b)
-	i := strings.LastIndexByte(s, ')')
+	return parseStartTicks(string(b))
+}
+
+// parseStartTicks extracts field 22 (starttime, clock ticks since boot) from the
+// contents of a /proc/<pid>/stat line. Field 2 (comm) is parenthesized and may
+// contain spaces or ')', so parsing resumes after the LAST ')': the remaining fields
+// start at 3 (state), so starttime (field 22) is index 22-3 = 19. Returns 0 when the
+// line cannot be parsed. Shared by ownStartTicks and procStartTicks.
+func parseStartTicks(stat string) int64 {
+	i := strings.LastIndexByte(stat, ')')
 	if i < 0 {
 		return 0
 	}
-	fields := strings.Fields(s[i+1:])
+	fields := strings.Fields(stat[i+1:])
 	if len(fields) <= 19 {
 		return 0
 	}
