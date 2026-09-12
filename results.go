@@ -169,6 +169,11 @@ type worktreeResult struct {
 	Error        string `json:"error,omitempty"`
 	ErrorCode    string `json:"errorCode,omitempty"`
 	SourceBranch string `json:"sourceBranch,omitempty"`
+	// Branch is the branch the new worktree checks out — the created branchName, or
+	// the attached existingBranch (19f30c46). It follows sourceBranch on the wire and
+	// is present on every success. Absent (omitempty) on failure, where success:false
+	// carries error/errorCode instead. Measured against 19f30c46.
+	Branch string `json:"branch,omitempty"`
 }
 
 type reattachResult struct {

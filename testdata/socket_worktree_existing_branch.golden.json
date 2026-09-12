@@ -1,0 +1,32 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "success": true,
+      "path": "<DIR>/repo/.claude/worktrees/wt0",
+      "sourceBranch": "master",
+      "branch": "existing"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "success": true,
+      "path": "<DIR>/repo/.claude/worktrees/wt1",
+      "sourceBranch": "master",
+      "branch": "nb1"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "success": true,
+      "path": "<DIR>/repo/.claude/worktrees/wt2",
+      "sourceBranch": "master",
+      "branch": "nb2"
+    }
+  }
+]

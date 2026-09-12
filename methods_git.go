@@ -39,7 +39,15 @@ type gitParams struct {
 	BranchName   string `json:"branchName"`
 	WorktreePath string `json:"worktreePath"`
 	SourceBranch string `json:"sourceBranch"`
-	WorktreeRoot string `json:"worktreeRoot,omitempty"`
+	// ExistingBranch attaches the new worktree to an already-existing local branch
+	// instead of creating one, added by the reference in 19f30c46 and advertised as
+	// the git.worktree_create.existingBranch feature. When it names a branch that
+	// show-ref --verify resolves, the add uses that branch as the commit-ish (no -b);
+	// when it is absent or names no branch, the -b <branchName> new-branch path runs.
+	// Caller-activated (like timeoutMs), not an operator divergence. Bound
+	// namespace-wide like every gitParams field (D9); only git.worktree_create reads it.
+	ExistingBranch string `json:"existingBranch,omitempty"`
+	WorktreeRoot   string `json:"worktreeRoot,omitempty"`
 	// TimeoutMs is a caller-supplied per-request deadline (milliseconds) on the
 	// git.worktree_create add + checkout, added by the reference in 4534d86 and
 	// advertised as the git.worktree_create.timeoutMs feature. Absent or 0 arms no
@@ -810,6 +818,19 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// --verify`, which would accept HEAD, the tag and the sha. Note "diverged"
 	// is accepted although it is NOT an ancestor of HEAD, which rules out an
 	// ancestry check here.
+	// existingBranch (19f30c46): attach the worktree to an already-existing local
+	// branch instead of creating one. Resolved before source, matching the reference's
+	// argv order (show-ref existingBranch, then rev-parse HEAD). show-ref --verify
+	// decides: a resolvable refs/heads/<existingBranch> switches to attach mode; an
+	// empty value or a miss falls through to the -b <branchName> new-branch path
+	// (measured against 19f30c46, which silently creates branchName when existingBranch
+	// names no branch). branchName stays required in both modes.
+	attachBranch := ""
+	if p.ExistingBranch != "" {
+		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+p.ExistingBranch); ok {
+			attachBranch = p.ExistingBranch
+		}
+	}
 	source := p.SourceBranch
 	sourceRef := ""
 	if source != "" {
@@ -829,9 +850,24 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// `worktree add` that checks out leaves an ORIG_HEAD in the worktree's admin dir
 	// that the two-step does not — wire-visible via files.read. An explicit ref is
 	// passed only for an accepted sourceBranch; otherwise -b defaults to HEAD.
-	addArgs := []string{"worktree", "add", "--no-track", "--no-checkout", "-b", p.BranchName, p.WorktreePath}
-	if sourceRef != "" {
-		addArgs = append(addArgs, sourceRef)
+	// worktreeBranch is the branch the worktree ends up on: the attached existingBranch,
+	// or the -b branchName it creates. It drives the add commit-ish, the read-tree ref,
+	// and the result's new `branch` field. createdBranch is only the branch this add
+	// CREATES, so the rollback below never deletes a pre-existing attached branch.
+	worktreeBranch := p.BranchName
+	createdBranch := p.BranchName
+	var addArgs []string
+	if attachBranch != "" {
+		// Attach mode: `worktree add --no-checkout <path> <existingBranch>` — no -b and
+		// no --no-track, since the branch already exists (measured, 19f30c46).
+		worktreeBranch = attachBranch
+		createdBranch = ""
+		addArgs = []string{"worktree", "add", "--no-checkout", p.WorktreePath, attachBranch}
+	} else {
+		addArgs = []string{"worktree", "add", "--no-track", "--no-checkout", "-b", p.BranchName, p.WorktreePath}
+		if sourceRef != "" {
+			addArgs = append(addArgs, sourceRef)
+		}
 	}
 	// A caller-supplied timeoutMs (4534d86) bounds the add + checkout. worktreeCreateCtx
 	// composes it with the D5 global deadline; at timeoutMs 0 with D5 off it is the same
@@ -880,7 +916,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
 		_, _, rtDrained, rtErr := hardenedGitWorktreeCreate(addCtx, repo, false, "-c", "core.splitIndex=false",
 			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
-			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+p.BranchName)
+			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+worktreeBranch)
 		switch {
 		case rtDrained:
 			// git EXITED 0 but a checkout descendant held the daemon's output pipe past
@@ -894,7 +930,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// finished" arm (git exited 0 cleanly, no "signal: killed") is what the
 			// reference emits for a drain that overran the deadline.
 			if p.TimeoutMs > 0 && callerTimeoutFired(addCtx) {
-				undoCreatedWorktree(repo, p.WorktreePath, p.BranchName, checkpoint)
+				undoCreatedWorktree(repo, p.WorktreePath, createdBranch, checkpoint)
 				return okResult(req.ID, worktreeResult{
 					Success:   false,
 					Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs),
@@ -939,7 +975,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// (7d193f89 dropped that). Best-effort: the worktree exists and the reference
 	// reports success regardless.
 	populateWorktree(repo, p.WorktreePath)
-	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source})
+	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }
 
 func gitWorktreeRemove(req *request) response {

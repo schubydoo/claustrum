@@ -767,6 +767,47 @@ func TestSocketWorktreeSourceBranch(t *testing.T) {
 	assertGolden(t, "socket_worktree_source_branch.golden.json", encodeGolden(t, got))
 }
 
+// TestSocketWorktreeExistingBranch pins 19f30c46's existingBranch param and the
+// new success `branch` field. When existingBranch names a real local branch the
+// worktree attaches to it (branch == existingBranch, NOT branchName); when it names
+// no branch, or is omitted, the -b branchName new-branch path runs (branch ==
+// branchName). branchName differs from existingBranch in the attach case, so a
+// build that ignores existingBranch would report branch:"attach-new" and diverge.
+func TestSocketWorktreeExistingBranch(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "a.txt"), "x\n", 0o644)
+	runGit(t, repo, "add", "a.txt")
+	runGit(t, repo, "commit", "-m", "init")
+	runGit(t, repo, "branch", "existing")
+
+	sock := startSocketServer(t)
+	cl := dial(t, sock)
+	cases := []struct {
+		branchName     string
+		existingBranch string // "" means omit the param
+	}{
+		{"attach-new", "existing"}, // attaches: branch == "existing"
+		{"nb1", "ghost"},           // no such branch: falls back, branch == "nb1"
+		{"nb2", ""},                // param omitted: new branch, branch == "nb2"
+	}
+	got := make([]json.RawMessage, 0, len(cases))
+	for i, c := range cases {
+		params := map[string]any{
+			"baseRepo":     repo,
+			"branchName":   c.branchName,
+			"worktreePath": filepath.ToSlash(filepath.Join(repo, ".claude", "worktrees", fmt.Sprintf("wt%d", i))),
+		}
+		if c.existingBranch != "" {
+			params["existingBranch"] = c.existingBranch
+		}
+		got = append(got, normPath(cl.call(req(i+1, "git.worktree_create", params)), root))
+	}
+	assertGolden(t, "socket_worktree_existing_branch.golden.json", encodeGolden(t, got))
+}
+
 // TestWorktreeResultFieldOrder pins sweep gap L1. No input populates
 // sourceBranch together with error/errorCode, so the order is unreachable over
 // the socket — assert it directly on the struct instead, because ordered result

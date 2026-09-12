@@ -54,6 +54,7 @@
         "process.stdin.offset",
         "git.status.baseRepo",
         "git.worktree_create.timeoutMs",
+        "git.worktree_create.existingBranch",
         "server.instance_id"
       ]
     }
