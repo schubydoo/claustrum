@@ -126,8 +126,8 @@ catch up via the replay buffer, extracting a plugin tarball — are in
   handoff never touches disk). claustrum reads `CLAUDE_RPC_TOKEN` **nowhere**, and strips it from spawned
   children. The one exception to auth itself is `server.shutdown`, which is **not** authenticated
   (matching the reference), so `-stop` sends no token at all.
-- **18 methods** across `server.*`, `files.*`, `git.*`, `process.*` (`server.capabilities`
-  self-describes them).
+- **19 methods** across `server.*`, `files.*`, `git.*`, `process.*`, `plugins.*`
+  (`server.capabilities` self-describes them).
 - **process.\*** is the core: a client supplies its own `id` on `spawn`; the daemon streams
   id-less `{"type":"stream",…}` notifications (base64 stdout/stderr + an `exit`), buffers them,
   and replays on `reattach{fromSeq}`. This is how both the agent and MCP servers are hosted.

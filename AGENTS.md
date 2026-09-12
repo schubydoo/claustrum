@@ -49,7 +49,7 @@ One binary; a flag selects the mode (`main.go`): `-serve`, `-bridge`, `-stop`,
 |------|------|
 | `rpc.go` | request/response types, error codes, `dispatch` (parse → auth → version → route; auth is checked *before* the jsonrpc version, except on the unauthenticated `server.shutdown` — probe-verified) |
 | `server.go` | the `-serve` daemon: `AF_UNIX` listener (mode `0600`), per-conn read loop, **concurrent** dispatch, self-daemonize, graceful shutdown |
-| `methods_*.go` | the 18 methods across `server.*` / `files.*` / `git.*` / `process.*` (`7d193f89` removed `server.version`) |
+| `methods_*.go` | the 19 methods across `server.*` / `files.*` / `git.*` / `process.*` / `plugins.*` (`7d193f89` removed `server.version`; `19f30c46` added `plugins.prune`) |
 | `results.go` | result structs, fields declared in the exact order the reference emits — **never a map** (a map sorts its keys and diverges from the wire contract) |
 | `process.go` | `procManager` / `managedProc`: spawn in own process group, base64 stream frames, async stdin writer (bounded queue + backpressure), per-process replay buffer, `reattach` |
 | `bridge.go` | `-bridge`: a stdio↔socket relay — what SSH attaches to; it injects no auth |

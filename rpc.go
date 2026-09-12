@@ -174,6 +174,8 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 		return ptr(s.handleGit(&req))
 	case "process":
 		return ptr(s.handleProcess(c, &req))
+	case "plugins":
+		return ptr(s.handlePlugins(&req))
 	default:
 		return ptr(errResult(req.ID, codeMethod, "Unknown namespace: "+ns))
 	}

@@ -321,6 +321,31 @@ func (m *procManager) get(id string) *managedProc {
 	return m.procs[id]
 }
 
+// liveArgv returns the argv of every process the manager still considers running,
+// as clients see it (running true). plugins.prune scans these for plugin-dir
+// references so a plugin an active session loaded (via a --plugin-dir path) is kept
+// regardless of age — matching the reference, which keeps a plugin whose hash
+// appears in a live child's argv. cmd is write-once so it is safe to read without p.mu; running
+// is read under p.mu like everywhere else.
+func (m *procManager) liveArgv() [][]string {
+	m.mu.Lock()
+	procs := make([]*managedProc, 0, len(m.procs))
+	for _, p := range m.procs {
+		procs = append(procs, p)
+	}
+	m.mu.Unlock()
+	var out [][]string
+	for _, p := range procs {
+		p.mu.Lock()
+		live := p.running
+		p.mu.Unlock()
+		if live && p.cmd != nil {
+			out = append(out, p.cmd.Args)
+		}
+	}
+	return out
+}
+
 // isRunning reports the process's state AS CLIENTS SEE IT: true until the exit
 // frame is emitted. During the bounded exit drain that is a window in which the
 // process has already been reaped but still reports running — deliberately, to
