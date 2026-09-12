@@ -924,6 +924,26 @@ id-less stream notifications, and **buffers** them for a later replay.
   absent or `false`, the daemon omits both fields (`omitempty`), and the frame is
   byte-identical to `{"success":true}`. An older daemon ignores the unknown param
   (tolerant decode). See [`DIVERGENCES.md`](DIVERGENCES.md) → CT-1.
+- **Exec-child trampoline (`19f30c46` parity, linux).** When the daemon's socket is
+  `run/<clientId>/rpc.sock` shaped, a spawned child is launched through a
+  self-re-exec trampoline (`<self> --exec-child <path> <argv…>`) that adds two
+  environment markers that give the child a stable, pid-reuse-safe identity:
+  `CLAUDE_SSH_RUN_DIR=<run dir>` (set by the daemon) and
+  `CLAUDE_SSH_CHILD=<pid>:<startTicks>` (set by the trampoline from the child's own
+  pid and its `/proc` start-time — a pid-reuse-safe identity). The five Go-runtime
+  vars (`GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT`, `GOTRACEBACK`) are stashed
+  under `CLAUDE_SSH_HELD_<name>` across the re-exec and restored before the target
+  runs, so they do not perturb the transient trampoline. A command that does not
+  resolve to a runnable file is **not** trampolined, so its spawn error frame is
+  unchanged (`fork/exec …` / `exec: … not found in $PATH`); a bare or non-run-shaped
+  socket spawns directly, with no trampoline and no markers. This is off-wire — it
+  adds no JSON-RPC frame and changes none. Verified against `19f30c46` on a VM: the
+  marker set and format match (the values are per-process), the held Go vars
+  round-trip, and a missing, non-executable-format, or relative-under-`cwd` target
+  returns the identical `-32603 fork/exec …` frame or is trampolined exactly as the
+  reference does. Darwin links the same subsystem (with a different, inferred
+  start-time source) and Windows links a trampoline shim not yet analyzed; both are
+  follow-up slices.
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`

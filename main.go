@@ -117,6 +117,12 @@ func applyReleaseStamp(mainVersion, relVersion, relTime string) {
 }
 
 func main() {
+	// Intercept the exec-child trampoline before anything else (flag parsing
+	// included): when spawned as `<self> --exec-child <execPath> <argv...>` the
+	// daemon re-exec'd itself to stamp a spawned child's identity, and this execs the
+	// real target in place, never returning. A no-op on non-linux and for any other
+	// argv (see execchild_linux.go / execchild_other.go).
+	maybeRunExecChild()
 	var (
 		serve     = flag.Bool("serve", false, "Self-daemonize and run the RPC server")
 		bridge    = flag.Bool("bridge", false, "Connect stdio to the running server")

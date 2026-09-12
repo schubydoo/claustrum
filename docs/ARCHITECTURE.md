@@ -85,6 +85,14 @@ children it spawns.
   still sets `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ, so
   `process.spawn` children inherit it exactly as they do under the reference (see
   [PROTOCOL.md](PROTOCOL.md)).
+- Under a `run/<clientId>/` socket, `19f30c46` launches `process.spawn` children
+  through a self-re-exec **exec-child trampoline** so the child carries a
+  `CLAUDE_SSH_CHILD=<pid>:<startTicks>` identity and `CLAUDE_SSH_RUN_DIR` — a stable,
+  pid-reuse-safe marker in the child's environment; the target's Go-runtime env is
+  held and restored across the re-exec. Reproduced on linux (`execchild_linux.go`);
+  darwin (a different, inferred start-time source) and Windows (a linked trampoline
+  shim, not yet analyzed) are follow-ups. Off-wire — see
+  [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a
   separate goroutine. A slow login shell therefore does not delay the moment the
   socket becomes available.

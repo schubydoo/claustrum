@@ -442,6 +442,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		instanceID:    newDaemonInstanceID(),
 		startedAt:     time.Now().UnixMilli(),
 	}
+	// The run/<clientId> dir (CLAUDE_SSH_RUN_DIR), derived from the socket. When set,
+	// spawn launches children through the exec-child trampoline; empty for a
+	// non-run-shaped socket, where children spawn directly (see execchild.go).
+	s.procs.runDir = execChildRunDir(socket)
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
 	if metricsAddr != "" {
