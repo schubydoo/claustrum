@@ -1,9 +1,9 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package main
 
-// recordChild is a no-op off linux: the orphan registry's identity (boot id, pid
-// namespace, machine id, and /proc start-times) is linux-specific, matching the
-// linux-only trampoline that stamps the child marker. Darwin and Windows are
-// reconciled in a follow-up slice.
+// recordChild is a no-op on the remaining platforms (windows and others). Linux and
+// darwin have their own identity gathers (childrecord_linux.go / childrecord_darwin.go);
+// the reference also records children on windows, which is reconciled in the windows
+// track of this slice.
 func (m *procManager) recordChild(pid int, argv0 string) {}

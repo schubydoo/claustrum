@@ -172,10 +172,13 @@ component_management:
         - execchild_other.go
         # 19f30c46 orphan registry: process.spawn writes <runDir>/children/<pid>.json so a
         # later daemon can reap a child left behind by a since-exited daemon. The record
-        # struct + atomic write are cross-platform; the identity gather (machine-id, /proc
-        # start-times) is linux-only (a no-op elsewhere for now).
+        # struct + atomic write are cross-platform; the identity gather is OS-specific —
+        # linux (boot_id/pidns, machine-id, /proc start-ticks) and darwin (boot-session
+        # UUID, hostname, ps start-time) each have their own, and the remaining targets use
+        # the no-op (childrecord_other.go); windows lands in the windows track.
         - childrecord.go
         - childrecord_linux.go
+        - childrecord_darwin.go
         - childrecord_other.go
         # 19f30c46 orphan reap: at -serve startup the daemon ends the process groups of
         # children a since-exited predecessor daemon of this run dir left orphaned, after
