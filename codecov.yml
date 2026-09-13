@@ -176,6 +176,7 @@ component_management:
         # start-times) is linux-only (a no-op elsewhere for now).
         - childrecord.go
         - childrecord_linux.go
+        - childrecord_darwin.go
         - childrecord_other.go
         # 19f30c46 orphan reap: at -serve startup the daemon ends the process groups of
         # children a since-exited predecessor daemon of this run dir left orphaned, after
