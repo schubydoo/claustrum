@@ -943,8 +943,9 @@ id-less stream notifications, and **buffers** them for a later replay.
   round-trip, and a missing, non-executable-format, or relative-under-`cwd` target
   returns the identical `-32603 fork/exec …` frame or is trampolined exactly as the
   reference does. Darwin links the same subsystem, with the start-time from `ps` instead
-  of `/proc`. This was validated against `19f30c46` on a macOS VM. Windows links a
-  trampoline shim, a follow-up slice.
+  of `/proc`. This was validated against `19f30c46` on a macOS VM. On windows the reference
+  daemon reports it is not the run-dir lock holder, so it stamps neither marker. A windows VM
+  showed a run-shaped-socket child has the same environment as a bare-socket child.
 - **Orphan-child registry record (`19f30c46` parity, linux and darwin).** Under that same
   `run/<clientId>/` socket, each spawned child (pid ≥ 2 with a readable start-time) is
   recorded to `<runDir>/children/<pid>.json`, written atomically (a temp file renamed
@@ -958,7 +959,9 @@ id-less stream notifications, and **buffers** them for a later replay.
   frame. On linux and darwin the daemon reaps these records at `-serve` startup (see
   [ARCHITECTURE.md](ARCHITECTURE.md) → orphan reap). On darwin the node is the boot-session
   UUID and the host is the hostname, and the start-times come from `ps` rather than `/proc`.
-  Windows is a follow-up slice.
+  On windows the reference daemon reports it is not the run-dir lock holder, so it records no
+  children and reaps none. A windows VM showed a spawned child leaves the children dir empty
+  and planted records survive startup.
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`
