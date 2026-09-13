@@ -453,7 +453,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
 	// recorded children become candidates; reapOrphans independently re-checks that each
 	// owning daemon is gone before it touches a child. Synchronous at startup, matching the
-	// reference; a no-op when the socket is not run-shaped or off linux (see childreap_*.go).
+	// reference; a no-op when the socket is not run-shaped or off linux and darwin (see childreap_*.go).
 	reapOrphans(s.procs.runDir, s.procs.instanceID)
 	// Start the host cleaner: a background sweep that ends stranded sibling daemons and
 	// orphaned Claude Code process groups under this install's roots and tidies their stale

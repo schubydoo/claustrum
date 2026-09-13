@@ -552,9 +552,9 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	cmd.Env = buildEnv(env)
 	cmd.SysProcAttr = newSysProcAttr()
 	// Under a run/<clientId>/ socket, launch through the exec-child trampoline so the
-	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux;
-	// a no-op otherwise, and a no-op for a command that would fail at Start, so its
-	// error frame is unchanged). Applied after buildEnv/SysProcAttr so it can rewrite
+	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
+	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
+	// its error frame is unchanged). Applied after buildEnv/SysProcAttr so it can rewrite
 	// the resolved argv and hold the Go-runtime env.
 	execErrR, execErrW := wrapCmdWithTrampoline(cmd, m.runDir)
 	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
@@ -661,8 +661,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	m.procs[id] = p
 	m.mu.Unlock()
 
-	// Record the spawned child in the orphan registry (linux, run-shaped socket only;
-	// a no-op otherwise) so a later daemon can reap it if this daemon exits leaving it
+	// Record the spawned child in the orphan registry (linux and darwin, run-shaped socket
+	// only; a no-op on windows/other) so a later daemon can reap it if this daemon exits leaving it
 	// behind. Done AFTER the child is in m.procs, so a concurrent server.shutdown /
 	// killAll cannot miss it during this synchronous filesystem work. Best-effort and
 	// non-destructive: errors are logged, and it never affects the spawn result.

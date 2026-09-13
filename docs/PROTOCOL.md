@@ -924,13 +924,14 @@ id-less stream notifications, and **buffers** them for a later replay.
   absent or `false`, the daemon omits both fields (`omitempty`), and the frame is
   byte-identical to `{"success":true}`. An older daemon ignores the unknown param
   (tolerant decode). See [`DIVERGENCES.md`](DIVERGENCES.md) → CT-1.
-- **Exec-child trampoline (`19f30c46` parity, linux).** When the daemon's socket is
+- **Exec-child trampoline (`19f30c46` parity, linux and darwin).** When the daemon's socket is
   `run/<clientId>/rpc.sock` shaped, a spawned child is launched through a
   self-re-exec trampoline (`<self> --exec-child <path> <argv…>`) that adds two
   environment markers that give the child a stable, pid-reuse-safe identity:
   `CLAUDE_SSH_RUN_DIR=<run dir>` (set by the daemon) and
   `CLAUDE_SSH_CHILD=<pid>:<startTicks>` (set by the trampoline from the child's own
-  pid and its `/proc` start-time — a pid-reuse-safe identity). The five Go-runtime
+  pid and its start-time, a pid-reuse-safe identity). On linux the start-time is the
+  `/proc` clock ticks. On darwin it is the `ps` start-time. The five Go-runtime
   vars (`GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT`, `GOTRACEBACK`) are stashed
   under `CLAUDE_SSH_HELD_<name>` across the re-exec and restored before the target
   runs, so they do not perturb the transient trampoline. A command that does not
@@ -941,21 +942,23 @@ id-less stream notifications, and **buffers** them for a later replay.
   marker set and format match (the values are per-process), the held Go vars
   round-trip, and a missing, non-executable-format, or relative-under-`cwd` target
   returns the identical `-32603 fork/exec …` frame or is trampolined exactly as the
-  reference does. Darwin links the same subsystem (with a different, inferred
-  start-time source) and Windows links a trampoline shim not yet analyzed; both are
-  follow-up slices.
-- **Orphan-child registry record (`19f30c46` parity, linux).** Under that same
+  reference does. Darwin links the same subsystem, with the start-time from `ps` instead
+  of `/proc`. This was validated against `19f30c46` on a macOS VM. Windows links a
+  trampoline shim, a follow-up slice.
+- **Orphan-child registry record (`19f30c46` parity, linux and darwin).** Under that same
   `run/<clientId>/` socket, each spawned child (pid ≥ 2 with a readable start-time) is
   recorded to `<runDir>/children/<pid>.json`, written atomically (a temp file renamed
   into place). A later daemon reads these to reap children a since-exited daemon left
   behind. The record is an ordered JSON object:
   `{"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<ticks>","argv0":"<child argv0>","start":"<ticks>","at":<epoch-ms>}`.
   The field ORDER and the string-vs-number typing (`daemonStart` and `start` are
-  clock-tick STRINGS; `pid`, `daemonPid` and `at` are numbers) are the on-disk
+  STRINGS, clock ticks on linux and a `ps` timestamp on darwin; `pid`, `daemonPid` and `at`
+  are numbers) are the on-disk
   contract, measured byte-for-byte against `19f30c46`. Off-wire — it adds no JSON-RPC
-  frame. On linux the daemon reaps these records at `-serve` startup (see
-  [ARCHITECTURE.md](ARCHITECTURE.md) → orphan reap); the darwin/windows identity sources
-  are a follow-up slice.
+  frame. On linux and darwin the daemon reaps these records at `-serve` startup (see
+  [ARCHITECTURE.md](ARCHITECTURE.md) → orphan reap). On darwin the node is the boot-session
+  UUID and the host is the hostname, and the start-times come from `ps` rather than `/proc`.
+  Windows is a follow-up slice.
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`

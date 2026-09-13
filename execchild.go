@@ -12,8 +12,8 @@ import (
 // spawn error, matching a direct Start failure); EOF — the CLOEXEC close on a
 // successful exec — means the target is running. It always closes the read end. The
 // caller must close its own write end first, or this blocks past EOF. Cross-platform
-// so spawn (in process.go) can call it unconditionally; off linux the trampoline is a
-// no-op that returns no pipe, so this is never reached there.
+// so spawn (in process.go) can call it unconditionally; off linux and darwin the trampoline
+// is a no-op that returns no pipe, so this is never reached there.
 func readExecChildError(r *os.File) error {
 	defer r.Close()
 	b, _ := io.ReadAll(r)
