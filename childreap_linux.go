@@ -42,6 +42,9 @@ const (
 	// reap forgets it. A younger foreign record is left in place, since a live process on
 	// another boot cannot be verified from here. Matches reference build 19f30c46.
 	reapForeignTTL = 30 * 24 * time.Hour
+	// reapPollInterval is how often each wait re-checks a signaled group for exit, matching
+	// reference build 19f30c46.
+	reapPollInterval = 100 * time.Millisecond
 )
 
 // maxReapTargets caps how many orphans one sweep signals, matching the reference's fixed
@@ -84,10 +87,11 @@ var (
 	// killGroup signals the whole process group led by pid (kill(-pid, sig)), the reap's
 	// only destructive call.
 	killGroup = func(pid int, sig syscall.Signal) error { return syscall.Kill(-pid, sig) }
-	// reapWaitExit waits up to timeout for the given pids' groups to exit and returns the
-	// survivors.
-	reapWaitExit = realReapWaitExit
-	// reapSleep is the poll delay inside realReapWaitExit.
+	// groupAlive reports whether the process group led by pid still has any member
+	// (kill(-pid, 0) succeeds). It stays true after the leader exits while a group member
+	// lingers, so the wait can clean up a survivor the leader's exit would otherwise hide.
+	groupAlive = func(pid int) bool { return syscall.Kill(-pid, 0) == nil }
+	// reapSleep is the delay between wait polls.
 	reapSleep = time.Sleep
 	// reapNow is the clock for the foreign-record age check and the wait deadline.
 	reapNow = time.Now
@@ -313,23 +317,26 @@ func earlierBootOfThisMachine(recHost, recNode, ownHost, ownNode string) bool {
 }
 
 // reapTargets ends the collected orphans in two phases: SIGTERM the group and wait the
-// grace, then SIGKILL any survivor and wait the escalate. Just before each SIGTERM it
-// re-reads /proc (sameLeader), so a pid reused between the sweep and the signal is not
-// killed. Every handled record is forgotten. It updates counts.
+// grace, then SIGKILL any survivor and wait the escalate. It re-reads /proc (sameLeader)
+// before each signal AND on every wait poll, so a pid reused between the sweep and a signal
+// is dropped rather than killed. When a target's leader exits while a group member lingers,
+// the wait SIGKILLs the group so the survivor is not left behind. Every handled record is
+// forgotten. It updates counts.
 func reapTargets(runDir string, targets []reapTarget, counts *reapCounts) {
 	if len(targets) == 0 {
 		return
 	}
+	// Phase 1: re-check identity, then SIGTERM the whole group.
 	var signaled []reapTarget
 	for _, t := range targets {
 		switch sameLeader(t.pid, t.start) {
 		case verdictGone:
-			counts.reaped++ // already gone; count it and forget below
+			counts.reaped++ // already gone before we signaled
 			forgetChildRecord(runDir, t.name)
 		case verdictSkip:
-			counts.forgotten++ // reused or no longer a group leader; do not signal
+			counts.forgotten++ // reused or no longer a group leader; never signal
 			forgetChildRecord(runDir, t.name)
-		default:
+		default: // verdictReap: still the same live leader
 			if err := killGroup(t.pid, syscall.SIGTERM); err != nil {
 				counts.forgotten++
 				forgetChildRecord(runDir, t.name)
@@ -339,61 +346,58 @@ func reapTargets(runDir string, targets []reapTarget, counts *reapCounts) {
 		}
 	}
 
-	survivors := waitTargets(signaled, reapGrace)
-	for _, t := range diffTargets(signaled, survivors) {
-		counts.reaped++
-		forgetChildRecord(runDir, t.name)
-	}
+	// Grace wait: poll, re-validating identity and cleaning up any group whose leader
+	// exited but whose members linger. Returns the targets still alive at the deadline.
+	survivors := reapWait(runDir, signaled, reapGrace, counts)
 
+	// Phase 2: SIGKILL the groups still alive after the grace, then wait the escalate. The
+	// grace wait re-validated each survivor's identity on its last poll, so a pid reused
+	// during the grace was dropped there rather than carried here.
 	for _, t := range survivors {
 		_ = killGroup(t.pid, syscall.SIGKILL)
 	}
-	stillAlive := waitTargets(survivors, reapEscalate)
-	for _, t := range diffTargets(survivors, stillAlive) {
-		counts.reaped++
-		forgetChildRecord(runDir, t.name)
-	}
-	for _, t := range stillAlive {
-		counts.survived++ // outlived SIGKILL (a zombie or an uninterruptible sleep); forget it
+	for _, t := range reapWait(runDir, survivors, reapEscalate, counts) {
+		counts.survived++ // outlived SIGKILL (a zombie or an uninterruptible sleep)
 		logInfof("[process.Reaper] child %d (%s): still present after SIGKILL", t.pid, t.name)
 		forgetChildRecord(runDir, t.name)
 	}
 }
 
-// waitTargets waits up to timeout for the targets' groups to exit and returns the ones
-// still alive.
-func waitTargets(targets []reapTarget, timeout time.Duration) []reapTarget {
+// reapWait polls up to timeout for each target's process group to exit, re-validating the
+// leader's identity on every poll (matching the reference's in-wait re-check). A target
+// whose leader is gone is counted reaped, and if its group still has members they are
+// SIGKILLed; a target whose leader pid was reused (its start-time changed) is dropped
+// without a signal; a target still holding the same live leader stays pending. It forgets
+// every resolved target's record and returns the targets still pending at the deadline.
+func reapWait(runDir string, targets []reapTarget, timeout time.Duration, counts *reapCounts) []reapTarget {
 	if len(targets) == 0 {
 		return nil
 	}
-	pids := make([]int, len(targets))
-	byPid := make(map[int]reapTarget, len(targets))
-	for i, t := range targets {
-		pids[i] = t.pid
-		byPid[t.pid] = t
-	}
-	alive := reapWaitExit(pids, timeout)
-	out := make([]reapTarget, 0, len(alive))
-	for _, pid := range alive {
-		out = append(out, byPid[pid])
-	}
-	return out
-}
-
-// diffTargets returns the targets in all that are not in the survivors set (the ones that
-// exited).
-func diffTargets(all, survivors []reapTarget) []reapTarget {
-	live := make(map[int]struct{}, len(survivors))
-	for _, t := range survivors {
-		live[t.pid] = struct{}{}
-	}
-	var out []reapTarget
-	for _, t := range all {
-		if _, ok := live[t.pid]; !ok {
-			out = append(out, t)
+	deadline := reapNow().Add(timeout)
+	pending := targets
+	for {
+		var still []reapTarget
+		for _, t := range pending {
+			switch sameLeader(t.pid, t.start) {
+			case verdictReap:
+				still = append(still, t) // same live leader; keep waiting
+			case verdictGone:
+				if groupAlive(t.pid) {
+					_ = killGroup(t.pid, syscall.SIGKILL) // leader gone, members linger
+				}
+				counts.reaped++
+				forgetChildRecord(runDir, t.name)
+			default: // verdictSkip: the pid was reused; it is not ours to signal
+				counts.forgotten++
+				forgetChildRecord(runDir, t.name)
+			}
 		}
+		pending = still
+		if len(pending) == 0 || !reapNow().Before(deadline) {
+			return pending
+		}
+		reapSleep(reapPollInterval)
 	}
-	return out
 }
 
 // sameLeader re-reads /proc just before a kill and reports whether the target is still the
@@ -479,23 +483,4 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 		}
 	}
 	return lp
-}
-
-// realReapWaitExit polls /proc until every pid's process is gone or timeout elapses, and
-// returns the survivors. The poll returns as soon as all have exited, so the grace and
-// escalate waits end early when the groups die quickly.
-func realReapWaitExit(pids []int, timeout time.Duration) []int {
-	deadline := reapNow().Add(timeout)
-	survivors := append([]int(nil), pids...)
-	for len(survivors) > 0 && reapNow().Before(deadline) {
-		reapSleep(50 * time.Millisecond)
-		var still []int
-		for _, pid := range survivors {
-			if readLiveProc(pid, false).state == procAlive {
-				still = append(still, pid)
-			}
-		}
-		survivors = still
-	}
-	return survivors
 }

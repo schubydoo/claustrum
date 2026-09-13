@@ -27,6 +27,90 @@ func fakeLiveProcs(t *testing.T, table map[int]liveProc) {
 	reapSleep = func(time.Duration) {}
 }
 
+type killRec struct {
+	pid int
+	sig syscall.Signal
+}
+
+// procSim is a stateful fake for the wait tests. It seams readLiveProc, killGroup,
+// groupAlive, reapNow and reapSleep so a process can die (or be reused) in response to a
+// real signal while the wait polls, and the clock advances only when the wait sleeps, so
+// the two-phase loops terminate deterministically without real time.
+type procSim struct {
+	live   map[int]*liveProc
+	group  map[int]bool
+	onKill map[int]func(sig syscall.Signal) error
+	kills  []killRec
+	now    time.Time
+}
+
+func newProcSim(t *testing.T) *procSim {
+	t.Helper()
+	s := &procSim{
+		live:   map[int]*liveProc{},
+		group:  map[int]bool{},
+		onKill: map[int]func(syscall.Signal) error{},
+		now:    time.Now(), // realistic, so the foreign-record age check is meaningful
+	}
+	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, killGroup, groupAlive, reapNow, reapSleep
+	t.Cleanup(func() {
+		readLiveProc, killGroup, groupAlive, reapNow, reapSleep = oldRead, oldKill, oldGroup, oldNow, oldSleep
+	})
+	readLiveProc = func(pid int, wantEnv bool) liveProc {
+		if lp, ok := s.live[pid]; ok {
+			return *lp
+		}
+		return liveProc{state: procGone}
+	}
+	killGroup = func(pid int, sig syscall.Signal) error {
+		s.kills = append(s.kills, killRec{pid, sig})
+		if fn := s.onKill[pid]; fn != nil {
+			return fn(sig)
+		}
+		return nil
+	}
+	groupAlive = func(pid int) bool { return s.group[pid] }
+	reapNow = func() time.Time { return s.now }
+	reapSleep = func(d time.Duration) { s.now = s.now.Add(d) }
+	return s
+}
+
+// add registers a live, group-leading process with the given start-ticks.
+func (s *procSim) add(pid int, start string) {
+	s.live[pid] = &liveProc{state: procAlive, startTicks: start, pgid: pid}
+}
+
+// diesOn makes the process exit (and its group empty) when killGroup signals it with
+// dieSig; other signals are recorded but leave it running.
+func (s *procSim) diesOn(pid int, dieSig syscall.Signal) {
+	s.onKill[pid] = func(sig syscall.Signal) error {
+		if sig == dieSig {
+			delete(s.live, pid)
+			s.group[pid] = false
+		}
+		return nil
+	}
+}
+
+func (s *procSim) sigCount(sig syscall.Signal) int {
+	n := 0
+	for _, k := range s.kills {
+		if k.sig == sig {
+			n++
+		}
+	}
+	return n
+}
+
+func (s *procSim) signaled(pid int) bool {
+	for _, k := range s.kills {
+		if k.pid == pid {
+			return true
+		}
+	}
+	return false
+}
+
 // TestVerifyOrphan walks the whole verdict tree: each guard returns its skip and the all-
 // pass record returns a reap. A mutant that drops any single guard flips exactly one row.
 func TestVerifyOrphan(t *testing.T) {
@@ -254,23 +338,18 @@ func TestReapOrphansGate(t *testing.T) {
 		DaemonPid: 6, Argv0: "/n", Start: "9", At: time.Now().UnixMilli(),
 	})
 
-	fakeLiveProcs(t, map[int]liveProc{
-		orphanPid: {state: procAlive, startTicks: "9000", pgid: orphanPid, program: "/usr/bin/node", runDir: runDir, childMark: strconv.Itoa(orphanPid) + ":9000"},
-		333:       {state: procAlive, startTicks: "50"},                                        // the live owning daemon
-		777:       {state: procAlive, startTicks: "7", pgid: 5, program: "/n", runDir: runDir}, // not group leader -> skip
-		888:       {state: procNotOurs},                                                        // disowns us -> passthrough
-		// deadDaemon and pid 444 are unlisted, so they read as gone.
-	})
-	var killed []int
-	oldKill, oldWait := killGroup, reapWaitExit
-	t.Cleanup(func() { killGroup, reapWaitExit = oldKill, oldWait })
-	killGroup = func(pid int, sig syscall.Signal) error { killed = append(killed, pid); return nil }
-	reapWaitExit = func(pids []int, d time.Duration) []int { return nil } // all exit during grace
+	sim := newProcSim(t)
+	sim.live[orphanPid] = &liveProc{state: procAlive, startTicks: "9000", pgid: orphanPid, program: "/usr/bin/node", runDir: runDir, childMark: strconv.Itoa(orphanPid) + ":9000"}
+	sim.live[333] = &liveProc{state: procAlive, startTicks: "50"}                                        // the live owning daemon
+	sim.live[777] = &liveProc{state: procAlive, startTicks: "7", pgid: 5, program: "/n", runDir: runDir} // not group leader -> skip
+	sim.live[888] = &liveProc{state: procNotOurs}                                                        // disowns us -> passthrough
+	// deadDaemon and pid 444 are unlisted, so they read as gone.
+	sim.diesOn(orphanPid, syscall.SIGTERM) // the reaped orphan exits to SIGTERM
 
 	reapOrphans(runDir, ownInstance)
 
-	if len(killed) != 1 || killed[0] != orphanPid {
-		t.Errorf("killed = %v, want a single SIGTERM to %d", killed, orphanPid)
+	if len(sim.kills) != 1 || sim.kills[0].pid != orphanPid || sim.kills[0].sig != syscall.SIGTERM {
+		t.Errorf("kills = %v, want a single SIGTERM to %d", sim.kills, orphanPid)
 	}
 	if recordExists(runDir, orphanName) {
 		t.Error("orphan record survived; a reaped orphan must be forgotten")
@@ -356,47 +435,16 @@ func TestReapTargetsTwoPhase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fakeLiveProcs(t, map[int]liveProc{
-		t1.pid: {state: procAlive, startTicks: "10", pgid: t1.pid},
-		t2.pid: {state: procAlive, startTicks: "20", pgid: t2.pid},
-	})
-	var sigs []struct {
-		pid int
-		sig syscall.Signal
-	}
-	oldKill, oldWait := killGroup, reapWaitExit
-	t.Cleanup(func() { killGroup, reapWaitExit = oldKill, oldWait })
-	killGroup = func(pid int, sig syscall.Signal) error {
-		sigs = append(sigs, struct {
-			pid int
-			sig syscall.Signal
-		}{pid, sig})
-		return nil
-	}
-	// Grace: both survive. Escalate: t1 dies, t2 outlives SIGKILL.
-	call := 0
-	reapWaitExit = func(pids []int, d time.Duration) []int {
-		call++
-		if call == 1 {
-			return pids // grace: none exited
-		}
-		return []int{t2.pid} // escalate: t2 still alive
-	}
+	sim := newProcSim(t)
+	sim.add(t1.pid, "10")
+	sim.add(t2.pid, "20")
+	sim.diesOn(t1.pid, syscall.SIGKILL) // survives SIGTERM + the grace, dies to the escalation
+	// t2 has no death policy: it outlives SIGKILL (a zombie or an uninterruptible sleep).
 	var counts reapCounts
 	reapTargets(runDir, []reapTarget{t1, t2}, &counts)
 
-	// Both got SIGTERM, both got SIGKILL.
-	term, kill := 0, 0
-	for _, s := range sigs {
-		switch s.sig {
-		case syscall.SIGTERM:
-			term++
-		case syscall.SIGKILL:
-			kill++
-		}
-	}
-	if term != 2 || kill != 2 {
-		t.Errorf("signals: %d SIGTERM, %d SIGKILL; want 2 and 2", term, kill)
+	if sim.sigCount(syscall.SIGTERM) != 2 || sim.sigCount(syscall.SIGKILL) != 2 {
+		t.Errorf("signals: %d SIGTERM, %d SIGKILL; want 2 and 2", sim.sigCount(syscall.SIGTERM), sim.sigCount(syscall.SIGKILL))
 	}
 	if counts.reaped != 1 || counts.survived != 1 {
 		t.Errorf("counts reaped=%d survived=%d, want 1 and 1", counts.reaped, counts.survived)
@@ -422,31 +470,18 @@ func TestReapTargetsPreKillReuse(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fakeLiveProcs(t, map[int]liveProc{
-		reused.pid:  {state: procAlive, startTicks: "999", pgid: reused.pid}, // start changed => reused
-		gone.pid:    {state: procGone},
-		sigfail.pid: {state: procAlive, startTicks: "30", pgid: sigfail.pid},
-	})
-	var killed []int
-	oldKill, oldWait := killGroup, reapWaitExit
-	t.Cleanup(func() { killGroup, reapWaitExit = oldKill, oldWait })
-	killGroup = func(pid int, sig syscall.Signal) error {
-		killed = append(killed, pid)
-		if pid == sigfail.pid {
-			return syscall.ESRCH // signal fails
-		}
-		return nil
-	}
-	reapWaitExit = func(pids []int, d time.Duration) []int { return nil }
+	sim := newProcSim(t)
+	sim.live[reused.pid] = &liveProc{state: procAlive, startTicks: "999", pgid: reused.pid} // start changed => reused
+	// gone.pid is absent from the sim, so it reads gone.
+	sim.add(sigfail.pid, "30")
+	sim.onKill[sigfail.pid] = func(syscall.Signal) error { return syscall.ESRCH } // the signal fails
 	var counts reapCounts
 	reapTargets(runDir, []reapTarget{reused, gone, sigfail}, &counts)
 
-	// The reused pid is never signaled; gone is never signaled; sigfail is signaled once
-	// (SIGTERM) and its error stops it there.
-	for _, pid := range killed {
-		if pid == reused.pid || pid == gone.pid {
-			t.Errorf("signaled pid %d that should have been skipped by the re-check", pid)
-		}
+	// A reused pid and a gone pid are never signaled; sigfail is signaled once and its
+	// error stops it there.
+	if sim.signaled(reused.pid) || sim.signaled(gone.pid) {
+		t.Errorf("a reused or gone pid was signaled: kills=%v", sim.kills)
 	}
 	if recordExists(runDir, reused.name) || recordExists(runDir, gone.name) || recordExists(runDir, sigfail.name) {
 		t.Error("a handled target's record survived; all must be forgotten")
@@ -474,16 +509,15 @@ func TestReapOrphansBatchOverflow(t *testing.T) {
 		})
 		table[pid] = liveProc{state: procAlive, startTicks: "9", pgid: pid, program: "/n", runDir: runDir, childMark: strconv.Itoa(pid) + ":9"}
 	}
-	fakeLiveProcs(t, table)
-	var killed int
-	oldKill, oldWait := killGroup, reapWaitExit
-	t.Cleanup(func() { killGroup, reapWaitExit = oldKill, oldWait })
-	killGroup = func(int, syscall.Signal) error { killed++; return nil }
-	reapWaitExit = func(pids []int, d time.Duration) []int { return nil }
+	sim := newProcSim(t)
+	for pid, lp := range table {
+		sim.live[pid] = &lp
+		sim.diesOn(pid, syscall.SIGTERM)
+	}
 
 	reapOrphans(runDir, "inst-self")
-	if killed != 1 {
-		t.Errorf("killed %d orphans, want exactly maxReapTargets=1", killed)
+	if sim.sigCount(syscall.SIGTERM) != 1 {
+		t.Errorf("signaled %d orphans, want exactly maxReapTargets=1", sim.sigCount(syscall.SIGTERM))
 	}
 }
 
@@ -648,28 +682,49 @@ func fields19() string {
 	return out
 }
 
-// TestRealReapWaitExit drives the poll loop with seamed time and /proc: a pid that goes
-// gone drops out, and a pid that stays alive survives to the deadline.
-func TestRealReapWaitExit(t *testing.T) {
-	oldRead, oldSleep, oldNow := readLiveProc, reapSleep, reapNow
-	t.Cleanup(func() { readLiveProc, reapSleep, reapNow = oldRead, oldSleep, oldNow })
-	reapSleep = func(time.Duration) {}
-	now := time.Unix(0, 0)
-	reapNow = func() time.Time { now = now.Add(60 * time.Millisecond); return now }
-
-	polls := 0
-	readLiveProc = func(pid int, wantEnv bool) liveProc {
-		if pid == 3001 {
-			polls++
-			if polls >= 2 {
-				return liveProc{state: procGone} // exits on the second poll
-			}
-			return liveProc{state: procAlive}
-		}
-		return liveProc{state: procAlive} // 3002 never exits
+// TestReapWaitDropsReusedAndCleansGroup covers the two lifecycle guards inside the wait: a
+// pid reused during the grace is dropped without a signal (never SIGKILLed), and a target
+// whose leader exits while a group member lingers has its group SIGKILLed. A target that
+// stays the same live leader is returned as still pending at the deadline.
+func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
+	runDir := t.TempDir()
+	dir := filepath.Join(runDir, "children")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	survivors := realReapWaitExit([]int{3001, 3002}, reapGrace)
-	if len(survivors) != 1 || survivors[0] != 3002 {
-		t.Errorf("survivors = %v, want [3002]", survivors)
+	staysAlive := reapTarget{pid: 3001, start: "10", name: "3001.json"}
+	reused := reapTarget{pid: 3002, start: "20", name: "3002.json"}
+	groupSurvivor := reapTarget{pid: 3003, start: "30", name: "3003.json"}
+	for _, tt := range []reapTarget{staysAlive, reused, groupSurvivor} {
+		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sim := newProcSim(t)
+	sim.add(staysAlive.pid, "10")                                                           // same live leader throughout
+	sim.live[reused.pid] = &liveProc{state: procAlive, startTicks: "777", pgid: reused.pid} // start changed => reused
+	// groupSurvivor.pid is absent (leader gone), but its group still has a member.
+	sim.group[groupSurvivor.pid] = true
+
+	var counts reapCounts
+	pending := reapWait(runDir, []reapTarget{staysAlive, reused, groupSurvivor}, reapGrace, &counts)
+
+	if len(pending) != 1 || pending[0].pid != staysAlive.pid {
+		t.Errorf("pending = %v, want only the live leader %d", pending, staysAlive.pid)
+	}
+	if sim.signaled(reused.pid) {
+		t.Error("a pid reused during the grace was signaled; it must be dropped")
+	}
+	if sim.sigCount(syscall.SIGKILL) != 1 || !sim.signaled(groupSurvivor.pid) {
+		t.Errorf("group survivor not cleaned up: kills=%v", sim.kills)
+	}
+	if counts.reaped != 1 || counts.forgotten != 1 {
+		t.Errorf("counts reaped=%d forgotten=%d, want 1 and 1", counts.reaped, counts.forgotten)
+	}
+	if recordExists(runDir, reused.name) || recordExists(runDir, groupSurvivor.name) {
+		t.Error("a resolved target's record survived; it must be forgotten")
+	}
+	if !recordExists(runDir, staysAlive.name) {
+		t.Error("a still-pending target's record was forgotten early")
 	}
 }
