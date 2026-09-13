@@ -34,8 +34,9 @@ import (
 //
 // The logic here is shared across the unix targets; only the child's start-time token is
 // OS-specific (ownStartToken: /proc/self/stat clock ticks on linux, the ps start-time on
-// darwin). Windows links only a trampoline shim (no re-exec), so there this is a no-op
-// (execchild_other.go).
+// darwin). On windows this is a no-op (execchild_other.go): the reference stamps no marker
+// there (VM-measured, a windows child's env matches a bare-socket child's), so the daemon
+// spawns the target directly.
 const (
 	execChildFlag  = "--exec-child"
 	heldEnvPrefix  = "CLAUDE_SSH_HELD_"

@@ -91,13 +91,17 @@ children it spawns.
   pid-reuse-safe marker in the child's environment; the target's Go-runtime env is
   held and restored across the re-exec. Reproduced on linux and darwin (shared
   `execchild_unix.go`, with the start-time source in `execchild_linux.go` and
-  `execchild_darwin.go`). Windows links a trampoline shim, a follow-up.
+  `execchild_darwin.go`). On windows the reference daemon reports it is not the run-dir lock
+  holder and stamps neither marker. A windows VM showed a child under a run-shaped socket has
+  the same environment as one under a bare socket.
   Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - Under that same socket the daemon also records each spawned child to
   `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go` /
   `childrecord_darwin.go`), an ordered JSON record a later daemon reads to reap children a
-  since-exited daemon left behind. Written atomically on linux and darwin. Windows is a
-  follow-up. Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+  since-exited daemon left behind. Written atomically on linux and darwin. On windows the
+  reference daemon reports it is not the run-dir lock holder, so it records no children. A
+  windows VM showed a spawned child leaves the children dir empty. Off-wire — see
+  [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - At `-serve` startup — right after it claims the run dir, which evicts a live
   predecessor on the same socket unless eviction is refused — the daemon reaps those
   records (shared `childreap.go`, with the live-process read in `childreap_linux.go` /
@@ -109,8 +113,10 @@ children it spawns.
   `CLAUDE_SSH_RUN_DIR` for this run dir plus a self-naming `CLAUDE_SSH_CHILD`. A verified
   orphan's process group gets `SIGTERM`, a 2s grace, then `SIGKILL` and a 1s escalate;
   the record is then forgotten. A record whose owner is still alive, or from another boot
-  or machine, is never reaped. It runs on linux and darwin, and is a no-op on Windows for
-  now. The kill and every live-process read sit behind seams, so tests exercise the decision
+  or machine, is never reaped. It runs on linux and darwin. On windows the reference daemon
+  reports it is not the run-dir lock holder, so it reaps nothing. A windows VM showed planted
+  child records survive a daemon startup untouched. The kill and every live-process read sit behind seams,
+  so tests exercise the decision
   without ending a real process. Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - Also at `-serve` startup the daemon starts a periodic **host cleaner** (the shared decision
   layer in `hostclean.go`, with the OS reads in `hostclean_linux.go` / `hostclean_darwin.go`):

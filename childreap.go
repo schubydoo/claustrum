@@ -21,8 +21,9 @@ import (
 //
 // This decision logic is shared across the unix targets; only how a live process is read
 // (readLiveProc: /proc on linux, ps on darwin) and how this daemon's own node/host
-// identity is gathered (ownReapIdentity) are OS-specific. Windows links no reap yet;
-// reapOrphans is a no-op there (childreap_other.go).
+// identity is gathered (ownReapIdentity) are OS-specific. On windows reapOrphans is a no-op
+// (childreap_other.go): the reference reaps nothing there (VM-measured, planted records
+// survive a startup), so there is no reap to share.
 //
 // This path is DESTRUCTIVE: a wrong reap ends a live process. So a record is reaped only
 // when every guard below holds, and the kill and the live-process reads go through
