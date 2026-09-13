@@ -166,9 +166,13 @@ component_management:
         # 19f30c46 exec-child trampoline: process.spawn re-execs the daemon to stamp a
         # spawned child's identity (CLAUDE_SSH_CHILD/CLAUDE_SSH_RUN_DIR) — a stable,
         # pid-reuse-safe marker in the child's environment. Run-dir derivation is
-        # cross-platform; the trampoline is linux-only (a no-op elsewhere for now).
+        # cross-platform (execchild.go); the trampoline is shared across unix
+        # (execchild_unix.go) with an OS-specific start-time token (execchild_linux.go =
+        # /proc ticks, execchild_darwin.go = ps start-time); windows uses the no-op.
         - execchild.go
+        - execchild_unix.go
         - execchild_linux.go
+        - execchild_darwin.go
         - execchild_other.go
         # 19f30c46 orphan registry: process.spawn writes <runDir>/children/<pid>.json so a
         # later daemon can reap a child left behind by a since-exited daemon. The record
