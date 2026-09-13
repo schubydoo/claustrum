@@ -142,6 +142,12 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `worktreePath:".."` from a daemon in home still destroys home through its
   parent (measured). See
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md) D2.
+- **`plugins.prune` is a further `os.RemoveAll` site, and it is safe by
+  construction.** It deletes `<socket-derived-root>/<hash>`. The root comes from
+  the daemon's own socket layout, not an RPC or operator path. The leaf must match
+  `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never caller-supplied and never
+  `~`-expanded, so it needs no `wipesHomeDir` guard. The four paths above remain
+  the only caller- or operator-supplied deletes.
 - **Auth is in-band per request** (`"auth":"<token>"`). The daemon's token comes
   from `-token-file` or from `-token-fd`. With `-token-file` the daemon reads the
   file once and then unlinks it, so the token never lands in

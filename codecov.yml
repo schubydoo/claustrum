@@ -117,6 +117,10 @@ component_management:
       paths:
         - methods_server.go
         - methods_plugins.go
+        # OS-split plugins.prune sibling-dial classification: the Windows-only
+        # Winsock refused error lives in pluginsibling_windows.go.
+        - pluginsibling_windows.go
+        - pluginsibling_other.go
         - handlers/prune.go
         # OS-split server.capabilities feature: external_root advertised on unix only.
         - capfeatures_other.go

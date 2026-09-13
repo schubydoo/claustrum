@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"path"
@@ -9,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/schubydoo/claustrum/handlers"
@@ -20,8 +24,9 @@ import (
 // swept: the per-install root plugins/<clientId>/ (results in `pruned`) and the
 // shared legacy root plugins/ (results in `prunedLegacy`), both relative to the
 // daemon socket's run/<clientId>/rpc.sock layout. The per-install sweep always
-// runs; the legacy sweep is skipped while any sibling daemon on the host answers a
-// dial, since its sessions may reference the shared legacy plugins.
+// runs. The legacy sweep is skipped while any sibling daemon on the host is present
+// (it answers, or its liveness cannot be ruled out), since its sessions can
+// reference the shared legacy plugins.
 //
 // "last used" is the newer of the dir's own mtime and its .synced marker's mtime
 // (the manifest.json mtime does not count). A dir is kept when it is live (its hash
@@ -101,16 +106,20 @@ func (s *server) pluginsPrune(req *request) response {
 	// Per-install root -> pruned[]. Always swept (it is this client's own), whether
 	// or not a sibling daemon is alive. An absent root is not an error, just empty.
 	prunePluginRoot(root, false, cutoff, live, &res)
-	// Shared legacy root -> prunedLegacy[]. "absent" when the shared dir does not
-	// exist. When a SIBLING daemon on this host answers a dial, its sessions may
-	// reference legacy plugins, so the legacy sweep is skipped and the reason names
-	// the first sibling that answered. Otherwise "swept" and the legacy dirs are
-	// classified like the per-install root.
+	// Shared legacy root -> prunedLegacy[]. The sibling check gates the legacy sweep
+	// and runs FIRST: when another install's daemon on this host may be present, its
+	// sessions may reference the shared legacy plugins, so the legacy field is the
+	// skip reason naming the first such sibling — even when the shared root does not
+	// exist (measured against 19f30c46, which does not stat the root before deciding
+	// to skip). With no sibling present, the shared root is "absent" when missing, or
+	// "swept" and classified like the per-install root when it exists. The reason
+	// detail comes from siblingDaemonAlive: a socket that answers, or one that cannot
+	// be ruled out gone.
 	base := filepath.Dir(legacyRoot) // <X>: the parent of run/ and plugins/
-	if _, err := os.Stat(legacyRoot); err != nil {
+	if sib := siblingDaemonAlive(base, filepath.Base(root)); sib != "" {
+		res.Legacy = "skipped: another install's daemon is running (" + sib + "); its sessions may use the shared legacy dirs"
+	} else if _, err := os.Stat(legacyRoot); err != nil {
 		res.Legacy = "absent"
-	} else if sib := siblingDaemonAlive(base, filepath.Base(root)); sib != "" {
-		res.Legacy = "skipped: another install's daemon is running (" + sib + " answers); its sessions may use the shared legacy dirs"
 	} else {
 		res.Legacy = "swept"
 		prunePluginRoot(legacyRoot, true, cutoff, live, &res)
@@ -139,31 +148,80 @@ func pluginsLayoutFromSocket(sock string) (root, legacyRoot string, ok bool) {
 	return filepath.Join(base, "plugins", clientID), filepath.Join(base, "plugins"), true
 }
 
-// siblingDaemonAlive reports the first sibling daemon — a run/<clientId>/rpc.sock
-// under base other than own — that answers a 300ms unix dial, returned as the
-// socket path relative to base ("run/<clientId>/rpc.sock"), or "" when none
-// answers. The legacy sweep is skipped while a sibling is alive, because its
-// sessions may reference the shared legacy plugins. os.ReadDir is sorted, so the
-// first sibling in clientId order that answers is the one named.
+// siblingDaemonAlive reports whether another install's daemon on this host may be
+// present, in which case its sessions may reference the shared legacy plugins and
+// the caller skips the legacy sweep. It returns the detail to embed in the skip
+// message for the FIRST sibling that may be present, or "" when every sibling is
+// provably gone (so the sweep runs). run/<clientId>/ dirs under base other than own
+// are examined in os.ReadDir (sorted) order. Reproduces 19f30c46: each socket is
+// stat'd, THEN dialed, and only a genuinely absent or dead socket clears it. A
+// permission-denied stat, a slow (timed-out) dial, or any dial error other than
+// connection-refused / not-a-socket / not-found leaves the sibling's liveness in
+// doubt and spares the shared legacy plugins. Treating every dial error as "gone"
+// was the divergence: claustrum swept another install's legacy plugins where the
+// reference kept them.
+//
+// The forms of the returned detail (the caller wraps each into "skipped: another
+// install's daemon is running (<detail>); its sessions may use the shared legacy dirs"):
+//
+//	"<rel> answers"                 the socket accepted a connection
+//	"cannot rule out <rel>: <err>"  the dial failed for a non-nobody-listening reason
+//	"cannot inspect <sock>: <err>"  the stat failed other than not-found / not-a-dir
+//	"cannot read <runDir>: <err>"   the run dir itself could not be listed
+//
+// <rel> is the forward-slash wire path "run/<clientId>/rpc.sock"; "cannot inspect"
+// names the absolute socket path and "cannot read" the run dir, matching the reference.
 func siblingDaemonAlive(base, own string) string {
-	entries, err := os.ReadDir(filepath.Join(base, "run"))
+	runDir := filepath.Join(base, "run")
+	entries, err := os.ReadDir(runDir)
 	if err != nil {
-		return ""
+		if errors.Is(err, fs.ErrNotExist) {
+			return ""
+		}
+		return "cannot read " + runDir + ": " + err.Error()
 	}
 	for _, e := range entries {
-		if !e.IsDir() || e.Name() == own {
+		if e.Name() == own {
 			continue
 		}
-		sock := filepath.Join(base, "run", e.Name(), "rpc.sock")
-		if c, derr := net.DialTimeout("unix", sock, 300*time.Millisecond); derr == nil {
-			_ = c.Close()
-			// The return value is a wire string embedded in the skip message, not a
-			// filesystem path, so it uses forward slashes on every OS (path.Join, not
-			// filepath.Join) — matching the reference's "run/<clientId>/rpc.sock".
-			return path.Join("run", e.Name(), "rpc.sock")
+		sock := filepath.Join(runDir, e.Name(), "rpc.sock")
+		// The relative form is a wire string embedded in the skip message, so it uses
+		// forward slashes on every OS (path.Join, not filepath.Join) — matching the
+		// reference's "run/<clientId>/rpc.sock".
+		rel := path.Join("run", e.Name(), "rpc.sock")
+		if _, serr := os.Stat(sock); serr != nil {
+			if errors.Is(serr, fs.ErrNotExist) || errors.Is(serr, syscall.ENOTDIR) {
+				continue
+			}
+			return "cannot inspect " + sock + ": " + serr.Error()
 		}
+		c, derr := net.DialTimeout("unix", sock, 300*time.Millisecond)
+		if derr == nil {
+			_ = c.Close()
+			return rel + " answers"
+		}
+		if isNobodyListening(derr) {
+			continue
+		}
+		return "cannot rule out " + rel + ": " + derr.Error()
 	}
 	return ""
+}
+
+// isNobodyListening reports whether a sibling dial error means the socket has no
+// live listener — connection refused, the path is not a socket, or the socket file
+// is gone — so the sibling counts as absent and does not gate the legacy sweep.
+// Any other error (permission denied, timeout, connection reset) leaves the sibling
+// possibly present, so the caller keeps the shared legacy plugins.
+// extraNobodyListening adds the Windows-only Winsock refused error
+// (pluginsibling_windows.go), because a refused dial there is WSAECONNREFUSED, not
+// syscall.ECONNREFUSED.
+func isNobodyListening(err error) bool {
+	return errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ENOTSOCK) ||
+		errors.Is(err, syscall.ENOENT) ||
+		errors.Is(err, fs.ErrNotExist) ||
+		extraNobodyListening(err)
 }
 
 // socketPath returns the filesystem path of the daemon's AF_UNIX listener, or ""
@@ -184,7 +242,8 @@ func (s *server) socketPath() string {
 // maximal hex runs, and the 16-hex runs are the candidate hashes. This covers THIS
 // daemon's own children. A sibling daemon's live plugins are handled coarsely at
 // the legacy root instead: siblingDaemonAlive skips the whole legacy sweep while
-// any sibling answers a dial, matching the reference.
+// any sibling is present (it answers, or its liveness cannot be ruled out), matching
+// the reference.
 func (s *server) livePluginRefs() map[string]bool {
 	set := map[string]bool{}
 	if s.procs == nil {
@@ -230,28 +289,61 @@ func prunePluginRoot(root string, legacy bool, cutoff time.Time, live map[string
 		if !e.IsDir() || !pluginHashRE.MatchString(name) {
 			continue // only plugin content-hash directories are swept
 		}
-		path := filepath.Join(root, name)
-		if live[name] {
-			res.Live++
-			continue
-		}
-		lastUsed := pluginLastUsed(path)
-		if lastUsed.After(cutoff) {
-			res.Young++
-			continue
-		}
-		if rerr := os.RemoveAll(path); rerr != nil {
-			res.Errors = append(res.Errors, path+": "+rerr.Error())
-			continue
-		}
-		if legacy {
-			res.PrunedLegacy = append(res.PrunedLegacy, name)
-			logInfof("[Plugins] pruned legacy plugin dir %s (last used %s)", path, lastUsed.Format(time.RFC3339))
-		} else {
-			res.Pruned = append(res.Pruned, name)
-			logInfof("[Plugins] pruned plugin dir %s (last used %s)", path, lastUsed.Format(time.RFC3339))
-		}
+		pruneOnePluginDir(root, name, legacy, cutoff, live, res)
 	}
+}
+
+// pruneOnePluginDir classifies one plugin content-hash directory and, when it is
+// neither live nor young, removes it. It holds that directory's lock across the
+// removal, so two concurrent prunes of the same directory never interleave.
+func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live map[string]bool, res *pruneResult) {
+	unlock := lockPluginDir(name)
+	defer unlock()
+	dir := filepath.Join(root, name)
+	if live[name] {
+		res.Live++
+		return
+	}
+	lastUsed := pluginLastUsed(dir)
+	if lastUsed.After(cutoff) {
+		res.Young++
+		return
+	}
+	if rerr := os.RemoveAll(dir); rerr != nil {
+		res.Errors = append(res.Errors, dir+": "+rerr.Error())
+		return
+	}
+	if legacy {
+		res.PrunedLegacy = append(res.PrunedLegacy, name)
+		logInfof("[Plugins] pruned legacy plugin dir %s (last used %s)", dir, lastUsed.Format(time.RFC3339))
+	} else {
+		res.Pruned = append(res.Pruned, name)
+		logInfof("[Plugins] pruned plugin dir %s (last used %s)", dir, lastUsed.Format(time.RFC3339))
+	}
+}
+
+// pluginDirLocks holds one lock per plugin-directory NAME (not full path).
+// Entries are created on first use. claustrum never removes one; the set of
+// content-hash names is bounded, so the map stays small.
+var (
+	pluginDirLocksMu sync.Mutex
+	pluginDirLocks   = map[string]*sync.Mutex{}
+)
+
+// lockPluginDir acquires the lock for one plugin-directory name and returns its
+// release. claustrum exposes only plugins.prune (no plugin-install RPC), so the
+// lock serialises concurrent prunes of the same directory, keyed by name so two
+// prunes of the same content-hash dir never interleave.
+func lockPluginDir(name string) func() {
+	pluginDirLocksMu.Lock()
+	m := pluginDirLocks[name]
+	if m == nil {
+		m = &sync.Mutex{}
+		pluginDirLocks[name] = m
+	}
+	pluginDirLocksMu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 // pluginLastUsed is the reference's "last used" time for a plugin dir: the newer of
