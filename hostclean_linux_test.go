@@ -450,6 +450,10 @@ func TestEndGroupsTwoPhase(t *testing.T) {
 			}
 		case syscall.SIGKILL:
 			kills = append(kills, pid)
+		case 0: // hcGroupExists probe: the group exists iff its leader pid is still present
+			if _, err := os.Stat(filepath.Join(root, strconv.Itoa(pid))); err != nil {
+				return syscall.ESRCH
+			}
 		}
 		return nil
 	}
@@ -512,7 +516,17 @@ func hcSeamSignals(t *testing.T, root string) (single, group *[]int) {
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	die := func(pid int) { _ = os.RemoveAll(filepath.Join(root, strconv.Itoa(pid))) }
 	hcSignalPid = func(pid int, sig syscall.Signal) error { s = append(s, pid); die(pid); return nil }
-	killGroup = func(pid int, sig syscall.Signal) error { g = append(g, pid); die(pid); return nil }
+	killGroup = func(pid int, sig syscall.Signal) error {
+		if sig == 0 { // hcGroupExists probe: the group exists iff its leader pid is still present
+			if _, err := os.Stat(filepath.Join(root, strconv.Itoa(pid))); err != nil {
+				return syscall.ESRCH
+			}
+			return nil
+		}
+		g = append(g, pid)
+		die(pid)
+		return nil
+	}
 	return &s, &g
 }
 
@@ -1099,6 +1113,39 @@ func TestEndGroupsTwoPhaseSkipsReusedPid(t *testing.T) {
 	}
 	if len(*single) != 0 || len(*group) != 0 {
 		t.Errorf("a reused pid was signalled: single=%v group=%v", *single, *group)
+	}
+}
+
+// TestEndGroupsTwoPhaseReapsDyingLeaderGroup proves the kill-enabled wait: a group leader that
+// exits during the grace has its lingering process group SIGKILLed, even though the leader pid
+// is now gone. Without the kill-enable, the group would leak.
+func TestEndGroupsTwoPhaseReapsDyingLeaderGroup(t *testing.T) {
+	root, mk, _ := fakeProc(t)
+	oldGrp, oldClock, oldSleep := killGroup, hcClock, hcSleep
+	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldGrp, oldClock, oldSleep })
+	now := time.Unix(3_000_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
+	var terms, kills []int
+	killGroup = func(pid int, sig syscall.Signal) error {
+		switch sig {
+		case syscall.SIGTERM:
+			terms = append(terms, pid)
+			_ = os.RemoveAll(filepath.Join(root, strconv.Itoa(pid))) // leader exits during the grace
+		case syscall.SIGKILL:
+			kills = append(kills, pid)
+		case 0:
+			return nil // the leader pid is gone but its group still has a member
+		}
+		return nil
+	}
+	mk(7001, "stat", "7001 (x) R 1 7001 "+strings.Repeat("0 ", 16)+"1 x")
+	sig, _ := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "leftover")
+	if sig != 1 {
+		t.Errorf("signalled=%d, want 1", sig)
+	}
+	if len(kills) != 1 || kills[0] != 7001 {
+		t.Errorf("group SIGKILL = %v, want [7001] (leader died in the grace, group lingered)", kills)
 	}
 }
 

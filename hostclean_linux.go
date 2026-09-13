@@ -886,7 +886,10 @@ func endGroupsTwoPhase(groups []tracked, label string) (signalled, survived int)
 			// Any other error: still wait to see whether it exits.
 		}
 		signalled++
-		live = append(live, waitEntry{tracked: g})
+		// kill-enabled for a group leader: if it exits during the grace, waitGone SIGKILLs its
+		// process group, reaping any members that outlive the leader. The reference wait does the
+		// same (its kill flag is the is-leader bit).
+		live = append(live, waitEntry{tracked: g, kill: g.pid == g.pgid})
 	}
 	survivors := waitGone(live, hcClock().Add(hcTermGrace))
 	for _, g := range survivors {
