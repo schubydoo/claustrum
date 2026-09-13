@@ -18,6 +18,7 @@ This lets a reader tell a re-published SHA from a real release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode — see below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371) |
 | `3ef9370e…` | 2026-09-03 (built) | none (off-wire: linux libc probe reordered ldd-first) | [PR 345](https://github.com/schubydoo/claustrum/pull/345) |
 | `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333) |
 | `7d193f89…` | 2026-08-25 | 6 changes + off-wire git rewrite — see below | [PR 286](https://github.com/schubydoo/claustrum/pull/286) |
@@ -31,6 +32,57 @@ Each per-build section has three parts. The **wire delta** is what claustrum
 must match byte-for-byte. **Off-wire churn** is any source that moved but never
 reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
 confirmed that nothing else changed.
+
+### `19f30c46353dde1606cad1fede73d0e9be222140` — 2026-09-11 (observed)
+
+Pinned by Claude Desktop for Linux `1.52386.0`. The upstream build date is not
+published, so the date above is when this build was captured and pinned. A large
+build on top of `3ef9370`. This build has two wire changes, both matched
+byte-for-byte, plus four off-wire subsystems and one new off-wire CLI mode.
+
+**Wire delta.**
+
+1. **`plugins.prune` added.** The method count goes from 18 to 19. This is a new
+   method in a new `plugins` namespace. It prunes cached CLI plugin directories
+   under the plugin root and reports what it removed. `server.capabilities` lists it
+   in `methods`. [PROTOCOL.md → plugins.prune](PROTOCOL.md) holds the frames.
+2. **`git.worktree_create` gains `existingBranch`.** A caller passes
+   `existingBranch:"<branch>"`, naming an existing local branch, to reuse it rather
+   than create one. The result gains a `branch` field, and `server.capabilities`
+   gains the matching feature. An absent or empty value keeps the create-a-branch
+   behavior, which is parity.
+   [PROTOCOL.md → git.worktree_create](PROTOCOL.md) holds the frames.
+
+**Off-wire.** These source changes move no client-visible frame. Four are subsystems.
+One is a CLI mode. A closing note covers windows.
+
+- **`-probe-cli` CLI mode.** A one-shot flag runs a bounded `<cli> --version` probe
+  and exits 0. For a CLI that runs it prints nothing. For one that times out it
+  prints `__CLI_HUNG__`. For one that is missing or does not run it prints
+  `__CLI_BAD__`. Claude Desktop drives it out of band to classify a CLI binary.
+- **Exec-child trampoline.** Under a run-shaped socket the daemon re-execs itself to
+  stamp a spawned child with `CLAUDE_SSH_RUN_DIR` and a `CLAUDE_SSH_CHILD` identity.
+  Linux and darwin only.
+- **Orphan-child record.** The daemon records each spawned child to
+  `<runDir>/children/<pid>.json`, written atomically. Linux and darwin only.
+- **Orphan reap.** At startup the daemon reaps a child that a since-exited daemon of
+  this run dir left behind, after it verifies the live process is that child. Linux
+  and darwin only.
+- **Host cleaner.** A periodic sweep ends stranded sibling daemons and orphaned
+  Claude Code process groups under this install's roots. It also tidies stale run
+  dirs. Linux and darwin only.
+- **Windows.** All four subsystems above are inert on windows. Windows ships no
+  run-dir lock, so the daemon is never the run-dir lock holder there. It records no
+  children, reaps nothing, and stamps no child markers. A windows VM showed this.
+
+**How it was bounded.** The static drift check passes for `19f30c46`. The 19 methods,
+the CLI flags, the `-version` format, and the tracked strings all match. The new
+`-probe-cli` flag appears in both binaries. The two wire changes went through the
+frame battery. Claustrum reconciled each off-wire subsystem 1:1. A throwaway VM
+validated the destructive paths on linux, darwin, and windows. The forensics stay
+outside the committed tree.
+
+**Reconciled in.** PRs 356 through 371.
 
 ### `3ef9370ec5b07a0e728ca5de4137d450e95eb2b6` — 2026-09-03
 
