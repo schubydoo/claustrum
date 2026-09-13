@@ -434,7 +434,7 @@ func TestVerifyListenerGates(t *testing.T) {
 }
 
 func TestEndGroupsTwoPhase(t *testing.T) {
-	_, mk, _ := fakeProc(t)
+	root, mk, _ := fakeProc(t)
 	oldKill, oldClock, oldSleep := killGroup, hcClock, hcSleep
 	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldKill, oldClock, oldSleep })
 	now := time.Unix(0, 0)
@@ -445,15 +445,20 @@ func TestEndGroupsTwoPhase(t *testing.T) {
 		switch sig {
 		case syscall.SIGTERM:
 			terms = append(terms, pid)
+			if pid == 2001 {
+				_ = os.RemoveAll(filepath.Join(root, "2001")) // g1 exits during the grace
+			}
 		case syscall.SIGKILL:
 			kills = append(kills, pid)
 		}
 		return nil
 	}
-	// g1 dies on SIGTERM (absent from procfs => gone); g2 stays alive (survives SIGKILL).
+	// Both are live at SIGTERM time (present in procfs, matching pgid+start-ticks). g1 exits
+	// during the grace; g2 stays alive and survives SIGKILL.
+	mk(2001, "stat", "2001 (x) R 1 2001 "+strings.Repeat("0 ", 16)+"5 x")
 	mk(2002, "stat", "2002 (x) R 1 2002 "+strings.Repeat("0 ", 16)+"5 x")
 	groups := []tracked{
-		{pid: 2001, pgid: 2001, startTicks: "1"}, // gone -> exits during grace
+		{pid: 2001, pgid: 2001, startTicks: "5"}, // exits during the grace
 		{pid: 2002, pgid: 2002, startTicks: "5"}, // alive throughout
 	}
 	sig, surv := endGroupsTwoPhase(groups, "orphan")
@@ -525,8 +530,10 @@ func TestEndDaemons(t *testing.T) {
 	root, mk, _ := fakeProc(t)
 	single, group := hcSeamSignals(t, root)
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 111}
-	// A daemon (dies to SIGKILL) with one leftover child group.
-	mk(3000, "stat", "3000 (server) R 1 3000 x") // present until signaled
+	// A daemon (dies to SIGKILL) with one leftover child group. Both are present in procfs with
+	// matching identity so the re-validation before signalling passes.
+	mk(3000, "stat", "3000 (server) R 1 3000 x")                          // daemon, present until signaled
+	mk(3001, "stat", "3001 (x) R 1 3001 "+strings.Repeat("0 ", 16)+"2 x") // leftover child group leader
 	targets := []daemonTarget{{
 		tracked:  tracked{pid: 3000, pgid: 3000, startTicks: "1"},
 		runDir:   "/opt/claude/run/x",
@@ -665,11 +672,12 @@ func TestPassReapsStrandedDaemon(t *testing.T) {
 }
 
 func TestEndGroupsWrapper(t *testing.T) {
-	root, _, _ := fakeProc(t)
+	root, mk, _ := fakeProc(t)
 	_, group := hcSeamSignals(t, root)
 	c := &hostCleaner{}
 	var sum hcSummary
-	c.endGroups([]tracked{{pid: 6001, pgid: 6001, startTicks: "1"}}, &sum) // absent -> exits on SIGTERM
+	mk(6001, "stat", "6001 (x) R 1 6001 "+strings.Repeat("0 ", 16)+"1 x") // live at signal time; dies on SIGTERM
+	c.endGroups([]tracked{{pid: 6001, pgid: 6001, startTicks: "1"}}, &sum)
 	if sum.orphanSignalled != 1 {
 		t.Errorf("orphanSignalled=%d, want 1", sum.orphanSignalled)
 	}
@@ -1056,8 +1064,11 @@ func TestHcSnapshotOverflow(t *testing.T) {
 // its single pid, while a group leader (pid == pgid) is signalled as a whole group. A blind
 // kill(-pid) on a non-leader would target a non-existent group and miss the helper.
 func TestEndGroupsTwoPhaseNonLeaderSingly(t *testing.T) {
-	root, _, _ := fakeProc(t)
+	root, mk, _ := fakeProc(t)
 	single, group := hcSeamSignals(t, root)
+	// Both are live at signal time (present in procfs with matching pgid+start-ticks).
+	mk(3001, "stat", "3001 (x) R 1 3001 "+strings.Repeat("0 ", 16)+"1 x")
+	mk(3002, "stat", "3002 (x) R 1 4000 "+strings.Repeat("0 ", 16)+"1 x")
 	groups := []tracked{
 		{pid: 3001, pgid: 3001, startTicks: "1"}, // leader -> group signal
 		{pid: 3002, pgid: 4000, startTicks: "1"}, // non-leader helper -> single pid
@@ -1071,6 +1082,23 @@ func TestEndGroupsTwoPhaseNonLeaderSingly(t *testing.T) {
 	}
 	if len(*single) != 1 || (*single)[0] != 3002 {
 		t.Errorf("single signals = %v, want [3002] (the non-leader helper)", *single)
+	}
+}
+
+// TestEndGroupsTwoPhaseSkipsReusedPid proves the ender re-validates identity before signalling:
+// a tracked child whose pid is now held by a different process (a different start-ticks) is not
+// signalled, so a pid reused during the wait cannot get an unrelated process killed.
+func TestEndGroupsTwoPhaseSkipsReusedPid(t *testing.T) {
+	root, mk, _ := fakeProc(t)
+	single, group := hcSeamSignals(t, root)
+	// The tracked child recorded start-ticks "1"; the live pid now shows "999" (a reused pid).
+	mk(5000, "stat", "5000 (x) R 1 5000 "+strings.Repeat("0 ", 16)+"999 x")
+	sig, _ := endGroupsTwoPhase([]tracked{{pid: 5000, pgid: 5000, startTicks: "1"}}, "leftover")
+	if sig != 0 {
+		t.Errorf("signalled=%d, want 0 (the pid was reused)", sig)
+	}
+	if len(*single) != 0 || len(*group) != 0 {
+		t.Errorf("a reused pid was signalled: single=%v group=%v", *single, *group)
 	}
 }
 

@@ -868,7 +868,10 @@ func newHostCleaner(socket string) (*hostCleaner, error) {
 func endGroupsTwoPhase(groups []tracked, label string) (signalled, survived int) {
 	var live []waitEntry
 	for _, g := range groups {
-		if g.pid < 2 {
+		// Re-validate identity immediately before signalling: a child can exit (and its pid be
+		// reused by an unrelated process) between the snapshot and now, so signal only when the
+		// tracked pgid and start-ticks still match. The reference re-checks the same way.
+		if g.pid < 2 || !g.same() {
 			continue
 		}
 		err := hcSignalTracked(g, syscall.SIGTERM)
@@ -887,6 +890,9 @@ func endGroupsTwoPhase(groups []tracked, label string) (signalled, survived int)
 	}
 	survivors := waitGone(live, hcClock().Add(hcTermGrace))
 	for _, g := range survivors {
+		if !g.same() {
+			continue // exited or was replaced during the grace: never SIGKILL a reused pid
+		}
 		_ = hcSignalTracked(g.tracked, syscall.SIGKILL)
 	}
 	for _, g := range waitGone(survivors, hcClock().Add(hcKillSettle)) {
