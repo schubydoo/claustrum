@@ -48,15 +48,17 @@ echo "reference downloaded + checksum-verified ($(stat -c%s "$WORK/ref") bytes)"
 drift=0
 note() { echo "  DRIFT: $*"; drift=1; }
 
-# 3a) the 18 canonical methods must be present in BOTH binaries (membership check;
+# 3a) the 19 canonical methods must be present in BOTH binaries (membership check;
 # `strings` can't reliably enumerate NEW methods because Go concatenates the string
 # table — authoritative add/remove detection is the server.capabilities probe in
 # the scratch/ battery). server.version was REMOVED in 7d193f89 and is asserted
-# absent below (REMOVED), not required here.
+# absent below (REMOVED), not required here. plugins.prune was ADDED in 19f30c46
+# (methods 18 -> 19).
 CANON='server.ping server.capabilities server.shutdown
 files.list files.validate files.stat files.read files.extract_tar
 git.info git.status git.list_branches git.worktree_create git.worktree_remove
-process.spawn process.stdin process.kill process.killAndWait process.reattach'
+process.spawn process.stdin process.kill process.killAndWait process.reattach
+plugins.prune'
 # Methods the reference REMOVED. They must be absent from BOTH binaries: a
 # reappearance in the reference is upstream drift, one in claustrum is a
 # regression. The method name only lands in the string table when its route
