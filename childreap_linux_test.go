@@ -728,3 +728,47 @@ func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
 		t.Error("a still-pending target's record was forgotten early")
 	}
 }
+
+// TestReapWaitSkipsGroupKillOnLeaderReuse proves the group cleanup re-confirms the leader
+// is still gone right before the SIGKILL: if the pid was recycled as a new group leader
+// between the poll's sameLeader read and the signal, the group is NOT SIGKILLed.
+func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
+	runDir := t.TempDir()
+	dir := filepath.Join(runDir, "children")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tg := reapTarget{pid: 5001, start: "10", name: "5001.json"}
+	if err := os.WriteFile(filepath.Join(dir, tg.name), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, killGroup, groupAlive, reapNow, reapSleep
+	t.Cleanup(func() {
+		readLiveProc, killGroup, groupAlive, reapNow, reapSleep = oldRead, oldKill, oldGroup, oldNow, oldSleep
+	})
+	reads := 0
+	readLiveProc = func(pid int, wantEnv bool) liveProc {
+		reads++
+		if reads == 1 {
+			return liveProc{state: procGone} // sameLeader: the leader is gone
+		}
+		return liveProc{state: procAlive, startTicks: "999", pgid: tg.pid} // re-check: pid reused as a new leader
+	}
+	killed := 0
+	killGroup = func(int, syscall.Signal) error { killed++; return nil }
+	groupAlive = func(int) bool { return true } // a group with this pgid exists (the reused leader's)
+	reapNow = time.Now
+	reapSleep = func(time.Duration) {}
+
+	var counts reapCounts
+	pending := reapWait(runDir, []reapTarget{tg}, reapGrace, &counts)
+	if killed != 0 {
+		t.Errorf("group SIGKILL sent despite the leader pid being reused; want 0, got %d", killed)
+	}
+	if len(pending) != 0 || counts.reaped != 1 {
+		t.Errorf("pending=%v reaped=%d, want [] and 1 (the gone leader is still counted reaped)", pending, counts.reaped)
+	}
+	if recordExists(runDir, tg.name) {
+		t.Error("record survived; a gone-leader target must be forgotten")
+	}
+}

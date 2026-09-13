@@ -382,8 +382,14 @@ func reapWait(runDir string, targets []reapTarget, timeout time.Duration, counts
 			case verdictReap:
 				still = append(still, t) // same live leader; keep waiting
 			case verdictGone:
-				if groupAlive(t.pid) {
-					_ = killGroup(t.pid, syscall.SIGKILL) // leader gone, members linger
+				// The leader is gone. Re-confirm it is still gone immediately before the
+				// group SIGKILL: while the pid is absent, any process still in group <pid>
+				// is a descendant of the original orphan, because a live process can hold
+				// pgid == pid only by being pid itself. If the pid was recycled as a new
+				// group leader in the meantime, skip the signal so an unrelated group is
+				// never hit.
+				if readLiveProc(t.pid, false).state == procGone && groupAlive(t.pid) {
+					_ = killGroup(t.pid, syscall.SIGKILL) // leader gone, group members linger
 				}
 				counts.reaped++
 				forgetChildRecord(runDir, t.name)
