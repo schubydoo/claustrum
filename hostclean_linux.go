@@ -508,15 +508,18 @@ func hcDirIdle(dir string, now time.Time) (time.Duration, bool) {
 	return idle, true
 }
 
-// hcSnapshot enumerates the pids under /proc owned by our uid, capped at hcMaxSnapshot. The
-// uid filter keeps the cleaner to this user's own processes.
-func hcSnapshot() ([]int, bool) {
+// hcSnapshot enumerates the pids under /proc owned by our uid. It appends at most hcMaxSnapshot
+// pids; when it finds a further matching process it stops and reports overflow, so the pass acts
+// only on per-process facts and skips run-dir retirement (matching the reference: the slice is
+// capped but a separate flag, not the slice length, signals "too many"). The uid filter keeps
+// the cleaner to this user's own processes. ok is false only when /proc is unreadable.
+func hcSnapshot() (pids []int, overflow bool, ok bool) {
 	ents, err := os.ReadDir(procRoot)
 	if err != nil {
-		return nil, false
+		return nil, false, false
 	}
 	uid := hcGetuid()
-	var pids []int
+	matched := 0
 	for _, e := range ents {
 		pid, err := strconv.Atoi(e.Name())
 		if err != nil || pid <= 0 {
@@ -526,16 +529,17 @@ func hcSnapshot() ([]int, bool) {
 		if err != nil {
 			continue
 		}
-		st, ok := fi.Sys().(*syscall.Stat_t)
-		if !ok || int(st.Uid) != uid {
+		st, stok := fi.Sys().(*syscall.Stat_t)
+		if !stok || int(st.Uid) != uid {
 			continue
 		}
-		pids = append(pids, pid)
-		if len(pids) >= hcMaxSnapshot {
-			break
+		matched++
+		if matched > hcMaxSnapshot {
+			return pids, true, true // more matches than one snapshot enumerates: cap + flag overflow
 		}
+		pids = append(pids, pid)
 	}
-	return pids, true
+	return pids, false, true
 }
 
 // ---- ownership / liveness / lock + socket probes (reference build 19f30c46) ----
@@ -783,7 +787,6 @@ const (
 	hcPassEvery  = 24 * time.Hour             // interval between passes and keepalives
 	hcMaxDaemons = 16                         // per-pass cap on stranded daemons ended
 	hcMaxGroups  = 64                         // per-pass cap on orphan groups ended
-	hcMaxProcs   = 4096                       // above this many procs, skip run-dir retirement
 )
 
 // hcSummary counts what one pass did. Its zero value renders as "no action needed".
@@ -824,6 +827,17 @@ type hostCleaner struct {
 // process; the group signal reuses killGroup from the reap.
 var hcSignalPid = func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }
 
+// hcSignalTracked signals a leftover process the way the reference does: a group leader
+// (pid == pgid) has its whole group signalled (kill(-pid)); a non-leader gets a single-pid
+// signal. A helper spawned without its own group would be missed by a blind kill(-pid), which
+// returns ESRCH for a pgid that does not exist.
+func hcSignalTracked(t tracked, sig syscall.Signal) error {
+	if t.pid == t.pgid {
+		return killGroup(t.pid, sig)
+	}
+	return hcSignalPid(t.pid, sig)
+}
+
 // newHostCleaner builds a cleaner for this daemon's own socket and executable, or returns an
 // error when the socket is not run-dir shaped or the executable is not a deployed daemon.
 func newHostCleaner(socket string) (*hostCleaner, error) {
@@ -857,7 +871,7 @@ func endGroupsTwoPhase(groups []tracked, label string) (signalled, survived int)
 		if g.pid < 2 {
 			continue
 		}
-		err := killGroup(g.pid, syscall.SIGTERM)
+		err := hcSignalTracked(g, syscall.SIGTERM)
 		if err != nil {
 			if hcIsNoSuchProcess(err) {
 				continue // already gone
@@ -873,7 +887,7 @@ func endGroupsTwoPhase(groups []tracked, label string) (signalled, survived int)
 	}
 	survivors := waitGone(live, hcClock().Add(hcTermGrace))
 	for _, g := range survivors {
-		_ = killGroup(g.pid, syscall.SIGKILL)
+		_ = hcSignalTracked(g.tracked, syscall.SIGKILL)
 	}
 	for _, g := range waitGone(survivors, hcClock().Add(hcKillSettle)) {
 		survived++
@@ -1026,8 +1040,13 @@ func (c *hostCleaner) judgeDaemon(d hcTracked) (daemonVerdict, string, *daemonTa
 		return dvSpare, fmt.Sprintf("the probe of its socket %s was inconclusive", socket), nil
 	}
 	// The socket is missing/stale/not-a-socket: it no longer leads to a live daemon.
-	if lockState, _, _ := lockProbe(runDir); lockState == hcLockHeld {
+	switch lockState, _, _ := lockProbe(runDir); lockState {
+	case hcLockHeld:
 		return dvSkip, "", nil // a live process holds its run-dir lock
+	case hcLockUnknown:
+		// The reference spares a daemon whose lock state it cannot determine, rather than
+		// reaping it: an unreadable lock is not proof the daemon is dead.
+		return dvSpare, "whether a process holds its run-dir lock could not be determined", nil
 	}
 	if hcBusy(d.pid) {
 		return dvSpare, "it still has a live connection; skipped until that closes", nil
@@ -1046,18 +1065,27 @@ func hcArgvHasStreamJSON(argv []string) bool {
 }
 
 // judgeOrphan reports whether a process is an orphaned Claude Code child whose owning daemon
-// is gone (the caller passes only daemon-gone candidates): old enough, a stream-json process,
-// and carrying the daemon-child marker. The reason is for the spare log; an empty reason with
-// reap=false is a silent skip.
+// is gone (the caller passes only daemon-gone candidates). It must be this user's own process,
+// in this daemon's namespace, running one of our deployed CLI binaries, old enough, a
+// stream-json process, and carrying the daemon-child marker. The uid, namespace and CLI-binary
+// gates match the reference: they keep the cleaner from ending an unrelated same-user process
+// that merely inherited the marker and happens to carry a stream-json argument. The reason is
+// for the spare log; an empty reason with reap=false is a silent skip.
 func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 	if t.stopped {
 		return false, "could not read it (it is stopped)"
+	}
+	if !t.sameUID || !t.sameNS {
+		return false, "" // not ours: a foreign uid or namespace
 	}
 	if !t.haveAge {
 		return false, "its age could not be determined"
 	}
 	if hcClock().Sub(t.startWall) < hcMinAge {
 		return false, "" // too young
+	}
+	if t.exe == "" || !c.roots.isCliBinary(t.exe) {
+		return false, "" // not one of our deployed CLI binaries
 	}
 	if t.argv == nil {
 		return false, "its argv could not be read"
@@ -1255,12 +1283,11 @@ func (c *hostCleaner) Pass() hcSummary {
 		logInfof("[process.HostClean] own socket %q does not lead to this daemon (state %d, pid %d); skipping this pass", c.ownSocket, state, peer)
 		return sum
 	}
-	pids, ok := hcSnapshot()
+	pids, tooMany, ok := hcSnapshot()
 	if !ok {
 		logInfof("[process.HostClean] could not enumerate this user's process list; skipping this sweep")
 		return sum
 	}
-	tooMany := len(pids) > hcMaxProcs
 	procs := make([]hcTracked, 0, len(pids))
 	byGroup := make(map[int][]hcTracked)
 	daemonPids := make(map[int]bool)

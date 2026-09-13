@@ -326,6 +326,18 @@ func TestJudgeDaemon(t *testing.T) {
 	if v, _, _ := c.judgeDaemon(mustInspect(t, 47)); v != dvSkip {
 		t.Errorf("daemon with a held run-dir lock not skipped: %v", v)
 	}
+	// SPARE: a daemon whose run-dir lock state cannot be determined (here the lock path is a
+	// directory, so lockProbe returns unknown) is spared, not reaped. An unreadable lock is not
+	// proof the daemon is dead.
+	unknownDir := t.TempDir()
+	unknownSock := filepath.Join(unknownDir, "rpc.sock")
+	if err := os.Mkdir(filepath.Join(unknownDir, runDirLockName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hcFakeDaemon(t, proot, mk, link, 48, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", unknownSock}, true, "100")
+	if v, reason, _ := c.judgeDaemon(mustInspect(t, 48)); v != dvSpare || reason == "" {
+		t.Errorf("daemon with an indeterminate run-dir lock: v=%v reason=%q, want spare", v, reason)
+	}
 }
 
 func mustInspect(t *testing.T, pid int) hcTracked {
@@ -366,6 +378,30 @@ func TestJudgeOrphan(t *testing.T) {
 	tr, _ = inspect(63, true)
 	if reap, _ := c.judgeOrphan(tr); reap {
 		t.Error("young orphan reaped; the age gate must spare it")
+	}
+	// A stream-json process running a binary that is not one of our deployed CLI binaries is
+	// skipped even with the marker and the right argv (an unrelated same-user process that
+	// merely inherited the marker must not be ended).
+	hcFakeDaemon(t, proot, mk, link, 64, "/usr/bin/claude", []string{"claude", "--output-format=stream-json"}, true, "100")
+	link(64, "fd/0", "pipe:[1]")
+	if reap, _ := c.judgeOrphan(mustInspect(t, 64)); reap {
+		t.Error("a non-deployed-binary stream process was judged an orphan")
+	}
+	// A stream-json process in another namespace is skipped.
+	hcFakeDaemon(t, proot, mk, link, 65, "/opt/claude/ccd-cli/x/claude", []string{"claude", "--output-format=stream-json"}, true, "100")
+	link(65, "fd/0", "pipe:[1]")
+	_ = os.Remove(filepath.Join(proot, "65", "ns", "pid"))
+	if err := os.Symlink("pid:[9999999]", filepath.Join(proot, "65", "ns", "pid")); err != nil {
+		t.Fatal(err)
+	}
+	if reap, _ := c.judgeOrphan(mustInspect(t, 65)); reap {
+		t.Error("a foreign-namespace stream process was judged an orphan")
+	}
+	// A stream-json process owned by another user is skipped.
+	hcFakeDaemonUID(t, proot, mk, link, 66, "/opt/claude/ccd-cli/x/claude", []string{"claude", "--output-format=stream-json"}, true, "100", 4242)
+	link(66, "fd/0", "pipe:[1]")
+	if reap, _ := c.judgeOrphan(mustInspect(t, 66)); reap {
+		t.Error("a foreign-uid stream process was judged an orphan")
 	}
 }
 
@@ -759,8 +795,9 @@ func TestJudgeOrphanBranches(t *testing.T) {
 	if reap, reason := c.judgeOrphan(tr); reap || reason == "" {
 		t.Errorf("stopped orphan: reap=%v reason=%q, want a spare reason", reap, reason)
 	}
-	// Unreadable command line -> reason. Build a tracked with no argv, old, marked env.
-	old := hcTracked{pid: 81, haveAge: true, startWall: hcClock().Add(-time.Hour), env: []string{hcDaemonChildMarker}}
+	// Unreadable command line -> reason. Build a tracked that passes the identity gates (our uid,
+	// our namespace, a deployed CLI binary) but has no argv, old, marked env.
+	old := hcTracked{pid: 81, sameUID: true, sameNS: true, exe: "/opt/claude/ccd-cli/x/claude", haveAge: true, startWall: hcClock().Add(-time.Hour), env: []string{hcDaemonChildMarker}}
 	if reap, reason := c.judgeOrphan(old); reap || reason == "" {
 		t.Errorf("nil-argv orphan: reap=%v reason=%q, want a spare reason", reap, reason)
 	}
@@ -983,14 +1020,57 @@ func TestHcSnapshot(t *testing.T) {
 	t.Cleanup(func() { hcGetuid = oldUID })
 	// Our uid matches the temp dirs (created by this process), so all are included.
 	hcGetuid = os.Getuid
-	pids, ok := hcSnapshot()
-	if !ok || len(pids) != 3 {
-		t.Errorf("snapshot = %v ok=%v, want 3 pids", pids, ok)
+	pids, overflow, ok := hcSnapshot()
+	if !ok || overflow || len(pids) != 3 {
+		t.Errorf("snapshot = %v overflow=%v ok=%v, want 3 pids, no overflow", pids, overflow, ok)
 	}
 	// A foreign uid excludes them all.
 	hcGetuid = func() int { return os.Getuid() + 99999 }
-	if pids, _ := hcSnapshot(); len(pids) != 0 {
-		t.Errorf("snapshot with foreign uid = %v, want none", pids)
+	if pids, overflow, _ := hcSnapshot(); len(pids) != 0 || overflow {
+		t.Errorf("snapshot with foreign uid = %v overflow=%v, want none", pids, overflow)
+	}
+}
+
+// TestHcSnapshotOverflow proves the overflow flag, not the slice length, signals "too many
+// processes". The slice is capped at hcMaxSnapshot; one process past the cap sets overflow.
+func TestHcSnapshotOverflow(t *testing.T) {
+	root, _, _ := fakeProc(t)
+	oldUID := hcGetuid
+	t.Cleanup(func() { hcGetuid = oldUID })
+	hcGetuid = os.Getuid
+	for i := 1; i <= hcMaxSnapshot+1; i++ {
+		if err := os.Mkdir(filepath.Join(root, strconv.Itoa(i)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pids, overflow, ok := hcSnapshot()
+	if !ok || !overflow {
+		t.Fatalf("overflow=%v ok=%v, want overflow with ok", overflow, ok)
+	}
+	if len(pids) != hcMaxSnapshot {
+		t.Errorf("len(pids)=%d, want the cap %d", len(pids), hcMaxSnapshot)
+	}
+}
+
+// TestEndGroupsTwoPhaseNonLeaderSingly proves a non-leader child (pid != pgid) is signalled by
+// its single pid, while a group leader (pid == pgid) is signalled as a whole group. A blind
+// kill(-pid) on a non-leader would target a non-existent group and miss the helper.
+func TestEndGroupsTwoPhaseNonLeaderSingly(t *testing.T) {
+	root, _, _ := fakeProc(t)
+	single, group := hcSeamSignals(t, root)
+	groups := []tracked{
+		{pid: 3001, pgid: 3001, startTicks: "1"}, // leader -> group signal
+		{pid: 3002, pgid: 4000, startTicks: "1"}, // non-leader helper -> single pid
+	}
+	sig, _ := endGroupsTwoPhase(groups, "process left behind by a stranded daemon")
+	if sig != 2 {
+		t.Errorf("signalled=%d, want 2", sig)
+	}
+	if len(*group) != 1 || (*group)[0] != 3001 {
+		t.Errorf("group signals = %v, want [3001] (the leader)", *group)
+	}
+	if len(*single) != 1 || (*single)[0] != 3002 {
+		t.Errorf("single signals = %v, want [3002] (the non-leader helper)", *single)
 	}
 }
 
