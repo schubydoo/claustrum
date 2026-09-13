@@ -55,3 +55,28 @@ func writeChildRecord(runDir string, rec childRecord) error {
 	}
 	return nil
 }
+
+// readChildRecord reads and parses one <runDir>/children/<name> record written by
+// writeChildRecord — the inverse used by the orphan reap at startup. It returns the
+// record and true on success, and false when the file is unreadable or is not valid
+// JSON, in which case the reap forgets the record (reference build 19f30c46). Pure
+// filesystem work, so cross-platform; the linux reap is its only caller.
+func readChildRecord(runDir, name string) (childRecord, bool) {
+	data, err := os.ReadFile(filepath.Join(runDir, "children", name))
+	if err != nil {
+		return childRecord{}, false
+	}
+	var rec childRecord
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return childRecord{}, false
+	}
+	return rec, true
+}
+
+// forgetChildRecord removes one <runDir>/children/<name> record. The reap calls it to
+// drop a record it has handled (reaped, gone, or skipped-and-stale). Best-effort: a
+// removal error is ignored. The reference likewise deletes handled records at reap time.
+// Pure filesystem work, so cross-platform.
+func forgetChildRecord(runDir, name string) {
+	_ = os.Remove(filepath.Join(runDir, "children", name))
+}

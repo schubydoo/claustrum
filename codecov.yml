@@ -177,6 +177,12 @@ component_management:
         - childrecord.go
         - childrecord_linux.go
         - childrecord_other.go
+        # 19f30c46 orphan reap: at -serve startup the daemon ends the process groups of
+        # children a since-exited predecessor daemon of this run dir left orphaned, after
+        # verifying each is still that recorded child. Linux-only (a no-op elsewhere for
+        # now); the kill and /proc reads are seamed so tests never touch a real process.
+        - childreap_linux.go
+        - childreap_other.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:

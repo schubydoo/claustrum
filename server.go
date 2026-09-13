@@ -449,6 +449,12 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// The daemon instance id, stamped into each child's orphan-registry record so a
 	// later daemon can tell this daemon's children from its own.
 	s.procs.instanceID = s.instanceID
+	// Reap children a since-exited predecessor daemon of this run dir left orphaned. The
+	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
+	// recorded children become candidates; reapOrphans independently re-checks that each
+	// owning daemon is gone before it touches a child. Synchronous at startup, matching the
+	// reference; a no-op when the socket is not run-shaped or off linux (see childreap_*.go).
+	reapOrphans(s.procs.runDir, s.procs.instanceID)
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
 	if metricsAddr != "" {
