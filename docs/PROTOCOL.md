@@ -953,8 +953,9 @@ id-less stream notifications, and **buffers** them for a later replay.
   The field ORDER and the string-vs-number typing (`daemonStart` and `start` are
   clock-tick STRINGS; `pid`, `daemonPid` and `at` are numbers) are the on-disk
   contract, measured byte-for-byte against `19f30c46`. Off-wire — it adds no JSON-RPC
-  frame. Reaping the recorded orphans, and the darwin/windows identity sources, are
-  follow-up slices.
+  frame. On linux the daemon reaps these records at `-serve` startup (see
+  [ARCHITECTURE.md](ARCHITECTURE.md) → orphan reap); the darwin/windows identity sources
+  are a follow-up slice.
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`

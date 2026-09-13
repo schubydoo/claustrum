@@ -96,8 +96,21 @@ children it spawns.
 - Under that same socket the daemon also records each spawned child to
   `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go`), an
   ordered JSON record a later daemon reads to reap children a since-exited daemon left
-  behind. Written atomically, linux-only for now. Reaping the records is a follow-up.
+  behind. Written atomically, linux-only for now.
   Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+- At `-serve` startup — right after it claims the run dir, which evicts a live
+  predecessor on the same socket unless eviction is refused — the daemon reaps those
+  records (`childreap_linux.go`).
+  It reaps a child only when its record's node matches ours (same boot id and pid
+  namespace), its owning daemon is gone, and the live process still is that recorded
+  child: the `/proc` start-time matches
+  (no pid reuse), the process leads its own group, runs the recorded program, and carries
+  `CLAUDE_SSH_RUN_DIR` for this run dir plus a self-naming `CLAUDE_SSH_CHILD`. A verified
+  orphan's process group gets `SIGTERM`, a 2s grace, then `SIGKILL` and a 1s escalate;
+  the record is then forgotten. A record whose owner is still alive, or from another boot
+  or machine, is never reaped. Linux-only (a no-op elsewhere for now); the kill and every
+  `/proc` read sit behind seams so tests exercise the decision without ending a real
+  process. Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a
   separate goroutine. A slow login shell therefore does not delay the moment the
   socket becomes available.
