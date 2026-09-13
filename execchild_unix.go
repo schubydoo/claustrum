@@ -115,12 +115,22 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 	if runDir == "" || cmd.Err != nil {
 		return nil, nil
 	}
+	self := trampolineSelf()
+	if self == "" {
+		// The daemon's own binary is not re-executable (e.g. it was uninstalled while the
+		// daemon kept running; darwin cannot re-exec a path whose file is gone). Spawn the
+		// target DIRECTLY, but still tag it with the run dir. This matches the reference: after
+		// an uninstall its children keep CLAUDE_SSH_RUN_DIR and just lack the CLAUDE_SSH_CHILD
+		// marker the re-exec would have added, rather than failing to spawn. On linux
+		// trampolineSelf is /proc/self/exe, which survives an unlink, so this path is not taken.
+		cmd.Env = replaceOrAppendEnv(cmd.Env, envRunDir, runDir)
+		return nil, nil
+	}
 	r, w, err := execChildErrPipe()
 	if err != nil {
 		return nil, nil // fall back to a direct spawn; the child just lacks the markers
 	}
 	cmd.ExtraFiles = append(cmd.ExtraFiles, w) // → execErrExtraFD in the child
-	self := trampolineSelf()
 	cmd.Args = append([]string{self, execChildFlag, cmd.Path}, cmd.Args...)
 	cmd.Path = self
 	cmd.Env = holdGoEnv(cmd.Env)
@@ -176,17 +186,22 @@ func restoreHeldEnv(env []string) []string {
 	return out
 }
 
-// trampolineSelf is the path the daemon re-execs as the trampoline: /proc/self/exe when
-// available (so a binary replaced in place still re-execs the running image), else
-// os.Executable. On darwin /proc/self/exe does not exist, so the os.Executable path is
-// taken — matching the reference, which links the same trampoline on darwin.
-func trampolineSelf() string {
+// trampolineSelf is the path the daemon re-execs as the trampoline, or "" when it has no
+// re-executable self (then wrapCmdWithTrampoline spawns the target directly). It prefers
+// /proc/self/exe, which points at the running image even after the on-disk binary is
+// unlinked or replaced (linux). On darwin there is no /proc/self/exe, so os.Executable is
+// used — but only when its file still exists: a daemon whose binary was uninstalled while
+// running cannot re-exec it, and returning "" makes the spawn fall back to a direct launch,
+// matching the reference. A seam so a test can force the "no self" fallback.
+var trampolineSelf = func() string {
 	const procSelfExe = "/proc/self/exe"
 	if _, err := os.Stat(procSelfExe); err == nil {
 		return procSelfExe
 	}
 	if exe, err := os.Executable(); err == nil {
-		return exe
+		if _, err := os.Stat(exe); err == nil {
+			return exe
+		}
 	}
-	return procSelfExe
+	return ""
 }
