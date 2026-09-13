@@ -458,7 +458,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// Start the host cleaner: a background sweep that ends stranded sibling daemons and
 	// orphaned Claude Code process groups under this install's roots and tidies their stale
 	// run dirs. It runs unconditionally at startup (matching the reference); a no-op when the
-	// socket is not a deployed run-dir socket or off linux (see hostclean_*.go). DESTRUCTIVE
+	// socket is not a deployed run-dir socket or off linux and darwin (see hostclean_*.go). DESTRUCTIVE
 	// and host-wide — validated only on a throwaway VM, never on a host that runs siblings.
 	startHostCleaner(socket)
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind

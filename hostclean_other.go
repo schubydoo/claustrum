@@ -1,9 +1,9 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package main
 
-// startHostCleaner is a no-op off linux. The host cleaner reads /proc, SO_PEERCRED, and
-// /proc/locks and signals process groups — all linux-specific — so there is nothing to run
-// on darwin or windows. Those ports are reconciled in a later slice, matching how the reap
-// and the exec-child trampoline landed linux-first.
+// startHostCleaner is a no-op on windows and other non-linux, non-darwin targets. The host
+// cleaner runs on linux (/proc) and darwin (sysctl + lsof); the reference ships no cleaner on
+// windows, so there is nothing to run there and this stays a no-op (provably 1:1 with the
+// reference, whose windows build links no cleaner).
 func startHostCleaner(socket string) {}

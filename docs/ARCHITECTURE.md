@@ -112,8 +112,9 @@ children it spawns.
   or machine, is never reaped. It runs on linux and darwin, and is a no-op on Windows for
   now. The kill and every live-process read sit behind seams, so tests exercise the decision
   without ending a real process. Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
-- Also at `-serve` startup the daemon starts a periodic **host cleaner**
-  (`hostclean_linux.go`): a background sweep, run 15s after startup and then daily, that
+- Also at `-serve` startup the daemon starts a periodic **host cleaner** (the shared decision
+  layer in `hostclean.go`, with the OS reads in `hostclean_linux.go` / `hostclean_darwin.go`):
+  a background sweep, run 15s after startup and then daily, that
   keeps the install tidy. It is confined to the install roots derived from the daemon's own
   socket and executable (`<root>/run` and `<root>/srv`), and to this user's own processes, so
   it never reaches an unrelated process or path. Each pass refuses to act unless its own
@@ -125,13 +126,16 @@ children it spawns.
   days, socket unanswered, no live lock — renamed aside then removed, with an undo if a socket
   or lock reappears mid-removal). It spares an ambiguous daemon or orphan with a logged
   reason, keeps a run dir it cannot probe conclusively, and never touches a fresh, busy,
-  locked, or foreign daemon. This path is DESTRUCTIVE and host-wide, so every `/proc` read,
+  locked, or foreign daemon. This path is DESTRUCTIVE and host-wide, so every process read,
   kill, dial, rename and remove sits behind a seam (tests never touch a real process or file)
   and its real behavior is validated only on a throwaway VM, never on a host that runs sibling
-  daemons. Linux-only (a no-op on darwin and windows for now). Off-wire. claustrum reproduces
-  this cleaner's behavior rather than matching it byte for byte: it omits the reference's
-  clock-skew freshness window and approximates some spare-reason bookkeeping, both in the
-  conservative direction (they only ever spare or skip where the reference might act).
+  daemons. It runs on linux and darwin (a no-op on windows, where the reference ships no
+  cleaner). Off-wire. claustrum reproduces this cleaner's behavior rather than matching it byte
+  for byte: it omits the reference's clock-skew freshness window and approximates some
+  spare-reason bookkeeping, both in the conservative direction (they only ever spare or skip
+  where the reference might act). The reap path acts only on a dead socket. After 30 days of
+  run-dir idleness the retire path can SIGTERM a socket-live daemon, but a clock-skew-fresh
+  daemon has no such idle run dir. So dropping that window cannot end a fresh daemon.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a
   separate goroutine. A slow login shell therefore does not delay the moment the
   socket becomes available.
