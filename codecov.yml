@@ -183,6 +183,13 @@ component_management:
         # now); the kill and /proc reads are seamed so tests never touch a real process.
         - childreap_linux.go
         - childreap_other.go
+        # 19f30c46 host cleaner: a periodic -serve background sweep that ends stranded sibling
+        # daemons and orphaned Claude Code process groups under this install's roots and tidies
+        # their stale run dirs. Linux-only (a no-op elsewhere for now); every /proc read, kill,
+        # dial, rename and remove is seamed so the destructive paths are unit-tested without a
+        # real process or file (real behavior validated on a throwaway VM).
+        - hostclean_linux.go
+        - hostclean_other.go
     - component_id: bridge_cli
       name: bridge, CLI & config
       paths:
