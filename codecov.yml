@@ -196,10 +196,15 @@ component_management:
         - childreap_other.go
         # 19f30c46 host cleaner: a periodic -serve background sweep that ends stranded sibling
         # daemons and orphaned Claude Code process groups under this install's roots and tidies
-        # their stale run dirs. Linux-only (a no-op elsewhere for now); every /proc read, kill,
-        # dial, rename and remove is seamed so the destructive paths are unit-tested without a
-        # real process or file (real behavior validated on a throwaway VM).
+        # their stale run dirs. The shared decision layer (hostclean.go, linux||darwin) drives
+        # OS-specific reads: /proc on linux, sysctl kern.proc + KERN_PROCARGS2 + lsof on darwin
+        # (hostclean_darwin.go). Windows uses the no-op (hostclean_other.go) — the reference
+        # ships no cleaner there. Every read, kill, dial, rename and remove is seamed so the
+        # destructive paths are unit-tested without a real process or file (real behavior
+        # validated on a throwaway VM).
+        - hostclean.go
         - hostclean_linux.go
+        - hostclean_darwin.go
         - hostclean_other.go
     - component_id: bridge_cli
       name: bridge, CLI & config
