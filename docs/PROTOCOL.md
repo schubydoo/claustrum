@@ -1092,7 +1092,7 @@ reports the outcome as a *result*. An unknown id is not an error:
 ### plugins.* (added `19f30c46`)
 
 #### plugins.prune
-`{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"absent|swept","minAgeDays":<clamped>}`
+`{[keep],[minAgeDays]}` → `{"root":"<per-install root>","pruned":[…],"prunedLegacy":[…],"staleArchives":0,"kept":0,"live":<n>,"young":<n>,"legacy":"absent|swept|skipped: …","minAgeDays":<clamped>}`
 
 Prunes cached CLI plugin directories the daemon keeps under its socket's
 run-directory layout. The daemon socket is `<X>/run/<clientId>/rpc.sock`; the
@@ -1114,13 +1114,23 @@ legacy root is `<X>/plugins` (results in `prunedLegacy`).
   `19f30c46` — a valid old plugin whose hash was in `keep` was still pruned, and no
   plain file was swept regardless of extension — so both counters stay 0 here. They
   are reproduced as fields for parity; their non-zero triggers are not yet pinned.
-- **`legacy`** is `"absent"` when the shared `plugins/` directory does not exist,
-  `"swept"` once it is processed, or `"skipped: another install's daemon is running
-  (run/<clientId>/rpc.sock answers); its sessions may use the shared legacy dirs"`
-  when a sibling daemon on the host answers a 300 ms unix dial. The per-install
-  sweep (`pruned`) always runs; only the legacy sweep is skipped while a sibling is
-  alive, since that sibling's sessions may reference the shared legacy plugins. The
-  first sibling (in sorted `run/<clientId>` order) that answers is named.
+- **`legacy`** reports the shared `plugins/` sweep, and the sibling check runs
+  first. If a sibling daemon on the host is present, or cannot be ruled out gone,
+  `legacy` is `"skipped: another install's daemon is running (<detail>); its sessions
+  may use the shared legacy dirs"`, even when the shared directory does not exist.
+  `<detail>` describes what blocked the sweep: the first present sibling in sorted
+  `run/<clientId>` order, or the run directory itself on a failed listing. It takes
+  one of four forms, where `<rel>` is `run/<clientId>/rpc.sock`:
+  - `"<rel> answers"`: the sibling socket accepted a 300 ms unix dial.
+  - `"cannot rule out <rel>: <err>"`: the dial failed for a reason other than
+    connection-refused, not-a-socket, or not-found.
+  - `"cannot inspect <sock>: <err>"`: a stat of the socket path failed.
+  - `"cannot read <run-dir>: <err>"`: a listing of the run directory failed.
+
+  With no sibling present, `legacy` is `"absent"` when the shared directory is
+  missing, or `"swept"` once it is processed. The per-install sweep (`pruned`)
+  always runs. The daemon skips only the legacy sweep, because a present sibling's
+  sessions can reference the shared legacy plugins.
 - If the socket is not `run/<clientId>/rpc.sock`, the daemon has no per-install root:
   `root` is `""`, `minAgeDays` is 0, `legacy` is `"skipped: <reason>"`, and a
   `skipped` field carries the reason.

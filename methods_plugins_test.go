@@ -2,21 +2,28 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
 // TestSiblingDaemonAlive proves the legacy-sweep guard: a run/<sib>/rpc.sock that a
-// live listener answers is reported by its relative path; a run dir with no
-// answering socket is not. A mutant that skipped the dial (always "" or always the
-// first sibling) would fail one of the two arms.
+// live listener answers is reported as "<rel> answers"; a run dir with no socket at
+// all is cleared (""). A mutant that skipped the dial (always "" or always the
+// first sibling) would fail one of the two arms, and a mutant that dropped the
+// "answers" suffix would fail the live arm.
 func TestSiblingDaemonAlive(t *testing.T) {
 	// A short temp root, not t.TempDir(): the full AF_UNIX socket path must stay
 	// under the macOS sockaddr_un limit (~104 bytes), the same reason the socket
@@ -46,7 +53,7 @@ func TestSiblingDaemonAlive(t *testing.T) {
 	// The return value is a wire string (embedded in the skip message), so it uses
 	// forward slashes on every OS — path.Join, matching siblingDaemonAlive. A
 	// filepath.Join here would expect "run\\...\\rpc.sock" on Windows and mismatch.
-	want := path.Join("run", sib, "rpc.sock")
+	want := path.Join("run", sib, "rpc.sock") + " answers"
 	if got := siblingDaemonAlive(base, own); got != want {
 		t.Errorf("live sibling: got %q, want %q", got, want)
 	}
@@ -61,6 +68,97 @@ func TestSiblingDaemonAlive(t *testing.T) {
 		if got := siblingDaemonAlive(base, own); got != "" {
 			t.Errorf("own listener must be skipped: got %q, want \"\"", got)
 		}
+	}
+}
+
+// TestIsNobodyListening pins the sibling-dial error classification the reference
+// uses: connection refused, not-a-socket, or not-found means the sibling is gone,
+// and everything else (permission denied, timeout, reset) means it may be present,
+// so the legacy sweep is kept. A mutant that treats every dial error as "gone" —
+// claustrum's old behavior — fails the EACCES/timeout/reset rows.
+func TestIsNobodyListening(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"conn-refused", syscall.ECONNREFUSED, true},
+		{"not-a-socket", syscall.ENOTSOCK, true},
+		{"no-ent", syscall.ENOENT, true},
+		{"fs-not-exist", fs.ErrNotExist, true},
+		{"wrapped-refused", fmt.Errorf("dial unix x: %w", syscall.ECONNREFUSED), true},
+		{"permission", syscall.EACCES, false},
+		{"timeout", syscall.ETIMEDOUT, false},
+		{"reset", syscall.ECONNRESET, false},
+		{"generic", errors.New("boom"), false},
+		{"nil", nil, false},
+	}
+	for _, c := range cases {
+		if got := isNobodyListening(c.err); got != c.want {
+			t.Errorf("isNobodyListening(%s) = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestSiblingDaemonAliveRunDir covers the run-dir-level branches: a missing run dir
+// clears the guard (""), and a run dir that cannot be listed (here it is a regular
+// file, so os.ReadDir fails with a non-not-found error) reports "cannot read
+// <dir>: ...". A mutant that returned "" on every ReadDir error would fail the
+// second arm and let a prune sweep another install's plugins when the run dir is
+// unreadable.
+func TestSiblingDaemonAliveRunDir(t *testing.T) {
+	base := t.TempDir()
+	if got := siblingDaemonAlive(base, "aaaaaaaa"); got != "" {
+		t.Errorf("absent run dir: got %q, want \"\"", got)
+	}
+	runPath := filepath.Join(base, "run")
+	if err := os.WriteFile(runPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := siblingDaemonAlive(base, "aaaaaaaa")
+	if runtime.GOOS == "windows" {
+		// On Windows a not-a-directory os.ReadDir error is ERROR_PATH_NOT_FOUND,
+		// which satisfies errors.Is(err, fs.ErrNotExist), so a non-directory run path
+		// reads as "no run dir" (""). The reference reaches the same verdict by the
+		// same Go semantics. The "cannot read" branch fires on Windows only for a real
+		// listing failure such as ERROR_ACCESS_DENIED, which a file cannot provoke; the
+		// Unix leg below exercises it (ENOTDIR is not fs.ErrNotExist there).
+		if got != "" {
+			t.Errorf("non-directory run path on Windows: got %q, want \"\"", got)
+		}
+		return
+	}
+	want := "cannot read " + runPath + ": "
+	if !strings.HasPrefix(got, want) {
+		t.Errorf("unreadable run dir: got %q, want prefix %q", got, want)
+	}
+}
+
+// TestLockPluginDir proves the per-name plugin-dir lock serialises the same name
+// and does not block a different name. A mutant whose lockPluginDir returned a
+// no-op release (no real lock) would let the second same-name acquire succeed while
+// the first is held, failing the "blocked" arm.
+func TestLockPluginDir(t *testing.T) {
+	unlock := lockPluginDir("aaaaaaaaaaaaaaaa")
+	got := make(chan struct{})
+	go func() {
+		u := lockPluginDir("aaaaaaaaaaaaaaaa")
+		close(got)
+		u()
+	}()
+	select {
+	case <-got:
+		t.Fatal("second acquire of the same name succeeded while the first was held")
+	case <-time.After(100 * time.Millisecond):
+	}
+	// A different name never blocks on the held one.
+	other := lockPluginDir("bbbbbbbbbbbbbbbb")
+	other()
+	unlock() // releasing the first must let the waiting goroutine proceed
+	select {
+	case <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second acquire did not proceed after release")
 	}
 }
 
