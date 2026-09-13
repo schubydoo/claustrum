@@ -726,6 +726,229 @@ func TestJudgeDaemonSocketLive(t *testing.T) {
 	}
 }
 
+func TestJudgeDaemonBranches(t *testing.T) {
+	proot, mk, link := fakeProc(t)
+	c := hcTestCleaner(t, "/opt/claude") // selfPid 999999, hcGetuid 1000, hcClock at Unix(1e6)
+	oldDial := hcDial
+	t.Cleanup(func() { hcDial = oldDial })
+	daemonExe := "/opt/claude/srv/a/server"
+	serve := []string{daemonExe, "--serve", "--socket", "/opt/claude/run/x/rpc.sock"}
+	now := hcClock()
+
+	// Every early return, driven by a directly-built record (no socket needed).
+	cases := []struct {
+		name string
+		d    hcTracked
+		want daemonVerdict
+	}{
+		{"stopped", hcTracked{pid: 100, sameNS: true, stopped: true}, dvSpare},
+		{"foreign-ns", hcTracked{pid: 100, sameNS: false}, dvSkip},
+		{"non-daemon-exe", hcTracked{pid: 100, sameNS: true, exe: "/usr/bin/other"}, dvSkip},
+		{"not-serve", hcTracked{pid: 100, sameNS: true, exe: daemonExe, argv: []string{daemonExe, "--bridge"}}, dvSkip},
+		{"age-unknown", hcTracked{pid: 100, sameNS: true, exe: daemonExe, argv: serve, haveAge: false}, dvSpare},
+		{"too-young", hcTracked{pid: 100, sameNS: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-time.Minute)}, dvSkip},
+		{"old-unmarked", hcTracked{pid: 100, sameNS: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-20 * time.Minute), env: []string{"PATH=/x"}}, dvSpare},
+		{"unmarked-not-old-enough", hcTracked{pid: 100, sameNS: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-6 * time.Minute), env: []string{"PATH=/x"}}, dvSkip},
+	}
+	for _, tc := range cases {
+		if v, _, _ := c.judgeDaemon(tc.d); v != tc.want {
+			t.Errorf("%s: verdict=%v, want %v", tc.name, v, tc.want)
+		}
+	}
+
+	// Marked + old, socket probe inconclusive (a dial error that is not missing/refused/wrong-type).
+	marked := hcTracked{pid: 100, sameNS: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-20 * time.Minute), env: []string{hcDaemonChildMarker}}
+	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.EIO} }
+	if v, reason, _ := c.judgeDaemon(marked); v != dvSpare || reason == "" {
+		t.Errorf("inconclusive socket: v=%v reason=%q, want spare", v, reason)
+	}
+
+	// Marked + old, socket dead, no lock, but the daemon still holds a live connection -> spare.
+	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
+	mk(100, "net/unix", "Num RefCount Protocol Flags Type St Inode Path\n0: 00000002 0 0 0001 03 555 /opt/claude/run/x/rpc.sock\n")
+	link(100, "fd/4", "socket:[555]")
+	_ = proot
+	if v, reason, _ := c.judgeDaemon(marked); v != dvSpare || reason == "" {
+		t.Errorf("busy daemon: v=%v reason=%q, want spare", v, reason)
+	}
+}
+
+// TestJudgeDaemonSocketLiveHealthyAndForeign covers the two socket-live sub-cases the primary
+// live test does not: the socket still answering the candidate itself (healthy -> skip), and a
+// foreign-uid answerer (-> spare).
+func TestJudgeDaemonSocketLiveHealthyAndForeign(t *testing.T) {
+	proot, mk, link := fakeProc(t)
+	c := hcTestCleaner(t, "/opt/claude")
+	socket := "/opt/claude/run/x/rpc.sock"
+	oldDial := hcDial
+	t.Cleanup(func() { hcDial = oldDial })
+	hcDial = func(string) (net.Conn, error) { return newFakePeerConn(t), nil } // peer = this test process
+	self := os.Getpid()
+
+	// Its socket still leads to itself (peer == pid): healthy, skip. The candidate's pid is this
+	// process, which is what SO_PEERCRED reports for the fake peer connection.
+	hcGetuid = func() int { return os.Getuid() }
+	hcFakeDaemon(t, proot, mk, link, self, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
+	if v, _, _ := c.judgeDaemon(mustInspect(t, self)); v != dvSkip {
+		t.Errorf("healthy self-answered daemon: v=%v, want skip", v)
+	}
+	// The socket is answered by a process owned by another user -> spare.
+	hcGetuid = func() int { return os.Getuid() + 12345 }
+	hcFakeDaemon(t, proot, mk, link, 71, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
+	if v, reason, _ := c.judgeDaemon(mustInspect(t, 71)); v != dvSpare || reason == "" {
+		t.Errorf("foreign-uid answerer: v=%v reason=%q, want spare", v, reason)
+	}
+}
+
+// TestEndDaemonsEPERMAndSurvivor covers the "not ours to signal" arm and the SIGKILL-survivor
+// warning in endDaemons.
+func TestEndDaemonsEPERMAndSurvivor(t *testing.T) {
+	_, mk, _ := fakeProc(t)
+	oldSig, oldGrp, oldClock, oldSleep := hcSignalPid, killGroup, hcClock, hcSleep
+	t.Cleanup(func() { hcSignalPid, killGroup, hcClock, hcSleep = oldSig, oldGrp, oldClock, oldSleep })
+	now := time.Unix(9_000_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
+	killGroup = func(int, syscall.Signal) error { return nil }
+	// Daemon 8001: EPERM (not ours) -> dropped. Daemon 8002: signalled but never exits -> survivor.
+	mk(8001, "stat", "8001 (server) R 1 8001 "+strings.Repeat("0 ", 16)+"1 x")
+	mk(8002, "stat", "8002 (server) R 1 8002 "+strings.Repeat("0 ", 16)+"1 x")
+	hcSignalPid = func(pid int, _ syscall.Signal) error {
+		if pid == 8001 {
+			return syscall.EPERM
+		}
+		return nil // 8002 stays alive in procfs -> waitGone times out -> survivor
+	}
+	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 111}
+	var sum hcSummary
+	c.endDaemons([]daemonTarget{
+		{tracked: tracked{pid: 8001, pgid: 8001, startTicks: "1"}, runDir: "/opt/claude/run/a"},
+		{tracked: tracked{pid: 8002, pgid: 8002, startTicks: "1"}, runDir: "/opt/claude/run/b"},
+	}, &sum)
+	if sum.strandedSignalled != 2 {
+		t.Errorf("strandedSignalled=%d, want 2", sum.strandedSignalled)
+	}
+	if sum.strandedSurvived != 1 {
+		t.Errorf("strandedSurvived=%d, want 1 (8002 never exited)", sum.strandedSurvived)
+	}
+}
+
+// TestEndGroupsTwoPhaseForeignOwner covers the EPERM ("belongs to another owner") arm.
+func TestEndGroupsTwoPhaseForeignOwner(t *testing.T) {
+	_, mk, _ := fakeProc(t)
+	oldGrp, oldClock, oldSleep := killGroup, hcClock, hcSleep
+	t.Cleanup(func() { killGroup, hcClock, hcSleep = oldGrp, oldClock, oldSleep })
+	now := time.Unix(9_100_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
+	killGroup = func(_ int, sig syscall.Signal) error {
+		if sig == 0 {
+			return nil
+		}
+		return syscall.EPERM
+	}
+	mk(8100, "stat", "8100 (x) R 1 8100 "+strings.Repeat("0 ", 16)+"1 x")
+	sig, _ := endGroupsTwoPhase([]tracked{{pid: 8100, pgid: 8100, startTicks: "1"}}, "orphan")
+	if sig != 0 {
+		t.Errorf("signalled=%d, want 0 (EPERM: not ours)", sig)
+	}
+}
+
+// TestTidyRunDirsKeepBranches covers the socket-inconclusive and lock-indeterminate keeps.
+func TestTidyRunDirsKeepBranches(t *testing.T) {
+	proot, _, _ := fakeProc(t)
+	_ = proot
+	c := hcTestCleaner(t, "/opt/claude")
+	oldDial, oldRm := hcDial, hcRemoveAll
+	t.Cleanup(func() { hcDial, hcRemoveAll = oldDial, oldRm })
+	removed := 0
+	hcRemoveAll = func(string) error { removed++; return nil }
+
+	// Socket probe inconclusive (a dial error that is not missing/refused/wrong-type) -> keep.
+	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.EIO} }
+	var sum hcSummary
+	c.tidyRunDirs([]runDirEntry{{name: "u", dirPath: "/opt/claude/run/u", socket: "/opt/claude/run/u/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)
+	if removed != 0 {
+		t.Errorf("dir kept-on-inconclusive-socket was removed (removed=%d)", removed)
+	}
+	// Socket dead but the lock state is indeterminate (a directory in place of daemon.lock) -> keep.
+	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, runDirLockName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum = hcSummary{}
+	c.tidyRunDirs([]runDirEntry{{name: "v", dirPath: dir, socket: filepath.Join(dir, "rpc.sock"), idle: 40 * 24 * time.Hour}}, &sum)
+	if removed != 0 || sum.runDirsRemoved != 0 {
+		t.Errorf("dir kept-on-indeterminate-lock was removed (removed=%d)", removed)
+	}
+}
+
+// TestRemoveRunDirErrors covers the rename-failed and remove-failed arms (the dir is kept).
+func TestRemoveRunDirErrors(t *testing.T) {
+	proot, _, _ := fakeProc(t)
+	_ = proot
+	c := hcTestCleaner(t, "/opt/claude")
+	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
+	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
+	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
+
+	// Rename for staging fails -> the dir is kept, RemoveAll is never called.
+	hcRename = func(string, string) error { return syscall.EACCES }
+	removed := 0
+	hcRemoveAll = func(string) error { removed++; return nil }
+	var sum hcSummary
+	c.tidyRunDirs([]runDirEntry{{name: "r", dirPath: "/opt/claude/run/r", socket: "/opt/claude/run/r/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)
+	if removed != 0 || sum.runDirsRemoved != 0 {
+		t.Errorf("rename-failed dir was still removed (removed=%d)", removed)
+	}
+	// Rename succeeds but RemoveAll fails -> not counted as removed.
+	hcRename = func(string, string) error { return nil }
+	hcRemoveAll = func(string) error { return syscall.EIO }
+	sum = hcSummary{}
+	c.tidyRunDirs([]runDirEntry{{name: "s", dirPath: "/opt/claude/run/s", socket: "/opt/claude/run/s/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)
+	if sum.runDirsRemoved != 0 {
+		t.Errorf("remove-failed dir counted as removed: %d", sum.runDirsRemoved)
+	}
+}
+
+// TestHcReadersMalformed covers the error arms of the small /proc readers.
+func TestHcReadersMalformed(t *testing.T) {
+	root, mk, link := fakeProc(t)
+	// hcUptime: missing and malformed both report not-ok.
+	if _, ok := hcUptime(); ok {
+		t.Error("hcUptime with no /proc/uptime reported ok")
+	}
+	if err := os.WriteFile(filepath.Join(root, "uptime"), []byte("garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := hcUptime(); ok {
+		t.Error("hcUptime on garbage reported ok")
+	}
+	// hcReadExe: a missing exe link reads empty.
+	if got := hcReadExe(4242); got != "" {
+		t.Errorf("hcReadExe(missing) = %q, want empty", got)
+	}
+	// hcReadUID: a status file with no Uid line yields not-ok.
+	mk(50, "status", "Name:\tx\n")
+	if _, ok := hcReadUID(50); ok {
+		t.Error("hcReadUID with no Uid line reported ok")
+	}
+	// hcReadStat on a truncated (<20 field) line is not ok.
+	mk(51, "stat", "51 (x) R 1 51 too short")
+	if hcReadStat(51).ok {
+		t.Error("hcReadStat on a short line reported ok")
+	}
+	// splitNul: an all-NUL (or empty) buffer yields nil; a delimited one splits.
+	if got := splitNul("\x00\x00"); got != nil {
+		t.Errorf("splitNul(all-nul) = %v, want nil", got)
+	}
+	if got := splitNul("a\x00b\x00"); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("splitNul = %v, want [a b]", got)
+	}
+	_ = link
+}
+
 func TestTidyRunDirsKeepOnLock(t *testing.T) {
 	proot, _, _ := fakeProc(t)
 	_ = proot
