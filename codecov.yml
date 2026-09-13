@@ -186,9 +186,13 @@ component_management:
         - childrecord_other.go
         # 19f30c46 orphan reap: at -serve startup the daemon ends the process groups of
         # children a since-exited predecessor daemon of this run dir left orphaned, after
-        # verifying each is still that recorded child. Linux-only (a no-op elsewhere for
-        # now); the kill and /proc reads are seamed so tests never touch a real process.
+        # verifying each is still that recorded child. The decision logic is shared
+        # (childreap.go, linux||darwin); the live-process read is OS-specific — /proc on
+        # linux, ps on darwin — and windows uses the no-op (childreap_other.go). Every kill
+        # and process read is seamed so tests never touch a real process.
+        - childreap.go
         - childreap_linux.go
+        - childreap_darwin.go
         - childreap_other.go
         # 19f30c46 host cleaner: a periodic -serve background sweep that ends stranded sibling
         # daemons and orphaned Claude Code process groups under this install's roots and tidies

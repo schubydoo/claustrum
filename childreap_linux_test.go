@@ -256,7 +256,7 @@ func TestEarlierBootOfThisMachine(t *testing.T) {
 		{"same machine same boot", host, "bootA/ns1", host, "bootA/ns2", false},
 		{"different machine", "machine-id:xyz", "bootA/ns1", host, "bootB/ns1", false},
 		{"empty host", "", "bootA/ns1", host, "bootB/ns1", false},
-		{"unparseable node", host, "bootA", host, "bootB", false},
+		{"empty node id", host, "", host, "bootB/ns1", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

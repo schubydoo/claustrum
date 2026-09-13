@@ -32,7 +32,7 @@ type childRecord struct {
 // <runDir>/children/<rec.Pid>.json — the on-disk path measured against 19f30c46. It
 // makes the children dir 0700, writes a temp file, then renames it into place so a
 // reader never sees a half-written record. Pure filesystem work and so cross-platform;
-// the linux caller supplies the record. Uses encoding/json.Marshal, whose HTML
+// the linux and darwin callers supply the record. Uses encoding/json.Marshal, whose HTML
 // escaping is inherited wire behaviour (see docs/ARCHITECTURE.md), so the observable
 // record bytes match 19f30c46's.
 func writeChildRecord(runDir string, rec childRecord) error {
@@ -60,7 +60,7 @@ func writeChildRecord(runDir string, rec childRecord) error {
 // writeChildRecord — the inverse used by the orphan reap at startup. It returns the
 // record and true on success, and false when the file is unreadable or is not valid
 // JSON, in which case the reap forgets the record (reference build 19f30c46). Pure
-// filesystem work, so cross-platform; the linux reap is its only caller.
+// filesystem work, so cross-platform; the reap on linux and darwin is its only caller.
 func readChildRecord(runDir, name string) (childRecord, bool) {
 	data, err := os.ReadFile(filepath.Join(runDir, "children", name))
 	if err != nil {

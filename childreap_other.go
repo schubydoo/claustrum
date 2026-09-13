@@ -1,10 +1,9 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package main
 
-// reapOrphans is a no-op off linux. The orphan registry's identity (boot id, pid
-// namespace inode, /proc start-times) is linux-specific, and the child records are
-// written only on linux (see childrecord_other.go), so there is nothing to reap. Darwin
-// and Windows are reconciled in a later slice, matching how the exec-child trampoline and
-// the child registry landed linux-first.
+// reapOrphans is a no-op on the remaining platforms (windows and others). Linux and darwin
+// have their own live-process readers (childreap_linux.go / childreap_darwin.go) over the
+// shared decision logic in childreap.go; the reference also reaps on windows, which is
+// reconciled in the windows track of this slice.
 func reapOrphans(runDir, ownInstance string) {}

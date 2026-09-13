@@ -89,28 +89,29 @@ children it spawns.
   through a self-re-exec **exec-child trampoline** so the child carries a
   `CLAUDE_SSH_CHILD=<pid>:<startTicks>` identity and `CLAUDE_SSH_RUN_DIR` — a stable,
   pid-reuse-safe marker in the child's environment; the target's Go-runtime env is
-  held and restored across the re-exec. Reproduced on linux (`execchild_linux.go`);
-  darwin (a different, inferred start-time source) and Windows (a linked trampoline
-  shim, not yet analyzed) are follow-ups. Off-wire — see
-  [PROTOCOL.md](PROTOCOL.md) → process.spawn.
-- Under that same socket the daemon also records each spawned child to
-  `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go`), an
-  ordered JSON record a later daemon reads to reap children a since-exited daemon left
-  behind. Written atomically, linux-only for now.
+  held and restored across the re-exec. Reproduced on linux and darwin (shared
+  `execchild_unix.go`, with the start-time source in `execchild_linux.go` and
+  `execchild_darwin.go`). Windows links a trampoline shim, a follow-up.
   Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+- Under that same socket the daemon also records each spawned child to
+  `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go` /
+  `childrecord_darwin.go`), an ordered JSON record a later daemon reads to reap children a
+  since-exited daemon left behind. Written atomically on linux and darwin. Windows is a
+  follow-up. Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - At `-serve` startup — right after it claims the run dir, which evicts a live
   predecessor on the same socket unless eviction is refused — the daemon reaps those
-  records (`childreap_linux.go`).
-  It reaps a child only when its record's node matches ours (same boot id and pid
-  namespace), its owning daemon is gone, and the live process still is that recorded
-  child: the `/proc` start-time matches
+  records (shared `childreap.go`, with the live-process read in `childreap_linux.go` /
+  `childreap_darwin.go`).
+  It reaps a child only when its record's node matches ours (same boot and machine), its
+  owning daemon is gone, and the live process still is that recorded
+  child: the start-time matches
   (no pid reuse), the process leads its own group, runs the recorded program, and carries
   `CLAUDE_SSH_RUN_DIR` for this run dir plus a self-naming `CLAUDE_SSH_CHILD`. A verified
   orphan's process group gets `SIGTERM`, a 2s grace, then `SIGKILL` and a 1s escalate;
   the record is then forgotten. A record whose owner is still alive, or from another boot
-  or machine, is never reaped. Linux-only (a no-op elsewhere for now); the kill and every
-  `/proc` read sit behind seams so tests exercise the decision without ending a real
-  process. Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+  or machine, is never reaped. It runs on linux and darwin, and is a no-op on Windows for
+  now. The kill and every live-process read sit behind seams, so tests exercise the decision
+  without ending a real process. Off-wire — see [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - Also at `-serve` startup the daemon starts a periodic **host cleaner**
   (`hostclean_linux.go`): a background sweep, run 15s after startup and then daily, that
   keeps the install tidy. It is confined to the install roots derived from the daemon's own
