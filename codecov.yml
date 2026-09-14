@@ -112,6 +112,10 @@ component_management:
         - daemon_runlock_darwin.go
         - daemon_runlock_windows.go
         - orphanexit.go
+        # 19f30c46: raise the daemon's RLIMIT_NOFILE at serve startup so process.spawn
+        # children inherit a high open-file limit (Unix only; a no-op on Windows).
+        - raiselimit_unix.go
+        - raiselimit_windows.go
     - component_id: methods
       name: methods (server/files/git/process/plugins)
       paths:

@@ -291,6 +291,17 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 		osExit(1)
 	}
 
+	// Set this daemon's RLIMIT_NOFILE soft limit to min(hard, 65536) so process.spawn
+	// children inherit a high open-file limit, matching reference build 19f30c46. (The
+	// Go runtime pre-raises the daemon's own soft limit near the hard limit at startup,
+	// so for a hard limit above 65536 this lowers the daemon's own soft limit; the point
+	// is the value the child inherits.) syscall.Setrlimit for RLIMIT_NOFILE also updates the
+	// value the Go runtime restores across exec, so the raised limit reaches the
+	// exec'd child. Unix only (Windows has no RLIMIT_NOFILE) and a no-op when the
+	// limit cannot be read or raised. Kept in this shell — not newServerOnSocket — so
+	// in-process tests never mutate the test process's own limit.
+	raiseInheritedFileLimit()
+
 	// Extract a real interactive PATH from the login shell so spawned children
 	// resolve tools the way an interactive session would. Run in a goroutine so
 	// a stalling login shell does not delay the daemon socket opening (matches

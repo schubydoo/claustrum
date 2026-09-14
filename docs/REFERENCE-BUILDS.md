@@ -38,7 +38,8 @@ confirmed that nothing else changed.
 Pinned by Claude Desktop for Linux `1.52386.0`. The upstream build date is not
 published, so the date above is when this build was captured and pinned. A large
 build on top of `3ef9370`. This build has two wire changes, both matched
-byte-for-byte, plus four off-wire subsystems and one new off-wire CLI mode.
+byte-for-byte, plus four off-wire subsystems, one new off-wire CLI mode, and a
+startup file-limit raise.
 
 **Wire delta.**
 
@@ -54,7 +55,7 @@ byte-for-byte, plus four off-wire subsystems and one new off-wire CLI mode.
    [PROTOCOL.md → git.worktree_create](PROTOCOL.md) holds the frames.
 
 **Off-wire.** These source changes move no client-visible frame. Four are subsystems.
-One is a CLI mode. A closing note covers windows.
+One is a CLI mode. One raises the inherited file limit. A closing note covers windows.
 
 - **`-probe-cli` CLI mode.** A one-shot flag runs a bounded `<cli> --version` probe
   and exits 0. For a CLI that runs it prints nothing. For one that times out it
@@ -71,7 +72,11 @@ One is a CLI mode. A closing note covers windows.
 - **Host cleaner.** A periodic sweep ends stranded sibling daemons and orphaned
   Claude Code process groups under this install's roots. It also tidies stale run
   dirs. Linux and darwin only.
-- **Windows.** All four subsystems above are inert on windows. Windows ships no
+- **Inherited file limit.** At serve startup the daemon sets its own RLIMIT_NOFILE
+  soft limit to min(hard, 65536) so process.spawn children inherit a high open-file
+  limit. Linux and darwin only (windows has no RLIMIT_NOFILE).
+- **Windows.** The exec-child, record, reap, and cleaner subsystems are inert on
+  windows. Windows ships no
   run-dir lock, so the daemon is never the run-dir lock holder there. It records no
   children, reaps nothing, and stamps no child markers. A windows VM showed this.
 
@@ -82,7 +87,8 @@ frame battery. Claustrum reconciled each off-wire subsystem 1:1. A throwaway VM
 validated the destructive paths on linux, darwin, and windows. The forensics stay
 outside the committed tree.
 
-**Reconciled in.** PRs 356 through 371.
+**Reconciled in.** PRs 356 through 371, with later follow-up parity fixes (the
+plugins.prune sibling-daemon classification and the inherited file-limit raise).
 
 ### `3ef9370ec5b07a0e728ca5de4137d450e95eb2b6` — 2026-09-03
 
