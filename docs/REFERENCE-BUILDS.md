@@ -79,6 +79,8 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
   windows. Windows ships no
   run-dir lock, so the daemon is never the run-dir lock holder there. It records no
   children, reaps nothing, and stamps no child markers. A windows VM showed this.
+  A windows VM re-confirmed that D16 (git.status of a linked worktree) persists on this
+  build.
 
 **How it was bounded.** The static drift check passes for `19f30c46`. The 19 methods,
 the CLI flags, the `-version` format, and the tracked strings all match. The new

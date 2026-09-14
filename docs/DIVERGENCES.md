@@ -665,10 +665,17 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `--work-tree` at the worktree). On Linux and macOS the two are byte-identical. On
   **Windows** the reference returns `-32603 "exit status 128"` for a linked worktree,
   and claustrum returns the status result (`{"isRepo":true,"clean":false,"changes":[…]}`).
-- **Outcome measured 2026-09-06; mechanism not yet pinned.** The Windows divergence
-  is measured: on a Windows VM the reference returns `-32603 "exit status 128"` for a
-  linked-worktree `git.status` across runs, and claustrum returns the status result
-  (`scratch/osparity/results/win-*-4534d86.json`). The exact reason the reference's
+- **Outcome measured 2026-09-06, re-confirmed on `19f30c46` 2026-09-13; mechanism not
+  yet pinned.** The Windows divergence is measured: on a Windows VM the reference
+  returns `-32603 "exit status 128"` for a linked-worktree `git.status` across runs,
+  and claustrum returns the status result
+  (`scratch/osparity/results/win-*-4534d86.json`). The 2026-09-13 re-probe ran the same
+  case against the `19f30c46` reference on a Windows VM: it again returns
+  `-32603 "exit status 128"` for a linked-worktree `git.status`, while claustrum returns
+  `{"isRepo":true,"clean":false,"changes":[" M f.txt"]}`. A main-checkout control
+  returned the identical `{"isRepo":false,"clean":false}` on both binaries. So D16 is
+  still-needed on `19f30c46`, not moot (`scratch/slice8/prerelease/d16probe.ps1`). The
+  exact reason the reference's
   assembly fails on Windows is not yet determined. An earlier hypothesis (a hardcoded
   `/tmp` temp-gitdir path) is contradicted: the reference respects `$TMPDIR`, so its
   temp gitdir is `<os-temp>/claude-ssh-gitdir-<random>` and resolves to `%TEMP%` on
