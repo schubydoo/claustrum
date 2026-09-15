@@ -293,6 +293,12 @@ func prunePluginRoot(root string, legacy bool, cutoff time.Time, live map[string
 	}
 }
 
+// pluginRemoveAll is the recursive delete pruneOnePluginDir performs, behind a seam so a
+// test can drive the failure arm without arranging a real undeletable directory (a chmod
+// fixture is a no-op for a root CI user, and this is a delete path, which the project keeps
+// out of a live filesystem in tests). Mirrors hcRemoveAll in hostclean.go.
+var pluginRemoveAll = os.RemoveAll
+
 // pruneOnePluginDir classifies one plugin content-hash directory and, when it is
 // neither live nor young, removes it. It holds that directory's lock across the
 // removal, so two concurrent prunes of the same directory never interleave.
@@ -309,7 +315,7 @@ func pruneOnePluginDir(root, name string, legacy bool, cutoff time.Time, live ma
 		res.Young++
 		return
 	}
-	if rerr := os.RemoveAll(dir); rerr != nil {
+	if rerr := pluginRemoveAll(dir); rerr != nil {
 		res.Errors = append(res.Errors, dir+": "+rerr.Error())
 		return
 	}
