@@ -4,6 +4,29 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.12.0 (2026-09-15)
+
+[Compare with 1.11.1](https://github.com/schubydoo/claustrum/compare/v1.11.1...v1.12.0)
+
+### Features
+
+- On darwin the daemon now records each spawned child to `<runDir>/children/<pid>.json`, which was linux-only before. It uses the darwin identity from reference build `19f30c46`: the node is the boot-session UUID, the host is the machine hostname, and the start-times are the process start as a UTC ANSIC timestamp. The on-disk record format stays byte-identical to linux, validated against the reference on a macOS VM. ([#367](https://github.com/schubydoo/claustrum/pull/367))
+- Under a run-shaped socket the daemon now records each spawned child to `<runDir>/children/<pid>.json`, matching reference build `19f30c46`. ([#361](https://github.com/schubydoo/claustrum/pull/361))
+- On darwin the daemon now launches `process.spawn` children under a run-shaped socket through the exec-child trampoline, which was linux-only before. The trampoline stamps `CLAUDE_SSH_CHILD=<pid>:<start>` and `CLAUDE_SSH_RUN_DIR` on the child, matching reference build `19f30c46`. The darwin start-time token is the process start as a UTC ANSIC timestamp, so it matches the child registry record. This is off-wire and was validated on a macOS VM. ([#368](https://github.com/schubydoo/claustrum/pull/368))
+- claustrum now launches `process.spawn` children under a `run/<clientId>/` socket through reference build `19f30c46`'s exec-child self-re-exec trampoline (linux), which stamps `CLAUDE_SSH_CHILD=<pid>:<startTicks>` and `CLAUDE_SSH_RUN_DIR` on the child as a stable, pid-reuse-safe identity in its environment and holds the Go-runtime env across the re-exec; it is off-wire (no JSON-RPC frame changes), leaves a missing or non-executable command's `-32603 fork/exec` error frame unchanged via the trampoline's exec-error pipe, and had its child-marker set and format verified against the reference on a VM. ([#359](https://github.com/schubydoo/claustrum/pull/359))
+- At startup the daemon now runs a periodic host cleaner. It ends stranded sibling daemons and orphaned Claude Code process groups under this install and tidies their stale run dirs. This reproduces reference build `19f30c46`'s host cleaner (off-wire), with a few documented, conservative simplifications. ([#364](https://github.com/schubydoo/claustrum/pull/364))
+- The startup host cleaner now runs on darwin. It was linux-only before. On darwin it reads processes with sysctl kern.proc, and argv and environment with KERN_PROCARGS2. It reads open files, sockets and the run-dir lock with lsof, because darwin has no /proc. The judge, kill and tidy decisions are shared with linux. This matches reference build `19f30c46` and was validated on a macOS VM. ([#370](https://github.com/schubydoo/claustrum/pull/370))
+- claustrum now implements plugins.prune, a new plugins.* namespace method from reference build `19f30c46` that removes cached CLI plugin directories not used within minAgeDays under the run/<clientId>/ socket layout while keeping live (session-referenced) and young ones, leaves the shared legacy plugins untouched for any other install whose daemon on the host still answers or cannot be ruled out as gone, and advertises it as the 19th server.capabilities method. ([#357](https://github.com/schubydoo/claustrum/pull/357))
+- claustrum now implements the `-probe-cli <path>` mode from reference build `19f30c46`, a one-shot bounded `<path> --version` runnability probe that always exits 0 and prints nothing when the CLI runs, `__CLI_HUNG__` when the fixed 30s deadline had to kill it, or `__CLI_BAD__` when the binary is missing or does not run. ([#358](https://github.com/schubydoo/claustrum/pull/358))
+- The startup orphan reap now runs on darwin. It was linux-only before. On darwin it reads a live process with `ps`, because darwin has no `/proc`. For each recorded child, it matches the live process to the record: same UTC start-time, process group leader, program, run-dir marker and direct-child marker. If every point matches, it ends the process group. So it never ends an unrelated process. This matches reference build `19f30c46` and was validated on a macOS VM. ([#369](https://github.com/schubydoo/claustrum/pull/369))
+- At startup the daemon now ends the process groups of children a since-exited predecessor daemon of the same run dir left orphaned. It first matches each live process to its record, so it does not end an unrelated process. This matches reference build `19f30c46`. ([#363](https://github.com/schubydoo/claustrum/pull/363))
+- git.worktree_create now accepts an `existingBranch` param that attaches the new worktree to an already-existing local branch, adds a `branch` field to its success result naming the checked-out branch, and advertises the `git.worktree_create.existingBranch` capability, matching reference build `19f30c46`. ([#356](https://github.com/schubydoo/claustrum/pull/356))
+
+### Fixes
+
+- The `-probe-cli` and `-install` modes now ignore SIGPIPE, so a closed stdout no longer kills them mid-write, matching reference build `19f30c46`. ([#362](https://github.com/schubydoo/claustrum/pull/362))
+- claustrum now sets the daemon's RLIMIT_NOFILE soft limit to min(hard, 65536) at serve startup on Unix, so process.spawn children inherit a high open-file limit, matching reference build `19f30c46`. ([#374](https://github.com/schubydoo/claustrum/pull/374))
+
 ## 1.11.1 (2026-09-10)
 
 [Compare with 1.11.0](https://github.com/schubydoo/claustrum/compare/v1.11.0...v1.11.1)
