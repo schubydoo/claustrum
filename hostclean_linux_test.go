@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1032,8 +1033,18 @@ func TestStart(t *testing.T) {
 	hcClock = time.Now
 	var chtimes int32
 	hcChtimes = func(string, time.Time, time.Time) error { atomic.AddInt32(&chtimes, 1); return nil }
+	// Start's two loops have no cancellation path — they are fire-and-forget in production —
+	// so the stub has to end them itself. Parking them in a bare select{} leaked two
+	// goroutines per run of this test, which at -count=N accumulates. Each now parks on
+	// stop, and runtime.Goexit ends the goroutine from inside the loop once the test closes
+	// it.
 	reached := make(chan struct{}, 4)
-	hcSleep = func(time.Duration) { reached <- struct{}{}; select {} } // signal, then block the goroutine
+	stop := make(chan struct{})
+	hcSleep = func(time.Duration) {
+		reached <- struct{}{} // signal, then wait for the test to release us
+		<-stop
+		runtime.Goexit()
+	}
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/x"}}, ownSocket: "/x/run/self/rpc.sock", ownRunDir: "/x/run/self", selfPid: 1}
 	c.Start()
 	timeout := time.After(3 * time.Second)
@@ -1044,6 +1055,26 @@ func TestStart(t *testing.T) {
 			t.Fatal("Start goroutines did not reach their first sleep")
 		}
 	}
+
+	// Both loops are parked, so this count includes them. The teardown waits for it to drop
+	// by two, which is the only thing that actually shows the goroutines ENDED: a signal
+	// sent from inside the stub would arrive before runtime.Goexit runs, so a change that
+	// dropped the Goexit would still deliver it while the loops spun on. Nothing else in
+	// this package runs in parallel, so the count is stable apart from these two.
+	parked := runtime.NumGoroutine()
+	t.Cleanup(func() {
+		close(stop)
+		deadline := time.Now().Add(5 * time.Second)
+		for runtime.NumGoroutine() > parked-2 {
+			if time.Now().After(deadline) {
+				t.Errorf("the 2 cleaner goroutines did not exit after the stop signal: %d goroutines, want %d",
+					runtime.NumGoroutine(), parked-2)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	})
+
 	if atomic.LoadInt32(&chtimes) == 0 {
 		t.Error("Start did not run Keepalive")
 	}
