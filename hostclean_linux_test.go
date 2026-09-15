@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1032,8 +1033,32 @@ func TestStart(t *testing.T) {
 	hcClock = time.Now
 	var chtimes int32
 	hcChtimes = func(string, time.Time, time.Time) error { atomic.AddInt32(&chtimes, 1); return nil }
+	// Start's two loops have no cancellation path — they are fire-and-forget in production —
+	// so the stub has to end them itself. Parking them in a bare select{} leaked two
+	// goroutines per run of this test, which at -count=N accumulates. Each now parks on
+	// stop, and runtime.Goexit ends the goroutine from inside the loop once the test closes
+	// it. The cleanup waits for both to confirm they exited rather than assuming it, so a
+	// change that breaks the exit path fails here instead of leaking again quietly.
 	reached := make(chan struct{}, 4)
-	hcSleep = func(time.Duration) { reached <- struct{}{}; select {} } // signal, then block the goroutine
+	stopped := make(chan struct{}, 4)
+	stop := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		for i := 0; i < 2; i++ {
+			select {
+			case <-stopped:
+			case <-time.After(5 * time.Second):
+				t.Errorf("only %d of the 2 cleaner goroutines exited after the stop signal", i)
+				return
+			}
+		}
+	})
+	hcSleep = func(time.Duration) {
+		reached <- struct{}{} // signal, then wait for the test to release us
+		<-stop
+		stopped <- struct{}{}
+		runtime.Goexit()
+	}
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/x"}}, ownSocket: "/x/run/self/rpc.sock", ownRunDir: "/x/run/self", selfPid: 1}
 	c.Start()
 	timeout := time.After(3 * time.Second)
