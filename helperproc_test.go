@@ -24,6 +24,22 @@ func TestMain(m *testing.M) {
 	// must run the trampoline (stamp the child identity, restore held env, exec the
 	// real target) rather than the suite. A no-op on non-linux and for any other argv.
 	maybeRunExecChild()
+
+	// Every helper re-exec is a copy of THIS binary, and under -race the tsan
+	// runtime sleeps atexit_sleep_ms (default 1000ms) in the main thread before
+	// the process exits — so each fixture spawn costs a wall-clock second no
+	// matter how trivial the fixture is. The suite spawns dozens of them
+	// (TestWorktreeCreateLingeringDescendant alone spawns ~30 stub gits), which
+	// measured as 48s of the 109s `go test -race ./...` run. Publishing the knob
+	// here hands it to every child through buildEnv's os.Environ() base, and
+	// leaves the parent's own tsan settings untouched (tsan parses GORACE at
+	// startup, and we are already past it). The children run a dozen lines of
+	// fixture code and hold no threads at exit, so the sleep buys no detection.
+	// An operator-supplied GORACE still wins.
+	if os.Getenv("GORACE") == "" {
+		os.Setenv("GORACE", "atexit_sleep_ms=0")
+	}
+
 	mode := os.Getenv("CLAUSTRUM_TEST_HELPER")
 
 	// A re-exec'd daemon child must never run the suite. runServe's parent half
