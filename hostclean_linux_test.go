@@ -234,12 +234,21 @@ func hcFakeDaemonUID(t *testing.T, root string, mk func(int, string, string), li
 }
 
 // hcTestCleaner builds a cleaner over one root and seams the clock, sleep and uid.
+//
+// The sleep ADVANCES the clock rather than doing nothing. Several of the cleaner's paths end
+// in waitGone, whose poll loop only terminates when the clock passes its deadline: with a
+// frozen clock and a no-op sleep, a regression that lets control reach one of them makes the
+// test HANG to the go test timeout instead of failing on its assertions (measured: a waitGone
+// over one live entry returns immediately with the advancing clock and panics at the 30s
+// timeout with the frozen one). Advancing costs a passing test nothing, because a passing
+// test reaches few sleeps or none.
 func hcTestCleaner(t *testing.T, root string) *hostCleaner {
 	t.Helper()
 	oldClock, oldSleep, oldUID := hcClock, hcSleep, hcGetuid
 	t.Cleanup(func() { hcClock, hcSleep, hcGetuid = oldClock, oldSleep, oldUID })
-	hcClock = func() time.Time { return time.Unix(1_000_000, 0) } // "now"; fake starts are far earlier
-	hcSleep = func(time.Duration) {}
+	now := time.Unix(1_000_000, 0) // "now"; fake starts are far earlier
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	hcGetuid = func() int { return 1000 }
 	return &hostCleaner{
 		roots:     &hostRoots{roots: []string{root}, daemonBin: "server"},
@@ -663,6 +672,16 @@ func TestPassReapsStrandedDaemon(t *testing.T) {
 	t.Cleanup(func() { hcGetuid = oldUID })
 	uid := os.Getuid()
 	hcGetuid = func() int { return uid }
+	// Pass ends with a real tidy sweep over the roots, and this root is the product's own
+	// install path. The fake clock sits in 1970, so every ordinary run dir under it reads as
+	// fresh and is skipped — but a leftover .removing-<name>-<ts> staging dir SKIPS the idle
+	// gate by design, and removeRunDir then calls hcRemoveAll on it with no rename. Measured:
+	// with these two seams absent, a staging dir holding a file was really deleted. An
+	// interrupted removal is exactly what leaves one behind, so this is not hypothetical.
+	oldRen, oldRm := hcRename, hcRemoveAll
+	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
+	hcRename = func(string, string) error { return nil }
+	hcRemoveAll = func(string) error { return nil }
 	// A stranded daemon owned by our uid whose own socket (a dead path under a temp dir that
 	// is guaranteed absent) no longer answers. Its pid must differ from this test process's
 	// (which is the cleaner's selfPid, and would be skipped as self).
