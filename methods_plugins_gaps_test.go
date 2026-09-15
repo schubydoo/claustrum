@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -139,6 +140,13 @@ func TestPrunePluginRootUnreadable(t *testing.T) {
 		t.Errorf("a missing root reported errors: %v", res.Errors)
 	}
 
+	// On Windows a not-a-directory os.ReadDir error is ERROR_PATH_NOT_FOUND, which satisfies
+	// os.IsNotExist, so a non-directory root reads as "absent" and no error is recorded —
+	// the same OS split TestSiblingDaemonAliveRunDir documents for the run dir. The Unix
+	// legs exercise the arm, where ENOTDIR is not fs.ErrNotExist.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	notADir := filepath.Join(t.TempDir(), "plugins")
 	if err := os.WriteFile(notADir, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)

@@ -17,10 +17,18 @@ import (
 func TestSiblingDaemonAliveSocketArms(t *testing.T) {
 	const own = "aaaaaaaa"
 
-	// mkSib returns the base and the sibling's run dir for one case.
+	// mkSib returns the base and the sibling's run dir for one case. The root is a short
+	// os.MkdirTemp, not t.TempDir(): a macOS t.TempDir path is built from the test name and
+	// already exceeds sockaddr_un's 104-byte sun_path, so every dial under it fails with
+	// EINVAL and the refused-connection case can never arise. The same reason the socket
+	// harness and TestSiblingDaemonAlive use os.MkdirTemp("", "cl").
 	mkSib := func(t *testing.T, sib string) (base, sibRun string) {
 		t.Helper()
-		base = t.TempDir()
+		base, err := os.MkdirTemp("", "cl")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(base) })
 		if err := os.MkdirAll(filepath.Join(base, "run", own), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -36,7 +44,11 @@ func TestSiblingDaemonAliveSocketArms(t *testing.T) {
 		// nobody is listening, so the sweep proceeds. A mutant without that classification
 		// reports "cannot rule out" and keeps another install's plugins forever.
 		base, sibRun := mkSib(t, "bbbbbbbb")
-		if err := os.WriteFile(filepath.Join(sibRun, "rpc.sock"), []byte("x"), 0o644); err != nil {
+		sock := filepath.Join(sibRun, "rpc.sock")
+		if len(sock) > 100 {
+			t.Skipf("temp root too long for sun_path (%d bytes): every dial here fails EINVAL, not ECONNREFUSED", len(sock))
+		}
+		if err := os.WriteFile(sock, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if got := siblingDaemonAlive(base, own); got != "" {

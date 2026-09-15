@@ -120,14 +120,21 @@ func TestJudgeDaemonAnotherVerifiedDaemon(t *testing.T) {
 	oldDial := hcDial
 	t.Cleanup(func() { hcDial = oldDial })
 	hcDial = func(string) (net.Conn, error) { return newFakePeerConn(t), nil } // peer = this process
-	hcGetuid = func() int { return os.Getuid() }
+	// SO_PEERCRED reports the RUNNER's real uid, which judgeDaemon compares against
+	// hcGetuid() and verifyListener against the uid in the fake status file. All three must
+	// be the same number, or the verdict depends on whether the runner happens to be uid
+	// 1000 (hcFakeDaemon's default) — it is on the maintainer host and is not on CI, where
+	// this failed. The fixtures therefore carry the real uid, the way
+	// TestJudgeDaemonSocketLive already does.
+	uid := os.Getuid()
+	hcGetuid = func() int { return uid }
 
 	// The answerer: this test process, fully verifiable as a daemon serving that socket.
-	hcFakeDaemon(t, proot, mk, link, os.Getpid(), "/opt/claude/srv/a/server",
-		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
+	hcFakeDaemonUID(t, proot, mk, link, os.Getpid(), "/opt/claude/srv/a/server",
+		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
 	// The candidate: another daemon that claims the same socket but no longer answers it.
-	hcFakeDaemon(t, proot, mk, link, 74, "/opt/claude/srv/a/server",
-		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
+	hcFakeDaemonUID(t, proot, mk, link, 74, "/opt/claude/srv/a/server",
+		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
 
 	v, reason, target := c.judgeDaemon(mustInspect(t, 74))
 	if v != dvSkip {
