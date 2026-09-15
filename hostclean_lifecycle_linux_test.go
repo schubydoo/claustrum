@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -95,13 +96,33 @@ func TestStartHostCleaner(t *testing.T) {
 		dials.Add(1)
 		return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT}
 	}
+	// Start's two loops have no cancellation path — they are fire-and-forget in production —
+	// so the stub has to end them itself. Parking them in a bare select{} would leak two
+	// goroutines per run of this test, which at -count=N accumulates. Instead each parks on
+	// stop, and runtime.Goexit ends the goroutine from inside the loop when the test closes
+	// it. Measured: goroutines no longer grow across repeated runs.
 	parked := make(chan struct{}, 4)
+	stopped := make(chan struct{}, 4)
+	stop := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		for i := 0; i < 2; i++ {
+			select {
+			case <-stopped:
+			case <-time.After(5 * time.Second):
+				t.Errorf("only %d of the 2 cleaner goroutines exited after the stop signal", i)
+				return
+			}
+		}
+	})
 	hcSleep = func(d time.Duration) {
 		if d == hcPassDelay {
 			return // the sweep loop's one-off delay before its first pass
 		}
 		parked <- struct{}{} // both loops reach their interval sleep exactly once
-		select {}
+		<-stop
+		stopped <- struct{}{}
+		runtime.Goexit()
 	}
 
 	// An empty socket starts nothing. This arm is a redundant fast path rather than a
