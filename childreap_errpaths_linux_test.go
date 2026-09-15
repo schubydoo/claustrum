@@ -63,24 +63,55 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 		t.Error("groupAlive(impossible group) = true, want false")
 	}
 
-	// The same answers for a group id that existed and was reaped, which is the shape the
-	// reap actually meets. The kernel could hand that number to a new process between the
-	// reap and the call, so a different answer skips rather than fails; the arm above is
-	// what keeps the test an oracle if that happens.
-	exe, env := helperCommand(t, "exit:0")
-	cmd := exec.Command(exe)
+	// A group this test creates and then ends, which is the shape the reap actually meets.
+	// newSysProcAttr sets Setpgid, so the helper LEADS its own group and its pid really is a
+	// process-group id; started without it the helper joins the test runner's group and its
+	// pid is a number that was never a pgid, so the "reaped group" answers below would prove
+	// nothing about a group. Its own group is also what makes the SIGKILL safe: it can reach
+	// nothing but this child.
+	exe, env := helperCommand(t, "sleep")
+	cmd := exec.Command(exe, "60")
 	cmd.Env = buildEnv(env)
-	if err := cmd.Run(); err != nil {
+	cmd.SysProcAttr = newSysProcAttr()
+	if err := cmd.Start(); err != nil {
 		t.Fatalf("helper: %v", err)
 	}
-	dead := cmd.Process.Pid
-	if _, err := os.Stat("/proc/" + strconv.Itoa(dead)); err == nil {
-		t.Skipf("pid %d was reused before the assertion", dead)
+	pgid := cmd.Process.Pid
+	reaped := false
+	t.Cleanup(func() {
+		if !reaped {
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			_, _ = cmd.Process.Wait()
+		}
+	})
+
+	// Alive: a real group, with a member.
+	if err := killGroup(pgid, 0); err != nil {
+		t.Errorf("killGroup(live group %d, 0) = %v, want nil", pgid, err)
 	}
-	if err := killGroup(dead, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Skipf("killGroup(reaped group %d, 0) = %v, not ESRCH: the pid was reused mid-test", dead, err)
+	if !groupAlive(pgid) {
+		t.Errorf("groupAlive(live group %d) = false, want true", pgid)
 	}
-	if groupAlive(dead) {
-		t.Errorf("groupAlive(dead group %d) = true, want false", dead)
+
+	// End it the way the reap does, then reap the zombie so the pid is really released.
+	if err := killGroup(pgid, syscall.SIGKILL); err != nil {
+		t.Fatalf("killGroup(%d, SIGKILL) = %v", pgid, err)
+	}
+	if _, err := cmd.Process.Wait(); err != nil {
+		t.Fatalf("waiting for the killed helper: %v", err)
+	}
+	reaped = true
+
+	// Gone. The kernel could hand that number to a new group leader between the reap and the
+	// call, so a different answer skips rather than fails; the impossible-group arm above is
+	// what keeps the test an oracle if that ever happens.
+	if _, err := os.Stat("/proc/" + strconv.Itoa(pgid)); err == nil {
+		t.Skipf("pid %d was reused before the assertion", pgid)
+	}
+	if err := killGroup(pgid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Skipf("killGroup(reaped group %d, 0) = %v, not ESRCH: the pid was reused mid-test", pgid, err)
+	}
+	if groupAlive(pgid) {
+		t.Errorf("groupAlive(reaped group %d) = true, want false", pgid)
 	}
 }
