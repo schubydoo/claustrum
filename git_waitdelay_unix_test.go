@@ -67,9 +67,16 @@ func runLingeringCreate(t *testing.T, base string, timeoutMs int) (string, time.
 // behaviour, and the mutant this test must catch) are cleanly separated.
 func TestWorktreeCreateLingeringDescendant(t *testing.T) {
 	// 2s, not the production 5s: the cap is paid twice in wall-clock here (once per
-	// git-exit-0 subtest) and nothing in the assertions scales with its size. The
-	// straddle stays reliable because the deadline is measured, not guessed — see
-	// spawn2 below — so only the fixed half-cap (1s) has to cover spawn jitter.
+	// git-exit-0 subtest) and nothing in the assertions scales with its size.
+	//
+	// The deadline is placed at (measured add+checkout) + drainCap/2, so halving the cap
+	// also halves that margin, from 2s to 1s. It is still far more generous than before,
+	// because the margin is what has to cover spawn JITTER and the spawns themselves got
+	// ~25x cheaper in the same change: the margin used to be about half the expected
+	// add+checkout duration and is now several times it. drainCap/2 is also the most robust
+	// split available — a larger margin would risk the deadline landing after the drain cap
+	// expires, which is the other way to lose the straddle. Measured: 5 consecutive runs
+	// pass with 40 CPU hogs on 20 cores.
 	const drainCap = 2 * time.Second
 	const orphan = "30" // seconds; >> drainCap so an uncapped drain reads very differently
 
@@ -83,13 +90,19 @@ func TestWorktreeCreateLingeringDescendant(t *testing.T) {
 	gitTimeout = 0 // D5 off: the caller timeoutMs is the only deadline
 
 	// Measure one hardenedGit call = two spawns (its `git config` precursor + the command).
-	// Warm the once-cached excludes probe first so it is not counted.
+	// Warm the once-cached excludes probe first so it is not counted, then take the SLOWEST
+	// of several samples: one sample can land in a quiet moment on a loaded host and
+	// underestimate what the four spawns below will cost, which would put the deadline
+	// before the checkout finishes instead of inside the drain.
 	stubLingeringGit(t, true, "0")
 	warm := t.TempDir()
 	hardenedGit(warm, false, "rev-parse", "--is-inside-work-tree")
-	t0 := time.Now()
-	hardenedGit(warm, false, "rev-parse", "--is-inside-work-tree")
-	spawn2 := time.Since(t0)
+	var spawn2 time.Duration
+	for i := 0; i < 3; i++ {
+		t0 := time.Now()
+		hardenedGit(warm, false, "rev-parse", "--is-inside-work-tree")
+		spawn2 = max(spawn2, time.Since(t0))
+	}
 
 	// The add + checkout under the deadline are four spawns ≈ 2 × spawn2.
 	tgMs := int((2 * spawn2).Milliseconds())
