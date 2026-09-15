@@ -391,9 +391,12 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 
 	// Pass ends with a real tidy sweep over the roots, and this cleaner's root is the
-	// product's own install path. On a host that HAS /opt/claude, an idle run dir under it
-	// with no live socket and no held lock would be genuinely renamed and deleted, so both
-	// destructive calls are seamed before Pass runs — the rule the rest of this file follows.
+	// product's own install path. The fake clock sits in 1970, so every ordinary run dir
+	// under it reads as fresh and is skipped — but a leftover .removing-<name>-<ts> staging
+	// dir SKIPS the idle gate by design, and removeRunDir then calls hcRemoveAll on it with
+	// no rename. Measured against the same shape in TestPassReapsStrandedDaemon: a staging
+	// dir holding a file was really deleted with these seams absent, while an ordinary
+	// 40-day-idle dir was left alone. So both destructive calls are seamed before Pass runs.
 	oldRen, oldRm := hcRename, hcRemoveAll
 	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
 	hcRename = func(string, string) error { return nil }
