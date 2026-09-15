@@ -66,7 +66,11 @@ func runLingeringCreate(t *testing.T, base string, timeoutMs int) (string, time.
 // is far larger than the drain cap so a capped reply and an unbounded one (the pre-fix
 // behaviour, and the mutant this test must catch) are cleanly separated.
 func TestWorktreeCreateLingeringDescendant(t *testing.T) {
-	const drainCap = 4 * time.Second
+	// 2s, not the production 5s: the cap is paid twice in wall-clock here (once per
+	// git-exit-0 subtest) and nothing in the assertions scales with its size. The
+	// straddle stays reliable because the deadline is measured, not guessed — see
+	// spawn2 below — so only the fixed half-cap (1s) has to cover spawn jitter.
+	const drainCap = 2 * time.Second
 	const orphan = "30" // seconds; >> drainCap so an uncapped drain reads very differently
 
 	oldCap := worktreeCreateDrainCap
