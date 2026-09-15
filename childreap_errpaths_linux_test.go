@@ -52,8 +52,21 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 		t.Error("groupAlive(own group) = false, want true")
 	}
 
-	// A group id that no longer exists. Without it, a killGroup of `return nil` and a
-	// groupAlive of `return true` both pass the assertions above.
+	// A group that cannot exist: a pid above pid_max. Without this arm, a killGroup of
+	// `return nil` and a groupAlive of `return true` both pass the assertions above, and
+	// unlike the reaped-pid arm below this one is race-free.
+	const impossible = 1 << 30
+	if err := killGroup(impossible, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Errorf("killGroup(impossible group, 0) = %v, want ESRCH", err)
+	}
+	if groupAlive(impossible) {
+		t.Error("groupAlive(impossible group) = true, want false")
+	}
+
+	// The same answers for a group id that existed and was reaped, which is the shape the
+	// reap actually meets. The kernel could hand that number to a new process between the
+	// reap and the call, so a different answer skips rather than fails; the arm above is
+	// what keeps the test an oracle if that happens.
 	exe, env := helperCommand(t, "exit:0")
 	cmd := exec.Command(exe)
 	cmd.Env = buildEnv(env)
@@ -61,13 +74,11 @@ func TestKillGroupAndGroupAliveRealBodies(t *testing.T) {
 		t.Fatalf("helper: %v", err)
 	}
 	dead := cmd.Process.Pid
-	// The kernel allocates pids sequentially and wraps only at pid_max, so a just-reaped
-	// pid is free for the rest of this test. Skip rather than fail if it is not.
 	if _, err := os.Stat("/proc/" + strconv.Itoa(dead)); err == nil {
 		t.Skipf("pid %d was reused before the assertion", dead)
 	}
 	if err := killGroup(dead, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Errorf("killGroup(dead group, 0) = %v, want ESRCH", err)
+		t.Skipf("killGroup(reaped group %d, 0) = %v, not ESRCH: the pid was reused mid-test", dead, err)
 	}
 	if groupAlive(dead) {
 		t.Errorf("groupAlive(dead group %d) = true, want false", dead)
