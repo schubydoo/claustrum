@@ -159,6 +159,12 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	hcRename = func(string, string) error { renames++; return nil }
 	hcRemoveAll = func(string) error { removes++; return nil }
 
+	var buf bytes.Buffer
+	oldW, oldF := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+
 	var sum hcSummary
 	c.tidyRunDirs([]runDirEntry{{name: "x", dirPath: "/opt/claude/run/x", socket: "/opt/claude/run/x/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)
 
@@ -167,6 +173,11 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	}
 	if renames != 0 || removes != 0 {
 		t.Errorf("a still-answering run dir was touched (renames=%d removes=%d)", renames, removes)
+	}
+	// "Nothing happened" is also true of a mutant that never tried to retire. The log is what
+	// distinguishes a REFUSED retire from a skipped one, so it is asserted here.
+	if got := buf.String(); !strings.Contains(got, "it serves a different socket; left running") {
+		t.Errorf("log = %q, want the refusal that shows the retire was attempted and declined", got)
 	}
 }
 
@@ -336,15 +347,38 @@ func TestPassBailsWhenTheProcessListIsUnreadable(t *testing.T) {
 			conn.Close()
 		}
 	}()
+	// An empty summary alone would not prove the pass stopped: with no snapshot the two
+	// classification loops have nothing to iterate either. The root therefore holds ONE run
+	// dir the tidy sweep would remove — old enough, no listener, no lock — so carrying on is
+	// visible as a removal. Both destructive calls are seamed, so the dir is only counted.
+	base := t.TempDir()
+	stale := filepath.Join(base, "run", "stale")
+	if err := os.MkdirAll(stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	oldRen, oldRm := hcRename, hcRemoveAll
+	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
+	renames, removes := 0, 0
+	hcRename = func(string, string) error { renames++; return nil }
+	hcRemoveAll = func(string) error { removes++; return nil }
+
 	// The self-probe succeeds (the socket leads to this process), and only then the process
-	// list turns out to be unreadable. A mutant that carried on sweeps with no snapshot.
+	// list turns out to be unreadable. The pass must stop there.
 	procRoot = filepath.Join(root, "gone")
 	c := &hostCleaner{
-		roots:     &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"},
+		roots:     &hostRoots{roots: []string{base}, daemonBin: "server"},
 		ownSocket: ownSock, ownRunDir: filepath.Dir(ownSock), selfPid: os.Getpid(),
 	}
+
 	if sum := c.Pass(); sum != (hcSummary{}) {
 		t.Errorf("summary = %+v, want the zero summary when /proc cannot be read", sum)
+	}
+	if renames != 0 || removes != 0 {
+		t.Errorf("the pass tidied a run dir after failing to read the process list (renames=%d removes=%d)", renames, removes)
 	}
 }
 
@@ -355,6 +389,15 @@ func TestPassBailsWhenTheProcessListIsUnreadable(t *testing.T) {
 // lists together pin which arm handled which.
 func TestPassClassifiesAWholeHost(t *testing.T) {
 	proot, mk, link := fakeProc(t)
+
+	// Pass ends with a real tidy sweep over the roots, and this cleaner's root is the
+	// product's own install path. On a host that HAS /opt/claude, an idle run dir under it
+	// with no live socket and no held lock would be genuinely renamed and deleted, so both
+	// destructive calls are seamed before Pass runs — the rule the rest of this file follows.
+	oldRen, oldRm := hcRename, hcRemoveAll
+	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
+	hcRename = func(string, string) error { return nil }
+	hcRemoveAll = func(string) error { return nil }
 
 	ownSock := filepath.Join(t.TempDir(), "rpc.sock")
 	ln, err := net.Listen("unix", ownSock)

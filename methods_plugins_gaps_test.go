@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -96,6 +97,86 @@ func mustPrune(t *testing.T, s *server) pruneResult {
 		t.Fatalf("result type = %T, want pruneResult", resp.Result)
 	}
 	return res
+}
+
+// siblingOwnID is the client id the sibling-probe tests pass as "our own", so the probe skips
+// that entry and examines the other.
+const siblingOwnID = "aaaaaaaa"
+
+// mkSiblingRunDir builds <base>/run/{own,sib} and returns the base and the sibling's run dir.
+// The root is a short os.MkdirTemp, not t.TempDir(): a t.TempDir path is built from the test
+// name, and on macOS that already exceeds sockaddr_un's 104-byte sun_path, so every dial under
+// it fails with EINVAL and the dial-classification arms can never be reached. The socket
+// harness and TestSiblingDaemonAlive use os.MkdirTemp("", "cl") for the same reason.
+func mkSiblingRunDir(t *testing.T, sib string) (base, sibRun string) {
+	t.Helper()
+	base, err := os.MkdirTemp("", "cl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	if err := os.MkdirAll(filepath.Join(base, "run", siblingOwnID), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sibRun = filepath.Join(base, "run", sib)
+	if err := os.MkdirAll(sibRun, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return base, sibRun
+}
+
+// TestSiblingDaemonAliveDialArms covers the two per-socket verdicts that turn on the DIAL
+// rather than the stat. Both run on every OS on purpose: the refused-dial arm is the only
+// end-to-end exercise of the Windows classification (pluginsibling_windows.go's
+// extraNobodyListening is otherwise only unit-tested in isolation), and sun_path is 108 bytes
+// on Windows too, so the over-long path produces the same EINVAL there.
+//
+// Each verdict is a wire string embedded in plugins.prune's legacy field, so each is asserted
+// whole or by prefix, never as "some non-empty answer".
+func TestSiblingDaemonAliveDialArms(t *testing.T) {
+	t.Run("a socket nobody listens on is not a sibling", func(t *testing.T) {
+		// A plain file at rpc.sock: the stat succeeds and the connect fails in a way that
+		// means nobody is listening, so the sweep proceeds. The errno differs per OS —
+		// ECONNREFUSED on linux, ENOTSOCK on macOS, WSAECONNREFUSED on Windows — and
+		// isNobodyListening accepts all three, which is the classification under test. A
+		// mutant without it reports "cannot rule out" and keeps another install's plugins
+		// forever.
+		base, sibRun := mkSiblingRunDir(t, "bbbbbbbb")
+		sock := filepath.Join(sibRun, "rpc.sock")
+		if len(sock) > 100 {
+			t.Skipf("temp root too long for sun_path (%d bytes): every dial here fails EINVAL, not refused", len(sock))
+		}
+		if err := os.WriteFile(sock, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := siblingDaemonAlive(base, siblingOwnID); got != "" {
+			t.Errorf("refused dial: got %q, want \"\"", got)
+		}
+	})
+
+	t.Run("an undialable socket is reported", func(t *testing.T) {
+		// A path longer than sun_path (108 bytes on linux and Windows, 104 on macOS): the
+		// file stats fine, but the connect fails with EINVAL, which does not mean nobody is
+		// listening. A mutant that treated every dial failure as "gone" would sweep the
+		// shared root while that daemon is alive. The length comes from the entry name, since
+		// a directory name may be 255 bytes and sun_path may not.
+		sib := strings.Repeat("d", 120)
+		base, sibRun := mkSiblingRunDir(t, sib)
+		sock := filepath.Join(sibRun, "rpc.sock")
+		if err := os.WriteFile(sock, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if len(sock) <= 108 {
+			t.Skipf("temp root too short to exceed sun_path: %d bytes", len(sock))
+		}
+		// The verdict embeds the forward-slash wire form on every OS (siblingDaemonAlive
+		// builds it with path.Join), so this expectation is separator-clean as written.
+		rel := path.Join("run", sib, "rpc.sock")
+		got := siblingDaemonAlive(base, siblingOwnID)
+		if !strings.HasPrefix(got, "cannot rule out "+rel+": ") {
+			t.Errorf("undialable socket: got %q, want the cannot-rule-out verdict for %s", got, rel)
+		}
+	})
 }
 
 // TestSocketPathNoPathListener covers the two arms that report "no path-based listener".

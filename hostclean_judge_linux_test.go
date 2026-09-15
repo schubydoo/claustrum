@@ -193,10 +193,17 @@ func TestRetireAbandonedGuards(t *testing.T) {
 
 	var signals []int
 	var sleeps int
-	oldSig, oldSleep := hcSignalPid, hcSleep
-	t.Cleanup(func() { hcSignalPid, hcSleep = oldSig, oldSleep })
+	oldSig, oldSleep, oldClock := hcSignalPid, hcSleep, hcClock
+	t.Cleanup(func() { hcSignalPid, hcSleep, hcClock = oldSig, oldSleep, oldClock })
 	hcSignalPid = func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return nil }
-	hcSleep = func(time.Duration) { sleeps++ }
+	// The sleep stub ADVANCES the fake clock rather than doing nothing. A guard that a
+	// mutation removes lets control reach waitGone, and with a frozen clock that poll loop
+	// never reaches its deadline: the mutant would fail by hanging until the go test timeout
+	// instead of failing on the assertions below. Starting at the instant hcTestCleaner
+	// froze keeps every fixture's age unchanged.
+	now := time.Unix(1_000_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { sleeps++; now = now.Add(d) }
 
 	// Ourselves. The record is a fully verifiable, old, idle daemon, so every gate below the
 	// self check would pass: deleting that check makes the cleaner SIGTERM its own daemon.
