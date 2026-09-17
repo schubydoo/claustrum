@@ -265,9 +265,10 @@ traps that matter when you tell drift from expected:
   `errorCode:"timeout"`+rollback on the caller `timeoutMs`. The off default (no
   `timeoutMs`, D5 off) is unbounded on every path, matching the reference.
 - **D5 has a wire-invisible arm:** when the deadline kills `git ls-files`,
-  `git.worktree_create` still answers `{"success":true}` and the
-  `.worktreeinclude` files are absent. Nothing on the wire says so, so a clean
-  frame diff does not cover it.
+  `git.worktree_create` still answers `{"success":true}` and the seeded files are
+  absent. That covers both passes: the `.worktreeinclude` manifest copy and the
+  `.claude/` copy. Nothing on the wire says so, so a clean frame diff does not
+  cover it.
 - **D12 needs a VALID zstd body** — D13's ordering answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the **body
   read only**: `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and

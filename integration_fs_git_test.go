@@ -945,17 +945,19 @@ func TestWorktreeRemoveResultShape(t *testing.T) {
 // assertion is on the resulting tree, reached over the real socket.
 func TestSocketWorktreeCreatePopulates(t *testing.T) {
 	requireGit(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("fixture uses POSIX modes; see TestPopulateWorktree")
-	}
+	isolateGitConfig(t)
 	root := resolveTestRoot(t, t.TempDir())
 	repo := filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "master", "repo")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "tracked\n", 0o644)
 	writeFile(t, filepath.Join(repo, ".gitignore"), "local.env\n", 0o644)
 	runGit(t, repo, "add", "tracked.txt", ".gitignore")
-	// .claude/ is NOT copied by 7d193f89, and a manifest match is copied only when
-	// git also ignores it — so local.env is both git-ignored and in the manifest.
+	// A manifest match is copied only when git also ignores it, so local.env is
+	// both git-ignored and in the manifest. `.claude/` stays out of the expected
+	// tree because this fixture does not ignore it, NOT because the reference never
+	// copies it: see TestPopulateWorktreeCopiesIgnoredClaudeDir. The git-config
+	// isolation above is what keeps that true on a machine whose global ignore
+	// names `.claude`.
 	writeFile(t, filepath.Join(repo, ".claude", "settings.json"), "{}\n", 0o644)
 	writeFile(t, filepath.Join(repo, ".worktreeinclude"), "local.env\n", 0o644)
 	writeFile(t, filepath.Join(repo, "local.env"), "K=V\n", 0o644)

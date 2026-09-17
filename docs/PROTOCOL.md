@@ -803,13 +803,28 @@ fails the request:
   intersection of `git ls-files --others --ignored --exclude-from=.worktreeinclude`
   and `git ls-files --others --ignored --exclude-standard`. A manifest match that
   git does not ignore is **not** copied, and without the manifest the daemon copies
-  no untracked file. (`7d193f89`; at `5db5e4a` the daemon also copied every manifest
-  match and copied `.claude/` recursively and unconditionally — `7d193f89` dropped
-  both, so `.claude/` is now subject to the same manifest-and-ignored rule as any
-  other path.)
-- **The daemon skips symlinks.** **Manifest entries must be plain filenames.** The
-  daemon silently skips a path that `git ls-files` C-quotes (tab, quote, backslash,
-  non-ASCII). This is a reference limitation reproduced for parity.
+  no untracked manifest file.
+- **`.claude/` is copied separately, with no manifest entry.** A second pass runs
+  `git ls-files --others --ignored --exclude-standard -z -- .claude/` and copies
+  everything it lists. So a `.claude/` the repo git-ignores is seeded into the new
+  worktree; a `.claude/` that is merely untracked is not, because that view cannot
+  see it. `.claude/worktrees/` is always skipped, since that is where session
+  worktrees live. Measured against `19f30c46` and `90fca6e6` alike. An earlier
+  version of this document said `7d193f89` had dropped this copy. It had not, and
+  neither did any build back to `5db5e4a`.
+- **Claude runtime state is skipped by both passes** since `90fca6e6`. The names
+  are `scheduled_tasks.json`, `scheduled_tasks.lock`, `routines/.state`,
+  `worktrees`, `checkpoints`, `mailbox`, `agent-registry.json`, `first-run` and
+  `assistant-daemon-state.json`. They match as whole path components, directly
+  under `.claude/`, case-insensitively. So `.claude/Checkpoints/` is dropped,
+  while `.claude/mailboxes/` and `.claude/nested/mailbox/` are both copied. All
+  nine names and both boundary cases are measured against `19f30c46` and
+  `90fca6e6`. `19f30c46` copies eight of the nine. It drops `worktrees` as well,
+  through the separate `.claude/worktrees/` skip that both builds carry.
+- **The daemon skips symlinks.** A filename that `git ls-files` C-quotes (tab,
+  quote, backslash, non-ASCII) IS copied: both passes use `-z` and split on NUL.
+  An earlier version of this document said the opposite and called it a reference
+  limitation reproduced for parity. It was neither.
 - **The copies do not preserve the source mode.** The daemon creates them
   0666-subject-to-umask, so an executable arrives non-executable and a `0400`
   source is widened. This matches the reference. Treat the manifest as a way to
