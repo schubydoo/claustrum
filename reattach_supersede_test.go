@@ -133,3 +133,52 @@ func TestSupersededConnectionIsNotClosedTwice(t *testing.T) {
 		t.Errorf("the idle watcher logged a second close for a superseded connection: %q", out)
 	}
 }
+
+// TestSupersedeRefusesAConnWithNoActivityWrapper covers the guard that a
+// production conn can never hit, and that a test conn silently hits all the time.
+//
+// A nil ac means there is no deliberate-close flag to claim, so supersede cannot
+// do its job. It says so rather than returning quietly, because a quiet return is
+// exactly how the socket harness ran every supersede assertion against a daemon
+// shape production never has.
+func TestSupersedeRefusesAConnWithNoActivityWrapper(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { client.Close(); server.Close() })
+	go func() { _, _ = io.Copy(io.Discard, server) }()
+	c := &conn{nc: client} // no ac, the shape only a test builds
+
+	out := captureLog(t, func() { c.supersede("whatever") })
+
+	if !strings.Contains(out, "no activity wrapper") {
+		t.Errorf("supersede log = %q, want a warning about the missing wrapper", out)
+	}
+	// It must not have closed the connection or marked the writer closed: with no
+	// flag there is nothing to coordinate with, so a silent close would be worse.
+	if err := c.writeLine([]byte("{}\n")); err != nil {
+		t.Errorf("supersede closed a conn it refused to supersede: %v", err)
+	}
+}
+
+// TestSupersedeLosingTheClaimStillMarksTheWriterClosed covers the arm where the
+// idle watcher got there first.
+//
+// supersede returns without logging or closing, since the watcher owns both. It
+// still marks the writer closed, because the watcher cannot: it holds the
+// activityConn, not the conn. Without that, a later write would slip past the
+// closed check and record a frame into a -wire-log capture that never reached the
+// wire.
+func TestSupersedeLosingTheClaimStillMarksTheWriterClosed(t *testing.T) {
+	c, ac := activityPipeConn(t)
+
+	if !ac.claimClose() {
+		t.Fatal("a fresh connection should have its close claim available")
+	}
+	out := captureLog(t, func() { c.supersede("process X reattached from another connection") })
+
+	if strings.Contains(out, "closing connection") {
+		t.Errorf("supersede logged a close it did not own: %q", out)
+	}
+	if err := c.writeLine([]byte("{}\n")); err == nil {
+		t.Error("the writer is still open after a lost claim; a later write would be recorded but never sent")
+	}
+}
