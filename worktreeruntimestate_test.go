@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 )
 
@@ -16,6 +18,54 @@ import (
 // claustrum has the manifest copy as copyWorktreeIncludes, and this file pins that
 // half. TestPopulateWorktreeCopiesIgnoredClaudeDir in worktreecopy_test.go pins
 // the `.claude/` copy.
+
+// droppedRuntimeStatePaths gives one repo-relative path per runtime-state name, in
+// the shape that name actually takes on disk: a file for the ones that are files, a
+// file inside it for the ones that are directories. Every entry must be dropped.
+//
+// It is keyed by the name so mustCoverEveryRuntimeStateName can prove the fixture
+// covers the whole list. An earlier version planted five of the nine by hand, which
+// left four exclusions with no behavioural test at all: a typo in one of those
+// would have let session state into a new worktree with the suite still green.
+//
+// `Checkpoints` is deliberately spelled with a capital, since the match is
+// case-insensitive and nothing else here would catch a mutant that dropped that.
+var runtimeStateFixturePaths = map[string]string{
+	"agent-registry.json":         ".claude/agent-registry.json",
+	"assistant-daemon-state.json": ".claude/assistant-daemon-state.json",
+	"checkpoints":                 ".claude/Checkpoints/c.json",
+	"first-run":                   ".claude/first-run",
+	"mailbox":                     ".claude/mailbox/m1.txt",
+	"routines/.state":             ".claude/routines/.state/r.json",
+	"scheduled_tasks.json":        ".claude/scheduled_tasks.json",
+	"scheduled_tasks.lock":        ".claude/scheduled_tasks.lock",
+	"worktrees":                   ".claude/worktrees/w/x.txt",
+}
+
+func droppedRuntimeStatePaths() []string {
+	out := make([]string, 0, len(runtimeStateFixturePaths))
+	for _, rel := range runtimeStateFixturePaths {
+		out = append(out, rel)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// mustCoverEveryRuntimeStateName fails when the fixture and the production list
+// have drifted apart in either direction.
+func mustCoverEveryRuntimeStateName(t *testing.T) {
+	t.Helper()
+	for _, name := range claudeRuntimeStateNames {
+		if _, ok := runtimeStateFixturePaths[name]; !ok {
+			t.Fatalf("runtime-state name %q has no fixture path; add one so it is tested", name)
+		}
+	}
+	for name := range runtimeStateFixturePaths {
+		if !slices.Contains(claudeRuntimeStateNames, name) {
+			t.Fatalf("fixture plants %q, which is not a runtime-state name any more", name)
+		}
+	}
+}
 
 // claudeRuntimeStateFixture builds a repo whose `.claude/` tree is git-ignored and
 // named by the manifest, so every file under it is a copy candidate today. Only the
@@ -34,13 +84,12 @@ func claudeRuntimeStateFixture(t *testing.T) (repo, wt string) {
 	writeFile(t, filepath.Join(repo, ".claude", "settings.local.json"), "{}\n", 0o644)
 	writeFile(t, filepath.Join(repo, ".claude", "agents", "a.md"), "a\n", 0o644)
 
-	// Dropped: one file for each shape in the nine-name list. A plain file name, a
-	// directory name, a two-component name, and one that differs only in case.
-	writeFile(t, filepath.Join(repo, ".claude", "scheduled_tasks.json"), "{}\n", 0o644)
-	writeFile(t, filepath.Join(repo, ".claude", "mailbox", "m1.txt"), "m\n", 0o644)
-	writeFile(t, filepath.Join(repo, ".claude", "routines", ".state", "r.json"), "r\n", 0o644)
-	writeFile(t, filepath.Join(repo, ".claude", "worktrees", "w", "x.txt"), "x\n", 0o644)
-	writeFile(t, filepath.Join(repo, ".claude", "Checkpoints", "c.json"), "c\n", 0o644)
+	// Dropped: one planted path for EVERY name in the list, not a sample of it.
+	// droppedRuntimeStatePaths is checked against the list itself, so a tenth name
+	// added without a fixture fails rather than going untested.
+	for _, rel := range droppedRuntimeStatePaths() {
+		writeFile(t, filepath.Join(repo, filepath.FromSlash(rel)), "x\n", 0o644)
+	}
 
 	// The two boundary cases, both COPIED on the reference. A name that only
 	// prefixes a listed one, and a listed name one level deeper than `.claude/`.
@@ -56,6 +105,7 @@ func claudeRuntimeStateFixture(t *testing.T) (repo, wt string) {
 // TestWorktreeIncludeSkipsClaudeRuntimeState pins the manifest half of the skip.
 func TestWorktreeIncludeSkipsClaudeRuntimeState(t *testing.T) {
 	requireGit(t)
+	mustCoverEveryRuntimeStateName(t)
 	isolateGitConfig(t)
 	repo, wt := claudeRuntimeStateFixture(t)
 	runGit(t, repo, "worktree", "add", "-b", "b1", wt)
@@ -74,14 +124,8 @@ func TestWorktreeIncludeSkipsClaudeRuntimeState(t *testing.T) {
 		}
 	}
 
-	// The new arms. claustrum copies every one of these today.
-	for _, rel := range []string{
-		".claude/scheduled_tasks.json",
-		".claude/mailbox/m1.txt",
-		".claude/routines/.state/r.json",
-		".claude/worktrees/w/x.txt",
-		".claude/Checkpoints/c.json",
-	} {
+	// The new arms: every name in the list, not a sample of it.
+	for _, rel := range droppedRuntimeStatePaths() {
 		if _, err := os.Stat(filepath.Join(wt, filepath.FromSlash(rel))); err == nil {
 			t.Errorf("%s was seeded into the worktree; it is Claude runtime state", rel)
 		}
