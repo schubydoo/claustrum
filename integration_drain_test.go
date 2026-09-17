@@ -20,6 +20,46 @@ import (
 // Measured against both reference binaries in scratch/probe/ref90-capture.md
 // section A: 19f30c46 answers {"success":true,"applied":6} and running:true
 // inside this window, 90fca6e6 answers -32602 and running:false.
+// waitForDrainWindow blocks until the daemon has reaped the process but has not yet
+// flipped running, which is the exit-drain window this test is about. It reads the
+// daemon's own flags rather than the wire, so the wire assertions stay independent
+// of it.
+func waitForDrainWindow(t *testing.T, s *server, processID string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if p := s.procs.get(processID); p != nil {
+			p.mu.Lock()
+			inWindow := p.reaped && p.running
+			p.mu.Unlock()
+			if inWindow {
+				return
+			}
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("process %s never entered the reaped-but-draining window", processID)
+}
+
+// killFixtureGroup SIGKILLs a spawned fixture's process group at cleanup.
+//
+// The orphan-stdout fixture leaves a grandchild holding the stdout pipe, on
+// purpose: that is the only way the drain window is reachable. Nothing else reaps
+// it. The daemon's own shutdown sweep skips a process whose running flag has
+// already flipped, and it never knew the grandchild anyway. Measured before this
+// helper existed: a `claustrum.test 20` survived the test by about 17 seconds.
+//
+// The spawned process gets its own process group, so the group kill reaches the
+// grandchild and cannot reach the test binary.
+func killFixtureGroup(t *testing.T, s *server, processID string) {
+	t.Helper()
+	t.Cleanup(func() {
+		if p := s.procs.get(processID); p != nil {
+			p.killGroupAfterExit()
+		}
+	})
+}
+
 // sawExitFrame reports whether an exit frame for processID has already arrived.
 // waitExit blocks for one; this only asks.
 func sawExitFrame(cl *testClient, processID string) bool {
@@ -38,7 +78,7 @@ func TestSocketReapedInDrainIsNotRunning(t *testing.T) {
 	exitDrainGrace = 3 * time.Second
 	t.Cleanup(func() { exitDrainGrace = old })
 
-	sock := startSocketServer(t)
+	s, sock := newRunningServer(t)
 	cl := dial(t, sock)
 
 	req := func(id int, method string, params map[string]any) string {
@@ -70,24 +110,29 @@ func TestSocketReapedInDrainIsNotRunning(t *testing.T) {
 		t.Fatalf("stdin to a live process = %s, want no running error", got)
 	}
 
-	// The drain window. The helper exits almost at once, so a short settle is
-	// enough to be inside it, and exitDrainGrace keeps it open for 3 seconds.
+	// The drain window.
 	cl.call(req(4, "process.spawn", map[string]any{
 		"id": "DRAIN", "command": exe, "args": []string{"20"}, "env": env,
 	}))
-	time.Sleep(300 * time.Millisecond)
+	killFixtureGroup(t, s, "DRAIN")
 
-	// Prove the window is still open before asserting anything inside it. Both
-	// assertions below are ALSO true after the exit frame, so without this the test
-	// passes whether or not it measured what it claims to.
+	// WAIT for the state, do not sleep a guess at it. An earlier version slept
+	// 300 ms and bet that the helper had exited by then, which is a bet a loaded or
+	// race-enabled runner loses: the process is still live, running is still true,
+	// and the assertions fail for a reason that has nothing to do with the change.
 	//
-	// The window is held open by one thing: the grandchild the helper starts. If
-	// that start ever fails, on a slow or hostile CI leg, the pipe closes at the
-	// helper's exit, the drain collapses to nothing, and the 300 ms observation
-	// lands past the exit frame. This turns that into a loud failure.
+	// The poll reads the daemon's own flags, and the assertions below read the
+	// wire. Synchronising on the internal state and asserting on the frame is what
+	// keeps this from becoming circular.
+	waitForDrainWindow(t, s, "DRAIN")
+
+	// Belt and braces at assertion time. Both assertions below are ALSO true after
+	// the exit frame, so if the window closed between the poll and here, the test
+	// would pass while measuring nothing. The window is held open by one thing, the
+	// grandchild the helper starts, and a failed start collapses it to nothing.
 	if sawExitFrame(cl, "DRAIN") {
-		t.Fatalf("the exit frame arrived within %v; the drain window was not open, so "+
-			"the assertions below would prove nothing", 300*time.Millisecond)
+		t.Fatal("the exit frame arrived before the assertions; the drain window was " +
+			"not open, so what follows would prove nothing")
 	}
 
 	if got := string(cl.call(req(5, "process.reattach", map[string]any{"id": "DRAIN"}))); !strings.Contains(got, `"running":false`) {

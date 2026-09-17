@@ -445,7 +445,7 @@ func TestSocketExitFrameBoundsTheDrain(t *testing.T) {
 	exitDrainGrace = 300 * time.Millisecond
 	t.Cleanup(func() { exitDrainGrace = old })
 
-	sock := startSocketServer(t)
+	s, sock := newRunningServer(t)
 	cl := dial(t, sock)
 
 	exe, env := helperCommand(t, "orphan-stdout")
@@ -460,6 +460,9 @@ func TestSocketExitFrameBoundsTheDrain(t *testing.T) {
 	}
 	cl.send(string(spawn))
 	cl.waitResponses(1)
+	// The fixture's grandchild holds the pipe for 20s on purpose and nothing else
+	// reaps it, so it outlives the test by about 17 seconds. Measured.
+	killFixtureGroup(t, s, "ORPH")
 
 	start := time.Now()
 	frames := cl.waitExit("ORPH")
