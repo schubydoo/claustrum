@@ -853,6 +853,18 @@ func (c *hostCleaner) retireAbandoned(pid int, socket string) bool {
 		logInfof("[process.HostClean] run-dir daemon pid %d: %s; left running", pid, reason)
 		return false
 	}
+	// Re-validate identity immediately before signalling, the way endGroupsTwoPhase does.
+	// Everything between the inspect above and here takes the bare pid: the busy sampler
+	// holds it for up to hcBusyWindow, and verifyListener dials on top of that. A daemon
+	// that exits in that span can have its pid taken by an unrelated process, and the
+	// SIGTERM below would then reach whatever now holds the number. waitGone already
+	// refuses a reused pid, so without this check the signal goes out and the mismatch
+	// afterwards reads as a clean exit. The reference refuses a reused pid on this path
+	// too, in both 19f30c46 and 90fca6e6 (read from those builds, not probe-measured).
+	if !t.asTracked().same() {
+		logInfof("[process.HostClean] idle daemon pid %d is no longer the process that was inspected; nothing signalled", pid)
+		return false
+	}
 	logInfof("[process.HostClean] SIGTERM to idle daemon pid %d: nothing has connected to its run dir within the window", pid)
 	if err := hcSignalPid(pid, syscall.SIGTERM); err != nil && !hcIsNoSuchProcess(err) {
 		return false
