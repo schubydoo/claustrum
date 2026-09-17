@@ -974,8 +974,10 @@ id-less stream notifications, and **buffers** them for a later replay.
     - The offset idempotency verdict is evaluated next, **even for an exited
       process**: an offset gap returns `-32003` and a wholly-duplicate write
       returns `{"success":true,…,"duplicate":true}`, regardless of running state.
-    - Known but **exited**, only when the write would enqueue fresh bytes →
-      `-32602 Process not running`.
+    - Known but **exited or already reaped**, only when the write would enqueue
+      fresh bytes → `-32602 Process not running`. Since `90fca6e6` the reap
+      counts, not just the exit frame, so this also covers the drain window. See
+      the exit-drain note under `process.spawn`.
 - **`offset` / `applied` — the resumable-stdin contract** (added `7c2f88d`,
   advertised as `process.stdin.offset`). The reply **always** carries `applied`: the
   cumulative count of stdin bytes accepted for delivery (the high-water mark).
@@ -1169,9 +1171,21 @@ legacy root is `<X>/plugins` (results in `prunedLegacy`).
   stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
   frame anyway. This matters when the command leaves a **grandchild that holds the
   same pipe** (`npm run dev &`). The daemon does **not** forward output that the
-  grandchild writes after the cap, because that write fails `EPIPE`. Until the
-  daemon emits the frame, `process.reattach` still reports `running: true`. The flag
-  flips with the frame, not with the process.
+  grandchild writes after the cap, because that write fails `EPIPE`. The
+  `process.reattach` `running` flag does not wait for that frame. Since `90fca6e6`
+  it also tests the reap, so a reattach inside the drain window reports
+  `running: false`. In claustrum it flips at the reap itself. On the reference the
+  narrowed test is read from the build and measured one second into the drain, so
+  the probe bounds the flip at one second rather than at the reap.
+  `process.stdin` refuses inside the same window with `-32602 Process not
+  running`, for a write that would enqueue fresh bytes. An offset gap still
+  answers `-32003` and a wholly duplicate write still answers
+  `{"success":true,…,"duplicate":true}`. Before `90fca6e6` both paths read the
+  flag that flips with the exit frame. Both then reported the process as still
+  running for up to the 5-second drain. The refusal also stops the drain window
+  from inflating `applied` and `stdinApplied`, which used to count bytes the
+  closed pipe discarded. The acknowledgement caveat under `stdinApplied` still
+  applies for a write accepted while the process was genuinely live.
 - Each stdout/stderr frame carries at most one **32 KiB** read. Larger output splits
   across frames. Concatenate `data` in `seq` order to reassemble it. The exact
   frame *boundaries* depend on pipe scheduling and are not stable. Only the
