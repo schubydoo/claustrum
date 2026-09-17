@@ -38,6 +38,50 @@ func treeOf(t *testing.T, root string) []string {
 	return out
 }
 
+// isolateGitConfig points the git commands the DAEMON runs at an empty global and
+// system config, so a fixture's ignore state is decided by its own `.gitignore`
+// alone.
+//
+// runGit already isolates the commands the TEST runs, but hardenedGitEnv builds on
+// os.Environ(), so the daemon-side `--exclude-standard` reads whatever global
+// excludes the machine has. That is correct in production and reproduces the
+// reference. In a test it makes the result depend on the machine: a developer
+// whose global ignore names `.claude` silently turns a "not ignored" fixture into
+// an ignored one, and the expected tree changes under them.
+//
+// GIT_CONFIG_GLOBAL alone is NOT enough, which is the trap this helper exists to
+// close. The user's ignore file is not read through git config at all: when
+// core.excludesFile is unset the resolver falls back to $XDG_CONFIG_HOME/git/ignore,
+// and then to the home directory. So both of those have to move as well.
+//
+// ⚠️ Moving them is not enough either, and moving HOME is a no-op on Windows:
+// os.UserHomeDir reads USERPROFILE there, not HOME. The XDG branch only RETURNS
+// when the file exists, so an empty XDG dir falls through to the real home. This
+// helper therefore CREATES an empty ignore file under the temp XDG dir, which
+// makes that branch return on every OS and needs no per-OS test. Measured on a
+// Windows VM: without the file, the resolver returned the real
+// C:\Users\...\.config\git\ignore even with HOME moved.
+//
+// The environment is only half of it. userExcludesFile memoizes the resolved path
+// for the life of the process, and hardenedArgs injects it as
+// `-c core.excludesFile=`. So whichever test runs FIRST decides the value for
+// every later test, and the environment this one sets arrives too late.
+//
+// That is what made these tests pass alone and fail in the suite: a socket test
+// runs a git command first, the cache holds the machine's real ignore file, and a
+// `.claude` line in it then ignores `.claude/` in every later fixture. Resetting
+// that cache is what makes the isolation actually hold.
+func isolateGitConfig(t *testing.T) {
+	t.Helper()
+	empty := t.TempDir()
+	writeFile(t, filepath.Join(empty, "git", "ignore"), "", 0o644)
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("XDG_CONFIG_HOME", empty)
+	t.Setenv("HOME", empty)
+	resetUserExcludesCache(t)
+}
+
 func eqTree(t *testing.T, got, want []string, what string) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -50,21 +94,32 @@ func eqTree(t *testing.T, got, want []string, what string) {
 	}
 }
 
-// TestPopulateWorktree pins 7d193f89's worktree seeding. `git worktree add` checks
-// out tracked files only, so a declared untracked file is missing unless copied.
-// 7d193f89 copies exactly the untracked files that are BOTH named by the manifest
-// AND git-ignored — no `.claude/` (5db5e4a copied it; 7d193f89 does not), and no
-// manifest match that git does not ignore.
+// TestPopulateWorktree pins the manifest half of worktree seeding. `git worktree
+// add` checks out tracked files only, so a declared untracked file is missing
+// unless copied. The reference copies exactly the untracked files that are BOTH
+// named by the manifest AND git-ignored, and no manifest match that git does not
+// ignore.
 //
-// Every expectation was probe-measured against the reference at 7d193f89. In this
-// fixture only `secret.env` is both git-ignored and in the manifest; `notes/` and
-// `plain-untracked.txt` are in the manifest but not ignored, `logs/` is ignored but
-// not in the manifest, and `.claude/` is never copied regardless.
+// In this fixture only `secret.env` is both git-ignored and in the manifest.
+// `notes/` and `plain-untracked.txt` are in the manifest but not ignored, and
+// `logs/` is ignored but not in the manifest.
+//
+// `.claude/` is absent from every expectation here for ONE reason, and it is not
+// "the reference never copies it": this fixture does not git-ignore `.claude/`, so
+// the `--others --ignored` view copyClaudeDir reads cannot see it. The copied case
+// is TestPopulateWorktreeCopiesIgnoredClaudeDir below. An earlier version of this
+// comment read the absence as a rule and was wrong for every reference build back
+// to 5db5e4a.
+//
+// The git-config isolation matters. copyClaudeDir's `--exclude-standard` honours
+// the USER's global excludes, by design. Without the isolation the fixture's
+// ignore state depends on whose machine runs the test.
 func TestPopulateWorktree(t *testing.T) {
 	requireGit(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture uses symlinks and POSIX modes")
 	}
+	isolateGitConfig(t)
 
 	fixture := func(t *testing.T, withClaude, withManifest bool) (repo, wt string) {
 		t.Helper()
@@ -99,12 +154,12 @@ func TestPopulateWorktree(t *testing.T) {
 		return repo, filepath.Join(root, "wt")
 	}
 
-	// The seeded tree is the same whether or not `.claude/` exists — it is never
-	// copied — and holds only the tracked files plus the one git-ignored manifest
-	// match.
+	// The seeded tree is the same whether or not `.claude/` exists, because this
+	// fixture does not ignore it. It holds the tracked files plus the one
+	// git-ignored manifest match.
 	withManifest := []string{".gitignore", "secret.env", "tracked.txt"}
 
-	t.Run("claude_present_is_not_copied", func(t *testing.T) {
+	t.Run("claude_present_but_not_ignored_is_not_copied", func(t *testing.T) {
 		repo, wt := fixture(t, true, true)
 		runGit(t, repo, "worktree", "add", "-b", "b1", wt)
 		populateWorktree(repo, wt)
@@ -124,6 +179,42 @@ func TestPopulateWorktree(t *testing.T) {
 		populateWorktree(repo, wt)
 		eqTree(t, treeOf(t, wt), withManifest, "no-claude")
 	})
+}
+
+// TestPopulateWorktreeCopiesIgnoredClaudeDir pins the half TestPopulateWorktree
+// cannot reach: when `.claude/` IS git-ignored, the reference seeds the new
+// worktree with everything under it except `.claude/worktrees/`, and no
+// `.worktreeinclude` is involved.
+//
+// Measured on an ephemeral linux VM against 19f30c46 and 90fca6e6 alike
+// (scratch/probe/ref90-capture.md section C). claustrum copied none of this
+// before, which is why the fixture carries no manifest at all: without one, every
+// file below reaches the worktree through copyClaudeDir or not at all.
+func TestPopulateWorktreeCopiesIgnoredClaudeDir(t *testing.T) {
+	requireGit(t)
+	isolateGitConfig(t)
+
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", "-b", "master", "repo")
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "t\n", 0o644)
+	writeFile(t, filepath.Join(repo, ".gitignore"), ".claude/\n", 0o644)
+	runGit(t, repo, "add", "tracked.txt", ".gitignore")
+	writeFile(t, filepath.Join(repo, ".claude", "settings.local.json"), "{}\n", 0o644)
+	writeFile(t, filepath.Join(repo, ".claude", "agents", "a.md"), "a\n", 0o644)
+	// The worktrees dir is where session worktrees live, so copying it would copy
+	// the worktree into itself. Both reference builds skip it.
+	writeFile(t, filepath.Join(repo, ".claude", "worktrees", "w", "x.txt"), "x\n", 0o644)
+	runGit(t, repo, "commit", "-m", "init")
+
+	wt := filepath.Join(root, "wt")
+	runGit(t, repo, "worktree", "add", "-b", "b", wt)
+	populateWorktree(repo, wt)
+
+	eqTree(t, treeOf(t, wt), []string{
+		".claude", ".claude/agents", ".claude/agents/a.md",
+		".claude/settings.local.json", ".gitignore", "tracked.txt",
+	}, "ignored .claude")
 }
 
 // TestCopyFileDoesNotPreserveMode pins a reference behaviour that looks like a
@@ -280,20 +371,23 @@ func TestSafeOverlayDest(t *testing.T) {
 	}
 }
 
-// TestWorktreeIncludeSkipsQuotedNames pins a REFERENCE LIMITATION that claustrum
-// reproduces on purpose. `git ls-files` C-quotes any path containing a tab, a
-// quote, a backslash or a non-ASCII byte, and the line-delimited output is
-// parsed as-is, so such a file is silently not copied.
+// TestWorktreeIncludeCopiesQuotedNames pins that a filename git would C-quote is
+// copied like any other. `git ls-files` C-quotes any path containing a tab, a
+// quote, a backslash or a non-ASCII byte, and the quoted display form names no
+// real file, so a line-delimited read drops it. The reference passes `-z` and
+// splits on NUL, so it copies all four shapes.
 //
-// Probe-measured: given six manifest-matched files the reference copied only the
-// two whose names git prints bare — plain and space-containing. Using `-z` here
-// would fix the limitation and thereby DIVERGE, copying files the reference
-// leaves behind, so the behaviour is asserted rather than corrected.
-func TestWorktreeIncludeSkipsQuotedNames(t *testing.T) {
+// This test used to assert the opposite, citing a probe. That probe was wrong.
+// Re-measured on an ephemeral linux VM against 19f30c46 AND 90fca6e6, all four
+// shapes are copied by both (scratch/probe/worktreecopy_probe.py, capture in
+// scratch/probe/ref90-capture.md section D). 7d193f89 splits on NUL as well, so
+// the original claim was wrong when it was written.
+func TestWorktreeIncludeCopiesQuotedNames(t *testing.T) {
 	requireGit(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("tabs and quotes are not legal in Windows filenames")
 	}
+	isolateGitConfig(t)
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "master", "repo")
@@ -320,7 +414,11 @@ func TestWorktreeIncludeSkipsQuotedNames(t *testing.T) {
 	populateWorktree(repo, wt)
 
 	eqTree(t, treeOf(t, wt),
-		[]string{".gitignore", "tracked.txt", "weird space.txt", "weird-plain.txt"},
+		[]string{
+			".gitignore", "tracked.txt",
+			"weird\ttab.txt", "weird space.txt", "weird\"quote.txt",
+			"weird-caf\u00e9.txt", "weird-plain.txt",
+		},
 		"quoted-name manifest matches")
 }
 

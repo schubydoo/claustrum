@@ -133,6 +133,8 @@ component_management:
         - methods_git.go
         - methods_process.go
         - worktreecopy.go
+        # `.claude/` seeding of a new worktree and the runtime-state skip.
+        - worktreeclaude.go
         # git.worktree_* machinery (containment, external roots, staleness, verify,
         # per-repo lock, leaf mkdir) + git hardening + the destructive-path guard.
         - worktreecontain.go

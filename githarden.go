@@ -391,7 +391,12 @@ func attrSourceArgs() []string {
 }
 
 var (
-	userExcludesOnce   sync.Once
+	// A mutex rather than a sync.Once, for two reasons. A test that moves HOME or
+	// XDG_CONFIG_HOME has to force a re-resolve, and clearing a Once means either
+	// copying a lock (go vet copylocks) or writing the pair with no
+	// synchronisation at all, which races any in-flight request goroutine.
+	userExcludesMu     sync.Mutex
+	userExcludesDone   bool
 	userExcludesCached string
 )
 
@@ -401,7 +406,12 @@ var (
 // excludes path 7d193f89 passes as core.excludesFile on every git invocation (observed
 // via a git-argv trace). hardenedArgs substitutes it for every git op.
 func userExcludesFile() string {
-	userExcludesOnce.Do(func() { userExcludesCached = resolveUserExcludesFile() })
+	userExcludesMu.Lock()
+	defer userExcludesMu.Unlock()
+	if !userExcludesDone {
+		userExcludesCached = resolveUserExcludesFile()
+		userExcludesDone = true
+	}
 	return userExcludesCached
 }
 

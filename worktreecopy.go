@@ -13,9 +13,9 @@ const worktreeIncludeFile = ".worktreeinclude"
 
 // claudeDirName is `.claude`, the repo child that holds session worktrees under
 // <repo>/.claude/worktrees. worktreecontain.go uses it (with worktreesSubdir) to
-// recognise a managed worktrees tree. 7d193f89 no longer copies `.claude/` into a
-// new worktree (it did at 5db5e4a) — the directory is subject only to the manifest
-// rule below, like any other untracked path.
+// recognise a managed worktrees tree. The reference ALSO seeds a new worktree with
+// the repo's git-ignored `.claude/` files, outside the manifest rule below: see
+// copyClaudeDir in worktreeclaude.go.
 const claudeDirName = ".claude"
 
 // worktreesSubdir is the child of .claude that holds session worktrees.
@@ -27,8 +27,12 @@ const worktreesSubdir = "worktrees"
 //
 // Best-effort: the worktree already exists and the reference reports success, so a
 // copy failure must not turn into a failed request.
+// The two copies run in the reference's order: the manifest copy first, then the
+// `.claude/` copy. The order is observable when both name the same path, because
+// the second copy overwrites the first.
 func populateWorktree(repo, worktree string) {
 	copyWorktreeIncludes(repo, worktree)
+	copyClaudeDir(repo, worktree)
 }
 
 // copyWorktreeIncludes copies the untracked files 7d193f89 seeds a worktree with:
@@ -42,12 +46,16 @@ func populateWorktree(repo, worktree string) {
 // The two sets are the intersection of two `git ls-files` views: the manifest
 // matches (--exclude-from) and the standard-ignored files (--exclude-standard).
 //
-// Line-delimited, and NOT `-z`, which is a deliberate parity choice rather than an
-// oversight. git C-quotes any path containing a tab, a quote, a backslash or a
-// non-ASCII byte, so those arrive as display forms like "weird\ttab.txt" that do not
-// name a real file and are silently skipped — the reference has the same limitation
-// (probe-measured), so `-z` would make claustrum copy MORE than the reference.
-// Pinned by TestWorktreeIncludeSkipsQuotedNames; see docs/PROTOCOL.md.
+// NUL-delimited, with `-z` on both views. git C-quotes any path containing a tab,
+// a quote, a backslash or a non-ASCII byte, and the quoted display form names no
+// real file, so a line-delimited read silently drops it. The reference passes `-z`
+// and copies all four shapes, measured against 19f30c46 and 90fca6e6 alike (see
+// scratch/probe/worktreecopy_probe.py). An earlier comment here claimed the
+// opposite and called it probe-measured parity. It was not: 7d193f89 splits on NUL
+// too, so the claim was wrong when it was written.
+//
+// A runtime-state path under `.claude/` is skipped even when the manifest names
+// it, matching 90fca6e6. See isClaudeRuntimeState.
 func copyWorktreeIncludes(repo, worktree string) {
 	if _, err := os.Stat(filepath.Join(repo, worktreeIncludeFile)); err != nil {
 		return
@@ -60,32 +68,31 @@ func copyWorktreeIncludes(repo, worktree string) {
 	// {"success":true}. Off by default since D5's flip, which is why it is not
 	// reachable today.
 	manifest, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
-		"--exclude-from="+worktreeIncludeFile)
+		"--exclude-from="+worktreeIncludeFile, "-z")
 	if err != nil || manifest == "" {
 		return
 	}
 	// The git-ignored set uses the worktree profile so --exclude-standard honours the
 	// user's global excludes (~/.config/git/ignore), matching 7d193f89 — a file
 	// ignored only by the user's global config is copied when the manifest names it.
-	ignored, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored", "--exclude-standard")
+	ignored, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
+		"--exclude-standard", "-z")
 	if err != nil {
 		return
 	}
 	ignoredSet := make(map[string]struct{})
-	for _, rel := range strings.Split(ignored, "\n") {
-		if rel = strings.TrimRight(rel, "\r"); rel != "" {
+	for _, rel := range strings.Split(ignored, "\x00") {
+		if rel != "" {
 			ignoredSet[rel] = struct{}{}
 		}
 	}
-	for _, rel := range strings.Split(manifest, "\n") {
-		// One guarded call rather than `if rel == "" { continue }`: gitStdoutErr
-		// strips the trailing newline and an empty `manifest` returned above, so no
-		// blank element reaches this loop.
-		if rel = strings.TrimRight(rel, "\r"); rel != "" {
-			if _, ok := ignoredSet[rel]; ok {
-				if dst := safeOverlayDest(worktree, rel); dst != "" {
-					copyFile(filepath.Join(repo, rel), dst)
-				}
+	for _, rel := range strings.Split(manifest, "\x00") {
+		if rel == "" || isClaudeRuntimeState(rel) {
+			continue
+		}
+		if _, ok := ignoredSet[rel]; ok {
+			if dst := safeOverlayDest(worktree, rel); dst != "" {
+				copyFile(filepath.Join(repo, rel), dst)
 			}
 		}
 	}
