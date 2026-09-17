@@ -104,7 +104,11 @@ type server struct {
 // conn is one connected client. The write mutex serializes the interleaving of
 // JSON-RPC responses and id-less stream notifications on the same socket.
 type conn struct {
-	nc     net.Conn
+	nc net.Conn
+	// ac is nc again, typed, when the accept loop wrapped it. supersede needs the
+	// deliberate-close flag, and a test that builds a conn around a bare pipe
+	// leaves this nil. Set once at accept and never mutated.
+	ac     *activityConn
 	wmu    sync.Mutex
 	closed bool
 
@@ -133,6 +137,49 @@ type conn struct {
 	stdinCond   *sync.Cond
 	stdinNext   uint64 // next ticket to hand out
 	stdinServed uint64 // ticket currently admitted
+}
+
+// supersede ends this connection because another one took over what it was
+// attached to, matching reference build 90fca6e6.
+//
+// Before 90fca6e6 a reattach only transferred the frame stream: the previously
+// attached connection stopped receiving frames but stayed open, so a client that
+// had lost the session could not tell its old connection was finished. Measured:
+// on 19f30c46 the old connection still answers server.ping after another
+// connection reattaches, and on 90fca6e6 the next write to it fails.
+//
+// The claim makes it happen once. A connection the idle watcher already ended
+// is not closed and logged a second time, and neither is one superseded twice.
+//
+// The reason text is claustrum's own phrasing, not the reference's verbatim
+// string, the same choice the host cleaner made for its log reasons. What is
+// reproduced is the close, which a client observes; the wording goes to stderr.
+func (c *conn) supersede(reason string) {
+	// The accept loop is the only place production builds a conn and it always
+	// sets ac, on every transport and every OS. A nil ac therefore means a
+	// test-built conn around a bare pipe, and there is no flag to claim.
+	//
+	// The warning is deliberate. A nil ac silently disables this whole path, and
+	// every supersede assertion then passes while nothing is superseded. That is
+	// not hypothetical: the socket harness handed serveConn a bare net.Conn until
+	// this change, so a future regression of the same shape says so out loud.
+	if c.ac == nil {
+		logWarnf("[Server] supersede on a connection with no activity wrapper; not closing it")
+		return
+	}
+	// Mark the writer closed whether or not we win the claim. Losing it means the
+	// idle watcher is closing this connection instead, so a later writeLine that
+	// slipped past the closed check would record a frame into a -wire-log capture
+	// that never reaches the wire. (The idle watcher still cannot set this itself:
+	// it holds the activityConn, not the conn.)
+	c.wmu.Lock()
+	c.closed = true
+	c.wmu.Unlock()
+	if !c.ac.claimClose() {
+		return
+	}
+	logInfof("[Server] closing connection %s: %s", c.nc.RemoteAddr(), reason)
+	_ = c.nc.Close()
 }
 
 // nextStdinTicket reserves this request's place in the stdin stream. Called from
@@ -819,7 +866,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 		// Wrap in an activity-stamping conn so the idle watcher can see the last
 		// read/write. 7d193f89 closes a connection idle for idleConnTimeout.
 		ac := newActivityConn(nc)
-		c := &conn{nc: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{})}
+		c := &conn{nc: ac, ac: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{})}
 		met.connections.Add(1)
 		logInfof("[Server] New connection from: %s", c.nc.RemoteAddr())
 		s.mu.Lock()
