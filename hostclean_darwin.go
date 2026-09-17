@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"net"
 	"os"
@@ -48,9 +49,38 @@ const (
 )
 
 // hcLsofPath is /usr/sbin/lsof. hcLsofEnv pins the locale so the -F output format is stable.
-const hcLsofPath = "/usr/sbin/lsof"
+// The path is a var only so a test can point it at a fixture command.
+var hcLsofPath = "/usr/sbin/lsof"
 
 var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
+
+// The three bounds on one lsof run.
+//
+// The reference bounds every lsof run its host cleaner makes. 90fca6e6 raised two of
+// the three, the command deadline from 5 s to 15 s and the abandon bound from 7 s to
+// 17 s. The wait delay stayed at 1 s.
+//
+// Pointer-class: all three are READ from the darwin builds of 19f30c46 and 90fca6e6,
+// on amd64 AND arm64, which carry the same values. NOT probe-measured: staging them
+// live needs an lsof that hangs on a macOS host.
+//
+// Why three and not two. The deadline kills the command. The wait delay then bounds
+// how long the run waits for the output pipe to close, which covers a child that
+// exited while a grandchild still holds the pipe. Neither covers a process wedged in
+// the kernel, because waiting on a command waits on the process first and only then
+// consults the delay, and that is exactly the case these bounds exist for: an lsof
+// stuck on an unresponsive mount. The abandon bound is what covers it. The run is
+// given up on, and an abandoned run reads as no output, which is the same answer an
+// lsof that genuinely finds nothing gives.
+//
+// The cost of getting this wrong is a whole cleaner pass: retireAbandoned samples
+// hcBusy for up to hcBusyWindow, and on darwin every one of those samples is an lsof
+// run.
+var (
+	hcLsofTimeout   = 15 * time.Second
+	hcLsofWaitDelay = 1 * time.Second
+	hcLsofAbandon   = 17 * time.Second
+)
 
 // Seams. Each is a package var a unit test replaces to drive the decision tree without a real
 // sysctl or lsof, mirroring linux's procRoot / hcDial seams.
@@ -76,11 +106,39 @@ var (
 	// and the reference (which parses lsof's output), the caller keys only on the output. lsof
 	// is a system binary always present on macOS and needs no privilege for this user's own
 	// processes, so a run failure is not a reachable path.
+	//
+	// Bounded three ways, matching the reference. An lsof that stalls on an unresponsive
+	// mount would otherwise hold the whole cleaner pass open with nothing to end it, and
+	// the deadline alone does not cover that case. See the bound constants above.
+	//
+	// The run happens on its own goroutine so the abandon bound can win the race. The
+	// goroutine is left to finish on its own; the channel is buffered, so its send never
+	// blocks even when nobody is listening any more.
+	//
+	// Returning also cancels the context, which kills a child that can still be killed,
+	// so an ordinary stall leaves nothing behind. For the case this bound exists for,
+	// a process wedged in the kernel, the kill does not land and the goroutine really
+	// does outlive the call. That is the point: the CALLER is unblocked either way, and
+	// the goroutine costs one buffered send whenever the process finally goes.
 	runLsof = func(args ...string) string {
-		cmd := exec.Command(hcLsofPath, append([]string{"-nP", "-w"}, args...)...)
+		ctx, cancel := context.WithTimeout(context.Background(), hcLsofTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, hcLsofPath, append([]string{"-nP", "-w"}, args...)...)
 		cmd.Env = hcLsofEnv
-		out, _ := cmd.Output()
-		return string(out)
+		cmd.WaitDelay = hcLsofWaitDelay
+		done := make(chan string, 1)
+		go func() {
+			out, _ := cmd.Output()
+			done <- string(out)
+		}()
+		abandon := time.NewTimer(hcLsofAbandon)
+		defer abandon.Stop()
+		select {
+		case out := <-done:
+			return out
+		case <-abandon.C:
+			return "" // give up on the run; no output reads as not busy / not held
+		}
 	}
 )
 

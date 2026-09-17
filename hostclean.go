@@ -835,11 +835,23 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 }
 
 // retireAbandoned SIGTERMs a still-live daemon whose run dir has been idle past the threshold.
-// It re-verifies identity (rejecting a reused pid), requires the daemon be old enough and
-// verifiably ours, then SIGTERMs the single pid and waits the grace. It returns true only when
-// the daemon exited; it never escalates to SIGKILL (that is judgeDaemon/endGroups' job).
+// It requires the daemon be verifiably ours and old enough, spares one that still shows a live
+// connection across the sampling window, re-verifies identity (rejecting a reused pid), then
+// SIGTERMs the single pid and waits the grace. That check order matches the reference. It
+// returns true only when the daemon exited; it never escalates to SIGKILL (that is
+// judgeDaemon/endGroups' job).
 func (c *hostCleaner) retireAbandoned(pid int, socket string) bool {
 	if pid < 2 || pid == c.selfPid {
+		return false
+	}
+	// The listener check comes FIRST, matching the reference's order. It is the cheapest
+	// way to reject a candidate, and putting it last means spending the whole sampling
+	// window on a process that is about to be refused anyway. On darwin that window is
+	// hcBusyWindow of lsof runs, so the order is visible in how many times lsof runs on
+	// a candidate that fails the listener check. It also decides which reason gets
+	// logged when more than one holds.
+	if reason := c.verifyListener(pid, socket); reason != "" {
+		logInfof("[process.HostClean] run-dir daemon pid %d: %s; left running", pid, reason)
 		return false
 	}
 	t, res := inspect(pid, false)
@@ -850,17 +862,12 @@ func (c *hostCleaner) retireAbandoned(pid int, socket string) bool {
 		logInfof("[process.HostClean] idle daemon pid %d still shows a live connection across samples; left running", pid)
 		return false
 	}
-	if reason := c.verifyListener(pid, socket); reason != "" {
-		logInfof("[process.HostClean] run-dir daemon pid %d: %s; left running", pid, reason)
-		return false
-	}
 	// Re-validate identity immediately before signalling, the way endGroupsTwoPhase does.
 	// Everything between the inspect above and here takes the bare pid: the busy sampler
-	// holds it for up to hcBusyWindow, and verifyListener dials on top of that. A daemon
-	// that exits in that span can have its pid taken by an unrelated process, and the
-	// SIGTERM below would then reach whatever now holds the number. waitGone already
-	// refuses a reused pid, so without this check the signal goes out and the mismatch
-	// afterwards reads as a clean exit.
+	// holds it for up to hcBusyWindow. A daemon that exits in that span can have its pid
+	// taken by an unrelated process, and the SIGTERM below would then reach whatever now
+	// holds the number. waitGone already refuses a reused pid, so without this check the
+	// signal goes out and the mismatch afterwards reads as a clean exit.
 	//
 	// The reference gates its own signal the same way. In 19f30c46 and 90fca6e6 alike,
 	// on linux and darwin, it does not signal a pid whose identity no longer matches the

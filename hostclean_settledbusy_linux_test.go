@@ -199,3 +199,46 @@ func TestRetireAbandonedSparesABusyDaemon(t *testing.T) {
 		}
 	})
 }
+
+// TestRetireAbandonedVerifiesBeforeItSamples pins the check order against the
+// reference's: the listener is verified first, so a candidate that is about to be
+// refused never costs a sampling window.
+//
+// The window is up to hcBusyWindow, and on darwin every sample in it is an lsof run,
+// so the order is worth a test rather than a comment. It is visible only in the logs,
+// which is why the assertion is on the sampler not running at all rather than on a
+// frame.
+func TestRetireAbandonedVerifiesBeforeItSamples(t *testing.T) {
+	const pid = 4400
+	const socket = "/opt/claude/run/x/rpc.sock"
+
+	proot, mk, link := fakeProc(t)
+	single, _ := hcSeamSignals(t, proot)
+	oldUID, seamedSleep := hcGetuid, hcSleep
+	t.Cleanup(func() { hcGetuid, hcSleep = oldUID, seamedSleep })
+	hcGetuid = func() int { return 1000 }
+	sleeps := 0
+	hcSleep = func(d time.Duration) { sleeps++; seamedSleep(d) }
+
+	// Busy AND unverifiable: it keeps a connected client, so the sampler would hold it
+	// for the whole window, but it carries no daemon-child marker, so verifyListener
+	// refuses it. Only the order decides which of those two happens.
+	exe := "/opt/claude/srv/a/server"
+	hcFakeDaemon(t, proot, mk, link, pid, exe,
+		[]string{exe, "--serve", "--socket", socket}, false, "1")
+	link(pid, "fd/4", "socket:[555]")
+	mk(pid, "net/unix", "Num RefCount Protocol Flags Type St Inode Path\n"+
+		"0000: 00000002 00000000 00000000 0001 03 555 "+socket+"\n")
+
+	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
+	if c.retireAbandoned(pid, socket) {
+		t.Fatal("an unverifiable daemon was retired")
+	}
+	if len(*single) != 0 {
+		t.Fatalf("signalled = %v, want nothing", *single)
+	}
+	if sleeps != 0 {
+		t.Errorf("the sampler slept %d times before the listener was verified; the "+
+			"verification comes first, so an unverifiable candidate costs no window", sleeps)
+	}
+}

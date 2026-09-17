@@ -443,3 +443,87 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 		t.Errorf("hcBusy = false while a client is connected")
 	}
 }
+
+// TestRunLsofIsBounded drives the REAL runLsof, not the seam every other darwin test
+// replaces, and pins that one run cannot outlive its bounds.
+//
+// Before this, runLsof used a plain exec.Command with no deadline, so an lsof that
+// stalled on an unresponsive mount held the cleaner pass open for as long as it
+// stalled. retireAbandoned samples hcBusy for up to hcBusyWindow and on darwin every
+// sample is an lsof run, so one stall is enough.
+//
+// The fixture is this test binary, never /usr/sbin/lsof: a real lsof cannot be made
+// to hang on demand. Both helper modes ignore their arguments, because the runner
+// prepends its own flags.
+func TestRunLsofIsBounded(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	oldPath, oldEnv := hcLsofPath, hcLsofEnv
+	oldTimeout, oldDelay, oldAbandon := hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon
+	t.Cleanup(func() {
+		hcLsofPath, hcLsofEnv = oldPath, oldEnv
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = oldTimeout, oldDelay, oldAbandon
+	})
+	hcLsofPath = exe
+	// runLsof REPLACES the child's environment with hcLsofEnv, so the child inherits
+	// nothing from the test process. GORACE has to be forwarded by hand: TestMain
+	// publishes atexit_sleep_ms=0 into this process's environment, and without it a
+	// race-built helper sleeps tsan's default second on the way out. Measured on a
+	// macOS VM: the prompt fixture took 1.04s under -race without this, and 0.09s
+	// with it. CI runs -race on macos-latest, so that is a guaranteed red, not a flake.
+	withHelper := func(mode string) {
+		hcLsofEnv = append(append([]string{}, oldEnv...),
+			"CLAUSTRUM_TEST_HELPER="+mode, "GORACE="+os.Getenv("GORACE"))
+	}
+
+	t.Run("control: a prompt command is read", func(t *testing.T) {
+		// First, and a t.Fatal: without it a runner that killed every run at once, or
+		// returned "" always, would pass both bound arms below. The assertion is on
+		// the OUTPUT, not on how long the child took to produce it. A wall-clock gate
+		// here would be the tightest bound in the file and would measure process
+		// startup rather than anything this test is about; the arms below already
+		// bound a fixture that genuinely hangs.
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 5*time.Second, time.Second, 6*time.Second
+		withHelper("print-quiet")
+		if got := runLsof("-p", "1"); got != "p1\n" {
+			t.Fatalf("runLsof of a prompt command = %q, want %q", got, "p1\n")
+		}
+	})
+
+	t.Run("the deadline ends a killable stall", func(t *testing.T) {
+		// The abandon bound is set far out, so only the command deadline can end this
+		// run. That is what makes this arm about the deadline rather than the race.
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 300*time.Millisecond, time.Second, time.Minute
+		withHelper("stall-quiet")
+		start := time.Now()
+		got := runLsof("-p", "1")
+		elapsed := time.Since(start)
+		if got != "" {
+			t.Errorf("runLsof of a stalled command = %q, want no output", got)
+		}
+		if elapsed > 10*time.Second {
+			t.Errorf("runLsof took %v; the deadline did not end it", elapsed)
+		}
+	})
+
+	t.Run("the abandon bound wins when the deadline cannot", func(t *testing.T) {
+		// This is the arm that matters, and the one a deadline-only implementation
+		// fails. Waiting on a command waits on the process first, so a process the
+		// deadline cannot shift holds the run open however short the wait delay is.
+		// Here the deadline is set beyond the fixture's own lifetime, which stands in
+		// for a process wedged in the kernel: nothing but the abandon bound can end it.
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = time.Minute, time.Minute, 300*time.Millisecond
+		withHelper("stall-quiet")
+		start := time.Now()
+		got := runLsof("-p", "1")
+		elapsed := time.Since(start)
+		if got != "" {
+			t.Errorf("runLsof of an unkillable stall = %q, want no output", got)
+		}
+		if elapsed > 10*time.Second {
+			t.Errorf("runLsof took %v; the run was not abandoned", elapsed)
+		}
+	})
+}
