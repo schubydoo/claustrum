@@ -60,17 +60,21 @@ func killFixtureGroup(t *testing.T, s *server, processID string) {
 	})
 }
 
-// sawExitFrame reports whether an exit frame for processID has already arrived.
-// waitExit blocks for one; this only asks.
-func sawExitFrame(cl *testClient, processID string) bool {
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
-	for _, f := range cl.fr {
-		if f.ProcessID == processID && f.Stream == "exit" {
-			return true
-		}
+// mustStillBeInDrainWindow fails if the process has left the reaped-but-draining
+// window. Called after the in-window assertions, it says they were made inside it.
+func mustStillBeInDrainWindow(t *testing.T, s *server, processID string) {
+	t.Helper()
+	p := s.procs.get(processID)
+	if p == nil {
+		t.Fatalf("process %s disappeared before the window could be rechecked", processID)
 	}
-	return false
+	p.mu.Lock()
+	inWindow := p.reaped && p.running
+	p.mu.Unlock()
+	if !inWindow {
+		t.Fatal("the drain window closed during the assertions above, so they were " +
+			"answered by the ordinary post-exit path and prove nothing")
+	}
 }
 
 func TestSocketReapedInDrainIsNotRunning(t *testing.T) {
@@ -126,21 +130,23 @@ func TestSocketReapedInDrainIsNotRunning(t *testing.T) {
 	// keeps this from becoming circular.
 	waitForDrainWindow(t, s, "DRAIN")
 
-	// Belt and braces at assertion time. Both assertions below are ALSO true after
-	// the exit frame, so if the window closed between the poll and here, the test
-	// would pass while measuring nothing. The window is held open by one thing, the
-	// grandchild the helper starts, and a failed start collapses it to nothing.
-	if sawExitFrame(cl, "DRAIN") {
-		t.Fatal("the exit frame arrived before the assertions; the drain window was " +
-			"not open, so what follows would prove nothing")
-	}
-
 	if got := string(cl.call(req(5, "process.reattach", map[string]any{"id": "DRAIN"}))); !strings.Contains(got, `"running":false`) {
 		t.Errorf("reattach inside the drain = %s, want running false", got)
 	}
 	if got := string(cl.call(req(6, "process.stdin", map[string]any{"id": "DRAIN", "data": payload}))); !strings.Contains(got, "Process not running") {
 		t.Errorf("stdin inside the drain = %s, want the not-running error", got)
 	}
+
+	// The window has to still be open AFTER those two calls, not merely before
+	// them. Both assertions are equally true once the exit frame is out, so a drain
+	// that expired between a check and the calls would leave them passing on the
+	// ordinary post-exit answers and proving nothing about the change.
+	//
+	// Checking afterwards covers the whole span: the window cannot have closed
+	// during a call and then reopened. The margin is wide, since the poll above
+	// returns near the start of a 3-second window and two round trips take well
+	// under a millisecond, and the failure direction is loud rather than silent.
+	mustStillBeInDrainWindow(t, s, "DRAIN")
 
 	// After the exit frame, the same reattach must report stdinApplied 0. The zero
 	// is what shows the counter never moved, rather than the process merely being
