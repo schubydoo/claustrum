@@ -20,6 +20,19 @@ import (
 // Measured against both reference binaries in scratch/probe/ref90-capture.md
 // section A: 19f30c46 answers {"success":true,"applied":6} and running:true
 // inside this window, 90fca6e6 answers -32602 and running:false.
+// sawExitFrame reports whether an exit frame for processID has already arrived.
+// waitExit blocks for one; this only asks.
+func sawExitFrame(cl *testClient, processID string) bool {
+	cl.mu.Lock()
+	defer cl.mu.Unlock()
+	for _, f := range cl.fr {
+		if f.ProcessID == processID && f.Stream == "exit" {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSocketReapedInDrainIsNotRunning(t *testing.T) {
 	old := exitDrainGrace
 	exitDrainGrace = 3 * time.Second
@@ -63,6 +76,19 @@ func TestSocketReapedInDrainIsNotRunning(t *testing.T) {
 		"id": "DRAIN", "command": exe, "args": []string{"20"}, "env": env,
 	}))
 	time.Sleep(300 * time.Millisecond)
+
+	// Prove the window is still open before asserting anything inside it. Both
+	// assertions below are ALSO true after the exit frame, so without this the test
+	// passes whether or not it measured what it claims to.
+	//
+	// The window is held open by one thing: the grandchild the helper starts. If
+	// that start ever fails, on a slow or hostile CI leg, the pipe closes at the
+	// helper's exit, the drain collapses to nothing, and the 300 ms observation
+	// lands past the exit frame. This turns that into a loud failure.
+	if sawExitFrame(cl, "DRAIN") {
+		t.Fatalf("the exit frame arrived within %v; the drain window was not open, so "+
+			"the assertions below would prove nothing", 300*time.Millisecond)
+	}
 
 	if got := string(cl.call(req(5, "process.reattach", map[string]any{"id": "DRAIN"}))); !strings.Contains(got, `"running":false`) {
 		t.Errorf("reattach inside the drain = %s, want running false", got)

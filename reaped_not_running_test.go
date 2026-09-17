@@ -36,8 +36,9 @@ func TestReapedProcessRefusesStdin(t *testing.T) {
 	goodB64 := base64.StdEncoding.EncodeToString([]byte("x"))
 
 	// The control that must keep passing: a live process is still accepted. It has
-	// no stdin pipe, so the write is dropped, but the reply is not the running
-	// error. This arm fails a mutant that refuses every process.
+	// no stdin writer goroutine, so the bytes sit in the queue and are never
+	// drained, but the reply is a success rather than the running error. This arm
+	// fails a mutant that refuses every process.
 	//
 	// It stays a t.Fatalf and it stays FIRST. The new arm below is one-sided: on
 	// its own it cannot tell "refuses a reaped process" from "refuses everything".
@@ -63,8 +64,12 @@ func TestReapedProcessRefusesStdin(t *testing.T) {
 func TestReapedProcessReattachReportsNotRunning(t *testing.T) {
 	s := newTestServer(t)
 
-	// The control: a live process still reports running true.
-	s.procs.procs["live"] = &managedProc{id: "live", subs: map[*conn]struct{}{}, running: true}
+	// The control: a live process still reports running true. It gets a condition
+	// variable it does not need here, so the literal stays safe to copy into a test
+	// that does reach the stdin enqueue.
+	liveProc := &managedProc{id: "live", subs: map[*conn]struct{}{}, running: true}
+	liveProc.stdinCond = sync.NewCond(&liveProc.stdinMu)
+	s.procs.procs["live"] = liveProc
 	if got := dispatchRaw(t, s, rpcLine(t, "process.reattach", map[string]any{"id": "live"})); !strings.Contains(got, `"running":true`) {
 		t.Fatalf("reattach to a live process = %s, want running true", got)
 	}
