@@ -345,12 +345,6 @@ func hcLockHeldAt(path string, fi os.FileInfo) bool {
 	return lockFileHeld(fi)
 }
 
-// hcSettledBusy reports whether an idle daemon still shows a live connection across samples.
-// Linux relies on hcBusy at judge time and never needs this extra sample, so it is always false.
-func hcSettledBusy(pid int) bool {
-	return false
-}
-
 // hcSelfExe resolves this process's own executable path, dropping a trailing " (deleted)".
 func hcSelfExe() (exe string, ok bool) {
 	if p, err := os.Readlink(procRoot + "/self/exe"); err == nil {

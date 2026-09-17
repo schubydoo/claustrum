@@ -705,17 +705,23 @@ func TestReadChildRecordMissing(t *testing.T) {
 	}
 }
 
-// fields19 returns stat fields 4..22 with pgrp (field 5) = 13 and starttime (field 22) =
-// 4242, so a "<pid> (proc) <state> " prefix plus this yields a parseable line.
+// fields19 returns stat fields 4..23 with pgrp (field 5) = 13, starttime (field 22) =
+// 4242 and a non-zero vsize (field 23), so a "<pid> (proc) <state> " prefix plus this
+// yields a parseable line.
+//
+// The vsize is why the name no longer matches the count. Since 90fca6e6 a vsize of
+// 0 counts as gone as well as the Z and X state letters, so a line that stops at
+// starttime cannot answer the question and reads as not ours.
 func fields19() string {
 	// After the ')': state(3) already supplied by caller. We supply ppid(4) pgrp(5) ...
-	// up to starttime(22). Index in the fields-after-')' slice: state=0, ppid=1, pgrp=2,
-	// ... starttime=19. So we need indices 1..19 here (ppid..starttime).
+	// up to vsize(23). Index in the fields-after-')' slice: state=0, ppid=1, pgrp=2,
+	// ... starttime=19, vsize=20. So we need indices 1..20 here.
 	f := []string{"1", "13"} // ppid=1, pgrp=13
 	for i := 3; i <= 18; i++ {
 		f = append(f, "0")
 	}
-	f = append(f, "4242") // starttime at index 19
+	f = append(f, "4242")    // starttime at index 19
+	f = append(f, "4194304") // vsize at index 20, non-zero so the process reads alive
 	out := ""
 	for i, s := range f {
 		if i > 0 {

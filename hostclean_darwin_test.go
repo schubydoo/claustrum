@@ -243,17 +243,32 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	}
 }
 
+// hcSettledBusy is shared code now (hostclean.go), so this covers the darwin half
+// of it: that the darwin hcBusy it samples answers, and that the loop behaves on
+// this OS. The rule itself is pinned on linux by TestHcSettledBusyHonoursTheDeadline.
+//
+// claustrum's own previous darwin debounce took ten fixed samples, so the window
+// assertion below is what separates the two.
 func TestHcSettledBusyDarwin(t *testing.T) {
-	oldRun, oldSleep := runLsof, hcSleep
-	t.Cleanup(func() { runLsof, hcSleep = oldRun, oldSleep })
-	hcSleep = func(time.Duration) {}
+	oldRun, oldSleep, oldClock := runLsof, hcSleep, hcClock
+	t.Cleanup(func() { runLsof, hcSleep, hcClock = oldRun, oldSleep, oldClock })
+	// A clock the sleeps drive, so the 3-second window costs no real time.
+	now := time.Unix(1_700_000_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
 
 	// Busy in every sample -> settled busy.
 	runLsof = func(...string) string {
 		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n"
 	}
+	start := now
 	if !hcSettledBusy(1) {
 		t.Error("busy-in-all-samples not settled busy")
+	}
+	// The window, not a sample count: claustrum's previous rule settled after about
+	// 450 ms.
+	if elapsed := now.Sub(start); elapsed < hcBusyWindow {
+		t.Errorf("sampled for %v, want at least the %v window", elapsed, hcBusyWindow)
 	}
 	// Busy at first, then idle -> not settled busy.
 	n := 0
