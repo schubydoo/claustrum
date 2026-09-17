@@ -65,7 +65,13 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 			if err != nil {
 				return // listener closed by cleanup
 			}
-			c := &conn{nc: nc}
+			// Wrapped exactly as the production accept loop wraps it. The harness
+			// used to hand serveConn a bare net.Conn, which left conn.ac nil, and a
+			// nil ac silently disables every path that claims the deliberate-close
+			// flag: the supersede on reattach, and the idle watcher. A socket test
+			// then asserts against a daemon shape production never has.
+			ac := newActivityConn(nc)
+			c := &conn{nc: ac, ac: ac}
 			s.mu.Lock()
 			s.conns[c] = struct{}{}
 			s.mu.Unlock()

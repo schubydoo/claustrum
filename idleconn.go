@@ -18,7 +18,18 @@ const idleConnTimeout = 5 * time.Minute
 type activityConn struct {
 	net.Conn
 	last atomic.Int64 // last activity, unix nanoseconds
+	// closedDeliberately is claimed by whichever path decides to end this
+	// connection on the daemon's own initiative: the idle watcher below, or a
+	// supersede from process.reattach. The claim is a Swap, so exactly one of them
+	// logs a reason and closes, and 90fca6e6 shares it between the two for that
+	// reason. Without it a superseded connection is closed once and then logged a
+	// second time by the idle watcher, which reads as two separate events.
+	closedDeliberately atomic.Bool
 }
+
+// claimClose returns true for the first caller only. A later caller learns that
+// someone else already owns ending this connection.
+func (a *activityConn) claimClose() bool { return !a.closedDeliberately.Swap(true) }
 
 func newActivityConn(c net.Conn) *activityConn {
 	a := &activityConn{Conn: c}
@@ -65,6 +76,11 @@ func (s *server) closeWhenIdle(a *activityConn, done <-chan struct{}) {
 			return
 		case <-t.C:
 			if idle := a.idleFor(); idle >= s.idleTimeout {
+				// Claim BEFORE logging and closing, matching 90fca6e6: a connection
+				// a supersede already ended is not closed or logged twice.
+				if !a.claimClose() {
+					return
+				}
 				logInfof("[Server] closing idle connection %s (idle for %s)",
 					a.RemoteAddr(), idle.Round(time.Second))
 				_ = a.Close()

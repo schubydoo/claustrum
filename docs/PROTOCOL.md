@@ -1080,9 +1080,18 @@ reports the outcome as a *result*. An unknown id is not an error:
 - **The transfer is exclusive.** A reattach does not add a second listener. Any
   connection attached before stops receiving frames for that process. This is what
   makes a resume safe.
+- **The transfer also CLOSES the connection it replaced**, since `90fca6e6`. The
+  daemon closes it once and logs a reason naming the process. Before `90fca6e6`
+  the old connection stayed open, so a client held a connection that never carried
+  another frame and had no sign that the session moved. Measured: on `19f30c46`
+  the old connection still answers `server.ping` after another connection
+  reattaches, and on `90fca6e6` the next write to it fails. A reattach on the
+  connection that is already attached closes nothing.
 - **The cut is by `seq`, not by wall-clock.** The transfer point is the reported
   `lastSeq`. The old connection can still receive a frame `<= lastSeq` slightly
-  after the reply, and never one above it. No frame reaches the old connection and
+  after the reply, and never one above it. Since `90fca6e6` that window is only as
+  long as it takes the supersede's close to land, rather than lasting until the
+  client hangs up. No frame reaches the old connection and
   is also absent from the new connection's replay. That is what `fromSeq` is for.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
 - **The daemon retains an exited process for ~15 minutes and then drops it**,

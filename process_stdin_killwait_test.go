@@ -201,7 +201,12 @@ func TestSocketProcessStdinOffset(t *testing.T) {
 	// The reattach above TRANSFERRED the frame stream to b, so the exit frame
 	// arrives there and not on cl. Measured at 5db5e4a: after a reattach the
 	// previously attached connection stops receiving.
-	cl.send(authed(`{"jsonrpc":"2.0","id":8,"method":"process.kill","params":{"id":"CAT","signal":"KILL"}}`))
+	//
+	// Since 90fca6e6 the transfer also CLOSES cl, so the kill goes out on b. This
+	// line used to use cl and started failing with a broken pipe the moment the
+	// supersede landed, which is the change being observable in an existing test
+	// rather than only in a new one.
+	b.send(authed(`{"jsonrpc":"2.0","id":8,"method":"process.kill","params":{"id":"CAT","signal":"KILL"}}`))
 	b.waitExit("CAT")
 }
 

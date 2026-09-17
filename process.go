@@ -1198,6 +1198,18 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// The map is replaced rather than cleared entry-by-entry so the old set is
 	// dropped atomically under p.mu, with no window where a frame could reach a
 	// half-emptied set.
+	//
+	// 90fca6e6 goes further than the transfer: the connection that WAS attached is
+	// closed, so a client that lost the session learns its old connection is
+	// finished instead of holding one that will never carry another frame. The
+	// superseded set is collected here and acted on after p.mu is dropped, because
+	// supersede logs and closes a socket and neither belongs under this lock.
+	superseded := make([]*conn, 0, len(p.subs))
+	for old := range p.subs {
+		if old != c {
+			superseded = append(superseded, old)
+		}
+	}
 	p.subs = map[*conn]struct{}{c: {}}
 	// running AND not reaped, matching 90fca6e6: a process inside the exit drain
 	// has already been waited on, so a client must not read it as resumable.
@@ -1213,6 +1225,9 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 		lastSeq = p.buffer[len(p.buffer)-1].Seq
 	}
 	p.mu.Unlock()
+	for _, old := range superseded {
+		old.supersede("process " + id + " reattached from another connection")
+	}
 	p.stdinMu.Lock()
 	stdinApplied = p.stdinApplied
 	p.stdinMu.Unlock()
