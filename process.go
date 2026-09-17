@@ -139,7 +139,7 @@ type managedProc struct {
 	// is reachable exactly when a grandchild holds the pipe open, and a
 	// grandchild that calls setsid() (which is what daemonizing means) leaves the
 	// group, so the group really can empty and its id be reused mid-drain. Read
-	// only under p.mu, and only by signalIfLive.
+	// only under p.mu, by signalIfLive, by isLive, and by reattach.
 	reaped bool
 	// exitedAt is stamped alongside running=false, so it dates the exit frame
 	// rather than the reap — the two are up to exitDrainGrace apart. Zero while
@@ -358,15 +358,29 @@ func (m *procManager) liveArgv() [][]string {
 	return out
 }
 
-// isRunning reports the process's state AS CLIENTS SEE IT: true until the exit
-// frame is emitted. During the bounded exit drain that is a window in which the
-// process has already been reaped but still reports running — deliberately, to
-// match the reference. Use isReaped, not this, to decide whether it is safe to
-// signal.
+// isRunning reports the process's state as the EXIT FRAME sees it: true until
+// that frame is emitted. During the bounded exit drain that is a window in which
+// the process has already been reaped but still reports running — deliberately,
+// to match the reference. No client-visible field reads this since 90fca6e6
+// narrowed process.reattach and process.stdin to isLive below; the callers left
+// are internal (killAndWaitProc, the session supersede, the shutdown log line). Use signalIfLive, which holds p.mu across the reaped
+// check and the delivery, to decide whether it is safe to signal.
 func (p *managedProc) isRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.running
+}
+
+// isLive is isRunning narrowed by the reap: running AND not yet reaped. The two
+// differ only inside the exit drain, the window that opens when cmd.Wait returns
+// and closes when the exit frame goes out. A process in that window has no pipe
+// left to write to and no session left to resume, so 90fca6e6 answers "not
+// running" for it on both process.stdin and process.reattach. isRunning stays for
+// the paths that report the client's view of the process, such as the exit frame.
+func (p *managedProc) isLive() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.running && !p.reaped
 }
 
 // signalGroup is a seam over procGroup.signal so the "do not signal a reaped
@@ -388,7 +402,7 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 // id-reuse eviction, whose exit frame reaches no client. The first reason wins,
 // so a client kill racing the shutdown sweep stays "client".
 //
-// p.mu is held across the check, the stamp and the delivery: an isReaped() that
+// p.mu is held across the check, the stamp and the delivery: a reaped check that
 // returns before the signal leaves a gap for the exit goroutine to reap in
 // between, which is the very race the check exists to prevent. Every signal site
 // goes through here for that reason.
@@ -725,9 +739,12 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// on the frame path required, and no seq number burnt on a dropped frame.
 	<-drained
 	closeAll(stdoutR, stderrR) // no-op on the drained path; idempotent
-	// running flips only now, not when cmd.Wait returned. Probe-measured: the
-	// reference still reports running:true two seconds into the drain window
-	// and false only once the exit frame is out.
+	// running flips only now, not when cmd.Wait returned. Probe-measured at
+	// 19f30c46: the reference still reported running:true two seconds into the
+	// drain window and false only once the exit frame was out. 90fca6e6 narrowed
+	// the flag it REPORTS, not this one: reattach answers p.running && !p.reaped
+	// (see isLive), so the field below keeps its old timing and no client reads
+	// it directly any more.
 	p.mu.Lock()
 	p.running = false
 	p.exitedAt = time.Now() // starts the procPruneAge clock
@@ -813,8 +830,11 @@ func (p *managedProc) enqueueStdin(data []byte) (full bool) {
 // nothing (the reference returns -32002 here rather than parking the request).
 // The stdinQBytes>0 conjunct exempts a lone over-cap write on an empty queue, so
 // it is always accepted. A write after the process exited (stdinDone) is dropped,
-// not reported as full — it matches the exit-drain wart (D-note: stdin acked
-// during the drain is dropped and the high-water mark still advances).
+// not reported as full. That kept the pre-90fca6e6 exit-drain wart intact, where
+// stdin acked during the drain was dropped and the high-water mark still
+// advanced. Since 90fca6e6 the drain is refused before the enqueue, so this arm
+// is reached only by a write racing the writer's own shutdown, and the shape of
+// the answer (drop, not -32002) is what it still pins.
 func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 	if !p.stdinDone && p.stdinQBytes > 0 && p.stdinQBytes+len(data) > stdinQueueCap {
 		if !p.stdinWarned {
@@ -857,6 +877,9 @@ func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 // stdinMu the other way, so the ordering is deadlock-free. On that same
 // fresh-enqueue path a queue already at the cap returns full=true and enqueues
 // nothing (the reference returns -32002 rather than parking the request).
+//
+// The call site passes mp.isLive, not mp.isRunning: 90fca6e6 refuses a write to a
+// process that has been reaped, even while the exit frame is still pending.
 func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() bool) (applied uint64, duplicate, gap, full, notRunning bool) {
 	p.stdinMu.Lock()
 	cur := p.stdinApplied
@@ -1176,7 +1199,9 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 	// dropped atomically under p.mu, with no window where a frame could reach a
 	// half-emptied set.
 	p.subs = map[*conn]struct{}{c: {}}
-	running = p.running
+	// running AND not reaped, matching 90fca6e6: a process inside the exit drain
+	// has already been waited on, so a client must not read it as resumable.
+	running = p.running && !p.reaped
 	var replay []streamFrame
 	for _, f := range p.buffer {
 		if f.Seq > fromSeq {

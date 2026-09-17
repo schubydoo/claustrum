@@ -595,8 +595,10 @@ func TestStdinExactCapFitAccepted(t *testing.T) {
 
 // A write that lands after the writer finished (stdinDone — the child exited or
 // the pipe closed) is DROPPED, not reported as full: full=true would surface
-// -32002 where claustrum matches the exit-drain wart instead (stdin acked during
-// the drain is dropped, and the high-water mark still advances).
+// -32002 where the reference drops the write instead. Before 90fca6e6 this arm
+// also carried the exit-drain wart, where stdin acked during the drain was
+// dropped and the high-water mark still advanced. 90fca6e6 refuses the drain
+// before the enqueue, so what is left here is the drop-not--32002 shape.
 //
 // The queue is pre-loaded past the cap so the backpressure gate would fire but
 // for its `!p.stdinDone` conjunct — dropping that conjunct turns this ack into a
