@@ -131,8 +131,10 @@ children it spawns.
   gone — `SIGTERM`, a 3s grace, then `SIGKILL`), and **retires stale run dirs** (idle past 30
   days, socket unanswered, no live lock — renamed aside then removed, with an undo if a socket
   or lock reappears mid-removal). It spares an ambiguous daemon or orphan with a logged
-  reason, keeps a run dir it cannot probe conclusively, and never touches a fresh, busy,
-  locked, or foreign daemon. This path is DESTRUCTIVE and host-wide, so every process read,
+  reason, keeps a run dir it cannot probe conclusively, and never touches a fresh, locked,
+  or foreign daemon. "Busy" is weaker than the other three: it is a 3-second sampling
+  window, not a state, so a daemon that is idle across the window and gains a client a
+  moment later is still signalled. This path is DESTRUCTIVE and host-wide, so every process read,
   kill, dial, rename and remove sits behind a seam (tests never touch a real process or file)
   and its real behavior is validated only on a throwaway VM, never on a host that runs sibling
   daemons. It runs on linux and darwin (a no-op on windows, where the reference ships no
@@ -171,9 +173,11 @@ session attaches to. It injects no auth.)
   per-connection writer, so responses and stream frames interleave safely.
 - Each managed process has a monotonic `seq`, an append-only frame buffer, and a
   set of subscriber connections. `spawn` subscribes the connection that spawned
-  the process. `reattach` subscribes the requester and replays buffered frames
-  with `seq > fromSeq`. Claustrum detaches a dead subscriber (`[frameSink] replay
-  write failed, detaching`).
+  the process. `reattach` REPLACES the whole subscriber set with the requester and
+  replays buffered frames with `seq > fromSeq`, so any connection attached before
+  stops receiving frames for that process. Since `90fca6e6` it also closes each
+  connection it displaced, once, with a logged reason. Claustrum detaches a dead
+  subscriber (`[frameSink] replay write failed, detaching`).
 
 ## Deployment lifecycle (how a driver uses it)
 

@@ -51,15 +51,19 @@ var claudeRuntimeStateNames = []string{
 // isClaudeRuntimeState reports whether rel names one of the runtime-state entries
 // directly under a `.claude/` directory, or anything inside one.
 //
-// The behaviour, all three parts measured against 90fca6e6:
+// The behaviour, all four parts measured against 90fca6e6:
 //   - whole path components, so `.claude/mailboxes/keep.txt` is COPIED
-//   - anchored directly under `.claude/`, so `.claude/nested/mailbox/deep.txt` is
-//     COPIED
+//   - anchored directly under a `.claude/`, so `.claude/nested/mailbox/deep.txt`
+//     is COPIED
+//   - but that `.claude/` need not be the repo root's: `sub/.claude/mailbox/m1.txt`
+//     is DROPPED (scratch/probe/nestedclaude_probe.py)
 //   - case-insensitive, so a `Checkpoints` directory is DROPPED
 //
+// Only the manifest pass can reach a nested `.claude/`. copyClaudeDir's listing is
+// pathspec-limited to the repo-root `.claude/`, so it never names one.
+//
 // claustrum implements that by lowercasing, wrapping the path in slashes and
-// substring-matching. Any implementation with the same three properties gives the
-// same answer on every input.
+// substring-matching.
 //
 // rel is repo-relative with forward slashes, the form `git ls-files` prints.
 func isClaudeRuntimeState(rel string) bool {

@@ -307,9 +307,10 @@ const (
 // the window. The window, the minimum and the sample interval match 90fca6e6 and
 // carry that const block's pointer-class label.
 //
-// claustrum's own previous debounce took ten fixed samples 50 ms apart, about
-// 450 ms in all, and on linux it was a constant false, so the spare could never
-// fire there. That was a gap against 19f30c46 as much as against 90fca6e6, since
+// claustrum's own previous debounce took ten fixed samples, sleeping hcWaitPoll
+// (100 ms) between them, so it settled after about 900 ms. On linux it was a
+// constant false, so the spare could never fire there. That was a gap against
+// 19f30c46 as much as against 90fca6e6, since
 // claustrum has a real linux hcBusy to sample with. One shared implementation now
 // serves both.
 func hcSettledBusy(pid int) bool {
@@ -859,8 +860,13 @@ func (c *hostCleaner) retireAbandoned(pid int, socket string) bool {
 	// that exits in that span can have its pid taken by an unrelated process, and the
 	// SIGTERM below would then reach whatever now holds the number. waitGone already
 	// refuses a reused pid, so without this check the signal goes out and the mismatch
-	// afterwards reads as a clean exit. The reference refuses a reused pid on this path
-	// too, in both 19f30c46 and 90fca6e6 (read from those builds, not probe-measured).
+	// afterwards reads as a clean exit.
+	//
+	// The reference gates its own signal the same way. In 19f30c46 and 90fca6e6 alike,
+	// on linux and darwin, it does not signal a pid whose identity no longer matches the
+	// one it inspected, and it writes no retire log for such a pid either. Read from
+	// those builds, not probe-measured: this path sits behind the same slow age gates
+	// as the const block above, which makes staging it expensive. Not staged.
 	if !t.asTracked().same() {
 		logInfof("[process.HostClean] idle daemon pid %d is no longer the process that was inspected; nothing signalled", pid)
 		return false

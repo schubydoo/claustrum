@@ -361,10 +361,17 @@ func (m *procManager) liveArgv() [][]string {
 // isRunning reports the process's state as the EXIT FRAME sees it: true until
 // that frame is emitted. During the bounded exit drain that is a window in which
 // the process has already been reaped but still reports running — deliberately,
-// to match the reference. No client-visible field reads this since 90fca6e6
-// narrowed process.reattach and process.stdin to isLive below; the callers left
-// are internal (killAndWaitProc, the session supersede, the shutdown log line). Use signalIfLive, which holds p.mu across the reaped
-// check and the delivery, to decide whether it is safe to signal.
+// to match the reference. 90fca6e6's reaped narrowing moved process.reattach and
+// process.stdin to isLive below, so neither reads this any more. One client-visible
+// field still does: killAndWaitProc answers alreadyExited from it, so inside the
+// drain a killAndWait answers alreadyExited:false and waits, rather than reporting
+// an already-exited process. It delivers no signal either — signalIfLive's reaped
+// guard suppresses that — so the drain costs the caller a wait, not a stray signal.
+// Leaving it on this side of the narrowing is READ from the build, which changed
+// the attach and stdin paths only; the Kill path inside the drain is NOT measured.
+// The other callers are internal (the session supersede, the shutdown log line).
+// Use signalIfLive, which holds p.mu across the reaped check and the delivery, to
+// decide whether it is safe to signal.
 func (p *managedProc) isRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -805,13 +805,15 @@ fails the request:
   git does not ignore is **not** copied, and without the manifest the daemon copies
   no untracked manifest file.
 - **`.claude/` is copied separately, with no manifest entry.** A second pass runs
-  `git ls-files --others --ignored --exclude-standard -z -- .claude/` and copies
-  everything it lists. So a `.claude/` the repo git-ignores is seeded into the new
-  worktree; a `.claude/` that is merely untracked is not, because that view cannot
-  see it. `.claude/worktrees/` is always skipped, since that is where session
-  worktrees live. Measured against `19f30c46` and `90fca6e6` alike. An earlier
-  version of this document said `7d193f89` had dropped this copy. It had not, and
-  neither did any build back to `5db5e4a`.
+  `git ls-files --others --ignored --exclude-standard -z -- .claude/` and copies what
+  it lists, minus the exclusions in the bullets below. So a `.claude/` the repo
+  git-ignores is seeded into the new worktree; a `.claude/` that is merely untracked
+  is not, because that view cannot see it. `.claude/worktrees/` is always skipped,
+  since that is where session worktrees live. The listing is limited to the repo-root
+  `.claude/`, so a nested one is reached only by the manifest pass. Measured against
+  `19f30c46` and `90fca6e6` alike. An earlier version of this document said
+  `7d193f89` had dropped this copy. It had not. Only those two builds are measured;
+  `7d193f89` reads the same listing NUL-delimited, and the earlier builds are not.
 - **Claude runtime state is skipped by both passes** since `90fca6e6`. The names
   are `scheduled_tasks.json`, `scheduled_tasks.lock`, `routines/.state`,
   `worktrees`, `checkpoints`, `mailbox`, `agent-registry.json`, `first-run` and
@@ -829,9 +831,19 @@ fails the request:
   0666-subject-to-umask, so an executable arrives non-executable and a `0400`
   source is widened. This matches the reference. Treat the manifest as a way to
   name configuration, not secrets or scripts.
-- An **opted-in `-git-timeout`** (D5) that kills the `git ls-files` skips **every**
-  manifest-selected file, and the reply is still `{"success":true}` — a silent,
-  wire-invisible loss. Off by default.
+- **Destination containment on both passes is claustrum's own.** Every copy resolves
+  its destination component by component inside the new worktree, and the copy is
+  dropped when an intermediate component is a symlink, so a link checked out into the
+  worktree cannot carry a copy outside it. Whether the reference refuses the same is
+  **unmeasured**: no probe behind this section has a symlinked-intermediate fixture.
+  Treat it as claustrum hardening, not parity. A `..` component cannot occur, because
+  `git ls-files` never prints one.
+- An **opted-in `-git-timeout`** (D5) that kills a `git ls-files` loses that pass, and
+  the reply is still `{"success":true}` — a silent, wire-invisible loss. Each pass has
+  its own deadline, so the manifest copy can succeed while the `.claude/` copy is lost,
+  or the other way round. The `.claude/` pass has no manifest precondition, so unlike
+  the manifest pass it runs on every create. The loss itself still needs a listing
+  slower than the deadline. Off by default.
 
 #### git.worktree_remove
 `{baseRepo,worktreePath[,branchName][,worktreeRoot]}` → `{"success":true}` (lenient)
@@ -992,7 +1004,7 @@ id-less stream notifications, and **buffers** them for a later replay.
     - Known but **exited or already reaped**, only when the write would enqueue
       fresh bytes → `-32602 Process not running`. Since `90fca6e6` the reap
       counts, not just the exit frame, so this also covers the drain window. See
-      the exit-drain note under `process.spawn`.
+      the exit-drain note under **Stream notifications**.
 - **`offset` / `applied` — the resumable-stdin contract** (added `7c2f88d`,
   advertised as `process.stdin.offset`). The reply **always** carries `applied`: the
   cumulative count of stdin bytes accepted for delivery (the high-water mark).
@@ -1050,6 +1062,14 @@ reports the outcome as a *result*. An unknown id is not an error:
 - Unknown id → `{"found":false,"died":false}`.
 - Already exited → `{"found":true,"died":true,"alreadyExited":true}`. The daemon
   sends no signal.
+- **Inside the exit drain this method is the exception.** `90fca6e6` narrowed
+  `process.reattach` and `process.stdin` to treat a reaped process as not running.
+  `killAndWait` still reads the flag that flips with the exit frame, so a call
+  inside the drain answers `alreadyExited:false` and waits for the frame rather
+  than reporting an already-exited process. No signal is delivered either, because
+  the daemon refuses to signal a reaped process. Leaving this method on the old side
+  of the narrowing is read from the build, which changed the attach and stdin paths
+  only. The Kill path inside the drain is **not** measured.
 - Live process → the daemon sends the graceful `signal` (default `SIGTERM`), and
   then waits up to the grace:
     - **`timeoutMs`** sets the grace. A non-positive or absent value gives the
@@ -1087,12 +1107,19 @@ reports the outcome as a *result*. An unknown id is not an error:
   the old connection still answers `server.ping` after another connection
   reattaches, and on `90fca6e6` the next write to it fails. A reattach on the
   connection that is already attached closes nothing.
+- **`running` is false for a reaped process**, since `90fca6e6`. Inside the bounded
+  exit drain the daemon has already waited on the process but has not yet emitted the
+  exit frame, and a reattach in that window answers `running:false`. See the
+  exit-drain note under **Stream notifications**, and the same rule under
+  `process.stdin`.
 - **The cut is by `seq`, not by wall-clock.** The transfer point is the reported
-  `lastSeq`. The old connection can still receive a frame `<= lastSeq` slightly
-  after the reply, and never one above it. Since `90fca6e6` that window is only as
-  long as it takes the supersede's close to land, rather than lasting until the
-  client hangs up. No frame reaches the old connection and
-  is also absent from the new connection's replay. That is what `fromSeq` is for.
+  `lastSeq`. The old connection never receives a frame above it. It can still receive
+  one `<= lastSeq`, from a write already in flight when the transfer took the process
+  off it. Since `90fca6e6` that window is bounded by the supersede's close rather than
+  lasting until the client hangs up, and claustrum runs the close before it writes the
+  reply. Whether a frame can still land on the old connection after the client reads
+  the reply is unmeasured. No frame reaches the old connection and is also absent from
+  the new connection's replay. That is what `fromSeq` is for.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
 - **The daemon retains an exited process for ~15 minutes and then drops it**,
   together with its replay buffer. An id last seen longer ago therefore answers

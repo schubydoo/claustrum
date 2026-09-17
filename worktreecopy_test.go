@@ -392,18 +392,20 @@ func TestWorktreeIncludeCopiesQuotedNames(t *testing.T) {
 	repo := filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "master", "repo")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "t\n", 0o644)
-	// The weird files must be git-ignored to be copy candidates at all (7d193f89
-	// copies only manifest matches that git also ignores); the quoted-name skip is
-	// what this test isolates on top of that.
+	// The weird files must be git-ignored to be copy candidates at all (the manifest
+	// pass copies only matches that git also ignores). The quoting is what this test
+	// isolates on top of that: the two bare names are the control, and every C-quoted
+	// shape must arrive beside them.
 	writeFile(t, filepath.Join(repo, ".gitignore"), "weird*\n", 0o644)
 	runGit(t, repo, "add", "tracked.txt", ".gitignore")
 	writeFile(t, filepath.Join(repo, worktreeIncludeFile), "weird*\n", 0o644)
 	for _, name := range []string{
-		"weird-plain.txt",  // printed bare      -> copied
-		"weird space.txt",  // printed bare      -> copied
-		"weird\ttab.txt",   // C-quoted          -> skipped
-		"weird\"quote.txt", // C-quoted          -> skipped
-		"weird-café.txt",   // C-quoted (UTF-8)  -> skipped
+		"weird-plain.txt",  // printed bare
+		"weird space.txt",  // printed bare
+		"weird\ttab.txt",   // C-quoted
+		"weird\"quote.txt", // C-quoted
+		"weird\\back.txt",  // C-quoted
+		"weird-café.txt",   // C-quoted (UTF-8)
 	} {
 		writeFile(t, filepath.Join(repo, name), "x\n", 0o644)
 	}
@@ -417,7 +419,7 @@ func TestWorktreeIncludeCopiesQuotedNames(t *testing.T) {
 		[]string{
 			".gitignore", "tracked.txt",
 			"weird\ttab.txt", "weird space.txt", "weird\"quote.txt",
-			"weird-caf\u00e9.txt", "weird-plain.txt",
+			"weird-caf\u00e9.txt", "weird-plain.txt", "weird\\back.txt",
 		},
 		"quoted-name manifest matches")
 }

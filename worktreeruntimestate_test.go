@@ -76,8 +76,8 @@ func claudeRuntimeStateFixture(t *testing.T) (repo, wt string) {
 	repo = filepath.Join(root, "repo")
 	runGit(t, root, "init", "-b", "master", "repo")
 	writeFile(t, filepath.Join(repo, "tracked.txt"), "tracked\n", 0o644)
-	writeFile(t, filepath.Join(repo, ".gitignore"), ".claude/\n", 0o644)
-	writeFile(t, filepath.Join(repo, ".worktreeinclude"), ".claude/\n", 0o644)
+	writeFile(t, filepath.Join(repo, ".gitignore"), ".claude/\nsub/.claude/\n", 0o644)
+	writeFile(t, filepath.Join(repo, ".worktreeinclude"), ".claude/\nsub/.claude/\n", 0o644)
 	runGit(t, repo, "add", "tracked.txt", ".gitignore")
 
 	// Kept: ordinary configuration under `.claude/`.
@@ -97,6 +97,15 @@ func claudeRuntimeStateFixture(t *testing.T) (repo, wt string) {
 	// would pass every arm below.
 	writeFile(t, filepath.Join(repo, ".claude", "mailboxes", "keep.txt"), "k\n", 0o644)
 	writeFile(t, filepath.Join(repo, ".claude", "nested", "mailbox", "deep.txt"), "d\n", 0o644)
+
+	// The third boundary: the `.claude/` a runtime-state name sits under need not be
+	// the repo root's. Measured on both reference builds, where 19f30c46 copies the
+	// nested mailbox and 90fca6e6 drops it (scratch/probe/nestedclaude_probe.py).
+	// Only the manifest pass can reach a nested one, which is why this lives here.
+	// Its neighbour is the control: an ordinary file under the same nested `.claude/`
+	// must still be copied, so a mutant that drops the whole nested tree fails.
+	writeFile(t, filepath.Join(repo, "sub", ".claude", "mailbox", "m1.txt"), "m\n", 0o644)
+	writeFile(t, filepath.Join(repo, "sub", ".claude", "settings.json"), "{}\n", 0o644)
 
 	runGit(t, repo, "commit", "-m", "init")
 	return repo, filepath.Join(root, "wt")
@@ -118,14 +127,16 @@ func TestWorktreeIncludeSkipsClaudeRuntimeState(t *testing.T) {
 		".claude/agents/a.md",
 		".claude/mailboxes/keep.txt",
 		".claude/nested/mailbox/deep.txt",
+		"sub/.claude/settings.json",
 	} {
 		if _, err := os.Stat(filepath.Join(wt, filepath.FromSlash(rel))); err != nil {
 			t.Fatalf("%s was not seeded: %v", rel, err)
 		}
 	}
 
-	// The new arms: every name in the list, not a sample of it.
-	for _, rel := range droppedRuntimeStatePaths() {
+	// The new arms: every name in the list, not a sample of it, plus the nested
+	// `.claude/`, which no name in the list covers on its own.
+	for _, rel := range append(droppedRuntimeStatePaths(), "sub/.claude/mailbox/m1.txt") {
 		if _, err := os.Stat(filepath.Join(wt, filepath.FromSlash(rel))); err == nil {
 			t.Errorf("%s was seeded into the worktree; it is Claude runtime state", rel)
 		}
