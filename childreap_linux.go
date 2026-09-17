@@ -39,12 +39,23 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 		return lp
 	}
 	fields := strings.Fields(string(stat)[i+1:])
-	if len(fields) <= 19 {
+	// Reference build 90fca6e6 widened the gone test: a process whose vsize is 0
+	// has an address space already torn down and counts as gone, where before only
+	// the Z and X state letters did. Pointer-class, read from that build rather
+	// than measured, because the reap's 5-minute age gate makes staging it live
+	// impractical.
+	//
+	// claustrum therefore reads vsize (stat field 23) alongside the state letter,
+	// which is why the floor below is 21 fields rather than 20.
+	if len(fields) <= 20 {
 		lp.state = procNotOurs
 		return lp
 	}
 	if fields[0] == "Z" || fields[0] == "X" {
 		return lp // zombie or dead: gone
+	}
+	if fields[20] == "0" { // vsize
+		return lp
 	}
 	lp.pgid, _ = strconv.Atoi(fields[2]) // field 5 (pgrp)
 	lp.startTicks = fields[19]           // field 22 (starttime)

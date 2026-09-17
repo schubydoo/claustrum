@@ -330,21 +330,6 @@ func hcBusy(pid int) bool {
 	return unix > 1
 }
 
-// hcSettledBusy debounces hcBusy: it samples up to 10 times and returns true only when the
-// process shows busy in every sample, so a transient connection does not count. Used by
-// retireAbandoned (a still-live daemon is retired only when it is idle across samples).
-func hcSettledBusy(pid int) bool {
-	for i := 0; i < 10; i++ {
-		if !hcBusy(pid) {
-			return false
-		}
-		if i < 9 {
-			hcSleep(hcWaitPoll)
-		}
-	}
-	return true
-}
-
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.
 func hcLockHeldAt(path string, _ os.FileInfo) bool {

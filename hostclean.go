@@ -281,7 +281,49 @@ func hcDirIdle(dir string, now time.Time) (time.Duration, bool) {
 const (
 	hcDialTimeout = 300 * time.Millisecond // probeSocket dial timeout
 	hcWaitPoll    = 100 * time.Millisecond // waitGone poll interval
+	// The busy debounce below, matching reference build 90fca6e6.
+	//
+	// Pointer-class: all three are READ from that build, NOT probe-measured. They
+	// were not staged live because the only caller is retireAbandoned, behind a
+	// 5-minute process age and a 30-day idle age, which makes it expensive.
+	//
+	// Expensive, not impossible, and the distinction matters per value. The WINDOW
+	// is observable in principle: a daemon whose client disconnects one second into
+	// the sample is retired under a 3-second window and spared under a shorter one,
+	// and that outcome is externally visible. The 50 ms interval and the 2-sample
+	// minimum are not observable, since nothing outside can see how often the
+	// sampler looked.
+	hcBusySample = 50 * time.Millisecond // sleep between busy samples
+	hcBusyWindow = 3 * time.Second       // how long a busy process must stay busy
+	hcBusyMin    = 2                     // samples taken before the deadline counts
 )
+
+// hcSettledBusy debounces hcBusy: it reports true only for a process that shows a
+// live connection in every sample across the whole window. retireAbandoned uses it
+// to spare an idle daemon that is still serving someone.
+//
+// It samples for hcBusyWindow with a minimum of hcBusyMin samples, and returns at
+// once on the first sample that says not busy, so an idle daemon is never held for
+// the window. The window, the minimum and the sample interval match 90fca6e6 and
+// carry that const block's pointer-class label.
+//
+// claustrum's own previous debounce took ten fixed samples 50 ms apart, about
+// 450 ms in all, and on linux it was a constant false, so the spare could never
+// fire there. That was a gap against 19f30c46 as much as against 90fca6e6, since
+// claustrum has a real linux hcBusy to sample with. One shared implementation now
+// serves both.
+func hcSettledBusy(pid int) bool {
+	deadline := hcClock().Add(hcBusyWindow)
+	for n := 1; ; n++ {
+		if !hcBusy(pid) {
+			return false
+		}
+		if n >= hcBusyMin && !hcClock().Before(deadline) {
+			return true
+		}
+		hcSleep(hcBusySample)
+	}
+}
 
 // tracked is a pid plus the identity that defeats pid reuse: its process group and its
 // start-ticks. A reused pid has a different start-ticks, so fate can tell it apart.
