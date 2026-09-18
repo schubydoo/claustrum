@@ -139,10 +139,12 @@ children it spawns.
   and its real behavior is validated only on a throwaway VM, never on a host that runs sibling
   daemons. It runs on linux and darwin (a no-op on windows, where the reference ships no
   cleaner). Off-wire. claustrum reproduces this cleaner's behavior rather than matching it byte
-  for byte: it omits the reference's clock-skew freshness window and approximates some
-  spare-reason bookkeeping, both in the conservative direction (they only ever spare or skip
-  where the reference might act). The reap path acts only on a dead socket. After 30 days of
-  run-dir idleness the retire path can SIGTERM a socket-live daemon, but a clock-skew-fresh
+  for byte, in three places, all in the conservative direction (they only ever spare or skip
+  where the reference might act): it omits the reference's clock-skew freshness window,
+  approximates some spare-reason bookkeeping, and on macOS reads an `lsof` run it gave up on
+  as busy where the reference reads it as idle. That third one is a numbered divergence,
+  [DIVERGENCES.md](DIVERGENCES.md) D17. The reap path acts only on a dead socket. After 30 days
+  of run-dir idleness the retire path can SIGTERM a socket-live daemon, but a clock-skew-fresh
   daemon has no such idle run dir. So dropping that window cannot end a fresh daemon.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a
   separate goroutine. A slow login shell therefore does not delay the moment the

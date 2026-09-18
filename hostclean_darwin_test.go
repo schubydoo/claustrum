@@ -214,7 +214,7 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	t.Cleanup(func() { runLsof = old })
 
 	// A bare listener: one unix record, no connected peer -> not busy.
-	runLsof = func(...string) string { return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf5\ntPIPE\nn->0xabc\n" }
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf5\ntPIPE\nn->0xabc\n", true }
 	if hcBusy(1) {
 		t.Error("bare listener read as busy")
 	}
@@ -223,23 +223,50 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	}
 
 	// Listener plus an accepted connection: two unix records -> busy.
-	runLsof = func(...string) string {
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n"
+	runLsof = func(...string) (string, bool) {
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
 	}
 	if !hcBusy(1) {
 		t.Error("listener with an accepted connection not read as busy")
 	}
 
 	// A connected-peer name ("->") is an immediate yes.
-	runLsof = func(...string) string { return "p1\nf3\ntunix\nn->/run/other\n" }
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true }
 	if !hcBusy(1) {
 		t.Error("connected unix peer not read as busy")
 	}
 
 	// No lsof output -> process gone / nothing found.
-	runLsof = func(...string) string { return "" }
+	runLsof = func(...string) (string, bool) { return "", true }
 	if _, ok := hcFdTargets(1); ok {
 		t.Error("hcFdTargets ok=true with no lsof output")
+	}
+}
+
+// TestHcBusyAbandonedRunReadsBusy pins D17.
+//
+// The two arms differ ONLY in the flag: both return no output. A completed run that
+// saw nothing is evidence the pid is idle, and must read as not busy — that arm is
+// the control, and it is also the parity arm, since the reference answers the same.
+// An abandoned run is not evidence of anything, and claustrum reads it as busy where
+// the reference reads it as idle. Deleting the D17 arm in hcBusy makes the second
+// assertion fail while the control still passes.
+func TestHcBusyAbandonedRunReadsBusy(t *testing.T) {
+	old := runLsof
+	t.Cleanup(func() { runLsof = old })
+
+	// CONTROL, and parity: lsof ran, found nothing. Not busy.
+	runLsof = func(...string) (string, bool) { return "", true }
+	if hcBusy(1) {
+		t.Fatal("a completed run that found nothing read as busy; that is the parity " +
+			"answer and D17 must not change it")
+	}
+
+	// The divergence: the run was abandoned, so nothing is known about the pid.
+	runLsof = func(...string) (string, bool) { return "", false }
+	if !hcBusy(1) {
+		t.Error("an abandoned run read as not busy; a wedged lsof would then let the " +
+			"cleaner SIGTERM a daemon that is still serving a client")
 	}
 }
 
@@ -258,8 +285,8 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 
 	// Busy in every sample -> settled busy.
-	runLsof = func(...string) string {
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n"
+	runLsof = func(...string) (string, bool) {
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
 	}
 	start := now
 	if !hcSettledBusy(1) {
@@ -272,12 +299,12 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	}
 	// Busy at first, then idle -> not settled busy.
 	n := 0
-	runLsof = func(...string) string {
+	runLsof = func(...string) (string, bool) {
 		n++
 		if n >= 3 {
-			return "p1\nf3\ntunix\nn/run/x/rpc.sock\n" // one unix = not busy
+			return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true // one unix = not busy
 		}
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n"
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
 	}
 	if hcSettledBusy(1) {
 		t.Error("busy-then-idle wrongly settled busy")
@@ -287,11 +314,11 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 func TestHcLockHeldAtDarwin(t *testing.T) {
 	old := runLsof
 	t.Cleanup(func() { runLsof = old })
-	runLsof = func(...string) string { return "p1234\n" }
+	runLsof = func(...string) (string, bool) { return "p1234\n", true }
 	if !hcLockHeldAt("/run/x/daemon.lock", nil) {
 		t.Error("a held lock read as unheld")
 	}
-	runLsof = func(...string) string { return "" }
+	runLsof = func(...string) (string, bool) { return "", true }
 	if hcLockHeldAt("/run/x/daemon.lock", nil) {
 		t.Error("an unheld lock read as held")
 	}
@@ -442,4 +469,102 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 	if !hcBusy(pid) {
 		t.Errorf("hcBusy = false while a client is connected")
 	}
+}
+
+// TestRunLsofIsBounded drives the REAL runLsof, not the seam every other darwin test
+// replaces, and pins that one run cannot outlive its bounds.
+//
+// Before this, runLsof used a plain exec.Command with no deadline, so an lsof that
+// stalled on an unresponsive mount held the cleaner pass open for as long as it
+// stalled. retireAbandoned samples hcBusy for up to hcBusyWindow and on darwin every
+// sample is an lsof run, so one stall is enough.
+//
+// The fixture is this test binary, never /usr/sbin/lsof: a real lsof cannot be made
+// to hang on demand. Both helper modes ignore their arguments, because the runner
+// prepends its own flags.
+func TestRunLsofIsBounded(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	oldPath, oldEnv := hcLsofPath, hcLsofEnv
+	oldTimeout, oldDelay, oldAbandon := hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon
+	t.Cleanup(func() {
+		hcLsofPath, hcLsofEnv = oldPath, oldEnv
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = oldTimeout, oldDelay, oldAbandon
+	})
+	hcLsofPath = exe
+	// runLsof REPLACES the child's environment with hcLsofEnv, so the child inherits
+	// nothing from the test process. GORACE has to be forwarded by hand: TestMain
+	// publishes atexit_sleep_ms=0 into this process's environment, and without it a
+	// race-built helper sleeps tsan's default second on the way out. Measured on a
+	// macOS VM: the prompt fixture took 1.04s under -race without this, and 0.09s
+	// with it. CI runs -race on macos-latest, so that is a guaranteed red, not a flake.
+	withHelper := func(mode string) {
+		hcLsofEnv = append(append([]string{}, oldEnv...),
+			"CLAUSTRUM_TEST_HELPER="+mode, "GORACE="+os.Getenv("GORACE"))
+	}
+
+	t.Run("control: a prompt command is read", func(t *testing.T) {
+		// First, and a t.Fatal: without it a runner that killed every run at once, or
+		// returned "" always, would pass both bound arms below. The assertion is on
+		// the OUTPUT, not on how long the child took to produce it. A wall-clock gate
+		// here would be the tightest bound in the file and would measure process
+		// startup rather than anything this test is about; the arms below already
+		// bound a fixture that genuinely hangs.
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 5*time.Second, time.Second, 6*time.Second
+		withHelper("print-quiet")
+		got, ok := runLsof("-p", "1")
+		if got != "p1\n" {
+			t.Fatalf("runLsof of a prompt command = %q, want %q", got, "p1\n")
+		}
+		if !ok {
+			t.Fatal("a completed run reported itself abandoned")
+		}
+	})
+
+	t.Run("the deadline ends a killable stall", func(t *testing.T) {
+		// The abandon bound is set far out, so only the command deadline can end this
+		// run. That is what makes this arm about the deadline rather than the race.
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 300*time.Millisecond, time.Second, time.Minute
+		withHelper("stall-quiet")
+		start := time.Now()
+		got, ok := runLsof("-p", "1")
+		elapsed := time.Since(start)
+		if got != "" {
+			t.Errorf("runLsof of a stalled command = %q, want no output", got)
+		}
+		// The deadline killed the command, so the run COMPLETED: the caller learns
+		// "lsof looked and saw nothing", which is a fact. That is the difference D17
+		// turns on, and it is why this arm asserts ok and the next asserts !ok.
+		if !ok {
+			t.Error("a run the deadline ended reported itself abandoned")
+		}
+		if elapsed > 10*time.Second {
+			t.Errorf("runLsof took %v; the deadline did not end it", elapsed)
+		}
+	})
+
+	t.Run("the abandon bound wins when the deadline cannot", func(t *testing.T) {
+		// This is the arm that matters, and the one a deadline-only implementation
+		// fails. Waiting on a command waits on the process first, so a process the
+		// deadline cannot shift holds the run open however short the wait delay is.
+		// Here the deadline is set beyond the fixture's own lifetime, which stands in
+		// for a process wedged in the kernel: nothing but the abandon bound can end it.
+		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = time.Minute, time.Minute, 300*time.Millisecond
+		withHelper("stall-quiet")
+		start := time.Now()
+		got, ok := runLsof("-p", "1")
+		elapsed := time.Since(start)
+		if ok {
+			t.Error("an abandoned run reported itself completed; D17 keys on this flag, " +
+				"so a wrong answer here reads an unreadable pid as idle")
+		}
+		if got != "" {
+			t.Errorf("runLsof of an unkillable stall = %q, want no output", got)
+		}
+		if elapsed > 10*time.Second {
+			t.Errorf("runLsof took %v; the run was not abandoned", elapsed)
+		}
+	})
 }

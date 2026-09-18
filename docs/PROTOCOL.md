@@ -139,6 +139,24 @@ the socket remove-then-rebind handoff. On macOS claustrum verifies the holder vi
 `sysctl KERN_PROCARGS2` where the reference skips the check — see
 [DIVERGENCES.md](DIVERGENCES.md) D15.
 
+### Host cleaner (off-wire, Linux and macOS)
+
+A periodic sweep ends stranded sibling daemons and tidies stale run dirs. It reaches
+no JSON-RPC frame, so nothing here is a wire contract; it is recorded because one of
+its decisions is an always-on divergence a client could feel as a lost session.
+
+Before it signals a daemon whose run dir has been idle past the threshold, the
+cleaner asks whether that daemon still has a live client. On macOS it asks `lsof`,
+and that run is bounded three ways: a command deadline, a wait for the output pipe,
+and a last bound after which the run is given up on. Those bounds match the reference.
+
+**An abandoned run reads as busy, not idle — [DIVERGENCES.md](DIVERGENCES.md) D17.**
+A run that gave up and a run that finished and saw nothing both produce no output,
+and the reference reads both as not busy, so a host where `lsof` cannot answer lets
+its cleaner SIGTERM a daemon that is serving a client. claustrum treats only the
+completed empty result as evidence. On every honest path `lsof` answers and the two
+builds agree.
+
 ### Daemon startup (`-serve`)
 
 The `-serve` launcher **creates the socket's parent directory** if it is missing

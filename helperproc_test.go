@@ -152,6 +152,14 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		time.Sleep(time.Duration(secs) * time.Second)
+	case "stall-quiet":
+		// A stand-in for an lsof that hangs: it ignores every argument, writes
+		// nothing, and outlives any bound a test would set. The argument-ignoring
+		// part matters, because the runner under test prepends its own flags.
+		time.Sleep(60 * time.Second)
+	case "print-quiet":
+		// The control for stall-quiet: same argument handling, answers at once.
+		fmt.Print("p1\n")
 	case "ignore-term":
 		// Escalation fixture (Unix): ignore SIGTERM so killAndWait's graceful
 		// signal is a no-op and it must escalate to SIGKILL. Announce readiness on
