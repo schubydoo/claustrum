@@ -65,5 +65,6 @@ reasons. First, its unit is not the unit that the harness counts today: a
 reconstruction puts the unit at output lines, not frames. Second, the June 2026
 harness that produced the figure was overwritten. Third, the battery grew after
 that date.
-Count again at the time of writing. Do not quote any figure. The parked
-forensics hold the full reconstruction.
+Count again at the time of writing. Do not quote any figure. The full
+reconstruction is in the maintainer's `scratch/` notes, which are gitignored and
+not in the public tree.
