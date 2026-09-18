@@ -46,7 +46,7 @@ example, it can be a building block for self-hosted tooling such as
 [clauster](https://github.com/schubydoo/clauster).
 
 > Status: stable (v1.0+). The JSON-RPC, process, file, and git surface is complete and
-> checked. The CLI-version installer is implemented, and its behavior is checked. No
+> validated. The CLI-version installer is implemented, and its behavior is checked. No
 > telemetry, ever.
 
 ## Install / build

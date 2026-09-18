@@ -111,7 +111,7 @@ enables it.
 | `-wire-log` | off | all | Appends every JSON-RPC frame to a file for diagnostics. It is the inverse of `-metrics-addr`, because it captures frame payloads: `files.write`, `process.stdin`, and the spawn env. Those payloads are truncated at 512 bytes, unless you set `-wire-log-max-string=0`. Credentials are redacted by key only, so a secret inside a payload string is not caught. The file is forced to `0600` on every open, append included. Treat it as sensitive. |
 | `wantPid` (CT-1) | off | all | When an already-authenticated caller opts in, the result carries the child `pid` and an opaque daemon `startTime`. They serve the detection of PID reuse and orphans, and they are not a credential. There is no new secret. |
 
-Details for the two surfaces that need more than a row:
+Details for the three surfaces that need more than a row:
 
 - `-metrics-addr`: the counters are tallies of connections, spawns, exits,
   reattaches, and bytes only. They hold no command output, no arguments, and no
