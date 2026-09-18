@@ -38,7 +38,7 @@ The standard, in priority order:
 > 2. Match by default. A wart Desktop tolerates is the contract, not a bug.
 >    Divergence needs a reason. Matching does not. The burden of proof is always
 >    on the divergence.
-> 3. A divergence earns ALWAYS-ON in one of three cases only.
+> 3. A divergence earns ALWAYS-ON only if one of three conditions holds.
 >    **(a)** Two things hold together. The reference's behaviour on that path
 >    is not a frame at all, which means an unbounded wait, unbounded memory,
 >    or unrecoverable data loss. And no honest caller can observe the
