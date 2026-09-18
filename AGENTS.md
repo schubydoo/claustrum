@@ -144,7 +144,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   because `~/.claude/…` is the install path of the daemon itself. The guard is
   always-on, not opt-in. Any RPC path param that reaches a recursive delete
   owes this guard. `IsAbs && !isFilesystemRoot` is not a substitute: home
-  passes both tests, and that test resolves no relative path. A daemon in home
+  passes both tests, and neither test resolves a relative path. A daemon in home
   that receives `worktreePath:".."` therefore still destroys home through the
   parent directory (measured). See
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md) D2.
@@ -196,7 +196,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   only with `-cli-url`. That download path verifies its SHA-256 before it
   extracts, unconditionally. The one dial `-serve` makes is the orphan-exit
   self-probe. It is a loopback to the OWN `AF_UNIX` socket of the daemon. It
-  makes sure that a successor took the path over (`orphanexit.go`). It is never
+  tests whether a successor took the path over (`orphanexit.go`). It is never
   network egress.
 - `-cli-probe-timeout` and `-libc-probe-timeout` are a swap footgun. The two
   names differ only in their `cli`/`libc` prefix, they have the same type, and
