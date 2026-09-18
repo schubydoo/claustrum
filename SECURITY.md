@@ -7,8 +7,8 @@ Please report security vulnerabilities privately through GitHub's
 (the "Report a vulnerability" button on the repository's Security tab). Do not
 open a public issue for security reports.
 
-You can expect an initial response within a few days. Once a fix is ready we'll
-coordinate disclosure and credit you, if you'd like.
+You can expect an initial response within a few days. When a fix is ready, we
+will coordinate disclosure. If you want credit, we will credit you.
 
 ## Supported versions
 
@@ -22,67 +22,80 @@ processes on the host it runs on.
 
 ### Trust boundary
 
-`process.spawn` runs arbitrary commands as the daemon's user, by design — that is
-the daemon's job (it hosts the agent and MCP servers). **Access to the socket plus
-a valid token is therefore equivalent to shell access for that user.** Everything
-below assumes an actor who does not already hold both; anyone who does can do
-whatever the daemon's user can.
+`process.spawn` runs arbitrary commands as the daemon's user, by design. That is
+the daemon's job, because it hosts the agent and the MCP servers. Access to the
+socket plus a valid token is therefore equivalent to shell access for that user.
+Everything below assumes an actor who does not already hold both. An actor who
+holds both can do whatever the daemon's user can.
 
 ### Auth & tokens
 
 - Auth is an in-band per-request token. The `-serve` daemon takes it from
-  `-token-file` (unlinked immediately after reading) or `-token-fd` (read from an
-  open descriptor and forwarded to the detached daemon over a pipe — this
-  handoff never on disk, in argv, or in the environment).
-- claustrum never reads a token from the environment. `CLAUDE_RPC_TOKEN` is read
-  by no mode; `-bridge` is a dumb relay whose client carries its own `auth`; and
-  the daemon unsets the variable before daemonizing and strips it from every
-  spawned child.
-- Protect the token and the socket together: whoever can read the token *and*
-  reach the socket can drive the daemon. The socket is owner-only by design; keep
+  `-token-file` or from `-token-fd`. With `-token-file`, the file is unlinked
+  immediately after reading. With `-token-fd`, the token is read from an open
+  descriptor and forwarded to the detached daemon over a pipe. That handoff is
+  never on disk, never in argv, and never in the environment.
+- claustrum never reads a token from the environment. No mode reads
+  `CLAUDE_RPC_TOKEN`. `-bridge` is a dumb relay, and its client carries its own
+  `auth`. The daemon unsets the variable before it daemonizes, and it strips the
+  variable from every spawned child.
+- Protect the token and the socket together. Whoever can read the token *and*
+  reach the socket can drive the daemon. The socket is owner-only by design. Keep
   the token source owner-readable and short-lived.
 - The running daemon persists its token to `daemon.token` (mode `0600`) in the
-  socket's directory, so a client can reconnect after the `-token-file` /
-  `-token-fd` source is gone (parity with the reference daemon, upstream
-  `5db5e4a`; see [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token persistence). It
-  is written atomically and unlinked on graceful shutdown, but is **left behind on
-  an unclean kill (`SIGKILL`) or crash** — cleanup runs only on the graceful path.
-  This widens the on-disk token window versus the immediate-unlink of the source,
-  so treat the socket directory as owner-only: it is where the token lives for the
-  daemon's lifetime. On POSIX the file is `0600`; on Windows those bits are not an
-  owner-only DACL (a Go `os.CreateTemp` limitation the reference shares), so
-  confinement there comes from the session directory's ACL.
-- `server.shutdown` is the one method the token does not gate: it is **not
-  authenticated**, behavioral parity with the reference (Desktop stops the daemon
-  with no token in its environment). So reaching the socket is by itself enough to
-  stop the daemon and drop every session, and `-stop` sends no token. The socket's
-  owner-only mode is what confines this; an actor who already shares the uid can
-  do strictly more via `process.spawn`. The optional Windows named-pipe transport
-  shares this dispatch, so the same exception applies. That the Desktop client
-  relies on this teardown path is a driver claim (see
-  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#driver-claims-and-their-provenance)).
+  socket's directory. A client can therefore reconnect after the `-token-file`
+  source or the `-token-fd` source is gone. This is parity with the reference
+  daemon, upstream `5db5e4a`. See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token
+  persistence. The file is written atomically and unlinked on graceful shutdown.
+  An unclean kill (`SIGKILL`) or a crash leaves the file behind, because cleanup
+  runs only on the graceful path. This widens the on-disk token window, compared
+  with the immediate unlink of the source. Treat the socket directory as owner-only,
+  because it is where the token lives for the daemon's lifetime. On POSIX the file
+  is `0600`. On Windows those bits are not an owner-only DACL, which is a Go
+  `os.CreateTemp` limitation the reference shares. Confinement on Windows
+  therefore comes from the session directory's ACL.
+- `server.shutdown` is the one method the token does not gate. It is not
+  authenticated. That is behavioral parity with the reference, because Desktop
+  stops the daemon with no token in its environment. Reaching the socket is
+  therefore enough on its own to stop the daemon and drop every session, and
+  `-stop` sends no token. The socket's owner-only mode is what confines this. An
+  actor who already shares the uid can do strictly more through `process.spawn`.
+  The optional Windows named-pipe transport shares this dispatch, so the same
+  exception applies. The claim that the Desktop client relies on this teardown
+  path is a driver claim. See
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#driver-claims-and-their-provenance).
 
 ### Network
 
-- `-install` reaches the network (HTTPS) only when given a `-cli-url`. That
-  download is verified against its SHA-256 unconditionally, before extracting and
-  before marking the CLI runnable — an empty `-cli-checksum` still fails.
-- The local `-cli-zst` (SFTP) blob is checksum-verified only when a
-  `-cli-checksum` is supplied; absent one it is trusted. This is an intentional
-  conditional divergence (D1; see [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)).
-- In `-serve` mode the daemon makes **no** outbound network connections. Its only dial
-  is the orphan-exit loopback self-probe — a connection to the daemon's own `AF_UNIX`
-  socket to confirm a successor has taken the path over (`orphanexit.go`) — never network
-  egress.
+- `-install` reaches the network (HTTPS) only with a `-cli-url`. That
+  download is verified against its SHA-256 unconditionally, before extraction and
+  before the CLI is marked runnable. An empty `-cli-checksum` still fails.
+- The local `-cli-zst` (SFTP) blob is checksum-verified only with a supplied
+  `-cli-checksum`. Without one, the blob is trusted. This is an intentional
+  conditional divergence, D1. See [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md).
+- In `-serve` mode the daemon makes no outbound network connections. Its only dial
+  is the orphan-exit loopback self-probe. That probe is a connection to the
+  daemon's own `AF_UNIX` socket, and it makes sure that a successor took the path
+  over (`orphanexit.go`). It is never network egress.
 
 ### Caller-supplied paths
 
-`files.*` and `git.*` read and act on paths the caller supplies; they are as
+`files.*` and `git.*` read and act on paths the caller supplies. They are as
 privileged as the daemon's user. Three of those paths reach a recursive delete
-(`os.RemoveAll`): `files.extract_tar` wipes its destination before unpacking,
-`git.worktree_remove` deletes the worktree path when git fails for a non-locked reason (a locked worktree is refused, not deleted), and `git.worktree_create` deletes the worktree path when it rolls back a worktree, after a failed `git worktree add` (unless the caller's `timeoutMs` cut the add short, which answers `timeout` and leaves the leaf) or when the caller `timeoutMs` was exceeded by the post-checkout drain. `wipesHomeDir`
-(`homeguard.go`) refuses any target that is or contains the home directory — an
-always-on guard (D2; see [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)). Paths
+(`os.RemoveAll`):
+
+- `files.extract_tar` wipes its destination before unpacking.
+- When git fails for a non-locked reason, `git.worktree_remove` deletes the
+  worktree path. A locked worktree is refused, not deleted.
+- When `git.worktree_create` rolls back a worktree, it deletes the worktree path.
+  That rollback happens after a failed `git worktree add`. It also happens after
+  the post-checkout drain exceeds the caller `timeoutMs`. An add that the caller's
+  `timeoutMs` cut short is the exception. Such an add answers `timeout` and leaves
+  the leaf.
+
+`wipesHomeDir` (`homeguard.go`) refuses any target that is or contains the home
+directory. It is an always-on guard (D2). See
+[`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Paths
 under home stay allowed, because the daemon's own install path lives there.
 
 ### Optional surfaces
@@ -92,36 +105,39 @@ enables it.
 
 | Surface | Default | Platform | Security consequence |
 |---|---|---|---|
-| `-metrics-addr` | off | all | Adds an inbound HTTP listener serving Prometheus counters only, with **no authentication** — bind it to loopback. |
-| `-listen-pipe` | off | Windows | Serves the same JSON-RPC over a Windows named pipe (same in-band token auth) for clients that cannot use the `AF_UNIX` socket; owner-only and local-only (see below). |
-| `-keep-children` | off | POSIX | Adds no listener or auth path; children run as the daemon's user. On graceful shutdown they are left running and orphaned (reparented to init), so the operator owns their eventual cleanup. |
-| `-wire-log` | off | all | Appends every JSON-RPC frame to a file for diagnostics — the inverse of `-metrics-addr`: it captures frame payloads (`files.write`, `process.stdin`, the spawn env; truncated at 512 bytes unless `-wire-log-max-string=0`). Credentials are redacted **by key** only, so a secret inside a payload string is not caught. The file is forced to `0600` on every open (append included); treat it as sensitive. |
-| `wantPid` (CT-1) | off | all | When an already-authenticated caller opts in, the result carries the child `pid` plus an opaque daemon `startTime` (for PID-reuse / orphan detection, not a credential) — no new secret. |
+| `-metrics-addr` | off | all | Adds an inbound HTTP listener. That listener serves Prometheus counters only, with no authentication. Bind it to loopback. |
+| `-listen-pipe` | off | Windows | Serves the same JSON-RPC over a Windows named pipe, with the same in-band token auth. It is for clients that cannot use the `AF_UNIX` socket. It is owner-only and local-only. See below. |
+| `-keep-children` | off | POSIX | Adds no listener and no auth path. Children run as the daemon's user. On graceful shutdown they are left running and orphaned, reparented to init. The operator therefore owns their eventual cleanup. |
+| `-wire-log` | off | all | Appends every JSON-RPC frame to a file for diagnostics. It is the inverse of `-metrics-addr`, because it captures frame payloads: `files.write`, `process.stdin`, and the spawn env. Those payloads are truncated at 512 bytes, unless you set `-wire-log-max-string=0`. Credentials are redacted by key only, so a secret inside a payload string is not caught. The file is forced to `0600` on every open, append included. Treat it as sensitive. |
+| `wantPid` (CT-1) | off | all | When an already-authenticated caller opts in, the result carries the child `pid` and an opaque daemon `startTime`. They serve the detection of PID reuse and orphans, and they are not a credential. There is no new secret. |
 
 Details for the two surfaces that need more than a row:
 
-- `-metrics-addr`: the counters are connection / spawn / exit / reattach / byte
-  tallies only — no command output, arguments, or tokens. Exposing the endpoint on
-  a reachable interface discloses coarse operational counts to anyone who can
-  connect.
-- `-wire-log`: unlike the counters, a capture contains the frame payloads —
-  arguments, file contents, and the `process.spawn` environment. Redaction is
-  **by key** (the `auth` member, token-like env keys), so it withholds those keys
-  but cannot find a credential embedded in a free-form payload string. Anyone who
-  reads the file gains what the client sent; keep it off unless you need it, and
-  store a capture as you would the socket token.
-- `-listen-pipe`: the pipe carries an owner-only DACL (SDDL
-  `D:P(A;;GA;;;<current-user-SID>)` — GENERIC_ALL to the daemon user's SID and to
-  no Everyone / Authenticated-Users / anonymous principal), the named-pipe
-  analogue of the socket's `0600` mode. It is local-only by two independent
-  mechanisms: that DACL, and go-winio's `ListenPipe` creating the pipe with
-  `FILE_PIPE_REJECT_REMOTE_CLIENTS`, so a client reaching it over SMB
-  (`\\host\pipe\…`) is refused regardless of the DACL. It grants no access the
-  socket + token did not already grant. When off, no pipe exists and behavior is
-  byte-for-byte identical to the reference. The chosen pipe name is published to
-  `rpc.pipe` in the socket directory (the name is not a secret — the DACL is the
-  access control) and removed on graceful shutdown.
+- `-metrics-addr`: the counters are tallies of connections, spawns, exits,
+  reattaches, and bytes only. They hold no command output, no arguments, and no
+  tokens. Exposing the endpoint on a reachable interface discloses coarse
+  operational counts to anyone who can connect.
+- `-wire-log`: unlike the counters, a capture contains the frame payloads. Those
+  payloads are arguments, file contents, and the `process.spawn` environment.
+  Redaction is by key, on the `auth` member and on token-like env keys. It
+  therefore withholds those keys, but it cannot find a credential embedded in a
+  free-form payload string. Anyone who reads the file gains what the client sent.
+  Keep the flag off unless you need it. Store a capture with the same care as the
+  socket token.
+- `-listen-pipe`: the pipe carries an owner-only DACL, in SDDL
+  `D:P(A;;GA;;;<current-user-SID>)`. That DACL grants GENERIC_ALL to the daemon
+  user's SID, and to no Everyone principal, no Authenticated-Users principal, and
+  no anonymous principal. That DACL is the named-pipe analogue of the socket's
+  `0600` mode. The pipe is local-only by two independent mechanisms. The first mechanism
+  is that DACL. The second is go-winio's `ListenPipe`, which creates the pipe with
+  `FILE_PIPE_REJECT_REMOTE_CLIENTS`. A client that reaches the pipe over SMB
+  (`\\host\pipe\…`) is therefore refused, regardless of the DACL. The pipe grants
+  no access that the socket plus the token did not already grant. With the flag
+  off, no pipe exists, and behavior is byte-for-byte identical to the reference.
+  The chosen pipe name is published to `rpc.pipe` in the socket directory, and it
+  is removed on graceful shutdown. The name is not a secret, because the DACL is
+  the access control.
 
-Reports that require already having the socket + token (or host shell access), or
-that amount to "the operator can run commands on their own host," are generally
-out of scope.
+Some reports require the socket plus the token already, or host shell access.
+Other reports amount to "the operator can run commands on their own host." Both
+kinds are generally out of scope.
