@@ -969,11 +969,17 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "worktree_add_failed",
 		})
 	}
-	// `git worktree add` checks out tracked files only, so the reference seeds the
-	// new worktree with the untracked files that .worktreeinclude names AND git also
-	// ignores (see copyWorktreeIncludes). .claude/ is no longer copied unconditionally
-	// (7d193f89 dropped that). Best-effort: the worktree exists and the reference
-	// reports success regardless.
+	// `git worktree add` checks out tracked files only, so the reference seeds the new
+	// worktree in two passes: the untracked files that .worktreeinclude names AND git
+	// also ignores (copyWorktreeIncludes), and the git-ignored files under .claude/,
+	// which need no manifest entry at all (copyClaudeDir in worktreeclaude.go).
+	//
+	// An earlier version of this comment said 7d193f89 had dropped the .claude/ pass.
+	// It had not. Measured against 19f30c46 and 90fca6e6 on a linux VM; the old reading
+	// came from a probe repo whose .claude/ was untracked rather than git-ignored, for
+	// which the pass lists nothing.
+	//
+	// Best-effort: the worktree exists and the reference reports success regardless.
 	populateWorktree(repo, p.WorktreePath)
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }

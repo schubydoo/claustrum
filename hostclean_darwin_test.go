@@ -266,7 +266,7 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 		t.Error("busy-in-all-samples not settled busy")
 	}
 	// The window, not a sample count: claustrum's previous rule settled after about
-	// 450 ms.
+	// 900 ms.
 	if elapsed := now.Sub(start); elapsed < hcBusyWindow {
 		t.Errorf("sampled for %v, want at least the %v window", elapsed, hcBusyWindow)
 	}

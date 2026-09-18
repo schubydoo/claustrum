@@ -20,16 +20,17 @@ import (
 // directories, so every test here drives it through the hcRename / hcRemoveAll seams except
 // the one case that needs a real rename, which works inside its own t.TempDir.
 //
-// Three arms of hostclean.go are deliberately left uncovered, because no fixture can reach
+// Two arms of hostclean.go are deliberately left uncovered, because no fixture can reach
 // them rather than because no test was written:
 //
 //   - runDirs' name == "." || ".." skip: os.ReadDir never yields those entries.
 //   - judgeDaemon's argv == nil spare: serveArgv already returned a socket for this
 //     candidate, and it returns "" for an argv shorter than two entries, so argv cannot be
 //     nil by the time that line is reached.
-//   - retireAbandoned's hcSettledBusy arm: hcSettledBusy is a constant false on linux (linux
-//     answers from hcBusy at judge time). The darwin implementation is a real probe, and the
-//     darwin tests cover it.
+//
+// retireAbandoned's hcSettledBusy arm used to be listed here as a third. It is reachable
+// now: hcSettledBusy is one shared implementation that samples for real on linux too, so
+// TestRetireAbandonedSparesABusyDaemon drives that branch.
 
 func TestRunDirsEnumerationArms(t *testing.T) {
 	oldClock := hcClock

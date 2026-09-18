@@ -40,8 +40,11 @@ func populateWorktree(repo, worktree string) {
 // repo's standard gitignore rules. The manifest is an include-filter over the
 // git-ignored set, not a copy list of its own — a manifest match that git does not
 // ignore is NOT copied (measured against 7d193f89; at 5db5e4a claustrum copied every
-// manifest match and also copied `.claude/` unconditionally, both of which 7d193f89
-// dropped).
+// manifest match, which 7d193f89 dropped).
+//
+// `.claude/` is NOT part of this pass. It has its own, always-on pass with no
+// manifest involved: copyClaudeDir in worktreeclaude.go. An earlier version of this
+// comment said 7d193f89 had dropped that copy. It had not.
 //
 // The two sets are the intersection of two `git ls-files` views: the manifest
 // matches (--exclude-from) and the standard-ignored files (--exclude-standard).

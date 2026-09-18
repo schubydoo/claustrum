@@ -327,12 +327,17 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   else `errorCode:"timeout"` ("deadline expired after the checkout finished", no
   `signal: killed`) with the worktree rolled back. Measured in
   `scratch/probe/wt-success-lingering-4534d86.md`; this is parity, not a divergence.
-- **One opted-in arm loses data silently.** If the deadline kills
-  `copyWorktreeIncludes` (`worktreecopy.go`) during `git ls-files`, it takes the
-  early return, and `populateWorktree` is best-effort. Therefore
-  `git.worktree_create` still answers
-  `{"success":true}` while every manifest-selected file is missing. No frame moves.
-  This arm is absent at the default.
+- **One opted-in arm loses data silently, on either seeding pass.** `populateWorktree`
+  runs two `git ls-files` passes, `copyWorktreeIncludes` (`worktreecopy.go`) and
+  `copyClaudeDir` (`worktreeclaude.go`), and both are best-effort: a killed listing
+  takes the early return and the error is dropped. Therefore `git.worktree_create`
+  still answers `{"success":true}` with files missing. Each pass gets its own deadline
+  from `gitCtx`, so a kill loses one pass and not the other: the manifest copy can
+  succeed while the `.claude/` seed is lost, or the other way round. The `.claude/`
+  pass has no manifest precondition, so unlike the manifest pass it runs on every
+  create, which widens where the arm can fire. The loss itself still needs a listing
+  slower than the configured deadline. No frame moves. This arm is absent at the
+  default.
 - **`git.worktree_create` under both deadlines.** The add and the read-tree
   checkout run under the shared deadline. A D5 hit **on the add** answers `git
   worktree add failed: …` with `errorCode:"worktree_add_failed"` — the same failure
@@ -355,7 +360,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** An operator with `-git-timeout` set reporting an honest slow
   git killed by it. The `-32603` arm makes a single report enough.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`,
-  `git.list_branches`; `methods_git.go`, `worktreecopy.go`.
+  `git.list_branches`; `methods_git.go`, `worktreecopy.go`, `worktreeclaude.go`.
 
 ### D6 · `-cli-version` must name a single path component (always-on) { #d6 }
 
@@ -652,6 +657,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** The reference adding the same holder check on macOS (then this
   becomes parity, not a divergence); or a legitimate macOS holder that
   `KERN_PROCARGS2` cannot read, reported as a failed handover.
+- **Not the only identity gate, and the other one is parity.** This entry covers the
+  run-dir lock's eviction path alone. The host cleaner's `retireAbandoned` has its own
+  gate, re-reading the pid's identity before its SIGTERM, and that one is classified as
+  parity: the reference does not signal a pid whose identity no longer matches, in
+  `19f30c46` and `90fca6e6` alike. That reading is from those builds, not
+  probe-measured, unlike this entry's own macOS measurement. Do not read the two as one
+  divergence.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock; `daemon_runlock_unix.go`
   (`holderSignalRefusal`), `daemon_runlock_darwin.go` (`realIsServeCmdline`,
   `procArgv`), `daemon_runlock_linux.go`.
@@ -713,7 +725,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   wire-surface *extension*; D1 by contrast changes an install-path behaviour.
 - **Default path is byte-identical:** when `wantPid` is absent or false,
   `omitempty` omits both fields, and the frame is exactly the old
-  `{"success":true}` / `{found,running,firstSeq,lastSeq}`. The fields live on a
+  `{"success":true}` / `{found,running,firstSeq,lastSeq,stdinApplied}`. The fields live on a
   dedicated `spawnResult` struct, so they can never leak into the `successResult`
   that `process.stdin` / `process.kill` share.
 - `startTime` is an **opaque daemon token**. It is the daemon's epoch-seconds wall

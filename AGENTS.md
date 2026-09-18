@@ -37,7 +37,7 @@ frames.** The wire surface *is* the product.
   compatibility without the reference binary, on linux, macOS **and** Windows.
   Process fixtures come from the test binary itself (`helperproc_test.go`),
   never from `/bin/*`, so stream bytes match the goldens on every OS. Statement
-  coverage is approximately 98%. The cross-binary battery that diffs against
+  coverage is approximately 99%. The cross-binary battery that diffs against
   the reference daemon lives in `scratch/`.
 
 ## Architecture

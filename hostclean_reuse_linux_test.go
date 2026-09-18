@@ -16,7 +16,7 @@ import (
 // number alone.
 //
 // This is the window the 90fca6e6 sampling change widened: claustrum's own debounce
-// ran about 450 ms, and on linux it did not run at all.
+// ran about 900 ms, and on linux it did not run at all.
 
 // retireReuseFixture builds one verifiable, old, marked daemon that shows a connected
 // client on the first busy sample and none on the second, so the sampler sleeps exactly

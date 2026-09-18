@@ -76,7 +76,7 @@ func TestHcSettledBusyHonoursTheDeadline(t *testing.T) {
 	}
 	elapsed := now.Sub(start)
 
-	// claustrum's own previous rule sampled for about 450 ms, so a fixture that
+	// claustrum's own previous rule sampled for about 900 ms, so a fixture that
 	// only checked "more than one sample" would pass under both.
 	if elapsed < hcBusyWindow {
 		t.Errorf("sampled for %v, want at least the %v window", elapsed, hcBusyWindow)
@@ -139,4 +139,63 @@ func TestHcSettledBusyTakesTwoSamples(t *testing.T) {
 	if sleeps == 0 {
 		t.Error("settled after a single sample; the rule takes at least two")
 	}
+}
+
+// TestRetireAbandonedSparesABusyDaemon drives the spare arm through retireAbandoned
+// itself, not through hcSettledBusy alone.
+//
+// The four tests above call the sampler directly, so none of them reaches the
+// `if hcSettledBusy(pid)` branch in retireAbandoned. On linux that branch was dead
+// before this sampler became real, and a comment in hostclean_tidy_linux_test.go
+// used to list it among the arms no fixture can reach.
+//
+// The control runs first and must retire. Without it an implementation that refused
+// every candidate would pass the spare arm.
+func TestRetireAbandonedSparesABusyDaemon(t *testing.T) {
+	const pid = 4300
+	const socket = "/opt/claude/run/x/rpc.sock"
+
+	// run plants one verifiable, old, marked daemon and says whether it keeps a
+	// connected client for every sample.
+	run := func(t *testing.T, busy bool) (retired bool, signalled []int) {
+		t.Helper()
+		proot, mk, link := fakeProc(t)
+		single, _ := hcSeamSignals(t, proot) // seams the clock, the sleep and both signals
+		oldUID := hcGetuid
+		t.Cleanup(func() { hcGetuid = oldUID })
+		hcGetuid = func() int { return 1000 }
+
+		exe := "/opt/claude/srv/a/server"
+		hcFakeDaemon(t, proot, mk, link, pid, exe,
+			[]string{exe, "--serve", "--socket", socket}, true, "1")
+		link(pid, "fd/4", "socket:[555]")
+		peers := "Num RefCount Protocol Flags Type St Inode Path\n"
+		if busy {
+			peers += "0000: 00000002 00000000 00000000 0001 03 555 " + socket + "\n"
+		}
+		mk(pid, "net/unix", peers)
+
+		c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
+		return c.retireAbandoned(pid, socket), *single
+	}
+
+	t.Run("control: an idle daemon is retired", func(t *testing.T) {
+		retired, signalled := run(t, false)
+		if !retired {
+			t.Fatal("an idle, verifiable daemon was not retired")
+		}
+		if len(signalled) != 1 || signalled[0] != pid {
+			t.Fatalf("signalled = %v, want [%d]", signalled, pid)
+		}
+	})
+
+	t.Run("a daemon busy across the window is spared", func(t *testing.T) {
+		retired, signalled := run(t, true)
+		if len(signalled) != 0 {
+			t.Errorf("signalled = %v, want nothing: the daemon is still serving someone", signalled)
+		}
+		if retired {
+			t.Error("retireAbandoned reported a retirement it did not make")
+		}
+	})
 }
