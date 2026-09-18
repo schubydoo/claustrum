@@ -49,7 +49,7 @@ sources, easiest first:
      `UPSTREAM_SHA`.
 
    Observed pins: Linux 1.18286.0 (2026-07-02) pinned `7c2f88d…`. Versions
-   1.20186.1 → 1.24012.9 pin `5db5e4a…` (the current baseline).
+   1.20186.1 → 1.24012.9 pin `5db5e4a…`.
 3. The Desktop machine's cache. The per-platform binaries are under
    `<app-data>/claude-ssh-remote/<sha>/` (`%APPDATA%/Claude/…` on Windows),
    beside a `.verified-<goos>-<goarch>` marker.
@@ -142,7 +142,7 @@ the traffic of the real desktop client. This is the method:
   commit them.
 
 We last ran this capture against a then-pinned reference, `8de85faa`. That build is
-now well behind the current `5db5e4a` baseline. It used a real Desktop session and
+now well behind the current baseline, `90fca6e6`. It used a real Desktop session and
 covered the full `process.*` lifecycle. That lifecycle included a >32 KiB output
 stream and a mid-stream disconnect and reconnect that drove `process.reattach`. The
 result was byte-identical for the methods that build exposed. The `server.capabilities`
@@ -316,7 +316,7 @@ Go 1.27 does exactly that. It enables the `jsonv2` GOEXPERIMENT by default
 `encoding/json`'s `Marshal` on the v2 engine. That engine renders an invalid
 UTF-8 byte as the literal U+FFFD character (bytes `EF BF BD`). Go 1.26
 and earlier emit the six-ASCII
-`\ufffd` escape, and so does the pinned reference daemon at `5db5e4a`. `files.read`
+`\ufffd` escape, and so did the reference daemon at `5db5e4a`. `files.read`
 puts raw file bytes into the `content` string. Under Go 1.27, every read of a file
 holding a non-UTF-8 byte therefore diverges from the
 reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
