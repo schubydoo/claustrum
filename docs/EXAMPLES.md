@@ -99,18 +99,18 @@ run '[{"jsonrpc":"2.0","id":1,"method":"process.spawn",
 
 The `firstSeq` and `lastSeq` values are examples only. The daemon frames stdout
 in chunks, not one frame per line. Thus the three `echo` outputs can arrive in
-one frame and change `lastSeq`. A process continues to run when the connection
-that spawned it disconnects. A *new* connection can `reattach` to that process
-and continue to read the stream. This is the reconnect path.
+one frame and change `lastSeq`. When the connection that spawned a process
+disconnects, the process continues to run. A *new* connection can `reattach` to
+that process and continue to read the stream. This is the reconnect path.
 
 ## Opt into `pid` + `startTime` — `wantPid` (claustrum extension)
 
 !!! note "An addition, not reference behavior"
-    The reference daemon has no `wantPid`. This is an opt-in **claustrum
-    extension** (CT-1; see [DIVERGENCES.md](DIVERGENCES.md)). If you omit it,
+    The reference daemon has no `wantPid`. This is an opt-in claustrum
+    extension, CT-1. See [DIVERGENCES.md](DIVERGENCES.md). If you omit it,
     which is the default, every frame stays byte-identical to the reference.
     `wantPid` does not change the original `spawn` and `reattach` behavior. It
-    only *adds* fields when you ask for them.
+    only *adds* the fields that you ask for.
 
 `process.spawn` and `process.reattach` accept `"wantPid":true`. When you set it,
 the result carries the child's OS `pid` and a `startTime` token. The daemon
@@ -131,9 +131,9 @@ Without `wantPid`, those same two replies are exactly `{"success":true}` and
 `{"found":…,"running":…,"firstSeq":…,"lastSeq":…,"stdinApplied":…}`. The
 `pid` and `startTime` fields are absent (`omitempty`).
 
-`startTime` is an **opaque token**. Store it. Then compare a daemon value
-against a *later* daemon value for the **same `id`** to detect PID reuse. Do
-**not** compare it for equality against a process start time that you read from
+`startTime` is an opaque token. Store it. Then compare a daemon value
+against a *later* daemon value for the same `id` to detect PID reuse. Do
+not compare it for equality against a process start time that you read from
 the OS (for example, psutil `create_time`). `startTime` is the daemon's wall
 clock at the moment of the spawn, not the kernel's process-creation time.
 
@@ -218,14 +218,14 @@ CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/
 Use `-keep-children` (CT-2, POSIX-only) to let child processes survive a daemon
 restart or upgrade. A graceful shutdown leaves the spawned children running.
 
-- **Off by default** — a shutdown kills the whole process tree.
-- **No re-adoption** — the new daemon does not re-adopt the survivors. Reconcile
+- Off by default. A shutdown kills the whole process tree.
+- No re-adoption. The new daemon does not re-adopt the survivors. Reconcile
   them out-of-band with the CT-1 `pid` and `startTime`.
-- **Survivors lose stdio** — stdin gets EOF, and writes to stdout and stderr hit
+- Survivors lose stdio. Stdin gets EOF, and writes to stdout and stderr hit
   a closed pipe (SIGPIPE/EPIPE, see [PROTOCOL.md](PROTOCOL.md)). Thus only
-  children that tolerate this condition genuinely outlive the daemon.
-- **Windows ignores it** — Windows drops the flag and prints a warning. A Job
-  Object kills the children when the daemon exits, in every case.
+  children that tolerate this condition outlive the daemon.
+- Windows ignores it. Windows drops the flag and prints a warning. In every
+  case, a Job Object kills the children as the daemon exits.
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children
