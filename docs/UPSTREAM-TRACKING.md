@@ -280,6 +280,25 @@ traps that matter when you tell drift from expected:
 - **D14 fires in only one of two stall shapes** (a surviving child blocks both
   binaries), and there is **no libc probe off linux at all** — so a `libc`
   difference off linux is not D14.
+- **Seven behaviours changed in `90fca6e6` while the JSON-RPC surface stood still**,
+  so a triager who meets one of them and finds the drift check quiet is looking at
+  parity, not drift. No method, field or error string moved, but three of the seven
+  change what a client reads: a reattach now closes the connection it replaces; a
+  reaped process reads as not running for `process.stdin` and `process.reattach`
+  inside the exit drain; and a new worktree no longer inherits the nine Claude
+  runtime-state names under `.claude/`. That last one is the likeliest to be
+  misread, because `19f30c46` copies eight of the nine, so a file missing from a
+  seeded worktree looks like a regression against the previous pin.
+  [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and all seven are
+  reconciled. One carries a deliberate exception: on the host cleaner's macOS busy
+  probe claustrum reads an `lsof` run it gave up on as busy where the reference reads
+  it as idle, which is [DIVERGENCES.md](DIVERGENCES.md) D17 rather than drift.
+- **A quiet body diff is not proof.** The `90fca6e6` reconciliation shipped four
+  PRs, then a full re-check found a seventh behaviour change the first pass had
+  missed: a constant-only change to a function that exists on one OS, invisible to
+  the constant pass on one of the two architectures. Diff every symbol name in the
+  raw binary too, not only the recovered function table — that is what caught two
+  new functions the table alone did not list.
 
 ## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
 

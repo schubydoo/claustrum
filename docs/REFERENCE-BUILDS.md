@@ -18,6 +18,7 @@ This lets a reader tell a re-published SHA from a real release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `90fca6e6…` | 2026-09-14 (built) | no surface change; 7 behaviour changes, 3 of them client-visible and 1 of those on a frame — see below | [PRs 387–392](https://github.com/schubydoo/claustrum/pull/392) |
 | `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode — see below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371) |
 | `3ef9370e…` | 2026-09-03 (built) | none (off-wire: linux libc probe reordered ldd-first) | [PR 345](https://github.com/schubydoo/claustrum/pull/345) |
 | `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333) |
@@ -32,6 +33,90 @@ Each per-build section has three parts. The **wire delta** is what claustrum
 must match byte-for-byte. **Off-wire churn** is any source that moved but never
 reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
 confirmed that nothing else changed.
+
+### `90fca6e6a55c4d4c659e8c6ed511b7969ab17315` — 2026-09-14 (built)
+
+Pinned by Claude Desktop for Linux `2.110.0`. A small build on top of `19f30c46`,
+built with the same Go toolchain. **It adds nothing to the JSON-RPC surface**: no
+method, no field, no new error string. The `server.capabilities` method list and
+feature list are unchanged, and the static drift check passes against this build
+with no change to its canon. The frame battery, run on the reattach slice, showed
+no divergence beyond `instanceId` and `startedAt`, which are per-boot values that
+cannot match between two daemons; the slices that landed after it move no frame.
+
+Recorded here anyway, because "the drift check was quiet" is exactly the answer a
+future triager must not take for "nothing changed": this build carries seven
+behaviour changes, and **three of them a client can observe**.
+
+**Wire delta.** Exactly one item changes the bytes of a frame: item 3, and claustrum
+had to change its own frames to stay byte-identical. Items 1 and 4 are observable
+off the frame instead, in the connection lifecycle and in the seeded worktree, which
+is precisely what a frame diff cannot catch.
+
+**The seven.**
+
+1. **A reattach closes the connection it replaces.** `process.reattach` already
+   transferred the frame stream to the reattaching connection. It now also closes
+   the connection it took the process from, once, with a logged reason. Before, that
+   connection stayed open and never carried another frame for that process, while
+   still answering `server.ping` — measured on `19f30c46`. This is the build's
+   most client-visible change. It is consistent with the Claude Desktop changelog
+   note about messages around a disconnect, which is a correlation, not something
+   this reconciliation established.
+2. **The idle close shares the deliberate-close flag** with that supersede, so a
+   superseded connection is not closed and logged a second time.
+3. **A reaped process is not running.** `process.stdin` and `process.reattach` test
+   the reap as well as the running flag, so inside the bounded exit drain a reattach
+   answers `running:false` and a fresh-bytes stdin write is refused.
+4. **A new worktree no longer inherits Claude runtime state.** Nine names under
+   `.claude/` are skipped by both seeding passes, matched as whole path components
+   and case-insensitively.
+5. **The host cleaner's busy sampler** went from a fixed sample count to a 3-second
+   window with a two-sample minimum. Its outcome is externally visible in principle:
+   a daemon whose client disconnects one second into the sample loses this gate's
+   protection under a 3-second window and keeps it under a shorter one. The gate is
+   not the whole decision, so losing it is not the same as being retired.
+6. **The linux orphan reap** treats a `/proc` process whose `vsize` is 0 as gone,
+   beside the state letter it already read. The reference changed its two readers in
+   the process layer, not the host cleaner's own stat read, so claustrum changed
+   `childreap_linux.go` and deliberately left `hostclean_linux.go`'s reader alone.
+7. **The host cleaner waits longer for a stalled `lsof`.** It gives a run 15 s where
+   `19f30c46` gave it 5 s, and gives up on a wedged one at 17 s rather than 7 s.
+   Darwin only. This is the one a full re-check found after the first four slices
+   had merged.
+
+The five that change nothing observable: two seams that nothing writes, two worktree
+durations that moved without changing value, and one no-op cancel path. They are
+recorded rather than reproduced.
+
+**How it was bounded.** A per-function body diff of all six platform targets, which
+reports the same change set on each, with three differences. The windows builds
+carry no `/proc` paths. One function counts as a shape change on arm64 and a
+constant-only change on amd64, which is reported on both arches and hides nothing.
+And item 7 is reported on darwin-amd64 alone, because the constant pass reads x86
+immediate syntax and is blind on arm64 — that blind spot is what hid it. The method
+and feature lists were read out of both binaries and compared.
+
+Items 1, 3 and 4 were measured on throwaway VMs against both reference binaries, one
+fixture per case. **Items 2, 5, 6 and 7 are read from the binaries, not
+probe-measured.** For 5, 6 and 7 the callers sit behind a 5-minute process age and a
+30-day idle age, which makes staging them expensive; each carries a pointer-class
+label in the code that implements it.
+
+The post-merge re-check added one step the first pass did not have: diffing every
+symbol name in the raw binaries rather than only the recovered function table. That
+is what found two functions the table alone did not list.
+
+⚠️ **Item 7 escaped the first pass.** A second, full re-check after the first four
+PRs had merged is what found it, for the reason named above. A green body diff
+bounds less than it appears to. The forensics stay outside the committed tree.
+
+**Reconciled in.** PRs 387 through 390 are the four implementation slices. PR 391
+corrects claims those four left wrong. PR 392 adds item 7, brings the host cleaner's
+check order into line, and carries the one deliberate exception in this build's
+reconciliation: on the macOS busy probe claustrum reads an `lsof` run it gave up on
+as busy where the reference reads it as idle ([DIVERGENCES.md](DIVERGENCES.md) D17).
+This bump follows all six.
 
 ### `19f30c46353dde1606cad1fede73d0e9be222140` — 2026-09-11 (observed)
 
