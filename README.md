@@ -132,8 +132,9 @@ through the replay buffer. They extract a plugin tarball.
   connection. Requests dispatch concurrently.
 - Auth: every request carries an in-band `"auth":"<token>"`. The daemon's token comes from
   `-token-file` or from `-token-fd`. With `-token-file` the daemon reads the file once and then
-  unlinks it. With `-token-fd` the daemon reads the token from an open descriptor, so the
-  handoff never touches disk. Claustrum reads `CLAUDE_RPC_TOKEN` nowhere, and strips it from
+  unlinks it. With `-token-fd` the daemon reads the token from an open descriptor. It forwards
+  the token to the daemonized child over a pipe, so the handoff never touches disk. Claustrum
+  reads `CLAUDE_RPC_TOKEN` nowhere, and strips it from
   spawned children. One method is the exception to auth itself: `server.shutdown` is not
   authenticated, which matches the reference. Therefore `-stop` sends no token at all.
 - The daemon has 19 methods, across `server.*`, `files.*`, `git.*`, `process.*`, and
@@ -161,8 +162,8 @@ These knobs belong to claustrum only, and they stay off the wire:
 All of them are off by default.
 
 Seven flags opt into a deliberate divergence from the reference. Each flag is off by default,
-and each flag has a matching `claustrum.conf` key. Claude Desktop owns the argv, so that key is
-the reachable knob. That is a driver claim. See
+and each flag has a matching `claustrum.conf` key. When Claude Desktop owns the argv, that key
+is the reachable knob. That is a driver claim. See
 [docs/ARCHITECTURE.md → Driver claims and their provenance](docs/ARCHITECTURE.md#driver-claims-and-their-provenance).
 See [docs/DIVERGENCES.md](docs/DIVERGENCES.md) for the catalog, the rules, and the
 measurements.
@@ -183,7 +184,7 @@ For the full details, see [docs/PROTOCOL.md](docs/PROTOCOL.md) and [docs/ARCHITE
 
 Claustrum cross-compiles to linux, macOS (darwin), and windows, on amd64 and arm64. That is
 six targets. It is a static `CGO_ENABLED=0` Go binary. OS-specific behavior is isolated in the
-`*_unix.go` and `*_windows.go` files. That behavior covers four areas:
+`*_unix.go` and `*_windows.go` files. Examples of that behavior:
 
 - The daemonize step.
 - Process groups on Unix, and Job Objects on Windows, for a whole-tree kill.

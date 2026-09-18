@@ -55,8 +55,8 @@ holds both can do whatever the daemon's user can.
   `os.CreateTemp` limitation the reference shares. Confinement on Windows
   therefore comes from the session directory's ACL.
 - `server.shutdown` is the one method the token does not gate. It is not
-  authenticated. That is behavioral parity with the reference, because Desktop
-  stops the daemon with no token in its environment. Reaching the socket is
+  authenticated. That is behavioral parity with the reference. Desktop stops the
+  daemon with no token in its environment. Reaching the socket is
   therefore enough on its own to stop the daemon and drop every session, and
   `-stop` sends no token. The socket's owner-only mode is what confines this. An
   actor who already shares the uid can do strictly more through `process.spawn`.
@@ -75,7 +75,7 @@ holds both can do whatever the daemon's user can.
   conditional divergence, D1. See [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md).
 - In `-serve` mode the daemon makes no outbound network connections. Its only dial
   is the orphan-exit loopback self-probe. That probe is a connection to the
-  daemon's own `AF_UNIX` socket, and it makes sure that a successor took the path
+  daemon's own `AF_UNIX` socket, and it tests whether a successor took the path
   over (`orphanexit.go`). It is never network egress.
 
 ### Caller-supplied paths

@@ -61,8 +61,9 @@ split condensed the full measurement and correction notes out of this table.
 
 *Footnote on the "496/496" figure.* Older records quote a battery result of
 "496/496 frames". That figure is historical and not reproducible, for three
-reasons. Its unit is not the unit that the harness counts today. A
-reconstruction puts the unit at output lines, not frames. The June 2026 harness
-that produced the figure was overwritten. The battery also grew after that date.
+reasons. First, its unit is not the unit that the harness counts today: a
+reconstruction puts the unit at output lines, not frames. Second, the June 2026
+harness that produced the figure was overwritten. Third, the battery grew after
+that date.
 Count again at the time of writing. Do not quote any figure. The parked
 forensics hold the full reconstruction.

@@ -46,8 +46,8 @@ in-progress commit, run `git commit --no-verify`.
   a 95% statement-coverage floor. The `coverage` job in
   `.github/workflows/ci.yml` holds that floor. The suite currently sits near
   99%, so an untested change shows up as a drop.
-- Compatibility. The wire surface is `rpc.go`, `methods_*.go`, `process.go`, and
-  `results.go`. If you touch it, re-run the validation battery in `scratch/`.
+- Compatibility. If you touch the wire surface (`rpc.go`, `methods_*.go`,
+  `process.go`, `results.go`), re-run the validation battery in `scratch/`.
   Make sure that the frames stay byte-identical. A change that diverges on
   purpose must say so in the PR. It must add an entry to the divergence catalog
   in [docs/DIVERGENCES.md](docs/DIVERGENCES.md). It must record its wire frames
@@ -121,7 +121,7 @@ This is how a release happens. On a push to `main`, `knope-prepare.yml` consumes
 the pending fragments. It opens a `chore: prepare release X.Y.Z` PR. That PR
 bumps `VERSION` and `CHANGELOG.md`, and it stamps `buildstamp.go`. The stamping
 is described below. Merging that PR tags `vX.Y.Z` and creates the GitHub Release.
-The GitHub Release triggers the signed `release.yml` build, through goreleaser.
+The tag push triggers the signed `release.yml` build, through goreleaser.
 Merging the release PR is the human approval gate.
 
 `buildstamp.go` is generated. Do not edit it by hand. `scripts/write_build_stamp.py`
