@@ -247,9 +247,9 @@ Claustrum remote server listening on /run/user/1000/claude/rpc.sock
 
 For a planted symlink in a writable directory, claustrum renames the link, not its
 target, to `remote-server.log.old`. It then creates a fresh regular log with
-`O_EXCL`. The link is never followed, and the victim stays untouched. claustrum
-cannot rename the existing entry in a sticky directory that holds another user's
-file or symlink. The exclusive create fails there too, so claustrum declines the
+`O_EXCL`. The link is never followed, and the victim stays untouched. If claustrum
+cannot rename the existing entry, the exclusive create fails too. One such case is a
+sticky directory that holds another user's file or symlink. claustrum then declines the
 log entirely and falls back to inherited stdio. In both cases claustrum never
 follows the link, and it never writes into a file another user owns. This is
 intentional divergence D8, and it is always-on. `4534d86` no longer
@@ -349,7 +349,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.read | `files.read: file exceeds maxBytes` | |
 | files.read | `files.read: not a regular file` | D4 opt-in only |
 | files.list | `open …: no such file or directory` | -32603 (missing dir) |
-| files.list | `open <p>: not a directory` | -32603. The path is not a directory. Since `7d193f89` the daemon opens with `O_DIRECTORY`, and the message was `readdirent …` |
+| files.list | `open <p>: not a directory` | -32603. The path is not a directory. Since `7d193f89` the daemon opens with `O_DIRECTORY`. Before `7d193f89` the message was `readdirent …` |
 | files.list | `open <p>: permission denied` | -32603 (an unreadable directory) |
 | files.validate | `Path does not exist` | in `error` field, `valid:false` |
 | files.extract_tar | `archivePath and destDir are required` | |
@@ -1080,7 +1080,7 @@ as id-less stream notifications, and it buffers them for a later replay.
       process. An offset gap returns `-32003`, and a wholly-duplicate write
       returns `{"success":true,…,"duplicate":true}`, whatever the running state is.
     - A known process that exited or was already reaped → `-32602 Process not
-      running`. This applies only when the write enqueues fresh bytes. Since
+      running`. This applies only when the write carries fresh bytes. Since
       `90fca6e6` the reap counts, not just the exit frame, so this also covers the
       drain window. See the exit-drain note under Stream notifications.
 - `offset` and `applied` are the resumable-stdin contract. `7c2f88d` added them,
@@ -1091,7 +1091,7 @@ as id-less stream notifications, and it buffers them for a later replay.
     - An absent `offset`, or `offset == applied`, makes the daemon append, and
       `applied` grows by `len(data)`.
     - `offset > applied` → `-32003 stdin offset gap: offset ahead of applied bytes`.
-      This is a hole that drops input. Resend from `applied`. The daemon
+      If accepted, that gap drops input. Resend from `applied`. The daemon
       enqueues nothing.
     - `offset + len(data) <= applied`, which is wholly applied, is a no-op. The
       reply adds `"duplicate":true`, `applied` does not change, and nothing reaches
@@ -1315,7 +1315,7 @@ shared legacy root is `<X>/plugins`, and its results go in `prunedLegacy`.
   narrowed test is read from the build and measured one second into the drain. The
   probe therefore bounds the flip at one second rather than at the reap.
   `process.stdin` refuses inside the same window with `-32602 Process not
-  running`, for a write that enqueues fresh bytes. An offset gap still
+  running`, for a write that carries fresh bytes. An offset gap still
   answers `-32003` and a wholly duplicate write still answers
   `{"success":true,…,"duplicate":true}`. Before `90fca6e6` both paths read the
   flag that flips with the exit frame. Both then reported the process as still
@@ -1331,7 +1331,7 @@ shared legacy root is `<X>/plugins`, and its results go in `prunedLegacy`.
   serialized frame including its trailing newline, which is the bytes a subscriber
   receives, not the base64 `data` alone. An exit frame therefore costs its envelope
   although it carries no `data`. The daemon drops frames oldest-first, whole frames
-  at a time, once a new frame exceeds the cap. It always retains at least one
+  at a time, once adding a new frame pushes the buffer total over the cap. It always retains at least one
   frame, even a frame larger than the cap. `reattach{fromSeq:0}` therefore replays
   everything still retained, and not necessarily everything ever emitted.
   `firstSeq` is the floor. Compare it against the last `seq` you saw to detect a
@@ -1421,8 +1421,8 @@ A token source is required. The detached child tests for it, not the launcher:
 The daemonize sentinel is internal and claustrum-namespaced. The re-exec marker is
 `CLAUSTRUM_DAEMON_CHILD`, not the reference's `CLAUDE_SSH_DAEMON_CHILD`. The
 reference name cannot serve here. A host that runs *inside* a real claude-ssh
-session exports `CLAUDE_SSH_DAEMON_CHILD=1` ambiently, so the launcher then
-mistakes itself for the already-daemonized child. claustrum keeps the observable
+session exports `CLAUDE_SSH_DAEMON_CHILD=1` ambiently. If claustrum used that name,
+the launcher mistakes itself for the already-daemonized child. claustrum keeps the observable
 parity separately. `daemonizeWithToken` still sets `CLAUDE_SSH_DAEMON_CHILD=1` in
 the daemon's environ, so that variable propagates into `process.spawn` children.
 `TestSpawnInheritsDaemonChildMarker` pins that. claustrum unsets the internal
@@ -1499,7 +1499,7 @@ fails and it reached no daemon. This matches the reference, and it is destructiv
 on two arms: a stale socket with no listener, and a live foreign
 listener. `-stop` removes a socket path it did not create, so a new client that
 dials by path cannot reach that listener afterwards. The listener itself stays
-alive. A conditional unlink is a divergence, so it is a candidate not taken. It is
+alive. If the unlink ran only on some exits, it diverges, so that variant is a candidate not taken. It is
 recorded under [Candidates considered but not
 taken](DIVERGENCES.md#candidates-considered-but-not-taken).
 
@@ -1657,8 +1657,8 @@ mean unbounded memory. See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   real client passes bare versions. `1.0.86`, `2.0.0-beta.1`, a commit sha,
   `latest` and `1.0.86+build.5` are all measured as accepted.
 - D7 forbids a collision with the orphan sweep. The sweep claims `.fetch-*` and
-  `*.zst`, and it runs after *every* attempted install. `-cli-version .fetch-x` or
-  `1.0.zst` therefore installs, and the sweep then deletes it moments later.
+  `*.zst`, and it runs after *every* attempted install. Without that rule, `-cli-version .fetch-x` or
+  `1.0.zst` installs, and the sweep then deletes it moments later.
   Both binaries finish with an empty cli-dir and no `cliError`, and report a
   success that installed nothing. claustrum now answers `cli version "…" collides
   with the install temp sweep`. The sweep predicate and this test share one
