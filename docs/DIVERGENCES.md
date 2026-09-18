@@ -212,8 +212,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `git worktree add`, unless the caller's `timeoutMs` cut the add short.
   A cut-short add answers
   `timeout` and leaves the leaf. A rollback also follows a post-checkout drain
-  that exceeded the caller `timeoutMs`, where the guard is defense-in-depth behind
-  create's own containment. `wipesHomeDir` (`homeguard.go`)
+  that exceeded the caller `timeoutMs`. On both rollback arms the guard is
+  defense-in-depth behind create's own containment. `wipesHomeDir` (`homeguard.go`)
   refuses any target that is or contains the home directory. Descendants stay
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**
@@ -260,7 +260,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   resolve symlinks.
 - **Reopen trigger.** An honest caller legitimately naming a destructive target
   that *is or contains* a home directory.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → all three methods. Also `homeguard.go` and
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `files.extract_tar` and `git.worktree_remove` (the `git.worktree_create` guard emits no frame). Also `homeguard.go` and
   `homeguard_test.go` (`wipeDestDir` seams the destructive call, so the suite is
   safe against an unfixed tree). Measurement: forensics.
 
@@ -384,7 +384,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   platform.
 - **A single component rather than a lexical containment check.** A lexical check
   accepts `link/1.0.0` (an intermediate symlink under the cli-dir, followed at open
-  time), and `EvalSymlinks` only adds a TOCTOU window before the `RemoveAll`. A
+  time). An `EvalSymlinks` check here adds only a TOCTOU window before the `RemoveAll`. A
   final component that is itself a symlink stays legal, because `os.RemoveAll`
   unlinks it rather than follows it. So the rule is narrower than "no symlinks".
 - **Why always-on.** Rule 3 clause (b). Measured, the reference destroys the
@@ -439,8 +439,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   position: a daemon must not follow a link it did not plant or write into a file
   it does not own. It does not depend on the reference being wrong.
 - **Why always-on.** Rule 3 clause (b). The trigger is unreachable on the
-  deployed path (`~/.claude/remote/` is per-user, not world-writable). A flag here
-  gates a branch that no honest deployment reaches.
+  deployed path (`~/.claude/remote/` is per-user, not world-writable). If a flag
+  existed, it gates a branch that no honest deployment reaches.
 - **Reopen trigger.** A deployment that puts the socket directory somewhere shared
   *and* needs the log file. Or the reference gaining the same refuse-to-follow (then
   this becomes parity, not a divergence).
