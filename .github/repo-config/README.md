@@ -1,45 +1,46 @@
 # Repo config baselines (advisory drift check)
 
-Declarative baselines for the repository's **labels** and a few **basic
-settings**, plus an advisory CI job that warns when the live GitHub config
-drifts from what is committed here.
+Declarative baselines for the labels of the repository and for a few basic
+settings. An advisory CI job goes with them. If the live GitHub labels or
+settings drift from what is committed here, that job warns.
 
-- `labels.json` — every label's `name`, `color`, and `description`. The file's
-  on-disk order/formatting is not significant: the drift check normalises both
-  the committed file and the live list (sort by name, sort keys) before
-  comparing, so either compact or pretty JSON works.
-- `settings.json` — `description`, `homepage`, `topics`, `has_issues`,
+- `labels.json`: the `name`, `color`, and `description` of every label. The
+  on-disk order and formatting of the file are not significant. Before it
+  compares, the drift check normalizes both the committed file and the live
+  list. It sorts by name and sorts keys. Compact JSON and pretty JSON both work.
+- `settings.json`: `description`, `homepage`, `topics`, `has_issues`,
   `has_wiki`, `has_projects`, the three `allow_*_merge` flags, and
   `delete_branch_on_merge`.
 
 ## What runs
 
-`.github/workflows/repo-config-drift.yml` on every PR (and on demand via
-`workflow_dispatch`). It fetches the live labels + settings with `gh api` and
-diffs them against the JSON here, printing any drift to the job summary.
+`.github/workflows/repo-config-drift.yml` runs on every PR, and on demand
+through `workflow_dispatch`. It fetches the live labels + settings with
+`gh api`. It diffs them against the JSON here and prints any drift to the job
+summary.
 
 ## It is READ-ONLY and ADVISORY
 
-- **Read-only.** The workflow only performs `gh api` GETs with the default
-  `GITHUB_TOKEN`. It uses no secrets and writes nothing — not labels, not
-  settings, not branch protection or rulesets (those are owned by the repo
-  ruleset, see [`../rulesets/`](../rulesets/), and are intentionally out of
-  scope).
-- **Fork-safe.** Plain `pull_request` trigger (never `pull_request_target`) with
+- Read-only. The workflow only performs `gh api` GETs with the default
+  `GITHUB_TOKEN`. It uses no secrets and it writes nothing. It writes no labels,
+  no settings, no branch protection and no rulesets. The repo ruleset owns
+  branch protection and rulesets, see [`../rulesets/`](../rulesets/), and they
+  are intentionally out of scope.
+- Fork-safe. Plain `pull_request` trigger (never `pull_request_target`) with
   `permissions: contents: read` (+ `issues: read` for the label API). A fork PR
   cannot exfiltrate or mutate anything.
-- **Non-blocking.** The job always exits `0` (drift only prints a diff) and is
-  additionally wrapped in `continue-on-error`. **Do not add it to the repo's
-  required status checks** — it must never gate a merge.
+- Non-blocking. The job always exits `0`, because drift only prints a diff. The
+  job is also wrapped in `continue-on-error`. Do not add it to the required
+  status checks of the repo. It must never gate a merge.
 
-The **apply / reconcile** half (writing labels and settings back to match these
-baselines) is intentionally **not** built here: it needs a privileged App token
-and is a maintainer-side action.
+The apply / reconcile half writes labels and settings back to match these
+baselines. It is intentionally not built here. It needs a privileged App token,
+and it is a maintainer-side action.
 
 ## Updating the baseline
 
 When you intentionally change a label or setting on GitHub, refresh the JSON
-here so the drift check goes quiet again:
+here. The drift check then goes quiet again:
 
 ```sh
 # labels
@@ -54,7 +55,7 @@ gh api repos/schubydoo/claustrum --jq '{
 }' | jq -S '.' > .github/repo-config/settings.json
 ```
 
-To push the committed baseline *to* GitHub (maintainer-side, needs a token with
+To push the committed baseline to GitHub (maintainer-side, needs a token with
 `repo` scope):
 
 ```sh

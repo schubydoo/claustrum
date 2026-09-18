@@ -14,9 +14,9 @@ internal-only PRs apply the `no-changelog` label instead. See CONTRIBUTING.md.
 <!-- The one hard rule: stay byte-identical to the reference daemon's JSON-RPC
      frames. Tick the box that applies. -->
 
-- [ ] **No wire-surface change** — does not touch `rpc.go`, `methods_*.go`,
+- [ ] No wire-surface change. It does not touch `rpc.go`, `methods_*.go`,
       `process.go`, or `results.go`.
-- [ ] **Intentional protocol change** — documented in
+- [ ] Intentional protocol change. It is documented in
       [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) and described below.
 
 ## Checklist
