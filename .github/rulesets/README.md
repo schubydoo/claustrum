@@ -1,35 +1,37 @@
 # Repository rulesets
 
-Declarative source of truth for this repo's **branch and tag protection**. Each
+Declarative source of truth for the branch and tag protection of this repo. Each
 file maps to one GitHub ruleset:
 
-- `main.json` → ruleset **`main`** (branch). Protects the default branch:
-  no deletion, no force-push, linear history, changes land via squash-only PRs
-  with all review threads resolved, and three checks must pass (`strict` — the
-  branch must be up to date first): `ci required checks passed`,
-  `security required checks passed`, and `conventional PR title`.
-- `tags.json` → ruleset **`protect-version-tags`** (tag). Makes `v*` release
+- `main.json` → ruleset `main` (branch). It protects the default branch. There
+  is no deletion, no force-push, and linear history. Changes land through
+  squash-only PRs with all review threads resolved. Three checks must pass:
+  `ci required checks passed`, `security required checks passed`, and
+  `conventional PR title`. Those checks are `strict`, so the branch must be up
+  to date first.
+- `tags.json` → ruleset `protect-version-tags` (tag). It makes `v*` release
   tags immutable: no deletion, no force-update.
 
-These files are the **baseline**; the advisory
+These files are the baseline. The advisory
 [`repo-config-drift`](../workflows/repo-config-drift.yml) workflow deliberately
-does **not** read or reconcile them. Rulesets are applied to GitHub by the
-maintainer via the API (below).
+does not read them and does not reconcile them. The maintainer applies rulesets
+to GitHub through the API (below).
 
 ## ⚠️ Bootstrap order
 
 The `main` ruleset requires PRs and linear history on the default branch. Apply
-it **only after the default branch already exists on GitHub** (i.e. after the
-first `git push`). Activating it on an empty repo blocks the very push that
-would create `main`. Push first, then apply.
+it only after the default branch already exists on GitHub, that is, after the
+first `git push`. On an empty repo the ruleset blocks the very push that
+creates `main`. Push first, then apply.
 
-The required checks are the aggregator jobs `ci required checks passed`
-([`ci.yml`](../workflows/ci.yml)) and `security required checks passed`
-([`security.yml`](../workflows/security.yml)), plus `conventional PR title`
-([`pr-title.yml`](../workflows/pr-title.yml)) — all integration `15368`
-(GitHub Actions). Scorecard is deliberately not required (it never runs on
-`pull_request`). If you rename an aggregator job, update `main.json` to match
-or PRs can never go green.
+The required checks are three aggregator jobs. They are
+`ci required checks passed` ([`ci.yml`](../workflows/ci.yml)),
+`security required checks passed`
+([`security.yml`](../workflows/security.yml)), and `conventional PR title`
+([`pr-title.yml`](../workflows/pr-title.yml)). All three are integration
+`15368` (GitHub Actions). Scorecard is deliberately not required, because it
+never runs on `pull_request`. If you rename an aggregator job, update
+`main.json` to match. Otherwise PRs can never go green.
 
 ## Applying
 
