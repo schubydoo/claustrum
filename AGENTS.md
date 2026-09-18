@@ -163,8 +163,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
   so this handoff never touches disk. No mode reads `CLAUDE_RPC_TOKEN`:
   `-bridge` relays a client that supplies its own `auth`, and the daemon strips
   the variable from spawned children. `server.shutdown` is the one method that
-  is not authenticated. That is parity with the reference, because Desktop
-  stops the daemon with no token in its environment. `-stop` therefore sends no
+  is not authenticated. That is parity with the reference. Desktop stops the
+  daemon with no token in its environment, so `-stop` sends no
   `auth` member. Every other method rejects an unauthenticated request `-32001`.
 - The daemon persists its token to `daemon.token` (mode `0600`) beside the
   socket. It writes the file atomically at startup and unlinks it on graceful

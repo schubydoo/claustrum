@@ -20,7 +20,7 @@ context belongs in `AGENTS.md` / `CLAUDE.md`, which the reviewer already reads.
 
 claustrum is a clean-room reimplementation of the daemon that hosts a remote Claude Code
 session over SSH. The wire surface is the product. It is judged against a pinned
-reference binary (`5db5e4a`), not against taste.
+reference binary (the build named in `scripts/UPSTREAM_SHA`), not against taste.
 
 That changes what "correct" means here. A change can be tidier, faster and better
 factored and still be wrong. It moved a byte on the wire.
