@@ -32,37 +32,36 @@ gives the inverse: the changes we will never make.
 
 The standard, in priority order:
 
-> 1. **Claude Desktop must keep working.** Claustrum is a drop-in. If a behaviour
+> 1. Claude Desktop must keep working. Claustrum is a drop-in. If a behaviour
 >    is reachable by Desktop, and matching the reference is what keeps Desktop
 >    working, we match. How ugly the reference's behaviour is does not matter.
-> 2. **Match by default.** A wart Desktop tolerates is the contract, not a bug.
+> 2. Match by default. A wart Desktop tolerates is the contract, not a bug.
 >    Divergence needs a reason. Matching does not. The burden of proof is always
 >    on the divergence.
-> 3. **A divergence earns ALWAYS-ON only if** one of three conditions holds.
+> 3. A divergence earns ALWAYS-ON in one of three cases only.
 >    **(a)** Two things hold together. The reference's behaviour on that path
->    **is not a frame at all**, which means an unbounded wait, unbounded memory,
->    or unrecoverable data loss. **And** no honest caller can observe the
->    difference. **(b)** The **trigger
->    itself** is unreachable on an honest path. **(c)** The trigger is reachable,
->    but **both binaries fail the operation** and the only delta is diagnostic
+>    is not a frame at all, which means an unbounded wait, unbounded memory,
+>    or unrecoverable data loss. And no honest caller can observe the
+>    difference. **(b)** The trigger itself is unreachable on an honest path. **(c)** The trigger is reachable,
+>    but both binaries fail the operation and the only delta is diagnostic
 >    text.
-> 4. **Anything else that changes an honest-path frame is OPT-IN, default off**, or
+> 4. Anything else that changes an honest-path frame is OPT-IN, default off, or
 >    it does not ship.
 
 Corollaries:
 
-- **Keeping a wart does not mean hiding it.** We match the wart *and* we document
+- Keeping a wart does not mean hiding it. We match the wart *and* we document
   it, so a user can see the edge before it causes damage.
-- **"The reference does it too" is a reason to match, never a reason to call it
-  safe.** D2 is the standing counter-example: the reference wipes a home directory,
+- "The reference does it too" is a reason to match, never a reason to call it
+  safe. D2 is the standing counter-example: the reference wipes a home directory,
   and we still refuse to do it.
-- **Every always-on divergence owes a reopen trigger.** The reopen trigger is the
+- Every always-on divergence owes a reopen trigger. The reopen trigger is the
   observation that makes us take the divergence back out. An always-on
   divergence with no reopen trigger is a preference, not a decision.
 
 ### Reading the clauses
 
-**Clause (a) is an AND.** Both halves must hold: the reference's behaviour is not a
+Clause (a) is an AND. Both halves must hold: the reference's behaviour is not a
 frame, *and* no honest caller observes the difference. The second half is where
 thresholds fail. A bound is a *threshold*. A threshold cannot separate a hostile
 input from an input that is only slow or large, so an honest input trips it too.
@@ -80,7 +79,7 @@ unrecoverable data loss, and no honest caller has a legitimate *use* for deletin
 home. A caller can still reach that path by accident, which is exactly what the
 guard is for.
 
-**Clause (b): the trigger is unreachable on an honest path.** Most surviving
+Clause (b): the trigger is unreachable on an honest path. Most surviving
 always-on entries use this form (D6, D7, D8, D9). Each entry has its own trigger,
 and the glosses are not interchangeable. Two of the four are asserted rather than
 enumerated: nobody ever enumerated Desktop's per-method param set against D9's
@@ -91,7 +90,7 @@ divergence).
 *Canonical example:* D6. A `-cli-version` naming a destructive path outside the
 cli-dir is not something any correct client emits.
 
-**Clause (c): both binaries fail, and the only delta is diagnostic text.**
+Clause (c): both binaries fail, and the only delta is diagnostic text.
 This clause is deliberately narrow, and we wrote it for D13. Measured, D13 does
 not meet it, so the clause justifies no entry in this file today. A reader must
 not take two things on trust. First, an `error.code` is not diagnostic text,
@@ -125,21 +124,21 @@ key, which serves every other driver.
 These conventions hold for every opt-in entry. This section states them once
 rather than repeating them in each entry:
 
-- **A flag and a matching `claustrum.conf` key.** The config key is the reachable
+- A flag and a matching `claustrum.conf` key. The config key is the reachable
   knob (see the argv premise above). Precedence is explicit CLI flag > config >
   default. claustrum resolves it with `flag.Visit`.
-- **Default off is the zero value, and disabled bypasses the guard entirely.** A
+- Default off is the zero value, and disabled bypasses the guard entirely. A
   cap set to `0` skips its `io.LimitReader`. A timeout set to `0` skips
   `context.WithTimeout`. For the download, `0` instead relies on
   `http.Client{Timeout: 0}`, which is the stdlib's own "no timeout". Never use a
   huge-but-finite value. The `cap+1` / armed-cancel arithmetic is what defines the
   boundary. Routing the unlimited case through that arithmetic invents a boundary
   the reference does not have.
-- **No opt-in bound is a hang detector.** Each bound is a threshold, so an
+- No opt-in bound is a hang detector. Each bound is a threshold, so an
   honest-but-slow or honest-but-large input trips it too. That is precisely why
   they are off by default.
-- **At the shipped defaults, no claustrum-chosen `-install` wall-clock bound
-  applies.** Only stdlib transport clocks remain on the `-cli-url` path
+- At the shipped defaults, no claustrum-chosen `-install` wall-clock bound
+  applies. Only stdlib transport clocks remain on the `-cli-url` path
   (`net.Dialer{Timeout: 30s}`, `TLSHandshakeTimeout: 10s`). Those two clocks are
   always-on, unnumbered, and unprobed on the reference.
 
@@ -186,7 +185,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   mismatch claustrum answers `checksum mismatch: …` and leaves the source blob
   intact. An absent or empty checksum stays trusting → byte-identical to the
   reference.
-- **Why conditional, not opt-in.** The *caller* activates it by supplying
+- Why conditional, not opt-in. The *caller* activates it by supplying
   `-cli-checksum`. On `-install`, that caller is Desktop. An operator does not
   activate it. It therefore has no flag or config key, and it needs none. The
   delta requires a *wrong* checksum, because a correct one is byte-identical, so
@@ -209,8 +208,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `os.RemoveAll`. `files.extract_tar` wipes `destDir`. When git exits non-zero for
   a non-locked reason, `git.worktree_remove` deletes `worktreePath`. A locked
   worktree is refused, not deleted. When `git.worktree_create` rolls back a
-  worktree, it deletes `worktreePath`. A rollback follows a failed `git worktree
-  add`, unless the caller's `timeoutMs` cut the add short. A cut-short add answers
+  worktree, it deletes `worktreePath`. A rollback follows a failed
+  `git worktree add`, unless the caller's `timeoutMs` cut the add short.
+  A cut-short add answers
   `timeout` and leaves the leaf. A rollback also follows a post-checkout drain
   that exceeded the caller `timeoutMs`, where the guard is defense-in-depth behind
   create's own containment. `wipesHomeDir` (`homeguard.go`)
@@ -260,7 +260,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   resolve symlinks.
 - **Reopen trigger.** An honest caller legitimately naming a destructive target
   that *is or contains* a home directory.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → both methods. Also `homeguard.go` and
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → all three methods. Also `homeguard.go` and
   `homeguard_test.go` (`wipeDestDir` seams the destructive call, so the suite is
   safe against an unfixed tree). Measurement: forensics.
 
@@ -474,10 +474,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **claustrum streams the blob and never buffers it.** It writes a `.blob-<random>`
   temp (or `$TMPDIR/claustrum-fetch-<random>` on a first install, before the cli-dir
   exists) and hashes it in one pass. Therefore "cap off" does not mean unbounded
-  memory (measured 886 MB → 10 MB on a 400 MiB payload). **The prefix `.blob-`, not
-  `.fetch-`, is the one that matters.** `.fetch-*` is the swept namespace. A
-  concurrent install's sweep deletes any `.fetch-` blob, which defeats the staging
-  retry
+  memory (measured 886 MB → 10 MB on a 400 MiB payload). The prefix `.blob-`, not
+  `.fetch-`, is the one that matters. `.fetch-*` is the swept namespace. If the
+  staging blob used the `.fetch-` prefix, the sweep of a concurrent install deletes
+  it, and that defeats the staging retry
   (`errStagingVanished`). The creator, both housekeeping passes, and
   `validateCLIVersion` all read `blobTempPrefix`.
 - **Who pays for opting in.** A cap set below free space replaces a disk-full report
