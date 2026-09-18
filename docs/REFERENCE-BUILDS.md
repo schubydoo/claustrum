@@ -12,9 +12,12 @@ behind each bump.
 
 ## Builds
 
-Newest first. A "wire change" is a change to the JSON-RPC surface that claustrum
-must match byte-for-byte. A pure rebuild with no wire change also gets a row.
-This lets a reader tell a re-published SHA from a real release.
+Newest first, by lineage. `3ef9370e…` is a rebuild on top of `4534d86…`, so it
+sits above it. Its build date (2026-09-03) is earlier than the date `4534d86…`
+was observed (2026-09-04). A "wire change" is a change to the JSON-RPC
+surface that claustrum must match byte-for-byte. A pure rebuild with no wire
+change also gets a row. This lets a reader tell a re-published SHA from a real
+release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|

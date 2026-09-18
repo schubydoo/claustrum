@@ -203,6 +203,7 @@ opt-in?
 | CT-1 | Opt-in (`wantPid`) | Yes, on request. It adds `pid`/`startTime` | spawn/reattach reply extension |
 | CT-2 | Opt-in (`-keep-children`, POSIX) | No | children survive shutdown |
 | CT-3 | Opt-in (`claustrum.conf`) | Only `version-override`, via the static check's `-version` diff | the configuration file itself |
+| CT-4 | Not built. A deferred idea, recorded in DIVERGENCES.md only | No. There is no code | opt-in hardened token persistence (a `persist-token` key, or a Windows owner-only DACL) |
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
 
 Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
