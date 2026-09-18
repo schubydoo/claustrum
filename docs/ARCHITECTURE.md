@@ -81,8 +81,9 @@ children it spawns.
 - An internal sentinel, `CLAUSTRUM_DAEMON_CHILD`, gates the self-daemonize
   re-exec. The name is claustrum's own on purpose. It is *not* the reference's
   `CLAUDE_SSH_DAEMON_CHILD`. A surrounding claude-ssh session exports that name
-  to every descendant. With that name, the launcher skips its own daemonize and
-  token-forward path. The child unsets the sentinel after it reads it.
+  to every descendant. If claustrum used that name as its sentinel, the launcher
+  mistakes itself for the child and skips its own daemonize and token-forward
+  path. The child unsets the sentinel after it reads it.
   Claustrum keeps reference parity by a separate route. `daemonizeWithToken`
   still sets `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ, so
   `process.spawn` children inherit it exactly as they do under the reference (see

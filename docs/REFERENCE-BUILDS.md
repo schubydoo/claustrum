@@ -345,8 +345,8 @@ are matched for the observable and security behavior, but not reproduced
 command-for-command.
 
 `git.worktree_remove` is an off-wire exception. The reference implements it as a
-hardened `rev-parse --absolute-git-dir`. It then deletes the worktree and its
-`$GIT_DIR/worktrees/<name>` registration directly from the filesystem. It then deletes
+hardened `rev-parse --absolute-git-dir`. It also deletes the worktree and its
+`$GIT_DIR/worktrees/<name>` registration directly from the filesystem. It also deletes
 the branch with a hardened `update-ref`. It runs no `git worktree remove` at all. Claustrum instead runs an unhardened
 `git worktree remove --force` with an `os.RemoveAll` fallback for the worktree itself.
 Its branch delete now matches the reference: a raw `update-ref --no-deref -d`. It was
@@ -409,7 +409,7 @@ byte-for-byte (values and timing) against the reference:
    `escalate`. Its result is `{found,died[,alreadyExited][,escalated]}`.
    [PROTOCOL.md → process.killAndWait](PROTOCOL.md#processkillandwait) is
    canonical for the defaults, the grace clamp and the escalation timing.
-2. The `process.stdin.offset` contract changed. A `process.stdin` reply now always
+2. The `process.stdin.offset` contract is new. A `process.stdin` reply now always
    carries `applied`, the cumulative count of decoded bytes. An `offset` param
    makes stdin idempotent across reconnects. A duplicate becomes a
    `duplicate:true` no-op. An offset ahead of the applied count gives a `-32003`
@@ -469,7 +469,7 @@ subdirectory.
 divergence:
 
 - The `-install` path gained an HTTPS download, a SHA-256 verify and a rename
-  that clears an existing target first. claustrum mirrors the substance:
+  with an EEXIST-clear. claustrum mirrors the substance:
   `install.go` verifies SHA-256 with
   `verifyChecksum`, unconditionally on the `-cli-url` path, and downloads with
   `fetchToFile`, which streams to a temp file. claustrum does not mirror one

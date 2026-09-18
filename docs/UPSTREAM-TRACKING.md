@@ -316,7 +316,9 @@ Go 1.27 does exactly that. It enables the `jsonv2` GOEXPERIMENT by default
 `encoding/json`'s `Marshal` on the v2 engine. That engine renders an invalid
 UTF-8 byte as the literal U+FFFD character (bytes `EF BF BD`). Go 1.26
 and earlier emit the six-ASCII
-`\ufffd` escape, and so did the reference daemon at `5db5e4a`. `files.read`
+`\ufffd` escape, and so did the reference daemon at `5db5e4a`. The build pinned
+today, `90fca6e6`, carries a go1.25.14 stamp (`go version` on the binary), so it
+emits the same escape. `files.read`
 puts raw file bytes into the `content` string. Under Go 1.27, every read of a file
 holding a non-UTF-8 byte therefore diverges from the
 reference. `TestInheritedInvalidUTF8BecomesReplacementChar` and
