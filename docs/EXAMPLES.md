@@ -109,7 +109,7 @@ that process and continue to read the stream. This is the reconnect path.
     The reference daemon has no `wantPid`. This is an opt-in claustrum
     extension, CT-1. See [DIVERGENCES.md](DIVERGENCES.md). If you omit it,
     which is the default, every frame stays byte-identical to the reference.
-    `wantPid` does not change the original `spawn` and `reattach` behavior. It
+    `wantPid` does not change the original `spawn` and `reattach` behavior.
     If you ask for them, it *adds* fields, and nothing else.
 
 `process.spawn` and `process.reattach` accept `"wantPid":true`. When you set it,
