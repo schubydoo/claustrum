@@ -384,7 +384,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   platform.
 - **A single component rather than a lexical containment check.** A lexical check
   accepts `link/1.0.0` (an intermediate symlink under the cli-dir, followed at open
-  time). An `EvalSymlinks` check here adds only a TOCTOU window before the `RemoveAll`. A
+  time). If this path ran an `EvalSymlinks` check, that check adds only a TOCTOU window before the `RemoveAll`. A
   final component that is itself a symlink stays legal, because `os.RemoveAll`
   unlinks it rather than follows it. So the rule is narrower than "no symlinks".
 - **Why always-on.** Rule 3 clause (b). Measured, the reference destroys the
