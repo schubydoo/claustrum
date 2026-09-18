@@ -214,7 +214,7 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	t.Cleanup(func() { runLsof = old })
 
 	// A bare listener: one unix record, no connected peer -> not busy.
-	runLsof = func(...string) string { return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf5\ntPIPE\nn->0xabc\n" }
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf5\ntPIPE\nn->0xabc\n", true }
 	if hcBusy(1) {
 		t.Error("bare listener read as busy")
 	}
@@ -223,23 +223,50 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	}
 
 	// Listener plus an accepted connection: two unix records -> busy.
-	runLsof = func(...string) string {
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n"
+	runLsof = func(...string) (string, bool) {
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
 	}
 	if !hcBusy(1) {
 		t.Error("listener with an accepted connection not read as busy")
 	}
 
 	// A connected-peer name ("->") is an immediate yes.
-	runLsof = func(...string) string { return "p1\nf3\ntunix\nn->/run/other\n" }
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true }
 	if !hcBusy(1) {
 		t.Error("connected unix peer not read as busy")
 	}
 
 	// No lsof output -> process gone / nothing found.
-	runLsof = func(...string) string { return "" }
+	runLsof = func(...string) (string, bool) { return "", true }
 	if _, ok := hcFdTargets(1); ok {
 		t.Error("hcFdTargets ok=true with no lsof output")
+	}
+}
+
+// TestHcBusyAbandonedRunReadsBusy pins D17.
+//
+// The two arms differ ONLY in the flag: both return no output. A completed run that
+// saw nothing is evidence the pid is idle, and must read as not busy — that arm is
+// the control, and it is also the parity arm, since the reference answers the same.
+// An abandoned run is not evidence of anything, and claustrum reads it as busy where
+// the reference reads it as idle. Deleting the D17 arm in hcBusy makes the second
+// assertion fail while the control still passes.
+func TestHcBusyAbandonedRunReadsBusy(t *testing.T) {
+	old := runLsof
+	t.Cleanup(func() { runLsof = old })
+
+	// CONTROL, and parity: lsof ran, found nothing. Not busy.
+	runLsof = func(...string) (string, bool) { return "", true }
+	if hcBusy(1) {
+		t.Fatal("a completed run that found nothing read as busy; that is the parity " +
+			"answer and D17 must not change it")
+	}
+
+	// The divergence: the run was abandoned, so nothing is known about the pid.
+	runLsof = func(...string) (string, bool) { return "", false }
+	if !hcBusy(1) {
+		t.Error("an abandoned run read as not busy; a wedged lsof would then let the " +
+			"cleaner SIGTERM a daemon that is still serving a client")
 	}
 }
 
@@ -258,8 +285,8 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 
 	// Busy in every sample -> settled busy.
-	runLsof = func(...string) string {
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n"
+	runLsof = func(...string) (string, bool) {
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
 	}
 	start := now
 	if !hcSettledBusy(1) {
@@ -272,12 +299,12 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	}
 	// Busy at first, then idle -> not settled busy.
 	n := 0
-	runLsof = func(...string) string {
+	runLsof = func(...string) (string, bool) {
 		n++
 		if n >= 3 {
-			return "p1\nf3\ntunix\nn/run/x/rpc.sock\n" // one unix = not busy
+			return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true // one unix = not busy
 		}
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n"
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
 	}
 	if hcSettledBusy(1) {
 		t.Error("busy-then-idle wrongly settled busy")
@@ -287,11 +314,11 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 func TestHcLockHeldAtDarwin(t *testing.T) {
 	old := runLsof
 	t.Cleanup(func() { runLsof = old })
-	runLsof = func(...string) string { return "p1234\n" }
+	runLsof = func(...string) (string, bool) { return "p1234\n", true }
 	if !hcLockHeldAt("/run/x/daemon.lock", nil) {
 		t.Error("a held lock read as unheld")
 	}
-	runLsof = func(...string) string { return "" }
+	runLsof = func(...string) (string, bool) { return "", true }
 	if hcLockHeldAt("/run/x/daemon.lock", nil) {
 		t.Error("an unheld lock read as held")
 	}
@@ -487,8 +514,12 @@ func TestRunLsofIsBounded(t *testing.T) {
 		// bound a fixture that genuinely hangs.
 		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 5*time.Second, time.Second, 6*time.Second
 		withHelper("print-quiet")
-		if got := runLsof("-p", "1"); got != "p1\n" {
+		got, ok := runLsof("-p", "1")
+		if got != "p1\n" {
 			t.Fatalf("runLsof of a prompt command = %q, want %q", got, "p1\n")
+		}
+		if !ok {
+			t.Fatal("a completed run reported itself abandoned")
 		}
 	})
 
@@ -498,10 +529,16 @@ func TestRunLsofIsBounded(t *testing.T) {
 		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 300*time.Millisecond, time.Second, time.Minute
 		withHelper("stall-quiet")
 		start := time.Now()
-		got := runLsof("-p", "1")
+		got, ok := runLsof("-p", "1")
 		elapsed := time.Since(start)
 		if got != "" {
 			t.Errorf("runLsof of a stalled command = %q, want no output", got)
+		}
+		// The deadline killed the command, so the run COMPLETED: the caller learns
+		// "lsof looked and saw nothing", which is a fact. That is the difference D17
+		// turns on, and it is why this arm asserts ok and the next asserts !ok.
+		if !ok {
+			t.Error("a run the deadline ended reported itself abandoned")
 		}
 		if elapsed > 10*time.Second {
 			t.Errorf("runLsof took %v; the deadline did not end it", elapsed)
@@ -517,8 +554,12 @@ func TestRunLsofIsBounded(t *testing.T) {
 		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = time.Minute, time.Minute, 300*time.Millisecond
 		withHelper("stall-quiet")
 		start := time.Now()
-		got := runLsof("-p", "1")
+		got, ok := runLsof("-p", "1")
 		elapsed := time.Since(start)
+		if ok {
+			t.Error("an abandoned run reported itself completed; D17 keys on this flag, " +
+				"so a wrong answer here reads an unreadable pid as idle")
+		}
 		if got != "" {
 			t.Errorf("runLsof of an unkillable stall = %q, want no output", got)
 		}

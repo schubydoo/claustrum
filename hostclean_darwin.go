@@ -69,9 +69,14 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 // exited while a grandchild still holds the pipe. Neither covers a process wedged in
 // the kernel, because waiting on a command waits on the process first and only then
 // consults the delay, and that is exactly the case these bounds exist for: an lsof
-// stuck on an unresponsive mount. The abandon bound is what covers it. The run is
-// given up on, and an abandoned run reads as no output, which is the same answer an
-// lsof that genuinely finds nothing gives.
+// stuck on an unresponsive mount. The abandon bound is what covers it: the run is
+// given up on.
+//
+// The gap between the bounds is what makes D17 safe. A merely slow lsof is killed by
+// the deadline and its output pipe closes within the wait delay, so the run COMPLETES
+// with no output well before the abandon bound. Reaching the abandon arm at all needs
+// a process that SIGKILL cannot end. So the two empty results really do mean different
+// things, and only the second one is the divergence.
 //
 // The cost of getting this wrong is a whole cleaner pass: retireAbandoned samples
 // hcBusy for up to hcBusyWindow, and on darwin every one of those samples is an lsof
@@ -120,7 +125,18 @@ var (
 	// a process wedged in the kernel, the kill does not land and the goroutine really
 	// does outlive the call. That is the point: the CALLER is unblocked either way, and
 	// the goroutine costs one buffered send whenever the process finally goes.
-	runLsof = func(args ...string) string {
+	//
+	// ⚠️ A wedged mount therefore leaks one process and one goroutine per abandoned run,
+	// and nothing caps that. The reference does not cap them either. It stays uncapped
+	// here rather than gaining a tracker the reference has no counterpart for: a pass runs
+	// every hcPassEvery (24 h) and reaches at most a couple of runs per candidate, so
+	// the accumulation is slow, and a host with a permanently wedged mount has a larger
+	// problem than this daemon.
+	//
+	// The second result says whether the run COMPLETED. An abandoned run answers false
+	// with no output, which is not the same fact as "lsof looked and found nothing" —
+	// see D17 and hcBusy below.
+	runLsof = func(args ...string) (string, bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), hcLsofTimeout)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, hcLsofPath, append([]string{"-nP", "-w"}, args...)...)
@@ -135,9 +151,9 @@ var (
 		defer abandon.Stop()
 		select {
 		case out := <-done:
-			return out
+			return out, true
 		case <-abandon.C:
-			return "" // give up on the run; no output reads as not busy / not held
+			return "", false // gave up on the run; the caller learns nothing about the pid
 		}
 	}
 )
@@ -358,9 +374,14 @@ func parseLsofFtn(out string) []lsofRec {
 }
 
 // hcFdTargets returns each fd mapped to its lsof name. The second result is false when lsof
-// returned nothing for the pid (the process gone or its files unreadable).
+// returned nothing for the pid (the process gone or its files unreadable), and also when the
+// run was abandoned. Both read as "unreadable", which is what the callers already act on.
 func hcFdTargets(pid int) (map[string]string, bool) {
-	recs := parseLsofFtn(runLsof("-p", strconv.Itoa(pid), "-F", "ftn"))
+	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	if !ok {
+		return nil, false
+	}
+	recs := parseLsofFtn(out)
 	if len(recs) == 0 {
 		return nil, false
 	}
@@ -374,9 +395,19 @@ func hcFdTargets(pid int) (map[string]string, bool) {
 // hcBusy reports whether the process has a live client on one of its unix sockets. A unix
 // record whose name shows a connected peer ("->") is an immediate yes; otherwise more than one
 // unix endpoint means an accepted connection sits alongside the bare listener.
+//
+// D17: an ABANDONED run answers busy. The reference conflates the two empty results — a run
+// that finished and saw nothing, and a run it gave up on — and reads both as not busy, so a
+// wedged lsof lets its cleaner SIGTERM a daemon that is in fact serving a client. claustrum
+// keeps them apart, because only one of them is evidence. On every honest path lsof answers
+// and the two builds agree; this arm is reachable only when the read failed outright.
 func hcBusy(pid int) bool {
+	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	if !ok {
+		return true
+	}
 	unix := 0
-	for _, r := range parseLsofFtn(runLsof("-p", strconv.Itoa(pid), "-F", "ftn")) {
+	for _, r := range parseLsofFtn(out) {
 		if r.typ != "unix" {
 			continue
 		}
@@ -390,8 +421,14 @@ func hcBusy(pid int) bool {
 
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.
+//
+// Deliberately NOT under D17: an abandoned run reads as not-held here, matching the reference.
+// The same argument would apply — a held lock that reads stale lets the tidy remove a live
+// daemon's run dir — but D17 was scoped to the busy predicate, and widening a divergence
+// without deciding it is how one grows by accident. Raised rather than taken.
 func hcLockHeldAt(path string, _ os.FileInfo) bool {
-	for _, ln := range strings.Split(runLsof("-F", "p", path), "\n") {
+	out, _ := runLsof("-F", "p", path)
+	for _, ln := range strings.Split(out, "\n") {
 		if strings.HasPrefix(ln, "p") {
 			return true
 		}

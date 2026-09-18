@@ -218,11 +218,18 @@ non-locked git failure as permission to delete `worktreePath` (a LOCKED worktree
 refused before the delete, since `7d193f89`). Therefore never read a fired
 `git-timeout` as "git refused". Opting D5 in is wire-visible.
 
-The two non-flag divergences: **D1** — claustrum verifies the `-cli-zst` SFTP
+The non-flag divergences in this section: **D1** — claustrum verifies the `-cli-zst` SFTP
 blob **only when a `-cli-checksum` is supplied** (conditional and
 caller-activated; an absent checksum stays trusting, so honest callers get
 byte-identical behavior). **D13** — verify-before-decompress *ordering*;
 always-on but **unresolved**, not justified.
+
+**D17 is off-wire and macOS-only**: the host cleaner reads an `lsof` run it gave
+up on as busy, where the reference reads it as idle. Only the abandoned case
+differs, so `lsof` answering normally gives both builds the same verdict. The
+harm it refuses is the cleaner SIGTERMing a daemon that is serving a client on a
+host where `lsof` cannot answer. The sibling lock read is deliberately NOT
+covered — see the entry.
 
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →
