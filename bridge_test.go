@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"net"
 	"os"
@@ -14,24 +15,36 @@ import (
 func TestRunStopSignalsShutdown(t *testing.T) {
 	s, sock := newRunningServer(t)
 
-	if err := runStop(sock); err != nil {
-		t.Fatalf("runStop: %v", err)
-	}
+	var out bytes.Buffer
+	runStop(sock, &out)
 	select {
 	case <-s.shutdown:
 	case <-time.After(2 * time.Second):
 		t.Error("runStop did not trigger server.shutdown")
 	}
+	if got := out.String(); got != "stopped\n" {
+		t.Errorf("runStop against a live daemon printed %q, want %q", got, "stopped\n")
+	}
 }
 
-// runStop is best-effort (matching the reference): an empty or unreachable
-// socket is a silent no-op (returns nil), not an error.
-func TestRunStopBestEffort(t *testing.T) {
-	if err := runStop(""); err != nil {
-		t.Errorf("empty socket should be a silent no-op, got %v", err)
+// A failed connect with no daemon.lock prints "none" (measured against f6010b97
+// and 90fca6e6 on a Linux VM). It also removes a stale daemon.token beside the
+// socket path. The references delete it in this case, and a
+// pre-fix claustrum left it (measured, 10/10 each).
+func TestRunStopNoneRemovesStaleToken(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "nope.sock")
+	token := filepath.Join(dir, persistedTokenName)
+	if err := os.WriteFile(token, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := runStop(filepath.Join(t.TempDir(), "nope.sock")); err != nil {
-		t.Errorf("unreachable socket should be a silent no-op, got %v", err)
+	var out bytes.Buffer
+	runStop(sock, &out)
+	if got := out.String(); got != "none\n" {
+		t.Errorf("runStop on a missing socket printed %q, want %q", got, "none\n")
+	}
+	if _, err := os.Lstat(token); !os.IsNotExist(err) {
+		t.Errorf("stale daemon.token still present after a failed connect (Lstat err = %v)", err)
 	}
 }
 
@@ -44,67 +57,72 @@ func TestRunBridgeDialError(t *testing.T) {
 	}
 }
 
-// runStop must print NOTHING, even though the daemon DOES reply: -stop is a
+// runStop prints the word "stopped" and never the reply frame. -stop is a
 // control command, not a relay, so a {"ok":true} shutdown reply must never reach
-// its stdout.
-//
-// MEASUREMENT HISTORY. A 2026-08-02 note here claimed the reference "stops
-// silently every time" and that neither daemon answers a real shutdown. That was
-// wrong — it was reading -stop's STDOUT (empty precisely because -stop swallows
-// the reply), not the daemon's wire frame. A 2026-08-27 sweep (scratch/osparity)
-// captured the wire directly. claustrum answers server.shutdown with {"ok":true}
-// and then stops. The reference does not send that frame reliably (measured on
-// f6010b97 and 90fca6e6). This test removes that variation with a fake listener
-// that replies deterministically, proving runStop discards the reply whether or
-// not a real daemon's copy lands. (The older -32001 it once observed came from
-// CLAUSTRUM's daemon of the day, which still authenticated shutdown. It is
-// unrelated to the reply shape.)
-func TestRunStopDiscardsTheReply(t *testing.T) {
-	// Short socket dir (macOS sun_path is ~104 bytes), mirroring the harness.
-	dir, err := os.MkdirTemp("", "cl")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "s.sock")
+// its stdout. A real daemon's reply races its teardown, so this test uses a fake
+// listener that always replies. Every connect-success shape prints the same
+// word: a reply, garbage, a close with no reply, and the read deadline. That is
+// measured against f6010b97 and 90fca6e6 on a Linux VM. After a successful
+// connect, -stop leaves the socket path in place.
+func TestRunStopConnectSuccessWords(t *testing.T) {
+	old := stopReplyTimeout
+	stopReplyTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { stopReplyTimeout = old })
 
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
+	const request = `{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` + "\n"
+	cases := []struct {
+		name  string
+		serve func(c net.Conn) // runs after the request is read, then the conn closes
+	}{
+		{"reply", func(c net.Conn) {
+			_, _ = io.WriteString(c, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`+"\n")
+		}},
+		{"garbage", func(c net.Conn) {
+			_, _ = io.WriteString(c, "\x00garbage\xff not json\n")
+		}},
+		{"close without reply", func(net.Conn) {}},
+		{"never replies", func(net.Conn) { time.Sleep(2 * stopReplyTimeout) }},
 	}
-	t.Cleanup(func() { _ = ln.Close() })
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Short socket dir (macOS sun_path is ~104 bytes), mirroring the harness.
+			dir, err := os.MkdirTemp("", "cl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(dir) })
+			sock := filepath.Join(dir, "s.sock")
+			ln, err := net.Listen("unix", sock)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ln.Close() })
+			got := make(chan string, 1)
+			go func() {
+				c, err := ln.Accept()
+				if err != nil {
+					got <- ""
+					return
+				}
+				defer c.Close()
+				line, _ := bufio.NewReader(c).ReadString('\n')
+				tc.serve(c)
+				got <- line
+			}()
 
-	const reply = `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` + "\n"
-	go func() {
-		c, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer c.Close()
-		_, _ = bufio.NewReader(c).ReadString('\n') // consume the shutdown request
-		_, _ = io.WriteString(c, reply)
-	}()
-
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
+			var out bytes.Buffer
+			runStop(sock, &out)
+			if got := out.String(); got != "stopped\n" {
+				t.Errorf("runStop printed %q, want %q", got, "stopped\n")
+			}
+			if line := <-got; line != request {
+				t.Errorf("request frame = %q, want %q", line, request)
+			}
+			if _, err := os.Lstat(sock); err != nil {
+				t.Errorf("socket path gone after a successful connect (Lstat err = %v); -stop must not unlink it", err)
+			}
+		})
 	}
-	os.Stdout = w
-	got := make(chan string, 1)
-	go func() {
-		b, _ := io.ReadAll(r)
-		got <- string(b)
-	}()
-	if err := runStop(sock); err != nil {
-		t.Errorf("runStop = %v, want nil", err)
-	}
-	os.Stdout = old
-	_ = w.Close()
-	if out := <-got; out != "" {
-		t.Errorf("runStop wrote %q to stdout, want nothing", out)
-	}
-	_ = r.Close()
 }
 
 // TestRunBridgeRelays drives a request through the stdio<->socket relay: swap

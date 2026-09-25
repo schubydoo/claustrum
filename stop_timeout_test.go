@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net"
 	"os"
 	"path/filepath"
@@ -48,12 +49,16 @@ func TestRunStopBoundsTheReplyWait(t *testing.T) {
 		}
 	})
 
-	done := make(chan error, 1)
-	go func() { done <- runStop(sock) }()
+	done := make(chan string, 1)
+	go func() {
+		var out bytes.Buffer
+		runStop(sock, &out)
+		done <- out.String()
+	}()
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("runStop = %v, want nil (best-effort)", err)
+	case got := <-done:
+		if got != "stopped\n" {
+			t.Errorf("runStop printed %q after the read deadline, want %q", got, "stopped\n")
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("runStop blocked on a silent daemon — the read deadline is missing")

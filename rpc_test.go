@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 const testToken = "s3cret-token"
@@ -39,6 +40,83 @@ func dispatchRaw(t *testing.T, s *server, line string) string {
 		t.Fatalf("marshal response: %v", err)
 	}
 	return string(b)
+}
+
+// dropConnsOnShutdown stands in for the teardown of a server that has no run
+// loop. Once shutdown is signaled, it runs dropConns, which releases the waiting
+// server.shutdown handler.
+func dropConnsOnShutdown(tb testing.TB, s *server) {
+	tb.Helper()
+	stop := make(chan struct{})
+	tb.Cleanup(func() { close(stop) })
+	go func() {
+		select {
+		case <-s.shutdown:
+			s.dropConns()
+		case <-stop:
+		}
+	}()
+}
+
+// The server.shutdown handler returns its reply only after dropConns starts. The
+// teardown must first wake the main goroutine and close the listener.
+func TestShutdownReplyWaitsForDropConns(t *testing.T) {
+	old := shutdownReplyWait
+	shutdownReplyWait = time.Minute
+	t.Cleanup(func() { shutdownReplyWait = old })
+	s := newTestServer(t)
+	// A failed run below still releases the handler goroutine.
+	t.Cleanup(s.dropConns)
+	done := make(chan *response, 1)
+	go func() {
+		done <- s.dispatch(nil, []byte(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
+	}()
+	select {
+	case <-s.shutdown:
+	case <-time.After(5 * time.Second):
+		t.Fatal("server.shutdown did not signal the shutdown channel")
+	}
+	select {
+	case <-done:
+		t.Fatal("the shutdown handler returned its reply before dropConns started")
+	case <-time.After(100 * time.Millisecond):
+	}
+	s.dropConns()
+	select {
+	case resp := <-done:
+		b, err := json.Marshal(*resp)
+		if err != nil {
+			t.Fatalf("marshal response: %v", err)
+		}
+		if got := string(b); got != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
+			t.Errorf("shutdown reply = %s, want the ok frame", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the shutdown handler did not return after dropConns started")
+	}
+}
+
+// With no teardown at all, the handler still returns once shutdownReplyWait
+// passes. A wedged teardown cannot hold it forever.
+func TestShutdownReplyWaitIsBounded(t *testing.T) {
+	old := shutdownReplyWait
+	shutdownReplyWait = 20 * time.Millisecond
+	t.Cleanup(func() { shutdownReplyWait = old })
+	s := newTestServer(t)
+	done := make(chan string, 1)
+	go func() {
+		resp := s.dispatch(nil, []byte(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))
+		b, _ := json.Marshal(*resp)
+		done <- string(b)
+	}()
+	select {
+	case got := <-done:
+		if got != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
+			t.Errorf("shutdown reply = %s, want the ok frame", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the shutdown handler waited past its bound with no teardown")
+	}
 }
 
 // TestAuthTokenComparison locks the auth-token check: the exact token is accepted
@@ -173,6 +251,7 @@ func TestDispatchHappyServerMethods(t *testing.T) {
 	}
 
 	// server.shutdown replies {"ok":true} and signals stop.
+	dropConnsOnShutdown(t, s)
 	if got := dispatchRaw(t, s, `{"jsonrpc":"2.0","id":2,"method":"server.shutdown",`+auth+`}`); got != `{"jsonrpc":"2.0","id":2,"result":{"ok":true}}` {
 		t.Errorf(`shutdown reply = %s, want {"jsonrpc":"2.0","id":2,"result":{"ok":true}}`, got)
 	}

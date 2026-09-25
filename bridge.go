@@ -5,13 +5,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 )
 
 // runBridge is a dumb stdio<->unix-socket relay. It does NOT inject auth; the
 // stream it relays must already carry "auth" per request. This is what an SSH
 // session attaches to. A dial failure is a hard error (wrapped "dial server:",
-// matching the reference) — unlike best-effort -stop.
+// matching the reference). -stop instead reports a failed dial as a word.
 //
 // At stdin EOF the bridge half-closes the socket. It keeps relaying the socket
 // to stdout. docs/PROTOCOL.md (-bridge) gives the exit rule.
@@ -36,6 +37,21 @@ func runBridge(socket string) error {
 	return nil
 }
 
+// The -stop stdout words. -stop prints exactly one of them, then a newline, and
+// exits 0 in every state that these words name. Measured against f6010b97 and
+// 90fca6e6 on a Linux VM.
+const (
+	stopWordStopped    = "stopped"    // the connect succeeded
+	stopWordNone       = "none"       // the connect failed and daemon.lock is free or missing. claustrum's own rule: also when the lock cannot be opened or locked
+	stopWordTerminated = "terminated" // the lock holder exited after SIGTERM
+	stopWordKilled     = "killed"     // the lock holder ignored SIGTERM and got SIGKILL
+	// stopWordSurvivor: the lock holder is a live process that -stop does not
+	// signal, or the lock is still held 1.5 s after SIGKILL. claustrum also prints
+	// it if the holder check fails again before SIGKILL. It prints it too when a
+	// signal cannot reach a holder that is still there.
+	stopWordSurvivor = "survivor"
+)
+
 // closeWriteOrClose ends the write side of nc so the daemon reads EOF, and
 // keeps the read side open for its last replies. If the half-close fails, it
 // closes nc fully. The daemon still reads EOF then, and the bridge exits on
@@ -47,51 +63,48 @@ func closeWriteOrClose(nc net.Conn) {
 	_ = nc.Close()
 }
 
-// runStop sends an unauthenticated server.shutdown RPC to a running daemon.
-// ⚠️ this stops the daemon and drops its sessions. It is best-effort (the
-// reference also exits 0): a missing or unreachable daemon is a silent no-op, not
-// an error.
 // stopReplyTimeout bounds how long -stop waits for the daemon's reply to its
 // shutdown request. 2s, measured against the reference. var so tests can shrink it.
 var stopReplyTimeout = 2 * time.Second
 
-func runStop(socket string) error {
-	// The socket path is unlinked UNCONDITIONALLY, on every path out of this
-	// function, matching the reference. Deferred so the dial-failure return below
-	// gets it too — that is the case which proves the unlink is -stop's own act
-	// and not the daemon's.
-	//
-	// Measured 2026-08-02 against 5db5e4a, three arms:
-	//
-	//	live daemon (control)   both: socket gone — but the DAEMON removes it on
-	//	                        graceful shutdown, so this arm attributes nothing
-	//	stale socket, no        reference: gone      claustrum: left in place
-	//	  listener
-	//	live FOREIGN listener   reference: gone, and the listener stays ALIVE
-	//	                        claustrum: left in place
-	//
-	// The last arm is worth stating plainly, because it is destructive and it is
-	// the behaviour being matched on purpose: -stop removes a socket path it did
-	// not create and cannot identify the owner of. The listener itself is not
-	// torn down — that arm checks it is still alive afterwards — but the path it
-	// was reachable through is gone, so a new client dialing by path cannot
-	// reach it. What becomes of its already-open connections was not measured.
-	//
-	// Note the scope of what WAS measured: all three arms used socket-shaped
-	// paths. os.Remove does not care — a regular file or an empty directory at
-	// the -socket path is removed just the same, and neither shape was put in
-	// front of the reference. Since -socket is operator-supplied rather than
-	// client-supplied, that is a footgun rather than an attack surface, but the
-	// comment should not imply the measurement covered it.
-	//
-	// Making the unlink conditional (stat first, remove only a socket) would be a
-	// DIVERGENCE, so it is not taken here. It is recorded as a candidate in
-	// docs/DIVERGENCES.md under "Candidates considered but not taken", which is a
-	// record, not a decision.
-	defer func() { _ = os.Remove(socket) }()
+// runStop sends an unauthenticated server.shutdown RPC to a running daemon and
+// prints one outcome word on stdout. ⚠️ this stops the daemon and drops its
+// sessions. In every state that the stopWord constants name, it prints a word
+// and main exits 0.
+func runStop(socket string, stdout io.Writer) {
+	_, _ = fmt.Fprintln(stdout, stopDaemon(socket))
+}
+
+// stopDaemon does the work of -stop and returns the word to print.
+//
+// Measured against f6010b97 and 90fca6e6 on a Linux VM:
+//
+//   - If the connect succeeds, -stop sends the request, does one read with a 2 s
+//     deadline and prints "stopped". A reply, garbage, an EOF, a reset and the
+//     deadline all give "stopped". -stop does not unlink the socket path on this
+//     path. A live daemon removes its own socket when it stops.
+//   - If the connect fails, -stop checks daemon.lock (stopRunDirHolder). Then it
+//     removes the socket path and daemon.token beside it, and prints the word
+//     from the lock check.
+//   - If the word is "survivor", -stop removes neither file. This is measured
+//     for a holder that -stop does not signal and for a lock that outlives
+//     SIGKILL. The other survivor arms follow the same rule.
+//
+// The unlink on a failed connect uses os.Remove. It removes a stale socket, a
+// socket that refuses the connect with EACCES, a regular file and an empty
+// directory. It keeps a non-empty directory and a path in a directory that
+// this user cannot write. The references do the same (measured).
+func stopDaemon(socket string) string {
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
-		return nil
+		// Remove while the lock is still held, then release it (see stopRunDirHolder).
+		word, release := stopRunDirHolder(socket)
+		if word != stopWordSurvivor {
+			_ = os.Remove(socket)
+			_ = os.Remove(filepath.Join(persistTokenDir(socket), persistedTokenName))
+		}
+		release()
+		return word
 	}
 	defer nc.Close()
 	// No auth member. The reference's -stop sends exactly this frame, and its
@@ -112,22 +125,10 @@ func runStop(socket string) error {
 	// deadline. Measured at 5db5e4a: against a socket that accepts and never
 	// replies, the reference returns in 2.030s over three runs. claustrum was still
 	// blocked when killed at 45s.
-	//
-	// A deadline error is deliberately ignored, exactly like the read error
-	// already was: -stop is best-effort and always reports success. The shutdown
-	// request has already been written by this point, so a daemon that is merely
-	// slow to answer still stops.
 	_ = nc.SetReadDeadline(time.Now().Add(stopReplyTimeout))
-	// Read the reply and DISCARD it. claustrum answers server.shutdown with a
-	// {"ok":true} frame and then stops. The reference does not send that frame reliably
-	// (measured on f6010b97 and 90fca6e6). So this read sees the frame or an
-	// immediate EOF. Either way claustrum's -stop emits nothing on stdout. The deadline
-	// still matters against a foreign or wedged listener that accepts and never
-	// answers.
-	//
-	// -stop is a control command, not a relay; a caller parsing its output should
-	// not have a JSON-RPC frame appear on any path.
+	// One read, and its result does not matter. The reply frame is never
+	// relayed to stdout: -stop is a control command, not a relay.
 	buf := make([]byte, 4096)
 	_, _ = nc.Read(buf)
-	return nil
+	return stopWordStopped
 }

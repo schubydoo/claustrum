@@ -48,14 +48,21 @@ func (s *server) handleServer(c *conn, req *request) *response {
 			Features:   capabilityFeatures,
 		}))
 	case methodShutdown:
-		// The reference does not reliably reply {"ok":true} before it stops, and a
-		// client usually reads an EOF instead (measured on f6010b97 and 90fca6e6).
-		// The standing battery never reads it because it shuts the daemon down on a
-		// throwaway connection, and -stop reads+discards the reply. signalShutdown
-		// fires here, before handleRequest writes the reply. Under a handler panic
-		// no frame is emitted for shutdown (the recover in handleRequest skips the
-		// error frame).
+		// The reply is {"ok":true}, but it reaches the client only when its write
+		// wins a race with the teardown. signalShutdown fires here. The handler
+		// then waits until dropConns starts (awaitDropStart, bounded), and only
+		// then returns the reply for handleRequest to write. docs/PROTOCOL.md
+		// (server.shutdown) records the reference measurements. Under a handler
+		// panic no frame is emitted for shutdown (the recover in handleRequest
+		// skips the error frame).
+		//
+		// The two log lines come before the teardown starts, so they precede
+		// every connection close. The reference logged them in this order before
+		// its connection close (measured).
+		logInfof("[ServerHandler] server.shutdown received over RPC")
+		logInfof("[Server] shutdown requested")
 		s.signalShutdown()
+		s.awaitDropStart()
 		return ptr(okResult(req.ID, shutdownResult{OK: true}))
 	default:
 		return ptr(unknownMethod(req))

@@ -22,8 +22,9 @@ func TestShutdownNeedsNoAuth(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestServer(t)
+			dropConnsOnShutdown(t, s)
 			if got := dispatchRaw(t, s, tc.frame); got != `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` {
-				t.Errorf(`shutdown reply = %s, want {"ok":true} (the daemon replies then stops)`, got)
+				t.Errorf(`shutdown result = %s, want {"ok":true} from dispatch`, got)
 			}
 			select {
 			case <-s.shutdown:

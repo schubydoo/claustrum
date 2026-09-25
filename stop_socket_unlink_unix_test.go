@@ -3,7 +3,7 @@
 package main
 
 import (
-	"errors"
+	"bytes"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,53 +11,41 @@ import (
 	"time"
 )
 
-// -stop removes the socket PATH unconditionally, on every path out of runStop.
+// -stop unlinks the socket path only after a FAILED connect. After a successful
+// connect it leaves the path alone. Measured against f6010b97 and 90fca6e6 on a
+// Linux VM:
 //
-// Measured 2026-08-02 against 5db5e4a, three arms:
+//	failed connect: stale socket         removed
+//	                own listener, 0000   removed (connect EACCES)
+//	                regular file         removed
+//	                empty directory      removed
+//	                non-empty directory  kept
+//	                dir not writable     kept (the unlink fails EACCES)
+//	connect ok:     foreign listener     kept, and still reachable by path
 //
-//	live daemon (control)   both: socket gone — the DAEMON unlinks it on
-//	                        graceful shutdown, so this arm attributes nothing
-//	stale socket, no        reference: gone      claustrum (before): present
-//	  listener
-//	live FOREIGN listener   reference: gone, listener still ALIVE
-//	                        claustrum (before): present, listener alive
+// The live-daemon case attributes nothing, because a daemon removes its own
+// socket when it stops. Only the arms with no claustrum daemon show what -stop
+// itself does.
 //
-// The happy path is blind here, which is the whole reason this test exists: a
-// live daemon unlinks its own socket during shutdown, so "socket gone" after
-// -stop proves nothing about who removed it. Only the two arms where NO
-// claustrum daemon is involved can attribute the unlink to -stop itself.
-//
-// unix-only on purpose: both arms turn on POSIX AF_UNIX semantics — a bound
+// unix-only on purpose: these arms turn on POSIX AF_UNIX semantics. A bound
 // socket path is an ordinary directory entry that can be unlinked out from
-// under a live listener. Windows does not promise that, and asserting it there
-// would test the platform rather than runStop.
+// under a live listener. Windows does not promise that.
 
-// stopLeavesNoSocket is the shared assertion: after runStop returns, the path
-// must be gone.
-func stopLeavesNoSocket(t *testing.T, sock string) {
+// stopPrints runs -stop against sock and checks the stdout bytes.
+func stopPrints(t *testing.T, sock, want string) {
 	t.Helper()
-	if err := runStop(sock); err != nil {
-		t.Fatalf("runStop = %v, want nil (best-effort)", err)
-	}
-	if _, err := os.Lstat(sock); !os.IsNotExist(err) {
-		t.Errorf("socket %s still present after -stop (Lstat err = %v); the unlink is not unconditional", sock, err)
+	var out bytes.Buffer
+	runStop(sock, &out)
+	if got := out.String(); got != want {
+		t.Errorf("runStop printed %q, want %q", got, want)
 	}
 }
 
-// Arm 1 — a stale socket file with nothing listening. runStop's dial fails and
-// it returns early; the unlink must still happen. This is the arm that proves
-// the unlink is -stop's own act: no daemon ever ran, so nothing else could have
-// removed the path.
-func TestRunStopUnlinksStaleSocket(t *testing.T) {
-	sock := filepath.Join(shortTempDir(t), "rpc.sock")
-
-	// Bind then close, which leaves the path behind exactly as a killed daemon
-	// would. Writing a plain file would test os.Remove, not the stale-socket
-	// case the reference was measured on.
-	//
-	// SetUnlinkOnClose(false) is required: Go's UnixListener unlinks a path it
-	// created when it closes, so a plain Close would clean up the very thing
-	// this arm needs staged and the test would silently have nothing to assert.
+// stageStaleSocket binds sock and closes the listener without unlinking it, as a
+// killed daemon leaves it. Go's UnixListener unlinks a path it created on Close,
+// so SetUnlinkOnClose(false) is required, or the test has nothing to assert.
+func stageStaleSocket(t *testing.T, sock string) {
+	t.Helper()
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -70,25 +58,102 @@ func TestRunStopUnlinksStaleSocket(t *testing.T) {
 	if err := ul.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// Fail rather than skip: if the stale socket cannot be staged, this arm
-	// proves nothing and must say so loudly.
 	if _, err := os.Lstat(sock); err != nil {
 		t.Fatalf("could not stage a stale socket at %s: %v", sock, err)
 	}
-
-	stopLeavesNoSocket(t, sock)
 }
 
-// Arm 2 — a live listener that is NOT a claustrum daemon. The path must be
-// removed and the listener must SURVIVE, which is the destructive half of this
-// behaviour stated plainly: -stop unlinks a path it did not create and cannot
-// identify the owner of. The listener is not torn down; the path it was
-// reachable through is, so anyone dialing by path can no longer find it.
-//
-// Asserting the listener stays alive is what stops an over-correction: a "fix"
-// that tore the listener down, or that closed it before unlinking, would pass
-// the path check alone and fail here.
-func TestRunStopUnlinksForeignListenerPathAndLeavesItAlive(t *testing.T) {
+// The failed-connect unlink arms. Each one prints "none" (there is no
+// daemon.lock) and then checks whether the path is gone.
+func TestRunStopFailedConnectUnlinkRules(t *testing.T) {
+	cases := []struct {
+		name     string
+		stage    func(t *testing.T, sock string)
+		wantGone bool
+	}{
+		{"stale socket", stageStaleSocket, true},
+		{"regular file", func(t *testing.T, sock string) {
+			if err := os.WriteFile(sock, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"empty directory", func(t *testing.T, sock string) {
+			if err := os.Mkdir(sock, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"non-empty directory", func(t *testing.T, sock string) {
+			if err := os.Mkdir(sock, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(sock, "keep"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sock := filepath.Join(shortTempDir(t), "rpc.sock")
+			tc.stage(t, sock)
+			stopPrints(t, sock, "none\n")
+			_, err := os.Lstat(sock)
+			if gone := os.IsNotExist(err); gone != tc.wantGone {
+				t.Errorf("after -stop: path gone = %v, want %v (Lstat err = %v)", gone, tc.wantGone, err)
+			}
+		})
+	}
+}
+
+// A live listener whose socket refuses the connect with EACCES (mode 0000) loses
+// its path, and -stop prints "none". Root ignores the mode. The connect then
+// succeeds, and the arm tests nothing.
+func TestRunStopUnlinksEACCESListenerPath(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses the socket mode, so the connect does not fail")
+	}
+	sock := filepath.Join(shortTempDir(t), "rpc.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	if err := os.Chmod(sock, 0); err != nil {
+		t.Fatal(err)
+	}
+	stopPrints(t, sock, "none\n")
+	if _, err := os.Lstat(sock); !os.IsNotExist(err) {
+		t.Errorf("EACCES listener path still present after -stop (Lstat err = %v)", err)
+	}
+}
+
+// A stale socket in a directory this user cannot write stays: the unlink fails
+// and -stop still prints "none". The reference case was a root-owned directory.
+// A 0555 directory gives the same EACCES without root.
+func TestRunStopKeepsSocketInUnwritableDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses the directory mode, so the unlink does not fail")
+	}
+	dir := filepath.Join(shortTempDir(t), "ro")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(dir, "rpc.sock")
+	stageStaleSocket(t, sock)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	stopPrints(t, sock, "none\n")
+	if _, err := os.Lstat(sock); err != nil {
+		t.Errorf("socket in an unwritable dir is gone after -stop (Lstat err = %v), want kept", err)
+	}
+}
+
+// A live listener that is NOT a claustrum daemon accepts the connect. -stop
+// prints "stopped" and leaves the path in place, so the listener stays reachable
+// by path. A pre-fix claustrum unlinked it (measured, 10/10), and the
+// references no longer do.
+func TestRunStopKeepsForeignListenerPath(t *testing.T) {
 	// The foreign listener accepts and never replies, so runStop also has to sit
 	// out its reply deadline. Shrink it so the test does not pay the full 2s.
 	old := stopReplyTimeout
@@ -102,62 +167,47 @@ func TestRunStopUnlinksForeignListenerPathAndLeavesItAlive(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ln.Close() })
 
-	accepted := make(chan net.Conn, 1)
+	accepted := make(chan net.Conn, 2)
 	go func() {
-		c, err := ln.Accept()
-		if err != nil {
-			return
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- c
 		}
-		accepted <- c
 	}()
 	t.Cleanup(func() {
-		select {
-		case c := <-accepted:
-			_ = c.Close()
-		default:
+		for {
+			select {
+			case c := <-accepted:
+				_ = c.Close()
+			default:
+				return
+			}
 		}
 	})
 
-	stopLeavesNoSocket(t, sock)
+	stopPrints(t, sock, "stopped\n")
 
 	select {
 	case c := <-accepted:
-		// Close it here rather than leaving it to the cleanup: the cleanup's
-		// non-blocking drain finds the channel empty once this case has taken
-		// the conn, so nothing else would ever close it.
 		_ = c.Close()
 	case <-time.After(5 * time.Second):
 		t.Fatal("the foreign listener never accepted -stop's connection")
 	}
 
-	// Now prove the listener SURVIVED, which is the over-correction guard.
-	//
-	// Neither obvious check does that. The accept above happened BEFORE the
-	// unlink, so it says nothing about the listener's state after it; and a fresh
-	// net.Listen on the same path succeeds purely because the path is free —
-	// equally true if runStop had torn the old listener down.
-	//
-	// The discriminator is what Accept does on a CLOSED listener: it returns
-	// net.ErrClosed immediately, where a live one blocks with nothing dialing it.
-	// So a short deadline separates the two — a timeout means alive.
-	if ul, ok := ln.(*net.UnixListener); ok {
-		if err := ul.SetDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
-			t.Fatalf("SetDeadline: %v", err)
-		}
-		_, err := ul.Accept()
-		if errors.Is(err, net.ErrClosed) {
-			t.Error("the foreign listener was closed by -stop; it must only lose its " +
-				"path, keeping its bound descriptor")
-		} else if !isTimeout(err) {
-			t.Errorf("Accept after the unlink = %v, want a timeout (proving the "+
-				"listener is still bound and waiting)", err)
-		}
+	// The path must still reach the same listener. A dial that the listener
+	// accepts proves both that the path exists and that it is still bound.
+	c, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatalf("dial by path after -stop: %v. The path must stay reachable", err)
 	}
-}
-
-// isTimeout reports whether err is a deadline expiry, which is the "listener is
-// alive and idle" signal above.
-func isTimeout(err error) bool {
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
+	_ = c.Close()
+	select {
+	case c := <-accepted:
+		_ = c.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("the listener did not accept the dial by path after -stop")
+	}
 }

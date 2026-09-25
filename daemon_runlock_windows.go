@@ -7,3 +7,7 @@ package main
 // handoff for mutual exclusion, where a second -serve leaves the incumbent alive.
 // claustrum matches by doing nothing here. The returned release func is a no-op.
 func claimRunDir(socket, role string) func() { return func() {} }
+
+// stopRunDirHolder is the -stop fallback after a failed connect. Windows has no
+// run-dir lock, so no daemon.lock can name a holder, and the word is always "none".
+func stopRunDirHolder(socket string) (string, func()) { return stopWordNone, func() {} }

@@ -242,10 +242,6 @@ func main() {
 			cliChecksum: *cliChecksum, cliZst: *cliZst, cliKeep: *cliKeep,
 		})
 		return
-	case *stop:
-		// Best-effort: a missing/unreachable daemon is silently a no-op (exit 0).
-		_ = runStop(resolveSocket())
-		return
 	case *bridge:
 		if err := runBridge(resolveSocket()); err != nil {
 			fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
@@ -272,6 +268,13 @@ func main() {
 			},
 			cfg.effectiveKeepChildren(*keepChildren, cliSet["keep-children"]),
 			cfg.effectiveListenPipe(*listenPipe, cliSet["listen-pipe"]))
+		return
+	case *stop:
+		// -stop comes after -bridge and -serve. With -stop -bridge the references
+		// run the bridge, and with -stop -serve they run serve (measured against
+		// f6010b97 and 90fca6e6 on a Linux VM). -stop prints one word and exits 0
+		// in every state that its words name (see bridge.go).
+		runStop(resolveSocket(), os.Stdout)
 		return
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required")

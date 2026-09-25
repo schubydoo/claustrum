@@ -226,7 +226,7 @@ func TestMainDispatch(t *testing.T) {
 		{"version", []string{"-version"}, false, 0},
 		// no cliDir/cliVersion: -install still prints its facts JSON and returns
 		{"install no cli work", []string{"-install"}, false, 0},
-		// a missing daemon is a silent no-op for -stop (exit 0 by returning)
+		// -stop exits 0 in every state: a missing daemon prints "none" and returns
 		{"stop missing daemon", []string{"-stop", "-socket", deadSock}, false, 0},
 		// -bridge to a dead socket is a hard error
 		{"bridge dead socket", []string{"-bridge", "-socket", deadSock}, true, 1},
@@ -242,6 +242,32 @@ func TestMainDispatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Mode precedence: -bridge and -serve win over -stop. With -stop -bridge the
+// references run the bridge, and with -stop -serve they run serve (measured
+// against f6010b97 and 90fca6e6 on a Linux VM). Each winner here exits 1, where
+// -stop returns (exit 0), so the exit tells the modes apart.
+//
+// SAFETY: every socket is in a temp dir. If -stop wins by mistake, it finds no
+// daemon there and prints "none". The -serve row takes the daemon-child path,
+// which exits 1 with no token source before it binds anything.
+func TestStopYieldsToBridgeAndServe(t *testing.T) {
+	deadSock := filepath.Join(t.TempDir(), "none.sock")
+	t.Run("stop+bridge runs the bridge", func(t *testing.T) {
+		code, exited := runMain(t, "-stop", "-bridge", "-socket", deadSock)
+		if !exited || code != 1 {
+			t.Errorf("-stop -bridge: exited=%v code=%d, want the bridge's dial failure (exit 1)", exited, code)
+		}
+	})
+	t.Run("stop+serve runs serve", func(t *testing.T) {
+		t.Setenv(daemonChildEnv, "1")
+		t.Setenv(tokenPipeEnv, "")
+		code, exited := runMain(t, "-stop", "-serve", "-socket", deadSock)
+		if !exited || code != 1 {
+			t.Errorf("-stop -serve: exited=%v code=%d, want serve's missing-token exit 1", exited, code)
+		}
+	})
 }
 
 // NOTE deliberately untested here: main's -bridge happy path (the lone

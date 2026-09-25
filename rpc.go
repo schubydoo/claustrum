@@ -106,8 +106,8 @@ const methodShutdown = "server.shutdown"
 // dispatch validates and routes one request and returns the response to send.
 // It can still return nil only under a handler panic (the recover in
 // handleRequest leaves resp nil for server.shutdown); every normal path,
-// server.shutdown included, returns a frame — {"ok":true} for shutdown (see
-// handleServer).
+// server.shutdown included, returns a frame: {"ok":true} for shutdown. That
+// frame races the teardown (see handleServer).
 // Stream-producing methods (process.*) use the conn to attach the client.
 func (s *server) dispatch(c *conn, raw []byte) *response {
 	req, resp := s.gate(raw)

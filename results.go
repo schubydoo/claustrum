@@ -68,11 +68,7 @@ type successResult struct {
 	Success bool `json:"success"`
 }
 
-// shutdownResult is server.shutdown's reply: {"ok":true}, and then the daemon
-// stops. The reference does not send this frame reliably, and a client usually reads
-// an EOF instead (measured on f6010b97 and 90fca6e6). The frame is not pinned by
-// any golden or the validation battery, because the battery shuts the daemon
-// down on a throwaway connection and never reads this reply.
+// shutdownResult is server.shutdown's reply. See the methodShutdown case in methods_server.go.
 type shutdownResult struct {
 	OK bool `json:"ok"`
 }

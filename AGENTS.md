@@ -154,7 +154,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
   caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
   The four paths above remain the only caller-supplied or operator-supplied
-  deletes.
+  recursive deletes.
 - Auth is in-band per request (`"auth":"<token>"`). The token of the daemon
   comes from `-token-file` or from `-token-fd`. With `-token-file` the daemon
   reads the file once and then unlinks it, so the token never lands in
