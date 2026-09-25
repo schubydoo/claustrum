@@ -109,7 +109,8 @@ func TestRunStopDiscardsTheReply(t *testing.T) {
 
 // TestRunBridgeRelays drives a request through the stdio<->socket relay: swap
 // os.Stdin/os.Stdout for pipes, write a ping, and read the daemon's reply back
-// out of stdout. Closing stdin ends the relay.
+// out of stdout. Closing stdin half-closes the socket. The daemon then closes
+// the connection, and that ends the relay.
 func TestRunBridgeRelays(t *testing.T) {
 	_, sock := newRunningServer(t)
 
@@ -151,11 +152,11 @@ func TestRunBridgeRelays(t *testing.T) {
 		t.Fatal("timed out waiting for the bridged reply")
 	}
 
-	_ = inW.Close() // EOF on stdin → the stdin->socket copy finishes → runBridge returns
+	_ = inW.Close() // stdin EOF → half-close → the daemon closes → runBridge returns
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Error("runBridge did not return after stdin closed")
+		t.Error("runBridge did not return after the daemon closed")
 	}
 	_ = outW.Close()
 }

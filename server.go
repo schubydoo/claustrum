@@ -877,10 +877,12 @@ func (s *server) acceptLoop(ln net.Listener) {
 // force a handler panic and prove the per-request recover keeps the daemon alive
 // (the panic path is otherwise unreachable, so it cannot be provoked by input).
 // Production never reassigns it.
-var dispatchRequest = func(s *server, c *conn, raw []byte) *response { return s.dispatch(c, raw) }
+var dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response { return s.route(c, req) }
 
 func (s *server) serveConn(c *conn) {
 	defer func() {
+		// Logged before the close, as the reference does (docs/PROTOCOL.md, Transport).
+		logInfof("[Server] Connection closed: %s", c.nc.RemoteAddr())
 		c.wmu.Lock()
 		c.closed = true
 		c.wmu.Unlock()
@@ -892,7 +894,6 @@ func (s *server) serveConn(c *conn) {
 		delete(s.conns, c)
 		s.mu.Unlock()
 		s.procs.detachConn(c)
-		logInfof("[Server] Connection closed: %s", c.nc.RemoteAddr())
 	}()
 
 	sc := bufio.NewScanner(c.nc)
@@ -913,23 +914,29 @@ func (s *server) serveConn(c *conn) {
 		// scheduling instead, which is exactly the property a capture is used to
 		// study (see the stdin-ticket note above).
 		c.wlog.record(c.id, "in", raw)
-		// Peek at the method while still in the read loop, so a stdin request can
-		// take its ticket in wire order before dispatch goes concurrent. A
-		// malformed line yields an empty method and is simply not ordered — it has
-		// no stdin payload to misplace.
-		var peek struct {
-			Method string      `json:"method"`
-			ID     interface{} `json:"id"`
+		// A line that fails the parse check or the auth check gets its reply
+		// here, on the read path, before the next read. A final newline does
+		// not change this. Measured against f6010b97 and 90fca6e6 on a Linux
+		// VM, the reference wrote these two error classes before it closed at
+		// a client half-close. It lost the reply for every later class there.
+		// Here every later class still goes to the concurrent dispatch below.
+		// At the idle close the connection is already closed, so this write
+		// fails and puts 0 bytes on the wire.
+		req, resp := s.gate(raw)
+		if resp != nil {
+			c.writeResponse(*resp)
+			continue
 		}
-		_ = json.Unmarshal(raw, &peek)
-		ordered := peek.Method == "process.stdin"
+		// Read the method here in the read loop, so a stdin request can take
+		// its ticket in wire order before dispatch goes concurrent.
+		ordered := req.Method == "process.stdin"
 		var ticket uint64
 		if ordered {
 			ticket = c.nextStdinTicket()
 		}
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
-		go s.handleRequest(c, raw, peek.Method, peek.ID, ordered, ticket)
+		go s.handleRequest(c, raw, req, ordered, ticket)
 	}
 
 	// The read loop also ends on a scanner error — a request line over the 1 MiB
@@ -954,9 +961,10 @@ func (s *server) serveConn(c *conn) {
 
 // handleRequest runs one connection request in its own goroutine: the
 // per-request panic recovery and, for process.stdin, the ordering ticket.
-// Extracted from serveConn's read loop so the loop reads as peek -> order ->
+// Extracted from serveConn's read loop so the loop reads as gate -> order ->
 // hand off; behavior is unchanged.
-func (s *server) handleRequest(c *conn, raw []byte, method string, id interface{}, ordered bool, ticket uint64) {
+func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, ticket uint64) {
+	method, id := req.Method, req.ID
 	// Per-request panic isolation: without this a panic in any handler
 	// crashes the whole daemon (an unrecovered panic in ANY goroutine takes
 	// the process down), orphaning managed children and leaving a stale
@@ -1015,7 +1023,7 @@ func (s *server) handleRequest(c *conn, raw []byte, method string, id interface{
 			c.awaitStdinTurn(ticket)
 			defer c.doneStdinTurn(ticket)
 		}
-		resp = dispatchRequest(s, c, raw)
+		resp = dispatchRequest(s, c, raw, req)
 	}()
 	if resp != nil {
 		c.writeResponse(*resp)

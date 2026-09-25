@@ -64,7 +64,7 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 	// not a happens-before edge). Which request panics is decided inside the
 	// replacement instead, so the second call needs no restore.
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte) *response {
+	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response {
 		if bytes.Contains(raw, []byte(`"id":7`)) {
 			panic("boom")
 		}
@@ -96,7 +96,7 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 // no reply and the daemon must still serve afterwards.
 func TestShutdownPanicWritesNoFrame(t *testing.T) {
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte) *response {
+	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response {
 		if bytes.Contains(raw, []byte(`"id":11`)) {
 			panic("boom")
 		}

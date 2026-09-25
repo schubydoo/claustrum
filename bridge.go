@@ -12,17 +12,39 @@ import (
 // stream it relays must already carry "auth" per request. This is what an SSH
 // session attaches to. A dial failure is a hard error (wrapped "dial server:",
 // matching the reference) — unlike best-effort -stop.
+//
+// At stdin EOF the bridge half-closes the socket. It keeps relaying the socket
+// to stdout. docs/PROTOCOL.md (-bridge) gives the exit rule.
+// Measured against f6010b97 and 90fca6e6 on Linux and Windows VMs, the
+// reference bridge got stdin `{"jsonrpc":"2.0","id":1,` then EOF. It put the
+// 76-byte -32700 frame on stdout and exited 0. Measured on a Linux VM, the
+// reference bridge also exited 0 with stdin still open once the daemon closed.
+// It printed the frames that arrived before the close.
 func runBridge(socket string) error {
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
 		return fmt.Errorf("dial server: %w", err)
 	}
 	defer nc.Close()
-	done := make(chan struct{}, 2)
-	go func() { _, _ = io.Copy(nc, os.Stdin); done <- struct{}{} }()
-	go func() { _, _ = io.Copy(os.Stdout, nc); done <- struct{}{} }()
-	<-done
+	// Read the globals once, here, so the copy goroutines never touch them.
+	in, out := os.Stdin, os.Stdout
+	go func() {
+		_, _ = io.Copy(nc, in)
+		closeWriteOrClose(nc)
+	}()
+	_, _ = io.Copy(out, nc)
 	return nil
+}
+
+// closeWriteOrClose ends the write side of nc so the daemon reads EOF, and
+// keeps the read side open for its last replies. If the half-close fails, it
+// closes nc fully. The daemon still reads EOF then, and the bridge exits on
+// the failed read, which is the behavior before the half-close.
+func closeWriteOrClose(nc net.Conn) {
+	if cw, ok := nc.(interface{ CloseWrite() error }); ok && cw.CloseWrite() == nil {
+		return
+	}
+	_ = nc.Close()
 }
 
 // runStop sends an unauthenticated server.shutdown RPC to a running daemon.
