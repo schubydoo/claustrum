@@ -34,70 +34,105 @@ func populateWorktree(repo, worktree string) {
 	copyClaudeDir(repo, worktree)
 }
 
-// copyWorktreeIncludes copies the untracked files 7d193f89 seeds a worktree with:
-// those that are BOTH named by the `.worktreeinclude` manifest AND ignored by the
-// repo's standard gitignore rules. The manifest is an include-filter over the
-// git-ignored set, not a copy list of its own — a manifest match that git does not
-// ignore is NOT copied (measured against 7d193f89; at 5db5e4a claustrum copied every
-// manifest match, which 7d193f89 dropped).
+// copyWorktreeIncludes copies the untracked files that the `.worktreeinclude`
+// manifest names AND the standard gitignore rules ignore. The manifest is an
+// include-filter over the git-ignored set, not a copy list of its own. A manifest
+// match that git does not ignore is NOT copied (measured against 7d193f89).
 //
 // `.claude/` is NOT part of this pass. It has its own, always-on pass with no
-// manifest involved: copyClaudeDir in worktreeclaude.go. An earlier version of this
-// comment said 7d193f89 had dropped that copy. It had not.
+// manifest involved: copyClaudeDir in worktreeclaude.go.
 //
-// The two sets are the intersection of two `git ls-files` views: the manifest
-// matches (--exclude-from) and the standard-ignored files (--exclude-standard).
+// The steps were measured against f6010b97 on a macOS VM. The version parse,
+// opening rules, counts, batches and error arms were re-checked on a Linux VM.
 //
-// NUL-delimited, with `-z` on both views. git C-quotes any path containing a tab,
-// a quote, a backslash or a non-ASCII byte, and the quoted display form names no
-// real file, so a line-delimited read silently drops it. The reference passes `-z`
-// and copies all four shapes, measured against 19f30c46 and 90fca6e6 alike (see
-// scratch/probe/worktreecopy_probe.py). An earlier comment here claimed the
-// opposite and called it probe-measured parity. It was not: 7d193f89 passes `-z`
-// too, so the claim was wrong when it was written.
+//   - The manifest must be a regular file at the repo root. A symlink or a
+//     directory copies nothing and runs no git. An empty regular file still
+//     runs `git version` and the scan, and it copies nothing.
+//   - `git version` selects the scan. Git 2.32.0 or later gets the new scan in
+//     worktreeinclude.go. Older git, output that does not parse, or a failed
+//     `git version` gets the old scan (oldWorktreeIncludeScan).
+//   - The new scan falls back to the old scan when the ignored files are too many.
 //
-// A runtime-state path under `.claude/` is skipped even when the manifest names
-// it, matching 90fca6e6. See isClaudeRuntimeState.
+// Both scans pass git a temp copy of the manifest bytes, not the manifest path.
+//
+// `-z` on every view. git C-quotes any path containing a tab, a quote, a
+// backslash or a non-ASCII byte. The quoted form names no real file, so a
+// line-delimited read drops it. The reference copies all four shapes (measured
+// against 19f30c46 and 90fca6e6).
+//
+// stdout ONLY, for the same reason as gitListBranches: this splits the result
+// into paths, so a warning on stderr becomes a bogus path.
+//
+// ⚠️ An OPTED-IN gitTimeout (D5) kills any of these calls, and the failure is
+// silent. The copy loses what that call gives it, and gitWorktreeCreate still
+// answers {"success":true}. D5 is off by default.
 func copyWorktreeIncludes(repo, worktree string) {
-	if _, err := os.Stat(filepath.Join(repo, worktreeIncludeFile)); err != nil {
+	manifest, ok := readWorktreeInclude(repo)
+	if !ok {
 		return
 	}
-	// stdout ONLY, for the same reason as gitListBranches: this splits the result
-	// into paths, so a warning on stderr becomes a bogus path.
-	//
-	// ⚠️ An OPTED-IN gitTimeout (D5) kills either call, and the failure is silent:
-	// an early return skips the copy while gitWorktreeCreate still answers
-	// {"success":true}. Off by default since D5's flip, which is why it is not
-	// reachable today.
-	manifest, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
-		"--exclude-from="+worktreeIncludeFile, "-z")
-	if err != nil || manifest == "" {
-		return
-	}
-	// The git-ignored set uses the worktree profile so --exclude-standard honours the
-	// user's global excludes (~/.config/git/ignore), matching 7d193f89 — a file
-	// ignored only by the user's global config is copied when the manifest names it.
-	ignored, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
-		"--exclude-standard", "-z")
+	tmp, err := os.CreateTemp("", includeTempPrefix+"*")
 	if err != nil {
 		return
 	}
-	ignoredSet := make(map[string]struct{})
-	for _, rel := range strings.Split(ignored, "\x00") {
-		if rel != "" {
-			ignoredSet[rel] = struct{}{}
-		}
+	defer os.Remove(tmp.Name())
+	_, werr := tmp.Write(manifest)
+	if cerr := tmp.Close(); werr != nil || cerr != nil {
+		return
 	}
-	for _, rel := range strings.Split(manifest, "\x00") {
-		if rel == "" || isClaudeRuntimeState(rel) {
+
+	var paths []string
+	fallback := true
+	if gitSelectsIncludeScan() {
+		paths, fallback = scanWorktreeIncludes(repo, tmp.Name(), manifest)
+	}
+	if fallback {
+		paths = oldWorktreeIncludeScan(repo, tmp.Name())
+	}
+	for _, rel := range paths {
+		// A path with a trailing `/` is a nested repository. git lists it as one
+		// entry. The reference creates nothing for it, so neither does claustrum.
+		// A runtime-state path under `.claude/` is skipped even when the manifest
+		// names it, matching 90fca6e6. See isClaudeRuntimeState.
+		if strings.HasSuffix(rel, "/") || isClaudeRuntimeState(rel) {
 			continue
 		}
-		if _, ok := ignoredSet[rel]; ok {
-			if dst := safeOverlayDest(worktree, rel); dst != "" {
-				copyFile(filepath.Join(repo, rel), dst)
-			}
+		if dst := safeOverlayDest(worktree, rel); dst != "" {
+			copyFile(filepath.Join(repo, rel), dst)
 		}
 	}
+}
+
+// readWorktreeInclude reads the manifest from the working tree. It does not
+// follow a symlink: both references copy nothing for a symlinked manifest. An
+// empty regular file is a manifest. f6010b97 still runs the scan for it.
+func readWorktreeInclude(repo string) ([]byte, bool) {
+	path := filepath.Join(repo, worktreeIncludeFile)
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return nil, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
+// oldWorktreeIncludeScan is the old scan. f6010b97 runs it for git below 2.32.0
+// and for the fallback. `git ls-files` lists the ignored files that the manifest
+// names, and `git check-ignore` keeps the ones that the standard ignore rules
+// match. The check honours the user's global excludes, so a file ignored only by
+// ~/.config/git/ignore is copied when the manifest names it. If either call
+// fails, nothing is copied.
+func oldWorktreeIncludeScan(repo, excludeFile string) []string {
+	named, err := hardenedGitStdout(repo, false, "--no-literal-pathspecs", "ls-files", "--others",
+		"--ignored", "--exclude-from="+excludeFile, "-z", "--", ":(exclude)"+claudeDirName+"/"+worktreesSubdir)
+	if err != nil || named == "" {
+		return nil
+	}
+	paths, _ := checkIgnored(repo, splitNUL(named))
+	return paths
 }
 
 // safeOverlayDest resolves the destination for a manifest-copied file inside the

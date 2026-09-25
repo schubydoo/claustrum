@@ -1137,14 +1137,137 @@ failure never fails the request. A caller `timeoutMs` that expires before the
 copies end still fails it, as `timeoutMs` above describes:
 - `.worktreeinclude` sits at the repo root and uses `.gitignore` syntax. It is an
   include filter over the git-ignored set. The daemon copies an untracked file only
-  when the manifest names it and git's standard rules ignore it. That is the
-  intersection of `git ls-files --others --ignored --exclude-from=.worktreeinclude`
-  and `git ls-files --others --ignored --exclude-standard`. A manifest match that
-  git does not ignore is not copied. Without the manifest the daemon copies no
-  untracked manifest file.
+  when the manifest names it and git's standard rules ignore it. A manifest match
+  that git does not ignore is not copied. The manifest must be a regular file. A
+  symlink or a directory copies nothing and runs no git. An empty regular file
+  still runs `git version` and the scan, and it copies nothing. git reads a temp
+  copy of the manifest bytes. The rules in this bullet and the next three were
+  measured against `f6010b97` on a macOS VM, except the rows named below. A
+  Linux VM re-checked the version parse, opening rules, counts, batches and
+  error arms. A Windows VM measured the Windows batch budget. The prefix rule
+  for one glob segment, with its case folding, was measured on Linux, macOS and
+  Windows VMs. So was the literal form after a leading `/`. Linux and Windows
+  VMs measured the glob after a leading `/`.
+  They also measured `build//`, `build//a.txt`, `BUILD//` and a lone `\` that
+  ends the first segment. The other `//` and `\` rows were measured on a Linux
+  VM only.
+- If the manifest is a regular file, the daemon runs `git version`. The call has no `-c`
+  option and no `-C`. It runs in the daemon's working directory, with the
+  daemon's environment unchanged. The first `git version ` in the output counts,
+  even after other text. A digit must follow it. Git 2.32.0 or later gets the
+  directory scan. Older git gets the full scan, and so does output that does not
+  parse. A non-zero exit also gets the full scan, even with valid output. Major
+  and minor compare as numbers. A number too large for an int counts as very
+  large. Text after the numbers is ignored, so `2.32.0.windows.1` gets the
+  directory scan.
+- The full scan runs
+  `git ls-files --others --ignored --exclude-from=<manifest copy> -z -- ':(exclude).claude/worktrees'`.
+  `git check-ignore --stdin -z` then keeps the paths that git's standard rules
+  ignore. If either call fails, nothing is copied. The full scan searches every
+  ignored directory.
+- The directory scan first lists the ignored entries with
+  `git ls-files --others --ignored --exclude-standard --directory`. If the listing
+  fails, nothing is copied. Every ignored file in the listing is a candidate. An
+  ignored directory is searched only when the manifest opens it. An any-depth
+  pattern therefore does not reach a file in a closed directory: `*.txt` does not
+  copy `build/a.txt` when git ignores `build/`. The opening rules follow:
+  - A literal name of one segment opens each listed directory that has the name
+    as any of its segments. `build` opens `build`, `sub/build` and `build/x`. So
+    does `**/` and then one literal. Case does not matter.
+  - One segment after a leading `/` opens each listed directory whose first
+    segment matches it as a glob. `/build/` opens `build`, not `sub/build`.
+    `/a?b/` opens `aXb` and `a_b`, not `ab`. The prefix rule does not apply
+    here. A `\` escapes the next character, so `/ab\q/` opens nothing. Case
+    does not matter.
+  - One glob segment without a leading `/` opens by its literal prefix. A glob
+    segment holds `*`, `?`, `[` or `\`. The prefix ends before the first of
+    these characters. The segment opens each listed directory whose path starts
+    with the prefix. The rest of the segment is not used. Case does not matter.
+  - So `b*` opens `build`, not `sub/build`. `su*` opens `sub/build`.
+    `a?b/` and `a[_]b/` open `ab`, `a b` and `a/c`. `sub\build/` opens `sub`,
+    `sub/build` and `subbuild`. `AB\q/` opens `ab`.
+  - `**/` and then a literal and more segments matches the rest of the pattern
+    from any segment of a listed directory. `**/sub/build/` opens `sub/build`.
+  - A pattern of two or more segments opens each listed directory that it matches
+    segment by segment, and the listed parents of that directory.
+  - In such a pattern, a segment that ends in a lone `\` matches any name. So
+    `sub\/x/` opens each listed directory of one segment and each listed
+    `<name>/x`. Git reads that line as `sub/x/`. This holds for the first, a
+    middle and the last segment. An even run of `\` at the end of a segment is
+    a literal `\`, so `zz\\/x/` opens only `zz\/x`. A run of three acts like a
+    run of one. Directly after `**/`, such a segment opens nothing.
+  - A `//` in a pattern leaves an empty segment. `build//`, `build//a.txt` and
+    `BUILD//` open `build`, not `sub/build` or `a/x/build`. `build//` alone
+    opens no dot directory. The empty segment matches no name, so `//x` opens
+    nothing and `a//b` opens only a listed `a`.
+  - One segment without a leading `/` that starts with `*`, `?`, `[` or `\` has
+    an empty prefix. It opens no directory. Neither does `**/` and then a glob. A negation and a
+    comment open nothing too.
+  - Git's own match still reads a `\` as an escape. The manifest goes to git
+    unchanged. So `a\ b/` opens `ab`, but git copies from `ab` only the files
+    that another manifest line matches. Git does not read `\` as a separator.
+  - In a pattern of two or more segments, a `\` does not cut a prefix.
+    `sub/b\q/` opens only `sub`.
+  - Only the first 256 counted patterns can open a directory. A negation counts.
+    Blank lines, comments and patterns over a cap do not count. A line of only
+    tabs and spaces is blank. So is a line that is empty after one leading and one
+    trailing `/` are removed, such as `//`.
+  - A pattern opens nothing if it has more than 1024 bytes after one leading and
+    one trailing `/` are removed. It also opens nothing if it has more than 32
+    segments.
+  - An any-depth pattern also opens the listed dot directories. A pattern of one
+    segment is any-depth, unless it starts with `/`. A pattern that starts with
+    `**/` is any-depth too. The 256 count does not apply to this. At most 128 dot
+    directories open, in listing order. The root `.claude/` takes a place unless
+    an explicit pattern matches it. The flag never opens these 14 names, in any case. They
+    take no place: `.angular`, `.cache`, `.dart_tool`, `.gradle`, `.next`,
+    `.nuxt`, `.parcel-cache`, `.pnpm-store`, `.svelte-kit`, `.terraform`, `.tox`,
+    `.turbo`, `.venv` and `.yarn`. An explicit pattern still opens a skipped
+    directory, or one past the 128th. A dot directory that an explicit pattern
+    matches takes no place. The root `.claude/` and `.claude/worktrees/` never
+    open, even when a pattern names them.
+  - The candidates go to `git ls-files --exclude-from=<manifest copy>` in batches.
+    Files and directories never share a batch. A directory pathspec has no
+    trailing `/`. A batch fills in listing order. When the next path does not
+    fit, a new batch starts. Each argument after the `-c` options costs its
+    length plus 3 bytes. That covers the fixed `ls-files` arguments, the
+    `--exclude-from` argument and the paths. One call costs at most 131 072
+    bytes on Linux and macOS, and at most 24 576 bytes on Windows. The `.claude/`
+    pass below uses the same budget. Each value is a fit to the measured batch
+    counts. It is not a value read from the reference. The `-c` options do not
+    count in claustrum. Whether `f6010b97` counts them was not measured. On Linux and macOS, every value from 131 070 to
+    131 073 fits the directory batches. On Windows, a one-byte bisection pins
+    24 576 from both sides. On a Windows VM, a command line of 32 412 characters started, and
+    one of 36 012 characters did not. The temp file name starts with a 27-byte
+    prefix, the same length as in the measured `f6010b97` argv. A random
+    decimal suffix follows it. The measured suffix had 8 to 10 digits in both
+    daemons.
+    A failed batch is skipped, and the other batches are still copied.
+  - Only the paths from the directory batches go to `git check-ignore --stdin -z`.
+    It keeps the paths that git's standard rules ignore. The file candidates are
+    copied without it. If it fails, the directory paths are dropped, and the file
+    candidates are still copied.
+  - If the ignored files of the listing total more than 1 MiB, the full scan runs
+    instead. Each file counts as its path length plus 3 bytes.
+- A nested repository inside an ignored directory is not copied, and no empty
+  directory is left for it.
 - `.claude/` is copied separately, with no manifest entry. A second pass runs
-  `git ls-files --others --ignored --exclude-standard -z -- .claude/` and copies
-  what it lists, minus the exclusions in the bullets below. A `.claude/` the repo
+  `git --literal-pathspecs ls-files --others --ignored --exclude-standard -z --`
+  with one pathspec for each child of `.claude/`, such as `.claude/settings.json`.
+  It leaves out `worktrees` in any case. If no other child exists, the pass runs
+  no git. `f6010b97` names the same children on Linux, macOS and Windows VMs. The
+  case rule was measured on Linux only. The pathspecs go into batches in the
+  order of the directory read, one git call for each batch. The budget is the
+  budget of the directory batches above. The fixed arguments cost 87 bytes. So
+  the pathspecs of one call cost at most 130 985 bytes on Linux and macOS, and
+  at most 24 489 bytes on Windows. A Linux VM and a Windows VM measured these
+  split points to the byte against `f6010b97`. The largest rows had 2 400
+  children on Windows and 30 000 on Linux. On
+  macOS the `.claude/` batches were not measured. Before each batch, the daemon
+  runs `git config -z --list --name-only`, as it does before every hardened
+  call. `f6010b97` also makes that call before each batch. A failed batch is
+  skipped, and the other batches still copy. The pass copies what git lists, minus
+  the exclusions in the bullets below. A `.claude/` the repo
   git-ignores is therefore seeded into the new worktree. A `.claude/` that is
   merely untracked is not, because that view cannot see it. `.claude/worktrees/` is
   always skipped, because that is where session worktrees live. The listing is
@@ -1174,12 +1297,15 @@ copies end still fails it, as `timeoutMs` above describes:
   same is unmeasured. No probe behind this section has a symlinked-intermediate
   fixture. Treat it as claustrum hardening, not parity. A `..` component cannot
   occur, because `git ls-files` never prints one.
-- An opted-in `-git-timeout` (D5) that kills a `git ls-files` loses that pass. The
-  reply is still `{"success":true}`, so the loss is silent and wire-invisible. Each
-  pass has its own deadline, so the manifest copy can succeed while the `.claude/`
-  copy is lost, or the other way round. The `.claude/` pass has no manifest
-  precondition, so it runs on every create, unlike the manifest pass. The loss
-  itself still needs a listing slower than the deadline. This is off by default.
+- An opted-in `-git-timeout` (D5) that kills a git call loses what that call
+  gives the pass. A killed listing loses the pass, and a killed batch loses that
+  batch. A killed `git check-ignore` loses the whole full scan, or the directory
+  paths of the directory scan. A killed `git version` selects the full scan.
+  The reply is still `{"success":true}`, so the loss is silent and
+  wire-invisible. Each git call has its own deadline, so the manifest copy can
+  succeed while `.claude/` files are lost, or the other way round. The `.claude/` pass has no manifest
+  precondition. It runs git on every create where `.claude/` holds a child other
+  than `worktrees`. This is off by default.
 
 #### git.worktree_remove
 `{baseRepo,worktreePath[,branchName][,worktreeRoot]}` → `{"success":true}` (lenient)

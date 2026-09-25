@@ -269,8 +269,8 @@ traps that matter for telling drift from expected:
   `4534d86` (`scratch/probe/wt-success-lingering-4534d86.md`). It gates success
   against `errorCode:"timeout"`+rollback on the caller `timeoutMs`. The off default
   (no `timeoutMs`, D5 off) is unbounded on every path, matching the reference.
-- D5 has a wire-invisible arm. When the deadline kills `git ls-files`,
-  `git.worktree_create` still answers `{"success":true}`, and the seeded files are
+- D5 has a wire-invisible arm. When the deadline kills `git ls-files` or
+  `git check-ignore`, `git.worktree_create` still answers `{"success":true}`, and the seeded files are
   absent. That covers both passes: the `.worktreeinclude` manifest copy and the
   `.claude/` copy. Nothing on the wire says so, so a clean frame diff does not
   cover it. A D5 kill of any `sourceBranch` step can change the start commit.

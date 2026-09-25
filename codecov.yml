@@ -133,6 +133,11 @@ component_management:
         - methods_git.go
         - methods_process.go
         - worktreecopy.go
+        # The .worktreeinclude directory scan: version gate, opening rules, caps.
+        - worktreeinclude.go
+        # Its per-OS batch budget and backslash rule.
+        - worktreeinclude_unix.go
+        - worktreeinclude_windows.go
         # `.claude/` seeding of a new worktree and the runtime-state skip.
         - worktreeclaude.go
         # git.worktree_* machinery (containment, external roots, staleness, verify,
