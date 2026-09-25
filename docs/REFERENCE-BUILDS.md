@@ -323,8 +323,8 @@ and non-locked-worktree fixtures did not exercise them.
   `{"success":false,"error":"refusing to remove worktree: <p> is locked (git worktree
   lock); unlock it to remove it"}` (message fixed regardless of the lock reason) and
   the directory survives. Pre-`7d193f89` the reference DELETED it via the recursive
-  fallback and answered `{"success":true}`. Any OTHER non-zero git exit (an ordinary
-  directory, a non-repo `baseRepo`) still reaches that fallback. Measured on an
+  fallback and answered `{"success":true}`. Any OTHER non-zero git exit (for example
+  an ordinary directory) still reaches that fallback. Measured on an
   ephemeral VM against `7d193f89`. The frame battery never removes a locked worktree.
 - `git.worktree_remove` registration prune. A completed removal drops
   `$GIT_DIR/worktrees/<name>`, so a re-create at the same path succeeds where it

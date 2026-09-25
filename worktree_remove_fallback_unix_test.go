@@ -319,10 +319,11 @@ var errRe = regexp.MustCompile(
 func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 	bin := t.TempDir()
 	// Sleep on every git command EXCEPT the hook-config enumeration 7d193f89 runs
-	// before each one (`git config …`), which must succeed fast, else the
-	// hostile-config gate would time out before the removal under test.
+	// before each one (`git config …`) and the repository check before a remove
+	// (`git rev-parse …`), which must succeed fast, else those gates would time
+	// out before the removal under test.
 	if err := os.WriteFile(filepath.Join(bin, "git"),
-		[]byte("#!/bin/sh\ncase \"$*\" in *config*) exit 0 ;; *) exec sleep 30 ;; esac\n"), 0o755); err != nil {
+		[]byte("#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in config|rev-parse) exit 0 ;; esac; done\nexec sleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -362,5 +363,50 @@ func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 	}
 	if !strings.Contains(raw, "no cleanup was attempted") {
 		t.Errorf("reply = %s, want it to say what the daemon actually knows", raw)
+	}
+}
+
+// A D5 (git-timeout) kill of the repository check before a remove reads as "no
+// repository": the reply is the lock-check refusal, nothing is deleted, and no
+// further git command runs.
+func TestWorktreeRemoveRepositoryCheckTimeoutRefuses(t *testing.T) {
+	bin := t.TempDir()
+	ran := filepath.Join(bin, "ran")
+	// The config enumeration answers fast, the repository check sleeps past the
+	// bound, and any other git command leaves a marker file.
+	script := "#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in config) exit 0 ;; rev-parse) exec sleep 30 ;; esac; done\n" +
+		"echo \"$*\" >> '" + ran + "'\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	old := gitTimeout
+	gitTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { gitTimeout = old })
+
+	base := t.TempDir()
+	target := filepath.Join(base, ".claude", "worktrees", "s0")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(target, "KEEP.txt")
+	if err := os.WriteFile(keep, []byte("must survive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newTestServer(t)
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": base, "worktreePath": target}))
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+		`"failed to remove worktree: could not check whether ` + jsonEscape(t, target) +
+		` is locked (its registrations could not be examined); retry"}}`
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("worktreePath was deleted: %v", err)
+	}
+	if b, err := os.ReadFile(ran); err == nil {
+		t.Errorf("git ran after the killed repository check: %s", b)
 	}
 }
