@@ -530,7 +530,7 @@ func (p *managedProc) emit(f streamFrame) {
 // spawn starts a child process in its own process group and begins streaming. It
 // returns the managedProc so the caller can read its (immutable) pid/startTime
 // for the CT-1 opt-in; the wire reply is otherwise unaffected.
-func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string) (*managedProc, error) {
+func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool) (*managedProc, error) {
 	// Read the drain cap ONCE, here in the caller's goroutine, rather than from
 	// inside the exit waiter. The waiter outlives the request — and outlives the
 	// test that spawned it — so reading the package var there races any later
@@ -571,6 +571,9 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		cmd.Dir = cwd
 	}
 	cmd.Env = buildEnv(env)
+	// After the caller's env and before the trampoline adds its markers, so an
+	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
+	cmd.Env = addShellAgentSocket(cmd.Env, noShellAgent)
 	cmd.SysProcAttr = newSysProcAttr()
 	// Under a run/<clientId>/ socket, launch through the exec-child trampoline so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and

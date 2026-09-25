@@ -22,7 +22,7 @@ func TestReattachTransfersTheFrameStream(t *testing.T) {
 	// fixtures to come from the test binary, and a /bin/sh fixture cannot run on
 	// the Windows CI leg at all.
 	exe, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(old, "xfer", exe, []string{"30"}, "", env); err != nil {
+	if _, err := m.spawn(old, "xfer", exe, []string{"30"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	p := m.get("xfer")

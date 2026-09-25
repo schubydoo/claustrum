@@ -247,6 +247,9 @@ component_management:
         - shellenv.go
         - shellenv_unix.go
         - shellenv_windows.go
+        - shellagent.go
+        - shellagent_unix.go
+        - shellagent_windows.go
     - component_id: observability
       name: logging, metrics & wire log
       paths:

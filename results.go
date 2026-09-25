@@ -24,12 +24,9 @@ type capabilitiesResult struct {
 	// keeps a zero-value test struct byte-identical to the pre-4534d86 shape).
 	InstanceID string `json:"instanceId,omitempty"`
 	StartedAt  int64  `json:"startedAt,omitempty"`
-	// Features advertises optional protocol extensions the client may rely on.
-	// process.stdin.offset landed in 7c2f88d; 7d193f89 added git.status.baseRepo and
-	// git.worktree.external_root — the last omitted on Windows, where the reference
-	// gates the external-worktree capability off (see capabilityFeatures). 4534d86
-	// appended server.instance_id (always last, every OS). The array field itself is
-	// always present (never omitempty) — emitted on every OS.
+	// Features advertises optional protocol extensions the client may rely on. The
+	// list, its order and its per-OS history live with capabilityFeatures. The array
+	// field itself is always present (never omitempty), on every OS.
 	Features []string `json:"features"`
 }
 

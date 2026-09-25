@@ -73,10 +73,8 @@ holds both can do whatever the daemon's user can.
 - The local `-cli-zst` (SFTP) blob is checksum-verified only with a supplied
   `-cli-checksum`. Without one, the blob is trusted. This is an intentional
   conditional divergence, D1. See [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md).
-- In `-serve` mode the daemon makes no outbound network connections. Its only dial
-  is the orphan-exit loopback self-probe. That probe is a connection to the
-  daemon's own `AF_UNIX` socket, and it tests whether a successor took the path
-  over (`orphanexit.go`). It is never network egress.
+- In `-serve` mode the daemon makes no outbound network connections. Every dial
+  it makes is to a local `AF_UNIX` socket.
 
 ### Caller-supplied paths
 

@@ -194,10 +194,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `dispatchRequest` seam.
 - `-serve` makes no outbound network connections. `-install` reaches the network
   only with `-cli-url`. That download path verifies its SHA-256 before it
-  extracts, unconditionally. The one dial `-serve` makes is the orphan-exit
-  self-probe. It is a loopback to the OWN `AF_UNIX` socket of the daemon. It
-  tests whether a successor took the path over (`orphanexit.go`). It is never
-  network egress.
+  extracts, unconditionally. Every dial `-serve` makes is to a local `AF_UNIX`
+  socket, never network egress.
 - `-cli-probe-timeout` and `-libc-probe-timeout` are a swap footgun. The two
   names differ only in their `cli`/`libc` prefix, they have the same type, and
   the `-install` arm of main resolves them in consecutive statements. A swap

@@ -31,7 +31,7 @@ func TestStopChildrenKeepsChildAlive(t *testing.T) {
 	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(c, "keep", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c, "keep", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	pid := m.get("keep").pid
@@ -62,7 +62,7 @@ func TestStopChildrenKillsChildByDefault(t *testing.T) {
 	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(c, "kill", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c, "kill", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	pid := m.get("kill").pid
