@@ -10,4 +10,4 @@ func claimRunDir(socket, role string) func() { return func() {} }
 
 // stopRunDirHolder is the -stop fallback after a failed connect. Windows has no
 // run-dir lock, so no daemon.lock can name a holder, and the word is always "none".
-func stopRunDirHolder(socket string) string { return stopWordNone }
+func stopRunDirHolder(socket string) (string, func()) { return stopWordNone, func() {} }

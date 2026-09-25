@@ -97,11 +97,13 @@ func runStop(socket string, stdout io.Writer) {
 func stopDaemon(socket string) string {
 	nc, err := net.Dial("unix", socket)
 	if err != nil {
-		word := stopRunDirHolder(socket)
+		// Remove while the lock is still held, then release it (see stopRunDirHolder).
+		word, release := stopRunDirHolder(socket)
 		if word != stopWordSurvivor {
 			_ = os.Remove(socket)
 			_ = os.Remove(filepath.Join(persistTokenDir(socket), persistedTokenName))
 		}
+		release()
 		return word
 	}
 	defer nc.Close()

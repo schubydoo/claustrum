@@ -283,47 +283,62 @@ var stopKillGrace = 1500 * time.Millisecond
 // -stop opens daemon.lock without O_CREAT, so it never creates the file. It never
 // writes an owner record into it. The references also never create or remove it,
 // and write no record into it.
-func stopRunDirHolder(socket string) string {
+//
+// The returned release func closes the lock fd. The caller removes the socket and
+// daemon.token first and calls release after, so a free lock stays held across
+// the removals. A new -serve takes the lock before it binds, so it cannot bind a
+// socket that -stop then removes. Measured with strace on a Linux VM, the
+// reference takes the lock and removes both files before it writes its word.
+func stopRunDirHolder(socket string) (string, func()) {
+	word, fd := stopRunDirHolderFD(socket)
+	if fd < 0 {
+		return word, func() {}
+	}
+	return word, func() { _ = syscall.Close(fd) }
+}
+
+// stopRunDirHolderFD does the work of stopRunDirHolder. It returns the open lock
+// fd, or -1 when daemon.lock could not be opened.
+func stopRunDirHolderFD(socket string) (string, int) {
 	path := filepath.Join(filepath.Dir(socket), runDirLockName)
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return stopWordNone
+		return stopWordNone, -1
 	}
-	defer func() { _ = syscall.Close(fd) }()
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != syscall.EWOULDBLOCK {
 		// Free (this process now holds it until the deferred close), or flock is
 		// not supported here. No live daemon can be named either way.
-		return stopWordNone
+		return stopWordNone, fd
 	}
 	holder, err := readOwnerRecord(path)
 	if err != nil || holderSignalRefusal(holder, socket) != "" {
 		logWarnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, selfBase(), socket)
-		return stopWordSurvivor
+		return stopWordSurvivor, fd
 	}
 	logInfof("[daemon] stop: run dir is held by a live daemon, pid %d (instance %q); sending SIGTERM", holder.Pid, holder.InstanceID)
 	if !signalHolder(holder.Pid, syscall.SIGTERM) && !holderGone(holder.Pid) {
 		// The holder is present but SIGTERM did not reach it. -stop leaves it.
-		return stopWordSurvivor
+		return stopWordSurvivor, fd
 	}
 	if waitLockFree(fd, stopTermGrace) {
 		logInfof("[daemon] stop: previous daemon pid %d (instance %q) exited after SIGTERM", holder.Pid, holder.InstanceID)
-		return stopWordTerminated
+		return stopWordTerminated, fd
 	}
 	// Check the holder again before SIGKILL, as the serve eviction does. If its pid
 	// now names another process, a SIGKILL hits that process instead.
 	if reason := holderSignalRefusal(holder, socket); reason != "" {
 		logWarnf("[daemon] stop: pid %d is no longer our serve holder before SIGKILL (%s); leaving it alone", holder.Pid, reason)
-		return stopWordSurvivor
+		return stopWordSurvivor, fd
 	}
 	logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", holder.Pid, holder.InstanceID, stopTermGrace)
 	if !signalHolder(holder.Pid, syscall.SIGKILL) && !holderGone(holder.Pid) {
-		return stopWordSurvivor
+		return stopWordSurvivor, fd
 	}
 	if !waitLockFree(fd, stopKillGrace) {
 		logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) survived SIGKILL (uninterruptible?); proceeding without run-dir ownership", holder.Pid, holder.InstanceID)
-		return stopWordSurvivor
+		return stopWordSurvivor, fd
 	}
-	return stopWordKilled
+	return stopWordKilled, fd
 }
 
 // waitLockFree polls the flock on fd every runDirPollInterval until it is taken or

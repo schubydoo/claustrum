@@ -324,3 +324,30 @@ func TestStopRunDirHolderUndeliverableArms(t *testing.T) {
 		})
 	}
 }
+
+// A free lock stays held by -stop until release runs, so the removals of the
+// socket and daemon.token happen under the lock. A -serve that starts meanwhile
+// cannot take the lock, so it cannot bind a socket that -stop then removes.
+func TestStopHoldsFreeLockUntilRelease(t *testing.T) {
+	dir := shortTempDir(t)
+	lock := filepath.Join(dir, runDirLockName)
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	word, release := stopRunDirHolder(filepath.Join(dir, "rpc.sock"))
+	if word != stopWordNone {
+		t.Fatalf("word = %q, want %q for a free lock", word, stopWordNone)
+	}
+	other, err := syscall.Open(lock, syscall.O_RDWR|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = syscall.Close(other) }()
+	if err := syscall.Flock(other, syscall.LOCK_EX|syscall.LOCK_NB); err != syscall.EWOULDBLOCK {
+		t.Fatalf("before release another fd took the lock (err %v): -stop does not hold it across the removals", err)
+	}
+	release()
+	if err := syscall.Flock(other, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatalf("after release the lock is still held: %v", err)
+	}
+}
