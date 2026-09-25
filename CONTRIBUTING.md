@@ -71,7 +71,7 @@ in-progress commit, run `git commit --no-verify`.
 
   ```sh
   pip install uv
-  uv pip compile --generate-hashes docs/requirements.in -o docs/requirements.txt
+  uv pip compile --generate-hashes docs/requirements.in --output-file=docs/requirements.txt
   ```
 - Conventional Commits. PR titles follow
   [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`,
