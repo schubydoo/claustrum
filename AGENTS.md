@@ -182,7 +182,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
   holder-verification that claustrum applies to the lock is a hardening
   divergence (D15). See [`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Token
   persistence / Run-dir lock.
-- The requests of one connection dispatch concurrently. Replies can return out
+- The requests of one connection dispatch concurrently. Parse and auth errors
+  are the exception: the read loop writes them
+  ([`docs/PROTOCOL.md`](docs/PROTOCOL.md) → Transport). Replies can return out
   of order, which matches the reference. Do not serialize them. The per-request
   goroutine recovers from panics. It replies with
   `-32603 "recovered panic: <v>"`. For `server.shutdown` it writes no frame at

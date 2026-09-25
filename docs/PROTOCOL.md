@@ -18,6 +18,67 @@ rules, and the reopen triggers are in [`DIVERGENCES.md`](DIVERGENCES.md).
   stream notifications arrive on it asynchronously.
 - The daemon dispatches a connection's requests concurrently. Responses can
   arrive out of request order. Match them by `id`.
+- Two error replies skip the concurrent dispatch: the parse error (`-32700`)
+  and the auth error (`-32001`). The daemon writes them on its read path,
+  before it reads the next line. Every other reply goes through the
+  concurrent dispatch. Measured against `f6010b97` and `90fca6e6` on a Linux
+  VM, the reference did the same:
+  - The parse error covers any line that does not decode into a request. A
+    partial object, a line of only spaces, `[1]`, `123`, `"x"` and a batch
+    array all get it. The frame is
+    `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}`,
+    76 bytes with its newline.
+  - The auth error covers a request with a missing or wrong `auth`. The
+    lines `null`, `{}` and `{"jsonrpc":"2.0"}` get it too. The frame echoes
+    the request `id`, re-encoded as in [Message shapes](#message-shapes). A
+    `null` or missing `id` gives `"id":null`. An unauthenticated
+    `server.shutdown` is not an auth error (see
+    [Authentication](#authentication)).
+  - The client can half-close its write side right after the line. These two
+    frames still reach the wire before the close, with or without a final
+    newline. A reply from the concurrent dispatch races the close.
+  - A request whose handler blocks does not delay a later auth error on the
+    same connection.
+  - The daemon logs `[Server] Parse error: <json error>` or
+    `[Server] Unauthorized request: method=…, id=…` before it writes the error
+    reply. Measured against `f6010b97` and `90fca6e6` on a Linux VM, the
+    reference logged the same parse-error text. When its reply write failed,
+    the failure line came after the parse-error line. In a Go type-mismatch
+    error, the type name differs from the reference.
+  - At a client EOF the daemon logs `[Server] Connection closed: <addr>`, then
+    closes the socket. Measured with strace on a Linux VM, `f6010b97`,
+    `90fca6e6` and claustrum all log this line before the close, in 20 of 20
+    runs each.
+  - The daemon does not wait for a request in flight when the client
+    half-closes. The probe sent a `files.read` of a pipe that returned data
+    after 100 ms, 500 ms or 2 s. Measured against `f6010b97` and `90fca6e6`
+    on a Windows VM, the reply was lost in 60 of 60 runs per build. A
+    partial last line did not change that. claustrum lost the reply in 60 of
+    60 runs too.
+- Input that ends without a final newline. The daemon reads the last bytes
+  before EOF as one more line, and the rules above apply. A tail of only `\r`
+  is a blank line and gets no reply.
+  - If an earlier valid line came first, the parse error for the tail and the
+    reply to the earlier line race. The probe sent a `server.ping` line, a
+    partial line, then a half-close, in 50 runs per build. Measured on a Linux
+    VM, `f6010b97` and `90fca6e6` each sent the `server.ping` reply in 1 of 50
+    runs. claustrum sent it in 4 of 50 runs. All three builds closed about
+    2 ms after the half-close. On Linux, claustrum matches the reference.
+  - On Windows this case has a measured timing difference, not parity.
+    Measured on a Windows VM, `f6010b97` and `90fca6e6` each sent the
+    `server.ping` reply in 50 of 50 runs, in either order. They closed about
+    12 ms after the half-close. claustrum sent the reply in 21 of 50 runs and
+    closed after about 2.4 ms. Every run on every build got the parse-error
+    frame. The cause of the later close of the reference is not known.
+  - At the idle close, the daemon also reads the last bytes as a line. It
+    dispatches a valid request. It writes the error for a bad tail on the read
+    path, but the connection is already closed, so that write fails. The wire
+    carried 0 bytes on each measured build.
+- Either end of an `AF_UNIX` connection on Windows can miss the other end's
+  close. Measured on a Windows VM, a reader got the bytes before the EOF and
+  then blocked. A new read returned the EOF. A plain blocking `WSARecv` loop
+  missed it too. One claustrum `-bridge` run hung in this way until the probe
+  killed it. One `90fca6e6` `-bridge` run also hung until the kill.
 
 ### Named-pipe transport (Windows, opt-in)
 
@@ -94,7 +155,7 @@ added this, and claustrum matches it. It is off the JSON-RPC wire, because the
 file sits beside the socket, not on it. An unclean kill (`SIGKILL` or a crash)
 leaves the file behind, because the daemon removes it only on the graceful
 `server.shutdown` / `SIGTERM` path. `-stop` also removes it after a failed
-connect, unless it prints `survivor`. See [-stop](#-stop--ask-a-running-daemon-to-shut-down).
+connect, unless it prints `survivor`. See the `-stop` section below.
 
 The fixed name and the socket-dir location are the reconnect contract, so they are
 not configurable. On Windows `0600` is not an owner-only DACL. This is a Go
@@ -1548,6 +1609,19 @@ claustrum -bridge -socket <p>
 A simple relay. It is the thing an SSH session attaches to. It adds no auth. The
 client that speaks through it supplies `"auth"` itself. It is strict, so a dial
 failure is a hard error: `claustrum: dial server: <err>` on stderr, exit `1`.
+
+At stdin EOF the bridge half-closes its socket write side, so the daemon reads
+EOF. The bridge then keeps copying the socket to stdout. It exits `0` when the
+daemon closes the connection, even with stdin still open. It prints every frame
+that arrived before the close. Measured against `f6010b97` and `90fca6e6` on
+Linux and Windows VMs, the reference bridge relayed the parse-error frame for a
+final partial line. It then exited `0`. Measured on a Linux VM, the
+reference bridge also exited `0` with stdin still open once the daemon closed.
+It printed the frames that arrived before the close. If the half-close fails,
+the claustrum bridge closes the socket fully.
+
+On Windows the daemon can miss the half-close of the bridge (see
+[Transport](#transport)). The bridge then does not exit.
 
 ### -stop — ask a running daemon to shut down
 

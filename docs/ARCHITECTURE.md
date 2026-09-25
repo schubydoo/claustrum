@@ -183,8 +183,10 @@ session attaches to it. It injects no auth.)
 
 ## Concurrency & replay model
 
-- Each request on a connection runs in its own goroutine. A mutex serializes the
-  per-connection writer, so responses and stream frames interleave safely.
+- Each request that passes the parse and auth checks runs in its own
+  goroutine. The read loop writes the parse and auth errors itself. A mutex
+  serializes the per-connection writer, so responses and stream frames
+  interleave safely.
 - Each managed process has a monotonic `seq`, an append-only frame buffer, and a
   set of subscriber connections. `spawn` subscribes the connection that spawned
   the process. `reattach` REPLACES the whole subscriber set with the requester. It then
