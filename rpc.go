@@ -110,9 +110,51 @@ const methodShutdown = "server.shutdown"
 // handleServer).
 // Stream-producing methods (process.*) use the conn to attach the client.
 func (s *server) dispatch(c *conn, raw []byte) *response {
+	req, resp := s.gate(raw)
+	if resp != nil {
+		return resp
+	}
+	if req.JSONRPC != "2.0" {
+		return ptr(errResult(req.ID, codeInvalidReq, "Invalid JSON-RPC version"))
+	}
+
+	ns, _, ok := strings.Cut(req.Method, ".")
+	if !ok {
+		// A method without a "namespace.method" shape is a format error, distinct
+		// from a well-formed method naming an unknown namespace (below).
+		return ptr(errResult(req.ID, codeMethod, "Invalid method format: "+req.Method))
+	}
+
+	switch ns {
+	case "server":
+		return s.handleServer(c, &req)
+	case "files":
+		return ptr(s.handleFiles(&req))
+	case "git":
+		return ptr(s.handleGit(&req))
+	case "process":
+		return ptr(s.handleProcess(c, &req))
+	case "plugins":
+		return ptr(s.handlePlugins(&req))
+	default:
+		return ptr(errResult(req.ID, codeMethod, "Unknown namespace: "+ns))
+	}
+}
+
+// gate runs the first two steps of dispatch: the parse check, then the auth
+// check. It returns the decoded request. It also returns the -32700 or -32001
+// reply when raw fails one of the two checks, and nil when raw passes both.
+//
+// dispatch and serveConn both call gate, so the two cannot disagree about
+// these frames. serveConn writes a gate reply on the read path, before it
+// reads the next line. A line that passes gate goes to the async dispatch.
+func (s *server) gate(raw []byte) (request, *response) {
 	var req request
 	if err := json.Unmarshal(raw, &req); err != nil {
-		return ptr(errResult(nil, codeParse, "Parse error"))
+		// Logged here, before serveConn writes the reply. The reference logs
+		// "Parse error: <json error>" before its reply write (measured).
+		logWarnf("[Server] Parse error: %v", err)
+		return req, ptr(errResult(nil, codeParse, "Parse error"))
 	}
 	// Precedence is auth → version (probe-verified) for every method that IS
 	// authenticated: a request that fails BOTH (e.g. no auth and no/!="2.0"
@@ -145,39 +187,15 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	// authenticated RPC connection, and an auth member that IS present is simply
 	// ignored here rather than rejected.
 	//
-	// The exemption covers auth ONLY. The version check below still applies:
+	// The exemption covers auth ONLY. The version check in dispatch still applies:
 	// measured, a shutdown frame with jsonrpc "1.0" or absent yields -32600 and
 	// the reference stays up.
 	if req.Method != methodShutdown &&
 		(req.Auth == "" || subtle.ConstantTimeCompare([]byte(req.Auth), []byte(s.token)) != 1) {
 		logWarnf("[Server] Unauthorized request: method=%s, id=%v", req.Method, idForLog(req.ID))
-		return ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
+		return req, ptr(errResult(req.ID, codeUnauthorized, "Unauthorized: invalid or missing auth token"))
 	}
-	if req.JSONRPC != "2.0" {
-		return ptr(errResult(req.ID, codeInvalidReq, "Invalid JSON-RPC version"))
-	}
-
-	ns, _, ok := strings.Cut(req.Method, ".")
-	if !ok {
-		// A method without a "namespace.method" shape is a format error, distinct
-		// from a well-formed method naming an unknown namespace (below).
-		return ptr(errResult(req.ID, codeMethod, "Invalid method format: "+req.Method))
-	}
-
-	switch ns {
-	case "server":
-		return s.handleServer(c, &req)
-	case "files":
-		return ptr(s.handleFiles(&req))
-	case "git":
-		return ptr(s.handleGit(&req))
-	case "process":
-		return ptr(s.handleProcess(c, &req))
-	case "plugins":
-		return ptr(s.handlePlugins(&req))
-	default:
-		return ptr(errResult(req.ID, codeMethod, "Unknown namespace: "+ns))
-	}
+	return req, nil
 }
 
 func ptr(r response) *response { return &r }

@@ -245,11 +245,9 @@ func TestMainDispatch(t *testing.T) {
 }
 
 // NOTE deliberately untested here: main's -bridge happy path (the lone
-// `return` after runBridge succeeds). runBridge returns on the FIRST copy
-// finishing and leaks the other copy goroutine, which still reads the
-// os.Stdout/os.Stdin globals — so any runMain-style swap-and-restore of those
-// globals races with the leaked goroutine (caught by -race in CI). The happy
-// path is covered by bridge_test.go against the real fds.
+// `return` after runBridge succeeds). bridge_test.go and
+// integration_eof_test.go test runBridge itself, with os.Stdin and os.Stdout
+// swapped for pipes.
 
 // The -serve arm's flag-to-global wiring, the mirror of
 // TestInstallArmWiresEachFlagToItsOwnGlobal above. Without it,
