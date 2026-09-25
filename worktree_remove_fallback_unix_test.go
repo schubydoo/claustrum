@@ -319,10 +319,11 @@ var errRe = regexp.MustCompile(
 func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 	bin := t.TempDir()
 	// Sleep on every git command EXCEPT the hook-config enumeration 7d193f89 runs
-	// before each one (`git config …`), which must succeed fast, else the
-	// hostile-config gate would time out before the removal under test.
+	// before each one (`git config …`) and the repository check before a remove
+	// (`git rev-parse …`), which must succeed fast, else those gates would time
+	// out before the removal under test.
 	if err := os.WriteFile(filepath.Join(bin, "git"),
-		[]byte("#!/bin/sh\ncase \"$*\" in *config*) exit 0 ;; *) exec sleep 30 ;; esac\n"), 0o755); err != nil {
+		[]byte("#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in config|rev-parse) exit 0 ;; esac; done\nexec sleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
