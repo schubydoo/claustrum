@@ -1,23 +1,36 @@
 #!/usr/bin/env python3
-"""Discover the claude-ssh SHA pinned by the *latest* Claude Desktop for Linux and
-compare it to the baseline in scripts/UPSTREAM_SHA.
+"""Discover the claude-ssh SHA pinned by the *latest* Claude Desktop for one
+platform and compare it to the baseline in scripts/UPSTREAM_SHA.
 
 This automates Step 1 of docs/UPSTREAM-TRACKING.md ("find a candidate SHA"): it
-reads the APT `Packages` index, picks the newest `claude-desktop` build, downloads
-that `.deb`, and runs `extract-desktop-pin.py` to read the pinned reference SHA out
+reads the platform's update feed, picks the newest Desktop build, downloads that
+package, and runs `extract-desktop-pin.py` to read the pinned reference SHA out
 of the app bundle — no CDN guessing, no running daemon. The scheduled
-`upstream-desktop-watch.yml` workflow calls this and opens an issue when the pin
-moves off the baseline.
+`upstream-desktop-watch.yml` workflow calls this once per platform and opens an
+issue when a pin is new: not the baseline, and not any build heading in
+docs/REFERENCE-BUILDS.md.
+
+The platforms ship on separate schedules, so one can pin a newer reference build
+than another. Feeds:
+  linux   — the APT `Packages` index (`.deb`, SHA-256 checked)
+  windows — the Squirrel `RELEASES` file for win32/x64 (`-full.nupkg`, SHA-1 and
+            size checked)
+  macos   — the Squirrel.Mac `RELEASES.json` for darwin/universal (`.zip`; the
+            feed carries no checksum, so TLS is its only integrity check)
+
+Every feed and package URL must be HTTPS, including after redirects.
 
 Usage:
-  latest-desktop-sha.py                 # fetch latest .deb, print summary
-  latest-desktop-sha.py --peek          # ONLY read the latest version (no download)
-  latest-desktop-sha.py --deb PATH      # use a local .deb (skip the download)
-  latest-desktop-sha.py --github-output # also append vars to $GITHUB_OUTPUT
+  latest-desktop-sha.py                     # linux: fetch latest, print summary
+  latest-desktop-sha.py --platform windows  # linux | windows | macos
+  latest-desktop-sha.py --peek              # ONLY read the latest version (no download)
+  latest-desktop-sha.py --deb PATH          # use a local package (skip the download)
+  latest-desktop-sha.py --github-output     # also append vars to $GITHUB_OUTPUT
 
-`--peek` is the cheap no-op gate for the watcher: it reads just the APT index to
-learn the newest Desktop version, so an already-analyzed version costs no 166 MB
-download.
+`--peek` is the cheap no-op gate for the watcher: it reads just the update feed
+to learn the newest Desktop version, so an already-analyzed version costs no
+download (166 MB for Linux, 250-380 MB for Windows and macOS). `--deb` accepts a
+`.deb`, `.nupkg` or `.zip`; the extractor picks the container by magic bytes.
 
 Stdlib only. Exit 0 on success (a *new* pin is reported via the `is_new` output
 var, not the exit code), 2 on failure — including a missing/unreadable
@@ -38,9 +51,13 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXTRACTOR = os.path.join(HERE, "extract-desktop-pin.py")
 UPSTREAM_SHA_FILE = os.path.join(HERE, "UPSTREAM_SHA")
+LEDGER_FILE = os.path.join(HERE, os.pardir, "docs", "REFERENCE-BUILDS.md")
 
 APT_BASE = "https://downloads.claude.ai/claude-desktop/apt/stable/"
 PACKAGES = APT_BASE + "dists/stable/main/binary-amd64/Packages"
+WIN_BASE = "https://downloads.claude.ai/releases/win32/x64/"
+MAC_FEED = "https://downloads.claude.ai/releases/darwin/universal/RELEASES.json"
+PLATFORMS = ("linux", "windows", "macos")
 
 
 def parse_packages(text: str) -> list[dict]:
@@ -71,25 +88,100 @@ def version_key(v: str) -> tuple:
     return (epoch, nums)
 
 
-def latest_package() -> dict:
-    text = urllib.request.urlopen(PACKAGES, timeout=60).read().decode()
-    pkgs = parse_packages(text)
-    if not pkgs:
-        raise ValueError("no packages parsed from APT index")
-    return max(pkgs, key=lambda p: version_key(p["Version"]))
+class HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect hop that is not HTTPS. Checking only the final URL
+    would let an https -> http -> https chain through, and the plain-HTTP hop
+    could point the chain anywhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.lower().startswith("https://"):
+            raise ValueError(f"refusing redirect to non-HTTPS URL: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def download(url: str, dest: str, expect_sha256: str | None) -> None:
-    h = hashlib.sha256()
-    with urllib.request.urlopen(url, timeout=300) as r, open(dest, "wb") as f:
+OPENER = urllib.request.build_opener(HttpsOnlyRedirect)
+
+
+def open_https(url: str, timeout: int):
+    """urlopen that refuses plain HTTP on the first URL, on every redirect hop,
+    and on the final URL. The macOS feed publishes no checksum, so TLS is the
+    only integrity check on that package."""
+    if not url.lower().startswith("https://"):
+        raise ValueError(f"refusing non-HTTPS URL: {url}")
+    r = OPENER.open(url, timeout=timeout)
+    if not r.geturl().lower().startswith("https://"):
+        r.close()
+        raise ValueError(f"refusing redirect to non-HTTPS URL: {r.geturl()}")
+    return r
+
+
+def fetch_text(url: str) -> str:
+    # utf-8-sig: the Windows RELEASES file starts with a byte-order mark.
+    with open_https(url, 60) as r:
+        return r.read().decode("utf-8-sig")
+
+
+def parse_win_releases(text: str) -> list[dict]:
+    """Parse a Squirrel.Windows `RELEASES` file: one `<SHA1> <file> <size>` per
+    line. Only `-full.nupkg` entries count; a delta package cannot be extracted
+    on its own."""
+    out = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        sha1, name, size = parts
+        m = re.search(r"-(\d[0-9A-Za-z.+~-]*)-full\.nupkg$", name)
+        if m and size.isdigit():
+            out.append({"version": m.group(1), "url": WIN_BASE + name,
+                        "sha1": sha1.lower(), "size": int(size)})
+    return out
+
+
+def latest_package(platform: str = "linux") -> dict:
+    """Return the newest build for `platform` as {version, url} plus whatever
+    integrity data the feed publishes (sha256, or sha1 + size)."""
+    if platform == "linux":
+        pkgs = parse_packages(fetch_text(PACKAGES))
+        if not pkgs:
+            raise ValueError("no packages parsed from APT index")
+        p = max(pkgs, key=lambda p: version_key(p["Version"]))
+        return {"version": p["Version"], "url": APT_BASE + p["Filename"],
+                "sha256": p.get("SHA256")}
+    if platform == "windows":
+        rels = parse_win_releases(fetch_text(WIN_BASE + "RELEASES"))
+        if not rels:
+            raise ValueError("no -full.nupkg parsed from Windows RELEASES")
+        return max(rels, key=lambda r: version_key(r["version"]))
+    if platform == "macos":
+        feed = json.loads(fetch_text(MAC_FEED))
+        cur = feed.get("currentRelease")
+        for rel in feed.get("releases") or []:
+            upd = rel.get("updateTo") or {}
+            if rel.get("version") == cur and upd.get("url"):
+                return {"version": cur, "url": upd["url"]}
+        raise ValueError(f"currentRelease {cur!r} has no url in macOS RELEASES.json")
+    raise ValueError(f"unknown platform {platform!r} (want one of {', '.join(PLATFORMS)})")
+
+
+def download(url: str, dest: str, pkg: dict) -> None:
+    """Stream `url` to `dest`, then check every digest and size the feed gave."""
+    digests = {k: hashlib.new(k) for k in ("sha256", "sha1") if pkg.get(k)}
+    size = 0
+    with open_https(url, 300) as r, open(dest, "wb") as f:
         while True:
             chunk = r.read(1 << 20)
             if not chunk:
                 break
             f.write(chunk)
-            h.update(chunk)
-    if expect_sha256 and h.hexdigest() != expect_sha256:
-        raise ValueError(f"deb checksum mismatch: want={expect_sha256} got={h.hexdigest()}")
+            size += len(chunk)
+            for h in digests.values():
+                h.update(chunk)
+    for k, h in digests.items():
+        if h.hexdigest() != pkg[k].lower():
+            raise ValueError(f"package {k} mismatch: want={pkg[k]} got={h.hexdigest()}")
+    if pkg.get("size") and size != pkg["size"]:
+        raise ValueError(f"package size mismatch: want={pkg['size']} got={size}")
 
 
 def extract_pin(deb_path: str) -> dict:
@@ -110,23 +202,44 @@ def read_baseline() -> str:
         return ""
 
 
+def read_ledger_shas() -> set[str]:
+    """Full 40-hex SHAs of the build entries in docs/REFERENCE-BUILDS.md: only
+    the "### `<sha>`" headings, so a SHA merely mentioned in prose (say, a
+    pin noted before it is reconciled) does not silence the watcher. A platform
+    whose Desktop lags behind still pins an older, already-reconciled build;
+    that pin is known, not new. A missing ledger yields an empty set, which errs
+    toward a noisy issue rather than a silent miss."""
+    try:
+        with open(LEDGER_FILE) as f:
+            return set(re.findall(r"^###\s+`([0-9a-f]{40})`", f.read(), re.M))
+    except OSError:
+        return set()
+
+
 def main(argv: list[str]) -> int:
     args = argv[1:]
     github_output = "--github-output" in args
     peek = "--peek" in args
     args = [a for a in args if a not in ("--github-output", "--peek")]
+    platform = "linux"
+    if "--platform" in args:
+        i = args.index("--platform")
+        platform = args[i + 1] if i + 1 < len(args) else ""
+        if platform not in PLATFORMS:
+            print(f"error: --platform must be one of {', '.join(PLATFORMS)}", file=sys.stderr)
+            return 2
     deb_path = None
     if "--deb" in args:
         deb_path = args[args.index("--deb") + 1]
 
-    # --peek: cheap no-op gate — read only the newest version from the APT index.
+    # --peek: cheap no-op gate — read only the newest version from the feed.
     if peek:
         try:
-            pkg = latest_package()
-        except (ValueError, urllib.error.URLError, OSError) as e:
+            pkg = latest_package(platform)
+        except (ValueError, KeyError, urllib.error.URLError, OSError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
-        ver = pkg["Version"]
+        ver = pkg["version"]
         print(f"desktop_version : {ver}")
         if github_output and os.environ.get("GITHUB_OUTPUT"):
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
@@ -142,15 +255,14 @@ def main(argv: list[str]) -> int:
                     break
             info = extract_pin(deb_path)
         else:
-            pkg = latest_package()
-            desktop_version = pkg["Version"]
-            url = APT_BASE + pkg["Filename"]
+            pkg = latest_package(platform)
+            desktop_version = pkg["version"]
             with tempfile.TemporaryDirectory() as td:
-                dest = os.path.join(td, "claude-desktop.deb")
-                print(f"downloading Desktop {desktop_version} ...", file=sys.stderr)
-                download(url, dest, pkg.get("SHA256"))
+                dest = os.path.join(td, "claude-desktop.pkg")
+                print(f"downloading Desktop {desktop_version} ({platform}) ...", file=sys.stderr)
+                download(pkg["url"], dest, pkg)
                 info = extract_pin(dest)
-    except (OSError, ValueError, urllib.error.URLError) as e:
+    except (OSError, ValueError, KeyError, urllib.error.URLError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
@@ -166,9 +278,13 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 2
-    is_new = sha != baseline
+    # New = not the baseline and not any older build in the ledger, so a
+    # lagging platform does not re-report a build that was already reconciled.
+    is_new = sha != baseline and sha not in read_ledger_shas()
     cli = (info.get("claude_code_cli") or {}).get("version", "-")
 
+    if not deb_path:
+        print(f"platform        : {platform}")
     print(f"desktop_version : {desktop_version}")
     print(f"claude_ssh_sha  : {sha}")
     print(f"baseline_sha    : {baseline or '(none)'}")

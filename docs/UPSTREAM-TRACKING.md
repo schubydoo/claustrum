@@ -41,11 +41,13 @@ sources, easiest first:
    therefore matches the bucket by path *segment*, not by `endswith`. A new Desktop
    build is itself the "new SHA" signal. Two scripts read the constant:
    - [`scripts/extract-desktop-pin.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/extract-desktop-pin.py)
-     reads it directly from a `.deb`. It uses the standard library only: `ar` →
-     `data.tar.xz` → `app.asar` → enclosure brace-match. You need no `dpkg` and no
-     `asar`.
+     reads it directly from a Linux `.deb`, a Windows `.nupkg` or a macOS `.zip`.
+     It uses the standard library only: `ar` → `data.tar.xz` → `app.asar`, or zip
+     → `app.asar`, then an enclosure brace-match. You need no `dpkg`, no `unzip`
+     and no `asar`. The Windows and macOS bundles carry the same literal.
    - [`scripts/latest-desktop-sha.py`](https://github.com/schubydoo/claustrum/blob/main/scripts/latest-desktop-sha.py)
-     runs the full loop: find the newest Desktop → download → extract → compare to
+     runs the full loop for one platform (`--platform linux|windows|macos`,
+     default `linux`): find the newest Desktop → download → extract → compare to
      `UPSTREAM_SHA`.
 
    Observed pins: Linux 1.18286.0 (2026-07-02) pinned `7c2f88d…`. Versions
@@ -354,15 +356,28 @@ divergence, and it carries no D-number.
 ## Automating it
 
 - [`.github/workflows/upstream-desktop-watch.yml`](https://github.com/schubydoo/claustrum/blob/main/.github/workflows/upstream-desktop-watch.yml)
-  runs twice daily (cron `17 6,18 * * *`). It calls
-  `scripts/latest-desktop-sha.py` to find the SHA the *newest* Claude Desktop for
-  Linux pins. That is Step 1, automated, and it needs no out-of-band source. It then
-  compares that SHA to `scripts/UPSTREAM_SHA`. A moved pin is what makes it run
-  `check-upstream.sh <sha>` for the static drift diff and open a single idempotent
-  tracking issue. The usual run is just download-extract-compare. Reconciliation
+  runs twice daily (cron `17 6,18 * * *`). It runs one leg for each of Linux,
+  Windows and macOS. Each leg calls `scripts/latest-desktop-sha.py --platform <p>`
+  to find the SHA that the *newest* Claude Desktop for that platform pins. That is
+  Step 1, automated, and it needs no out-of-band source. A new pin must
+  meet two tests. It differs from `scripts/UPSTREAM_SHA`, and no build heading in
+  [`REFERENCE-BUILDS.md`](REFERENCE-BUILDS.md) (a "### `<full sha>`" line)
+  matches it. A SHA that only the prose mentions does not count. A lagging platform
+  that still pins an older, reconciled build therefore stays quiet. A new pin on
+  any platform makes that leg run `check-upstream.sh <sha>` for the static drift
+  diff and open a single idempotent tracking issue. If that issue is still open,
+  a later leg that finds the same SHA adds a comment to it. A leg skips all
+  downloads for a Desktop version that it already analyzed. Reconciliation
   (Step 4) stays a human decision.
-- The watcher currently covers Linux only. macOS and Windows Desktop builds pin the
-  same per-SHA CDN artifacts, so they give a redundant cross-check rather than a
-  new signal. Extraction from those bundles is a possible follow-up.
+- The platforms ship on separate schedules, so one platform can pin a newer
+  reference build than the others. On 2026-09-24, Linux Desktop 2.7032.0 pinned
+  `90fca6e6…`, and Windows and macOS Desktop 2.9939.2 pinned `f6010b97…`. A
+  Linux-only watcher did not see that new build. For Linux, the script reads the
+  APT `Packages` index (`.deb`). For Windows, it reads the Squirrel `RELEASES`
+  file for win32/x64 (`-full.nupkg`). For macOS, it reads `RELEASES.json` for
+  darwin/universal (`.zip`). The script checks the `.deb` by SHA-256 and the
+  `.nupkg` by SHA-1 and size. The macOS feed publishes no checksum, so TLS is
+  the only integrity check on that download. The script therefore refuses a
+  URL or a redirect that is not HTTPS, for every feed and package.
 - You can still run `check-upstream.sh` by hand against any SHA. Examples are a
   SHA you just found, or a check that a re-published build did not shift.

@@ -2,21 +2,32 @@
 #
 # WHAT — automates Step 1 of docs/UPSTREAM-TRACKING.md ("find a candidate SHA").
 # Claude Desktop bakes the pinned reference daemon SHA + per-platform manifest into
-# its app bundle, so a new Desktop build is itself the "new SHA" signal. This job:
-#   0. peeks the newest Desktop version from the APT index (cheap, no download);
-#      if we've already analyzed that version the run is a NO-OP (cache hit),
-#   1. otherwise downloads that `.deb` and reads the pinned SHA out of `app.asar`
+# its app bundle, so a new Desktop build is itself the "new SHA" signal.
+#
+# The job runs once per platform (linux, windows, macos). The platforms ship on
+# separate schedules, so any one of them can be the first to pin a new reference
+# build; each is checked on its own. Per platform it:
+#   0. peeks the newest Desktop version from that platform's update feed (cheap,
+#      no download); if we've already analyzed that version the leg is a NO-OP
+#      (cache hit),
+#   1. otherwise downloads that package (`.deb` / `.nupkg` / `.zip`) and reads the
+#      pinned SHA out of `app.asar`
 #      (scripts/latest-desktop-sha.py -> scripts/extract-desktop-pin.py),
-#   2. compares it to the baseline in scripts/UPSTREAM_SHA, and
-#   3. when it differs, runs the existing static drift check and opens a tracking
-#      issue. Reconciliation stays a human decision (per the doc's Step 4).
+#   2. compares it to the baseline in scripts/UPSTREAM_SHA and to every build
+#      heading ("### `<full sha>`") in docs/REFERENCE-BUILDS.md (a lagging platform that still pins an older,
+#      reconciled build is not "new"), and
+#   3. when it is new, runs the existing static drift check and opens a tracking
+#      issue, one per SHA. While that issue is open, a later leg that pins the
+#      same SHA adds a comment to it instead. Reconciliation stays a human
+#      decision (per the doc's Step 4).
 #
 # SAFETY / SCOPE
-#   * Read-only except `issues: write` (it opens ONE idempotent tracking issue).
+#   * Read-only except `issues: write` (it opens at most one idempotent tracking
+#     issue per SHA, or comments on it).
 #   * persist-credentials:false — the token is only used by `gh`, never git.
-#   * Untrusted-ish values (the version/SHA parsed from the .deb) are passed to
+#   * Untrusted-ish values (the version/SHA parsed from the package) are passed to
 #     shell only via `env:`, never interpolated into a `run:` body.
-#   * The heavy path (download .deb, build claustrum, diff) runs ONLY for a
+#   * The heavy path (download package, build claustrum, diff) runs ONLY for a
 #     not-yet-analyzed version, so the twice-daily run is usually a cache-hit no-op.
 #   * Advisory: the job stays green even on a new build — the issue is the signal.
 name: upstream-desktop-watch
@@ -36,18 +47,27 @@ concurrency:
 
 jobs:
   watch:
-    name: watch for new claude-ssh reference build
+    name: watch for new claude-ssh reference build (${{ matrix.platform }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      # One leg at a time, so two legs that find the same new SHA cannot race
+      # to open duplicate issues.
+      max-parallel: 1
+      matrix:
+        platform: [linux, windows, macos]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # 0) Cheap peek: newest Desktop version from the APT index (no .deb download).
+      # 0) Cheap peek: newest Desktop version from the feed (no package download).
       - name: Peek latest Desktop version
         id: peek
-        run: python3 scripts/latest-desktop-sha.py --peek --github-output
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: python3 scripts/latest-desktop-sha.py --platform "$PLATFORM" --peek --github-output
 
       # No-op gate: a cache keyed on the version. If we've already analyzed this
       # exact version the cache HITS and every heavy step below is skipped; the
@@ -57,17 +77,18 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .desktop-analyzed
-          key: desktop-analyzed-v1-${{ steps.peek.outputs.desktop_version }}
+          key: desktop-analyzed-v2-${{ matrix.platform }}-${{ steps.peek.outputs.desktop_version }}
 
       - name: Summary (peek / no-op)
         env:
+          PLATFORM: ${{ matrix.platform }}
           VER: ${{ steps.peek.outputs.desktop_version }}
           HIT: ${{ steps.seen.outputs.cache-hit }}
         run: |
           {
-            echo "## Upstream desktop watch"
+            echo "## Upstream desktop watch ($PLATFORM)"
             echo ""
-            echo "- latest Desktop (Linux): \`$VER\`"
+            echo "- latest Desktop ($PLATFORM): \`$VER\`"
             if [ "$HIT" = "true" ]; then
               echo "- already analyzed this version — **no-op**"
             else
@@ -77,12 +98,14 @@ jobs:
 
       # ---- heavy path: only for a version we have not analyzed yet ----
 
-      # Downloads the .deb and reads the pinned SHA; exits non-zero on a
+      # Downloads the package and reads the pinned SHA; exits non-zero on a
       # missing/unreadable baseline (so detection can't silently fail).
       - name: Discover pinned SHA
         id: discover
         if: steps.seen.outputs.cache-hit != 'true'
-        run: python3 scripts/latest-desktop-sha.py --github-output
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: python3 scripts/latest-desktop-sha.py --platform "$PLATFORM" --github-output
 
       - name: Summary (pin)
         if: steps.seen.outputs.cache-hit != 'true'
@@ -111,7 +134,7 @@ jobs:
         env:
           SHA: ${{ steps.discover.outputs.claude_ssh_sha }}
           CLI: ${{ steps.discover.outputs.claude_code_cli }}
-          VER: ${{ steps.peek.outputs.desktop_version }}
+          VER: "${{ steps.peek.outputs.desktop_version }} (${{ matrix.platform }})"
         run: |
           missing=0
           if [ -z "$SHA" ]; then
@@ -156,6 +179,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          PLATFORM: ${{ matrix.platform }}
           SHA: ${{ steps.discover.outputs.claude_ssh_sha }}
           DESKTOP: ${{ steps.discover.outputs.desktop_version }}
           BASELINE: ${{ steps.discover.outputs.baseline_sha }}
@@ -166,12 +190,16 @@ jobs:
           short="${SHA:0:12}"
           title="Upstream: new claude-ssh reference build ${short}"
 
-          # Idempotent: if an open issue with this exact title already exists, do
-          # nothing (avoids a comment on every run until the baseline is bumped).
+          # Idempotent: if an open issue with this exact title already exists,
+          # record that this platform pins the same SHA and stop. The version
+          # cache means this comment fires once per new Desktop version, not on
+          # every run until the baseline is bumped.
           existing="$(gh issue list --repo "$REPO" --state open --json number,title \
             --jq ".[] | select(.title == \"$title\") | .number" | head -n1)"
           if [ -n "$existing" ]; then
-            echo "issue #$existing already tracks $short — nothing to do"
+            echo "issue #$existing already tracks $short — adding a platform note"
+            gh issue comment "$existing" --repo "$REPO" \
+              --body "Claude Desktop for $PLATFORM (\`$DESKTOP\`) also pins \`$SHA\`."
             exit 0
           fi
 
@@ -181,20 +209,20 @@ jobs:
           [ -n "${DRIFT_RC:-}" ] && [ "${DRIFT_RC:-}" != "0" ] && verdict="DRIFT or error (exit ${DRIFT_RC})"
 
           body="$(cat <<EOF
-          A newer **Claude Desktop for Linux** (\`$DESKTOP\`) pins a \`claude-ssh\`
+          A newer **Claude Desktop for $PLATFORM** (\`$DESKTOP\`) pins a \`claude-ssh\`
           reference build that differs from the baseline in \`scripts/UPSTREAM_SHA\`.
 
           | | |
           |---|---|
-          | Latest Desktop (Linux) | \`$DESKTOP\` |
+          | Latest Desktop ($PLATFORM) | \`$DESKTOP\` |
           | New reference SHA | \`$SHA\` |
           | Current baseline | \`$BASELINE\` |
           | Drift check | $verdict |
           | Manifest | $MAN |
 
           Discovered automatically by \`.github/workflows/upstream-desktop-watch.yml\`
-          (\`scripts/latest-desktop-sha.py\` reads the pin from the Desktop
-          \`.deb\`'s \`app.asar\` — see docs/UPSTREAM-TRACKING.md Step 1).
+          (\`scripts/latest-desktop-sha.py --platform $PLATFORM\` reads the pin from
+          the Desktop package's \`app.asar\` — see docs/UPSTREAM-TRACKING.md Step 1).
 
           ### Static drift check
           \`\`\`
@@ -204,8 +232,9 @@ jobs:
           ### Next steps (docs/UPSTREAM-TRACKING.md Step 4)
           1. Reconcile any wire drift the check flagged.
           2. Run the private byte-for-byte battery in \`scratch/\` for frame parity.
-          3. Bump \`scripts/UPSTREAM_SHA\` to \`$SHA\`, add a row to
-             \`docs/REFERENCE-BUILDS.md\`, and note it in \`CHANGELOG.md\`.
+          3. Bump \`scripts/UPSTREAM_SHA\` to \`$SHA\`, add a row and a
+             detail section headed with the full SHA to \`docs/REFERENCE-BUILDS.md\`
+             (the watcher reads only those headings), and note it in \`CHANGELOG.md\`.
 
           _This issue is opened once per new SHA; the watcher goes quiet again once
           the baseline is bumped._
