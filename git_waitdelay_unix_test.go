@@ -12,8 +12,8 @@ import (
 
 // stubLingeringGit puts this test binary on PATH as `git` (a symlink, so os.Executable()
 // still resolves to the real binary) running in the "git-lingering" helper mode. exit0
-// chooses whether the read-tree checkout git EXITS 0 while a descendant keeps holding the
-// daemon's combined output pipe (the P1 git-exit-0 case) or blocks past the deadline (the
+// chooses whether the read-tree checkout git EXITS 0 while a descendant keeps holding one of the
+// daemon's output pipes (the P1 git-exit-0 case) or blocks past the deadline (the
 // killed-during-checkout case). orphanSecs is how long that descendant holds the pipe.
 func stubLingeringGit(t *testing.T, exit0 bool, orphanSecs string) {
 	t.Helper()
@@ -49,7 +49,7 @@ func runLingeringCreate(t *testing.T, base string, timeoutMs int) (string, time.
 }
 
 // git.worktree_create must reproduce 4534d86's behaviour when the read-tree checkout
-// leaves a descendant holding the daemon's combined output pipe: the reference caps the
+// leaves a descendant holding one of the daemon's output pipes: the reference caps the
 // post-checkout drain at a FIXED ~5s from git's OWN exit (independent of timeoutMs),
 // reaps the descendant, and only THEN gates the frame on
 // timeoutMs — success (worktree kept) when timeoutMs exceeds the drain, else errorCode

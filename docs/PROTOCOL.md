@@ -432,8 +432,11 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment). The spelling refusal is Windows-only and comes before containment |
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"`, for a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
-| git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"`. The message is git's combined output on one line, with internal newlines joined by a space, capped at 512 bytes. The pre-created leaf directory is rolled back on failure. A pre-existing branch is not deleted (`4534d86`) |
-| git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <git error> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline |
+| git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is git's stderr, made by the text rule in the method section. The `f6010b97` text starts with git's graft-file deprecation `hint:` lines, and the 512-byte cap can cut the rest. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
+| git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap. Measured against `f6010b97` and `90fca6e6` on a macOS VM |
+| git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule. The frame matches `90fca6e6` byte for byte. The `f6010b97` text starts with git's graft-file deprecation `hint:` lines. The new directory and the branch the call created are removed. In attach mode the attached branch is kept (measured against `f6010b97`) |
+| git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
+| git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. This is `7d193f89` containment. The spelling refusal is Windows-only and comes before containment |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It gates the delete fallback off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it through the fallback and answered `success:true`. |
@@ -886,6 +889,32 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   or names no branch, the `-b <branchName>` new-branch path runs and `branch` is
   `<branchName>`. A miss falls back silently rather than erroring. This is measured
   against `19f30c46`.
+- If the attach add fails, the daemon runs
+  `worktree add --no-track --no-checkout -b <branchName> <path> [<sha>]` and goes
+  on. The fallback add gets the start commit that `sourceBranch` resolved to, as
+  the new-branch path does, and the checkout then reads that commit. With no start
+  commit, the add gets no start point, and the checkout reads
+  `refs/heads/<branchName>`. `branch` is `<branchName>`. A rollback after this
+  fallback deletes `<branchName>`, because the call created it. The natural trigger
+  is an `existingBranch` that is checked out in `baseRepo`. With
+  `existingBranch:"main"` and no `sourceBranch`, the reply is
+  `{"success":true,"path":"<p>","sourceBranch":"main","branch":"<branchName>"}`.
+  If the fallback add also fails, the reply is
+  `{success:false,error:"git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)",errorCode:"worktree_add_failed"}`.
+  Measured against `f6010b97` and `90fca6e6` on a macOS VM. There, `90fca6e6`
+  passes the ref name as the start point and `f6010b97` the full id. The new
+  branch lands on the same commit, and claustrum passes the full id.
+- No fallback runs when the failed attach add deleted the leaf or put a new
+  directory in its place. The daemon tests the leaf's identity for that. The reply
+  is then `git worktree add failed: <attach text>`, and the rollback of a failed
+  add runs. Measured against `f6010b97` and `90fca6e6` on macOS and Windows VMs.
+  On Linux and Windows VMs both references held the leaf and its parent open
+  during the create. On ext4 their replacement leaf got a new inode in 12 of 12
+  runs. Claustrum holds both open until it answers, so a replacement cannot reuse
+  the inode of the leaf. On Windows both claustrum handles share delete. Under the
+  handles of `f6010b97`, the leaf can be renamed. A rename of the parent fails with
+  "Access is denied." while the leaf is inside it. Claustrum takes the leaf's
+  identity from its handle.
 - The resolved repo is not git → `{success:false,error:"not a git
   repository",errorCode:"not_a_repo"}`. The daemon tests this before the add.
 - By default, with no `worktreeRoot`, `7d193f89` confines the worktree to inside
@@ -903,7 +932,9 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   repo. An empty `worktreePath` is `{success:false,error:"failed to create parent
   directory: \"\" does not name a directory",errorCode:"mkdir_failed"}`. The daemon
   creates the parent directory before the add, so a nested path succeeds on a fresh
-  repo.
+  repo. A `worktreePath` with a trailing slash, `//` or `/./` succeeds too. `path`
+  and each undo text below quote `worktreePath` exactly as sent. Measured against
+  `f6010b97` and `90fca6e6` on Linux and macOS VMs.
 - `worktreeRoot` is the `external_root` capability. When the client supplies
   `worktreeRoot`, the worktree is placed OUTSIDE the repository, at
   `<worktreeRoot>/<directory>/<name>`, exactly two levels under the root. On
@@ -921,48 +952,189 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   (`"<root> is writable by <who> (mode <perm>); … chmod go-w"`). The `<directory>`
   level must not be a symlink. Unless it is already marked, it must also start out
   empty (`"<dir> already exists, is not marked as a worktree directory, and holds
-  other files (for example \"<name>\"); … must start out empty …"`). On success the
+  other files (for example \"<name>\"); … must start out empty …"`). These two
+  tests take `<directory>` from the cleaned `worktreePath`, so for `R/proj/w1/`
+  the refusal names `R/proj`. With `worktreeRoot`, the "already exists" refusal
+  also quotes the cleaned path, for example `R/cp/w1` for `R/cp/w1/`. Measured
+  against `f6010b97` and `90fca6e6` on Linux and macOS VMs. On success the
   daemon writes a 285-byte `.claude-managed-worktrees` marker at the `<directory>`
   level. Independently, a `baseRepo` that itself sits under a managed-worktrees
   marker is refused `{success:false,error:"baseRepo is inside a managed worktrees
   directory …",errorCode:"nested_base_repo"}`.
-- Other failure → `{success:false,error:"git worktree add failed: …",errorCode:"worktree_add_failed"}`.
-  The tail is git's combined output, because the add writes its fatal to stderr
-  and leaves stdout empty. Since `4534d86` it is reported on a single line, with
-  git's stderr lines joined by a space and capped at 512 bytes. Since `4534d86` the
-  pre-created leaf directory is also rolled back. One example is
+- Other failure → `{success:false,error:"git worktree add failed: <text>",errorCode:"worktree_add_failed"}`.
+  `<text>` is git's stderr, made by the text rule below. The `f6010b97` text
+  starts with git's graft-file deprecation `hint:` lines. One `90fca6e6` example is
   `"git worktree add failed: Preparing
-  worktree (new branch 'dup') fatal: a branch named 'dup' already exists"`.
-- `timeoutMs` is caller-supplied and was added by `4534d86`. It bounds the add and
-  the checkout with a per-request deadline in milliseconds. An absent `timeoutMs`,
-  or `0`, arms no deadline, so the reply is byte-identical to the default. A fired
-  deadline answers
+  worktree (new branch 'dup') fatal: a branch named 'dup' already exists"`. A
+  failed add answers this frame even when the caller `timeoutMs` expired during the
+  add.
+- After a failed add, the daemon runs no git call. It removes the leaf only if the
+  leaf is an empty directory. Files that the failed add left in the leaf stay, and
+  so do a registration and a branch that it made. A retry at the same path then
+  answers `unsafe_path` "already exists". Measured against `f6010b97` and
+  `90fca6e6` on macOS and Windows VMs, with a stub git that failed after it wrote
+  into the leaf. The common failures, such as a branch that already exists, leave
+  the leaf empty, so a retry with a fresh branch succeeds. If the failed add
+  replaced the leaf's parent and made a new empty leaf in it, the new leaf stays.
+  The daemon tests the identity of the parent that it holds open for that. Both
+  references kept the new leaf after a failed attach add, in 20 of 20 runs on
+  Linux and macOS VMs.
+- The text rule makes every git text in the failure frames of this method. That
+  covers the add failure, each part of the attach-fallback frame, the checkout
+  failure and the checkout that the deadline killed. Measured against `f6010b97`
+  and `90fca6e6` on a macOS VM:
+  1. Take stderr only. stdout is not quoted.
+  2. Keep the first 512 bytes.
+  3. Drop every byte that is not valid UTF-8, anywhere in the text. The cap comes
+     first, so the bytes of a rune that the cap cut go too.
+  4. Replace each rune that is not printable with one space, with no collapsing.
+     So `\r\n` gives two spaces. The measured set includes `\t`, NUL, `\x7f`,
+     U+0085, U+00A0, U+200B and U+2028. claustrum uses Go's `unicode.IsPrint`,
+     which fits every measured payload. That is an inference, not a proof.
+  5. Trim the spaces at both ends.
+  6. If the result is empty, use the exec error. That is `exit status 128` for a
+     git that failed with that status, and `signal: killed` for a killed checkout.
+     On Windows the killed checkout gives the kill's own error, `exit status 1`.
+- `timeoutMs` is caller-supplied and was added by `4534d86`. It is a per-request
+  deadline in milliseconds over the add, the checkout and the copy step. An absent
+  `timeoutMs`, or `0`, arms no deadline, so the reply is byte-identical to the
+  default. A fired deadline answers
   `{success:false,error:"git worktree add timed out after <n>ms (…)",errorCode:"timeout"}`.
-  The parenthetical takes three forms. It is
-  `deadline expired before the checkout started` when the add is killed, as
-  measured. It is `deadline expired during the checkout): <git error>` when the
-  checkout, a `read-tree`, is killed, as measured. The tail there is git's own
-  error, for example `signal: killed`. It is
-  `deadline expired after the checkout finished` in one further case. The checkout
-  git exits 0, and then a descendant it left, such as a smudge or hook filter,
-  holds the daemon's combined output pipe past a fixed ~5s post-exit drain cap.
-  That cap is measured against `4534d86` and is independent of `timeoutMs`. At that
-  cap the daemon reaps the descendant, then gates the reply on `timeoutMs`. When
-  `timeoutMs` exceeds the drain, the worktree is kept and the reply is
-  `{success:true}`. When it does not, the worktree is rolled back, with the branch
-  deleted and the worktree removed. The reply is then the `timeout` frame carrying
-  this parenthetical. The same string
-  also covers the near-unhittable window where the deadline expires just after a
-  checkout that left no lingering descendant. This is caller-activated. It is
-  distinct from the operator-global `-git-timeout` divergence (D5), and it applies
-  to create only, not to `git.worktree_remove`.
-- `sourceBranch` omitted → the source defaults to the repo's current branch, and
-  the daemon echoes it back. On an unborn HEAD the source resolves empty, the add
-  infers an orphan branch and succeeds, and the result omits `sourceBranch`.
+  The rules below were measured against `f6010b97` and `90fca6e6` on a macOS VM,
+  except where a rule names another build.
+  - The deadline does not kill `git worktree add`. The daemon waits for the add to
+    exit. If the add failed, the reply is the add-failure frame above, not
+    `timeout`. If the add succeeded and the deadline expired, the parenthetical is
+    `deadline expired before the checkout started`. The reply thus waits for the
+    add. In attach mode the daemon runs the fallback add first, as described
+    above, and then tests the deadline.
+  - The deadline kills the checkout, a `read-tree`. The parenthetical is then
+    `deadline expired during the checkout): <text>`. The text rule above makes
+    `<text>` from the stderr of the killed git. With
+    `f6010b97`, git can print graft-file `hint:` lines on stderr before the kill,
+    and `<text>` then holds them. claustrum matches `90fca6e6` there.
+  - The deadline does not kill the copy step that seeds the new worktree. The
+    daemon lets the step finish and then tests the deadline. If it expired, the
+    parenthetical is `deadline expired after the checkout finished`. The reply
+    thus waits for the copy step.
+  - The checkout git can exit 0 while a descendant it left, such as a smudge or
+    hook filter, holds one of the daemon's output pipes. The daemon caps that
+    drain at a fixed ~5s from git's exit, independent of `timeoutMs`. That cap is
+    measured against `4534d86`. At the cap the daemon reaps the descendant. The
+    checkout then counts as finished, so the copy step runs and the deadline test
+    after it decides. When `timeoutMs` exceeds the drain, the reply is
+    `{success:true}`. When it does not, the reply is the `timeout` frame with
+    `deadline expired after the checkout finished`.
+  - These timeouts roll back as a failed checkout does. See the failed-checkout
+    and undo rules below. No rollback runs `git worktree remove`, so the
+    `.git/worktrees/` directory stays. A retry at the same path then succeeds, with
+    the same `branchName` or a new one.
+  - This is caller-activated. It is distinct from the operator-global
+    `-git-timeout` divergence (D5), and it applies to create only, not to
+    `git.worktree_remove`.
+- A non-empty `sourceBranch` picks the start commit of the new branch. The rules
+  below were measured side by side against `f6010b97` on Linux, Windows and
+  macOS. Here `s` is the value as sent.
+  - The daemon resolves two candidates. L is `refs/heads/<s>^{commit}`. R is
+    `refs/remotes/origin/<s>^{commit}`. Each is plain string concatenation, so a
+    revision suffix such as `feat~1` works, and a slash name such as `team/feat`
+    works. A symbolic ref is followed, so `s = "HEAD"` reads
+    `refs/remotes/origin/HEAD`. An annotated tag object in the origin ref is peeled
+    to its commit. An origin ref that holds a missing object, a tree or garbage,
+    or a local ref that holds a missing object, counts as absent. `s` is tried
+    only under `refs/heads/` and `refs/remotes/origin/`.
+  - Only the remote-tracking namespace `origin` is read. The remote's
+    configuration does not matter. The daemon fetches nothing, so a stale tracking
+    ref is used as it is.
+  - On a case-insensitive file system, a loose ref matches `sourceBranch` in any
+    letter case, and a packed ref does not (Windows, macOS). On macOS a loose ref
+    under `Origin` also counts.
+  - Only one candidate resolves → that one.
+  - Both resolve, and `git merge-base --is-ancestor <L> <R>` exits 0 (L equals R or
+    is behind it) → R.
+  - Otherwise the daemon runs `git merge-base <R> <L>`. If it fails (no common
+    history, a shallow cut, a missing parent commit) → R.
+  - Otherwise the daemon runs `git diff --quiet --no-ext-diff --no-textconv
+    --submodule=short <merge base> <L> -- ':(top,icase).claude'
+    ':(top,icase).mcp.json'`. Exit 0 → L. Any other exit → R. So a local change to
+    the repo-root `.claude` entry or the root `.mcp.json`, in any letter case,
+    selects R. So does a diff that errors. The test is the net tree difference from
+    the merge base. It is not the commit history, and it is not a comparison with
+    R. A nested `sub/.claude`, a `.claude.json` or a `.claudex` directory does not
+    count. Uncommitted state in `baseRepo` does not count.
+  - The add gets the chosen commit's full id:
+    `worktree add --no-track --no-checkout -b <branchName> <path> <sha>`. The
+    checkout reads the same id. The new branch's reflog therefore reads
+    `branch: Created from <sha>`. The branch gets no upstream configuration.
+  - `sourceBranch` is echoed exactly as sent, whichever candidate was used.
+  - Neither candidate resolves → the same result as an omitted `sourceBranch`.
+  - `existingBranch` is resolved after these steps. When it attaches, the chosen
+    commit goes unused, and `sourceBranch` is still echoed.
+  - These git steps have no deadline of their own. With `-git-timeout` (D5) opted
+    in, a killed step counts as a failed step under the rules above.
+- `sourceBranch` omitted or `""` → origin is not read. A non-empty `sourceBranch`
+  that resolves to nothing reads both candidates first. In each of these cases the
+  add gets no start point, so the new branch starts at HEAD, and its reflog reads
+  `branch: Created from HEAD`. The daemon echoes the current branch from
+  `rev-parse --abbrev-ref HEAD`. On a detached HEAD the result omits
+  `sourceBranch`. That is measured against `f6010b97` with `sourceBranch` omitted
+  and with a `sourceBranch` that resolves to nothing. Since `7d193f89`, on an
+  unborn HEAD the add fails with `worktree_add_failed`.
+- A failed checkout (`read-tree`) fails the request with
+  `{success:false,error:"git worktree add failed (checkout): <text>",errorCode:"worktree_add_failed"}`.
+  The text rule above makes `<text>`. The frame matches `90fca6e6`
+  byte for byte. The `f6010b97` text starts with git's graft-file deprecation
+  `hint:` lines. The daemon removes the new directory,
+  the branch that the call created and its reflog, and the worktree's registration
+  in the main repository's `.git/worktrees/`. The only git call in the rollback is
+  `update-ref --no-deref -d refs/heads/<branchName>`. The `.git/worktrees/`
+  directory itself stays, so the first linked worktree's failed checkout leaves it
+  empty. With a linked worktree as `baseRepo`, that worktree's own entry stays,
+  and a retry at the same path fails the same way. In attach mode the attached
+  branch is kept. These end states are measured against `f6010b97`.
+- The checkout is `read-tree -u --reset --no-recurse-submodules <rev>`, after the
+  hardening `-c` options and `-c core.splitIndex=false -c core.commitGraph=false`.
+  It runs with the new worktree as its working directory, and it passes no `-C`.
+  `--git-dir` names the git dir of `baseRepo`, and `--work-tree` names the new
+  worktree. For a linked-worktree `baseRepo`, the git dir is that worktree's own
+  admin dir. The daemon gets it with `rev-parse --absolute-git-dir` before the add.
+  The index goes to a file in a new temporary directory, named by `GIT_INDEX_FILE`.
+  Its config precursor, `--git-dir=<git dir> config -z --list --name-only`, runs in
+  the new worktree too. Measured against `f6010b97` and `90fca6e6` on a Windows VM.
+  After git exits 0, claustrum moves that index into the worktree's registration
+  and removes the temporary directory. The registration of a reference create
+  holds an `index` file too. A process that the checkout leaves behind starts in
+  the new worktree. On Windows it then blocks the removal of the leaf, and the
+  rollback reports it with the undo text below.
+- Every rollback after a successful add runs three steps. This covers the checkout
+  failure and each `timeout` frame. The steps and texts were measured against
+  `f6010b97` and `90fca6e6` on a Windows VM:
+  1. Delete the entries at the top of the leaf, one at a time, in the order that
+     the directory read returns them. The names are not sorted. Stop at the first
+     entry that cannot be deleted. Then append `; and the undo could
+     not finish for <leaf>: the worktree directory, its registration, and the
+     branch all remain; remove them by hand before retrying (RemoveAll <entry>:
+     <OS error>)` to the error, and undo nothing else.
+  2. Delete the registration and the branch that the call created.
+  3. Remove the leaf directory, which is now empty. If that fails, append `; and
+     the undo could not finish for <leaf>: the worktree directory remains
+     (re-populated while undoing?); remove it by hand before retrying (removeat
+     <leaf base name>: <OS error>)`.
+
+  The `errorCode` does not change. `<leaf>` is `worktreePath` exactly as sent, and
+  `<entry>` is a name at the top of the leaf. With a trailing slash on
+  `worktreePath`, the `removeat` part still names the base name, such as `w1`. The
+  step 1 order was measured against both references on Linux ext4 and macOS APFS
+  VMs. The two wordings are fixed, and only `<OS error>` varies. On Windows the measured causes were an open handle, a
+  process with its working directory in the leaf, and a running executable. An
+  ACL that denies the delete and a file name with a trailing dot were causes too. On Linux and macOS
+  claustrum gives the same wordings with the OS error text of Go, for example
+  `permission denied`. Both references gave the same text on Linux and macOS VMs.
 
 Worktree population works as follows. `git worktree add` checks out tracked files
 only, so the daemon then seeds the new worktree. The copies are best-effort, and a
-failure never fails the request:
+failure never fails the request. A caller `timeoutMs` that expires before the
+copies end still fails it, as `timeoutMs` above describes:
 - `.worktreeinclude` sits at the repo root and uses `.gitignore` syntax. It is an
   include filter over the git-ignored set. The daemon copies an untracked file only
   when the manifest names it and git's standard rules ignore it. That is the

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Git-invocation hardening, matching reference build 7d193f89. That build stopped
@@ -124,13 +125,19 @@ func hardenedGitEnv(heavy bool) []string {
 // e.g. git.status classifies a globally-ignored file as ignored. On a host with no
 // global excludes the resolver returns /dev/null, leaving the old behaviour.
 func hardenedArgs(dir string, heavy bool, args ...string) []string {
+	return append([]string{"-C", dir}, hardenedProfileArgs(heavy, args...)...)
+}
+
+// hardenedProfileArgs is hardenedArgs without the `-C dir` selector, for the one
+// call that selects its repository by working directory and --git-dir instead: the
+// read-tree checkout of git.worktree_create.
+func hardenedProfileArgs(heavy bool, args ...string) []string {
 	profile := gitHardenLight
 	if heavy {
 		profile = gitHardenHeavy
 	}
 	excludes := userExcludesFile()
-	full := make([]string, 0, 2+2*len(profile)+len(args))
-	full = append(full, "-C", dir)
+	full := make([]string, 0, 2*len(profile)+len(args))
 	for _, c := range profile {
 		if strings.HasPrefix(c, "core.excludesFile=") {
 			c = "core.excludesFile=" + excludes
@@ -162,6 +169,20 @@ func hardenedGitContext(ctx context.Context, dir string, heavy bool, args ...str
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
+// hardenedGitStderr is hardenedGitContext for a call whose failure text goes on the
+// wire: it returns stderr only, untrimmed, and the exec error. stdout is not kept,
+// because the failure frames of git.worktree_create quote stderr only (measured
+// against f6010b97 and 90fca6e6 on a macOS VM). See worktreeGitText.
+func hardenedGitStderr(ctx context.Context, dir string, heavy bool, args ...string) (string, error) {
+	hookPrecursor(ctx, dir)
+	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
+	cmd.Env = hardenedGitEnv(heavy)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	return errBuf.String(), err
+}
+
 // hardenedGit is hardenedGitContext with the standard git timeout context.
 func hardenedGit(dir string, heavy bool, args ...string) (string, bool) {
 	ctx, cancel := gitCtx()
@@ -171,8 +192,8 @@ func hardenedGit(dir string, heavy bool, args ...string) (string, bool) {
 
 // worktreeCreateDrainCap bounds the post-exit pipe drain of git.worktree_create's
 // read-tree checkout. Measured against 4534d86: when the checkout leaves a descendant
-// (a smudge/hook filter, or something it backgrounds) holding the daemon's combined
-// output pipe, the reference caps the drain at a FIXED ~5.0s from the checkout git's
+// (a smudge/hook filter, or something it backgrounds) holding one of the daemon's
+// output pipes, the reference caps the drain at a FIXED ~5.0s from the checkout git's
 // OWN exit — independent of the caller timeoutMs (measured 5.004 / 5.007 / 5.009s) —
 // then reaps the descendant (so the reply arrives at ~5s, not at the descendant's
 // lifetime), and only then gates the reply on timeoutMs
@@ -183,33 +204,42 @@ func hardenedGit(dir string, heavy bool, args ...string) (string, bool) {
 // from git-exit, matching the reference. (var, not const, so tests can shrink it.)
 var worktreeCreateDrainCap = 5 * time.Second
 
-// hardenedGitWorktreeCreate runs one git subcommand of git.worktree_create's checkout
-// under the hardening profile, in its OWN process group, with the post-exit output-pipe
-// drain capped at worktreeCreateDrainCap when a deadline is armed. It is the only git
-// exec path that caps the drain and reaps the process group, because it is the only
-// path measured to need it: the read-tree checkout can run a smudge/hook filter that
-// backgrounds a descendant which inherits the daemon's combined output pipe and
-// outlives git. The reference emits e.g. "... (deadline expired during the checkout):
-// signal: killed", where that suffix is git's own kill error.
+// hardenedGitCheckout runs the read-tree checkout of git.worktree_create under the
+// hardening profile, in its OWN process group, with the post-exit output-pipe drain
+// capped at worktreeCreateDrainCap when a deadline is armed. It is the only git exec
+// path that caps the drain and reaps the process group, because it is the only path
+// measured to need it: the read-tree checkout can run a smudge/hook filter that
+// backgrounds a descendant which inherits the daemon's output pipes and outlives git.
+//
+// The call has the shape measured against f6010b97 and 90fca6e6 on a Windows VM. Its
+// working directory is the new worktree (leaf), it passes no -C, and its --git-dir is
+// gitDir, the git dir of baseRepo. The index goes to indexFile through GIT_INDEX_FILE.
+// The config precursor runs the same way: `--git-dir=<gitDir> config -z --list
+// --name-only` with the leaf as its working directory. args carries the -c pins and
+// options after the hardening profile, and the read-tree subcommand itself.
 //
 // It returns:
-//   - out: combined stdout+stderr, trailing newline trimmed;
-//   - ok: git exited 0 (a drain overrun still counts as exited-0);
-//   - drained: git EXITED 0 but a descendant held the pipe past the drain cap. Go
+//   - stderr: stderr only, untrimmed. The failure frames quote it (worktreeGitText).
+//     stdout goes to its own pipe, which the drain cap also covers, and is not kept.
+//   - drained: git EXITED 0 but a descendant held a pipe past the drain cap. Go
 //     surfaces this as exec.ErrWaitDelay. The caller routes it to the timeoutMs
 //     verdict (success if timeoutMs exceeded the drain, else timeout + rollback with
 //     the "after the checkout finished" message) — NEVER to worktree_add_failed and
 //     NEVER to "during the checkout";
 //   - err: the underlying exec error — git's own "signal: killed" *ExitError when the
 //     deadline killed a still-running git, exec.ErrWaitDelay on a drain overrun, or a
-//     non-zero *ExitError otherwise.
+//     non-zero *ExitError otherwise. nil when git exited 0.
 //
 // With no deadline armed (D5 off and timeoutMs off) WaitDelay is left unset, so the
 // drain is unbounded and byte-identical to the reference default, which applies no cap.
-func hardenedGitWorktreeCreate(ctx context.Context, dir string, heavy bool, args ...string) (out string, ok, drained bool, err error) {
-	hookPrecursor(ctx, dir)
-	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
-	cmd.Env = hardenedGitEnv(heavy)
+func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, args ...string) (stderr string, drained bool, err error) {
+	pre := exec.CommandContext(ctx, "git", "--git-dir="+gitDir, "config", "-z", "--list", "--name-only")
+	pre.Dir = leaf
+	pre.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
+	_, _ = pre.Output()
+	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false, args...)...)
+	cmd.Dir = leaf
+	cmd.Env = append(hardenedGitEnv(false), "GIT_INDEX_FILE="+indexFile)
 	// Own process group so the teardown below can SIGKILL the whole group and reap a
 	// descendant the checkout left holding the pipe — reproducing 4534d86's observed
 	// descendant reap.
@@ -231,9 +261,9 @@ func hardenedGitWorktreeCreate(ctx context.Context, dir string, heavy bool, args
 			return nil
 		}
 	}
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
 	err = cmd.Run()
 	drained = errors.Is(err, exec.ErrWaitDelay)
 	if drained {
@@ -242,9 +272,59 @@ func hardenedGitWorktreeCreate(ctx context.Context, dir string, heavy bool, args
 		// descendant, matching the reference's observed descendant reap.
 		reapProcessGroup(cmd.Process)
 	}
-	out = strings.TrimRight(buf.String(), "\n")
-	ok = err == nil || drained
-	return out, ok, drained, err
+	return errBuf.String(), drained, err
+}
+
+// runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
+// into a new index in a fresh temporary directory, fills leaf from it, and, when
+// git exits 0, moves that index into adminDir, the new worktree's registration. The
+// temporary directory is removed afterwards. The results are those of
+// hardenedGitCheckout. The -c pins core.splitIndex=false and core.commitGraph=false
+// follow the profile, as in the argv measured against f6010b97.
+//
+// Moving the index is best-effort: a real read-tree that exits 0 has written it. If
+// the move fails, the worktree has no index, as after `worktree add --no-checkout`.
+func runWorktreeCheckout(ctx context.Context, leaf, gitDir, adminDir, rev string) (stderr string, drained bool, err error) {
+	idxDir, err := os.MkdirTemp("", "claustrum-index-")
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = os.RemoveAll(idxDir) }()
+	idx := filepath.Join(idxDir, "index")
+	stderr, drained, err = hardenedGitCheckout(ctx, leaf, gitDir, idx,
+		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
+		"--git-dir="+gitDir, "--work-tree="+leaf,
+		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
+	if err == nil || drained {
+		if !filepath.IsAbs(adminDir) {
+			adminDir = filepath.Join(leaf, adminDir)
+		}
+		installWorktreeIndex(idx, filepath.Join(adminDir, "index"))
+	}
+	return stderr, drained, err
+}
+
+// installWorktreeIndex moves the index file src to dst. A rename fails across file
+// systems, so a copy is the fallback. Best-effort: see runWorktreeCheckout.
+func installWorktreeIndex(src, dst string) {
+	if os.Rename(src, dst) == nil {
+		return
+	}
+	if b, err := os.ReadFile(src); err == nil {
+		_ = os.WriteFile(dst, b, 0o644)
+	}
+}
+
+// repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no
+// answer: the admin dir that repo's .git file names, or <repo>/.git.
+func repoGitDir(repo string) string {
+	if admin := worktreeAdminDir(repo); admin != "" {
+		if !filepath.IsAbs(admin) {
+			admin = filepath.Join(repo, admin)
+		}
+		return admin
+	}
+	return filepath.Join(repo, ".git")
 }
 
 // hardenedGitStdout is hardenedGit but returns stdout only and the exec error,
@@ -503,27 +583,45 @@ func hostileConfigRefusal(dir string) (string, bool) {
 		"listing the configuration in force: " + detail, true
 }
 
-// stderrHeadCap is the byte cap 7d193f89 applies to captured git output before it
+// stderrHeadCap is the byte cap 7d193f89 applies to captured git stderr before it
 // reaches an error frame.
 const stderrHeadCap = 512
 
-// boundedStderrHead caps s at its first stderrHeadCap BYTES, collapses newlines to
-// single spaces, and trims surrounding whitespace, matching the reference: a git
-// failure whose output exceeds 512 bytes is reported with only the head (so an
-// error frame like "git worktree add failed: …" cannot balloon with a huge git
-// message), and the multi-line git error is reported on a single line. `git
-// worktree add` writes its progress and its fatal on separate stderr lines
-// ("Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already
-// exists"); 4534d86 reports the two joined by a space, where claustrum previously
-// kept the newline. Measured against 4534d86 (scratch/probe/wtfail). The byte cap
-// runs first (on the raw bytes), so a multi-byte rune split at the boundary is kept
-// as-is.
-func boundedStderrHead(s string) string {
+// worktreeGitText makes the git text of the git.worktree_create failure frames: the
+// checkout failure, the add failure, the killed checkout, and each of the two parts
+// of the attach-fallback frame. The rule was measured against f6010b97 and 90fca6e6
+// on a macOS VM, and both builds agree:
+//
+//  1. Use stderr only. stdout is not quoted.
+//  2. Keep the first stderrHeadCap bytes.
+//  3. Drop every byte that is not valid UTF-8, anywhere in the text. The cap comes
+//     first, so the bytes of a rune that the cap cuts are dropped too.
+//  4. Replace each rune that is not printable with one space. Runs are not
+//     collapsed, so "\r\n" gives two spaces.
+//  5. Trim the spaces at both ends.
+//  6. If the result is empty, use the exec error, for example "exit status 128" or
+//     "signal: killed".
+//
+// Step 4 uses unicode.IsPrint. That is an inference from the measured payloads, not
+// a proof: every sample fits it. The samples cover \r, \n, \t, NUL, \x01, \x1b, \x7f,
+// U+0085, U+009B, U+00A0, U+200B and U+2028, which all became one space.
+func worktreeGitText(stderr string, err error) string {
+	s := stderr
 	if len(s) > stderrHeadCap {
 		s = s[:stderrHeadCap]
 	}
-	s = strings.ReplaceAll(s, "\n", " ")
-	return strings.TrimSpace(s)
+	s = strings.ToValidUTF8(s, "")
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return ' '
+	}, s)
+	s = strings.Trim(s, " ")
+	if s == "" && err != nil {
+		s = err.Error()
+	}
+	return s
 }
 
 // noRepositoryAt reports whether the hardened `git rev-parse --absolute-git-dir`

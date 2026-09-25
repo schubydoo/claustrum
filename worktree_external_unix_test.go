@@ -98,6 +98,87 @@ func TestWorktreeRemoveExternalDirSymlink(t *testing.T) {
 	}
 }
 
+// A worktreePath that ends in a slash, with a worktreeRoot. The <directory> tests
+// read the cleaned path, so "R/proj/w1/" is judged at "R/proj", not at "R/proj/w1".
+// The frames were measured against f6010b97 and 90fca6e6 on Linux and macOS VMs
+// (rows XS_c_slash, XS_c_slash_exists, XS2_c_slash_twice). Without the clean, the
+// first case created the worktree in R/proj and wrote the marker there, and the
+// others named the wrong directory.
+func TestWorktreeExternalTrailingSlash(t *testing.T) {
+	requireGit(t)
+	base := t.TempDir()
+	repo := filepath.Join(base, "T")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	root := filepath.Join(base, "R")
+	proj := filepath.Join(root, "proj")
+	for _, d := range []string{filepath.Join(proj, "e0"), filepath.Join(proj, "p0")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(proj, "p0", "keep.txt"), "keep\n", 0o644)
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := newTestServer(t)
+	create := func(wp string) string {
+		t.Helper()
+		return dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+			map[string]any{"baseRepo": repo, "branchName": "w1", "worktreePath": wp, "worktreeRoot": root}))
+	}
+	notEmpty := "refusing to create worktree: " + proj + " already exists, is not marked as a " +
+		"worktree directory, and holds other files (for example \"e0\"); the per-repository " +
+		"directory under a worktree location must start out empty — remove it, restore " +
+		"its .claude-managed-worktrees file if you deleted it, or choose another location"
+
+	t.Run("new leaf in a non-empty directory", func(t *testing.T) {
+		wantError(t, create(proj+"/w1/"), notEmpty, "unsafe_path")
+		if _, err := os.Lstat(filepath.Join(proj, "w1")); !os.IsNotExist(err) {
+			t.Errorf("w1 was created (err=%v)", err)
+		}
+		if _, err := os.Lstat(filepath.Join(proj, managedWorktreesMarker)); !os.IsNotExist(err) {
+			t.Errorf("the marker was written into %s (err=%v)", proj, err)
+		}
+	})
+	t.Run("existing plain folder", func(t *testing.T) {
+		wantError(t, create(proj+"/p0/"), notEmpty, "unsafe_path")
+	})
+	t.Run("second create in a fresh directory", func(t *testing.T) {
+		wp := filepath.Join(root, "cp", "w1")
+		raw := create(wp + "/")
+		want := `{"success":true,"path":` + jsonString(t, wp+"/") + `,`
+		if !strings.Contains(raw, want) {
+			t.Fatalf("first create = %s, want %s", raw, want)
+		}
+		wantError(t, create(wp+"/"), "refusing to create worktree: "+wp+
+			" already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path")
+	})
+	t.Run("symlinked directory", func(t *testing.T) {
+		outside := filepath.Join(base, "outside")
+		if err := os.MkdirAll(filepath.Join(outside, "wt"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		dlink := filepath.Join(root, "dlink")
+		if err := os.Symlink(outside, dlink); err != nil {
+			t.Fatal(err)
+		}
+		const tail = " is a symbolic link; the directory under the worktree location must be a real directory"
+		wantError(t, create(dlink+"/w1/"), "refusing to create worktree: "+dlink+tail, "unsafe_path")
+		if _, err := os.Lstat(filepath.Join(outside, "w1")); !os.IsNotExist(err) {
+			t.Errorf("the create followed the symlink out of the root (err=%v)", err)
+		}
+		rm := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+			map[string]any{"baseRepo": repo, "worktreePath": dlink + "/wt/", "worktreeRoot": root}))
+		if got := worktreeErrorField(t, rm); got != "refusing to remove worktree: "+dlink+tail {
+			t.Errorf("remove through a symlinked <dir> = %s, want the symlink refusal", rm)
+		}
+	})
+}
+
 // writableWho names who beyond the owner can write. The three spellings are the
 // reference's; the combined case is not reachable in the RPC test above without a
 // shared group AND world-write, so it is pinned directly.

@@ -152,6 +152,8 @@ component_management:
         - worktreemkdir_windows.go
         - worktreestale.go
         - worktreeverify.go
+        # sourceBranch start-commit choice for git.worktree_create.
+        - worktreesource.go
         - githarden.go
         - homeguard.go
         # cross-platform fs primitives for the git/files methods: path canon (git

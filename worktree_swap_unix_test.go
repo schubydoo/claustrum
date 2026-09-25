@@ -62,3 +62,56 @@ func TestWorktreeCreateRefusesSwappedLeaf(t *testing.T) {
 		t.Errorf("create over a swapped leaf = %s, want success:false", raw)
 	}
 }
+
+// TestCheckpointHoldsLeafAndParent pins that, on unix, the create's checkpoint
+// holds the leaf and its parent open until release. The references hold open
+// descriptors on both during the create (measured in /proc/<pid>/fd on a Linux
+// VM). The held leaf keeps its inode allocated, so a directory made at the same
+// path after a delete gets a new inode number, and verifyCreatedWorktree reports
+// it. Without the hold, ext4 reused the number 4 times in 6 on a Linux VM, and the
+// replacement passed the check. A tmpfs did not reuse the number in local runs, so
+// this test checks the hold itself, then the refusal after many replacements.
+func TestCheckpointHoldsLeafAndParent(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "worktrees")
+	leaf := filepath.Join(parent, "w1")
+	if err := os.MkdirAll(leaf, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cp := checkpointCreatedWorktree(leaf + "/")
+	if cp.info == nil {
+		t.Fatal("checkpoint did not capture the leaf")
+	}
+	if len(cp.held) != 2 {
+		cp.release()
+		t.Fatalf("checkpoint holds %d handles, want 2 (the leaf and its parent)", len(cp.held))
+	}
+	for i, want := range []string{leaf, parent} {
+		got, err := cp.held[i].Stat()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !os.SameFile(got, fi) {
+			t.Errorf("held handle %d is not %s", i, want)
+		}
+	}
+	for i := range 200 {
+		if err := os.RemoveAll(leaf); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(leaf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if msg := verifyCreatedWorktree(leaf, cp); !strings.Contains(msg, "was not populated by git worktree add") {
+			t.Fatalf("replacement %d: verify = %q, want the not-populated refusal", i, msg)
+		}
+	}
+	held := cp.held[0]
+	cp.release()
+	if _, err := held.Stat(); err == nil {
+		t.Errorf("the leaf handle is still open after release")
+	}
+}

@@ -129,7 +129,7 @@ func (p *gitParams) repoDir() string {
 //
 // The ONE measured exception is git.worktree_create's read-tree checkout, which
 // CAN leave a smudge/hook descendant holding the pipe. Only that path caps the
-// drain — see hardenedGitWorktreeCreate / worktreeCreateDrainCap in githarden.go —
+// drain — see hardenedGitCheckout / worktreeCreateDrainCap in githarden.go —
 // reproducing 4534d86's fixed ~5s post-exit cap + descendant reap and the
 // timeoutMs-gated success-vs-timeout verdict. That is wire-visible (a timeout +
 // rollback where an unbounded drain would report success), so it is scoped to the
@@ -163,36 +163,26 @@ func gitCtx() (context.Context, context.CancelFunc) {
 // git runs git -C <dir> <args...> under gitTimeout and returns combined output + ok.
 //
 // Combined, deliberately — do NOT "fix" this to Output() to match gitStdoutErr
-// below. git.worktree_create puts this string ON THE WIRE on failure
-// ("git worktree add failed: " + out), and `git worktree add` writes both its
-// progress and its fatal to stderr while leaving stdout empty. Measured with a
-// branch name that already exists (the wire string is single-line since 4534d86 —
-// boundedStderrHead joins git's two stderr lines with a space; 5db5e4a kept the
-// newline):
+// below. It once carried the failure text of git.worktree_create, whose `git
+// worktree add` writes both its progress and its fatal to stderr while leaving
+// stdout empty. git.worktree_create now quotes stderr only, through
+// hardenedGitStderr and worktreeGitText (measured against f6010b97 and 90fca6e6:
+// stdout never shows in those frames).
 //
-//	reference (4534d86) : "git worktree add failed: Preparing worktree (new branch 'dup') fatal: a branch named 'dup' already exists"
-//	stdout-only         : "git worktree add failed: "
-//
-// This helper's remaining callers fall into four groups, and only the first two
-// are safe by argument:
+// This helper's remaining callers fall into two groups, and only the first
+// is safe by argument:
 //
 //	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
 //	                     both of which a warning-prefixed string fails safely;
 //	                     show-ref --verify --quiet and update-ref -d (the branch
 //	                     delete), which discard their output entirely
-//	wants the stderr     gitWorktreeCreate — the failure text lives there
 //	echoes it verbatim   --show-toplevel → root/repo, symbolic-ref --short HEAD →
 //	                     branch (rev-parse --short HEAD supplies only the
 //	                     detached-HEAD sha fallback), remote get-url → repoSlug,
-//	                     symbolic-ref → defaultBranch
-//	echoed AND used      rev-parse --abbrev-ref HEAD → sourceBranch, which is both
-//	  as argv            put on the wire AND passed to `git worktree add` as the
-//	                     commit-ish. This is the most exposed of the set and had
-//	                     no row at all: a folded warning here would not merely be
-//	                     echoed, it would make the add fail and surface as a
-//	                     wire-visible worktree_add_failed.
+//	                     symbolic-ref → defaultBranch, rev-parse --abbrev-ref
+//	                     HEAD → sourceBranch
 //
-// The last two groups put combined output on the wire unsplit. No fixture has been
+// The second group puts combined output on the wire unsplit. No fixture has been
 // found that makes those commands write to stderr while exiting 0, so the
 // exposure is theoretical and this change does not touch it — but it is NOT
 // covered by the argument above, and saying otherwise would repeat the mistake
@@ -254,32 +244,34 @@ func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool
 	return out, ok, ctx.Err() != nil
 }
 
-// worktreeCreateCtx builds the context for git.worktree_create's add + checkout.
-// It composes the D5 global git deadline (gitCtx — background when off) with the
-// caller's per-request timeoutMs (4534d86 parity). timeoutMs <= 0 arms no
-// per-request deadline, so with D5 also off the operation runs unbounded and
-// byte-identical to the reference at its default. When both are set, the tighter
-// one fires first.
+// worktreeCreateCtx builds the two contexts of git.worktree_create.
 //
-// The add and the read-tree checkout share this one context, so with D5 opted in
-// AND timeoutMs 0 the read-tree now runs under the add's remaining D5 budget rather
-// than a fresh gitCtx per call. That is a change only to D5's own claustrum-only,
-// default-off path; no frame moves (at timeoutMs 0 the read-tree is best-effort and
-// its result is discarded, and an empty worktree still passes verifyCreatedWorktree).
-// errCallerTimeoutMs is the cause stamped on the caller's per-request deadline, so
-// a fired context can be attributed to the caller's timeoutMs specifically and not
-// to the D5 global deadline that shares the same context. When both are opted in and
-// the tighter D5 deadline fires first, context.Cause reports D5's DeadlineExceeded,
-// not this — see callerTimeoutFired.
+// d5 is the D5 global git deadline from gitCtx. It has no deadline when D5 is off.
+// The add runs under d5 only, so the caller's timeoutMs never kills the add.
+//
+// caller is d5 plus the caller's timeoutMs (4534d86 parity). The read-tree checkout
+// runs under caller, so the caller's deadline kills the checkout. The daemon also
+// tests caller after the add and after the copy step. When timeoutMs is 0 or less,
+// caller is d5 itself, and with D5 also off nothing is bounded.
+//
+// The add and the checkout share the one D5 deadline. With D5 opted in and
+// timeoutMs 0, the checkout thus runs under the D5 time that the add left. That is a
+// change only to the claustrum-only, default-off D5 path. A D5 kill of the checkout
+// is a failed checkout: the request answers worktree_add_failed "(checkout)" and
+// rolls back.
+//
+// errCallerTimeoutMs is the cause stamped on the caller's deadline. It tells a fired
+// caller deadline apart from a fired D5 deadline. When D5 fires first,
+// context.Cause reports the D5 DeadlineExceeded instead. See callerTimeoutFired.
 var errCallerTimeoutMs = errors.New("git.worktree_create caller timeoutMs deadline")
 
-func worktreeCreateCtx(timeoutMs int) (context.Context, context.CancelFunc) {
+func worktreeCreateCtx(timeoutMs int) (d5, caller context.Context, cancel context.CancelFunc) {
 	base, baseCancel := gitCtx()
 	if timeoutMs <= 0 {
-		return base, baseCancel
+		return base, base, baseCancel
 	}
-	ctx, cancel := context.WithTimeoutCause(base, time.Duration(timeoutMs)*time.Millisecond, errCallerTimeoutMs)
-	return ctx, func() { cancel(); baseCancel() }
+	ctx, c := context.WithTimeoutCause(base, time.Duration(timeoutMs)*time.Millisecond, errCallerTimeoutMs)
+	return base, ctx, func() { c(); baseCancel() }
 }
 
 // callerTimeoutFired reports whether ctx was canceled by the caller's own timeoutMs
@@ -749,9 +741,17 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
+		// With a worktreeRoot the refusal names the cleaned path: f6010b97 and
+		// 90fca6e6 quote "R/cp/w1" for a worktreePath sent as "R/cp/w1/" (measured
+		// on Linux and macOS VMs). Without a worktreeRoot it names the path as sent.
+		// No probe sent an in-repo path with a slash to this refusal.
+		existing := p.WorktreePath
+		if p.WorktreeRoot != "" {
+			existing = filepath.Clean(p.WorktreePath)
+		}
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
-			Error:     fmt.Sprintf("refusing to create worktree: %s already exists, and a new worktree is only ever created in a fresh directory", p.WorktreePath),
+			Error:     fmt.Sprintf("refusing to create worktree: %s already exists, and a new worktree is only ever created in a fresh directory", existing),
 			ErrorCode: "unsafe_path",
 		})
 	}
@@ -762,8 +762,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	dropStaleWorktreeRegistration(repo, p.WorktreePath)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
-	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo.
-	if err := os.MkdirAll(filepath.Dir(p.WorktreePath), 0o755); err != nil {
+	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
+	// from the cleaned path. With a trailing slash, filepath.Dir of the raw path is
+	// the leaf itself, and the leaf mkdir below then failed with "file exists". The
+	// references create that worktree and echo the path as sent. Measured on Linux
+	// and macOS VMs. Every frame below therefore keeps the raw p.WorktreePath.
+	leafParent := filepath.Dir(filepath.Clean(p.WorktreePath))
+	if err := os.MkdirAll(leafParent, 0o755); err != nil {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     fmt.Sprintf("failed to create parent directory: %v", err),
@@ -775,7 +780,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// baseRepoUnderManagedWorktrees looks for, so a later create whose baseRepo sits
 	// under here is refused as a nested repo.
 	if p.WorktreeRoot != "" {
-		_ = ensureManagedWorktreesMarker(filepath.Dir(p.WorktreePath))
+		_ = ensureManagedWorktreesMarker(leafParent)
 	}
 	// 7d193f89 also creates the worktree directory ITSELF before `git worktree add`
 	// (git adds into the pre-made empty dir). An unwritable/foreign-owned parent fails HERE as
@@ -791,63 +796,52 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		})
 	}
 	// Record the leaf's identity now, to confirm below that `git worktree add`
-	// populated this same directory and nothing swapped it during the add.
+	// populated this same directory and nothing swapped it during the add. The
+	// checkpoint holds the leaf and its parent open until the create answers.
 	checkpoint := checkpointCreatedWorktree(p.WorktreePath)
-	// Default the source to the repo's current branch. On an unborn HEAD
-	// (no-commit repo) abbrev-ref fails — leave source empty rather than capturing
-	// git's error text, and let `git worktree add` infer an orphan branch.
-	// The reference accepts a sourceBranch ONLY when it names an existing local
-	// branch, and silently ignores anything else — succeeding off HEAD rather
-	// than failing the request. claustrum forwarded the value straight to
-	// `git worktree add`, which failed with "invalid reference".
-	//
-	// Measured against the reference at 5db5e4a; the accepted set is narrower
-	// than "a resolvable rev":
-	//
-	//	feature, diverged           local branches  -> used as-is
-	//	HEAD                                        -> ignored, falls back
-	//	refs/heads/feature          full ref name   -> ignored, falls back
-	//	v1                          tag             -> ignored, falls back
-	//	cb77b0c                     commit sha      -> ignored, falls back
-	//	origin/rbranch              remote-tracking -> ignored, falls back
-	//	no-such-branch                              -> ignored, falls back
-	//
-	// So the test is the existence of refs/heads/<source>, not `rev-parse
-	// --verify`, which would accept HEAD, the tag and the sha. Note "diverged"
-	// is accepted although it is NOT an ancestor of HEAD, which rules out an
-	// ancestry check here.
+	defer checkpoint.release()
+	// A non-empty sourceBranch picks the start commit from the local branch and its
+	// origin remote-tracking ref (pickSourceCommit, worktreesource.go). When a
+	// candidate resolves, the add and the checkout get that commit's full id, so the
+	// new branch's reflog reads "branch: Created from <sha>", and sourceBranch is
+	// echoed exactly as sent. When none resolves, or sourceBranch is omitted or "",
+	// the add gets no start point (HEAD) and the current branch is echoed instead.
+	// Measured side by side against f6010b97 on Linux, Windows and macOS.
+	source := p.SourceBranch
+	startCommit := ""
+	if source != "" {
+		startCommit = pickSourceCommit(repo, source)
+	}
 	// existingBranch (19f30c46): attach the worktree to an already-existing local
-	// branch instead of creating one. Resolved before source, matching the reference's
-	// argv order (show-ref existingBranch, then rev-parse HEAD). show-ref --verify
-	// decides: a resolvable refs/heads/<existingBranch> switches to attach mode; an
-	// empty value or a miss falls through to the -b <branchName> new-branch path
-	// (measured against 19f30c46, which silently creates branchName when existingBranch
-	// names no branch). branchName stays required in both modes.
+	// branch instead of creating one. It is resolved after the sourceBranch
+	// candidates and before the HEAD fallback, in the order measured against
+	// f6010b97. show-ref --verify decides: a resolvable refs/heads/<existingBranch>
+	// switches to attach mode, and the chosen start commit goes unused. An empty
+	// value or a miss falls through to the -b <branchName> new-branch path
+	// (measured against 19f30c46, which silently creates branchName when
+	// existingBranch names no branch). branchName stays required in both modes.
 	attachBranch := ""
 	if p.ExistingBranch != "" {
 		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+p.ExistingBranch); ok {
 			attachBranch = p.ExistingBranch
 		}
 	}
-	source := p.SourceBranch
-	sourceRef := ""
-	if source != "" {
-		if _, ok := hardenedGit(repo, false, "show-ref", "--verify", "--quiet", "refs/heads/"+source); ok {
-			sourceRef = "refs/heads/" + source
-		} else {
-			source = "" // ignored; fall back to HEAD
-		}
-	}
-	if source == "" {
-		if s, ok := hardenedGit(repo, false, "rev-parse", "--abbrev-ref", "HEAD"); ok {
-			source = s // echoed as sourceBranch; the add itself defaults to HEAD
+	if startCommit == "" {
+		// The fallback echoes the current branch. On a detached HEAD abbrev-ref
+		// prints "HEAD", and the member is omitted (measured against f6010b97 and
+		// 90fca6e6). On an unborn HEAD abbrev-ref fails, the member is omitted, and
+		// the add below fails (see TestGitWorktreeCreateEmptyRepo).
+		source = ""
+		if s, ok := hardenedGit(repo, false, "rev-parse", "--abbrev-ref", "HEAD"); ok && s != "HEAD" {
+			source = s
 		}
 	}
 	// 7d193f89 creates the branch WITHOUT checking out (--no-track --no-checkout),
 	// then populates the working tree with a separate read-tree --reset. A plain
 	// `worktree add` that checks out leaves an ORIG_HEAD in the worktree's admin dir
-	// that the two-step does not — wire-visible via files.read. An explicit ref is
-	// passed only for an accepted sourceBranch; otherwise -b defaults to HEAD.
+	// that the two-step does not. That is wire-visible via files.read. An explicit
+	// start commit is passed only when a sourceBranch candidate resolved. Otherwise
+	// -b defaults to HEAD.
 	// worktreeBranch is the branch the worktree ends up on: the attached existingBranch,
 	// or the -b branchName it creates. It drives the add commit-ish, the read-tree ref,
 	// and the result's new `branch` field. createdBranch is only the branch this add
@@ -863,98 +857,140 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		addArgs = []string{"worktree", "add", "--no-checkout", p.WorktreePath, attachBranch}
 	} else {
 		addArgs = []string{"worktree", "add", "--no-track", "--no-checkout", "-b", p.BranchName, p.WorktreePath}
-		if sourceRef != "" {
-			addArgs = append(addArgs, sourceRef)
+		if startCommit != "" {
+			addArgs = append(addArgs, startCommit)
 		}
 	}
-	// A caller-supplied timeoutMs (4534d86) bounds the add + checkout. worktreeCreateCtx
-	// composes it with the D5 global deadline; at timeoutMs 0 with D5 off it is the same
-	// unbounded context hardenedGit uses, so the default path is byte-identical.
-	addCtx, addCancel := worktreeCreateCtx(p.TimeoutMs)
-	defer addCancel()
-	out, ok := hardenedGitContext(addCtx, repo, false, addArgs...)
-	if !ok {
-		// The caller's timeoutMs reports a distinct errorCode "timeout", not
-		// worktree_add_failed — a client branches on errorCode, and this
-		// caller-timeout -> "timeout" mapping is measured against 4534d86.
-		// callerTimeoutFired gates on WHICH deadline fired, not merely on timeoutMs
-		// being set: a D5 global deadline that fires first (operator opted in, caller
-		// sent a longer timeoutMs) falls through to worktree_add_failed, the way a
-		// D5-only kill (no timeoutMs) already does — so the caller's longer duration is
-		// never quoted for a kill D5 caused. That D5 interaction is claustrum's own
-		// divergence, not reference behavior: the reference has no D5 global deadline.
-		if p.TimeoutMs > 0 && callerTimeoutFired(addCtx) {
+	// The checkout reads the start commit's id when the add got one, and the
+	// worktree's branch otherwise (the attached branch, or the -b branch made off
+	// HEAD). Measured against f6010b97.
+	checkoutRev := "refs/heads/" + worktreeBranch
+	if attachBranch == "" && startCommit != "" {
+		checkoutRev = startCommit
+	}
+	// The read-tree checkout names the git dir of baseRepo with --git-dir, as
+	// measured against f6010b97 and 90fca6e6 on a Windows VM. For a linked-worktree
+	// baseRepo that is its own admin dir. The references ask git for it with
+	// rev-parse --absolute-git-dir, on the heavy profile, before the add.
+	gitDir := repoGitDir(repo)
+	if d, ok := hardenedGit(repo, true, "rev-parse", "--absolute-git-dir"); ok && d != "" {
+		gitDir = filepath.Clean(filepath.FromSlash(d))
+	}
+	// A caller-supplied timeoutMs (4534d86) bounds the add, the checkout and the copy
+	// step. At timeoutMs 0 with D5 off, both contexts are the unbounded context that
+	// hardenedGit uses, so the default path is byte-identical.
+	d5Ctx, callerCtx, cancelCtx := worktreeCreateCtx(p.TimeoutMs)
+	defer cancelCtx()
+	// The caller's deadline does not kill the add. The daemon waits for git to exit.
+	// Measured against f6010b97 and 90fca6e6 on a macOS VM. Each failure frame quotes
+	// git's stderr through worktreeGitText.
+	addStderr, addErr := hardenedGitStderr(d5Ctx, repo, false, addArgs...)
+	if addErr != nil && attachBranch != "" {
+		// A refused attach falls back to a new branch, unless the failed attach add
+		// deleted the leaf or put a new directory in its place. Then the request
+		// answers the attach add's own failure. Measured against f6010b97 and 90fca6e6
+		// on a macOS VM, with the leaf deleted and with it replaced by a new empty
+		// directory. A leaf left as it was gets the fallback.
+		if verifyCreatedWorktree(p.WorktreePath, checkpoint) != "" {
+			undoFailedAdd(p.WorktreePath, checkpoint)
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
-				Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs),
-				ErrorCode: "timeout",
+				Error:     "git worktree add failed: " + worktreeGitText(addStderr, addErr),
+				ErrorCode: "worktree_add_failed",
 			})
 		}
-		// Roll back the leaf claustrum pre-created (mkdirWorktreeLeaf) so a failed add
-		// leaves no partial worktree behind, matching 4534d86 (scratch/probe/wtfail: the
-		// reference removes the leaf and keeps any pre-existing branch;
-		// scratch/probe/worktree-mutations-4534d86.md B: a retry at the same path with a
-		// fresh branch then succeeds). branch is "" here: the realistic add failures
-		// (branch already exists, ref lock) create no new branch, and the reference
-		// does NOT delete the branch — deleting it would corrupt the worktree already
-		// using it. undoCreatedWorktree still applies the always-on home guard and the
-		// leaf-identity re-check before the RemoveAll (D2).
-		undoCreatedWorktree(repo, p.WorktreePath, "", checkpoint)
+		// The fallback add names branchName and gets the start point that
+		// sourceBranch resolved to, if any, as the new-branch path does. The worktree
+		// then ends up on that new branch, and the rollbacks below delete it. If the
+		// fallback also fails, the frame quotes both texts, each one made on its own.
+		// Measured against f6010b97 and 90fca6e6 on a macOS VM.
+		attachStderr, attachErr := addStderr, addErr
+		fallbackArgs := []string{"worktree", "add", "--no-track", "--no-checkout", "-b", p.BranchName, p.WorktreePath}
+		if startCommit != "" {
+			fallbackArgs = append(fallbackArgs, startCommit)
+		}
+		addStderr, addErr = hardenedGitStderr(d5Ctx, repo, false, fallbackArgs...)
+		if addErr != nil {
+			undoFailedAdd(p.WorktreePath, checkpoint)
+			return okResult(req.ID, worktreeResult{
+				Success: false,
+				Error: fmt.Sprintf("git worktree add failed: %s (attaching to the existing branch %s was refused first: %s)",
+					worktreeGitText(addStderr, addErr), attachBranch, worktreeGitText(attachStderr, attachErr)),
+				ErrorCode: "worktree_add_failed",
+			})
+		}
+		worktreeBranch = p.BranchName
+		createdBranch = p.BranchName
+		checkoutRev = "refs/heads/" + p.BranchName
+		if startCommit != "" {
+			checkoutRev = startCommit
+		}
+	}
+	if addErr != nil {
+		// A failed add answers this frame even when the caller's deadline already
+		// expired. The rollback runs no git call and removes the leaf only if it is
+		// empty (undoFailedAdd). A branch that existed before the call is kept.
+		// Measured against f6010b97 and 90fca6e6 on a macOS VM.
+		undoFailedAdd(p.WorktreePath, checkpoint)
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
-			Error:     "git worktree add failed: " + boundedStderrHead(out),
+			Error:     "git worktree add failed: " + worktreeGitText(addStderr, addErr),
 			ErrorCode: "worktree_add_failed",
 		})
 	}
-	// Second half of the two-step: populate the working tree from the new branch
-	// without a checkout, writing the WORKTREE's own index (its .git points at
-	// <repo>/.git/worktrees/<name>) — using the main .git here would wipe the linked
-	// index. Best-effort — an unborn/orphan branch has nothing to read, leaving the
-	// worktree empty.
+	// The add succeeded. If the caller's deadline expired during it, the request
+	// answers timeout "before the checkout started" and rolls back. errorCode
+	// "timeout" is reserved for the caller's own deadline. The reference has no D5.
+	// Every rollback below appends an undo text when one of its steps fails.
+	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
+		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs)
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
+			ErrorCode: "timeout",
+		})
+	}
+	// Second half of the two-step: the read-tree fills the working tree from the new
+	// branch. It runs in the leaf with --git-dir set to the git dir of baseRepo and its
+	// index in a new temporary directory (GIT_INDEX_FILE). After git exits 0, that
+	// index becomes the new worktree's own index. Measured against f6010b97 and
+	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
+	// last arm of the switch.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		_, _, rtDrained, rtErr := hardenedGitWorktreeCreate(addCtx, repo, false, "-c", "core.splitIndex=false",
-			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
-			"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/"+worktreeBranch)
+		rtStderr, rtDrained, rtErr := runWorktreeCheckout(callerCtx, p.WorktreePath, gitDir, adminDir, checkoutRev)
 		switch {
 		case rtDrained:
-			// git EXITED 0 but a checkout descendant held the daemon's output pipe past
-			// the ~5s drain cap (hardenedGitWorktreeCreate already SIGKILLed the group,
-			// reaping it). 4534d86 caps that drain independently of timeoutMs and THEN
-			// gates the frame on timeoutMs: success (worktree kept) when timeoutMs
-			// exceeds the drain, else errorCode "timeout" + rollback. By the time the
-			// fixed drain completes, the caller ctx has expired iff timeoutMs was at or
-			// below the drain, so callerTimeoutFired distinguishes the two arms — the
-			// SAME predicate the killed-during arm uses. This "after the checkout
-			// finished" arm (git exited 0 cleanly, no "signal: killed") is what the
-			// reference emits for a drain that overran the deadline.
-			if p.TimeoutMs > 0 && callerTimeoutFired(addCtx) {
-				undoCreatedWorktree(repo, p.WorktreePath, createdBranch, checkpoint)
-				return okResult(req.ID, worktreeResult{
-					Success:   false,
-					Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs),
-					ErrorCode: "timeout",
-				})
-			}
-			// timeoutMs exceeded the drain (or none / D5-only): the worktree is kept —
-			// fall through to the success reply, matching the reference.
-		case p.TimeoutMs > 0 && callerTimeoutFired(addCtx):
-			// git was still running when the caller's deadline fired: killed DURING the
-			// checkout. A killed read-tree carries git's own "signal: killed" error; a
-			// read-tree that returned clean in the microsecond before the deadline
-			// reports the after-checkout variant (near-unhittable, reproduced from the
-			// reference string rather than force-covered — the drained arm above is the
-			// measured "after the checkout finished" path).
-			if rtErr != nil {
-				return okResult(req.ID, worktreeResult{
-					Success:   false,
-					Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s", p.TimeoutMs, rtErr),
-					ErrorCode: "timeout",
-				})
-			}
+			// git exited 0, but a checkout descendant held the daemon's output pipe
+			// past the ~5s drain cap. hardenedGitCheckout already killed and reaped
+			// the process group. The checkout counts as finished, so the request goes
+			// on to the copy step. The deadline test after the copy step then answers
+			// timeout "after the checkout finished" and rolls back. If the deadline has
+			// not expired, the request succeeds. Measured against f6010b97 and
+			// 90fca6e6 on a macOS VM.
+		case rtErr != nil && p.TimeoutMs > 0 && callerTimeoutFired(callerCtx):
+			// The caller's deadline killed the checkout. The text after "during the
+			// checkout): " is the killed git's stderr made by worktreeGitText, or the
+			// exec error, for example "signal: killed", when that text is empty.
+			// Measured against f6010b97 and 90fca6e6 on a macOS VM.
+			msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s",
+				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
-				Error:     fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs),
+				Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
 				ErrorCode: "timeout",
+			})
+		case rtErr != nil:
+			// The checkout failed on its own (for example a tree object it cannot
+			// read). The request fails with git's text, and the rollback removes the
+			// new directory, its registration and the branch this call created. The
+			// frame matches 90fca6e6 byte for byte. The f6010b97 text starts with
+			// git's graft-file deprecation hint: lines. In attach mode createdBranch is
+			// "", so the attached branch is kept, as measured against f6010b97.
+			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
+				ErrorCode: "worktree_add_failed",
 			})
 		}
 	}
@@ -979,6 +1015,18 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	//
 	// Best-effort: the worktree exists, so a copy failure does not fail the request.
 	populateWorktree(repo, p.WorktreePath)
+	// The caller's deadline does not kill the copy step. The daemon lets the step
+	// finish and then tests the deadline. If the deadline expired, the request answers
+	// timeout "after the checkout finished" and rolls back. Measured against f6010b97
+	// and 90fca6e6 on a macOS VM.
+	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
+		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs)
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
+			ErrorCode: "timeout",
+		})
+	}
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }
 
@@ -1240,22 +1288,23 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// leaves it (measured against 4534d86, scratch/probe/gitmut: after remove the ref
 	// and reflog are gone on both, but the config section survives on the reference
 	// and claustrum's `branch -D` deleted it). update-ref matches on all three and is
-	// the same primitive undoCreatedWorktree already uses. Best-effort: a branch that
+	// the same primitive undoFailedCheckout already uses. Best-effort: a branch that
 	// does not exist still answers {"success":true}, so a failed delete is not surfaced.
 	if p.BranchName != "" {
 		hardenedGit(repo, false, "update-ref", "--no-deref", "-d", "refs/heads/"+p.BranchName)
 	}
-	// Prune the registration (see above). A no-op when `git worktree remove`
-	// already dropped it; the fix for the fallback path. The ONLY legitimate admin
-	// dir is `<repo>/.git/worktrees/<name>`, so require the pruned path to resolve
-	// strictly inside `<repo>/.git/worktrees` before the delete — not merely inside
-	// the repo. worktreeAdminDir returns the `.git` pointer's contents verbatim, and
-	// those contents are attacker-writable, so a stale or forged pointer such as
-	// `gitdir: <repo>/src` or `<repo>/.git/objects` (or a `..` variant that Clean or
-	// EvalSymlinks collapses back under the repo) would otherwise turn the prune into
-	// an os.RemoveAll of unrelated repo data. Constraining to `.git/worktrees` rejects
-	// every such target while still pruning a real registration. Off-wire: the result
-	// is discarded and the reply is success:true either way. Raised by review on PR 286.
+	// Prune the registration (see above). This is the fix for the fallback path. It
+	// does nothing when `git worktree remove` already dropped the registration. For a
+	// baseRepo whose .git is a directory, the only valid admin dir is
+	// `<repo>/.git/worktrees/<name>`. The pruned path must therefore resolve strictly
+	// inside `<repo>/.git/worktrees` before the delete. Inside the repo is not enough.
+	// worktreeAdminDir returns the contents of the `.git` pointer as they are, and an
+	// attacker can write them. A stale or forged pointer can name `<repo>/src` or
+	// `<repo>/.git/objects`, or a `..` variant that Clean or EvalSymlinks brings back
+	// under the repo. Without the check, the prune then deletes unrelated repo data.
+	// The check refuses every such target and still prunes a real registration.
+	// Off-wire: the result is discarded, and the reply is success:true either way.
+	// Raised by review on PR 286.
 	if adminDir != "" && worktreeAdminBelongsTo(adminDir, p.WorktreePath) &&
 		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(repo, ".git", "worktrees"))) {
 		_ = os.RemoveAll(adminDir)

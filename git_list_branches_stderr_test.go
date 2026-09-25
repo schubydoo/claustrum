@@ -85,10 +85,8 @@ func TestGitListBranchesIgnoresGitStderr(t *testing.T) {
 }
 
 // The split between git() and gitStdoutErr is a per-caller decision, so pin that
-// git() still returns COMBINED output — gitWorktreeCreate depends on it, and a
-// well-meaning "consistency" change to Output() would silently empty that frame.
-// TestSocketWorktreeCreateFailureCarriesGitStderr covers the frame itself; this
-// covers the helper, so the reason survives even if that test is rewritten.
+// git() still returns COMBINED output. The echo callers listed in the git() comment
+// in methods_git.go depend on it.
 func TestGitHelperStillReadsCombinedOutput(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

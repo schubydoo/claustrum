@@ -273,7 +273,16 @@ traps that matter for telling drift from expected:
   `git.worktree_create` still answers `{"success":true}`, and the seeded files are
   absent. That covers both passes: the `.worktreeinclude` manifest copy and the
   `.claude/` copy. Nothing on the wire says so, so a clean frame diff does not
-  cover it.
+  cover it. A D5 kill of any `sourceBranch` step can change the start commit.
+  The frame changes only when both lookups are killed.
+- The failure frames of `git.worktree_create` differ between pins. In
+  `f6010b97` the git text starts with git's graft-file deprecation `hint:` lines.
+  In the add-failure frame the 512-byte cap can then cut the rest of the text.
+  `90fca6e6` and claustrum do not print the hint, so that prefix is not drift.
+- In a repo with no `.claude/`, a `timeoutMs` that expires during the copy step
+  splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
+  `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
+  back. That difference is not drift.
 - D12 needs a VALID zstd body. D13's ordering answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and

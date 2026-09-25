@@ -207,12 +207,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `os.RemoveAll`. `files.extract_tar` wipes `destDir`. When git exits non-zero for
   a non-locked reason, `git.worktree_remove` deletes `worktreePath`. A locked
   worktree is refused, not deleted. When `git.worktree_create` rolls back a
-  worktree, it deletes `worktreePath`. A rollback follows a failed
-  `git worktree add`, unless the caller's `timeoutMs` cut the add short.
-  A cut-short add answers
-  `timeout` and leaves the leaf. A rollback also follows a post-checkout drain
-  that exceeded the caller `timeoutMs`. On both rollback arms the guard is
-  defense-in-depth behind create's own containment. `wipesHomeDir` (`homeguard.go`)
+  worktree, it deletes `worktreePath`. A rollback follows a caller `timeoutMs`
+  that expired during a successful add, the checkout or the copy step. It also
+  follows a post-checkout drain that exceeded the caller `timeoutMs`, and a failed
+  read-tree checkout. That rollback deletes the leaf's entries, then the empty
+  leaf. After a failed `git worktree add`, create only removes an empty leaf, with
+  an rmdir. On every rollback arm the guard is defense-in-depth behind create's
+  own containment. `wipesHomeDir` (`homeguard.go`)
   refuses any target that is or contains the home directory. Descendants stay
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
 - **Containment is the test, and the predicate resolves relative paths**
@@ -329,7 +330,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   measured exception is `git.worktree_create`'s read-tree checkout, which can run a
   smudge/hook filter that backgrounds a pipe-holding descendant. That path alone
   caps the post-exit drain at a fixed ~5 s from git's own exit. It also SIGKILLs
-  the process group (`hardenedGitWorktreeCreate` / `worktreeCreateDrainCap`).
+  the process group (`hardenedGitCheckout` / `worktreeCreateDrainCap`).
   That reproduces `4534d86`. When the caller `timeoutMs` exceeds that drain, the
   answer is success. Otherwise the answer is
   `errorCode:"timeout"` ("deadline expired after the checkout finished", no
@@ -351,9 +352,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   worktree add failed: …` with `errorCode:"worktree_add_failed"`. That is the same
   failure arm as any other git error, and it is distinct from the 4534d86
   caller-`timeoutMs` arm
-  (`errorCode:"timeout"`). A D5 hit on the read-tree checkout is discarded like any
-  best-effort step (see the loses-data-silently arm above). The error is dropped and
-  the create can still answer `{"success":true}` with an incomplete worktree. When a
+  (`errorCode:"timeout"`). A D5 hit on the read-tree checkout is a failed checkout.
+  It answers `git worktree add failed (checkout): …` with
+  `errorCode:"worktree_add_failed"`, and the create rolls back. A D5 hit on one of
+  the `sourceBranch` steps counts as a failed step. It can change the
+  start commit. If both candidate lookups are killed, the HEAD fallback runs. The
+  echoed `sourceBranch` then becomes the current branch, or is omitted on a
+  detached HEAD. When a
   caller supplies a `timeoutMs` LONGER than `-git-timeout`, the tighter D5 deadline
   fires first during the add. claustrum still answers `worktree_add_failed`, because
   it attributes the kill to the deadline that actually fired. A caller `timeoutMs`
