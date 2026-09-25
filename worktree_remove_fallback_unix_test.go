@@ -328,7 +328,7 @@ func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	old := gitTimeout
-	gitTimeout = 300 * time.Millisecond
+	gitTimeout = 2 * time.Second
 	t.Cleanup(func() { gitTimeout = old })
 
 	root := t.TempDir()

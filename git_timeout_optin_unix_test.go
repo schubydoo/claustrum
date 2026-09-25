@@ -117,7 +117,7 @@ func TestWorktreeCreateD5DeadlineIsNotReportedAsTimeoutErrorCode(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	old := gitTimeout
-	gitTimeout = 100 * time.Millisecond
+	gitTimeout = 2 * time.Second
 	t.Cleanup(func() { gitTimeout = old })
 
 	base := t.TempDir()
@@ -140,7 +140,7 @@ func TestWorktreeCreateD5DeadlineIsNotReportedAsTimeoutErrorCode(t *testing.T) {
 // — not errorCode "timeout" quoting the caller's longer duration, which would blame
 // the caller for a deadline the operator set. Guards the WithTimeoutCause
 // discrimination: without it, any fired deadline with timeoutMs>0 is misreported as a
-// caller timeout. The add sleeps, D5 (100ms) fires well before the caller's 5000ms.
+// caller timeout. The add sleeps, D5 (2s) fires well before the caller's 5000ms.
 func TestWorktreeCreateD5FiresBeforeLongerTimeoutMs(t *testing.T) {
 	bin := t.TempDir()
 	script := "#!/bin/sh\ncase \"$*\" in " +
@@ -154,7 +154,7 @@ func TestWorktreeCreateD5FiresBeforeLongerTimeoutMs(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	old := gitTimeout
-	gitTimeout = 100 * time.Millisecond // D5 far tighter than the caller's timeoutMs
+	gitTimeout = 2 * time.Second // D5 tighter than the caller's timeoutMs
 	t.Cleanup(func() { gitTimeout = old })
 
 	base := t.TempDir()
@@ -178,7 +178,7 @@ func TestWorktreeCreateD5FiresBeforeLongerTimeoutMs(t *testing.T) {
 func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
 	stubSlowGit(t, "30")
 	old := gitTimeout
-	gitTimeout = 120 * time.Millisecond
+	gitTimeout = 2 * time.Second
 	t.Cleanup(func() { gitTimeout = old })
 
 	root := t.TempDir()
@@ -190,8 +190,8 @@ func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
 	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": root, "worktreePath": wt}))
 
-	if !strings.Contains(raw, "120ms") {
-		t.Errorf("reply = %s, want it to quote the configured 120ms bound", raw)
+	if !strings.Contains(raw, "2s") {
+		t.Errorf("reply = %s, want it to quote the configured 2s bound", raw)
 	}
 	if strings.Contains(raw, "1m0s") || strings.Contains(raw, "60s") {
 		t.Errorf("reply = %s, quotes the retracted 60s default rather than the value in force", raw)

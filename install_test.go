@@ -934,7 +934,7 @@ func TestPruneBudgetIgnoresOrphans(t *testing.T) {
 	if err := os.WriteFile(zstFile, zstdOf(t, fakeCLI(t, 0)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_ = captureInstallFacts(t, installOpts{
+	facts := captureInstallFacts(t, installOpts{
 		cliDir: dir, cliVersion: "5.0.0", cliZst: zstFile, cliKeep: 3})
 
 	ents, err := os.ReadDir(dir)
@@ -948,7 +948,7 @@ func TestPruneBudgetIgnoresOrphans(t *testing.T) {
 	sort.Strings(left)
 	want := []string{"3.0.0", "4.0.0", "5.0.0"}
 	if len(left) != len(want) {
-		t.Fatalf("cli-dir = %v, want %v (orphans must not consume the keep budget)", left, want)
+		t.Fatalf("cli-dir = %v, want %v (orphans must not consume the keep budget); install result: %+v", left, want, facts)
 	}
 	for i := range want {
 		if left[i] != want[i] {
