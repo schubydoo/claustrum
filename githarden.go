@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -523,4 +524,38 @@ func boundedStderrHead(s string) string {
 	}
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.TrimSpace(s)
+}
+
+// noRepositoryAt reports whether the hardened `git rev-parse --absolute-git-dir`
+// fails in dir, an existing directory. That covers a directory in which git finds
+// no repository. A path that does not exist, or is not a directory, reports
+// false: that input keeps its own answer on each method.
+func noRepositoryAt(dir string) bool {
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return false
+	}
+	_, ok := hardenedGit(dir, false, "rev-parse", "--absolute-git-dir")
+	return !ok
+}
+
+// statInsideDir looks at name inside dir through a handle on dir, without
+// following a symlink at name. It reports nil when dir does not exist, and when
+// name does not exist: those inputs keep their own answers. Any other failure is
+// returned as is. A directory that can be opened but not searched (mode 0600)
+// gives "statat .claude: permission denied". One that cannot be opened at all
+// (mode 0000) gives "open <dir>: permission denied". A .claude that is a symlink,
+// even to a place outside dir, passes.
+func statInsideDir(dir, name string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	if _, err := root.Lstat(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }

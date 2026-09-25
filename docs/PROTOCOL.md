@@ -376,6 +376,8 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it through the fallback and answered `success:true`. |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. The configuration of `baseRepo` cannot be read, or, without `worktreeRoot`, `baseRepo` holds no repository. Nothing is deleted |
+| git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). Nothing is deleted |
 | git.worktree_remove | `failed to remove worktree: <git output>; manual cleanup also failed: <err>` | in `error` (only if manual cleanup also fails) |
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error`. It sits behind `7d193f89` containment on the default branch, where it fires only if a repo is an ancestor of home. It is the active home guard on the `external_root` branch |
 | git.worktree_remove | `git worktree remove timed out after <dur>; no cleanup was attempted, and git may have partially removed the worktree` | D5 opt-in, in `error` |
@@ -949,9 +951,9 @@ failure never fails the request:
   reply is `{"success":false,"error":"refusing to remove worktree: <p> is locked
   (git worktree lock); unlock it to remove it"}`. That message is fixed whatever
   the lock reason is, and the directory is left in place. Any OTHER non-zero
-  git exit takes a different path, for example an ordinary directory or a non-repo
-  `baseRepo`. The daemon then removes `worktreePath` itself, recursively, and it
-  still answers `{"success":true}`. On a non-locked failure this method is a
+  git exit takes a different path, for example an ordinary directory. The daemon
+  then removes `worktreePath` itself, recursively, and it still answers
+  `{"success":true}`. On a non-locked failure this method is a
   recursive
   delete of the caller-supplied `worktreePath`. Treat `worktreePath` as a path you
   ask the daemon to remove, not as a filter. Both are reference behavior, matched
@@ -959,6 +961,20 @@ failure never fails the request:
   the reference deleted the locked worktree too, through the fallback. The reply
   carries `{"success":false,"error":"failed to remove worktree: <git output>;
   manual cleanup also failed: <err>"}` only when the manual cleanup *also* fails.
+- Without `worktreeRoot`, a `baseRepo` that is an existing directory in which git
+  finds no repository is refused before `git worktree remove` runs, and nothing is
+  deleted: `{"success":false,"error":"failed
+  to remove worktree: could not check whether <p> is locked (its registrations could
+  not be examined); retry"}`, with no `errorCode`. Examples are a plain directory, a
+  repository whose `.git` lacks `objects/`, and a daemon `GIT_DIR` that names nothing
+  usable. `f6010b97` refuses these, measured on Linux, macOS and Windows VMs, and
+  `90fca6e6` answers the same. The same
+  text answers a repository whose configuration cannot be read.
+- Without `worktreeRoot`, a `baseRepo` that the daemon can open but not search
+  (mode 0600) answers `{"success":false,"error":"failed to remove worktree: statat
+  .claude: permission denied"}`. One that it cannot open at all (mode 0000) answers
+  `failed to remove worktree: open <baseRepo>: permission denied`. Nothing is
+  deleted in either case. Measured against `f6010b97` on Linux and macOS VMs.
 - A request that names a non-existent branch still answers a bare
   `{"success":true}`. That is what "lenient" means here.
 - A home-directory `worktreePath` is refused. The `7d193f89` containment now does
@@ -986,7 +1002,8 @@ failure never fails the request:
   is off by default. When armed it answers
   `{"success":false,"error":"git worktree remove timed out after <dur>; no cleanup
   was attempted, and git may have partially removed the worktree"}` and removes
-  nothing. See [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
+  nothing. A hit on the earlier config or repository check answers the lock-check
+  refusal instead. See [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
 
 ### process.* (the agent/MCP-hosting core)
 

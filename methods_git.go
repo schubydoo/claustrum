@@ -1108,7 +1108,30 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// worktree's registrations to tell whether it is locked, so it refuses with its
 	// own message (a corrupt config, not the read methods' -32603). Measured against
 	// 7d193f89 on an ephemeral VM.
-	if _, bad := hostileConfigRefusal(repo); bad {
+	//
+	// The same refusal answers a baseRepo that is an existing directory in which git
+	// finds no repository: a plain directory, a repository whose git directory is
+	// broken, or a daemon GIT_DIR that names nothing usable. There are no
+	// registrations to examine, so nothing is deleted. Before, git's own remove
+	// failed there and the manual-cleanup fallback below deleted worktreePath with
+	// {"success":true}. Measured against f6010b97 on Linux, macOS and Windows VMs,
+	// and 90fca6e6 answers the same. A baseRepo that does not exist at all is left
+	// to the paths below, as before.
+	// Without worktreeRoot, a baseRepo the daemon may open but not search (mode
+	// 0600), or cannot open at all, answers with the error from its look at
+	// .claude, and that error is the whole reply. With worktreeRoot there is no
+	// such look: a search-only baseRepo (mode 0100) still removes. Measured side
+	// by side against f6010b97 on Linux, and the reference's answers also on
+	// macOS.
+	if p.WorktreeRoot == "" {
+		if err := statInsideDir(repo, ".claude"); err != nil {
+			return okResult(req.ID, worktreeRemoveResult{
+				Success: false,
+				Error:   "failed to remove worktree: " + err.Error(),
+			})
+		}
+	}
+	if _, bad := hostileConfigRefusal(repo); bad || noRepositoryAt(repo) {
 		return okResult(req.ID, worktreeRemoveResult{
 			Success: false,
 			Error: "failed to remove worktree: could not check whether " + p.WorktreePath +
@@ -1140,7 +1163,10 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	//	fixture      git fails because             reference at 7d193f89
 	//	locked       the worktree is locked        REFUSED, dir left in place
 	//	plain-dir    the path was never a worktree DELETED (fallback)
-	//	bogus-repo   baseRepo is not a repo at all DELETED (fallback)
+	//
+	// A baseRepo that is not a repository used to reach the fallback too (measured
+	// at 5db5e4a). 90fca6e6 and f6010b97 refuse it instead, with the lock-check
+	// text above, and claustrum now matches.
 	//
 	// So for a NON-LOCKED failure `git.worktree_remove` is a recursive delete of the
 	// caller-supplied worktreePath, and that is parity, not a claustrum invention.

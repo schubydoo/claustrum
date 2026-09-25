@@ -313,8 +313,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** With the deadline on, claustrum bounds every git invocation (shared
   `gitCtx` across `git` / `gitStdoutErr` / `gitDeadline`). On `git.worktree_remove`
-  a hit deletes nothing and answers
+  a hit deletes nothing. A hit on `git worktree remove` itself answers
   `git worktree remove timed out after <dur>; no cleanup was attempted, and git may have partially removed the worktree`.
+  A hit on the earlier config or repository check answers the lock-check refusal.
   On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
   A killed repo-detection call answers `isRepo:false`.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
