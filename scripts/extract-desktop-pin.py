@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Extract the pinned claude-ssh (and claude-code CLI) build info from a Claude
-Desktop for Linux `.deb`.
+Desktop package: the Linux `.deb`, the Windows `.nupkg` or the macOS `.zip`.
 
 Claude Desktop bakes the reference daemon's version + per-platform manifest into
 the app as a `JSON.parse('{"version":"<sha>",…,"baseUrl":".../claude-ssh-releases"}')`
@@ -8,12 +8,13 @@ literal inside `resources/app.asar`. This is the offline "new SHA" signal that
 Step 1 of docs/UPSTREAM-TRACKING.md calls for — read it without connecting
 anywhere.
 
-Self-contained: parses the `ar`(deb) container and its `data.tar.xz` with the
-Python stdlib only (no dpkg-deb / ar / tar / asar needed), so it runs the same on
-a dev box and a CI runner.
+Self-contained: parses the `ar`(deb) container and its `data.tar.xz`, or the zip
+container of the Windows / macOS package, with the Python stdlib only (no
+dpkg-deb / ar / tar / unzip / asar needed), so it runs the same on a dev box and a
+CI runner. The container type comes from the file's magic bytes, not its name.
 
 Usage:
-  extract-desktop-pin.py <path-to.deb> [--json]
+  extract-desktop-pin.py <path-to.deb|.nupkg|.zip> [--json]
   extract-desktop-pin.py --asar <app.asar> [--json]
 
 Output (human): the claude-ssh SHA, baseUrl, per-platform checksums, derived URLs,
@@ -28,6 +29,7 @@ import json
 import lzma
 import sys
 import tarfile
+import zipfile
 
 ASAR_MEMBER = "./usr/lib/claude-desktop/resources/app.asar"
 SSH_MARKER = "claude-ssh-releases"
@@ -68,6 +70,28 @@ def extract_asar_from_deb(deb: bytes) -> bytes:
                     break
                 return f.read()
     raise ValueError(f"{ASAR_MEMBER} not found inside data.tar")
+
+
+def extract_asar_from_zip(path: str) -> bytes:
+    """Pull app.asar out of a zip package: the Windows Squirrel `.nupkg`
+    (`lib/net45/resources/app.asar`) or the macOS update `.zip`
+    (`Claude.app/Contents/Resources/app.asar`). Match on the path suffix so a
+    moved parent directory does not break the lookup."""
+    with zipfile.ZipFile(path) as zf:
+        for name in zf.namelist():
+            if name.lower().endswith("resources/app.asar"):
+                return zf.read(name)
+    raise ValueError("resources/app.asar not found inside zip package")
+
+
+def extract_asar(path: str) -> bytes:
+    """Return app.asar from a `.deb` or a zip package, chosen by magic bytes."""
+    with open(path, "rb") as f:
+        magic = f.read(8)
+    if magic.startswith(b"PK\x03\x04"):
+        return extract_asar_from_zip(path)
+    with open(path, "rb") as f:
+        return extract_asar_from_deb(f.read())
 
 
 def find_build_info(asar: bytes, marker: str) -> dict:
@@ -165,8 +189,8 @@ def main(argv: list[str]) -> int:
         if args[0] == "--asar":
             asar = open(args[1], "rb").read()
         else:
-            asar = extract_asar_from_deb(open(args[0], "rb").read())
-    except (OSError, ValueError, IndexError) as e:
+            asar = extract_asar(args[0])
+    except (OSError, ValueError, IndexError, zipfile.BadZipFile) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
