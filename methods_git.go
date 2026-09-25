@@ -1116,7 +1116,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// failed there and the manual-cleanup fallback below deleted worktreePath with
 	// {"success":true}. Measured against f6010b97 on Linux, macOS and Windows VMs,
 	// and 90fca6e6 answers the same. A baseRepo that does not exist at all is left
-	// to the paths below, as before.
+	// to the paths below, as before. With worktreeRoot this refusal does not apply:
+	// the external path keeps its own answers, so removing an external worktree
+	// that is already gone still succeeds.
 	// Without worktreeRoot, a baseRepo the daemon may open but not search (mode
 	// 0600), or cannot open at all, answers with the error from its look at
 	// .claude, and that error is the whole reply. With worktreeRoot there is no
@@ -1131,7 +1133,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			})
 		}
 	}
-	if _, bad := hostileConfigRefusal(repo); bad || noRepositoryAt(repo) {
+	if _, bad := hostileConfigRefusal(repo); bad || (p.WorktreeRoot == "" && noRepositoryAt(repo)) {
 		return okResult(req.ID, worktreeRemoveResult{
 			Success: false,
 			Error: "failed to remove worktree: could not check whether " + p.WorktreePath +

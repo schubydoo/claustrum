@@ -163,3 +163,27 @@ func TestWorktreeRemoveExternalSearchOnlyBaseRepo(t *testing.T) {
 		t.Errorf("without worktreeRoot:\n got  %s\n want %s", got, want)
 	}
 }
+
+// The no-repository refusal applies only without worktreeRoot. With worktreeRoot,
+// removing an external worktree that is already gone still answers success when
+// baseRepo is a plain directory, as it did before that refusal existed.
+func TestWorktreeRemoveExternalNoRepositoryKeepsItsAnswer(t *testing.T) {
+	requireGit(t)
+	base := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", base)
+	plain := filepath.Join(base, "N")
+	root := filepath.Join(base, "mine")
+	for _, d := range []string{plain, filepath.Join(root, "d")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := newTestServer(t)
+	gone := filepath.Join(root, "d", "absent")
+	got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
+		map[string]any{"baseRepo": plain, "worktreePath": gone, "worktreeRoot": root}))
+	if want := `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
