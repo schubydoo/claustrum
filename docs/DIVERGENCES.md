@@ -159,7 +159,7 @@ rather than repeating them in each entry:
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`) | always-on | always-on | **UNRESOLVED**: clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a slow `ldd` on a host where the deadline changes the reported `libc`. The host is a musl host the glob misses, or a mixed host. Or the reference bounding it above 45 s |
-| [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
+| [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (Windows failure mechanism not yet pinned) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
@@ -659,6 +659,14 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   that is not a serve process. claustrum instead reads the holder's argument vector
   from `sysctl KERN_PROCARGS2` and refuses to signal a pid whose argv is not our
   `-serve` for this socket.
+- **`-stop` too.** `-stop` runs the same holder check before it signals a lock
+  holder. On macOS the reference `-stop` signals any live holder whose lock record
+  says role `serve` on this host's node. It does not check the holder's command
+  line. claustrum does not signal such a holder, and prints `survivor`. Measured
+  on a macOS VM against `f6010b97` and `90fca6e6`. Both references sent `SIGTERM`
+  to a python holder with a valid `serve` record, and `SIGKILL` 4 s later if it
+  ignored `SIGTERM`. claustrum left it alone. On Linux the references also refuse that holder, so Linux is
+  parity.
 - **Default.** Always-on, macOS only. On the honest path the live lock holder wrote
   its own pid into the record, so the verification passes and the outcome is
   identical to the reference (the predecessor is evicted).
@@ -676,13 +684,14 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   becomes parity, not a divergence). Or a legitimate macOS holder that
   `KERN_PROCARGS2` cannot read, reported as a failed handover.
 - **Not the only identity gate.** This entry covers the run-dir lock's eviction path
-  alone. claustrum's host cleaner has its own gate in `retireAbandoned`, which
+  and `-stop` alone. claustrum's host cleaner has its own gate in `retireAbandoned`, which
   re-reads the pid's identity before its SIGTERM. That gate is not a numbered
   divergence. Its reference side is not probe-measured, unlike this entry's own macOS
   measurement. Do not read the two as one divergence.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock. Also `daemon_runlock_unix.go`
-  (`holderSignalRefusal`), `daemon_runlock_darwin.go` (`realIsServeCmdline`,
-  `procArgv`), `daemon_runlock_linux.go`.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock and `-stop`. Also
+  `daemon_runlock_unix.go` (`holderSignalRefusal`, `stopRunDirHolder`),
+  `daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`),
+  `daemon_runlock_linux.go`.
 
 ### D16 · `git.status` of a linked worktree returns the status on Windows, where the reference errors (Windows) { #d16 }
 
@@ -892,14 +901,12 @@ reference costs something real. We record them so the code can point
 somewhere durable. No decision is implied, and nothing here is shipped or
 scheduled.
 
-- **Conditional `-stop` socket unlink.** `-stop` removes the socket path on every
-  exit, even the exit where no daemon answered. That matches the reference (measured on
-  three arms, two of them attributing: the live-daemon control says nothing, because
-  the daemon removes the socket itself). So `-stop` removes a path that it did not
-  create and whose owner it cannot identify. `os.Remove` does not distinguish
-  shapes, so a regular file or an empty directory at the `-socket` path goes the
-  same way. A `stat`-first variant that removes only a socket is strictly
-  safer, and it is a divergence.
+- **Conditional `-stop` socket unlink.** After a failed connect, `-stop` removes
+  the socket path, unless it prints `survivor`. That matches the reference (measured against `f6010b97` and
+  `90fca6e6` on a Linux VM). `os.Remove` does not check the shape of the path. A
+  regular file or an empty directory at the `-socket` path is removed too. A
+  `stat`-first variant that removes only a socket keeps those two shapes, and it
+  is a divergence. It does not change the socket case.
 - **Fail fast on a missing `-serve` token source.** The check runs in the detached
   child, so the launcher reports its ~10 s accept timeout, and the real reason
   reaches only the child's log. That is reference parity (measured 10.02 s vs

@@ -93,7 +93,8 @@ uses the in-memory token. The write is also best-effort. The daemon logs a failu
 added this, and claustrum matches it. It is off the JSON-RPC wire, because the
 file sits beside the socket, not on it. An unclean kill (`SIGKILL` or a crash)
 leaves the file behind, because the daemon removes it only on the graceful
-`server.shutdown` / `SIGTERM` path.
+`server.shutdown` / `SIGTERM` path. `-stop` also removes it after a failed
+connect, unless it prints `survivor`. See [-stop](#-stop--ask-a-running-daemon-to-shut-down).
 
 The fixed name and the socket-dir location are the reconnect contract, so they are
 not configurable. On Windows `0600` is not an owner-only DACL. This is a Go
@@ -149,7 +150,8 @@ machine identity (`node`) is the boot id joined to the pid-namespace inode on
 Linux, and `sysctl kern.bootsessionuuid` on macOS. Windows ships no run-dir
 lock. Mutual exclusion on Windows stays the socket remove-then-rebind handoff.
 On macOS claustrum makes sure of the holder through `sysctl KERN_PROCARGS2`,
-where the reference skips that test. See [DIVERGENCES.md](DIVERGENCES.md) D15.
+where the reference skips that test. This holds for the
+eviction and for `-stop`. See [DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Host cleaner (off-wire, Linux and macOS)
 
@@ -398,6 +400,7 @@ panic in any handler, and the daemon does not crash. The reply is
 `[Server] recovered panic: method=<m> id=<id>: <v>`. One method is the exception.
 A recovered `server.shutdown` panic writes no frame at all. Its only reply is
 `{"ok":true}`.
+See `server.*` below.
 
 This frame is claustrum's own. It is not a statement about the wire. No input is
 known to reach a handler panic. Extensive fuzzing found none, and each of
@@ -548,7 +551,7 @@ member of the `plugins.*` namespace.
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
 | `server.capabilities` | none | `{"version":"<id>","methods":[…19…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","process.spawn.shellAgentSocket","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the 19th method, appended last on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `process.spawn.shellAgentSocket`, `instanceId` and `startedAt` are present on every OS |
-| `server.shutdown` | none | `{"ok":true}`. The daemon replies, then stops, and the connection closes. The reference does not send that frame reliably, measured on `f6010b97` and `90fca6e6`. See below |
+| `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler waits until the teardown starts to close connections, and then returns the reply. The frame arrives only when its write wins the race with the close. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
   `-32601 "Unknown method: server.version"` like any other unknown method.
@@ -574,6 +577,40 @@ member of the `plugins.*` namespace.
   `git.worktree_create.existingBranch` and `process.spawn.shellAgentSocket` are
   present on every OS.
 - `server.shutdown` is not authenticated. See [Authentication](#authentication).
+- On the reference, `server.shutdown` usually closes the connection with no
+  reply. Its `{"ok":true}` frame arrived in 24 of 800 single-connection runs
+  with an earlier ping. It arrived in 0 of 200 runs with no earlier request on
+  the connection. With a second idle connection open it arrived in 67 of 200 runs.
+  These counts are measured against `f6010b97` and `90fca6e6` on a Linux VM. In
+  claustrum, the handler signals the teardown and waits until the teardown starts
+  to close connections. Then it returns the reply for writing, so the reply write
+  races the close. The teardown closes the listener first, then every connection,
+  before its other cleanup.
+  When the frame arrives, it is `{"jsonrpc":"2.0","id":<id>,"result":{"ok":true}}`
+  followed by EOF. An idle connection gets a clean EOF with no bytes. macOS is not
+  measured yet.
+- Log order on `server.shutdown`. The daemon logs
+  `[ServerHandler] server.shutdown received over RPC`, then
+  `[Server] shutdown requested`, before the teardown closes any connection.
+  Each connection's `[Server] Connection closed: <addr>` line, when it is
+  logged, comes after its close. Measured with `strace` against `f6010b97` and `90fca6e6` on a Linux
+  VM, the reference wrote the two lines before its connection close in 36 of
+  36 traced runs. Its `Connection closed` line came after the close in 32 of
+  them. Each of the other 4 runs also wrote the shutdown reply.
+  The reference then logs
+  `[Server] cleanup: closed <n> connection(s), killed <n> child process group(s)`.
+  claustrum does not log that line. This is a measured log difference. On a Linux
+  VM with one connection, the `f6010b97` log ended with that line in 50 of 50
+  runs. The claustrum log had no `cleanup:` line in 50 of 50 runs.
+- Reply delivery is a measured timing difference, not parity. The claustrum
+  reply arrives at a different rate. Each count below is from 50 runs with a ping before the shutdown. The
+  runs were measured in one session against `f6010b97`, on one Linux VM and one
+  Windows VM. On one connection, the claustrum reply arrived in 0 of 50 runs on
+  Linux and in 0 of 50 on Windows. The reference reply arrived in 5 of 50 on Linux
+  and in 21 of 50 on Windows. With a second idle connection open, the claustrum
+  reply arrived in 2 of 50 runs on Linux, where the reference reply arrived in 20
+  of 50. On Windows the counts were 39 of 50 for claustrum and 36 of 50 for the
+  reference. All of these rates depend on timing.
 
 ### files.* (param: `path`)
 
@@ -1519,27 +1556,90 @@ claustrum -stop -socket <p>          # no token needed, and none is read
 ```
 
 `-stop` sends `server.shutdown` with no `auth` member, because that method is
-not authenticated. See [Authentication](#authentication). It is best-effort. A
-missing or unreachable daemon is a silent no-op, with exit `0` and no output, and
-`-stop` reads and discards any reply. The daemon answers `server.shutdown` with
-`{"ok":true}` and then stops. The reference does not send that frame reliably,
-measured on `f6010b97` and `90fca6e6`. claustrum's `-stop` prints nothing either
-way, because it is a control command, not a relay.
+not authenticated. See [Authentication](#authentication). The request is
+`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}` and a newline. `-stop` then
+reads once, with a 2 s deadline, and discards what it reads. It never relays a
+frame to stdout. A live daemon's reply does not always arrive. On one connection
+the claustrum reply arrived in 0 of 50 runs on Linux and on Windows, where the
+`f6010b97` reply arrived in 5 of 50 on Linux and in 21 of 50 on Windows. This is
+a measured timing difference, not parity. See `server.*` above for the
+counts with a second idle connection. `-stop` prints `stopped` whether the
+reply arrives or not.
 
-`-stop` unlinks the socket path on every exit path, including when the dial
-fails and it reached no daemon. This matches the reference, and it is destructive
-on two arms: a stale socket with no listener, and a live foreign
-listener. `-stop` removes a socket path it did not create, so a new client that
-dials by path cannot reach that listener afterwards. The listener itself stays
-alive. If the unlink ran only on some exits, it diverges, so that variant is a candidate not taken. It is
-recorded under [Candidates considered but not
+`-stop` prints one word on stdout, then a newline, and exits `0` in every state
+in the table below. The words and the rules below are measured against
+`f6010b97` and `90fca6e6` on a Linux VM, except the rules marked as claustrum's
+own. After `SIGKILL`, `-stop` polls the lock for 1.5 s. The word `killed` needs
+the lock to become free in that wait. The macOS results are below.
+
+| word | state |
+|---|---|
+| `stopped` | The connect succeeded. A reply, garbage, an EOF, a reset and the read deadline all give this word. |
+| `none` | The connect failed, and `daemon.lock` is free or missing. claustrum also prints `none` when the lock cannot be opened or locked. |
+| `terminated` | The connect failed, and a live serve daemon of this binary for this socket holds `daemon.lock`. `-stop` sent `SIGTERM`, and the lock became free. |
+| `killed` | As `terminated`, but the lock was still held 4 s after `SIGTERM`. `-stop` sent `SIGKILL`. |
+| `survivor` | The connect failed, and a live process that is not that daemon holds `daemon.lock`. `-stop` does not signal it. The word is also `survivor` if the lock is still held 1.5 s after `SIGKILL`. `-stop` does not wait longer. claustrum also prints `survivor` if the holder check fails again before `SIGKILL`. It prints it too when a signal cannot reach a holder that is still there. |
+
+The lock check uses the holder test of the serve eviction. See [Run-dir
+lock](#run-dir-lock-daemonlock). The exact rule of the Linux reference was not
+isolated. Windows has no run-dir lock, so a failed connect there always prints
+`none`.
+
+On macOS the words and effects match the references in 22 of 24 measured states.
+The two other states have a live lock holder that is not a serve process. The
+macOS reference signals any live holder whose lock record says role `serve` on
+this host's node. It does not check the holder's command line. claustrum keeps
+its holder check on macOS, so it does not signal such a holder and prints
+`survivor`. This is part of [D15](DIVERGENCES.md#d15). It was measured on a macOS
+VM against `f6010b97` and `90fca6e6`.
+
+The lock path writes these lines to stderr. claustrum adds its own level tag, as
+it does for the serve eviction lines. The message text of these five lines is the
+reference text:
+
+```text
+<ts> INFO  [daemon] stop: run dir is held by a live daemon, pid <N> (instance "<hex32>"); sending SIGTERM
+<ts> INFO  [daemon] stop: previous daemon pid <N> (instance "<hex32>") exited after SIGTERM
+<ts> WARN  [daemon] stop: WARNING previous daemon pid <N> (instance "<hex32>") ignored SIGTERM for 4s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
+<ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (pid <N> is not a <basename> --serve process for <sock>); leaving it alone
+<ts> WARN  [daemon] stop: WARNING previous daemon pid <N> (instance "<hex32>") survived SIGKILL (uninterruptible?); proceeding without run-dir ownership
+```
+
+This line is claustrum's own. It comes from the second holder check:
+
+```text
+<ts> WARN  [daemon] stop: pid <N> is no longer our serve holder before SIGKILL (<reason>); leaving it alone
+```
+
+After a successful connect, `-stop` removes nothing. A live daemon removes its own
+socket and `daemon.token` when it stops. After a failed connect, `-stop` removes
+the socket path and the `daemon.token` beside it, stale or not. It does this after
+the lock check. If the word is `survivor`, `-stop` removes neither file. This is
+measured for a holder that `-stop` does not signal and for a lock that outlives
+`SIGKILL`. The other `survivor` cases follow the same rule. `-stop` never creates
+or removes `daemon.lock`, and it writes no record into it. The references also
+never create or remove it, and write no record into it. The socket unlink removes
+a stale socket, a regular file and an empty directory. It keeps a non-empty
+directory, and a path in a directory that the user cannot write. The references do
+the same.
+
+If the word is not `survivor`, a live foreign listener that refuses the connect
+with `EACCES` loses its socket path. The listener stays alive, but a client that
+dials by path cannot reach it afterwards. The unlink does not check what the path is. A variant that removes
+only a socket keeps a regular file and an empty directory at the path. It does
+not keep the socket of such a listener. That variant is a candidate not taken.
+It is recorded under [Candidates considered but not
 taken](DIVERGENCES.md#candidates-considered-but-not-taken).
+
+`-version`, `-install` and `-probe-cli` win over `-stop`. `-bridge` and `-serve`
+win too. With `-stop -bridge` claustrum runs the bridge, and with `-stop -serve`
+it runs serve.
 
 > Upgrading a live daemon needs care. A daemon still running from a build that
 > predates the shutdown-auth-exemption change *does* require auth on
-> `server.shutdown`. It answers `-32001` and keeps running. `-stop` discards the
-> reply and exits `0` either way, so the caller sees success while the old daemon
-> survives. Stop the old daemon before you upgrade, or kill it by PID once.
+> `server.shutdown`. It answers `-32001` and keeps running. `-stop` prints
+> `stopped` and exits `0` either way, so the caller sees success while the old
+> daemon survives. Stop the old daemon before you upgrade, or kill it by PID once.
 
 ### -version
 
@@ -1762,8 +1862,8 @@ write with EPIPE instead of terminating the process.
 - The default socket is `~/.claude/remote/rpc.sock`. When `-socket` is omitted, all
   modes fall back to it. If the parent directory is missing, `-serve` creates it
   with mode `0700`, so a bare `-serve` on a fresh machine works. `-bridge`
-  and `-stop` do not create it. They fail with `connect: no such file or directory`
-  when no daemon has run.
+  and `-stop` do not create it. When no daemon has run, `-bridge` fails with
+  `connect: no such file or directory`, and `-stop` prints `none`.
 - With no mode given, claustrum prints
   `claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required`
   on stderr and exits `2`, with no usage dump. An *unknown flag* gets the stdlib

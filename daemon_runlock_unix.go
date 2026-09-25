@@ -241,6 +241,108 @@ func evictRunDirHolder(path, socket string) bool {
 	return false
 }
 
+// stopTermGrace is how long -stop waits for the lock holder to let go of daemon.lock
+// after SIGTERM, before it sends SIGKILL. 4 s, measured against f6010b97 and 90fca6e6
+// on a Linux VM. The serve eviction above uses its own runDirTermGrace. A var so a
+// test can shrink it.
+var stopTermGrace = 4 * time.Second
+
+// stopKillGrace is how long -stop polls daemon.lock after SIGKILL. 1.5 s, measured
+// against f6010b97 and 90fca6e6 on a Linux VM (1.506 to 1.527 s). A var so a test
+// can shrink it.
+var stopKillGrace = 1500 * time.Millisecond
+
+// stopRunDirHolder is the -stop fallback after the connect to the socket failed. It
+// returns the stdout word. Measured against f6010b97 and 90fca6e6 on a Linux VM:
+//
+//   - If daemon.lock is missing or free, the word is "none".
+//   - If a live serve daemon of this binary for this socket holds it, -stop sends
+//     SIGTERM and polls the lock. The word is "terminated" when the lock frees.
+//   - If the lock is still held after stopTermGrace, -stop sends SIGKILL and polls
+//     the lock for stopKillGrace. The word is "killed" when the lock frees.
+//   - If the lock is still held after stopKillGrace, the word is "survivor". -stop
+//     does not wait longer for the lock.
+//   - If the holder is not that daemon, -stop does not signal it. The word is
+//     "survivor".
+//
+// claustrum's own rule: the word is also "survivor" when the holder check fails
+// again before SIGKILL.
+//
+// The holder check is holderSignalRefusal, the same check the serve eviction uses.
+// The exact rule the Linux reference applies was not isolated. On macOS the
+// reference signals any live holder whose record says role serve on this node.
+// It does not check the command line. claustrum keeps its holder check on macOS,
+// so a foreign holder there gets "survivor". This is part of D15 (measured on a
+// macOS VM against f6010b97 and 90fca6e6).
+//
+// Five stderr lines copy the reference text: the SIGTERM line, the exit line, the
+// SIGKILL line, the "will not signal" line and the "survived SIGKILL" line. The
+// line about the second holder check is claustrum's own. claustrum keeps its own
+// level tag, as the serve eviction lines do.
+//
+// -stop opens daemon.lock without O_CREAT, so it never creates the file. It never
+// writes an owner record into it. The references also never create or remove it,
+// and write no record into it.
+func stopRunDirHolder(socket string) string {
+	path := filepath.Join(filepath.Dir(socket), runDirLockName)
+	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return stopWordNone
+	}
+	defer func() { _ = syscall.Close(fd) }()
+	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != syscall.EWOULDBLOCK {
+		// Free (this process now holds it until the deferred close), or flock is
+		// not supported here. No live daemon can be named either way.
+		return stopWordNone
+	}
+	holder, err := readOwnerRecord(path)
+	if err != nil || holderSignalRefusal(holder, socket) != "" {
+		logWarnf("[daemon] stop: WARNING %s is held by a live process we will not signal (pid %d is not a %s --serve process for %s); leaving it alone", path, holder.Pid, selfBase(), socket)
+		return stopWordSurvivor
+	}
+	logInfof("[daemon] stop: run dir is held by a live daemon, pid %d (instance %q); sending SIGTERM", holder.Pid, holder.InstanceID)
+	if !signalHolder(holder.Pid, syscall.SIGTERM) && !holderGone(holder.Pid) {
+		// The holder is present but SIGTERM did not reach it. -stop leaves it.
+		return stopWordSurvivor
+	}
+	if waitLockFree(fd, stopTermGrace) {
+		logInfof("[daemon] stop: previous daemon pid %d (instance %q) exited after SIGTERM", holder.Pid, holder.InstanceID)
+		return stopWordTerminated
+	}
+	// Check the holder again before SIGKILL, as the serve eviction does. If its pid
+	// now names another process, a SIGKILL hits that process instead.
+	if reason := holderSignalRefusal(holder, socket); reason != "" {
+		logWarnf("[daemon] stop: pid %d is no longer our serve holder before SIGKILL (%s); leaving it alone", holder.Pid, reason)
+		return stopWordSurvivor
+	}
+	logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) ignored SIGTERM for %s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", holder.Pid, holder.InstanceID, stopTermGrace)
+	if !signalHolder(holder.Pid, syscall.SIGKILL) && !holderGone(holder.Pid) {
+		return stopWordSurvivor
+	}
+	if !waitLockFree(fd, stopKillGrace) {
+		logWarnf("[daemon] stop: WARNING previous daemon pid %d (instance %q) survived SIGKILL (uninterruptible?); proceeding without run-dir ownership", holder.Pid, holder.InstanceID)
+		return stopWordSurvivor
+	}
+	return stopWordKilled
+}
+
+// waitLockFree polls the flock on fd every runDirPollInterval until it is taken or
+// grace elapses. It reports whether the lock was taken. The lock frees when its
+// holder exits, even before a parent reaps it, so this sees an exit that
+// kill(pid, 0) misses on a zombie.
+func waitLockFree(fd int, grace time.Duration) bool {
+	deadline := time.Now().Add(grace)
+	for {
+		if syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB) == nil {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(runDirPollInterval)
+	}
+}
+
 // signalHolder sends sig to pid. It returns true when the signal was delivered, false
 // when it could not be (already gone, or not permitted) — in which case the caller
 // resolves the outcome with holderGone.
