@@ -877,7 +877,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 // force a handler panic and prove the per-request recover keeps the daemon alive
 // (the panic path is otherwise unreachable, so it cannot be provoked by input).
 // Production never reassigns it.
-var dispatchRequest = func(s *server, c *conn, raw []byte) *response { return s.dispatch(c, raw) }
+var dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response { return s.route(c, req) }
 
 func (s *server) serveConn(c *conn) {
 	defer func() {
@@ -936,7 +936,7 @@ func (s *server) serveConn(c *conn) {
 		}
 		// The real daemon dispatches a connection's requests concurrently, so
 		// responses can return out of order; match that.
-		go s.handleRequest(c, raw, req.Method, req.ID, ordered, ticket)
+		go s.handleRequest(c, raw, req, ordered, ticket)
 	}
 
 	// The read loop also ends on a scanner error — a request line over the 1 MiB
@@ -963,7 +963,8 @@ func (s *server) serveConn(c *conn) {
 // per-request panic recovery and, for process.stdin, the ordering ticket.
 // Extracted from serveConn's read loop so the loop reads as gate -> order ->
 // hand off; behavior is unchanged.
-func (s *server) handleRequest(c *conn, raw []byte, method string, id interface{}, ordered bool, ticket uint64) {
+func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, ticket uint64) {
+	method, id := req.Method, req.ID
 	// Per-request panic isolation: without this a panic in any handler
 	// crashes the whole daemon (an unrecovered panic in ANY goroutine takes
 	// the process down), orphaning managed children and leaving a stale
@@ -1022,7 +1023,7 @@ func (s *server) handleRequest(c *conn, raw []byte, method string, id interface{
 			c.awaitStdinTurn(ticket)
 			defer c.doneStdinTurn(ticket)
 		}
-		resp = dispatchRequest(s, c, raw)
+		resp = dispatchRequest(s, c, raw, req)
 	}()
 	if resp != nil {
 		c.writeResponse(*resp)

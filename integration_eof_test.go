@@ -39,14 +39,14 @@ func holdDispatch(t *testing.T) (seen func() []string) {
 	)
 	release := make(chan struct{})
 	old := dispatchRequest
-	dispatchRequest = func(s *server, c *conn, raw []byte) *response {
+	dispatchRequest = func(s *server, c *conn, raw []byte, req request) *response {
 		wg.Add(1)
 		defer wg.Done()
 		mu.Lock()
 		raws = append(raws, string(raw))
 		mu.Unlock()
 		<-release
-		return old(s, c, raw)
+		return old(s, c, raw, req)
 	}
 	t.Cleanup(func() {
 		close(release)

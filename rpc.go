@@ -114,6 +114,12 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	if resp != nil {
 		return resp
 	}
+	return s.route(c, req)
+}
+
+// route handles a request that already passed gate. serveConn calls it with the
+// request its read loop decoded, so an accepted line is parsed only once.
+func (s *server) route(c *conn, req request) *response {
 	if req.JSONRPC != "2.0" {
 		return ptr(errResult(req.ID, codeInvalidReq, "Invalid JSON-RPC version"))
 	}
