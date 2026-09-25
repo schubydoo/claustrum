@@ -38,27 +38,27 @@ import (
 // another boot or machine, is never reaped.
 
 // reapGrace is how long the reap waits for a group to exit after SIGTERM before it
-// escalates to SIGKILL. reapEscalate is how long it waits after SIGKILL. Both match
-// reference build 19f30c46.
+// escalates to SIGKILL. reapEscalate is how long it waits after SIGKILL. Both values are
+// claustrum's own, not probe-measured.
 const (
 	reapGrace    = 2 * time.Second
 	reapEscalate = 1 * time.Second
 	// reapForeignTTL is how old a record from another boot or machine must be before the
 	// reap forgets it. A younger foreign record is left in place, since a live process on
-	// another boot cannot be verified from here. Matches reference build 19f30c46.
+	// another boot cannot be verified from here. claustrum's own value, not probe-measured.
 	reapForeignTTL = 30 * 24 * time.Hour
-	// reapPollInterval is how often each wait re-checks a signaled group for exit, matching
-	// reference build 19f30c46.
+	// reapPollInterval is how often each wait re-checks a signaled group for exit.
+	// claustrum's own value, not probe-measured.
 	reapPollInterval = 100 * time.Millisecond
 )
 
-// maxReapTargets caps how many orphans one sweep signals, matching the reference's fixed
-// batch. Extra candidates are left for the next startup. A var so a test can shrink it to
+// maxReapTargets caps how many orphans one sweep signals. The cap is claustrum's own, not
+// probe-measured. Extra candidates are left for the next startup. A var so a test can shrink it to
 // exercise the overflow path.
 var maxReapTargets = 64
 
 // maxPid is the largest usable pid (2^31 - 1). With the `pid < 2 || pid > maxPid` test it
-// yields the reference's [2, 2^31) window.
+// yields a [2, 2^31) window.
 const maxPid = 1<<31 - 1
 
 // verdict values from verifyOrphan (the per-record decision).
@@ -222,7 +222,7 @@ func reapOrphans(runDir, ownInstance string) {
 
 // verifyOrphan decides one record whose owning daemon is gone and whose node matches ours.
 // It returns a verdict and, for a skip, a short reason for the log. The reasons are
-// claustrum's own phrasing of the same conditions the reference checks.
+// claustrum's own phrasing.
 func verifyOrphan(rec childRecord, runDir string, ownDaemonPid, ownParentPid, ownPgid int) (int, string) {
 	pid := rec.Pid
 	switch {
@@ -340,8 +340,8 @@ func earlierBootOfThisMachine(recHost, recNode, ownHost, ownNode string) bool {
 // how many targets it signalled and splits the reap total into the grace and escalate
 // buckets. A group still alive after the escalate is counted survived and its record is KEPT,
 // so a later daemon can still find a group this one could not end; every other handled record
-// is forgotten. It updates counts. (The survivor arm follows the pinned 19f30c46 analysis: a
-// process cannot be made to outlive SIGKILL on demand, so it is not VM-confirmed.)
+// is forgotten. It updates counts. (The survivor arm is claustrum's own, not probe-measured:
+// a process cannot be made to outlive SIGKILL on demand.)
 func reapTargets(runDir string, targets []reapTarget, counts *reapCounts) {
 	if len(targets) == 0 {
 		return
@@ -385,7 +385,7 @@ func reapTargets(runDir string, targets []reapTarget, counts *reapCounts) {
 }
 
 // reapWait polls up to timeout for each target's process group to exit, re-validating the
-// leader's identity on every poll (matching the reference's in-wait re-check). A target
+// leader's identity on every poll. A target
 // whose leader is gone is counted reaped (via reapedCounter, so the caller buckets it as
 // grace or escalate), and if its group still has members they are SIGKILLed; a target whose
 // leader pid was reused (its start-time changed) is dropped without a signal; a target still

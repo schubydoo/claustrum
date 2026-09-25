@@ -110,9 +110,9 @@ func (s *server) pluginsPrune(req *request) response {
 	// and runs FIRST: when another install's daemon on this host may be present, its
 	// sessions may reference the shared legacy plugins, so the legacy field is the
 	// skip reason naming the first such sibling — even when the shared root does not
-	// exist (measured against 19f30c46, which does not stat the root before deciding
-	// to skip). With no sibling present, the shared root is "absent" when missing, or
-	// "swept" and classified like the per-install root when it exists. The reason
+	// exist (measured against 19f30c46). With no sibling present, the shared root is
+	// "absent" when missing, or "swept" and classified like the per-install root when
+	// it exists. The reason
 	// detail comes from siblingDaemonAlive: a socket that answers, or one that cannot
 	// be ruled out gone.
 	base := filepath.Dir(legacyRoot) // <X>: the parent of run/ and plugins/
@@ -153,8 +153,8 @@ func pluginsLayoutFromSocket(sock string) (root, legacyRoot string, ok bool) {
 // the caller skips the legacy sweep. It returns the detail to embed in the skip
 // message for the FIRST sibling that may be present, or "" when every sibling is
 // provably gone (so the sweep runs). run/<clientId>/ dirs under base other than own
-// are examined in os.ReadDir (sorted) order. Reproduces 19f30c46: each socket is
-// stat'd, THEN dialed, and only a genuinely absent or dead socket clears it. A
+// are examined in os.ReadDir (sorted) order. claustrum stats each socket, THEN
+// dials it, and only a genuinely absent or dead socket clears it. A
 // permission-denied stat, a slow (timed-out) dial, or any dial error other than
 // connection-refused / not-a-socket / not-found leaves the sibling's liveness in
 // doubt and spares the shared legacy plugins. Treating every dial error as "gone"

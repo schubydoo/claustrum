@@ -96,11 +96,10 @@ func filesList(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	// Open with O_DIRECTORY (oDirectoryFlag) then read. 7d193f89's files.list
-	// fails at the open for anything that is not a directory, so a regular file —
-	// readable or not — reports `open <p>: not a directory` and an unreadable
-	// directory reports `open <p>: permission denied`. Both are matched
-	// byte-for-byte; before 7d193f89 the reference reached the readdir and said
+	// Open with O_DIRECTORY (oDirectoryFlag) then read. On 7d193f89's files.list
+	// a regular file, readable or not, reports `open <p>: not a directory` and an
+	// unreadable directory reports `open <p>: permission denied`. Both are matched
+	// byte-for-byte. Before 7d193f89 the reference said
 	// `readdirent <p>: not a directory` instead. On Windows the flag is 0 (no
 	// O_DIRECTORY) and this is os.Open, whose non-dir wording is not pinned there.
 	f, err := os.OpenFile(p.Path, os.O_RDONLY|oDirectoryFlag, 0)
@@ -126,9 +125,9 @@ func filesList(req *request) response {
 			continue
 		}
 		full := filepath.Join(p.Path, e.Name())
-		// The reference resolves isDir via Stat (FOLLOWING symlinks), not the raw
-		// dirent type — so a symlink to a directory reports isDir:true, and a
-		// dangling symlink (Stat fails) reports isDir:false.
+		// isDir comes from Stat, which FOLLOWS symlinks, not from the raw dirent
+		// type. The reference output matches: a symlink to a directory reports
+		// isDir:true, and a dangling symlink (Stat fails) reports isDir:false.
 		isDir := false
 		if fi, err := os.Stat(full); err == nil {
 			isDir = fi.IsDir()
@@ -318,10 +317,10 @@ var maxExtractBytes int64
 // over-cap check against the running totalWritten. Extracted from extractTarGz so
 // the saturating cap arithmetic lives in one named, testable place.
 //
-// maxExtractBytes <= 0 (the default) copies straight through, exactly as the
-// reference does — deliberately NOT a LimitReader with a huge bound, since the
-// max-total+1 arithmetic below is what defines the boundary behaviour and routing
-// the unlimited case through it would invent a boundary the reference has none of.
+// maxExtractBytes <= 0 (the default) copies straight through. It is deliberately
+// NOT a LimitReader with a huge bound, since the max-total+1 arithmetic below is
+// what defines the boundary behaviour and routing the unlimited case through it
+// invents a boundary.
 // (Both paths read identically today: archive/tar's Reader.WriteTo is unexported,
 // so io.Copy falls through to the same 32 KiB generic copy either way. If a future
 // Go exports it, only the uncapped branch takes the sparse-file fast path — same
@@ -370,7 +369,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	// recreates it before unpacking. Both steps run only AFTER the gzip header
 	// validates above, so a corrupt archive leaves an existing destDir intact
 	// (probe-verified). destDir is created owner-only (0700), matching the
-	// reference's umask-077 extraction.
+	// reference.
 	if err := wipeDestDir(destDir); err != nil {
 		return 0, fmt.Errorf("clean destDir: %v", err)
 	}

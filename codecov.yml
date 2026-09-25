@@ -208,8 +208,8 @@ component_management:
         # daemons and orphaned Claude Code process groups under this install's roots and tidies
         # their stale run dirs. The shared decision layer (hostclean.go, linux||darwin) drives
         # OS-specific reads: /proc on linux, sysctl kern.proc + KERN_PROCARGS2 + lsof on darwin
-        # (hostclean_darwin.go). Windows uses the no-op (hostclean_other.go) — the reference
-        # ships no cleaner there. Every read, kill, dial, rename and remove is seamed so the
+        # (hostclean_darwin.go). Windows uses the no-op (hostclean_other.go).
+        # Every read, kill, dial, rename and remove is seamed so the
         # destructive paths are unit-tested without a real process or file (real behavior
         # validated on a throwaway VM).
         - hostclean.go
@@ -222,7 +222,7 @@ component_management:
         - bridge.go
         - main.go
         - config.go
-        # 19f30c46: -probe-cli and -install ignore SIGPIPE so a closed stdout does not
+        # -probe-cli and -install ignore SIGPIPE so a closed stdout does not
         # kill them mid-write (fd 1). OS-split: signal.Ignore on unix, a no-op on Windows.
         - ignorepipe.go
         - ignorepipe_unix.go

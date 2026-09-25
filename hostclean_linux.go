@@ -246,7 +246,7 @@ func inspect(pid int, wantEnv bool) (hcTracked, hcInspectResult) {
 
 // hcSnapshot enumerates the pids under /proc owned by our uid. It appends at most hcMaxSnapshot
 // pids; when it finds a further matching process it stops and reports overflow, so the pass acts
-// only on per-process facts and skips run-dir retirement (matching the reference: the slice is
+// only on per-process facts and skips run-dir retirement (the slice is
 // capped but a separate flag, not the slice length, signals "too many"). The uid filter keeps
 // the cleaner to this user's own processes. ok is false only when /proc is unreadable.
 func hcSnapshot() (pids []int, overflow bool, ok bool) {

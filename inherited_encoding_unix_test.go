@@ -95,8 +95,7 @@ func TestInheritedPathErrorTextReachesTheWire(t *testing.T) {
 	escapeText := "\\" + "ufffd"
 	if strings.Contains(got, escapeText) {
 		t.Errorf("the message carries the %s ESCAPE, so the string still held the "+
-			"invalid byte at marshal time and the ENCODER substituted — the reference "+
-			"substitutes at decode", escapeText)
+			"invalid byte at marshal time and the ENCODER substituted", escapeText)
 	}
 }
 

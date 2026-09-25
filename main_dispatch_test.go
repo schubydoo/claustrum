@@ -323,8 +323,7 @@ func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
 
 // TestSigpipeIgnoredForStdoutModes pins that -probe-cli and -install ignore SIGPIPE
 // (both write structured output to stdout, fd 1, where Go's default terminates the
-// process on a closed-pipe write), while -version does not — matching reference build
-// 19f30c46, which sets it in exactly those two modes. The seam counts the calls
+// process on a closed-pipe write), while -version does not. The seam counts the calls
 // without touching the test process's real signal disposition.
 func TestSigpipeIgnoredForStdoutModes(t *testing.T) {
 	old := ignoreSigpipe

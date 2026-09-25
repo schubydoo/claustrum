@@ -13,11 +13,10 @@ import (
 	"unicode/utf8"
 )
 
-// loginPATHTimeout caps the time the login-shell subprocess may run. The
-// reference uses 4s — measured two ways against 5db5e4a: its extractPathFromShell
-// carries a 4e9 ns timer immediate, and with a login shell that sleeps 6s the
-// reference answers the first process.spawn after 4.01s (having given up) while
-// a 10s cap answers after 5.82s (having waited). The value is load-bearing: on a
+// loginPATHTimeout caps how long the login-shell subprocess runs. It is 4s.
+// Measured against 5db5e4a with a login shell that sleeps 6s: the reference
+// answers the first process.spawn after 4.01s, because it gave up. A 10s cap
+// answers after 5.82s, because it waited. The value is load-bearing: on a
 // host whose login shell takes longer than this, children inherit the daemon's
 // PATH rather than the login PATH, so a longer cap diverges both in first-spawn
 // latency and in every spawned child's environment.
@@ -29,9 +28,8 @@ var loginPATHTimeout = 4 * time.Second
 //
 // CORRECTION, 2026-08-02: this list shipped as {bash, zsh, sh}, and the comment
 // here said the bash-vs-zsh order "could not be measured (no /bin/zsh on the
-// probe host)" and followed the reference's string-table order. Both halves were
-// wrong. String-table order is not preference order, and the question is
-// measurable on a host with no zsh — you supply one.
+// probe host)". That was wrong: the order is measurable on a host with no zsh if
+// you supply one.
 //
 // Measured 2026-08-02 against 5db5e4a, two independent instruments agreeing:
 //

@@ -26,9 +26,9 @@ func runBridge(socket string) error {
 }
 
 // runStop sends an unauthenticated server.shutdown RPC to a running daemon.
-// ⚠️ this stops the daemon and drops its sessions. It is best-effort (matching
-// the reference): a missing or unreachable daemon is a silent no-op, not an
-// error.
+// ⚠️ this stops the daemon and drops its sessions. It is best-effort (the
+// reference also exits 0): a missing or unreachable daemon is a silent no-op, not
+// an error.
 // stopReplyTimeout bounds how long -stop waits for the daemon's reply to its
 // shutdown request. 2s, measured against the reference. var so tests can shrink it.
 var stopReplyTimeout = 2 * time.Second
@@ -88,20 +88,18 @@ func runStop(socket string) error {
 	// and then never answers — wedged, or a stale socket now owned by something
 	// else — would otherwise hang -stop forever, since a bare Read has no
 	// deadline. Measured at 5db5e4a: against a socket that accepts and never
-	// replies the reference returns in 2.030s (three runs, and its Stop carries a
-	// 2e9 ns immediate), where claustrum was still blocked when killed at 45s.
+	// replies, the reference returns in 2.030s over three runs. claustrum was still
+	// blocked when killed at 45s.
 	//
 	// A deadline error is deliberately ignored, exactly like the read error
 	// already was: -stop is best-effort and always reports success. The shutdown
 	// request has already been written by this point, so a daemon that is merely
 	// slow to answer still stops.
 	_ = nc.SetReadDeadline(time.Now().Add(stopReplyTimeout))
-	// Read the reply and DISCARD it. Both daemons answer server.shutdown with a
-	// {"ok":true} frame and then stop (measured 2026-08-27 — the earlier note here
-	// that "the reference prints nothing" was reading -stop's STDOUT, which is
-	// empty precisely BECAUSE -stop swallows the reply, not because the daemon is
-	// silent). Delivery races the teardown on both, so this read may see the frame
-	// or an immediate EOF; either way -stop emits nothing on stdout. The deadline
+	// Read the reply and DISCARD it. claustrum answers server.shutdown with a
+	// {"ok":true} frame and then stops. The reference does not send that frame reliably
+	// (measured on f6010b97 and 90fca6e6). So this read sees the frame or an
+	// immediate EOF. Either way claustrum's -stop emits nothing on stdout. The deadline
 	// still matters against a foreign or wedged listener that accepts and never
 	// answers.
 	//

@@ -108,7 +108,7 @@ var hashBlobFile = sha256File
 func ensureCLI(o installOpts, cliPath string) error {
 	// Validate -cli-version BEFORE anything touches the filesystem. The rules and
 	// their measurements live on validateCLIVersion; both are claustrum-only
-	// hardening, and on each input the reference does the damaging thing.
+	// hardening.
 	//
 	// Guarding here rather than at the individual hazards gates every filesystem
 	// effect, not just the destructive one, and reports through the existing
@@ -324,7 +324,7 @@ var errStagingVanished = errors.New("staging file vanished")
 // still loses the staggered case, where the other install staged BEFORE we began
 // and its file is indistinguishable from litter by name alone. Recovering from
 // the loss is exact; predicting which files are safe to delete is not — and the
-// retry lets the sweep stay unconditional, matching the reference.
+// retry lets the sweep stay unconditional.
 // chmodStaged is os.Chmod behind a seam, so the one branch between decompress
 // and rename that no fixture can otherwise provoke is reachable from a test.
 // That branch matters more than its size: it is on the CONSUMED side of the
@@ -386,8 +386,8 @@ func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 }
 
 // validateCLIVersion rejects a -cli-version the install cannot honestly carry
-// out. Two rules, both measured, both claustrum-only hardening — the reference
-// accepts each input and does the damaging thing.
+// out. Two rules, both measured, both claustrum-only hardening. Measured, the
+// reference destroys the target on "../victim".
 //
 //  1. A SINGLE PATH COMPONENT. cliPath is filepath.Join(cliDir, cliVersion) and
 //     ensureCLI's os.RemoveAll deletes cliPath recursively, so a version that
@@ -527,10 +527,10 @@ const (
 )
 
 // probeCLITimeout is the fixed wall-clock bound the -probe-cli mode puts on the
-// `<cli> --version` probe (reference build 19f30c46: 30s). It is deliberately NOT
+// `<cli> --version` probe. The reference value is not probe-measured. It is NOT
 // the opt-in -cli-probe-timeout (D11) divergence: -probe-cli is a standalone mode
-// Claude Desktop drives to classify a CLI binary, and the reference always bounds it
-// at 30s. It is a var, not a const, only so tests can shrink it (same idiom as
+// Claude Desktop drives to classify a CLI binary, and the reference always bounds it.
+// It is a var, not a const, only so tests can shrink it (same idiom as
 // stdinQueueCap in process.go).
 var probeCLITimeout = 30 * time.Second
 
@@ -555,8 +555,9 @@ const probeCLIKillGrace = 2 * time.Second
 // A consequence of the own-group isolation: a terminal Ctrl-C signals only the
 // foreground group (the claustrum process), NOT this child, so an interrupted probe
 // leaves the CLI to the deadline or to exit on its own rather than dying with the
-// Ctrl-C. That is intentional parity — the reference likewise groups the child and
-// installs no SIGINT handler. Do NOT add a SIGINT reaper here: it would diverge.
+// Ctrl-C. That is intentional parity: SIGINT ends the reference's -probe-cli with
+// exit 130 and empty stdout (19f30c46). Do NOT add a SIGINT reaper here: it would
+// diverge.
 func probeCLIRunnable(path string) probeCLIVerdict {
 	ctx, cancel := context.WithTimeout(context.Background(), probeCLITimeout)
 	defer cancel()
@@ -621,8 +622,8 @@ func writeProbeCLIResult(w io.Writer, v probeCLIVerdict) {
 // exceeds 536870912 bytes" to prove the probe reached this limit.
 var maxCLIBytes int64
 
-// zstdDecompress decompresses the zstd blob at src to dest in-process, using the
-// same library (klauspost/compress) the real binary embeds — no external zstd CLI.
+// zstdDecompress decompresses the zstd blob at src to dest in-process, using
+// klauspost/compress. It needs no external zstd CLI.
 //
 // It takes a PATH rather than a []byte for two reasons: the blob never has to be
 // held in memory, and ensureCLI retries stageAndInstall once, which needs a
@@ -805,7 +806,7 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 		n, copyErr = io.Copy(io.MultiWriter(f, h), io.LimitReader(wb, maxCLIBytes+1))
 	}
 	// Record fetch stats even on copyErr: the reference emits the fetch object on a
-	// stall, a cap hit, and a mid-body error, not only on success.
+	// stall, not only on success.
 	s := wb.stats()
 	lastInstallFetch = &s
 	_ = wb.Close() // stop the progress ticker
@@ -832,16 +833,14 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 // with four versions, three orphans and -cli-keep 3, every real version was
 // deleted, including the one just installed.
 //
-// os.Remove per entry, matching the reference exactly: it clears files and EMPTY
-// directories, and silently leaves a non-empty ".fetch-dir/" in place. That
-// asymmetry is measured, not incidental — an empty orphan directory is swept, a
-// populated one survives.
-// UNCONDITIONAL, matching the reference. An earlier version skipped entries that
+// os.Remove per entry. It clears files and EMPTY directories, and silently leaves
+// a non-empty ".fetch-dir/" in place. An empty orphan directory is swept (measured).
+// UNCONDITIONAL. An earlier version skipped entries that
 // appeared after the install started, to avoid reclaiming a concurrent install's
 // in-flight staging file. That was a divergence AND only a partial guard — in the
 // staggered case the other install staged BEFORE this one began, so its file is
 // indistinguishable from litter by name alone. stageAndInstall's retry handles
-// the loss instead, which is exact and lets this stay identical to the reference.
+// the loss instead, which is exact and lets this stay unconditional.
 func sweepFetchTemps(cliDir string) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
@@ -1039,9 +1038,9 @@ func lddCtx(timeout time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), timeout)
 }
 
-// muslLoaderGlob matches the musl dynamic loader for ANY architecture. The
-// reference carries this glob; claustrum used to stat a hardcoded
-// "/lib/ld-musl-x86_64.so.1", which cannot see the loader on arm64 or riscv.
+// muslLoaderGlob matches the musl dynamic loader for ANY architecture. claustrum
+// used to stat a hardcoded "/lib/ld-musl-x86_64.so.1", which cannot see the
+// loader on arm64 or riscv.
 const muslLoaderGlob = "/lib/ld-musl-*.so.*"
 
 // hasMuslLoader reports whether the musl dynamic loader is present. Since the

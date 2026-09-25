@@ -285,7 +285,7 @@ traps that matter for telling drift from expected:
 - D14 fires in only one of two stall shapes (a surviving child blocks both
   binaries). There is no libc probe off linux at all, so a `libc`
   difference off linux is not D14.
-- Seven behaviors changed in `90fca6e6` while the JSON-RPC surface stood still.
+- claustrum made seven changes for `90fca6e6` while the JSON-RPC surface stood still.
   A triager who meets one of them and finds the drift check quiet is looking at
   parity, not drift. No method, field or error string moved. Three of the seven
   still change what a client reads. A reattach now closes the connection it
@@ -296,14 +296,10 @@ traps that matter for telling drift from expected:
   seeded worktree looks like a regression against the previous pin.
   [REFERENCE-BUILDS.md](REFERENCE-BUILDS.md) holds all seven, and all seven are
   reconciled. One carries a deliberate exception. On the host cleaner's macOS busy
-  probe, claustrum reads an `lsof` run it gave up on as busy, where the reference
-  reads it as idle. That is [DIVERGENCES.md](DIVERGENCES.md) D17 rather than drift.
-- A quiet body diff is not proof. The `90fca6e6` reconciliation shipped four
-  PRs. A full re-check then found a seventh behavior change the first pass had
-  missed: a constant-only change to a function that exists on one OS, invisible to
-  the constant pass on one of the two architectures. Diff every symbol name in the
-  raw binary too, not only the recovered function table. That is what caught two
-  new functions the table alone did not list.
+  probe, claustrum reads an `lsof` run it gave up on as busy. The reference side is
+  not probe-measured. That is [DIVERGENCES.md](DIVERGENCES.md) D17 rather than drift.
+- The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
+  seventh change that the first pass had missed.
 
 ## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
 

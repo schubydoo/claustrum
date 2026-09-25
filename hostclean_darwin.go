@@ -56,13 +56,9 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 
 // The three bounds on one lsof run.
 //
-// The reference bounds every lsof run its host cleaner makes. 90fca6e6 raised two of
-// the three, the command deadline from 5 s to 15 s and the abandon bound from 7 s to
-// 17 s. The wait delay stayed at 1 s.
-//
-// Pointer-class: all three are READ from the darwin builds of 19f30c46 and 90fca6e6,
-// on amd64 AND arm64, which carry the same values. NOT probe-measured: staging them
-// live needs an lsof that hangs on a macOS host.
+// claustrum bounds every lsof run its host cleaner makes. The three values are
+// claustrum's own. The reference side is not probe-measured, because staging it needs
+// an lsof that hangs on a macOS host.
 //
 // Why three and not two. The deadline kills the command. The wait delay then bounds
 // how long the run waits for the output pipe to close, which covers a child that
@@ -74,9 +70,8 @@ var hcLsofEnv = []string{"LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 //
 // The gap between the bounds is what makes D17 safe. A merely slow lsof is killed by
 // the deadline and its output pipe closes within the wait delay, so the run COMPLETES
-// with no output well before the abandon bound. Reaching the abandon arm at all needs
-// a process that SIGKILL cannot end. So the two empty results really do mean different
-// things, and only the second one is the divergence.
+// with no output well before the abandon bound. So the two empty results really do
+// mean different things, and only the second one is the divergence.
 //
 // The cost of getting this wrong is a whole cleaner pass: retireAbandoned samples
 // hcBusy for up to hcBusyWindow, and on darwin every one of those samples is an lsof
@@ -107,12 +102,12 @@ var (
 	}
 	// runLsof runs `/usr/sbin/lsof -nP -w <args...>` with the pinned env and returns stdout;
 	// lsof exits non-zero when it simply finds nothing, so the stdout is used regardless. Like
-	// the linux lock/busy probes (which parse /proc and read an unreadable source as not-held)
-	// and the reference (which parses lsof's output), the caller keys only on the output. lsof
+	// the linux lock/busy probes (which parse /proc and read an unreadable source as not-held),
+	// the caller keys only on the output. lsof
 	// is a system binary always present on macOS and needs no privilege for this user's own
 	// processes, so a run failure is not a reachable path.
 	//
-	// Bounded three ways, matching the reference. An lsof that stalls on an unresponsive
+	// Bounded three ways. An lsof that stalls on an unresponsive
 	// mount would otherwise hold the whole cleaner pass open with nothing to end it, and
 	// the deadline alone does not cover that case. See the bound constants above.
 	//
@@ -127,8 +122,7 @@ var (
 	// the goroutine costs one buffered send whenever the process finally goes.
 	//
 	// ⚠️ A wedged mount therefore leaks one process and one goroutine per abandoned run,
-	// and nothing caps that. The reference does not cap them either. It stays uncapped
-	// here rather than gaining a tracker the reference has no counterpart for: a pass runs
+	// and nothing caps that. It stays uncapped here: a pass runs
 	// every hcPassEvery (24 h) and reaches at most a couple of runs per candidate, so
 	// the accumulation is slow, and a host with a permanently wedged mount has a larger
 	// problem than this daemon.
@@ -396,11 +390,10 @@ func hcFdTargets(pid int) (map[string]string, bool) {
 // record whose name shows a connected peer ("->") is an immediate yes; otherwise more than one
 // unix endpoint means an accepted connection sits alongside the bare listener.
 //
-// D17: an ABANDONED run answers busy. The reference conflates the two empty results — a run
-// that finished and saw nothing, and a run it gave up on — and reads both as not busy, so a
-// wedged lsof lets its cleaner SIGTERM a daemon that is in fact serving a client. claustrum
-// keeps them apart, because only one of them is evidence. On every honest path lsof answers
-// and the two builds agree; this arm is reachable only when the read failed outright.
+// D17: an ABANDONED run answers busy. A run that finished and saw nothing and a run that was
+// given up on both produce no output. claustrum keeps them apart, because only the first is
+// evidence. The reference side is not probe-measured. This arm is reachable only when the
+// read failed outright.
 func hcBusy(pid int) bool {
 	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !ok {
@@ -422,7 +415,7 @@ func hcBusy(pid int) bool {
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.
 //
-// Deliberately NOT under D17: an abandoned run reads as not-held here, matching the reference.
+// Deliberately NOT under D17: an abandoned run reads as not-held here.
 // The same argument would apply — a held lock that reads stale lets the tidy remove a live
 // daemon's run dir — but D17 was scoped to the busy predicate, and widening a divergence
 // without deciding it is how one grows by accident. Raised rather than taken.

@@ -31,7 +31,7 @@ import (
 // kill, dial, rename and remove goes through a package-var seam, so unit tests exercise the
 // whole decision without touching a real process or file. The real sweep is validated only on
 // a throwaway VM; a cleaner-enabled -serve must never run on a host that also runs siblings.
-// Windows links no cleaner (the reference ships none there); it is a no-op (hostclean_other.go).
+// Windows links no cleaner. It is a no-op (hostclean_other.go).
 
 // hostRoots is the containment envelope. roots holds the install root dir(s) the cleaner may
 // touch (a daemon socket <root>/run/<id>/rpc.sock yields <root>); daemonBin is the deployed
@@ -54,7 +54,7 @@ const (
 // its resolved executable. The socket must be <root>/run/<id>/rpc.sock. When haveExe is set
 // the executable must be a deployed daemon under <root>/srv, and its root is added when it
 // differs from the socket's. It returns an error when the socket is not run-dir shaped or the
-// executable is not a deployed daemon (reference build 19f30c46).
+// executable is not a deployed daemon.
 func deriveRoots(socket, exe string, haveExe bool) (*hostRoots, error) {
 	socket = filepath.Clean(socket)
 	if filepath.Base(socket) != rpcSockBasename {
@@ -167,7 +167,7 @@ func (r *hostRoots) stripRoot(path string) string {
 // serveArgv extracts the socket path from a daemon's argv. It requires argv[0]'s basename to
 // be binName and the argv to carry a -serve/--serve flag with an absolute -socket/--socket
 // value, and returns "" when the argv is a -bridge/-stop/-install invocation or lacks the
-// serve-plus-socket pair (reference build 19f30c46).
+// serve-plus-socket pair.
 func serveArgv(argv []string, binName string) string {
 	if len(argv) < 2 || filepath.Base(argv[0]) != binName {
 		return ""
@@ -198,7 +198,7 @@ func serveArgv(argv []string, binName string) string {
 	return ""
 }
 
-// ---- inspection layer (read-only /proc reads, reference build 19f30c46) ----
+// ---- inspection layer (read-only /proc reads) ----
 
 const (
 	hcMaxSnapshot = 4096 // cap on the processes one snapshot enumerates
@@ -275,17 +275,15 @@ func hcDirIdle(dir string, now time.Time) (time.Duration, bool) {
 	return idle, true
 }
 
-// ---- ownership / liveness / lock + socket probes (reference build 19f30c46) ----
+// ---- ownership / liveness / lock + socket probes ----
 
-// hcDialTimeout and hcWaitPoll match the reference.
+// hcDialTimeout and hcWaitPoll are claustrum's own values, not probe-measured.
 const (
 	hcDialTimeout = 300 * time.Millisecond // probeSocket dial timeout
 	hcWaitPoll    = 100 * time.Millisecond // waitGone poll interval
-	// The busy debounce below, matching reference build 90fca6e6.
-	//
-	// Pointer-class: all three are READ from that build, NOT probe-measured. They
-	// were not staged live because the only caller is retireAbandoned, behind a
-	// 5-minute process age and a 30-day idle age, which makes it expensive.
+	// The busy debounce below. All three values are claustrum's own and are NOT
+	// probe-measured. Staging them live is expensive: the only caller is
+	// retireAbandoned, behind a 5-minute process age and a 30-day idle age.
 	//
 	// Expensive, not impossible, and the distinction matters per value. The WINDOW
 	// is observable in principle: a daemon whose client disconnects one second into
@@ -304,14 +302,12 @@ const (
 //
 // It samples for hcBusyWindow with a minimum of hcBusyMin samples, and returns at
 // once on the first sample that says not busy, so an idle daemon is never held for
-// the window. The window, the minimum and the sample interval match 90fca6e6 and
-// carry that const block's pointer-class label.
+// the window. The window, the minimum and the sample interval are claustrum's own
+// values and are not probe-measured. See the const block.
 //
 // claustrum's own previous debounce took ten fixed samples, sleeping hcWaitPoll
 // (100 ms) between them, so it settled after about 900 ms. On linux it was a
-// constant false, so the spare could never fire there. That was a gap against
-// 19f30c46 as much as against 90fca6e6, since
-// claustrum has a real linux hcBusy to sample with. One shared implementation now
+// constant false, so the spare could never fire there. One shared implementation now
 // serves both.
 func hcSettledBusy(pid int) bool {
 	deadline := hcClock().Add(hcBusyWindow)
@@ -496,9 +492,9 @@ func waitGone(entries []waitEntry, deadline time.Time) []waitEntry {
 	}
 }
 
-// ---- the cleaner: lifecycle, summary, and the destructive enders (reference build 19f30c46) ----
+// ---- the cleaner: lifecycle, summary, and the destructive enders ----
 
-// Timing and count gates (reference build 19f30c46).
+// Timing and count gates. The values are claustrum's own, not probe-measured.
 const (
 	hcMinAge     = 5 * time.Minute            // a daemon or orphan younger than this is never touched
 	hcMarkerAge  = 2 * hcMinAge               // an unmarked --serve daemon older than this is spared, not skipped
@@ -550,7 +546,7 @@ type hostCleaner struct {
 // process; the group signal reuses killGroup from the reap.
 var hcSignalPid = func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }
 
-// hcSignalTracked signals a leftover process the way the reference does: a group leader
+// hcSignalTracked signals a leftover process: a group leader
 // (pid == pgid) has its whole group signalled (kill(-pid)); a non-leader gets a single-pid
 // signal. A helper spawned without its own group would be missed by a blind kill(-pid), which
 // returns ESRCH for a pgid that does not exist.
@@ -590,7 +586,7 @@ func endGroupsTwoPhase(groups []tracked, label string) (signalled, survived int)
 	for _, g := range groups {
 		// Re-validate identity immediately before signalling: a child can exit (and its pid be
 		// reused by an unrelated process) between the snapshot and now, so signal only when the
-		// tracked pgid and start-ticks still match. The reference re-checks the same way.
+		// tracked pgid and start-ticks still match.
 		if g.pid < 2 || !g.same() {
 			continue
 		}
@@ -607,8 +603,7 @@ func endGroupsTwoPhase(groups []tracked, label string) (signalled, survived int)
 		}
 		signalled++
 		// kill-enabled for a group leader: if it exits during the grace, waitGone SIGKILLs its
-		// process group, reaping any members that outlive the leader. The reference wait does the
-		// same (its kill flag is the is-leader bit).
+		// process group, reaping any members that outlive the leader.
 		live = append(live, waitEntry{tracked: g, kill: g.pid == g.pgid})
 	}
 	survivors := waitGone(live, hcClock().Add(hcTermGrace))
@@ -773,7 +768,7 @@ func (c *hostCleaner) judgeDaemon(d hcTracked) (daemonVerdict, string, *daemonTa
 	case hcLockHeld:
 		return dvSkip, "", nil // a live process holds its run-dir lock
 	case hcLockUnknown:
-		// The reference spares a daemon whose lock state it cannot determine, rather than
+		// claustrum spares a daemon whose lock state it cannot determine, rather than
 		// reaping it: an unreadable lock is not proof the daemon is dead.
 		return dvSpare, "whether a process holds its run-dir lock could not be determined", nil
 	}
@@ -797,7 +792,7 @@ func hcArgvHasStreamJSON(argv []string) bool {
 // is gone (the caller passes only daemon-gone candidates). It must be this user's own process,
 // in this daemon's namespace, running one of our deployed CLI binaries, old enough, a
 // stream-json process, and carrying the daemon-child marker. The uid, namespace and CLI-binary
-// gates match the reference: they keep the cleaner from ending an unrelated same-user process
+// gates keep the cleaner from ending an unrelated same-user process
 // that merely inherited the marker and happens to carry a stream-json argument. The reason is
 // for the spare log; an empty reason with reap=false is a silent skip.
 func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
@@ -837,14 +832,14 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 // retireAbandoned SIGTERMs a still-live daemon whose run dir has been idle past the threshold.
 // It requires the daemon be verifiably ours and old enough, spares one that still shows a live
 // connection across the sampling window, re-verifies identity (rejecting a reused pid), then
-// SIGTERMs the single pid and waits the grace. That check order matches the reference. It
+// SIGTERMs the single pid and waits the grace. That check order is claustrum's choice. It
 // returns true only when the daemon exited; it never escalates to SIGKILL (that is
 // judgeDaemon/endGroups' job).
 func (c *hostCleaner) retireAbandoned(pid int, socket string) bool {
 	if pid < 2 || pid == c.selfPid {
 		return false
 	}
-	// The listener check comes FIRST, matching the reference's order. It is the cheapest
+	// The listener check comes FIRST. It is the cheapest
 	// way to reject a candidate, and putting it last means spending the whole sampling
 	// window on a process that is about to be refused anyway. On darwin that window is
 	// hcBusyWindow of lsof runs, so the order is visible in how many times lsof runs on
@@ -869,11 +864,9 @@ func (c *hostCleaner) retireAbandoned(pid int, socket string) bool {
 	// holds the number. waitGone already refuses a reused pid, so without this check the
 	// signal goes out and the mismatch afterwards reads as a clean exit.
 	//
-	// The reference gates its own signal the same way. In 19f30c46 and 90fca6e6 alike,
-	// on linux and darwin, it does not signal a pid whose identity no longer matches the
-	// one it inspected, and it writes no retire log for such a pid either. Read from
-	// those builds, not probe-measured: this path sits behind the same slow age gates
-	// as the const block above, which makes staging it expensive. Not staged.
+	// This gate is claustrum's own. Its reference side is not probe-measured. This path
+	// sits behind the same slow age gates as the const block above, which makes staging
+	// it expensive.
 	if !t.asTracked().same() {
 		logInfof("[process.HostClean] idle daemon pid %d is no longer the process that was inspected; nothing signalled", pid)
 		return false
@@ -889,7 +882,7 @@ func (c *hostCleaner) retireAbandoned(pid int, socket string) bool {
 	return false
 }
 
-// ---- run-dir tidy + the pass orchestration + lifecycle (reference build 19f30c46) ----
+// ---- run-dir tidy + the pass orchestration + lifecycle ----
 
 const (
 	hcMaxRunDirs    = 64           // run dirs examined per pass

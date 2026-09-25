@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// Daemon-to-daemon socket handoff, matching 7d193f89. A unix socket path cannot be
+// Daemon-to-daemon socket handoff, a feature 7d193f89 added. A unix socket path cannot be
 // rebound in place, so a restarting daemon unlinks the old socket and binds a fresh
 // inode; the launcher must wait for that NEW inode to accept, and a departing
 // predecessor must not delete a successor's socket. All three pieces key on
@@ -33,9 +33,9 @@ func isSocketDead(err error) bool {
 
 // removeSocketIfOwned unlinks the socket on graceful shutdown ONLY when the socket
 // on disk is still the same inode this daemon bound (owned). If a successor has
-// already rebound the path to a new inode, the departing daemon leaves it alone —
-// matching 7d193f89, so a restart's old daemon cannot delete the new daemon's
-// socket. A nil owned (never recorded) falls back to the unconditional unlink.
+// already rebound the path to a new inode, the departing daemon leaves it alone,
+// so a restart's old daemon cannot delete the new daemon's socket. A nil owned
+// (never recorded) falls back to the unconditional unlink.
 func removeSocketIfOwned(socket string, owned os.FileInfo) {
 	if owned == nil {
 		_ = os.Remove(socket)

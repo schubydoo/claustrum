@@ -13,9 +13,7 @@ import (
 // Before, a reattach only transferred the frame stream: the previously attached
 // connection stopped receiving frames but stayed open, so a client that had lost
 // the session had no way to tell its old connection was finished. The reference now
-// looks up the writer currently attached to that process, and when it is a
-// different connection it supersedes it: the connection is closed, once, with a
-// logged reason naming the process.
+// closes the old connection when a different connection reattaches.
 //
 // This is the change behind the Desktop note about messages around a disconnect
 // being dropped or answered with a prompt to send them again. It is observable: the
@@ -100,10 +98,10 @@ func TestReattachOnTheSameConnectionDoesNotSupersede(t *testing.T) {
 	}
 }
 
-// TestSupersededConnectionIsNotClosedTwice pins the shared deliberate-close flag.
-// The reference sets the flag inside the supersede, and its idle watcher now claims
-// that same flag before it logs and closes. So a connection the supersede already
-// finished produces no second close and no second log line.
+// TestSupersededConnectionIsNotClosedTwice pins claustrum's shared deliberate-close
+// flag. The supersede and the idle watcher claim the same flag before they log and
+// close. So a connection the supersede already finished produces no second close and
+// no second log line.
 func TestSupersededConnectionIsNotClosedTwice(t *testing.T) {
 	m := newTestProcManager(t)
 

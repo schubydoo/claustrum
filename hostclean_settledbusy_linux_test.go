@@ -11,14 +11,13 @@ import (
 //
 // First, linux must sample at all. claustrum's linux hcSettledBusy was a constant
 // false, so the "idle daemon still shows a live connection" spare in
-// retireAbandoned could never fire there. The reference's own equivalent is
-// reached from its retireAbandoned on linux, and claustrum has a real linux
-// hcBusy to sample with.
+// retireAbandoned never fired there. claustrum has a real linux hcBusy to sample
+// with.
 //
 // Second, the sampling rule: sample for a 3-second window, take at least 2
 // samples, and return at once on the first sample that says not busy. The three
-// values match reference build 90fca6e6 and carry the pointer-class label on the
-// const block in hostclean.go: read from that build, not probe-measured.
+// values are claustrum's own and are not probe-measured. See the const block in
+// hostclean.go.
 
 // busyFakeProc points procRoot at a tree in which pid 42 has a connected client on
 // its own unix socket, which is what hcBusy looks for.
@@ -57,7 +56,7 @@ func TestHcSettledBusyLinuxSamples(t *testing.T) {
 	}
 }
 
-// TestHcSettledBusyHonoursTheDeadline pins the 90fca6e6 sampling rule: at least two
+// TestHcSettledBusyHonoursTheDeadline pins claustrum's sampling rule: at least two
 // samples, and sampling continues until the deadline passes.
 func TestHcSettledBusyHonoursTheDeadline(t *testing.T) {
 	oldSleep, oldClock := hcSleep, hcClock
@@ -200,8 +199,8 @@ func TestRetireAbandonedSparesABusyDaemon(t *testing.T) {
 	})
 }
 
-// TestRetireAbandonedVerifiesBeforeItSamples pins the check order against the
-// reference's: the listener is verified first, so a candidate that is about to be
+// TestRetireAbandonedVerifiesBeforeItSamples pins the check order: the listener is
+// verified first, so a candidate that is about to be
 // refused never costs a sampling window.
 //
 // The window is up to hcBusyWindow, and on darwin every sample in it is an lsof run,

@@ -30,10 +30,10 @@ type streamFrame struct {
 	// process.kill / process.killAndWait, "shutdown" for the shutdown/killAll
 	// sweep. Both omitempty, so a normal exit stays byte-identical to the pre-4534d86
 	// frame. Provenance: the "client" values and the SIGTERM/SIGKILL names are
-	// live-measured against 4534d86 (other mapped signal names are not individually
-	// measured), and the Windows signal-omission is VM-measured; the "shutdown"
-	// value is from static analysis only (the shutdown exit frame races connection
-	// teardown and is not client-observable).
+	// live-measured against 4534d86. Other mapped signal names are not individually
+	// measured. The Windows signal-omission is VM-measured. The "shutdown" value is
+	// not probe-measured, because the shutdown exit frame races connection
+	// teardown and is not client-observable.
 	Signal   string `json:"signal,omitempty"`
 	KilledBy string `json:"killedBy,omitempty"`
 
@@ -156,7 +156,7 @@ type managedProc struct {
 	// drain window carries no killedBy on the reference). The first reason wins, so
 	// a client kill racing the shutdown sweep stays "client". Provenance for the
 	// value set is split at the KilledBy field comment above: "client" is
-	// live-measured, "shutdown" is static-analysis-only. Read and written under p.mu.
+	// live-measured, "shutdown" is not probe-measured. Read and written under p.mu.
 	killedBy string
 	stdin    io.WriteCloser
 	// cmd is set once in spawn's composite literal and never reassigned, so it is
@@ -206,7 +206,7 @@ type procManager struct {
 	// spawnLocks holds a per-session-key mutex so concurrent spawns of the SAME CLI
 	// session serialize (a new session process must fully register before the next
 	// same-key spawn supersedes it). Ref-counted and dropped at zero, so the map does
-	// not grow unbounded. Guarded by spawnMu. (4534d86 lockSessionSpawn.)
+	// not grow unbounded. Guarded by spawnMu.
 	spawnMu    sync.Mutex
 	spawnLocks map[string]*sessionSpawnLock
 
@@ -231,8 +231,7 @@ type sessionSpawnLock struct {
 }
 
 // procPruneAge is how long a process stays reachable after it exits. Past this,
-// process.reattach reports found:false and the id is free again — the reference
-// drops the entry, along with its replay buffer, from the table.
+// process.reattach reports found:false and the id is free again.
 //
 // Provenance, which used to be labelled "probe-measured" as a whole and is not:
 //
@@ -243,24 +242,22 @@ type sessionSpawnLock struct {
 //	                 one is a reattach answering found:true at 45s, re-measured
 //	                 2026-08-02 because the bracket previously published a 20s
 //	                 lower bound that nothing stated beside it supported.
-//	pointer-class    the only duration constant in its pruneExited is 900s.
-//	                 That is where the exact value comes from. Read, not probed.
+//	claustrum        900s is claustrum's own choice inside that bracket. It is
+//	                 not probe-measured.
 //
-// The value is very likely right; the label was wrong. Copied into the manager
-// at construction. var so tests can shrink it.
+// Copied into the manager at construction. var so tests can shrink it.
 var procPruneAge = 15 * time.Minute
 
-// procPruneInterval is the sweep period of the background prune. The reference
-// runs the same sweep from a time.NewTicker(60s) started by NewManager, on top
-// of the inline call in Spawn — so an idle daemon prunes too, with no spawn to
-// trigger it.
+// procPruneInterval is the sweep period of the background prune. The sweep runs
+// on top of the inline call in spawn, so an idle daemon prunes too, with no spawn
+// to trigger it.
 //
-// Pointer-class, NOT probe-measured, and it cannot become probe-measured: the
-// only wire effect of the sweep is that an aged-out id answers found:false, and
-// an id that has aged out answers that way whatever schedule noticed it. No
-// observable distinguishes a 60s ticker from a 30s or 120s one. What the probe
-// DOES support is the "idle daemon prunes too" half — an entry disappears with
-// no intervening process.spawn to trigger the inline call.
+// The 60s period is claustrum's own value. It is NOT probe-measured, and it cannot
+// become probe-measured. The only wire effect of the sweep is that an aged-out id
+// answers found:false. An aged-out id answers that way whatever schedule noticed
+// it. No observable distinguishes a 60s sweep from a 30s or 120s one. The probe
+// DOES support the "idle daemon prunes too" half. On the reference, an entry
+// disappears with no intervening process.spawn to trigger an inline call.
 //
 // Copied into the manager at construction, so a test must set it before
 // newProcManager. var so tests can shrink it.
@@ -278,10 +275,10 @@ func newProcManager() *procManager {
 	return m
 }
 
-// pruneLoop sweeps long-exited processes out of the table on a timer, matching
-// the goroutine the reference's NewManager starts. Without it an idle daemon
-// would keep every dead process forever; spawn's inline sweep only ever prunes
-// when new work arrives.
+// pruneLoop sweeps long-exited processes out of the table on a timer. The
+// reference also prunes an idle daemon, which is probe-measured. Without this loop
+// an idle daemon keeps every dead process forever. The inline sweep in spawn
+// prunes only when new work arrives.
 func (m *procManager) pruneLoop() {
 	t := time.NewTicker(m.pruneInterval)
 	defer t.Stop()
@@ -367,8 +364,8 @@ func (m *procManager) liveArgv() [][]string {
 // drain a killAndWait answers alreadyExited:false and waits, rather than reporting
 // an already-exited process. It delivers no signal either — signalIfLive's reaped
 // guard suppresses that — so the drain costs the caller a wait, not a stray signal.
-// Leaving it on this side of the narrowing is READ from the build, which changed
-// the attach and stdin paths only; the Kill path inside the drain is NOT measured.
+// Leaving killAndWait on this side of the narrowing is claustrum's choice. The
+// reference answer for a kill inside the drain is NOT probe-measured.
 // The other callers are internal (the session supersede, the shutdown log line).
 // Use signalIfLive, which holds p.mu across the reaped check and the delivery, to
 // decide whether it is safe to signal.
@@ -546,8 +543,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		unlock := m.lockSessionSpawn(sessionKey)
 		defer unlock()
 	}
-	// The reference prunes inline here as well as on its ticker, so a busy daemon
-	// sheds long-dead entries without waiting for the next sweep.
+	// claustrum prunes inline here as well as on its timer, so a busy daemon sheds
+	// long-dead entries without waiting for the next sweep.
 	m.pruneExited()
 	cmd := exec.Command(command, args...)
 	if cwd != "" {
@@ -672,8 +669,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// missed by killAll — so we tear its tree down here rather than leak it. We
 	// first drop its subscribers so its teardown frames (a late exit/stdout under
 	// the now-reused id) don't reach clients. OS-level only — no wire frame
-	// change; an intentional divergence from the reference, which leaves the old
-	// process running (see docs/PROTOCOL.md).
+	// change. The reference side of this teardown is not probe-measured (see
+	// docs/PROTOCOL.md).
 	if old := m.procs[id]; old != nil {
 		old.mu.Lock()
 		old.subs = map[*conn]struct{}{}
@@ -731,11 +728,11 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.mu.Unlock()
 	// A child can leave a grandchild holding the same stdout — `npm run dev &`,
 	// anything that daemonizes. The pipes then stay open long after the process
-	// we spawned is gone. The reference gives that drain exactly 5 seconds and
-	// then closes the read ends, so the exit frame lands on time and the
-	// grandchild's next write fails with EPIPE. Waiting for EOF instead (what
-	// claustrum did) means the exit frame is delayed for as long as the
-	// grandchild lives, which for a dev server is "never".
+	// we spawned is gone. On the reference the exit frame lands 5 seconds after
+	// the exit and the grandchild's next write fails with EPIPE (measured at
+	// 5db5e4a). Waiting for EOF instead (what claustrum did) means the exit frame
+	// is delayed for as long as the grandchild lives, which for a dev server is
+	// "never".
 	drained := make(chan struct{})
 	go func() { wg.Wait(); close(drained) }()
 	select {
@@ -792,7 +789,7 @@ func pumpStream(p *managedProc, name string, r io.Reader) {
 			// EOF is the normal end of a stream and says nothing. Anything else —
 			// a closed pipe forced by the drain cap, an I/O error — is why the
 			// output stopped, and without it a truncated stream looks identical to
-			// a clean one. The reference logs this; claustrum returned silently.
+			// a clean one.
 			if !errors.Is(err, io.EOF) {
 				logWarnf("[process.Manager] %s read error for process %s: %v", name, p.id, err)
 			}
@@ -842,7 +839,7 @@ func (p *managedProc) enqueueStdin(data []byte) (full bool) {
 // it is always accepted. A write after the process exited (stdinDone) is dropped,
 // not reported as full. That kept the pre-90fca6e6 exit-drain wart intact, where
 // stdin acked during the drain was dropped and the high-water mark still
-// advanced. Since 90fca6e6 the drain is refused before the enqueue, so this arm
+// advanced. claustrum now refuses stdin inside the drain before the enqueue, so this arm
 // is reached only by a write racing the writer's own shutdown, and the shape of
 // the answer (drop, not -32002) is what it still pins.
 func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
@@ -888,8 +885,8 @@ func (p *managedProc) enqueueStdinLocked(data []byte) (full bool) {
 // fresh-enqueue path a queue already at the cap returns full=true and enqueues
 // nothing (the reference returns -32002 rather than parking the request).
 //
-// The call site passes mp.isLive, not mp.isRunning: 90fca6e6 refuses a write to a
-// process that has been reaped, even while the exit frame is still pending.
+// The call site passes mp.isLive, not mp.isRunning: 90fca6e6 refuses a write inside
+// the exit drain (measured on a linux VM).
 func (p *managedProc) applyStdin(data []byte, offset *uint64, running func() bool) (applied uint64, duplicate, gap, full, notRunning bool) {
 	p.stdinMu.Lock()
 	cur := p.stdinApplied
@@ -951,8 +948,7 @@ func (p *managedProc) stdinWriter() {
 		if err != nil {
 			// The whole queue is discarded here — everything the client sent and
 			// got success:true for, that the child will now never see. Silently
-			// dropping it left no trace at all; the reference logs the write error
-			// that caused it.
+			// dropping it left no trace at all.
 			logWarnf("[process.Manager] drainStdin %s: write error: %v", p.id, err)
 			p.stdinQ, p.stdinQBytes, p.stdinDone = nil, 0, true
 			p.stdinCond.Broadcast()
@@ -1049,8 +1045,8 @@ var maxKillWaitMs = 30000 // 30s
 //
 // SEVEN seconds, matching the reference — MEASURED 2026-08-06, black-box, not
 // inferred. Observing it needs a child SIGKILL cannot reap, which a
-// pipe-holding grandchild does NOT produce: the exit drain closes the read ends
-// at 5s on both binaries and the reply lands at 5.01s either way, so that route
+// pipe-holding grandchild does NOT produce: the exit drain ends at 5s on both
+// binaries and the reply lands at 5.01s either way, so that route
 // proves nothing. The fixture that works is real uninterruptible sleep — a read
 // against a dm-delay device on an ephemeral VM. With timeoutMs 500:
 //
@@ -1066,10 +1062,8 @@ var killReapGrace = 7 * time.Second
 
 // exitDrainGrace bounds how long the exit frame waits for stdout/stderr to reach
 // EOF after the spawned process itself has exited. Only a grandchild that
-// inherited the pipe can hold them open that long, and the reference gives it
-// exactly this much before closing the read ends and emitting exit anyway
-// (measured at 5s against 5db5e4a; its Spawn waiter pairs os.Process.wait with a
-// 5s time.NewTimer). var so tests can shrink it.
+// inherited the pipe can hold them open that long. Measured against 5db5e4a,
+// the reference also emits the exit frame after 5s. var so tests can shrink it.
 var exitDrainGrace = 5 * time.Second
 
 // osPipe and cmdStdinPipe are seams over the three pipe constructions in spawn.
@@ -1145,7 +1139,7 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	select {
 	case <-p.done:
 		if escalate {
-			// The reference SIGKILLs the group even when the graceful signal
+			// The reference ends the whole tree even when the graceful signal
 			// already did the job. Measured at 5db5e4a with a child that
 			// backgrounds a sleeper: killAndWait with escalate:true leaves no
 			// grandchild alive, escalate:false spares it — and the child itself
@@ -1221,8 +1215,8 @@ func (m *procManager) reattach(c *conn, id string, fromSeq uint64) (p *managedPr
 		}
 	}
 	p.subs = map[*conn]struct{}{c: {}}
-	// running AND not reaped, matching 90fca6e6: a process inside the exit drain
-	// has already been waited on, so a client must not read it as resumable.
+	// On 90fca6e6 a reattach inside the exit drain answers running:false
+	// (measured). The process was already waited on, so it is not resumable.
 	running = p.running && !p.reaped
 	var replay []streamFrame
 	for _, f := range p.buffer {

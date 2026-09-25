@@ -186,7 +186,7 @@ func TestEnsureCLIKeepsDestinationWhenStagingVanishes(t *testing.T) {
 // A name-only sweep guard cannot fix this. In the staggered ordering the other
 // install staged BEFORE this one began, so its file is indistinguishable from
 // litter by name — which is why the fix is a bounded retry rather than a smarter
-// sweep, and why the sweep itself stays unconditional like the reference.
+// sweep, and why the sweep itself stays unconditional.
 //
 // Deterministic, no sleeps: the stand-in CLI removes its own path the FIRST time
 // isRunnable execs it and leaves a marker, so the retry's copy survives. The exec

@@ -52,13 +52,13 @@ func TestRunBridgeDialError(t *testing.T) {
 // silently every time" and that neither daemon answers a real shutdown. That was
 // wrong — it was reading -stop's STDOUT (empty precisely because -stop swallows
 // the reply), not the daemon's wire frame. A 2026-08-27 sweep (scratch/osparity)
-// captured the wire directly: both the reference and claustrum answer
-// server.shutdown with {"ok":true} and then stop. Delivery races the teardown on
-// both, so a real shutdown reply is nondeterministic on the wire; this test
-// removes that race with a fake listener that replies deterministically, proving
-// runStop discards the reply whether or not a real daemon's copy lands. (The
-// older -32001 it once observed came from CLAUSTRUM's daemon of the day, which
-// still authenticated shutdown — unrelated to the reply shape.)
+// captured the wire directly. claustrum answers server.shutdown with {"ok":true}
+// and then stops. The reference does not send that frame reliably (measured on
+// f6010b97 and 90fca6e6). This test removes that variation with a fake listener
+// that replies deterministically, proving runStop discards the reply whether or
+// not a real daemon's copy lands. (The older -32001 it once observed came from
+// CLAUSTRUM's daemon of the day, which still authenticated shutdown. It is
+// unrelated to the reply shape.)
 func TestRunStopDiscardsTheReply(t *testing.T) {
 	// Short socket dir (macOS sun_path is ~104 bytes), mirroring the harness.
 	dir, err := os.MkdirTemp("", "cl")

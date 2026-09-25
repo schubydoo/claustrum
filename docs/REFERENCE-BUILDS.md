@@ -21,7 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
-| `90fca6e6…` | 2026-09-14 (built) | no surface change. 7 behavior changes, 3 of them client-visible and 1 of those on a frame. See below | [PRs 387–392](https://github.com/schubydoo/claustrum/pull/392) |
+| `90fca6e6…` | 2026-09-14 (built) | no surface change. claustrum made 7 changes, 3 of them client-visible and 1 of those on a frame. See below | [PRs 387–392](https://github.com/schubydoo/claustrum/pull/392) |
 | `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode. See below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371) |
 | `3ef9370e…` | 2026-09-03 (built) | none (off-wire: linux libc probe reordered ldd-first) | [PR 345](https://github.com/schubydoo/claustrum/pull/345) |
 | `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333) |
@@ -48,8 +48,8 @@ no divergence beyond `instanceId` and `startedAt`. Those are per-boot values tha
 cannot match between two daemons. The slices that landed after it move no frame.
 
 Recorded here anyway, because "the drift check was quiet" is exactly the answer a
-future triager must not take for "nothing changed": this build carries seven
-behavior changes, and three of them a client can observe.
+future triager must not take for "nothing changed". claustrum made seven changes
+for this build. Items 1, 3 and 4 are measured.
 
 **Wire delta.** Exactly one item changes the bytes of a frame: item 3, and claustrum
 had to change its own frames to stay byte-identical. Items 1 and 4 are observable
@@ -60,65 +60,44 @@ worktree, which is precisely what a frame diff cannot catch.
 
 1. A reattach closes the connection it replaces. `process.reattach` already
    transferred the frame stream to the reattaching connection. It now also closes
-   the connection it took the process from, once, with a logged reason. Before, that
+   the connection it took the process from. Before, that
    connection stayed open and never carried another frame for that process, while
    still answering `server.ping`. That was measured on `19f30c46`. This is the build's
    most client-visible change. It is consistent with the Claude Desktop changelog
    note about messages around a disconnect, which is a correlation, not something
    this reconciliation established.
-2. The idle close shares the deliberate-close flag with that supersede, so a
-   superseded connection is not closed and logged a second time.
-3. A reaped process is not running. `process.stdin` and `process.reattach` test
-   the reap as well as the running flag, so inside the bounded exit drain a reattach
+2. claustrum's idle close shares the deliberate-close flag with the supersede, so
+   a superseded connection is not closed and logged a second time. Not
+   probe-measured.
+3. A reaped process is not running. Inside the bounded exit drain a reattach
    answers `running:false` and a fresh-bytes stdin write is refused.
 4. A new worktree no longer inherits Claude runtime state. Nine names under
    `.claude/` are skipped by both seeding passes, matched as whole path components
    and case-insensitively.
-5. The host cleaner's busy sampler went from a fixed sample count to a 3-second
-   window with a two-sample minimum. Its outcome is externally visible in principle:
-   a daemon whose client disconnects one second into the sample loses this gate's
-   protection under a 3-second window and keeps it under a shorter one. The gate is
-   not the whole decision, so losing it is not the same as being retired.
-6. The linux orphan reap treats a `/proc` process whose `vsize` is 0 as gone,
-   beside the state letter it already read. The reference changed its two readers in
-   the process layer, not the host cleaner's own stat read. Claustrum therefore changed
+5. The host cleaner's busy sampler. claustrum now samples for a 3-second window
+   with a two-sample minimum. These are its own values, not probe-measured.
+6. claustrum's linux orphan reap now treats a `/proc` process whose `vsize` is 0 as
+   gone, beside the state letter it already read. claustrum changed
    `childreap_linux.go` and deliberately left `hostclean_linux.go`'s reader alone.
-7. The host cleaner waits longer for a stalled `lsof`. It gives a run 15 s where
-   `19f30c46` gave it 5 s, and gives up on a wedged one at 17 s rather than 7 s.
-   Darwin only. This is the one a full re-check found after the first four slices
-   had merged.
+   Not probe-measured.
+7. The darwin host cleaner's `lsof` run. claustrum now gives a run 15 s and gives
+   up on a wedged one at 17 s. These are its own values, not probe-measured. This
+   is the one a full re-check found after the first four slices had merged.
 
-The five that change nothing observable: two seams that nothing writes, two worktree
-durations that moved without changing value, and one no-op cancel path. They are
-recorded rather than reproduced.
-
-**How it was bounded.** A per-function body diff of all six platform targets, which
-reports the same change set on each, with three differences. The windows builds
-carry no `/proc` paths. One function counts as a shape change on arm64 and a
-constant-only change on amd64, which is reported on both arches and hides nothing.
-And item 7 is reported on darwin-amd64 alone. The constant pass reads x86
-immediate syntax and is blind on arm64. That blind spot is what hid it. The method
-and feature lists were read out of both binaries and compared.
-
-Items 1, 3 and 4 were measured on throwaway VMs against both reference binaries, one
-fixture per case. Items 2, 5, 6 and 7 are read from the binaries, not
-probe-measured. For 5, 6 and 7 the callers sit behind a 5-minute process age and a
-30-day idle age, which makes staging them expensive. Each carries a pointer-class
-label in the code that implements it.
-
-The post-merge re-check added one step the first pass did not have: diffing every
-symbol name in the raw binaries rather than only the recovered function table. That
-is what found two functions the table alone did not list.
+**How it was bounded.** Items 1, 3 and 4 were measured on VMs. Items 2, 5, 6 and 7
+are not probe-measured. For 5, 6 and 7 the
+callers sit behind a 5-minute process age and a 30-day idle age, which makes
+staging them expensive. The code for each states that its values are claustrum's
+own.
 
 Item 7 escaped the first pass. A second, full re-check after the first four
-PRs had merged is what found it, for the reason named above. A green body diff
-bounds less than it appears to. The forensics stay outside the committed tree.
+PRs had merged is what found it.
 
 **Reconciled in.** PRs 387 through 390 are the four implementation slices. PR 391
-corrects claims those four left wrong. PR 392 adds item 7, brings the host cleaner's
-check order into line, and carries the one deliberate exception in this build's
-reconciliation: on the macOS busy probe claustrum reads an `lsof` run it gave up on
-as busy where the reference reads it as idle ([DIVERGENCES.md](DIVERGENCES.md) D17).
+corrects claims those four left wrong. PR 392 adds item 7, puts the host cleaner's
+listener check first, and carries the one deliberate exception in this build's
+reconciliation. On the macOS busy probe claustrum reads an `lsof` run it gave up on
+as busy. The reference side is not probe-measured ([DIVERGENCES.md](DIVERGENCES.md) D17).
 This bump follows all six.
 
 ### `19f30c46353dde1606cad1fede73d0e9be222140` — 2026-09-11 (observed)
@@ -160,9 +139,8 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
 - Host cleaner. A periodic sweep ends stranded sibling daemons and orphaned
   Claude Code process groups under this install's roots. It also tidies stale run
   dirs. Linux and darwin only.
-- Inherited file limit. At serve startup the daemon sets its own RLIMIT_NOFILE
-  soft limit to min(hard, 65536) so process.spawn children inherit a high open-file
-  limit. Linux and darwin only (windows has no RLIMIT_NOFILE).
+- Inherited file limit. A process.spawn child inherits a soft RLIMIT_NOFILE of
+  65536 (measured). Linux and darwin only (windows has no RLIMIT_NOFILE).
 - Windows. The exec-child, record, reap, and cleaner subsystems are inert on
   windows. Windows ships no
   run-dir lock, so the daemon is never the run-dir lock holder there. It records no
@@ -188,7 +166,7 @@ and the `-version` format are byte-identical. One off-wire change, linux only.
 
 **Wire delta.** None.
 
-**Off-wire.** The `-install` libc probe (`detectLibc`, linux only) was reordered.
+**Off-wire.** The `-install` libc probe (linux only) was reordered.
 Build 4534d86 and earlier consulted the musl loader glob (`/lib/ld-musl-*.so.*`)
 first and ran `ldd --version` only on a miss. Build 3ef9370 runs `ldd` on every
 call and lets its output decide. A "musl" banner reports `musl`. Any other output
@@ -199,9 +177,8 @@ the driver uses `libc` to choose which CLI build to download. See
 [DIVERGENCES.md](DIVERGENCES.md) D14 and `install.go` `classifyLibc`.
 
 **How it was bounded.** The static drift check passed. A function-inventory diff
-across all six platforms found exactly one changed function (`detectLibc`, linux
-only). Darwin and windows carry no `detectLibc` symbol, and their recovered
-function inventory is unchanged. Their
+across all six platforms found exactly one changed function, the linux libc
+probe. The recovered function inventory of darwin and windows is unchanged. Their
 binaries differ only by ordinary rebuild churn. String constants, `-help`,
 `-install -help` and the `-version` format are unchanged. The reorder was measured
 on both reference binaries on a mixed host (glibc `ldd` plus a musl marker):
@@ -224,8 +201,9 @@ divergence (D16). The RPC method set is unchanged at 18.
    (at index 2 on every OS) and `server.instance_id` (last on every OS).
    `git.worktree.external_root` is still dropped on Windows only.
 2. The process exit frame gains `signal` and `killedBy` on the kill path. A
-   process that a client killed, or that a shutdown killed, now reports the
-   terminating `signal` and a `killedBy` value (`client` or `shutdown`). The
+   process that a client killed now reports the terminating `signal` and
+   `killedBy:"client"`. claustrum sends `killedBy:"shutdown"` for a process the
+   shutdown sweep killed. The `shutdown` value is not probe-measured. The
    `signal` is omitted on Windows, which has no SIGTERM machinery. A normal exit
    is unchanged.
 3. `git.worktree_create` gains a caller `timeoutMs`. An integer millisecond
@@ -252,8 +230,8 @@ It bounds the `git.worktree_create` post-checkout drain. The macOS run-dir holde
 check is the always-on divergence D15.
 
 **How it was bounded.** Full frame captures against the new binary, plus VM
-measurements on Windows and macOS. Two decompile passes and the three-OS osparity
-sweep (`scratch/osparity/results/*-4534d86.json`) ran as well. Linux and macOS are
+measurements on Windows and macOS. The three-OS osparity sweep
+(`scratch/osparity/results/*-4534d86.json`) ran as well. Linux and macOS are
 byte-identical between claustrum and the reference. Windows is byte-identical apart from two things. One is
 the documented D16 divergence (git.status of a linked worktree). The other is the
 shared Windows worktree-timeout timing race, which the reference exhibits too.
@@ -296,8 +274,8 @@ refusal. The off-wire git rewrite and VM probes surfaced those three.
    target is refused as "already exists … a fresh directory". Both also refuse a path
    that crosses a symlinked component under the repo (a planted `.claude` /
    `.claude/worktrees` link) with `errorCode:"symlinked_component"` on create. The
-   create therefore cannot escape, and the remove fallback's `os.RemoveAll` cannot
-   follow the link out of the repo. `worktree_remove` applies the same location checks
+   create therefore cannot escape, and the remove fallback cannot delete through the
+   link out of the repo. `worktree_remove` applies the same location checks
    (no `errorCode` field). The success shapes are unchanged. Create now makes the
    parent directory before `git worktree add`, so a nested session path succeeds on a
    fresh repository.
@@ -321,11 +299,10 @@ and non-locked-worktree fixtures did not exercise them.
   directory (`?? sub/`).
 - `git.worktree_remove` refuses a LOCKED worktree. A locked worktree now answers
   `{"success":false,"error":"refusing to remove worktree: <p> is locked (git worktree
-  lock); unlock it to remove it"}` (message fixed regardless of the lock reason) and
-  the directory survives. Pre-`7d193f89` the reference DELETED it via the recursive
-  fallback and answered `{"success":true}`. Any OTHER non-zero git exit (for example
-  an ordinary directory) still reaches that fallback. Measured on an
-  ephemeral VM against `7d193f89`. The frame battery never removes a locked worktree.
+  lock); unlock it to remove it"}` and the directory survives. Pre-`7d193f89` the
+  reference DELETED it and answered `{"success":true}`. Any OTHER non-zero git exit
+  (for example an ordinary directory) still reaches the recursive delete. Measured
+  on an ephemeral VM against `7d193f89`. The frame battery never removes a locked worktree.
 - `git.worktree_remove` registration prune. A completed removal drops
   `$GIT_DIR/worktrees/<name>`, so a re-create at the same path succeeds where it
   previously failed `already registered`.
@@ -388,9 +365,8 @@ cases.
 **Wire delta.** None.
 
 **Off-wire churn.** The daemon now persists its auth token to `daemon.token`
-(mode `0600`) in the socket's directory. At startup it writes the file
-atomically: an `os.CreateTemp("daemon.token-*")` and then a rename. At graceful
-shutdown it unlinks the file. A client can therefore reconnect to a daemon that
+(mode `0600`) in the socket's directory. It writes the file at startup and
+unlinks it at graceful shutdown. A client can therefore reconnect to a daemon that
 already runs, and authenticate again after the original `-token-file` was
 unlinked or the `-token-fd` pipe closed. claustrum matches this in
 `tokenpersist.go`, wired through `runServe` and `teardown`.
@@ -430,10 +406,9 @@ byte-for-byte (values and timing) against the reference:
    (`["process.stdin.offset"]`).
 
 **Off-wire churn.** `git.list_branches` switched to `--sort=refname`, which keeps
-the same lexical order. `git.worktree_create` gained a `safeRefName` guard on ref
-names. Both changes are measured byte-identical. `git.refs`,
-`process.validateGroupKillPid` and `killProcessGroup` are internal symbols, not
-wire methods. `server.capabilities` is authoritative on the method set.
+the same lexical order. `git.worktree_create` gained a guard on ref
+names. Both changes are measured byte-identical. Three new internal symbols are
+not wire methods. `server.capabilities` is authoritative on the method set.
 
 **How it was bounded.** The frame battery gates all five changes. Differential
 binary analysis showed that the off-wire deltas are real source, and not
@@ -454,9 +429,8 @@ independently. [D1](DIVERGENCES.md#d1) records what Desktop supplies on the
 
 **Wire delta.** None (pure rebuild).
 
-**Off-wire churn.** The only source delta was an internal `ccd-cli-version`
-cache-existence check in the `-install` bootstrap. This check is off the JSON-RPC
-wire.
+**Off-wire churn.** The binary diff showed one changed function, in the
+`-install` bootstrap. That path is off the JSON-RPC wire.
 
 **How it was bounded.** The full frame battery stayed byte-identical. The pin
 bump needed no code changes.
@@ -471,16 +445,14 @@ subdirectory.
 2026-07-02 examined them. claustrum already covers both, and neither is a missed
 divergence:
 
-- The `-install` path gained an HTTPS download, a SHA-256 verify and a rename
-  with an EEXIST-clear. claustrum mirrors the substance:
+- The `-install` path gained an HTTPS download and a SHA-256 verify.
+  claustrum mirrors the substance:
   `install.go` verifies SHA-256 with
   `verifyChecksum`, unconditionally on the `-cli-url` path, and downloads with
-  `fetchToFile`, which streams to a temp file. claustrum does not mirror one
-  detail: the reference's EEXIST-clear before the rename. claustrum uses a plain
-  atomic `os.Rename`, which POSIX-replaces a target *file* anyway. This is a
-  minor difference for Windows and for a directory target, and it has no
-  wire impact.
-- A refactor of the `process.Spawn` failure path, which is a wire-reachable path. It was
+  `fetchToFile`, which streams to a temp file. claustrum then uses a plain
+  atomic `os.Rename`, which POSIX-replaces a target *file*. The reference
+  handling of an existing target is not probe-measured. It has no wire impact.
+- Changed code on the `process.spawn` failure path, which is wire-reachable. It was
   therefore the killAndWait-shaped risk: a change that the happy-path battery
   never stresses.
 

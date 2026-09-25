@@ -75,8 +75,8 @@ var chmodWireLog = (*os.File).Chmod
 // newWireLog opens path for append and forces it to 0600: a capture contains
 // whatever the client sent, which for files.write or process.stdin is arbitrary
 // user data. Append rather than truncate so a daemon restart during a capture
-// session (the reference respawns instantly) does not silently discard the earlier
-// half — which is exactly why each record carries pid; see the field's comment.
+// session does not silently discard the earlier half — which is exactly why each
+// record carries pid; see the field's comment.
 //
 // The 0600 on OpenFile applies ONLY when O_CREATE makes the file; appending onto an
 // existing path — a restart mid-capture, or a file an operator pre-created — keeps

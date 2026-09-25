@@ -116,8 +116,8 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //     memory. They live in docs/PROTOCOL.md's table rather than in a golden.
 //
 // ⚠️ The FIFO rows need a writer and the opted-in ones do not — that asymmetry IS
-// the divergence, not test scaffolding. With the guard off, the read blocks in
-// open exactly as the reference's does, so an unpaired FIFO would hang this test
+// the divergence, not test scaffolding. With the guard off, the read waits for a
+// writer as the reference's does, so an unpaired FIFO hangs this test
 // rather than fail it. The writer supplies the half the reference waits for, which
 // is also the shape that proves "not a permanent hang".
 func TestSocketFilesReadNonRegularDefault(t *testing.T) {
@@ -221,9 +221,7 @@ func mustMkfifo(t *testing.T, path string) {
 // Linux-only, for the same reason TestSocketListNonDirErrorText is: open() on a
 // socket returns a different errno per kernel — ENXIO "no such device or address"
 // on linux, EOPNOTSUPP "operation not supported on socket" on Darwin (measured on
-// macOS 26.5). That is NOT a claustrum-vs-reference divergence; the reference is
-// also Go and takes the same stdlib path, so it says the same thing on each OS.
-// What is pinned is that the read reaches open() at all, which is exactly what the
+// macOS 26.5). What is pinned is that the read reaches open() at all, which is exactly what the
 // old guard prevented.
 //
 // ⚠️ The socket binds under os.MkdirTemp, NOT t.TempDir. Measured on macOS:

@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-// TestMachineID pins the /etc/machine-id -> /var/lib/dbus/machine-id fallback
-// (reference build 19f30c46): the first readable non-empty file wins, the second is
+// TestMachineID pins the /etc/machine-id -> /var/lib/dbus/machine-id fallback:
+// the first readable non-empty file wins, the second is
 // used when the first is missing, and "" is returned when neither is readable. Seams
 // machineIDPaths at temp files so it does not depend on the host's real id.
 func TestMachineID(t *testing.T) {

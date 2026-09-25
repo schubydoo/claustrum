@@ -90,9 +90,8 @@ func TestHandlerPanicIsRecovered(t *testing.T) {
 	}
 }
 
-// server.shutdown is the one method the recovery answers with SILENCE: an error frame
-// for a shutdown is a shape the reference never sends, so under a panic the request
-// goroutine emits no frame at all. Provoked through the same dispatchRequest seam,
+// server.shutdown is the one method the recovery answers with SILENCE. Under a panic
+// the request goroutine emits no frame at all. Provoked through the same dispatchRequest seam,
 // written once before the server starts (see the note above). The connection must carry
 // no reply and the daemon must still serve afterwards.
 func TestShutdownPanicWritesNoFrame(t *testing.T) {

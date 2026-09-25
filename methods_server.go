@@ -48,14 +48,13 @@ func (s *server) handleServer(c *conn, req *request) *response {
 			Features:   capabilityFeatures,
 		}))
 	case methodShutdown:
-		// The reference replies {"ok":true} and then stops (measured 2026-08-27;
-		// the standing battery never saw it because it shuts the daemon down on a
-		// throwaway connection, and -stop reads+discards the reply). signalShutdown
-		// fires here, before handleRequest writes the reply, so delivery races the
-		// teardown exactly as it does on the reference — claustrum does not try to
-		// out-deliver it. Under a handler panic no frame is emitted for shutdown
-		// (the recover in handleRequest skips the error frame — the reference sends
-		// no error frame for shutdown either).
+		// The reference does not reliably reply {"ok":true} before it stops, and a
+		// client usually reads an EOF instead (measured on f6010b97 and 90fca6e6).
+		// The standing battery never reads it because it shuts the daemon down on a
+		// throwaway connection, and -stop reads+discards the reply. signalShutdown
+		// fires here, before handleRequest writes the reply. Under a handler panic
+		// no frame is emitted for shutdown (the recover in handleRequest skips the
+		// error frame).
 		s.signalShutdown()
 		return ptr(okResult(req.ID, shutdownResult{OK: true}))
 	default:

@@ -67,8 +67,7 @@ func (*procGroup) close() {}
 //	process.killAndWait (escalates to KILL)  grandchild dies
 //
 // claustrum killed the grandchild in all four cases, because it always used the
-// negative pid. The reference's own function table corroborates the split: it
-// carries both a signalProcess and a killProcessGroup.
+// negative pid.
 //
 // This matters to a client: a graceful `process.kill` is meant to ask one process
 // to stop, and taking down every background job that process started is a

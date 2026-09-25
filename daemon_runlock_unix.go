@@ -34,10 +34,11 @@ import (
 // ships no run-dir lock at all (daemon_runlock_windows.go).
 const runDirLockName = "daemon.lock"
 
-// Eviction timing, matching the reference (4534d86, measured): after SIGTERM the new
-// daemon polls for the holder's exit for up to runDirTermGrace, then escalates to
-// SIGKILL and polls for up to runDirKillGrace, checking every runDirPollInterval. They
-// are package vars so a test can shrink them.
+// Eviction timing: after SIGTERM the new daemon polls for the holder's exit for up to
+// runDirTermGrace, then escalates to SIGKILL and polls for up to runDirKillGrace, checking
+// every runDirPollInterval. The 2 s SIGTERM grace is measured against 4534d86. The other
+// two values are claustrum's own, not probe-measured. They are package vars so a test
+// can shrink them.
 var (
 	runDirTermGrace    = 2 * time.Second
 	runDirKillGrace    = 1 * time.Second
@@ -63,10 +64,10 @@ var (
 	waitForExit  = realWaitForExit
 )
 
-// ownerRecord is the JSON the daemon writes into daemon.lock. The field order and the
-// omitempty set reproduce the reference's record so a successor daemon reading it sees
-// the same shape. Pid has no omitempty (a 0 pid is still emitted); role is "serve" for
-// a serve daemon; node is omitted when the machine identity is unknown.
+// ownerRecord is the JSON the daemon writes into daemon.lock. The field order reproduces
+// the reference's record so a successor daemon reading it sees the same shape. Pid
+// has no omitempty (a 0 pid is still emitted). Role is "serve" for a serve daemon.
+// Node is omitted when the machine identity is unknown.
 type ownerRecord struct {
 	Pid        int    `json:"pid"`
 	Role       string `json:"role,omitempty"`
@@ -76,13 +77,12 @@ type ownerRecord struct {
 }
 
 // claimRunDir takes the run-dir lock and writes this daemon's owner record, evicting a
-// prior live sibling serve daemon if one holds it. It runs BEFORE the socket is bound,
-// matching the reference order (run-dir claim -> socket bind -> token persist).
+// prior live sibling serve daemon if one holds it. It runs BEFORE the socket is bound.
 //
 // Claiming is best-effort: every failure logs a warning and returns, and the daemon
 // serves without run-dir ownership — it never aborts startup. The returned release func
 // truncates the record and drops the flock on graceful shutdown; the file itself is left
-// in place (not unlinked), also matching the reference. When the lock could not be taken
+// in place (not unlinked). When the lock could not be taken
 // the release func is a no-op.
 func claimRunDir(socket, role string) func() {
 	dir := filepath.Dir(socket)
@@ -140,8 +140,8 @@ func lockRunDir(fd int, path, socket string) bool {
 	// The holder is gone, so the lock should now be free. Retry once — if a different
 	// process grabbed it in the gap, leave that new holder alone.
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		// The reference's exact changed-hands wording is string-table-only (not runtime
-		// captured); prefix/tail normalized, middle keeps claustrum's own wording.
+		// This line's wording is claustrum's own. The reference's changed-hands line was
+		// not captured at runtime.
 		logWarnf("[daemon] serve: %s changed hands during eviction; proceeding without run-dir ownership", path)
 		return false
 	}
@@ -153,8 +153,8 @@ func lockRunDir(fd int, path, socket string) bool {
 // true when the holder is gone (evicted, or already exited), false when the holder must
 // be left alone or survived the ladder.
 func evictRunDirHolder(path, socket string) bool {
-	// The reference logs a "previous owner of <rundir>: <outcome>" summary once a
-	// valid holder record has been read, with outcome terminated (SIGTERM), killed
+	// The reference logs a "previous owner of <rundir>: <outcome>" summary, with
+	// outcome terminated (SIGTERM), killed
 	// (SIGKILL), or survivor (left in place). The three outcomes and the eviction
 	// wording are measured against 4534d86 (scratch/probe/runlock-log-4534d86.md).
 	// Only the daemon log MESSAGE text is matched here; claustrum keeps its own level
@@ -177,9 +177,8 @@ func evictRunDirHolder(path, socket string) bool {
 		return false
 	}
 	// Generic holder-signal refusal (holder on another machine, our own pid, etc.).
-	// The reference's exact wording for this line is string-table-only (not runtime
-	// captured), so only the prefix/tail are normalized; the middle keeps claustrum's
-	// own wording. The summary outcome (survivor) is the captured held-by-stop pattern.
+	// This line's wording is claustrum's own. The reference's line was not captured at
+	// runtime. The summary outcome (survivor) is the captured held-by-stop pattern.
 	if reason := holderSignalRefusal(holder, socket); reason != "" {
 		logWarnf("[daemon] serve: not signaling pid %d, the holder of %s (%s); proceeding without run-dir ownership", holder.Pid, path, reason)
 		summary("survivor")
@@ -361,7 +360,7 @@ func selfBase() string {
 }
 
 // newRunDirInstanceID returns a 32-hex-character random id for the owner record, the
-// same 16-random-bytes shape the reference uses. It returns "" on the (unreachable)
+// same 32-hex shape the reference records. It returns "" on the (unreachable)
 // crypto/rand failure, and the field is then omitted.
 //
 // Standalone note: this is generated here so the run-dir lock is a self-contained PR.

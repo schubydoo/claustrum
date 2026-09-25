@@ -162,7 +162,7 @@ func TestEnsureCLIRefusesVersionEscapingCliDir(t *testing.T) {
 // cliDir, so a filepath.Rel-based check accepts it. os.RemoveAll then follows
 // the symlink at open time and deletes /outside/1.0.0 recursively. Measured
 // against the first version of this guard: the directory was destroyed and
-// replaced by the CLI binary. The reference at 5db5e4a does the same.
+// replaced by the CLI binary.
 //
 // Unix-only for the fixture (os.Symlink on Windows needs a privilege the CI
 // runner does not have); the guard itself is platform-independent and

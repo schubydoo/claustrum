@@ -71,8 +71,8 @@ func TestSiblingDaemonAlive(t *testing.T) {
 	}
 }
 
-// TestIsNobodyListening pins the sibling-dial error classification the reference
-// uses: connection refused, not-a-socket, or not-found means the sibling is gone,
+// TestIsNobodyListening pins the sibling-dial error classification:
+// connection refused, not-a-socket, or not-found means the sibling is gone,
 // and everything else (permission denied, timeout, reset) means it may be present,
 // so the legacy sweep is kept. A mutant that treats every dial error as "gone" —
 // claustrum's old behavior — fails the EACCES/timeout/reset rows.
@@ -119,10 +119,9 @@ func TestSiblingDaemonAliveRunDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// On Windows a not-a-directory os.ReadDir error is ERROR_PATH_NOT_FOUND,
 		// which satisfies errors.Is(err, fs.ErrNotExist), so a non-directory run path
-		// reads as "no run dir" (""). The reference reaches the same verdict by the
-		// same Go semantics. The "cannot read" branch fires on Windows only for a real
-		// listing failure such as ERROR_ACCESS_DENIED, which a file cannot provoke; the
-		// Unix leg below exercises it (ENOTDIR is not fs.ErrNotExist there).
+		// reads as "no run dir" (""). The "cannot read" branch fires on Windows only
+		// for a real listing failure such as ERROR_ACCESS_DENIED, which a file cannot
+		// provoke; the Unix leg below exercises it (ENOTDIR is not fs.ErrNotExist there).
 		if got != "" {
 			t.Errorf("non-directory run path on Windows: got %q, want \"\"", got)
 		}

@@ -504,7 +504,7 @@ func hostileConfigRefusal(dir string) (string, bool) {
 }
 
 // stderrHeadCap is the byte cap 7d193f89 applies to captured git output before it
-// reaches an error frame (its bounded stderr sink keeps only the first 512 bytes).
+// reaches an error frame.
 const stderrHeadCap = 512
 
 // boundedStderrHead caps s at its first stderrHeadCap BYTES, collapses newlines to
@@ -516,8 +516,8 @@ const stderrHeadCap = 512
 // ("Preparing worktree (new branch 'dup')\nfatal: a branch named 'dup' already
 // exists"); 4534d86 reports the two joined by a space, where claustrum previously
 // kept the newline. Measured against 4534d86 (scratch/probe/wtfail). The byte cap
-// runs first (on the raw bytes, as the reference's byte-bounded buffer does), so a
-// multi-byte rune split at the boundary is kept as-is.
+// runs first (on the raw bytes), so a multi-byte rune split at the boundary is kept
+// as-is.
 func boundedStderrHead(s string) string {
 	if len(s) > stderrHeadCap {
 		s = s[:stderrHeadCap]

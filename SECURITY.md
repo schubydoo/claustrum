@@ -52,7 +52,7 @@ holds both can do whatever the daemon's user can.
   with the immediate unlink of the source. Treat the socket directory as owner-only,
   because it is where the token lives for the daemon's lifetime. On POSIX the file
   is `0600`. On Windows those bits are not an owner-only DACL, which is a Go
-  `os.CreateTemp` limitation the reference shares. Confinement on Windows
+  `os.CreateTemp` limitation. Confinement on Windows
   therefore comes from the session directory's ACL.
 - `server.shutdown` is the one method the token does not gate. It is not
   authenticated. That is behavioral parity with the reference. Desktop stops the

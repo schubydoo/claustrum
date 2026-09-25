@@ -15,8 +15,7 @@ import (
 //   - 19f30c46 and 90fca6e6 both copy the git-ignored files under `.claude/` into
 //     a new worktree, with no `.worktreeinclude` entry involved at all.
 //   - 90fca6e6 additionally drops the runtime-state paths listed below. 19f30c46
-//     copies eight of the nine. The ninth is `worktrees`, which both builds drop
-//     through the separate `.claude/worktrees/` prefix skip below.
+//     copies eight of the nine. The ninth is `worktrees`, which both builds drop.
 //
 // The fixture matters. `git ls-files --others --ignored --exclude-standard`
 // returns nothing when `.claude/` is merely untracked, so a probe repo without
@@ -30,12 +29,9 @@ import (
 // worktree act on another session's queue.
 //
 // Every name is measured, one fixture file per name: 90fca6e6 drops all nine, and
-// 19f30c46 copies eight of them. It drops `worktrees` as well, through the
-// separate prefix skip in copyClaudeDir that both builds carry. `worktrees` still
-// belongs in this list, because the manifest copy has no such prefix skip.
+// 19f30c46 copies eight of them. It drops `worktrees` as well.
 //
-// Sorted, so no ordering from the reference survives here. The predicate is a
-// disjunction, so the order cannot change an answer.
+// Sorted. The predicate is a disjunction, so the order cannot change an answer.
 var claudeRuntimeStateNames = []string{
 	"agent-registry.json",
 	"assistant-daemon-state.json",
@@ -91,8 +87,8 @@ func isClaudeRuntimeState(rel string) bool {
 // `-z` here is not optional. git C-quotes any path with a tab, a quote, a
 // backslash or a non-ASCII byte, and the quoted form names no real file.
 //
-// Best-effort, like the manifest copy: the worktree already exists and the
-// reference still reports success, so a copy failure must not fail the request.
+// Best-effort, like the manifest copy: the worktree already exists, so a copy
+// failure does not fail the request.
 func copyClaudeDir(repo, worktree string) {
 	out, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
 		"--exclude-standard", "-z", "--", claudeDirName+"/")

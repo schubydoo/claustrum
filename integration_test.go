@@ -432,8 +432,8 @@ func assertGolden(t *testing.T, name string, got []byte) {
 // 20-second sleeper on its own stdout, prints one line, and exits 7. Before the
 // bounded drain, the daemon waited for EOF, so the exit frame was hostage to the
 // grandchild — the whole 20 seconds here, and forever for a real dev server. The
-// reference caps that at 5s (exitDrainGrace), closes the read ends, and emits
-// exit; the grandchild's next write then fails with EPIPE.
+// reference emits the exit frame after 5s, and the grandchild's next write then
+// fails with EPIPE.
 //
 // The cap is shrunk to 300ms so the test measures the CAP rather than the clock.
 // waitExit's own deadline is 5s, well under the grandchild's 20s, so without the
@@ -499,17 +499,18 @@ func TestSocketExitFrameBoundsTheDrain(t *testing.T) {
 // TestSocketResponseIDCanonicalization pins that the reply carries the id Go
 // re-encodes, not the bytes the client sent.
 //
-// The reference's rpc.Request.ID is an interface{}, so every id makes a round
-// trip through float64 / map[string]interface{} before it is written back.
+// Decoding the id into an interface{} makes every id round-trip through float64
+// or map[string]interface{} before it is written back. The reference replies
+// match that round trip.
 // claustrum used json.RawMessage and echoed the bytes, which is indistinguishable
 // for the ids a real client sends and wrong for everything else. Each case below
 // was measured against the reference at 5db5e4a; the four that change are the
 // four that were divergent.
 //
 // The precision case is the load-bearing one: 12345678901234567890 comes back
-// as ...567000 only if the id went through a float64. That is the evidence the
-// reference decodes without UseNumber, so a "fix" that preserved precision would
-// be a new divergence, not an improvement.
+// as ...567000 only if the id went through a float64. The reference replies that
+// way, so a "fix" that preserves precision is a new divergence, not an
+// improvement.
 func TestSocketResponseIDCanonicalization(t *testing.T) {
 	sock := startSocketServer(t)
 	cl := dial(t, sock)
@@ -554,8 +555,8 @@ func TestSocketResponseIDCanonicalization(t *testing.T) {
 //   - a pruned id is indistinguishable from an unknown one: reattach reports
 //     found:false and kill still reports success:true, no new error path.
 //
-// All three probe-measured against the reference at 5db5e4a (its threshold is
-// 900s and its sweep a 60s ticker; both are shrunk here). The vars are set before
+// All three probe-measured against the reference at 5db5e4a. claustrum's own
+// 900s age and 60s sweep are shrunk here. The vars are set before
 // startSocketServer because pruneLoop reads the interval once at start, and the
 // restore is registered first so the LIFO cleanup stops the daemon before it.
 func TestSocketPrunesLongExitedProcesses(t *testing.T) {

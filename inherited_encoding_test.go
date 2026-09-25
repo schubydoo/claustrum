@@ -10,10 +10,10 @@ import (
 // Wire bytes claustrum emits because it is written in Go, not because any
 // claustrum code chose them.
 //
-// The reference is also Go, so its stdlib is doing unpaid parity work for us:
-// encoding/json's defaults, os's error formatting and path/filepath's cleaning
-// all reach the wire directly. That is load-bearing and it was, until this file,
-// entirely untested — the validation battery only exercises the spellings its
+// The stdlib does unpaid parity work for us: encoding/json's defaults, os's
+// error formatting and path/filepath's cleaning all reach the wire directly.
+// The measured reference frames carry the same bytes. That is load-bearing, and
+// until this file it was entirely untested — the validation battery only exercises the spellings its
 // fixtures send, and none of them sent any of these shapes.
 //
 // Every case here was measured against the reference at 5db5e4a and agreed byte

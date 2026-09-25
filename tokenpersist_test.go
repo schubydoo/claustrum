@@ -82,8 +82,7 @@ func TestPersistTokenRoundTrip(t *testing.T) {
 		t.Fatalf("token bytes = %q, want %q (no newline, verbatim)", b, token)
 	}
 	// os.CreateTemp yields 0600 on POSIX; Windows has no Unix permission bits
-	// (Go reports 0666), so the mode assertion is POSIX-only — same platform
-	// caveat the reference daemon inherits from the Go runtime.
+	// (Go reports 0666), so the mode assertion is POSIX-only.
 	if runtime.GOOS != "windows" {
 		if fi, err := os.Stat(path); err != nil {
 			t.Fatalf("stat: %v", err)
@@ -169,7 +168,7 @@ func TestRemovePersistedTokenAbsent(t *testing.T) {
 
 // persistToken is best-effort: if the socket's directory does not exist (so the
 // temp-file create fails), it logs and returns without panicking, and the daemon
-// keeps serving — only file-based reconnect is unavailable. Mirrors the reference.
+// keeps serving — only file-based reconnect is unavailable.
 func TestPersistTokenCreateFailureIsNonFatal(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "no-such-subdir", "rpc.sock")
 	persistToken(socket, "tok") // dir missing → CreateTemp errors; must not panic
@@ -315,7 +314,7 @@ func TestOpenDaemonLog(t *testing.T) {
 	// An EXISTING log with a loose mode must not be inherited. The 0o600 passed
 	// to OpenFile applies only on creation, so truncating a pre-created 0666 file
 	// would keep the daemon's output readable by other local users. openDaemonLog
-	// removes first and creates exclusively, which the reference also does
+	// removes first and creates exclusively. The reference gives the same result
 	// (probe-measured: a planted 0666 file owned by ANOTHER user comes back 0600
 	// owned by us — an owner change, which chmod cannot perform).
 	if runtime.GOOS != "windows" {

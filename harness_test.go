@@ -258,10 +258,10 @@ func streamBytes(t *testing.T, frames []streamFrame, stream string) string {
 // newTestProcManager builds a procManager whose background prune sweep is shut
 // down when the test ends.
 //
-// newProcManager starts that sweep unconditionally, matching the reference's
-// NewManager. In the daemon the server's teardown closes it; a test that builds
-// a manager directly has no such teardown, so every one of them would otherwise
-// leak a goroutine and a ticker for the life of the test binary. Tests use this
+// newProcManager starts that sweep unconditionally. In the daemon the server's
+// teardown closes it. A test that builds a manager directly has no such teardown.
+// Without this helper, every such test leaks a goroutine and a ticker for the life
+// of the test binary. Tests use this
 // instead of calling newProcManager, so the ownership is not something each new
 // test has to remember.
 func newTestProcManager(tb testing.TB) *procManager {

@@ -250,9 +250,8 @@ func TestSocketProcessKillAndWait(t *testing.T) {
 	}
 }
 
-// TestSocketStdinOffsetUint64Edges pins the W2 typing contract: the reference
-// declares StdinParams.Offset as *uint64 and ReattachParams.FromSeq as uint64,
-// so a negative value is a decode failure (-32602), not an accepted offset, and
+// TestSocketStdinOffsetUint64Edges pins the W2 typing contract: on the reference
+// a negative value is a decode failure (-32602), not an accepted offset, and
 // 2^64-1 is a legal value that lands in the offset-gap path (-32003).
 //
 // claustrum used *int / int, which silently ACCEPTED offset:-1 (applying the

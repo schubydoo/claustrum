@@ -129,7 +129,7 @@ func TestDaemonizeTimeoutPrintsToStderr(t *testing.T) {
 
 // The OTHER failure arm of the same wait, and the one the exit code cannot tell
 // apart: when a LIVE predecessor still owns the socket and the child never takes
-// the path over, the launcher reports 7d193f89's distinct "did not take over"
+// the path over, the launcher reports a distinct "did not take over"
 // line instead of the accept timeout above. Both exit 1, so only the message
 // discriminates them.
 //

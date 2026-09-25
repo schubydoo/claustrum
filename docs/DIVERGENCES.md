@@ -132,8 +132,7 @@ rather than repeating them in each entry:
   `context.WithTimeout`. For the download, `0` instead relies on
   `http.Client{Timeout: 0}`, which is the stdlib's own "no timeout". Never use a
   huge-but-finite value. The `cap+1` / armed-cancel arithmetic is what defines the
-  boundary. Routing the unlimited case through that arithmetic invents a boundary
-  the reference does not have.
+  boundary. Routing the unlimited case through that arithmetic invents a boundary.
 - No opt-in bound is a hang detector. Each bound is a threshold, so an
   honest-but-slow or honest-but-large input trips it too. That is precisely why
   they are off by default.
@@ -162,7 +161,7 @@ rather than repeating them in each entry:
 | [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a slow `ldd` on a host where the deadline changes the reported `libc`. The host is a musl host the glob misses, or a mixed host. Or the reference bounding it above 45 s |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (Windows failure mechanism not yet pinned) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, or a decision to reproduce its failure for strict 1:1 |
-| [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
+| [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -389,7 +388,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   final component that is itself a symlink stays legal, because `os.RemoveAll`
   unlinks it rather than follows it. So the rule is narrower than "no symlinks".
 - **Why always-on.** Rule 3 clause (b). Measured, the reference destroys the
-  target on both `../victim` and `link/1.0.0`. The real client passes bare version
+  target on `../victim`. The real client passes bare version
   strings (`1.0.86`, a commit sha, `latest`, all measured accepted). The evidence is
   an observed value plus a measured accepted-set, not an enumeration.
 - **Reopen trigger.** Desktop passing a `-cli-version` that is not a single path
@@ -427,10 +426,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   log and falls back to inherited stdio. In both cases claustrum never follows the
   link or writes into a file it does not own.
 - **The upstream state changed, and this entry was revised to match it.** Measured
-  2026-09-06 (scratch/security/disclosures.md): `4534d86` no longer plain-truncates
-  a foreign *regular* file. The pre-`4534d86` disclosure (measured 2026-08-06 on
-  `5db5e4a`) is fixed upstream, and claustrum now matches the `.old` rotation on the
-  common path. But in a root-owned sticky directory the reference still FOLLOWS a
+  2026-09-06: `4534d86` no longer plain-truncates a foreign *regular* file. `5db5e4a`
+  did, measured 2026-08-06. claustrum now matches the `.old` rotation on the common
+  path. But in a root-owned sticky directory the reference still FOLLOWS a
   planted `remote-server.log` symlink. It writes its own log into the victim, or it
   refuses to start. claustrum refuses to follow it. So a narrower hardening
   survives, and it is a D2-style case: "the reference does it too" is not a reason
@@ -454,8 +452,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   (`pathParams`, `gitParams`), so a field that is valid for the *namespace* but
   unused by *this* method still participates in decoding. A type-mismatched value
   there answers `-32602` (for example `files.stat {"maxBytes":"{"}`, `git.status
-  {"baseRepo":[1,2]}`). The reference binds only the field the method reads and
-  ignores the rest. Both binaries ignore a genuinely unknown key.
+  {"baseRepo":[1,2]}`). The reference answers both requests with defaults, as
+  measured. Both binaries ignore a genuinely unknown key.
 - **Why always-on.** Rule 3 clause (b): the trigger is a type error in a field the
   method does not read (a client bug). Stated honestly, this is narrower than "a
   real client never sends them". Nobody ever enumerated Desktop's per-method param
@@ -517,7 +515,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   no deadline at or below 90 s, and any finite bound diverges for some honest input.
   Picking 30 s or 60 s only moves the boundary. Above 90 s is unmeasured on both.
 - **Why opt-in.** The deadline cleared clause (a)'s not-a-frame half (the
-  reference's wait is apparently unbounded), but an honest-but-slow CLI pays and,
+  reference showed no deadline at or below 90 s), but an honest-but-slow CLI pays and,
   with Desktop owning the argv, cannot decline (rule 4). We verified the flip
   against the reference. We did not only argue it.
 - **Reopen trigger** (a retraction rider, not the flip): Desktop turning out not to
@@ -603,8 +601,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D14 · Make the `-install` libc probe deadline opt-in (linux) { #d14 }
 
-- **Behavior.** Since reference build 3ef9370 `detectLibcWith` runs `ldd --version`
-  on every call and lets its output decide (see `classifyLibc`). A "musl" banner
+- **Behavior.** Since reference build 3ef9370 the libc probe runs `ldd --version`
+  on every call and lets its output decide. claustrum does the same (see
+  `classifyLibc`). A "musl" banner
   reports `musl`. Any other output reports `glibc`. When `ldd` produced no output,
   and only then, the loader glob
   (`/lib/ld-musl-*.so.*`) is consulted. The
@@ -655,7 +654,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   signals a live lock holder, it verifies that the holder is one of our own `-serve`
   processes bound to this socket. On Linux both the reference and claustrum verify the
   holder's command line (claustrum reads `/proc/<pid>/cmdline`). On macOS there is no `/proc`, and the reference does not
-  verify the holder before signalling: it sends SIGTERM then SIGKILL to the recorded
+  verify the holder before signalling: it sends SIGTERM to the recorded
   pid unverified. Measured on a macOS VM: the reference signals even a lock holder
   that is not a serve process. claustrum instead reads the holder's argument vector
   from `sysctl KERN_PROCARGS2` and refuses to signal a pid whose argv is not our
@@ -666,7 +665,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Why always-on (rule 3 clause (a)).** Signalling an unverified pid is
   unrecoverable harm. A crash can leave a stale record whose pid is reused by an
   unrelated process. A foreign process can also hold the flock. The reference then
-  SIGKILLs that innocent process. No honest caller benefits from skipping the check.
+  SIGTERMs that innocent process. No honest caller benefits from skipping the check.
   The same guard is already always-on on Linux (via `/proc`), so macOS matches
   Linux's safety rather than the reference's macOS gap.
 - **Cost.** None on the honest path. In the one case where the reference evicts and
@@ -676,13 +675,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** The reference adding the same holder check on macOS (then this
   becomes parity, not a divergence). Or a legitimate macOS holder that
   `KERN_PROCARGS2` cannot read, reported as a failed handover.
-- **Not the only identity gate, and the other one is parity.** This entry covers the
-  run-dir lock's eviction path alone. The host cleaner's `retireAbandoned` has its own
-  gate, re-reading the pid's identity before its SIGTERM, and that one is classified as
-  parity: the reference does not signal a pid whose identity no longer matches, in
-  `19f30c46` and `90fca6e6` alike. That reading is from those builds, not
-  probe-measured, unlike this entry's own macOS measurement. Do not read the two as one
-  divergence.
+- **Not the only identity gate.** This entry covers the run-dir lock's eviction path
+  alone. claustrum's host cleaner has its own gate in `retireAbandoned`, which
+  re-reads the pid's identity before its SIGTERM. That gate is not a numbered
+  divergence. Its reference side is not probe-measured, unlike this entry's own macOS
+  measurement. Do not read the two as one divergence.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock. Also `daemon_runlock_unix.go`
   (`holderSignalRefusal`), `daemon_runlock_darwin.go` (`realIsServeCmdline`,
   `procArgv`), `daemon_runlock_linux.go`.
@@ -744,48 +741,39 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Behavior.** The macOS host cleaner asks `lsof` whether a daemon has a live client.
   That run is bounded, and the last bound gives up on a run that never returns. A run
   that gave up produces no output, and so does a run that finished and saw nothing.
-  The reference reads both as "not busy". claustrum keeps them apart: a run it gave up
-  on reads as busy, because it is not evidence about the pid at all. Only the
-  abandoned case differs. A completed run that found nothing still reads as not busy,
-  which is the parity answer. The reference claims in this entry are read from the
-  `90fca6e6` darwin builds, not probe-measured: staging the divergent arm needs an
-  `lsof` that hangs on a macOS host.
-- **Default.** Always-on, macOS only. The divergent arm is not reachable by a slow
-  `lsof`, and that is a property of the bounds rather than an intention. The command
+  claustrum keeps them apart. A run it gave up on reads as busy, because it is not
+  evidence about the pid at all. A completed run that found nothing reads as not
+  busy. The reference side of this entry is not probe-measured. Staging the
+  abandoned arm needs an `lsof` that hangs on a macOS host.
+- **Default.** Always-on, macOS only. The command
   deadline kills a slow run, and the wait delay bounds its pipe. Such a run therefore
   completes with no output well before the abandon bound. Reaching the abandon arm
-  needs a process `SIGKILL` cannot end. So on every honest path the two builds agree,
-  and the arm that differs is a wedged mount.
-- **Why always-on (rule 3 clause (a)).** The reference's version is unrecoverable
-  harm: `retireAbandoned` reads not-busy as permission to continue, and after the
-  identity re-check it SIGTERMs the daemon. On a host where `lsof` cannot answer, that
+  needs a process `SIGKILL` cannot end.
+- **Why always-on (rule 3 clause (a)).** The harm it refuses is unrecoverable. If an
+  abandoned run reads as not busy, `retireAbandoned` takes that as permission to
+  continue. After the identity re-check it SIGTERMs the daemon. On a host where `lsof` cannot answer, that
   ends a session that is in fact serving a client. The loss is that session's state,
   which extends rule 3's list rather than sitting inside it, the same extension
-  [D15](#d15) made and the same reason. Clause (a)'s other half holds on the bound gap
-  in **Default** above: no honest caller reaches the arm at all, so none can observe
-  the difference. It is the same shape as
+  [D15](#d15) made and the same reason. The other half: a slow `lsof` completes
+  before the abandon bound (see **Default**), so no honest caller reaches this arm.
+  It is the same shape as
   [D15](#d15), which refuses to act on an identity the daemon cannot verify. It is
-  also the same shape as two spares the reference itself already has. It spares a
-  daemon whose
+  also the same shape as two spares claustrum already has. It spares a daemon whose
   lock state it cannot determine, and an orphan whose descriptors it cannot inspect.
-  The busy probe is the one lsof-backed read where the reference does not apply its
-  own rule. The lock spare is long-established here. The descriptor spare is read
-  from the `90fca6e6` builds rather than probe-measured. It is an argument for
-  D17 rather than a premise this entry rests on, because the clause-(a) case stands
+  That is an argument for D17 rather than a premise this entry rests on, because the clause-(a) case stands
   on the harm alone.
 - **Cost.** A daemon whose `lsof` keeps failing is never retired by the busy gate, so
   its run dir stays until `lsof` works again. That is the conservative direction, and
   it matches what the cleaner already does for an unreadable lock. It also costs a
   second wedged run. Reading the first as busy keeps the sampler going. Its
-  two-sample minimum means claustrum abandons twice on such a host, where the reference
-  abandons once. Each abandoned run leaves a process and a goroutine behind, so the
-  leak on this path doubles. The reference caps neither, and neither does claustrum.
+  two-sample minimum means claustrum abandons twice on such a host. Each abandoned
+  run leaves a process and a goroutine behind. claustrum caps neither.
 - **Not covered: the lock read.** `hcLockHeldAt` still reads an abandoned run as
-  not-held, matching the reference, although the same argument applies to it. This
+  not-held, although the same argument applies to it. This
   entry was scoped to the busy predicate deliberately. Widening it is a decision, not
   an implementation detail.
-- **Reopen trigger.** The reference distinguishing the two empty results (then this
-  becomes parity). Or an operator reporting a run dir the cleaner will not tidy
+- **Reopen trigger.** A measurement that shows the reference distinguishing the two
+  empty results (then this becomes parity). Or an operator reporting a run dir the cleaner will not tidy
   because `lsof` keeps failing on that host.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Host cleaner. Also `hostclean_darwin.go`
   (`runLsof`, `hcBusy`), `hostclean.go` (`hcSettledBusy`, `retireAbandoned`).
@@ -918,7 +906,7 @@ scheduled.
   10.07 s). A parent-side check answered in 0.03 s and named the actual problem: a
   better operator experience, and a divergence.
 - **The macOS lock read's abandoned run.** `hcLockHeldAt` reads an `lsof` run it gave
-  up on as not-held, matching the reference. The argument behind [D17](#d17) reaches
+  up on as not-held. The argument behind [D17](#d17) reaches
   it too: a held lock that reads stale lets the tidy remove a live daemon's run dir.
   D17 was scoped to the busy predicate, so this is the same shape one step away.
   Taking it is a second divergence rather than an implementation detail.

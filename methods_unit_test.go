@@ -1152,8 +1152,7 @@ func TestExtractTarGzDirEntry(t *testing.T) {
 func TestDetectLibcLddMissing(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		// There is no probe to fall back FROM off linux: detectLibc returns ""
-		// without consulting ldd, matching the reference, whose detectLibc does
-		// not exist in the darwin or windows builds. TestDetectLibc covers that.
+		// without consulting ldd. TestDetectLibc covers that.
 		t.Skip("the libc probe is linux-only")
 	}
 	t.Setenv("PATH", t.TempDir()) // a dir with no `ldd`

@@ -510,13 +510,13 @@ func gitStatus(req *request) response {
 	// individually (`?? sub/u.txt`) rather than as the directory (`?? sub/`).
 	//
 	// The reference builds status in an ISOLATED temp gitdir so the caller's index is
-	// never refreshed: a fresh GIT_DIR (HEAD + index copied from the worktree's own
-	// gitdir) with GIT_COMMON_DIR pointing at the shared repo, and --work-tree at the
-	// worktree. hardenedGitStatus reproduces that assembly (reconstructed from the
-	// reference's runtime git argv+env, scratch/probe/gitargv). It is byte-identical on
-	// Linux and macOS. On Windows it is NOT: the reference's own git.status of a linked
-	// worktree errors -32603 "exit status 128" there (measured), while claustrum returns
-	// the status. That is intentional divergence D16 (claustrum more correct). The exact
+	// never refreshed: a fresh GIT_DIR with GIT_COMMON_DIR pointing at the shared
+	// repo, and --work-tree at the worktree. hardenedGitStatus reproduces that
+	// assembly (reconstructed from the reference's runtime git argv+env,
+	// scratch/probe/gitargv). It is byte-identical on Linux and macOS. On Windows it
+	// is NOT: the reference's own git.status of a linked worktree errors -32603
+	// "exit status 128" there (measured), while claustrum returns the status. That
+	// is intentional divergence D16 (claustrum more correct). The exact
 	// reason the reference fails on Windows is not yet pinned; an earlier hardcoded-/tmp
 	// hypothesis is contradicted (the reference respects $TMPDIR). See docs/DIVERGENCES.md
 	// D16. A path with no work tree still exits 128, and the reference propagates the bare
@@ -771,15 +771,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		})
 	}
 	// For an external worktreeRoot, tag the <directory> level as holding managed
-	// session worktrees before git runs (7d193f89 writes the marker even if the add
-	// later fails). This is the same marker baseRepoUnderManagedWorktrees looks for,
-	// so a later create whose baseRepo sits under here is refused as a nested repo.
+	// session worktrees before git runs. This is the same marker
+	// baseRepoUnderManagedWorktrees looks for, so a later create whose baseRepo sits
+	// under here is refused as a nested repo.
 	if p.WorktreeRoot != "" {
 		_ = ensureManagedWorktreesMarker(filepath.Dir(p.WorktreePath))
 	}
 	// 7d193f89 also creates the worktree directory ITSELF before `git worktree add`
-	// (git adds into the pre-made empty dir). It does so by opening the parent and
-	// `mkdirat`-ing the leaf, so an unwritable/foreign-owned parent fails HERE as
+	// (git adds into the pre-made empty dir). An unwritable/foreign-owned parent fails HERE as
 	// `failed to create worktree directory: mkdirat <leaf>: <errno>` with errorCode
 	// mkdir_failed — where claustrum used to reach git and return worktree_add_failed.
 	// mkdirWorktreeLeaf reproduces the `mkdirat <leaf>` wording byte-for-byte (unix;
@@ -796,8 +795,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	checkpoint := checkpointCreatedWorktree(p.WorktreePath)
 	// Default the source to the repo's current branch. On an unborn HEAD
 	// (no-commit repo) abbrev-ref fails — leave source empty rather than capturing
-	// git's error text, and let `git worktree add` infer an orphan branch (it
-	// succeeds, and the reference omits sourceBranch from the result).
+	// git's error text, and let `git worktree add` infer an orphan branch.
 	// The reference accepts a sourceBranch ONLY when it names an existing local
 	// branch, and silently ignores anything else — succeeding off HEAD rather
 	// than failing the request. claustrum forwarded the value straight to
@@ -912,7 +910,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// without a checkout, writing the WORKTREE's own index (its .git points at
 	// <repo>/.git/worktrees/<name>) — using the main .git here would wipe the linked
 	// index. Best-effort — an unborn/orphan branch has nothing to read, leaving the
-	// worktree empty just as the reference does.
+	// worktree empty.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
 		_, _, rtDrained, rtErr := hardenedGitWorktreeCreate(addCtx, repo, false, "-c", "core.splitIndex=false",
 			"--git-dir="+adminDir, "--work-tree="+p.WorktreePath,
@@ -979,7 +977,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// came from a probe repo whose .claude/ was untracked rather than git-ignored, for
 	// which the pass lists nothing.
 	//
-	// Best-effort: the worktree exists and the reference reports success regardless.
+	// Best-effort: the worktree exists, so a copy failure does not fail the request.
 	populateWorktree(repo, p.WorktreePath)
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
 }
@@ -1088,10 +1086,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// the daemon's working directory: on a daemon started in the user's home (what
 	// an SSH-launched one inherits) that equals home and the guard fired. It would
 	// have refused an input where os.RemoveAll("") is a documented no-op returning
-	// nil — nothing to protect — and skipped the branchName delete the reference
-	// still performs. Worse, the frame varied with the daemon's cwd, which no
-	// golden can observe because the harness runs from a temp dir. Raised in review
-	// on #232; pinned by TestWorktreeRemoveEmptyPathIsNotRefused.
+	// nil — nothing to protect. Worse, the frame varied with the daemon's cwd, which
+	// no golden can observe because the harness runs from a temp dir. Raised in
+	// review on PR 232; pinned by TestWorktreeRemoveEmptyPathIsNotRefused.
 	if p.WorktreePath != "" && wipesHomeDir(p.WorktreePath) {
 		return okResult(req.ID, worktreeRemoveResult{
 			Success: false,
@@ -1141,12 +1138,12 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		})
 	}
 	adminDir := worktreeAdminDir(p.WorktreePath)
-	// 7d193f89 detects a locked worktree by reading its `locked` marker
-	// (<admin>/locked) — it does not run `git worktree remove` at all, so its lock
-	// check is locale-independent. Refuse here, before the destructive `git worktree
-	// remove --force` + os.RemoveAll fallback below, so a non-C locale (where the
-	// "cannot remove a locked working tree" stderr match would miss) cannot delete a
-	// locked worktree the reference refuses. Same fixed message as the stderr branch.
+	// 7d193f89 runs no `git worktree remove` at all (git-argv trace), yet it refuses a
+	// locked worktree. Check the `locked` marker (<admin>/locked) here, before the
+	// destructive `git worktree remove --force` + os.RemoveAll fallback below, so a
+	// non-C locale (where the "cannot remove a locked working tree" stderr match
+	// misses) cannot delete a locked worktree the reference refuses. Same fixed
+	// message as the stderr branch.
 	if adminDir != "" && fileExists(filepath.Join(adminDir, "locked")) {
 		return okResult(req.ID, worktreeRemoveResult{
 			Success: false,
@@ -1210,7 +1207,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// 7d193f89 REFUSES a LOCKED worktree rather than falling back to a delete:
 		// `git worktree remove --force` fails with "cannot remove a locked working
 		// tree", and the reference answers success:false with its own fixed message
-		// (independent of the lock reason) and leaves the directory in place. Only the
+		// and leaves the directory in place. Only the
 		// OTHER git-failure modes (an ordinary non-worktree directory) reach the
 		// os.RemoveAll fallback below. Before 7d193f89 the reference DELETED a locked
 		// worktree here — a wire change, measured against 7d193f89 on an ephemeral VM

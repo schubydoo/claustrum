@@ -96,8 +96,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
   CONTRIBUTING.md → Changesets.
 - A changeset body is ONE line. knope renders any multi-line body as a
   `####` heading block instead of a bullet. That breaks the changelog, and it
-  already did so in 1.7.2 and 1.7.3. Fold every detail into the single
-  sentence. `scripts/lint_changesets.py` gates this in CI and pre-commit.
+  already did so in 1.7.2 and 1.7.3. Fold every detail into that one
+  line. Several sentences on it are fine. `scripts/lint_changesets.py` gates this in CI and pre-commit.
 - Before a PR, make all four of these true: `gofmt -l .` prints nothing,
   `go vet ./...` is clean, `golangci-lint run` is clean, and
   `go test -race ./...` is green. For a wire-surface change, also re-run the
@@ -186,8 +186,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   of order, which matches the reference. Do not serialize them. The per-request
   goroutine recovers from panics. It replies with
   `-32603 "recovered panic: <v>"`. For `server.shutdown` it writes no frame at
-  all, because an error frame is a shape the reference never sends for
-  shutdown. That frame is claustrum's own and is NOT a parity claim. The path
+  all. That frame is claustrum's own and is NOT a parity claim. The path
   is unreachable, so no client can observe it and it cannot diverge from
   anything. Do not add a golden for that frame. The battery never exercises it.
   Do not treat it as a wire contract. The tests provoke it through the
@@ -240,8 +239,8 @@ behavior. D13: verify-before-decompress ordering. D13 is always-on, but it is
 unresolved, not justified.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
-up on as busy, where the reference reads it as idle. Only the abandoned case
-differs, so `lsof` answering normally gives both builds the same verdict. The
+up on as busy. A completed run that found nothing reads as not busy. The
+reference side is not probe-measured. The
 harm it refuses is the cleaner SIGTERMing a daemon that is serving a client on a
 host where `lsof` cannot answer. The sibling lock read is deliberately NOT
 covered. See the entry.

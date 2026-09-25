@@ -79,9 +79,9 @@ type server struct {
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 
 	// idleTimeout closes a connection with no read/write activity for this long.
-	// 7d193f89 uses a fixed 5-minute idle timeout (idleConnTimeout) with no flag or
-	// env to disable it, so this is always-on to match; a test overrides it to a
-	// short value.
+	// The reference closes a connection idle for 5 minutes (idleConnTimeout),
+	// measured against f6010b97. So this is always-on to match. A test overrides
+	// it to a short value.
 	idleTimeout time.Duration
 
 	// sockInfo / tokenInfo / pipeInfo are the identities of the socket, daemon.token
@@ -315,9 +315,8 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	//	claustrum : exit 1 after 0.03s
 	//	            "claustrum: daemonized child requires --token-file or …"
 	//
-	// So the reference's parent daemonizes regardless, its child refuses to
-	// start, and the operator sees the launcher's accept timeout — the real
-	// reason is only in the child's own log. claustrum answered 300x faster and
+	// So on the reference the operator sees the launcher's accept timeout, and
+	// the real reason is only in the child's own log. claustrum answered 300x faster and
 	// said exactly what was wrong. Matching costs both of those.
 	//
 	// This is parity on purpose. Failing fast in the parent is recorded as a
@@ -443,8 +442,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// recovers from a boot failure — would otherwise leak the open file. Close is
 	// nil-safe, so this is a no-op when logging is off.
 	ok := false
-	// Claim the run dir BEFORE binding the socket, matching the reference order
-	// (run-dir claim -> socket bind -> token persist). This evicts a prior live
+	// Claim the run dir BEFORE binding the socket (run-dir claim -> socket bind ->
+	// token persist). This evicts a prior live
 	// sibling serve daemon so a restart deterministically replaces it. Best-effort:
 	// claimRunDir never fails the boot, only logs and serves without ownership. On
 	// Windows it is a no-op (see daemon_runlock_windows.go).
@@ -510,12 +509,12 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// Reap children a since-exited predecessor daemon of this run dir left orphaned. The
 	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
 	// recorded children become candidates; reapOrphans independently re-checks that each
-	// owning daemon is gone before it touches a child. Synchronous at startup, matching the
-	// reference; a no-op when the socket is not run-shaped or off linux and darwin (see childreap_*.go).
+	// owning daemon is gone before it touches a child. Synchronous at startup. A no-op when
+	// the socket is not run-shaped or off linux and darwin (see childreap_*.go).
 	reapOrphans(s.procs.runDir, s.procs.instanceID)
 	// Start the host cleaner: a background sweep that ends stranded sibling daemons and
 	// orphaned Claude Code process groups under this install's roots and tidies their stale
-	// run dirs. It runs unconditionally at startup (matching the reference); a no-op when the
+	// run dirs. It runs unconditionally at startup. It is a no-op when the
 	// socket is not a deployed run-dir socket or off linux and darwin (see hostclean_*.go). DESTRUCTIVE
 	// and host-wide — validated only on a throwaway VM, never on a host that runs siblings.
 	startHostCleaner(socket)
@@ -573,8 +572,7 @@ const daemonLogName = "remote-server.log"
 // Rotate-then-create-exclusively. The prior log is renamed to
 // remote-server.log.old rather than unlinked, matching 4534d86: the reference
 // keeps the previous session's log as .old on every restart (measured
-// 2026-09-06, scratch/security/disclosures.md — reachable on the ordinary
-// per-restart path, so this is parity, not an edge). os.Rename overwrites any
+// 2026-09-06 on the ordinary per-restart path, so this is parity, not an edge). os.Rename overwrites any
 // existing .old and is a no-op when there is no prior log. It also acts on the
 // link itself, never following a symlinked path.
 //
@@ -618,9 +616,10 @@ func openDaemonLog(socket string) *os.File {
 // the token to no disk, no argv, and no environment; an empty forwardToken means the child
 // reads its own -token-file as before.
 // daemonStartTimeout caps how long the -serve launcher waits for the daemonized
-// child to start accepting before it returns anyway. The reference uses 10s
-// (a 1e10 ns deadline in its spawnChild, alongside the string "timeout waiting
-// for daemon to accept on %s"). var so tests can shrink it.
+// child to start accepting before it returns anyway. It is 10s. The reference
+// also gives up after about 10s, measured with no token source (DIVERGENCES.md).
+// The launcher then prints "timeout waiting for daemon to accept on <socket>".
+// var so tests can shrink it.
 var daemonStartTimeout = 10 * time.Second
 
 // startDaemonChild is cmd.Start behind a seam over the re-exec below: the
@@ -630,16 +629,13 @@ var daemonStartTimeout = 10 * time.Second
 var startDaemonChild = func(cmd *exec.Cmd) error { return cmd.Start() }
 
 func daemonizeWithToken(socket, forwardToken string) {
-	// Create the socket's directory before anything opens a file in it — the
-	// reference does this in its launcher (string "mkdir parent %s: %v") and
-	// creates the chain 0700, the same owner-only mode it uses for the cli-dir.
+	// Create the socket's directory, mode 0700, before anything opens a file in it.
 	// Measured: with a missing socket directory the reference starts normally and
 	// leaves d sub(700) / rpc.sock(600) / daemon.token(600) / remote-server.log(600)
 	// behind, while claustrum refused to start at all.
 	//
 	// The error is deliberately not reported here: a failure surfaces immediately
-	// as the child's bind error, and the reference prints nothing to the
-	// launcher's stderr on this path.
+	// as the child's bind error.
 	if dir := filepath.Dir(socket); dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o700)
 	}
@@ -714,7 +710,7 @@ func daemonizeWithToken(socket, forwardToken string) {
 		// -token-file, where its child refuses to start:
 		// "claude-ssh: timeout waiting for daemon to accept on <socket>", exit 1,
 		// after the full 10.06s deadline. When a predecessor was still holding the
-		// socket, 7d193f89 reports the distinct "daemon did not take over" instead.
+		// socket, claustrum reports the distinct "daemon did not take over" instead.
 		if predInfo != nil {
 			fmt.Fprintf(os.Stderr, "claustrum: daemon did not take over %s (predecessor still owns it)\n", socket)
 		} else {
@@ -864,7 +860,7 @@ func (s *server) acceptLoop(ln net.Listener) {
 		}
 		tempDelay = 0
 		// Wrap in an activity-stamping conn so the idle watcher can see the last
-		// read/write. 7d193f89 closes a connection idle for idleConnTimeout.
+		// read/write. The reference closes a connection idle for 5 minutes (f6010b97).
 		ac := newActivityConn(nc)
 		c := &conn{nc: ac, ac: ac, id: s.connSeq.Add(1), wlog: s.wlog, done: make(chan struct{})}
 		met.connections.Add(1)
@@ -900,10 +896,10 @@ func (s *server) serveConn(c *conn) {
 	}()
 
 	sc := bufio.NewScanner(c.nc)
-	// The reference caps a single request line at 1 MiB (bufio maxTokenSize =
-	// 1024*1024): a line up to 1048575 bytes is accepted, 1048576+ closes the
-	// connection with no reply (probe-verified to the exact byte). Clients must
-	// chunk large process.stdin payloads to stay under it.
+	// The reference caps a single request line at 1 MiB: a line up to 1048575
+	// bytes is accepted, 1048576+ closes the connection with no reply
+	// (probe-verified to the exact byte). Clients must chunk large process.stdin
+	// payloads to stay under it.
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
@@ -1009,8 +1005,7 @@ func (s *server) handleRequest(c *conn, raw []byte, method string, id interface{
 			// method+id locate the request but not the fault.
 			logDebugf("[Server] recovered panic stack: method=%s id=%v\n%s", method, idForLog(id), debug.Stack())
 			// server.shutdown's own reply is {"ok":true}, produced by the normal
-			// dispatch path, not here. Under a panic we emit NO frame for it: an
-			// error frame would be a shape the reference never sends for shutdown.
+			// dispatch path, not here. Under a panic we emit NO frame for it.
 			if method == methodShutdown {
 				return
 			}
@@ -1050,8 +1045,7 @@ func (s *server) closeAll(socket string) {
 		_ = s.pipeLn.Close()
 	}
 	// Unlink the socket only if it is still the inode we bound: a restart's successor
-	// may already have rebound the path, and 7d193f89 leaves a successor's socket
-	// alone rather than deleting it out from under the new daemon.
+	// may already have rebound the path.
 	removeSocketIfOwned(socket, s.sockInfo)
 	removePersistedToken(socket, s.tokenInfo)
 	// Remove rpc.pipe on the same graceful path as rpc.sock/daemon.token, and with the
@@ -1059,7 +1053,7 @@ func (s *server) closeAll(socket string) {
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
 	removePipeNameFileIfOwned(socket, s.pipeInfo)
 	// Drop the run-dir lock: truncate the owner record and unlock daemon.lock,
-	// leaving the file in place (matching the reference). No-op when not held.
+	// leaving the file in place. No-op when not held.
 	if s.releaseRunDir != nil {
 		s.releaseRunDir()
 	}
@@ -1077,7 +1071,7 @@ func (s *server) closeAll(socket string) {
 }
 
 // stopChildren implements the -keep-children policy on graceful shutdown. By
-// default it kills the whole child tree (matching the reference). With
+// default it kills the whole child tree. With
 // -keep-children set (POSIX only — gated at startup by honorKeepChildren), it
 // instead leaves every running child alive so they survive a daemon
 // restart/upgrade, logging one honest line with the surviving count. The new

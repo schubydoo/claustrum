@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// TestSocketReapedInDrainIsNotRunning drives the 90fca6e6 reap test through a real
+// TestSocketReapedInDrainIsNotRunning drives the 90fca6e6 drain refusal through a real
 // socket, in a real exit-drain window. The unit test in reaped_not_running_test.go
 // hand-builds the flags; this one lets the daemon set them.
 //
