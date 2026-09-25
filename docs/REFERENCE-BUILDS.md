@@ -139,8 +139,10 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
 - Host cleaner. A periodic sweep ends stranded sibling daemons and orphaned
   Claude Code process groups under this install's roots. It also tidies stale run
   dirs. Linux and darwin only.
-- Inherited file limit. A process.spawn child inherits a soft RLIMIT_NOFILE of
-  65536 (measured). Linux and darwin only (windows has no RLIMIT_NOFILE).
+- Inherited file limit. At serve startup, claustrum sets its soft RLIMIT_NOFILE
+  to min(hard, 65536), so a process.spawn child inherits that limit when the raise
+  succeeds. A child inherited 65536 in the reference measurement. Linux and darwin
+  only (windows has no RLIMIT_NOFILE).
 - Windows. The exec-child, record, reap, and cleaner subsystems are inert on
   windows. Windows ships no
   run-dir lock, so the daemon is never the run-dir lock holder there. It records no

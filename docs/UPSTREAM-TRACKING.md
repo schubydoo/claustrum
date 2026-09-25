@@ -299,7 +299,9 @@ traps that matter for telling drift from expected:
   probe, claustrum reads an `lsof` run it gave up on as busy. The reference side is
   not probe-measured. That is [DIVERGENCES.md](DIVERGENCES.md) D17 rather than drift.
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
-  seventh change that the first pass had missed.
+  seventh change that the first pass had missed. A new value inside an existing
+  function shows in no symbol list, so a quiet symbol comparison does not prove
+  that nothing changed. Re-check the whole build after the slices merge.
 
 ## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
 
