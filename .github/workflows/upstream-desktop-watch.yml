@@ -13,8 +13,8 @@
 #   1. otherwise downloads that package (`.deb` / `.nupkg` / `.zip`) and reads the
 #      pinned SHA out of `app.asar`
 #      (scripts/latest-desktop-sha.py -> scripts/extract-desktop-pin.py),
-#   2. compares it to the baseline in scripts/UPSTREAM_SHA and to every full SHA
-#      in docs/REFERENCE-BUILDS.md (a lagging platform that still pins an older,
+#   2. compares it to the baseline in scripts/UPSTREAM_SHA and to every build
+#      heading ("### `<full sha>`") in docs/REFERENCE-BUILDS.md (a lagging platform that still pins an older,
 #      reconciled build is not "new"), and
 #   3. when it is new, runs the existing static drift check and opens a tracking
 #      issue, one per SHA. While that issue is open, a later leg that pins the
@@ -232,8 +232,9 @@ jobs:
           ### Next steps (docs/UPSTREAM-TRACKING.md Step 4)
           1. Reconcile any wire drift the check flagged.
           2. Run the private byte-for-byte battery in \`scratch/\` for frame parity.
-          3. Bump \`scripts/UPSTREAM_SHA\` to \`$SHA\`, add a row to
-             \`docs/REFERENCE-BUILDS.md\`, and note it in \`CHANGELOG.md\`.
+          3. Bump \`scripts/UPSTREAM_SHA\` to \`$SHA\`, add a row and a
+             detail section headed with the full SHA to \`docs/REFERENCE-BUILDS.md\`
+             (the watcher reads only those headings), and note it in \`CHANGELOG.md\`.
 
           _This issue is opened once per new SHA; the watcher goes quiet again once
           the baseline is bumped._

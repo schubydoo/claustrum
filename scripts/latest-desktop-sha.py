@@ -7,7 +7,7 @@ reads the platform's update feed, picks the newest Desktop build, downloads that
 package, and runs `extract-desktop-pin.py` to read the pinned reference SHA out
 of the app bundle — no CDN guessing, no running daemon. The scheduled
 `upstream-desktop-watch.yml` workflow calls this once per platform and opens an
-issue when a pin is new: not the baseline, and not any full SHA recorded in
+issue when a pin is new: not the baseline, and not any build heading in
 docs/REFERENCE-BUILDS.md.
 
 The platforms ship on separate schedules, so one can pin a newer reference build
@@ -16,7 +16,9 @@ than another. Feeds:
   windows — the Squirrel `RELEASES` file for win32/x64 (`-full.nupkg`, SHA-1 and
             size checked)
   macos   — the Squirrel.Mac `RELEASES.json` for darwin/universal (`.zip`; the
-            feed carries no checksum, so the download is trusted over TLS only)
+            feed carries no checksum, so TLS is its only integrity check)
+
+Every feed and package URL must be HTTPS, including after redirects.
 
 Usage:
   latest-desktop-sha.py                     # linux: fetch latest, print summary
@@ -86,9 +88,37 @@ def version_key(v: str) -> tuple:
     return (epoch, nums)
 
 
+class HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect hop that is not HTTPS. Checking only the final URL
+    would let an https -> http -> https chain through, and the plain-HTTP hop
+    could point the chain anywhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.lower().startswith("https://"):
+            raise ValueError(f"refusing redirect to non-HTTPS URL: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+OPENER = urllib.request.build_opener(HttpsOnlyRedirect)
+
+
+def open_https(url: str, timeout: int):
+    """urlopen that refuses plain HTTP on the first URL, on every redirect hop,
+    and on the final URL. The macOS feed publishes no checksum, so TLS is the
+    only integrity check on that package."""
+    if not url.lower().startswith("https://"):
+        raise ValueError(f"refusing non-HTTPS URL: {url}")
+    r = OPENER.open(url, timeout=timeout)
+    if not r.geturl().lower().startswith("https://"):
+        r.close()
+        raise ValueError(f"refusing redirect to non-HTTPS URL: {r.geturl()}")
+    return r
+
+
 def fetch_text(url: str) -> str:
     # utf-8-sig: the Windows RELEASES file starts with a byte-order mark.
-    return urllib.request.urlopen(url, timeout=60).read().decode("utf-8-sig")
+    with open_https(url, 60) as r:
+        return r.read().decode("utf-8-sig")
 
 
 def parse_win_releases(text: str) -> list[dict]:
@@ -138,7 +168,7 @@ def download(url: str, dest: str, pkg: dict) -> None:
     """Stream `url` to `dest`, then check every digest and size the feed gave."""
     digests = {k: hashlib.new(k) for k in ("sha256", "sha1") if pkg.get(k)}
     size = 0
-    with urllib.request.urlopen(url, timeout=300) as r, open(dest, "wb") as f:
+    with open_https(url, 300) as r, open(dest, "wb") as f:
         while True:
             chunk = r.read(1 << 20)
             if not chunk:
@@ -173,13 +203,15 @@ def read_baseline() -> str:
 
 
 def read_ledger_shas() -> set[str]:
-    """Full 40-hex SHAs recorded in docs/REFERENCE-BUILDS.md. A platform whose
-    Desktop lags behind still pins an older, already-reconciled build; that pin
-    is known, not new. A missing ledger yields an empty set, which errs toward a
-    noisy issue rather than a silent miss."""
+    """Full 40-hex SHAs of the build entries in docs/REFERENCE-BUILDS.md: only
+    the "### `<sha>`" headings, so a SHA merely mentioned in prose (say, a
+    pin noted before it is reconciled) does not silence the watcher. A platform
+    whose Desktop lags behind still pins an older, already-reconciled build;
+    that pin is known, not new. A missing ledger yields an empty set, which errs
+    toward a noisy issue rather than a silent miss."""
     try:
         with open(LEDGER_FILE) as f:
-            return set(re.findall(r"\b[0-9a-f]{40}\b", f.read()))
+            return set(re.findall(r"^###\s+`([0-9a-f]{40})`", f.read(), re.M))
     except OSError:
         return set()
 

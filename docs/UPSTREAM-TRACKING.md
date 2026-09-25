@@ -360,8 +360,9 @@ divergence, and it carries no D-number.
   Windows and macOS. Each leg calls `scripts/latest-desktop-sha.py --platform <p>`
   to find the SHA that the *newest* Claude Desktop for that platform pins. That is
   Step 1, automated, and it needs no out-of-band source. A new pin must
-  meet two tests. It differs from `scripts/UPSTREAM_SHA`, and no full SHA in
-  [`REFERENCE-BUILDS.md`](REFERENCE-BUILDS.md) matches it. A lagging platform
+  meet two tests. It differs from `scripts/UPSTREAM_SHA`, and no build heading in
+  [`REFERENCE-BUILDS.md`](REFERENCE-BUILDS.md) (a "### `<full sha>`" line)
+  matches it. A SHA that only the prose mentions does not count. A lagging platform
   that still pins an older, reconciled build therefore stays quiet. A new pin on
   any platform makes that leg run `check-upstream.sh <sha>` for the static drift
   diff and open a single idempotent tracking issue. If that issue is still open,
@@ -375,7 +376,8 @@ divergence, and it carries no D-number.
   APT `Packages` index (`.deb`). For Windows, it reads the Squirrel `RELEASES`
   file for win32/x64 (`-full.nupkg`). For macOS, it reads `RELEASES.json` for
   darwin/universal (`.zip`). The script checks the `.deb` by SHA-256 and the
-  `.nupkg` by SHA-1 and size. The macOS feed publishes no checksum, so the
-  script trusts that download over TLS only.
+  `.nupkg` by SHA-1 and size. The macOS feed publishes no checksum, so TLS is
+  the only integrity check on that download. The script therefore refuses a
+  URL or a redirect that is not HTTPS, for every feed and package.
 - You can still run `check-upstream.sh` by hand against any SHA. Examples are a
   SHA you just found, or a check that a re-published build did not shift.
