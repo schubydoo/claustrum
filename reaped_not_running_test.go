@@ -7,16 +7,14 @@ import (
 	"testing"
 )
 
-// Reference build 90fca6e6 NARROWED the "is this process running" test that
-// process.reattach and process.stdin both consult. Before, it read the running
-// flag alone. Now it reads running AND NOT reaped, so strictly fewer processes
-// pass it.
+// Measured on reference build 90fca6e6: inside the exit drain, process.reattach
+// reports running:false and process.stdin answers -32602. 19f30c46 reported
+// running:true and accepted the write.
 //
-// The two flags differ only inside the exit drain: reaped is set the moment
-// cmd.Wait returns, and running stays true until the exit frame goes out, which is
-// up to exitDrainGrace later. See the reaped comment in process.go. So the window
-// this pins is real and reachable, and inside it the reference now reports the
-// process as not running and refuses stdin.
+// claustrum's running and reaped flags differ only inside the exit drain: reaped
+// is set the moment cmd.Wait returns, and running stays true until the exit frame
+// goes out, which is up to exitDrainGrace later. See the reaped comment in
+// process.go. So the window this pins is real and reachable.
 
 // reapedProc builds a process in the exit-drain window: already reaped, still
 // reporting running. The stdin condition variable is wired because, without the

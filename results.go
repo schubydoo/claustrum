@@ -68,14 +68,11 @@ type successResult struct {
 	Success bool `json:"success"`
 }
 
-// shutdownResult is server.shutdown's reply: the reference answers {"ok":true}
-// and then stops. Delivery is best-effort on the reference — it races the
-// daemon's teardown, so a client sometimes reads an EOF instead of the frame.
-// Claustrum reproduces that observed ordering: its own signalShutdown fires
-// before the reply is written, rather than making delivery more reliable than
-// the reference. The frame is not pinned by any golden or the validation
-// battery, because the battery shuts the daemon down on a throwaway connection
-// and never reads this reply — see scratch/osparity for the sweep that measured it.
+// shutdownResult is server.shutdown's reply: {"ok":true}, and then the daemon
+// stops. The reference does not send this frame reliably, and a client usually reads
+// an EOF instead (measured on f6010b97 and 90fca6e6). The frame is not pinned by
+// any golden or the validation battery, because the battery shuts the daemon
+// down on a throwaway connection and never reads this reply.
 type shutdownResult struct {
 	OK bool `json:"ok"`
 }
@@ -125,17 +122,16 @@ type branchesResult struct {
 	Branches []string `json:"branches"`
 }
 
-// Field order is the reference's: success, path, error, errorCode, sourceBranch.
-// No input currently populates sourceBranch together with error/errorCode, so
-// the difference is unreachable on the wire today — corrected anyway, because
-// ordered structs ARE the contract and a future input that populates both would
-// otherwise diverge silently.
-// worktreeRemoveResult is git.worktree_remove's reply. The reference declares an
-// `error` field alongside `success`, and the lenient cases still answer a bare
-// {"success":true} — removing a nonexistent worktree, or naming a branch that
-// does not exist.
+// Field order: success, path, error, errorCode, sourceBranch. No input populates
+// sourceBranch together with error/errorCode, so the order of those two groups is
+// claustrum's own, not probe-measured.
+// worktreeRemoveResult is git.worktree_remove's reply. On some failures the
+// reference emits an `error` field beside `success`. The lenient cases still
+// answer a bare {"success":true}: removing a nonexistent worktree, or naming a
+// branch that does not exist.
 //
-// THREE inputs DO populate `error` now; this comment used to say none did:
+// Every refusal and failure branch of gitWorktreeRemoveLocked populates `error`.
+// Three of those branches are:
 //
 //	git refused AND the daemon's own cleanup also failed  (matches the reference)
 //	claustrum's gitTimeout fired  (claustrum-only, and OPT-IN since D5's flip:
@@ -144,7 +140,7 @@ type branchesResult struct {
 //	worktreePath is/contains the home directory           (claustrum-only)
 //
 // The last two are frames the reference cannot emit — it showed no deadline at or
-// below the 75 s probed, and it hands a home directory straight to the delete.
+// below the 75 s probed, and at 5db5e4a it deleted a home directory.
 //
 // ⚠️ This comment used to add "all three are confined to pathological paths;
 // every reference-reachable reply is still the bare {"success":true}". Both

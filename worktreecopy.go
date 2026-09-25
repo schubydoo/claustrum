@@ -25,11 +25,10 @@ const worktreesSubdir = "worktrees"
 // `git worktree add` gives a clean checkout of tracked files only, so a declared
 // untracked file is missing unless copied — see copyWorktreeIncludes for the rule.
 //
-// Best-effort: the worktree already exists and the reference reports success, so a
-// copy failure must not turn into a failed request.
-// The two copies run in the reference's order: the manifest copy first, then the
-// `.claude/` copy. The order is observable when both name the same path, because
-// the second copy overwrites the first.
+// Best-effort: the worktree already exists, so a copy failure does not turn into a
+// failed request.
+// The manifest copy runs first, then the `.claude/` copy. The order is observable
+// when both name the same path, because the second copy overwrites the first.
 func populateWorktree(repo, worktree string) {
 	copyWorktreeIncludes(repo, worktree)
 	copyClaudeDir(repo, worktree)
@@ -54,7 +53,7 @@ func populateWorktree(repo, worktree string) {
 // real file, so a line-delimited read silently drops it. The reference passes `-z`
 // and copies all four shapes, measured against 19f30c46 and 90fca6e6 alike (see
 // scratch/probe/worktreecopy_probe.py). An earlier comment here claimed the
-// opposite and called it probe-measured parity. It was not: 7d193f89 splits on NUL
+// opposite and called it probe-measured parity. It was not: 7d193f89 passes `-z`
 // too, so the claim was wrong when it was written.
 //
 // A runtime-state path under `.claude/` is skipped even when the manifest names
@@ -140,7 +139,7 @@ func safeOverlayDest(worktree, rel string) string {
 // PRESERVED, matching the reference. Probe-measured by varying the launcher's
 // umask: with 022 every copy lands 0644, with 077 every copy lands 0600, with
 // 000 every copy lands 0666 — regardless of whether the source was 0755, 0640
-// or 0400. So the reference creates the file and never chmods it.
+// or 0400.
 //
 // Two consequences worth knowing, both inherited deliberately rather than
 // "fixed" (see docs/PROTOCOL.md):

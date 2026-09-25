@@ -12,7 +12,7 @@ This repo has shipped that breakage twice: the multi-paragraph fragments behind 
 release notes, where every other entry is a bullet.
 
 Rule: a changeset body must be a SINGLE line -- it then always renders as a clean bullet.
-Fold any details / "Upgrade note" into that one sentence; never span lines or add a second
+Fold any details / "Upgrade note" into that one line; never span lines or add a second
 paragraph. (Allowing a multi-line body whose line 1 is a complete sentence is not enough:
 a heading among bullets is itself the breakage, so multi-line is rejected outright.)
 
@@ -66,7 +66,7 @@ def _violation(path: str, body: str) -> str | None:
             f"Summary (line 1):\n"
             f'      "{first}"\n'
             f"    Fix: keep the WHOLE entry on ONE line so it renders as a clean bullet; "
-            f"fold any details / 'Upgrade note' into that single sentence."
+            f"fold any details / 'Upgrade note' into that one line (several sentences are fine)."
         )
     return None
 

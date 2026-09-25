@@ -7,7 +7,7 @@ import (
 )
 
 // expandPath resolves a leading `~` against the daemon user's home directory,
-// matching the reference daemon's handlers.expandPath / process.expandPath.
+// matching the reference daemon.
 //
 // The rule is deliberately narrow. Every clause below was probe-measured against
 // the reference at 5db5e4a on 2026-08-02, reading the string the reference ECHOES

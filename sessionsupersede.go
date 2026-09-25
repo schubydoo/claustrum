@@ -6,8 +6,7 @@ import (
 )
 
 // cliSessionKey returns the CLI session id a spawn's argv belongs to, or "" when
-// the spawn is not a supersedable session. It reproduces the reference's rule
-// (4534d86): a non-empty key requires ALL of —
+// the spawn is not a supersedable session. A non-empty key requires ALL of —
 //   - stream-json mode: an arg exactly "--input-format=stream-json",
 //     "--output-format=stream-json", or bare "stream-json";
 //   - a session id: "--session-id"/"--session-id=<v>" wins; otherwise
@@ -57,9 +56,9 @@ func cliSessionKey(args []string) string {
 }
 
 // validSessionToken accepts a session id of length 1..128 that does not start with
-// "-" and uses only [A-Za-z0-9-_.:] — the session-id shape claustrum accepts, matching
-// the reference, which keeps a stray flag (e.g. "--session-id" followed by another
-// flag) from being read as an id.
+// "-" and uses only [A-Za-z0-9-_.:] — the session-id shape claustrum accepts. It
+// keeps a stray flag (e.g. "--session-id" followed by another flag) from being read
+// as an id.
 func validSessionToken(t string) bool {
 	if len(t) < 1 || len(t) > 128 || strings.HasPrefix(t, "-") {
 		return false

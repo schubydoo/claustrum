@@ -118,6 +118,7 @@ children it spawns.
   reuse. The process leads its own group and runs the recorded program. It also carries
   `CLAUDE_SSH_RUN_DIR` for this run dir plus a self-naming `CLAUDE_SSH_CHILD`. A verified
   orphan's process group gets `SIGTERM`, a 2s grace, then `SIGKILL` and a 1s escalate.
+  These two timings are claustrum's own values, not probe-measured.
   The record is then forgotten. A record whose owner is still alive, or from another boot
   or machine, is never reaped. It runs on linux and darwin. On windows the reference daemon
   reports it is not the run-dir lock holder, so it reaps nothing. A windows VM showed planted
@@ -138,6 +139,8 @@ children it spawns.
   `SIGTERM`→`SIGKILL`.
   A pass also ends orphaned Claude Code process groups. An orphan is a `stream-json` daemon
   child whose daemon is gone. It gets `SIGTERM`, a 3s grace, then `SIGKILL`.
+  The 15s delay, the daily period, the 5 min age, the 3s grace and the 30-day idle age
+  are claustrum's own values, not probe-measured.
   A pass also retires stale run dirs. A stale run dir is idle past 30
   days, its socket is unanswered, and it has no live lock. The cleaner renames it aside and
   then removes it. If a socket or lock reappears mid-removal, the cleaner undoes the removal.
@@ -148,16 +151,13 @@ children it spawns.
   moment later is still signalled. This path is DESTRUCTIVE and host-wide. Every process read,
   kill, dial, rename and remove therefore sits behind a seam, and tests never touch a real
   process or file. Its real behavior is measured only on a throwaway VM, never on a host that
-  runs sibling daemons. It runs on linux and darwin. On windows it is a no-op, and the
-  reference ships no cleaner there. This behavior is off-wire. Claustrum reproduces this
+  runs sibling daemons. It runs on linux and darwin. On windows it is a no-op. This
+  behavior is off-wire. Claustrum reproduces this
   cleaner's behavior rather than matching it byte
-  for byte. Three places differ, and all three are conservative: they only ever spare or skip
-  where the reference can act. Claustrum omits the reference's clock-skew freshness window.
-  It approximates some spare-reason bookkeeping. On macOS it reads an `lsof` run it gave up on
-  as busy, where the reference reads it as idle. That third one is a numbered divergence,
+  for byte. It approximates some spare-reason bookkeeping. On macOS it reads an `lsof` run it
+  gave up on as busy, and the reference side of that is not probe-measured. That one is a numbered divergence,
   [DIVERGENCES.md](DIVERGENCES.md) D17. The reap path acts only on a dead socket. After 30 days
-  of run-dir idleness the retire path can SIGTERM a socket-live daemon, but a clock-skew-fresh
-  daemon has no such idle run dir. So dropping that window cannot end a fresh daemon.
+  of run-dir idleness the retire path can SIGTERM a socket-live daemon.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a
   separate goroutine. A slow login shell therefore does not delay the moment the
   socket becomes available.
@@ -190,7 +190,7 @@ session attaches to it. It injects no auth.)
   the process. `reattach` REPLACES the whole subscriber set with the requester. It then
   replays buffered frames with `seq > fromSeq`. Any connection attached before
   stops receiving frames for that process. Since `90fca6e6` it also closes each
-  connection it displaced, once, with a logged reason. Claustrum detaches a dead
+  connection it displaced. Claustrum detaches a dead
   subscriber (`[frameSink] replay write failed, detaching`).
 
 ## Deployment lifecycle (how a driver uses it)

@@ -10,10 +10,9 @@ import (
 )
 
 // mkdirWorktreeLeaf creates the final worktree directory component (the caller has
-// already made the leading directories). 7d193f89 resolves worktree locations
-// through openat/mkdirat, so its failure on an unwritable or foreign-owned parent
-// reads `mkdirat <leaf>: <errno>` — the leaf basename with no directory — where a
-// plain os.Mkdir would render `mkdir <full path>`. That string is wire-visible in
+// already made the leading directories). On an unwritable or foreign-owned
+// parent, the 7d193f89 failure reads `mkdirat <leaf>: <errno>`. The leaf is the
+// basename with no directory. A plain os.Mkdir renders `mkdir <full path>`. That string is wire-visible in
 // the mkdir_failed frame, so reproduce the `mkdirat <leaf>` wording by re-wrapping
 // the underlying errno with the leaf name. (stdlib syscall.Mkdirat is linux-only
 // and golang.org/x/sys is a Windows-only dependency here, so this rewraps rather

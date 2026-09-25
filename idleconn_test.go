@@ -8,8 +8,8 @@ import (
 )
 
 // closeWhenIdle closes a connection that has gone silent for idleTimeout, matching
-// 7d193f89's 5-minute idle close (tested here with a short timeout). Activity on the
-// connection resets the clock.
+// the 5-minute idle close measured on f6010b97 (tested here with a short timeout).
+// Activity on the connection resets the clock.
 func TestCloseWhenIdle(t *testing.T) {
 	t.Run("idle_connection_is_closed", func(t *testing.T) {
 		c1, c2 := net.Pipe()

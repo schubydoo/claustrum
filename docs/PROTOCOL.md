@@ -106,9 +106,9 @@ the honest path. A collision survives only where eviction is refused, and on
 Windows, which ships no run-dir lock. Eviction is refused for a foreign or
 cross-machine lock holder, and for a holder that survives `SIGKILL`.
 
-The unlink carries an inode-ownership qualifier, added by reference build
-`7d193f89`. On graceful shutdown the daemon unlinks `daemon.token` only when the
-file on disk is still the inode this daemon wrote. The daemon stats the file and
+The unlink carries an inode-ownership qualifier. On graceful shutdown the
+daemon unlinks `daemon.token` only when the file on disk is still the inode this
+daemon wrote. The daemon stats the file and
 compares its identity (`os.SameFile`) to the one it recorded at startup. A
 restart's successor can rebind the socket and
 republish `daemon.token` to a new inode before the predecessor leaves. The
@@ -133,7 +133,8 @@ record into that file. The record is a JSON object
 omitted when the machine identity is unknown. Reference build `4534d86` added
 this, and claustrum matches it. It is off the JSON-RPC wire, because it is a file
 beside the socket. On graceful shutdown the daemon truncates the record and drops
-the lock, but it leaves the file in place. `daemon.token` is unlinked instead.
+the lock, but it leaves the file in place. `daemon.token` is unlinked instead. This
+shutdown handling is claustrum's own, not probe-measured.
 
 A prior live daemon can still hold the lock. The newcomer then evicts it before it
 takes over, with `SIGTERM` and then `SIGKILL` after a grace period. A restart
@@ -145,11 +146,10 @@ ownership rather than aborting.
 
 The lock, the owner record, and the eviction run on Linux and macOS only. The
 machine identity (`node`) is the boot id joined to the pid-namespace inode on
-Linux, and `sysctl kern.bootsessionuuid` on macOS. Windows ships no run-dir lock,
-because the reference does not compile one there. Mutual exclusion on Windows
-stays the socket remove-then-rebind handoff. On macOS claustrum makes sure of the
-holder through `sysctl KERN_PROCARGS2`, where the reference skips that test. See
-[DIVERGENCES.md](DIVERGENCES.md) D15.
+Linux, and `sysctl kern.bootsessionuuid` on macOS. Windows ships no run-dir
+lock. Mutual exclusion on Windows stays the socket remove-then-rebind handoff.
+On macOS claustrum makes sure of the holder through `sysctl KERN_PROCARGS2`,
+where the reference skips that test. See [DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Host cleaner (off-wire, Linux and macOS)
 
@@ -161,14 +161,14 @@ a lost session.
 Before it signals a daemon whose run dir went idle past the threshold, the cleaner
 asks whether that daemon still has a live client. On macOS it asks `lsof`. That
 run is bounded three ways: a command deadline, a wait for the output pipe, and a
-last bound after which the run is given up on. Those bounds match the reference.
+last bound after which the run is given up on. Those bounds are claustrum's own
+values and are not probe-measured.
 
 An abandoned run reads as busy, not idle. See [DIVERGENCES.md](DIVERGENCES.md)
 D17. A run that gave up and a run that finished and saw nothing both produce no
-output. The reference reads both as not busy. On a host where `lsof` cannot
-answer, the reference cleaner therefore SIGTERMs a daemon that is serving a
-client. claustrum treats only the completed empty result as evidence. On every
-honest path `lsof` answers and the two builds agree.
+output. claustrum treats only the completed empty result as evidence. On a host
+where `lsof` cannot answer, the cleaner therefore does not SIGTERM a daemon that
+is serving a client. The reference side is not probe-measured.
 
 ### Daemon startup (`-serve`)
 
@@ -218,17 +218,17 @@ half is the inode-ownership unlink under
 ### Idle-connection close
 
 A `-serve` daemon closes any accepted connection that goes 5 minutes with no read
-or write activity. This matches `7d193f89`. The timeout is fixed and always-on.
-There is no flag and no configuration key to change it or to disable it. The
-daemon stamps the last activity time on every read and write of the connection. A
-per-connection watcher polls for silence, at a quarter of the timeout, bounded to
-at most 30 s. Once the idle span reaches the timeout, the watcher closes the
-socket and logs `[Server] closing idle connection <addr> (idle for <d>)`. The
-watcher stops as soon as the connection closes for any other reason, and as soon
-as the daemon shuts down. It therefore never outlives its connection. This is off
-the JSON-RPC wire, because it is connection lifecycle and sends no frame. It
-closes only an idle *connection*, never the daemon. A client-less orphan daemon is
-retired by the separate orphan-exit self-probe below.
+or write activity. This matches `f6010b97`, as measured. The timeout is fixed and
+always-on. There is no flag and no configuration key to change it or to disable
+it. The daemon stamps the last activity time on every read and write of the
+connection. A per-connection watcher polls for silence, at a quarter of the
+timeout, bounded to at most 30 s. Once the idle span reaches the timeout, the
+watcher closes the socket and logs
+`[Server] closing idle connection <addr> (idle for <d>)`. The watcher stops as
+soon as the connection closes for any other reason, and as soon as the daemon
+shuts down. It therefore never outlives its connection. This is off the JSON-RPC wire, because it is connection lifecycle and
+sends no frame. It closes only an idle *connection*, never the daemon. A
+client-less orphan daemon is retired by the separate orphan-exit self-probe below.
 
 ### Daemon log (`remote-server.log`)
 
@@ -253,8 +253,7 @@ sticky directory that holds another user's file or symlink. claustrum then decli
 log entirely and falls back to inherited stdio. In both cases claustrum never
 follows the link, and it never writes into a file another user owns. This is
 intentional divergence D8, and it is always-on. `4534d86` no longer
-plain-truncates a foreign regular log. That disclosure is fixed upstream, and
-claustrum matches the `.old` rotation. But in a root-owned sticky directory the
+plain-truncates a foreign regular log, and claustrum matches the `.old` rotation. But in a root-owned sticky directory the
 reference still follows a planted `remote-server.log` symlink. It then writes its
 log into the victim, or it refuses to start. claustrum declines instead. The
 trigger is not reachable on the deployed path, because the socket directory
@@ -288,12 +287,12 @@ its own socket, sends an authed `server.capabilities`, and compares the reply's
 changed file identity that still leads back is not orphaned. Two consecutive
 failed probes, 60 seconds apart, trigger a graceful shutdown. That shutdown closes
 listeners, drops clients, and stops child process groups unless `-keep-children`
-is set. It is never a bare exit.
+is set. It is never a bare exit. The 60-second interval and the 10-minute grace
+are claustrum's own values, not probe-measured.
 
 The behavior is identical on every OS, because `os.SameFile` gives the
 file-identity compare portably. It is a no-op when the daemon has no captured
-socket identity or no `instanceId`. This is parity with the reference, not a
-divergence.
+socket identity or no `instanceId`.
 
 ## Message shapes
 
@@ -349,7 +348,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.read | `files.read: file exceeds maxBytes` | |
 | files.read | `files.read: not a regular file` | D4 opt-in only |
 | files.list | `open …: no such file or directory` | -32603 (missing dir) |
-| files.list | `open <p>: not a directory` | -32603. The path is not a directory. Since `7d193f89` the daemon opens with `O_DIRECTORY`. Before `7d193f89` the message was `readdirent …` |
+| files.list | `open <p>: not a directory` | -32603. The path is not a directory. Since `7d193f89` the open itself fails. Before `7d193f89` the message was `readdirent …` |
 | files.list | `open <p>: permission denied` | -32603 (an unreadable directory) |
 | files.validate | `Path does not exist` | in `error` field, `valid:false` |
 | files.extract_tar | `archivePath and destDir are required` | |
@@ -373,7 +372,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `git worktree add failed: <combined output>` | in `error`, `errorCode:"worktree_add_failed"`. The message is git's combined output on one line, with internal newlines joined by a space, capped at 512 bytes. The pre-created leaf directory is rolled back on failure. A pre-existing branch is not deleted (`4534d86`) |
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <git error> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. This is `7d193f89` containment. The spelling refusal is Windows-only and comes before containment |
-| git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It gates the os.RemoveAll fallback off a planted link (`7d193f89`) |
+| git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It gates the delete fallback off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it through the fallback and answered `success:true`. |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. The configuration of `baseRepo` cannot be read, or, without `worktreeRoot`, `baseRepo` holds no repository. Nothing is deleted |
@@ -397,8 +396,8 @@ The per-request goroutine wraps dispatch in `recover()`. It therefore catches a
 panic in any handler, and the daemon does not crash. The reply is
 `{"error":{"code":-32603,"message":"recovered panic: <v>"}}`, and the daemon logs
 `[Server] recovered panic: method=<m> id=<id>: <v>`. One method is the exception.
-A recovered `server.shutdown` panic writes no frame at all, because an error frame
-is a shape the reference never sends for shutdown. Its only reply is `{"ok":true}`.
+A recovered `server.shutdown` panic writes no frame at all. Its only reply is
+`{"ok":true}`.
 
 This frame is claustrum's own. It is not a statement about the wire. No input is
 known to reach a handler panic. Extensive fuzzing found none, and each of
@@ -440,10 +439,9 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object.
   but unused by *this* method therefore still takes part in the decode. A
   type-mismatched value there gives `-32602`, for example
   `files.stat {"maxBytes":"{"}` and `git.status {"baseRepo":[1,2]}`. The reference
-  binds only the field the specific method reads and ignores the rest, so it runs
-  with defaults. Both daemons ignore a genuinely unknown key, which is a key in
-  neither struct. This is accepted divergence D9. See
-  [`DIVERGENCES.md`](DIVERGENCES.md).
+  answers both requests with defaults, as measured. Both daemons ignore a
+  genuinely unknown key, which is a key in neither struct. This is accepted
+  divergence D9. See [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ## Path handling
 
@@ -550,7 +548,7 @@ member of the `plugins.*` namespace.
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
 | `server.capabilities` | none | `{"version":"<id>","methods":[…19…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","process.spawn.shellAgentSocket","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the 19th method, appended last on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `process.spawn.shellAgentSocket`, `instanceId` and `startedAt` are present on every OS |
-| `server.shutdown` | none | `{"ok":true}`. The daemon replies, then stops, and the connection closes. Delivery races the teardown, so the reply is best-effort on the wire. See below |
+| `server.shutdown` | none | `{"ok":true}`. The daemon replies, then stops, and the connection closes. The reference does not send that frame reliably, measured on `f6010b97` and `90fca6e6`. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
   `-32601 "Unknown method: server.version"` like any other unknown method.
@@ -760,8 +758,7 @@ Errors. Unless a line says otherwise, each error goes in the `error` field with
   claustrum is more correct. See [DIVERGENCES.md](DIVERGENCES.md) D16.
 - Every line is verbatim, the first one included. The daemon splits on the trailing
   newline only, so entry 0 keeps its leading space. `[" M a1"," M a2"]` returns
-  `[" M a1"," M a2"]`. 5db5e4a trimmed the whole blob and lost entry 0's leading
-  space. 7d193f89 and 4534d86 do not.
+  `[" M a1"," M a2"]`. 5db5e4a lost entry 0's leading space. 7d193f89 and 4534d86 do not.
 - A failing git → `-32603` that carries the Go error string (`exit status 128`, not
   git's `fatal:` text). With opt-in D5 the same `-32603` can carry `signal: killed`.
 
@@ -882,10 +879,7 @@ failure never fails the request:
   merely untracked is not, because that view cannot see it. `.claude/worktrees/` is
   always skipped, because that is where session worktrees live. The listing is
   limited to the repo-root `.claude/`, so a nested one is reached only by the
-  manifest pass. This is measured against `19f30c46` and `90fca6e6` alike. An
-  earlier version of this document said `7d193f89` had dropped this copy. It had
-  not. Only those two builds are measured. `7d193f89` reads the same listing
-  NUL-delimited, and the earlier builds are not.
+  manifest pass. This is measured against `19f30c46` and `90fca6e6` alike.
 - Claude runtime state is skipped by both passes since `90fca6e6`. The names
   are `scheduled_tasks.json`, `scheduled_tasks.lock`, `routines/.state`,
   `worktrees`, `checkpoints`, `mailbox`, `agent-registry.json`, `first-run` and
@@ -894,7 +888,7 @@ failure never fails the request:
   dropped, while `.claude/mailboxes/` and `.claude/nested/mailbox/` are both
   copied. All nine names and both boundary cases are measured against `19f30c46`
   and `90fca6e6`. `19f30c46` copies eight of the nine. It drops `worktrees` as
-  well, through the separate `.claude/worktrees/` skip that both builds carry.
+  well, so both builds drop `worktrees`.
 - The daemon skips symlinks. A filename that `git ls-files` C-quotes, with a tab, a
   quote, a backslash or a non-ASCII byte, IS copied. Both passes use `-z` and split
   on NUL. An earlier version of this document said the opposite and called it a
@@ -949,13 +943,11 @@ failure never fails the request:
 - The daemon runs `git worktree remove --force`. `7d193f89` refuses a LOCKED
   worktree here. git fails with `cannot remove a locked working tree`, and the
   reply is `{"success":false,"error":"refusing to remove worktree: <p> is locked
-  (git worktree lock); unlock it to remove it"}`. That message is fixed whatever
-  the lock reason is, and the directory is left in place. Any OTHER non-zero
-  git exit takes a different path, for example an ordinary directory. The daemon
-  then removes `worktreePath` itself, recursively, and it still answers
-  `{"success":true}`. On a non-locked failure this method is a
-  recursive
-  delete of the caller-supplied `worktreePath`. Treat `worktreePath` as a path you
+  (git worktree lock); unlock it to remove it"}`, and the directory is left in
+  place. Any OTHER non-zero git exit takes a different path, for example an
+  ordinary directory. The daemon then removes `worktreePath` itself, recursively,
+  and it still answers `{"success":true}`. On a non-locked failure this method is
+  a recursive delete of the caller-supplied `worktreePath`. Treat `worktreePath` as a path you
   ask the daemon to remove, not as a filter. Both are reference behavior, matched
   deliberately. The lock refusal is a `7d193f89` change, because before `7d193f89`
   the reference deleted the locked worktree too, through the fallback. The reply
@@ -1016,10 +1008,9 @@ as id-less stream notifications, and it buffers them for a later replay.
 - Missing `id` → `-32602 Process ID is required`. Missing `command` →
   `-32602 Command is required`.
 - A request that reuses a still-live `id` succeeds and replaces the registry entry,
-  like the reference. claustrum diverges here, because it also kills the
-  now-orphaned previous process tree. It drops the subscribers first, so no stray
-  frame arrives under the reused id. This is OS-level only and changes no wire
-  byte. The reference leaves the old process running.
+  like the reference. claustrum also kills the now-orphaned previous process
+  tree. It drops the subscribers first, so no stray frame arrives under the
+  reused id. This is OS-level only and changes no wire byte.
 - Session superseding is `4534d86` parity. A `process.spawn` whose `args` name a
   stream-json CLI session terminates any OTHER running process of the SAME session
   id. Such `args` carry an `--input-format=stream-json` or
@@ -1030,8 +1021,7 @@ as id-less stream notifications, and it buffers them for a later replay.
   `killedBy:"client"` marker on that frame ships in a separate slice. A spawn with
   no session key, or with a different session id, supersedes nothing. The eviction,
   the `client` kill reason, and the session-key rules above are measured against
-  the reference. claustrum also serializes concurrent spawns of one session, which
-  matches an equivalent per-key lock seen in the reference.
+  the reference. claustrum also serializes concurrent spawns of one session.
 - The SSH agent hand-off is `f6010b97` parity on linux and darwin, advertised as
   `process.spawn.shellAgentSocket`, and measured on both. The daemon builds the
   child env from its own env, the login-shell PATH and the caller's `env`. If that
@@ -1187,14 +1177,14 @@ reports the outcome as a *result*. An unknown id is not an error:
 - Unknown id → `{"found":false,"died":false}`.
 - Already exited → `{"found":true,"died":true,"alreadyExited":true}`. The daemon
   sends no signal.
-- Inside the exit drain this method is the exception. `90fca6e6` narrowed
-  `process.reattach` and `process.stdin` to treat a reaped process as not running.
-  `killAndWait` still reads the flag that flips with the exit frame. A call
-  inside the drain therefore answers `alreadyExited:false` and waits for the frame
-  rather than reporting an already-exited process. No signal is delivered either,
-  because the daemon refuses to signal a reaped process. Leaving this method on the
-  old side of the narrowing is read from the build, which changed the attach and
-  stdin paths only. The Kill path inside the drain is not measured.
+- Inside the exit drain this method is the exception. Since `90fca6e6`,
+  `process.reattach` and `process.stdin` answer as if the process is not running
+  there. In claustrum, `killAndWait` still reads the flag that flips with the
+  exit frame. A call inside the drain therefore answers `alreadyExited:false` and
+  waits for the frame rather than reporting an already-exited process. No signal
+  is delivered either, because the daemon refuses to signal a reaped process.
+  Keeping this method unchanged is claustrum's choice. The reference answer inside
+  the drain is not probe-measured.
 - Live process → the daemon sends the graceful `signal`, `SIGTERM` by default, and
   then waits up to the grace:
     - `timeoutMs` sets the grace. A non-positive or absent value gives the
@@ -1249,14 +1239,13 @@ reports the outcome as a *result*. An unknown id is not an error:
   the old connection and is also absent from the new connection's replay. That is
   what `fromSeq` is for.
 - Unknown id → `{found:false,running:false,firstSeq:0,lastSeq:0,stdinApplied:0}`.
-- The daemon retains an exited process for about 15 minutes and then drops it,
+- The daemon retains an exited process for a bounded time and then drops it,
   together with its replay buffer. An id last seen longer ago therefore answers
   exactly like an unknown one, and `process.kill` on it still reports
-  `{"success":true}`. The daemon never drops a running process. The sweep runs
-  on a 60-second timer, and it also runs inline on every `process.spawn`. On the
-  wire, the retention brackets only to `(45 s, 960 s]`. The exact 15 min and 60 s
-  are pointer-class. No wire observable distinguishes them from other values in
-  that bracket. Read `found:false` after a long gap as "finished and forgotten",
+  `{"success":true}`. The daemon never drops a running process. On the wire, the
+  reference retention brackets only to `(45 s, 960 s]`. claustrum retains for 15
+  minutes. It sweeps on a 60-second timer and inline on every `process.spawn`.
+  Those two values are claustrum's own and are not probe-measured. Read `found:false` after a long gap as "finished and forgotten",
   not as "never existed".
 - `stdinApplied` was added by `7c2f88d`. It is the process's cumulative
   applied-stdin byte count, as described under `process.stdin`. It is always
@@ -1347,26 +1336,25 @@ shared legacy root is `<X>/plugins`, and its results go in `prunedLegacy`.
   shutdown and `killAll` sweep. `killedBy` is emitted on every OS. The `client`
   values and the `SIGTERM` and `SIGKILL` names are live-measured. The other mapped
   signal names derive from the same wait-status path and are not individually
-  measured against the reference. The `shutdown` value is read from the reference
-  by static analysis only, because the shutdown exit frame races connection
-  teardown and is not client-observable.
+  measured against the reference. The `shutdown` value is not probe-measured,
+  because the shutdown exit frame races connection teardown
+  and is not client-observable.
 - The `exit` frame waits at most 5 seconds after the process exits for
   stdout/stderr to reach EOF. The daemon then closes the read ends and emits the
   frame anyway. This matters when the command leaves a grandchild that holds the
   same pipe, as `npm run dev &` does. The daemon does not forward output that the
   grandchild writes after the cap, because that write fails `EPIPE`. The
-  `process.reattach` `running` flag does not wait for that frame. Since `90fca6e6`
-  it also tests the reap, so a reattach inside the drain window reports
-  `running: false`. In claustrum it flips at the reap itself. On the reference the
-  narrowed test is read from the build and measured one second into the drain. The
-  probe therefore bounds the flip at one second rather than at the reap.
+  `process.reattach` `running` flag does not wait for that frame. Since `90fca6e6`,
+  a reattach inside the drain window reports `running: false`. In claustrum it
+  flips at the reap itself. On the reference the flip is measured one second into
+  the drain. The probe therefore bounds the flip
+  at one second rather than at the reap.
   `process.stdin` refuses inside the same window with `-32602 Process not
   running`, for a write that carries fresh bytes. An offset gap still
   answers `-32003` and a wholly duplicate write still answers
-  `{"success":true,…,"duplicate":true}`. Before `90fca6e6` both paths read the
-  flag that flips with the exit frame. Both then reported the process as still
-  running for up to the 5-second drain. The refusal also stops the drain window
-  from inflating `applied` and `stdinApplied`, which used to count bytes the
+  `{"success":true,…,"duplicate":true}`. Before `90fca6e6`, both paths reported
+  the process as still running inside the drain, measured on `19f30c46`. The
+  refusal also stops the drain window from inflating `applied` and `stdinApplied`, which used to count bytes the
   closed pipe discarded. The acknowledgement caveat under `stdinApplied` still
   applies for a write accepted while the process was genuinely live.
 - Each stdout/stderr frame carries at most one 32 KiB read. Larger output splits
@@ -1390,8 +1378,6 @@ shared legacy root is `<X>/plugins`, and its results go in `prunedLegacy`.
 
 One binary, six modes: `-serve`, `-bridge`, `-stop`, `-version`, `-install` and
 `-probe-cli`.
-Everything here is probe-verified against the reference unless it is marked
-claustrum-only.
 
 ### Flags and config keys
 
@@ -1536,9 +1522,9 @@ claustrum -stop -socket <p>          # no token needed, and none is read
 not authenticated. See [Authentication](#authentication). It is best-effort. A
 missing or unreachable daemon is a silent no-op, with exit `0` and no output, and
 `-stop` reads and discards any reply. The daemon answers `server.shutdown` with
-`{"ok":true}` and then stops, matching the reference. Delivery races the
-teardown on both, so `-stop` reads either that frame or an immediate EOF. It
-prints nothing either way, because it is a control command, not a relay.
+`{"ok":true}` and then stops. The reference does not send that frame reliably,
+measured on `f6010b97` and `90fca6e6`. claustrum's `-stop` prints nothing either
+way, because it is a control command, not a relay.
 
 `-stop` unlinks the socket path on every exit path, including when the dial
 fails and it reached no daemon. This matches the reference, and it is destructive
@@ -1674,7 +1660,7 @@ durations probed. See [`DIVERGENCES.md`](DIVERGENCES.md):
   the rename.
 - `-libc-probe-timeout <dur>` is D14, and it is linux only. `0` puts no deadline on
   `ldd --version`. Off linux the probe never runs. On linux it can fire on any
-  host. Since build 3ef9370 `detectLibcWith` runs `ldd` on every call, and
+  host. Since build 3ef9370 the libc probe runs `ldd` on every call, and
   the loader glob is only the empty-output fallback. Do not confuse it with
   `-cli-probe-timeout`. The two names differ only in
   their `cli` and `libc` prefix, they have the same type, and main's `-install` arm
@@ -1692,9 +1678,8 @@ mean unbounded memory. See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
 `-cli-version` hardening is claustrum-only:
 - D6 requires a single path component. The clearing step is an `os.RemoveAll`
   on `filepath.Join(cliDir, cliVersion)`. A version that escapes the cli-dir
-  therefore deletes unrelated data, and the reference destroys the target on both
-  shapes. Two such versions are `../victim`, and `link/1.0.0` through an
-  intermediate symlink. claustrum answers
+  therefore deletes unrelated data. Measured, the reference destroys the target on
+  `../victim`. `link/1.0.0` through an intermediate symlink also escapes. claustrum answers
   `cli version "…" must be a single path component` and touches nothing. It
   refuses `.`, `..`, `/` and `\` on every OS. claustrum uses a single-component
   test and not lexical containment, because containment accepts `link/1.0.0`, and
@@ -1761,18 +1746,16 @@ Staging and cleanup:
 
 The bound is a fixed 30 s, always applied. It is not the opt-in
 `-cli-probe-timeout` (D11), which bounds only the `-install` runnability probe and is
-off by default. Matching the reference, the mode unsets `CLAUDE_RPC_TOKEN` so the
+off by default. The mode unsets `CLAUDE_RPC_TOKEN` so the
 probed child never inherits it. The probe runs in its own process group. On Unix the
 fixed deadline group-kills the whole subtree, so a `--version` that forks a descendant
 cannot outlive the probe. On Windows the direct child is killed and `WaitDelay` bounds
 the mode, so a stray descendant is left to exit on its own. The mode installs no SIGINT
 handler. A Ctrl-C therefore terminates the claustrum process itself, with exit 130 and
 empty stdout. The probed CLI runs in its own process group, so a terminal Ctrl-C is not
-delivered to it. That matches the reference's process-group model. The mode ignores
+delivered to it. The mode ignores
 SIGPIPE, as `-install` does, so a stdout pipe the caller closes mid-write fails the
-write with EPIPE instead of terminating the process. The reference ignores SIGPIPE in
-these two stdout-writing modes. This is byte-for-byte parity with `19f30c46`, and it
-carries no D-number.
+write with EPIPE instead of terminating the process.
 
 ### Behavior shared by every mode
 

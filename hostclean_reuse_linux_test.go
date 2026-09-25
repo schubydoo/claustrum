@@ -15,7 +15,7 @@ import (
 // process, so the SIGTERM afterwards needs the identity captured on entry, not the
 // number alone.
 //
-// This is the window the 90fca6e6 sampling change widened: claustrum's own debounce
+// This is the window claustrum's sampling change widened: its old debounce
 // ran about 900 ms, and on linux it did not run at all.
 
 // retireReuseFixture builds one verifiable, old, marked daemon that shows a connected

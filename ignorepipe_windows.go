@@ -2,6 +2,5 @@
 
 package main
 
-// ignoreSigpipeDefault is a no-op on Windows, which has no SIGPIPE — matching the
-// reference, whose Windows build has nothing to ignore here.
+// ignoreSigpipeDefault is a no-op on Windows, which has no SIGPIPE.
 func ignoreSigpipeDefault() {}

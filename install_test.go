@@ -581,14 +581,10 @@ func TestHTTPGet(t *testing.T) {
 func TestDetectLibc(t *testing.T) {
 	got := detectLibc()
 	if runtime.GOOS != "linux" {
-		// The reference reports an empty libc off linux; claustrum used to answer
-		// "glibc" on Windows and macOS.
-		//
-		// Pointer-class, and deliberately labelled as such: it was settled by
-		// inspecting the non-linux reference builds, not by a probe, because the
-		// reference cannot be run on this host's darwin or windows targets. The
-		// observable it predicts is that the `libc` key is always present and
-		// always empty there — which is exactly what this assertion pins.
+		// claustrum reports an empty libc off linux. It used to answer "glibc" on
+		// Windows and macOS. The reference reports an empty libc on a Windows guest
+		// (see libc_other.go). The darwin side is not probe-measured. This assertion
+		// pins that the `libc` key is always present and always empty there.
 		if got != "" {
 			t.Errorf("detectLibc() = %q on %s, want \"\" (the reference reports no libc off linux)", got, runtime.GOOS)
 		}
@@ -1220,9 +1216,8 @@ func TestRunInstallFacts(t *testing.T) {
 	if f.OS == "" || f.Arch == "" {
 		t.Errorf("facts missing os/arch: %+v", f)
 	}
-	// libc is reported on linux only — off linux the reference has no
-	// detectLibc at all and emits an empty string, so "" is the correct value
-	// there rather than a missing one.
+	// libc is reported on linux only. Off linux claustrum emits an empty string,
+	// so "" is the correct value there rather than a missing one.
 	if runtime.GOOS == "linux" && f.Libc == "" {
 		t.Errorf("facts missing libc on linux: %+v", f)
 	}

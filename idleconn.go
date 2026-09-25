@@ -7,22 +7,22 @@ import (
 )
 
 // idleConnTimeout is how long a connection may go with no read/write activity
-// before the daemon closes it. 7d193f89 uses a fixed 5-minute idle timeout with no
-// flag or env to change or disable it, so claustrum matches that value and keeps it
-// always-on.
+// before the daemon closes it. The reference closes a connection after 5 minutes
+// with no traffic, measured against f6010b97 on a linux VM. claustrum matches that
+// value and keeps it always-on.
 const idleConnTimeout = 5 * time.Minute
 
 // activityConn wraps a net.Conn and records the time of the last Read or Write, so
-// closeWhenIdle can tell whether the connection has gone silent. Matches 7d193f89,
-// which stamps activity on every read and write of the accepted connection.
+// closeWhenIdle can tell whether the connection has gone silent. On the reference a
+// read alone and a write alone each keep a connection open, measured against f6010b97
+// on a linux VM.
 type activityConn struct {
 	net.Conn
 	last atomic.Int64 // last activity, unix nanoseconds
 	// closedDeliberately is claimed by whichever path decides to end this
 	// connection on the daemon's own initiative: the idle watcher below, or a
 	// supersede from process.reattach. The claim is a Swap, so exactly one of them
-	// logs a reason and closes, and 90fca6e6 shares it between the two for that
-	// reason. Without it a superseded connection is closed once and then logged a
+	// logs a reason and closes. Without it a superseded connection is closed once and then logged a
 	// second time by the idle watcher, which reads as two separate events.
 	closedDeliberately atomic.Bool
 }
@@ -76,8 +76,9 @@ func (s *server) closeWhenIdle(a *activityConn, done <-chan struct{}) {
 			return
 		case <-t.C:
 			if idle := a.idleFor(); idle >= s.idleTimeout {
-				// Claim BEFORE logging and closing, matching 90fca6e6: a connection
-				// a supersede already ended is not closed or logged twice.
+				// Claim BEFORE logging and closing, so a connection a supersede
+				// already ended is not closed or logged twice. This order is
+				// claustrum's own and is not probe-measured.
 				if !a.claimClose() {
 					return
 				}

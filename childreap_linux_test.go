@@ -709,7 +709,7 @@ func TestReadChildRecordMissing(t *testing.T) {
 // 4242 and a non-zero vsize (field 23), so a "<pid> (proc) <state> " prefix plus this
 // yields a parseable line.
 //
-// The vsize is why the name no longer matches the count. Since 90fca6e6 a vsize of
+// The vsize is why the name no longer matches the count. A vsize of
 // 0 counts as gone as well as the Z and X state letters, so a line that stops at
 // starttime cannot answer the question and reads as not ours.
 func fields19() string {

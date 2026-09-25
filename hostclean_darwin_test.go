@@ -246,16 +246,15 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 // TestHcBusyAbandonedRunReadsBusy pins D17.
 //
 // The two arms differ ONLY in the flag: both return no output. A completed run that
-// saw nothing is evidence the pid is idle, and must read as not busy — that arm is
-// the control, and it is also the parity arm, since the reference answers the same.
-// An abandoned run is not evidence of anything, and claustrum reads it as busy where
-// the reference reads it as idle. Deleting the D17 arm in hcBusy makes the second
-// assertion fail while the control still passes.
+// saw nothing is evidence the pid is idle, and must read as not busy. That arm is
+// the control. An abandoned run is not evidence of anything, and claustrum reads it
+// as busy. Deleting the D17 arm in hcBusy makes the second assertion fail while
+// the control still passes.
 func TestHcBusyAbandonedRunReadsBusy(t *testing.T) {
 	old := runLsof
 	t.Cleanup(func() { runLsof = old })
 
-	// CONTROL, and parity: lsof ran, found nothing. Not busy.
+	// CONTROL: lsof ran, found nothing. Not busy.
 	runLsof = func(...string) (string, bool) { return "", true }
 	if hcBusy(1) {
 		t.Fatal("a completed run that found nothing read as busy; that is the parity " +

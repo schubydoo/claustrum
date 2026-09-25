@@ -48,8 +48,8 @@ func lockedWorktree(t *testing.T) (repo, wt string) {
 	return repo, wt
 }
 
-// 7d193f89 REFUSES a locked worktree removal — success:false with a fixed message
-// (independent of the lock reason), leaving the directory in place. Before 7d193f89
+// 7d193f89 REFUSES a locked worktree removal: success:false with a fixed message,
+// leaving the directory in place. Before 7d193f89
 // the reference DELETED it and answered success:true; that older behavior is the
 // wire divergence this reconciles. Measured against 7d193f89 on an ephemeral VM,
 // both binaries returning byte-identical frames.
@@ -68,8 +68,8 @@ func TestWorktreeRemoveLockedWorktreeIsRefused(t *testing.T) {
 	}
 }
 
-// The locked refusal reads the `locked` marker file (matching 7d193f89, which does
-// not run `git worktree remove` at all), not git's localised stderr — so it holds
+// The locked refusal reads the `locked` marker file (7d193f89 runs no `git worktree
+// remove` at all), not git's localised stderr, so it holds
 // under any locale. Proven with a stub git that EXITS 0 on every call: only the
 // marker-file check stands between the caller and a deletion, so a refusal here means
 // the file-based path fired, not git's output. Without that check the stub "succeeds"

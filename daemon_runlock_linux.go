@@ -25,7 +25,7 @@ var (
 )
 
 // nodeID builds the machine-plus-pid-namespace identity the reference writes into the
-// owner record and compares before signalling: the boot id joined to the pid-namespace
+// owner record: the boot id joined to the pid-namespace
 // inode with a single "/". It returns "" when either part is unavailable, and an empty
 // node makes the signal guard refuse eviction.
 func nodeID() string {

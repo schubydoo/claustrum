@@ -187,13 +187,12 @@ func main() {
 		// `<path> --version` runnability probe and exit 0, printing nothing if it
 		// runs, __CLI_HUNG__ if the 30s deadline had to kill it, or __CLI_BAD__ if it
 		// is missing or does not run. Claude Desktop drives this to classify a CLI
-		// binary out of band. Matching the reference, unset CLAUDE_RPC_TOKEN so the
-		// probed child never inherits it (measured: the reference strips it). No
+		// binary out of band. Unset CLAUDE_RPC_TOKEN so the probed child never
+		// inherits it. No
 		// SIGINT handler is installed: the reference's -probe-cli is terminated by
 		// SIGINT (exit 130, empty stdout, measured), which is Go's default here.
 		// Ignore SIGPIPE so a closed stdout does not kill the probe mid-write (the
-		// token goes to fd 1, which Go would otherwise let SIGPIPE terminate);
-		// matching the reference, which ignores it in this mode.
+		// token goes to fd 1, which Go would otherwise let SIGPIPE terminate).
 		ignoreSigpipe()
 		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
 		writeProbeCLIResult(os.Stdout, probeCLIRunnable(*probeCLI))
@@ -220,8 +219,7 @@ func main() {
 	switch {
 	case *install:
 		// Ignore SIGPIPE so a closed stdout does not kill -install mid-write while it
-		// prints its progress/result to fd 1; matching the reference, which ignores it
-		// in this mode.
+		// prints its progress/result to fd 1.
 		ignoreSigpipe()
 		// -install only: the cap governs the decompress and download reads, which
 		// no other mode performs. Set before runInstall because the value is read

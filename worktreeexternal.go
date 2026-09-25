@@ -115,12 +115,12 @@ func externalWorktreeVerify(baseRepo, worktreePath string) (reason string, trans
 	admin := filepath.Clean(strings.TrimSpace(line[len(prefix):]))
 	const notOurs = " carries a .git file that does not name this repository's own worktree admin directory"
 	// A worktree admin dir is <gitdir>/worktrees/<name>; if the parent component is not
-	// "worktrees" it cannot be one, and the reference does not even consult baseRepo.
+	// "worktrees" it cannot be one.
 	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
 		return wp + notOurs, false
 	}
-	// It is shaped like a worktree admin — confirm it is baseRepo's OWN. The reference
-	// opens baseRepo's worktrees directory; if that fails it cannot decide → transient.
+	// It is shaped like a worktree admin — confirm it is baseRepo's OWN. If baseRepo's
+	// worktrees directory cannot be opened, the daemon cannot decide → transient.
 	baseWT := filepath.Join(baseRepo, ".git", worktreesSubdir)
 	d, err := os.Open(baseWT)
 	if err != nil {

@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// 7d193f89 creates the worktree directory itself (openat parent + mkdirat leaf)
-// before `git worktree add`, so an unwritable parent fails as
+// 7d193f89 creates the worktree directory itself before `git worktree add`, so
+// an unwritable parent fails as
 // "failed to create worktree directory: mkdirat <leaf>: permission denied" with
 // errorCode mkdir_failed — NOT git's worktree_add_failed, and NOT os.Mkdir's
 // "mkdir <full path>". The `mkdirat <leaf>` wording is the wire-visible bit this

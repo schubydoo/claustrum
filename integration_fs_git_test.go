@@ -213,8 +213,8 @@ func TestSocketGitBattery(t *testing.T) {
 // emit, AND the position each shape appears in. The leading space is positional
 // data: " M f" (unstaged) and "M  f" (staged) differ only in where the letter
 // sits. 7d193f89 passes the porcelain through verbatim, so EVERY line keeps its
-// leading space, the FIRST included. 5db5e4a trimmed the whole blob before
-// splitting, eating the first line's space; re-measured against the reference
+// leading space, the FIRST included. 5db5e4a dropped the first line's leading
+// space; re-measured against the reference
 // daemons 7d193f89 AND 4534d86, both keep it (scratch/probe/attrsrc).
 //
 // Both halves need a fixture. The battery only ever produced "?? dirty.txt" — an
@@ -337,14 +337,12 @@ func TestSocketErrorTextParity(t *testing.T) {
 }
 
 // TestSocketListNonDirErrorText pins the W5 non-directory wording. Since 7d193f89
-// files.list opens with O_DIRECTORY, so a non-directory now fails AT the open with
-// ENOTDIR — `open <p>: not a directory` — rather than reaching the readdir. That
+// files.list answers a non-directory with `open <p>: not a directory`. That
 // is a real wire change from the earlier `readdirent <p>: not a directory`, and
 // claustrum matches it (odirectory_unix.go).
 //
 // Gated to linux: the wording is verified against the reference on linux, and on
 // Windows there is no O_DIRECTORY (the flag is 0, so the failure lands elsewhere).
-// The reference is also Go, so it takes the same stdlib path per-OS.
 func TestSocketListNonDirErrorText(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("O_DIRECTORY open wording verified on linux; Windows has no O_DIRECTORY")
@@ -364,11 +362,10 @@ func TestSocketListNonDirErrorText(t *testing.T) {
 }
 
 // TestSocketListPermissionDeniedErrorText pins the remaining W5 case: an
-// unreadable DIRECTORY reports the open failure ("permission denied"). Under
-// 7d193f89's O_DIRECTORY open this is the ONLY shape that still yields
-// permission-denied — an unreadable regular file now fails the O_DIRECTORY type
-// check first and reports "not a directory" (covered by the non-dir test), so
-// the fixture is a mode-000 directory rather than a file.
+// unreadable DIRECTORY reports the open failure ("permission denied"). Since
+// 7d193f89 this is the ONLY shape that still yields permission-denied. An
+// unreadable regular file now reports "not a directory" (covered by the non-dir
+// test). The fixture is therefore a mode-000 directory rather than a file.
 //
 // Split out because it is the ONLY assertion in this group that depends on the
 // running uid; keeping it inside the shared test made a root environment skip
@@ -550,7 +547,7 @@ func TestSocketTildeExpansion(t *testing.T) {
 	// `worktree add -b` creates the branch before it validates the path — so
 	// anything appended after this point inherits it.
 	// Under 7d193f89 the freshness check ("already exists … fresh directory")
-	// fires before git is ever run, so this now asserts that the REFUSAL echoes
+	// answers instead, so this now asserts that the REFUSAL echoes
 	// the expanded, trailing-separator-cleaned path — the same wire-visibility the
 	// row has always pinned, one refusal earlier. The path expands under the repo
 	// (containment), and expandPath strips the trailing "/" for the tilde form.
@@ -917,10 +914,9 @@ func gitExitOK(repo string, args ...string) bool {
 
 // TestWorktreeRemoveResultShape pins the declared reply shape: field ORDER, and
 // that `error` is omitted when empty. The lenient cases still answer a bare
-// {"success":true}, which is what the committed goldens pin; `error` is populated
-// only on the two pathological paths (cleanup-also-failed, and claustrum's
-// gitTimeout). Asserted directly so the order cannot drift on a path no golden
-// covers.
+// {"success":true}, which is what the committed goldens pin. `error` is populated
+// only on a refusal or failure branch (see worktreeRemoveResult). Asserted
+// directly so the order cannot drift on a path no golden covers.
 func TestWorktreeRemoveResultShape(t *testing.T) {
 	b, err := json.Marshal(worktreeRemoveResult{Success: true, Error: "e"})
 	if err != nil {

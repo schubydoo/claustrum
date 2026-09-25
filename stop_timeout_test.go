@@ -11,8 +11,7 @@ import (
 // -stop must not block forever on a daemon that accepts the connection and then
 // never replies — a wedged daemon, or a stale socket now owned by something
 // else. Measured at 5db5e4a: the reference returns in 2.030s against a silent
-// socket (and its Stop carries a 2e9 ns immediate), while claustrum was still
-// blocked when killed at 45s.
+// socket. claustrum was still blocked when killed at 45s.
 func TestRunStopBoundsTheReplyWait(t *testing.T) {
 	old := stopReplyTimeout
 	stopReplyTimeout = 200 * time.Millisecond

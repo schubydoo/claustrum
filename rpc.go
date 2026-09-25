@@ -29,9 +29,9 @@ const (
 // request is one inbound JSON-RPC line.
 //
 // id is decoded into an interface{}, NOT a json.RawMessage, so the reply carries
-// the id Go re-encodes rather than the bytes the client sent. That is what the
-// reference does — its rpc.Request.ID is an interface{} — and the difference is
-// observable. Probe-measured against 5db5e4a:
+// the id Go re-encodes rather than the bytes the client sent. The reference
+// replies the same way, and the difference is observable. Probe-measured
+// against 5db5e4a:
 //
 //	sent 1.0                   -> reference replies 1
 //	sent 1e2                   -> 100
@@ -39,8 +39,7 @@ const (
 //	sent {"b":1,"a":2}         -> {"a":2,"b":1}          (map, so keys sort)
 //
 // Echoing the raw bytes reproduced none of those. Plain interface{} reproduces
-// all four exactly, including the precision loss — which is itself the evidence
-// the reference does not use a json.Decoder with UseNumber.
+// all four exactly, including the precision loss.
 //
 // Integers, strings, arrays and null were already identical: encoding/json
 // compacts and HTML-escapes a RawMessage too, so "a<b" came back "a\u003cb"
@@ -107,8 +106,8 @@ const methodShutdown = "server.shutdown"
 // dispatch validates and routes one request and returns the response to send.
 // It can still return nil only under a handler panic (the recover in
 // handleRequest leaves resp nil for server.shutdown); every normal path,
-// server.shutdown included, returns a frame — the reference replies {"ok":true}
-// to shutdown and then stops (see handleServer).
+// server.shutdown included, returns a frame — {"ok":true} for shutdown (see
+// handleServer).
 // Stream-producing methods (process.*) use the conn to attach the client.
 func (s *server) dispatch(c *conn, raw []byte) *response {
 	var req request
@@ -126,7 +125,7 @@ func (s *server) dispatch(c *conn, raw []byte) *response {
 	//
 	// The token compare is constant-time (crypto/subtle) so the auth path can't
 	// leak the count of matching leading bytes through response latency — defense-
-	// in-depth (HackerOne #3793038); the local 0600 socket already gates any such
+	// in-depth. The local 0600 socket already gates any such
 	// oracle to the token's own user. The empty-auth short-circuit only fast-rejects
 	// an obvious miss and reveals nothing about the token; ConstantTimeCompare
 	// returns 0 on a length mismatch, so a wrong-length token is still rejected.

@@ -4,7 +4,7 @@ package main
 // -install stream structured output a caller consumes over a pipe (the classification
 // tokens and the install JSON facts, both on fd 1), where Go's default terminates the
 // process on a broken-pipe write; ignoring SIGPIPE lets the write fail with EPIPE
-// instead. Set in exactly these two modes, matching reference build 19f30c46. It is a
+// instead. Set in exactly these two modes. It is a
 // package var so a test can observe that the right modes call it; the OS-specific body
 // is ignoreSigpipeDefault.
 //

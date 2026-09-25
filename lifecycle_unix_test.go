@@ -433,8 +433,7 @@ func TestMainServeDispatch(t *testing.T) {
 // The missing-token-source check runs in the DETACHED CHILD, not the launcher.
 //
 // Measured 2026-08-02 against 5db5e4a with `-serve` and no token flags: the
-// reference exits 1 after 10.07 s reporting its accept timeout, because its
-// parent daemonizes regardless and only the child discovers the problem.
+// reference exits 1 after 10.07 s reporting its accept timeout.
 // claustrum exited in 0.03 s naming the actual cause. Matching costs both the
 // speed and the diagnosis, on purpose.
 //

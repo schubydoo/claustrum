@@ -65,8 +65,8 @@ func TestProbeCLIRunnableClassifies(t *testing.T) {
 }
 
 // TestWriteProbeCLIResult pins the exact stdout the -probe-cli mode writes for each
-// verdict, matching 19f30c46 byte-for-byte: nothing on success (fmt.Fprintln is not
-// called), and the token plus a trailing newline otherwise.
+// verdict, matching 19f30c46 byte-for-byte: nothing on success, and the token plus a
+// trailing newline otherwise.
 func TestWriteProbeCLIResult(t *testing.T) {
 	cases := []struct {
 		v    probeCLIVerdict

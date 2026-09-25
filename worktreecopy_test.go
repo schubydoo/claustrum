@@ -374,14 +374,12 @@ func TestSafeOverlayDest(t *testing.T) {
 // TestWorktreeIncludeCopiesQuotedNames pins that a filename git would C-quote is
 // copied like any other. `git ls-files` C-quotes any path containing a tab, a
 // quote, a backslash or a non-ASCII byte, and the quoted display form names no
-// real file, so a line-delimited read drops it. The reference passes `-z` and
-// splits on NUL, so it copies all four shapes.
+// real file, so a line-delimited read drops it.
 //
-// This test used to assert the opposite, citing a probe. That probe was wrong.
-// Re-measured on an ephemeral linux VM against 19f30c46 AND 90fca6e6, all four
-// shapes are copied by both (scratch/probe/worktreecopy_probe.py, capture in
-// scratch/probe/ref90-capture.md section D). 7d193f89 splits on NUL as well, so
-// the original claim was wrong when it was written.
+// This test used to assert the opposite, citing a probe. Re-measured on an
+// ephemeral linux VM against 19f30c46 AND 90fca6e6, all four shapes are copied
+// by both (scratch/probe/worktreecopy_probe.py, capture in
+// scratch/probe/ref90-capture.md section D).
 func TestWorktreeIncludeCopiesQuotedNames(t *testing.T) {
 	requireGit(t)
 	if runtime.GOOS == "windows" {

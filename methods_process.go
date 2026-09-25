@@ -98,8 +98,8 @@ func (s *server) processStdin(req *request) response {
 	if mp == nil {
 		return errResult(req.ID, codeInvalidParam, "Process not found")
 	}
-	// isLive, not isRunning: 90fca6e6 refuses a write to a process that has already
-	// been reaped, even while it still reports running to the exit-frame path.
+	// isLive, not isRunning: 90fca6e6 refuses a write inside the exit drain, after
+	// the child exits and before its exit frame goes out (measured on a linux VM).
 	applied, duplicate, gap, full, notRunning := mp.applyStdin(data, p.Offset, mp.isLive)
 	if gap {
 		return errResult(req.ID, codeStdinOffsetGap, "stdin offset gap: offset ahead of applied bytes")

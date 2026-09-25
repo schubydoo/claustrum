@@ -172,8 +172,7 @@ func TestDispatchHappyServerMethods(t *testing.T) {
 		t.Errorf("server.ping with mistyped params should still pong, got: %s", got)
 	}
 
-	// server.shutdown replies {"ok":true} and signals stop (the reference answers
-	// this frame then stops; measured 2026-08-27).
+	// server.shutdown replies {"ok":true} and signals stop.
 	if got := dispatchRaw(t, s, `{"jsonrpc":"2.0","id":2,"method":"server.shutdown",`+auth+`}`); got != `{"jsonrpc":"2.0","id":2,"result":{"ok":true}}` {
 		t.Errorf(`shutdown reply = %s, want {"jsonrpc":"2.0","id":2,"result":{"ok":true}}`, got)
 	}

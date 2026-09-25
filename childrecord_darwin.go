@@ -15,8 +15,7 @@ import (
 // run-shaped socket (reference build 19f30c46, darwin). Best-effort and
 // non-destructive: a failure is logged, never fatal. It is a no-op when the socket is
 // not run/<clientId>/ shaped (no runDir), when pid < 2, or when the child's
-// start-time cannot be read — matching the reference, which skips the record without a
-// pid-reuse-safe start-time. The record's identity differs from linux because darwin
+// start-time cannot be read. The record's identity differs from linux because darwin
 // has no /proc: the node is the boot-session UUID, the host is the machine hostname,
 // and the start-times are the process start formatted as a UTC ANSIC timestamp (the
 // same value `ps -o lstart` prints under TZ=UTC) rather than /proc clock ticks. The
@@ -45,8 +44,8 @@ func (m *procManager) recordChild(pid int, argv0 string) {
 	}
 }
 
-// bootSessionUUID returns this boot's session UUID (reference build 19f30c46 darwin:
-// sysctl kern.bootsessionuuid), the darwin analogue of linux's boot_id. It is the
+// bootSessionUUID returns this boot's session UUID (sysctl
+// kern.bootsessionuuid), the darwin analogue of linux's boot_id. It is the
 // record's node value. Returns "" when the sysctl is unreadable. A seam so a test can
 // supply a fixed id without depending on the host.
 var bootSessionUUID = func() string {

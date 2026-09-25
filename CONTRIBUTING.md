@@ -92,7 +92,7 @@ entry summary. Any further content makes the entry render as a `####` heading
 block instead of a bullet. Such content is a second line, or a paragraph after a
 blank line, such as an "Upgrade note". A lone heading among bullets is what
 breaks the changelog. This already shipped twice, in the 1.7.2 and 1.7.3 release
-notes. Fold every detail into that one sentence. `scripts/lint_changesets.py`
+notes. Fold every detail into that one line. Several sentences on it are fine. `scripts/lint_changesets.py`
 enforces the rule, in CI and in the `make hooks` pre-commit hook.
 
 On a user-facing PR, add a fragment. Run `knope document-change`, or create

@@ -25,8 +25,8 @@ func TestBoundedStderrHead(t *testing.T) {
 	}
 }
 
-// 7d193f89 caps git.worktree_create's failure stderr at 512 bytes (its bounded
-// stderr sink), so a long git error does not balloon the frame. A 600-char invalid
+// 7d193f89 caps git.worktree_create's failure stderr at 512 bytes, so a long git
+// error does not balloon the frame. A 600-char invalid
 // branch name makes `git worktree add` fail with >512 bytes of stderr; the reference
 // and claustrum both answer "git worktree add failed: " + a 512-byte head (total
 // 537). Measured byte-identical against 7d193f89 on an ephemeral VM.

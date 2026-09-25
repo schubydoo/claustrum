@@ -27,8 +27,8 @@ import (
 // listeners closed, clients dropped, and child process groups stopped unless
 // -keep-children), never a bare exit.
 
-// Orphan-exit timing. Package vars so a test can shrink them; the reference uses a 60s
-// check interval and a 600s (10 min) grace.
+// Orphan-exit timing. These are claustrum's own values and are not probe-measured.
+// Package vars so a test can shrink them.
 var (
 	orphanCheckInterval = 60 * time.Second
 	orphanGrace         = 10 * time.Minute

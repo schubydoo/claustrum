@@ -8,12 +8,11 @@ import (
 	"testing"
 )
 
-// Reference build 90fca6e6 widened the "this process is gone" test in the reap's
-// /proc read. Before, the state letter alone decided it: Z or X meant gone. Now a
+// claustrum widened the "this process is gone" test in the reap's /proc read. Before, the state letter alone decided it: Z or X meant gone. Now a
 // vsize of 0 counts as gone too, because a process whose address space is already
 // torn down reports one, and the state letter alone reads it as alive.
 //
-// Pointer-class: read from that build rather than measured. The reap's 5-minute
+// That rule is claustrum's own and is not probe-measured. The reap's 5-minute
 // age gate makes staging it live impractical.
 //
 // claustrum reads vsize from stat field 23, so its own field-count floor rises
@@ -28,8 +27,7 @@ func statLine(pid int, state, vsize string) string {
 }
 
 // TestRealReadLiveProcVsizeZeroIsGone pins the new gone test. A state-R process with
-// a vsize of 0 has no address space left, so the reference reads it as gone and
-// claustrum must too.
+// a vsize of 0 has no address space left, so claustrum reads it as gone.
 func TestRealReadLiveProcVsizeZeroIsGone(t *testing.T) {
 	_, mk, _ := fakeProc(t)
 
@@ -40,7 +38,7 @@ func TestRealReadLiveProcVsizeZeroIsGone(t *testing.T) {
 	}
 
 	// The new arm. Without the fix claustrum answers procAlive here, and the reap
-	// then treats a process the reference calls gone as a live orphan.
+	// then treats a process that is gone as a live orphan.
 	mk(71, "stat", statLine(71, "R", "0"))
 	if lp := realReadLiveProc(71, false); lp.state != procGone {
 		t.Errorf("state R with vsize 0: state = %d, want procGone", lp.state)

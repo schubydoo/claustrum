@@ -177,7 +177,7 @@ func TestExpandPathsCoversEveryPathField(t *testing.T) {
 	if sp.Cwd != under("c") {
 		t.Errorf("spawnParams.Cwd = %q", sp.Cwd)
 	}
-	// Command and ID are not path params in the reference; leave them alone.
+	// Command and ID are not path params, so leave them alone.
 	if sp.Command != "~/not-a-path" || sp.ID != "~id" {
 		t.Errorf("spawnParams touched a non-path field: %+v", sp)
 	}
