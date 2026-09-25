@@ -22,13 +22,17 @@ var capabilityMethods = []string{
 // appended server.instance_id (the capabilities reply now carries a per-boot instanceId),
 // always last and on every OS. 19f30c46 inserted git.worktree_create.existingBranch
 // after timeoutMs and before external_root (worktree_create can attach an
-// already-existing branch), present on every OS like timeoutMs. The array itself is
-// always emitted.
+// already-existing branch), present on every OS like timeoutMs. f6010b97 inserted
+// process.spawn.shellAgentSocket after existingBranch and before external_root
+// (process.spawn hands a child the login shell's SSH_AUTH_SOCK, and takes a
+// disableShellAgentSocket param), present on every OS. claustrum's Windows
+// spawn never probes. The array itself is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
 	"git.worktree_create.timeoutMs",
 	"git.worktree_create.existingBranch",
+	"process.spawn.shellAgentSocket",
 }, externalRootCapabilityFeatures...), "server.instance_id")
 
 func (s *server) handleServer(c *conn, req *request) *response {

@@ -412,7 +412,7 @@ func TestSpawnClosesTrampolinePipeOnConstructionFailure(t *testing.T) {
 	}
 	m := newTestProcManager(t)
 	m.runDir = "/x/run/c0ffee01" // run-shaped -> a resolved command is trampolined
-	if _, err := m.spawn(nil, "P", "/bin/sh", []string{"-c", "true"}, "", nil); err == nil {
+	if _, err := m.spawn(nil, "P", "/bin/sh", []string{"-c", "true"}, "", nil, false); err == nil {
 		t.Fatal("spawn succeeded despite a stdout pipe failure")
 	}
 	if errR == nil || errW == nil {

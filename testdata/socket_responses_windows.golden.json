@@ -55,6 +55,7 @@
         "git.status.baseRepo",
         "git.worktree_create.timeoutMs",
         "git.worktree_create.existingBranch",
+        "process.spawn.shellAgentSocket",
         "server.instance_id"
       ]
     }

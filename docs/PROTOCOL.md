@@ -547,7 +547,7 @@ member of the `plugins.*` namespace.
 | method | params | result |
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
-| `server.capabilities` | none | `{"version":"<id>","methods":[…19…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the 19th method, appended last on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `instanceId` and `startedAt` are present on every OS |
+| `server.capabilities` | none | `{"version":"<id>","methods":[…19…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","process.spawn.shellAgentSocket","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the 19th method, appended last on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `process.spawn.shellAgentSocket`, `instanceId` and `startedAt` are present on every OS |
 | `server.shutdown` | none | `{"ok":true}`. The daemon replies, then stops, and the connection closes. Delivery races the teardown, so the reply is best-effort on the wire. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
@@ -568,8 +568,11 @@ member of the `plugins.*` namespace.
   `git.worktree.external_root` is present. On Windows it is omitted. The reference
   gates the external-worktree capability off on Windows, measured against
   `7d193f89`, and drops the feature from its Windows capabilities frame, so
-  claustrum matches. `git.worktree_create.timeoutMs` and
-  `git.worktree_create.existingBranch` are present on every OS.
+  claustrum matches. `f6010b97` inserted `process.spawn.shellAgentSocket` after
+  `git.worktree_create.existingBranch`, because `process.spawn` can hand a child
+  the login shell's SSH agent socket. `git.worktree_create.timeoutMs`,
+  `git.worktree_create.existingBranch` and `process.spawn.shellAgentSocket` are
+  present on every OS.
 - `server.shutdown` is not authenticated. See [Authentication](#authentication).
 
 ### files.* (param: `path`)
@@ -991,7 +994,7 @@ The client supplies its own `id`, which is any string. The daemon delivers outpu
 as id-less stream notifications, and it buffers them for a later replay.
 
 #### process.spawn
-`{id,command[,args][,cwd][,env][,wantPid]}` → `{"success":true}`, then stream frames
+`{id,command[,args][,cwd][,env][,disableShellAgentSocket][,wantPid]}` → `{"success":true}`, then stream frames
 - `args`: string[]. `env`: `{KEY:VAL}`, merged over the daemon environment.
 - Missing `id` → `-32602 Process ID is required`. Missing `command` →
   `-32602 Command is required`.
@@ -1012,6 +1015,32 @@ as id-less stream notifications, and it buffers them for a later replay.
   the `client` kill reason, and the session-key rules above are measured against
   the reference. claustrum also serializes concurrent spawns of one session, which
   matches an equivalent per-key lock seen in the reference.
+- The SSH agent hand-off is `f6010b97` parity on linux and darwin, advertised as
+  `process.spawn.shellAgentSocket`, and measured on both. The daemon builds the
+  child env from its own env, the login-shell PATH and the caller's `env`. If that
+  env has no `SSH_AUTH_SOCK` entry, the child gets `SSH_AUTH_SOCK=<socket>` after
+  the caller's entries. The socket is what the user's login shell exports.
+  - An entry that is already present wins, even with an empty value. A caller can
+    therefore skip the hand-off for one spawn with `"SSH_AUTH_SOCK":""`.
+  - `"disableShellAgentSocket":true` also skips it. A non-bool value answers
+    `-32602 Invalid params`, and `null` counts as `false`.
+  - The daemon runs `<shell> -l -i -c …` on the first spawn that needs a socket,
+    not at startup. The shell choice is the one the PATH extraction uses: `$SHELL`
+    when it is executable, then `/bin/zsh`, `/bin/bash` and `/bin/sh`. The run has
+    a 4 s deadline, and a shell that the kill cannot end is given up on at 5 s. The
+    spawn that runs the shell therefore answers about 4 s later when the shell
+    does not exit, and about 5 s later when the kill cannot end it.
+  - A socket that does not accept a connection within 250 ms is not handed on. The
+    daemon caches the answer and runs the login shell again only 10 minutes after
+    the last run. After 3 failed runs in a row it stops asking. A connection
+    attempt that has not returned after 500 ms ends the hand-off for the life of
+    the daemon.
+  - A spawn never fails because of this step. At the default log level, each
+    login-shell run and each give-up writes a `[shellenv]` line to the daemon log.
+    A spawn served from the cache, or skipped, writes none.
+  - On Windows the capability and the param exist, but spawn runs no login shell
+    and adds no `SSH_AUTH_SOCK`. Measured with a Git bash `$SHELL` whose profile
+    exports a live socket: neither daemon starts it.
 - `wantPid` is a claustrum-only opt-in, CT-1. With `"wantPid":true` the reply gains
   two fields after `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
   `pid` is the child's OS pid. `startTime` is the daemon's wall clock in epoch

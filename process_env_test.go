@@ -66,7 +66,7 @@ func TestSpawnInheritsDaemonChildMarker(t *testing.T) {
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")
 	if _, err := m.spawn(c, "envcheck", printenv,
-		[]string{"CLAUDE_SSH_DAEMON_CHILD"}, "", env); err != nil {
+		[]string{"CLAUDE_SSH_DAEMON_CHILD"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if got := firstStdout(t, frames); got != "CLAUDE_SSH_DAEMON_CHILD=1" {
@@ -85,7 +85,7 @@ func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 	c, frames := pipeConn(t)
 	printenv, env := helperCommand(t, "printenv")
 	if _, err := m.spawn(c, "tokencheck", printenv,
-		[]string{"CLAUDE_RPC_TOKEN"}, "", env); err != nil {
+		[]string{"CLAUDE_RPC_TOKEN"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// An empty value means the var was absent; anything else means it leaked.

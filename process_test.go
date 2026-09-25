@@ -235,7 +235,7 @@ func TestSpawnEmitsOperationalLogs(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	echo, env := helperCommand(t, "echo")
-	if _, err := m.spawn(c, "lg", echo, []string{"hi"}, "", env); err != nil {
+	if _, err := m.spawn(c, "lg", echo, []string{"hi"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// Wait for the exit frame so the exit log line has been emitted.
@@ -384,7 +384,7 @@ func TestSpawnRespectsCwd(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	pwd, env := helperCommand(t, "pwd")
-	if _, err := m.spawn(c, "cwd", pwd, nil, tmp, env); err != nil {
+	if _, err := m.spawn(c, "cwd", pwd, nil, tmp, env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// Canonicalize the child's report the same way as want: on Windows the
@@ -403,7 +403,7 @@ func TestPumpStreamSkipsEmptyReads(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	echo, env := helperCommand(t, "echo")
-	if _, err := m.spawn(c, "em", echo, []string{"hi"}, "", env); err != nil {
+	if _, err := m.spawn(c, "em", echo, []string{"hi"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	deadline := time.After(3 * time.Second)
@@ -429,7 +429,7 @@ func TestWriteStdinReturnValue(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, _ := pipeConn(t)
 	cat, env := helperCommand(t, "cat")
-	if _, err := m.spawn(c, "cat", cat, nil, "", env); err != nil {
+	if _, err := m.spawn(c, "cat", cat, nil, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if !m.writeStdin("cat", []byte("hello\n")) {
@@ -661,7 +661,7 @@ func TestKillAllTerminatesLiveProcess(t *testing.T) {
 	m := newTestProcManager(t)
 	c, frames := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(c, "sl", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c, "sl", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	m.killAll()
@@ -688,7 +688,7 @@ func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
 
 	c1, _ := pipeConn(t)
 	sleep, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(c1, "dup", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c1, "dup", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("first spawn: %v", err)
 	}
 	old := m.get("dup")
@@ -697,7 +697,7 @@ func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
 	}
 
 	c2, _ := pipeConn(t)
-	if _, err := m.spawn(c2, "dup", sleep, []string{"60"}, "", env); err != nil {
+	if _, err := m.spawn(c2, "dup", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("second spawn with duplicate id: %v (both spawns must succeed)", err)
 	}
 
@@ -807,7 +807,7 @@ func TestMetricsCountProcessOps(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, frames := pipeConn(t)
 	cat, env := helperCommand(t, "cat")
-	if _, err := m.spawn(c, "mc", cat, nil, "", env); err != nil {
+	if _, err := m.spawn(c, "mc", cat, nil, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if !m.writeStdin("mc", []byte("hello\n")) {
@@ -920,7 +920,7 @@ func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
 		want := errors.New("pipe: too many open files")
 		osPipe = func() (*os.File, *os.File, error) { return nil, nil, want }
 		m := newTestProcManager(t)
-		_, err := m.spawn(nil, "P", "irrelevant", nil, "", nil)
+		_, err := m.spawn(nil, "P", "irrelevant", nil, "", nil, false)
 		if !errors.Is(err, want) {
 			t.Fatalf("spawn error = %v, want the pipe error", err)
 		}
@@ -939,7 +939,7 @@ func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
 			return nil, nil, errors.New("pipe: too many open files")
 		}
 		m := newTestProcManager(t)
-		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
+		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil, false); err == nil {
 			t.Fatal("spawn succeeded despite a pipe failure")
 		}
 		if !closed(first[0]) || !closed(first[1]) {
@@ -958,7 +958,7 @@ func TestSpawnClosesPipesOnConstructionFailure(t *testing.T) {
 			return nil, errors.New("stdinpipe: too many open files")
 		}
 		m := newTestProcManager(t)
-		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil); err == nil {
+		if _, err := m.spawn(nil, "P", "irrelevant", nil, "", nil, false); err == nil {
 			t.Fatal("spawn succeeded despite a stdin pipe failure")
 		}
 		if len(made) != 4 {
@@ -1190,7 +1190,7 @@ func TestSpawnConfinesTheDrainGrace(t *testing.T) {
 
 	m := newTestProcManager(t)
 	exe, env := helperCommand(t, "orphan-stdout")
-	if _, err := m.spawn(&conn{nc: a}, "GRACE", exe, []string{"3"}, "", env); err != nil {
+	if _, err := m.spawn(&conn{nc: a}, "GRACE", exe, []string{"3"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	// The child exits at once; its grandchild holds stdout, so by now the waiter

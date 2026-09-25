@@ -39,6 +39,10 @@ type spawnParams struct {
 	// daemon ignores the unknown field (bindParams tolerates it), so the param is
 	// safe to send unconditionally.
 	WantPid bool `json:"wantPid"`
+	// DisableShellAgentSocket turns off the login-shell SSH_AUTH_SOCK hand-off for
+	// this spawn (see shellagent.go). A non-bool value fails the decode, so it
+	// answers -32602 like any other mistyped param; null is accepted as false.
+	DisableShellAgentSocket bool `json:"disableShellAgentSocket"`
 }
 
 func (s *server) processSpawn(c *conn, req *request) response {
@@ -52,7 +56,7 @@ func (s *server) processSpawn(c *conn, req *request) response {
 	if p.Command == "" {
 		return errResult(req.ID, codeInvalidParam, "Command is required")
 	}
-	mp, err := s.procs.spawn(c, p.ID, p.Command, p.Args, p.Cwd, p.Env)
+	mp, err := s.procs.spawn(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}

@@ -27,6 +27,7 @@ Claustrum is one Go binary. A flag selects the mode. The build is static
 | `pipetransport_windows.go` / `pipetransport_other.go` | the optional Windows named-pipe listener (`startPipeTransport` via go-winio, owner-only DACL) vs the non-Windows no-op stub + `honorListenPipe` warning |
 | `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS) |
 | `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / no-op (Windows) |
+| `shellagent.go` / `shellagent_unix.go` / `shellagent_windows.go` | `process.spawn` SSH agent hand-off: the login shell's `SSH_AUTH_SOCK`, checked and cached (Unix) / no-op (Windows) |
 
 The JSON-RPC surface is the same on every OS. Only the `*_unix.go` /
 `*_windows.go` files are different.
@@ -166,8 +167,8 @@ children it spawns.
   the pipe, the daemon publishes the chosen pipe name to `rpc.pipe` beside the
   socket. It removes `rpc.pipe` on graceful shutdown. The transport is strictly
   additive, and the socket path does not change.
-- The daemon makes no outbound network connections (its only dial is the
-  orphan-exit loopback self-probe to its own `AF_UNIX` socket, not network egress). It opens no inbound
+- The daemon makes no outbound network connections. Every dial it makes is to a
+  local `AF_UNIX` socket. It opens no inbound
   listener beyond the socket unless the operator opts into `-metrics-addr` (TCP)
   or `-listen-pipe` (a local, owner-only Windows named pipe).
 

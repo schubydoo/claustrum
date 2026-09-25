@@ -50,7 +50,7 @@ func TestReattachSupersedesThePreviousConnection(t *testing.T) {
 
 	old, _ := activityPipeConn(t)
 	exe, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(old, "sup", exe, []string{"30"}, "", env); err != nil {
+	if _, err := m.spawn(old, "sup", exe, []string{"30"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 
@@ -89,7 +89,7 @@ func TestReattachOnTheSameConnectionDoesNotSupersede(t *testing.T) {
 
 	c, _ := activityPipeConn(t)
 	exe, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(c, "same", exe, []string{"30"}, "", env); err != nil {
+	if _, err := m.spawn(c, "same", exe, []string{"30"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if _, found, _, _, _, _ := m.reattach(c, "same", 0); !found {
@@ -109,7 +109,7 @@ func TestSupersededConnectionIsNotClosedTwice(t *testing.T) {
 
 	old, ac := activityPipeConn(t)
 	exe, env := helperCommand(t, "sleep")
-	if _, err := m.spawn(old, "twice", exe, []string{"30"}, "", env); err != nil {
+	if _, err := m.spawn(old, "twice", exe, []string{"30"}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	fresh, _ := activityPipeConn(t)

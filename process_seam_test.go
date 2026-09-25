@@ -42,7 +42,7 @@ func TestSpawnSurvivesConfinementFailure(t *testing.T) {
 	var p *managedProc
 	out := captureLog(t, func() {
 		var err error
-		if p, err = m.spawn(c, "confine", echo, []string{"hi"}, "", env); err != nil {
+		if p, err = m.spawn(c, "confine", echo, []string{"hi"}, "", env, false); err != nil {
 			t.Fatalf("spawn = %v, want success: a confinement failure is not fatal", err)
 		}
 	})

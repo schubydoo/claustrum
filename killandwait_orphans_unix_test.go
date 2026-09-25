@@ -36,7 +36,7 @@ func TestKillAndWaitEscalationReapsOrphanedGroup(t *testing.T) {
 	m := newTestProcManager(t)
 	c, _ := pipeConn(t)
 
-	if _, err := m.spawn(c, "orphans", exe, []string{pidFile}, "", env); err != nil {
+	if _, err := m.spawn(c, "orphans", exe, []string{pidFile}, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	gpid := waitPIDFile(t, pidFile)

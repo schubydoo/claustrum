@@ -49,7 +49,7 @@ func TestSupersedeSessionEmptyKeyIsNoop(t *testing.T) {
 	t.Cleanup(m.killAll)
 	c, _ := pipeConn(t)
 	cat, env := helperCommand(t, "cat")
-	p, err := m.spawn(c, "victim", cat, nil, "", env)
+	p, err := m.spawn(c, "victim", cat, nil, "", env, false)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
