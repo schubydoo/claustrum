@@ -4,6 +4,23 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.13.0 (2026-09-26)
+
+[Compare with 1.12.0](https://github.com/schubydoo/claustrum/compare/v1.12.0...v1.13.0)
+
+### Features
+
+- Every `git.*` method now checks the repository's git directory before git runs and refuses one that is not laid out as git writes it, as reference build `f6010b97` does. ([#424](https://github.com/schubydoo/claustrum/pull/424))
+- `git.worktree_create` now matches reference build `f6010b97`: it can start from `origin/<sourceBranch>`, rolls back on a failed checkout or a timeout, and quotes git errors the same way. ([#419](https://github.com/schubydoo/claustrum/pull/419))
+- On Linux and macOS, `process.spawn` now passes the login shell's `SSH_AUTH_SOCK` to a child that has none, as reference build `f6010b97` does. The new `disableShellAgentSocket` param turns this off. ([#410](https://github.com/schubydoo/claustrum/pull/410))
+- `git.worktree_create` now copies `.worktreeinclude` and `.claude/` files the way reference build `f6010b97` does, including its directory scan and its batching of long git calls. ([#420](https://github.com/schubydoo/claustrum/pull/420))
+
+### Fixes
+
+- A client that closes right after a bad line now gets its parse or auth error, and `-bridge` keeps relaying replies after stdin closes. ([#416](https://github.com/schubydoo/claustrum/pull/416))
+- `-stop` now prints its outcome and, on Linux and macOS, stops a live daemon that holds the socket's lock, as reference build `f6010b97` does. ([#417](https://github.com/schubydoo/claustrum/pull/417))
+- Without `worktreeRoot`, `git.worktree_remove` no longer deletes `worktreePath` when `baseRepo` holds no git repository. It answers an error instead, as reference build `f6010b97` does. ([#411](https://github.com/schubydoo/claustrum/pull/411))
+
 ## 1.12.0 (2026-09-18)
 
 [Compare with 1.11.1](https://github.com/schubydoo/claustrum/compare/v1.11.1...v1.12.0)
