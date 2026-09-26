@@ -126,15 +126,25 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `wipesHomeDir` is the active home guard. Both branches run it before the
       delete.
     - When `git.worktree_create` rolls back a worktree, it deletes
-      `worktreePath`. The rollback runs in two cases. The first case is a failed
-      `git worktree add`: the leaf it made is removed, so a retry at the same
-      path with a fresh branch succeeds. An add cut short by the `timeoutMs` of
-      the caller answers `timeout` and leaves the leaf. The second case is a
-      post-checkout drain that exceeded the `timeoutMs` of the caller.
-      `wipesHomeDir` guards both deletes as defense-in-depth behind the
+      `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
+      it runs no git call and removes the leaf only if the leaf is an empty
+      directory. The second rollback follows a successful add. It runs when the
+      `timeoutMs` of the caller expired during the add, the checkout or the copy
+      step. It also runs after a post-checkout drain that exceeded that
+      `timeoutMs`, and after a failed read-tree checkout. It deletes the entries
+      of the leaf in the order that the directory read returns them, and it
+      stops at the first failure. Then it deletes the registration and the
+      created branch, and then the empty leaf. A step that fails appends a
+      measured undo text to the frame.
+      `wipesHomeDir` guards every delete as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint
-      identity of the leaf again, so a swap during the add or the drain cannot
-      redirect the delete.
+      identity of the leaf again, so a swap while create runs cannot redirect
+      a delete. Create holds the leaf and its parent open until it answers,
+      so a replacement cannot reuse the identity of the leaf. On Windows both
+      handles share delete access, so they do not block these deletes.
+      The empty-leaf rmdir tests only two things: the path still resolves to
+      the leaf, and the parent is still the held parent. An rmdir cannot
+      delete content.
     - `-install` deletes `filepath.Join(cliDir, cliVersion)`, which is operator
       input. The single-path-component rule of D6 guards it instead, not
       `wipesHomeDir`.

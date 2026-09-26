@@ -62,9 +62,11 @@ func worktreeExternalContainmentRefusal(worktreeRoot, worktreePath, verb string)
 // that carries the create out of the chosen location. verb is "create" or "remove"
 // (create carries errorCode unsafe_path; remove carries none). Measured against
 // 7d193f89: this runs after the ownership/writability checks on create, and before
-// the registration verify (externalWorktreeVerify) on remove.
+// the registration verify (externalWorktreeVerify) on remove. The <directory> comes
+// from the cleaned path, so a worktreePath that ends in a slash names its real
+// parent (see externalWorktreeDirNotEmptyRefusal).
 func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
-	dir := filepath.Dir(worktreePath)
+	dir := filepath.Dir(filepath.Clean(worktreePath))
 	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Sprintf("refusing to %s worktree: %s is a symbolic link; the directory "+
 			"under the worktree location must be a real directory", verb, dir)
@@ -149,8 +151,12 @@ func externalWorktreeVerify(baseRepo, worktreePath string) (reason string, trans
 // Returns "" when the directory is absent, empty, or already marked. The example
 // filename is the first entry in os.ReadDir's sorted order — wire-visible, measured
 // byte-for-byte against 7d193f89.
+//
+// The <directory> comes from the cleaned path. For "R/proj/w1/", filepath.Dir of
+// the raw path is "R/proj/w1", not "R/proj". f6010b97 and 90fca6e6 refuse that
+// create and name "R/proj" (measured on Linux and macOS VMs).
 func externalWorktreeDirNotEmptyRefusal(worktreePath string) string {
-	dir := filepath.Dir(worktreePath)
+	dir := filepath.Dir(filepath.Clean(worktreePath))
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) == 0 {
 		return ""

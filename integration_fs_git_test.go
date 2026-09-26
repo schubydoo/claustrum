@@ -717,15 +717,15 @@ func TestSocketGitRepoDetection(t *testing.T) {
 	assertGolden(t, "socket_git_repo_detection.golden.json", encodeGolden(t, got))
 }
 
-// TestSocketWorktreeSourceBranch pins sweep gap W4: a sourceBranch is honoured
-// ONLY when it names an existing local branch. Anything else is ignored and the
-// worktree is created off HEAD, with the fallback reported in sourceBranch —
-// where claustrum used to fail the whole request with git's "invalid reference".
-//
-// The accepted set is narrower than "a resolvable rev", which is why the fix
-// tests refs/heads/<source> existence rather than `rev-parse --verify`. Measured
-// against the reference at 5db5e4a; "diverged" is accepted although it is not an
-// ancestor of HEAD.
+// TestSocketWorktreeSourceBranch pins sweep gap W4. A sourceBranch that resolves
+// under neither refs/heads/ nor refs/remotes/origin/ is ignored. The worktree is
+// created off HEAD, with the fallback reported in sourceBranch. Before, claustrum
+// failed the whole request with git's "invalid reference". HEAD, a full ref
+// name, a tag, and origin/<name> all fall back here, because this fixture has no
+// refs/remotes/origin/HEAD, refs/remotes/origin/v1 or similar. "diverged" is used
+// although it is not an ancestor of HEAD. Measured against the reference at
+// 5db5e4a. The origin candidate and the start-commit choice are pinned in
+// worktreesource_test.go.
 func TestSocketWorktreeSourceBranch(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
@@ -988,8 +988,7 @@ func TestSocketWorktreeCreatePopulates(t *testing.T) {
 //	             fatal: a branch named 'dup' already exists"
 //	Output()  : "git worktree add failed: "
 //
-// Switching the shared git() helper to Output() empties this frame, which is why
-// that helper stays on CombinedOutput. The assertion is on the substring git
+// The assertion is on the substring git
 // itself emits, not the full string, so a git that reworks its wording still
 // fails the empty-tail regression rather than the phrasing.
 func TestSocketWorktreeCreateFailureCarriesGitStderr(t *testing.T) {

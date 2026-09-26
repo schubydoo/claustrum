@@ -86,10 +86,11 @@ privileged as the daemon's user. Three of those paths reach a recursive delete
 - When git fails for a non-locked reason, `git.worktree_remove` deletes the
   worktree path. A locked worktree is refused, not deleted.
 - When `git.worktree_create` rolls back a worktree, it deletes the worktree path.
-  That rollback happens after a failed `git worktree add`. It also happens after
-  the post-checkout drain exceeds the caller `timeoutMs`. An add that the caller's
-  `timeoutMs` cut short is the exception. Such an add answers `timeout` and leaves
-  the leaf.
+  That rollback happens when the caller `timeoutMs` expires during a successful
+  add, the checkout or the copy step. It also happens after the post-checkout
+  drain exceeds the caller `timeoutMs`, and after a failed read-tree checkout.
+  After a failed `git worktree add`, the daemon only removes the worktree path
+  if it is an empty directory. That removal cannot delete content.
 
 `wipesHomeDir` (`homeguard.go`) refuses any target that is or contains the home
 directory. It is an always-on guard (D2). See

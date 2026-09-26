@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // mkdirWorktreeLeaf creates the final worktree directory component (the caller has
@@ -27,4 +28,24 @@ func mkdirWorktreeLeaf(worktreePath string) error {
 		return err
 	}
 	return nil
+}
+
+// rmdirWorktreeLeaf removes worktreePath only if it is an empty directory. rmdir(2)
+// never deletes a file or a directory that holds an entry, so the emptiness test and
+// the removal are one step. undoFailedAdd uses it.
+func rmdirWorktreeLeaf(worktreePath string) error {
+	return syscall.Rmdir(worktreePath)
+}
+
+// holdWorktreeDir opens the directory at path and returns the handle, or nil when
+// the open fails. checkpointCreatedWorktree holds the leaf and its parent open this
+// way until the create answers. An open handle keeps a deleted directory's inode
+// allocated, so a new directory at the same path gets a new inode number. A held
+// handle does not stop a delete on unix.
+func holdWorktreeDir(path string) *os.File {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	return f
 }

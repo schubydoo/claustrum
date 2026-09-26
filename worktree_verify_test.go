@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -31,6 +30,7 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	cp := checkpointCreatedWorktree(wt)
+	defer cp.release()
 	if cp.info == nil {
 		t.Fatal("checkpoint did not capture the leaf")
 	}
@@ -66,19 +66,17 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	//     os.SameFile reports the two identical (measured: flaky on the ubuntu CI runner).
 	//     Creating the replacement ALONGSIDE the original (below) forces a distinct inode,
 	//     making the check deterministic on POSIX rather than luck-of-the-allocator.
-	//   - Windows: os.SameFile does NOT reliably distinguish two directories here at all —
-	//     measured, the windows-latest runner reports the swapped directory as identical
-	//     even when the two coexisted. So the identity check, and this sub-case, is
-	//     POSIX-only; production verifyCreatedWorktree inherits that Windows limitation
-	//     on its os.SameFile check.
-	if runtime.GOOS == "windows" {
-		return
-	}
+	//   - Windows: an identity from os.Stat of a path is read from the path only when
+	//     os.SameFile runs, so a checkpoint taken that way read the swapped directory
+	//     too, and the windows-latest runner reported the two as identical. The
+	//     checkpoint now takes the identity from its held leaf handle, which reads it
+	//     at once, so this sub-case runs on Windows too.
 	orig := filepath.Join(base, "e", "wt")
 	if err := os.MkdirAll(orig, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	origCP := checkpointCreatedWorktree(orig)
+	defer origCP.release()
 	if origCP.info == nil {
 		t.Fatal("checkpoint did not capture the leaf")
 	}
@@ -97,48 +95,118 @@ func TestVerifyCreatedWorktree(t *testing.T) {
 	}
 }
 
-// undoCreatedWorktree is git.worktree_create's rollback. The RPC reaches it on every
-// failed `git worktree add` and on a post-checkout drain overrun, but neither path
-// takes its three guarded steps — a failed add leaves no registration to prune, never
-// names home, and leaves the checkpointed leaf intact — so those steps are exercised
-// at the function seam. Every path handed to it here — including the stand-in HOME —
-// is inside a t.TempDir(), because two of the steps end in os.RemoveAll.
-func TestUndoCreatedWorktree(t *testing.T) {
-	// A leftover registration is pruned when it points back at this worktree and
-	// resolves strictly inside <repo>/.git/worktrees; the leaf itself then goes too.
-	t.Run("prunes_the_registration", func(t *testing.T) {
-		base := t.TempDir()
-		repo := filepath.Join(base, "repo")
-		wt := filepath.Join(repo, ".claude", "worktrees", "wt")
-		admin := filepath.Join(repo, ".git", "worktrees", "wt")
-		if err := os.MkdirAll(wt, 0o755); err != nil {
+// fakeRegistration makes the two halves of a genuine worktree registration under
+// repo: the leaf's `.git` pointer and the admin dir's `gitdir` record pointing back.
+// No git runs. It returns the admin dir.
+func fakeRegistration(t *testing.T, repo, wt string) string {
+	t.Helper()
+	admin := filepath.Join(repo, ".git", "worktrees", filepath.Base(wt))
+	for _, d := range []string{wt, admin} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(admin, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		// The two halves of a genuine registration: the worktree's `.git` pointer and
-		// the admin dir's `gitdir` record pointing back at it.
-		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+admin+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(admin, "gitdir"), []byte(filepath.Join(wt, ".git")+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+admin+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(admin, "gitdir"), []byte(filepath.Join(wt, ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return admin
+}
 
-		undoCreatedWorktree(repo, wt, "", worktreeCheckpoint{})
-
-		if _, err := os.Stat(admin); err == nil {
-			t.Errorf("the registration at %s survived the rollback", admin)
+// undoFailedAdd is the rollback of an add that git reported as failed. It runs no git
+// call and removes the leaf only if the leaf is an empty directory (measured against
+// f6010b97 and 90fca6e6). Every path handed to it here, including the stand-in HOME,
+// is inside a t.TempDir().
+func TestUndoFailedAdd(t *testing.T) {
+	t.Run("removes_an_empty_leaf", func(t *testing.T) {
+		wt := filepath.Join(t.TempDir(), "wt")
+		if err := os.Mkdir(wt, 0o755); err != nil {
+			t.Fatal(err)
 		}
-		if _, err := os.Stat(wt); err == nil {
-			t.Errorf("the worktree leaf at %s survived the rollback", wt)
+		cp := checkpointCreatedWorktree(wt)
+		defer cp.release()
+		undoFailedAdd(wt, cp)
+		if _, err := os.Lstat(wt); !os.IsNotExist(err) {
+			t.Errorf("the empty leaf survived: Lstat err %v", err)
 		}
 	})
 
-	// The always-on home guard (D2) is re-applied here because the rollback runs
-	// seconds after the create's own containment did. A worktreePath that IS the home
-	// directory stops before any delete.
+	// A failed add that left content keeps the leaf, the content and the registration.
+	t.Run("keeps_a_leaf_with_content", func(t *testing.T) {
+		repo := filepath.Join(t.TempDir(), "repo")
+		wt := filepath.Join(repo, ".claude", "worktrees", "wt")
+		admin := fakeRegistration(t, repo, wt)
+		cp := checkpointCreatedWorktree(wt)
+		defer cp.release()
+		undoFailedAdd(wt, cp)
+		for _, p := range []string{filepath.Join(wt, ".git"), admin} {
+			if _, err := os.Stat(p); err != nil {
+				t.Errorf("%s: %v, want it kept", p, err)
+			}
+		}
+	})
+
+	// The always-on home guard (D2). An empty home directory passes the rmdir, so
+	// only the guard keeps it.
+	t.Run("refuses_the_home_directory", func(t *testing.T) {
+		home := filepath.Join(t.TempDir(), "home")
+		if err := os.Mkdir(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(homeEnvVar(), home)
+		undoFailedAdd(home, worktreeCheckpoint{})
+		if _, err := os.Stat(home); err != nil {
+			t.Errorf("the rollback removed the home directory: %v", err)
+		}
+	})
+
+	// The path no longer resolves to where the leaf was made (an ancestor swapped for
+	// a symlink). The empty directory it leads to is left alone.
+	t.Run("refuses_a_moved_path", func(t *testing.T) {
+		wt := filepath.Join(t.TempDir(), "wt")
+		if err := os.Mkdir(wt, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cp := checkpointCreatedWorktree(wt)
+		defer cp.release()
+		if cp.info == nil {
+			t.Fatal("checkpoint did not capture the leaf")
+		}
+		cp.resolved = filepath.Join(filepath.Dir(cp.resolved), "elsewhere")
+		undoFailedAdd(wt, cp)
+		if _, err := os.Stat(wt); err != nil {
+			t.Errorf("the rollback removed a path that no longer resolves to the leaf: %v", err)
+		}
+	})
+}
+
+// undoFailedCheckout is the rollback after a successful add. The RPC tests drive its
+// normal path. The guards are exercised here at the function seam, because a failed
+// guard needs a swap during the call. branch is "", so no git runs.
+func TestUndoFailedCheckout(t *testing.T) {
+	t.Run("removes_the_leaf_and_the_registration", func(t *testing.T) {
+		repo := filepath.Join(t.TempDir(), "repo")
+		wt := filepath.Join(repo, ".claude", "worktrees", "wt")
+		admin := fakeRegistration(t, repo, wt)
+		writeFile(t, filepath.Join(wt, "sub", "f.txt"), "f\n", 0o644)
+		cp := checkpointCreatedWorktree(wt)
+		defer cp.release()
+		if got := undoFailedCheckout(repo, wt, "", cp); got != "" {
+			t.Errorf("undo text = %q, want none", got)
+		}
+		for _, p := range []string{admin, wt} {
+			if _, err := os.Lstat(p); !os.IsNotExist(err) {
+				t.Errorf("%s survived the rollback (Lstat err %v)", p, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Dir(admin)); err != nil {
+			t.Errorf("the registrations directory: %v, want it kept", err)
+		}
+	})
+
+	// The always-on home guard (D2) stops both deletes of the leaf.
 	t.Run("refuses_the_home_directory", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv(homeEnvVar(), home)
@@ -146,17 +214,17 @@ func TestUndoCreatedWorktree(t *testing.T) {
 		if err := os.WriteFile(keep, []byte("must survive"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-
-		undoCreatedWorktree(t.TempDir(), home, "", worktreeCheckpoint{})
-
+		if got := undoFailedCheckout(t.TempDir(), home, "", worktreeCheckpoint{}); got != "" {
+			t.Errorf("undo text = %q, want none", got)
+		}
 		if _, err := os.Stat(keep); err != nil {
 			t.Errorf("the rollback deleted the home directory: %v", err)
 		}
 	})
 
-	// The leaf identity is re-checked so a swap during the drain cannot redirect the
-	// RemoveAll onto a replacement's contents. A file where the checkpointed
-	// directory was is such a swap, and it must be left alone.
+	// The leaf identity is re-checked, so a swap during the call cannot redirect the
+	// deletes onto a replacement. A file where the checkpointed directory was is such
+	// a swap, and it must be left alone.
 	t.Run("refuses_a_stale_checkpoint", func(t *testing.T) {
 		base := t.TempDir()
 		wt := filepath.Join(base, "wt")
@@ -164,6 +232,7 @@ func TestUndoCreatedWorktree(t *testing.T) {
 			t.Fatal(err)
 		}
 		cp := checkpointCreatedWorktree(wt)
+		defer cp.release()
 		if cp.info == nil {
 			t.Fatal("checkpoint did not capture the leaf")
 		}
@@ -173,9 +242,9 @@ func TestUndoCreatedWorktree(t *testing.T) {
 		if err := os.WriteFile(wt, []byte("not the directory that was created"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-
-		undoCreatedWorktree(base, wt, "", cp)
-
+		if got := undoFailedCheckout(base, wt, "", cp); got != "" {
+			t.Errorf("undo text = %q, want none", got)
+		}
 		if _, err := os.Stat(wt); err != nil {
 			t.Errorf("the rollback deleted a path that no longer matched the checkpoint: %v", err)
 		}

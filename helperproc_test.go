@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -125,6 +127,231 @@ func runGitLingering(args []string) int {
 		// config prechecks, ls-files (populate), and update-ref / worktree remove /
 		// branch (rollback): succeed quietly.
 		return 0
+	}
+}
+
+// runGitSlow implements the "git-slow" stub. It runs the real git named by
+// CLAUSTRUM_GITSTUB_REAL with the same argv. It slows a call only when every word
+// in CLAUSTRUM_GITSTUB_MATCH (comma-separated) is an exact argument of that call.
+// A word is never matched as a substring, so "read-tree" does not match a path.
+//
+// A slowed call first prints its stderr payload and CLAUSTRUM_GITSTUB_STDOUT to
+// stdout. The stderr payload is CLAUSTRUM_GITSTUB_STDERR, in which a literal \n, \r
+// or \t becomes that control character. When CLAUSTRUM_GITSTUB_STDERR_FILE names a
+// file, its bytes are the payload instead, so a test can send any byte. When the
+// call holds the word --no-track and CLAUSTRUM_GITSTUB_STDERR2_FILE names a file,
+// that file is used, so the attach fallback add gets its own stderr.
+//
+// CLAUSTRUM_GITSTUB_ACTION, if set, changes the directory named by
+// CLAUSTRUM_GITSTUB_LEAF. It runs before the real git in the modes "pre" and
+// "fail", and after it in the modes "post", "postfail" and "hold":
+//   - "rm": delete it.
+//   - "repl": delete it and make a new empty directory in its place.
+//   - "replparent": delete its parent, then make the parent and a new empty leaf.
+//   - "fill": write junk.txt into it.
+//   - "lock": make hsub/f and zz.txt in it, then make hsub read-only, so a
+//     delete of hsub fails for a user that is not root.
+//   - "lockparent": make its parent read-only, so the leaf cannot be removed.
+//   - "lockmany": make rN/f in it for N in the order 3 0 5 1 7 2 6 4, and make each
+//     rN read-only. Neither the first nor the last one made is r0.
+//
+// When CLAUSTRUM_GITSTUB_SNAP names a file, the action then writes the leaf's
+// top-level names to it, one per line, in the order that the directory read
+// returns them (not sorted).
+//
+// CLAUSTRUM_GITSTUB_MODE decides:
+//   - "pre": sleep CLAUSTRUM_GITSTUB_MS milliseconds, then run the real git.
+//   - "post": run the real git, then sleep.
+//   - "fail": sleep, then exit without running git.
+//   - "postfail": run the real git, then print the stderr payload (not before) and
+//     exit, whatever git answered.
+//   - "hold": run the real git, start a descendant that holds this call's stdout
+//     and stderr for CLAUSTRUM_GITSTUB_MS milliseconds, and exit at once.
+//
+// "fail" and "postfail" exit with CLAUSTRUM_GITSTUB_EXIT, 1 when it is not set.
+//
+// When CLAUSTRUM_GITSTUB_LOG names a file, every call appends its argv to it as
+// one line, with the words joined by a unit separator (0x1f). When
+// CLAUSTRUM_GITSTUB_CTXLOG names a file, every call appends its working directory,
+// a record separator (0x1e), its GIT_INDEX_FILE, a record separator, and its argv
+// joined as above.
+func runGitSlow(args []string) int {
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
+		appendLine(log, strings.Join(args, "\x1f"))
+	}
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_CTXLOG"); log != "" {
+		wd, _ := os.Getwd()
+		appendLine(log, wd+"\x1e"+os.Getenv("GIT_INDEX_FILE")+"\x1e"+strings.Join(args, "\x1f"))
+	}
+	slow := false
+	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH"); m != "" {
+		slow = true
+		for _, w := range strings.Split(m, ",") {
+			if !slices.Contains(args, w) {
+				slow = false
+				break
+			}
+		}
+	}
+	mode := os.Getenv("CLAUSTRUM_GITSTUB_MODE")
+	pause := func() {
+		ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
+	exitCode := 1
+	if c, err := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_EXIT")); err == nil {
+		exitCode = c
+	}
+	payload := func() []byte {
+		file := os.Getenv("CLAUSTRUM_GITSTUB_STDERR_FILE")
+		if f2 := os.Getenv("CLAUSTRUM_GITSTUB_STDERR2_FILE"); f2 != "" && slices.Contains(args, "--no-track") {
+			file = f2
+		}
+		if file != "" {
+			b, _ := os.ReadFile(file)
+			return b
+		}
+		return []byte(strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace(os.Getenv("CLAUSTRUM_GITSTUB_STDERR")))
+	}
+	if slow {
+		if mode != "postfail" {
+			_, _ = os.Stderr.Write(payload())
+		}
+		unescape := strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace
+		_, _ = os.Stdout.WriteString(unescape(os.Getenv("CLAUSTRUM_GITSTUB_STDOUT")))
+		if mode == "pre" || mode == "fail" {
+			if err := gitStubAction(os.Getenv("CLAUSTRUM_GITSTUB_ACTION"), os.Getenv("CLAUSTRUM_GITSTUB_LEAF")); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 127
+			}
+		}
+		switch mode {
+		case "fail":
+			pause()
+			return exitCode
+		case "pre":
+			pause()
+		}
+	}
+	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	code := 0
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
+			fmt.Fprintln(os.Stderr, err)
+			return 127
+		}
+		code = ee.ExitCode()
+	}
+	if slow && (mode == "post" || mode == "postfail" || mode == "hold") {
+		if err := gitStubAction(os.Getenv("CLAUSTRUM_GITSTUB_ACTION"), os.Getenv("CLAUSTRUM_GITSTUB_LEAF")); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 127
+		}
+	}
+	if slow && mode == "post" {
+		pause()
+	}
+	if slow && mode == "postfail" {
+		_, _ = os.Stderr.Write(payload())
+		return exitCode
+	}
+	if slow && mode == "hold" {
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS"))
+		child := exec.Command(exe, strconv.Itoa((ms+999)/1000))
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	return code
+}
+
+// gitStubAction applies a CLAUSTRUM_GITSTUB_ACTION to leaf, then writes the
+// CLAUSTRUM_GITSTUB_SNAP snapshot. See runGitSlow.
+func gitStubAction(action, leaf string) error {
+	if err := applyGitStubAction(action, leaf); err != nil {
+		return err
+	}
+	snap := os.Getenv("CLAUSTRUM_GITSTUB_SNAP")
+	if snap == "" || action == "" {
+		return nil
+	}
+	d, err := os.Open(leaf)
+	if err != nil {
+		return err
+	}
+	names, err := d.Readdirnames(-1)
+	_ = d.Close()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(snap, []byte(strings.Join(names, "\n")), 0o644)
+}
+
+// applyGitStubAction makes the change that gitStubAction names.
+func applyGitStubAction(action, leaf string) error {
+	switch action {
+	case "":
+		return nil
+	case "rm":
+		return os.RemoveAll(leaf)
+	case "repl":
+		if err := os.RemoveAll(leaf); err != nil {
+			return err
+		}
+		return os.Mkdir(leaf, 0o755)
+	case "replparent":
+		if err := os.RemoveAll(filepath.Dir(leaf)); err != nil {
+			return err
+		}
+		return os.MkdirAll(leaf, 0o755)
+	case "fill":
+		return os.WriteFile(filepath.Join(leaf, "junk.txt"), []byte("junk\n"), 0o644)
+	case "lock":
+		if err := os.MkdirAll(filepath.Join(leaf, "hsub"), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(leaf, "hsub", "f"), []byte("f\n"), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(leaf, "zz.txt"), []byte("zz\n"), 0o644); err != nil {
+			return err
+		}
+		return os.Chmod(filepath.Join(leaf, "hsub"), 0o555)
+	case "lockparent":
+		return os.Chmod(filepath.Dir(leaf), 0o555)
+	case "lockmany":
+		for _, i := range []int{3, 0, 5, 1, 7, 2, 6, 4} {
+			dir := filepath.Join(leaf, "r"+strconv.Itoa(i))
+			if err := os.Mkdir(dir, 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, "f"), []byte("f\n"), 0o644); err != nil {
+				return err
+			}
+			if err := os.Chmod(dir, 0o555); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown CLAUSTRUM_GITSTUB_ACTION %q", action)
+}
+
+// appendLine appends line and a newline to the file at path.
+func appendLine(path, line string) {
+	if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+		_, _ = f.WriteString(line + "\n")
+		_ = f.Close()
 	}
 }
 
@@ -268,11 +495,15 @@ func runHelper(mode string, args []string) int {
 		// when this binary is invoked through a PATH symlink named `git` (see
 		// stubLingeringGit): the config prechecks and the add/rollback probes succeed
 		// fast, and the read-tree checkout spawns a `sleep` child (this binary re-exec'd)
-		// that INHERITS this process's stdout+stderr — the daemon's combined output pipe —
+		// that INHERITS this process's stdout+stderr, the daemon's output pipes,
 		// and outlives git, exactly reproducing the P1 smudge-filter orphan. Whether git
 		// itself exits 0 (leaving the orphan to hold the pipe) or blocks past the deadline
 		// is chosen by CLAUSTRUM_GITSTUB_EXIT0.
 		return runGitLingering(args)
+	case "git-slow":
+		// Stand-in `git` for the git.worktree_create caller-timeout tests. It passes
+		// every call through to the real git and slows one chosen call. See runGitSlow.
+		return runGitSlow(args)
 	case "runlock-hold":
 		// Run-dir eviction fixture (Unix): open the lock file, take the flock, write
 		// an owner record naming this process as a serve daemon, announce readiness by
