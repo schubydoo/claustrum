@@ -176,7 +176,7 @@ func gitCtx() (context.Context, context.CancelFunc) {
 //	                     both of which a warning-prefixed string fails safely;
 //	                     show-ref --verify --quiet and update-ref -d (the branch
 //	                     delete), which discard their output entirely
-//	echoes it verbatim   --show-toplevel → root/repo, symbolic-ref --short HEAD →
+//	echoes it verbatim   --show-toplevel → root/repo, branch --show-current →
 //	                     branch (rev-parse --short HEAD supplies only the
 //	                     detached-HEAD sha fallback), remote get-url → repoSlug,
 //	                     symbolic-ref → defaultBranch, rev-parse --abbrev-ref
@@ -203,7 +203,13 @@ func git(dir string, args ...string) (string, bool) {
 // testable without waiting on a real wedged git. Combined output — see git().
 func gitContext(ctx context.Context, dir string, args ...string) (string, bool) {
 	full := append([]string{"-C", dir}, args...)
-	out, err := exec.CommandContext(ctx, "git", full...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, "git", full...)
+	// The GIT_COMMON_DIR pin of the git-directory trust check, when dir's git directory
+	// is trusted (see gitdirtrust.go).
+	if pin := commonDirPinEnv(dir); pin != nil {
+		cmd.Env = append(os.Environ(), pin...)
+	}
+	out, err := cmd.CombinedOutput()
 	return strings.TrimRight(string(out), "\n"), err == nil
 }
 
@@ -296,6 +302,14 @@ func gitInfo(req *request) response {
 	// and applied to every git op via hardenedArgs/userExcludesFile, rather than
 	// probed here and discarded.
 	//
+	// The git-directory trust check runs first, on path (gitdirtrust.go). Measured side
+	// by side against f6010b97 on Linux, macOS and Windows VMs.
+	switch t := requestGitDirTrust(p.Path, true); t.verdict {
+	case gitDirRefused:
+		return errResult(req.ID, codeInternal, t.refusal)
+	case gitDirNoRepo:
+		return okResult(req.ID, notRepoResult{})
+	}
 	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603
 	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
@@ -318,8 +332,16 @@ func gitInfo(req *request) response {
 	defBranch := gitDefaultBranch(p.Path)
 	// The branch is `branch --show-current` (works on a normal and an unborn HEAD),
 	// empty on a detached HEAD → reported as "detached:<short-sha>".
-	branch, _ := hardenedGit(p.Path, false, "branch", "--show-current")
-	if branch == "" {
+	//
+	// When `branch --show-current` fails, the result has no `branch` member at all,
+	// never git's error text. Measured side by side against 90fca6e6 and f6010b97 on a
+	// Linux VM: a HEAD git fails to resolve ("ref: refs/heads/main" or 40 hex digits,
+	// each followed by junk, H15 H18 NH21 NH22) answers without `branch` on both.
+	branch, ok := hardenedGit(p.Path, false, "branch", "--show-current")
+	switch {
+	case !ok:
+		branch = ""
+	case branch == "":
 		sha, _ := hardenedGit(p.Path, false, "rev-parse", "--short", "HEAD")
 		branch = "detached:" + sha
 	}
@@ -483,10 +505,19 @@ func gitStatus(req *request) response {
 	if p.BaseRepo == "" {
 		return errResult(req.ID, codeInvalidParam, "baseRepo is required")
 	}
+	// The git-directory trust check runs on baseRepo, not on path (gitdirtrust.go).
+	// Measured side by side against f6010b97 on Linux, macOS and Windows VMs.
+	switch t := requestGitDirTrust(p.BaseRepo, false); t.verdict {
+	case gitDirRefused:
+		return errResult(req.ID, codeInternal, t.refusal)
+	case gitDirNoRepo:
+		return okResult(req.ID, gitStatusResult{})
+	}
 	// A repo whose config cannot be enumerated is refused with -32603 before status
-	// runs (7d193f89). The enumeration is on baseRepo — where git reports the config
-	// path relative (".git/config"), matching the reference; the worktree path would
-	// resolve to the same config but git would report it absolute. Measured on VM.
+	// runs (7d193f89). The enumeration is on baseRepo. With the GIT_COMMON_DIR pin of
+	// the trust check, git names the config by its absolute path. In the create and
+	// remove frames f6010b97 names the absolute path too, and 90fca6e6 names
+	// ".git/config" (Linux VM, K06). This frame is not measured on f6010b97.
 	if msg, bad := hostileConfigRefusal(p.BaseRepo); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}
@@ -610,6 +641,14 @@ func gitListBranches(req *request) response {
 	if baseRepoUnderManagedWorktrees(p.repoDir()) {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
+	// The git-directory trust check runs on path (gitdirtrust.go). Measured side by
+	// side against f6010b97 on Linux, macOS and Windows VMs.
+	switch t := requestGitDirTrust(p.Path, true); t.verdict {
+	case gitDirRefused:
+		return errResult(req.ID, codeInternal, t.refusal)
+	case gitDirNoRepo:
+		return okResult(req.ID, branchesResult{Branches: []string{}})
+	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
 	// measured on an ephemeral VM.
 	if msg, bad := hostileConfigRefusal(p.Path); bad {
@@ -677,6 +716,21 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			Error:     managedWorktreesRefusal,
 			ErrorCode: "nested_base_repo",
 		})
+	}
+	// The git-directory trust check runs on baseRepo before anything is created
+	// (gitdirtrust.go). A refusal creates no worktree directory, no entry and no
+	// branch. When the daemon's own environment carries GIT_COMMON_DIR, the refusal
+	// text is wrapped as a failed add. Measured side by side against f6010b97 on Linux,
+	// macOS and Windows VMs.
+	switch t := requestGitDirTrust(repo, false); t.verdict {
+	case gitDirRefused:
+		msg := t.refusal
+		if daemonCommonDirSet() {
+			msg = gitDirAddWrap + msg
+		}
+		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	case gitDirNoRepo:
+		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
@@ -957,7 +1011,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		rtStderr, rtDrained, rtErr := runWorktreeCheckout(callerCtx, p.WorktreePath, gitDir, adminDir, checkoutRev)
+		rtStderr, rtDrained, rtErr := runWorktreeCheckout(callerCtx, p.WorktreePath, gitDir, adminDir, checkoutRev, commonDirPinEnv(repo))
 		switch {
 		case rtDrained:
 			// git exited 0, but a checkout descendant held the daemon's output pipe
@@ -983,9 +1037,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// The checkout failed on its own (for example a tree object it cannot
 			// read). The request fails with git's text, and the rollback removes the
 			// new directory, its registration and the branch this call created. The
-			// frame matches 90fca6e6 byte for byte. The f6010b97 text starts with
-			// git's graft-file deprecation hint: lines. In attach mode createdBranch is
-			// "", so the attached branch is kept, as measured against f6010b97.
+			// frame matches 90fca6e6 byte for byte, apart from git's graft-file
+			// deprecation hint: lines. f6010b97 and claustrum both set GIT_GRAFT_FILE,
+			// so where git prints the hint, their text starts with it. In attach mode
+			// createdBranch is "", so the attached branch is kept, as measured against
+			// f6010b97.
 			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
@@ -1067,7 +1123,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// containment is replaced by the external checks: 2-level containment, then a
 	// full registration verify (externalWorktreeVerify) — a path that is not a
 	// genuine registered worktree of baseRepo is refused and LEFT IN PLACE (or, when
-	// baseRepo's worktrees dir is unreadable, reported as a transient "could not
+	// baseRepo's worktrees dir is missing, reported as a transient "could not
 	// verify … retry"), where an in-repo remove would fall back to a recursive
 	// delete. Measured against 7d193f89 on an ephemeral VM.
 	if p.WorktreeRoot != "" {
@@ -1077,8 +1133,20 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
 		}
+		// The work-tree check comes before the dir-symlink check. A base that the check
+		// refuses gets the work-tree refusal even when the directory level is a symlink.
+		// Measured side by side against f6010b97 on a Linux VM (rows K10, K11, K14 and
+		// K16 with a symlinked directory level).
+		if msg := externalWorkTreeRefusal(repo); msg != "" {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+		}
+		// A worktree registry that exists but cannot be read answers the lock-check text.
+		// A worktree that is already gone skips this, as on f6010b97 (row K13, Linux VM).
+		if externalRegistrationsUnreadable(repo, p.WorktreePath) {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
 		}
 		if reason, transient := externalWorktreeVerify(repo, p.WorktreePath); reason != "" {
 			wp := filepath.Clean(p.WorktreePath)
@@ -1161,9 +1229,8 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// failed there and the manual-cleanup fallback below deleted worktreePath with
 	// {"success":true}. Measured against f6010b97 on Linux, macOS and Windows VMs,
 	// and 90fca6e6 answers the same. A baseRepo that does not exist at all is left
-	// to the paths below, as before. With worktreeRoot this refusal does not apply:
-	// the external path keeps its own answers, so removing an external worktree
-	// that is already gone still succeeds.
+	// to the paths below, as before. With worktreeRoot this refusal does not apply.
+	// externalWorkTreeRefusal answers those inputs with its own texts instead.
 	// Without worktreeRoot, a baseRepo the daemon may open but not search (mode
 	// 0600), or cannot open at all, answers with the error from its look at
 	// .claude, and that error is the whole reply. With worktreeRoot there is no
@@ -1177,13 +1244,19 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 				Error:   "failed to remove worktree: " + err.Error(),
 			})
 		}
-	}
-	if _, bad := hostileConfigRefusal(repo); bad || (p.WorktreeRoot == "" && noRepositoryAt(repo)) {
-		return okResult(req.ID, worktreeRemoveResult{
-			Success: false,
-			Error: "failed to remove worktree: could not check whether " + p.WorktreePath +
-				" is locked (its registrations could not be examined); retry",
-		})
+		// The same refusal answers a baseRepo that fails the git-directory trust check
+		// (gitdirtrust.go), with a refused git directory or with no repository. Nothing
+		// is deleted then. The worktree directory, its entry and its branch all stay.
+		// The check looks at baseRepo only. Damage to the entry of the worktree being
+		// removed therefore does not stop the removal. Measured side by side against
+		// f6010b97 on Linux, macOS and Windows VMs. With worktreeRoot,
+		// externalWorkTreeRefusal answered these inputs above.
+		if v := requestGitDirTrust(repo, false).verdict; v == gitDirRefused || v == gitDirNoRepo {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
+		}
+		if _, bad := hostileConfigRefusal(repo); bad || noRepositoryAt(repo) {
+			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
+		}
 	}
 	adminDir := worktreeAdminDir(p.WorktreePath)
 	// 7d193f89 runs no `git worktree remove` at all (git-argv trace), yet it refuses a
@@ -1306,10 +1379,35 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// Off-wire: the result is discarded, and the reply is success:true either way.
 	// Raised by review on PR 286.
 	if adminDir != "" && worktreeAdminBelongsTo(adminDir, p.WorktreePath) &&
-		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(repo, ".git", "worktrees"))) {
+		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(pruneGitDir(repo), "worktrees"))) {
 		_ = os.RemoveAll(adminDir)
 	}
 	return okResult(req.ID, worktreeRemoveResult{Success: true})
+}
+
+// pruneGitDir is the git directory whose `worktrees` holds the entries that a remove
+// prunes: the repository git directory the trust check pinned for repo. For a main
+// repository that is <repo>/.git. For a linked worktree used as baseRepo it is the main
+// repository's git directory, since the worktree's own `.git` is a file. Before, the
+// prune looked under <worktree>/.git/worktrees, which never exists, so after the
+// recursive-delete fallback the entry stayed. Measured side by side against f6010b97
+// on a Linux VM (C10, remove from a linked worktree whose commondir starts with white
+// space: the reference deletes the entry). When the daemon's own environment sets
+// GIT_COMMON_DIR, or the check pinned nothing, the old <repo>/.git stays.
+func pruneGitDir(repo string) string {
+	if !daemonCommonDirSet() {
+		if t := gitDirTrustFor(repo); t.verdict == gitDirTrusted && t.pinCommonDir != "" {
+			return t.pinCommonDir
+		}
+	}
+	return filepath.Join(repo, ".git")
+}
+
+// lockCheckRefusal is git.worktree_remove's answer when baseRepo's registrations cannot
+// be examined. The path is echoed as given, unquoted and not cut.
+func lockCheckRefusal(worktreePath string) string {
+	return "failed to remove worktree: could not check whether " + worktreePath +
+		" is locked (its registrations could not be examined); retry"
 }
 
 // worktreeAdminDir reads a linked worktree's `.git` pointer file
@@ -1343,5 +1441,33 @@ func worktreeAdminBelongsTo(adminDir, worktreePath string) bool {
 	if err != nil {
 		return false
 	}
-	return canonicalPath(strings.TrimSpace(string(b))) == canonicalPath(filepath.Join(worktreePath, ".git"))
+	// sameCanonicalPath, not ==: on Windows git writes this record with forward slashes,
+	// and once the fallback delete has removed the worktree neither side can be
+	// resolved, so the two spellings differ only in slash direction. Before this the
+	// prune was skipped there and the entry stayed. Measured against f6010b97 on a
+	// Windows 11 VM, where the reference deletes the entry.
+	return sameCanonicalPath(canonicalPathOfGone(strings.TrimSpace(string(b))),
+		canonicalPathOfGone(filepath.Join(worktreePath, ".git")))
+}
+
+// canonicalPathOfGone is canonicalPath for a path that possibly no longer exists. It resolves
+// the nearest existing ancestor and joins the missing rest back on. After the fallback
+// delete the worktree is gone, but its parent still resolves. Before, a remove named
+// through a symlinked root (macOS /tmp -> /private/tmp) did not match the path in the
+// entry. Git records the resolved path there, so the entry stayed. Measured against
+// f6010b97 on a macOS VM, where the reference deletes the entry.
+func canonicalPathOfGone(p string) string {
+	p = filepath.Clean(p)
+	var missing []string
+	for cur := p; ; {
+		if _, err := os.Lstat(cur); err == nil {
+			return filepath.Join(append([]string{canonicalPath(cur)}, missing...)...)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		missing = append([]string{filepath.Base(cur)}, missing...)
+		cur = parent
+	}
 }

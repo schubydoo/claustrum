@@ -101,6 +101,7 @@ func TestWorktreeRemoveLockedByMarkerNotStderr(t *testing.T) {
 // directory must survive rather than fall through to the delete.
 func TestWorktreeRemoveLockedFromGitStderr(t *testing.T) {
 	repo := t.TempDir()
+	shapeAsGitRepo(t, repo)
 	wt := filepath.Join(repo, ".claude", "worktrees", "wt")
 	keep := filepath.Join(wt, "KEEP.txt")
 	if err := os.MkdirAll(wt, 0o700); err != nil {
@@ -332,6 +333,7 @@ func TestWorktreeRemoveTimeoutDoesNotDelete(t *testing.T) {
 	t.Cleanup(func() { gitTimeout = old })
 
 	root := t.TempDir()
+	shapeAsGitRepo(t, root)
 	wt := filepath.Join(root, "wt")
 	if err := os.MkdirAll(wt, 0o700); err != nil {
 		t.Fatal(err)

@@ -316,8 +316,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   a hit deletes nothing. A hit on `git worktree remove` itself answers
   `git worktree remove timed out after <dur>; no cleanup was attempted, and git may have partially removed the worktree`.
   A hit on the earlier config or repository check answers the lock-check refusal.
+  With `worktreeRoot` it answers the work-tree refusal (`cannot determine the repository's work tree`).
   On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
-  A killed repo-detection call answers `isRepo:false`.
+  A killed repo-detection call answers `isRepo:false`. A killed
+  `branch --show-current` in `git.info` leaves out the `branch` member.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
 - **Never read a timeout as "git refused."** `git.worktree_remove` treats a

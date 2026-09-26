@@ -160,6 +160,10 @@ component_management:
         # sourceBranch start-commit choice for git.worktree_create.
         - worktreesource.go
         - githarden.go
+        # the git-directory trust check every git.* method runs first (f6010b97).
+        - gitdirtrust.go
+        - gitdirtrust_unix.go
+        - gitdirtrust_windows.go
         - homeguard.go
         # cross-platform fs primitives for the git/files methods: path canon (git
         # frame spelling) and the O_DIRECTORY guard used by files.list.

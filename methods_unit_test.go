@@ -877,7 +877,7 @@ func TestGitNonRepoResults(t *testing.T) {
 	}
 }
 
-// git.info resolves the branch via symbolic-ref, which works on an unborn HEAD
+// git.info resolves the branch via branch --show-current, which works on an unborn HEAD
 // (empty repo → the init branch name) and lets a detached HEAD be reported as
 // "detached:<short-sha>" — where `rev-parse --abbrev-ref HEAD` would fail (and
 // previously leaked git's error text) or return "HEAD".

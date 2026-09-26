@@ -121,6 +121,7 @@ func TestWorktreeCreateD5DeadlineIsNotReportedAsTimeoutErrorCode(t *testing.T) {
 	t.Cleanup(func() { gitTimeout = old })
 
 	base := t.TempDir()
+	shapeAsGitRepo(t, base)
 	wt := filepath.Join(base, ".claude", "worktrees", "wt")
 	s := newTestServer(t)
 	// No timeoutMs in the request: the fired deadline is D5's, so the guard must
@@ -158,6 +159,7 @@ func TestWorktreeCreateD5FiresBeforeLongerTimeoutMs(t *testing.T) {
 	t.Cleanup(func() { gitTimeout = old })
 
 	base := t.TempDir()
+	shapeAsGitRepo(t, base)
 	wt := filepath.Join(base, ".claude", "worktrees", "wt")
 	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
@@ -182,6 +184,7 @@ func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
 	t.Cleanup(func() { gitTimeout = old })
 
 	root := t.TempDir()
+	shapeAsGitRepo(t, root)
 	wt := filepath.Join(root, "wt")
 	if err := os.MkdirAll(wt, 0o700); err != nil {
 		t.Fatal(err)
@@ -232,6 +235,7 @@ func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
 	t.Cleanup(func() { gitTimeout = old })
 
 	base := t.TempDir()
+	shapeAsGitRepo(t, base)
 	wt := filepath.Join(base, ".claude", "worktrees", "wt")
 	s := newTestServer(t)
 	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
