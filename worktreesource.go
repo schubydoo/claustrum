@@ -60,7 +60,7 @@ func pickSourceCommit(repo, source string) string {
 // resolveCommit resolves ref^{commit} to a full commit id, or "" when it does not
 // name a commit. It reads stdout only, and so does the merge-base step. git writes
 // hints and warnings to stderr, for example the graft-file deprecation hints that
-// appear when the environment sets GIT_GRAFT_FILE=/dev/null. With combined
+// appear when the environment sets GIT_GRAFT_FILE. With combined
 // output, such a hint becomes part of the id.
 //
 // Each step of the start-commit choice passes -c core.commitGraph=false, and the

@@ -288,8 +288,10 @@ func callerTimeoutFired(ctx context.Context) bool {
 	return errors.Is(context.Cause(ctx), errCallerTimeoutMs)
 }
 
+// isRepo runs right after hostileConfigRefusal on dir, so it runs no precursor
+// (hardenedGitFirst).
 func isRepo(dir string) bool {
-	out, ok := hardenedGit(dir, false, "rev-parse", "--is-inside-work-tree")
+	out, ok := hardenedGitFirst(dir, false, "rev-parse", "--is-inside-work-tree")
 	return ok && out == "true"
 }
 
@@ -299,7 +301,7 @@ func gitInfo(req *request) response {
 		return *bad
 	}
 	// The excludesFile the reference reads at git.info is now resolved once (cached)
-	// and applied to every git op via hardenedArgs/userExcludesFile, rather than
+	// and applied to every git op via hardenedProfileArgs/userExcludesFile, rather than
 	// probed here and discarded.
 	//
 	// The git-directory trust check runs first, on path (gitdirtrust.go). Measured side
@@ -313,14 +315,14 @@ func gitInfo(req *request) response {
 	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603
 	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
-	if msg, bad := hostileConfigRefusal(p.Path); bad {
+	if msg, bad := hostileConfigRefusal(p.Path, false); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// isRepo now requires BOTH a git dir and a work tree, under the light hardening
 	// profile: a bare repo has a git dir but no work tree, so --show-toplevel fails
 	// and it reports the bare notRepoResult (matching the old --is-inside-work-tree
 	// verdict via a different pair of commands).
-	if _, ok := hardenedGit(p.Path, false, "rev-parse", "--git-dir"); !ok {
+	if _, ok := hardenedGitFirst(p.Path, false, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, notRepoResult{})
 	}
 	top, ok := hardenedGit(p.Path, false, "rev-parse", "--show-toplevel")
@@ -517,8 +519,10 @@ func gitStatus(req *request) response {
 	// runs (7d193f89). The enumeration is on baseRepo. With the GIT_COMMON_DIR pin of
 	// the trust check, git names the config by its absolute path. f6010b97 names the
 	// absolute path in this frame too, measured side by side on Linux and macOS VMs.
-	// 90fca6e6 names ".git/config" (Linux VM, K06).
-	if msg, bad := hostileConfigRefusal(p.BaseRepo); bad {
+	// 90fca6e6 names ".git/config" (Linux VM, K06). The listing carries the heavy
+	// profile, as the first listing of f6010b97's git.status does on Linux, macOS and
+	// Windows VMs.
+	if msg, bad := hostileConfigRefusal(p.BaseRepo, true); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	gitDir, commonDir, ok := gitStatusWorktreeOf(p.Path, p.BaseRepo)
@@ -539,20 +543,21 @@ func gitStatus(req *request) response {
 	// scratch/probe/gitargv). It is byte-identical on Linux and macOS. On Windows it
 	// is NOT: the reference's own git.status of a linked worktree errors -32603
 	// "exit status 128" there (measured), while claustrum returns the status. That
-	// is intentional divergence D16 (claustrum more correct). The exact
-	// reason the reference fails on Windows is not yet pinned; an earlier hardcoded-/tmp
-	// hypothesis is contradicted (the reference respects $TMPDIR). See docs/DIVERGENCES.md
-	// D16. A path with no work tree still exits 128, and the reference propagates the bare
-	// Go error string, not git's "fatal:" output.
+	// is intentional divergence D16 (claustrum more correct). With Git for Windows
+	// 2.55.0, git status exits 128 when core.excludesFile is NUL. The reference
+	// passes NUL there when the user has no global excludes file. claustrum passes
+	// /dev/null to that one call (statusExcludesFile). See docs/DIVERGENCES.md D16.
+	// A path with no work tree still exits 128, and the reference propagates the
+	// bare Go error string, not git's "fatal:" output.
 	//
 	// --attr-source=<empty-tree> makes git ignore the repo's in-repo .gitattributes,
 	// matching 4534d86: without it a .gitattributes clean filter runs during status
 	// and flips a file's modified-ness (wire-visible) plus executes its command. It is
 	// a top-level option before the subcommand, and a no-op on a repo with no
 	// attribute rules (so ordinary status stays byte-identical).
-	statusArgs := append(attrSourceArgs(), "status", "--porcelain",
+	// hardenedGitStatus puts it first.
+	out, err := hardenedGitStatus(p.Path, gitDir, commonDir, "status", "--porcelain",
 		"--untracked-files=all", "--ignore-submodules=all")
-	out, err := hardenedGitStatus(p.Path, gitDir, commonDir, statusArgs...)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
@@ -651,15 +656,15 @@ func gitListBranches(req *request) response {
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
 	// measured on an ephemeral VM.
-	if msg, bad := hostileConfigRefusal(p.Path); bad {
+	if msg, bad := hostileConfigRefusal(p.Path, false); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// 7d193f89 runs this under the light hardening profile with the config
 	// precursor; the repo gate is `rev-parse --git-dir` (true for a bare repo and
 	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
 	// reference returns the full branches shape (branches:[]) on a non-repo, not
-	// git.info's bare notRepoResult.
-	if _, ok := hardenedGit(p.Path, false, "rev-parse", "--git-dir"); !ok {
+	// git.info's bare notRepoResult. The refusal check above was its precursor.
+	if _, ok := hardenedGitFirst(p.Path, false, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// stdout only, AND propagate a failure — the same two rules git.status
@@ -735,7 +740,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
 	// detail under errorCode worktree_add_failed. Measured on an ephemeral VM.
-	if msg, bad := hostileConfigRefusal(repo); bad {
+	if msg, bad := hostileConfigRefusal(repo, false); bad {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     msg,
@@ -1148,6 +1153,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if externalRegistrationsUnreadable(repo, p.WorktreePath) {
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
 		}
+		externalWorktreeListing(repo)
 		if reason, transient := externalWorktreeVerify(repo, p.WorktreePath); reason != "" {
 			wp := filepath.Clean(p.WorktreePath)
 			if transient {
@@ -1254,7 +1260,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if v := requestGitDirTrust(repo, false).verdict; v == gitDirRefused || v == gitDirNoRepo {
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
 		}
-		if _, bad := hostileConfigRefusal(repo); bad || noRepositoryAt(repo) {
+		// The listing carries the heavy profile of the rev-parse that follows it, as on
+		// f6010b97 (Linux, macOS and Windows VMs).
+		//
+		// When the check fails, f6010b97 runs it once more before it answers: a
+		// second listing, and a second rev-parse when that listing passes. Measured
+		// on Linux and macOS VMs (a corrupt config, and a git directory that git
+		// cannot use). The answer is the same whatever the second check finds.
+		if _, bad := hostileConfigRefusal(repo, true); bad || noRepositoryAt(repo) {
+			if _, bad := hostileConfigRefusal(repo, true); !bad {
+				noRepositoryAt(repo)
+			}
 			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
 		}
 	}

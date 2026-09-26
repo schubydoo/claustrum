@@ -877,6 +877,11 @@ The daemon's own environment changes the check as follows:
   and `git.list_branches` answer `-32603 config-defined hooks could not be pinned
   off; git not run: listing the configuration in force: exit status 128: fatal: not a
   git repository: <entry>`. Any other `GIT_DIR` that does not exist is left to git.
+  Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the daemon's
+  environment sets `GIT_COMMON_DIR`. A relative value is
+  first joined to the request directory. On Windows `/dev/null` names nothing, so it
+  becomes `<request dir>\dev\null`. Measured against `f6010b97` on Linux and
+  Windows VMs.
 - A `GIT_COMMON_DIR` turns the check off for `git.info` and `git.list_branches`.
   The other three methods still run it. `git.worktree_create` then prefixes the
   refusal with `git worktree add failed: cannot locate the repository's git
@@ -933,6 +938,82 @@ becomes one space on `90fca6e6` too (Linux VM). With the `GIT_COMMON_DIR` pin, g
 names a corrupt config by its absolute path. `f6010b97` does the same in the
 `git.info`, `git.list_branches`, `git.status`, create and remove frames, measured on
 Linux and macOS VMs. `90fca6e6` names `.git/config`.
+
+#### Hardened git calls
+
+The git methods run most git steps as hardened calls. A hardened call carries a fixed
+set of `-c` options and a fixed set of environment variables. This shape is off the
+wire. The reply frames do not depend on it. A logging git wrapper measured each point
+below against `f6010b97`. Each point names the VMs that measured it.
+
+- Working directory. Each hardened call runs with the repository directory as its
+  working directory, and it passes no `-C`. The checkout of `git.worktree_create`
+  runs in the new worktree. The `git status` call runs in the worktree. Both name
+  their directories with `--git-dir` and `--work-tree`. Linux, macOS and Windows VMs.
+- Profiles. A call uses the light profile or the heavy profile. Each profile has its
+  own `-c` options and its own variables. The light variables are, in this order,
+  `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`
+  and `GIT_GRAFT_FILE=<null>`. The heavy variables are, in this order,
+  `GIT_NO_LAZY_FETCH=1`, `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty
+  `GIT_ASKPASS` and `GIT_TERMINAL_PROMPT=0`. Then comes `GIT_COMMON_DIR` when the
+  trust check pins it. Then come the two hook pins, from `GIT_CONFIG_COUNT=2`.
+  Linux, macOS and Windows VMs.
+- Heavy calls. `git status` and `rev-parse --absolute-git-dir` use the heavy
+  profile. Every other hardened call uses the light profile. Of the claustrum calls,
+  only `git status` adds `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
+  Linux, macOS and Windows VMs.
+- Null device. `<null>` is `/dev/null` on Linux and macOS, and `NUL` on Windows.
+  The same value goes into `-c core.excludesFile` when the user has no global
+  excludes file. The `-c core.hooksPath` and `-c core.attributesFile` values stay
+  `/dev/null` on Windows. Windows VM. claustrum only: its `git status` call passes
+  `-c core.excludesFile=/dev/null` on Windows too. That is divergence D16.
+- Configuration listing. Before each hardened call except the first (see the next
+  point), the daemon runs
+  `git config -z --list --name-only` in the same directory. The listing carries the
+  profile variables of the call after it, and `GIT_COMMON_DIR`. It carries no hook
+  pins. The listing before the checkout and the listing before the `git status`
+  call start with `--git-dir=<dir>`. Linux, macOS and Windows VMs.
+- Hooks refusal check. The first listing of a method is the hooks refusal check. It
+  is not an extra call. If it fails, the method answers the hooks refusal. `git.info`,
+  `git.list_branches` and `git.worktree_create` run it with the light profile.
+  `git.status` and `git.worktree_remove` run it with the heavy profile. Linux, macOS
+  and Windows VMs. With `worktreeRoot`, `git.worktree_remove` runs a light check.
+  Later a heavy listing and `rev-parse --absolute-git-dir` follow. Linux VM.
+- Excludes read. Before its first listing, the daemon reads the user's
+  `core.excludesFile` once, with `git config --includes --path core.excludesFile`.
+  This call runs in the temporary directory. `GIT_DIR=<null>` is the only variable
+  that it adds. Linux, macOS and Windows VMs.
+- The probe `git --attr-source=<empty tree> version` adds no variable. Linux, macOS
+  and Windows VMs.
+- The `git status` call starts with `--attr-source=<empty tree>`. The heavy `-c`
+  options, `--git-dir` and `--work-tree` follow it. Linux and macOS VMs. It and its
+  listing pin `GIT_COMMON_DIR` to the clean path of the common git directory. On
+  Windows the reference pins it with backslashes (Windows VM). claustrum cleans the
+  path to match, and its Windows unit test checks the pin.
+- Variable order. A `GIT_*` variable of the daemon's own environment keeps its
+  place, before the variables that the daemon adds. If the daemon adds a variable
+  that its environment already has, the added value and place win. Linux and macOS
+  VMs. On Windows, the Go runtime of claustrum sorts the environment block by name.
+  `f6010b97` does not sort it (Windows VM). Go's os/exec sorts it, and claustrum
+  does not work around that.
+- Temporary names. The temporary git dir of `git status` starts with
+  `claustrum-git-dir-`. The temporary index directory of the checkout starts with
+  `claustrum-gitidx-`. Each prefix has the length of the `f6010b97` prefix, 18 and 17
+  bytes. Linux, macOS and Windows VMs.
+- `git.worktree_remove` without `worktreeRoot`. If the hooks refusal check or the
+  heavy `rev-parse --absolute-git-dir` after it fails, the check runs once more. That
+  is a second listing, and a second `rev-parse` when that listing passes. Then the
+  method answers the lock-check refusal. Linux and macOS VMs.
+- `git.worktree_remove` with `worktreeRoot`. A light `rev-parse --show-toplevel`
+  follows the light check, with no listing of its own. Before the daemon decides
+  whether `worktreePath` is a registered worktree, it runs a light
+  `worktree list --porcelain -z` and a heavy `rev-parse --absolute-git-dir`. Each
+  of them has its listing. claustrum does not use the answers of these calls.
+  Linux VM.
+- Some calls of `f6010b97` have no claustrum counterpart. Examples are a
+  `rev-parse --show-toplevel` in `git.worktree_create` and the plumbing calls of its
+  `git status`. claustrum's `git.status` runs a light `rev-parse` in `path`, with its
+  listing, that `f6010b97` does not run. The replies are the same.
 
 #### git.info
 `{path}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""}`
@@ -1015,9 +1096,10 @@ Linux and macOS VMs. `90fca6e6` names `.git/config`.
   byte-identical to the reference and to a direct status.
 - Windows divergence D16. On Windows the reference's own `git.status` of a linked
   worktree errors `-32603 "exit status 128"`, as measured, while claustrum returns
-  the status. The reference's Windows failure mechanism is not yet pinned. An
-  earlier hardcoded-`/tmp` hypothesis is contradicted, because the reference
-  respects `$TMPDIR`. This is a reachable, always-on Windows divergence, and
+  the status. With Git for Windows 2.55.0 the cause is the
+  `-c core.excludesFile=NUL` of the reference's status call. The reference passes
+  `NUL` when the user has no global excludes file. `git status` exits 128 on that
+  value. Claustrum passes `/dev/null` there instead. This is a reachable, always-on Windows divergence, and
   claustrum is more correct. See [DIVERGENCES.md](DIVERGENCES.md) D16.
 - Every line is verbatim, the first one included. The daemon splits on the trailing
   newline only, so entry 0 keeps its leading space. `[" M a1"," M a2"]` returns
@@ -1096,7 +1178,8 @@ Linux and macOS VMs. `90fca6e6` names `.git/config`.
   and the real commit, and ancestry is the real ancestry, even when `refs/replace`
   or `info/grafts` name others. This is measured against `f6010b97`. claustrum
   runs every git step of this method with `GIT_NO_REPLACE_OBJECTS=1` and
-  `GIT_GRAFT_FILE=/dev/null`.
+  `GIT_GRAFT_FILE=<null>`, except `rev-parse --absolute-git-dir`. See
+  [Hardened git calls](#hardened-git-calls).
 - By default, with no `worktreeRoot`, `7d193f89` confines the worktree to inside
   the repository. After the repo
   test, `worktreePath` must be absolute, carry no `..` component, sit strictly
@@ -1447,8 +1530,8 @@ copies end still fails it, as `timeoutMs` above describes:
   split points to the byte against `f6010b97`. The largest rows had 2 400
   children on Windows and 30 000 on Linux. On
   macOS the `.claude/` batches were not measured. Before each batch, the daemon
-  runs `git config -z --list --name-only`, as it does before every hardened
-  call. `f6010b97` also makes that call before each batch. A failed batch is
+  runs `git config -z --list --name-only`, as it does before most hardened
+  calls. `f6010b97` also makes that call before each batch. A failed batch is
   skipped, and the other batches still copy. The pass copies what git lists, minus
   the exclusions in the bullets below. A `.claude/` the repo
   git-ignores is therefore seeded into the new worktree. A `.claude/` that is

@@ -63,7 +63,7 @@ func treeOf(t *testing.T, root string) []string {
 // C:\Users\...\.config\git\ignore even with HOME moved.
 //
 // The environment is only half of it. userExcludesFile memoizes the resolved path
-// for the life of the process, and hardenedArgs injects it as
+// for the life of the process, and hardenedProfileArgs injects it as
 // `-c core.excludesFile=`. So whichever test runs FIRST decides the value for
 // every later test, and the environment this one sets arrives too late.
 //

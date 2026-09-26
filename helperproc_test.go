@@ -175,7 +175,9 @@ func runGitLingering(args []string) int {
 // CLAUSTRUM_GITSTUB_CTXLOG names a file, every call appends its working directory,
 // a record separator (0x1e), its GIT_INDEX_FILE, a record separator, its argv joined
 // as above, a record separator, and three variables of its environment:
-// GIT_COMMON_DIR, GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE, joined by 0x1f.
+// GIT_COMMON_DIR, GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE, joined by 0x1f. A last
+// record separator follows, then every GIT_* entry of its environment as KEY=value,
+// in the order of the environment, joined by 0x1f.
 func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 		appendLine(log, strings.Join(args, "\x1f"))
@@ -183,7 +185,13 @@ func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_CTXLOG"); log != "" {
 		wd, _ := os.Getwd()
 		env := os.Getenv("GIT_COMMON_DIR") + "\x1f" + os.Getenv("GIT_NO_REPLACE_OBJECTS") + "\x1f" + os.Getenv("GIT_GRAFT_FILE")
-		appendLine(log, wd+"\x1e"+os.Getenv("GIT_INDEX_FILE")+"\x1e"+strings.Join(args, "\x1f")+"\x1e"+env)
+		var all []string
+		for _, kv := range os.Environ() {
+			if strings.HasPrefix(kv, "GIT_") {
+				all = append(all, kv)
+			}
+		}
+		appendLine(log, wd+"\x1e"+os.Getenv("GIT_INDEX_FILE")+"\x1e"+strings.Join(args, "\x1f")+"\x1e"+env+"\x1e"+strings.Join(all, "\x1f"))
 	}
 	slow := false
 	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH"); m != "" {

@@ -29,7 +29,7 @@ import (
 
 // gitHardenLight is the `-c` set for repo-local reads and mutations that never
 // reach a remote (git.info's tree walks, git.list_branches, git.worktree_create).
-// The core.excludesFile entry is a PLACEHOLDER: hardenedArgs substitutes the user's
+// The core.excludesFile entry is a PLACEHOLDER: hardenedProfileArgs substitutes the user's
 // resolved global excludes (userExcludesFile) for it — 7d193f89 keeps the user's
 // ~/.config/git/ignore in force, and the literal /dev/null is only the fallback when
 // none exists.
@@ -43,7 +43,7 @@ var gitHardenLight = []string{
 	"alias.remote-https=",
 	"alias.remote-http=",
 	"alias.remote-ssh=",
-	"core.excludesFile=/dev/null", // placeholder — see hardenedArgs / userExcludesFile
+	"core.excludesFile=/dev/null", // placeholder — see hardenedProfileArgs / userExcludesFile
 	"submodule.recurse=false",
 	"fetch.recurseSubmodules=false",
 	"push.recurseSubmodules=false",
@@ -56,7 +56,7 @@ var gitHardenHeavy = []string{
 	"core.fsmonitor=false",
 	"core.hooksPath=/dev/null",
 	"core.attributesFile=/dev/null",
-	"core.excludesFile=/dev/null", // placeholder — see hardenedArgs / userExcludesFile
+	"core.excludesFile=/dev/null", // placeholder — see hardenedProfileArgs / userExcludesFile
 	"core.longpaths=true",
 	"protocol.allow=never",
 	"protocol.ext.allow=never",
@@ -92,68 +92,83 @@ func hookPinEnv() []string {
 	}
 }
 
-// hardenedGitEnv builds the environment for a hardened git command: the daemon's
-// own environment, the hook pins, terminal/prompt suppression, and the protocol
-// gate. heavy adds the no-lazy-fetch and askpass clearing the heavy profile uses.
+// profileEnv is the part of the environment that the profile decides. The light
+// profile sets the protocol gate, terminal prompt suppression, and turns off
+// replace objects and grafts. The heavy profile turns off lazy fetch, forbids every
+// protocol, and clears the askpass helper.
 //
-// GIT_OPTIONAL_LOCKS=0 is set on the heavy profile, which is git.status only (the
-// sole heavy caller). 4534d86 sets it on its status commands; without it a plain
-// `git status` REWRITES the worktree's index (refreshing the stat cache) and takes
-// index.lock — a mutation of the caller's repo on a read. With it the status output
-// is byte-identical (measured) but the index is not touched, matching the reference.
-// If a future non-status caller uses the heavy profile, reconsider scoping this to
-// the status call.
-//
-// The light profile also turns off replace objects and grafts
-// (GIT_NO_REPLACE_OBJECTS=1, GIT_GRAFT_FILE=/dev/null). git.worktree_create runs every
-// git step under the light profile. Its checkout thus uses the real blob and the real
-// commit, even when refs/replace or info/grafts name others. git.status runs under
-// the heavy profile and still honours replace objects. Both were measured side by
-// side against f6010b97 on a Linux VM. git.info and git.list_branches answer the same
-// either way. With the graft variable set, git prints its graft-file deprecation
+// The light profile turns off replace objects and grafts
+// (GIT_NO_REPLACE_OBJECTS=1, GIT_GRAFT_FILE=<null device>). git.worktree_create runs
+// every git step under the light profile, except the heavy rev-parse
+// --absolute-git-dir. Its checkout thus uses the real blob and
+// the real commit, even when refs/replace or info/grafts name others. git.status runs
+// under the heavy profile and still honours replace objects. Both were measured side
+// by side against f6010b97 on a Linux VM. git.info and git.list_branches answer the
+// same either way. With the graft variable set, git prints its graft-file deprecation
 // hint: lines on stderr, as it does for f6010b97.
+//
+// The null device is os.DevNull: /dev/null, and NUL on Windows. f6010b97 sets
+// GIT_GRAFT_FILE=NUL on a Windows VM, and /dev/null on Linux and macOS VMs. The
+// variables and their order are those of f6010b97 on the same VMs.
+func profileEnv(heavy bool) []string {
+	if heavy {
+		return []string{
+			"GIT_NO_LAZY_FETCH=1",
+			"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
+			"GIT_ASKPASS=",
+			"GIT_TERMINAL_PROMPT=0",
+		}
+	}
+	return []string{
+		"GIT_ALLOW_PROTOCOL=https:ssh",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_NO_REPLACE_OBJECTS=1",
+		"GIT_GRAFT_FILE=" + os.DevNull,
+	}
+}
+
+// precursorEnv is the environment of the configuration listing that runs before a
+// hardened call: the daemon's own environment, the profile of the call that follows
+// it, and pin. It carries no hook pins. f6010b97 sets exactly these on its listing,
+// the heavy set before a heavy call and the light set before a light call. Measured
+// on Linux, macOS and Windows VMs.
 //
 // pin is the GIT_COMMON_DIR pin of the git-directory trust check (commonDirPinEnv),
 // or nil.
-func hardenedGitEnv(heavy bool, pin []string) []string {
-	env := append(os.Environ(), hookPinEnv()...)
-	env = append(env, "GIT_TERMINAL_PROMPT=0")
-	if heavy {
-		env = append(env,
-			"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
-			"GIT_ASKPASS=",
-			"GIT_NO_LAZY_FETCH=1",
-			"GIT_OPTIONAL_LOCKS=0",
-		)
-	} else {
-		env = append(env,
-			"GIT_ALLOW_PROTOCOL=https:ssh",
-			"GIT_NO_REPLACE_OBJECTS=1",
-			"GIT_GRAFT_FILE=/dev/null",
-		)
-	}
+func precursorEnv(heavy bool, pin []string) []string {
+	env := append(os.Environ(), profileEnv(heavy)...)
 	return append(env, pin...)
 }
 
-// hardenedArgs prefixes the `-C dir` selector and the profile's `-c` overrides
-// before the git subcommand. The profile's placeholder core.excludesFile is filled
-// in with the user's resolved global excludes (userExcludesFile) — 7d193f89 runs
-// every git op with the user's ~/.config/git/ignore in force, not /dev/null, so that
-// e.g. git.status classifies a globally-ignored file as ignored. On a host with no
-// global excludes the resolver returns /dev/null, leaving the old behaviour.
-func hardenedArgs(dir string, heavy bool, args ...string) []string {
-	return append([]string{"-C", dir}, hardenedProfileArgs(heavy, args...)...)
+// hardenedGitEnv builds the environment for a hardened git command: precursorEnv,
+// then the hook pins.
+//
+// GIT_OPTIONAL_LOCKS=0 is not part of it. hardenedGitStatus adds it to the status
+// call only, as f6010b97 does. The heavy `rev-parse --absolute-git-dir` of
+// git.worktree_create and git.worktree_remove runs without it on the same VMs.
+func hardenedGitEnv(heavy bool, pin []string) []string {
+	return append(precursorEnv(heavy, pin), hookPinEnv()...)
 }
 
-// hardenedProfileArgs is hardenedArgs without the `-C dir` selector, for the one
-// call that selects its repository by working directory and --git-dir instead: the
-// read-tree checkout of git.worktree_create.
+// hardenedProfileArgs puts the profile's `-c` overrides before the git subcommand.
+// There is no `-C dir`: every hardened call selects its repository by its working
+// directory, as f6010b97 does on Linux, macOS and Windows VMs. The profile's
+// placeholder core.excludesFile is filled in with the user's resolved global
+// excludes (userExcludesFile) — 7d193f89 runs every git op with the user's
+// ~/.config/git/ignore in force, not /dev/null, so that e.g. git.status classifies
+// a globally-ignored file as ignored. On a host with no global excludes the resolver
+// returns the null device, leaving the old behaviour.
 func hardenedProfileArgs(heavy bool, args ...string) []string {
+	return profileArgsWithExcludes(heavy, userExcludesFile(), args...)
+}
+
+// profileArgsWithExcludes is hardenedProfileArgs with the core.excludesFile value
+// given by the caller.
+func profileArgsWithExcludes(heavy bool, excludes string, args ...string) []string {
 	profile := gitHardenLight
 	if heavy {
 		profile = gitHardenHeavy
 	}
-	excludes := userExcludesFile()
 	full := make([]string, 0, 2*len(profile)+len(args))
 	for _, c := range profile {
 		if strings.HasPrefix(c, "core.excludesFile=") {
@@ -165,26 +180,54 @@ func hardenedProfileArgs(heavy bool, args ...string) []string {
 }
 
 // hookPrecursor runs the config-enumeration the reference issues before every
-// hardened command (`git -C dir config -z --list --name-only`) to discover
-// config-defined hooks. Its result does not change the pinning for a repo with no
-// hook config — the two base pins in hookPinEnv cover that — but the call is part
-// of the reference's process trace, so it is reproduced. Best-effort: a failure
-// leaves the base pins in place.
-func hookPrecursor(ctx context.Context, dir string) {
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "config", "-z", "--list", "--name-only")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
-	cmd.Env = append(cmd.Env, commonDirPinEnv(dir)...)
+// hardened command (`git config -z --list --name-only`, with dir as its working
+// directory) to discover config-defined hooks. Its result does not change the
+// pinning for a repo with no hook config — the two base pins in hookPinEnv cover
+// that — but the call is part of the reference's process trace, so it is reproduced.
+// heavy is the profile of the call that follows. Best-effort: a failure leaves the
+// base pins in place.
+//
+// The user's global excludes are resolved first. f6010b97 reads them before its
+// first listing, measured on Linux and Windows VMs.
+func hookPrecursor(ctx context.Context, dir string, heavy bool) {
+	userExcludesFile()
+	cmd := exec.CommandContext(ctx, "git", "config", "-z", "--list", "--name-only")
+	cmd.Dir = dir
+	cmd.Env = precursorEnv(heavy, commonDirPinEnv(dir))
 	_, _ = cmd.Output()
+}
+
+// hardenedGitCmd builds a hardened git command in dir, with the config precursor
+// first when precursor is true. It is false for the first call after
+// hostileConfigRefusal: that check is the listing f6010b97 runs before that call, so
+// the call gets no second one. Measured on Linux, macOS and Windows VMs.
+func hardenedGitCmd(ctx context.Context, dir string, heavy, precursor bool, args ...string) *exec.Cmd {
+	if precursor {
+		hookPrecursor(ctx, dir, heavy)
+	}
+	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(heavy, args...)...)
+	cmd.Dir = dir
+	cmd.Env = hardenedGitEnv(heavy, commonDirPinEnv(dir))
+	return cmd
 }
 
 // hardenedGitContext runs a git subcommand under the hardening profile and
 // environment, with the config precursor first. Combined output, like git().
 func hardenedGitContext(ctx context.Context, dir string, heavy bool, args ...string) (string, bool) {
-	hookPrecursor(ctx, dir)
-	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
-	cmd.Env = hardenedGitEnv(heavy, commonDirPinEnv(dir))
-	out, err := cmd.CombinedOutput()
+	return hardenedGitCombined(ctx, dir, heavy, true, args...)
+}
+
+func hardenedGitCombined(ctx context.Context, dir string, heavy, precursor bool, args ...string) (string, bool) {
+	out, err := hardenedGitCmd(ctx, dir, heavy, precursor, args...).CombinedOutput()
 	return strings.TrimRight(string(out), "\n"), err == nil
+}
+
+// hardenedGitFirst is hardenedGit for the first call after hostileConfigRefusal on
+// the same dir. It runs no config precursor, because that check was its precursor.
+func hardenedGitFirst(dir string, heavy bool, args ...string) (string, bool) {
+	ctx, cancel := gitCtx()
+	defer cancel()
+	return hardenedGitCombined(ctx, dir, heavy, false, args...)
 }
 
 // hardenedGitStderr is hardenedGitContext for a call whose failure text goes on the
@@ -192,9 +235,7 @@ func hardenedGitContext(ctx context.Context, dir string, heavy bool, args ...str
 // because the failure frames of git.worktree_create quote stderr only (measured
 // against f6010b97 and 90fca6e6 on a macOS VM). See worktreeGitText.
 func hardenedGitStderr(ctx context.Context, dir string, heavy bool, args ...string) (string, error) {
-	hookPrecursor(ctx, dir)
-	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
-	cmd.Env = hardenedGitEnv(heavy, commonDirPinEnv(dir))
+	cmd := hardenedGitCmd(ctx, dir, heavy, true, args...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
@@ -207,6 +248,16 @@ func hardenedGit(dir string, heavy bool, args ...string) (string, bool) {
 	defer cancel()
 	return hardenedGitContext(ctx, dir, heavy, args...)
 }
+
+// statusGitDirTempPrefix and checkoutIndexTempPrefix start the names of the
+// temporary git dir of git.status and the temporary index directory of the
+// git.worktree_create checkout. Each has the length of the prefix in the f6010b97
+// argv and env, measured on Linux, macOS and Windows VMs: 18 and 17 bytes.
+// os.MkdirTemp adds a random decimal suffix, as f6010b97 does.
+const (
+	statusGitDirTempPrefix  = "claustrum-git-dir-"
+	checkoutIndexTempPrefix = "claustrum-gitidx-"
+)
 
 // worktreeCreateDrainCap bounds the post-exit pipe drain of git.worktree_create's
 // read-tree checkout. Measured against 4534d86: when the checkout leaves a descendant
@@ -233,9 +284,10 @@ var worktreeCreateDrainCap = 5 * time.Second
 // working directory is the new worktree (leaf), it passes no -C, and its --git-dir is
 // gitDir, the git dir of baseRepo. The index goes to indexFile through GIT_INDEX_FILE.
 // The config precursor runs the same way: `--git-dir=<gitDir> config -z --list
-// --name-only` with the leaf as its working directory. pin is the GIT_COMMON_DIR pin
-// of baseRepo (commonDirPinEnv), or nil. Both calls carry it. args carries the -c pins
-// and options after the hardening profile, and the read-tree subcommand itself.
+// --name-only` with the leaf as its working directory, and the light precursorEnv.
+// pin is the GIT_COMMON_DIR pin of baseRepo (commonDirPinEnv), or nil. Both calls
+// carry it. args carries the -c pins and options after the hardening profile, and
+// the read-tree subcommand itself.
 //
 // It returns:
 //   - stderr: stderr only, untrimmed. The failure frames quote it (worktreeGitText).
@@ -254,8 +306,7 @@ var worktreeCreateDrainCap = 5 * time.Second
 func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pin []string, args ...string) (stderr string, drained bool, err error) {
 	pre := exec.CommandContext(ctx, "git", "--git-dir="+gitDir, "config", "-z", "--list", "--name-only")
 	pre.Dir = leaf
-	pre.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
-	pre.Env = append(pre.Env, pin...)
+	pre.Env = precursorEnv(false, pin)
 	_, _ = pre.Output()
 	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false, args...)...)
 	cmd.Dir = leaf
@@ -305,7 +356,7 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // Moving the index is best-effort: a real read-tree that exits 0 has written it. If
 // the move fails, the worktree has no index, as after `worktree add --no-checkout`.
 func runWorktreeCheckout(ctx context.Context, leaf, gitDir, adminDir, rev string, pin []string) (stderr string, drained bool, err error) {
-	idxDir, err := os.MkdirTemp("", "claustrum-index-")
+	idxDir, err := os.MkdirTemp("", checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, err
 	}
@@ -384,11 +435,14 @@ func hardenedGitStdin(dir, stdin string, args ...string) (string, error) {
 }
 
 func hardenedGitRun(dir string, heavy bool, stdin io.Reader, args ...string) (string, error) {
+	return hardenedGitRunPre(dir, heavy, true, stdin, args...)
+}
+
+// hardenedGitRunPre is hardenedGitRun with the choice of precursor of hardenedGitCmd.
+func hardenedGitRunPre(dir string, heavy, precursor bool, stdin io.Reader, args ...string) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	hookPrecursor(ctx, dir)
-	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
-	cmd.Env = hardenedGitEnv(heavy, commonDirPinEnv(dir))
+	cmd := hardenedGitCmd(ctx, dir, heavy, precursor, args...)
 	cmd.Stdin = stdin
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
@@ -416,15 +470,27 @@ var (
 // showed --git-dir=<temp>, GIT_COMMON_DIR=<repo>/.git and --work-tree=<wt>.
 //
 // On Linux and macOS this is byte-identical to a direct `git -C <wt> status` (measured),
-// and to the reference. On Windows it is not identical to the reference: there the
-// reference's own git.status of a linked worktree errors (measured), while this returns
-// the status. That is the deliberate divergence D16; claustrum is more correct on
-// Windows. The reason the reference fails on Windows is not yet pinned (an earlier
-// hardcoded-/tmp hypothesis is contradicted — it respects $TMPDIR); see docs/DIVERGENCES.md.
-// Returns stdout and the raw exec error, like hardenedGitStdout, so a non-zero exit
-// surfaces as "exit status N", the same string the reference puts on the wire.
+// and to the reference. On Windows the reference's own git.status of a linked worktree
+// answers exit status 128 (measured), and this returns the status. That is the
+// deliberate divergence D16. With Git for Windows 2.55.0 its cause is the
+// core.excludesFile value of the status call (statusExcludesFile). See
+// docs/DIVERGENCES.md. Returns stdout and the raw exec error, like
+// hardenedGitStdout, so a non-zero exit surfaces as "exit status N", the same
+// string the reference puts on the wire.
+//
+// The call has the shape of f6010b97 on Linux and macOS VMs. Its working
+// directory is the worktree. The argv is --attr-source (attrSourceArgs), the heavy
+// profile, --git-dir, --work-tree, then args. Its config precursor is `--git-dir=<temp>
+// config -z --list --name-only` in the worktree. Both carry the heavy profile and
+// GIT_COMMON_DIR=commonDir, cleaned. git prints commonDir with forward slashes on
+// Windows, and f6010b97 pins it with backslashes on a Windows VM. The status
+// call alone adds GIT_OPTIONAL_LOCKS=0: 4534d86
+// sets it on its status commands. Without it a plain `git status` REWRITES the
+// worktree's index (refreshing the stat cache) and takes index.lock — a mutation of
+// the caller's repo on a read. With it the status output is byte-identical
+// (measured) but the index is not touched, matching the reference.
 func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (string, error) {
-	tmp, err := os.MkdirTemp("", "claustrum-gitstatus-")
+	tmp, err := os.MkdirTemp("", statusGitDirTempPrefix)
 	if err != nil {
 		return "", err
 	}
@@ -474,20 +540,34 @@ func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (stri
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	hookPrecursor(ctx, worktree)
-	full := []string{"--git-dir=" + tmp, "--work-tree=" + worktree}
-	excludes := userExcludesFile()
-	for _, c := range gitHardenHeavy {
-		if strings.HasPrefix(c, "core.excludesFile=") {
-			c = "core.excludesFile=" + excludes
-		}
-		full = append(full, "-c", c)
-	}
-	full = append(full, args...)
+	attr := attrSourceArgs()
+	excludes := statusExcludesFile()
+	pin := []string{"GIT_COMMON_DIR=" + filepath.Clean(commonDir)}
+	pre := exec.CommandContext(ctx, "git", "--git-dir="+tmp, "config", "-z", "--list", "--name-only")
+	pre.Dir = worktree
+	pre.Env = precursorEnv(true, pin)
+	_, _ = pre.Output()
+	full := append(attr, profileArgsWithExcludes(true, excludes, append([]string{"--git-dir=" + tmp, "--work-tree=" + worktree}, args...)...)...)
 	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Env = append(hardenedGitEnv(true, nil), "GIT_COMMON_DIR="+commonDir)
+	cmd.Dir = worktree
+	cmd.Env = append(hardenedGitEnv(true, pin), "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
+}
+
+// statusExcludesFile is the core.excludesFile value of the status call. It is
+// userExcludesFile, except that the null device is spelled /dev/null on every OS.
+// On Windows git status exits 128 with "fatal: cannot use NUL as an exclude file"
+// when core.excludesFile is NUL. It accepts /dev/null there. git ls-files and git
+// check-ignore accept NUL. Measured with Git for Windows 2.55.0 on a Windows 11 VM.
+// f6010b97 passes NUL to its status call on that VM and answers exit status 128.
+// This one value is the divergence D16. On Linux and macOS os.DevNull is /dev/null,
+// so nothing changes there.
+func statusExcludesFile() string {
+	if e := userExcludesFile(); e != os.DevNull {
+		return e
+	}
+	return "/dev/null"
 }
 
 // gitEmptyTree is git's canonical empty-tree object (SHA-1). Passing it as
@@ -510,13 +590,13 @@ var (
 //
 // git added --attr-source in 2.40, so support is probed once with the reference's own
 // guard — `git --attr-source=<empty> version`, which errors on older git. The option
-// is a top-level one, before the subcommand: the reference emits it first, claustrum
-// after the -c pins, but both are pre-subcommand and functionally identical, so the
-// status frame is unchanged by the position.
+// is a top-level one, the first argument of the status call, as f6010b97 emits it.
+//
+// The probe runs with the daemon's own environment and adds no variable. f6010b97
+// adds none to it on Linux and Windows VMs.
 func attrSourceArgs() []string {
 	attrSourceOnce.Do(func() {
 		cmd := exec.Command("git", "--attr-source="+gitEmptyTree, "version")
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 		attrSourceOK = cmd.Run() == nil
 	})
 	if attrSourceOK {
@@ -537,9 +617,10 @@ var (
 
 // userExcludesFile resolves the user's global git excludes file once: the configured
 // core.excludesFile if it is an absolute path, else $XDG_CONFIG_HOME/git/ignore or
-// $HOME/.config/git/ignore when that file exists, else "/dev/null". This is the
+// $HOME/.config/git/ignore when that file exists, else the null device (os.DevNull:
+// /dev/null, and NUL on Windows, as f6010b97 passes on a Windows VM). This is the
 // excludes path 7d193f89 passes as core.excludesFile on every git invocation (observed
-// via a git-argv trace). hardenedArgs substitutes it for every git op.
+// via a git-argv trace). hardenedProfileArgs substitutes it for every git op.
 func userExcludesFile() string {
 	userExcludesMu.Lock()
 	defer userExcludesMu.Unlock()
@@ -556,11 +637,15 @@ func resolveUserExcludesFile() string {
 	// hardening profile so git reports the real global setting, not the pin.
 	ctx, cancel := gitCtx()
 	defer cancel()
-	// GIT_DIR=/dev/null makes this read only the user's global/system config, never a
-	// repo's own core.excludesFile — a repo must not be able to inject excludes. This
+	// GIT_DIR=<null device> makes this read only the user's global/system config, never
+	// a repo's own core.excludesFile — a repo must not be able to inject excludes. This
 	// is the once-cached read that replaced the reference's per-call excludes probe.
+	// Its working directory is the temporary directory, and GIT_DIR is its only added
+	// variable. f6010b97 runs it so on Linux and Windows VMs, with GIT_DIR=NUL on
+	// Windows.
 	cmd := exec.CommandContext(ctx, "git", "config", "--includes", "--path", "core.excludesFile")
-	cmd.Env = append(os.Environ(), "GIT_DIR=/dev/null", "GIT_TERMINAL_PROMPT=0")
+	cmd.Dir = os.TempDir()
+	cmd.Env = append(os.Environ(), "GIT_DIR="+os.DevNull)
 	if out, err := cmd.Output(); err == nil {
 		if p := strings.TrimSpace(string(out)); filepath.IsAbs(p) {
 			return p
@@ -576,7 +661,7 @@ func resolveUserExcludesFile() string {
 			return p
 		}
 	}
-	return "/dev/null"
+	return os.DevNull
 }
 
 func fileExists(p string) bool {
@@ -592,12 +677,20 @@ func fileExists(p string) bool {
 // enumerable. Callers phrase the method-specific frame (a -32603 for the read
 // methods, a worktreeResult for worktree_create, its own message for
 // worktree_remove). Measured byte-for-byte against 7d193f89 on an ephemeral VM.
-func hostileConfigRefusal(dir string) (string, bool) {
+//
+// In git.info, git.list_branches, git.worktree_create and git.worktree_remove, this
+// check is the first listing of the method, not an extra one. It stands in for the
+// precursor of the method's first hardened call: dir is its working directory, and
+// heavy is the profile of that call. f6010b97 makes one listing there, not two, on
+// Linux, macOS and Windows VMs. When the next call is on the same dir, the caller
+// runs it with no precursor of its own (hardenedGitFirst).
+func hostileConfigRefusal(dir string, heavy bool) (string, bool) {
+	userExcludesFile()
 	ctx, cancel := gitCtx()
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "config", "-z", "--list", "--name-only")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
-	cmd.Env = append(cmd.Env, commonDirPinEnv(dir)...)
+	cmd := exec.CommandContext(ctx, "git", "config", "-z", "--list", "--name-only")
+	cmd.Dir = dir
+	cmd.Env = precursorEnv(heavy, commonDirPinEnv(dir))
 	_, err := cmd.Output()
 	if err == nil {
 		return "", false
@@ -605,15 +698,21 @@ func hostileConfigRefusal(dir string) (string, bool) {
 	// A failure to CHDIR into dir — it does not exist, is a non-directory, or a parent
 	// is not traversable — is NOT a hostile config: git never reached a repo, so there
 	// are no config-defined hooks to pin off. This is a fully client-controlled honest
-	// input (a stale or mistyped path), so detect it locale-independently with os.Stat,
-	// BEFORE parsing git's localizable "cannot change to" text — a git build whose
-	// translation covers that message would otherwise flip this honest path to the
-	// -32603 refusal. The reference lets such an input fall through to its normal
+	// input (a stale or mistyped path), so detect it with os.Stat, not from any git
+	// text. The reference lets such an input fall through to its normal
 	// not-a-repo shape (measured against 7d193f89: a nonexistent path/baseRepo answers
 	// isRepo:false on the read methods, not_a_repo on worktree_create, and success on
 	// worktree_remove — NOT this refusal). Only a config git CAN reach but cannot parse
 	// (a corrupt .git/config) is refused here.
 	if fi, statErr := os.Stat(dir); statErr != nil || !fi.IsDir() {
+		return "", false
+	}
+	// Residual fallback for the one chdir failure os.Stat cannot see: dir exists and is
+	// a directory, but git cannot start in it (dir itself lacks +x). The start then
+	// fails with a *fs.PathError, before git runs. This stays behavioural for that
+	// exotic, non-honest input. The honest nonexistent-path case never reaches it.
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
 		return "", false
 	}
 	var stderr string
@@ -622,13 +721,6 @@ func hostileConfigRefusal(dir string) (string, bool) {
 		// Not trimmed here. worktreeGitText cuts the raw stderr at 512 bytes first and
 		// trims after that, so leading white space counts toward the cap.
 		stderr = string(ee.Stderr)
-	}
-	// Residual fallback for the one chdir failure os.Stat cannot see: dir exists and is
-	// a directory, but git still cannot chdir into it (dir itself lacks +x). git's -C
-	// chdir failure reads "cannot change to '<dir>'". This stays behavioural for that
-	// exotic, non-honest input; the honest nonexistent-path case never reaches it.
-	if strings.Contains(stderr, "cannot change to") {
-		return "", false
 	}
 	// The reference wraps the git error as "<exit status>: <stderr>", then as
 	// "listing the configuration in force: <that>", then as the hooks refusal.
@@ -694,17 +786,23 @@ func worktreeGitText(stderr string, err error) string {
 // fails in dir, an existing directory. That covers a directory in which git finds
 // no repository. A path that does not exist, or is not a directory, reports
 // false: that input keeps its own answer on each method.
+//
+// It runs right after hostileConfigRefusal on dir, so it runs no precursor.
 func noRepositoryAt(dir string) bool {
-	return repositoryCheckError(dir) != nil
+	return repositoryCheckError(dir, false) != nil
 }
 
 // repositoryCheckError is noRepositoryAt with the exec error of the failed call, for
 // example "exit status 128". It answers nil where noRepositoryAt answers false.
-func repositoryCheckError(dir string) error {
+//
+// The call runs on the heavy profile, as f6010b97 runs it on Linux, macOS and
+// Windows VMs. precursor is false when it is the first call after
+// hostileConfigRefusal on dir (see hardenedGitCmd).
+func repositoryCheckError(dir string, precursor bool) error {
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return nil
 	}
-	_, err := hardenedGitStdout(dir, false, "rev-parse", "--absolute-git-dir")
+	_, err := hardenedGitRunPre(dir, true, precursor, nil, "rev-parse", "--absolute-git-dir")
 	return err
 }
 

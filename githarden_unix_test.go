@@ -113,8 +113,8 @@ func TestHardenedGitStatusIndexReadFails(t *testing.T) {
 }
 
 // A directory that exists but cannot be entered (mode 0000) passes the os.Stat
-// pre-check, so git itself fails to chdir with "cannot change to". That is still
-// not a hostile config — git never reached a repo — so no refusal is raised.
+// pre-check, so git cannot start in it: the start fails with a *fs.PathError. That
+// is still not a hostile config — git never reached a repo — so no refusal is raised.
 func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
 	requireGit(t)
 	skipIfRoot(t)
@@ -123,7 +123,7 @@ func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	if msg, bad := hostileConfigRefusal(dir); bad || msg != "" {
+	if msg, bad := hostileConfigRefusal(dir, false); bad || msg != "" {
 		t.Errorf("hostileConfigRefusal(unenterable dir) = (%q, %v), want (\"\", false)", msg, bad)
 	}
 }
