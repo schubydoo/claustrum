@@ -569,15 +569,24 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 
 // Row K16: a `.git` file that names a path that is gone and is not a worktree entry.
 // git's configuration listing fails there, so the reason is the hooks refusal. The
-// check also comes before the dir-symlink check.
+// check also comes before the dir-symlink check. git 2.47 names the missing path
+// in its text, and a newer git prints "(null)" there. The daemon passes git's text
+// through, so the test accepts either.
 func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	f := newWRFixture(t)
 	g := filepath.Join(f.base, "G")
 	nowhere := filepath.Join(f.base, "nowhere")
 	wrWrite(t, filepath.Join(g, ".git"), "gitdir: "+nowhere+"\n")
-	want := refusalFrame(t, wtUnknown+"config-defined hooks could not be pinned off; git not run: "+
-		"listing the configuration in force: exit status 128: fatal: not a git repository: "+nowhere)
-	if got := f.remove(t, g, f.p0, ""); got != want {
+	wantFor := func(name string) string {
+		return refusalFrame(t, wtUnknown+"config-defined hooks could not be pinned off; git not run: "+
+			"listing the configuration in force: exit status 128: fatal: not a git repository: "+name)
+	}
+	want := wantFor(nowhere)
+	got := f.remove(t, g, f.p0, "")
+	if got == wantFor("(null)") {
+		want = got
+	}
+	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	lnk := filepath.Join(f.R, "lnk")
