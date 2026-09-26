@@ -202,6 +202,7 @@ opt-in?
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept) |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering |
+| D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | status call `core.excludesFile` is `/dev/null`, not `NUL` |
 | CT-1 | Opt-in (`wantPid`) | Yes, on request. It adds `pid`/`startTime` | spawn/reattach reply extension |
 | CT-2 | Opt-in (`-keep-children`, POSIX) | No | children survive shutdown |
 | CT-3 | Opt-in (`claustrum.conf`) | Only `version-override`, via the static check's `-version` diff | the configuration file itself |

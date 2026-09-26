@@ -58,8 +58,10 @@ type gitDirTrust struct {
 	// refusal is the full wire text when verdict is gitDirRefused.
 	refusal string
 	// pinCommonDir is the repository git directory of a trusted git directory. Git
-	// runs with GIT_COMMON_DIR set to it. It is empty when the check left the
-	// directory to git.
+	// runs with GIT_COMMON_DIR set to it, and a remove prunes and verifies entries
+	// under it. For a daemon GIT_DIR that names nothing, it is the absolute form of
+	// that GIT_DIR. It is empty when the check left the
+	// directory to git with no pin.
 	pinCommonDir string
 }
 
@@ -226,12 +228,16 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 	fi, err := os.Stat(g)
 	if err != nil {
 		// Gone. A GIT_DIR that names a gone linked-worktree entry is refused. Any other
-		// GIT_DIR is left to git. A directory found by the walk means no repository.
+		// GIT_DIR is left to git, with GIT_COMMON_DIR pinned to its absolute form. A
+		// relative GIT_DIR is joined to the request directory first. f6010b97 pins
+		// that value on Linux and Windows VMs (rows E02 and E05, and E06 where
+		// GIT_DIR=/dev/null names nothing on Windows). A directory found by the walk
+		// means no repository.
 		if fromEnv {
 			if isWorktreeEntry(g) {
 				return gitDirTrust{verdict: gitDirRefused, refusal: gitDirEntryGoneRefusal}
 			}
-			return gitDirTrust{}
+			return gitDirTrust{pinCommonDir: g}
 		}
 		return gitDirTrust{verdict: gitDirNoRepo}
 	}

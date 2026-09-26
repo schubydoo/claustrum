@@ -12,9 +12,9 @@ import (
 
 // logGitArgv puts a `git` first on PATH that records its argv and then runs the
 // real git, and returns a reader for the calls logged so far. It never branches
-// on its arguments. The reader drops the leading -C <dir>, then the hardened
-// light or heavy profile's -c options when they appear as that exact run, and
-// every --git-dir= / --work-tree= option. Every other -c option is kept, in order,
+// on its arguments. The reader drops the hardened light or heavy profile's -c
+// options when they appear as that exact run, and every --git-dir= / --work-tree=
+// option. Every other -c option is kept, in order,
 // with the subcommand and its arguments, one call per slice.
 func logGitArgv(t *testing.T) func() [][]string {
 	t.Helper()

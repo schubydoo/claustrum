@@ -710,9 +710,32 @@ func TestGitDirTrustDaemonGitDir(t *testing.T) {
 	})
 	t.Run("gone, not an entry", func(t *testing.T) {
 		r := newTrustRepo(t)
-		t.Setenv("GIT_DIR", filepath.Join(r.base, "nope.git"))
+		nope := filepath.Join(r.base, "nope.git")
+		t.Setenv("GIT_DIR", nope)
 		wantResult(t, "info(T)", info(t, r.T), notRepoInfo)
 		wantResult(t, "list_branches(T)", listBranches(t, r.T), notRepoList)
+		// git still runs with GIT_COMMON_DIR pinned to that GIT_DIR, as f6010b97 pins
+		// it on Linux and Windows VMs (row E05).
+		if got, want := commonDirPinEnv(r.T), []string{"GIT_COMMON_DIR=" + nope}; !slices.Equal(got, want) {
+			t.Errorf("pin = %q, want %q", got, want)
+		}
+	})
+	t.Run("relative, names nothing", func(t *testing.T) {
+		// A relative GIT_DIR that names nothing in the request directory is pinned
+		// joined to that directory, as f6010b97 pins it on Linux and Windows VMs
+		// (row E02, directory N).
+		r := newTrustRepo(t)
+		plain := filepath.Join(r.base, "N")
+		if err := os.Mkdir(plain, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GIT_DIR", ".git")
+		wantResult(t, "info(N)", info(t, plain), notRepoInfo)
+		got := commonDirPinEnv(plain)
+		want := "GIT_COMMON_DIR=" + filepath.Join(canonicalPath(plain), ".git")
+		if len(got) != 1 || canonicalPath(strings.TrimPrefix(got[0], "GIT_COMMON_DIR=")) != canonicalPath(strings.TrimPrefix(want, "GIT_COMMON_DIR=")) {
+			t.Errorf("pin = %q, want %q", got, want)
+		}
 	})
 	t.Run("relative .git", func(t *testing.T) {
 		r := newTrustRepo(t)
@@ -882,7 +905,7 @@ func TestGitInfoOmitsABranchGitCannotResolve(t *testing.T) {
 func TestHardenedEnvReplaceAndGraftSwitches(t *testing.T) {
 	light := hardenedGitEnv(false, nil)
 	heavy := hardenedGitEnv(true, nil)
-	for _, kv := range []string{"GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=/dev/null"} {
+	for _, kv := range []string{"GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + os.DevNull} {
 		if !slices.Contains(light, kv) {
 			t.Errorf("light env lacks %s", kv)
 		}

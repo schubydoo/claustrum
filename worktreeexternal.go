@@ -215,16 +215,32 @@ func externalWorkTreeRefusal(repo string) string {
 			return workTreeUnknownPrefix + "exit status 128"
 		}
 	}
-	if detail, bad := hostileConfigRefusal(repo); bad {
+	// This listing is light, and the rev-parse below runs its own heavy one. That is
+	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).
+	if detail, bad := hostileConfigRefusal(repo, false); bad {
 		return workTreeUnknownPrefix + detail
 	}
+	// The call after that light listing is `rev-parse --show-toplevel` in baseRepo,
+	// on f6010b97 (Linux VM, rows WR00, WR07, WR09 and WR14). claustrum makes the
+	// call and does not use its answer. The checks below decide.
+	hardenedGitFirst(repo, false, "rev-parse", "--show-toplevel")
 	if baseIsGitDir(repo) {
 		return workTreeUnknownPrefix + "exit status 128"
 	}
-	if err := repositoryCheckError(repo); err != nil {
+	if err := repositoryCheckError(repo, true); err != nil {
 		return workTreeUnknownPrefix + err.Error()
 	}
 	return ""
+}
+
+// externalWorktreeListing makes the two git calls that f6010b97 makes before it
+// decides whether worktreePath is a registered worktree of baseRepo: a light
+// `worktree list --porcelain -z`, then a heavy `rev-parse --absolute-git-dir`, each
+// in baseRepo with its listing. Measured on a Linux VM (rows WR00, WR07, WR09 and
+// WR14). claustrum does not use their answers. externalWorktreeVerify decides.
+func externalWorktreeListing(repo string) {
+	hardenedGit(repo, false, "worktree", "list", "--porcelain", "-z")
+	hardenedGit(repo, true, "rev-parse", "--absolute-git-dir")
 }
 
 // unenterableBaseListing covers a baseRepo that exists but that git cannot start in:

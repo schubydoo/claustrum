@@ -219,9 +219,8 @@ and `7d193f89` and `4534d86` keep it. Claustrum had carried the stale `5db5e4a` 
 
 New divergence D16. On Windows the reference's own `git.status` of a linked worktree
 errors `-32603 "exit status 128"` (measured). Claustrum reproduces the same
-temp-gitdir assembly and returns the status. The reference's Windows failure mechanism
-is not yet pinned. An earlier hardcoded-`/tmp` hypothesis is contradicted, because the
-reference respects `$TMPDIR`. The behavior is byte-identical on Linux and macOS. On
+temp-gitdir assembly and returns the status. The Windows failure mechanism was not
+pinned in this cycle. A later measurement pinned it. See D16. The behavior is byte-identical on Linux and macOS. On
 Windows it is a reachable divergence, with claustrum more correct. See
 [DIVERGENCES.md](DIVERGENCES.md) D16.
 
