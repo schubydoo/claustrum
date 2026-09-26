@@ -515,9 +515,9 @@ func gitStatus(req *request) response {
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 before status
 	// runs (7d193f89). The enumeration is on baseRepo. With the GIT_COMMON_DIR pin of
-	// the trust check, git names the config by its absolute path. In the create and
-	// remove frames f6010b97 names the absolute path too, and 90fca6e6 names
-	// ".git/config" (Linux VM, K06). This frame is not measured on f6010b97.
+	// the trust check, git names the config by its absolute path. f6010b97 names the
+	// absolute path in this frame too, measured side by side on Linux and macOS VMs.
+	// 90fca6e6 names ".git/config" (Linux VM, K06).
 	if msg, bad := hostileConfigRefusal(p.BaseRepo); bad {
 		return errResult(req.ID, codeInternal, msg)
 	}

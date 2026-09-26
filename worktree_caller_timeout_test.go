@@ -908,9 +908,13 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				slowGit(t, "worktree,add", tc.mode, 0, `fatal: synthetic add failure\n`, "")
 				raw, _ := f.create(t, s, "w1", tc.existing, 0)
 				// In postfail the real add runs first. Its graft-file hints can fill
-				// the 512-byte cap before the stub's own line.
+				// the 512-byte cap before the stub's own line. The other rows still
+				// carry the stub's line.
 				if !strings.Contains(raw, `"error":"git worktree add failed: `) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 					t.Fatalf("reply = %s, want the add failure", raw)
+				}
+				if tc.mode != "postfail" && !strings.Contains(raw, "fatal: synthetic add failure") {
+					t.Errorf("reply = %s, want git's stderr in the frame", raw)
 				}
 				if !lastCallHolds(t, log, "worktree", "add") {
 					t.Errorf("git calls = %q, want none after the failed add", gitCalls(t, log))

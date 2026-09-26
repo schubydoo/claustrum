@@ -930,8 +930,9 @@ space, and then trims spaces. A stub git on a Windows VM measured this frame aga
 control bytes. 40 newlines and 40 spaces before a long text showed that the cap
 comes before the trim. The leading white space counts toward the 512 bytes. A tab
 becomes one space on `90fca6e6` too (Linux VM). With the `GIT_COMMON_DIR` pin, git
-names a corrupt config by its absolute path. `f6010b97` does the same in the create
-and remove frames, where `90fca6e6` names `.git/config`.
+names a corrupt config by its absolute path. `f6010b97` does the same in the
+`git.info`, `git.list_branches`, `git.status`, create and remove frames, measured on
+Linux and macOS VMs. `90fca6e6` names `.git/config`.
 
 #### git.info
 `{path}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""}`

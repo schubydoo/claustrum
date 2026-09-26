@@ -244,7 +244,9 @@ func unenterableBaseListing(repo string) error {
 			return nil
 		}
 	}
-	cmd := exec.Command("git", "config", "-z", "--list", "--name-only")
+	ctx, cancel := gitCtx()
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "config", "-z", "--list", "--name-only")
 	cmd.Dir = repo
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
 	var ee *exec.ExitError
