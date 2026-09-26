@@ -112,13 +112,22 @@ func TestLogDefaultThresholdEmitsEverything(t *testing.T) {
 // so anything that greps for the prefix keeps working. (Tags are padded to a
 // fixed width, so a 4-letter level like INFO is followed by two spaces before
 // the prefix — that column-aligns "[" across every level.)
+//
+// The test checks only the line it wrote. captureLog swaps the global logger, so a
+// process that an earlier test started can log its exit into the same capture.
 func TestLogTagPrecedesPrefixIntact(t *testing.T) {
 	withThreshold(t, logLevelDebug)
 	out := captureLog(t, func() { logInfof("[Server] New connection from: %s", "x") })
-	if !strings.HasPrefix(out, "INFO ") {
-		t.Errorf("level tag missing at line start: %q", out)
+	var line string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "[Server] New connection from: x") {
+			line = l
+		}
 	}
-	if !strings.Contains(out, "[Server] New connection from: x") {
-		t.Errorf("component prefix not byte-intact: %q", out)
+	if line == "" {
+		t.Fatalf("component prefix not byte-intact: %q", out)
+	}
+	if !strings.HasPrefix(line, "INFO ") {
+		t.Errorf("level tag missing at line start: %q", line)
 	}
 }
