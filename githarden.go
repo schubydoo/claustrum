@@ -305,15 +305,38 @@ func runWorktreeCheckout(ctx context.Context, leaf, gitDir, adminDir, rev string
 }
 
 // installWorktreeIndex moves the index file src to dst. A rename fails across file
-// systems, so a copy is the fallback. Best-effort: see runWorktreeCheckout.
+// systems, so a copy is the fallback. The copy goes to a temporary file beside dst
+// and is renamed into place only after a full write, so a failed copy leaves no
+// index rather than a partial one. Best-effort: see runWorktreeCheckout.
 func installWorktreeIndex(src, dst string) {
-	if os.Rename(src, dst) == nil {
+	if indexRename(src, dst) == nil {
 		return
 	}
-	if b, err := os.ReadFile(src); err == nil {
-		_ = os.WriteFile(dst, b, 0o644)
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), "index.tmp-")
+	if err != nil {
+		return
+	}
+	err = indexWrite(tmp, b)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = indexRename(tmp.Name(), dst)
+	}
+	if err != nil {
+		_ = os.Remove(tmp.Name())
 	}
 }
+
+// indexRename and indexWrite are seams for the tests of installWorktreeIndex.
+var (
+	indexRename = os.Rename
+	indexWrite  = func(f *os.File, b []byte) error { _, err := f.Write(b); return err }
+)
 
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no
 // answer: the admin dir that repo's .git file names, or <repo>/.git.
