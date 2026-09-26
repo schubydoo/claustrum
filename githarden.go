@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -354,11 +355,22 @@ func repoGitDir(repo string) string {
 // for callers that split a warning on stderr from a real failure (git.status,
 // git.list_branches).
 func hardenedGitStdout(dir string, heavy bool, args ...string) (string, error) {
+	return hardenedGitRun(dir, heavy, nil, args...)
+}
+
+// hardenedGitStdin is hardenedGitStdout on the light profile, with stdin fed to
+// git. The .worktreeinclude scan uses it for `git check-ignore --stdin`.
+func hardenedGitStdin(dir, stdin string, args ...string) (string, error) {
+	return hardenedGitRun(dir, false, strings.NewReader(stdin), args...)
+}
+
+func hardenedGitRun(dir string, heavy bool, stdin io.Reader, args ...string) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	hookPrecursor(ctx, dir)
 	cmd := exec.CommandContext(ctx, "git", hardenedArgs(dir, heavy, args...)...)
 	cmd.Env = hardenedGitEnv(heavy)
+	cmd.Stdin = stdin
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
 }

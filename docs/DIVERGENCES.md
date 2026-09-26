@@ -337,15 +337,15 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `signal: killed`) with the worktree rolled back. Measured in
   `scratch/probe/wt-success-lingering-4534d86.md`. This is parity, not a divergence.
 - **One opted-in arm loses data silently, on either seeding pass.** `populateWorktree`
-  runs two `git ls-files` passes, `copyWorktreeIncludes` (`worktreecopy.go`) and
-  `copyClaudeDir` (`worktreeclaude.go`), and both are best-effort: a killed listing
-  takes the early return and the error is dropped. Therefore `git.worktree_create`
-  still answers `{"success":true}` with files missing. Each pass gets its own deadline
+  runs two seeding passes, `copyWorktreeIncludes` (`worktreecopy.go`) and
+  `copyClaudeDir` (`worktreeclaude.go`), and both are best-effort. A killed call loses what
+  that call lists, and the error is dropped. Therefore `git.worktree_create`
+  still answers `{"success":true}` with files missing. Each git call gets its own deadline
   from `gitCtx`, so a kill loses one pass and not the other: the manifest copy can
   succeed while the `.claude/` seed is lost, or the other way round. The `.claude/`
-  pass has no manifest precondition, so unlike the manifest pass it runs on every
-  create, which widens where the arm can fire. The loss itself still needs a listing
-  slower than the configured deadline. No frame moves. This arm is absent at the
+  pass has no manifest precondition. It runs git on every create where `.claude/`
+  holds a child other than `worktrees`. A killed `git version` selects the full
+  scan. No frame moves. This arm is absent at the
   default.
 - **`git.worktree_create` under both deadlines.** The add and the read-tree
   checkout run under the shared deadline. A D5 hit on the add answers `git

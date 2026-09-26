@@ -1,7 +1,9 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -87,21 +89,78 @@ func isClaudeRuntimeState(rel string) bool {
 // `-z` here is not optional. git C-quotes any path with a tab, a quote, a
 // backslash or a non-ASCII byte, and the quoted form names no real file.
 //
+// The pass names each child of `.claude/` as a literal pathspec and leaves out
+// `worktrees` in any case. If no other child exists, no git call runs.
+// f6010b97 names the same children (measured on Linux, macOS and Windows VMs).
+// Its order is not sorted on Linux or macOS, so claustrum keeps the order of
+// the directory read. The `worktrees` case rule was measured on Linux only.
+//
+// The pathspecs go into batches, one git call per batch. See claudeDirPassCalls.
+// Each call runs through hardenedGitStdout, so the config precursor runs before
+// each batch. f6010b97 makes that call before each batch too (measured on Linux
+// and Windows).
+//
 // Best-effort, like the manifest copy: the worktree already exists, so a copy
-// failure does not fail the request.
+// failure does not fail the request. A failed batch is skipped, and the other
+// batches still copy. The directory batches of the `.worktreeinclude` scan do
+// the same.
 func copyClaudeDir(repo, worktree string) {
-	out, err := hardenedGitStdout(repo, false, "ls-files", "--others", "--ignored",
-		"--exclude-standard", "-z", "--", claudeDirName+"/")
-	if err != nil || out == "" {
-		return
-	}
+	copyClaudeDirCalls(repo, worktree, claudeDirPassCalls(repo, gitArgvBudget))
+}
+
+// copyClaudeDirCalls runs each argv of calls and copies the files it lists.
+func copyClaudeDirCalls(repo, worktree string, calls [][]string) {
 	skipPrefix := claudeDirName + "/" + worktreesSubdir + "/"
-	for _, rel := range strings.Split(out, "\x00") {
-		if rel == "" || strings.HasPrefix(rel, skipPrefix) || isClaudeRuntimeState(rel) {
+	for _, args := range calls {
+		out, err := hardenedGitStdout(repo, false, args...)
+		if err != nil {
 			continue
 		}
-		if dst := safeOverlayDest(worktree, rel); dst != "" {
-			copyFile(filepath.Join(repo, rel), dst)
+		for _, rel := range strings.Split(out, "\x00") {
+			if rel == "" || strings.HasPrefix(rel, skipPrefix) || isClaudeRuntimeState(rel) {
+				continue
+			}
+			if dst := safeOverlayDest(worktree, rel); dst != "" {
+				copyFile(filepath.Join(repo, rel), dst)
+			}
 		}
 	}
+}
+
+// claudeDirPassFixedArgs is the fixed argv of one `.claude/` batch, up to and
+// including `--`.
+var claudeDirPassFixedArgs = []string{"--literal-pathspecs", "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--"}
+
+// claudeDirPassCalls returns the git argv of each `.claude/` batch, or nil when
+// the pass runs no git. Readdirnames keeps the order of the directory read.
+func claudeDirPassCalls(repo string, budget int) [][]string {
+	dir, err := os.Open(filepath.Join(repo, claudeDirName))
+	if err != nil {
+		return nil
+	}
+	names, err := dir.Readdirnames(-1)
+	dir.Close()
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, name := range names {
+		if !strings.EqualFold(name, worktreesSubdir) {
+			paths = append(paths, claudeDirName+"/"+name)
+		}
+	}
+	return claudeDirPassBatches(paths, budget)
+}
+
+// claudeDirPassBatches splits the `.claude/` pathspecs into git calls, in the
+// given order. The fixed argv and the pathspecs of one call share budget. Each
+// argument costs its length plus 3 bytes (argvCost). The fixed argv costs 87.
+// When the next pathspec does not fit, the call closes and a new call starts.
+// This matches the measured f6010b97 split points on Linux and Windows.
+func claudeDirPassBatches(paths []string, budget int) [][]string {
+	var calls [][]string
+	for _, batch := range batchIncludePathspecs(paths, budget-argvCost(claudeDirPassFixedArgs)) {
+		calls = append(calls, append(slices.Clone(claudeDirPassFixedArgs), batch...))
+	}
+	return calls
 }
