@@ -4,6 +4,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/windows"
 )
@@ -27,4 +28,12 @@ func canonicalPath(p string) string {
 		return p
 	}
 	return windows.UTF16ToString(buf[:n])
+}
+
+// sameCanonicalPath compares two canonicalPath results without regard to slash
+// direction or letter case. canonicalPath keeps a path's own spelling when the path
+// no longer exists. Git writes its records with forward slashes (`C:/…/.git`). Go
+// joins with backslashes (`C:\…\.git`).
+func sameCanonicalPath(a, b string) bool {
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
 }

@@ -39,6 +39,7 @@ func stubLingeringGit(t *testing.T, exit0 bool, orphanSecs string) {
 // returns the raw reply and the wall-clock the reply took.
 func runLingeringCreate(t *testing.T, base string, timeoutMs int) (string, time.Duration) {
 	t.Helper()
+	shapeAsGitRepo(t, base)
 	wt := filepath.Join(base, ".claude", "worktrees", "wt")
 	s := newTestServer(t)
 	start := time.Now()

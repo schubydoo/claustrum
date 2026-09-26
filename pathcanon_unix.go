@@ -14,3 +14,8 @@ func canonicalPath(p string) string {
 	}
 	return p
 }
+
+// sameCanonicalPath compares two canonicalPath results as plain strings.
+func sameCanonicalPath(a, b string) bool {
+	return a == b
+}

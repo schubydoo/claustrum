@@ -431,8 +431,9 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		s := newTestServer(t)
 		runGit(t, f.top, "branch", "w1")
 		raw, _ := f.create(t, s, "w1", "main", 0)
-		// The wording of git's two refusals depends on the git version.
-		re := regexp.MustCompile(`"error":"git worktree add failed: [^"]*a branch named 'w1' already exists \(attaching to the existing branch main was refused first: [^"]*'main' is already [^"]*\)","errorCode":"worktree_add_failed"`)
+		// The wording of git's two refusals depends on the git version. Each output
+		// can start with git's graft-file hint, which holds escaped quotes.
+		re := regexp.MustCompile(`"error":"git worktree add failed: (?:[^"\\]|\\.)*a branch named 'w1' already exists \(attaching to the existing branch main was refused first: (?:[^"\\]|\\.)*'main' is already (?:[^"\\]|\\.)*\)","errorCode":"worktree_add_failed"`)
 		if !re.MatchString(raw) {
 			t.Fatalf("reply = %s, want the two-output add failure", raw)
 		}
@@ -906,8 +907,14 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				f.stubAction(t, tc.action)
 				slowGit(t, "worktree,add", tc.mode, 0, `fatal: synthetic add failure\n`, "")
 				raw, _ := f.create(t, s, "w1", tc.existing, 0)
-				if !strings.Contains(raw, "fatal: synthetic add failure") || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+				// In postfail the real add runs first. Its graft-file hints can fill
+				// the 512-byte cap before the stub's own line. The other rows still
+				// carry the stub's line.
+				if !strings.Contains(raw, `"error":"git worktree add failed: `) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 					t.Fatalf("reply = %s, want the add failure", raw)
+				}
+				if tc.mode != "postfail" && !strings.Contains(raw, "fatal: synthetic add failure") {
+					t.Errorf("reply = %s, want git's stderr in the frame", raw)
 				}
 				if !lastCallHolds(t, log, "worktree", "add") {
 					t.Errorf("git calls = %q, want none after the failed add", gitCalls(t, log))
@@ -946,15 +953,16 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var rt, pre []string
+				var rt, pre, rtEnv, preEnv []string
 				var rtCwd, preCwd, index string
 				for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
-					parts := strings.SplitN(line, "\x1e", 3)
+					parts := strings.SplitN(line, "\x1e", 4)
 					argv := strings.Split(parts[2], "\x1f")
+					env := strings.Split(parts[3], "\x1f")
 					if slices.Contains(argv, "read-tree") {
-						rt, rtCwd, index = argv, parts[0], parts[1]
+						rt, rtCwd, index, rtEnv = argv, parts[0], parts[1], env
 					} else if len(argv) == 5 && argv[1] == "config" && strings.HasPrefix(argv[0], "--git-dir=") {
-						pre, preCwd = argv, parts[0]
+						pre, preCwd, preEnv = argv, parts[0], env
 					}
 				}
 				if rt == nil || pre == nil {
@@ -992,6 +1000,17 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				}
 				if st := f.out(t, f.leaf(), "status", "--porcelain"); st != "" {
 					t.Errorf("git status in the new worktree = %q, want clean", st)
+				}
+				// Both calls carry the GIT_COMMON_DIR pin of the trust check: the main
+				// repository's git directory, for a plain and a linked baseRepo. The
+				// read-tree also turns off replace objects and grafts. f6010b97 sets all
+				// three on its read-tree (Linux and Windows argv captures).
+				wantCommon := canonicalPath(filepath.Join(f.top, ".git"))
+				if canonicalPath(rtEnv[0]) != wantCommon || canonicalPath(preEnv[0]) != wantCommon {
+					t.Errorf("GIT_COMMON_DIR = %q (read-tree), %q (precursor), want %s", rtEnv[0], preEnv[0], wantCommon)
+				}
+				if rtEnv[1] != "1" || rtEnv[2] != "/dev/null" {
+					t.Errorf("read-tree GIT_NO_REPLACE_OBJECTS = %q, GIT_GRAFT_FILE = %q, want 1 and /dev/null", rtEnv[1], rtEnv[2])
 				}
 			})
 		}
