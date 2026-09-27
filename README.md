@@ -161,7 +161,7 @@ These knobs belong to claustrum only, and they stay off the wire:
 
 All of them are off by default.
 
-Seven flags opt into a deliberate divergence from the reference. Each flag is off by default,
+Six flags opt into a deliberate divergence from the reference. Each flag is off by default,
 and each flag has a matching `claustrum.conf` key. When Claude Desktop owns the argv, that key
 is the reachable knob. That is a driver claim. See
 [docs/ARCHITECTURE.md → Driver claims and their provenance](docs/ARCHITECTURE.md#driver-claims-and-their-provenance).
@@ -176,7 +176,8 @@ measurements.
 | `-max-cli-bytes` (D10) | off (0) | a size cap on the decompressed CLI + download body | `-install` |
 | `-cli-probe-timeout` (D11) | off (0) | a deadline on the `<cli> --version` runnability probe | `-install` |
 | `-cli-download-timeout` (D12) | off (0) | a deadline on the CLI download | `-install` |
-| `-libc-probe-timeout` (D14) | off (0) | a deadline on the `ldd --version` libc probe | `-install`, linux only |
+
+`-libc-probe-timeout` is deprecated. It sets nothing and logs one warning. The `ldd` libc probe always has the reference's 5 s bound.
 
 For the full details, see [docs/PROTOCOL.md](docs/PROTOCOL.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

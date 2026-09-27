@@ -154,13 +154,13 @@ func main() {
 		cliKeep     = flag.Int("cli-keep", 3, "How many most-recent CLI versions to keep")
 		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 
-		libcProbe = flag.Duration("libc-probe-timeout", 0, "Bound the `ldd --version` libc probe with this wall-clock `duration` (e.g. 5s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that falls back to the default classification for any ldd slower than it, honest or not. -install only, linux only (the probe does not run elsewhere). Claude Desktop owns the argv, so the libc-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
-
 		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the <cli> --version runnability probe with this wall-clock `duration` (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
 
 		readRegularOnly = flag.Bool("files-read-regular-only", false, "Make files.read refuse anything that is not a regular file (FIFO, socket, character/block device) with -32602 \"files.read: not a regular file\". Off by default, which is what the reference does — it reads /dev/null happily and blocks on a writerless FIFO; on is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the files-read-regular-only key in claustrum.conf is usually the reachable way to set this.")
 
 		gitTimeoutFlag = flag.Duration("git-timeout", 0, "Bound every git invocation with this wall-clock `duration` (e.g. 60s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that kills any git slower than it, honest or not, and is wire-visible (e.g. -32603 \"signal: killed\"). -serve only. Claude Desktop owns the argv, so the git-timeout key in claustrum.conf is usually the reachable way to set this.")
+
+		_ = flag.Duration("libc-probe-timeout", 0, "Deprecated and ignored. The `ldd --version` libc probe always bounds ldd itself at 5s, as the reference does. Passing this flag, or setting the libc-probe-timeout key in claustrum.conf, logs one warning on -install and changes nothing.")
 
 		cliDownload = flag.Duration("cli-download-timeout", 0, "Bound the whole -cli-url download exchange with this wall-clock `duration` (e.g. 10m). 0 (the default) means no bound, which is what the reference does; a non-zero value is an opt-in divergence that fails any download slower than it, honest or not. -install only. Claude Desktop owns the argv, so the cli-download-timeout key in claustrum.conf is usually the reachable way to set this.")
 	)
@@ -229,11 +229,9 @@ func main() {
 		// called from the runInstall path's two call sites (the cache-hit guard
 		// here, and stageAndInstall via ensureCLI), not handed an option struct.
 		cliProbeTimeout = cfg.effectiveCLIProbeTimeout(*cliProbe, cliSet["cli-probe-timeout"])
-		// And the same for the libc probe: detectLibc reads the package var directly
-		// (libc_linux.go), and only -install reaches it. ⚠️ Distinct from the line
-		// above — these two flags differ only in their cli/libc prefix and share a type, so a swap
-		// here compiles, vets and passes every isolated test.
-		lddProbeTimeout = cfg.effectiveLibcProbeTimeout(*libcProbe, cliSet["libc-probe-timeout"])
+		// -libc-probe-timeout and its config key are deprecated no-ops. They set
+		// nothing, so the ldd probe keeps its 5 s bound (lddProbeTimeout).
+		warnDeprecatedLibcProbe(cliSet["libc-probe-timeout"], cfg.libcProbeTimeoutSeen)
 		// Same reasoning: fetchToFile reads this deep in the download path rather
 		// than taking it through installOpts.
 		cliDownloadTimeout = cfg.effectiveCLIDownloadTimeout(*cliDownload, cliSet["cli-download-timeout"])
@@ -279,5 +277,14 @@ func main() {
 	default:
 		fmt.Fprintln(os.Stderr, "claustrum: one of --version/--install/--probe-cli/--serve/--bridge/--stop is required")
 		osExit(2)
+	}
+}
+
+// warnDeprecatedLibcProbe logs one warning when the deprecated -libc-probe-timeout
+// flag or its claustrum.conf key is present. It sets nothing: the reference
+// bounds the ldd probe at 5 s itself (since 19f30c46), so D14 is retired.
+func warnDeprecatedLibcProbe(flagSet, keySeen bool) {
+	if flagSet || keySeen {
+		logWarnf("[Install] -libc-probe-timeout is deprecated and ignored. The ldd probe always uses its 5s bound")
 	}
 }

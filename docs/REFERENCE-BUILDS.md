@@ -22,10 +22,10 @@ release.
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
 | `90fca6e6…` | 2026-09-14 (built) | no surface change. claustrum made 7 changes, 3 of them client-visible and 1 of those on a frame. See below | [PRs 387–392](https://github.com/schubydoo/claustrum/pull/392) |
-| `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode. See below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371) |
+| `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode. See below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371), and the `ldd` bound under issue 408 |
 | `3ef9370e…` | 2026-09-03 (built) | none (off-wire: linux libc probe reordered ldd-first) | [PR 345](https://github.com/schubydoo/claustrum/pull/345) |
-| `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333) |
-| `7d193f89…` | 2026-08-25 | 6 changes + off-wire git rewrite. See below | [PR 286](https://github.com/schubydoo/claustrum/pull/286) |
+| `4534d86…` | 2026-09-04 (observed) | 3 changes + off-wire lifecycle layer | [PRs 314–333](https://github.com/schubydoo/claustrum/pull/333), and the sweep age gate under issue 408 |
+| `7d193f89…` | 2026-08-25 | 6 changes + off-wire git rewrite. See below | [PR 286](https://github.com/schubydoo/claustrum/pull/286), and the `-cli-zst` checksum check under issue 408 |
 | `5db5e4a1…` | 2026-07-06 | none (off-wire: `daemon.token` persistence) | [PR 131](https://github.com/schubydoo/claustrum/pull/131) |
 | `7c2f88d1…` | 2026-07-02 | 5 changes. See below | [PR 120](https://github.com/schubydoo/claustrum/pull/120) |
 | `d20a77da…` | 2026-06-09 | none (pure rebuild) | [PR 97](https://github.com/schubydoo/claustrum/pull/97) (pin bump only) |
@@ -108,6 +108,9 @@ build on top of `3ef9370`. This build has two wire changes, both matched
 byte-for-byte, plus four off-wire subsystems, one new off-wire CLI mode, and a
 startup file-limit raise.
 
+**Missed at first.** This build also bounds the `ldd` libc probe at 5 s. That
+change was reconciled later, under issue 408.
+
 **Wire delta.**
 
 1. `plugins.prune` added. The method count goes from 18 to 19. This is a new
@@ -176,7 +179,7 @@ reports `glibc`. The loader glob is consulted only after `ldd` produced no
 output. The exit code is not consulted. This value is off the JSON-RPC wire, and it
 appears only in the `__INSTALL_RESULT__` line. Claustrum still matches it, because
 the driver uses `libc` to choose which CLI build to download. See
-[DIVERGENCES.md](DIVERGENCES.md) D14 and `install.go` `classifyLibc`.
+[DIVERGENCES.md](DIVERGENCES.md) D14 (now retired) and `install.go` `classifyLibc`.
 
 **How it was bounded.** The static drift check passed. A function-inventory diff
 across all six platforms found exactly one changed function, the linux libc
@@ -194,6 +197,9 @@ published. The date above is the date of capture and pinning. A
 lifecycle-focused build on top of `7d193f89`. Three wire changes, all matched
 byte-for-byte, plus a large off-wire daemon-lifecycle layer and one new documented
 divergence (D16). The RPC method set is unchanged at 18.
+
+**Missed at first.** This build also added the 10-minute age gate to the install
+temp sweep. That change was reconciled later, under issue 408.
 
 **Wire delta.**
 
@@ -246,6 +252,9 @@ session-worktree surface. Seven wire changes, all matched byte-for-byte. Four ar
 listed below. The other three are the `git.status` untracked handling, the
 `worktree_remove` registration prune, and the `worktree_remove` locked-worktree
 refusal. The off-wire git rewrite and VM probes surfaced those three.
+
+**Missed at first.** This build also checks a supplied `-cli-checksum` against
+the `-cli-zst` blob. That change was reconciled later, under issue 408.
 
 **Wire delta.**
 
@@ -420,11 +429,11 @@ and it calls 15 of the 19 methods. The uncalled four include
 CLI drives shutdown, and the client reads the version from `--version` CLI
 stdout, not over RPC. A
 capture of a real session will therefore not exercise the new method, and the
-synthetic battery stays the gate for it. That client also bears on D1's trust
-boundary: `--install` carries `--cli-checksum` on the `--cli-url` download. A
+synthetic battery stays the gate for it. That client also bears on the
+`-cli-zst` checksum path (retired D1): `--install` carries `--cli-checksum` on the `--cli-url` download. A
 later argv capture (2026-08-10, two cold starts on one host) shows this
-independently. [D1](DIVERGENCES.md#d1) records what Desktop supplies on the
-`--cli-zst` SFTP fallback, and the limits of that record.
+independently. The retired [D1](DIVERGENCES.md#d1) entry records what Desktop
+supplies on the `--cli-zst` SFTP fallback, and the limits of that record.
 
 ### `d20a77da22b7d4822f758654b226299ad7021c22` — 2026-06-09
 

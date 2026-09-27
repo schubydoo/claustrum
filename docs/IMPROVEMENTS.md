@@ -8,13 +8,13 @@ history, not a backlog.
 Most of this work is wire-neutral. It changes tooling, tests, or OS-level
 behaviour, but it does not change a JSON-RPC frame. The exceptions are the items
 that knowingly make a frame or a behaviour different from the reference daemon.
-Those items are the numbered deliberate divergences (D1-D17) and the
+Those items are the numbered deliberate divergences (the D series) and the
 client-driven extensions (CT-1..CT-5). They no longer live here.
 
 ## Deliberate divergences and the decision rules → docs/DIVERGENCES.md
 
 The divergence catalog and THE RULE now live in their own canonical home,
-[DIVERGENCES.md](DIVERGENCES.md). The catalog holds D1-D17 and CT-1..CT-5.
+[DIVERGENCES.md](DIVERGENCES.md). The catalog holds the D series and CT-1..CT-5.
 Each entry gives its default, how to activate it, why it exists, and its reopen
 trigger. THE RULE is the four-rule, clause-(a)/(b)/(c) standard, and every
 divergence is judged against it. A contributor needs two things most: the
@@ -37,7 +37,7 @@ split condensed the full measurement and correction notes out of this table.
 | 2 | In-repo Go test suite | H/M | `harness_test.go` and the integration suites boot the daemon on a temp socket. They assert each method's frames over the real wire. Thus CI gates compatibility without the reference binary. |
 | 3 | Golden-frame fixtures | H/M | The tests assert `testdata/socket_*.golden.json` byte-equal. To regenerate them, run `go test -run Socket -update`. |
 | 4 | Atomic `-install` extract | M/L | `ensureCLI` stages the file at `.fetch-<random>`, not at `<cliPath>.tmp`, so the orphan sweep can reclaim it. `ensureCLI` then renames the file into place with `os.Rename`. An interrupted install never leaves a half-written `cliPath`. The end state and the `__INSTALL_RESULT__` facts stay byte-compatible. |
-| 5 | Timeouts on `git`/`exec` calls | M/L | Wrapped git and the linux-only `ldd` libc probe in `exec.CommandContext`. Both halves became numbered divergences: D5 (`gitTimeout`) and D14 (`ldd` probe). Both are now opt-in and off by default. See [DIVERGENCES.md](DIVERGENCES.md). |
+| 5 | Timeouts on `git`/`exec` calls | M/L | Wrapped git and the linux-only `ldd` libc probe in `exec.CommandContext`. Both halves became numbered divergences: D5 (`gitTimeout`) and D14 (`ldd` probe). D5 is opt-in and off by default. D14 is retired, because the reference now bounds the `ldd` probe at 5 s itself. See [DIVERGENCES.md](DIVERGENCES.md). |
 | 6 | pre-commit + `gofmt`/`vet` hooks | M/L | A zero-dependency hook lives in `.githooks/`. `make hooks` installs it. It uses the same lint order as CI. `--no-verify` bypasses it. |
 | 7 | `go vet`-clean + `staticcheck` in CI | M/L | The CI `lint` job runs `golangci-lint` (`.golangci.yml`: staticcheck + govet + errcheck + ineffassign + unused + misspell/unconvert). |
 | 8 | Bounded replay buffer (ring) | M-H/M | A cap of 16 MiB of serialized frame bytes applies to each per-process buffer. The count includes each frame's JSON line and its trailing newline. The oldest frames drop, and `firstSeq` advances. The cap is parity, not tuning. The reference's 16 MiB was measured, and `firstSeq` is wire-visible. Measure again before you change it. |

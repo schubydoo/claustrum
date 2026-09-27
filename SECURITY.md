@@ -71,8 +71,7 @@ holds both can do whatever the daemon's user can.
   download is verified against its SHA-256 unconditionally, before extraction and
   before the CLI is marked runnable. An empty `-cli-checksum` still fails.
 - The local `-cli-zst` (SFTP) blob is checksum-verified only with a supplied
-  `-cli-checksum`. Without one, the blob is trusted. This is an intentional
-  conditional divergence, D1. See [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md).
+  `-cli-checksum`. Without one, the blob is trusted. The reference does the same.
 - In `-serve` mode the daemon makes no outbound network connections. Every dial
   it makes is to a local `AF_UNIX` socket.
 

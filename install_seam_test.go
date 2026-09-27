@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestEnsureCLIWordsAHashFailureAsOpeningInput covers the D1 hash arm in
+// TestEnsureCLIWordsAHashFailureAsOpeningInput covers the checksum hash arm in
 // ensureCLI's -cli-zst branch. It is unreachable without a seam: the branch has
 // just opened the blob and read a byte from it, so any fixture that could make
 // sha256File fail (missing, a directory, unreadable) has already been rejected
@@ -33,7 +33,7 @@ func TestEnsureCLIWordsAHashFailureAsOpeningInput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A checksum is what activates D1's verification at all; without one the blob
+	// A checksum is what activates the -cli-zst verification at all; without one the blob
 	// is never hashed and the arm is not on the path.
 	err := ensureCLI(installOpts{cliZst: blob, cliChecksum: "00"}, filepath.Join(dir, "cli"))
 	want := fmt.Sprintf("opening input: %v", errHash)

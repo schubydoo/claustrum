@@ -72,32 +72,33 @@ The test is this question:
 If the honest input is reachable, and the caller cannot turn the guard off, then
 always-on is not justified. This holds no matter how the reference behaves on the
 hostile path. This test flipped every timeout and size cap from always-on to
-opt-in (D3, D5, D10, D11, D12, D14). D4 is the non-threshold sibling.
+opt-in (D3, D5, D10, D11, D12, and the retired D14). D4 is the non-threshold sibling.
 
 *Canonical example:* D2 satisfies both halves. The reference's home-wipe is
 unrecoverable data loss, and no honest caller has a legitimate *use* for deleting
 home. A caller can still reach that path by accident, which is exactly what the
 guard is for.
 
-Clause (b): the trigger is unreachable on an honest path. Most surviving
-always-on entries use this form (D6, D7, D8, D9). Each entry has its own trigger,
-and the glosses are not interchangeable. Two of the four are asserted rather than
+Clause (b): the trigger is unreachable on an honest path. Four always-on
+entries use this form (D6, D8, D9, D18). Each entry has its own trigger,
+and the glosses are not interchangeable. Three of the four are asserted rather than
 enumerated: nobody ever enumerated Desktop's per-method param set against D9's
-binding, and D6/D7 rest on an observed value plus a measured accepted-set. Read
-those two as unenumerated, not established (rule 2 puts the burden on the
+binding, and D6 and D18 rest on an observed value plus a measured accepted-set. Read
+those three as unenumerated, not established (rule 2 puts the burden on the
 divergence).
 
 *Canonical example:* D6. A `-cli-version` naming a destructive path outside the
 cli-dir is not something any correct client emits.
 
 Clause (c): both binaries fail, and the only delta is diagnostic text.
-This clause is deliberately narrow, and we wrote it for D13. Measured, D13 does
-not meet it, so the clause justifies no entry in this file today. A reader must
+This clause is deliberately narrow, and we wrote it for D13. D13 did not meet it
+when measured, so the clause justifies no entry in this file today. A reader must
 not take two things on trust. First, an `error.code` is not diagnostic text,
 because a client branches on it. Second, on-disk state that a caller can
-`files.stat` is not diagnostic text either. D13's honest-path rows differ in both,
-so the clause keeps its literal wording and D13 sits [unresolved](#d13). We did
-not widen the clause to fit its one candidate.
+`files.stat` is not diagnostic text either. D13's honest-path rows differed in
+on-disk state when they were measured. The clause keeps its literal wording and
+D13 sits [unresolved](#d13). We did not widen the clause to fit its one
+candidate.
 
 *Canonical example:* none currently qualifies.
 
@@ -106,7 +107,7 @@ not widen the clause to fit its one candidate.
 Every opt-in tag rests on one claim about the driver: Claude Desktop owns the
 daemon's argv on both `-serve` and `-install`. Therefore an operator cannot reach
 a flag-only knob, and the `claustrum.conf` key (read beside the executable) is the
-reachable one. This claim is the premise under D3, D4, D5, D10, D11, D12, D14 and
+reachable one. This claim is the premise under D3, D4, D5, D10, D11, D12 and
 under the "(opt-in)" tag itself.
 
 So much rests on the claim that it gets one canonical record. Its provenance, its
@@ -137,31 +138,30 @@ rather than repeating them in each entry:
   honest-but-slow or honest-but-large input trips it too. That is precisely why
   they are off by default.
 - At the shipped defaults, no claustrum-chosen `-install` wall-clock bound
-  applies. Only stdlib transport clocks remain on the `-cli-url` path
-  (`net.Dialer{Timeout: 30s}`, `TLSHandshakeTimeout: 10s`). Those two clocks are
-  always-on, unnumbered, and unprobed on the reference.
+  applies. The stdlib transport clocks (`net.Dialer{Timeout: 30s}`,
+  `TLSHandshakeTimeout: 10s`) apply on `-cli-url` only. They are always-on,
+  unnumbered, and unprobed on the reference. The `ldd` libc probe has the
+  reference's 5 s bound on ldd itself and a 2 s drain after ldd exits.
 
 ## Catalog
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D1](#d1) | SHA-256-verify the local `-cli-zst` blob | trusting (no verify) | conditional: the caller supplies `-cli-checksum` | rule 3: only a *wrong* checksum pays | Desktop supplying a checksum mismatching its own SFTP blob |
 | [D2](#d2) | Refuse a destructive path that is or contains `$HOME` | always-on | always-on | rule 3 clause (a) | an honest caller legitimately targeting a path that is/contains home |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D4](#d4) | `files.read` refuses non-regular files | off | `-files-read-regular-only` / key | rule 4 | opt-in refuses a legit read, or default parks/OOMs the daemon in normal use |
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
-| [D7](#d7) | `-cli-version` must not collide with the temp sweep | always-on | always-on | rule 3 clause (b) | Desktop passing `.fetch-*` or `*.zst` |
 | [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log` | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
 | [D9](#d9) | Namespace-wide params binding (type error in an unread field → `-32602`) | always-on | always-on | rule 3 clause (b) | a real client sending a type-mismatched unread namespace field |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D11](#d11) | Deadline on the `<cli> --version` runnability probe | off (`0`) | `-cli-probe-timeout` / key | rule 4 | Desktop turning out not to parse `cliError` (retraction rider) |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
-| [D13](#d13) | Verify checksum before decompressing (`-cli-url`) | always-on | always-on | **UNRESOLVED**: clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
-| [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a slow `ldd` on a host where the deadline changes the reported `libc`. The host is a musl host the glob misses, or a mixed host. Or the reference bounding it above 45 s |
+| [D13](#d13) | Verify checksum before decompressing (`-cli-url`, and `-cli-zst` with a checksum) | always-on | always-on | **UNRESOLVED**: clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
+| [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -169,37 +169,12 @@ rather than repeating them in each entry:
 | [CT-5](#ct-5) | `-listen-pipe` Windows named-pipe transport | off | `-listen-pipe` / `listen-pipe` key (Windows) | additive opt-in transport | — |
 
 Tags: **opt-in** = operator-declinable (flag + config key). **conditional** =
-activated by the caller (D1). **always-on** = no switch. The CT block uses
+activated by the caller. No current entry is conditional. **always-on** = no switch. The CT block uses
 "opt-in" in the looser sense of "off unless somebody asks for it". CT-1 is
 caller-activated and CT-3 *is* the config mechanism, so neither one is
 operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ## Entries
-
-### D1 · Re-harden the `-cli-zst` checksum (conditional) { #d1 }
-
-- **Behavior.** The reference verifies `-cli-checksum` only on the `-cli-url`
-  download, not on the local `-cli-zst` (SFTP) blob. When the caller supplies a
-  `-cli-checksum`, and only then, claustrum SHA-256-verifies `-cli-zst`. On a
-  mismatch claustrum answers `checksum mismatch: …` and leaves the source blob
-  intact. An absent or empty checksum stays trusting → byte-identical to the
-  reference.
-- Why conditional, not opt-in. The *caller* activates it by supplying
-  `-cli-checksum`. On `-install`, that caller is Desktop. An operator does not
-  activate it. It therefore has no flag or config key, and it needs none. The
-  delta requires a *wrong* checksum, because a correct one is byte-identical, so
-  no honest caller pays for it.
-- **Observable delta** (supplied-wrong checksum only): a valid blob that the
-  reference installs returns `checksum mismatch`. A corrupt blob returns `checksum
-  mismatch` instead of `decompressing: …`.
-- **Observed once**, on 2026-08-10, during a download failure that the probe
-  forced. This is the only capture that reached the SFTP rung. The captured
-  Desktop `-cli-zst` invocation supplied no `-cli-checksum`, where the `-cli-url`
-  call seconds earlier did supply one. The condition was therefore false, and no
-  verification ran. This is one instance of one failure shape.
-- **Reopen trigger.** Desktop supplying a `-cli-checksum` that does not match the
-  blob it uploaded over SFTP. Conditional is not the same as unreachable.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`.
 
 ### D2 · Refuse a home directory as a destructive path target (always-on) { #d2 }
 
@@ -402,22 +377,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   component.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`.
 
-### D7 · `-cli-version` must not collide with the install temp sweep (always-on) { #d7 }
-
-- **Behavior.** The orphan sweep claims `.fetch-*` and `*.zst` after *every*
-  install. Therefore `-cli-version .fetch-x` or `1.0.zst` installs correctly, and
-  the sweep deletes it moments later in the same run. Measured, both binaries
-  finish with an empty cli-dir and no `cliError`. They report success although
-  they installed nothing. claustrum answers `cli version "…" collides with the
-  install temp sweep` instead. The sweep predicate and this check share one
-  definition, so they cannot drift apart.
-- **Unlike D6 this gives up exact parity** (an error beats a success that installed
-  nothing). But that preference is not what earns the entry. Clause (b) earns it.
-- **Why always-on.** Rule 3 clause (b), on the same evidence as D6.
-- **Reopen trigger.** Desktop passing a `-cli-version` matching `.fetch-*` or
-  `*.zst` (one observation reopens D6 too, because both rest on the same evidence).
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`.
-
 ### D8 · claustrum never follows or writes a foreign/symlinked `remote-server.log` (always-on) { #d8 }
 
 - **Behavior.** claustrum rotates the prior log to `remote-server.log.old` and
@@ -478,8 +437,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Default.** `0` = unlimited (byte-identical). **Activate:** `-max-cli-bytes <n>`
   or the key. When disabled, both call sites bypass their `LimitReader`.
 - **claustrum streams the blob and never buffers it.** It writes a `.blob-<random>`
-  temp (or `$TMPDIR/claustrum-fetch-<random>` on a first install, before the cli-dir
-  exists) and hashes it in one pass. Therefore "cap off" does not mean unbounded
+  temp in the cli-dir (or `$TMPDIR/claustrum-fetch-<random>` if the cli-dir is
+  unwritable) and hashes it in one pass. Therefore "cap off" does not mean unbounded
   memory (measured 886 MB → 10 MB on a 400 MiB payload). The prefix `.blob-`, not
   `.fetch-`, is the one that matters. `.fetch-*` is the swept namespace. If the
   staging blob used the `.fetch-` prefix, the sweep of a concurrent install deletes
@@ -580,12 +539,15 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   because `io.Copy`'s error returns first. That case diverges on the prefix instead:
   `download failed: <err>` against the reference's `decompressing: <err>`.
 - **Why it is unresolved.** We wrote clause (c) for this entry and, measured, it
-  does not meet it. On both honest-path rows the reference creates an empty
-  cli-dir where claustrum creates nothing (when the cli-dir did not already
-  exist). The delta is therefore not confined to diagnostic text: an empty directory
-  is state a caller keeps, and a caller can distinguish it with a `files.stat`. The
-  reopen fixture run 2026-08-08 did not meet its condition. The on-disk delta is
-  conditional on the cli-dir being absent, and it does not self-heal.
+  did not meet it. On both honest-path rows the reference created an empty
+  cli-dir where claustrum created nothing (when the cli-dir did not already
+  exist). The delta was therefore not confined to diagnostic text: an empty
+  directory is state a caller keeps, and a caller can distinguish it with a
+  `files.stat`. The reopen fixture run 2026-08-08 did not meet its condition.
+- **That on-disk delta is gone.** claustrum now creates the cli-dir before any
+  network access, as the reference does (measured on `f6010b97`). No new
+  measurement of the D13 rows exists yet. So whether D13 now meets clause (c) is
+  open, and D13 stays unresolved until a run settles it.
 - **The trigger is reachable** (not "an input no honest caller produces", which was
   measured wrong): a bad mirror, a partial upload, or a stale short proxy object is
   undecompressable *and* checksum-mismatched with no adversary. This is *not* the
@@ -600,60 +562,14 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** Any change to how Desktop classifies `cliError`. For example,
   distinguishing `checksum mismatch` from a decompression error, or matching either
   as terminal.
-- **Not the same as D1.** D1 is about *whether* claustrum verifies the local
-  `-cli-zst` blob at all. D13 is about the *order* of verify and decompress on the
-  `-cli-url` download.
+- **The `-cli-zst` path too.** If the caller supplies a `-cli-checksum`, claustrum
+  hashes the `-cli-zst` blob before it decompresses it. The reference reports a
+  decompress failure before a checksum mismatch. So a corrupt blob with a wrong checksum answers
+  `checksum mismatch` on claustrum and `decompressing: unexpected EOF` on the
+  reference. Both binaries leave an empty cli-dir there. The reference half is
+  measured on a Linux VM against `7d193f89` through `f6010b97`.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Staging and cleanup, and `install.go`.
   Ordering, clause-(c), and reopen-fixture tables: forensics.
-
-### D14 · Make the `-install` libc probe deadline opt-in (linux) { #d14 }
-
-- **Behavior.** Since reference build 3ef9370 the libc probe runs `ldd --version`
-  on every call and lets its output decide. claustrum does the same (see
-  `classifyLibc`). A "musl" banner
-  reports `musl`. Any other output reports `glibc`. When `ldd` produced no output,
-  and only then, the loader glob
-  (`/lib/ld-musl-*.so.*`) is consulted. The
-  deadline bounds that `ldd` run, which is now always in the path. Off linux,
-  `libc_other.go` returns `""` without probing, so the bound cannot fire there.
-- **Default.** `0` = no deadline (byte-identical). **Activate:** `-libc-probe-timeout
-  <dur>` or the key. The disabled state bypasses `context.WithTimeout` (`lddCtx`).
-  **Not the
-  same knob as `-cli-probe-timeout`** (D11), whose name differs only in the
-  `cli`/`libc` prefix.
-  `-cli-probe-timeout` bounds `<cli> --version`. `-libc-probe-timeout` bounds
-  `ldd --version`. `TestInstallArmWiresEachFlagToItsOwnGlobal` exists because a swap
-  compiles and passes every isolated test.
-- The value delta is narrow but not cosmetic. When the armed deadline kills
-  `ldd` before it writes anything, its output is empty, so the loader glob decides
-  the fallback: a marker present reports `musl`, else `glibc`. A deadline that
-  fires after `ldd` wrote partial output takes that output, not the glob. The
-  empty-output case coincides with the un-timed answer, except where the un-timed
-  `ldd` output disagrees with the marker. Two host shapes disagree. On a musl host
-  the glob misses, the fallback reports `glibc` where the un-timed banner reports
-  `musl`. On a mixed host carrying a marker, the fallback reports `musl` where its
-  un-timed glibc output reports `glibc`. Per the driver claim that Desktop uses
-  `libc` to choose a CLI build
-  ([ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance)), the
-  wrong build can be fetched on those host shapes.
-- Softer than it reads. The deadline fires in only one of two stall shapes: a
-  stalled `ldd` that leaves a surviving child keeps claustrum blocked past the
-  deadline (the same softness the general git sites have under D5). This `ldd` probe
-  (`runLddVersion`, `CombinedOutput`) does not cap the post-exit drain. Only
-  `git.worktree_create`'s checkout does, where the descendant-orphan case is
-  measured. The deadline also addresses the stall half only. A hostile `ldd`
-  resolved earlier in `PATH` that answers in 1 s is untouched, and `classifyLibc`
-  then trusts its `musl` banner verbatim.
-- **Why opt-in.** The deadline cleared clause (a)'s not-a-frame half (the reference
-  gave no reply at 45 s in the discriminating shape), but the honest-path cost was
-  untested in either direction, and there was no escape hatch. An untested
-  conjunction is not a justification (rule 4).
-- **Reopen trigger.** A host where the armed deadline changes the reported `libc`
-  from its un-timed value. The host is a musl host the glob misses, or a mixed
-  host, and in either case it has a slow `ldd`. Or any measurement showing the
-  reference bounds this probe above 45 s.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`. Also `install.go` (canonical
-  stall table), `libc_linux.go` and `libc_other.go`. Full measurement: forensics.
 
 ### D15 · Verify a run-dir lock holder is our serve process before signalling it (macOS) { #d15 }
 
@@ -803,11 +719,29 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Host cleaner. Also `hostclean_darwin.go`
   (`runLsof`, `hcBusy`), `hostclean.go` (`hcSettledBusy`, `retireAbandoned`).
 
+### D18 · `-cli-version` must not start with `.blob-` (always-on) { #d18 }
+
+- **Behavior.** claustrum downloads a `-cli-url` blob to `<cli-dir>/.blob-<random>`.
+  The sweep and the `-cli-keep` prune both skip that prefix, so an in-flight blob
+  is never deleted or counted. A CLI installed under such a name is never pruned
+  or swept either. claustrum therefore answers `cli version "…" collides with the
+  install download blob` and installs nothing.
+- **Reference side.** The prefix is claustrum's own name. Whether the reference
+  installs such a version is not measured.
+- **Why always-on.** Rule 3 clause (b). The real client passes bare versions
+  (`1.0.86`, a commit sha, `latest`). It is on the same evidence as [D6](#d6).
+- **Why not part of D6.** D6 guards a destructive path that leaves the cli-dir.
+  D18 guards a name that claustrum itself reserves. The reasons and the reopen
+  triggers differ. The number D7 is retired and is not reused.
+- **Reopen trigger.** Desktop passing a `-cli-version` that starts with `.blob-`.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`
+  (`isDownloadBlobName`, `validateCLIVersion`).
+
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
 - `process.spawn` / `process.reattach` accept an optional `"wantPid":true`. The
   reply then gains `pid` (the child's OS pid) and `startTime`. This is the first
-  wire-surface *extension*. D1 by contrast changes an install-path behaviour.
+  wire-surface *extension*.
 - The default path is byte-identical. When `wantPid` is absent or false,
   `omitempty` omits both fields, and the frame is exactly the old
   `{"success":true}` / `{found,running,firstSeq,lastSeq,stdinApplied}`. The fields live on a
@@ -850,7 +784,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   fail-safe. Precedence: explicit CLI flag > config > default.
 - Keys mirror the flags: `version-override`, `keep-children`, `metrics-addr`,
   `wire-log`, `wire-log-max-string`, `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10), `cli-probe-timeout`
-  (D11), `cli-download-timeout` (D12), `libc-probe-timeout` (D14), `git-timeout`
+  (D11), `cli-download-timeout` (D12), `git-timeout`
   (D5), `files-read-regular-only` (D4). Durations use `time.ParseDuration`, which
   rejects a bare number, except zero. Zero parses in unboundedly many spellings and
   always means disabled. No accepted oddity can switch a divergence *on*.
@@ -910,6 +844,55 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) (`-serve` flags). Also `pipetransport.go`
   and `pipetransport_windows.go`.
 
+## Retired entries
+
+A retired entry is a divergence that a later reference build made moot. Its
+number is not reused, and its old link points here.
+
+### D1 · Verify the `-cli-zst` blob against a supplied checksum (retired) { #d1 }
+
+- Since `7d193f89` the reference checks a supplied `-cli-checksum` against the
+  `-cli-zst` blob. `5db5e4a` ignored it. The compare is case-sensitive, so the
+  right digest in upper case fails.
+- On a mismatch the reference answers `checksum mismatch` and keeps the blob.
+  It creates the cli-dir before it opens the blob. So a failed attempt past the
+  version check leaves the cli-dir, empty if it was new. The cli-dir half is
+  measured on a Linux VM from `5db5e4a`, the mismatch from `7d193f89`. claustrum
+  now does all of this, unit-tested.
+- The `-cli-url` path follows the same rules on `f6010b97`. The compare is
+  case-sensitive, and the cli-dir comes before any network access.
+- One delta stays, and [D13](#d13) owns it: claustrum hashes before it
+  decompresses.
+- Desktop's one captured `-cli-zst` call (2026-08-10) supplied no
+  `-cli-checksum`, so no check ran on that path. It is one instance of one
+  failure shape.
+
+### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }
+
+- D7 refused a `-cli-version` such as `.fetch-x` or `1.0.zst`. Its premise was
+  that the sweep deletes such a version in the run that installed it. That held
+  up to `7d193f89`.
+- Since `4534d86` the sweep removes an entry only when its mtime is about 10
+  minutes old or more. The reference installs such a version and keeps it. A later
+  install removes it once it is that old. A cache hit does not.
+- claustrum now does the same. Measured on a Linux VM against `4534d86` through
+  `f6010b97`. [D6](#d6) still applies to every version.
+
+### D14 · Deadline on the `ldd --version` libc probe (retired) { #d14 }
+
+- Since `19f30c46` the reference bounds the `ldd` process at 5 s. If `ldd` still
+  runs then, it kills the whole process group of `ldd` and drops any output. The
+  loader glob then decides. No log line is written. The dropped-output row is
+  measured on `f6010b97` and `90fca6e6`.
+- If `ldd` exits in time, the reference waits up to about 2 s for its output
+  pipe, then uses the output. Measured on `f6010b97` for exits up to 4.5 s.
+- claustrum now does the same, always. The late-exit case is unit-tested.
+- The `-libc-probe-timeout` flag and its `claustrum.conf` key are deprecated.
+  Both are still accepted, both set nothing, and either one logs one warning on
+  `-install`.
+- No knob stays to change the bound. A different bound is a new divergence, and
+  rule 2 puts the burden of proof on it. No measurement gives that proof today.
+
 ## Candidates considered but not taken
 
 In each of these claustrum can be friendlier than the reference, and matching the
@@ -941,7 +924,7 @@ scheduled.
 - Replacing the in-band `"auth"` scheme.
 - Adding required new params to existing methods. The sanctioned exception is
   an optional, gracefully-ignored param whose result fields vanish by default.
-  That is the D1 / CT-1 pattern. It leaves the default frame byte-identical, and it
+  That is the CT-1 pattern. It leaves the default frame byte-identical, and it
   degrades both ways.
 
 Any of these needs a deliberate, documented protocol version bump.

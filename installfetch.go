@@ -30,6 +30,11 @@ var installIdleTimeout = 60 * time.Second
 // runs, where the reference emits no `fetch` object.
 var lastInstallFetch *fetchStats
 
+// lastInstallFinal is the final __INSTALL_PROGRESS__ line of a complete -cli-url
+// download. fetchToFile sets it, and ensureCLI prints it only after the checksum
+// passes (emitFinalProgress). runInstall resets it with lastInstallFetch.
+var lastInstallFinal *progressLine
+
 // fetchStats is the `fetch` object 4534d86 appends (last) to __INSTALL_RESULT__
 // whenever a -cli-url download was attempted — even a 0-byte 404. Field order
 // bytes, ms, longestPauseMs, all always present. bytes is the total read, ms the
@@ -76,6 +81,11 @@ type watchedBody struct {
 // read-idle clock and the first pause measure from when the body became readable.
 func newWatchedBody(inner io.ReadCloser, total int64, start time.Time) *watchedBody {
 	w := &watchedBody{inner: inner, total: total, lastAt: time.Now(), start: start, stop: make(chan struct{}), tickerDone: make(chan struct{})}
+	// The leading bytes:0 line is printed HERE, before any Read, so it always
+	// says 0. Printed from the ticker goroutine, it raced the first Read and
+	// once said bytes:57 with no bytes:0 line. The reference printed bytes:0
+	// first in every measured run.
+	w.emitProgress()
 	w.idle = time.AfterFunc(installIdleTimeout, w.onIdle)
 	go w.ticker()
 	return w
@@ -162,7 +172,6 @@ func (w *watchedBody) stats() fetchStats {
 
 func (w *watchedBody) ticker() {
 	defer close(w.tickerDone)
-	w.emitProgress() // leading bytes:0
 	t := time.NewTicker(installProgressInterval)
 	defer t.Stop()
 	for {
@@ -182,6 +191,17 @@ func (w *watchedBody) emitProgress() {
 		pl.Total = w.total
 	}
 	w.mu.Unlock()
+	printProgress(pl)
+}
+
+// emitFinalProgress prints lastInstallFinal, if a download completed.
+func emitFinalProgress() {
+	if lastInstallFinal != nil {
+		printProgress(*lastInstallFinal)
+	}
+}
+
+func printProgress(pl progressLine) {
 	b, _ := json.Marshal(pl)
 	fmt.Printf("__INSTALL_PROGRESS__%s\n", b)
 }

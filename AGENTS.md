@@ -58,7 +58,7 @@ There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`, default emit-everything). The level tag goes before the `[Component]` prefixes, so existing greps keep matching |
 | `metrics.go` | opt-in Prometheus counters at `/metrics`. The `-metrics-addr` flag creates the listener. Without that flag there is no listener. Counting is always-on atomics |
 | `wirelog.go` | opt-in `-wire-log` JSON-RPC frame capture (CT-3). It is a pure side channel over already-marshaled bytes, and it is off by default. It redacts credentials by key only, not by payload contents. It forces `0600` on every open |
-| `install.go` | `-install`: CLI download / verify (SHA-256) / extract (zstd) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob. Without `-cli-checksum` it does not verify that blob (D1) |
+| `install.go` | `-install`: CLI download / verify (SHA-256) / extract (zstd) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob, as the reference does. The compare is case-sensitive |
 | `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups / Windows Job Objects, login-shell PATH, the POSIX-only `-keep-children`) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5) |
 
 The JSON-RPC surface is identical on every OS. Full internals →
@@ -207,11 +207,12 @@ The JSON-RPC surface is identical on every OS. Full internals →
   only with `-cli-url`. That download path verifies its SHA-256 before it
   extracts, unconditionally. Every dial `-serve` makes is to a local `AF_UNIX`
   socket, never network egress.
-- `-cli-probe-timeout` and `-libc-probe-timeout` are a swap footgun. The two
-  names differ only in their `cli`/`libc` prefix, they have the same type, and
-  the `-install` arm of main resolves them in consecutive statements. A swap
-  compiles and passes every isolated test.
-  `TestInstallArmWiresEachFlagToItsOwnGlobal` is the guard against it.
+- The `ldd` libc probe bounds ldd itself at 5 s (`lddProbeTimeout`), as on the
+  reference since `19f30c46`. Its old flag, `-libc-probe-timeout`, is a
+  deprecated no-op that logs one warning. `-cli-probe-timeout` sets the near-twin
+  `cliProbeTimeout`. A line that sets the `ldd` bound from either flag compiles
+  and passes every isolated test. `TestInstallArmWiresEachFlagToItsOwnGlobal` is
+  the guard against it.
 - A disabled limiter bypasses its `io.LimitReader` / `context.WithTimeout`
   entirely. Never "simplify" it into a huge value. For the caps, the `cap+1`
   (or `max-total+1`) arithmetic defines the boundary. For the deadlines, an
@@ -221,7 +222,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
 
 ## Gotchas — Part B: the opt-in wire divergences
 
-Seven divergences are opt-in flags:
+Six divergences are opt-in flags:
 
 - D3 (`max-extract-bytes`)
 - D4 (`files-read-regular-only`)
@@ -229,9 +230,8 @@ Seven divergences are opt-in flags:
 - D10 (`max-cli-bytes`)
 - D11 (`cli-probe-timeout`)
 - D12 (`cli-download-timeout`)
-- D14 (`libc-probe-timeout`)
 
-All seven default OFF. That is the parity position.
+All six default OFF. That is the parity position.
 The reference applies no such cap, deadline, or refusal at any input that the
 probe can reach. A non-off default therefore fails an operation that the
 reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
@@ -243,12 +243,9 @@ non-locked git failure as permission to delete `worktreePath`. Since
 `7d193f89`, a LOCKED worktree is refused before the delete. Therefore never
 read a fired `git-timeout` as "git refused". Opting D5 in is wire-visible.
 
-This section holds two non-flag divergences. D1: if a `-cli-checksum` is
-supplied, claustrum verifies the `-cli-zst` SFTP blob. Without `-cli-checksum`
-it does not verify that blob. D1 is therefore conditional and caller-activated.
-Without that flag the path stays trusting, so honest callers get byte-identical
-behavior. D13: verify-before-decompress ordering. D13 is always-on, but it is
-unresolved, not justified.
+D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is
+always-on, but it is unresolved, not justified. D1, D7 and D14 are retired,
+because claustrum now matches the reference on those paths.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
 up on as busy. A completed run that found nothing reads as not busy. The

@@ -83,13 +83,10 @@ type config struct {
 	// same: Claude Desktop owns that argv too, so the config key is how an operator
 	// actually opts in.
 	gitTimeout *time.Duration
-	// libcProbeTimeout mirrors -libc-probe-timeout; nil means "not set in the file".
-	// Same reachability argument as the rest of the -install knobs: Desktop owns
-	// that argv. ⚠️ NOT the same knob as cliProbeTimeout — that one bounds the
-	// `<cli> --version` runnability probe (D11); this one bounds `ldd --version`
-	// (D14). The names differ only in their cli/libc prefix and share a type, which is
-	// exactly the crossing TestInstallArmWiresEachFlagToItsOwnGlobal exists to catch.
-	libcProbeTimeout *time.Duration
+	// libcProbeTimeoutSeen records that the file carries the deprecated
+	// libc-probe-timeout key. The value is ignored: the ldd probe always uses
+	// its 5 s bound (lddProbeTimeout). main logs one warning on -install.
+	libcProbeTimeoutSeen bool
 	// filesReadRegularOnly mirrors -files-read-regular-only; nil means "not set in
 	// the file". A bool rather than a threshold: the guard it gates is a predicate
 	// on the file's mode, so there is no value to tune — only on or off. Same
@@ -228,6 +225,9 @@ func applyConfigKey(cfg *config, key, val string) {
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.cliDownloadTimeout = &d
 		}
+	case "libc-probe-timeout":
+		// Deprecated and ignored, whatever the value. See libcProbeTimeoutSeen.
+		cfg.libcProbeTimeoutSeen = true
 	case "git-timeout":
 		// A Go duration ("60s", "2m"); 0 disables the deadline (the default).
 		// Negative and unparseable values are rejected on the same reasoning as the
@@ -236,14 +236,6 @@ func applyConfigKey(cfg *config, key, val string) {
 		// can switch the deadline on by accident.
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.gitTimeout = &d
-		}
-	case "libc-probe-timeout":
-		// A Go duration ("5s", "1m"); 0 disables the deadline (the default). Same
-		// parsing and the same zero/negative edges as cli-probe-timeout above, and
-		// the same consequence: every accepted oddity leaves the deadline off, so
-		// none of them can switch it on.
-		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
-			cfg.libcProbeTimeout = &d
 		}
 	case "files-read-regular-only":
 		// A bool, not a threshold — false disables the guard (the default) and is
@@ -391,15 +383,6 @@ func (cfg config) effectiveCLIProbeTimeout(cliVal time.Duration, cliSet bool) ti
 func (cfg config) effectiveGitTimeout(cliVal time.Duration, cliSet bool) time.Duration {
 	return effectiveNumeric(cliVal, cliSet, cfg.gitTimeout, func() {
 		logWarnf("[Server] -git-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
-	})
-}
-
-// effectiveLibcProbeTimeout applies the same precedence for -libc-probe-timeout,
-// and the same negative handling as the other -install durations.
-func (cfg config) effectiveLibcProbeTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	// [Install], not [Server]: detectLibc is reached only from the -install arm.
-	return effectiveNumeric(cliVal, cliSet, cfg.libcProbeTimeout, func() {
-		logWarnf("[Install] -libc-probe-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
 	})
 }
 

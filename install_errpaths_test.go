@@ -248,49 +248,66 @@ func TestEnsureCLIFinalComponentSymlinkIsSafe(t *testing.T) {
 	}
 }
 
-// A version that the orphan sweep would claim is refused. Without this the
-// install SUCCEEDS and the sweep then deletes the CLI it just wrote, in the same
-// run, while the facts frame reports no cliError — measured at 5db5e4a with an
-// EMPTY cli-dir and no error on BOTH the reference and claustrum.
-//
-// Reporting an error beats reporting a success that installed nothing, so this
-// is a second claustrum-only hardening on the same flag. It is exact parity that
-// is being given up here, unlike the escape rules, where the reference destroys
-// unrelated data.
-func TestEnsureCLIRefusesSweptVersionNames(t *testing.T) {
+// A version whose name the sweep claims INSTALLS, as on the reference. Measured
+// on a Linux VM against 4534d86 through f6010b97: the install succeeds and the
+// same run keeps the fresh CLI, a cache hit keeps it at any age, and a later
+// install sweeps it once its mtime is more than 10 minutes old. claustrum refused
+// these versions before (the retired D7).
+func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 	for _, v := range []string{".fetch-x", "1.0.zst"} {
 		t.Run(v, func(t *testing.T) {
 			root := t.TempDir()
 			cliDir := filepath.Join(root, "clidir")
-			if err := os.MkdirAll(cliDir, 0o700); err != nil {
+			blob := func() string {
+				t.Helper()
+				p := filepath.Join(root, "cli.zst")
+				if err := os.WriteFile(p, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			}
+			cliPath := filepath.Join(cliDir, v)
+
+			f := captureInstallFacts(t, installOpts{cliDir: cliDir, cliVersion: v, cliZst: blob()})
+			if f.CliError != "" {
+				t.Fatalf("CliError = %q, want the install to succeed", f.CliError)
+			}
+			if !isRegularFile(cliPath) {
+				t.Fatal("the fresh CLI was swept in the run that installed it")
+			}
+
+			old := time.Now().Add(-601 * time.Second)
+			if err := os.Chtimes(cliPath, old, old); err != nil {
 				t.Fatal(err)
 			}
-			zstPath := filepath.Join(root, "cli.zst")
-			if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
-				t.Fatal(err)
+			f = captureInstallFacts(t, installOpts{cliDir: cliDir, cliVersion: v})
+			if !f.CliWasPresent || !isRegularFile(cliPath) {
+				t.Fatalf("cache hit: present=%v, file kept=%v; a cache hit must not sweep",
+					f.CliWasPresent, isRegularFile(cliPath))
 			}
-			f := captureInstallFacts(t, installOpts{
-				cliDir: cliDir, cliVersion: v, cliZst: zstPath,
-			})
-			if !strings.Contains(f.CliError, "collides with the install temp sweep") {
-				t.Errorf("CliError = %q, want a sweep-collision refusal", f.CliError)
+
+			f = captureInstallFacts(t, installOpts{cliDir: cliDir, cliVersion: "2.0.0", cliZst: blob()})
+			if f.CliError != "" {
+				t.Fatalf("second install CliError = %q, want success", f.CliError)
+			}
+			if _, err := os.Lstat(cliPath); !os.IsNotExist(err) {
+				t.Errorf("%s, 601 s old, survived a later install's sweep (lstat err %v)", v, err)
 			}
 		})
 	}
 }
 
-// The sweep and the validator must agree on what the sweep claims, or a version
-// becomes install-then-vanish again. This pins them to the one predicate.
-func TestSweptNameRuleIsShared(t *testing.T) {
+// The sweep's name rule, and the validator's acceptance of every name it claims.
+func TestSweptNameRule(t *testing.T) {
 	for _, name := range []string{".fetch-x", ".fetch-", "1.0.zst", ".zst"} {
 		if !isSweptName(name) {
 			t.Errorf("isSweptName(%q) = false, want true", name)
 		}
-		if err := validateCLIVersion(name); err == nil {
-			t.Errorf("validateCLIVersion(%q) = nil, but the sweep would delete it", name)
+		if err := validateCLIVersion(name); err != nil {
+			t.Errorf("validateCLIVersion(%q) = %v, want nil — the reference installs it", name, err)
 		}
 	}
-	for _, name := range []string{"1.0.86", "latest", "README"} {
+	for _, name := range []string{"1.0.86", "latest", "README", ".FETCH-u", "a.ZST", "a.zst.bak", "zst"} {
 		if isSweptName(name) {
 			t.Errorf("isSweptName(%q) = true, want false", name)
 		}

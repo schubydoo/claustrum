@@ -25,8 +25,7 @@ The daemon is one binary. A flag selects the mode:
   attaches to this mode.
 - `-install` is the installer. It downloads the CLI, verifies the SHA-256,
   extracts the zstd archive, and prunes old CLI versions. It verifies a local
-  `-cli-zst` blob only with a caller-supplied checksum
-  ([D1](DIVERGENCES.md#d1)).
+  `-cli-zst` blob only with a caller-supplied checksum, as the reference does.
 - `-probe-cli` runs the bounded `<cli> --version` probe on one CLI binary, and it
   exits 0. If the CLI runs, it prints nothing. If the 30 s deadline killed the
   CLI, it prints `__CLI_HUNG__`. If the CLI is missing or does not run, it prints
