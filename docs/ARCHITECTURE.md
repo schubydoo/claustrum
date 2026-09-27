@@ -49,9 +49,9 @@ This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
     - `-cli-zst` names a local `.zst` file. Claustrum consumes it as soon as
       decompression succeeds. A runnability probe that fails after that point
       does not undo the consumption. A supplied `-cli-checksum` makes claustrum
-      verify the blob against it, and without that flag claustrum does not
-      verify the blob. That is a conditional divergence from the reference, and
-      the caller activates it. See [D1](DIVERGENCES.md#d1).
+      verify the blob against it, case-sensitively. Without that flag claustrum
+      does not verify the blob. The reference does the same. Claustrum creates
+      the cli-dir before it opens the blob.
     - `-cli-url` makes claustrum download the blob. Claustrum then verifies its
       SHA-256 against `-cli-checksum` *unconditionally* (even an empty checksum
       fails).
@@ -59,8 +59,8 @@ This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
   again for runnability. It does all of this at a temp path, then renames the
   file into place atomically. An interrupted install never leaves a
   half-written CLI.
-- Claustrum prunes the directory to the `-cli-keep` most-recent files (by mtime,
-  default 3).
+- Claustrum prunes the directory to the `-cli-keep` most-recent CLI versions (by
+  mtime, default 3). The prune skips `.blob-*` and every name the sweep claims.
 - Claustrum prints one line: `__INSTALL_RESULT__{json}`.
 
 ### 2 · Daemon / process supervisor (`-serve`)
@@ -287,9 +287,8 @@ sits in front of those calls so operators can quiet the daemon:
   "os":   "linux",            // GOOS
   "arch": "amd64",            // GOARCH
   "libc": "glibc",            // or "musl"; "" off linux (no probe). On linux an ldd
-                              // slower than -libc-probe-timeout falls back to the
-                              // loader-glob result when that is set; no deadline by
-                              // default (D14).
+                              // still running at 5 s is killed, its output is
+                              // dropped, and the loader glob decides.
                               // The driver uses
                               // this field to pick which CLI build to download —
                               // a third-binary claim; see the provenance note below.
@@ -313,7 +312,6 @@ count. If you need a count, re-derive it from `ensureCLI`:
 | phase | string |
 |---|---|
 | version check | `cli version "<v>" must be a single path component` |
-| | `cli version "<v>" collides with the install temp sweep` |
 | | `cli version "<v>" collides with the install download blob` |
 | source | `cli <v> missing and no --cli-url or --cli-zst provided`. A second route reaches it. A present, working CLI answers `--version` more slowly than an opted-in `-cli-probe-timeout`, and no source flag was given. That route is unreachable at the default, which has no deadline (D11) |
 | | `opening input: <err>` (`-cli-zst` read) |
@@ -362,7 +360,7 @@ load-bearing:
   field to pick which CLI build to download.
 - "Desktop owns the argv". An operator has no way to influence the daemon's
   argv. A divergence reachable only through an argv flag is therefore unreachable
-  on Desktop-driven hosts. This premise lets D3, D4, D5, D10, D11, D12 and D14 be
+  on Desktop-driven hosts. This premise lets D3, D4, D5, D10, D11 and D12 be
   opt-in. It also defines the "(opt-in)" tagging convention: a flag and
   a configuration key, because the configuration key is the reachable knob.
 
@@ -387,7 +385,7 @@ fail, an SFTP upload was re-invoked as `-cli-zst`. Both records live in `scratch
 (gitignored).
 
 The `cliError` and `libc` claims remain design constraints. The argv claim is a
-driver result, not a parity one. Five argv dependents (D3, D4, D5, D12, D14) carry
+driver result, not a parity one. Four argv dependents (D3, D4, D5, D12) carry
 reopen triggers for their own behavior. The other two (D10, D11) carry riders about
 the `cliError` claim, as does D13. All live in [DIVERGENCES.md](DIVERGENCES.md). If
 someone finds a route to influence the daemon's argv, the argv claim reopens. A
@@ -396,8 +394,8 @@ field, or a configuration file it turns into argv. A forwarded env var does not
 qualify, because nothing in `config.go` or `main.go` reads the
 environment for these knobs. The dependents list is maintained by hand, and it was
 incomplete every time somebody checked it. Treat it as best-known, not complete. The
-argv claim underpins D3, D4, D5, D10, D11, D12 and D14. `cliError` underpins D10,
+argv claim underpins D3, D4, D5, D10, D11 and D12. `cliError` underpins D10,
 D11 (retraction rider), D13 and clause (c)'s error-string rider. `libc` underpins
-D14's residual delta. Two further driver claims are untracked and unprovenanced:
-D6's and D7's clause-(b) evidence, which rests on what Desktop emits as
-`-cli-version`.
+no current entry. It underpinned the retired D14. One further driver claim is
+untracked and unprovenanced: D6's clause-(b) evidence, which rests on what Desktop
+emits as `-cli-version`.

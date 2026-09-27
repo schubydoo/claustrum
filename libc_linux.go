@@ -16,9 +16,9 @@ func detectLibc() string {
 
 // lddGlob is a seam, for the same reason detectLibcWith takes a glob at all: the
 // musl fallback is otherwise unreachable on a glibc host. Since build 3ef9370 the
-// glob is consulted only when `ldd` produced no output (see classifyLibc), so on
-// any host whose `ldd` answers — every real one — production never reaches the
-// fallback, and the seam is what lets a test drive that branch. Production never
+// glob is consulted only when `ldd` produced no output (see classifyLibc), or
+// when the 5 s bound dropped it. So on a host whose `ldd` answers within the 5 s
+// bound, production never reaches the fallback, and the seam is what lets a test drive that branch. Production never
 // reassigns it.
 //
 // Declared BELOW detectLibc deliberately. Above it, this comment butted straight

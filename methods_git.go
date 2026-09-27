@@ -75,8 +75,8 @@ func (p *gitParams) repoDir() string {
 // ⚠️ Everything below describes what an operator opts INTO, measured against the
 // retracted 60 s default. It shipped always-on and that failed rule 3: a
 // wall-clock deadline cannot separate a hostile git from an honestly slow one, so
-// a large repo on a loaded host or a cold network filesystem trips it too — and
-// unlike the ldd probe, the fallback here IS observable — on git.status and
+// a large repo on a loaded host or a cold network filesystem trips it too. The
+// fallback here IS observable. On git.status and
 // git.list_branches the killed process surfaces as -32603 carrying
 // "signal: killed" (docs/PROTOCOL.md -> git.list_branches; docs/DIVERGENCES.md D5).
 // Normal git ops finish well under any sane bound, but "well under" is a statement

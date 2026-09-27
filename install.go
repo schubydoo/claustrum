@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -46,6 +47,7 @@ func runInstall(o installOpts) {
 	// Reset the -cli-url download sink; fetchToFile fills it when a download is
 	// attempted, and it is read back into f.Fetch below (4534d86).
 	lastInstallFetch = nil
+	lastInstallFinal = nil
 	f := installFacts{
 		ServerVersion: Version,
 		OS:            runtime.GOOS,
@@ -81,7 +83,7 @@ func runInstall(o installOpts) {
 			//	cache hit                no     no
 			//	install attempted+failed yes    no
 			//	install succeeded        yes    yes
-			sweepFetchTemps(o.cliDir)
+			sweepFetchTemps(o.cliDir, time.Now())
 			if err == nil && o.cliKeep > 0 {
 				pruneCLI(o.cliDir, o.cliKeep)
 			}
@@ -96,7 +98,7 @@ func runInstall(o installOpts) {
 	fmt.Printf("__INSTALL_RESULT__%s\n", b)
 }
 
-// hashBlobFile is sha256File behind a seam, so ensureCLI's D1 hash-failure arm is
+// hashBlobFile is sha256File behind a seam, so ensureCLI's -cli-zst hash-failure arm is
 // reachable from a test: the blob has just been opened and read a byte at that
 // point, so no fixture can make the very next hash of the same path fail.
 // Production never reassigns it.
@@ -135,15 +137,29 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// is baseline, not workload.
 	var blobPath, blobSum string
 	var err error
+	// On every cache miss the cli-dir is created FIRST, before the source check,
+	// before the blob is opened and before any network access. The reference
+	// creates the cli-dir (0700, with its parents) there. A Linux VM measured it
+	// on -cli-zst from 5db5e4a to f6010b97. It measured -cli-url and a miss with
+	// no source flag on f6010b97. A failure leaves the cli-dir, empty if it was
+	// new. A missing blob, a 404, a refused connection and a missing source all
+	// leave it. A -cli-url download also shows it 1.5 s into a 3 s wait for
+	// headers.
+	//
+	// 0700, not 0755: the reference creates the whole cli-dir chain owner-only.
+	// Probe-measured under umask 022 against 5db5e4a. The "mkdir cli dir: "
+	// prefix is measured against 5db5e4a too, and it lands in cliError.
+	if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
+		return fmt.Errorf("mkdir cli dir: %v", err)
+	}
 	switch {
 	case o.cliZst != "":
-		// SFTP fallback: the blob arrives over an already-authenticated channel,
-		// so the reference NEVER verifies -cli-checksum here. Claustrum diverges as
-		// a conditional hardening (docs/DIVERGENCES.md D1), activated by the caller supplying
-		// -cli-checksum rather than by an operator: when a -cli-checksum IS supplied we
-		// verify it and reject a corrupt/tampered blob with the same "checksum
-		// mismatch" error as the -cli-url path. An ABSENT/empty checksum stays
-		// trusting — matching the reference — so honest callers are unaffected.
+		// SFTP fallback. If the caller supplies a -cli-checksum, the reference checks the blob
+		// against it since 7d193f89. 5db5e4a ignored it. A mismatch answers
+		// "checksum mismatch" and keeps the blob. An absent or empty checksum
+		// verifies nothing. claustrum hashes before it decompresses, which is
+		// the D13 ordering, so a corrupt blob with a wrong checksum answers
+		// "checksum mismatch" here where the reference answers "decompressing: ".
 		//
 		// Opened and read one byte, purely to keep `opening input: ` attached to
 		// the same conditions os.ReadFile reported it for (missing, permission,
@@ -178,8 +194,8 @@ func ensureCLI(o installOpts, cliPath string) error {
 			}
 		}
 	case o.cliURL != "":
-		// The temp lands beside the CLI destination when it can; see fetchToFile
-		// for why a failure there falls back rather than erroring.
+		// The temp lands in the cli-dir, created above, when it can. See
+		// fetchToFile for why a failure there falls back rather than erroring.
 		blobPath, blobSum, err = fetchToFile(o.cliURL, filepath.Dir(cliPath))
 		if err != nil {
 			// A status failure and a read-idle stall are already fully worded and go
@@ -210,22 +226,15 @@ func ensureCLI(o installOpts, cliPath string) error {
 		if err := verifyChecksum(blobSum, o.cliChecksum); err != nil {
 			return err
 		}
+		// The final progress line comes only after the checksum passes. Measured
+		// on a Linux VM against f6010b97, 5 of 5 runs per row: a good download
+		// prints bytes:0 then bytes:57, and a mismatch prints bytes:0 only.
+		emitFinalProgress()
 	default:
 		return fmt.Errorf("cli %s missing and no --cli-url or --cli-zst provided", o.cliVersion)
 	}
-	// 0700, not 0755: the reference creates the whole cli-dir chain owner-only.
-	// Probe-measured under umask 022 against 5db5e4a — every directory it makes
-	// comes out drwx------, while claustrum's came out drwxr-xr-x. The installed
-	// CLI file itself is 0755 on both.
-	if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
-		// "mkdir cli dir: " prefix, measured against 5db5e4a — the reference
-		// reports `mkdir cli dir: mkdir <path>: permission denied` where claustrum
-		// emitted the bare Go error. This lands in cliError on the wire.
-		return fmt.Errorf("mkdir cli dir: %v", err)
-	}
 	// Stage, verify and install, retried ONCE if a concurrent install's sweep
-	// reclaimed our staging file. See stageAndInstall for why that can happen and
-	// why a retry is the fix rather than a smarter sweep.
+	// reclaimed our staging file. See stageAndInstall for when that can happen.
 	decompressed, err := stageAndInstall(blobPath, cliPath)
 	if err != nil && errors.Is(err, errStagingVanished) {
 		// Accumulate rather than overwrite. Decompression is a fact about the
@@ -306,7 +315,9 @@ var errStagingVanished = errors.New("staging file vanished")
 // for that whole probe window while the reference shows only the installed
 // version, on both the -cli-zst and -cli-url paths. So across the probe window
 // the reference has no in-flight file for its own sweep to hit, and claustrum
-// does: any concurrent install that finishes first sweeps ours.
+// does. Since the sweep's age gate (sweepMinAge), a concurrent install sweeps
+// ours only once it is more than ten minutes old, for example behind a CLI whose
+// --version takes that long.
 //
 // This used to say the reference's sweep "can NEVER hit its own in-flight file".
 // That is too strong, and a different window falsifies it: measured 2026-08-08
@@ -319,12 +330,9 @@ var errStagingVanished = errors.New("staging file vanished")
 // is covered separately, by being outside isSweptName so no sweep claims it.
 // The reference's own exposure is the reference's to carry.
 //
-// The caller retries once on errStagingVanished, which is what actually fixes
-// that. A smarter sweep cannot: skipping entries that postdate our own start
-// still loses the staggered case, where the other install staged BEFORE we began
-// and its file is indistinguishable from litter by name alone. Recovering from
-// the loss is exact; predicting which files are safe to delete is not — and the
-// retry lets the sweep stay unconditional.
+// The caller retries once on errStagingVanished, which covers that case. The
+// age gate is the reference's own rule, not a guard for this: a staging file
+// older than the gate is indistinguishable from litter by name and age alone.
 // chmodStaged is os.Chmod behind a seam, so the one branch between decompress
 // and rename that no fixture can otherwise provoke is reachable from a test.
 // That branch matters more than its size: it is on the CONSUMED side of the
@@ -386,22 +394,22 @@ func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 }
 
 // validateCLIVersion rejects a -cli-version the install cannot honestly carry
-// out. Two rules, both measured, both claustrum-only hardening. Measured, the
-// reference destroys the target on "../victim".
+// out. Two rules, both claustrum-only.
 //
-//  1. A SINGLE PATH COMPONENT. cliPath is filepath.Join(cliDir, cliVersion) and
-//     ensureCLI's os.RemoveAll deletes cliPath recursively, so a version that
-//     reaches outside cliDir destroys unrelated data. "../victim" escapes because
-//     Join CLEANS; "link/1.0.0" escapes through a symlink under cliDir, which a
+//  1. A SINGLE PATH COMPONENT (D6). cliPath is filepath.Join(cliDir, cliVersion)
+//     and ensureCLI's os.RemoveAll deletes cliPath recursively, so a version that
+//     reaches outside cliDir destroys unrelated data. Measured, the reference
+//     destroys the target on "../victim". "../victim" escapes because Join
+//     CLEANS; "link/1.0.0" escapes through a symlink under cliDir, which a
 //     lexical containment check accepts because it is lexically inside.
 //
-//  2. NOT A NAME THE SWEEP CLAIMS. sweepFetchTemps runs after every attempted
-//     install and removes ".fetch-*" and "*.zst". A version of ".fetch-x" or
-//     "1.0.zst" therefore installs correctly and is deleted moments later, in the
-//     same run, while the facts frame reports success with no cliError. Measured
-//     at 5db5e4a: reference AND claustrum both leave an EMPTY cli-dir and report
-//     no error. Reporting an error beats reporting a success that installed
-//     nothing, so claustrum refuses the version instead.
+//  2. NOT THE DOWNLOAD BLOB PREFIX. See isDownloadBlobName below.
+//
+// A version that the sweep claims (".fetch-x", "1.0.zst") is ACCEPTED, as the
+// reference accepts it. Since 4534d86 the sweep removes only entries more than
+// ten minutes old, so such a version installs and stays until a later install
+// finds it that old. Measured on a Linux VM against 4534d86 through f6010b97.
+// claustrum refused these versions until then (the retired D7).
 //
 // "." and ".." are rejected explicitly by rule 1: "." resolves cliPath to the
 // cli-dir ITSELF, which would hand the whole cli-dir to os.RemoveAll.
@@ -417,19 +425,11 @@ func validateCLIVersion(v string) error {
 	if !isSingleComponent(v) {
 		return fmt.Errorf("cli version %q must be a single path component", v)
 	}
-	if isSweptName(v) {
-		// Deliberately names the sweep, not the character class: the point is the
-		// collision, and isSweptName is the one definition of it.
-		return fmt.Errorf("cli version %q collides with the install temp sweep", v)
-	}
 	if isDownloadBlobName(v) {
-		// The MIRROR of the check above, on the identical input. A version with
-		// the blob prefix installs fine and is then exempt from pruneCLI's census
-		// FOREVER — never counted against -cli-keep, never evicted, and not
-		// reclaimed by the sweep either, since neither pass claims that prefix by
-		// construction. A leaked immortal binary rather than a deleted one, but
-		// the same class of collision, so the validator reads the same set of
-		// housekeeping names both passes do.
+		// A version with claustrum's own blob prefix installs fine and is then
+		// exempt from pruneCLI's census FOREVER. It is never counted against
+		// -cli-keep, never evicted, and never swept, because neither pass claims
+		// that prefix. This is D18.
 		return fmt.Errorf("cli version %q collides with the install download blob", v)
 	}
 	return nil
@@ -446,14 +446,21 @@ func isSingleComponent(name string) bool {
 
 // verifyChecksum returns a "checksum mismatch" error (byte-identical to the
 // reference's -cli-url path) when got does not equal expected. The -cli-url path
-// calls it unconditionally; the -cli-zst path only when a checksum is supplied
-// (docs/DIVERGENCES.md D1, a conditional divergence from the reference — caller-activated).
+// calls it unconditionally; the -cli-zst path only when a checksum is supplied,
+// as the reference does.
+//
+// The compare is CASE-SENSITIVE. got is lower-case hex, so an upper-case
+// checksum fails even when it names the right digest. Measured on a Linux VM on
+// the -cli-zst path against 7d193f89 through f6010b97: the reference answers
+// `checksum mismatch: expected=5739E4…, actual=5739e4…` there. claustrum used
+// strings.EqualFold and installed. Both source paths share this function. The
+// -cli-url path is measured case-sensitive on f6010b97 too.
 //
 // It takes the hex digest rather than the bytes so no caller has to hold the
 // whole blob in memory to check it: the download hashes as it streams, and the
 // local path hashes the file in one bounded pass (sha256File).
 func verifyChecksum(got, expected string) error {
-	if !strings.EqualFold(got, expected) {
+	if got != expected {
 		return fmt.Errorf("checksum mismatch: expected=%s, actual=%s", expected, got)
 	}
 	return nil
@@ -728,12 +735,10 @@ var closeFetchTemp = (*os.File).Close
 // memory and is never hashed in a second pass. The caller owns the temp file and
 // must remove it.
 //
-// The temp is preferentially created beside the CLI destination (dir), which puts
-// it on the filesystem the install writes to. If that fails — an unwritable or
-// not-yet-created cli-dir — it falls back to the OS temp dir rather than
-// reporting a download failure, because ensureCLI creates the cli-dir AFTER the
-// download and reports its own `mkdir cli dir: ` error there. Failing here
-// instead would move that error to a different string on a reachable path.
+// The temp is preferentially created in dir, the cli-dir, which puts it on the
+// filesystem the install writes to. ensureCLI creates the cli-dir before it calls
+// this. If the create still fails, for example in an unwritable cli-dir, the temp
+// falls back to the OS temp dir rather than reporting a download failure.
 func fetchToFile(url, dir string) (path, sum string, err error) {
 	// start times the whole exchange so fetch.ms matches the reference (a 404 reports
 	// ms of the request round-trip). A pre-body failure records ms with zero bytes;
@@ -758,7 +763,7 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 		return "", "", &httpStatusError{code: resp.StatusCode}
 	}
 	// ⚠️ The prefix must be one isSweptName does NOT claim. sweepFetchTemps runs
-	// after EVERY attempted install and takes ".fetch-*" and "*.zst" from the
+	// after EVERY attempted install and takes old ".fetch-*" and "*.zst" from the
 	// cli-dir, so naming the blob ".fetch-*" would let a concurrent install's
 	// sweep delete the staging file AND the blob the retry re-reads — defeating
 	// errStagingVanished in exactly the case it exists for, and able to fail the
@@ -770,14 +775,6 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 	// in RAM and undo the streaming this change exists for. The cost is that the
 	// sweep can no longer reclaim a blob left by a SIGKILLed install; the caller's
 	// own defer removes it on every other path.
-	//
-	// ⚠️ On a FIRST install that argument does not hold, and the fallback below is
-	// why: ensureCLI creates the cli-dir AFTER this runs, so the CreateTemp here
-	// fails with ENOENT and the blob goes to $TMPDIR after all — onto the tmpfs
-	// this paragraph exists to avoid, and out of reach of the sweep and the prune.
-	// Peak RSS stays flat either way (tmpfs pages are page cache, not process
-	// RSS), so the 886 MB -> 10 MB figure is unaffected; the host is still holding
-	// the blob in memory though, and that number alone does not say so.
 	f, err := os.CreateTemp(dir, blobTempPrefix+"*")
 	if err != nil {
 		if f, err = os.CreateTemp("", "claustrum-fetch-*"); err != nil {
@@ -822,34 +819,50 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 		_ = os.Remove(tmp)
 		return "", "", fmt.Errorf("response exceeds %d bytes", maxCLIBytes)
 	}
+	lastInstallFinal = &progressLine{Phase: "download", Bytes: n, Total: total}
 	return tmp, hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// pruneCLI keeps the most-recent `keep` version files under cliDir (by mtime).
-// sweepFetchTemps removes the reference's leftover download temporaries from the
-// cli-dir. They are named ".fetch-<something>"; an interrupted install leaves
-// them behind indefinitely, and claustrum's pruneCLI used to count them as CLI
-// *versions*, so they consumed the -cli-keep budget and evicted real binaries —
-// with four versions, three orphans and -cli-keep 3, every real version was
-// deleted, including the one just installed.
+// sweepMinAge is how old a swept name must be before the sweep removes it.
+// The gate exists from 4534d86 on. 5db5e4a and 7d193f89 swept at every age.
+// Measured on a Linux VM against 19f30c46, 90fca6e6 and f6010b97: an entry
+// whose mtime is 599 s old stays, and one 601 s old goes (two runs each). The
+// exact 600 s point is not measured, and claustrum treats it as not old.
+const sweepMinAge = 10 * time.Minute
+
+// sweepFetchTemps removes install litter from the cli-dir: an entry whose name
+// isSweptName claims AND whose mtime is more than sweepMinAge before now. The
+// litter is an interrupted install's ".fetch-<something>" or a stray "*.zst".
+// claustrum's pruneCLI used to count such litter as CLI *versions*, so it
+// consumed the -cli-keep budget and evicted real binaries.
 //
-// os.Remove per entry. It clears files and EMPTY directories, and silently leaves
-// a non-empty ".fetch-dir/" in place. An empty orphan directory is swept (measured).
-// UNCONDITIONAL. An earlier version skipped entries that
-// appeared after the install started, to avoid reclaiming a concurrent install's
-// in-flight staging file. That was a divergence AND only a partial guard — in the
-// staggered case the other install staged BEFORE this one began, so its file is
-// indistinguishable from litter by name alone. stageAndInstall's retry handles
-// the loss instead, which is exact and lets this stay unconditional.
-func sweepFetchTemps(cliDir string) {
+// The rules, measured on the reference from 4534d86 on (the future-mtime row on
+// 19f30c46 through f6010b97):
+//   - The age is the entry's own mtime, for a symlink the link's own mtime.
+//     atime and ctime are not read. Only the link is removed. A target outside
+//     the cli-dir stays (the only case measured). os.Lstat, not DirEntry.Info:
+//     on Windows Info comes from the directory listing, which can hold a stale
+//     time for a directory.
+//   - A future mtime is not old, so it stays.
+//   - os.Remove per entry. It removes files and EMPTY directories and never
+//     recurses, so a non-empty ".fetch-dir/" stays at every age.
+//
+// A concurrent install's staging file is fresh, so the age gate now keeps it.
+// stageAndInstall's retry still covers a staging file that outlives the gate.
+func sweepFetchTemps(cliDir string, now time.Time) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
 		return
 	}
 	for _, e := range ents {
-		if isSweptName(e.Name()) {
-			_ = os.Remove(filepath.Join(cliDir, e.Name()))
+		if !isSweptName(e.Name()) {
+			continue
 		}
+		fi, err := os.Lstat(filepath.Join(cliDir, e.Name()))
+		if err != nil || now.Sub(fi.ModTime()) <= sweepMinAge {
+			continue
+		}
+		_ = os.Remove(filepath.Join(cliDir, e.Name()))
 	}
 }
 
@@ -868,8 +881,7 @@ func sweepFetchTemps(cliDir string) {
 // claustrum's staging file at that moment holds the compressed body. Different
 // artifacts, so the naming rule below is claustrum's own either way. Defined
 // once here so the creator, BOTH housekeeping passes and validateCLIVersion read
-// the same rule — the same reason isSweptName is factored out below, and with the
-// same fourth reader. A rule the validator does not consult is one an operator can
+// the same rule. A rule the validator does not consult is one an operator can
 // walk into with -cli-version.
 const blobTempPrefix = ".blob-"
 
@@ -884,10 +896,9 @@ func isDownloadBlobName(name string) bool { return strings.HasPrefix(name, blobT
 // it, and pruneCLI then counted it as a version and burned a -cli-keep slot on
 // it. An unrelated file ("README") survives on both.
 //
-// Split out so the sweep and the -cli-version validator read the SAME rule. A
-// version matching this predicate installs successfully and is then deleted by
-// the sweep in the same run, so the two must not drift apart — see
-// validateCLIVersion.
+// The match is case-sensitive, and the bare names ".fetch-" and ".zst" count.
+// ".FETCH-u" and "a.ZST" stay. Measured on every reference build from 5db5e4a
+// to f6010b97.
 func isSweptName(name string) bool {
 	return strings.HasPrefix(name, ".fetch-") || strings.HasSuffix(name, ".zst")
 }
@@ -906,11 +917,18 @@ func pruneCLI(cliDir string, keep int) {
 		if e.IsDir() {
 			continue
 		}
+		// A name the sweep claims is not counted either, at ANY age. Measured on a
+		// Linux VM against f6010b97: with a fresh ".fetch-o" and "x.zst" beside
+		// three real CLIs and -cli-keep 3, the reference keeps all three real CLIs.
+		// The age gate leaves such fresh litter in place, so counting it evicts
+		// real CLIs. The fixture does not show whether the reference tests the
+		// name or runnability. Both exclude these two empty files.
+		if isSweptName(e.Name()) {
+			continue
+		}
 		// A concurrent install's in-flight download blob is not a CLI version.
-		// It is the only file claustrum creates in the cli-dir that survives the
-		// sweep, so without this it would sort NEWEST, take a -cli-keep slot and
-		// evict a real binary — the exact defect isSweptName was introduced to
-		// stop for .fetch-* staging files.
+		// Counted, it sorts NEWEST, takes a -cli-keep slot and evicts a real
+		// binary.
 		if isDownloadBlobName(e.Name()) {
 			continue
 		}
@@ -929,78 +947,54 @@ func isRegularFile(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-// lddProbeTimeout bounds the `ldd --version` libc probe WHEN SET; it is 0 by
-// default and then bounds nothing. This is divergence D14; see the D14 entry in
-// docs/DIVERGENCES.md.
+// lddProbeTimeout bounds how long `ldd --version` itself runs. It is a var,
+// not a const, only so tests can shrink it. Nothing else sets it.
 //
-// MEASURED: the reference applies no deadline here at or below 45 s — probed with
-// a stub ldd on PATH and the musl loader glob masked. That result comes from the
-// `exec sleep 120` shape below ONLY; the surviving-child shape cannot support it,
-// because the PRE-FLIP claustrum had a deadline and looked identical there. An earlier version
-// of this comment said the unbounded wait was "assumed"; it is measured now, in
-// that one shape. When a deadline IS set we cap the probe and fall back to the
-// default classification on timeout; at the shipped default none is set — see the
-// D14 FLIP paragraph at the bottom of this comment, which is the current default and
-// not an afterthought.
+// Measured on a Linux VM with a stub `ldd` first on PATH. From 19f30c46 on, the
+// reference cuts the probe at 5 s: a 4.9 s stall answers at 4.93 s, and a 5.1 s
+// stall answers at 5.01 to 5.04 s. 3ef9370 and older builds wait for ldd, with no
+// bound. The bound fires on a fresh install and on a cache hit alike.
 //
-// A wall-clock deadline cannot separate a hostile `ldd` from a slow one, so an
-// honest-but-slow `ldd` falls back too — but that usually changes NOTHING
-// observable. Since build 3ef9370 ldd runs on every call (see classifyLibc). A
-// deadline that fires before ldd writes anything leaves empty output, so the musl
-// loader glob decides: a musl host carrying the loader marker still reports "musl",
-// and a glibc host with no marker still reports "glibc". (A deadline that fires
-// after ldd has written partial output takes that output through step 1 or 2
-// instead, not the glob.) The reported value moves in the two shapes where the
-// empty-output fallback disagrees with the output ldd would have given: a musl host
-// the glob misses (fallback reports "glibc" where the banner would have said
-// "musl"), and a mixed host carrying a marker (fallback reports "musl" where the
-// glibc output would have said "glibc"). See docs/DIVERGENCES.md D14.
-// ⚠️ That residual is narrow but NOT costless: Claude Desktop uses the reported
-// libc to pick which CLI build it downloads, so on those host shapes the
-// consequence is the wrong build being fetched, not a cosmetic field. ⚠️ That last
-// sentence is a claim about the DRIVER, not about the reference daemon — the
-// parity harness cannot confirm or refute it. See docs/ARCHITECTURE.md →
-// Driver claims and their provenance.
-//
-// 🔴 The bound is narrower than it reads, and this comment used to overstate it by
-// calling the divergence "total". MEASURED, against a STALLED ldd:
-//
-//	stub `exec sleep 120` (nothing survives the kill) -> claustrum falls back at 5s
-//	  and prints a complete __INSTALL_RESULT__; the reference emits nothing at 45s.
-//	  ⚠️ The claustrum column is the PRE-FLIP always-on build (the retracted 5s
-//	  default). At the shipped default it does not fall back at all and this row's
-//	  claustrum column becomes the reference's.
-//	stub `sleep 120` (a child survives holding the output pipe) -> NEITHER binary
-//	  replies at 45s (measured). For CLAUSTRUM the cause is CombinedOutput waiting
-//	  on the inherited pipe after the deadline kills the shell — the same softness
-//	  gitTimeout has (see methods_git.go). The REFERENCE's cause is unmeasured;
-//	  this arm cannot show it, and no mechanism is claimed for it here.
-//
-// A hostile ldd answering in 1s is untouched by the deadline either way.
-// (The libc VALUE itself is a separate matter and is still unmeasured: see
-// classifyLibc for the loader glob, libc_other.go for why the probe does not run
-// off linux at all, and docs/DIVERGENCES.md D14 for the musl-banner fixture that
-// would settle it.)
-// D14 FLIP: ZERO (the default) DISABLES IT, which is the parity position. Opt in
-// with -libc-probe-timeout or the libc-probe-timeout key in claustrum.conf; the
-// config key is the reachable one, since Claude Desktop owns the -install argv.
-// Disabled bypasses context.WithTimeout ENTIRELY (see lddCtx) rather than passing a
-// huge duration, for the same reason D3 and D10 bypass their io.LimitReaders and D5
-// bypasses gitCtx: an unarmed cancel path is what makes exec.CommandContext have
-// nothing to fire.
-//
-// ⚠️ What turning it OFF costs, stated plainly: against a stalled `ldd` claustrum
-// now waits as the reference does, so `-install` can block indefinitely instead of
-// falling back at 5 s. That is the trade — it is the reference's measured behaviour
-// (no reply at 45 s in the discriminating shape), and the caller who wants the bound
-// can ask for it. It was flipped rather than argued for because the honest-path cost
-// was never measured in EITHER direction and the caller could not decline it; D4 is
-// the precedent, where the cost WAS measured and it was flipped anyway.
-var lddProbeTimeout time.Duration
+// The bound covers the ldd process only. If ldd exits in time, the drain that
+// follows (lddKillGrace) can end past 5 s.
+var lddProbeTimeout = 5 * time.Second
 
-// runLddVersion runs `ldd --version` under ctx; the process is killed if ctx expires.
+// lddKillGrace is the WaitDelay on the probe. It caps the wait for ldd's output
+// pipe to close after ldd itself exits. The output already read is then USED,
+// and the process that still holds the pipe is not killed. Measured on a Linux
+// VM against f6010b97: an ldd that prints a musl banner, leaves a `sleep` child
+// holding its stdout and exits at 0.5 to 4.5 s answers musl about 2 s after it
+// exits on the reference. The child survives.
+const lddKillGrace = 2 * time.Second
+
+// errLddBound marks an ldd run that the bound killed while ldd itself still ran.
+// It wraps context.DeadlineExceeded, which is what detectLibcWith tests for.
+var errLddBound = fmt.Errorf("ldd killed at the bound: %w", context.DeadlineExceeded)
+
+// runLddVersion runs `ldd --version` under ctx. ldd runs in its OWN process
+// group. If ctx expires while ldd runs, the whole group is killed, not only ldd,
+// and the run reports errLddBound. Measured: the reference runs the stub in its
+// own group (pgid = the stub's pid), and a `sleep` child of the stub is gone
+// right after the reference answers at 5.02 s.
+//
+// Cancel runs only if ctx expires before Wait sees ldd exit. After ldd exits,
+// WaitDelay alone bounds the drain.
 func runLddVersion(ctx context.Context) ([]byte, error) {
-	return exec.CommandContext(ctx, "ldd", "--version").CombinedOutput()
+	cmd := exec.CommandContext(ctx, "ldd", "--version")
+	cmd.SysProcAttr = newSysProcAttr()
+	var killed atomic.Bool
+	cmd.Cancel = func() error {
+		killed.Store(true)
+		reapProcessGroup(cmd.Process)
+		_ = cmd.Process.Kill()
+		return nil
+	}
+	cmd.WaitDelay = lddKillGrace
+	out, err := cmd.CombinedOutput()
+	if killed.Load() {
+		return out, errLddBound
+	}
+	return out, err
 }
 
 // detectLibcWith answers the libc question by running the `ldd` probe FIRST and
@@ -1009,33 +1003,33 @@ func runLddVersion(ctx context.Context) ([]byte, error) {
 //
 // The order is the behaviour, not a tidy-up. Reference build 3ef9370 runs `ldd`
 // on every call and lets its output decide; the loader glob is reached only when
-// ldd produced nothing. Earlier builds (4534d86 and before) did the reverse —
-// glob first, ldd only on a miss — and claustrum matched that until this build.
+// ldd produced nothing. Earlier builds (4534d86 and before) did the reverse,
+// glob first and ldd only on a miss. claustrum matched that until this build.
 // Measured against both reference binaries on a mixed host (glibc ldd plus a musl
 // marker): 4534d86 reports musl, 3ef9370 reports glibc.
 //
-// The runner and timeout are injected so the timeout/fallback path is exercisable
-// on any host, and glob is injectable for the same reason classifyLibc takes one:
-// the musl fallback is otherwise unreachable on a glibc host.
+// When the bound kills ldd, the output is DROPPED, even output ldd wrote before
+// it stalled, so the loader glob decides. Measured on f6010b97 and 90fca6e6: a
+// stub that prints a musl banner and then stalls reports glibc at 5.04 s with no
+// marker. No log line, no stderr, and the facts line keeps its normal shape. An
+// ldd that exited in time keeps its output, even when the drain ends past 5 s.
+//
+// The runner and timeout are injected so the bound is exercisable on any host,
+// and glob is injectable for the same reason classifyLibc takes one: the musl
+// fallback is otherwise unreachable on a glibc host. A runner reports a kill at
+// the bound with an error that wraps context.DeadlineExceeded.
 func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error),
 	glob func(string) ([]string, error)) string {
-	ctx, cancel := lddCtx(timeout)
-	defer cancel()
-	out, _ := run(ctx)
-	return classifyLibc(out, glob)
-}
-
-// lddCtx builds the context for the `ldd` probe, arming a deadline only when one is
-// asked for. At the shipped default (0) it returns a plain Background context, so
-// nothing is armed and exec.CommandContext has no cancel path — NOT a huge-but-finite
-// deadline. Do not "simplify" the two into one: a context with a far-off deadline
-// still reports one, still spawns the timer goroutine, and still kills the probe
-// eventually, which is the divergence this flip removes. Mirrors gitCtx (D5).
-func lddCtx(timeout time.Duration) (context.Context, context.CancelFunc) {
-	if timeout <= 0 {
-		return context.Background(), func() {}
+	ctx, cancel := context.Background(), context.CancelFunc(func() {})
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
-	return context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, err := run(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		out = nil
+	}
+	return classifyLibc(out, glob)
 }
 
 // muslLoaderGlob matches the musl dynamic loader for ANY architecture. claustrum
@@ -1075,8 +1069,8 @@ func hasMuslLoader(glob func(string) ([]string, error)) bool {
 //     exiting 1 reports glibc. If a non-zero exit dropped to the glob, the present
 //     marker would force musl; it reports glibc, so the exit is ignored here too.
 //  3. Only when `ldd` produced no output at all does the musl loader glob decide:
-//     present → musl, else glibc. This is the missing-ldd path; a killed ldd reaches
-//     it only if it was killed before writing anything (partial output takes 1 or 2).
+//     present → musl, else glibc. This is the missing-ldd path, and the path of
+//     an ldd the bound killed, because detectLibcWith drops its output.
 //
 // This reverses the ordering claustrum carried for build 4534d86 and earlier,
 // where the loader glob was consulted FIRST and outranked ldd. The mixed host is

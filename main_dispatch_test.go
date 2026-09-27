@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"flag"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,16 +54,11 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// socket goldens read the package var, so a -serve case leaking `true` turns
 	// three unrelated tests into seed-dependent failures under -shuffle.
 	oldRegularOnly := filesReadRegularOnly
-	// lddProbeTimeout joined with D14's flip. Same -install arm as cliProbeTimeout,
-	// and the two are near-twins (cli/libc prefix) in both flag and global, so a leak here would
-	// masquerade as a cli-probe-timeout leak while reading TestLddProbeTimeoutDefaultIsOff.
-	oldLddTimeout := lddProbeTimeout
 	t.Cleanup(func() {
 		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
 		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 		gitTimeout = oldGitTimeout
 		filesReadRegularOnly = oldRegularOnly
-		lddProbeTimeout = oldLddTimeout
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -93,34 +91,48 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 //
 // Distinct values on purpose: equal ones would pass under a swap.
 func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
+	var buf bytes.Buffer
+	oldOut := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(oldOut) })
 	if _, exited := runMain(t, "-install", "-cli-probe-timeout", "7s",
 		"-cli-download-timeout", "42s", "-libc-probe-timeout", "23s"); exited {
 		t.Fatal("-install should return, not exit")
 	}
 	if cliProbeTimeout != 7*time.Second {
-		t.Errorf("cliProbeTimeout = %s, want 7s (-cli-probe-timeout must reach it, not the download or libc global)", cliProbeTimeout)
+		t.Errorf("cliProbeTimeout = %s, want 7s (-cli-probe-timeout must reach it, not the download global)", cliProbeTimeout)
 	}
 	if cliDownloadTimeout != 42*time.Second {
 		t.Errorf("cliDownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, not the probe global)", cliDownloadTimeout)
 	}
-	// ⚠️ The sharpest of the three. -libc-probe-timeout and -cli-probe-timeout
-	// differ only in their cli/libc prefix, both are flag.Duration, and both are
-	// resolved in consecutive statements in
-	// main's -install arm — so a swap compiles, vets, and passes every test that
-	// exercises either deadline in isolation. Only distinct values here catch it.
-	if lddProbeTimeout != 23*time.Second {
-		t.Errorf("lddProbeTimeout = %s, want 23s (-libc-probe-timeout must reach it, not the CLI probe global)", lddProbeTimeout)
+	// ⚠️ The sharpest check. -libc-probe-timeout is a deprecated no-op, and the
+	// ldd bound is the reference's fixed 5 s. Neither the deprecated flag nor its
+	// near-twin -cli-probe-timeout may reach lddProbeTimeout. Both are durations
+	// resolved side by side in main's -install arm, so a crossed line compiles and
+	// passes every isolated test.
+	if lddProbeTimeout != 5*time.Second {
+		t.Errorf("lddProbeTimeout = %s, want the fixed 5s (no flag may reach it)", lddProbeTimeout)
 	}
-	// The DECLARED default, the one-character regression the other assertions miss:
-	// flipping flag.Duration's default argument back to 5*time.Second survives every
-	// explicit-value test in the suite while shipping a binary that deadlines every
-	// linux -install.
-	f := lastMainFlagSet.Lookup("libc-probe-timeout")
-	if f == nil {
-		t.Fatal("main() did not register -libc-probe-timeout")
+	if n := strings.Count(buf.String(), "-libc-probe-timeout is deprecated and ignored"); n != 1 {
+		t.Errorf("deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
 	}
-	if f.DefValue != "0s" {
-		t.Fatalf("-libc-probe-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
+}
+
+// The deprecation warning fires for the flag or the config key, once, and not
+// at all when neither is present.
+func TestWarnDeprecatedLibcProbe(t *testing.T) {
+	for _, tc := range []struct {
+		flagSet, keySeen bool
+		want             int
+	}{{false, false, 0}, {true, false, 1}, {false, true, 1}, {true, true, 1}} {
+		var buf bytes.Buffer
+		oldOut := log.Writer()
+		log.SetOutput(&buf)
+		warnDeprecatedLibcProbe(tc.flagSet, tc.keySeen)
+		log.SetOutput(oldOut)
+		if n := strings.Count(buf.String(), "deprecated and ignored"); n != tc.want {
+			t.Errorf("flag=%v key=%v: %d warnings, want %d", tc.flagSet, tc.keySeen, n, tc.want)
+		}
 	}
 }
 
@@ -130,17 +142,16 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 // the assertion follows it — t.Cleanup fires at the subtest's end.
 func TestRunMainRestoresInstallGlobals(t *testing.T) {
 	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
-	oldMaxCLI, oldMaxExtract, oldLdd := maxCLIBytes, maxExtractBytes, lddProbeTimeout
+	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
 	cliProbeTimeout, cliDownloadTimeout = 3*time.Second, 4*time.Second
-	maxCLIBytes, maxExtractBytes, lddProbeTimeout = 11, 22, 6*time.Second
+	maxCLIBytes, maxExtractBytes = 11, 22
 	t.Cleanup(func() {
 		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
-		maxCLIBytes, maxExtractBytes, lddProbeTimeout = oldMaxCLI, oldMaxExtract, oldLdd
+		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	t.Run("inner", func(t *testing.T) {
 		if _, exited := runMain(t, "-install", "-cli-probe-timeout", "9s",
-			"-cli-download-timeout", "8s", "-max-cli-bytes", "99",
-			"-libc-probe-timeout", "7s"); exited {
+			"-cli-download-timeout", "8s", "-max-cli-bytes", "99"); exited {
 			t.Fatal("-install should return, not exit")
 		}
 	})
@@ -153,13 +164,6 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 		{"cliDownloadTimeout", cliDownloadTimeout, 4 * time.Second},
 		{"maxCLIBytes", maxCLIBytes, int64(11)},
 		{"maxExtractBytes", maxExtractBytes, int64(22)},
-		// lddProbeTimeout joined runMain's save/restore with D14's flip and had no
-		// row here — repeating exactly the omission TestRunMainRestoresServeGlobals
-		// was written to close for gitTimeout and filesReadRegularOnly. Measured
-		// without this row: dropping the restore leaks 7s and is caught on only
-		// 2 of 10 shuffle seeds, and CI passes no -shuffle at all, so it would
-		// never have gone red.
-		{"lddProbeTimeout", lddProbeTimeout, 6 * time.Second},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)

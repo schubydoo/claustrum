@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -286,9 +287,9 @@ func TestFetchToFileStreamsAndHashes(t *testing.T) {
 }
 
 // An unusable target directory must NOT turn into a download failure. ensureCLI
-// creates the cli-dir after the download and reports its own "mkdir cli dir: "
-// error there; failing here would move that error to a different string on a
-// reachable path, so fetchToFile falls back to the OS temp dir instead.
+// creates the cli-dir before the download, but the dir can still refuse a create,
+// for example when it is unwritable. fetchToFile then falls back to the OS temp
+// dir, so the download itself still runs.
 func TestFetchToFileFallsBackWhenDirUnusable(t *testing.T) {
 	body := []byte("payload")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -598,80 +599,72 @@ func TestDetectLibc(t *testing.T) {
 // TestDetectLibcWithTimeout verifies the probe returns promptly with a fallback
 // classification when `ldd` hangs, instead of blocking forever. A runner that
 // blocks until ctx is cancelled stands in for a stalled ldd; detectLibcWith must
-// still return within its deadline.
-//
-// ⚠️ This is the OPTED-IN path since D14's flip: it passes an explicit 20ms, and at
-// the shipped default (0) no deadline is armed at all. Do not "simplify" it to use
-// lddProbeTimeout — with Background's nil Done channel the hung runner below would
-// block forever, which is precisely the behaviour the default now restores.
+// still return within its bound.
 func TestDetectLibcWithTimeout(t *testing.T) {
 	hung := func(ctx context.Context) ([]byte, error) {
-		<-ctx.Done() // mimic a stalled `ldd`: unblocks only when the deadline fires
+		<-ctx.Done() // mimic a stalled `ldd`: unblocks only when the bound fires
 		return nil, ctx.Err()
 	}
-	// Since build 3ef9370 the runner is always called first (see classifyLibc), so
-	// the hung runner below is entered on every host, glob or not. The deadline
-	// must make it return; without an armed deadline this test would block. The
-	// hung runner returns no output, so the loader glob is the fallback here, and
-	// noMusl just fixes that fallback to a deterministic value — the assertion
-	// accepts either result, because the point is that detectLibcWith RETURNS.
 	noMusl := func(string) ([]string, error) { return nil, nil }
 	done := make(chan string, 1)
 	go func() { done <- detectLibcWith(20*time.Millisecond, hung, noMusl) }()
 	select {
 	case got := <-done:
-		if got != "glibc" && got != "musl" {
-			t.Errorf("detectLibcWith(timeout) = %q, want glibc or musl fallback", got)
+		if got != "glibc" {
+			t.Errorf("detectLibcWith(timeout) = %q, want the glibc fallback", got)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("detectLibcWith did not return after its deadline — ldd timeout not enforced")
+		t.Fatal("detectLibcWith did not return after its bound — ldd timeout not enforced")
 	}
 }
 
-// D14's flip, both arms, on ONE fixture that straddles the deadline — which is the
-// point. A probe answering in 200ms is honest, not stalled, and a wall-clock
-// threshold cannot tell the two apart.
-//
-// ⚠️ SCOPE: `run` is an injected closure, not a spawned process. No `ldd` is
-// resolved, `runLddVersion`/`exec.CommandContext`/`CombinedOutput` are never on the
-// path, and nothing is killed — the closure's ctx arm returns ctx.Err() of its own
-// accord. What this pins is that lddCtx arms (or does not arm) a deadline and that
-// detectLibcWith propagates the result through classifyLibc. It CANNOT show the
-// real probe's surviving-child softness, where CombinedOutput waits on the inherited
-// pipe past the deadline — see the D14 entry in docs/DIVERGENCES.md. A fixture faster than the deadline would
-// answer the same either way and prove nothing (see the D12 straddle lesson).
-//
-// The runner returns a musl banner after a delay. At the default (no deadline)
-// ldd is waited for and its output decides: musl. Opted in below that latency the
-// deadline kills it, the output is empty, and the loader glob (which misses here)
-// gives the glibc fallback. That value swing between the two arms is the point.
-// Since 3ef9370 the ldd exit code is not consulted, so the banner alone decides
-// step 1 — this fixture returns a nil error only because the delay arm has none.
-func TestDetectLibcTimeoutOptInVersusDefault(t *testing.T) {
+// The shipped bound is the reference's 5 s. Measured on a Linux VM from 19f30c46
+// on: a 4.9 s stall answers, and a 5.1 s stall is cut at 5.0 s.
+func TestLddProbeTimeoutIsFiveSeconds(t *testing.T) {
+	if lddProbeTimeout != 5*time.Second {
+		t.Errorf("lddProbeTimeout = %s, want 5s, the reference's measured bound", lddProbeTimeout)
+	}
+}
+
+// Both sides of the bound on ONE runner shape. The runner prints a musl banner
+// after a delay. Inside the bound its output decides: musl. Past the bound the
+// output is dropped and the loader glob (which misses here) gives glibc.
+func TestDetectLibcAnswerInsideVersusPastTheBound(t *testing.T) {
 	slowMusl := func(ctx context.Context) ([]byte, error) {
 		select {
 		case <-time.After(200 * time.Millisecond):
 			return []byte("musl libc (x86_64)\nVersion 1.2.4"), nil
 		case <-ctx.Done():
-			// Never taken at the default: Background's Done() is nil, and a receive
-			// on a nil channel blocks forever, so the timer arm always wins there.
 			return nil, ctx.Err()
 		}
 	}
 	noMusl := func(string) ([]string, error) { return nil, nil }
-
-	// Default (0) — nothing armed, so the honest-but-slow ldd is waited for and its
-	// answer stands. This is the reference's measured behaviour and the parity position.
-	if got := detectLibcWith(0, slowMusl, noMusl); got != "musl" {
-		t.Errorf("at the shipped default detectLibcWith = %q, want musl — a 200ms ldd must be "+
-			"waited for, not killed; the flip exists so this answer survives", got)
+	if got := detectLibcWith(5*time.Second, slowMusl, noMusl); got != "musl" {
+		t.Errorf("inside the bound detectLibcWith = %q, want musl — a 200ms ldd must be waited for", got)
 	}
-
-	// Opted in below the runner's latency — the same honest ldd is killed and the
-	// answer becomes the fallback. That value change is what an operator opts INTO.
 	if got := detectLibcWith(20*time.Millisecond, slowMusl, noMusl); got != "glibc" {
-		t.Errorf("opted in at 20ms detectLibcWith = %q, want the glibc fallback — the deadline "+
-			"must kill a 200ms probe", got)
+		t.Errorf("past the bound detectLibcWith = %q, want the glibc fallback", got)
+	}
+}
+
+// When the bound fires, output that ldd already wrote is DROPPED, and the loader
+// glob decides. Measured from 19f30c46 on: a stub that prints a musl banner at
+// once and then stalls reports glibc with no marker and musl with the marker.
+// The runner here returns its partial output when the context ends, which is
+// what CombinedOutput hands back after a kill.
+func TestDetectLibcDropsPartialOutputAtTheBound(t *testing.T) {
+	partial := func(ctx context.Context) ([]byte, error) {
+		<-ctx.Done()
+		return []byte("musl libc (x86_64)\n"), ctx.Err()
+	}
+	noMusl := func(string) ([]string, error) { return nil, nil }
+	found := func(string) ([]string, error) { return []string{"/lib/ld-musl-x86_64.so.1"}, nil }
+	if got := detectLibcWith(20*time.Millisecond, partial, noMusl); got != "glibc" {
+		t.Errorf("partial musl banner, no marker: detectLibcWith = %q, want glibc — output "+
+			"written before the bound must be dropped", got)
+	}
+	if got := detectLibcWith(20*time.Millisecond, partial, found); got != "musl" {
+		t.Errorf("partial output, marker present: detectLibcWith = %q, want musl from the glob", got)
 	}
 }
 
@@ -732,7 +725,7 @@ func TestDetectLibcOrderingLddFirst(t *testing.T) {
 	glibcLdd := func(context.Context) ([]byte, error) {
 		return []byte("ldd (Debian GLIBC 2.41) 2.41"), nil
 	}
-	if got := detectLibcWith(0, glibcLdd, found); got != "glibc" {
+	if got := detectLibcWith(lddProbeTimeout, glibcLdd, found); got != "glibc" {
 		t.Errorf("mixed host: detectLibcWith = %q, want glibc — ldd output must decide "+
 			"before the loader glob is consulted", got)
 	}
@@ -740,7 +733,7 @@ func TestDetectLibcOrderingLddFirst(t *testing.T) {
 	muslBannerExit1 := func(context.Context) ([]byte, error) {
 		return []byte("musl libc (x86_64)\nVersion 1.2.5"), io.EOF
 	}
-	if got := detectLibcWith(0, muslBannerExit1, none); got != "musl" {
+	if got := detectLibcWith(lddProbeTimeout, muslBannerExit1, none); got != "musl" {
 		t.Errorf("musl banner, ldd exit 1: detectLibcWith = %q, want musl — the exit code "+
 			"must not be consulted", got)
 	}
@@ -856,30 +849,61 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 	})
 }
 
-// TestSweepFetchTemps pins the orphan sweep, including the asymmetry that made
-// it worth measuring: os.Remove clears files and EMPTY directories, and silently
-// leaves a POPULATED ".fetch-dir/" behind. Real CLI versions must never be
-// touched by the sweep.
+// TestSweepFetchTemps pins the orphan sweep against a fixed "now", so the ages
+// are exact and no test sleeps. The rules, measured on a Linux VM against
+// 4534d86 through f6010b97:
+//   - A swept name goes only when its mtime is more than 600 s old. 599 s stays,
+//     601 s goes, and a future mtime stays.
+//   - Files and EMPTY directories follow the same rule. A POPULATED
+//     ".fetch-dir/" stays at every age, because os.Remove never recurses.
+//   - The names are ".fetch-*" and "*.zst", case-sensitive, bare forms included.
 func TestSweepFetchTemps(t *testing.T) {
 	dir := t.TempDir()
-	write := func(name string) {
+	now := time.Now()
+	old := now.Add(-601 * time.Second)
+	young := now.Add(-599 * time.Second)
+	future := now.Add(24 * time.Hour)
+	age := func(name string, at time.Time) {
+		t.Helper()
+		if err := os.Chtimes(filepath.Join(dir, name), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(name string, at time.Time) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		age(name, at)
 	}
-	write(".fetch-abc123")
-	write(".fetch-") // the empty-suffix form
-	write("1.0.0")   // a real version
-	if err := os.Mkdir(filepath.Join(dir, ".fetch-empty"), 0o755); err != nil {
-		t.Fatal(err)
+	mkdir := func(name string, at time.Time) {
+		t.Helper()
+		if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		age(name, at)
 	}
+	write(".fetch-old", old)
+	write(".fetch-young", young)
+	write(".fetch-future", future)
+	write("old.zst", old)
+	write("young.zst", young)
+	write(".fetch-", old) // the bare prefix
+	write(".zst", old)    // the bare suffix
+	mkdir(".fetch-empty", old)
+	mkdir("empty.zst", young)
 	if err := os.Mkdir(filepath.Join(dir, ".fetch-full"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write(filepath.Join(".fetch-full", "inner"))
+	write(filepath.Join(".fetch-full", "inner"), old)
+	age(".fetch-full", old) // after the inner write, which moved the dir's mtime
+	// Names the sweep never claims, all old enough to go if it did.
+	controls := []string{"1.0.0", ".FETCH-u", "a.ZST", "x.fetch-y", "fetch-z", ".fetchq", "a.zst.bak", "zst"}
+	for _, c := range controls {
+		write(c, old)
+	}
 
-	sweepFetchTemps(dir)
+	sweepFetchTemps(dir, now)
 
 	got := map[string]bool{}
 	ents, err := os.ReadDir(dir)
@@ -889,16 +913,26 @@ func TestSweepFetchTemps(t *testing.T) {
 	for _, e := range ents {
 		got[e.Name()] = true
 	}
-	for _, gone := range []string{".fetch-abc123", ".fetch-", ".fetch-empty"} {
+	for _, gone := range []string{".fetch-old", "old.zst", ".fetch-", ".zst", ".fetch-empty"} {
 		if got[gone] {
-			t.Errorf("%s survived the sweep", gone)
+			t.Errorf("%s (601 s old) survived the sweep", gone)
 		}
 	}
-	if !got[".fetch-full"] {
-		t.Error(".fetch-full was removed; a populated orphan directory must survive, matching os.Remove")
+	for _, kept := range []string{".fetch-young", "young.zst", "empty.zst"} {
+		if !got[kept] {
+			t.Errorf("%s (599 s old) was swept; only entries more than 600 s old go", kept)
+		}
 	}
-	if !got["1.0.0"] {
-		t.Error("the sweep deleted a real CLI version")
+	if !got[".fetch-future"] {
+		t.Error(".fetch-future (mtime in the future) was swept; a future mtime is not old")
+	}
+	if !got[".fetch-full"] || !isRegularFile(filepath.Join(dir, ".fetch-full", "inner")) {
+		t.Error(".fetch-full or its file was removed; a populated directory must survive at every age")
+	}
+	for _, c := range controls {
+		if !got[c] {
+			t.Errorf("the sweep removed %q, a name it does not claim", c)
+		}
 	}
 }
 
@@ -1000,11 +1034,10 @@ func TestEnsureCLIFromURL(t *testing.T) {
 	}
 }
 
-// Claustrum's conditional divergence (docs/DIVERGENCES.md D1): the -cli-zst (SFTP) path
-// verifies -cli-checksum WHEN one is supplied — a wrong checksum is rejected like
-// the -cli-url path, and the source blob is left intact. An ABSENT/empty checksum
-// stays trusting, matching the reference (which never verifies this path), so
-// honest callers are unaffected.
+// The -cli-zst (SFTP) path verifies -cli-checksum WHEN one is supplied, as the
+// reference does since 7d193f89: a wrong checksum is rejected like the -cli-url
+// path, and the source blob is left intact. An ABSENT/empty checksum verifies
+// nothing. The compare is case-sensitive, measured on a Linux VM.
 func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 	mkZst := func(t *testing.T) (dir, zstFile string) {
 		dir = t.TempDir()
@@ -1029,7 +1062,30 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 		}
 	})
 
-	t.Run("absent checksum stays trusting (reference parity)", func(t *testing.T) {
+	// The reference compares case-sensitively, so the RIGHT digest in upper case
+	// fails, and the message carries both spellings. Measured on a Linux VM
+	// against 7d193f89 through f6010b97. strings.EqualFold installed here.
+	t.Run("upper-case right checksum is rejected", func(t *testing.T) {
+		dir, zstFile := mkZst(t)
+		zst, _ := os.ReadFile(zstFile)
+		sum := sha256.Sum256(zst)
+		lower := hex.EncodeToString(sum[:])
+		upper := strings.ToUpper(lower)
+		cliDir := filepath.Join(dir, "cli")
+		err := ensureCLI(installOpts{cliZst: zstFile, cliChecksum: upper}, filepath.Join(cliDir, "out.exe"))
+		want := "checksum mismatch: expected=" + upper + ", actual=" + lower
+		if err == nil || err.Error() != want {
+			t.Fatalf("zst + upper-case checksum = %v, want %q", err, want)
+		}
+		if !isRegularFile(zstFile) {
+			t.Error("a failed checksum must not consume the source .zst")
+		}
+		if ents, rerr := os.ReadDir(cliDir); rerr != nil || len(ents) != 0 {
+			t.Errorf("cli-dir after the mismatch: entries=%v err=%v, want an empty dir", ents, rerr)
+		}
+	})
+
+	t.Run("absent checksum verifies nothing", func(t *testing.T) {
 		dir, zstFile := mkZst(t)
 		cliPath := filepath.Join(dir, "out.exe")
 		if err := ensureCLI(installOpts{cliZst: zstFile}, cliPath); err != nil {
@@ -1053,6 +1109,47 @@ func TestEnsureCLIZstVerifiesChecksumWhenSupplied(t *testing.T) {
 			t.Error("the CLI should install with a matching checksum")
 		}
 	})
+}
+
+// The -cli-zst path creates the cli-dir, mode 0700 with its parents, BEFORE it
+// opens the blob. So a failed attempt past the version check leaves the cli-dir,
+// empty if it was new. Measured on a Linux VM against 5db5e4a through f6010b97,
+// a missing blob included, and with absent parents. claustrum created it only at
+// the decompress step.
+func TestEnsureCLIZstCreatesTheCliDirFirst(t *testing.T) {
+	for _, tc := range []struct{ name, blob, checksum, wantPrefix string }{
+		{"missing blob", "absent.zst", "", "opening input:"},
+		{"wrong checksum", "cli.zst", "deadbeef", "checksum mismatch:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "cli.zst"), zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cliDir := filepath.Join(root, "p1", "p2", "cli")
+			o := installOpts{cliZst: filepath.Join(root, tc.blob), cliChecksum: tc.checksum}
+			err := ensureCLI(o, filepath.Join(cliDir, "1.0.0"))
+			if err == nil || !strings.HasPrefix(err.Error(), tc.wantPrefix) {
+				t.Fatalf("ensureCLI = %v, want a %q error", err, tc.wantPrefix)
+			}
+			ents, rerr := os.ReadDir(cliDir)
+			if rerr != nil || len(ents) != 0 {
+				t.Fatalf("cli-dir after a failed attempt: entries=%v err=%v, want it created and empty", ents, rerr)
+			}
+			if runtime.GOOS == "windows" {
+				return // Windows has no POSIX mode bits to compare
+			}
+			for _, d := range []string{filepath.Join(root, "p1"), filepath.Join(root, "p1", "p2"), cliDir} {
+				fi, serr := os.Stat(d)
+				if serr != nil {
+					t.Fatal(serr)
+				}
+				if fi.Mode().Perm() != 0o700 {
+					t.Errorf("%s mode = %v, want 0700", d, fi.Mode().Perm())
+				}
+			}
+		})
+	}
 }
 
 // The -cli-url (download) path verifies UNCONDITIONALLY: a wrong checksum and an
@@ -1153,17 +1250,21 @@ func TestDownloadBlobSurvivesHousekeeping(t *testing.T) {
 	if isSweptName(filepath.Base(blobPath)) {
 		t.Fatalf("download blob %q matches isSweptName; the sweep would delete it", filepath.Base(blobPath))
 	}
-	// Belt and braces: run the real sweep and confirm the blob survives it.
-	sweepFetchTemps(dir)
+	// Belt and braces: run the real sweep and confirm the blob survives it, aged
+	// well past the sweep's gate so the name alone is what spares it.
+	hourAgo := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(blobPath, hourAgo, hourAgo); err != nil {
+		t.Fatal(err)
+	}
+	sweepFetchTemps(dir, time.Now())
 	if !isRegularFile(blobPath) {
 		t.Errorf("sweepFetchTemps removed the download blob %q", blobPath)
 	}
 
-	// Surviving the sweep is only half of it. pruneCLI has no name predicate of
-	// its own — it counts every non-directory in the cli-dir as a CLI version —
-	// so a blob that escapes the sweep is the first file claustrum creates that
-	// reaches the prune census. Being newest, it sorts to the front, takes a
-	// -cli-keep slot and evicts a real version instead.
+	// Surviving the sweep is only half of it. pruneCLI skips the sweep's names
+	// and the blob prefix, and counts every other non-directory as a CLI version.
+	// A blob it counted sorts to the front as newest, takes a -cli-keep slot and
+	// evicts a real version instead.
 	realVersion := filepath.Join(dir, "1.0.0")
 	if err := os.WriteFile(realVersion, []byte("cli"), 0o755); err != nil {
 		t.Fatal(err)
@@ -1266,7 +1367,7 @@ func captureInstallFacts(t *testing.T, o installOpts) installFacts {
 // missing cli-dir must be a no-op, never a panic, because the sweep runs on the
 // install path where the directory may not exist yet.
 func TestSweepFetchTempsUnreadableDir(t *testing.T) {
-	sweepFetchTemps(filepath.Join(t.TempDir(), "no-such-dir"))
+	sweepFetchTemps(filepath.Join(t.TempDir(), "no-such-dir"), time.Now())
 }
 
 // A non-200 download is reported with the reference's exact wording, and it is
@@ -1467,4 +1568,248 @@ func TestEnsureCLIConsumesBlobWhenChmodFails(t *testing.T) {
 	// And the staging file must not survive the failure — the same cleanup the
 	// not-runnable branch does.
 	assertNoStagingLeftover(t, filepath.Join(dir, "out.exe"))
+}
+
+// captureInstallOutput runs runInstall and returns its raw stdout.
+func captureInstallOutput(t *testing.T, o installOpts) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	go func() { b, _ := io.ReadAll(r); done <- string(b) }()
+	os.Stdout = w
+	runInstall(o)
+	_ = w.Close()
+	os.Stdout = old
+	out := <-done
+	_ = r.Close()
+	return out
+}
+
+// The prune never counts a name the sweep claims, at any age. Measured on a Linux
+// VM against f6010b97 with three real CLIs (72 h, 48 h, 24 h old), a ".fetch-o"
+// and an "x.zst", and one install of 2.0.0 with -cli-keep 3. With the litter
+// fresh, the reference keeps 1.1.0, 1.2.0, 2.0.0 and the litter. With the litter
+// 601 s old (the control), the sweep takes it and the same three CLIs stay.
+func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		age  time.Duration
+		want []string
+	}{
+		{"fresh litter", 0, []string{".fetch-o", "1.1.0", "1.2.0", "2.0.0", "x.zst"}},
+		{"601 s litter (control)", 601 * time.Second, []string{"1.1.0", "1.2.0", "2.0.0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "cli")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now()
+			put := func(name string, body []byte, age time.Duration) {
+				t.Helper()
+				p := filepath.Join(dir, name)
+				if err := os.WriteFile(p, body, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				at := now.Add(-age)
+				if err := os.Chtimes(p, at, at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			put("1.0.0", fakeCLI(t, 0), 72*time.Hour)
+			put("1.1.0", fakeCLI(t, 0), 48*time.Hour)
+			put("1.2.0", fakeCLI(t, 0), 24*time.Hour)
+			put(".fetch-o", nil, tc.age)
+			put("x.zst", nil, tc.age)
+			blob := filepath.Join(t.TempDir(), "cli.zst")
+			if err := os.WriteFile(blob, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "2.0.0", cliZst: blob, cliKeep: 3})
+			if f.CliError != "" {
+				t.Fatalf("CliError = %q, want success", f.CliError)
+			}
+			ents, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var left []string
+			for _, e := range ents {
+				left = append(left, e.Name())
+			}
+			sort.Strings(left)
+			if strings.Join(left, " ") != strings.Join(tc.want, " ") {
+				t.Errorf("cli-dir = %v, want %v", left, tc.want)
+			}
+		})
+	}
+}
+
+// The -cli-url path creates the cli-dir (0700, with parents) before any network
+// access, and every failure leaves it empty. Measured on a Linux VM against
+// f6010b97: a checksum mismatch, a 404 and a refused connection each leave an
+// empty 0700 cli-dir, and the cli-dir exists before the server sends headers.
+func TestEnsureCLIURLCreatesTheCliDirFirst(t *testing.T) {
+	zst := zstdOf(t, fakeCLI(t, 0))
+	sum := sha256.Sum256(zst)
+	right := hex.EncodeToString(sum[:])
+
+	var mu sync.Mutex
+	var cliDir string
+	var sawDir bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		fi, err := os.Stat(cliDir)
+		sawDir = err == nil && fi.IsDir()
+		mu.Unlock()
+		if r.URL.Path == "/missing.zst" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(zst)
+	}))
+	defer srv.Close()
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL := dead.URL + "/cli.zst"
+	dead.Close()
+
+	for _, tc := range []struct {
+		name, url, checksum, wantPrefix string
+		asksServer                      bool
+	}{
+		{"wrong checksum", srv.URL + "/cli.zst", "deadbeef", "checksum mismatch:", true},
+		{"upper-case checksum", srv.URL + "/cli.zst", strings.ToUpper(right), "checksum mismatch:", true},
+		{"404", srv.URL + "/missing.zst", right, "download failed with status 404", true},
+		{"unreachable", deadURL, right, "download failed:", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "p1", "cli")
+			mu.Lock()
+			cliDir, sawDir = dir, false
+			mu.Unlock()
+			err := ensureCLI(installOpts{cliURL: tc.url, cliChecksum: tc.checksum}, filepath.Join(dir, "1.0.0"))
+			if err == nil || !strings.HasPrefix(err.Error(), tc.wantPrefix) {
+				t.Fatalf("ensureCLI = %v, want a %q error", err, tc.wantPrefix)
+			}
+			mu.Lock()
+			saw := sawDir
+			mu.Unlock()
+			if tc.asksServer && !saw {
+				t.Error("the cli-dir did not exist when the request reached the server")
+			}
+			ents, rerr := os.ReadDir(dir)
+			if rerr != nil || len(ents) != 0 {
+				t.Fatalf("cli-dir after the failure: entries=%v err=%v, want it created and empty", ents, rerr)
+			}
+			if runtime.GOOS == "windows" {
+				return
+			}
+			for _, d := range []string{filepath.Join(root, "p1"), dir} {
+				fi, serr := os.Stat(d)
+				if serr != nil {
+					t.Fatal(serr)
+				}
+				if fi.Mode().Perm() != 0o700 {
+					t.Errorf("%s mode = %v, want 0700", d, fi.Mode().Perm())
+				}
+			}
+		})
+	}
+}
+
+// The final __INSTALL_PROGRESS__ line comes only after the checksum passes, and
+// the leading bytes:0 line always comes first. Measured on a Linux VM against
+// f6010b97, 5 of 5 runs per row: a good 57-byte download prints bytes:0 then
+// bytes:57, and a mismatch or an empty checksum prints bytes:0 only.
+func TestInstallProgressLinesFollowTheChecksum(t *testing.T) {
+	zst := zstdOf(t, fakeCLI(t, 0))
+	sum := sha256.Sum256(zst)
+	// Content-Length is set explicitly. Without it a large body (the Windows fake
+	// CLI is about 9 MB) goes out chunked, and the lines carry no "total".
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(zst)))
+		_, _ = w.Write(zst)
+	}))
+	defer srv.Close()
+	n := len(zst)
+	lead := fmt.Sprintf(`__INSTALL_PROGRESS__{"phase":"download","bytes":0,"total":%d}`, n)
+	final := fmt.Sprintf(`__INSTALL_PROGRESS__{"phase":"download","bytes":%d,"total":%d}`, n, n)
+	for _, tc := range []struct {
+		name, checksum string
+		want           []string
+	}{
+		{"right checksum", hex.EncodeToString(sum[:]), []string{lead, final}},
+		{"wrong checksum", "deadbeef", []string{lead}},
+		{"no checksum", "", []string{lead}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Several runs, because the old ticker-goroutine lead line raced the
+			// first read and once printed bytes:57 with no bytes:0 line.
+			for i := 0; i < 5; i++ {
+				dir := filepath.Join(t.TempDir(), "cli")
+				out := captureInstallOutput(t, installOpts{cliDir: dir, cliVersion: "1.0.0",
+					cliURL: srv.URL + "/cli.zst", cliChecksum: tc.checksum})
+				var got []string
+				for _, l := range strings.Split(out, "\n") {
+					if strings.HasPrefix(l, "__INSTALL_PROGRESS__") {
+						got = append(got, l)
+					}
+				}
+				if strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
+					t.Fatalf("run %d: progress lines =\n%s\nwant\n%s", i, strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+				}
+			}
+		})
+	}
+}
+
+// A cache miss with no source flag still creates the cli-dir (0700, with its
+// parents) before the source check, and leaves it empty. Measured on a Linux VM
+// against f6010b97, two runs: the answer is the same text on both binaries, and
+// the reference leaves an empty 0700 cli-dir.
+func TestInstallCacheMissWithNoSourceCreatesTheCliDir(t *testing.T) {
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "p1", "cli")
+	f := captureInstallFacts(t, installOpts{cliDir: cliDir, cliVersion: "9.9.9"})
+	if want := "cli 9.9.9 missing and no --cli-url or --cli-zst provided"; f.CliError != want {
+		t.Fatalf("CliError = %q, want %q", f.CliError, want)
+	}
+	ents, err := os.ReadDir(cliDir)
+	if err != nil || len(ents) != 0 {
+		t.Fatalf("cli-dir after a no-source miss: entries=%v err=%v, want it created and empty", ents, err)
+	}
+	if runtime.GOOS == "windows" {
+		return // Windows has no POSIX mode bits to compare
+	}
+	for _, d := range []string{filepath.Join(root, "p1"), cliDir} {
+		fi, serr := os.Stat(d)
+		if serr != nil {
+			t.Fatal(serr)
+		}
+		if fi.Mode().Perm() != 0o700 {
+			t.Errorf("%s mode = %v, want 0700", d, fi.Mode().Perm())
+		}
+	}
+}
+
+// A zero or negative bound arms no deadline, so the probe output is used. A
+// disabled limiter bypasses its deadline, it never becomes an expired one.
+func TestDetectLibcZeroTimeoutIsUnbounded(t *testing.T) {
+	run := func(ctx context.Context) ([]byte, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return []byte("musl libc (x86_64)\n"), nil
+	}
+	glob := func(string) ([]string, error) { return nil, nil }
+	for _, d := range []time.Duration{0, -time.Second} {
+		if got := detectLibcWith(d, run, glob); got != "musl" {
+			t.Errorf("detectLibcWith(%v) = %q, want musl (no deadline armed)", d, got)
+		}
+	}
 }

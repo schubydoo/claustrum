@@ -172,7 +172,7 @@ If the check reports drift:
 
 Not every claustrum behavior is meant to match the reference.
 [docs/DIVERGENCES.md](DIVERGENCES.md) catalogs the deliberate divergences
-(D1–D17, CT-1..CT-5) and the four-rule standard that governs them. That file is the
+(the D series and CT-1..CT-5) and the four-rule standard that governs them. That file is the
 canonical home for what each one is, why it exists, how to activate it, and its
 reopen trigger. When the drift check flags one of them, it is expected, not drift.
 Check it against the catalog before you "fix" it.
@@ -184,30 +184,34 @@ opt-in?
 ### Which divergences a probe can see
 
 `battery-visible?` asks whether the standard frame battery (`validate.sh` /
-`battery.js`) shows a diff. The install-path bounds (D10–D14) run under
+`battery.js`) shows a diff. The install-path bounds (D10–D13) run under
 `-install`, which the frame battery never drives at all.
 
 | ID | Default | Battery-visible? | What it is |
 |----|---------|------------------|------------|
-| D1 | Conditional. It fires for a supplied `-cli-checksum`. Caller-activated, not operator-declinable. On `-install` the caller is Desktop | No via frames. `scratch/probe/cli_probe.sh` does drive it | `-cli-zst` SHA-256 verification |
 | D3 | Off (`0` = unlimited) | No. Off the default path | `files.extract_tar` size cap |
 | D4 | Off | Yes. `battery.js` id 70 reads `/dev/null`. No diff at the default (guard off), and it turns red once armed | `files.read` regular-file guard |
 | D5 | Off (`0` = no deadline) | No. Off the default path | git-invocation deadline |
 | D10 | Off (`0` = unlimited) | No. Install path | `-install` CLI size cap |
 | D11 | Off (`0` = no deadline) | No. Install path | `-install` runnability-probe deadline |
 | D12 | Off (`0` = no bound) | No. Install path | `-install` download bound |
-| D14 | Off (`0` = no deadline), linux only | No. Install path | `ldd --version` libc probe deadline |
 | D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal |
-| D6 / D7 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component / temp-sweep collision |
+| D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
+| D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-` |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept) |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
-| D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering |
+| D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
 | D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | status call `core.excludesFile` is `/dev/null`, not `NUL` |
 | CT-1 | Opt-in (`wantPid`) | Yes, on request. It adds `pid`/`startTime` | spawn/reattach reply extension |
 | CT-2 | Opt-in (`-keep-children`, POSIX) | No | children survive shutdown |
 | CT-3 | Opt-in (`claustrum.conf`) | Only `version-override`, via the static check's `-version` diff | the configuration file itself |
 | CT-4 | Not built. A deferred idea, recorded in DIVERGENCES.md only | No. There is no code | opt-in hardened token persistence (a `persist-token` key, or a Windows owner-only DACL) |
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
+
+D1, D7 and D14 are retired. The reference changed on each path, and claustrum
+now matches it. A difference on those paths is drift, not a divergence, unless
+an entry in the table above covers it (for example D6, D10, D13, D18). See
+[DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries).
 
 Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
 numbers several more claustrum-only behaviors, and they are just as real. They are
@@ -222,10 +226,9 @@ An opt-in key that is *present* is not a deadline that is *in force*. A mistyped
 inert value leaves the divergence off, and the parity behavior that results reads
 exactly like drift. When a symptom matches a D-shaped divergence on a stock
 claustrum, check for the key or flag first. Then make sure that the value parses to
-a positive duration. Four knobs take a duration: D5 (`git-timeout`), D11
-(`cli-probe-timeout`), D12 (`cli-download-timeout`), and D14
-(`libc-probe-timeout`). D5 logs under `[Server]`. The last three log under
-`[Install]`. All four parse the same way:
+a positive duration. Three knobs take a duration: D5 (`git-timeout`), D11
+(`cli-probe-timeout`) and D12 (`cli-download-timeout`). D5 logs under `[Server]`.
+The other two log under `[Install]`. All three parse the same way:
 
 | Value shape | Configuration key in `claustrum.conf` | `-…` flag on the argv |
 |-------------|--------------------------------|-----------------------|
@@ -294,9 +297,8 @@ traps that matter for telling drift from expected:
   artifact reaches the checksum (claustrum `checksum mismatch: …`). A genuine
   interrupted transfer never does, because `io.Copy`'s error returns first.
   Claustrum therefore diverges on the *prefix* (`download failed: <err>`).
-- D14 fires in only one of two stall shapes (a surviving child blocks both
-  binaries). There is no libc probe off linux at all, so a `libc`
-  difference off linux is not D14.
+- The `ldd` libc probe bounds ldd itself at 5 s on both binaries (parity since
+  `19f30c46`). There is no libc probe off linux at all.
 - claustrum made seven changes for `90fca6e6` while the JSON-RPC surface stood still.
   A triager who meets one of them and finds the drift check quiet is looking at
   parity, not drift. No method, field or error string moved. Three of the seven

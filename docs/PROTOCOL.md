@@ -2156,7 +2156,7 @@ never "a huge limit".
 | `-max-cli-bytes <n>` | `max-cli-bytes` | `0` | cap CLI decompress + download (D10) | -install |
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | `0` | `<cli> --version` deadline (D11) | -install |
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
-| `-libc-probe-timeout <dur>` | `libc-probe-timeout` | `0` | `ldd --version` deadline, linux only (D14) | -install |
+| `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
 | `-cli-keep <n>` | none | `3` | versions to retain on prune | -install |
 | none (config only) | `version-override` | none | `-version` stdout rebrand (CT-3) | -version |
 
@@ -2399,8 +2399,7 @@ See
 ```text
 claustrum -install -cli-dir <d> -cli-version <v> \
           [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>] \
-          [-libc-probe-timeout <dur>]
+          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
 ```
 
 `-install` downloads, verifies, extracts and prunes, and then prints one
@@ -2415,7 +2414,7 @@ The `cliError` catalogue follows:
 |---|---|
 | `installed cli at <path> is not runnable` | post-extraction `--version` probe failed (or timed out, D11) |
 | `cli <v> missing and no --cli-url or --cli-zst provided` | cache miss (or a cache-hit probe timeout, D11) with no source flag |
-| `checksum mismatch: expected=<x>, actual=<y>` | `-cli-checksum` verify failed. This applies to `-cli-url` always, and to `-cli-zst` only when a checksum is supplied (D1) |
+| `checksum mismatch: expected=<x>, actual=<y>` | `-cli-checksum` verify failed. This applies to `-cli-url` always, and to `-cli-zst` only when a checksum is supplied. The compare is case-sensitive |
 | `opening input: <err>` | `-cli-zst` read error |
 | `decompressing: <err>` | bad zstd blob, for example `invalid input: magic number mismatch` |
 | `decompressing: decompressed CLI exceeds <n> bytes` | D10 cap, opt-in |
@@ -2425,19 +2424,22 @@ The `cliError` catalogue follows:
 | `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, `4534d86` parity, VM-measured) |
 | `mkdir cli dir: <err>` | cli-dir uncreatable |
 | `cli version "…" must be a single path component` | D6 hardening |
-| `cli version "…" collides with the install temp sweep` | D7 hardening |
-| `cli version "…" collides with the install download blob` | version starting `.blob-` |
+| `cli version "…" collides with the install download blob` | version starting `.blob-` (D18) |
 | `clearing stale dir at <path>: <err>` | an occupied `cliPath` directory that claustrum cannot remove |
 | `staging file vanished before install: <err>` | a concurrent sweep took the staging file |
 
 Download progress and `fetch` stats came with `4534d86`, on the `-cli-url` path:
 - While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to stdout
-  on a ticker of about 1 s: `{"phase":"download","bytes":<n>[,"total":<m>]}`. A
-  leading `bytes:0` line is always emitted. `total` carries the Content-Length and
-  is dropped when the server sends none, as with a chunked body. The cadence is
-  time-driven, so byte counts jump irregularly and there is no guaranteed final
-  `bytes==total` line. A consumer treats these as progress, not as a byte-exact
-  sequence.
+  on a ticker of about 1 s: `{"phase":"download","bytes":<n>[,"total":<m>]}`.
+  `total` carries the Content-Length and is dropped when the server sends none,
+  as with a chunked body.
+- A leading `bytes:0` line comes first, before any byte is read. A final
+  `bytes:<n>` line comes only after the checksum passes. A failed check prints no
+  final line. Measured on a Linux VM against `f6010b97` with a 57-byte blob, 5 of
+  5 runs per row: `bytes:0` then `bytes:57` on success, and `bytes:0` alone on a
+  mismatch.
+- The ticker lines in between are time-driven, so their byte counts jump
+  irregularly. A consumer treats them as progress, not as a byte-exact sequence.
 - The `__INSTALL_RESULT__` facts line gains a `fetch` object LAST, after `cliError`:
   `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}`. Those are bytes read, download
   duration, and the largest gap between reads. It appears whenever a `-cli-url`
@@ -2461,17 +2463,27 @@ Checksum and verify ordering:
   `download failed: <transport>` there, where the reference answers
   `decompressing: <transport>`. Both binaries fail the install either way. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D13.
-- The `-cli-zst` checksum is intentional conditional divergence D1. The reference
-  never checksum-verifies the local SFTP-upload blob. claustrum verifies it only
-  when a `-cli-checksum` is supplied, with the same `checksum mismatch` error, and
-  it leaves the source blob intact. An absent or empty checksum stays trusting, so
-  honest callers are byte-identical. See [`DIVERGENCES.md`](DIVERGENCES.md) → D1.
+- On the `-cli-zst` path claustrum verifies the blob only when a `-cli-checksum`
+  is supplied, as the reference does since `7d193f89`. A mismatch answers
+  `checksum mismatch` and keeps the blob. An absent or empty checksum verifies
+  nothing.
+- The compare is case-sensitive on both paths. The right digest in upper case
+  answers `checksum mismatch: expected=<UPPER>, actual=<lower>`, as on the
+  reference.
+- On every cache miss claustrum creates the cli-dir (mode `0700`, with its
+  parents) first. That is before the source check, before it opens a `-cli-zst`
+  blob and before any `-cli-url` network access. So every failed cache miss past
+  the version check leaves the cli-dir, empty if it was new. A mismatch, a 404, a
+  refused connection and a missing source all leave it. That matches the
+  reference: on every measured build from `5db5e4a` for `-cli-zst`, and on
+  `f6010b97` for `-cli-url` and a missing source. Measured on a Linux VM.
 
-The opt-in wall-clock bounds are all three off by default, so a stock claustrum
+The opt-in wall-clock bounds are both off by default, so a stock claustrum
 applies none of them, on linux or anywhere. At the shipped defaults no
-claustrum-chosen `-install` bound applies. Only the stdlib transport clocks
-(`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply, and only on
-`-cli-url`. Off is parity, because the reference showed no deadline at the
+claustrum-chosen `-install` bound applies. The stdlib transport clocks
+(`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on `-cli-url` only.
+The `ldd` probe has the reference's 5 s bound on ldd itself and a 2 s drain after
+ldd exits. Off is parity, because the reference showed no deadline at the
 durations probed. See [`DIVERGENCES.md`](DIVERGENCES.md):
 - `-cli-download-timeout <dur>` is D12. `0` gives `http.Client{Timeout:0}`, which
   is no bound. When armed, it bounds the whole exchange. An honest download that is
@@ -2485,15 +2497,9 @@ durations probed. See [`DIVERGENCES.md`](DIVERGENCES.md):
   diverges as no `cliError` at all. It is a threshold, not a hang detector, so an
   honest-but-slow CLI trips it too. The cached binary survives every failure before
   the rename.
-- `-libc-probe-timeout <dur>` is D14, and it is linux only. `0` puts no deadline on
-  `ldd --version`. Off linux the probe never runs. On linux it can fire on any
-  host. Since build 3ef9370 the libc probe runs `ldd` on every call, and
-  the loader glob is only the empty-output fallback. Do not confuse it with
-  `-cli-probe-timeout`. The two names differ only in
-  their `cli` and `libc` prefix, they have the same type, and main's `-install` arm
-  resolves them in consecutive statements. `TestInstallArmWiresEachFlagToItsOwnGlobal`
-  pins that. `libc` build selection is a driver claim. See
-  [ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance).
+- The `ldd --version` libc probe bounds ldd itself at 5 s, as on the reference
+  since `19f30c46`. It is not a knob. `-libc-probe-timeout` is a deprecated no-op. See
+  Staging and cleanup below.
 
 D10 is the opt-in size cap. `-max-cli-bytes <n>`, or the `max-cli-bytes`
 configuration key, governs both the decompressed CLI and the download body. `0` is
@@ -2514,28 +2520,29 @@ mean unbounded memory. See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   symlink stays legal, because `os.RemoveAll` unlinks it and does not follow it. The
   real client passes bare versions. `1.0.86`, `2.0.0-beta.1`, a commit sha,
   `latest` and `1.0.86+build.5` are all measured as accepted.
-- D7 forbids a collision with the orphan sweep. The sweep claims `.fetch-*` and
-  `*.zst`, and it runs after *every* attempted install. Without that rule, `-cli-version .fetch-x` or
-  `1.0.zst` installs, and the sweep then deletes it moments later.
-  Both binaries finish with an empty cli-dir and no `cliError`, and report a
-  success that installed nothing. claustrum now answers `cli version "…" collides
-  with the install temp sweep`. The sweep predicate and this test share one
-  definition.
+- A version that the sweep claims, such as `.fetch-x` or `1.0.zst`, installs.
+  The same run keeps it, because the sweep removes only old entries. A later
+  install removes it once it is more than 10 minutes old. This matches the
+  reference since `4534d86`. The retired D7 refused such a version.
 
 Staging and cleanup:
 - claustrum stages the CLI at `<cli-dir>/.fetch-<random>`, mode `0600`, and
   renames it into place. It never stages at `<cliPath>.tmp`. This is one code path
   for `-cli-url` and `-cli-zst` alike. The orphan sweep matches `.fetch-*`, so it
   reclaims the litter of an interrupted install.
-- When the cli-dir exists, a `-cli-url` download lands at
-  `<cli-dir>/.blob-<random>`. On a first install it lands at
-  `$TMPDIR/claustrum-fetch-<random>`,
-  because `fetchToFile` in `install.go` runs before `ensureCLI` creates the
-  directory. The `.blob-` prefix is deliberately different, so that the sweep and
-  the `-cli-keep` prune do not claim an in-flight blob. That prune counts every
-  non-directory as a version. That is also why claustrum refuses a `-cli-version`
-  that starts with `.blob-`. The install removes the blob on every path. Only a
-  SIGKILLed download leaves it behind. No frame changes either way.
+- A `-cli-url` download lands at `<cli-dir>/.blob-<random>`, because `ensureCLI`
+  creates the cli-dir first. If the cli-dir is unwritable, it lands at
+  `$TMPDIR/claustrum-fetch-<random>`. The `.blob-` prefix is deliberately
+  different, so that the `-cli-keep` prune does not count it and the sweep does
+  not claim an in-flight blob. That is also why claustrum refuses a
+  `-cli-version` that starts with `.blob-` (D18). The install removes the blob on
+  every path. Only a SIGKILLed download leaves it behind, and nothing reclaims
+  it. The sweep must not take it, because a retry re-reads the blob after the
+  staging file, which is never older. No frame changes either way.
+- The `-cli-keep` prune counts every other non-directory as a version. It skips
+  every name the sweep claims, at any age. Measured on a Linux VM against
+  `f6010b97`: a fresh `.fetch-o` and `x.zst` beside three real CLIs, with
+  `-cli-keep 3`, leave all three real CLIs in place.
 - claustrum consumes the `-cli-zst` blob once decompression succeeds, and not
   only on a fully successful install. An extracted CLI that fails the runnability
   test still costs the blob. claustrum leaves a blob that is not valid zstd alone.
@@ -2547,18 +2554,34 @@ Staging and cleanup:
   `staging file vanished before install: <err>`, and `cliPath` stays untouched. The
   end states match the reference for every destination shape: absent, a regular
   file, and a non-empty directory.
-- The orphan sweep removes `.fetch-*` and `*.zst` entries with one `os.Remove`
-  per entry. It therefore clears files and *empty* directories, and leaves a
-  non-empty `.fetch-dir/`. Unrelated files survive. The sweep runs whenever an
+- The orphan sweep removes a `.fetch-*` or `*.zst` entry only when its mtime is
+  about 10 minutes old or more. The gate exists from `4534d86` on. `5db5e4a` and
+  `7d193f89` swept at every age. On `19f30c46` through `f6010b97`, 599 s stays,
+  601 s goes and a future mtime stays. claustrum removes an entry only when it is
+  more than 600 s old. The names are case-sensitive, and the bare `.fetch-` and
+  `.zst` count. The age is the entry's own mtime, for a symlink the link's own, so a symlink is
+  judged by the link, and only the link goes. The sweep uses one `os.Remove` per
+  entry. It therefore clears files and *empty* directories, and leaves a
+  non-empty `.fetch-dir/` at every age. Unrelated files survive. Measured on a
+  Linux VM. The sweep runs whenever an
   install was attempted, and the `-cli-keep` prune runs only on success. claustrum
   stages its extract in this same `.fetch-*` namespace and holds it across the
-  probe, so a concurrent install can reclaim another install's staging file.
-  claustrum handles that with a single retry of the stage-verify-rename step,
-  and it does not narrow the sweep.
+  probe. A concurrent install can reclaim that staging file only once it is more
+  than 10 minutes old. claustrum handles that case with a single retry of the
+  stage-verify-rename step.
 - claustrum runs `ldd` on every libc probe since build 3ef9370, and its output
   decides the answer. A "musl" banner reports `musl`, and any other output reports
   `glibc`. The `/lib/ld-musl-*.so.*` marker is consulted only when `ldd` produced
   no output.
+- The probe bounds ldd itself at 5 s, as on the reference since `19f30c46`. `ldd`
+  runs in its own process group. If ldd still runs at 5 s, the whole group is
+  killed. Output written before that kill is dropped, so the marker decides. No log line is
+  written, and the facts line keeps its shape. The bound applies on a fresh
+  install and on a cache hit. Measured on a Linux VM.
+- If `ldd` exits before 5 s while a child still holds its output pipe, the probe
+  waits up to 2 s more. Then it uses the output it has, even past 5 s. The child
+  is not killed. Measured on a Linux VM against `f6010b97` for exits from 0.5 s to
+  4.5 s: the reference answered musl about 2 s after ldd exited.
 
 ### -probe-cli — classify a CLI binary
 

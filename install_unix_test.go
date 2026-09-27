@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // The cli-dir chain is created owner-only (0700), matching the reference, while
@@ -221,5 +222,159 @@ func TestEnsureCLIRetriesWhenStagingIsSweptOnce(t *testing.T) {
 func TestSha256FileDirectory(t *testing.T) {
 	if _, err := sha256File(t.TempDir()); err == nil {
 		t.Fatal("expected an error hashing a directory")
+	}
+}
+
+// The sweep never follows a symlink out of the cli-dir. It judges a ".fetch-*"
+// symlink by the LINK's own mtime (an lstat) and removes only the link. The
+// target, a file or a directory with a file in it, stays in every case.
+// Measured on a Linux VM against 4534d86 through f6010b97: an old link to a
+// fresh target goes, and a fresh link to an old target stays.
+//
+// Go has no portable lchtimes, so the link's age comes from the "now" handed to
+// the sweep: the link is created at real time, and the target's mtime is set.
+func TestSweepFetchTempsJudgesTheLinkNotItsTarget(t *testing.T) {
+	setup := func(t *testing.T) (cliDir, outFile, outDir string) {
+		t.Helper()
+		root := t.TempDir()
+		cliDir = filepath.Join(root, "cli")
+		outFile = filepath.Join(root, "outside-file")
+		outDir = filepath.Join(root, "outside-dir")
+		if err := os.Mkdir(cliDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(outFile, []byte("keep"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(outDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "inner"), []byte("keep"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outFile, filepath.Join(cliDir, ".fetch-lnk")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outDir, filepath.Join(cliDir, ".fetch-lnkdir")); err != nil {
+			t.Fatal(err)
+		}
+		return cliDir, outFile, outDir
+	}
+	setTargets := func(t *testing.T, at time.Time, paths ...string) {
+		t.Helper()
+		for _, p := range paths {
+			if err := os.Chtimes(p, at, at); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	targetsKept := func(t *testing.T, outFile, outDir string) {
+		t.Helper()
+		if !isRegularFile(outFile) || !isRegularFile(filepath.Join(outDir, "inner")) {
+			t.Error("the sweep reached through a symlink and removed its target")
+		}
+	}
+	linkExists := func(p string) bool { _, err := os.Lstat(p); return err == nil }
+
+	t.Run("old link, fresh target", func(t *testing.T) {
+		cliDir, outFile, outDir := setup(t)
+		now := time.Now().Add(time.Hour) // the links are an hour old at this "now"
+		setTargets(t, now, outFile, outDir)
+		sweepFetchTemps(cliDir, now)
+		for _, l := range []string{".fetch-lnk", ".fetch-lnkdir"} {
+			if linkExists(filepath.Join(cliDir, l)) {
+				t.Errorf("%s survived; an old link goes whatever its target's age", l)
+			}
+		}
+		targetsKept(t, outFile, outDir)
+	})
+
+	t.Run("fresh link, old target", func(t *testing.T) {
+		cliDir, outFile, outDir := setup(t)
+		setTargets(t, time.Now().Add(-time.Hour), outFile, outDir)
+		sweepFetchTemps(cliDir, time.Now())
+		for _, l := range []string{".fetch-lnk", ".fetch-lnkdir"} {
+			if !linkExists(filepath.Join(cliDir, l)) {
+				t.Errorf("%s was swept; a fresh link stays whatever its target's age", l)
+			}
+		}
+		targetsKept(t, outFile, outDir)
+	})
+}
+
+// The ldd probe's bound kills ldd's WHOLE process group and drops the output ldd
+// wrote. The stub prints a musl banner at once, backgrounds a sleeper that holds
+// the output pipe, and waits. Measured on a Linux VM from 19f30c46 on: the
+// reference answers at the bound, reports glibc (no marker), and leaves no
+// sleeper. Three things fail without the fix: a direct-child kill leaves the
+// sleeper alive and holding the pipe, no bound blocks for 30 s, and keeping the
+// partial output reports musl.
+func TestRunLddVersionKillsTheGroupAtTheBound(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "sleeper.pid")
+	stub := "#!/bin/sh\necho 'musl libc (x86_64)'\nsleep 30 &\necho $! > " + pidFile + "\nwait\n"
+	if err := os.WriteFile(filepath.Join(dir, "ldd"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	noMusl := func(string) ([]string, error) { return nil, nil }
+
+	// 3 s, not less: the stub must write its pid file before the bound fires, and
+	// macOS shell start-up is slow on a loaded runner.
+	const bound = 3 * time.Second
+	start := time.Now()
+	got := detectLibcWith(bound, runLddVersion, noMusl)
+	elapsed := time.Since(start)
+
+	pid := readGrandchildPID(t, pidFile)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	if got != "glibc" {
+		t.Errorf("detectLibcWith = %q, want glibc: output written before the bound must be dropped", got)
+	}
+	// The group kill closes the pipe at once. A surviving sleeper adds
+	// lddKillGrace (2 s) on top of the bound.
+	if elapsed >= bound+lddKillGrace {
+		t.Errorf("the probe took %s, want under %s: a child held the pipe past the bound", elapsed, bound+lddKillGrace)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for syscall.Kill(pid, 0) != syscall.ESRCH {
+		if time.Now().After(deadline) {
+			t.Fatalf("sleeper pid %d still alive: the bound did not kill ldd's process group", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// The bound covers the ldd process only. An ldd that exits in time keeps its
+// output, even when a child holds the pipe and the answer lands past the bound.
+// Measured on a Linux VM against f6010b97: a stub that prints a musl banner,
+// exits at 3.5 s and leaves a `sleep` child on its stdout answers musl at 5.54 s,
+// and the child survives. The test scales that down: a 3 s bound and an exit
+// at 2 s, so the answer lands near 4 s, past the bound.
+func TestRunLddVersionKeepsOutputOfAnLddThatExitedInTime(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "child.pid")
+	stub := "#!/bin/sh\necho 'musl libc (x86_64)'\nsleep 2\nsleep 10 &\necho $! > " + pidFile + "\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "ldd"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	noMusl := func(string) ([]string, error) { return nil, nil }
+
+	const bound = 3 * time.Second
+	start := time.Now()
+	got := detectLibcWith(bound, runLddVersion, noMusl)
+	elapsed := time.Since(start)
+
+	pid := readGrandchildPID(t, pidFile)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	if elapsed <= bound {
+		t.Fatalf("the probe answered at %s, inside the %s bound; the fixture must land past it", elapsed, bound)
+	}
+	if got != "musl" {
+		t.Errorf("detectLibcWith = %q at %s, want musl: ldd exited in time, so its output stands", got, elapsed)
+	}
+	if syscall.Kill(pid, 0) != nil {
+		t.Error("the child holding the pipe was killed; after ldd exits, nothing is killed")
 	}
 }
