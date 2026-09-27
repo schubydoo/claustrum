@@ -78,7 +78,7 @@ func TestPlanIncludeScanBatchLayoutWindows(t *testing.T) {
 		{"BbT_dirs2500", 120, "d*/\n", nil, dirs(2500), []int{}, []int{1625, 875}},
 	} {
 		arg := "--exclude-from=" + strings.Repeat("t", c.argLen-len("--exclude-from="))
-		p := planIncludeScan([]byte(c.manifest), listing(c.files, c.dirs), arg)
+		p := planIncludeScan([]byte(c.manifest), listing(c.files, c.dirs), arg, nil)
 		if gotF, gotD := sizes(p.fileBatches), sizes(p.dirBatches); p.fallback || !slices.Equal(gotF, c.wantF) || !slices.Equal(gotD, c.wantD) {
 			t.Errorf("%s: fallback %v, file batches %v, dir batches %v, want %v and %v (f6010b97)",
 				c.name, p.fallback, gotF, gotD, c.wantF, c.wantD)

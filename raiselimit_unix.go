@@ -21,6 +21,13 @@ var (
 // call, not the value, is what updates the limit the Go runtime restores across
 // exec, so a spawned child inherits the raised limit rather than the daemon's
 // original startup soft limit.
+//
+// Only after a raise that works, it writes one INFO line to the daemon log with
+// the limit it set. CLAUSTRUM_LOG_LEVEL=warn drops that line. f6010b97 writes the
+// same `[daemon]` line, without a level tag, as the first line of its log. That
+// is before the "listening" line. Linux and macOS VMs measured this, with the
+// value 65536. The line was not seen on the
+// Windows VM. A failed raise writes no line. That path was not measured.
 func raiseInheritedFileLimit() {
 	var lim syscall.Rlimit
 	if err := getRlimit(syscall.RLIMIT_NOFILE, &lim); err != nil {
@@ -29,5 +36,7 @@ func raiseInheritedFileLimit() {
 	target := min(uint64(65536), lim.Max)
 	if err := setRlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Cur: target, Max: lim.Max}); err != nil {
 		_ = setRlimit(syscall.RLIMIT_NOFILE, &lim)
+		return
 	}
+	logInfof("[daemon] child processes will start with an open-files limit of %d", target)
 }

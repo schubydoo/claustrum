@@ -659,9 +659,8 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// and closes its copy once the child owns it.
 	//
 	// BOTH streams, not just stderr: claustrum splits its output, printing the
-	// "listening on …" banner to stdout and log lines to stderr. Redirecting only
-	// stderr would leave the banner on the terminal and produce a log missing its
-	// first line.
+	// "listening on …" banner to stdout and log lines to stderr. If only stderr
+	// went to the file, the banner stays on the terminal and the log misses it.
 	logFile := openDaemonLog(socket)
 	if logFile != nil {
 		cmd.Stdout = logFile

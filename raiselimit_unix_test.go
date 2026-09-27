@@ -3,6 +3,8 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -119,5 +121,48 @@ func TestRaiseInheritedFileLimitErrors(t *testing.T) {
 	}
 	if attempts[1].Cur != 1024 {
 		t.Errorf("fallback Cur = %d, want 1024 (original)", attempts[1].Cur)
+	}
+}
+
+// TestRaiseInheritedFileLimitLogsLimit pins the daemon log line. f6010b97 writes
+// `[daemon] child processes will start with an open-files limit of 65536` on
+// Linux and macOS VMs. Claustrum writes the same text with its INFO tag, and the
+// value is the soft limit it set. A failed raise writes no line.
+func TestRaiseInheritedFileLimitLogsLimit(t *testing.T) {
+	origGet, origSet := getRlimit, setRlimit
+	t.Cleanup(func() { getRlimit, setRlimit = origGet, origSet })
+	var buf bytes.Buffer
+	oldOut, oldFlags := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldOut); log.SetFlags(oldFlags) })
+	oldLevel := logThreshold.Load()
+	logThreshold.Store(int32(logLevelDebug))
+	t.Cleanup(func() { logThreshold.Store(oldLevel) })
+
+	for _, c := range []struct {
+		name    string
+		hard    uint64
+		setFail bool
+		want    string
+	}{
+		{"high hard limit", 1 << 20, false, "INFO  [daemon] child processes will start with an open-files limit of 65536\n"},
+		{"low hard limit", 8192, false, "INFO  [daemon] child processes will start with an open-files limit of 8192\n"},
+		{"raise fails", 1 << 20, true, ""},
+	} {
+		buf.Reset()
+		getRlimit = func(_ int, l *syscall.Rlimit) error { *l = syscall.Rlimit{Cur: 1024, Max: c.hard}; return nil }
+		first := true
+		setRlimit = func(int, *syscall.Rlimit) error {
+			if c.setFail && first {
+				first = false
+				return syscall.EINVAL
+			}
+			return nil
+		}
+		raiseInheritedFileLimit()
+		if got := buf.String(); got != c.want {
+			t.Errorf("%s: log = %q, want %q", c.name, got, c.want)
+		}
 	}
 }
