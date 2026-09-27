@@ -849,13 +849,19 @@ const sweepMinAge = 10 * time.Minute
 //
 // A concurrent install's staging file is fresh, so the age gate now keeps it.
 // stageAndInstall's retry still covers a staging file that outlives the gate.
+//
+// The sweep also removes claustrum's own .blob- download temp under the same age
+// rule. A live download writes at least every 60 s (installIdleTimeout), and
+// every other path removes the blob, so one that is 10 minutes old is an orphan
+// of a killed install. This is claustrum's own rule. isSweptName and pruneCLI
+// still do not claim .blob-.
 func sweepFetchTemps(cliDir string, now time.Time) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
 		return
 	}
 	for _, e := range ents {
-		if !isSweptName(e.Name()) {
+		if !isSweptName(e.Name()) && !strings.HasPrefix(e.Name(), blobTempPrefix) {
 			continue
 		}
 		fi, err := os.Lstat(filepath.Join(cliDir, e.Name()))
@@ -1020,7 +1026,10 @@ func runLddVersion(ctx context.Context) ([]byte, error) {
 // the bound with an error that wraps context.DeadlineExceeded.
 func detectLibcWith(timeout time.Duration, run func(context.Context) ([]byte, error),
 	glob func(string) ([]string, error)) string {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.Background(), context.CancelFunc(func() {})
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	}
 	defer cancel()
 	out, err := run(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {

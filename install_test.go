@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1249,10 +1250,11 @@ func TestDownloadBlobSurvivesHousekeeping(t *testing.T) {
 	if isSweptName(filepath.Base(blobPath)) {
 		t.Fatalf("download blob %q matches isSweptName; the sweep would delete it", filepath.Base(blobPath))
 	}
-	// Belt and braces: run the real sweep and confirm the blob survives it, aged
-	// well past the sweep's gate so the name alone is what spares it.
-	hourAgo := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(blobPath, hourAgo, hourAgo); err != nil {
+	// Run the real sweep and confirm an in-flight blob survives it. A live
+	// download writes at least every 60 s, so its blob is never 10 minutes old.
+	// An orphan that old is reclaimed (TestSweepFetchTempsReclaimsOrphanBlob).
+	live := time.Now().Add(-30 * time.Second)
+	if err := os.Chtimes(blobPath, live, live); err != nil {
 		t.Fatal(err)
 	}
 	sweepFetchTemps(dir, time.Now())
@@ -1577,12 +1579,15 @@ func captureInstallOutput(t *testing.T, o installOpts) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	done := make(chan string, 1)
+	go func() { b, _ := io.ReadAll(r); done <- string(b) }()
 	os.Stdout = w
 	runInstall(o)
 	_ = w.Close()
 	os.Stdout = old
-	out, _ := io.ReadAll(r)
-	return string(out)
+	out := <-done
+	_ = r.Close()
+	return out
 }
 
 // The prune never counts a name the sweep claims, at any age. Measured on a Linux
@@ -1654,11 +1659,14 @@ func TestEnsureCLIURLCreatesTheCliDirFirst(t *testing.T) {
 	sum := sha256.Sum256(zst)
 	right := hex.EncodeToString(sum[:])
 
+	var mu sync.Mutex
 	var cliDir string
 	var sawDir bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		fi, err := os.Stat(cliDir)
 		sawDir = err == nil && fi.IsDir()
+		mu.Unlock()
 		if r.URL.Path == "/missing.zst" {
 			http.NotFound(w, r)
 			return
@@ -1681,23 +1689,28 @@ func TestEnsureCLIURLCreatesTheCliDirFirst(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			cliDir = filepath.Join(root, "p1", "cli")
-			sawDir = false
-			err := ensureCLI(installOpts{cliURL: tc.url, cliChecksum: tc.checksum}, filepath.Join(cliDir, "1.0.0"))
+			dir := filepath.Join(root, "p1", "cli")
+			mu.Lock()
+			cliDir, sawDir = dir, false
+			mu.Unlock()
+			err := ensureCLI(installOpts{cliURL: tc.url, cliChecksum: tc.checksum}, filepath.Join(dir, "1.0.0"))
 			if err == nil || !strings.HasPrefix(err.Error(), tc.wantPrefix) {
 				t.Fatalf("ensureCLI = %v, want a %q error", err, tc.wantPrefix)
 			}
-			if tc.asksServer && !sawDir {
+			mu.Lock()
+			saw := sawDir
+			mu.Unlock()
+			if tc.asksServer && !saw {
 				t.Error("the cli-dir did not exist when the request reached the server")
 			}
-			ents, rerr := os.ReadDir(cliDir)
+			ents, rerr := os.ReadDir(dir)
 			if rerr != nil || len(ents) != 0 {
 				t.Fatalf("cli-dir after the failure: entries=%v err=%v, want it created and empty", ents, rerr)
 			}
 			if runtime.GOOS == "windows" {
 				return
 			}
-			for _, d := range []string{filepath.Join(root, "p1"), cliDir} {
+			for _, d := range []string{filepath.Join(root, "p1"), dir} {
 				fi, serr := os.Stat(d)
 				if serr != nil {
 					t.Fatal(serr)
@@ -1781,6 +1794,47 @@ func TestInstallCacheMissWithNoSourceCreatesTheCliDir(t *testing.T) {
 		}
 		if fi.Mode().Perm() != 0o700 {
 			t.Errorf("%s mode = %v, want 0700", d, fi.Mode().Perm())
+		}
+	}
+}
+
+// The sweep reclaims claustrum's own .blob- download temp under the same age
+// rule as the swept names: 601 s old goes, 599 s old stays. The prune still does
+// not count it.
+func TestSweepFetchTempsReclaimsOrphanBlob(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	for name, age := range map[string]time.Duration{".blob-old": 601 * time.Second, ".blob-young": 599 * time.Second} {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, now.Add(-age), now.Add(-age)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sweepFetchTemps(dir, now)
+	if _, err := os.Lstat(filepath.Join(dir, ".blob-old")); !os.IsNotExist(err) {
+		t.Errorf(".blob-old (601 s) survived the sweep: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, ".blob-young")); err != nil {
+		t.Errorf(".blob-young (599 s) was removed: %v", err)
+	}
+}
+
+// A zero or negative bound arms no deadline, so the probe output is used. A
+// disabled limiter bypasses its deadline, it never becomes an expired one.
+func TestDetectLibcZeroTimeoutIsUnbounded(t *testing.T) {
+	run := func(ctx context.Context) ([]byte, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return []byte("musl libc (x86_64)\n"), nil
+	}
+	glob := func(string) ([]string, error) { return nil, nil }
+	for _, d := range []time.Duration{0, -time.Second} {
+		if got := detectLibcWith(d, run, glob); got != "musl" {
+			t.Errorf("detectLibcWith(%v) = %q, want musl (no deadline armed)", d, got)
 		}
 	}
 }
