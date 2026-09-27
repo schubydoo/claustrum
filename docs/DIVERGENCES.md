@@ -417,9 +417,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Behavior.** claustrum binds `params` into one struct per namespace
   (`pathParams`, `gitParams`), so a field that is valid for the *namespace* but
   unused by *this* method still participates in decoding. A type-mismatched value
-  there answers `-32602` (for example `files.stat {"maxBytes":"{"}`, `git.status
-  {"baseRepo":[1,2]}`). The reference answers both requests with defaults, as
-  measured. Both binaries ignore a genuinely unknown key.
+  there answers `-32602`, for example `files.stat {"maxBytes":"{"}`. The reference
+  answers that request with defaults, as measured on `f6010b97`. Both binaries
+  ignore a genuinely unknown key.
 - **Why always-on.** Rule 3 clause (b): the trigger is a type error in a field the
   method does not read (a client bug). Stated honestly, this is narrower than "a
   real client never sends them". Nobody ever enumerated Desktop's per-method param
