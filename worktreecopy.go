@@ -124,14 +124,19 @@ func readWorktreeInclude(repo string) ([]byte, bool) {
 // names, and `git check-ignore` keeps the ones that the standard ignore rules
 // match. The check honours the user's global excludes, so a file ignored only by
 // ~/.config/git/ignore is copied when the manifest names it. If either call
-// fails, nothing is copied.
+// fails, nothing is copied. A runtime-state path does not go to check-ignore
+// (checkIgnoreInput), as in f6010b97 (I15c and I15d, Linux and macOS VMs).
 func oldWorktreeIncludeScan(repo, excludeFile string) []string {
 	named, err := hardenedGitStdout(repo, false, "--no-literal-pathspecs", "ls-files", "--others",
 		"--ignored", "--exclude-from="+excludeFile, "-z", "--", ":(exclude)"+claudeDirName+"/"+worktreesSubdir)
-	if err != nil || named == "" {
+	if err != nil {
 		return nil
 	}
-	paths, _ := checkIgnored(repo, splitNUL(named))
+	check := checkIgnoreInput(splitNUL(named), nil)
+	if len(check) == 0 {
+		return nil
+	}
+	paths, _ := checkIgnored(repo, check)
 	return paths
 }
 

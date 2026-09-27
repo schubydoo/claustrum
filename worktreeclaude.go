@@ -94,6 +94,7 @@ func isClaudeRuntimeState(rel string) bool {
 // f6010b97 names the same children (measured on Linux, macOS and Windows VMs).
 // Its order is not sorted on Linux or macOS, so claustrum keeps the order of
 // the directory read. The `worktrees` case rule was measured on Linux only.
+// See claudeDirChildren.
 //
 // The pathspecs go into batches, one git call per batch. See claudeDirPassCalls.
 // Each call runs through hardenedGitStdout, so the config precursor runs before
@@ -132,8 +133,21 @@ func copyClaudeDirCalls(repo, worktree string, calls [][]string) {
 var claudeDirPassFixedArgs = []string{"--literal-pathspecs", "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--"}
 
 // claudeDirPassCalls returns the git argv of each `.claude/` batch, or nil when
-// the pass runs no git. Readdirnames keeps the order of the directory read.
+// the pass runs no git.
 func claudeDirPassCalls(repo string, budget int) [][]string {
+	return claudeDirPassBatches(claudeDirChildren(repo), budget)
+}
+
+// claudeDirChildren returns `.claude/<name>` for each child of the repo-root
+// `.claude/`, in the order of the directory read. It leaves out `worktrees` in
+// any case. It returns nil when the directory cannot be read.
+//
+// Two steps use this list. The `.claude/` pass names it. The directory batches
+// of the `.worktreeinclude` scan put it in place of the root `.claude` when that
+// directory opens (see openIncludeDirs). f6010b97 uses the same list in both
+// steps. Linux and macOS VMs measured this in C02, C03, C05, D23, I14b and I15d.
+// A Windows VM measured it in Cl_anydepth.
+func claudeDirChildren(repo string) []string {
 	dir, err := os.Open(filepath.Join(repo, claudeDirName))
 	if err != nil {
 		return nil
@@ -149,7 +163,7 @@ func claudeDirPassCalls(repo string, budget int) [][]string {
 			paths = append(paths, claudeDirName+"/"+name)
 		}
 	}
-	return claudeDirPassBatches(paths, budget)
+	return paths
 }
 
 // claudeDirPassBatches splits the `.claude/` pathspecs into git calls, in the

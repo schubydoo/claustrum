@@ -450,7 +450,7 @@ func TestPlanIncludeScanBatchLayout(t *testing.T) {
 		{"I11m_macos", 101, "build/\nP0000*\nP0039*\n", pads, []string{"build"}, []int{2975, 1025}, []int{1}},
 	} {
 		arg := "--exclude-from=" + strings.Repeat("t", c.argLen-len("--exclude-from="))
-		p := planIncludeScan([]byte(c.manifest), listing(c.files, c.dirs), arg)
+		p := planIncludeScan([]byte(c.manifest), listing(c.files, c.dirs), arg, nil)
 		if gotF, gotD := sizes(p.fileBatches), sizes(p.dirBatches); !slices.Equal(gotF, c.wantF) || !slices.Equal(gotD, c.wantD) {
 			t.Errorf("%s: file batches %v, dir batches %v, want %v and %v (f6010b97)", c.name, gotF, gotD, c.wantF, c.wantD)
 		}
@@ -593,5 +593,167 @@ func TestClaudeDirPassFailedBatch(t *testing.T) {
 		if got := err == nil; got != want {
 			t.Errorf("%s copied = %v, want %v", p, got, want)
 		}
+	}
+}
+
+// logIncludeScanCalls puts a `git` first on PATH that logs each call and then
+// runs the real git. The reader returns the batch calls of the scan as
+// "batch: <pathspecs>" and each check-ignore call as "check-ignore: <stdin>",
+// with each NUL of the stdin shown as `|`. It drops every other call.
+func logIncludeScanCalls(t *testing.T) func() []string {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found in PATH")
+	}
+	bin := t.TempDir()
+	log := filepath.Join(bin, "calls.log")
+	in := filepath.Join(bin, "stdin")
+	script := "#!/bin/sh\n" +
+		"for a in \"$@\"; do if [ \"$a\" = check-ignore ]; then\n" +
+		"  cat > '" + in + "'\n" +
+		"  { printf 'check-ignore: '; tr '\\000' '|' < '" + in + "'; printf '\\n'; } >> '" + log + "'\n" +
+		"  exec '" + real + "' \"$@\" < '" + in + "'\n" +
+		"fi; done\n" +
+		"for a in \"$@\"; do printf '%s\\037' \"$a\"; done >> '" + log + "'\n" +
+		"printf '\\n' >> '" + log + "'\n" +
+		"exec '" + real + "' \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return func() []string {
+		data, _ := os.ReadFile(log)
+		var calls []string
+		for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+			if strings.HasPrefix(line, "check-ignore: ") {
+				calls = append(calls, line)
+				continue
+			}
+			args := strings.Split(strings.TrimSuffix(line, "\037"), "\037")
+			batch := false
+			for _, a := range args {
+				batch = batch || strings.HasPrefix(a, "--exclude-from=")
+			}
+			if i := slices.Index(args, "--"); batch && i >= 0 {
+				calls = append(calls, "batch: "+strings.Join(args[i+1:], " "))
+			}
+		}
+		return calls
+	}
+}
+
+// TestIncludeCheckIgnoreCallShape pins the pathspecs of the scan batches and the
+// stdin of each check-ignore call. The want lists are the f6010b97 calls from
+// the Linux and macOS VMs (close-out run of 30f09ef, and I15 of slice 4).
+//
+//   - A path from a directory batch that is also a file candidate does not go to
+//     check-ignore. If no path is left, no check-ignore call runs (A03, A04).
+//   - A runtime-state path and a nested repository (`vendor/lib/`) do not go
+//     either (C04, I15c, D16).
+//   - An open root `.claude/` becomes its children in the directory batch, and
+//     `worktrees` is left out (C02, C03, C05, D23). `<claude>` stands for those
+//     children in the order of the directory read.
+//   - The old scan drops runtime-state paths too (I15c_old).
+//
+// The want file sets are the f6010b97 sets. The I15c sets also hold the tracked
+// sub/t.md, which the checkout writes. The D16 want lists come from a macOS run
+// and a Linux run of f6010b97. The Linux run also covered the old scan.
+func TestIncludeCheckIgnoreCallShape(t *testing.T) {
+	requireGit(t)
+	isolateGitConfig(t)
+	const v231, v232 = "git version 2.31.0\n", "git version 2.32.0\n"
+	for _, c := range []struct {
+		name, version string
+		c             includeCase
+		want          []string
+	}{
+		{"A03_middle_slash", v232, includeCase{ignore: lines("*.i"), files: []string{"sub/a.i", "x/sub/a.i", "a.i"},
+			manifest: "sub/a.i\n", want: []string{"sub/a.i"}}, []string{"batch: a.i sub/a.i x/sub/a.i", "batch: sub"}},
+		{"A04_star", v232, includeCase{ignore: lines("*.i"),
+			files: []string{"s1.i", "sub/s2.i", "sx/y.i", "sub/z.i", "sub/deep/z.i", "q.i"}, manifest: "s*.i\nsub/*.i\n",
+			want: []string{"s1.i", "sub/s2.i", "sub/z.i"}},
+			[]string{"batch: q.i s1.i sub/deep/z.i sub/s2.i sub/z.i sx/y.i", "batch: sub sub/deep sx"}},
+		{"A16_trailing_slash", v232, includeCase{ignore: lines("*.i"),
+			files: []string{"cfg/a.i", "sub/cfg/b.i", "cf2.i", "cf3.i/c.i"}, manifest: "cfg/\ncf2.i/\ncf3.i/\n",
+			want: []string{"cf3.i/c.i", "cfg/a.i", "sub/cfg/b.i"}},
+			[]string{"batch: cf2.i cfg/a.i sub/cfg/b.i", "batch: cf3.i cfg sub/cfg", "check-ignore: cf3.i/c.i|"}},
+		{"C02_claude_anydepth", v232, includeCase{ignore: lines(".claude/settings.local.json", ".claude/checkpoints/", "*.json"),
+			files:    []string{".claude/settings.local.json", ".claude/checkpoints/x.json", ".claude/a/b.json", "top.json"},
+			manifest: "*.json\n", want: []string{".claude/a/b.json", ".claude/settings.local.json", "top.json"}},
+			[]string{"batch: .claude/a/b.json .claude/settings.local.json top.json", "batch: <claude>"}},
+		{"C03_claude_whole_ignored_anydepth", v232, includeCase{ignore: lines(".claude/"),
+			files: []string{".claude/settings.local.json", ".claude/a/b.json", ".claude/checkpoints/c.json",
+				"sub/.claude/d.json", "sub/.claude/checkpoints/e.json"}, manifest: "*.json\n",
+			want: []string{".claude/a/b.json", ".claude/settings.local.json", "sub/.claude/d.json"}},
+			[]string{"batch: <claude> sub/.claude",
+				"check-ignore: .claude/a/b.json|.claude/settings.local.json|sub/.claude/d.json|"}},
+		{"C04_nested_claude_explicit", v232, includeCase{ignore: lines("sub/.claude/"),
+			files: []string{"sub/.claude/d.json", "sub/.claude/checkpoints/e.json"}, manifest: "sub/.claude/\n",
+			want: []string{"sub/.claude/d.json"}},
+			[]string{"batch: sub sub/.claude", "check-ignore: sub/.claude/d.json|"}},
+		{"C05_claude_explicit_manifest", v232, includeCase{ignore: lines(".claude/"),
+			files:    []string{".claude/settings.local.json", ".claude/a/b.json", ".claude/mailbox/m.json"},
+			manifest: ".claude/\n", want: []string{".claude/a/b.json", ".claude/settings.local.json"}},
+			[]string{"batch: <claude>", "check-ignore: .claude/a/b.json|.claude/settings.local.json|"}},
+		{"D23_worktrees_dir_pattern", v232, includeCase{ignore: lines(".claude/"),
+			files: []string{".claude/k.txt", "other.i"}, manifest: ".claude/worktrees/\n**/*.txt\n",
+			want: []string{".claude/k.txt"}},
+			[]string{"batch: <claude>", "check-ignore: .claude/k.txt|"}},
+		{"D16_nested_repo_in_ignored", v232, includeCase{ignore: lines("vendor/"),
+			files: []string{"vendor/lib/a.txt", "vendor/plain.txt"}, manifest: "vendor/\n*.txt\n",
+			setup: func(t *testing.T, repo string) { runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q") },
+			want:  []string{"vendor/plain.txt"}},
+			[]string{"batch: vendor", "check-ignore: vendor/plain.txt|"}},
+		{"D16_nested_repo_old", v231, includeCase{ignore: lines("vendor/"),
+			files: []string{"vendor/lib/a.txt", "vendor/plain.txt"}, manifest: "vendor/\n*.txt\n",
+			setup: func(t *testing.T, repo string) { runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q") },
+			want:  []string{"vendor/plain.txt"}},
+			[]string{"batch: :(exclude).claude/worktrees", "check-ignore: vendor/plain.txt|"}},
+		{"I15c_nested_new", v232, includeCase{ignore: lines("sub/.claude/"), tracked: []string{"sub/t.md"},
+			files:    []string{"sub/.claude/worktrees/x.dd", "sub/.claude/ok.dd", "sub/.claude/checkpoints/c.dd"},
+			manifest: "*.dd\n", want: []string{"sub/.claude/ok.dd", "sub/t.md"}},
+			[]string{"batch: sub/.claude", "check-ignore: sub/.claude/ok.dd|"}},
+		{"I15c_nested_old", v231, includeCase{ignore: lines("sub/.claude/"), tracked: []string{"sub/t.md"},
+			files:    []string{"sub/.claude/worktrees/x.dd", "sub/.claude/ok.dd", "sub/.claude/checkpoints/c.dd"},
+			manifest: "*.dd\n", want: []string{"sub/.claude/ok.dd", "sub/t.md"}},
+			[]string{"batch: :(exclude).claude/worktrees", "check-ignore: sub/.claude/ok.dd|"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stubGit(t, gitStub{version: c.version})
+			calls := logIncludeScanCalls(t)
+			var repo string
+			fx := c.c
+			setup := fx.setup
+			fx.setup = func(t *testing.T, r string) {
+				repo = r
+				if setup != nil {
+					setup(t, r)
+				}
+			}
+			got := runIncludeCase(t, fx)
+			if want := slices.Sorted(slices.Values(c.c.want)); !slices.Equal(got, want) {
+				t.Errorf("copied %v, want %v (f6010b97)", got, want)
+			}
+			// The children of the root `.claude/`, read here and not with
+			// claudeDirChildren, so a fault there cannot hide in both sides.
+			var children []string
+			if d, err := os.Open(filepath.Join(repo, claudeDirName)); err == nil {
+				names, _ := d.Readdirnames(-1)
+				d.Close()
+				for _, n := range names {
+					if n != worktreesSubdir {
+						children = append(children, claudeDirName+"/"+n)
+					}
+				}
+			}
+			var want []string
+			for _, w := range c.want {
+				want = append(want, strings.ReplaceAll(w, "<claude>", strings.Join(children, " ")))
+			}
+			if got := calls(); !slices.Equal(got, want) {
+				t.Errorf("scan calls\n got %q\nwant %q (f6010b97)", got, want)
+			}
+		})
 	}
 }

@@ -155,12 +155,12 @@ func mustJSON(v any) string {
 // daemon.token.
 //
 // Probe-measured against the reference at 5db5e4a: its launcher's own stdout and
-// stderr are 0 bytes, the banner is the file's first line, and a restart
+// stderr are 0 bytes, the banner opens the file after any limit line, and a restart
 // truncates rather than appends.
 //
 // Both streams matter: claustrum prints the banner to stdout and log lines to
 // stderr, so redirecting only stderr would leave the banner on the terminal and
-// produce a log missing its first line.
+// produce a log missing the banner.
 func TestServeWritesRemoteServerLog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and spawns the real binary; skipped under -short")
@@ -224,9 +224,19 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, _, _ := strings.Cut(string(b), "\n")
-	if !strings.Contains(first, "listening on "+sock) {
-		t.Errorf("first log line = %q, want the banner naming the socket", first)
+	// The open-files limit line comes first when the raise works, as in
+	// f6010b97. The banner follows it. A failed raise writes no limit line.
+	logLines := strings.Split(string(b), "\n")
+	banner := 0
+	const limitLine = "INFO  [daemon] child processes will start with an open-files limit of "
+	if strings.Contains(logLines[0], limitLine) {
+		banner = 1
+	}
+	if !strings.Contains(logLines[banner], "listening on "+sock) {
+		t.Errorf("log line %d = %q, want the banner naming the socket", banner, logLines[banner])
+	}
+	if n := strings.Count(string(b), limitLine); n != banner {
+		t.Errorf("the limit line appears %d times, want %d and only as the first line", n, banner)
 	}
 
 	// Graceful shutdown removes the socket and daemon.token; the log stays.

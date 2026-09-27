@@ -474,33 +474,39 @@ func bracketClass(glob string, start int) (int, string) {
 	return -1, ""
 }
 
-// openIncludeDirs returns the listed directories that the new scan searches, in
-// listing order. dirs have no trailing `/`. A dot directory that an explicit
-// pattern matches takes none of the includeMaxDotDirs places.
+// openIncludeDirs returns the pathspecs of the directory batches, in listing
+// order. dirs have no trailing `/`. A dot directory that an explicit pattern
+// matches takes none of the includeMaxDotDirs places.
 //
-// The root `.claude/` and `.claude/worktrees/` never open, even when a pattern
-// names them. The root `.claude/` takes a place only when the any-depth flag
-// reaches it and no explicit pattern matches it.
-func openIncludeDirs(plan includePlan, dirs []string) []string {
+// `.claude/worktrees/` never opens, even when a pattern names it. The root
+// `.claude/` opens by the same rules as other directories, and it takes a place
+// only when the any-depth flag reaches it and no explicit pattern matches it.
+// An open root `.claude/` does not become one pathspec. claudeChildren takes
+// its place in the list (see claudeDirChildren). So a root `.claude/` that
+// holds only `worktrees` adds no pathspec.
+func openIncludeDirs(plan includePlan, dirs, claudeChildren []string) []string {
 	var open []string
+	add := func(dir string) {
+		if dir == claudeDirName {
+			open = append(open, claudeChildren...)
+		} else {
+			open = append(open, dir)
+		}
+	}
 	places := 0
 	for _, dir := range dirs {
 		if dir == claudeDirName+"/"+worktreesSubdir {
 			continue
 		}
 		if plan.opensExplicitly(dir) {
-			if dir != claudeDirName {
-				open = append(open, dir)
-			}
+			add(dir)
 			continue
 		}
 		name := strings.ToLower(dir[strings.LastIndexByte(dir, '/')+1:])
 		if plan.anyDepth && strings.HasPrefix(name, ".") && !includeSkipDotDirs[name] &&
 			places < includeMaxDotDirs {
 			places++
-			if dir != claudeDirName {
-				open = append(open, dir)
-			}
+			add(dir)
 		}
 	}
 	return open
@@ -594,8 +600,9 @@ func includeBatchArgs(excludeArg string) []string {
 // the pathspecs. Files and directories never share a batch. The directory
 // batches start after the last file batch. excludeArg is the
 // `--exclude-from=<temp file>` argument. The fixed argv of a batch call counts
-// toward gitArgvBudget, and the pathspecs share the rest.
-func planIncludeScan(manifest []byte, listing, excludeArg string) includeScanPlan {
+// toward gitArgvBudget, and the pathspecs share the rest. claudeChildren
+// replaces an open root `.claude/` (see openIncludeDirs).
+func planIncludeScan(manifest []byte, listing, excludeArg string, claudeChildren []string) includeScanPlan {
 	var files, dirs []string
 	for _, e := range splitNUL(listing) {
 		if d, ok := strings.CutSuffix(e, "/"); ok {
@@ -610,7 +617,7 @@ func planIncludeScan(manifest []byte, listing, excludeArg string) includeScanPla
 	limit := gitArgvBudget - argvCost(includeBatchArgs(excludeArg))
 	return includeScanPlan{
 		fileBatches: batchIncludePathspecs(files, limit),
-		dirBatches:  batchIncludePathspecs(openIncludeDirs(parseIncludePlan(manifest), dirs), limit),
+		dirBatches:  batchIncludePathspecs(openIncludeDirs(parseIncludePlan(manifest), dirs, claudeChildren), limit),
 	}
 }
 
@@ -641,6 +648,30 @@ func checkIgnored(repo string, paths []string) ([]string, bool) {
 	return splitNUL(out), true
 }
 
+// checkIgnoreInput returns the paths that go to check-ignore, in their order.
+// It drops each path that is in skip, each path that ends in `/` (a nested
+// repository), and each runtime-state path (isClaudeRuntimeState).
+//
+// f6010b97 drops the same paths before its check-ignore call. If no path is
+// left, it makes no call. Linux and macOS VMs measured the skip rule in A03 to
+// A05, A14 and A16 to A18. They measured the runtime-state rule in C02 to C05
+// and I15c. They measured the `/` rule in D16, and the Linux VM measured it in
+// both scans. In the old scan, I15c and I15d show the runtime-state rule. The
+// old scan with every path dropped was not measured.
+func checkIgnoreInput(paths, skip []string) []string {
+	skipSet := make(map[string]bool, len(skip))
+	for _, p := range skip {
+		skipSet[p] = true
+	}
+	var in []string
+	for _, p := range paths {
+		if !skipSet[p] && !strings.HasSuffix(p, "/") && !isClaudeRuntimeState(p) {
+			in = append(in, p)
+		}
+	}
+	return in
+}
+
 // scanWorktreeIncludes runs the new scan. It returns the repo-relative paths to
 // copy. fallback is true when the ignored files exceed the fallback limit, and
 // the caller then runs the old scan.
@@ -648,7 +679,8 @@ func checkIgnored(repo string, paths []string) ([]string, bool) {
 // excludeFile holds a copy of the manifest bytes.
 //
 // The file candidates are copied as the file batches name them. Only the paths
-// from the directory batches go to check-ignore. If check-ignore fails, those
+// from the directory batches go to check-ignore, and a path that is also a file
+// candidate does not go (see checkIgnoreInput). If check-ignore fails, those
 // paths are dropped and the file candidates are still copied.
 func scanWorktreeIncludes(repo, excludeFile string, manifest []byte) (paths []string, fallback bool) {
 	// The listing of ignored entries. An ignored directory is listed once, as
@@ -660,15 +692,15 @@ func scanWorktreeIncludes(repo, excludeFile string, manifest []byte) (paths []st
 		return nil, false
 	}
 	excludeArg := "--exclude-from=" + excludeFile
-	plan := planIncludeScan(manifest, listing, excludeArg)
+	plan := planIncludeScan(manifest, listing, excludeArg, claudeDirChildren(repo))
 	if plan.fallback {
 		return nil, true
 	}
 	paths = runIncludeBatches(repo, excludeArg, plan.fileBatches)
-	fromDirs := runIncludeBatches(repo, excludeArg, plan.dirBatches)
-	if len(fromDirs) == 0 {
+	check := checkIgnoreInput(runIncludeBatches(repo, excludeArg, plan.dirBatches), paths)
+	if len(check) == 0 {
 		return paths, false
 	}
-	kept, _ := checkIgnored(repo, fromDirs)
+	kept, _ := checkIgnored(repo, check)
 	return append(paths, kept...), false
 }

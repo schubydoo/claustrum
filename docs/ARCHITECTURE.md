@@ -259,7 +259,7 @@ The logging mirrors the reference daemon:
 - Every operational or diagnostic line goes to stderr through the standard
   `log` package, which adds a `2006/01/02 15:04:05` timestamp prefix. These lines
   are the `[Server]` connection lifecycle, the `[process.Manager]` spawn, stream
-  and exit lines, `[shellenv]`, and `[frameSink]`.
+  and exit lines, `[daemon]`, `[shellenv]`, and `[frameSink]`.
 - These logs are not part of the JSON-RPC wire contract. Claustrum still keeps
   them byte-faithful (minus the timestamp and PID), so anything tailing the
   daemon log behaves identically.

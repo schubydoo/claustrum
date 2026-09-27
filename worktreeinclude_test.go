@@ -667,7 +667,7 @@ func TestIncludeOpenerIgnoresCase(t *testing.T) {
 		{"b*/\n", "sub/build", false},
 	} {
 		plan := parseIncludePlan([]byte(c.manifest))
-		if got := slices.Contains(openIncludeDirs(plan, []string{c.dir}), c.dir); got != c.opens {
+		if got := slices.Contains(openIncludeDirs(plan, []string{c.dir}, nil), c.dir); got != c.opens {
 			t.Errorf("manifest %q opens %q = %v, want %v", c.manifest, c.dir, got, c.opens)
 		}
 	}
@@ -688,7 +688,7 @@ func TestIncludePlanOpensNothing(t *testing.T) {
 		"*.txt\n":        {".bx"},          // B03, Y32
 		"b*/\n":          {".bx", "build"}, // Y08: root level only
 	} {
-		got := openIncludeDirs(parseIncludePlan([]byte(manifest)), dirs)
+		got := openIncludeDirs(parseIncludePlan([]byte(manifest)), dirs, nil)
 		if !slices.Equal(got, want) {
 			t.Errorf("manifest %q opens %v, want %v", manifest, got, want)
 		}
@@ -845,7 +845,7 @@ func TestPlanIncludeScanMatchesReference(t *testing.T) {
 		{"I14e_explicit", ".claude/worktrees/\n.claude/worktrees/stale/\n**/x.dd\n", ".claude/\x00.claude/worktrees/\x00top.dd\x00", [][]string{{"top.dd"}}, nil},                                                      // item 14
 		{"I03d_adeep_starlog", "a/**/build/\n*.log\n", ".claude/\x00.claude/worktrees/\x00a/\x00a/other/\x00a/x/\x00a/x/build/\x00a/x/other/\x00", nil, [][]string{{"a", "a/other", "a/x", "a/x/build", "a/x/other"}}}, // item 16
 	} {
-		p := planIncludeScan([]byte(c.manifest), c.listing, "--exclude-from=/tmp/"+includeTempPrefix+"123456789")
+		p := planIncludeScan([]byte(c.manifest), c.listing, "--exclude-from=/tmp/"+includeTempPrefix+"123456789", nil)
 		if p.fallback || !reflect.DeepEqual(p.fileBatches, c.files) || !reflect.DeepEqual(p.dirBatches, c.dirs) {
 			t.Errorf("%s: files %q dirs %q, want files %q dirs %q (f6010b97)", c.name, p.fileBatches, p.dirBatches, c.files, c.dirs)
 		}
@@ -910,7 +910,7 @@ func TestPlanIncludeScanCounts(t *testing.T) {
 		{"explicit_root_claude_takes_no_place", ".claude/\n*.dd\n", dirList(dot128), dot128},
 		{"F01_dotcap_128", "*.dd\n", dirList(dot128), dot128[:127]},
 	} {
-		p := planIncludeScan([]byte(c.manifest), c.listing, "--exclude-from=/tmp/x")
+		p := planIncludeScan([]byte(c.manifest), c.listing, "--exclude-from=/tmp/x", nil)
 		if len(p.dirBatches) != 1 || !slices.Equal(p.dirBatches[0], c.want) {
 			var got []string
 			for _, b := range p.dirBatches {
@@ -918,6 +918,18 @@ func TestPlanIncludeScanCounts(t *testing.T) {
 			}
 			t.Errorf("%s: opens %d dirs, want %d (f6010b97)", c.name, len(got), len(c.want))
 		}
+	}
+	// An open root .claude/ takes one dot place and adds its children in its place.
+	// This row is derived from the two measured rules, not measured as a whole.
+	kids := []string{".claude/a", ".claude/b", ".claude/c"}
+	p := planIncludeScan([]byte("*.dd\n"), dirList(dot128), "--exclude-from=/tmp/x", kids)
+	var got []string
+	for _, b := range p.dirBatches {
+		got = append(got, b...)
+	}
+	if want := append(slices.Clone(kids), dot128[:127]...); !slices.Equal(got, want) {
+		t.Errorf("F01_dotcap_128 with children: got %d dirs (first %q), want the 3 children then 127 dot dirs",
+			len(got), got[:min(4, len(got))])
 	}
 }
 
@@ -1009,7 +1021,7 @@ func TestIncludeAnchoredOneSegment(t *testing.T) {
 		"/b*/\n":           {"build"},                                  // Y22: the glob form
 		"build/\n":         {".bx", "a/x/build", "build", "sub/build"}, // control
 	} {
-		if got := openIncludeDirs(parseIncludePlan([]byte(manifest)), yTreeDirs); !slices.Equal(got, want) {
+		if got := openIncludeDirs(parseIncludePlan([]byte(manifest)), yTreeDirs, nil); !slices.Equal(got, want) {
 			t.Errorf("manifest %q opens %v, want %v (f6010b97)", manifest, got, want)
 		}
 	}
@@ -1272,7 +1284,7 @@ func TestIncludePrefixOpening(t *testing.T) {
 		{"LC6_star_ds_t", "*//\n*.txt\n", gTreeDirs, []string{".bx", "build", "bx"}},
 		{"LC6_ctl_build_ds_a", "build//\n", gTreeDirs, []string{"build"}},
 	} {
-		got := openIncludeDirs(parseIncludePlan([]byte(c.manifest)), c.dirs)
+		got := openIncludeDirs(parseIncludePlan([]byte(c.manifest)), c.dirs, nil)
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s: manifest %q opens %v, want %v (f6010b97)", c.name, c.manifest, got, c.want)
 		}
@@ -1400,5 +1412,34 @@ func TestClaudeDirPassBatches(t *testing.T) {
 	}
 	if calls := claudeDirPassBatches(nil, unix); calls != nil {
 		t.Errorf("no children: %q, want no call", calls)
+	}
+}
+
+// TestOpenIncludeDirsClaudeChildren covers the root `.claude/` in the directory
+// batch. When it opens, its children take its place, in the given order.
+// `.claude/worktrees` never opens. With no children, the root adds no pathspec.
+// f6010b97 does this on Linux, macOS and Windows VMs (C03, Cl_anydepth).
+func TestOpenIncludeDirsClaudeChildren(t *testing.T) {
+	plan := parseIncludePlan([]byte("*.json\n"))
+	dirs := []string{".claude", ".claude/worktrees", "sub/.claude"}
+	children := []string{".claude/settings.local.json", ".claude/a"}
+	if got, want := openIncludeDirs(plan, dirs, children), []string{".claude/settings.local.json", ".claude/a", "sub/.claude"}; !slices.Equal(got, want) {
+		t.Errorf("open = %q, want %q (f6010b97)", got, want)
+	}
+	if got, want := openIncludeDirs(plan, dirs, nil), []string{"sub/.claude"}; !slices.Equal(got, want) {
+		t.Errorf("open without children = %q, want %q (f6010b97)", got, want)
+	}
+}
+
+// TestCheckIgnoreInput covers the paths that go to check-ignore. A path in skip,
+// a path that ends in `/` and a runtime-state path are dropped. The order stays.
+func TestCheckIgnoreInput(t *testing.T) {
+	paths := []string{"b.i", "a.i", "vendor/lib/", "sub/.claude/checkpoints/e.json", "sub/.claude/d.json"}
+	got := checkIgnoreInput(paths, []string{"a.i"})
+	if want := []string{"b.i", "sub/.claude/d.json"}; !slices.Equal(got, want) {
+		t.Errorf("check-ignore input = %q, want %q (f6010b97)", got, want)
+	}
+	if got := checkIgnoreInput([]string{"a.i", "x/"}, []string{"a.i"}); len(got) != 0 {
+		t.Errorf("check-ignore input = %q, want none", got)
 	}
 }
