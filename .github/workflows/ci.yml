@@ -80,13 +80,25 @@ jobs:
           python3 scripts/lint_codecov_components.py
 
   test:
-    name: test (${{ matrix.os }})
+    name: test (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15 # the windows leg is markedly slower than ubuntu/macos
+    timeout-minutes: 15 # the windows legs are markedly slower than ubuntu/macos
     strategy:
       fail-fast: false
+      # Windows runs the suite in two shards, because the top-level tests run
+      # one at a time and are slowest there. On one Windows run the worktree
+      # tests took 204 s and the rest 184 s. One shard runs the -run pattern
+      # and the other skips it, so together they run every test once.
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+            shard: worktree
+            select: -run=^TestWorktree
+          - os: windows-latest
+            shard: rest
+            select: -skip=^TestWorktree
     env:
       # Renovate bumps this via a customManagers entry in the shared
       # schubydoo/renovate-config:claustrum preset — the same shape as
@@ -152,11 +164,15 @@ jobs:
       # collapsible ::group:: markers) — quieter, still not streaming. `--junitfile`
       # is independent of `--format`, so Codecov's ingest is unaffected either way.
       - name: go test
+        # GOFLAGS carries the shard's -run or -skip flag. It is empty on the
+        # other legs. go build ignores a test flag in GOFLAGS.
+        env:
+          GOFLAGS: ${{ matrix.select }}
         run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 ./...
       # Upload from EVERY leg, tagged with its OS as a Codecov flag, so Test Analytics
       # (flaky/slow tests) breaks out per platform — which is the axis claustrum
-      # actually varies on. The matrix has no second dimension, so one cell per OS is
-      # already what this produces; no cell-selection filter is needed.
+      # actually varies on. Both Windows shards upload under the one Windows flag,
+      # and each shard's junit.xml holds different tests.
       #
       # No token: claustrum is a public repo, so codecov-action uploads tokenless (same
       # rationale as the coverage upload below). Non-blocking — Codecov is never a
@@ -173,7 +189,7 @@ jobs:
           # listed files "will be added to the coverage files found for upload".
           # Without this the CLI still walks the checkout looking for more. There
           # is nothing else JUnit-shaped to find today, so this buys exactness and
-          # a skipped filesystem walk on three legs, not a bug fix.
+          # a skipped filesystem walk on every leg, not a bug fix.
           disable_search: true
           flags: ${{ runner.os }}
           report_type: test_results
@@ -181,13 +197,13 @@ jobs:
       # Keep the junit files even when the upload is a no-op. The Codecov step is
       # deliberately non-blocking, so a rejected upload is a warning line and
       # nothing else; the coverage job already retains coverage.out for exactly
-      # this reason. Named per-OS because artifact names must be unique across a
-      # matrix.
+      # this reason. Named per matrix cell (OS, plus the shard on Windows),
+      # because artifact names must be unique across a matrix.
       - name: Upload test results artifact
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results-${{ matrix.os }}
+          name: test-results-${{ matrix.os }}${{ matrix.shard && format('-{0}', matrix.shard) || '' }}
           path: junit.xml
           retention-days: 7
 
