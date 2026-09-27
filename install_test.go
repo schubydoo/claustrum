@@ -1250,11 +1250,10 @@ func TestDownloadBlobSurvivesHousekeeping(t *testing.T) {
 	if isSweptName(filepath.Base(blobPath)) {
 		t.Fatalf("download blob %q matches isSweptName; the sweep would delete it", filepath.Base(blobPath))
 	}
-	// Run the real sweep and confirm an in-flight blob survives it. A live
-	// download writes at least every 60 s, so its blob is never 10 minutes old.
-	// An orphan that old is reclaimed (TestSweepFetchTempsReclaimsOrphanBlob).
-	live := time.Now().Add(-30 * time.Second)
-	if err := os.Chtimes(blobPath, live, live); err != nil {
+	// Belt and braces: run the real sweep and confirm the blob survives it, aged
+	// well past the sweep's gate so the name alone is what spares it.
+	hourAgo := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(blobPath, hourAgo, hourAgo); err != nil {
 		t.Fatal(err)
 	}
 	sweepFetchTemps(dir, time.Now())
@@ -1795,30 +1794,6 @@ func TestInstallCacheMissWithNoSourceCreatesTheCliDir(t *testing.T) {
 		if fi.Mode().Perm() != 0o700 {
 			t.Errorf("%s mode = %v, want 0700", d, fi.Mode().Perm())
 		}
-	}
-}
-
-// The sweep reclaims claustrum's own .blob- download temp under the same age
-// rule as the swept names: 601 s old goes, 599 s old stays. The prune still does
-// not count it.
-func TestSweepFetchTempsReclaimsOrphanBlob(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Now()
-	for name, age := range map[string]time.Duration{".blob-old": 601 * time.Second, ".blob-young": 599 * time.Second} {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chtimes(p, now.Add(-age), now.Add(-age)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	sweepFetchTemps(dir, now)
-	if _, err := os.Lstat(filepath.Join(dir, ".blob-old")); !os.IsNotExist(err) {
-		t.Errorf(".blob-old (601 s) survived the sweep: %v", err)
-	}
-	if _, err := os.Lstat(filepath.Join(dir, ".blob-young")); err != nil {
-		t.Errorf(".blob-young (599 s) was removed: %v", err)
 	}
 }
 

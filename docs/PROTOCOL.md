@@ -2536,9 +2536,9 @@ Staging and cleanup:
   different, so that the `-cli-keep` prune does not count it and the sweep does
   not claim an in-flight blob. That is also why claustrum refuses a
   `-cli-version` that starts with `.blob-` (D18). The install removes the blob on
-  every path. Only a SIGKILLed download leaves it behind. The sweep removes such
-  an orphan once it is more than 10 minutes old, which is claustrum's own rule. A
-  live download writes at least every 60 s. No frame changes either way.
+  every path. Only a SIGKILLed download leaves it behind, and nothing reclaims
+  it. The sweep must not take it, because a retry re-reads the blob after the
+  staging file, which is never older. No frame changes either way.
 - The `-cli-keep` prune counts every other non-directory as a version. It skips
   every name the sweep claims, at any age. Measured on a Linux VM against
   `f6010b97`: a fresh `.fetch-o` and `x.zst` beside three real CLIs, with
