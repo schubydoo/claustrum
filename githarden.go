@@ -709,11 +709,14 @@ func hostileConfigRefusal(dir string, heavy bool) (string, bool) {
 	}
 	// Residual fallback for the one chdir failure os.Stat cannot see: dir exists and is
 	// a directory, but git cannot start in it (dir itself lacks +x). The start then
-	// fails with a *fs.PathError, before git runs. This stays behavioural for that
-	// exotic, non-honest input. The honest nonexistent-path case never reaches it.
+	// fails with a *fs.PathError, before git runs. Only that case falls through. The
+	// search test is a stat of "<dir>/.", which needs +x on dir. Any other start
+	// failure, such as git missing from PATH, keeps the refusal.
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
-		return "", false
+		if _, serr := os.Stat(dir + string(os.PathSeparator) + "."); serr != nil {
+			return "", false
+		}
 	}
 	var stderr string
 	var ee *exec.ExitError

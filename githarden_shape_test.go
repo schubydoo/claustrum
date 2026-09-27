@@ -221,11 +221,15 @@ func TestHardenedGitCallShape(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", empty)
 	t.Setenv("HOME", empty)
 	t.Setenv("USERPROFILE", empty)
-	// go test hands the test binary GIT_TERMINAL_PROMPT=0. Take it out, so the env
-	// the daemon adds is all that the stub sees.
-	t.Setenv("GIT_TERMINAL_PROMPT", "")
-	if err := os.Unsetenv("GIT_TERMINAL_PROMPT"); err != nil {
-		t.Fatal(err)
+	// go test hands the test binary GIT_TERMINAL_PROMPT=0, and a host can export
+	// others, such as the GIT_ASKPASS of an editor. Take every variable the daemon
+	// sets out of the test's environment, so the env the daemon adds is all that
+	// the stub sees.
+	for _, k := range daemonGitKeys {
+		t.Setenv(k, "")
+		if err := os.Unsetenv(k); err != nil {
+			t.Fatal(err)
+		}
 	}
 	resetUserExcludesCache(t)
 	resetAttr := func() {

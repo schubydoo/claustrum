@@ -264,6 +264,8 @@ func unenterableBaseListing(repo string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "config", "-z", "--list", "--name-only")
 	cmd.Dir = repo
+	// This listing does not use precursorEnv. Git never starts here, so its
+	// environment never reaches git, and only the Go start error reaches the frame.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
 	var ee *exec.ExitError
 	if _, err := cmd.Output(); err != nil && !errors.As(err, &ee) {

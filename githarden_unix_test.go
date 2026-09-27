@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -125,5 +126,21 @@ func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	if msg, bad := hostileConfigRefusal(dir, false); bad || msg != "" {
 		t.Errorf("hostileConfigRefusal(unenterable dir) = (%q, %v), want (\"\", false)", msg, bad)
+	}
+}
+
+// A git that cannot start in any directory is a different failure from an
+// unenterable directory. The start also fails with a *fs.PathError, but dir can be
+// entered, so the refusal stays. The fixture is an executable git with no valid
+// format, so exec fails with ENOEXEC after the chdir.
+func TestHostileConfigRefusalGitCannotStart(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("not a program\x00\x01"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	msg, bad := hostileConfigRefusal(t.TempDir(), false)
+	if !bad || !strings.Contains(msg, "listing the configuration in force: ") {
+		t.Errorf("hostileConfigRefusal(git cannot start) = (%q, %v), want the refusal", msg, bad)
 	}
 }
