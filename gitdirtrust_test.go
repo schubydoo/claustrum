@@ -921,6 +921,7 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
+	cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
@@ -944,6 +945,7 @@ func commitWithFile(t *testing.T, r trustRepo, base, content string) string {
 	} {
 		cmd := exec.Command("git", append([]string{"-C", r.T}, args...)...)
 		cmd.Env = append(os.Environ(), idx)
+		cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
 		out, err := cmd.Output()
 		if err != nil {
 			t.Fatalf("git %v: %v", args, err)
