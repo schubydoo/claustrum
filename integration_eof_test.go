@@ -86,6 +86,7 @@ func eofExchange(t *testing.T, sock, raw string) string {
 	if _, err := io.WriteString(nc, raw); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+	afunixEOFGap()
 	if err := nc.(*net.UnixConn).CloseWrite(); err != nil {
 		t.Fatalf("CloseWrite: %v", err)
 	}
@@ -322,6 +323,7 @@ func TestSocketEOFTerminatedBadLineControl(t *testing.T) {
 	if _, err := io.ReadFull(nc, buf); err != nil || string(buf) != eofParseErrFrame {
 		t.Fatalf("frame = %q (%v), want %q", buf, err, eofParseErrFrame)
 	}
+	afunixEOFGap()
 	if err := nc.(*net.UnixConn).CloseWrite(); err != nil {
 		t.Fatalf("CloseWrite: %v", err)
 	}
