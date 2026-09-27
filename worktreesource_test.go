@@ -56,6 +56,7 @@ func (fx *sourceFixture) out(dir string, args ...string) string {
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
 	)
+	cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
 	b, err := cmd.Output()
 	if err != nil {
 		fx.t.Fatalf("git %v: %v", args, err)

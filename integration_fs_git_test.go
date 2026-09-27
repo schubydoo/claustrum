@@ -30,6 +30,12 @@ func requireGit(t *testing.T) {
 // runGit runs a setup git command against dir with a fully isolated identity and
 // config, so neither the developer's global gitconfig nor system config can
 // perturb the fixture (gpgsign, default branch, hooks, …).
+// gitNoAutoMaintenance turns off the background "git maintenance run --auto
+// --detach" that a fixture commit starts. That run creates
+// .git/objects/maintenance.lock after git returns, and a TempDir cleanup that
+// runs at that moment fails with "directory not empty".
+var gitNoAutoMaintenance = []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=maintenance.auto", "GIT_CONFIG_VALUE_0=false"}
+
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
@@ -38,6 +44,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
 	)
+	cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -909,6 +916,7 @@ func TestSocketWorktreeRemoveKeepsBranchConfig(t *testing.T) {
 func gitExitOK(repo string, args ...string) bool {
 	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
 	return cmd.Run() == nil
 }
 
