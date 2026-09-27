@@ -919,6 +919,18 @@ func TestPlanIncludeScanCounts(t *testing.T) {
 			t.Errorf("%s: opens %d dirs, want %d (f6010b97)", c.name, len(got), len(c.want))
 		}
 	}
+	// An open root .claude/ takes one dot place and adds its children in its place.
+	// This row is derived from the two measured rules, not measured as a whole.
+	kids := []string{".claude/a", ".claude/b", ".claude/c"}
+	p := planIncludeScan([]byte("*.dd\n"), dirList(dot128), "--exclude-from=/tmp/x", kids)
+	var got []string
+	for _, b := range p.dirBatches {
+		got = append(got, b...)
+	}
+	if want := append(slices.Clone(kids), dot128[:127]...); !slices.Equal(got, want) {
+		t.Errorf("F01_dotcap_128 with children: got %d dirs (first %q), want the 3 children then 127 dot dirs",
+			len(got), got[:min(4, len(got))])
+	}
 }
 
 // Fixtures of the interpretation matrix

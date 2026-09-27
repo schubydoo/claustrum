@@ -655,8 +655,9 @@ func checkIgnored(repo string, paths []string) ([]string, bool) {
 // f6010b97 drops the same paths before its check-ignore call. If no path is
 // left, it makes no call. Linux and macOS VMs measured the skip rule in A03 to
 // A05, A14 and A16 to A18. They measured the runtime-state rule in C02 to C05
-// and I15c. Only the macOS VM measured the `/` rule, in D16. In the old scan, I15c and I15d show
-// the runtime-state rule. The old scan with every path dropped was not measured.
+// and I15c. They measured the `/` rule in D16, and the Linux VM measured it in
+// both scans. In the old scan, I15c and I15d show the runtime-state rule. The
+// old scan with every path dropped was not measured.
 func checkIgnoreInput(paths, skip []string) []string {
 	skipSet := make(map[string]bool, len(skip))
 	for _, p := range skip {

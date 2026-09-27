@@ -657,8 +657,8 @@ func logIncludeScanCalls(t *testing.T) func() []string {
 //   - The old scan drops runtime-state paths too (I15c_old).
 //
 // The want file sets are the f6010b97 sets. The I15c sets also hold the tracked
-// sub/t.md, which the checkout writes. The D16 want list comes from a macOS run and
-// a Linux run of f6010b97.
+// sub/t.md, which the checkout writes. The D16 want lists come from a macOS run
+// and a Linux run of f6010b97. The Linux run also covered the old scan.
 func TestIncludeCheckIgnoreCallShape(t *testing.T) {
 	requireGit(t)
 	isolateGitConfig(t)
@@ -705,6 +705,11 @@ func TestIncludeCheckIgnoreCallShape(t *testing.T) {
 			setup: func(t *testing.T, repo string) { runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q") },
 			want:  []string{"vendor/plain.txt"}},
 			[]string{"batch: vendor", "check-ignore: vendor/plain.txt|"}},
+		{"D16_nested_repo_old", v231, includeCase{ignore: lines("vendor/"),
+			files: []string{"vendor/lib/a.txt", "vendor/plain.txt"}, manifest: "vendor/\n*.txt\n",
+			setup: func(t *testing.T, repo string) { runGit(t, filepath.Join(repo, "vendor", "lib"), "init", "-q") },
+			want:  []string{"vendor/plain.txt"}},
+			[]string{"batch: :(exclude).claude/worktrees", "check-ignore: vendor/plain.txt|"}},
 		{"I15c_nested_new", v232, includeCase{ignore: lines("sub/.claude/"), tracked: []string{"sub/t.md"},
 			files:    []string{"sub/.claude/worktrees/x.dd", "sub/.claude/ok.dd", "sub/.claude/checkpoints/c.dd"},
 			manifest: "*.dd\n", want: []string{"sub/.claude/ok.dd", "sub/t.md"}},

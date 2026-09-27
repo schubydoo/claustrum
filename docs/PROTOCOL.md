@@ -1440,8 +1440,9 @@ copies end still fails it, as `timeoutMs` above describes:
   `git check-ignore --stdin -z` then keeps the paths that git's standard rules
   ignore. A runtime-state path (see below) or a nested repository does not go
   to check-ignore. `f6010b97` drops the runtime-state paths on Linux and macOS
-  VMs (I15c, I15d). The nested-repository rule was measured in this scan on a Linux VM (D16). If
-  every path is dropped, no check-ignore call runs. That case was not measured.
+  VMs (I15c, I15d). A Linux VM measured the nested-repository rule in this scan
+  (D16, with the old scan forced and with git 2.25.1). If every path is dropped,
+  no check-ignore call runs. That case was not measured.
   If either call fails, nothing is copied. The full scan searches every ignored
   directory.
 - The directory scan first lists the ignored entries with
