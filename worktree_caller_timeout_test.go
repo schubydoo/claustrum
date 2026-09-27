@@ -956,7 +956,7 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				var rt, pre, rtEnv, preEnv []string
 				var rtCwd, preCwd, index string
 				for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
-					parts := strings.SplitN(line, "\x1e", 4)
+					parts := strings.SplitN(line, "\x1e", 5)
 					argv := strings.Split(parts[2], "\x1f")
 					env := strings.Split(parts[3], "\x1f")
 					if slices.Contains(argv, "read-tree") {
@@ -989,8 +989,8 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				if !slices.Equal(got, append(slices.Clone(profile), tail...)) {
 					t.Errorf("read-tree argv = %q\nwant %q (GITDIR = %s), with no -C", rt, append(profile, tail...), wantGitDir)
 				}
-				if filepath.Base(index) != "index" || !strings.HasPrefix(filepath.Base(filepath.Dir(index)), "claustrum-index-") {
-					t.Errorf("GIT_INDEX_FILE = %q, want <temp>/claustrum-index-*/index", index)
+				if filepath.Base(index) != "index" || !strings.HasPrefix(filepath.Base(filepath.Dir(index)), checkoutIndexTempPrefix) {
+					t.Errorf("GIT_INDEX_FILE = %q, want <temp>/%s*/index", index, checkoutIndexTempPrefix)
 				}
 				if _, err := os.Lstat(filepath.Dir(index)); !os.IsNotExist(err) {
 					t.Errorf("the temporary index directory %s remains (Lstat err %v)", filepath.Dir(index), err)
@@ -1009,8 +1009,8 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				if canonicalPath(rtEnv[0]) != wantCommon || canonicalPath(preEnv[0]) != wantCommon {
 					t.Errorf("GIT_COMMON_DIR = %q (read-tree), %q (precursor), want %s", rtEnv[0], preEnv[0], wantCommon)
 				}
-				if rtEnv[1] != "1" || rtEnv[2] != "/dev/null" {
-					t.Errorf("read-tree GIT_NO_REPLACE_OBJECTS = %q, GIT_GRAFT_FILE = %q, want 1 and /dev/null", rtEnv[1], rtEnv[2])
+				if rtEnv[1] != "1" || rtEnv[2] != os.DevNull {
+					t.Errorf("read-tree GIT_NO_REPLACE_OBJECTS = %q, GIT_GRAFT_FILE = %q, want 1 and %s", rtEnv[1], rtEnv[2], os.DevNull)
 				}
 			})
 		}

@@ -57,8 +57,8 @@ func TestHostileConfigRefusal(t *testing.T) {
 	}
 }
 
-// A nonexistent (or unreadable) path/baseRepo makes `git -C <dir> config` fail to
-// chdir, which is NOT a hostile config: git could not reach a repo at all. The gate
+// A nonexistent (or unreadable) path/baseRepo makes the listing fail to start in
+// <dir>, which is NOT a hostile config: git could not reach a repo at all. The gate
 // must fall through to the normal not-a-repo shape, matching 7d193f89 (measured: a
 // nonexistent path answers isRepo:false / not_a_repo / success, not the -32603
 // refusal). Before the fix, hostileConfigRefusal fired on the chdir failure and

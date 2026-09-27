@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -113,8 +114,8 @@ func TestHardenedGitStatusIndexReadFails(t *testing.T) {
 }
 
 // A directory that exists but cannot be entered (mode 0000) passes the os.Stat
-// pre-check, so git itself fails to chdir with "cannot change to". That is still
-// not a hostile config — git never reached a repo — so no refusal is raised.
+// pre-check, so git cannot start in it: the start fails with a *fs.PathError. That
+// is still not a hostile config — git never reached a repo — so no refusal is raised.
 func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
 	requireGit(t)
 	skipIfRoot(t)
@@ -123,7 +124,23 @@ func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	if msg, bad := hostileConfigRefusal(dir); bad || msg != "" {
+	if msg, bad := hostileConfigRefusal(dir, false); bad || msg != "" {
 		t.Errorf("hostileConfigRefusal(unenterable dir) = (%q, %v), want (\"\", false)", msg, bad)
+	}
+}
+
+// A git that cannot start in any directory is a different failure from an
+// unenterable directory. The start also fails with a *fs.PathError, but dir can be
+// entered, so the refusal stays. The fixture is an executable git with no valid
+// format, so exec fails with ENOEXEC after the chdir.
+func TestHostileConfigRefusalGitCannotStart(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("not a program\x00\x01"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	msg, bad := hostileConfigRefusal(t.TempDir(), false)
+	if !bad || !strings.Contains(msg, "listing the configuration in force: ") {
+		t.Errorf("hostileConfigRefusal(git cannot start) = (%q, %v), want the refusal", msg, bad)
 	}
 }

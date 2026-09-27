@@ -160,7 +160,7 @@ rather than repeating them in each entry:
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`) | always-on | always-on | **UNRESOLVED**: clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D14](#d14) | Deadline on the `ldd --version` libc probe (linux) | off (`0`) | `-libc-probe-timeout` / key | rule 4 | a slow `ldd` on a host where the deadline changes the reported `libc`. The host is a musl host the glob misses, or a mixed host. Or the reference bounding it above 45 s |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
-| [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (Windows failure mechanism not yet pinned) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, or a decision to reproduce its failure for strict 1:1 |
+| [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
@@ -708,49 +708,58 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   fresh `GIT_DIR`
   with the worktree's `HEAD` and `index`, `GIT_COMMON_DIR` at the shared repo, and
   `--work-tree` at the worktree. On Linux and macOS the two are byte-identical. On
-  Windows the reference returns `-32603 "exit status 128"` for a linked worktree,
-  and claustrum returns the status result (`{"isRepo":true,"clean":false,"changes":[…]}`).
-- Outcome measured 2026-09-06, and re-verified on `19f30c46` 2026-09-13. The
-  mechanism is not yet pinned. The Windows divergence is measured: on a Windows VM the reference
-  returns `-32603 "exit status 128"` for a linked-worktree `git.status` across runs,
-  and claustrum returns the status result
-  (`scratch/osparity/results/win-*-4534d86.json`). The 2026-09-13 re-probe ran the same
-  case against the `19f30c46` reference on a Windows VM: it again returns
-  `-32603 "exit status 128"` for a linked-worktree `git.status`, while claustrum returns
-  `{"isRepo":true,"clean":false,"changes":[" M f.txt"]}`. A main-checkout control
-  returned the identical `{"isRepo":false,"clean":false}` on both binaries. So D16 is
-  still-needed on `19f30c46`, not moot (`scratch/slice8/prerelease/d16probe.ps1`). The
-  exact reason the reference's
-  assembly fails on Windows is not yet determined. An earlier hypothesis (a hardcoded
-  `/tmp` temp-gitdir path) is contradicted: the reference respects `$TMPDIR`, so its
-  temp gitdir is `<os-temp>/claude-ssh-gitdir-<random>` and resolves to `%TEMP%` on
-  Windows (captured with `scratch/probe/gitargv` under a set `TMPDIR`). claustrum's own
-  temp-gitdir assembly, with an OS-valid temp dir, returns the correct status on Windows
-  (measured: a valid temp gitdir returns ` M a.txt`). Pinning the reference's Windows
-  failure needs a git-argv capture on Windows (the shim used on Linux is POSIX-only). A
-  capture was attempted with a Windows `git.exe` shim on the daemon's PATH. But the
-  reference self-daemonizes, and the re-executed child does not inherit the shim, so its git
-  calls were not intercepted. A capture needs a foreground daemon mode or an injection the
-  daemonized child inherits.
+  Windows, when the user has no global excludes file, the reference returns
+  `-32603 "exit status 128"` for a linked worktree. claustrum returns the status result (`{"isRepo":true,"clean":false,"changes":[…]}`).
+- Outcome measured 2026-09-06, and re-verified on `19f30c46` 2026-09-13. On a
+  Windows VM the reference returns `-32603 "exit status 128"` for a linked-worktree
+  `git.status`, across runs, and claustrum returns the status result. A
+  main-checkout control returns `{"isRepo":false,"clean":false}` on both binaries.
+  On 2026-09-26 the `f6010b97` reference again answered 128 on a Windows VM. The
+  claustrum side of that date is its Windows unit suite, which gets the status.
+- **Mechanism, measured 2026-09-26.** A logging git wrapper on a Windows 11 VM
+  recorded the cwd, argv and env of every git call of the reference (`f6010b97`).
+  Its status call passes `-c core.excludesFile=NUL`, the Windows null device. The
+  reference passes that value when the user has no global excludes file. That
+  status call was then replayed with Git for Windows 2.55.0, one element changed at
+  a time. With `NUL`, `git status` exits 128 with
+  `fatal: cannot use NUL as an exclude file`. With `/dev/null`, it prints the
+  status. Five other elements did not change the result. They are the working
+  directory, the argv order, the slash direction of `GIT_COMMON_DIR` and of
+  `commondir`, the temp name, and the listing before the call. In the same replay,
+  `git ls-files --others --ignored --exclude-standard` and `git check-ignore`
+  accepted `NUL`. The replay is in `scratch/f6010b97/d16-nul-excludes-raw/`.
+- **Derived, not measured.** A Windows user with a global excludes file gets that
+  file in the reference's status call, not `NUL`. The reference's status then
+  works there, and D16 does not arise.
+- **The one element that differs on purpose.** claustrum's `git status` call has the
+  cwd, argv and env of the reference, apart from the temp dir name and the env order
+  on Windows. One value differs on purpose. On Windows claustrum passes
+  `-c core.excludesFile=/dev/null` where the reference passes `NUL`
+  (`statusExcludesFile` in `githarden.go`). Every other call that passes
+  `-c core.excludesFile` passes `NUL` there, as the reference does. On Linux and
+  macOS the null device is `/dev/null`, so nothing differs there. A user with a
+  global excludes file gets that file on every OS.
 - **This is reachable, not an edge.** `git.status.baseRepo` is advertised on Windows,
   and the reference rebuilt `git.status` around session worktrees, so a Windows client
   that runs status on a session worktree reaches this path by design. D16 is a
   deliberate REACHABLE wire divergence, unlike the unreachable rule 3 clause (b) cases.
 - **Why diverge (claustrum is more correct).** claustrum reproduces the reference's
-  status assembly and returns the correct status on every OS. To match, claustrum must
-  reproduce whatever makes the reference's assembly fail on Windows. That failure is
-  an error for a
-  valid status of a session worktree, the exact operation the worktree rebuild exists to
+  status assembly apart from the excludes value, and returns the correct status on
+  every OS. To match, claustrum must pass `NUL` to its status call as well. The
+  reference's failure is an error for a valid status of a session worktree, the exact operation the worktree rebuild exists to
   serve. That is the D2 and D8 pattern: the reference doing it is not a reason to
   reproduce a break.
 - **Cost.** A Windows client that diffs frames against the reference sees a result
   where the reference sends an error. A client that reads the reference error as "no
   repo or no changes" reads claustrum as reporting changes the reference hides.
 - **Reopen trigger.** The reference fixing its Windows `git.status` (then this becomes
-  parity). Or a decision to put strict 1:1 above correctness, which replaces this entry
-  with reproducing the reference's Windows failure so claustrum errors 128 too.
+  parity). A Git for Windows release that accepts `NUL` as an exclude file in
+  `git status` (then this becomes parity too). Or a decision to put strict 1:1 above correctness, which replaces this entry
+  with reproducing the reference's Windows failure so claustrum errors 128 too. That
+  change is one value: `NUL` in the `core.excludesFile` of the status call.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.status`. Also `methods_git.go`
-  (`gitStatus`) and `githarden.go` (`hardenedGitStatus`). Evidence in `scratch/osparity/`.
+  (`gitStatus`) and `githarden.go` (`hardenedGitStatus`, `statusExcludesFile`).
+  Evidence in `scratch/osparity/` and `scratch/f6010b97/d16-nul-excludes-raw/`.
 
 ### D17 · An abandoned `lsof` run reads as busy, not idle (macOS) { #d17 }
 
