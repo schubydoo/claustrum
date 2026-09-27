@@ -300,13 +300,22 @@ The launcher creates `remote-server.log` in the socket's directory with mode
 `remote-server.log.old` and creates a fresh one. This matches `4534d86`, which
 keeps the previous session's log as `.old` on every restart. The launcher
 redirects the daemonized child's stdout and stderr into that file, so the
-launcher's own streams stay empty. The first line is the ready banner, with no
-timestamp:
+launcher's own streams stay empty. On Linux and macOS, when the limit raise
+works, the first line tells the open-files limit that `process.spawn` children
+get. This line is at INFO level, so `CLAUSTRUM_LOG_LEVEL=warn` drops it. The
+ready banner follows, with no timestamp:
 
 ```
+2026/07/31 00:17:30 INFO  [daemon] child processes will start with an open-files limit of 65536
 Claustrum remote server listening on /run/user/1000/claude/rpc.sock
 2026/07/31 00:17:30 INFO  [Server] New connection from: @
 ```
+
+The value is the soft limit it set, which is the lower of 65536 and the hard limit. `f6010b97`
+writes the same line, with no level tag, before its banner. Linux and macOS VMs
+measured this, with the value 65536. On the Windows VM the reference log has no
+such line, and claustrum writes none there. A failed raise was not measured.
+Claustrum writes no line then.
 
 For a planted symlink in a writable directory, claustrum renames the link, not its
 target, to `remote-server.log.old`. It then creates a fresh regular log with
@@ -1429,8 +1438,13 @@ copies end still fails it, as `timeoutMs` above describes:
 - The full scan runs
   `git ls-files --others --ignored --exclude-from=<manifest copy> -z -- ':(exclude).claude/worktrees'`.
   `git check-ignore --stdin -z` then keeps the paths that git's standard rules
-  ignore. If either call fails, nothing is copied. The full scan searches every
-  ignored directory.
+  ignore. A runtime-state path (see below) or a nested repository does not go
+  to check-ignore. `f6010b97` drops the runtime-state paths on Linux and macOS
+  VMs (I15c, I15d). A Linux VM measured the nested-repository rule in this scan
+  (D16, with the old scan forced and with git 2.25.1). If every path is dropped,
+  no check-ignore call runs. That case was not measured.
+  If either call fails, nothing is copied. The full scan searches every ignored
+  directory.
 - The directory scan first lists the ignored entries with
   `git ls-files --others --ignored --exclude-standard --directory`. If the listing
   fails, nothing is copied. Every ignored file in the listing is a candidate. An
@@ -1490,8 +1504,15 @@ copies end still fails it, as `timeoutMs` above describes:
     `.nuxt`, `.parcel-cache`, `.pnpm-store`, `.svelte-kit`, `.terraform`, `.tox`,
     `.turbo`, `.venv` and `.yarn`. An explicit pattern still opens a skipped
     directory, or one past the 128th. A dot directory that an explicit pattern
-    matches takes no place. The root `.claude/` and `.claude/worktrees/` never
-    open, even when a pattern names them.
+    matches takes no place. `.claude/worktrees/` never opens, even when a
+    pattern names it.
+  - The root `.claude/` opens by the rules above. It does not become one
+    pathspec. Its children take its place in the directory batch, in the order
+    of the directory read. `worktrees` is left out in any case. This is the list
+    of the `.claude/` pass below. So a root `.claude/` that holds only
+    `worktrees` adds no pathspec. `f6010b97` does the same on Linux and macOS
+    VMs (C02, C03, C05, D23, I14b, I15d). The Windows VM shows it too
+    (`Cl_anydepth`).
   - The candidates go to `git ls-files --exclude-from=<manifest copy>` in batches.
     Files and directories never share a batch. A directory pathspec has no
     trailing `/`. A batch fills in listing order. When the next path does not
@@ -1513,6 +1534,12 @@ copies end still fails it, as `timeoutMs` above describes:
     It keeps the paths that git's standard rules ignore. The file candidates are
     copied without it. If it fails, the directory paths are dropped, and the file
     candidates are still copied.
+  - Three kinds of directory path do not go to check-ignore. The first is a
+    path that the file batches also print. The second is a nested repository,
+    which ends in `/`. The third is a Claude runtime-state path. If no path is
+    left, no check-ignore call runs. `f6010b97` sends the same paths on Linux
+    and macOS VMs. The first rule comes from A03 to A05, A14 and A16 to A18. The
+    second comes from D16. The third comes from C02 to C05 and I15c.
   - If the ignored files of the listing total more than 1 MiB, the full scan runs
     instead. Each file counts as its path length plus 3 bytes.
 - A nested repository inside an ignored directory is not copied, and no empty
