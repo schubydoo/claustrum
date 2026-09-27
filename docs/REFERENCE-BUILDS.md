@@ -21,6 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
+| `f6010b97…` | 2026-09-24 (observed) | several frame changes in `git.*`, one new `process.spawn` param and one new `server.capabilities` feature. See below | [PRs 410–427](https://github.com/schubydoo/claustrum/pull/427) |
 | `90fca6e6…` | 2026-09-14 (built) | no surface change. claustrum made 7 changes, 3 of them client-visible and 1 of those on a frame. See below | [PRs 387–392](https://github.com/schubydoo/claustrum/pull/392) |
 | `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode. See below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371), and the `ldd` bound under issue 408 |
 | `3ef9370e…` | 2026-09-03 (built) | none (off-wire: linux libc probe reordered ldd-first) | [PR 345](https://github.com/schubydoo/claustrum/pull/345) |
@@ -36,6 +37,37 @@ Each per-build section has three parts. The **wire delta** is what claustrum
 must match byte-for-byte. **Off-wire churn** is any source that moved but never
 reaches the JSON-RPC surface. **How it was bounded** gives the measurement that
 showed that nothing else changed.
+
+### `f6010b978a0b0f4ca0dcb7dadda9cc4271a608a1` — 2026-09-24 (observed)
+
+Pinned by Claude Desktop 2.9939.2 for Windows and macOS. Linux Desktop 2.7032.0
+still pinned `90fca6e6` that day. Issue 408 tracked the reconciliation.
+
+**Wire delta.**
+
+- `process.spawn` passes the login shell's `SSH_AUTH_SOCK` on Linux and macOS
+  when the child env has none. It gains the `disableShellAgentSocket` param, and
+  `server.capabilities` gains the `process.spawn.shellAgentSocket` feature (PR 410).
+- Every `git.*` method checks the git directory before git runs and refuses one
+  that is not laid out as git writes it (PR 424).
+- `git.worktree_create` passes git the full start commit id. It picks
+  `origin/<sourceBranch>` in more cases, such as after a local `.claude` or
+  `.mcp.json` change (PR 419).
+- `git.worktree_remove` answers a new reason text with `worktreeRoot` (PR 424).
+
+**Off-wire churn.** The `.worktreeinclude` directory scan (PRs 420, 426) and the
+hardened git call shape (PR 425).
+
+**Older gaps closed in the same work.** PRs 411, 416, 417 and 427, and parts of
+PR 419, fix behavior that older builds already had. The rows above name those
+builds.
+
+**How it was bounded.** The slices were measured side by side on Linux, macOS
+and Windows VMs. A whole-build re-check of main against this build then ran on
+all three OSes. It found no new frame difference. It found argv and log
+leftovers (PR 426), older `-install` gaps (PR 427) and a stale D9 example. D16
+is still needed, and its Windows cause is now known. D1, D7 and D14 are
+retired, and D18 is new.
 
 ### `90fca6e6a55c4d4c659e8c6ed511b7969ab17315` — 2026-09-14 (built)
 

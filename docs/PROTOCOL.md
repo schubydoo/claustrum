@@ -515,8 +515,8 @@ Every `files.*` / `git.*` / `process.*` method requires a `params` object.
   namespace (`pathParams`, `gitParams`). A field that is valid for the *namespace*
   but unused by *this* method therefore still takes part in the decode. A
   type-mismatched value there gives `-32602`, for example
-  `files.stat {"maxBytes":"{"}` and `git.status {"baseRepo":[1,2]}`. The reference
-  answers both requests with defaults, as measured. Both daemons ignore a
+  `files.stat {"maxBytes":"{"}`. The reference answers that request with
+  defaults, as measured. Both daemons ignore a
   genuinely unknown key, which is a key in neither struct. This is accepted
   divergence D9. See [`DIVERGENCES.md`](DIVERGENCES.md).
 
