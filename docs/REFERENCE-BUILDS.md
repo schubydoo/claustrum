@@ -41,7 +41,8 @@ showed that nothing else changed.
 ### `f6010b978a0b0f4ca0dcb7dadda9cc4271a608a1` — 2026-09-24 (observed)
 
 Pinned by Claude Desktop 2.9939.2 for Windows and macOS. Linux Desktop 2.7032.0
-still pinned `90fca6e6` that day. Issue 408 tracked the reconciliation.
+still pinned `90fca6e6` that day. Issue 408 tracked the reconciliation. The build
+carries a `go1.25.14` stamp (`go version` on the binary), the same as `90fca6e6`.
 
 **Wire delta.**
 
@@ -59,13 +60,16 @@ still pinned `90fca6e6` that day. Issue 408 tracked the reconciliation.
 hardened git call shape (PR 425).
 
 **Older gaps closed in the same work.** PRs 411, 416, 417 and 427, and parts of
-PR 419, fix behavior that older builds already had. The rows above name those
-builds.
+PR 419, fix behavior that older builds already had. PR 411 is the
+`git.worktree_remove` refusal of a `baseRepo` with no repository, which stops a
+recursive delete. The rows above name those builds.
 
 **How it was bounded.** The slices were measured side by side on Linux, macOS
 and Windows VMs. A whole-build re-check of main against this build then ran on
 all three OSes. It found no new frame difference. It found argv and log
-leftovers (PR 426), older `-install` gaps (PR 427) and a stale D9 example. D16
+leftovers (PR 426), older `-install` gaps (PR 427) and a stale D9 example. For
+`git.status {"baseRepo":[1,2]}` both binaries answered the same frame,
+`{"code":-32602,"message":"Invalid params"}`, on Linux, macOS and Windows. D16
 is still needed, and its Windows cause is now known. D1, D7 and D14 are
 retired, and D18 is new.
 
