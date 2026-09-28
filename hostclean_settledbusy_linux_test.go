@@ -20,13 +20,35 @@ import (
 // hostclean.go.
 
 // busyFakeProc points procRoot at a tree in which pid 42 has a connected client on
-// its own unix socket, which is what hcBusy looks for.
+// its own unix socket, which is what hcBusy looks for, and pid 99 has readable
+// descriptors and no client.
 func busyFakeProc(t *testing.T) {
 	t.Helper()
 	_, mk, link := fakeProc(t)
 	link(42, "fd/4", "socket:[555]")
 	mk(42, "net/unix", "Num RefCount Protocol Flags Type St Inode Path\n"+
 		"0000: 00000002 00000000 00000000 0001 03 555 /opt/claude/run/x/rpc.sock\n")
+	link(99, "fd/1", "/dev/null")
+}
+
+// TestHcSettledBusyUnreadableIsBusy: a process whose connections cannot be read at all
+// settles busy at once, so the retire refuses it. Not measured: the Linux run did not
+// stage this rule.
+func TestHcSettledBusyUnreadableIsBusy(t *testing.T) {
+	oldSleep, oldClock := hcSleep, hcClock
+	t.Cleanup(func() { hcSleep, hcClock = oldSleep, oldClock })
+	now := time.Unix(1_700_000_000, 0)
+	hcClock = func() time.Time { return now }
+	sleeps := 0
+	hcSleep = func(d time.Duration) { sleeps++; now = now.Add(d) }
+
+	busyFakeProc(t)
+	if !hcSettledBusy(77) { // pid 77 has no fd directory in the fake tree
+		t.Error("a process whose connections cannot be read did not settle busy")
+	}
+	if sleeps != 0 {
+		t.Errorf("the sampler slept %d times on an unreadable process, want an immediate answer", sleeps)
+	}
 }
 
 // TestHcSettledBusyLinuxSamples pins that linux samples rather than answering a
@@ -42,8 +64,9 @@ func TestHcSettledBusyLinuxSamples(t *testing.T) {
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 
-	// The control. pid 99 has nothing under the fake /proc at all.
-	_, _, _ = fakeProc(t)
+	// The control. pid 99 has readable descriptors and no client.
+	_, _, link := fakeProc(t)
+	link(99, "fd/1", "/dev/null")
 	if hcSettledBusy(99) {
 		t.Fatal("a process with no connected client read as settled busy")
 	}
@@ -175,7 +198,7 @@ func TestRetireAbandonedSparesABusyDaemon(t *testing.T) {
 		mk(pid, "net/unix", peers)
 
 		c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-		return c.retireAbandoned(pid, socket), *single
+		return hcRetire(c, pid, socket), *single
 	}
 
 	t.Run("control: an idle daemon is retired", func(t *testing.T) {
@@ -230,7 +253,7 @@ func TestRetireAbandonedVerifiesBeforeItSamples(t *testing.T) {
 		"0000: 00000002 00000000 00000000 0001 03 555 "+socket+"\n")
 
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-	if c.retireAbandoned(pid, socket) {
+	if hcRetire(c, pid, socket) {
 		t.Fatal("an unverifiable daemon was retired")
 	}
 	if len(*single) != 0 {

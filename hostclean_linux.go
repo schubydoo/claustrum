@@ -106,18 +106,19 @@ func hcFdTargets(pid int) (map[string]string, bool) {
 }
 
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
-// daemon-spawned child.
-func hcStdioArePipes(pid int) bool {
+// daemon-spawned child. canRead is false when the descriptor list is unreadable. One read
+// answers both.
+func hcStdioArePipes(pid int) (pipes, canRead bool) {
 	m, ok := hcFdTargets(pid)
 	if !ok {
-		return false
+		return false, false
 	}
 	for _, fd := range []string{"0", "1", "2"} {
 		if !strings.HasPrefix(m[fd], "pipe:[") {
-			return false
+			return false, true
 		}
 	}
-	return true
+	return true, true
 }
 
 // hcHasFileOpen reports whether the process holds path open on any fd.
@@ -135,11 +136,20 @@ func hcHasFileOpen(pid int, path string) bool {
 }
 
 // hcBusy reports whether the process has a connected client on one of its own unix sockets: a
-// socket fd whose inode appears in /proc/<pid>/net/unix in the connected state (St 03).
+// socket fd whose inode appears in /proc/<pid>/net/unix in the connected state (St 03). A
+// process whose connections cannot be read reads as not busy here. hcBusyCheck tells the two
+// apart.
 func hcBusy(pid int) bool {
+	busy, _ := hcBusyCheck(pid)
+	return busy
+}
+
+// hcBusyCheck is hcBusy plus whether the connections could be read at all. canRead is false
+// when the fd directory, or the net/unix table a socket fd needs, cannot be read.
+func hcBusyCheck(pid int) (busy, canRead bool) {
 	m, ok := hcFdTargets(pid)
 	if !ok {
-		return false
+		return false, false
 	}
 	inodes := make(map[string]bool)
 	for _, t := range m {
@@ -148,11 +158,11 @@ func hcBusy(pid int) bool {
 		}
 	}
 	if len(inodes) == 0 {
-		return false
+		return false, true
 	}
 	b, err := os.ReadFile(procRoot + "/" + strconv.Itoa(pid) + "/net/unix")
 	if err != nil {
-		return false
+		return false, false
 	}
 	for _, ln := range strings.Split(string(b), "\n") {
 		f := strings.Fields(ln)
@@ -160,10 +170,10 @@ func hcBusy(pid int) bool {
 			continue
 		}
 		if f[5] == "03" && inodes[f[6]] { // St 03 = connected; Inode column
-			return true
+			return true, true
 		}
 	}
-	return false
+	return false, true
 }
 
 // hcClockTick turns a stat start-ticks value into a duration; Linux reports USER_HZ = 100.

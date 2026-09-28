@@ -15,84 +15,33 @@ import (
 )
 
 // The run-dir tidy pass and the sweep orchestration. The tidy pass renames and deletes
-// directories, so every test here drives it through the hcRename / hcRemoveAll seams except
-// the one case that needs a real rename, which works inside its own t.TempDir.
+// directories. A test either counts those calls through the hcRename / hcRemoveAll seams, or
+// lets them run for real through os.Root inside its own t.TempDir. No test renames or
+// removes anything outside a temp dir.
 //
-// Two arms of hostclean.go are deliberately left uncovered, because no fixture can reach
-// them rather than because no test was written:
+// One arm of hostclean.go is deliberately left uncovered, because no fixture can reach it
+// rather than because no test was written: runDirs' name == "." || ".." skip.
+// Readdirnames never yields those entries.
 //
-//   - runDirs' name == "." || ".." skip: os.ReadDir never yields those entries.
-//   - judgeDaemon's argv == nil spare: serveArgv already returned a socket for this
-//     candidate, and it returns "" for an argv shorter than two entries, so argv cannot be
-//     nil by the time that line is reached.
+// judgeDaemon's argv == nil spare used to be listed here too. It is reachable now, because
+// that gate runs before serveArgv, and TestJudgeDaemonBranches drives it.
 //
-// retireAbandoned's hcSettledBusy arm used to be listed here as a third. It is reachable
+// retireAbandoned's hcSettledBusy arm used to be listed here as well. It is reachable
 // now: hcSettledBusy is one shared implementation that samples for real on linux too, so
 // TestRetireAbandonedSparesABusyDaemon drives that branch.
-
-func TestRunDirsEnumerationArms(t *testing.T) {
-	oldClock := hcClock
-	t.Cleanup(func() { hcClock = oldClock })
-	hcClock = time.Now
-
-	t.Run("a non-directory entry is not a run dir", func(t *testing.T) {
-		base := t.TempDir()
-		runRoot := filepath.Join(base, "run")
-		if err := os.MkdirAll(filepath.Join(runRoot, "a"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		// A plain file beside it. Without the stat/IsDir check it becomes a run-dir entry
-		// and the tidy pass tries to rename and delete it.
-		if err := os.WriteFile(filepath.Join(runRoot, "notes.txt"), []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
-		dirs := c.runDirs()
-		if len(dirs) != 1 || dirs[0].name != "a" {
-			t.Errorf("runDirs = %+v, want only the directory entry", dirs)
-		}
-	})
-
-	t.Run("the same directory reached by two roots is listed once", func(t *testing.T) {
-		base := t.TempDir()
-		runRoot := filepath.Join(base, "run")
-		if err := os.MkdirAll(filepath.Join(runRoot, "a"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		// A second root that is a symlink to the first: both runRoots() entries list the
-		// same directory, and only the device+inode key can tell that.
-		alias := filepath.Join(t.TempDir(), "alias")
-		if err := os.Symlink(base, alias); err != nil {
-			t.Fatal(err)
-		}
-		c := &hostCleaner{roots: &hostRoots{roots: []string{base, alias}}}
-		if dirs := c.runDirs(); len(dirs) != 1 {
-			t.Errorf("runDirs = %d entries, want 1: the same dir under two roots", len(dirs))
-		}
-	})
-
-	t.Run("the enumeration stops at the cap", func(t *testing.T) {
-		base := t.TempDir()
-		runRoot := filepath.Join(base, "run")
-		for i := 0; i < hcMaxRunDirs+1; i++ {
-			if err := os.MkdirAll(filepath.Join(runRoot, fmt.Sprintf("d%03d", i)), 0o755); err != nil {
-				t.Fatal(err)
-			}
-		}
-		c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
-		if dirs := c.runDirs(); len(dirs) != hcMaxRunDirs {
-			t.Errorf("runDirs = %d entries, want the cap of %d", len(dirs), hcMaxRunDirs)
-		}
-	})
-}
 
 // hcRetireFixture seams a live-then-dead socket and a signal that "replaces" the daemon's pid,
 // so retireAbandoned can succeed repeatedly. It returns the pid the fake peer reports.
 func hcRetireFixture(t *testing.T, proot string, mk func(int, string, string), link func(int, string, string), socketArgv string) int {
 	t.Helper()
 	self := os.Getpid()
-	hcFakeDaemon(t, proot, mk, link, self, "/opt/claude/srv/a/server",
-		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socketArgv}, true, "1")
+	// SO_PEERCRED reports the runner's real uid for the fake peer, and the retire refuses a
+	// peer whose uid is not the cleaner's. So the cleaner and the fixture both use that uid.
+	uid := os.Getuid()
+	hcGetuid = func() int { return uid }
+	hcFakeDaemonUID(t, proot, mk, link, self, "/opt/claude/srv/a/server",
+		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socketArgv}, true, "1", uid)
+	link(self, "fd/1", "/dev/null") // readable connections, none of them a client
 
 	oldSig, oldSleep := hcSignalPid, hcSleep
 	t.Cleanup(func() { hcSignalPid, hcSleep = oldSig, oldSleep })
@@ -115,8 +64,8 @@ func hcRetireFixture(t *testing.T, proot string, mk func(int, string, string), l
 func TestTidyRunDirsRetiresAnAnsweringDaemon(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
-	socket := "/opt/claude/run/x/rpc.sock"
-	hcRetireFixture(t, proot, mk, link, socket)
+	e := hcNewEntry(t, "x", 40*24*time.Hour)
+	hcRetireFixture(t, proot, mk, link, e.socket)
 
 	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
 	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
@@ -129,11 +78,11 @@ func TestTidyRunDirsRetiresAnAnsweringDaemon(t *testing.T) {
 		return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} // it exited
 	}
 	var removed []string
-	hcRename = func(string, string) error { return nil }
-	hcRemoveAll = func(p string) error { removed = append(removed, p); return nil }
+	hcRename = func(*os.Root, string, string) error { return nil }
+	hcRemoveAll = func(_ *os.Root, p string) error { removed = append(removed, p); return nil }
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{{name: "x", dirPath: "/opt/claude/run/x", socket: socket, idle: 40 * 24 * time.Hour}}, &sum)
+	c.tidyRunDirs([]runDirEntry{e}, &sum)
 
 	if sum.daemonsRetired != 1 {
 		t.Errorf("daemonsRetired = %d, want 1", sum.daemonsRetired)
@@ -155,13 +104,13 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
 	hcDial = func(string) (net.Conn, error) { return newFakePeerConn(t), nil }
 	renames, removes := 0, 0
-	hcRename = func(string, string) error { renames++; return nil }
-	hcRemoveAll = func(string) error { removes++; return nil }
+	hcRename = func(*os.Root, string, string) error { renames++; return nil }
+	hcRemoveAll = func(*os.Root, string) error { removes++; return nil }
 
 	buf := captureLogBuf(t)
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{{name: "x", dirPath: "/opt/claude/run/x", socket: "/opt/claude/run/x/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)
+	c.tidyRunDirs([]runDirEntry{hcNewEntry(t, "x", 40*24*time.Hour)}, &sum)
 
 	if sum.daemonsRetired != 0 || sum.runDirsRemoved != 0 {
 		t.Errorf("summary = %+v, want no retire and no removal", sum)
@@ -171,46 +120,43 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	}
 	// "Nothing happened" is also true of a mutant that never tried to retire. The log is what
 	// distinguishes a REFUSED retire from a skipped one, so it is asserted here.
-	if got := buf.String(); !strings.Contains(got, "it serves a different socket; left running") {
+	if got := buf.String(); !strings.Contains(got, "was not retired: it serves a different socket") {
 		t.Errorf("log = %q, want the refusal that shows the retire was attempted and declined", got)
 	}
 }
 
 // TestTidyRunDirsStopsAtTheRetireBudget: the per-pass retirement budget is a cap on how many
-// daemons one sweep may SIGTERM. The entry past the budget is skipped entirely — not probed,
-// not retired, not removed.
+// daemons one sweep may SIGTERM. The entry past the budget is skipped, with a log line: not
+// probed, not retired, not removed.
 func TestTidyRunDirsStopsAtTheRetireBudget(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
-	socket := "/opt/claude/run/x/rpc.sock"
+	runRoot, root := hcRunRoot(t)
+	socket := filepath.Join(runRoot, "d0", rpcSockBasename)
 	hcRetireFixture(t, proot, mk, link, socket)
 
 	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
 	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
-	// Each entry probes its socket twice: live, then dead once its daemon is retired. The
-	// removal's own probe of the staged copy is keyed by address, not by that alternation.
+	// Each entry probes its socket twice: live, then dead once its daemon is retired.
 	dials := 0
 	hcDial = func(addr string) (net.Conn, error) {
-		if strings.Contains(addr, hcStagingPrefix) {
-			return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT}
-		}
 		dials++
 		if dials%2 == 1 {
 			return newFakePeerConn(t), nil
 		}
 		return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT}
 	}
-	hcRename = func(string, string) error { return nil }
-	hcRemoveAll = func(string) error { return nil }
+	hcRename = func(*os.Root, string, string) error { return nil }
+	hcRemoveAll = func(*os.Root, string) error { return nil }
+	buf := captureLogBuf(t)
 
 	// Every entry names the same socket (the same fake daemon answers each time), which is
 	// what lets one fixture stand in for a host with many abandoned run dirs.
 	var entries []runDirEntry
 	for i := 0; i < hcMaxRetire+1; i++ {
-		name := fmt.Sprintf("d%d", i)
-		entries = append(entries, runDirEntry{
-			name: name, dirPath: "/opt/claude/run/" + name, socket: socket, idle: 40 * 24 * time.Hour,
-		})
+		e := hcEntry(t, runRoot, root, fmt.Sprintf("d%d", i), 40*24*time.Hour)
+		e.socket = socket
+		entries = append(entries, e)
 	}
 	var sum hcSummary
 	c.tidyRunDirs(entries, &sum)
@@ -221,6 +167,43 @@ func TestTidyRunDirsStopsAtTheRetireBudget(t *testing.T) {
 	if sum.runDirsRemoved != hcMaxRetire {
 		t.Errorf("runDirsRemoved = %d, want %d: the entry past the budget is skipped", sum.runDirsRemoved, hcMaxRetire)
 	}
+	last := entries[hcMaxRetire].dirPath
+	if want := fmt.Sprintf("run dir %q not examined this sweep: the retire budget of %d attempts is spent", last, hcMaxRetire); !strings.Contains(buf.String(), want) {
+		t.Errorf("log = %q, want %q", buf.String(), want)
+	}
+}
+
+// TestTidyRunDirsBudgetCountsAttempts: the budget counts retire attempts. Eight
+// refused retires spend it, and the ninth dir is left for a later pass without a dial.
+// Not measured: the Linux run did not stage this rule.
+func TestTidyRunDirsBudgetCountsAttempts(t *testing.T) {
+	proot, mk, link := fakeProc(t)
+	c := hcTestCleaner(t, "/opt/claude")
+	// The answerer serves a DIFFERENT socket, so every retire is refused.
+	hcRetireFixture(t, proot, mk, link, "/opt/claude/run/other/rpc.sock")
+
+	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
+	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
+	dials := 0
+	hcDial = func(string) (net.Conn, error) { dials++; return newFakePeerConn(t), nil }
+	hcRename = func(*os.Root, string, string) error { return nil }
+	hcRemoveAll = func(*os.Root, string) error { return nil }
+	buf := captureLogBuf(t)
+
+	runRoot, root := hcRunRoot(t)
+	var entries []runDirEntry
+	for i := 0; i < hcMaxRetire+1; i++ {
+		entries = append(entries, hcEntry(t, runRoot, root, fmt.Sprintf("d%d", i), 40*24*time.Hour))
+	}
+	var sum hcSummary
+	c.tidyRunDirs(entries, &sum)
+
+	if dials != hcMaxRetire {
+		t.Errorf("dials = %d, want %d: the ninth dir is not probed once eight attempts failed", dials, hcMaxRetire)
+	}
+	if want := "the retire budget of 8 attempts is spent"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log = %q, want %q", buf.String(), want)
+	}
 }
 
 // TestRemoveRunDirLockReacquiredMidRemoval uses a REAL rename so the staged directory carries
@@ -230,11 +213,8 @@ func TestRemoveRunDirLockReacquiredMidRemoval(t *testing.T) {
 	proot, _, _ := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
 
-	parent := t.TempDir()
-	dir := filepath.Join(parent, "x")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	e := hcNewEntry(t, "x", 40*24*time.Hour)
+	dir := e.dirPath
 	lockPath := filepath.Join(dir, runDirLockName)
 	if err := os.WriteFile(lockPath, []byte(`{"pid":4321,"role":"serve"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -253,15 +233,14 @@ func TestRemoveRunDirLockReacquiredMidRemoval(t *testing.T) {
 	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
 	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
 	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
-	hcRename = os.Rename // a real rename: the staged dir must carry the real lock file
+	hcRename = func(r *os.Root, from, to string) error { return r.Rename(from, to) } // a real rename: the staged dir must carry the real lock file
 	removed := 0
-	hcRemoveAll = func(string) error { removed++; return nil }
+	hcRemoveAll = func(*os.Root, string) error { removed++; return nil }
 
 	// removeRunDir is called directly: the tidy pass has its own lock check, which refuses
 	// this dir before the removal starts. The arm under test is the SECOND look, after the
 	// dir has already been renamed aside — a lock taken inside that window.
-	e := runDirEntry{name: "x", dirPath: dir, socket: filepath.Join(dir, "rpc.sock"), idle: 40 * 24 * time.Hour}
-	if c.removeRunDir(e, false) {
+	if c.removeRunDir(e, false, hcSockMissing) {
 		t.Error("removeRunDir reported success for a dir whose lock was re-acquired")
 	}
 	if removed != 0 {
@@ -285,39 +264,33 @@ func TestUndoRenameFailureIsLogged(t *testing.T) {
 
 	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
 	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
-	dials := 0
-	hcDial = func(string) (net.Conn, error) {
-		dials++
-		if dials == 1 {
-			return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} // dead when the tidy looks
-		}
-		return newFakePeerConn(t), nil // a listener reappeared inside the rename window
-	}
+	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} } // dead when the tidy looks
 	renames := 0
-	hcRename = func(string, string) error {
+	hcRename = func(r *os.Root, from, to string) error {
 		renames++
 		if renames == 1 {
-			return nil // staged
+			if err := r.Rename(from, to); err != nil { // staged for real
+				return err
+			}
+			// A socket appears in the staged dir inside the rename window.
+			return os.WriteFile(filepath.Join(r.Name(), to, rpcSockBasename), nil, 0o600)
 		}
 		return syscall.EACCES // and now it cannot be put back
 	}
 	removed := 0
-	hcRemoveAll = func(string) error { removed++; return nil }
-
+	hcRemoveAll = func(*os.Root, string) error { removed++; return nil }
 	buf := captureLogBuf(t)
 
 	var sum hcSummary
-	c.tidyRunDirs([]runDirEntry{{name: "x", dirPath: "/opt/claude/run/x", socket: "/opt/claude/run/x/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)
+	e := hcNewEntry(t, "x", 40*24*time.Hour)
+	c.tidyRunDirs([]runDirEntry{e}, &sum)
 
 	if removed != 0 || sum.runDirsRemoved != 0 {
-		t.Errorf("the dir was removed although a listener reappeared (removed=%d)", removed)
+		t.Errorf("the dir was removed although a socket appeared (removed=%d)", removed)
 	}
 	got := buf.String()
-	if !strings.Contains(got, `run dir "x" could not be restored`) {
-		t.Errorf("log = %q, want the could-not-be-restored line naming the dir", got)
-	}
-	if !strings.Contains(got, "a listener reappeared mid-removal") {
-		t.Errorf("log = %q, want the reason the removal was aborted", got)
+	if want := fmt.Sprintf("run dir %q could not be restored (a socket appeared in it during removal)", e.dirPath); !strings.Contains(got, want) {
+		t.Errorf("log = %q, want %q", got, want)
 	}
 }
 
@@ -354,8 +327,8 @@ func TestPassBailsWhenTheProcessListIsUnreadable(t *testing.T) {
 	oldRen, oldRm := hcRename, hcRemoveAll
 	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
 	renames, removes := 0, 0
-	hcRename = func(string, string) error { renames++; return nil }
-	hcRemoveAll = func(string) error { removes++; return nil }
+	hcRename = func(*os.Root, string, string) error { renames++; return nil }
+	hcRemoveAll = func(*os.Root, string) error { removes++; return nil }
 
 	// The self-probe succeeds (the socket leads to this process), and only then the process
 	// list turns out to be unreadable. The pass must stop there.
@@ -383,15 +356,15 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 
 	// Pass ends with a real tidy sweep over the roots, and this cleaner's root is the
 	// product's own install path. The fake clock sits in 1970, so every ordinary run dir
-	// under it reads as fresh and is skipped — but a leftover .removing-<name>-<ts> staging
+	// under it reads as fresh and is skipped — but a leftover <name>.removing-<pid>-<ts> staging
 	// dir SKIPS the idle gate by design, and removeRunDir then calls hcRemoveAll on it with
 	// no rename. Measured against the same shape in TestPassReapsStrandedDaemon: a staging
 	// dir holding a file was really deleted with these seams absent, while an ordinary
 	// 40-day-idle dir was left alone. So both destructive calls are seamed before Pass runs.
 	oldRen, oldRm := hcRename, hcRemoveAll
 	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
-	hcRename = func(string, string) error { return nil }
-	hcRemoveAll = func(string) error { return nil }
+	hcRename = func(*os.Root, string, string) error { return nil }
+	hcRemoveAll = func(*os.Root, string) error { return nil }
 
 	ownSock := filepath.Join(t.TempDir(), "rpc.sock")
 	ln, err := net.Listen("unix", ownSock)
@@ -417,13 +390,14 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 
 	self := os.Getpid()
 	daemonExe := "/opt/claude/srv/a/server"
-	cliExe := "/opt/claude/ccd-cli/v1/claude"
-	deadSock := filepath.Join(t.TempDir(), "gone", "rpc.sock")
+	cliExe := "/opt/claude/ccd-cli/2.1.0"
+	deadSock := "/opt/claude/run/claustrum-test-gone/rpc.sock"
 	stream := []string{"claude", "--output-format=stream-json"}
 
 	stranded := self + 1 // reaped: marked, old, its own socket is gone, no lock, not busy
 	hcFakeDaemonUID(t, proot, mk, link, stranded, daemonExe,
 		[]string{daemonExe, "--serve", "--socket", deadSock}, true, "1", uid)
+	link(stranded, "fd/1", "/dev/null") // readable descriptors, no daemon.lock, no client
 
 	child := self + 2 // its child: ended in phase B once the daemon is dead
 	hcFakeDaemonUID(t, proot, mk, link, child, cliExe, stream, true, "1", uid)
@@ -446,7 +420,7 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 
 	orphan := self + 7 // reaped: a full stream-json orphan whose descriptors read
 	hcFakeDaemonUID(t, proot, mk, link, orphan, cliExe, stream, true, "1", uid)
-	link(orphan, "fd/0", "pipe:[1]")
+	hcPipeStdio(link, orphan)
 
 	vanished := self + 8 // enumerated, then unreadable: skipped
 	if err := os.MkdirAll(filepath.Join(proot, strconv.Itoa(vanished)), 0o755); err != nil {

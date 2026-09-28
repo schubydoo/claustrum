@@ -243,6 +243,72 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	}
 }
 
+// TestStdioPipesAndBusyCheckDarwin covers the two darwin reads the orphan and daemon judges
+// use: pipe stdio from lsof's PIPE type, and hcBusyCheck, which is always a reading on darwin.
+func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
+	old := runLsof
+	t.Cleanup(func() { runLsof = old })
+
+	// fds 0, 1 and 2 all PIPE: a daemon-spawned child's stdio.
+	runLsof = func(...string) (string, bool) {
+		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true
+	}
+	if pipes, canRead := hcStdioArePipes(1); !pipes || !canRead {
+		t.Errorf("three PIPE stdio records: pipes=%v canRead=%v, want true true", pipes, canRead)
+	}
+	// One unix record and nothing else: a reading, and not pipe stdio.
+	runLsof = func(...string) (string, bool) { return "p1\nf0\ntunix\nn->0x1\n", true }
+	if pipes, canRead := hcStdioArePipes(1); pipes || !canRead {
+		t.Errorf("a unix stdio record: pipes=%v canRead=%v, want false true", pipes, canRead)
+	}
+	// An abandoned run tells nothing: not pipes, and not a reading.
+	runLsof = func(...string) (string, bool) { return "", false }
+	if pipes, canRead := hcStdioArePipes(1); pipes || canRead {
+		t.Errorf("an abandoned lsof run: pipes=%v canRead=%v, want false false", pipes, canRead)
+	}
+
+	// hcBusyCheck: a completed run with a connected peer is busy. An abandoned run reads busy
+	// under D17, and both are readings.
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true }
+	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
+		t.Errorf("connected peer: busy=%v canRead=%v, want true true", busy, canRead)
+	}
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true }
+	if busy, canRead := hcBusyCheck(1); busy || !canRead {
+		t.Errorf("bare listener: busy=%v canRead=%v, want false true", busy, canRead)
+	}
+	runLsof = func(...string) (string, bool) { return "", false }
+	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
+		t.Errorf("abandoned run: busy=%v canRead=%v, want true true (D17)", busy, canRead)
+	}
+}
+
+// TestJudgeOrphanReadsDescriptorsOnceDarwin: judgeOrphan answers both "could the descriptors
+// be read" and "are they pipes" from one lsof run, not two.
+func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
+	old, oldClock := runLsof, hcClock
+	t.Cleanup(func() { runLsof, hcClock = old, oldClock })
+	now := time.Unix(1_700_000_000, 0)
+	hcClock = func() time.Time { return now }
+	runs := 0
+	runLsof = func(...string) (string, bool) {
+		runs++
+		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true
+	}
+	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}}
+	orphan := hcTracked{
+		pid: 77, pgid: 77, ppid: 1, sameUID: true, sameNS: true, haveAge: true,
+		startWall: now.Add(-time.Hour), exe: "/opt/claude/ccd-cli/2.1.0",
+		argv: []string{"claude", "stream-json"}, env: []string{hcDaemonChildMarker},
+	}
+	if reap, reason := c.judgeOrphan(orphan); !reap {
+		t.Fatalf("orphan not reaped (reason %q)", reason)
+	}
+	if runs != 1 {
+		t.Errorf("lsof ran %d times for one orphan, want 1", runs)
+	}
+}
+
 // TestHcBusyAbandonedRunReadsBusy pins D17.
 //
 // The two arms differ ONLY in the flag: both return no output. A completed run that

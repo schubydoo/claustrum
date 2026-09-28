@@ -62,7 +62,7 @@ func retireReuseFixture(t *testing.T, reuse bool) (retired bool, signalled []int
 	}
 
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
-	retired = c.retireAbandoned(pid, socket)
+	retired = hcRetire(c, pid, socket)
 	if !swapped {
 		t.Fatal("the sampler never slept, so the fixture never reached the window it is about")
 	}

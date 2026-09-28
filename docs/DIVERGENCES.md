@@ -707,7 +707,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   It is the same shape as
   [D15](#d15), which refuses to act on an identity the daemon cannot verify. It is
   also the same shape as two spares claustrum already has. It spares a daemon whose
-  lock state it cannot determine, and an orphan whose descriptors it cannot inspect.
+  open files it cannot inspect, and an orphan whose descriptors it cannot inspect.
   That is an argument for D17 rather than a premise this entry rests on, because the clause-(a) case stands
   on the harm alone.
 - **Cost.** A daemon whose `lsof` keeps failing is never retired by the busy gate, so
@@ -720,6 +720,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   not-held, although the same argument applies to it. This
   entry was scoped to the busy predicate deliberately. Widening it is a decision, not
   an implementation detail.
+- **Linux is outside this entry.** On Linux the busy read comes from `/proc`, not
+  `lsof`. If `/proc` cannot read a daemon's descriptors or its `net/unix` table, the
+  retire refuses that daemon. The stranded-daemon judge never reaps it. The reference's
+  retire refusal, captured on the Linux run for a busy daemon, uses one text for both
+  cases: "a connection is attached to it right now, or that could not be read". The Linux
+  run did not stage an unreadable `/proc`, so neither arm is measured. Neither arm is a numbered divergence, because neither is known to
+  differ from the reference.
 - **Reopen trigger.** A measurement that shows the reference distinguishing the two
   empty results (then this becomes parity). Or an operator reporting a run dir the cleaner will not tidy
   because `lsof` keeps failing on that host.

@@ -249,7 +249,7 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 		killGroup = func(int, syscall.Signal) error { return syscall.ESRCH }
 		hcSignalPid = func(int, syscall.Signal) error { return syscall.ESRCH }
 
-		signalled, survived := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "orphaned process group")
+		signalled, survived := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "orphaned process group", "")
 		if signalled != 0 || survived != 0 {
 			t.Errorf("signalled=%d survived=%d, want 0 and 0 for an already-gone group", signalled, survived)
 		}
@@ -291,7 +291,7 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 			return now
 		}
 
-		signalled, survived := endGroupsTwoPhase([]tracked{{pid: pid, pgid: pid, startTicks: "1"}}, "orphaned process group")
+		signalled, survived := endGroupsTwoPhase([]tracked{{pid: pid, pgid: pid, startTicks: "1"}}, "orphaned process group", "")
 		if !reused {
 			t.Fatal("the fixture never reused the pid; endGroupsTwoPhase's clock reads no longer line up")
 		}
