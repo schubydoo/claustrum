@@ -28,12 +28,6 @@ func hcRunRoot(t *testing.T) (runRoot string, root *os.Root) {
 	return runRoot, root
 }
 
-// hcCaptureLog sends the standard logger to a buffer, with no timestamp, until cleanup.
-func hcCaptureLog(t *testing.T) *syncBuffer {
-	t.Helper()
-	return captureLogBuf(t)
-}
-
 // TestRunDirsSkipsOwnDirAndSymlinks pins two runDirs rules (issue 429): the cleaner's
 // own run dir is never listed, so the tidy never dials its own socket, and a symlinked entry
 // is not a run dir, so it is never probed or removed.
@@ -114,7 +108,7 @@ func TestRunDirsCapLogNeedsA65thDir(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		buf := hcCaptureLog(t)
+		buf := captureLogBuf(t)
 		c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
 		dirs, done := c.runDirs()
 		done()

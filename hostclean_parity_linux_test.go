@@ -187,7 +187,7 @@ func TestPassListsRunDirsBeforeTheDaemonPhase(t *testing.T) {
 		}
 		return nil, &net.OpError{Op: "dial", Err: syscall.EIO} // inconclusive: spared
 	}
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 
 	f.c.Pass()
 
@@ -226,7 +226,7 @@ func TestTidyRemovesADirWithAnEmptyLock(t *testing.T) {
 			}
 			return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} // it unlinked its socket
 		}
-		buf := hcCaptureLog(t)
+		buf := captureLogBuf(t)
 
 		var sum hcSummary
 		c.tidyRunDirs([]runDirEntry{e}, &sum)
@@ -285,7 +285,7 @@ func TestTidyKeepsADirWhoseSocketStaysAfterTheRetire(t *testing.T) {
 	}
 	removes := 0
 	hcRemoveAll = func(*os.Root, string) error { removes++; return nil }
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 
 	var sum hcSummary
 	c.tidyRunDirs([]runDirEntry{e}, &sum)
@@ -318,7 +318,7 @@ func TestTidyRetireLogUsesTheFreshAge(t *testing.T) {
 		return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT}
 	}
 	hcRemoveAll = func(*os.Root, string) error { return nil }
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 	var sum hcSummary
 	c.tidyRunDirs([]runDirEntry{e}, &sum)
 	if want := "has seen no connection for 40 days: SIGTERM"; !strings.Contains(buf.String(), want) {
@@ -551,7 +551,7 @@ func TestPassEndsOnlyTheMeasuredOrphanGroups(t *testing.T) {
 	f.link(notPipes, "fd/0", "pipe:[1]")
 	f.link(notPipes, "fd/1", "/dev/null")
 	f.link(notPipes, "fd/2", "/dev/null")
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 
 	sum := f.c.Pass()
 	if len(f.group) != 1 || f.group[0] != ended {
@@ -576,7 +576,7 @@ func TestPassOwnSocketLines(t *testing.T) {
 	oldDial := hcDial
 	t.Cleanup(func() { hcDial = oldDial })
 
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 	hcDial = func(string) (net.Conn, error) { return newFakePeerConn(t), nil }
 	if sum := c.Pass(); sum != (hcSummary{}) {
 		t.Errorf("summary = %+v, want zero", sum)
@@ -593,7 +593,7 @@ func TestPassOwnSocketLines(t *testing.T) {
 
 	// claustrum's own wording, not a captured text: a socket that is missing or cannot be
 	// probed also stops the pass.
-	buf = hcCaptureLog(t)
+	buf = captureLogBuf(t)
 	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
 	if sum := c.Pass(); sum != (hcSummary{}) {
 		t.Errorf("summary = %+v, want zero", sum)
@@ -607,7 +607,7 @@ func TestEndDaemonsMeasuredLine(t *testing.T) {
 	root, mk, _ := fakeProc(t)
 	hcSeamSignals(t, root)
 	mk(3100, "stat", hcRunningStat(3100, 1, 3100, "1"))
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 	var sum hcSummary
 	(&hostCleaner{}).endDaemons([]daemonTarget{{tracked: tracked{pid: 3100, pgid: 3100, startTicks: "1"}, socket: "/r/run/X/rpc.sock"}}, &sum)
 	want := `[hostclean] ending stranded daemon pid 3100: it was started for "/r/run/X/rpc.sock", which no longer leads to it, and it holds no run-dir lock: SIGKILL`

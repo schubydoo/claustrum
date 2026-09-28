@@ -148,7 +148,7 @@ func TestTidyRunDirsStopsAtTheRetireBudget(t *testing.T) {
 	}
 	hcRename = func(*os.Root, string, string) error { return nil }
 	hcRemoveAll = func(*os.Root, string) error { return nil }
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 
 	// Every entry names the same socket (the same fake daemon answers each time), which is
 	// what lets one fixture stand in for a host with many abandoned run dirs.
@@ -188,7 +188,7 @@ func TestTidyRunDirsBudgetCountsAttempts(t *testing.T) {
 	hcDial = func(string) (net.Conn, error) { dials++; return newFakePeerConn(t), nil }
 	hcRename = func(*os.Root, string, string) error { return nil }
 	hcRemoveAll = func(*os.Root, string) error { return nil }
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 
 	runRoot, root := hcRunRoot(t)
 	var entries []runDirEntry
@@ -279,7 +279,7 @@ func TestUndoRenameFailureIsLogged(t *testing.T) {
 	}
 	removed := 0
 	hcRemoveAll = func(*os.Root, string) error { removed++; return nil }
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 
 	var sum hcSummary
 	e := hcNewEntry(t, "x", 40*24*time.Hour)

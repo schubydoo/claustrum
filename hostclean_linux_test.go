@@ -1150,7 +1150,7 @@ func TestRemoveRunDirUndoOnReappear(t *testing.T) {
 	hcRemoveAll = func(*os.Root, string) error { removed++; return nil }
 	// The tidy saw no socket (missing), and one appeared after the rename: undo.
 	e := hcNewEntry(t, "x", 40*24*time.Hour)
-	buf := hcCaptureLog(t)
+	buf := captureLogBuf(t)
 	if c.removeRunDir(e, false, hcSockMissing) {
 		t.Error("removeRunDir returned true despite a socket appearing")
 	}
