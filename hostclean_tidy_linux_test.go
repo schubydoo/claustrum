@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -160,7 +159,7 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	hcRename = func(string, string) error { renames++; return nil }
 	hcRemoveAll = func(string) error { removes++; return nil }
 
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
@@ -310,7 +309,7 @@ func TestUndoRenameFailureIsLogged(t *testing.T) {
 	removed := 0
 	hcRemoveAll = func(string) error { removed++; return nil }
 
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
