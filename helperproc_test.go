@@ -67,7 +67,9 @@ func TestMain(m *testing.M) {
 		// Spawning a fixture must not start the user's login shell to look for an
 		// SSH agent. The tests that cover the hand-off swap in their own stub.
 		shellAgentSocket = func() string { return "" }
-		os.Exit(m.Run())
+		code := m.Run()
+		removeFixtureTemplates()
+		os.Exit(code)
 	}
 	os.Exit(runHelper(mode, os.Args[1:]))
 }

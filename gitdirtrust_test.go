@@ -84,16 +84,16 @@ func newTrustRepo(t *testing.T) trustRepo {
 	return r
 }
 
-// initTrustMain makes dir a repository on branch main with one commit.
+// initTrustMain makes dir a repository on branch main with one commit. It
+// copies a template, which holds no absolute path.
 func initTrustMain(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, dir, "init", "-q", "-b", "main")
-	writeFile(t, filepath.Join(dir, ".gitignore"), ".claude/worktrees/\n", 0o644)
-	runGit(t, dir, "add", ".gitignore")
-	runGit(t, dir, "commit", "-q", "-m", "init")
+	copyFixtureTemplate(t, "trust-main", dir, func(t *testing.T, dir string) {
+		runGit(t, dir, "init", "-q", "-b", "main")
+		writeFile(t, filepath.Join(dir, ".gitignore"), ".claude/worktrees/\n", 0o644)
+		runGit(t, dir, "add", ".gitignore")
+		runGit(t, dir, "commit", "-q", "-m", "init")
+	})
 }
 
 // entry is the linked-worktree entry of TW.
