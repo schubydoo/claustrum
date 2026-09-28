@@ -79,13 +79,15 @@ unrecoverable data loss, and no honest caller has a legitimate *use* for deletin
 home. A caller can still reach that path by accident, which is exactly what the
 guard is for.
 
-Clause (b): the trigger is unreachable on an honest path. Four always-on
-entries use this form (D6, D8, D9, D18). Each entry has its own trigger,
-and the glosses are not interchangeable. Three of the four are asserted rather than
+Clause (b): the trigger is unreachable on an honest path. Five always-on
+entries use this form (D6, D8, D9, D18, D19). Each entry has its own trigger,
+and the glosses are not interchangeable. Three of the five are asserted rather than
 enumerated: nobody ever enumerated Desktop's per-method param set against D9's
 binding, and D6 and D18 rest on an observed value plus a measured accepted-set. Read
 those three as unenumerated, not established (rule 2 puts the burden on the
-divergence).
+divergence). D19 holds for worktrees that either daemon creates, because both
+creates refuse the junction. A worktree made outside the daemon can still sit behind
+it.
 
 *Canonical example:* D6. A `-cli-version` naming a destructive path outside the
 cli-dir is not something any correct client emits.
@@ -162,6 +164,7 @@ rather than repeating them in each entry:
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
 | [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
+| [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where the reference answers success and deletes only the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -179,8 +182,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 ### D2 · Refuse a home directory as a destructive path target (always-on) { #d2 }
 
 - **Behavior.** Three methods hand a caller-supplied, `~`-expanded path to
-  `os.RemoveAll`. `files.extract_tar` wipes `destDir`. When git exits non-zero for
-  a non-locked reason, `git.worktree_remove` deletes `worktreePath`. A locked
+  a recursive delete. `files.extract_tar` wipes `destDir`. `git.worktree_remove`
+  deletes `worktreePath` itself, through an `os.Root` on its parent. A locked
   worktree is refused, not deleted. When `git.worktree_create` rolls back a
   worktree, it deletes `worktreePath`. A rollback follows a caller `timeoutMs`
   that expired during a successful add, the checkout or the copy step. It also
@@ -203,8 +206,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   parity, not as this divergence.** That build confined session worktrees to
   inside the repository. A `worktreePath` that is not strictly under `baseRepo` is
   now refused *with the reference's own "not inside the repository" wording*. The
-  refusal comes before git, the `os.RemoveAll` fallback, or `wipesHomeDir` is
-  reached. Every `~`-expanded home path is such a path. On that method's
+  refusal comes before git, the delete, or `wipesHomeDir` is reached. Every `~`-expanded home path is such a path. On that method's
   default branch `wipesHomeDir` is now
   defense-in-depth behind the reference's containment. It can still fire only in the
   exotic case of a repository that is itself an ancestor of home. On the
@@ -287,19 +289,24 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 ### D5 · Make the `gitTimeout` deadline opt-in { #d5 }
 
 - **Behavior.** With the deadline on, claustrum bounds every git invocation (shared
-  `gitCtx` across `git` / `gitStdoutErr` / `gitDeadline`). On `git.worktree_remove`
-  a hit deletes nothing. A hit on `git worktree remove` itself answers
-  `git worktree remove timed out after <dur>; no cleanup was attempted, and git may have partially removed the worktree`.
-  A hit on the earlier config or repository check answers the lock-check refusal.
-  With `worktreeRoot` it answers the work-tree refusal (`cannot determine the repository's work tree`).
+  `gitCtx` across `git` / `gitStdoutErr` and the hardened helpers). That method runs
+  no `git worktree remove`. On `git.worktree_remove` no git failure or kill leads to a
+  delete. A failure only refuses or skips a step. If the worktree directory exists, a
+  hit on the config or repository check answers the lock-check refusal. For a gone
+  worktree, the hit gives the lock-check text with the hooks refusal, or skips the
+  registration step. With `worktreeRoot` a hit answers the work-tree refusal (`cannot
+  determine the repository's work tree`). A killed `update-ref` keeps the branch, and
+  the reply is still `{"success":true}`.
   On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
   A killed repo-detection call answers `isRepo:false`. A killed
   `branch --show-current` in `git.info` leaves out the `branch` member.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
-- **Never read a timeout as "git refused."** `git.worktree_remove` treats a
-  non-locked git failure as permission to delete `worktreePath`, so claustrum keeps the timeout
-  reply separate from the failure arm. The cap is also softer than it reads on the
+- **Never read a timeout as "git refused."** `git.worktree_remove` deletes nothing on
+  a git failure. `git.worktree_create` does: its rollback deletes after a failed or
+  killed read-tree checkout, and it removes an empty leaf after a failed add. A caller
+  that deletes on a git failure must tell the deadline apart from the verdict of git
+  first. The cap is also softer than it reads on the
   general git sites. `CombinedOutput`/`Output` waits on git's output pipe. So a git
   that leaves a surviving child stays blocked past the deadline on `git.status`,
   `git.list_branches` and the repo probes. Those paths are unmeasured for a
@@ -743,6 +750,41 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** Desktop passing a `-cli-version` that starts with `.blob-`.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`
   (`isDownloadBlobName`, `validateCLIVersion`).
+
+### D19 · Refuse a junction at `.claude` or `.claude\worktrees` on remove (Windows, always-on) { #d19 }
+
+- **Behavior.** On Windows, `git.worktree_remove` refuses a request whose `.claude` or
+  `.claude\worktrees` is a junction. The reply is `{"success":false,"error":"failed
+  to remove worktree: openat .claude\\worktrees: path escapes from parent"}`. That
+  text is claustrum's own, the error of `os.Root`. Nothing is deleted, and the branch
+  stays.
+- **Reference side, measured.** Measured against `f6010b97` on a Windows VM (rows
+  J03, J04 and J05 for `.claude\worktrees`, row JC for `.claude`). The reference answers `{"success":true}` and deletes nothing.
+  It still deletes the branch. When the junction leads to a live worktree, that
+  worktree is left on a deleted branch. With no worktree behind the junction, it
+  answers `{"success":true}` too (rows JCR1 and JCR2, after the refused create).
+  Neither daemon deleted anything outside the fixture.
+- **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
+  and no key.
+- **Why always-on.** Rule 3 clause (b), by the maintainer's decision of 2026-09-27.
+  The `git.worktree_create` of both daemons refuses a junctioned `.claude` or
+  `.claude\worktrees` with `mkdir_failed` and creates nothing (reference measured on a
+  Windows VM, rows JCR1 and JCR2). So neither daemon creates a worktree there. Only a
+  worktree made outside the daemon sits there. For it, claustrum keeps the branch that
+  the reference deletes.
+- **Cost.** A Windows client that diffs frames against the reference sees
+  `success:false` where the reference sends `success:true`. The branch that the
+  reference deletes stays with claustrum. A client that relies on the remove to
+  delete the branch there must delete it itself.
+- **Reopen trigger.** The reference refusing the junction with the same text (then
+  this becomes parity), or the reference deleting the tree through the junction. Or a Windows
+  client that depends on the success reply for a junctioned `.claude` or
+  `.claude\worktrees`.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`. Also
+  `worktreeremove.go` (`openRemoveParent`). Evidence in
+  `scratch/i429/remove-val-windows-6bed4ee.md`,
+  `scratch/i429/remove-val-windows-8755717.md` and
+  `scratch/i429/remove-val-windows-8755717-jcr.md`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

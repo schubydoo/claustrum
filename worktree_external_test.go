@@ -219,9 +219,9 @@ func TestWorktreeCreateExternalDirMustBeEmpty(t *testing.T) {
 	}
 }
 
-// An external remove whose target carries no `.git` file is refused and LEFT IN
-// PLACE — the non-destructive external counterpart to the in-repo delete fallback
-// (an in-repo plain directory is still deleted; an external one is not).
+// An external remove whose target carries no `.git` file and holds files is refused
+// and left in place. An in-repo plain directory is deleted instead. An empty one is
+// removed in both modes (TestWorktreeRemoveExternalEmptyDirIsRemoved).
 func TestWorktreeRemoveExternalMissingGit(t *testing.T) {
 	requireGit(t)
 	base := t.TempDir()
@@ -235,6 +235,7 @@ func TestWorktreeRemoveExternalMissingGit(t *testing.T) {
 	if err := os.MkdirAll(stray, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, filepath.Join(stray, "keep.txt"), "keep\n", 0o644)
 	s := newTestServer(t)
 	rr := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
 		map[string]any{"baseRepo": repo, "worktreePath": stray, "worktreeRoot": filepath.Join(base, "mine")}))
@@ -286,10 +287,10 @@ func TestWorktreeRemoveExternalWrongDepth(t *testing.T) {
 	}
 }
 
-// externalWorktreeVerify cannot decide when baseRepo's worktrees directory is
-// unreadable, and the RPC then reports a TRANSIENT "could not verify … retry"
-// rather than the flat refusal — a caller is told to retry, not that the path is
-// junk. Fixture: a freshly `git init`ed baseRepo (no .git/worktrees yet) and a
+// The remove cannot decide when baseRepo's worktrees directory cannot be opened and
+// the worktree is not a stale one of baseRepo. The RPC then reports a TRANSIENT
+// "could not verify … retry" rather than the flat refusal — a caller is told to
+// retry, not that the path is junk. Fixture: a freshly `git init`ed baseRepo (no .git/worktrees yet) and a
 // worktree whose `.git` names a plausible foreign admin directory.
 func TestWorktreeRemoveExternalVerifyTransient(t *testing.T) {
 	requireGit(t)

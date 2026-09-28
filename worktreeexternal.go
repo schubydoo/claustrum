@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
 // External worktrees (the "Worktree location" capability, added by reference build
@@ -65,7 +64,7 @@ func worktreeExternalContainmentRefusal(worktreeRoot, worktreePath, verb string)
 // that carries the create out of the chosen location. verb is "create" or "remove"
 // (create carries errorCode unsafe_path; remove carries none). Measured against
 // 7d193f89: this runs after the ownership/writability checks on create, and before
-// the registration verify (externalWorktreeVerify) on remove. The <directory> comes
+// the registration checks on remove. The <directory> comes
 // from the cleaned path, so a worktreePath that ends in a slash names its real
 // parent (see externalWorktreeDirNotEmptyRefusal).
 func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
@@ -77,76 +76,7 @@ func worktreeExternalDirSymlinkRefusal(worktreePath, verb string) string {
 	return ""
 }
 
-// externalWorktreeVerify reproduces 7d193f89's "is worktreePath a registered worktree
-// of baseRepo" check on the external-remove path, whose non-locked git failure would
-// otherwise recursively os.RemoveAll the path. The reference REFUSES (leaves the path in
-// place) unless it can positively confirm a genuine registration — unlike an in-repo
-// remove, which deletes a plain directory as a fallback (measured: in-repo plain dir is
-// deleted at 7d193f89, an external one is not). It returns:
-//   - ("", false) when the path may be removed: a genuine registration, a GHOST whose
-//     admin dir is gone (the reference cleans those up), or a path already gone;
-//   - (reason, false) to REFUSE and leave it in place — the caller wraps it as
-//     "... is not a worktree of <baseRepo> (<reason>), so it is left in place; ...";
-//   - (detail, true) when the daemon cannot decide (baseRepo's worktrees dir is
-//     unreadable) — the caller wraps it as "could not verify that ... (<detail>); retry".
-//
-// A linked worktree's `.git` is a `gitdir:` pointer FILE naming an admin directory
-// <gitdir>/worktrees/<name> under baseRepo, whose own `gitdir` record points back at this
-// worktree. Each reason string, and the delete/leave/transient split, was measured
-// byte-for-byte against 7d193f89 on an ephemeral VM.
-func externalWorktreeVerify(baseRepo, worktreePath string) (reason string, transient bool) {
-	wp := filepath.Clean(worktreePath)
-	if _, err := os.Stat(wp); err != nil {
-		// Already gone — os.RemoveAll of a missing path is a nil no-op → success:true.
-		return "", false
-	}
-	gp := filepath.Join(wp, ".git")
-	fi, err := os.Stat(gp)
-	if err != nil {
-		return wp + " has no .git file", false
-	}
-	if !fi.Mode().IsRegular() {
-		return gp + " is not a regular file", false
-	}
-	b, err := os.ReadFile(gp)
-	if err != nil {
-		return gp + " does not name a git dir", false
-	}
-	line := strings.TrimSpace(string(b))
-	const prefix = "gitdir:"
-	if !strings.HasPrefix(line, prefix) {
-		return gp + " does not name a git dir", false
-	}
-	admin := filepath.Clean(strings.TrimSpace(line[len(prefix):]))
-	const notOurs = " carries a .git file that does not name this repository's own worktree admin directory"
-	// A worktree admin dir is <gitdir>/worktrees/<name>; if the parent component is not
-	// "worktrees" it cannot be one.
-	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
-		return wp + notOurs, false
-	}
-	// It is shaped like a worktree admin — confirm it is baseRepo's OWN. If baseRepo's
-	// worktrees directory cannot be opened, the daemon cannot decide → transient.
-	baseWT := filepath.Join(verifyGitDir(baseRepo), worktreesSubdir)
-	d, err := os.Open(baseWT)
-	if err != nil {
-		return err.Error(), true // e.g. "open <baseRepo>/.git/worktrees: no such file or directory"
-	}
-	_ = d.Close()
-	if canonicalPath(filepath.Dir(admin)) != canonicalPath(baseWT) {
-		return wp + notOurs, false
-	}
-	// Under baseRepo's own worktrees. A ghost admin dir (registration gone) may be
-	// removed as a stale leftover; a present one must record THIS worktree.
-	if _, err := os.Stat(admin); err != nil {
-		return "", false
-	}
-	if !worktreeAdminBelongsTo(admin, wp) {
-		return wp + " carries a .git file naming an admin directory whose own record is of a different worktree", false
-	}
-	return "", false
-}
-
-// verifyGitDir is the git directory whose worktrees directory externalWorktreeVerify
+// verifyGitDir is the git directory whose worktrees directory git.worktree_remove
 // reads. It is the repository git directory that the trust check pinned for baseRepo
 // (pruneGitDir). For a linked worktree used as baseRepo, that is the git directory of
 // the main repository. Its own `.git` is a file, so <baseRepo>/.git/worktrees never
@@ -237,7 +167,7 @@ func externalWorkTreeRefusal(repo string) string {
 // decides whether worktreePath is a registered worktree of baseRepo: a light
 // `worktree list --porcelain -z`, then a heavy `rev-parse --absolute-git-dir`, each
 // in baseRepo with its listing. Measured on a Linux VM (rows WR00, WR07, WR09 and
-// WR14). claustrum does not use their answers. externalWorktreeVerify decides.
+// WR14). claustrum does not use their answers.
 func externalWorktreeListing(repo string) {
 	hardenedGit(repo, false, "worktree", "list", "--porcelain", "-z")
 	hardenedGit(repo, true, "rev-parse", "--absolute-git-dir")
@@ -297,20 +227,6 @@ func goneNonEntryGitFile(repo string) bool {
 	}
 	_, err = os.Lstat(g)
 	return errors.Is(err, fs.ErrNotExist) && !isWorktreeEntry(g)
-}
-
-// externalRegistrationsUnreadable reports whether worktreePath exists and the worktrees
-// directory that externalWorktreeVerify reads exists but cannot be read for lack of
-// permission. f6010b97 then answers the lock-check text for a plain folder and for a
-// registered worktree. A worktrees directory that does not exist is left to
-// externalWorktreeVerify. Measured side by side against f6010b97 on a Linux VM (row
-// K13, worktrees directory at mode 0000).
-func externalRegistrationsUnreadable(baseRepo, worktreePath string) bool {
-	if _, err := os.Stat(worktreePath); err != nil {
-		return false
-	}
-	_, err := os.ReadDir(filepath.Join(verifyGitDir(baseRepo), worktreesSubdir))
-	return errors.Is(err, fs.ErrPermission)
 }
 
 // baseIsGitDir reports whether the walk of the trust check finds repo itself as the

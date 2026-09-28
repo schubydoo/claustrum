@@ -3,7 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/windows"
@@ -14,6 +17,33 @@ import (
 // wording pinned, so a plain MkdirAll is sufficient here.
 func mkdirWorktreeLeaf(worktreePath string) error {
 	return os.MkdirAll(worktreePath, 0o755)
+}
+
+// junctionParentRefusal reports the parent-directory failure of git.worktree_create
+// when a directory between repo and the leaf is a junction, or "" when none is. Go
+// reports a junction, and any other non-symlink reparse point, as ModeIrregular, not
+// as a directory or a symlink, so this refuses those too. The first
+// junction, in order from repo, is named as repo joined with its components. The
+// reference refuses a junctioned `.claude` and a junctioned `.claude\worktrees` this
+// way and creates nothing. Measured against f6010b97 on a Windows VM (rows JCR1 and
+// JCR2).
+func junctionParentRefusal(repo, worktreePath string) string {
+	rel, err := filepath.Rel(repo, filepath.Dir(filepath.Clean(worktreePath)))
+	if err != nil || !filepath.IsLocal(rel) {
+		return ""
+	}
+	cur := repo
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		cur = filepath.Join(cur, part)
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			return ""
+		}
+		if fi.Mode()&os.ModeIrregular != 0 {
+			return fmt.Sprintf("failed to create parent directory: %s is not a directory", cur)
+		}
+	}
+	return ""
 }
 
 // rmdirWorktreeLeaf removes worktreePath only if it is an empty directory.

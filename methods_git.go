@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,31 +84,16 @@ func (p *gitParams) repoDir() string {
 // about typical hosts, not a property of the predicate, and an honest 61 s git has
 // never been measured on either binary. This is D5.
 //
-// ⚠️ A TIMEOUT IS NOT "the same as any other git failure". That is what this
-// comment used to say, and it was true only while failure meant NOTHING HAPPENED.
-// gitWorktreeRemove now treats a NON-LOCKED git failure as permission to delete the
-// worktree itself, so a caller that ACTS on failure must distinguish our deadline from
-// git's verdict — otherwise our own safety cap authorises a destructive act the
-// reference cannot perform, since it showed no deadline at or below 75 s and
-// simply blocks (measured on one method; see D5 for the scope).
-//
-// ⚠️ The flip does not retire that distinction, it narrows when it can fire. With
-// the bound off, gitCtx hands back a context that never expires, so gitDeadline's
-// timedOut is false by construction and the destructive fallback is reached only
-// on git's own verdict. Opt the bound back in and the hazard returns exactly as
-// measured. Do NOT collapse gitDeadline into git() while "the default is off" —
-// it guards a recursive delete.
-//
-//	read-only callers (isRepo, gitInfo, gitStatus, …)  ok=false is enough
-//	callers with a side effect (gitWorktreeRemove)     MUST use gitDeadline
-//
-// The reply shape is NOT unchanged either: the timeout branch answers
-// {"success":false,"error":"git worktree remove timed out after …"}, a frame the
-// reference never emits.
+// ⚠️ A TIMEOUT IS NOT "the same as any other git failure" for a caller that acts on
+// the failure. git.worktree_remove runs no `git worktree remove`. On that method no
+// git failure or kill leads to a delete. A failure only refuses or skips a step.
+// git.worktree_create is the exception: its rollback deletes after a failed or killed
+// read-tree checkout, and it removes an empty leaf after a failed add. A caller that
+// deletes on a git failure must tell our deadline from git's verdict first.
 //
 // ⚠️ This used to add "no OTHER frame moves because of the deadline". That is
-// false: the deadline is the shared gitTimeout, applied independently at all
-// three helpers (git, gitStdoutErr, gitDeadline), so a kill can surface through
+// false: the deadline is the shared gitTimeout, applied independently at the
+// helpers (git, gitStdoutErr, the hardened helpers), so a kill can surface through
 // ANY call site. gitStdoutErr turns it into -32603 "signal: killed" on
 // git.status and git.list_branches, and the repo-detection calls can answer
 // isRepo:false instead. More than one arm moves; the full set has not been
@@ -149,8 +135,8 @@ var gitTimeout time.Duration
 // gitTimeout is positive, unbounded when it is 0 (the default).
 //
 // The zero case returns context.Background() rather than a WithTimeout carrying a
-// huge value, so exec.CommandContext has nothing to fire and gitDeadline's
-// ctx.Err() is nil by construction — a wedged git then blocks, as the reference
+// huge value, so exec.CommandContext has nothing to fire and ctx.Err() is nil by
+// construction — a wedged git then blocks, as the reference
 // did at every duration probed (no deadline at or below 75 s, measured on
 // git.worktree_remove only; above that, unmeasured on both binaries).
 func gitCtx() (context.Context, context.CancelFunc) {
@@ -173,9 +159,9 @@ func gitCtx() (context.Context, context.CancelFunc) {
 // is safe by argument:
 //
 //	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
-//	                     both of which a warning-prefixed string fails safely;
-//	                     show-ref --verify --quiet and update-ref -d (the branch
-//	                     delete), which discard their output entirely
+//	                     both of which a warning-prefixed string fails safely
+//	                     (show-ref --verify and the update-ref branch deletes now
+//	                     run through hardenedGit instead)
 //	echoes it verbatim   --show-toplevel → root/repo, branch --show-current →
 //	                     branch (rev-parse --short HEAD supplies only the
 //	                     detached-HEAD sha fallback), remote get-url → repoSlug,
@@ -230,24 +216,6 @@ func gitStdoutErr(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
 	out, err := exec.CommandContext(ctx, "git", full...).Output()
 	return strings.TrimRight(string(out), "\n"), err
-}
-
-// gitDeadline is git() plus one extra bit: whether OUR deadline killed the
-// process, as opposed to git exiting non-zero on its own.
-//
-// It exists for exactly one caller. gitWorktreeRemove treats a NON-LOCKED git failure
-// as permission to delete worktreePath itself, and gitTimeout is a CLAUSTRUM-ONLY
-// divergence — the reference showed no deadline at or below 75 s and simply
-// blocks. So
-// without this distinction a wedged git turns a claustrum safety measure into a
-// recursive delete the reference would never perform. Measured before the fix,
-// with a stub git that sleeps and gitTimeout shrunk: the directory was deleted
-// and the reply was {"success":true}.
-func gitDeadline(dir string, args ...string) (out string, ok bool, timedOut bool) {
-	ctx, cancel := gitCtx()
-	defer cancel()
-	out, ok = gitContext(ctx, dir, args...)
-	return out, ok, ctx.Err() != nil
 }
 
 // worktreeCreateCtx builds the two contexts of git.worktree_create.
@@ -814,6 +782,14 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "unsafe_path",
 		})
 	}
+	// On Windows a junction between the repo and the leaf fails the parent step, and
+	// nothing is created (rows JCR1 and JCR2, Windows VM). It runs before the stale
+	// registration drop below, so nothing is touched either.
+	if p.WorktreeRoot == "" {
+		if msg := junctionParentRefusal(repo, p.WorktreePath); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "mkdir_failed"})
+		}
+	}
 	// The target is confirmed missing above, so any worktree registration still
 	// naming it is stale (its session folder was deleted out from under git). Drop
 	// just that registration so the add below recreates cleanly, the way 7d193f89
@@ -1103,312 +1079,279 @@ func gitWorktreeRemove(req *request) response {
 }
 
 func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
-	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid
-	// trust root (no errorCode on remove). Measured against 7d193f89 on an ephemeral
-	// VM. Comes before the containment/removal below.
-	if baseRepoUnderManagedWorktrees(repo) {
-		return okResult(req.ID, worktreeRemoveResult{
-			Success: false,
-			Error:   managedWorktreesRefusal,
-		})
+	refuse := func(msg string) response {
+		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
 	}
-	// worktree-location containment, added by the reference in 7d193f89 and matched
-	// here byte-for-byte (verb "remove", no errorCode field). It gates the
-	// os.RemoveAll fallback below: only a path strictly inside the repo survives to
-	// reach it, so a "~"-expanded home path is refused here — with the reference's
-	// wording — before the wipesHomeDir guard is consulted. Empty is failed as a
-	// non-directory, not as a relative path (measured against 7d193f89).
+	// 7d193f89 refuses a baseRepo inside a managed worktrees tree as an invalid trust
+	// root (no errorCode on remove). A baseRepo that does not exist skips the check.
+	// The reference was measured on a macOS VM (f6010b97, rows M01 and M02).
+	if _, err := os.Stat(repo); !errors.Is(err, fs.ErrNotExist) && baseRepoUnderManagedWorktrees(repo) {
+		return refuse(managedWorktreesRefusal)
+	}
+	// Empty is failed as a non-directory, not as a relative path (measured against
+	// 7d193f89).
 	if p.WorktreePath == "" {
-		return okResult(req.ID, worktreeRemoveResult{
-			Success: false,
-			Error:   fmt.Sprintf("failed to remove worktree: %q does not name a directory", p.WorktreePath),
-		})
+		return refuse(fmt.Sprintf("failed to remove worktree: %q does not name a directory", p.WorktreePath))
 	}
-	// With a worktreeRoot the worktree lives OUTSIDE the repo, so the in-repo
-	// containment is replaced by the external checks: 2-level containment, then a
-	// full registration verify (externalWorktreeVerify) — a path that is not a
-	// genuine registered worktree of baseRepo is refused and LEFT IN PLACE (or, when
-	// baseRepo's worktrees dir is missing, reported as a transient "could not
-	// verify … retry"), where an in-repo remove would fall back to a recursive
-	// delete. Measured against 7d193f89 on an ephemeral VM.
+	var target removeTarget
+	var err error
 	if p.WorktreeRoot != "" {
+		// With a worktreeRoot the worktree lives outside the repo. The external checks
+		// replace the in-repo containment. Measured against 7d193f89 and f6010b97.
 		if msg := externalWorktreeUnsupportedRefusal(p.WorktreeRoot, "remove"); msg != "" {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+			return refuse(msg)
 		}
 		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+			return refuse(msg)
 		}
 		// The work-tree check comes before the dir-symlink check. A base that the check
 		// refuses gets the work-tree refusal even when the directory level is a symlink.
 		// Measured side by side against f6010b97 on a Linux VM (rows K10, K11, K14 and
 		// K16 with a symlinked directory level).
 		if msg := externalWorkTreeRefusal(repo); msg != "" {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+			return refuse(msg)
 		}
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
-		}
-		// A worktree registry that exists but cannot be read answers the lock-check text.
-		// A worktree that is already gone skips this, as on f6010b97 (row K13, Linux VM).
-		if externalRegistrationsUnreadable(repo, p.WorktreePath) {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
+			return refuse(msg)
 		}
 		externalWorktreeListing(repo)
-		if reason, transient := externalWorktreeVerify(repo, p.WorktreePath); reason != "" {
-			wp := filepath.Clean(p.WorktreePath)
-			if transient {
-				return okResult(req.ID, worktreeRemoveResult{Success: false,
-					Error: fmt.Sprintf("failed to remove worktree: could not verify that %s is a "+
-						"worktree of %s (%s); retry", wp, repo, reason)})
-			}
-			return okResult(req.ID, worktreeRemoveResult{Success: false,
-				Error: fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%s), "+
-					"so it is left in place; remove it by hand if it is a leftover", wp, repo, reason)})
+		if msg := worktreeRemoveHomeRefusal(p.WorktreePath); msg != "" {
+			return refuse(msg)
 		}
+		target, err = locateExternalWorktree(p.WorktreePath)
 	} else {
+		// The containment of 7d193f89: only a path strictly inside the repo goes on, so
+		// a "~"-expanded home path is refused here, with the reference's wording, before
+		// the home guard is consulted.
 		if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+			return refuse(msg)
 		}
-		// A symlinked component under .claude/worktrees is refused before the removal —
-		// this is what keeps the os.RemoveAll fallback below from following a planted
-		// link out of the repo (matches 7d193f89; no errorCode on remove).
+		// A symlinked component under the repo, the leaf excluded, is refused before
+		// anything is deleted (matches 7d193f89. No errorCode on remove).
 		if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "remove"); msg != "" {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+			return refuse(msg)
 		}
-	}
-	// ⚠️ INTENTIONAL DIVERGENCE, and the only one on this method — refused before
-	// git is run at all, so neither the removal nor the branch delete happens.
-	//
-	// Everything below documents that a failed `git worktree remove` hands
-	// worktreePath to os.RemoveAll, and that this is measured PARITY rather than a
-	// claustrum invention. What that measurement did not cover is that
-	// worktreePath is `~`-expanded first (expandpath.go), so `"worktreePath":"~"`
-	// makes that line os.RemoveAll($HOME) — git fails on a home directory, which
-	// is not a worktree, so the fallback is the arm that runs.
-	//
-	// That gap is now closed, not inferred: probed 2026-08-06 at 5db5e4a on an
-	// ephemeral VM with HOME pinned to a fixture, `"worktreePath":"~"` answers
-	// {"success":true} and the home directory is GONE. Two instrument checks ran
-	// first, so a null result could not be mistaken for a refusal — files.validate
-	// on ~/KEEP.txt returned valid:true, and an ordinary non-worktree directory
-	// was deleted as the table below predicts.
-	//
-	// It is the same defect that destroyed the maintainer's home directory through
-	// files.extract_tar on 2026-08-02; only the method differs.
-	//
-	// The comment below justifies the parity by "the caller did name the path and
-	// ask for it to be removed". That is the right test, and a home directory
-	// fails it: the caller named "~", and no caller asking to remove a worktree
-	// means "delete my home directory". Matching the reference is this project's
-	// hard rule for FRAMES; it was never a commitment to reproduce an
-	// unrecoverable data loss the reference reaches by accident.
-	// The empty check is not defensive noise — without it this guard CHANGED a
-	// reference-reachable frame. gitWorktreeRemove has no required-param check, so
-	// an omitted worktreePath arrives here as "", and filepath.Abs("") resolves to
-	// the daemon's working directory: on a daemon started in the user's home (what
-	// an SSH-launched one inherits) that equals home and the guard fired. It would
-	// have refused an input where os.RemoveAll("") is a documented no-op returning
-	// nil — nothing to protect. Worse, the frame varied with the daemon's cwd, which
-	// no golden can observe because the harness runs from a temp dir. Raised in
-	// review on PR 232; pinned by TestWorktreeRemoveEmptyPathIsNotRefused.
-	if p.WorktreePath != "" && wipesHomeDir(p.WorktreePath) {
-		return okResult(req.ID, worktreeRemoveResult{
-			Success: false,
-			Error:   fmt.Sprintf("worktreePath must not be or contain the home directory: %q", p.WorktreePath),
-		})
-	}
-	// 7d193f89 prunes the worktree registration on every removal. `git worktree
-	// remove` already drops it when it succeeds, but the manual-cleanup fallback
-	// below (a locked worktree, exit 128) leaves it, so a re-create at the same
-	// path would then fail "already registered" where the reference re-creates
-	// cleanly. Capture the admin dir now, before the removal deletes the pointer,
-	// and prune it after a successful removal.
-	// If the repo's config cannot be enumerated, the reference cannot examine the
-	// worktree's registrations to tell whether it is locked, so it refuses with its
-	// own message (a corrupt config, not the read methods' -32603). Measured against
-	// 7d193f89 on an ephemeral VM.
-	//
-	// The same refusal answers a baseRepo that is an existing directory in which git
-	// finds no repository: a plain directory, a repository whose git directory is
-	// broken, or a daemon GIT_DIR that names nothing usable. There are no
-	// registrations to examine, so nothing is deleted. Before, git's own remove
-	// failed there and the manual-cleanup fallback below deleted worktreePath with
-	// {"success":true}. Measured against f6010b97 on Linux, macOS and Windows VMs,
-	// and 90fca6e6 answers the same. A baseRepo that does not exist at all is left
-	// to the paths below, as before. With worktreeRoot this refusal does not apply.
-	// externalWorkTreeRefusal answers those inputs with its own texts instead.
-	// Without worktreeRoot, a baseRepo the daemon may open but not search (mode
-	// 0600), or cannot open at all, answers with the error from its look at
-	// .claude, and that error is the whole reply. With worktreeRoot there is no
-	// such look: a search-only baseRepo (mode 0100) still removes. Measured side
-	// by side against f6010b97 on Linux, and the reference's answers also on
-	// macOS.
-	if p.WorktreeRoot == "" {
+		if msg := worktreeRemoveHomeRefusal(p.WorktreePath); msg != "" {
+			return refuse(msg)
+		}
+		// A baseRepo the daemon can open but not search (mode 0600), or cannot open at
+		// all, answers with the error from its look at .claude, and that error is the
+		// whole reply. Measured side by side against f6010b97 on Linux, and the
+		// reference's answers also on macOS.
 		if err := statInsideDir(repo, ".claude"); err != nil {
-			return okResult(req.ID, worktreeRemoveResult{
-				Success: false,
-				Error:   "failed to remove worktree: " + err.Error(),
-			})
+			return refuse("failed to remove worktree: " + err.Error())
 		}
-		// The same refusal answers a baseRepo that fails the git-directory trust check
-		// (gitdirtrust.go), with a refused git directory or with no repository. Nothing
-		// is deleted then. The worktree directory, its entry and its branch all stay.
-		// The check looks at baseRepo only. Damage to the entry of the worktree being
-		// removed therefore does not stop the removal. Measured side by side against
-		// f6010b97 on Linux, macOS and Windows VMs. With worktreeRoot,
-		// externalWorkTreeRefusal answered these inputs above.
+		target, err = locateInRepoWorktree(repo, p.WorktreePath)
+	}
+	if err != nil {
+		return refuse(worktreeRemoveText(err))
+	}
+	defer target.close()
+	if target.parent == nil {
+		return removeGoneWorktree(req, p, repo, target.path)
+	}
+	// A leaf that is a symbolic link or not a directory is refused, and nothing is
+	// deleted. In the repo no git runs first. Before, a symbolic link to a sibling
+	// worktree made the removal delete that sibling, its entry and its branch (rows
+	// S01 to S05).
+	fi, err := target.parent.Lstat(target.leaf)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return removeGoneWorktree(req, p, repo, target.path)
+	case err != nil:
+		return refuse(worktreeRemoveText(err))
+	case fi.Mode()&fs.ModeSymlink != 0:
+		return refuse(worktreeRemoveText(refuseWorktree("%s is a symbolic link, not a worktree directory", target.path)))
+	case !fi.IsDir():
+		return refuse(worktreeRemoveText(refuseWorktree("%s is not a directory", target.path)))
+	}
+	leafDir, err := target.parent.OpenRoot(target.leaf)
+	if err != nil {
+		return refuse(worktreeRemoveText(err))
+	}
+	if err := checkLeafIdentity(target.parent, target.leaf, leafDir, target.path); err != nil {
+		_ = leafDir.Close()
+		return refuse(worktreeRemoveText(err))
+	}
+	// The `.git` file is read before the git calls below. In the repo no git has run
+	// yet. With worktreeRoot the external checks above already ran git. A leaf swapped
+	// during the git calls below is not detected: the removal then deletes the new directory and drops the
+	// entry that the old `.git` file named (row Z01).
+	gitDir, dotGitErr := worktreeGitFileTarget(leafDir, target.path)
+	_ = leafDir.Close()
+	if p.WorktreeRoot == "" {
+		// If the repo's config cannot be listed, or baseRepo holds no repository, or its
+		// git directory fails the trust check (gitdirtrust.go), the registrations cannot
+		// be examined. Nothing is deleted. Measured side by side against f6010b97 on
+		// Linux, macOS and Windows VMs (rows G08, T03 and T04 on macOS).
 		if v := requestGitDirTrust(repo, false).verdict; v == gitDirRefused || v == gitDirNoRepo {
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
+			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		// The listing carries the heavy profile of the rev-parse that follows it, as on
-		// f6010b97 (Linux, macOS and Windows VMs).
-		//
-		// When the check fails, f6010b97 runs it once more before it answers: a
-		// second listing, and a second rev-parse when that listing passes. Measured
-		// on Linux and macOS VMs (a corrupt config, and a git directory that git
-		// cannot use). The answer is the same whatever the second check finds.
+		// f6010b97 (Linux, macOS and Windows VMs). When the check fails, f6010b97 runs it
+		// once more before it answers: a second listing, and a second rev-parse when that
+		// listing passes. That repeat was measured on Linux and macOS VMs (a corrupt
+		// config, and a git directory that git cannot use). The answer is the same
+		// whatever the second check finds.
 		if _, bad := hostileConfigRefusal(repo, true); bad || noRepositoryAt(repo) {
 			if _, bad := hostileConfigRefusal(repo, true); !bad {
 				noRepositoryAt(repo)
 			}
-			return okResult(req.ID, worktreeRemoveResult{Success: false, Error: lockCheckRefusal(p.WorktreePath)})
+			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 	}
-	adminDir := worktreeAdminDir(p.WorktreePath)
-	// 7d193f89 runs no `git worktree remove` at all (git-argv trace), yet it refuses a
-	// locked worktree. Check the `locked` marker (<admin>/locked) here, before the
-	// destructive `git worktree remove --force` + os.RemoveAll fallback below, so a
-	// non-C locale (where the "cannot remove a locked working tree" stderr match
-	// misses) cannot delete a locked worktree the reference refuses. Same fixed
-	// message as the stderr branch.
-	if adminDir != "" && fileExists(filepath.Join(adminDir, "locked")) {
-		return okResult(req.ID, worktreeRemoveResult{
-			Success: false,
-			Error: fmt.Sprintf("refusing to remove worktree: %s is locked "+
-				"(git worktree lock); unlock it to remove it", p.WorktreePath),
-		})
+	commonDir := verifyGitDir(repo)
+	sp := newWorktreePathSet(target.path, p.WorktreePath)
+	entry := ""
+	if dotGitErr == nil {
+		entry, dotGitErr = verifiedWorktreeEntry(gitDir, commonDir, target.path, sp)
 	}
-	// When `git worktree remove --force` fails for a NON-LOCKED reason, the reference
-	// removes worktreePath itself and still answers {"success":true}; it reports
-	// failure only when that manual cleanup ALSO fails. A LOCKED worktree is the
-	// exception — 7d193f89 refuses it (the branch above) rather than deleting it.
-	//
-	// Measured: at 5db5e4a, checking the DIRECTORY after each git failure; at
-	// 7d193f89, re-probing the locked case on an ephemeral VM (both binaries):
-	//
-	//	fixture      git fails because             reference at 7d193f89
-	//	locked       the worktree is locked        REFUSED, dir left in place
-	//	plain-dir    the path was never a worktree DELETED (fallback)
-	//
-	// A baseRepo that is not a repository used to reach the fallback too (measured
-	// at 5db5e4a). 90fca6e6 and f6010b97 refuse it instead, with the lock-check
-	// text above, and claustrum now matches.
-	//
-	// So for a NON-LOCKED failure `git.worktree_remove` is a recursive delete of the
-	// caller-supplied worktreePath, and that is parity, not a claustrum invention.
-	// Documented in PROTOCOL.md because it will otherwise read as a bug. The caller
-	// did name the path and ask for it to be removed, which is why this is not
-	// treated like the -cli-version escape in PR 196 — there the deletion reached a
-	// path the caller never named. (Pre-7d193f89 the reference deleted the locked
-	// worktree too and did NOT prune, so the repo kept listing it; 7d193f89 both
-	// refuses the locked case and prunes the registration on a completed removal.)
-	//
-	// git() not a bespoke helper — it is already CombinedOutput, and the only
-	// differences were error-vs-ok and a trailing-newline trim that the
-	// strings.TrimSpace below absorbs.
-	out, ok, timedOut := gitDeadline(repo, "worktree", "remove", "--force", p.WorktreePath)
-	// NESTED under !ok deliberately: timedOut alone is not enough. If git exits 0
-	// at the instant the deadline fires, exec's Wait returns a nil error (ok=true)
-	// while ctx.Err() is already DeadlineExceeded — so a removal that SUCCEEDED
-	// would be reported as a wedged one, and the branchName delete below skipped.
-	// The window is nanoseconds and not reproducible in a test, so the guarantee
-	// is structural: a successful git cannot reach the timeout report at all.
-	// Raised on review.
-	if !ok {
-		if timedOut {
-			// OUR deadline, not git's verdict. Deleting here would be a destructive
-			// act on a path the reference never reaches, so report instead — a bare
-			// {"success":true} would be a lie about a wedged removal.
-			//
-			// Worded as what the daemon KNOWS: its deadline fired and it ran no
-			// cleanup of its own. It does NOT know the directory state, because the
-			// git it SIGKILLed unlinks as it goes and the slow-filesystem case this
-			// timeout exists for is exactly when it will have got part-way.
-			return okResult(req.ID, worktreeRemoveResult{
-				Success: false,
-				Error: fmt.Sprintf(
-					"git worktree remove timed out after %s; no cleanup was attempted, "+
-						"and git may have partially removed the worktree", gitTimeout),
-			})
+	lockChecked := false
+	if p.WorktreeRoot != "" && dotGitErr != nil {
+		// Beneath a worktreeRoot, a worktree that cannot be verified is removed only
+		// when it is an empty directory or a stale worktree of this repository. Else it
+		// is refused and left in place. A locked registration by path comes first (row
+		// E06). Rows E01 to E08, L03, X03 and X04.
+		locked, readable := worktreeLockedByPath(commonDir, sp)
+		if !readable {
+			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
-		// 7d193f89 REFUSES a LOCKED worktree rather than falling back to a delete:
-		// `git worktree remove --force` fails with "cannot remove a locked working
-		// tree", and the reference answers success:false with its own fixed message
-		// and leaves the directory in place. Only the
-		// OTHER git-failure modes (an ordinary non-worktree directory) reach the
-		// os.RemoveAll fallback below. Before 7d193f89 the reference DELETED a locked
-		// worktree here — a wire change, measured against 7d193f89 on an ephemeral VM
-		// (the frame battery never removes a locked worktree, so it did not catch it).
-		// Anchor on git's FULL phrase, not the bare "locked working tree": git echoes
-		// the caller's path in the non-locked failure ("'<path>' is not a working
-		// tree"), so a worktreePath literally containing "locked working tree" would
-		// substring-match and be wrongly refused (leaving a directory the reference
-		// would delete). The full phrase cannot appear in that path-echo. Raised by
-		// wire-byte review.
-		if strings.Contains(out, "cannot remove a locked working tree") {
-			return okResult(req.ID, worktreeRemoveResult{
-				Success: false,
-				Error: fmt.Sprintf("refusing to remove worktree: %s is locked "+
-					"(git worktree lock); unlock it to remove it", p.WorktreePath),
-			})
+		if locked {
+			return refuse(lockedWorktreeRefusal(p.WorktreePath))
 		}
-		if rmErr := os.RemoveAll(p.WorktreePath); rmErr != nil {
-			return okResult(req.ID, worktreeRemoveResult{
-				Success: false,
-				Error: fmt.Sprintf("failed to remove worktree: %s; manual cleanup also failed: %v",
-					strings.TrimSpace(out), rmErr),
-			})
+		lockChecked = true
+		if target.parent.Remove(target.leaf) == nil {
+			return removeGoneWorktree(req, p, repo, target.path)
+		}
+		if !entryAlreadyGone(gitDir, commonDir) {
+			var r *worktreeRefusal
+			if errors.As(dotGitErr, &r) {
+				return refuse(fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%v), "+
+					"so it is left in place; remove it by hand if it is a leftover", p.WorktreePath, repo, dotGitErr))
+			}
+			// claustrum's text from before, with the cleaned path. No run has measured
+			// the reference on this input.
+			return refuse(fmt.Sprintf("failed to remove worktree: could not verify that %s is a "+
+				"worktree of %s (%v); retry", filepath.Clean(p.WorktreePath), repo, dotGitErr))
 		}
 	}
-	// The reference also deletes the branch when branchName is given, via a raw ref
-	// delete (update-ref --no-deref -d), NOT `git branch -D`. Both remove the ref and
-	// its reflog forcefully — an unmerged branch goes too — but `git branch -D` ALSO
-	// drops the branch's config section ([branch "<name>"]), where the reference
-	// leaves it (measured against 4534d86, scratch/probe/gitmut: after remove the ref
-	// and reflog are gone on both, but the config section survives on the reference
-	// and claustrum's `branch -D` deleted it). update-ref matches on all three and is
-	// the same primitive undoFailedCheckout already uses. Best-effort: a branch that
-	// does not exist still answers {"success":true}, so a failed delete is not surfaced.
-	if p.BranchName != "" {
-		hardenedGit(repo, false, "update-ref", "--no-deref", "-d", "refs/heads/"+p.BranchName)
+	// The lock check. A verified entry is locked when it carries a `locked` marker of
+	// any kind, a dangling symbolic link included (row L04). Without a verified entry
+	// every registration that names the worktree is checked (rows R05 and L02).
+	if entry != "" {
+		if verifiedEntryLocked(commonDir, entry) {
+			return refuse(lockedWorktreeRefusal(p.WorktreePath))
+		}
+	} else if !lockChecked {
+		locked, readable := worktreeLockedByPath(commonDir, sp)
+		if !readable {
+			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
+		if locked {
+			return refuse(lockedWorktreeRefusal(p.WorktreePath))
+		}
 	}
-	// Prune the registration (see above). This is the fix for the fallback path. It
-	// does nothing when `git worktree remove` already dropped the registration. For a
-	// baseRepo whose .git is a directory, the only valid admin dir is
-	// `<repo>/.git/worktrees/<name>`. The pruned path must therefore resolve strictly
-	// inside `<repo>/.git/worktrees` before the delete. Inside the repo is not enough.
-	// worktreeAdminDir returns the contents of the `.git` pointer as they are, and an
-	// attacker can write them. A stale or forged pointer can name `<repo>/src` or
-	// `<repo>/.git/objects`, or a `..` variant that Clean or EvalSymlinks brings back
-	// under the repo. Without the check, the prune then deletes unrelated repo data.
-	// The check refuses every such target and still prunes a real registration.
-	// Off-wire: the result is discarded, and the reply is success:true either way.
-	// Raised by review on PR 286.
-	if adminDir != "" && worktreeAdminBelongsTo(adminDir, p.WorktreePath) &&
-		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(filepath.Join(pruneGitDir(repo), "worktrees"))) {
-		_ = os.RemoveAll(adminDir)
+	if err := deleteWorktreeDir(target.parent, target.leaf, target.path); err != nil {
+		return refuse(worktreeRemoveText(err))
+	}
+	// The entry goes after the tree. A verified entry that cannot be deleted is
+	// reported, and the branch is still deleted (rows D01 to D03). Without a verified
+	// entry, the one entry whose record names the worktree is deleted, and a failure
+	// is not reported (rows R01 to R04).
+	pending := ""
+	if entry != "" {
+		if err := dropWorktreeEntry(commonDir, entry); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			pending = fmt.Sprintf("removed the worktree but could not drop its registration (%v)", err)
+		}
+	} else {
+		dropWorktreeEntryByPath(commonDir, sp)
+	}
+	deleteWorktreeBranch(repo, p.BranchName)
+	if pending != "" {
+		return refuse(pending)
 	}
 	return okResult(req.ID, worktreeRemoveResult{Success: true})
 }
 
+// removeGoneWorktree answers a remove whose worktree directory is not there. The
+// registration is checked by path. A locked one is refused. Else the one entry whose
+// record names the worktree is deleted, and then the branch. path is the spelling of
+// the worktree, or "" when a parent directory is missing too.
+//
+// In the repo, a config that cannot be listed, or a git directory that fails the trust
+// check, is refused with its reason (rows G07, T01 and T02). A baseRepo that holds no
+// repository skips the registration and answers success (rows G05 and G05b). Measured
+// on the reference, f6010b97, on a macOS VM (rows G01 to G06).
+func removeGoneWorktree(req *request, p *gitParams, repo, path string) response {
+	refuse := func(msg string) response {
+		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
+	}
+	lockCheck := func(reason string) response {
+		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath +
+			" is locked (" + reason + "); retry")
+	}
+	checkRegistration := true
+	if p.WorktreeRoot == "" {
+		switch t := requestGitDirTrust(repo, false); t.verdict {
+		case gitDirRefused:
+			return lockCheck(t.refusal)
+		case gitDirNoRepo:
+			checkRegistration = false
+		default:
+			if detail, bad := hostileConfigRefusal(repo, true); bad {
+				return lockCheck(detail)
+			}
+			checkRegistration = !noRepositoryAt(repo)
+		}
+	}
+	if checkRegistration {
+		commonDir := verifyGitDir(repo)
+		// The baseRepo part of the path is also matched in its resolved form, and the
+		// rest as sent. So a baseRepo sent in 8.3 form or through a junction still finds
+		// a locked registration when the worktree and its parent are gone (Windows VM,
+		// rows GL1 and GL2). A present worktree does not get this spelling, so an 8.3
+		// leaf keeps its entry (rows N83_leaf and N83_base).
+		underBase := ""
+		if p.WorktreeRoot == "" {
+			if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.IsLocal(rel) {
+				underBase = filepath.Join(finalDirPath(repo), rel)
+			}
+		}
+		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
+		// A worktrees directory that cannot be read does not stop a gone remove. The
+		// reference answers success there (Linux VM, row K13 with worktreeRoot and a
+		// gone target). Without worktreeRoot no row measures it.
+		if locked, _ := worktreeLockedByPath(commonDir, sp); locked {
+			return refuse("refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
+				"registration is locked (git worktree lock); unlock it to remove the registration and branch")
+		}
+		dropWorktreeEntryByPath(commonDir, sp)
+	}
+	deleteWorktreeBranch(repo, p.BranchName)
+	return okResult(req.ID, worktreeRemoveResult{Success: true})
+}
+
+// worktreeRemoveHomeRefusal is the home guard of git.worktree_remove (D2). It refuses a
+// worktreePath that is the home directory or holds it, before anything is deleted.
+// worktreePath is `~`-expanded first (expandpath.go), and at 5db5e4a the reference
+// answered {"success":true} to "worktreePath":"~" and deleted the home directory. The
+// containment checks refuse that input first today, so this guard is defense in depth.
+// It is the same defect that destroyed the maintainer's home directory through
+// files.extract_tar on 2026-08-02.
+func worktreeRemoveHomeRefusal(worktreePath string) string {
+	if wipesHomeDir(worktreePath) {
+		return fmt.Sprintf("worktreePath must not be or contain the home directory: %q", worktreePath)
+	}
+	return ""
+}
+
 // pruneGitDir is the git directory whose `worktrees` holds the entries that a remove
-// prunes: the repository git directory the trust check pinned for repo. For a main
+// deletes: the repository git directory the trust check pinned for repo. For a main
 // repository that is <repo>/.git. For a linked worktree used as baseRepo it is the main
-// repository's git directory, since the worktree's own `.git` is a file. Before, the
-// prune looked under <worktree>/.git/worktrees, which never exists, so after the
-// recursive-delete fallback the entry stayed. Measured side by side against f6010b97
-// on a Linux VM (C10, remove from a linked worktree whose commondir starts with white
-// space: the reference deletes the entry). When the daemon's own environment sets
+// repository's git directory, since the worktree's own `.git` is a file. A look under
+// <worktree>/.git/worktrees finds nothing, because that directory never exists.
+// Measured side by side against f6010b97 on a Linux VM (C10, remove from a linked
+// worktree whose commondir starts with white space: the reference deletes the entry). When the daemon's own environment sets
 // GIT_COMMON_DIR, or the check pinned nothing, the old <repo>/.git stays.
 func pruneGitDir(repo string) string {
 	if !daemonCommonDirSet() {
@@ -1428,8 +1371,8 @@ func lockCheckRefusal(worktreePath string) string {
 
 // worktreeAdminDir reads a linked worktree's `.git` pointer file
 // ("gitdir: <mainGitDir>/worktrees/<name>") and returns that admin directory, or
-// "" when worktreePath is not a linked worktree. Removing it drops the worktree's
-// registration from the main repository.
+// "" when worktreePath is not a linked worktree. The rollback of git.worktree_create
+// uses it to find the entry of the worktree it created.
 func worktreeAdminDir(worktreePath string) string {
 	b, err := os.ReadFile(filepath.Join(worktreePath, ".git"))
 	if err != nil {
@@ -1446,32 +1389,31 @@ func worktreeAdminDir(worktreePath string) string {
 // worktreeAdminBelongsTo reports whether adminDir's `gitdir` back-pointer resolves to
 // worktreePath's own `.git` file. git writes `<adminDir>/gitdir` holding the absolute
 // path of the linked worktree's `.git`, so a genuine registration points back at the
-// worktree being removed. Without this, a forged or stale `<worktreePath>/.git` that
-// names a SIBLING worktree's admin dir (still under `.git/worktrees`, so the
-// containment check alone passes) would let the prune delete that unrelated
-// registration. Measured against 7d193f89: the reference leaves the sibling's
-// registration in place, so requiring the back-pointer to match keeps claustrum's
-// prune to the worktree the caller actually named.
+// worktree. Its only caller is the rollback of git.worktree_create, which deletes the
+// entry of the worktree it created. Without this, a forged or stale
+// `<worktreePath>/.git` that names a SIBLING worktree's admin dir (still under
+// `.git/worktrees`, so the containment check alone passes) would let the rollback
+// take that unrelated registration. git.worktree_remove verifies its entry in
+// worktreeremove.go instead.
 func worktreeAdminBelongsTo(adminDir, worktreePath string) bool {
 	b, err := os.ReadFile(filepath.Join(adminDir, "gitdir"))
 	if err != nil {
 		return false
 	}
 	// sameCanonicalPath, not ==: on Windows git writes this record with forward slashes,
-	// and once the fallback delete has removed the worktree neither side can be
-	// resolved, so the two spellings differ only in slash direction. Before this the
-	// prune was skipped there and the entry stayed. Measured against f6010b97 on a
+	// and once the worktree is deleted neither side can be resolved, so the two
+	// spellings differ only in slash direction. Measured against f6010b97 on a
 	// Windows 11 VM, where the reference deletes the entry.
 	return sameCanonicalPath(canonicalPathOfGone(strings.TrimSpace(string(b))),
 		canonicalPathOfGone(filepath.Join(worktreePath, ".git")))
 }
 
 // canonicalPathOfGone is canonicalPath for a path that possibly no longer exists. It resolves
-// the nearest existing ancestor and joins the missing rest back on. After the fallback
-// delete the worktree is gone, but its parent still resolves. Before, a remove named
-// through a symlinked root (macOS /tmp -> /private/tmp) did not match the path in the
-// entry. Git records the resolved path there, so the entry stayed. Measured against
-// f6010b97 on a macOS VM, where the reference deletes the entry.
+// the nearest existing ancestor and joins the missing rest back on. After a delete
+// the worktree is gone, but its parent still resolves. A remove named through a
+// symlinked root (macOS /tmp -> /private/tmp) then still matches the path in the
+// entry, where git records the resolved path. Measured against f6010b97 on a macOS
+// VM, where the reference deletes the entry.
 func canonicalPathOfGone(p string) string {
 	p = filepath.Clean(p)
 	var missing []string

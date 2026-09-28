@@ -111,14 +111,24 @@ The JSON-RPC surface is identical on every OS. Full internals →
 - `process.spawn` runs arbitrary commands as the user of the daemon. This is by
   design. Treat socket + token as equivalent to shell access. The threat model
   is in [`SECURITY.md`](SECURITY.md).
-- Four code paths give a caller-supplied or operator-supplied path to
-  `os.RemoveAll`. Three of them are RPC paths. The daemon `~`-expands those RPC
+- Four code paths give a caller-supplied or operator-supplied path to a
+  recursive delete (`os.RemoveAll` or `os.Root.RemoveAll`).
+  `git.worktree_remove` uses `os.Root.RemoveAll`. The rollback of
+  `git.worktree_create` uses both. Three of the four paths are RPC paths. The daemon
+  `~`-expands those RPC
   paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
   the maintainer's home directory on 2026-08-02:
     - `files.extract_tar` wipes `destDir`. `wipesHomeDir` (`homeguard.go`) guards it.
-    - If git fails for a non-locked reason, `git.worktree_remove` deletes
-      `worktreePath`. Since `7d193f89`, a LOCKED worktree is refused, not
-      deleted. Also since `7d193f89`, the containment of the reference refuses a
+    - `git.worktree_remove` deletes `worktreePath` itself. It runs no `git
+      worktree remove`. It deletes the entries of the leaf except `.git` in the
+      order that the directory read returns them, and it stops at the first
+      failure. Then it deletes the rest and the leaf, then the entry under
+      `<git dir>/worktrees`. Each delete goes through an `os.Root`, so no delete
+      follows a symlink out of the leaf or its parent. A leaf that is a symlink
+      or not a directory is refused. A LOCKED worktree is refused, not deleted.
+      On Windows a junction at `.claude` or `.claude\worktrees` is refused too,
+      where the reference answers success and deletes the branch. That is D19.
+      Since `7d193f89`, the containment of the reference refuses a
       home path first: `worktreePath` must be strictly inside `baseRepo`. On the
       default branch `wipesHomeDir` is therefore defense-in-depth. It fires in
       one case only: a repo is an ancestor of home. On the `worktreeRoot` /
@@ -238,10 +248,12 @@ reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
 `claustrum.conf` key is the reachable knob, not the flag. Each disabled state
 bypasses its limiter entirely. That is the "never simplify" rule of Part A.
 
-The deadline of D5 gates a destructive path. `git.worktree_remove` treats a
-non-locked git failure as permission to delete `worktreePath`. Since
-`7d193f89`, a LOCKED worktree is refused before the delete. Therefore never
-read a fired `git-timeout` as "git refused". Opting D5 in is wire-visible.
+On `git.worktree_remove` the deadline of D5 gates no delete. That method runs no
+`git worktree remove`, and no git failure or kill leads to a delete there. A
+failure only refuses or skips a step. `git.worktree_create` is the exception. Its
+rollback deletes after a failed or killed read-tree checkout, and it removes an
+empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
+Opting D5 in is wire-visible.
 
 D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is
 always-on, but it is unresolved, not justified. D1, D7 and D14 are retired,

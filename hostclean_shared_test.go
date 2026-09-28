@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,12 +31,7 @@ func hcRunRoot(t *testing.T) (runRoot string, root *os.Root) {
 // hcCaptureLog sends the standard logger to a buffer, with no timestamp, until cleanup.
 func hcCaptureLog(t *testing.T) *syncBuffer {
 	t.Helper()
-	var buf syncBuffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
-	return &buf
+	return captureLogBuf(t)
 }
 
 // TestRunDirsSkipsOwnDirAndSymlinks pins two runDirs rules (issue 429): the cleaner's
