@@ -38,19 +38,30 @@ func newSourceFixture(t *testing.T) *sourceFixture {
 	}
 	fx.base = fx.repo
 	copyFixtureTemplate(t, "worktree-source", root, func(t *testing.T, dir string) {
-		b := &sourceFixture{t: t}
-		origin, helper := filepath.Join(dir, "O.git"), filepath.Join(dir, "W")
+		b := &sourceFixture{
+			t:      t,
+			root:   dir,
+			origin: filepath.Join(dir, "O.git"),
+			helper: filepath.Join(dir, "W"),
+			repo:   filepath.Join(dir, "T"),
+		}
+		b.base = b.repo
 		runGit(t, dir, "init", "-q", "--bare", "-b", "main", "O.git")
 		runGit(t, dir, "init", "-q", "-b", "main", "W")
-		runGit(t, helper, "remote", "add", "origin", origin)
-		b.commit(helper, map[string]string{".gitignore": ".claude/worktrees/\n", "t.txt": "t\n"})
-		runGit(t, helper, "push", "-q", "origin", "main")
-		runGit(t, dir, "clone", "-q", origin, "T")
+		runGit(t, b.helper, "remote", "add", "origin", b.origin)
+		b.commit(b.helper, map[string]string{".gitignore": ".claude/worktrees/\n", "t.txt": "t\n"})
+		runGit(t, b.helper, "push", "-q", "origin", "main")
+		runGit(t, dir, "clone", "-q", b.origin, "T")
 	})
-	// The template made one commit.
-	fx.counter = 1
-	// The remote URL in W and T names the template's origin. git rewrites it,
-	// because git escapes a backslash in a config value on Windows.
+	// commit keeps its count in n.txt, so the copy carries the template's count.
+	n, err := os.ReadFile(filepath.Join(fx.helper, "n.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.counter = len(strings.TrimSpace(string(n)))
+	// The remote URL in W and T names the template's origin. Let git rewrite
+	// it: a text rewrite would have to reproduce the backslash escaping git
+	// applies to a config value on Windows.
 	for _, repo := range []string{fx.helper, fx.repo} {
 		runGit(t, repo, "remote", "set-url", "origin", fx.origin)
 	}
