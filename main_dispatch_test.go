@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"log"
 	"os"
@@ -91,7 +90,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 //
 // Distinct values on purpose: equal ones would pass under a swap.
 func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldOut := log.Writer()
 	log.SetOutput(&buf)
 	t.Cleanup(func() { log.SetOutput(oldOut) })
@@ -125,7 +124,7 @@ func TestWarnDeprecatedLibcProbe(t *testing.T) {
 		flagSet, keySeen bool
 		want             int
 	}{{false, false, 0}, {true, false, 1}, {false, true, 1}, {true, true, 1}} {
-		var buf bytes.Buffer
+		var buf syncBuffer
 		oldOut := log.Writer()
 		log.SetOutput(&buf)
 		warnDeprecatedLibcProbe(tc.flagSet, tc.keySeen)

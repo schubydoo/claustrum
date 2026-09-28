@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -225,7 +224,7 @@ func TestEmitDetachesOnWriteError(t *testing.T) {
 // line. Capture the global logger to assert they fire. Receiving the exit frame
 // guarantees all three have been written (the exit log precedes the exit emit).
 func TestSpawnEmitsOperationalLogs(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldFlags := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0) // assert on the message text, not the timestamp
@@ -273,7 +272,7 @@ done:
 // writeResponse logs the reference's writeResponse/Failed-to-write lines when the
 // underlying write fails (the client dropped the connection mid-reply).
 func TestWriteResponseLogsOnWriteError(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
@@ -296,7 +295,7 @@ func TestWriteResponseLogsOnWriteError(t *testing.T) {
 // reattach detaches a conn (and logs the replay-write-failed line) when replaying
 // the buffer to it fails because its socket is already gone.
 func TestReattachDetachesOnReplayWriteError(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
@@ -331,7 +330,7 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 // "Failed to write response" without attempting a write, and a closed conn
 // returns early (no write, no panic).
 func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW := log.Writer()
 	log.SetOutput(&buf)
 	t.Cleanup(func() { log.SetOutput(oldW) })

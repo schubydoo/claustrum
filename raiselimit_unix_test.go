@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"log"
 	"os/exec"
 	"strconv"
@@ -131,7 +130,7 @@ func TestRaiseInheritedFileLimitErrors(t *testing.T) {
 func TestRaiseInheritedFileLimitLogsLimit(t *testing.T) {
 	origGet, origSet := getRlimit, setRlimit
 	t.Cleanup(func() { getRlimit, setRlimit = origGet, origSet })
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldOut, oldFlags := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
