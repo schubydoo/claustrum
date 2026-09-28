@@ -286,7 +286,11 @@ func hcDirIdle(root *os.Root, name string, now time.Time) (time.Duration, bool) 
 }
 
 // hcHasOpenNamed reports whether pid holds a file whose base name is base open on any
-// descriptor. canRead is false when the descriptor list could not be read.
+// descriptor. canRead is false when the descriptor list could not be read. The compare is on
+// the name the descriptor shows now. On linux an unlinked file shows as "<path> (deleted)",
+// so a lock whose file was deleted does not count as open by name. A daemon whose run dir
+// was removed under it is then judged like one whose lock file was renamed. The reference
+// side of the deleted case is not measured.
 func hcHasOpenNamed(pid int, base string) (open, canRead bool) {
 	m, ok := hcFdTargets(pid)
 	if !ok {
@@ -484,7 +488,11 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 	_ = f.Close()
 	// An empty lock file carries no record. A daemon truncates its lock to 0 bytes on a
 	// graceful exit, so an empty file is asked about its holder like any other. Content
-	// that is present but does not parse stays indeterminate.
+	// that is present but does not parse stays indeterminate. On linux a starting daemon
+	// holds no flock between its open and its flock. So its lock reads stale in that window,
+	// empty or not. The post-rename lock probe in removeRunDir sees a flock taken between
+	// this read and the rename. It does not see one taken after it, and a leftover staging
+	// dir has no such probe.
 	if rec == nil && fi.Size() != 0 {
 		return hcLockUnknown, nil, true
 	}
@@ -686,6 +694,12 @@ func (c *hostCleaner) endDaemons(targets []daemonTarget, sum *hcSummary) {
 	var live []waitEntry
 	signaled := make(map[int]bool, len(targets))
 	for _, t := range targets {
+		// Re-validate identity immediately before signalling, the way endGroupsTwoPhase and
+		// retireAbandoned do. The judging loop can take seconds, and a target that exits in that span
+		// can have its pid taken by an unrelated process.
+		if !t.same() {
+			continue
+		}
 		sum.strandedSignalled++
 		logInfof("[hostclean] ending stranded daemon pid %d: it was started for %q, which no longer leads to it, and it holds no run-dir lock: SIGKILL", t.pid, t.socket)
 		err := hcSignalPid(t.pid, syscall.SIGKILL)
@@ -885,10 +899,11 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 	if !hcHasEnv(t.env, hcDaemonChildMarker) {
 		return false, "" // not a daemon child
 	}
-	if _, ok := hcFdTargets(t.pid); !ok {
+	pipes, canRead := hcStdioArePipes(t.pid)
+	if !canRead {
 		return false, "its open descriptors were unreadable" // cannot confirm it, so spare it
 	}
-	if !hcStdioArePipes(t.pid) {
+	if !pipes {
 		return false, "" // its stdio is not the pipes a daemon gives its child
 	}
 	return true, ""

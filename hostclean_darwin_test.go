@@ -253,18 +253,18 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 	runLsof = func(...string) (string, bool) {
 		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true
 	}
-	if !hcStdioArePipes(1) {
-		t.Error("three PIPE stdio records did not read as pipes")
+	if pipes, canRead := hcStdioArePipes(1); !pipes || !canRead {
+		t.Errorf("three PIPE stdio records: pipes=%v canRead=%v, want true true", pipes, canRead)
 	}
-	// One unix record and nothing else: not pipe stdio.
+	// One unix record and nothing else: a reading, and not pipe stdio.
 	runLsof = func(...string) (string, bool) { return "p1\nf0\ntunix\nn->0x1\n", true }
-	if hcStdioArePipes(1) {
-		t.Error("a unix stdio record read as pipes")
+	if pipes, canRead := hcStdioArePipes(1); pipes || !canRead {
+		t.Errorf("a unix stdio record: pipes=%v canRead=%v, want false true", pipes, canRead)
 	}
-	// An abandoned run tells nothing, so it is not pipe stdio.
+	// An abandoned run tells nothing: not pipes, and not a reading.
 	runLsof = func(...string) (string, bool) { return "", false }
-	if hcStdioArePipes(1) {
-		t.Error("an abandoned lsof run read as pipes")
+	if pipes, canRead := hcStdioArePipes(1); pipes || canRead {
+		t.Errorf("an abandoned lsof run: pipes=%v canRead=%v, want false false", pipes, canRead)
 	}
 
 	// hcBusyCheck: a completed run with a connected peer is busy. An abandoned run reads busy
@@ -280,6 +280,32 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 	runLsof = func(...string) (string, bool) { return "", false }
 	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
 		t.Errorf("abandoned run: busy=%v canRead=%v, want true true (D17)", busy, canRead)
+	}
+}
+
+// TestJudgeOrphanReadsDescriptorsOnceDarwin: judgeOrphan answers both "could the descriptors
+// be read" and "are they pipes" from one lsof run, not two.
+func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
+	old, oldClock := runLsof, hcClock
+	t.Cleanup(func() { runLsof, hcClock = old, oldClock })
+	now := time.Unix(1_700_000_000, 0)
+	hcClock = func() time.Time { return now }
+	runs := 0
+	runLsof = func(...string) (string, bool) {
+		runs++
+		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true
+	}
+	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}}
+	orphan := hcTracked{
+		pid: 77, pgid: 77, ppid: 1, sameUID: true, sameNS: true, haveAge: true,
+		startWall: now.Add(-time.Hour), exe: "/opt/claude/ccd-cli/2.1.0",
+		argv: []string{"claude", "stream-json"}, env: []string{hcDaemonChildMarker},
+	}
+	if reap, reason := c.judgeOrphan(orphan); !reap {
+		t.Fatalf("orphan not reaped (reason %q)", reason)
+	}
+	if runs != 1 {
+		t.Errorf("lsof ran %d times for one orphan, want 1", runs)
 	}
 }
 

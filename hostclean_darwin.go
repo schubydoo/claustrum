@@ -420,19 +420,24 @@ func hcBusyCheck(pid int) (busy, canRead bool) {
 }
 
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
-// daemon-spawned child. lsof names a pipe's type PIPE.
-func hcStdioArePipes(pid int) bool {
+// daemon-spawned child. lsof names a pipe's type PIPE. canRead is false when the run was
+// abandoned or returned nothing for the pid. One lsof run answers both.
+func hcStdioArePipes(pid int) (pipes, canRead bool) {
 	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !ok {
-		return false
+		return false, false
 	}
-	pipes := 0
-	for _, r := range parseLsofFtn(out) {
+	recs := parseLsofFtn(out)
+	if len(recs) == 0 {
+		return false, false // lsof returned nothing for the pid, as hcFdTargets reads it
+	}
+	n := 0
+	for _, r := range recs {
 		if (r.fd == "0" || r.fd == "1" || r.fd == "2") && r.typ == "PIPE" {
-			pipes++
+			n++
 		}
 	}
-	return pipes == 3
+	return n == 3, true
 }
 
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no

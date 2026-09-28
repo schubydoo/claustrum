@@ -106,18 +106,19 @@ func hcFdTargets(pid int) (map[string]string, bool) {
 }
 
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
-// daemon-spawned child.
-func hcStdioArePipes(pid int) bool {
+// daemon-spawned child. canRead is false when the descriptor list is unreadable. One read
+// answers both.
+func hcStdioArePipes(pid int) (pipes, canRead bool) {
 	m, ok := hcFdTargets(pid)
 	if !ok {
-		return false
+		return false, false
 	}
 	for _, fd := range []string{"0", "1", "2"} {
 		if !strings.HasPrefix(m[fd], "pipe:[") {
-			return false
+			return false, true
 		}
 	}
-	return true
+	return true, true
 }
 
 // hcHasFileOpen reports whether the process holds path open on any fd.

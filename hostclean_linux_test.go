@@ -93,8 +93,8 @@ func TestHcFdPredicates(t *testing.T) {
 	link(42, "fd/2", "pipe:[113]")
 	link(42, "fd/3", "/opt/claude/run/x/rpc.sock")
 	link(42, "fd/4", "socket:[555]")
-	if !hcStdioArePipes(42) {
-		t.Error("stdio pipes not detected")
+	if pipes, canRead := hcStdioArePipes(42); !pipes || !canRead {
+		t.Errorf("stdio pipes: pipes=%v canRead=%v, want true true", pipes, canRead)
 	}
 	if !hcHasFileOpen(42, "/opt/claude/run/x/rpc.sock") {
 		t.Error("open file not detected")
@@ -105,8 +105,8 @@ func TestHcFdPredicates(t *testing.T) {
 	// A process whose stdout is not a pipe.
 	link(43, "fd/0", "pipe:[1]")
 	link(43, "fd/1", "/dev/null")
-	if hcStdioArePipes(43) {
-		t.Error("non-pipe stdout accepted as pipes")
+	if pipes, canRead := hcStdioArePipes(43); pipes || !canRead {
+		t.Errorf("non-pipe stdout: pipes=%v canRead=%v, want false true", pipes, canRead)
 	}
 }
 
@@ -564,7 +564,7 @@ func TestEndDaemons(t *testing.T) {
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 111}
 	// A daemon (dies to SIGKILL) with one leftover child group. Both are present in procfs with
 	// matching identity so the re-validation before signalling passes.
-	mk(3000, "stat", "3000 (server) R 1 3000 x")                          // daemon, present until signaled
+	mk(3000, "stat", hcRunningStat(3000, 1, 3000, "1"))                   // daemon, present until signaled
 	mk(3001, "stat", "3001 (x) R 1 3001 "+strings.Repeat("0 ", 16)+"2 x") // leftover child group leader
 	targets := []daemonTarget{{
 		tracked:  tracked{pid: 3000, pgid: 3000, startTicks: "1"},

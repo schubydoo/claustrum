@@ -409,20 +409,63 @@ func TestRemoveRunDirUndoesOnAnUnexaminableLock(t *testing.T) {
 	}
 }
 
-// TestRemoveRunDirActsInsideTheRoot: the rename and the remove go through the run root, by
-// name. The recorded path is only used in log lines.
+// TestRemoveRunDirActsInsideTheRoot: the rename and the remove go through the run root and
+// take bare names inside it, never a path.
 // Not measured: the Linux run did not stage this rule.
 func TestRemoveRunDirActsInsideTheRoot(t *testing.T) {
 	fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
+	oldRen, oldRm := hcRename, hcRemoveAll
+	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
+	var renamedFrom, renamedTo, removed string
+	hcRename = func(r *os.Root, from, to string) error {
+		renamedFrom, renamedTo = from, to
+		return r.Rename(from, to)
+	}
+	hcRemoveAll = func(r *os.Root, name string) error {
+		removed = name
+		return r.RemoveAll(name)
+	}
 	e := hcNewEntry(t, "x", 40*24*time.Hour)
-	realDir := e.dirPath
-	e.dirPath = "/nonexistent/run/x"
 	if !c.removeRunDir(e, false, hcSockMissing) {
 		t.Fatal("removeRunDir failed")
 	}
-	if _, err := os.Lstat(realDir); !os.IsNotExist(err) {
-		t.Errorf("the dir under the root is still there: %v", err)
+	if renamedFrom != "x" || strings.ContainsRune(renamedTo, filepath.Separator) || removed != renamedTo {
+		t.Errorf("rename %q -> %q, remove %q: want bare names inside the run root", renamedFrom, renamedTo, removed)
+	}
+	if _, err := os.Lstat(e.dirPath); !os.IsNotExist(err) {
+		t.Errorf("the run dir is still there: %v", err)
+	}
+}
+
+// TestEndDaemonsRechecksIdentity: a target whose pid now belongs to another process is not
+// signalled. The judging loop can take seconds, and the pid can be reused in that span.
+func TestEndDaemonsRechecksIdentity(t *testing.T) {
+	root, mk, _ := fakeProc(t)
+	single, _ := hcSeamSignals(t, root)
+	mk(3200, "stat", hcRunningStat(3200, 1, 3200, "999")) // judged with start-ticks 1, now 999
+	var sum hcSummary
+	(&hostCleaner{}).endDaemons([]daemonTarget{{tracked: tracked{pid: 3200, pgid: 3200, startTicks: "1"}, socket: "/r/run/X/rpc.sock"}}, &sum)
+	if len(*single) != 0 {
+		t.Errorf("SIGKILL sent to a reused pid: %v", *single)
+	}
+	if sum.strandedSignalled != 0 {
+		t.Errorf("strandedSignalled = %d, want 0", sum.strandedSignalled)
+	}
+}
+
+// TestHasOpenNamedDeletedLock pins that on linux a lock whose file was deleted does not count
+// as open by name (the kernel shows it as "<path> (deleted)"). The reference side is not
+// measured. This test makes a change to that choice a deliberate one.
+func TestHasOpenNamedDeletedLock(t *testing.T) {
+	_, _, link := fakeProc(t)
+	link(3300, "fd/3", "/opt/claude/run/x/daemon.lock (deleted)")
+	if open, canRead := hcHasOpenNamed(3300, runDirLockName); open || !canRead {
+		t.Errorf("deleted lock: open=%v canRead=%v, want false true", open, canRead)
+	}
+	link(3301, "fd/3", "/opt/claude/run/x/daemon.lock")
+	if open, _ := hcHasOpenNamed(3301, runDirLockName); !open {
+		t.Error("a live lock did not count as open by name")
 	}
 }
 
