@@ -70,6 +70,13 @@ func TestWorktreeGitFileTargetRelative(t *testing.T) {
 	if want := filepath.Join(wp, "..", "repo", ".git", "worktrees", "w"); err != nil || got != want {
 		t.Errorf("worktreeGitFileTarget = (%q, %v), want %q", got, err, want)
 	}
+	// Extra white space after "gitdir: " is dropped, so an absolute path stays
+	// absolute rather than being joined onto the worktree.
+	abs := filepath.Join(t.TempDir(), "repo", ".git", "worktrees", "w")
+	writeFile(t, filepath.Join(wp, ".git"), "gitdir:   "+abs+"\n", 0o644)
+	if got, err := worktreeGitFileTarget(root, wp); err != nil || got != abs {
+		t.Errorf("worktreeGitFileTarget(extra space) = (%q, %v), want %q", got, err, abs)
+	}
 }
 
 // Records that are empty or do not end in `.git` are skipped. A relative one is taken

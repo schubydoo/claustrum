@@ -1748,7 +1748,10 @@ copies end still fails it, as `timeoutMs` above describes:
   junctions and 8.3 names resolved on Windows. The rest of `<p>` counts as sent. So a
   `baseRepo` sent in 8.3 form or through a junction still finds a locked registration
   when the worktree and its parent are gone (rows GL1 and GL2, with GL0 as the
-  control). Without `worktreeRoot`, two more answers come first. A configuration that
+  control). A worktrees directory that cannot be read does not stop this path: with
+  `worktreeRoot` the reply is `{"success":true}` (row K13, Linux VM). Without
+  `worktreeRoot` that case is not measured. Without `worktreeRoot`, two more answers
+  come first. A configuration that
   git cannot list, or a refused git directory, answers `{"success":false,"error":"failed
   to remove worktree: could not check whether <p> is locked (<reason>); retry"}`.
   `<reason>` is the hooks refusal or the trust refusal text. A `baseRepo` that holds

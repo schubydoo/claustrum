@@ -1318,6 +1318,9 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			}
 		}
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
+		// A worktrees directory that cannot be read does not stop a gone remove. The
+		// reference answers success there (Linux VM, row K13 with worktreeRoot and a
+		// gone target). Without worktreeRoot no row measures it.
 		if locked, _ := worktreeLockedByPath(commonDir, sp); locked {
 			return refuse("refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
 				"registration is locked (git worktree lock); unlock it to remove the registration and branch")

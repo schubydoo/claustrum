@@ -166,6 +166,9 @@ func worktreeGitFileTarget(leafDir *os.Root, path string) (string, error) {
 		return "", err
 	}
 	rest, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir: ")
+	// Extra white space after "gitdir: " is dropped, as worktreeAdminDir drops it.
+	// No row measures that input.
+	rest = strings.TrimSpace(rest)
 	if !ok || rest == "" {
 		return "", refuseWorktree("%s does not name a git dir", gitFile)
 	}
