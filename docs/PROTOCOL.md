@@ -221,7 +221,8 @@ reaches no JSON-RPC frame, so nothing here is a wire contract. It is recorded
 because one of its decisions is an always-on divergence that a client can feel as
 a lost session.
 
-Before it signals a daemon whose run dir went idle past the threshold, the cleaner
+Before it signals a daemon whose run dir went idle past the threshold, or whose run
+dir name carries `.removing-` from an earlier removal, the cleaner
 asks whether that daemon still has a live client. On macOS it asks `lsof`. That
 run is bounded three ways: a command deadline, a wait for the output pipe, and a
 last bound after which the run is given up on. Those bounds are claustrum's own

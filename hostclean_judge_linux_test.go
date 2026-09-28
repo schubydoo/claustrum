@@ -85,15 +85,15 @@ func TestLockProbeUnopenableAndEmpty(t *testing.T) {
 		t.Errorf("lockProbe of an unopenable lock = %d, want hcLockUnknown", state)
 	}
 
-	// An empty lock file parses to no record. This arm is defensive: without it the empty
-	// buffer fails to unmarshal and the same nil comes back, so the assertion is the
-	// contract, not a mutant oracle.
+	// An empty lock file carries no record. A daemon leaves exactly that behind when it exits
+	// gracefully (it truncates its lock to 0 bytes), so nobody holding it reads as stale, and
+	// the tidy can remove the dir in the same pass (issue 429).
 	empty := t.TempDir()
 	if err := os.WriteFile(filepath.Join(empty, runDirLockName), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state, rec, present := lockProbe(empty); state != hcLockUnknown || rec != nil || !present {
-		t.Errorf("lockProbe of an empty lock = state %d rec %v present %v, want unknown/nil/true", state, rec, present)
+	if state, rec, present := lockProbe(empty); state != hcLockStale || rec != nil || !present {
+		t.Errorf("lockProbe of an empty lock = state %d rec %v present %v, want stale/nil/true", state, rec, present)
 	}
 }
 
@@ -108,11 +108,11 @@ func TestVerifyListenerServesAnotherSocket(t *testing.T) {
 	}
 }
 
-// TestJudgeDaemonAnotherVerifiedDaemon covers the last socket-live sub-case: the socket is
-// answered by a DIFFERENT process that verifies as one of our daemons serving it. That daemon
-// owns the socket now, so the candidate is skipped silently — not spared with a reason, and
-// not reaped. Deleting the arm drops the candidate through to the lock probe, which with no
-// lock file reaps it.
+// TestJudgeDaemonAnotherVerifiedDaemon covers the socket-live case where a DIFFERENT process
+// answers the candidate's socket and verifies as one of our daemons serving it. The candidate
+// no longer owns its socket and holds no daemon.lock, so it is stranded and reaped. That is
+// the measured m2 case (issue 429): the reference ends it with SIGKILL. claustrum used
+// to skip it silently.
 func TestJudgeDaemonAnotherVerifiedDaemon(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
@@ -123,22 +123,33 @@ func TestJudgeDaemonAnotherVerifiedDaemon(t *testing.T) {
 	// SO_PEERCRED reports the RUNNER's real uid, which judgeDaemon compares against
 	// hcGetuid() and verifyListener against the uid in the fake status file. All three must
 	// be the same number, or the verdict depends on whether the runner happens to be uid
-	// 1000 (hcFakeDaemon's default) — it is on the maintainer host and is not on CI, where
-	// this failed. The fixtures therefore carry the real uid, the way
-	// TestJudgeDaemonSocketLive already does.
+	// 1000 (hcFakeDaemon's default).
 	uid := os.Getuid()
 	hcGetuid = func() int { return uid }
 
 	// The answerer: this test process, fully verifiable as a daemon serving that socket.
 	hcFakeDaemonUID(t, proot, mk, link, os.Getpid(), "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
-	// The candidate: another daemon that claims the same socket but no longer answers it.
+	// The candidate: another daemon that claims the same socket but no longer answers it. Its
+	// lock was renamed aside, so it holds no daemon.lock BY NAME.
 	hcFakeDaemonUID(t, proot, mk, link, 74, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
+	link(74, "fd/3", "/opt/claude/run/x-old/daemon.lock.aside")
 
 	v, reason, target := c.judgeDaemon(mustInspect(t, 74))
-	if v != dvSkip {
-		t.Errorf("verdict = %v (reason %q, target %v), want skip: a verified daemon serves that socket", v, reason, target)
+	if v != dvReap || target == nil || target.pid != 74 {
+		t.Fatalf("verdict = %v (reason %q, target %v), want reap: another verified daemon owns its socket", v, reason, target)
+	}
+	if target.socket != socket {
+		t.Errorf("target socket = %q, want %q for the ending log line", target.socket, socket)
+	}
+
+	// The same candidate WITH daemon.lock open by name is skipped (measured m1).
+	hcFakeDaemonUID(t, proot, mk, link, 76, "/opt/claude/srv/a/server",
+		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
+	link(76, "fd/3", "/opt/claude/run/x-old/daemon.lock")
+	if v, reason, _ := c.judgeDaemon(mustInspect(t, 76)); v != dvSkip {
+		t.Errorf("verdict = %v (reason %q), want skip: it holds its daemon.lock", v, reason)
 	}
 }
 
@@ -148,7 +159,7 @@ func TestJudgeDaemonAnotherVerifiedDaemon(t *testing.T) {
 func TestJudgeOrphanUnreadableArms(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	c := hcTestCleaner(t, "/opt/claude")
-	cli := "/opt/claude/ccd-cli/v1/claude"
+	cli := "/opt/claude/ccd-cli/2.1.0"
 	old := hcClock().Add(-time.Hour)
 
 	base := hcTracked{
@@ -176,7 +187,7 @@ func TestJudgeOrphanUnreadableArms(t *testing.T) {
 	}
 	// With the descriptors readable the same record IS reaped, which is what makes the
 	// assertion above about that gate and not about one of the earlier ones.
-	link(75, "fd/0", "pipe:[1]")
+	hcPipeStdio(link, 75)
 	if reap, reason := c.judgeOrphan(base); !reap || reason != "" {
 		t.Errorf("readable fds: reap=%v reason=%q, want a silent reap", reap, reason)
 	}
@@ -201,7 +212,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	// never reaches its deadline: the mutant would fail by hanging until the go test timeout
 	// instead of failing on the assertions below. Starting at the instant hcTestCleaner
 	// froze keeps every fixture's age unchanged.
-	now := time.Unix(1_000_000, 0)
+	now := time.Unix(1_700_000_000, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { sleeps++; now = now.Add(d) }
 
@@ -209,10 +220,10 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	// self check would pass: deleting that check makes the cleaner SIGTERM its own daemon.
 	hcFakeDaemon(t, proot, mk, link, c.selfPid, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
-	if c.retireAbandoned(c.selfPid, socket) {
+	if hcRetire(c, c.selfPid, socket) {
 		t.Error("retireAbandoned signalled this very daemon")
 	}
-	if c.retireAbandoned(1, socket) {
+	if hcRetire(c, 1, socket) {
 		t.Error("retireAbandoned signalled pid 1")
 	}
 
@@ -221,7 +232,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	young := 76
 	hcFakeDaemon(t, proot, mk, link, young, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "9999990")
-	if c.retireAbandoned(young, socket) {
+	if hcRetire(c, young, socket) {
 		t.Error("retireAbandoned signalled a daemon younger than the minimum age")
 	}
 
@@ -237,7 +248,8 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	victim := 77
 	hcFakeDaemon(t, proot, mk, link, victim, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
-	if c.retireAbandoned(victim, socket) {
+	link(victim, "fd/1", "/dev/null") // readable connections, none a client
+	if hcRetire(c, victim, socket) {
 		t.Error("retireAbandoned reported success after a failed signal")
 	}
 	if len(signals) != 1 || signals[0] != victim {

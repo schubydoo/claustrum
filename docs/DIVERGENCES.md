@@ -700,7 +700,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   It is the same shape as
   [D15](#d15), which refuses to act on an identity the daemon cannot verify. It is
   also the same shape as two spares claustrum already has. It spares a daemon whose
-  lock state it cannot determine, and an orphan whose descriptors it cannot inspect.
+  open files it cannot inspect, and an orphan whose descriptors it cannot inspect.
   That is an argument for D17 rather than a premise this entry rests on, because the clause-(a) case stands
   on the harm alone.
 - **Cost.** A daemon whose `lsof` keeps failing is never retired by the busy gate, so

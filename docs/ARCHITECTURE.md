@@ -130,34 +130,51 @@ children it spawns.
   layer in `hostclean.go`, with the OS reads in `hostclean_linux.go` / `hostclean_darwin.go`).
   The cleaner is a background sweep that keeps the install tidy. It runs 15s after startup
   and then daily. It is confined to the install roots derived from the daemon's own
-  socket and executable (`<root>/run` and `<root>/srv`). It is also confined to this
+  socket and executable (`<root>/run`, `<root>/srv` and `<root>/ccd-cli`). It is also confined to this
   user's own processes. It therefore never reaches an unrelated process or path. Each pass first makes sure that
   its own socket still leads to itself, and without that the pass does not act.
-  A pass then ends stranded sibling daemons. A stranded sibling is our `--serve` daemon,
-  older than 5 min, and carrying the daemon-child marker. Its socket no longer leads to it,
-  and it holds no run-dir lock. Each one gets `SIGKILL`, and its leftover child groups get
-  `SIGTERM`→`SIGKILL`.
+  Next it lists the run dirs and reads the idle age of each one. It does this before it
+  judges or dials any other daemon, because a dial writes a line to that daemon's log.
+  A pass then ends stranded sibling daemons. A stranded sibling is our `--serve` daemon on a
+  run-dir socket, older than 5 min, and carrying the daemon-child marker. It has no file
+  named `daemon.lock` open, and the cleaner checks that before it dials the socket. Its
+  socket no longer leads to it. Another verified daemon on that socket does not spare it.
+  Each one gets `SIGKILL`, and its leftover child groups get `SIGTERM`→`SIGKILL`.
   A pass also ends orphaned Claude Code process groups. An orphan is a `stream-json` daemon
-  child whose daemon is gone. It gets `SIGTERM`, a 3s grace, then `SIGKILL`.
-  The 15s delay, the daily period, the 5 min age, the 3s grace and the 30-day idle age
-  are claustrum's own values, not probe-measured.
+  child that leads its own process group. Its parent is pid 1, its binary sits directly in
+  `<root>/ccd-cli`, and its stdin, stdout and stderr are pipes. It gets `SIGTERM`, a 3s
+  grace, then `SIGKILL`.
+  The 15s delay matches the reference, as measured on Linux and macOS against `f6010b97`. The daily
+  period, the 5 min age, the 3s grace and the 30-day idle age are claustrum's own values,
+  not probe-measured.
   A pass also retires stale run dirs. A stale run dir is idle past 30
-  days, its socket is unanswered, and it has no live lock. The cleaner renames it aside and
-  then removes it. If a socket or lock reappears mid-removal, the cleaner undoes the removal.
+  days, or its name carries `.removing-` from an earlier removal. Its socket is unanswered, and no live process holds its lock. An empty lock file is
+  not indeterminate: the cleaner asks whether a live process holds it. The list skips the
+  cleaner's own run dir and any entry that is not a plain directory, a symlink included.
+  The tidy reads the idle age again before it probes a dir, and it keeps a dir that came
+  back into use, unless the dir has a staging name. It renames a stale dir to
+  `<name>.removing-<own pid>-<base-36 time>` inside the run root and then removes it. A
+  socket can appear after the rename, or its lock can become held or unreadable. The
+  cleaner then renames the dir back. A dir whose daemon it retires goes in the same pass,
+  once that daemon's socket is gone.
   The cleaner spares an ambiguous daemon or orphan with a logged
-  reason. It keeps a run dir it cannot probe conclusively. It never touches a fresh, locked,
-  or foreign daemon. "Busy" is weaker than the other three: it is a 3-second sampling
+  reason. It keeps a run dir it cannot probe conclusively. The reap path never touches a
+  fresh or foreign daemon, or one that has a file named `daemon.lock` open. "Busy" is weaker
+  than the other three: it is a 3-second sampling
   window, not a state. A daemon that is idle across the window and gains a client a
   moment later is still signalled. This path is DESTRUCTIVE and host-wide. Every process read,
   kill, dial, rename and remove therefore sits behind a seam, and tests never touch a real
-  process or file. Its real behavior is measured only on a throwaway VM, never on a host that
+  process. A test that lets a rename or a remove run for real does so inside its own temp
+  dir. Its real behavior is measured only on a throwaway VM, never on a host that
   runs sibling daemons. It runs on linux and darwin. On windows it is a no-op. This
-  behavior is off-wire. Claustrum reproduces this
-  cleaner's behavior rather than matching it byte
-  for byte. It approximates some spare-reason bookkeeping. On macOS it reads an `lsof` run it
+  behavior is off-wire. Its log lines carry the `[hostclean]` prefix after claustrum's level
+  tag. The lines that the Linux and macOS measurements against `f6010b97` captured use the captured
+  texts. The other lines keep claustrum's own wording. On macOS it reads an `lsof` run it
   gave up on as busy, and the reference side of that is not probe-measured. That one is a numbered divergence,
-  [DIVERGENCES.md](DIVERGENCES.md) D17. The reap path acts only on a dead socket. After 30 days
-  of run-dir idleness the retire path can SIGTERM a socket-live daemon.
+  [DIVERGENCES.md](DIVERGENCES.md) D17. The reap path never ends a daemon whose socket still
+  leads to itself. After 30 days
+  of run-dir idleness, or at once for a run dir named with `.removing-`, the retire path can
+  SIGTERM a socket-live daemon.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a
   separate goroutine. A slow login shell therefore does not delay the moment the
   socket becomes available.

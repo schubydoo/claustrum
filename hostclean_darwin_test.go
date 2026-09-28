@@ -243,6 +243,46 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	}
 }
 
+// TestStdioPipesAndBusyCheckDarwin covers the two darwin reads the orphan and daemon judges
+// use: pipe stdio from lsof's PIPE type, and hcBusyCheck, which is always a reading on darwin.
+func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
+	old := runLsof
+	t.Cleanup(func() { runLsof = old })
+
+	// fds 0, 1 and 2 all PIPE: a daemon-spawned child's stdio.
+	runLsof = func(...string) (string, bool) {
+		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true
+	}
+	if !hcStdioArePipes(1) {
+		t.Error("three PIPE stdio records did not read as pipes")
+	}
+	// One unix record and nothing else: not pipe stdio.
+	runLsof = func(...string) (string, bool) { return "p1\nf0\ntunix\nn->0x1\n", true }
+	if hcStdioArePipes(1) {
+		t.Error("a unix stdio record read as pipes")
+	}
+	// An abandoned run tells nothing, so it is not pipe stdio.
+	runLsof = func(...string) (string, bool) { return "", false }
+	if hcStdioArePipes(1) {
+		t.Error("an abandoned lsof run read as pipes")
+	}
+
+	// hcBusyCheck: a completed run with a connected peer is busy. An abandoned run reads busy
+	// under D17, and both are readings.
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true }
+	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
+		t.Errorf("connected peer: busy=%v canRead=%v, want true true", busy, canRead)
+	}
+	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true }
+	if busy, canRead := hcBusyCheck(1); busy || !canRead {
+		t.Errorf("bare listener: busy=%v canRead=%v, want false true", busy, canRead)
+	}
+	runLsof = func(...string) (string, bool) { return "", false }
+	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
+		t.Errorf("abandoned run: busy=%v canRead=%v, want true true (D17)", busy, canRead)
+	}
+}
+
 // TestHcBusyAbandonedRunReadsBusy pins D17.
 //
 // The two arms differ ONLY in the flag: both return no output. A completed run that

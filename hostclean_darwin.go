@@ -412,6 +412,29 @@ func hcBusy(pid int) bool {
 	return unix > 1
 }
 
+// hcBusyCheck is hcBusy plus whether the answer is a reading at all. On darwin it is always
+// a reading: hcBusy already answers busy for an abandoned run (D17), so that arm never reads
+// as "could not be inspected".
+func hcBusyCheck(pid int) (busy, canRead bool) {
+	return hcBusy(pid), true
+}
+
+// hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
+// daemon-spawned child. lsof names a pipe's type PIPE.
+func hcStdioArePipes(pid int) bool {
+	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	if !ok {
+		return false
+	}
+	pipes := 0
+	for _, r := range parseLsofFtn(out) {
+		if (r.fd == "0" || r.fd == "1" || r.fd == "2") && r.typ == "PIPE" {
+			pipes++
+		}
+	}
+	return pipes == 3
+}
+
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.
 //
