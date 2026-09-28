@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -224,11 +223,7 @@ func TestEmitDetachesOnWriteError(t *testing.T) {
 // line. Capture the global logger to assert they fire. Receiving the exit frame
 // guarantees all three have been written (the exit log precedes the exit emit).
 func TestSpawnEmitsOperationalLogs(t *testing.T) {
-	var buf syncBuffer
-	oldW, oldFlags := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0) // assert on the message text, not the timestamp
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldFlags) })
+	buf := captureLogBuf(t)
 
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -272,11 +267,7 @@ done:
 // writeResponse logs the reference's writeResponse/Failed-to-write lines when the
 // underlying write fails (the client dropped the connection mid-reply).
 func TestWriteResponseLogsOnWriteError(t *testing.T) {
-	var buf syncBuffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	client, server := net.Pipe()
 	client.Close() // writes now fail
@@ -295,11 +286,7 @@ func TestWriteResponseLogsOnWriteError(t *testing.T) {
 // reattach detaches a conn (and logs the replay-write-failed line) when replaying
 // the buffer to it fails because its socket is already gone.
 func TestReattachDetachesOnReplayWriteError(t *testing.T) {
-	var buf syncBuffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	m := newTestProcManager(t)
 	p := &managedProc{id: "p", subs: map[*conn]struct{}{}, running: true}
@@ -330,10 +317,7 @@ func TestReattachDetachesOnReplayWriteError(t *testing.T) {
 // "Failed to write response" without attempting a write, and a closed conn
 // returns early (no write, no panic).
 func TestWriteResponseMarshalErrorAndClosed(t *testing.T) {
-	var buf syncBuffer
-	oldW := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(oldW) })
+	buf := captureLogBuf(t)
 
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })

@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,11 +30,7 @@ import (
 // captureStopLog sends the stdlib log output to a buffer for the rest of the test.
 func captureStopLog(t *testing.T) *syncBuffer {
 	t.Helper()
-	var buf syncBuffer
-	old := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(old) })
-	return &buf
+	return captureLogBuf(t)
 }
 
 // seamServeHolder makes the holder check accept the test's lock-holder child.

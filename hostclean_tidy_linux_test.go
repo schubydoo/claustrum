@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -159,11 +158,7 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	hcRename = func(string, string) error { renames++; return nil }
 	hcRemoveAll = func(string) error { removes++; return nil }
 
-	var buf syncBuffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	var sum hcSummary
 	c.tidyRunDirs([]runDirEntry{{name: "x", dirPath: "/opt/claude/run/x", socket: "/opt/claude/run/x/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)
@@ -309,11 +304,7 @@ func TestUndoRenameFailureIsLogged(t *testing.T) {
 	removed := 0
 	hcRemoveAll = func(string) error { removed++; return nil }
 
-	var buf syncBuffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	var sum hcSummary
 	c.tidyRunDirs([]runDirEntry{{name: "x", dirPath: "/opt/claude/run/x", socket: "/opt/claude/run/x/rpc.sock", idle: 40 * 24 * time.Hour}}, &sum)

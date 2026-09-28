@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -386,10 +385,7 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	var buf syncBuffer
-	oldOut := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(oldOut) })
+	buf := captureLogBuf(t)
 	release := claimRunDir(sock, "serve") // evicts synchronously, logging the ladder
 	t.Cleanup(release)
 	_ = waitForExit(holder.Process.Pid, 3*time.Second)
@@ -427,10 +423,7 @@ func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
 	writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 	_ = syscall.Close(fd)
 
-	var buf syncBuffer
-	oldOut := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(oldOut) })
+	buf := captureLogBuf(t)
 	evicted := evictRunDirHolder(lockPath, sock)
 	if evicted {
 		t.Error("evictRunDirHolder evicted a --stop holder; want left in place")
@@ -563,10 +556,7 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 			writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 			_ = syscall.Close(fd)
 
-			var buf syncBuffer
-			oldOut := log.Writer()
-			log.SetOutput(&buf)
-			t.Cleanup(func() { log.SetOutput(oldOut) })
+			buf := captureLogBuf(t)
 			evicted := evictRunDirHolder(lockPath, sock)
 
 			if evicted != tc.wantEvicted {

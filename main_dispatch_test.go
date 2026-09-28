@@ -90,10 +90,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 //
 // Distinct values on purpose: equal ones would pass under a swap.
 func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
-	var buf syncBuffer
-	oldOut := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(oldOut) })
+	buf := captureLogBuf(t)
 	if _, exited := runMain(t, "-install", "-cli-probe-timeout", "7s",
 		"-cli-download-timeout", "42s", "-libc-probe-timeout", "23s"); exited {
 		t.Fatal("-install should return, not exit")

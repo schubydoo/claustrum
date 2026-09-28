@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -130,11 +129,7 @@ func TestRaiseInheritedFileLimitErrors(t *testing.T) {
 func TestRaiseInheritedFileLimitLogsLimit(t *testing.T) {
 	origGet, origSet := getRlimit, setRlimit
 	t.Cleanup(func() { getRlimit, setRlimit = origGet, origSet })
-	var buf syncBuffer
-	oldOut, oldFlags := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldOut); log.SetFlags(oldFlags) })
+	buf := captureLogBuf(t)
 	oldLevel := logThreshold.Load()
 	logThreshold.Store(int32(logLevelDebug))
 	t.Cleanup(func() { logThreshold.Store(oldLevel) })
@@ -160,7 +155,15 @@ func TestRaiseInheritedFileLimitLogsLimit(t *testing.T) {
 			return nil
 		}
 		raiseInheritedFileLimit()
-		if got := buf.String(); got != c.want {
+		// Keep only the limit lines. Goroutines of other tests can still log into
+		// the global logger, and such a line must not fail the exact compare.
+		var got string
+		for _, line := range strings.SplitAfter(buf.String(), "\n") {
+			if strings.Contains(line, "open-files limit") {
+				got += line
+			}
+		}
+		if got != c.want {
 			t.Errorf("%s: log = %q, want %q", c.name, got, c.want)
 		}
 	}
