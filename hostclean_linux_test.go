@@ -743,7 +743,8 @@ func TestJudgeDaemonSocketLive(t *testing.T) {
 	hcGetuid = func() int { return os.Getuid() }
 
 	inspectDaemon := func(pid int) hcTracked {
-		hcFakeDaemon(t, proot, mk, link, pid, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
+		// The daemon's uid is the runner's too: the judge skips a daemon of another uid.
+		hcFakeDaemonUID(t, proot, mk, link, pid, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", os.Getuid())
 		link(pid, "fd/1", "/dev/null") // readable descriptors with no daemon.lock open
 		tr, res := inspect(pid, true)
 		if res != hcInspectOK {
