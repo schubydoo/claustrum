@@ -4,7 +4,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -88,7 +87,7 @@ func TestExitWhenOrphanedRequiresTwoProbes(t *testing.T) {
 		t.Fatal(err)
 	}
 	probes := fakeCapServer(t, sock, "ffffffffffffffffffffffffffffffff") // successor with a foreign id
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldOut := log.Writer()
 	log.SetOutput(&buf)
 	startOrphanLoop(t, s, sock)

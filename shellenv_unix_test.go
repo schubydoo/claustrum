@@ -3,8 +3,6 @@
 package main
 
 import (
-	"bytes"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,11 +47,7 @@ func TestExtractLoginPATHDefaultShell(t *testing.T) {
 // When the login shell produces no PATH sentinel (e.g. SHELL ignores the
 // command), extractLoginPATH logs the not-found line and leaves PATH intact.
 func TestExtractLoginPATHNoSentinel(t *testing.T) {
-	var buf bytes.Buffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	t.Setenv("PATH", os.Getenv("PATH"))
 	// A CONTROLLED stub that emits nothing, not a system binary.
@@ -159,11 +153,7 @@ func TestExtractLoginPATHDoesNotHang(t *testing.T) {
 // Pins the `err != nil` guard: a negated guard would log only on success and stay
 // silent here.
 func TestExtractLoginPATHLogsShellError(t *testing.T) {
-	var buf bytes.Buffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	shell := writeFakeShell(t, "exit 7") // non-zero exit → CombinedOutput err != nil
 
@@ -296,11 +286,7 @@ func TestSafeLoginShellTakesTheFirstExecutableCandidate(t *testing.T) {
 // receive the extracted PATH, while claustrum's did. Wire-visible, because
 // loginPATH becomes every spawned child's environment.
 func TestExtractLoginPATHDiscardsTheValueOnTimeout(t *testing.T) {
-	var buf bytes.Buffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	oldTimeout := loginPATHTimeout
 	loginPATHTimeout = 300 * time.Millisecond
@@ -368,11 +354,7 @@ func TestTruncateShellOutput(t *testing.T) {
 
 // And the truncation must actually reach the log line, not just exist.
 func TestExtractLoginPATHTruncatesTheLoggedShellOutput(t *testing.T) {
-	var buf bytes.Buffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	// 500 bytes, no sentinel anywhere — the same shape as the measured fixture.
 	t.Setenv("SHELL", writeFakeShell(t, "printf '%0500d' 0"))

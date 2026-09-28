@@ -70,6 +70,19 @@ func captureLog(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+// captureLogBuf points the default logger at a locked buffer, with no timestamp,
+// until the test ends, and returns the buffer. Use it, not a plain bytes.Buffer: see
+// syncBuffer.
+func captureLogBuf(t *testing.T) *syncBuffer {
+	t.Helper()
+	buf := &syncBuffer{}
+	oldW, oldF := log.Writer(), log.Flags()
+	log.SetOutput(buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	return buf
+}
+
 func withThreshold(t *testing.T, level logLevel) {
 	t.Helper()
 	old := logThreshold.Load()

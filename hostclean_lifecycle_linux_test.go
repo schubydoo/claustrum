@@ -3,9 +3,7 @@
 package main
 
 import (
-	"bytes"
 	"errors"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -165,11 +163,7 @@ func TestKeepaliveLogsAChtimesFailure(t *testing.T) {
 	hcClock = time.Now
 	hcChtimes = func(string, time.Time, time.Time) error { return syscall.EIO }
 
-	var buf bytes.Buffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	c := &hostCleaner{ownRunDir: "/opt/claude/run/self"}
 	c.Keepalive()

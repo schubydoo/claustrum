@@ -3,8 +3,6 @@
 package main
 
 import (
-	"bytes"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,11 +25,7 @@ func TestChildTokenLogsUnlinkFailure(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: a 0500 directory is still writable")
 	}
-	var buf bytes.Buffer
-	oldW, oldF := log.Writer(), log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() { log.SetOutput(oldW); log.SetFlags(oldF) })
+	buf := captureLogBuf(t)
 
 	dir := t.TempDir()
 	locked := filepath.Join(dir, "locked")
