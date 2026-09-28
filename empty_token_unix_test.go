@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"log"
 	"os"
 	"path/filepath"
@@ -27,7 +26,7 @@ func TestChildTokenLogsUnlinkFailure(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: a 0500 directory is still writable")
 	}
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)

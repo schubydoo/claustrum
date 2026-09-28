@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"log"
 	"os"
 	"path/filepath"
@@ -49,7 +48,7 @@ func TestExtractLoginPATHDefaultShell(t *testing.T) {
 // When the login shell produces no PATH sentinel (e.g. SHELL ignores the
 // command), extractLoginPATH logs the not-found line and leaves PATH intact.
 func TestExtractLoginPATHNoSentinel(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
@@ -159,7 +158,7 @@ func TestExtractLoginPATHDoesNotHang(t *testing.T) {
 // Pins the `err != nil` guard: a negated guard would log only on success and stay
 // silent here.
 func TestExtractLoginPATHLogsShellError(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
@@ -296,7 +295,7 @@ func TestSafeLoginShellTakesTheFirstExecutableCandidate(t *testing.T) {
 // receive the extracted PATH, while claustrum's did. Wire-visible, because
 // loginPATH becomes every spawned child's environment.
 func TestExtractLoginPATHDiscardsTheValueOnTimeout(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
@@ -368,7 +367,7 @@ func TestTruncateShellOutput(t *testing.T) {
 
 // And the truncation must actually reach the log line, not just exist.
 func TestExtractLoginPATHTruncatesTheLoggedShellOutput(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)

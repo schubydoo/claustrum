@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -387,7 +386,7 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldOut := log.Writer()
 	log.SetOutput(&buf)
 	t.Cleanup(func() { log.SetOutput(oldOut) })
@@ -428,7 +427,7 @@ func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
 	writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "stop", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 	_ = syscall.Close(fd)
 
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldOut := log.Writer()
 	log.SetOutput(&buf)
 	t.Cleanup(func() { log.SetOutput(oldOut) })
@@ -564,7 +563,7 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 			writeOwnerRecord(fd, ownerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: "x", StartedAt: 1})
 			_ = syscall.Close(fd)
 
-			var buf bytes.Buffer
+			var buf syncBuffer
 			oldOut := log.Writer()
 			log.SetOutput(&buf)
 			t.Cleanup(func() { log.SetOutput(oldOut) })

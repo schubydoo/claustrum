@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -31,9 +30,9 @@ func hcRunRoot(t *testing.T) (runRoot string, root *os.Root) {
 }
 
 // hcCaptureLog sends the standard logger to a buffer, with no timestamp, until cleanup.
-func hcCaptureLog(t *testing.T) *bytes.Buffer {
+func hcCaptureLog(t *testing.T) *syncBuffer {
 	t.Helper()
-	var buf bytes.Buffer
+	var buf syncBuffer
 	oldW, oldF := log.Writer(), log.Flags()
 	log.SetOutput(&buf)
 	log.SetFlags(0)
