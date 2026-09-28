@@ -445,9 +445,13 @@ func TestHardenedGitCallShape(t *testing.T) {
 
 	// When the refusal check of an in-repo remove fails, the check runs once more
 	// before the lock-check answer, as on f6010b97 (Linux and macOS VMs): a second
-	// listing, and a second rev-parse when that listing passes.
+	// listing, and a second rev-parse when that listing passes. The worktree
+	// directory exists: a gone one answers from its own path.
 	checkTwice := func(t *testing.T, g wtFixture, wantHardened bool) {
 		t.Helper()
+		if err := os.MkdirAll(g.leaf(), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": g.top, "worktreePath": g.leaf()})
 		if !strings.Contains(raw, "could not check whether") {
 			t.Fatalf("reply = %s, want the lock-check refusal", raw)

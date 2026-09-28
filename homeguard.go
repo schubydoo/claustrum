@@ -11,11 +11,12 @@ import (
 // user's home directory with it — true when p IS the home directory, and true
 // when p is an ANCESTOR of it ("/home", "/Users", a drive root).
 //
-// Why this exists, precisely. Two methods hand a caller-supplied path to
-// os.RemoveAll: files.extract_tar wipes destDir before unpacking
-// (methods_files.go), and git.worktree_remove deletes worktreePath when git
-// refuses for a non-locked reason (methods_git.go; a locked worktree is refused,
-// not deleted). Both paths are `~`-expanded first — bindParams
+// Why this exists, precisely. Three paths hand a caller-supplied path to a
+// recursive delete: files.extract_tar wipes destDir before unpacking
+// (methods_files.go), git.worktree_remove deletes worktreePath itself
+// (worktreeremove.go; a locked worktree is refused, not deleted), and the rollback
+// of git.worktree_create deletes the worktree it created (worktreeverify.go). The
+// paths are `~`-expanded first — bindParams
 // calls expandPaths on EVERY request (rpc.go), and expandPath returns the home
 // directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` reaches
 // os.RemoveAll($HOME).
@@ -67,10 +68,10 @@ func wipesHomeDir(p string) bool {
 	// RESOLVE RELATIVE PATHS FIRST. filepath.Clean does not make a path absolute,
 	// so without this every relative input compares unequal to an absolute home
 	// and fails BOTH tests below — the guard would answer false for ".." no matter
-	// what ".." resolves to. That is not academic. git.worktree_remove performs
-	// the same recursive delete with NO IsAbs gate of its own, and PROTOCOL.md
-	// already measures that its fallback resolves worktreePath against the
-	// DAEMON's working directory — so without this, the guard on that method
+	// what ".." resolves to. That is not academic. Before 7d193f89,
+	// git.worktree_remove performed the same recursive delete with NO IsAbs gate
+	// of its own, and its fallback resolved worktreePath against the DAEMON's
+	// working directory — so without this, the guard on that method
 	// would miss ".." from a daemon sitting in a home directory, which is
 	// os.RemoveAll on home's parent. os.RemoveAll refuses a trailing "." but has
 	// no such guard for "..". Measured: unguarded, that spelling really does

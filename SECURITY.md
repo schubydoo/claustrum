@@ -79,11 +79,13 @@ holds both can do whatever the daemon's user can.
 
 `files.*` and `git.*` read and act on paths the caller supplies. They are as
 privileged as the daemon's user. Three of those paths reach a recursive delete
-(`os.RemoveAll`):
+(`os.RemoveAll` or `os.Root.RemoveAll`). `git.worktree_remove` uses
+`os.Root.RemoveAll`, and the rollback of `git.worktree_create` uses both:
 
 - `files.extract_tar` wipes its destination before unpacking.
-- When git fails for a non-locked reason, `git.worktree_remove` deletes the
-  worktree path. A locked worktree is refused, not deleted.
+- `git.worktree_remove` deletes the worktree path, and then its entry under the
+  git directory. Each delete goes through an `os.Root`, so no delete follows a
+  symlink out of the worktree. A locked worktree is refused, not deleted.
 - When `git.worktree_create` rolls back a worktree, it deletes the worktree path.
   That rollback happens when the caller `timeoutMs` expires during a successful
   add, the checkout or the copy step. It also happens after the post-checkout

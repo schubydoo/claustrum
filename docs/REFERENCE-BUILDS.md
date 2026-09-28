@@ -71,7 +71,8 @@ leftovers (PR 426), older `-install` gaps (PR 427) and a stale D9 example. For
 `git.status {"baseRepo":[1,2]}` both binaries answered the same frame,
 `{"code":-32602,"message":"Invalid params"}`, on Linux, macOS and Windows. D16
 is still needed, and its Windows cause is now known. D1, D7 and D14 are
-retired, and D18 is new.
+retired, and D18 is new. A later pass matched `git.worktree_remove` to this build
+and closed most of its older gaps. D19, the Windows junction refusal, is new with it.
 
 ### `90fca6e6a55c4d4c659e8c6ed511b7969ab17315` — 2026-09-14 (built)
 
@@ -320,8 +321,8 @@ the `-cli-zst` blob. That change was reconciled later, under issue 408.
    target is refused as "already exists … a fresh directory". Both also refuse a path
    that crosses a symlinked component under the repo (a planted `.claude` /
    `.claude/worktrees` link) with `errorCode:"symlinked_component"` on create. The
-   create therefore cannot escape, and the remove fallback cannot delete through the
-   link out of the repo. `worktree_remove` applies the same location checks
+   create therefore cannot escape, and the remove cannot delete through the link out
+   of the repo. `worktree_remove` applies the same location checks
    (no `errorCode` field). The success shapes are unchanged. Create now makes the
    parent directory before `git worktree add`, so a nested session path succeeds on a
    fresh repository.
@@ -346,9 +347,9 @@ and non-locked-worktree fixtures did not exercise them.
 - `git.worktree_remove` refuses a LOCKED worktree. A locked worktree now answers
   `{"success":false,"error":"refusing to remove worktree: <p> is locked (git worktree
   lock); unlock it to remove it"}` and the directory survives. Pre-`7d193f89` the
-  reference DELETED it and answered `{"success":true}`. Any OTHER non-zero git exit
-  (for example an ordinary directory) still reaches the recursive delete. Measured
-  on an ephemeral VM against `7d193f89`. The frame battery never removes a locked worktree.
+  reference DELETED it and answered `{"success":true}`. An unlocked ordinary
+  directory is still deleted. The reference runs no `git worktree remove` for either
+  case. Measured on an ephemeral VM against `7d193f89`. The frame battery never removes a locked worktree.
 - `git.worktree_remove` registration prune. A completed removal drops
   `$GIT_DIR/worktrees/<name>`, so a re-create at the same path succeeds where it
   previously failed `already registered`.
@@ -373,14 +374,18 @@ command-for-command.
 `git.worktree_remove` is an off-wire exception. The reference implements it as a
 hardened `rev-parse --absolute-git-dir`. It also deletes the worktree and its
 `$GIT_DIR/worktrees/<name>` registration directly from the filesystem. It also deletes
-the branch with a hardened `update-ref`. It runs no `git worktree remove` at all. Claustrum instead runs an unhardened
+the branch with a hardened `update-ref`. It runs no `git worktree remove` at all. Claustrum then ran an unhardened
 `git worktree remove --force` with an `os.RemoveAll` fallback for the worktree itself.
+Since the `f6010b97` reconciliation, claustrum deletes the tree and the entry itself, as
+the reference does. See [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`.
 Its branch delete now matches the reference: a raw `update-ref --no-deref -d`. It was
 `git branch -D`, which also dropped the branch's `[branch "<name>"]` config section, where
 the reference leaves it. Both now spare it, measured against 4534d86. Both yield
 byte-identical frames on every probed case (locked refusal, non-worktree delete, stale
-re-create, normal removal). The residual difference is the worktree-removal mechanism,
-and that difference is off-wire.
+re-create, normal removal). The residual difference was the worktree-removal
+mechanism, and that difference was off-wire on those cases. On other rows the old
+mechanism was wire-visible, for example a partial delete failure and a symbolic-link
+leaf. See [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`.
 
 Beyond git, the build adds a daemon-to-daemon reconnect handoff
 and idle-connection management (the SSH-reliability items in the Desktop changelog).

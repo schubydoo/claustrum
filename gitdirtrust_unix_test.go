@@ -307,9 +307,9 @@ func TestGitDirTrustSymlinkedPaths(t *testing.T) {
 	})
 }
 
-// A remove named through a symlinked root still prunes the entry. Git records the
-// worktree's resolved path in the entry. After the fallback delete the worktree is
-// gone, so its path is resolved through its nearest existing parent. This is the
+// A remove named through a symlinked root still deletes the entry. Git records the
+// worktree's resolved path in the entry, and the daemon resolves the path it was
+// given through its nearest existing parent. This is the
 // macOS /tmp -> /private/tmp case, measured against f6010b97 on a macOS VM, where the
 // reference deletes the entry.
 func TestGitDirTrustRemoveThroughSymlinkedRootPrunesEntry(t *testing.T) {
@@ -323,14 +323,6 @@ func TestGitDirTrustRemoveThroughSymlinkedRootPrunesEntry(t *testing.T) {
 	writeFile(t, filepath.Join(entry, "gitdir"), filepath.Join(D, ".git")+"\n", 0o644)
 	writeFile(t, filepath.Join(entry, "commondir"), "../..\n", 0o644)
 	writeFile(t, filepath.Join(D, ".git"), "gitdir: "+entry+"\n", 0o644)
-	// Git's own remove fails, so the fallback delete runs and the prune follows it.
-	bin := t.TempDir()
-	script := "#!/bin/sh\ncase \"$*\" in\n  *\"worktree remove\"*) echo \"fatal: failed\" >&2; exit 1 ;;\n  *) exit 0 ;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-
 	alias := filepath.Join(realTempDir(t), "L")
 	symlink(t, base, alias)
 	aliasT := filepath.Join(alias, "T")

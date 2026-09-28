@@ -704,7 +704,7 @@ func TestPrecedenceGitTimeout(t *testing.T) {
 
 // The bypass, asserted directly. "Off" must mean context.WithTimeout is never
 // called — not a huge-but-finite deadline — so that exec.CommandContext has no
-// cancel path to fire and gitDeadline's timedOut is false by construction.
+// cancel path to fire and ctx.Err() stays nil by construction.
 //
 // This is the assertion a "simplify 0 into 100 years" refactor fails: such a
 // context still reports a deadline, and this test says it must not.

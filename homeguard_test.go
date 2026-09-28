@@ -97,9 +97,9 @@ func TestWipesHomeDirWithNoResolvableHome(t *testing.T) {
 // guard answered false — including ".." from a daemon whose working directory is
 // the home directory, which is os.RemoveAll on home's parent.
 //
-// git.worktree_remove is where this bites: it has no IsAbs gate, and PROTOCOL.md
-// measures that its fallback delete resolves worktreePath against the daemon's
-// working directory. Raised in review on #231.
+// Before 7d193f89, git.worktree_remove was where this bit: it had no IsAbs gate,
+// and its old fallback delete resolved worktreePath against the daemon's working
+// directory. Raised in review on #231.
 func TestWipesHomeDirResolvesRelativePaths(t *testing.T) {
 	base := t.TempDir()
 	home := filepath.Join(base, "users", "someone")
@@ -245,10 +245,10 @@ func TestFilesExtractTarRefusesHomeDir(t *testing.T) {
 // git.worktree_remove must refuse a worktreePath that is (or contains) the home
 // directory.
 //
-// This is the SECOND caller-supplied path handed to os.RemoveAll, found while
-// fixing the first: when `git worktree remove --force` fails — and it fails on a
-// home directory, which is not a worktree — the daemon deletes worktreePath
-// itself. `~` expands there too.
+// This is the SECOND caller-supplied path handed to a recursive delete, found while
+// fixing the first: the daemon deletes worktreePath itself, and `~` expands there
+// too. (At the time a failed `git worktree remove --force` led to that delete.
+// Today the remove runs no such git call.)
 //
 // Unlike the extract_tar wipe there is no seam on that delete, so safety here
 // comes from the home being a t.TempDir(): against the unfixed tree this test
@@ -300,7 +300,7 @@ func TestWorktreeRemoveRefusesHomeDir(t *testing.T) {
 			// baseRepo is a real directory but not a repository; the home path is
 			// outside it, so 7d193f89's location containment refuses it — with the
 			// reference's own "refusing to remove worktree:" wording — before git,
-			// the os.RemoveAll fallback, or the wipesHomeDir guard is ever reached.
+			// the delete, or the wipesHomeDir guard is ever reached.
 			// Containment is what protects home here now; the guard remains as
 			// defense-in-depth (and as the primary guard for files.extract_tar).
 			got := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
