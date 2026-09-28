@@ -58,7 +58,7 @@ type gitDirTrust struct {
 	// refusal is the full wire text when verdict is gitDirRefused.
 	refusal string
 	// pinCommonDir is the repository git directory of a trusted git directory. Git
-	// runs with GIT_COMMON_DIR set to it, and a remove prunes and verifies entries
+	// runs with GIT_COMMON_DIR set to it, and a remove verifies and deletes entries
 	// under it. For a daemon GIT_DIR that names nothing, it is the absolute form of
 	// that GIT_DIR. It is empty when the check left the
 	// directory to git with no pin.

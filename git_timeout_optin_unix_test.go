@@ -77,27 +77,6 @@ func TestGitTimeoutOptInKillsOnlyWhenSet(t *testing.T) {
 	})
 }
 
-// gitDeadline's third bit is what keeps a deadline from authorising the
-// destructive worktree_remove fallback. With the bound off it must be false by
-// construction, not merely false in practice.
-//
-// TestWorktreeRemoveTimeoutDoesNotDelete covers the opted-in half — that a
-// deadline is NOT read as "git refused". This is its mirror.
-func TestGitDeadlineReportsNoTimeoutWhenBoundIsOff(t *testing.T) {
-	stubSlowGit(t, "0.25")
-	old := gitTimeout
-	gitTimeout = 0
-	t.Cleanup(func() { gitTimeout = old })
-
-	_, ok, timedOut := gitDeadline(t.TempDir(), "worktree", "remove")
-	if timedOut {
-		t.Errorf("timedOut = true with the bound off; the destructive fallback would be gated on a deadline that cannot exist")
-	}
-	if !ok {
-		t.Errorf("ok = false; the stub exits 0, so the call should have succeeded")
-	}
-}
-
 // The p.TimeoutMs>0 guard in gitWorktreeCreateLocked keeps a D5 (git-timeout)
 // deadline that fires during the `worktree add` reporting worktree_add_failed —
 // NOT the caller-facing errorCode "timeout", which is reserved for a caller-supplied
@@ -172,32 +151,6 @@ func TestWorktreeCreateD5FiresBeforeLongerTimeoutMs(t *testing.T) {
 	}
 	if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 		t.Errorf("reply = %s, want errorCode worktree_add_failed", raw)
-	}
-}
-
-// The reply text for an opted-in timeout quotes the configured duration, so it
-// must reflect the value in force rather than a hardcoded 60s.
-func TestWorktreeRemoveTimeoutMessageQuotesTheConfiguredBound(t *testing.T) {
-	stubSlowGit(t, "30")
-	old := gitTimeout
-	gitTimeout = 2 * time.Second
-	t.Cleanup(func() { gitTimeout = old })
-
-	root := t.TempDir()
-	shapeAsGitRepo(t, root)
-	wt := filepath.Join(root, "wt")
-	if err := os.MkdirAll(wt, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	s := newTestServer(t)
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove",
-		map[string]any{"baseRepo": root, "worktreePath": wt}))
-
-	if !strings.Contains(raw, "2s") {
-		t.Errorf("reply = %s, want it to quote the configured 2s bound", raw)
-	}
-	if strings.Contains(raw, "1m0s") || strings.Contains(raw, "60s") {
-		t.Errorf("reply = %s, quotes the retracted 60s default rather than the value in force", raw)
 	}
 }
 

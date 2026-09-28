@@ -21,7 +21,7 @@ import (
 // containment — a path directly under the repo with no .claude/worktrees
 // component is accepted (measured: <repo>/notclaude/wt succeeded). A worktreePath
 // equal to the repo itself is refused as "not inside", which is what keeps
-// git.worktree_remove's os.RemoveAll fallback off the repository root.
+// git.worktree_remove's delete off the repository root.
 //
 // This containment is also why it subsumes the D2 home-wipe guard: a "~"-expanded
 // home path is not strictly under a repo, so it is refused here — with the
@@ -54,10 +54,12 @@ func worktreePathRefusal(repo, worktreePath, verb string) string {
 // worktreeSymlinkRefusal returns the reference's refusal when a component of
 // worktreePath BELOW baseRepo — excluding the leaf — is a symbolic link, or "" if
 // none is. A planted `.claude` / `.claude/worktrees` symlink could carry a create
-// outside the repo or point the destructive remove fallback at an external target,
-// so 7d193f89 refuses it by name (verb is "create" or "remove"). A symlinked LEAF
-// is not caught here — it exists, so the caller's freshness check refuses it as
-// "already exists" instead (measured). Confirmed byte-for-byte against 7d193f89.
+// outside the repo or point the destructive remove at an external target,
+// so 7d193f89 refuses it by name (verb is "create" or "remove"). The refusal text
+// is confirmed byte-for-byte against 7d193f89. A symlinked LEAF
+// is not caught here. Create refuses it as "already exists" (measured). Remove
+// refuses it as "is a symbolic link, not a worktree directory" (f6010b97, measured
+// on a macOS VM).
 func worktreeSymlinkRefusal(repo, worktreePath, verb string) string {
 	link := symlinkedComponent(repo, worktreePath)
 	if link == "" {
@@ -145,7 +147,7 @@ func pathHasDotDot(p string) bool {
 // baseRepo is accepted on Windows (measured on the Windows 7d193f89 build) — where the
 // earlier case-sensitive strings.HasPrefix wrongly refused it. p is under root iff
 // Rel(root, p) succeeds, is not "." (equal paths are "not inside" the repo, keeping the
-// repository root out of reach of the remove fallback), and is filepath-local (no ".."
+// repository root out of reach of the remove), and is filepath-local (no ".."
 // escape). By the time this runs the caller has already refused a raw ".." component.
 func pathStrictlyUnder(p, root string) bool {
 	rel, err := filepath.Rel(root, p)

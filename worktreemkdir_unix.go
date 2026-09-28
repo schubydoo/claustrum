@@ -30,6 +30,13 @@ func mkdirWorktreeLeaf(worktreePath string) error {
 	return nil
 }
 
+// junctionParentRefusal is a Windows check. Unix has no junctions, and a symlinked
+// component is refused earlier (worktreeSymlinkRefusal).
+func junctionParentRefusal(repo, worktreePath string) string {
+	_, _ = repo, worktreePath
+	return ""
+}
+
 // rmdirWorktreeLeaf removes worktreePath only if it is an empty directory. rmdir(2)
 // never deletes a file or a directory that holds an entry, so the emptiness test and
 // the removal are one step. undoFailedAdd uses it.

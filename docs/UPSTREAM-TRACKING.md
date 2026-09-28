@@ -198,6 +198,7 @@ opt-in?
 | D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal |
 | D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
 | D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-` |
+| D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where the reference answers success and deletes the branch |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept) |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
