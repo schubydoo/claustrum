@@ -1103,7 +1103,10 @@ lower-case `git_config_count` or `git_config_key_0` (Windows VM).
   index where one is not set is refused with
   `inherited GIT_CONFIG pair <n> is incomplete`. Linux, macOS and Windows VMs.
 - An empty key is not refused here. On a repository, git then fails the listing.
-  Linux, macOS and Windows VMs.
+  Linux, macOS and Windows VMs. `f6010b97` also refuses `git.info` and
+  `git.list_branches` on a plain-directory `path`, and `git.worktree_create` and
+  `git.worktree_remove` on a plain-directory `baseRepo`. claustrum answers these as
+  it does with nothing set. Linux, macOS and Windows VMs (issue 429).
 
 A refusal text starts with `config-defined hooks could not be pinned off; git not
 run: `. Before the refusal, the daemon runs no git call except the excludes read.

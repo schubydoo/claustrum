@@ -32,7 +32,7 @@ const (
 		"commondir not as git writes it: "
 	// gitDirEntryGoneRefusal carries the older hooks prefix. It answers a daemon GIT_DIR
 	// that names a linked-worktree entry which no longer exists.
-	gitDirEntryGoneRefusal = "config-defined hooks could not be pinned off; git not run: " +
+	gitDirEntryGoneRefusal = hooksPinPrefix +
 		"the worktree entry this folder's .git names no longer exists"
 	// gitDirAddWrap prefixes a refusal on git.worktree_create when the daemon's own
 	// environment already carries GIT_COMMON_DIR.

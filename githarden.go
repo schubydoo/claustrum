@@ -140,7 +140,9 @@ func hardenedGitEnv(heavy bool, pin []string) []string {
 	return hardenedEnvFrom(os.Environ(), heavy, pin)
 }
 
-// hardenedEnvFrom is hardenedGitEnv with daemon as the daemon's environment.
+// hardenedEnvFrom is hardenedGitEnv with daemon as the daemon's environment. The
+// light profile's GIT_ALLOW_PROTOCOL still comes from the process environment
+// (lightAllowProtocol), not from daemon.
 func hardenedEnvFrom(daemon []string, heavy bool, pin []string) []string {
 	base := dropConfigOverrides(daemon)
 	// A refused count gives 0 here.
