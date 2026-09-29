@@ -355,6 +355,51 @@ func TestWorktreeCreateExternalCheckoutRefusal(t *testing.T) {
 	})
 }
 
+// A symlinked <directory> gets the symlink refusal before the <directory>-level
+// tests. f6010b97 has this order on Linux and macOS VMs (K1, K2, K4, K6).
+func TestWorktreeCreateExternalDirSymlinkFirst(t *testing.T) {
+	symlinkRefusal := func(f string) (string, string) {
+		return "refusing to create worktree: " + filepath.Join(f, "R", "cp") + " is a symbolic link; " +
+			"the directory under the worktree location must be a real directory", "unsafe_path"
+	}
+	linkCp := func(t *testing.T, f, target string) {
+		mkdirForTest(t, filepath.Join(f, "R"))
+		symlinkForTest(t, target, filepath.Join(f, "R", "cp"))
+	}
+	runChainCases(t, []chainCase{
+		{
+			name: "K1_link_to_a_file", rootRel: "R",
+			setup: func(t *testing.T, f string) {
+				writeFile(t, filepath.Join(f, "f"), "x", 0o644)
+				linkCp(t, f, filepath.Join(f, "f"))
+			},
+			want: symlinkRefusal,
+		},
+		{
+			name: "K2_link_to_a_checkout", rootRel: "R",
+			setup: func(t *testing.T, f string) {
+				mkdirForTest(t, filepath.Join(f, "co", ".git"))
+				linkCp(t, f, filepath.Join(f, "co"))
+			},
+			want: symlinkRefusal,
+		},
+		{
+			name: "K4_link_to_a_dir_without_search", rootRel: "R", denied: true,
+			setup: func(t *testing.T, f string) {
+				mkdirForTest(t, filepath.Join(f, "s"))
+				chmodForTest(t, filepath.Join(f, "s"), 0o600)
+				linkCp(t, f, filepath.Join(f, "s"))
+			},
+			want: symlinkRefusal,
+		},
+		{
+			name: "K6_dangling_link", rootRel: "R",
+			setup: func(t *testing.T, f string) { linkCp(t, f, filepath.Join(f, "nowhere")) },
+			want:  symlinkRefusal,
+		},
+	})
+}
+
 // The root-chain checkout test comes before the root refusals. The <directory>
 // .git test comes after them, and before the non-empty and "already exists"
 // refusals. f6010b97 has this order on Linux and macOS VMs (O1, O3, O4, O6, O8,

@@ -1249,14 +1249,15 @@ below against `f6010b97`. Each point names the VMs that measured it.
   (`"<p> is not <worktree location>/<directory>/<name> beneath <root>"`). Next, the
   daemon resolves the symlinks of the root. It tests each directory from `/` down
   to the root for a `.git` entry, top first. These root-chain tests come before
-  the tests of the root's owner and write access. The `<directory>`-level tests
-  come after those, and before the symlinked, non-empty and existing-leaf tests.
+  the tests of the root's owner and write access. The symlinked `<directory>`
+  test comes next, then the `<directory>`-level tests, then the non-empty and
+  existing-leaf tests.
   The error table above gives each text. A `.git` entry or a symlink loop refuses
   the create with `errorCode:"unsafe_path"`. Measured against `f6010b97` on Linux
   and macOS VMs, texts and order. A Linux VM measured the `<directory>` file
   test after the writable-root and foreign-owner tests, and the search test after
-  the writable-root test. The order of the `<directory>`-level tests against
-  the symlinked `<directory>` test is not measured. The root must be owned by
+  the writable-root test. Linux and macOS VMs measured the symlinked `<directory>`
+  test before the `<directory>`-level tests. The root must be owned by
   the daemon's user (`"<root> is owned by uid <o>, not by you (uid <u>); …"`). The root must not be
   writable by its group or by every user on the host
   (`"<root> is writable by <who> (mode <perm>); … chmod go-w"`). The `<directory>`

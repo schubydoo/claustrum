@@ -740,8 +740,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
-		// The root-chain step comes before the root refusals. The <directory> step
-		// comes after them. docs/PROTOCOL.md gives the measured order.
+		// The root-chain step comes before the root refusals. The <directory> symlink
+		// refusal comes after them, then the <directory> step. docs/PROTOCOL.md
+		// gives the measured order.
 		dir, msg, code := externalChainCheck(p.WorktreeRoot, p.WorktreePath)
 		if msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
@@ -750,11 +751,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeRootShareRefusal(root); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
-		if msg, code := externalDirLevelCheck(externalDir); msg != "" {
-			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
-		}
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg, code := externalDirLevelCheck(externalDir); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
 		}
 		if msg := externalWorktreeDirNotEmptyRefusal(p.WorktreePath); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})

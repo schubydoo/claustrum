@@ -91,9 +91,9 @@ func externalChainCheck(worktreeRoot, worktreePath string) (dir, msg, code strin
 }
 
 // externalDirLevelCheck tests dir, the resolved <directory> level, when it exists.
-// It comes after worktreeRootShareRefusal and before the <directory> symlink,
-// non-empty and "already exists" refusals. The order against the symlink refusal
-// is not measured. The texts match f6010b97 on Linux and macOS VMs:
+// It comes after worktreeRootShareRefusal and the <directory> symlink refusal, and
+// before the non-empty and "already exists" refusals. Linux and macOS VMs measured
+// the order against the symlink refusal. The texts match f6010b97 on both:
 //   - A dir that is not a directory reads "<path> is not a directory".
 //   - A .git entry in it refuses the create with unsafe_path.
 //   - A failed lstat of that entry reads "statat <name>/.git: <errno>".
