@@ -19,6 +19,21 @@ func mkdirWorktreeLeaf(worktreePath string) error {
 	return os.MkdirAll(worktreePath, 0o755)
 }
 
+// mkdirRepoWorktreeParents makes the missing directories of dir with os.MkdirAll
+// and mode 0755. No probe measured a Windows parent step that fails on a file or on
+// a denied create, so it keeps the MkdirAll error text. The unix build walks each
+// component to match the texts of f6010b97.
+func mkdirRepoWorktreeParents(repo, dir string) error {
+	_ = repo
+	return os.MkdirAll(dir, 0o755)
+}
+
+// mkdirExternalWorktreeParents is never reached on Windows, because Windows
+// refuses every worktreeRoot first. It makes dir with os.MkdirAll.
+func mkdirExternalWorktreeParents(dir string) error {
+	return os.MkdirAll(dir, 0o700)
+}
+
 // junctionParentRefusal reports the parent-directory failure of git.worktree_create
 // when a directory between repo and the leaf is a junction, or "" when none is. Go
 // reports a junction, and any other non-symlink reparse point, as ModeIrregular, not
