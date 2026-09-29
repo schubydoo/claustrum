@@ -1260,24 +1260,60 @@ below against `f6010b97`. Each point names the VMs that measured it.
   test before the `<directory>`-level tests. The root must be owned by
   the daemon's user (`"<root> is owned by uid <o>, not by you (uid <u>); …"`). The root must not be
   writable by its group or by every user on the host
-  (`"<root> is writable by <who> (mode <perm>); … chmod go-w"`). The `<directory>`
-  level must not be a symlink. Unless it is already marked, it must also start out
-  empty (`"<dir> already exists, is not marked as a worktree directory, and holds
-  other files (for example \"<name>\"); … must start out empty …"`). These two
-  tests take `<directory>` from the cleaned `worktreePath`, so for `R/proj/w1/`
-  the refusal names `R/proj`. With `worktreeRoot`, the "already exists" refusal
-  also quotes the cleaned path, for example `R/cp/w1` for `R/cp/w1/`. Measured
-  against `f6010b97` and `90fca6e6` on Linux and macOS VMs. With `worktreeRoot`,
-  each directory that the create makes above the leaf asks for mode 0700. That
-  covers every missing directory from the highest one down to `<directory>`.
-  After the parent step and before the add, the daemon writes a 285-byte
-  `.claude-managed-worktrees` marker at the `<directory>` level if no marker
-  exists. An existing entry of that name keeps its content and its mode. A marker
-  that cannot be created for another reason stops the create with
-  `errorCode:"mkdir_failed"`, and the leaf is not made. A failed add keeps the
-  marker. A directory that the call made before a later failure stays.
-  Measured against `f6010b97` on Linux and macOS VMs. Independently, a `baseRepo` that itself sits under a managed-worktrees
-  marker is refused `{success:false,error:"baseRepo is inside a managed worktrees
+  (`"<root> is writable by <who> (mode <perm>); … chmod go-w"`). The group-write
+  bit counts unless the group is the private group of the daemon's user. For
+  this test the answers follow only the flat files `/etc/passwd` and
+  `/etc/group`. Members and primary-group users in the macOS directory service
+  do not count. A directory-service group alone is not enough. A stock macOS
+  user has no `/etc/passwd` line, so there every group-writable root is
+  refused. A group that counts as shared on a root with mode 0777 gives the
+  `<who>` text "its group and every user on this host". These texts, the four
+  tests and the line format below were measured against `f6010b97` on Linux and
+  macOS VMs, except where a line says otherwise.
+  - A private group passes four tests:
+    - Its gid is the daemon's gid.
+    - `/etc/passwd` has exactly one line with that gid as its primary gid. That
+      line must be the daemon user's line. Only Linux VMs measured this.
+      Whether it is found by uid or by name is not measured.
+    - At least one `/etc/group` line has that gid, and every such line has the
+      name of that user.
+    - No such line lists a member other than that user.
+  - The account-file lines:
+    - In both files a line that starts with `#` is skipped.
+    - A `/etc/passwd` line with 6, 7 or 8 fields is read.
+    - A passwd name with a leading space does not match the user (Linux only).
+    - A `+name` line is not skipped.
+    - A leading space and a trailing CR around a group member are trimmed, and
+      an empty member is ignored.
+  - Not measured:
+    - claustrum uses the effective gid, and no capture told the real and the
+      effective gid apart.
+    - A file that cannot be read makes the group shared.
+    - A `/etc/passwd` line with fewer than 6 or more than 8 fields is skipped.
+    - A `/etc/group` line with other than 4 fields is skipped.
+    - A line with a non-numeric uid or gid is skipped.
+    - Two identical group lines for the user pass.
+    - A member is also trimmed of trailing spaces. No other field is trimmed.
+    - A user known only to a Linux NSS source, such as LDAP, counts as shared.
+
+  The `<directory>` level must not be a symlink. Unless it is already marked, it
+  must also start out empty (`"<dir> already exists, is not marked as a worktree
+  directory, and holds other files (for example \"<name>\"); … must start out
+  empty …"`). These two tests take `<directory>` from the cleaned
+  `worktreePath`, so for `R/proj/w1/` the refusal names `R/proj`. With
+  `worktreeRoot`, the "already exists" refusal also quotes the cleaned path, for
+  example `R/cp/w1` for `R/cp/w1/`. Measured against `f6010b97` and `90fca6e6`
+  on Linux and macOS VMs. With `worktreeRoot`, each directory that the create
+  makes above the leaf asks for mode 0700. That covers every missing directory
+  from the highest one down to `<directory>`. After the parent step and before
+  the add, the daemon writes a 285-byte `.claude-managed-worktrees` marker at
+  the `<directory>` level if no marker exists. An existing entry of that name
+  keeps its content and its mode. A marker that cannot be created for another
+  reason stops the create with `errorCode:"mkdir_failed"`, and the leaf is not
+  made. A failed add keeps the marker. A directory that the call made before a
+  later failure stays. Measured against `f6010b97` on Linux and macOS VMs.
+  Independently, a `baseRepo` that itself sits under a managed-worktrees marker
+  is refused `{success:false,error:"baseRepo is inside a managed worktrees
   directory …",errorCode:"nested_base_repo"}`.
 - Other failure → `{success:false,error:"git worktree add failed: <text>",errorCode:"worktree_add_failed"}`.
   `<text>` is git's stderr, made by the text rule below. On `f6010b97` and on
