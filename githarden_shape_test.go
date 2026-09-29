@@ -401,6 +401,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 			t.Skip("a worktreeRoot is refused on Windows before any git call")
 		}
 		root := t.TempDir()
+		requireTempOutsideCheckout(t, root)
 		ext := filepath.Join(root, "proj", "e0")
 		raw, _ := run("git.worktree_create", map[string]any{
 			"baseRepo": f.top, "branchName": "e0", "worktreePath": ext, "worktreeRoot": root})

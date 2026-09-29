@@ -63,11 +63,9 @@ func externalChainCheck(worktreeRoot, worktreePath string) (dir, msg, code strin
 		}
 		return "", parentStepPrefix + err.Error(), "mkdir_failed"
 	}
-	fi, err := os.Lstat(resolved)
-	if err != nil {
-		return "", parentStepPrefix + err.Error(), "mkdir_failed"
-	}
-	if !fi.IsDir() {
+	// A path that EvalSymlinks just resolved exists, so a failed Lstat here means a
+	// concurrent change. It gets the same text as a path that is not a directory.
+	if fi, err := os.Lstat(resolved); err != nil || !fi.IsDir() {
 		return "", parentStepPrefix + resolved + ": not a directory", "mkdir_failed"
 	}
 	var chain []string

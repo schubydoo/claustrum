@@ -366,6 +366,15 @@ form. Until a drift check (Steps 2–3) shows that the reference moved, holding 
 1.26.x is the parity-preserving position. This is a temporary hold, not a
 divergence, and it carries no D-number.
 
+### The symlink-loop text of `filepath.EvalSymlinks`
+
+`git.worktree_create` with a `worktreeRoot` detects a symlink loop by the error
+text of `filepath.EvalSymlinks`, "EvalSymlinks: too many links". Go does not
+export that error. The test lives in `isSymlinkLoop` (`worktreeexternal_unix.go`).
+If a Go release rewords the text, the loop frame changes from `unsafe_path` to
+`mkdir_failed`. The S1, S1b, S1c and S1d cases in
+`worktree_create_chain_unix_test.go` then fail. Check them after each Go bump.
+
 ## Automating it
 
 - [`.github/workflows/upstream-desktop-watch.yml`](https://github.com/schubydoo/claustrum/blob/main/.github/workflows/upstream-desktop-watch.yml)

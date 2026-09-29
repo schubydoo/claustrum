@@ -51,7 +51,9 @@ type chainCase struct {
 	denied   bool
 	setup    func(t *testing.T, f string)
 	want     func(f string) (text, code string)
-	// absent lists paths, relative to F, that the failed create must not make.
+	// absent lists more paths, relative to F, that the failed create must not make.
+	// The leaf and the <directory> level are always checked when they were missing
+	// before the call.
 	absent []string
 	// kept lists paths, relative to F, that the failed create must leave in place.
 	kept []string
@@ -74,13 +76,18 @@ func runChainCases(t *testing.T, cases []chainCase) {
 			if c.rootSent != nil {
 				root = c.rootSent(f)
 			}
+			var abs []string
+			for _, p := range []string{wp, filepath.Dir(wp)} {
+				if _, err := os.Lstat(p); err != nil {
+					abs = append(abs, p)
+				}
+			}
 			raw := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": repo, "branchName": "b", "worktreePath": wp, "worktreeRoot": root}))
 			text, code := c.want(f)
 			if want := failFrame(t, text, code); raw != want {
 				t.Errorf("create frame\n got %s\nwant %s", raw, want)
 			}
-			abs := []string{}
 			for _, a := range c.absent {
 				abs = append(abs, filepath.Join(f, a))
 			}
@@ -173,7 +180,8 @@ func TestWorktreeCreateExternalChain(t *testing.T) {
 				return parentText("cannot mark " + filepath.Join(f, "R", "cp") +
 					" as a worktree location: openat .claude-managed-worktrees: permission denied")
 			},
-			absent: []string{"R/cp/w1", "R/cp/" + managedWorktreesMarker},
+			absent: []string{"R/cp/" + managedWorktreesMarker},
+			kept:   []string{"R/cp"},
 		},
 		{
 			name: "S4_symlinked_root_dir_is_a_file", rootRel: "R",
@@ -676,23 +684,5 @@ func TestWorktreeCreateInRepoClaudeLoop(t *testing.T) {
 		"your own. Replace it with a real directory (or delete it and it will be recreated)"
 	if want := failFrame(t, text, "symlinked_component"); raw != want {
 		t.Errorf("create frame\n got %s\nwant %s", raw, want)
-	}
-}
-
-// requireTempOutsideCheckout fails the test when the temp dir sits inside a git
-// checkout. The create then refuses every worktreeRoot under it, so set TMPDIR
-// outside any checkout. It walks the resolved path, as the create does.
-func requireTempOutsideCheckout(t *testing.T, dir string) {
-	t.Helper()
-	if r, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = r
-	}
-	for d := dir; ; d = filepath.Dir(d) {
-		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
-			t.Fatalf("temp dir %s is inside a git checkout (%s has a .git entry); set TMPDIR outside it", dir, d)
-		}
-		if filepath.Dir(d) == d {
-			return
-		}
 	}
 }
