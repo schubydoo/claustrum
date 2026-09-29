@@ -12,11 +12,11 @@ import (
 )
 
 // An external worktreeRoot writable by every user on the host is refused (mode is
-// echoed). The uid-ownership and shared-group refusals need a foreign owner / a
-// shared group and are VM-verified rather than exercised here. Measured against
-// 7d193f89. The asserted substring is the suffix common to the world-only and
-// group+world spellings, so a temp dir whose gid differs from the process egid
-// (which would add "its group and ") does not make the test flaky.
+// echoed). Measured against 7d193f89. The asserted substring is the suffix common
+// to the world-only and group+world spellings. This test reads the host's own
+// passwd and group files. If they do not show the temp dir's group as private,
+// the text adds "its group and ", and the test still passes. TestWorktreeRootShareRefusalGroupRule pins the group rule with fixture
+// files.
 func TestWorktreeCreateExternalWorldWritable(t *testing.T) {
 	requireGit(t)
 	base := t.TempDir()
@@ -207,4 +207,133 @@ func TestWorktreeRootShareRefusalMissingRoot(t *testing.T) {
 	if got := worktreeRootShareRefusal(filepath.Join(t.TempDir(), "nonexistent")); got != "" {
 		t.Errorf("missing root = %q, want no refusal", got)
 	}
+}
+
+// useAccountFiles points the flat passwd and group seams at fixture files with the
+// given content, and restores them at cleanup. A test that calls it must not run in
+// parallel, since every worktreeRoot create reads the seams.
+func useAccountFiles(t *testing.T, passwd, group string) {
+	t.Helper()
+	dir := t.TempDir()
+	pw, gr := filepath.Join(dir, "passwd"), filepath.Join(dir, "group")
+	writeFile(t, pw, passwd, 0o644)
+	writeFile(t, gr, group, 0o644)
+	oldPW, oldGR := flatPasswdPath, flatGroupPath
+	flatPasswdPath, flatGroupPath = pw, gr
+	t.Cleanup(func() { flatPasswdPath, flatGroupPath = oldPW, oldGR })
+}
+
+// groupRoot makes a root owned by the test user, with group gid and mode perm.
+func groupRoot(t *testing.T, gid int, perm os.FileMode) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "R")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(root, -1, gid); err != nil {
+		t.Skipf("cannot set the group of the root to %d: %v", gid, err)
+	}
+	chmodForTest(t, root, perm)
+	return root
+}
+
+// A group-writable worktreeRoot counts as private only when the flat passwd and
+// group files show the group as the daemon user's own. The fixture files carry the
+// euid and egid of the test, so the host's own files play no part. A row named
+// with an L, M, P, X or VR number follows that measured row (f6010b97, Linux and macOS
+// VMs). A row named not_measured_ pins a choice that no capture measured.
+func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
+	skipIfRoot(t)
+	uid, gid := os.Geteuid(), os.Getegid()
+	me := fmt.Sprintf("sgme:x:%d:%d:me:/home/sgme:/bin/sh\n", uid, gid)
+	other := fmt.Sprintf("sgother:x:%d:%d:other:/home/sgother:/bin/sh\n", uid+1, gid+1)
+	otherSameGID := fmt.Sprintf("sgother:x:%d:%d:other:/home/sgother:/bin/sh\n", uid+1, gid)
+	meElsewhere := fmt.Sprintf("sgme:x:%d:%d:me:/home/sgme:/bin/sh\n", uid, gid+1)
+	grp := func(name, members string) string { return fmt.Sprintf("%s:x:%d:%s\n", name, gid, members) }
+	refusal := func(root, who, mode string) string {
+		return "refusing to create worktree: " + root + " is writable by " + who + " (mode " + mode +
+			"); choose a directory only you can write to, or remove the extra write permission (chmod go-w)"
+	}
+	cases := []struct {
+		name          string
+		passwd, group string
+		noGroupFile   bool
+		perm          os.FileMode
+		who           string // "" means accepted
+	}{
+		{name: "L1_L10_private", passwd: other + me, group: grp("sgme", ""), perm: 0o775},
+		{name: "L1b_M11_M14_user_listed", passwd: me + other, group: grp("sgme", "sgme"), perm: 0o775},
+		{name: "L1_private_among_other_groups", passwd: me, group: fmt.Sprintf("sgother:x:%d:sgme\n", gid+1) + grp("sgme", ""), perm: 0o775},
+		{name: "L5_other_member", passwd: me, group: grp("sgme", "sgother"), perm: 0o775, who: "its group"},
+		{name: "M16_other_member", passwd: me, group: grp("sgme", "sgme,sgother"), perm: 0o775, who: "its group"},
+		{name: "L5b_other_primary_user", passwd: me + otherSameGID, group: grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "M15_other_primary_user", passwd: me + otherSameGID, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
+		{name: "X1_no_passwd_line", passwd: other, group: grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "P11_only_gid_line_is_another_user", passwd: otherSameGID + meElsewhere, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
+		{name: "P11b_only_gid_line_is_another_user", passwd: otherSameGID + meElsewhere, group: grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "P12_group_named_after_the_other_user", passwd: otherSameGID + meElsewhere, group: grp("sgother", ""), perm: 0o775, who: "its group"},
+		{name: "L9_group_renamed", passwd: me, group: grp("sgpriv", ""), perm: 0o775, who: "its group"},
+		{name: "L13_no_user_with_that_primary_gid", passwd: meElsewhere, group: grp("sgme", "sgme"), perm: 0o775, who: "its group"},
+		{name: "X2_no_group_line", passwd: me, group: "", perm: 0o775, who: "its group"},
+		{name: "L2_private_0777", passwd: me, group: grp("sgme", ""), perm: 0o777, who: "every user on this host"},
+		{name: "M4_shared_0777", passwd: other, group: grp("sgme", ""), perm: 0o777, who: "its group and every user on this host"},
+		{name: "P1_passwd_comment_line", passwd: fmt.Sprintf("#sgme:x:%d:%d::/home/sgme:/bin/bash\n", uid, gid) + me, group: grp("sgme", ""), perm: 0o775},
+		{name: "P2_group_comment_line", passwd: me, group: fmt.Sprintf("#old:x:%d:\n", gid) + grp("sgme", ""), perm: 0o775},
+		{name: "P3_group_line_crlf", passwd: me, group: fmt.Sprintf("sgme:x:%d:\r\n", gid), perm: 0o775},
+		{name: "P4_passwd_6_fields", passwd: fmt.Sprintf("sgme:x:%d:%d::/home/sgme\n", uid, gid), group: grp("sgme", ""), perm: 0o775},
+		{name: "P5_passwd_8_fields", passwd: fmt.Sprintf("sgme:x:%d:%d::/home/sgme:/bin/bash:extra\n", uid, gid), group: grp("sgme", ""), perm: 0o775},
+		{name: "P6_member_leading_space", passwd: me, group: grp("sgme", " sgme"), perm: 0o775},
+		{name: "P7_plus_line_is_a_second_user", passwd: me + fmt.Sprintf("+sgme:x:%d:%d:::\n", uid, gid), group: grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "P8_second_gid_line_after_with_member", passwd: me, group: grp("sgme", "") + fmt.Sprintf("sgdup:x:%d:nobody\n", gid), perm: 0o775, who: "its group"},
+		{name: "P9_second_gid_line_before", passwd: me, group: fmt.Sprintf("sgdup:x:%d:\n", gid) + grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "P10_passwd_name_leading_space", passwd: fmt.Sprintf(" sgme:x:%d:%d::/home/sgme:/bin/bash\n", uid, gid), group: grp("sgme", ""), perm: 0o775, who: "its group"},
+		{name: "X3_second_gid_line_after", passwd: me, group: grp("sgme", "") + fmt.Sprintf("sgdup:x:%d:\n", gid), perm: 0o775, who: "its group"},
+		{name: "VR1_VR2_shared_0755", passwd: other, group: grp("sgme", ""), perm: 0o755},
+		{name: "not_measured_malformed_lines_skipped",
+			passwd: "junk\n" + fmt.Sprintf("sgx:x:nan:%d:::\n", gid) + me,
+			group:  "junk\nsgx:x:nan:\n" + grp("sgme", ""), perm: 0o775},
+		{name: "not_measured_unreadable_file", passwd: me, noGroupFile: true, perm: 0o775, who: "its group"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			useAccountFiles(t, c.passwd, c.group)
+			if c.noGroupFile {
+				flatGroupPath = filepath.Join(t.TempDir(), "missing")
+			}
+			root := groupRoot(t, gid, c.perm)
+			want := ""
+			if c.who != "" {
+				want = refusal(root, c.who, fmt.Sprintf("%04o", c.perm))
+			}
+			if got := worktreeRootShareRefusal(root); got != want {
+				t.Errorf("worktreeRootShareRefusal = %q, want %q", got, want)
+			}
+		})
+	}
+
+	// L12, M13: the group is the user's private group in the files, but it is
+	// not the daemon's gid. That needs a supplementary group of the test user.
+	t.Run("L12_M13_not_the_daemon_gid", func(t *testing.T) {
+		groups, err := os.Getgroups()
+		if err != nil {
+			t.Skipf("getgroups: %v", err)
+		}
+		alt := -1
+		for _, g := range groups {
+			if g != gid {
+				alt = g
+				break
+			}
+		}
+		if alt < 0 {
+			t.Skip("the test user has no supplementary group")
+		}
+		useAccountFiles(t, fmt.Sprintf("sgme:x:%d:%d:me:/home/sgme:/bin/sh\n", uid, alt),
+			fmt.Sprintf("sgme:x:%d:\n", alt))
+		root := groupRoot(t, alt, 0o775)
+		want := refusal(root, "its group", "0775")
+		if got := worktreeRootShareRefusal(root); got != want {
+			t.Errorf("worktreeRootShareRefusal = %q, want %q", got, want)
+		}
+	})
 }

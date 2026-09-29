@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -131,12 +133,9 @@ func externalDirLevelCheck(dir string) (msg, code string) {
 //   - writable by a shared group, or by every user on the host ->
 //     "is writable by <who> (mode <perm>); …"
 //
-// A root the daemon user owns and only they (and their own group) can write to
-// passes. The group is a sharing concern only when the directory's gid is NOT the
-// daemon's effective gid: a private per-user group is not shared, so a
-// group-writable root under it is accepted (VM-confirmed). Only the write bits
-// beyond the owner's matter — group-write (0o020) when the group is shared, and
-// world-write (0o002).
+// A root the daemon user owns and only they can write to passes. The group-write
+// bit (0o020) counts unless rootGroupIsPrivate finds the group private to the
+// daemon user. The world-write bit (0o002) always counts.
 func worktreeRootShareRefusal(root string) string {
 	fi, err := os.Stat(root)
 	if err != nil {
@@ -155,7 +154,7 @@ func worktreeRootShareRefusal(root string) string {
 			"are refused the same way)", root, st.Uid, euid)
 	}
 	perm := fi.Mode().Perm()
-	groupShared := perm&0o020 != 0 && int(st.Gid) != os.Getegid()
+	groupShared := perm&0o020 != 0 && !rootGroupIsPrivate(int(st.Gid), int(st.Uid))
 	worldWritable := perm&0o002 != 0
 	if who := writableWho(groupShared, worldWritable); who != "" {
 		return fmt.Sprintf("refusing to create worktree: %s is writable by %s (mode %04o); "+
@@ -163,6 +162,95 @@ func worktreeRootShareRefusal(root string) string {
 			"permission (chmod go-w)", root, who, perm)
 	}
 	return ""
+}
+
+// flatPasswdPath and flatGroupPath are the flat account files that
+// rootGroupIsPrivate reads. They are variables so that tests can point them at
+// fixture files.
+var (
+	flatPasswdPath = "/etc/passwd"
+	flatGroupPath  = "/etc/group"
+)
+
+// rootGroupIsPrivate reports whether gid is the private group of the daemon user
+// with uid. It reads only the flat files, never NSS or the macOS directory
+// service. All four tests must pass. Measured against f6010b97 on Linux and
+// macOS VMs:
+//
+//   - gid is the gid of the daemon.
+//   - The passwd file has exactly one line with gid as its primary gid. That
+//     line must be the daemon user's line (P11, P12, both on Linux only).
+//     Whether it is found by uid or by name is not measured.
+//   - At least one group file line has gid. Every such line has the name of
+//     that passwd line (P8, P9, X3, MP8, MP9, MX3).
+//   - No such line lists a member other than that user.
+//
+// Both files skip a line whose first character is '#' (P1, P2, MP1, MP2). A
+// passwd line with 6, 7 or 8 fields is read (P4, P5, MP4, MP5). A passwd name
+// with a leading space does not match the user (P10, Linux only). A '+name' line
+// is not skipped (P7, MP7). A leading space and a trailing CR around a group member are trimmed (P3, P6,
+// MP3, MP6), and an empty member is ignored.
+//
+// These choices are not measured. The test uses the effective gid, and no capture
+// told the real and the effective gid apart. A file that cannot be read makes the
+// group shared. A passwd line with fewer than 6 or more than 8 fields is skipped.
+// A group line with other than 4 fields is skipped. A line with a non-numeric uid
+// or gid is skipped. Two identical group lines for the user pass. A member is
+// also trimmed of trailing spaces. No other field is trimmed.
+func rootGroupIsPrivate(gid, uid int) bool {
+	if gid != os.Getegid() {
+		return false
+	}
+	passwd, err := os.ReadFile(flatPasswdPath)
+	if err != nil {
+		return false
+	}
+	name, found := "", 0
+	for _, line := range strings.Split(string(passwd), "\n") {
+		// name:password:uid:gid:gecos:home[:shell[:extra]]
+		f := strings.Split(line, ":")
+		if strings.HasPrefix(line, "#") || len(f) < 6 || len(f) > 8 {
+			continue
+		}
+		lineUID, errU := strconv.Atoi(f[2])
+		lineGID, errG := strconv.Atoi(f[3])
+		if errU != nil || errG != nil || lineGID != gid {
+			continue
+		}
+		found++
+		if lineUID == uid {
+			name = f[0]
+		}
+	}
+	if found != 1 || name == "" {
+		return false
+	}
+	group, err := os.ReadFile(flatGroupPath)
+	if err != nil {
+		return false
+	}
+	seen := false
+	for _, line := range strings.Split(string(group), "\n") {
+		// name:password:gid:member,member
+		f := strings.Split(line, ":")
+		if strings.HasPrefix(line, "#") || len(f) != 4 {
+			continue
+		}
+		if lineGID, err := strconv.Atoi(f[2]); err != nil || lineGID != gid {
+			continue
+		}
+		if f[0] != name {
+			return false
+		}
+		for _, m := range strings.Split(f[3], ",") {
+			m = strings.Trim(strings.TrimSuffix(strings.Trim(m, " "), "\r"), " ")
+			if m != "" && m != name {
+				return false
+			}
+		}
+		seen = true
+	}
+	return seen
 }
 
 // writableWho names who — beyond the owner — can write to the root, or "" if only
