@@ -243,7 +243,6 @@ func groupRoot(t *testing.T, gid int, perm os.FileMode) string {
 // with an L, M, P, X or VR number follows that measured row (f6010b97, Linux and macOS
 // VMs). A row named not_measured_ pins a choice that no capture measured.
 func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
-	skipIfRoot(t)
 	uid, gid := os.Geteuid(), os.Getegid()
 	me := fmt.Sprintf("sgme:x:%d:%d:me:/home/sgme:/bin/sh\n", uid, gid)
 	other := fmt.Sprintf("sgother:x:%d:%d:other:/home/sgother:/bin/sh\n", uid+1, gid+1)
@@ -257,7 +256,7 @@ func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
 	cases := []struct {
 		name          string
 		passwd, group string
-		noGroupFile   bool
+		fileState     string // "missing passwd", "missing group" or "unreadable group"
 		perm          os.FileMode
 		who           string // "" means accepted
 	}{
@@ -292,13 +291,22 @@ func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
 		{name: "not_measured_malformed_lines_skipped",
 			passwd: "junk\n" + fmt.Sprintf("sgx:x:nan:%d:::\n", gid) + me,
 			group:  "junk\nsgx:x:nan:\n" + grp("sgme", ""), perm: 0o775},
-		{name: "not_measured_unreadable_file", passwd: me, noGroupFile: true, perm: 0o775, who: "its group"},
+		{name: "not_measured_missing_group_file", passwd: me, fileState: "missing group", perm: 0o775, who: "its group"},
+		{name: "not_measured_unreadable_group_file", passwd: me, group: grp("sgme", ""), fileState: "unreadable group", perm: 0o775, who: "its group"},
+		{name: "not_measured_missing_passwd_file", group: grp("sgme", ""), fileState: "missing passwd", perm: 0o775, who: "its group"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			useAccountFiles(t, c.passwd, c.group)
-			if c.noGroupFile {
+			switch c.fileState {
+			case "missing passwd":
+				flatPasswdPath = filepath.Join(t.TempDir(), "missing")
+			case "missing group":
 				flatGroupPath = filepath.Join(t.TempDir(), "missing")
+			case "unreadable group":
+				// uid 0 reads a 0o000 file, so the fixture cannot deny it there.
+				skipIfRoot(t)
+				chmodForTest(t, flatGroupPath, 0o000)
 			}
 			root := groupRoot(t, gid, c.perm)
 			want := ""

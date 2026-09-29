@@ -147,14 +147,15 @@ func worktreeRootShareRefusal(root string) string {
 	if !ok {
 		return ""
 	}
-	if euid := os.Geteuid(); int(st.Uid) != euid {
+	euid := os.Geteuid()
+	if int(st.Uid) != euid {
 		return fmt.Sprintf("refusing to create worktree: %s is owned by uid %d, not by you "+
 			"(uid %d); choose a directory you own, for example under your home directory "+
 			"(directories on network or container storage that report a different owner "+
 			"are refused the same way)", root, st.Uid, euid)
 	}
 	perm := fi.Mode().Perm()
-	groupShared := perm&0o020 != 0 && !rootGroupIsPrivate(int(st.Gid), int(st.Uid))
+	groupShared := perm&0o020 != 0 && !rootGroupIsPrivate(int(st.Gid), euid)
 	worldWritable := perm&0o002 != 0
 	if who := writableWho(groupShared, worldWritable); who != "" {
 		return fmt.Sprintf("refusing to create worktree: %s is writable by %s (mode %04o); "+
@@ -188,10 +189,10 @@ var (
 // Both files skip a line whose first character is '#' (P1, P2, MP1, MP2). A
 // passwd line with 6, 7 or 8 fields is read (P4, P5, MP4, MP5). A passwd name
 // with a leading space does not match the user (P10, Linux only). A '+name' line
-// is not skipped (P7, MP7). A leading space and a trailing CR around a group member are trimmed (P3, P6,
-// MP3, MP6), and an empty member is ignored.
+// is not skipped (P7, MP7). A leading space and a trailing CR around a group
+// member are trimmed (P3, P6, MP3, MP6), and an empty member is ignored.
 //
-// These choices are not measured. The test uses the effective gid, and no capture
+// These choices are not measured. claustrum uses the effective gid, and no capture
 // told the real and the effective gid apart. A file that cannot be read makes the
 // group shared. A passwd line with fewer than 6 or more than 8 fields is skipped.
 // A group line with other than 4 fields is skipped. A line with a non-numeric uid
