@@ -1267,8 +1267,9 @@ below against `f6010b97`. Each point names the VMs that measured it.
   do not count. A directory-service group alone is not enough. A stock macOS
   user has no `/etc/passwd` line, so there every group-writable root is
   refused. A group that counts as shared on a root with mode 0777 gives the
-  `<who>` text "its group and every user on this host". Measured against
-  `f6010b97` on Linux and macOS VMs, line format included.
+  `<who>` text "its group and every user on this host". These texts, the four
+  tests and the line format below were measured against `f6010b97` on Linux and
+  macOS VMs, except where a line says otherwise.
   - A private group passes four tests:
     - Its gid is the daemon's gid.
     - `/etc/passwd` has exactly one line with that gid as its primary gid. That

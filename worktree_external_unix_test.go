@@ -293,7 +293,7 @@ func TestWorktreeRootShareRefusalGroupRule(t *testing.T) {
 			group:  "junk\nsgx:x:nan:\n" + grp("sgme", ""), perm: 0o775},
 		{name: "not_measured_missing_group_file", passwd: me, fileState: "missing group", perm: 0o775, who: "its group"},
 		{name: "not_measured_unreadable_group_file", passwd: me, group: grp("sgme", ""), fileState: "unreadable group", perm: 0o775, who: "its group"},
-		{name: "not_measured_missing_passwd_file", group: grp("sgme", ""), fileState: "missing passwd", perm: 0o775, who: "its group"},
+		{name: "not_measured_missing_passwd_file", passwd: me, group: grp("sgme", ""), fileState: "missing passwd", perm: 0o775, who: "its group"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
