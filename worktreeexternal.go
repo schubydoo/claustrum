@@ -279,7 +279,7 @@ func externalWorktreeDirNotEmptyRefusal(worktreePath string) string {
 }
 
 // managedWorktreesMarkerBody is the exact content 7d193f89 writes into a
-// .claude-managed-worktrees marker on a successful external create (285 bytes,
+// .claude-managed-worktrees marker on an external create (285 bytes,
 // sha256 45da7f8a…). A client can read it via files.read, so the bytes are part of
 // the observable contract and are reproduced verbatim — like the version spoof, this
 // is measured reference OUTPUT, not copied source.
@@ -288,12 +288,30 @@ const managedWorktreesMarkerBody = "This directory holds Claude Code session wor
 	"managed checkouts; open the repository itself, not one of them, as a\n" +
 	"session folder. Safe to delete once the directory is otherwise empty.\n"
 
-// ensureManagedWorktreesMarker writes the marker into the <directory> level of an
-// external worktree (filepath.Dir(worktreePath)). claustrum writes it before `git
-// worktree add`, so the directory is tagged as managed as soon as it is committed to
-// holding a worktree; best-effort — the directory was just created and is owned by
-// the daemon user. (A successful create writing the marker was measured against
-// 7d193f89; the reference's behavior on a subsequent add failure was not.)
+// ensureManagedWorktreesMarker writes the marker into dir, the <directory> level of
+// an external worktree with the symlinks of its root resolved. claustrum writes it
+// after the parent step and before `git worktree add`. The directory is then
+// tagged as managed before git runs.
+//
+// It creates the marker only when no entry of that name exists. An existing entry
+// of any kind keeps its content and its mode, and a failed add keeps the marker.
+// Any other open error stops the create with "cannot mark <dir> as a worktree
+// location: openat .claude-managed-worktrees: <errno>". f6010b97 does the same on
+// Linux and macOS VMs. Not measured: a write or close that fails after the open.
+// The create goes on then.
 func ensureManagedWorktreesMarker(dir string) error {
-	return os.WriteFile(filepath.Join(dir, managedWorktreesMarker), []byte(managedWorktreesMarkerBody), 0o644)
+	f, err := os.OpenFile(filepath.Join(dir, managedWorktreesMarker), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err
+		}
+		return fmt.Errorf("cannot mark %s as a worktree location: openat %s: %w", dir, managedWorktreesMarker, err)
+	}
+	_, _ = f.WriteString(managedWorktreesMarkerBody)
+	_ = f.Close()
+	return nil
 }

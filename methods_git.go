@@ -729,8 +729,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// in-repo containment is replaced by the external-location checks: absolute /
 	// no-".." spelling of the root and path, 2-level containment, ownership /
 	// writability of the root, and the <directory> must start out empty (or already
-	// be a managed worktree directory). Order measured against 7d193f89; an empty
-	// worktreePath is judged here as a relative path, not the in-repo mkdir failure.
+	// be a managed worktree directory). An empty worktreePath is judged here as a
+	// relative path, not the in-repo mkdir failure.
+	var externalDir string
 	if p.WorktreeRoot != "" {
 		root := filepath.Clean(p.WorktreeRoot)
 		if msg := externalWorktreeUnsupportedRefusal(p.WorktreeRoot, "create"); msg != "" {
@@ -739,11 +740,22 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
+		// The root-chain step comes before the root refusals. The <directory> symlink
+		// refusal comes after them, then the <directory> step. docs/PROTOCOL.md
+		// gives the measured order.
+		dir, msg, code := externalChainCheck(p.WorktreeRoot, p.WorktreePath)
+		if msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
+		}
+		externalDir = dir
 		if msg := worktreeRootShareRefusal(root); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg, code := externalDirLevelCheck(externalDir); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
 		}
 		if msg := externalWorktreeDirNotEmptyRefusal(p.WorktreePath); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
@@ -802,20 +814,28 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// the leaf itself, and the leaf mkdir below then failed with "file exists". The
 	// references create that worktree and echo the path as sent. Measured on Linux
 	// and macOS VMs. Every frame below therefore keeps the raw p.WorktreePath.
+	// The parent makers set the modes and the error texts per OS.
 	leafParent := filepath.Dir(filepath.Clean(p.WorktreePath))
-	if err := os.MkdirAll(leafParent, 0o755); err != nil {
-		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     fmt.Sprintf("failed to create parent directory: %v", err),
-			ErrorCode: "mkdir_failed",
-		})
+	var parentErr error
+	if p.WorktreeRoot != "" {
+		parentErr = mkdirExternalWorktreeParents(externalDir)
+	} else {
+		parentErr = mkdirRepoWorktreeParents(repo, leafParent)
 	}
 	// For an external worktreeRoot, tag the <directory> level as holding managed
 	// session worktrees before git runs. This is the same marker
 	// baseRepoUnderManagedWorktrees looks for, so a later create whose baseRepo sits
-	// under here is refused as a nested repo.
-	if p.WorktreeRoot != "" {
-		_ = ensureManagedWorktreesMarker(leafParent)
+	// under here is refused as a nested repo. A marker that cannot be made stops
+	// the create before the leaf is made.
+	if parentErr == nil && p.WorktreeRoot != "" {
+		parentErr = ensureManagedWorktreesMarker(externalDir)
+	}
+	if parentErr != nil {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     fmt.Sprintf("failed to create parent directory: %v", parentErr),
+			ErrorCode: "mkdir_failed",
+		})
 	}
 	// 7d193f89 also creates the worktree directory ITSELF before `git worktree add`
 	// (git adds into the pre-made empty dir). An unwritable/foreign-owned parent fails HERE as

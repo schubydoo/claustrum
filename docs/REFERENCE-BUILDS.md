@@ -73,6 +73,8 @@ leftovers (PR 426), older `-install` gaps (PR 427) and a stale D9 example. For
 is still needed, and its Windows cause is now known. D1, D7 and D14 are
 retired, and D18 is new. A later pass matched `git.worktree_remove` to this build
 and closed most of its older gaps. D19, the Windows junction refusal, is new with it.
+Another pass matched the `git.worktree_create` directory modes, parent-step error
+texts and checkout refusal for a worktree location to this build on Linux and macOS.
 
 ### `90fca6e6a55c4d4c659e8c6ed511b7969ab17315` — 2026-09-14 (built)
 

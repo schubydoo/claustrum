@@ -443,6 +443,16 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"`, for a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
 | git.worktree_create | `failed to create parent directory: <repo>\<component> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Windows, when `.claude` or `.claude\worktrees` is a junction. claustrum also refuses another directory level, or a non-symlink reparse point, the same way (not measured). Nothing is created: no directory, no entry, no branch (`f6010b97`, Windows VM, rows JCR1 and JCR2) |
+| git.worktree_create | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs, with a `.git` entry up to five levels above the root. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is that directory, resolved and cleaned. Linux and macOS VMs measured these spellings. When several directories hold a `.git` entry, the highest one is named. Linux and macOS VMs measured that too |
+| git.worktree_create | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Under a symlinked root, `<dir>` has the root resolved. Linux and macOS VMs measured that spelling |
+| git.worktree_create | `refusing to create worktree: <root> passes through too many symbolic links (a loop?)` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a symlink loop is in the path of the root. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here, and it sends this refusal for a finite chain of more than 255 links (neither measured) |
+| git.worktree_create | `failed to create parent directory: lstat <path>: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`. There are two cases. First, a root symlink names a missing target, and `<path>` is that target. Second, a directory from `/` down to the root cannot be searched. Then `<path>` is `<dir>/.git` for the highest such directory. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Other errors from resolving the root are sent as Go prints them (not measured) |
+| git.worktree_create | `failed to create parent directory: <path>: not a directory` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the deepest existing part of the root is not a directory after its symlinks are resolved. `<path>` is that resolved path. It can be the root, a path above the root, or the file that a root symlink names. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs |
+| git.worktree_create | `failed to create parent directory: <path> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS. Without `worktreeRoot`, an existing component above the leaf is not a directory. `<path>` is its full path, with the symlinks of the repo resolved and with `//` and `/./` removed. With `worktreeRoot`, the `<directory>` level exists and is not a directory, and `<path>` is its path with the root resolved. A `<directory>` that is a symlink gets the symlink refusal first. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Linux and macOS VMs measured the symlinked `baseRepo`, the `/./` and the symlinked root. A macOS VM measured the `/tmp` repo spelling. On Windows, without `worktreeRoot`, a file in the path keeps the `os.MkdirAll` text, `mkdir <path>: <OS error>` (not measured) |
+| git.worktree_create | `failed to create parent directory: statat .: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, without `worktreeRoot`, when an existing `.claude` or `.claude/worktrees` cannot be searched. This holds also when nothing is left to create. Measured against `f6010b97` on Linux and macOS VMs |
+| git.worktree_create | `failed to create parent directory: statat <name>/.git: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level exists and cannot be searched. `<name>` is its last component. Measured against `f6010b97` on Linux and macOS VMs |
+| git.worktree_create | `failed to create parent directory: mkdirat <name>: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, when a missing directory above the leaf cannot be created. Without `worktreeRoot`, `<name>` is that directory's last component. With `worktreeRoot`, `<name>` is its path relative to the deepest directory that existed before the call, for example `a/b`. A directory that the call made before the failure stays. Measured with `permission denied` and `file name too long` against `f6010b97` on Linux and macOS VMs. Other errno texts take the same shape (not measured). A root made in the same call, then a failed `<directory>`, reads `mkdirat R/cp` by the same rule (not measured) |
+| git.worktree_create | `failed to create parent directory: cannot mark <dir> as a worktree location: openat .claude-managed-worktrees: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the marker cannot be created and no entry of that name exists. `<dir>` is the `<directory>` level with the symlinks of the root resolved. The leaf is not made. Measured against `f6010b97` on Linux and macOS VMs, also under a symlinked root |
 | git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is git's stderr, made by the text rule in the method section. On `f6010b97` and on claustrum the text can start with git's graft-file deprecation `hint:` lines, because both set `GIT_GRAFT_FILE`. The 512-byte cap can then cut the rest. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
 | git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap. Measured against `f6010b97` and `90fca6e6` on a macOS VM |
 | git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule. Where git prints graft-file deprecation `hint:` lines, the text starts with them on `f6010b97` and on claustrum. `90fca6e6` prints no hint. Apart from the hint, the frame matches `90fca6e6` byte for byte. The new directory and the branch the call created are removed. In attach mode the attached branch is kept (measured against `f6010b97`) |
@@ -1219,7 +1229,12 @@ below against `f6010b97`. Each point names the VMs that measured it.
   creates the parent directory before the add, so a nested path succeeds on a fresh
   repo. A `worktreePath` with a trailing slash, `//` or `/./` succeeds too. `path`
   and each undo text below quote `worktreePath` exactly as sent. Measured against
-  `f6010b97` and `90fca6e6` on Linux and macOS VMs.
+  `f6010b97` and `90fca6e6` on Linux and macOS VMs. On Linux and macOS a directory
+  that the create makes above the leaf asks for mode 0755, and the leaf asks for
+  0777. The umask applies. An existing directory keeps its mode. A directory that
+  the call made before a later failure stays. The texts of this step name the repo
+  with its symlinks resolved. Measured against `f6010b97` on Linux and macOS VMs.
+  Both VMs ran umask 0000, which tells a leaf request of 0777 from 0775.
 - `worktreeRoot` is the `external_root` capability. When the client supplies
   `worktreeRoot`, the worktree is placed OUTSIDE the repository, at
   `<worktreeRoot>/<directory>/<name>`, exactly two levels under the root. On
@@ -1227,12 +1242,23 @@ below against `f6010b97`. Each point names the VMs that measured it.
   location test with `"refusing to {create,remove} worktree: <root> cannot be used:
   a custom worktree location is not supported on Windows hosts yet"`. The
   `errorCode` is `"unsafe_path"` on create, and there is none on remove. On unix
-  the in-repo containment above is replaced by these tests, each with
-  `errorCode:"unsafe_path"`. `worktreeRoot` and `worktreePath` must be absolute and
+  the in-repo containment above is replaced by the tests below. A refusal among
+  them has `errorCode:"unsafe_path"`. The error table gives the code of each
+  failure. `worktreeRoot` and `worktreePath` must be absolute and
   `..`-free, and `worktreePath` must sit exactly two levels under the root
-  (`"<p> is not <worktree location>/<directory>/<name> beneath <root>"`). The root
-  must be owned by the daemon's user
-  (`"<root> is owned by uid <o>, not by you (uid <u>); …"`). The root must not be
+  (`"<p> is not <worktree location>/<directory>/<name> beneath <root>"`). Next, the
+  daemon resolves the symlinks of the root. It tests each directory from `/` down
+  to the root for a `.git` entry, top first. These root-chain tests come before
+  the tests of the root's owner and write access. The symlinked `<directory>`
+  test comes next, then the `<directory>`-level tests, then the non-empty and
+  existing-leaf tests.
+  The error table above gives each text. A `.git` entry or a symlink loop refuses
+  the create with `errorCode:"unsafe_path"`. Measured against `f6010b97` on Linux
+  and macOS VMs, texts and order. A Linux VM measured the `<directory>` file
+  test after the writable-root and foreign-owner tests, and the search test after
+  the writable-root test. Linux and macOS VMs measured the symlinked `<directory>`
+  test before the `<directory>`-level tests. The root must be owned by
+  the daemon's user (`"<root> is owned by uid <o>, not by you (uid <u>); …"`). The root must not be
   writable by its group or by every user on the host
   (`"<root> is writable by <who> (mode <perm>); … chmod go-w"`). The `<directory>`
   level must not be a symlink. Unless it is already marked, it must also start out
@@ -1241,9 +1267,16 @@ below against `f6010b97`. Each point names the VMs that measured it.
   tests take `<directory>` from the cleaned `worktreePath`, so for `R/proj/w1/`
   the refusal names `R/proj`. With `worktreeRoot`, the "already exists" refusal
   also quotes the cleaned path, for example `R/cp/w1` for `R/cp/w1/`. Measured
-  against `f6010b97` and `90fca6e6` on Linux and macOS VMs. On success the
-  daemon writes a 285-byte `.claude-managed-worktrees` marker at the `<directory>`
-  level. Independently, a `baseRepo` that itself sits under a managed-worktrees
+  against `f6010b97` and `90fca6e6` on Linux and macOS VMs. With `worktreeRoot`,
+  each directory that the create makes above the leaf asks for mode 0700. That
+  covers every missing directory from the highest one down to `<directory>`.
+  After the parent step and before the add, the daemon writes a 285-byte
+  `.claude-managed-worktrees` marker at the `<directory>` level if no marker
+  exists. An existing entry of that name keeps its content and its mode. A marker
+  that cannot be created for another reason stops the create with
+  `errorCode:"mkdir_failed"`, and the leaf is not made. A failed add keeps the
+  marker. A directory that the call made before a later failure stays.
+  Measured against `f6010b97` on Linux and macOS VMs. Independently, a `baseRepo` that itself sits under a managed-worktrees
   marker is refused `{success:false,error:"baseRepo is inside a managed worktrees
   directory …",errorCode:"nested_base_repo"}`.
 - Other failure → `{success:false,error:"git worktree add failed: <text>",errorCode:"worktree_add_failed"}`.

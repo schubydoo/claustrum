@@ -38,6 +38,7 @@ func worktreeErrorField(t *testing.T, raw string) string {
 func TestWorktreeCreateExternalRoot(t *testing.T) {
 	requireGit(t)
 	base := t.TempDir()
+	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "R")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -102,6 +103,7 @@ func TestWorktreeCreateExternalRoot(t *testing.T) {
 func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 	requireGit(t)
 	base := t.TempDir()
+	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "R")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -172,6 +174,7 @@ func TestWorktreeCreateExternalSpellingAndSymlink(t *testing.T) {
 func TestWorktreeCreateExternalDirMustBeEmpty(t *testing.T) {
 	requireGit(t)
 	base := t.TempDir()
+	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "R")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)

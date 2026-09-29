@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -73,5 +74,23 @@ func removeFixtureTemplates() {
 	defer fixtureTplMu.Unlock()
 	if fixtureTplRoot != "" {
 		_ = os.RemoveAll(fixtureTplRoot)
+	}
+}
+
+// requireTempOutsideCheckout fails the test when the temp dir sits inside a git
+// checkout. The create then refuses every worktreeRoot under it, so set TMPDIR
+// outside any checkout. It walks the resolved path, as the create does.
+func requireTempOutsideCheckout(t *testing.T, dir string) {
+	t.Helper()
+	if r, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = r
+	}
+	for d := dir; ; d = filepath.Dir(d) {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+			t.Fatalf("temp dir %s is inside a git checkout (%s has a .git entry); set TMPDIR outside it", dir, d)
+		}
+		if filepath.Dir(d) == d {
+			return
+		}
 	}
 }
