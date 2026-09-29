@@ -110,9 +110,9 @@ const managedWorktreesRefusal = "baseRepo is inside a managed worktrees director
 // baseRepoUnderManagedWorktrees reports whether repo sits inside a managed
 // worktrees tree: beneath a `.claude/worktrees` directory, or beneath any ancestor
 // directory that holds a `.claude-managed-worktrees` marker file. 7d193f89 refuses
-// such a baseRepo on git.worktree_create (errorCode "nested_base_repo"),
-// git.worktree_remove (no errorCode), and git.list_branches (bare isRepo:false).
-// Confirmed byte-for-byte against 7d193f89 on an ephemeral VM.
+// such a baseRepo on git.worktree_create (errorCode "nested_base_repo") and
+// git.worktree_remove (no errorCode). git.list_branches tests its path and its
+// baseRepo (docs/PROTOCOL.md).
 func baseRepoUnderManagedWorktrees(repo string) bool {
 	p := canonicalPath(repo)
 	for {

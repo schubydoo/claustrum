@@ -133,7 +133,20 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // A baseRepo that does not exist skips every reason. Every row, and the order against
 // the containment and dir-symlink checks, was measured side by side against f6010b97
 // on a Linux VM.
+//
+// Before these reasons comes the check of the daemon's own GIT_CONFIG_COUNT, for a
+// baseRepo that exists. When it refuses, the reason is the trust refusal text if the
+// trust check refuses, and else the count refusal. See docs/PROTOCOL.md, "The
+// daemon's own git environment".
 func externalWorkTreeRefusal(repo string) string {
+	if _, err := os.Stat(repo); err == nil {
+		if msg, bad := daemonCountRefusal(); bad {
+			if t := requestGitDirTrust(repo, false); t.verdict == gitDirRefused {
+				msg = t.refusal
+			}
+			return workTreeUnknownPrefix + msg
+		}
+	}
 	if err := unenterableBaseListing(repo); err != nil {
 		return workTreeUnknownPrefix + hooksRefusalPrefix + err.Error()
 	}

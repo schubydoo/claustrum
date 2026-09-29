@@ -163,6 +163,8 @@ component_management:
         # sourceBranch start-commit choice for git.worktree_create.
         - worktreesource.go
         - githarden.go
+        # the daemon's own GIT_* variables on the git calls of the git methods.
+        - gitenv.go
         # the git-directory trust check every git.* method runs first (f6010b97).
         - gitdirtrust.go
         - gitdirtrust_unix.go

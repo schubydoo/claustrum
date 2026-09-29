@@ -272,12 +272,17 @@ func gitInfo(req *request) response {
 	// and applied to every git op via hardenedProfileArgs/userExcludesFile, rather than
 	// probed here and discarded.
 	//
-	// The git-directory trust check runs first, on path (gitdirtrust.go). Measured side
-	// by side against f6010b97 on Linux, macOS and Windows VMs.
-	switch t := requestGitDirTrust(p.Path, true); t.verdict {
-	case gitDirRefused:
+	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
+	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
+	// repository" answer (docs/PROTOCOL.md).
+	t := requestGitDirTrust(p.Path, true)
+	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
-	case gitDirNoRepo:
+	}
+	if msg, bad := daemonCountRefusal(); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
+	if t.verdict == gitDirNoRepo {
 		return okResult(req.ID, notRepoResult{})
 	}
 	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
@@ -475,12 +480,22 @@ func gitStatus(req *request) response {
 	if p.BaseRepo == "" {
 		return errResult(req.ID, codeInvalidParam, "baseRepo is required")
 	}
+	// A baseRepo that does not resolve answers the bare shape, before any git call and
+	// before the check of the daemon's own GIT_CONFIG_COUNT (docs/PROTOCOL.md).
+	if unresolvable(p.BaseRepo) {
+		return okResult(req.ID, gitStatusResult{})
+	}
 	// The git-directory trust check runs on baseRepo, not on path (gitdirtrust.go).
-	// Measured side by side against f6010b97 on Linux, macOS and Windows VMs.
-	switch t := requestGitDirTrust(p.BaseRepo, false); t.verdict {
-	case gitDirRefused:
+	// The count check comes after a trust refusal and before the "no repository"
+	// answer.
+	t := requestGitDirTrust(p.BaseRepo, false)
+	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
-	case gitDirNoRepo:
+	}
+	if msg, bad := daemonCountRefusal(); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
+	if t.verdict == gitDirNoRepo {
 		return okResult(req.ID, gitStatusResult{})
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 before status
@@ -560,6 +575,14 @@ func gitStatus(req *request) response {
 	return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: false, Changes: changes})
 }
 
+// unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
+// git.status treats such a baseRepo as missing, and git.list_branches such a path
+// (docs/PROTOCOL.md).
+func unresolvable(p string) bool {
+	_, err := filepath.EvalSymlinks(p)
+	return err != nil
+}
+
 // gitStatusWorktreeOf reports whether path is a linked git worktree whose main
 // repository is baseRepo — the gate 7d193f89's git.status applies before it will
 // run status. One `git rev-parse` at path yields the three facts that decide it:
@@ -608,18 +631,25 @@ func gitListBranches(req *request) response {
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree before
-	// listing anything, answering the bare isRepo:false shape (branches:[]). Measured
-	// against 7d193f89 on an ephemeral VM.
-	if baseRepoUnderManagedWorktrees(p.repoDir()) {
+	// A path inside a managed worktrees tree, and a non-empty path that does not
+	// resolve, answer the bare isRepo:false shape (branches:[]) before any git call
+	// and before the check of the daemon's own GIT_CONFIG_COUNT (docs/PROTOCOL.md).
+	// The managed-worktrees test also runs on baseRepo.
+	if baseRepoUnderManagedWorktrees(p.Path) || baseRepoUnderManagedWorktrees(p.repoDir()) ||
+		(p.Path != "" && unresolvable(p.Path)) {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
-	// The git-directory trust check runs on path (gitdirtrust.go). Measured side by
-	// side against f6010b97 on Linux, macOS and Windows VMs.
-	switch t := requestGitDirTrust(p.Path, true); t.verdict {
-	case gitDirRefused:
+	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
+	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
+	// repository" answer (docs/PROTOCOL.md).
+	t := requestGitDirTrust(p.Path, true)
+	if t.verdict == gitDirRefused {
 		return errResult(req.ID, codeInternal, t.refusal)
-	case gitDirNoRepo:
+	}
+	if msg, bad := daemonCountRefusal(); bad {
+		return errResult(req.ID, codeInternal, msg)
+	}
+	if t.verdict == gitDirNoRepo {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
@@ -693,16 +723,21 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The git-directory trust check runs on baseRepo before anything is created
 	// (gitdirtrust.go). A refusal creates no worktree directory, no entry and no
 	// branch. When the daemon's own environment carries GIT_COMMON_DIR, the refusal
-	// text is wrapped as a failed add. Measured side by side against f6010b97 on Linux,
-	// macOS and Windows VMs.
-	switch t := requestGitDirTrust(repo, false); t.verdict {
-	case gitDirRefused:
+	// text is wrapped as a failed add. The check of the daemon's own GIT_CONFIG_COUNT
+	// comes after a trust refusal and before the "no repository" answer
+	// (docs/PROTOCOL.md).
+	t := requestGitDirTrust(repo, false)
+	if t.verdict == gitDirRefused {
 		msg := t.refusal
 		if daemonCommonDirSet() {
 			msg = gitDirAddWrap + msg
 		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
-	case gitDirNoRepo:
+	}
+	if msg, bad := daemonCountRefusal(); bad {
+		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+	}
+	if t.verdict == gitDirNoRepo {
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
@@ -1232,6 +1267,14 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// when it is an empty directory or a stale worktree of this repository. Else it
 		// is refused and left in place. A locked registration by path comes first (row
 		// E06). Rows E01 to E08, L03, X03 and X04.
+		//
+		// With a refused daemon GIT_CONFIG_COUNT, externalWorkTreeRefusal has already
+		// refused a baseRepo that exists. For a missing baseRepo without a ".."
+		// component, the answer is a lock-check refusal that names the repository
+		// (docs/PROTOCOL.md).
+		if _, bad := daemonCountRefusal(); bad {
+			return refuse(unreadableRepoLockCheckRefusal(p.WorktreePath, repo))
+		}
 		locked, readable := worktreeLockedByPath(commonDir, sp)
 		if !readable {
 			return refuse(lockCheckRefusal(p.WorktreePath))
@@ -1300,8 +1343,8 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 //
 // In the repo, a config that cannot be listed, or a git directory that fails the trust
 // check, is refused with its reason (rows G07, T01 and T02). A baseRepo that holds no
-// repository skips the registration and answers success (rows G05 and G05b). Measured
-// on the reference, f6010b97, on a macOS VM (rows G01 to G06).
+// repository skips the registration (rows G05 and G05b). Measured on the reference,
+// f6010b97, on a macOS VM (rows G01 to G06).
 func removeGoneWorktree(req *request, p *gitParams, repo, path string) response {
 	refuse := func(msg string) response {
 		return okResult(req.ID, worktreeRemoveResult{Success: false, Error: msg})
@@ -1310,11 +1353,19 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		return refuse("failed to remove worktree: could not check whether " + p.WorktreePath +
 			" is locked (" + reason + "); retry")
 	}
+	// The check of the daemon's own GIT_CONFIG_COUNT refuses in both modes. Without
+	// worktreeRoot it comes after a trust refusal and before the "no repository"
+	// answer (docs/PROTOCOL.md).
 	checkRegistration := true
 	if p.WorktreeRoot == "" {
-		switch t := requestGitDirTrust(repo, false); t.verdict {
-		case gitDirRefused:
+		t := requestGitDirTrust(repo, false)
+		if t.verdict == gitDirRefused {
 			return lockCheck(t.refusal)
+		}
+		if msg, bad := daemonCountRefusal(); bad {
+			return lockCheck(msg)
+		}
+		switch t.verdict {
 		case gitDirNoRepo:
 			checkRegistration = false
 		default:
@@ -1323,6 +1374,8 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			}
 			checkRegistration = !noRepositoryAt(repo)
 		}
+	} else if msg, bad := daemonCountRefusal(); bad {
+		return lockCheck(msg)
 	}
 	if checkRegistration {
 		commonDir := verifyGitDir(repo)
@@ -1387,6 +1440,13 @@ func pruneGitDir(repo string) string {
 func lockCheckRefusal(worktreePath string) string {
 	return "failed to remove worktree: could not check whether " + worktreePath +
 		" is locked (its registrations could not be examined); retry"
+}
+
+// unreadableRepoLockCheckRefusal is the lock-check refusal of git.worktree_remove that
+// names the repository (docs/PROTOCOL.md).
+func unreadableRepoLockCheckRefusal(worktreePath, repo string) string {
+	return "failed to remove worktree: could not check whether " + worktreePath +
+		" is locked (the repository at " + repo + " could not be read); retry"
 }
 
 // worktreeAdminDir reads a linked worktree's `.git` pointer file
