@@ -439,11 +439,12 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
+| git.worktree_create / git.worktree_remove | `baseRepo is inside a managed worktrees directory (beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees marker), or could not be validated as a trust root` | in `error`. Create adds `errorCode:"nested_base_repo"`, and remove has none. It answers a `baseRepo` under a managed worktrees tree, or one that fails claustrum's own trust-root test. No git runs. See the method sections |
 | git.worktree_create | `branchName is required` | |
 | git.worktree_create | `not a git repository` | in `error`, `errorCode:"not_a_repo"` |
-| git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment). The spelling refusal is Windows-only and comes before containment |
+| git.worktree_create | `refusing to create worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; … / already exists, …}` | in `error`, `errorCode:"unsafe_path"` (`7d193f89` containment). The spelling refusal is Windows-only and comes before containment. `<repo>` is `baseRepo` as sent, so an absent `baseRepo` gives the empty string (`f6010b97`, Linux and macOS VMs). With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`. `<p>` is then `baseRepo` as sent (`f6010b97`, Linux and macOS VMs) |
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"`, for a symlinked ancestor component under the repo (`7d193f89`) |
-| git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`) |
+| git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`, without `worktreeRoot`) |
 | git.worktree_create | `failed to create parent directory: <repo>\<component> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Windows, when `.claude` or `.claude\worktrees` is a junction. claustrum also refuses another directory level, or a non-symlink reparse point, the same way (not measured). Nothing is created: no directory, no entry, no branch (`f6010b97`, Windows VM, rows JCR1 and JCR2) |
 | git.worktree_create | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs, with a `.git` entry up to five levels above the root. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is that directory, resolved and cleaned. Linux and macOS VMs measured these spellings. When several directories hold a `.git` entry, the highest one is named. Linux and macOS VMs measured that too |
 | git.worktree_create | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Under a symlinked root, `<dir>` has the root resolved. Linux and macOS VMs measured that spelling |
@@ -460,16 +461,16 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule. Where git prints graft-file deprecation `hint:` lines, the text starts with them on `f6010b97` and on claustrum. `90fca6e6` prints no hint. Apart from the hint, the frame matches `90fca6e6` byte for byte. The new directory and the branch the call created are removed. In attach mode the attached branch is kept (measured against `f6010b97`) |
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM |
-| git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. This is `7d193f89` containment. The spelling refusal is Windows-only and comes before containment |
+| git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. This is `7d193f89` containment. The spelling refusal is Windows-only and comes before containment. `<repo>` is `baseRepo` as sent. An absent or empty `baseRepo` gives the empty string (`f6010b97`, Linux and macOS VMs). A Windows VM measured an absent one. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent. An empty `worktreePath` gets the first text there (`f6010b97`, Linux and macOS VMs) |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It keeps the delete off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <t> {is a symbolic link, not a worktree directory / is not a directory}` | in `error`, with no `errorCode`, for a leaf that is a symbolic link or not a directory. `<t>` has the symbolic links of `baseRepo` resolved. With `worktreeRoot`, the links of the `<directory>` level are resolved instead. Nothing is deleted (`f6010b97`, macOS VM) |
 | git.worktree_remove | `refusing to remove worktree: <t> changed while the removal was checking it` | in `error`, with no `errorCode`. claustrum's own text for a leaf that another directory replaced between two looks. Only a race reaches it, and no run has measured the reference there. Nothing is deleted |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it and answered `success:true`. |
 | git.worktree_remove | `refusing to remove worktree: <p> is gone but its registration is locked (git worktree lock); unlock it to remove the registration and branch` | in `error`, with no `errorCode`, for a gone worktree with a locked registration. Nothing is deleted (`f6010b97`, macOS VM) |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal text (`f6010b97`, macOS VM). `<reason>` is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows VMs). With `worktreeRoot` and a missing `baseRepo`, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS VMs) |
-| git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`) |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. Without `worktreeRoot`, for a worktree directory that exists: the configuration of `baseRepo` cannot be read, `baseRepo` holds no repository, or the trust check refuses its git directory. The same holds when the daemon's `GIT_CONFIG_COUNT` is refused, for a `baseRepo` without a `..` component. In both modes, for a worktree directory that exists: the worktree registry exists but cannot be read. Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`, when the daemon's `GIT_CONFIG_COUNT` is refused, `baseRepo` is missing and the worktree directory exists. This row covers a `baseRepo` without a `..` component. Nothing is deleted (`f6010b97`, Linux and macOS VMs) |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal text (`f6010b97`, macOS VM). `<reason>` is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows VMs). With `worktreeRoot` and a missing absolute `baseRepo` without a `..` component, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS VMs) |
+| git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`, without `worktreeRoot`) |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. Without `worktreeRoot`, for a worktree directory that exists: the configuration of `baseRepo` cannot be read, `baseRepo` holds no repository, or the trust check refuses its git directory. When the daemon's `GIT_CONFIG_COUNT` is refused, the same holds. Linux and macOS VMs measured that also for a `baseRepo` of `<T>/missing/..`, which does not resolve. In both modes, for a worktree directory that exists: the worktree registry exists but cannot be read. Nothing is deleted |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`, when the daemon's `GIT_CONFIG_COUNT` is refused, `baseRepo` is missing and the worktree directory exists. This row covers an absolute `baseRepo` without a `..` component. Nothing is deleted (`f6010b97`, Linux and macOS VMs) |
 | git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT`. Nothing is deleted. See the method section (`f6010b97`, Linux VM) |
 | git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). Nothing is deleted |
 | git.worktree_remove | `failed to remove worktree: RemoveAll <entry>: <errno text>` | in `error`, when the delete of the worktree fails part-way. If an entry other than `.git` fails, `.git` stays. The entry of the worktree and the branch stay in every case (`f6010b97`, macOS VM) |
@@ -1125,13 +1126,13 @@ remove of a gone worktree.
 | `git.list_branches`, `path` not empty and does not resolve, or inside a managed worktrees directory | `{"isRepo":false,"branches":[]}`, before the check and with no git call. See the method section |
 | `git.status` | the same, also for a `path` that is a plain dir, the repository, missing or a file, and for a plain-dir `baseRepo`. Linux, macOS and Windows VMs |
 | `git.status`, `baseRepo` does not resolve | `{"isRepo":false,"clean":false}`, before the check and with no git call. See the method section |
-| `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, also for a plain-dir or missing `baseRepo` and a relative `worktreePath`. Also for a `worktreePath` with a `..` component, outside the repository or that exists. A missing `branchName` gets its `-32602` frame first. A `baseRepo` inside a managed worktrees directory gets its `nested_base_repo` frame first. Linux, macOS and Windows VMs. On Windows the check comes before the `worktreeRoot` refusal (Windows VM) |
-| `git.worktree_remove` | Some refusals come first, with their usual frames. These are for a relative path, a path outside the repository, the repository itself and a `..` component (Linux, macOS and Windows VMs). They are also for a path outside `worktreeRoot` (Linux and macOS VMs). Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a regular-file `baseRepo` (Linux, macOS and Windows VMs). So does `statat .claude: permission denied` for a `baseRepo` with mode 0600 (Linux and macOS VMs) |
+| `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, also for a plain-dir or missing `baseRepo` and a relative `worktreePath`. Also for a `worktreePath` with a `..` component, outside the repository or that exists. A missing `branchName` gets its `-32602` frame first. A `baseRepo` inside a managed worktrees directory gets its `nested_base_repo` frame first. Linux, macOS and Windows VMs. On Windows the check comes before the `worktreeRoot` refusal (Windows VM). A `baseRepo` that fails claustrum's own trust-root test gets that frame first too. Only the Windows VM measured that order (round 1 row C1 P1) |
+| `git.worktree_remove` | Some refusals come first, with their usual frames. These are for a relative path, a path outside the repository, the repository itself and a `..` component (Linux, macOS and Windows VMs). They are also for a path outside `worktreeRoot`, and with `worktreeRoot` for a `..` `baseRepo` (Linux and macOS VMs). A `baseRepo` that fails claustrum's own trust-root test gets the managed-worktrees refusal first. Only the Windows VM measured that order (round 1 row A1 P1). Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a regular-file `baseRepo` (Linux, macOS and Windows VMs). So does `statat .claude: permission denied` for a `baseRepo` with mode 0600 (Linux and macOS VMs) |
 | `git.worktree_remove`, no `worktreeRoot`, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`, also for a plain-dir or missing `baseRepo`. Linux, macOS and Windows VMs |
-| `git.worktree_remove`, no `worktreeRoot`, worktree directory present, `baseRepo` without a `..` component | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`. Linux, macOS and Windows VMs |
+| `git.worktree_remove`, no `worktreeRoot`, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`. Linux, macOS and Windows VMs. Linux and macOS VMs also measured a `baseRepo` of `<T>/missing/..`, which does not resolve. On Windows that `baseRepo` gets the managed-worktrees refusal first |
 | `git.worktree_remove` with `worktreeRoot`, `baseRepo` a repository or a plain dir | `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}`. A trust refusal puts its own text there instead. Linux and macOS VMs |
-| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing and without a `..` component, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (the repository at <baseRepo> could not be read); retry"}`. Linux and macOS VMs |
-| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. Linux and macOS VMs |
+| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (the repository at <baseRepo> could not be read); retry"}`. Linux and macOS VMs |
+| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. Linux and macOS VMs |
 
 On Windows the `worktreeRoot` refusal of `git.worktree_remove` comes before the
 check (Windows VM).
@@ -1345,7 +1346,9 @@ check (Windows VM).
   (Windows only, before the containment check), `"<p> is not
   inside the repository <repo>; session worktrees are only created and removed under
   <repository>/.claude/worktrees"`, and `"<p> already exists, and a new worktree is
-  only ever created in a fresh directory"`. The recommended location is
+  only ever created in a fresh directory"`. `<repo>` is `baseRepo` as sent. An
+  absent `baseRepo` gives the empty string, so a space comes before the semicolon
+  (`f6010b97`, Linux and macOS VMs). The recommended location is
   `<repo>/.claude/worktrees/<id>`, but the enforced rule is only containment in the
   repo. An empty `worktreePath` is `{success:false,error:"failed to create parent
   directory: \"\" does not name a directory",errorCode:"mkdir_failed"}`. The daemon
@@ -1369,7 +1372,13 @@ check (Windows VM).
   them has `errorCode:"unsafe_path"`. The error table gives the code of each
   failure. `worktreeRoot` and `worktreePath` must be absolute and
   `..`-free, and `worktreePath` must sit exactly two levels under the root
-  (`"<p> is not <worktree location>/<directory>/<name> beneath <root>"`). Next, the
+  (`"<p> is not <worktree location>/<directory>/<name> beneath <root>"`).
+  `baseRepo` must also be absolute and carry no `..` component. The refusal uses
+  the `worktreePath` texts and names `baseRepo` as sent. An absent `baseRepo` is a
+  relative path with the empty string as its name. `f6010b97` sends this refusal
+  after the repo test, and nothing is created (rows C7, C8 and C9 on Linux and
+  macOS VMs). claustrum tests it after the `worktreePath` spelling and before the
+  two-level test, as on remove. That order is not measured. Next, the
   daemon resolves the symlinks of the root. It tests each directory from `/` down
   to the root for a `.git` entry, top first. These root-chain tests come before
   the tests of the root's owner and write access. The symlinked `<directory>`
@@ -1436,8 +1445,14 @@ check (Windows VM).
   made. A failed add keeps the marker. A directory that the call made before a
   later failure stays. Measured against `f6010b97` on Linux and macOS VMs.
   Independently, a `baseRepo` that itself sits under a managed-worktrees marker
-  is refused `{success:false,error:"baseRepo is inside a managed worktrees
-  directory …",errorCode:"nested_base_repo"}`.
+  is refused
+  `{success:false,error:"baseRepo is inside a managed worktrees directory …",errorCode:"nested_base_repo"}`.
+  The same frame answers a `baseRepo` that fails claustrum's own trust-root test, as
+  in `git.worktree_remove`. No git runs, and nothing is created. Linux and macOS VMs
+  measured that against `f6010b97` in rows G1c, G2c and G4c. The Windows VM measured
+  it in round 1 row C1 and in round 2 rows K1, D1, D2, D4, J1 and J3. The refusal
+  comes before the check of the daemon's `GIT_CONFIG_COUNT` (round 1 row C1 P1 on the
+  Windows VM).
 - Other failure → `{success:false,error:"git worktree add failed: <text>",errorCode:"worktree_add_failed"}`.
   `<text>` is git's stderr, made by the text rule below. On `f6010b97` and on
   claustrum the text can start with git's graft-file deprecation `hint:` lines.
@@ -1851,12 +1866,40 @@ copies end still fails it, as `timeoutMs` above describes:
   repository. `worktreePath` must be absolute, carry no `..` component, and sit
   strictly under `baseRepo`. Otherwise the reply is `{"success":false,"error":"refusing
   to remove worktree: <p> …"}`, with no `errorCode`, and with the same three reasons
-  as `worktree_create`. An empty `worktreePath` is `{"success":false,"error":"failed
-  to remove worktree: \"\" does not name a directory"}`. Only a path that passes these
-  tests reaches the delete below. With `worktreeRoot`, the path must sit two levels
-  under that root, under the same external containment as `worktree_create`.
-- The managed-worktrees refusal skips a `baseRepo` that does not exist. Such a remove
-  answers `{"success":true}`. Measured against `f6010b97` on a macOS VM.
+  as `worktree_create`. The "not inside the repository" text names `baseRepo` as
+  sent. An absent or empty `baseRepo` gives the empty string, so a space comes before
+  the semicolon (`f6010b97`, Linux and macOS VMs). A Windows VM measured an absent
+  one. An empty `worktreePath` is
+  `{"success":false,"error":"failed to remove worktree: \"\" does not name a
+  directory"}`. Only a path that passes these tests reaches the delete below.
+- With `worktreeRoot`, the path must sit two levels under that root, under the same
+  external containment as `worktree_create`. An empty `worktreePath` is a relative
+  path there. After the `worktreePath` checks and before the two-level check,
+  `baseRepo` must be absolute and carry no `..` component. The refusal uses the
+  `worktreePath` texts and names `baseRepo` as sent, for example
+  `{"success":false,"error":"refusing to remove worktree: <baseRepo> contains a \"..\" component; choose the session folder by its absolute path, without \"..\""}`.
+  An absent `baseRepo` is a relative path with the empty string as its name. No git
+  runs before these refusals. Under a refused daemon `GIT_CONFIG_COUNT`, a `..`
+  `baseRepo` still gets the `..` text. Measured against `f6010b97` on Linux and
+  macOS VMs. The `..` test is by whole component: `<T>/sub/..` is refused, and
+  `<B>/d..d/T` and `<T>/.` pass (Linux and macOS VMs).
+- The managed-worktrees refusal skips a `baseRepo` that does not exist. Measured
+  against `f6010b97` on a macOS VM.
+- claustrum's own trust-root test also gives the managed-worktrees refusal. It fails a
+  `baseRepo` that `os.Stat` does not report as missing and that Go's
+  `filepath.EvalSymlinks` cannot resolve. The test is fitted to the measured rows of
+  `f6010b97`, and every measured row fits it. On Linux and macOS, rows G1, G2 and G4
+  got the refusal. They send `<T>/a.txt/..`, `<T>/loop/..` (a link to itself) and a
+  path through a directory with mode 000. There `os.Stat` fails with ENOTDIR, ELOOP or
+  EACCES. On Linux and macOS, `<T>/missing/..` and `<T>/dl/..` (a dangling link) are
+  missing, and skip the test (rows A1 and G3). On Windows `<T>\missing\..` stats,
+  because Windows removes `missing\..` by name, but it does not resolve. The Windows
+  VM rows K1, D1, D2, D4, J1 and J3 fit this rule too. They put a missing name, a
+  regular file or a dangling directory symlink before `..`, or a junction mid-path. No
+  git runs, and nothing is deleted. The refusal comes before the `worktreePath`
+  checks, the `worktreeRoot` refusal of Windows and the check of the daemon's
+  `GIT_CONFIG_COUNT`. Only the Windows VM measured that order (round 1 rows O1 to O4,
+  WR1 and A1 P1).
 - The daemon runs no `git worktree remove` and no `git worktree prune`. It deletes the
   worktree directory itself, then the entry of the worktree under `<git dir>/worktrees`.
   `<git dir>` is the repository git directory that the trust check pinned for

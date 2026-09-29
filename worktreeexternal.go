@@ -17,9 +17,10 @@ import (
 // the checks here. Every message and the marker bytes below were measured
 // byte-for-byte against 7d193f89 on an ephemeral VM.
 
-// worktreeExternalContainmentRefusal reports the reference's refusal when an
-// external worktreeRoot/worktreePath pair is not a valid location, or "" if it is.
-// verb is "create" or "remove". Checks run in the reference's measured order:
+// worktreeExternalSpellingRefusal and worktreeExternalShapeRefusal report the
+// reference's refusal when an external worktreeRoot/worktreePath pair is not a valid
+// location, or "" if it is. verb is "create" or "remove". Checks run in the
+// reference's measured order:
 //
 //  1. worktreeRoot must be absolute and carry no ".." component — its refusals name
 //     the root and use the "worktree location … beneath the filesystem root" wording;
@@ -29,7 +30,9 @@ import (
 //
 // The ".." checks run on the raw path before any filepath.Clean, so a path that
 // would clean back to a valid location is still refused — matching 7d193f89.
-func worktreeExternalContainmentRefusal(worktreeRoot, worktreePath, verb string) string {
+// worktreeExternalSpellingRefusal is steps 1 and 2. Both worktree methods check
+// baseRepo between steps 2 and 3. On git.worktree_create that order is not measured.
+func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) string {
 	if !filepath.IsAbs(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
 			"worktree location by its absolute path, without %q, beneath the filesystem root",
@@ -40,14 +43,12 @@ func worktreeExternalContainmentRefusal(worktreeRoot, worktreePath, verb string)
 			"worktree location by its absolute path, without %q, beneath the filesystem root",
 			verb, worktreeRoot, "..", "..")
 	}
-	if !filepath.IsAbs(worktreePath) {
-		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
-			"session folder by its absolute path, without %q", verb, worktreePath, "..")
-	}
-	if pathHasDotDot(worktreePath) {
-		return fmt.Sprintf("refusing to %s worktree: %s contains a %q component; choose the "+
-			"session folder by its absolute path, without %q", verb, worktreePath, "..", "..")
-	}
+	return sessionFolderSpellingRefusal(worktreePath, verb)
+}
+
+// worktreeExternalShapeRefusal is step 3 of the checks listed above
+// worktreeExternalSpellingRefusal.
+func worktreeExternalShapeRefusal(worktreeRoot, worktreePath, verb string) string {
 	root := filepath.Clean(worktreeRoot)
 	wp := filepath.Clean(worktreePath)
 	if filepath.Dir(filepath.Dir(wp)) != root {

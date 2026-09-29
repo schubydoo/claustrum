@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,9 +29,8 @@ import (
 // home path is not strictly under a repo, so it is refused here — with the
 // reference's own wording — before wipesHomeDir (homeguard.go) is ever reached.
 //
-// Empty worktreePath is NOT judged here. The reference does not treat "" as a
-// relative path; it fails later with a "does not name a directory" message, so
-// the two callers special-case "" before calling this.
+// Empty worktreePath is NOT judged here. Both callers answer "" with a "does not
+// name a directory" text before they call this.
 func worktreePathRefusal(repo, worktreePath, verb string) string {
 	const guidance = "session worktrees are only created and removed under <repository>/.claude/worktrees"
 	if !filepath.IsAbs(worktreePath) {
@@ -128,6 +129,46 @@ func baseRepoUnderManagedWorktrees(repo string) bool {
 		}
 		p = parent
 	}
+}
+
+// baseRepoWalkFails is claustrum's own trust-root test for baseRepo. It fails a repo
+// that os.Stat does not report as missing and that the symlink walk of
+// filepath.EvalSymlinks cannot resolve. The test is fitted to the measured rows of
+// f6010b97. There git.worktree_create and git.worktree_remove answer
+// managedWorktreesRefusal with no git call.
+//
+// On Linux and macOS, rows G1, G2 and G4 (remove) and G1c, G2c and G4c (create) got
+// that refusal. They send <T>/a.txt/.., <T>/loop/.. and a path through a directory
+// with mode 000, where os.Stat fails with ENOTDIR, ELOOP or EACCES. On Windows os.Stat
+// folds ".." by name, so <T>\missing\.. stats while the walk fails at "missing". On
+// the Windows VM, round 1 rows A1, A1f, A2, A3, O1 to O4, C1 and WR1 got the refusal.
+// So did round 2 rows K1, D1, D2, D4, J1 and J3.
+//
+// A missing path skips the test. That is round 1 row A1 and rows G3 and G3c on Linux
+// and macOS, and round 1 row WX1 on the Windows VM. On the Windows VM, round 1 rows A4
+// and A8 stat and walk, and pass. So do round 2 rows K0, D3, J2, L1, L2, Q1, Q2 and
+// S1. repo is repoDir(): the baseRepo after the ~ expansion, or "." when it is absent.
+func baseRepoWalkFails(repo string) bool {
+	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	_, err := evalSymlinks(repo)
+	return err != nil
+}
+
+// sessionFolderSpellingRefusal is the refusal of a relative path, an empty one
+// included, or of a path with a ".." component, or "" if p is neither. The text
+// names p as sent. verb is "create" or "remove".
+func sessionFolderSpellingRefusal(p, verb string) string {
+	if !filepath.IsAbs(p) {
+		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
+			"session folder by its absolute path, without %q", verb, p, "..")
+	}
+	if pathHasDotDot(p) {
+		return fmt.Sprintf("refusing to %s worktree: %s contains a %q component; choose the "+
+			"session folder by its absolute path, without %q", verb, p, "..", "..")
+	}
+	return ""
 }
 
 // pathHasDotDot reports whether any path segment is exactly "..". The check is on

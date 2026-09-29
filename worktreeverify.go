@@ -25,12 +25,9 @@ func (cp worktreeCheckpoint) release() {
 	}
 }
 
-// evalSymlinks is filepath.EvalSymlinks behind a seam, so checkpointCreatedWorktree's
-// failure arm is reachable from a test: it sits after a successful os.Stat of the same
-// path. On Unix that Stat already walked the same symlink chain, so no fixture fails
-// the resolve without failing the Stat; on Windows EvalSymlinks additionally re-lists
-// each component with FindFirstFile, so only an ACL denying List on the parent would —
-// a fixture this suite does not stage. Production never reassigns it.
+// evalSymlinks is filepath.EvalSymlinks behind a seam, so the failure arm of
+// checkpointCreatedWorktree is reachable from a test. baseRepoWalkFails uses the seam
+// too. Production never reassigns it.
 var evalSymlinks = filepath.EvalSymlinks
 
 // checkpointCreatedWorktree captures the leaf's identity for the post-add check.
