@@ -503,8 +503,9 @@ func TestHardenedGitCallShape(t *testing.T) {
 	})
 
 	// A GIT_* variable of the daemon's own environment keeps its place, before the
-	// variables that the daemon adds, as on f6010b97 (Linux and macOS VMs). On Windows
-	// Go's os/exec sorts the environment block, and claustrum does not work around that.
+	// variables that the daemon adds, as on f6010b97 (Linux and macOS VMs).
+	// docs/PROTOCOL.md gives the exceptions. On Windows Go's os/exec sorts the
+	// environment block, and claustrum does not work around that.
 	t.Run("daemon env first", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("Go sorts the environment block on Windows")

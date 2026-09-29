@@ -78,20 +78,6 @@ var gitHardenHeavy = []string{
 	"push.recurseSubmodules=false",
 }
 
-// hookPinEnv is the always-present config-hook pinning the reference injects via
-// GIT_CONFIG_* on every hardened command: hook.enabled=false and an empty
-// hook.event. A repo that defines its own hooks in config would need further pins
-// (not yet reproduced); the two base pins are constant.
-func hookPinEnv() []string {
-	return []string{
-		"GIT_CONFIG_COUNT=2",
-		"GIT_CONFIG_KEY_0=hook.enabled",
-		"GIT_CONFIG_VALUE_0=false",
-		"GIT_CONFIG_KEY_1=hook.event",
-		"GIT_CONFIG_VALUE_1=",
-	}
-}
-
 // profileEnv is the part of the environment that the profile decides. The light
 // profile sets the protocol gate, terminal prompt suppression, and turns off
 // replace objects and grafts. The heavy profile turns off lazy fetch, forbids every
@@ -120,7 +106,7 @@ func profileEnv(heavy bool) []string {
 		}
 	}
 	return []string{
-		"GIT_ALLOW_PROTOCOL=https:ssh",
+		"GIT_ALLOW_PROTOCOL=" + lightAllowProtocol(),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_NO_REPLACE_OBJECTS=1",
 		"GIT_GRAFT_FILE=" + os.DevNull,
@@ -128,26 +114,40 @@ func profileEnv(heavy bool) []string {
 }
 
 // precursorEnv is the environment of the configuration listing that runs before a
-// hardened call: the daemon's own environment, the profile of the call that follows
-// it, and pin. It carries no hook pins. f6010b97 sets exactly these on its listing,
-// the heavy set before a heavy call and the light set before a light call. Measured
-// on Linux, macOS and Windows VMs.
+// hardened call: the daemon's own environment without GIT_CONFIG and
+// GIT_CONFIG_PARAMETERS (gitenv.go), the profile of the call that follows it, and
+// pin. It carries no hook pins, and the daemon's GIT_CONFIG_COUNT set is kept as it
+// is. The heavy set comes before a heavy call and the light set before a light call
+// (docs/PROTOCOL.md).
 //
 // pin is the GIT_COMMON_DIR pin of the git-directory trust check (commonDirPinEnv),
 // or nil.
 func precursorEnv(heavy bool, pin []string) []string {
-	env := append(os.Environ(), profileEnv(heavy)...)
+	env := append(dropConfigOverrides(os.Environ()), profileEnv(heavy)...)
 	return append(env, pin...)
 }
 
-// hardenedGitEnv builds the environment for a hardened git command: precursorEnv,
-// then the hook pins.
+// hardenedGitEnv builds the environment for a hardened git command: the daemon's
+// own environment as precursorEnv has it, less GIT_CONFIG_COUNT and every
+// GIT_CONFIG_KEY_<digits> and GIT_CONFIG_VALUE_<digits>. Then come the profile, pin,
+// and configPinEnv: the count, the inherited pairs and the hook pins (gitenv.go).
+// docs/PROTOCOL.md gives the order.
 //
 // GIT_OPTIONAL_LOCKS=0 is not part of it. hardenedGitStatus adds it to the status
-// call only, as f6010b97 does. The heavy `rev-parse --absolute-git-dir` of
-// git.worktree_create and git.worktree_remove runs without it on the same VMs.
+// call only. The heavy `rev-parse --absolute-git-dir` of git.worktree_create and
+// git.worktree_remove runs without it.
 func hardenedGitEnv(heavy bool, pin []string) []string {
-	return append(precursorEnv(heavy, pin), hookPinEnv()...)
+	return hardenedEnvFrom(os.Environ(), heavy, pin)
+}
+
+// hardenedEnvFrom is hardenedGitEnv with daemon as the daemon's environment.
+func hardenedEnvFrom(daemon []string, heavy bool, pin []string) []string {
+	base := dropConfigOverrides(daemon)
+	// A refused count gives 0 here.
+	count, _ := inheritedConfigProblem(base)
+	env := append(withoutConfigCountSet(base), profileEnv(heavy)...)
+	env = append(env, pin...)
+	return append(env, configPinEnv(base, count)...)
 }
 
 // hardenedProfileArgs puts the profile's `-c` overrides before the git subcommand.
@@ -182,8 +182,8 @@ func profileArgsWithExcludes(heavy bool, excludes string, args ...string) []stri
 // hookPrecursor runs the config-enumeration the reference issues before every
 // hardened command (`git config -z --list --name-only`, with dir as its working
 // directory) to discover config-defined hooks. Its result does not change the
-// pinning for a repo with no hook config — the two base pins in hookPinEnv cover
-// that — but the call is part of the reference's process trace, so it is reproduced.
+// pinning for a repo with no hook config, because the two base pins in configPinEnv
+// cover that. The call is part of the reference's process trace, so it is reproduced.
 // heavy is the profile of the call that follows. Best-effort: a failure leaves the
 // base pins in place.
 //
@@ -684,8 +684,18 @@ func fileExists(p string) bool {
 // heavy is the profile of that call. f6010b97 makes one listing there, not two, on
 // Linux, macOS and Windows VMs. When the next call is on the same dir, the caller
 // runs it with no precursor of its own (hardenedGitFirst).
+//
+// The check of the daemon's own GIT_CONFIG_COUNT (daemonCountRefusal) comes
+// first. When it refuses, no listing runs, and a directory is refused with its text.
+// A dir that does not exist, or is not a directory, is not refused, as below. See
+// docs/PROTOCOL.md, "The daemon's own git environment".
 func hostileConfigRefusal(dir string, heavy bool) (string, bool) {
-	userExcludesFile()
+	if msg, bad := daemonCountRefusal(); bad {
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			return "", false
+		}
+		return msg, true
+	}
 	ctx, cancel := gitCtx()
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "config", "-z", "--list", "--name-only")
@@ -741,8 +751,7 @@ func hostileConfigRefusal(dir string, heavy bool) (string, bool) {
 }
 
 // hooksRefusalPrefix starts the hooks refusal. The exec error and git's text follow.
-const hooksRefusalPrefix = "config-defined hooks could not be pinned off; git not run: " +
-	"listing the configuration in force: "
+const hooksRefusalPrefix = hooksPinPrefix + "listing the configuration in force: "
 
 // stderrHeadCap is the byte cap 7d193f89 applies to captured git stderr before it
 // reaches an error frame.
