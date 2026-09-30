@@ -164,7 +164,7 @@ rather than repeating them in each entry:
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
 | [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
-| [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where the reference answers success and deletes only the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
+| [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -296,8 +296,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   worktree, the hit gives the lock-check text with the hooks refusal, or skips the
   registration step. With `worktreeRoot` a hit answers the work-tree refusal (`cannot
   determine the repository's work tree`), and so does a hit on `rev-parse
-  --show-toplevel` or `worktree list`. A killed `update-ref` keeps the branch, and
-  the reply is still `{"success":true}`.
+  --show-toplevel` or `worktree list`. A D5 stop of a call of the branch step keeps
+  the branch, and the reply adds `"branchKept":true`. In a `git.worktree_create`
+  rollback such a stop adds an undo text instead. It is one of the branch-step texts
+  in PROTOCOL.md → The branch step.
   On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
   A killed repo-detection call answers `isRepo:false`. A killed
   `branch --show-current` in `git.info` leaves out the `branch` member.
@@ -358,7 +360,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   a distinct context cause (`errCallerTimeoutMs`, checked by `callerTimeoutFired` in
   `methods_git.go`).
 - **Why opt-in.** The reference showed no deadline at or below 75 s on
-  `worktree_remove`. An honest 61 s git was never measured. The deadline cleared
+  `worktree_remove`, outside the branch step. That step has its own bounds on both
+  sides since `89cb6289` (PROTOCOL.md → The branch step). An honest 61 s git was
+  never measured. The deadline cleared
   clause (a)'s not-a-frame half, but the `-32603 signal: killed` arm is an honest
   caller observing the difference (rule 4).
 - **Reopen trigger.** An operator with `-git-timeout` set reporting an honest slow
@@ -767,7 +771,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   It still deletes the branch. When the junction leads to a live worktree, that
   worktree is left on a deleted branch. With no worktree behind the junction, it
   answers `{"success":true}` too (rows JCR1 and JCR2, after the refused create).
-  Neither daemon deleted anything outside the fixture.
+  Neither daemon deleted anything outside the fixture. `89cb6289` is not measured
+  here. Its branch step deletes a branch only when another ref reaches its tip.
 - **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
   and no key.
 - **Why always-on.** Rule 3 clause (b), by the maintainer's decision of 2026-09-27.

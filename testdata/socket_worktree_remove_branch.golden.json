@@ -22,7 +22,8 @@
     "jsonrpc": "2.0",
     "id": 5,
     "result": {
-      "success": true
+      "success": true,
+      "branchKept": true
     }
   },
   {
@@ -38,7 +39,8 @@
     "result": {
       "isRepo": true,
       "branches": [
-        "master"
+        "master",
+        "unmerged"
       ]
     }
   }

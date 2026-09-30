@@ -663,7 +663,22 @@ func TestGitDirTrustPinsTheCommonDirectory(t *testing.T) {
 			if c, _ := create(t, r.TW); strings.ContainsAny(string(c.Result), "\t") || strings.Contains(string(c.Result), `\t`) {
 				t.Errorf("create(TW) = %s, keeps a tab in the error text", c.Result)
 			}
-			wantResult(t, "remove(TW,SWW)", remove(t, r.TW, r.SWW, "s1"), `{"success":true}`)
+			// Past the pin, git fails on this commondir, or lists no branch, depending
+			// on its version. A failed for-each-ref keeps s1, and the reply adds the
+			// member (89cb6289, rows R18, R18b and R22a). After a listing without s1,
+			// rev-parse runs and exits 1, so s1 is absent to the branch step. s1 then
+			// stays with no member (rows R11 and B2-09d). Else s1 is at main's tip, and the step deletes it. So the member
+			// is set if and only if s1 still exists and the pinned listing does not
+			// show it absent.
+			got := string(remove(t, r.TW, r.SWW, "s1").Result)
+			kept := got == `{"success":true,"branchKept":true}`
+			if !kept && got != `{"success":true}` {
+				t.Fatalf("remove(TW,SWW) = %s, want success with or without branchKept", got)
+			}
+			s1 := gitExitOK(r.T, "show-ref", "--verify", "--quiet", "refs/heads/s1")
+			if want := s1 && !pinnedListingLacks(t, r.TW, "refs/heads/s1"); kept != want {
+				t.Errorf("remove(TW,SWW) = %s with s1 present=%v, want branchKept=%v", got, s1, want)
+			}
 			if exists(r.SWW) {
 				t.Errorf("remove(TW,SWW) left the worktree")
 			}
@@ -674,6 +689,27 @@ func TestGitDirTrustPinsTheCommonDirectory(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pinnedListingLacks reports whether a for-each-ref in dir, with the daemon's
+// GIT_COMMON_DIR pin for dir, exits 0 and does not list ref.
+func pinnedListingLacks(t *testing.T, dir, ref string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/heads/")
+	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1"),
+		commonDirPinEnv(dir)...)
+	cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(l) == ref {
+			return false
+		}
+	}
+	return true
 }
 
 // A GIT_DIR in the daemon's environment is the git directory judged for every

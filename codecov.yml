@@ -160,6 +160,11 @@ component_management:
         - worktreeverify.go
         # git.worktree_remove's own delete of the worktree and its entry.
         - worktreeremove.go
+        # The branch step of git.worktree_remove and the create rollbacks (89cb6289),
+        # with the OS-split stop of its update-ref.
+        - worktreebranch.go
+        - worktreebranch_unix.go
+        - worktreebranch_windows.go
         # sourceBranch start-commit choice for git.worktree_create.
         - worktreesource.go
         - githarden.go

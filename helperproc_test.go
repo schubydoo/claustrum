@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -184,6 +186,15 @@ func runGitLingering(args []string) int {
 // GIT_COMMON_DIR, GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE, joined by 0x1f. A last
 // record separator follows, then every GIT_* entry of its environment as KEY=value,
 // in the order of the environment, joined by 0x1f.
+//
+// A second rule, CLAUSTRUM_GITSTUB_MATCH2, picks another call, so that a test can
+// fail the checkout with the first rule and change a call of the rollback's branch
+// step with the second. A call that it matches first applies CLAUSTRUM_GITSTUB_ACTION2
+// to the path CLAUSTRUM_GITSTUB_LEAF2: "rm" deletes the file, and "touch" makes an
+// empty one. With CLAUSTRUM_GITSTUB_MODE2 "ignoreterm" it then ignores SIGTERM. It
+// sleeps CLAUSTRUM_GITSTUB_MS2 milliseconds. Then it exits with
+// CLAUSTRUM_GITSTUB_EXIT2 when that is set, or else goes on as a call that the first
+// rule does not match.
 func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 		appendLine(log, strings.Join(args, "\x1f"))
@@ -199,15 +210,32 @@ func runGitSlow(args []string) int {
 		}
 		appendLine(log, wd+"\x1e"+os.Getenv("GIT_INDEX_FILE")+"\x1e"+strings.Join(args, "\x1f")+"\x1e"+env+"\x1e"+strings.Join(all, "\x1f"))
 	}
+	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) {
+		leaf := os.Getenv("CLAUSTRUM_GITSTUB_LEAF2")
+		var err error
+		switch os.Getenv("CLAUSTRUM_GITSTUB_ACTION2") {
+		case "rm":
+			err = os.Remove(leaf)
+		case "touch":
+			err = os.WriteFile(leaf, nil, 0o644)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 127
+		}
+		if os.Getenv("CLAUSTRUM_GITSTUB_MODE2") == "ignoreterm" {
+			signal.Ignore(syscall.SIGTERM)
+		}
+		ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS2"))
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+		if c, err := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_EXIT2")); err == nil {
+			return c
+		}
+		return runGitReal(args)
+	}
 	slow := false
 	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH"); m != "" {
-		slow = true
-		for _, w := range strings.Split(m, ",") {
-			if !slices.Contains(args, w) {
-				slow = false
-				break
-			}
-		}
+		slow = stubMatches(args, m)
 	}
 	mode := os.Getenv("CLAUSTRUM_GITSTUB_MODE")
 	pause := func() {
@@ -289,6 +317,33 @@ func runGitSlow(args []string) int {
 		}
 	}
 	return code
+}
+
+// stubMatches reports whether every word of the comma-separated match is an exact
+// argument in args.
+func stubMatches(args []string, match string) bool {
+	for _, w := range strings.Split(match, ",") {
+		if !slices.Contains(args, w) {
+			return false
+		}
+	}
+	return true
+}
+
+// runGitReal runs the real git with args and the stub's own stdio, and returns its
+// exit code.
+func runGitReal(args []string) int {
+	cmd := exec.Command(os.Getenv("CLAUSTRUM_GITSTUB_REAL"), args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
+			fmt.Fprintln(os.Stderr, err)
+			return 127
+		}
+		return ee.ExitCode()
+	}
+	return 0
 }
 
 // gitStubAction applies a CLAUSTRUM_GITSTUB_ACTION to leaf, then writes the

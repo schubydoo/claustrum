@@ -448,16 +448,6 @@ func readRootDir(root *os.Root) ([]fs.DirEntry, error) {
 	return dir.ReadDir(-1)
 }
 
-// deleteWorktreeBranch deletes refs/heads/<branch> with a raw ref delete. A branch name
-// that starts with "-" or "+" is skipped (rows B01, B02 and B05). A failed delete is
-// not reported (row B04).
-func deleteWorktreeBranch(repo, branch string) {
-	if branch == "" || branch[0] == '-' || branch[0] == '+' {
-		return
-	}
-	hardenedGit(repo, false, "update-ref", "--no-deref", "-d", "refs/heads/"+branch)
-}
-
 // lockedWorktreeRefusal answers a worktree whose entry is locked.
 func lockedWorktreeRefusal(worktreePath string) string {
 	return "refusing to remove worktree: " + worktreePath +

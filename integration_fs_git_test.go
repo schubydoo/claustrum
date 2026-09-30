@@ -819,24 +819,27 @@ func TestSocketWorktreeExistingBranch(t *testing.T) {
 // a future input could expose.
 func TestWorktreeResultFieldOrder(t *testing.T) {
 	b, err := json.Marshal(worktreeResult{
-		Success: true, Path: "/p", Error: "e", ErrorCode: "c", SourceBranch: "s",
+		Success: true, Path: "/p", Error: "e", ErrorCode: "c", SourceBranch: "s", Branch: "b", BranchKept: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"success":true,"path":"/p","error":"e","errorCode":"c","sourceBranch":"s"}`
+	// branchKept follows errorCode (89cb6289). Its place after sourceBranch and branch
+	// is claustrum's choice (not measured).
+	const want = `{"success":true,"path":"/p","error":"e","errorCode":"c","sourceBranch":"s","branch":"b","branchKept":true}`
 	if string(b) != want {
 		t.Errorf("worktreeResult field order:\n got %s\nwant %s", b, want)
 	}
 }
 
 // TestSocketWorktreeRemoveBranch pins sweep gap F2: git.worktree_remove deletes
-// the branch named by branchName, forcefully — an UNMERGED branch goes too.
-// claustrum ignored the parameter entirely and left both branches behind.
+// the branch named by branchName. claustrum once ignored the parameter entirely and
+// left both branches behind. Since 89cb6289 a branch with a commit that no other
+// branch reaches stays, and the reply says so with "branchKept":true (row R02 on
+// Linux, macOS and Windows VMs). A branch at another branch's tip goes (row R01).
 //
-// The reply is a bare {"success":true} either way, so this gap is invisible in
-// the frame it returns. It is pinned through git.list_branches before and after,
-// which is where a client would actually notice.
+// The end state is pinned through git.list_branches before and after, which is
+// where a client would actually notice.
 func TestSocketWorktreeRemoveBranch(t *testing.T) {
 	requireGit(t)
 	root := resolveTestRoot(t, t.TempDir())
@@ -866,13 +869,13 @@ func TestSocketWorktreeRemoveBranch(t *testing.T) {
 		normPath(cl.call(req(3, "git.list_branches", map[string]any{"path": repo})), root),
 		normPath(cl.call(req(4, "git.worktree_remove", map[string]any{
 			"baseRepo": repo, "worktreePath": wt("wtm"), "branchName": "merged"})), root),
-		// the unmerged branch must go too — `git branch -d` would refuse it
+		// the unmerged branch holds a commit that no other branch reaches, so it stays
 		normPath(cl.call(req(5, "git.worktree_remove", map[string]any{
 			"baseRepo": repo, "worktreePath": wt("wtu"), "branchName": "unmerged"})), root),
 		// a branch that does not exist is still {"success":true}, not an error
 		normPath(cl.call(req(6, "git.worktree_remove", map[string]any{
 			"baseRepo": repo, "worktreePath": wt("nope"), "branchName": "ghost"})), root),
-		// after: only master survives
+		// after: master and the unmerged branch survive
 		normPath(cl.call(req(7, "git.list_branches", map[string]any{"path": repo})), root),
 	}
 	assertGolden(t, "socket_worktree_remove_branch.golden.json", encodeGolden(t, got))
@@ -933,10 +936,15 @@ func TestWorktreeRemoveResultShape(t *testing.T) {
 	if want := `{"success":true,"error":"e"}`; string(b) != want {
 		t.Errorf("worktreeRemoveResult = %s, want %s", b, want)
 	}
-	// omitempty: the reachable reply must stay a bare {"success":true}.
+	// omitempty: a reply with no error and no kept branch is a bare {"success":true}.
 	b, _ = json.Marshal(worktreeRemoveResult{Success: true})
 	if want := `{"success":true}`; string(b) != want {
 		t.Errorf("worktreeRemoveResult (no error) = %s, want %s", b, want)
+	}
+	// branchKept follows error (89cb6289, row R19).
+	b, _ = json.Marshal(worktreeRemoveResult{Success: false, Error: "e", BranchKept: true})
+	if want := `{"success":false,"error":"e","branchKept":true}`; string(b) != want {
+		t.Errorf("worktreeRemoveResult (kept) = %s, want %s", b, want)
 	}
 }
 
