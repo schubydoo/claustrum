@@ -88,8 +88,11 @@ func (p *gitParams) repoDir() string {
 // the failure. git.worktree_remove runs no `git worktree remove`. On that method no
 // D5 kill leads to a delete. A kill only refuses or skips a step.
 // git.worktree_create is the exception: its rollback deletes after a failed or killed
-// read-tree checkout, and it removes an empty leaf after a failed add. A caller that
-// deletes on a git failure must tell our deadline from git's verdict first.
+// read-tree checkout, and it removes an empty leaf after a failed add. Its checkout
+// tests run without the answer of a killed show-toplevel or `worktree list`. The
+// root-chain step still refuses a root that has, or lies below, a .git entry. A caller
+// that deletes on a git
+// failure must tell our deadline from git's verdict first.
 //
 // ⚠️ This used to add "no OTHER frame moves because of the deadline". That is
 // false: the deadline is the shared gitTimeout, applied independently at the
@@ -800,6 +803,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeRootInRepoRefusal(p.WorktreeRoot, p.BaseRepo, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
+		// A D5 kill of show-toplevel or `worktree list` does not refuse here. The
+		// checkout tests then run without that answer. The root-chain step below still
+		// refuses a root that has, or lies below, a .git entry. A root in a listed
+		// worktree whose .git entry is gone then goes on. That is claustrum's choice
+		// (not measured).
 		topLevel, _ := repoTopLevel(repo, true)
 		_ = repositoryCheckError(repo, true)
 		listed, _ := worktreeList(repo)

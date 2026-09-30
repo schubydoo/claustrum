@@ -213,6 +213,7 @@ func (r r0cRow) create(t *testing.T) {
 // claustrum answered {"success":true} to rows E1, W1 and Y6. It deleted the dirty
 // leaf, its entry and its branch, or with E1 the branch of a live worktree.
 func TestWorktreeRemoveRootInMainCheckout(t *testing.T) {
+	requireWorktreeListZ(t)
 	const w1 = "<T>/.claude/worktrees/w1"
 	for _, r := range []r0cRow{
 		// A root that does not exist, under a symlink to <T>. Its longest existing
@@ -253,6 +254,7 @@ func TestWorktreeRemoveRootInMainCheckout(t *testing.T) {
 // Before, claustrum answered {"success":true} to each row. It deleted the dirty leaf,
 // its entry and its branch, or with Y10 the branch of a live worktree.
 func TestWorktreeRemoveRootInLinkedWorktree(t *testing.T) {
+	requireWorktreeListZ(t)
 	const w0 = "<B>/X/o/w0"
 	for _, r := range []r0cRow{
 		// W2 is also row Y2c: the gitdir file of w0 as git wrote it.
@@ -323,10 +325,10 @@ func TestWorktreeRemoveRootMissing(t *testing.T) {
 	}
 }
 
-// stubGitCall puts a `git` first on PATH that runs the real git, except for a call
-// whose arguments hold the words of call. That call runs cmd instead. It also sets the
-// D5 deadline gitTimeout to 2 s.
-func stubGitCall(t *testing.T, call, cmd string) {
+// stubGitCall puts a `git` first on PATH that runs the git found before it, except
+// for a call whose arguments hold the words of call. That call runs cmd instead. It
+// also sets the D5 deadline gitTimeout to d, and 0 means no deadline.
+func stubGitCall(t *testing.T, call, cmd string, d time.Duration) {
 	t.Helper()
 	real, err := exec.LookPath("git")
 	if err != nil {
@@ -340,7 +342,7 @@ func stubGitCall(t *testing.T, call, cmd string) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	old := gitTimeout
-	gitTimeout = 2 * time.Second
+	gitTimeout = d
 	t.Cleanup(func() { gitTimeout = old })
 }
 
@@ -351,7 +353,7 @@ func stubGitCall(t *testing.T, call, cmd string) {
 // choice (not measured).
 func TestWorktreeRemoveListKilledRefuses(t *testing.T) {
 	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
-		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exec sleep 30") },
+		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exec sleep 30", 2*time.Second) },
 		want:  "failed to remove worktree: cannot determine the repository's work tree: signal: killed"}
 	r.remove(t)
 }
@@ -372,7 +374,9 @@ func TestWorktreeRemoveTopLevelKilledRefuses(t *testing.T) {
 			}
 			writeFile(t, filepath.Join(f.T, ".git", "worktrees", "W", "gitdir"), f.expand("<B>/S/W/.git\n"), 0o644)
 		},
-		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "rev-parse --show-toplevel", "exec sleep 30") },
+		after: func(t *testing.T, f *r0Fixture) {
+			stubGitCall(t, "rev-parse --show-toplevel", "exec sleep 30", 2*time.Second)
+		},
 		calls: []string{r0cListing, "rev-parse --show-toplevel"},
 		want:  "failed to remove worktree: cannot determine the repository's work tree: signal: killed"}
 	r.remove(t)
@@ -384,7 +388,7 @@ func TestWorktreeRemoveTopLevelKilledRefuses(t *testing.T) {
 // the deadline. That is claustrum's choice (not measured).
 func TestWorktreeRemoveListFailureGoesOn(t *testing.T) {
 	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
-		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exit 129") }}
+		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exit 129", 0) }}
 	r.remove(t)
 }
 
@@ -447,6 +451,7 @@ func TestWorktreeRemoveRootCaseVariant(t *testing.T) {
 // makes 9 calls, in this order. Before, claustrum sent its "inside a git checkout"
 // text for rows E2, W3, W4, Y11a and Y11c.
 func TestWorktreeCreateRootInCheckout(t *testing.T) {
+	requireWorktreeListZ(t)
 	const w0 = "<B>/X/o/w0"
 	const w1 = "<T>/.claude/worktrees/w1"
 	for _, r := range []r0cRow{
@@ -468,5 +473,40 @@ func TestWorktreeCreateRootInCheckout(t *testing.T) {
 			want:  "refusing to create worktree: <T>/.claude/worktrees/w1/r leads into the repository <B>/W (at <T>)" + r0Tail},
 	} {
 		t.Run(r.name, r.create)
+	}
+}
+
+// On create, a D5 kill of `rev-parse --show-toplevel` or `worktree list` does not
+// refuse, and the checkout tests run without that answer. The root-chain step still
+// refuses the root, because the root or a directory above it holds a .git entry. It sends its own
+// "inside a git checkout" text with errorCode unsafe_path, and nothing is created.
+// That is claustrum's choice (not measured). The rows:
+//   - show-toplevel: the shape of row Y11b, baseRepo W/sub and the root in W, with W
+//     listed through the symlink <B>/S. Only the top level of baseRepo matches W.
+//   - worktree list: the shape of row W4, the root in the linked worktree w0.
+//   - both: the shape of row E2, baseRepo <T>/sub and the root in <T>.
+func TestWorktreeCreateCheckoutCallKilled(t *testing.T) {
+	const w0 = "<B>/X/o/w0"
+	killTop := func(t *testing.T) { stubGitCall(t, "rev-parse --show-toplevel", "exec sleep 30", 2*time.Second) }
+	killList := func(t *testing.T) { stubGitCall(t, "worktree list", "exec sleep 30", 2*time.Second) }
+	for name, r := range map[string]r0cRow{
+		"show-toplevel": {base: "<B>/W/sub", root: "<B>/W/.claude", wp: "<B>/W/.claude/cp/c1",
+			setup: func(t *testing.T, f *r0Fixture) {
+				withW(t, f)
+				if err := os.Symlink(f.B, filepath.Join(f.B, "S")); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Join(f.T, ".git", "worktrees", "W", "gitdir"), f.expand("<B>/S/W/.git\n"), 0o644)
+			},
+			after: func(t *testing.T, f *r0Fixture) { killTop(t) },
+			want:  checkoutRootText("<B>/W/.claude", "<B>/W")},
+		"worktree list": {root: w0, wp: w0 + "/cp/c1", setup: withW0,
+			after: func(t *testing.T, f *r0Fixture) { killList(t) },
+			want:  checkoutRootText(w0, w0)},
+		"both": {base: "<T>/sub", root: "<T>/.claude", wp: "<T>/.claude/cp/c1",
+			after: func(t *testing.T, f *r0Fixture) { killTop(t); killList(t) },
+			want:  checkoutRootText("<T>/.claude", "<T>")},
+	} {
+		t.Run(name, r.create)
 	}
 }

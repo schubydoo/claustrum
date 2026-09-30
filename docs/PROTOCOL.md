@@ -1061,7 +1061,10 @@ below against `f6010b97`. Each point names the VMs that measured it.
   is 9 calls. `f6010b97` makes the same 9 calls before it refuses a root in a
   checkout. `89cb6289` also makes 9 calls, in this order. claustrum does not use the
   answer of `rev-parse --absolute-git-dir`. On a create that goes on, the references
-  make more calls than claustrum. Linux and macOS VMs.
+  make more calls than claustrum. Linux and macOS VMs. If the D5 deadline kills
+  `rev-parse --show-toplevel` or `worktree list`, the checkout tests run without that
+  answer. The root-chain tests still refuse a root that has, or lies below, a
+  `.git` entry, with their own text. That is claustrum's choice (not measured).
 - Some calls of `f6010b97` have no claustrum counterpart. Examples are a
   `rev-parse --show-toplevel` with `--git-dir` and `--work-tree` in
   `git.worktree_create`, and the plumbing calls of its `git status`. claustrum's

@@ -339,7 +339,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   caller-`timeoutMs` arm
   (`errorCode:"timeout"`). A D5 hit on the read-tree checkout is a failed checkout.
   It answers `git worktree add failed (checkout): …` with
-  `errorCode:"worktree_add_failed"`, and the create rolls back. A D5 hit on one of
+  `errorCode:"worktree_add_failed"`, and the create rolls back. A D5 hit on
+  `rev-parse --show-toplevel` or `worktree list` leaves the checkout tests of a
+  `worktreeRoot` without that answer. The root-chain step still refuses a root that
+  has, or lies below, a `.git` entry. A D5 hit on one of
   the `sourceBranch` steps counts as a failed step. It can change the
   start commit. If both candidate lookups are killed, the HEAD fallback runs. The
   echoed `sourceBranch` then becomes the current branch, or is omitted on a

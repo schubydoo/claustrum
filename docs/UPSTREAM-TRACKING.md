@@ -402,7 +402,8 @@ an older git the call fails, and the checkout tests then compare the root with t
 git top level of `baseRepo` only. A root in another checkout of the repository then
 passes, and `git.worktree_remove` goes on as it did before these tests. The
 references on such a git are not measured. Several tests in
-`worktree_root_checkout_unix_test.go` expect a working call, so they fail there.
+`worktree_root_checkout_unix_test.go` expect a working call. They skip there
+(`requireWorktreeListZ`), so a skip in CI means a git older than 2.36.
 Check them after the git of a CI runner or a test VM changes.
 
 ## Automating it

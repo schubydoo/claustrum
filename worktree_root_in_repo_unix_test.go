@@ -5,6 +5,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -39,6 +41,26 @@ func newR0Fixture(t *testing.T) *r0Fixture {
 		}
 	}
 	return f
+}
+
+// requireWorktreeListZ skips the test when git is older than 2.36, which has no
+// `git worktree list -z`. The checkout tests need a working call.
+func requireWorktreeListZ(t *testing.T) {
+	t.Helper()
+	requireGit(t)
+	out, err := gitVersionCmd(t.Context()).Output()
+	if err != nil {
+		t.Fatalf("git version: %v", err)
+	}
+	m := regexp.MustCompile(`git version (\d+)\.(\d+)`).FindStringSubmatch(string(out))
+	if m == nil {
+		t.Fatalf("git version: does not parse %q", out)
+	}
+	major, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	if major < 2 || major == 2 && minor < 36 {
+		t.Skipf("git %s.%s has no `worktree list -z`, which needs git 2.36 or later", m[1], m[2])
+	}
 }
 
 // r0Repo makes a repository at dir with one commit on main that adds a.txt.
@@ -90,13 +112,14 @@ func keptDirty(t *testing.T, repo, leaf, branch string) {
 
 // gitSteps returns the logged git calls without the configuration calls (the
 // listings and the excludes read), each call as one string without its -c options.
+// An empty log gives an empty slice.
 func gitSteps(calls [][]string) []string {
 	var steps []string
 	for _, c := range calls {
 		for len(c) >= 2 && c[0] == "-c" {
 			c = c[2:]
 		}
-		if len(c) == 0 || c[0] == "config" {
+		if len(c) == 0 || c[0] == "" || c[0] == "config" {
 			continue
 		}
 		steps = append(steps, strings.Join(c, " "))
@@ -134,7 +157,10 @@ func (r r0RemoveRow) run(t *testing.T, wantSteps []string) {
 	if want := refusalFrame(t, f.expand(r.want)); got != want {
 		t.Errorf("remove =\n  %s\nwant\n  %s", got, want)
 	}
-	if steps := gitSteps(calls()); strings.Join(steps, "\n") != strings.Join(wantSteps, "\n") {
+	steps := gitSteps(calls())
+	if wantSteps == nil && len(steps) != 0 {
+		t.Errorf("git calls = %q, want none", steps)
+	} else if strings.Join(steps, "\n") != strings.Join(wantSteps, "\n") {
 		t.Errorf("git calls = %q, want %q", steps, wantSteps)
 	}
 	keptDirty(t, f.T, leaf, "wt1")
