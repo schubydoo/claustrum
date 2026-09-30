@@ -255,9 +255,9 @@ func branchLockPresent(repo, branch string) bool {
 
 // rollbackBranchText is the part of a git.worktree_create undo text that the branch
 // step adds. It is "" when the branch went, was absent, or was never made. A branch
-// whose name the skip rule leaves alone gets a text too. leafLeft
-// is true when the leaf stays. Then the kept text drops its "the worktree itself was
-// removed, but " start. After a failed rmdir the leaf part comes first (row C05). A
+// whose name the skip rule leaves alone gets a text too. leafLeft is true when the
+// leaf stays. Then the kept text drops its "the worktree itself was removed, but "
+// start. After a failed rmdir the leaf part comes first (row C05). A
 // leaf that the home or identity guard skipped stays too (claustrum's own path).
 // docs/PROTOCOL.md → "The branch step" gives each text with its rows and VMs.
 func rollbackBranchText(repo, branch string, res branchStepResult, leafLeft bool) string {
@@ -298,7 +298,10 @@ func rollbackBranchText(repo, branch string, res branchStepResult, leafLeft bool
 				"if none is, it is stale debris of the interrupted delete — remove the lock " +
 				"file by hand too"
 		}
-		return t + ": " + res.err.Error()
+		if res.err != nil {
+			t += ": " + res.err.Error()
+		}
+		return t
 	}
 	return ""
 }

@@ -29,8 +29,9 @@ func withWorktreeRepoLock(repo string, fn func() response) response {
 // worktreeBranchLocks serialises the branch step (worktreebranch.go) per common git
 // dir. The lock of withWorktreeRepoLock is keyed by baseRepo. So it does not cover
 // two removes through the repository and through one of its linked worktrees.
-// 89cb6289 runs those two branch steps one after the other (row R21b, Linux VM). The key is the
-// git dir under whose worktrees directory the entries are removed (verifyGitDir).
+// 89cb6289 runs those two branch steps one after the other (row R21b, Linux VM). The
+// key is the git dir under whose worktrees directory the entries are removed
+// (verifyGitDir).
 // That key is claustrum's choice (not measured): the rows do not tell the common dir
 // from the main worktree. A create rollback takes the same lock (not measured). The
 // branch lock is always taken last, so it does not deadlock with the per-repo lock.

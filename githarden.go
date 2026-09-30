@@ -86,8 +86,9 @@ var gitHardenHeavy = []string{
 // The light profile turns off replace objects and grafts
 // (GIT_NO_REPLACE_OBJECTS=1, GIT_GRAFT_FILE=<null device>). git.worktree_create runs
 // every git step under the light profile, except the heavy rev-parse
-// --absolute-git-dir and the calls of the branch step (branchStepEnv). Its checkout thus uses the real blob and
-// the real commit, even when refs/replace or info/grafts name others. git.status runs
+// --absolute-git-dir and the calls of the branch step (branchStepEnv). Its checkout
+// thus uses the real blob and the real commit, even when refs/replace or info/grafts
+// name others. git.status runs
 // under the heavy profile and still honours replace objects. Both were measured side
 // by side against f6010b97 on a Linux VM. git.info and git.list_branches answer the
 // same either way. With the graft variable set, git prints its graft-file deprecation
@@ -158,12 +159,17 @@ func hardenedEnvWith(daemon, profile, pin []string) []string {
 }
 
 // branchStepEnv is the environment of the calls of the branch step (worktreebranch.go).
-// After the daemon's own part come the light profile without GIT_ALLOW_PROTOCOL, pin,
-// the count, the inherited pairs and the hook pins. Then come GIT_NO_LAZY_FETCH=1,
-// GIT_ALLOW_PROTOCOL=denied_by_claude_ssh and GIT_ASKPASS=. 89cb6289 has that order on
-// Linux, macOS and Windows VMs (row R01).
+// After the daemon's own part come the light profile (profileEnv) without its
+// GIT_ALLOW_PROTOCOL entry, pin, the count, the inherited pairs and the hook pins. Then
+// come GIT_NO_LAZY_FETCH=1, GIT_ALLOW_PROTOCOL=denied_by_claude_ssh and GIT_ASKPASS=.
+// 89cb6289 has that order on Linux, macOS and Windows VMs (row R01).
 func branchStepEnv(pin []string) []string {
-	profile := []string{"GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + os.DevNull}
+	var profile []string
+	for _, kv := range profileEnv(false) {
+		if !strings.HasPrefix(kv, "GIT_ALLOW_PROTOCOL=") {
+			profile = append(profile, kv)
+		}
+	}
 	return append(hardenedEnvWith(os.Environ(), profile, pin),
 		"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_ASKPASS=")
 }

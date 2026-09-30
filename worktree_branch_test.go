@@ -509,6 +509,9 @@ func TestWorktreeRemoveBranchStepConcurrent(t *testing.T) {
 		lines = append(lines, rpcLine(t, "git.worktree_remove", map[string]any{"baseRepo": f.repo, "worktreePath": f.wt, "branchName": "wt1"}))
 	}
 	raws := dispatchTogether(newTestServer(t), lines)
+	if n := inside.Load(); n != 2 {
+		t.Errorf("the branch step hook ran %d times, want 2", n)
+	}
 	if timedOut.Load() {
 		t.Error("the two branch steps did not run at the same time")
 	}
