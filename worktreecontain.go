@@ -33,13 +33,8 @@ import (
 // name a directory" text before they call this.
 func worktreePathRefusal(repo, worktreePath, verb string) string {
 	const guidance = "session worktrees are only created and removed under <repository>/.claude/worktrees"
-	if !filepath.IsAbs(worktreePath) {
-		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the session folder by its absolute path, without %q",
-			verb, worktreePath, "..")
-	}
-	if pathHasDotDot(worktreePath) {
-		return fmt.Sprintf("refusing to %s worktree: %s contains a %q component; choose the session folder by its absolute path, without %q",
-			verb, worktreePath, "..", "..")
+	if msg := sessionFolderSpellingRefusal(worktreePath, verb); msg != "" {
+		return msg
 	}
 	if windowsPathSpellingHazard(worktreePath) {
 		return fmt.Sprintf("refusing to %s worktree: %s has a component Windows reads as a different name (trailing dot or space, or a colon); choose the session folder by its absolute path, without %q",
@@ -148,6 +143,11 @@ func baseRepoUnderManagedWorktrees(repo string) bool {
 // and macOS, and round 1 row WX1 on the Windows VM. On the Windows VM, round 1 rows A4
 // and A8 stat and walk, and pass. So do round 2 rows K0, D3, J2, L1, L2, Q1, Q2 and
 // S1. repo is repoDir(): the baseRepo after the ~ expansion, or "." when it is absent.
+//
+// On Windows, after its walk, filepath.EvalSymlinks looks up each component of the
+// resolved path with FindFirstFile, which lists its parent. So a parent that denies List to the
+// daemon can fail EvalSymlinks after os.Stat passed, and claustrum then refuses. No
+// row measured that case.
 func baseRepoWalkFails(repo string) bool {
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return false

@@ -47,7 +47,8 @@ func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) st
 }
 
 // worktreeExternalShapeRefusal is step 3 of the checks listed above
-// worktreeExternalSpellingRefusal.
+// worktreeExternalSpellingRefusal. Callers run worktreeExternalSpellingRefusal first,
+// so worktreePath is absolute and has no ".." component here.
 func worktreeExternalShapeRefusal(worktreeRoot, worktreePath, verb string) string {
 	root := filepath.Clean(worktreeRoot)
 	wp := filepath.Clean(worktreePath)
