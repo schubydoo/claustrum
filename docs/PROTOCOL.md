@@ -446,6 +446,9 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"`, for a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`, without `worktreeRoot`) |
 | git.worktree_create | `failed to create parent directory: <repo>\<component> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Windows, when `.claude` or `.claude\worktrees` is a junction. claustrum also refuses another directory level, or a non-symlink reparse point, the same way (not measured). Nothing is created: no directory, no entry, no branch (`f6010b97`, Windows VM, rows JCR1 and JCR2) |
+| git.worktree_create | `refusing to create worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. A root that is `baseRepo` or lies beneath it by whole components is refused. `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, and `<repo>` is `baseRepo` as sent. claustrum cleans both paths first, as on remove. No create row measured that cleaning. It comes after the repo test and before the root-chain tests. claustrum runs it after the two-level test, as on remove. That order is not measured on create. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
+| git.worktree_create | `refusing to create worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. The root passes the test above but leads into the git top level of `baseRepo`, or into the main checkout. The remove row below gives the test and the spelling of `<at>`. claustrum compares file identity as on remove (not measured on create). Before the checkout tests, both references refuse a root below a directory `<dir>` that is writable by its group without the sticky bit: `refusing to create worktree: <root> passes through <dir>, which is writable by its group without the sticky bit (mode <mode>), so they could replace what is beneath it; choose a location under directories only you (or the system) control, or remove the extra write permission (chmod go-w)`. In macOS row Y11d the root is a firmlink spelling of `<T>/.claude`, and `<dir>` is `/System/Volumes/Data`. In Linux rows T7 and T7c, `<dir>` has mode 0775 and a shared group. claustrum does not run that test. It sends this row's text in rows Y11d and T7. In row T7c the root is in no checkout, and claustrum creates the worktree. `<repo>` is `baseRepo` as sent. It comes after 9 git calls (see "Hardened git calls") and before the root-chain tests. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
+| git.worktree_create | `refusing to create worktree: <root> leads into <wt>, a worktree of the repository <repo> (at <wt>); a worktree location must be outside the repository's checkouts` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. The root passes both tests above but lies in a linked worktree `<wt>` of the repository. The remove row below gives the test. `<repo>` is `baseRepo` as sent. It comes before the root-chain tests. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
 | git.worktree_create | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs, with a `.git` entry up to five levels above the root. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is that directory, resolved and cleaned. Linux and macOS VMs measured these spellings. When several directories hold a `.git` entry, the highest one is named. Linux and macOS VMs measured that too |
 | git.worktree_create | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Under a symlinked root, `<dir>` has the root resolved. Linux and macOS VMs measured that spelling |
 | git.worktree_create | `refusing to create worktree: <root> passes through too many symbolic links (a loop?)` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a symlink loop is in the path of the root. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here, and it sends this refusal for a finite chain of more than 255 links (neither measured) |
@@ -462,6 +465,10 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. This is `7d193f89` containment. The spelling refusal is Windows-only and comes before containment. `<repo>` is `baseRepo` as sent. An absent or empty `baseRepo` gives the empty string (`f6010b97`, Linux and macOS VMs). A Windows VM measured an absent one. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent. An empty `worktreePath` gets the first text there (`f6010b97`, Linux and macOS VMs) |
+| git.worktree_remove | `refusing to remove worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, with no `errorCode`, with `worktreeRoot`. The test cleans the root and `baseRepo` and compares whole components. A root that is `baseRepo` or lies beneath it is refused, and `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, so a trailing slash stays. `<repo>` is `baseRepo` as sent, so `<T>/` and `<T>/.` stay too. It comes after the spelling, `baseRepo` and two-level tests, and before any git call. The worktree is not looked at. Nothing is deleted. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
+| git.worktree_remove | `refusing to remove worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | in `error`, with no `errorCode`, with `worktreeRoot`. The root passes the test above. The daemon resolves the symlinks of the longest existing part of the root and appends the missing rest. Then it walks from that path up to `/`. `<at>` is the outermost path on that walk that is the same file as one of two checkouts. These are the git top level of `baseRepo` and the main checkout, the first entry of `worktree list`. So `<at>` is a prefix of the resolved root, for example `/private/tmp/…` for a root sent as `/tmp/…` on macOS. A bind mount (Linux), a firmlink spelling and a case variant (macOS) match too, and `<at>` keeps their spelling. With `baseRepo` in a linked worktree, a bind mount (Linux row T1) or a case variant (macOS row T1m) of the main checkout matches too. `<repo>` is `baseRepo` as sent. It is below `<at>` in row Q19, and a linked worktree in row W1. The main checkout wins over a linked worktree nearer to the root. If both checkouts hold the root, the main checkout is named (row T2b). There it is also the outer one, and claustrum names the outer match. It comes after the work-tree step and `worktree list`. Nothing is deleted. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
+| git.worktree_remove | `refusing to remove worktree: <root> leads into <wt>, a worktree of the repository <repo> (at <wt>); a worktree location must be outside the repository's checkouts` | in `error`, with no `errorCode`, with `worktreeRoot`. The root passes both tests above. `<wt>` is the first linked worktree in `worktree list` that is the resolved root or a parent of it by whole components. The test compares `<wt>` as listed, as a string. It resolves no symlink in `<wt>`, folds no case and compares no file identity. It skips a listed worktree whose path does not exist, also a locked one (rows Y9 and T3). Of two nested worktrees, git lists the outer one first. A root that holds a linked worktree passes. claustrum skips only a path that does not exist. Another error of the lstat keeps the entry (not measured). `<repo>` is `baseRepo` as sent. Nothing is deleted. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
+| git.worktree_remove | `failed to remove worktree: the worktree location <root> is not reachable (<reason>); nothing was removed — retry once it is available, or remove the worktree by hand` | in `error`, with no `errorCode`, with `worktreeRoot`. If the root passes the three tests above but does not exist or does not resolve, this refusal comes right after them. `<root>` is `worktreeRoot` as sent. For a root that does not exist, `<reason>` is `<root> does not exist`, also with two missing levels (rows Y9, T3, T4, T8 and T9). Row T9 also has a missing `baseRepo`. For a symlink that does not resolve, `<reason>` is the error of resolving it, for example `lstat <target>: no such file or directory` (row T5). claustrum sends other resolve errors the same way (not measured). Another error of the lstat keeps the old answer. For `permission denied` both references and claustrum answer `failed to remove worktree: lstat <root>: permission denied`, and claustrum makes 2 more git calls first (row T6). Nothing is deleted, and the branch stays. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs. Row T6 ran on a Linux VM only |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It keeps the delete off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <t> {is a symbolic link, not a worktree directory / is not a directory}` | in `error`, with no `errorCode`, for a leaf that is a symbolic link or not a directory. `<t>` has the symbolic links of `baseRepo` resolved. With `worktreeRoot`, the links of the `<directory>` level are resolved instead. Nothing is deleted (`f6010b97`, macOS VM) |
 | git.worktree_remove | `refusing to remove worktree: <t> changed while the removal was checking it` | in `error`, with no `errorCode`. claustrum's own text for a leaf that another directory replaced between two looks. Only a race reaches it, and no run has measured the reference there. Nothing is deleted |
@@ -1041,11 +1048,27 @@ below against `f6010b97`. Each point names the VMs that measured it.
   follows the light check, with no listing of its own. Before the daemon decides
   whether `worktreePath` is a registered worktree, it runs a light
   `worktree list --porcelain -z` and a heavy `rev-parse --absolute-git-dir`. Each
-  of them has its listing. claustrum does not use the answers of these calls.
-  Linux VM.
+  of them has its listing. claustrum does not use the answer of the last
+  `rev-parse --absolute-git-dir`. For a `baseRepo` that exists, the "leads into"
+  and "not reachable" refusals come right after `worktree list`.
+  With the excludes read that is 7 calls, as on `f6010b97` and `89cb6289`. For a
+  missing `baseRepo` and a missing root, both references send "not reachable" with
+  no git call, and claustrum makes 1 call, the excludes read (row T9). Linux and macOS VMs.
+- `git.worktree_create` with `worktreeRoot`. After the repo test and the in-repo
+  root test, claustrum runs a light `rev-parse --show-toplevel`, a heavy
+  `rev-parse --absolute-git-dir` and a light `worktree list --porcelain -z` in
+  `baseRepo`. Each has its listing. With the excludes read and the repo test that
+  is 9 calls. `f6010b97` makes the same 9 calls before it refuses a root in a
+  checkout. `89cb6289` also makes 9 calls, in this order. claustrum does not use the
+  answer of `rev-parse --absolute-git-dir`. On a create that goes on, the references
+  make more calls than claustrum. Linux and macOS VMs. If the D5 deadline kills
+  `rev-parse --show-toplevel` or `worktree list`, the checkout tests run without that
+  answer. The root-chain tests still refuse a root that has, or lies below, a
+  `.git` entry, with their own text. That is claustrum's choice (not measured).
 - Some calls of `f6010b97` have no claustrum counterpart. Examples are a
-  `rev-parse --show-toplevel` in `git.worktree_create` and the plumbing calls of its
-  `git status`. claustrum's `git.status` runs a light `rev-parse` in `path`, with its
+  `rev-parse --show-toplevel` with `--git-dir` and `--work-tree` in
+  `git.worktree_create`, and the plumbing calls of its `git status`. claustrum's
+  `git.status` runs a light `rev-parse` in `path`, with its
   listing, that `f6010b97` does not run. The replies are the same.
 
 #### The daemon's own git environment
@@ -1127,12 +1150,12 @@ remove of a gone worktree.
 | `git.status` | the same, also for a `path` that is a plain dir, the repository, missing or a file, and for a plain-dir `baseRepo`. Linux, macOS and Windows VMs |
 | `git.status`, `baseRepo` does not resolve | `{"isRepo":false,"clean":false}`, before the check and with no git call. See the method section |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, also for a plain-dir or missing `baseRepo` and a relative `worktreePath`. Also for a `worktreePath` with a `..` component, outside the repository or that exists. A missing `branchName` gets its `-32602` frame first. A `baseRepo` inside a managed worktrees directory gets its `nested_base_repo` frame first. Linux, macOS and Windows VMs. On Windows the check comes before the `worktreeRoot` refusal (Windows VM). A `baseRepo` that fails claustrum's own trust-root test gets that frame first too. Only the Windows VM measured that order (round 1 row C1 P1) |
-| `git.worktree_remove` | Some refusals come first, with their usual frames. These are for a relative path, a path outside the repository, the repository itself and a `..` component (Linux, macOS and Windows VMs). They are also for a path outside `worktreeRoot`, and with `worktreeRoot` for a `..` `baseRepo` (Linux and macOS VMs). A `baseRepo` that fails claustrum's own trust-root test gets the managed-worktrees refusal first. Only the Windows VM measured that order (round 1 row A1 P1). Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a regular-file `baseRepo` (Linux, macOS and Windows VMs). So does `statat .claude: permission denied` for a `baseRepo` with mode 0600 (Linux and macOS VMs) |
+| `git.worktree_remove` | Some refusals come first, with their usual frames. These are for a relative path, a path outside the repository, the repository itself and a `..` component (Linux, macOS and Windows VMs). They are also for a path outside `worktreeRoot`, and with `worktreeRoot` for a `..` `baseRepo` (Linux and macOS VMs). A `baseRepo` that fails claustrum's own trust-root test gets the managed-worktrees refusal first. Only the Windows VM measured that order (round 1 row A1 P1). Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a regular-file `baseRepo` (Linux, macOS and Windows VMs). So does `statat .claude: permission denied` for a `baseRepo` with mode 0600 (Linux and macOS VMs). With `worktreeRoot`, so does the refusal of a root in `baseRepo` (row E7, Linux and macOS VMs) |
 | `git.worktree_remove`, no `worktreeRoot`, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`, also for a plain-dir or missing `baseRepo`. Linux, macOS and Windows VMs |
 | `git.worktree_remove`, no `worktreeRoot`, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`. Linux, macOS and Windows VMs. Linux and macOS VMs also measured a `baseRepo` of `<T>/missing/..`, which does not resolve. On Windows that `baseRepo` gets the managed-worktrees refusal first |
 | `git.worktree_remove` with `worktreeRoot`, `baseRepo` a repository or a plain dir | `{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}`. A trust refusal puts its own text there instead. Linux and macOS VMs |
 | `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory present | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (the repository at <baseRepo> could not be read); retry"}`. Linux and macOS VMs |
-| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. Linux and macOS VMs |
+| `git.worktree_remove` with `worktreeRoot`, `baseRepo` missing, absolute and without a `..` component, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`. If the root is missing too, the "not reachable" refusal comes first (row T9). Linux and macOS VMs |
 
 On Windows the `worktreeRoot` refusal of `git.worktree_remove` comes before the
 check (Windows VM).
@@ -1378,7 +1401,21 @@ check (Windows VM).
   relative path with the empty string as its name. `f6010b97` sends this refusal
   after the repo test, and nothing is created (rows C7, C8 and C9 on Linux and
   macOS VMs). claustrum tests it after the `worktreePath` spelling and before the
-  two-level test, as on remove. That order is not measured. Next, the
+  two-level test, as on remove. That order is not measured. Three tests refuse a
+  root in a checkout of the repository. claustrum runs them after the two-level
+  test, as on remove. That order is not measured on create. The first test
+  compares the cleaned root with the cleaned `baseRepo` by whole components. Then
+  the daemon makes the git calls that "Hardened git calls" lists. The second test
+  refuses a root that leads into the git top level of `baseRepo` or into the main
+  checkout. The third refuses a root in a linked worktree of the repository. A
+  root that holds the repository passes, and so does `<B>/Tx` beside `<B>/T`. The
+  three tests come before the root-chain tests, and nothing is created. The error
+  table gives the texts. Measured against `f6010b97` and `89cb6289` on Linux and
+  macOS VMs (rows K1 to K4, K6 to K9, E2, W3, W4 and Y11a to Y11c). Before these
+  tests, both references refuse a root below a group-writable directory without the
+  sticky bit. macOS row Y11d and Linux rows T7 and T7c measured that. claustrum does
+  not run that test. It sends the "leads into" text in rows Y11d and T7, and it
+  creates the worktree in row T7c (see the error table). Next, the
   daemon resolves the symlinks of the root. It tests each directory from `/` down
   to the root for a `.git` entry, top first. These root-chain tests come before
   the tests of the root's owner and write access. The symlinked `<directory>`
@@ -1883,6 +1920,24 @@ copies end still fails it, as `timeoutMs` above describes:
   `baseRepo` still gets the `..` text. Measured against `f6010b97` on Linux and
   macOS VMs. The `..` test is by whole component: `<T>/sub/..` is refused, and
   `<B>/d..d/T` and `<T>/.` pass (Linux and macOS VMs).
+- With `worktreeRoot`, four tests refuse a root in a checkout of the repository, or
+  a root that does not exist. Nothing is deleted, and the error table gives the
+  texts. The first test runs after the two-level check and before any git call. It
+  refuses a root whose cleaned path is the cleaned `baseRepo` or lies beneath it by
+  whole components. It does not look at the worktree, so a missing worktree gets
+  the same answer. The other three tests run after the `worktree list` call, in
+  this order. The second refuses a root that leads into the git top level of
+  `baseRepo` or into the main checkout. The third refuses a root in a linked
+  worktree of the repository. The fourth refuses a root that does not exist or does
+  not resolve.
+  claustrum runs the `<directory>` symlink check before these three. That order is
+  not measured. A root is not refused for holding the repository or a linked
+  worktree (rows Q15s and Y7). Neither is a root in a checkout of another repository beside it (rows
+  Q20 and Q20b). Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs
+  (the Q, E, W and Y rows of the R0 runs). If `worktree list` fails without a D5
+  kill, the second test compares the root with the git top level of `baseRepo` only.
+  The third test is then skipped. That is claustrum's choice (not measured). A git
+  older than 2.36 fails that call.
 - The managed-worktrees refusal skips a `baseRepo` that does not exist. Measured
   against `f6010b97` on a macOS VM.
 - claustrum's own trust-root test also gives the managed-worktrees refusal. It fails a
@@ -1985,8 +2040,10 @@ copies end still fails it, as `timeoutMs` above describes:
   junctions and 8.3 names resolved on Windows. The rest of `<p>` counts as sent. So a
   `baseRepo` sent in 8.3 form or through a junction still finds a locked registration
   when the worktree and its parent are gone (rows GL1 and GL2, with GL0 as the
-  control). A worktrees directory that cannot be read does not stop this path: with
-  `worktreeRoot` the reply is `{"success":true}` (row K13, Linux VM). Without
+  control). With `worktreeRoot`, a root that does not exist is refused before
+  this path. A worktrees directory that cannot be read
+  does not stop this path: with `worktreeRoot` the reply is `{"success":true}`
+  (row K13, Linux VM). Without
   `worktreeRoot` that case is not measured. Without `worktreeRoot`, two more answers
   come first. A configuration that
   git cannot list, or a refused git directory, answers `{"success":false,"error":"failed
@@ -2016,12 +2073,13 @@ copies end still fails it, as `timeoutMs` above describes:
   [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
 - A relative `worktreePath` is refused upfront (`"…is a relative path…"`). Send an
   absolute path under the repository.
-- `gitTimeout` (D5) is off by default. On this method no git failure or kill leads
-  to a delete. A failure only refuses or skips a step. When a hit stops the config or
-  repository check, the request refuses, or it skips the registration of a gone
-  worktree. With `worktreeRoot` that hit answers the work-tree refusal. A killed
-  `update-ref` keeps the branch, and the reply is still `{"success":true}`. Not
-  measured. See [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
+- `gitTimeout` (D5) is off by default. On this method no D5 kill leads to a delete.
+  A kill only refuses or skips a step. When a hit stops the config or repository
+  check, the request refuses, or it skips the registration of a gone worktree. With
+  `worktreeRoot` that hit answers the work-tree refusal, and so does a hit on
+  `rev-parse --show-toplevel` or `worktree list`. A killed `update-ref` keeps the
+  branch, and the reply is still `{"success":true}`. Not measured. See
+  [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
 
 ### process.* (the agent/MCP-hosting core)
 

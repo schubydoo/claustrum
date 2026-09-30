@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // External worktrees (the "Worktree location" capability, added by reference build
@@ -57,6 +59,215 @@ func worktreeExternalShapeRefusal(worktreeRoot, worktreePath, verb string) strin
 			"<worktree location>/<directory>/<name> beneath %s", verb, wp, root)
 	}
 	return ""
+}
+
+// worktreeRootInRepoRefusal is the refusal of a worktreeRoot that is baseRepo or lies
+// beneath it, or "" when the root passes. The test cleans both paths and compares
+// whole components. It resolves no symlink and runs no git. The text names
+// worktreeRoot and baseRepo as sent. verb is "create" or "remove". f6010b97 and
+// 89cb6289 send the same frames on Linux and macOS VMs:
+//   - Refused: the repository T, T/.claude, T/.claude/ with its slash kept in the
+//     text, T/.claude/worktrees, T/sub and a missing T/missing. These are Linux rows
+//     Q1, Q7, Q8, Q8b, Q2s to Q5s and K1 to K3, and macOS rows MX3, MX4, MX11, MX13,
+//     MX14 and MX15.
+//   - Passed: a root that holds the repository, and B/Tx beside B/T (Linux rows
+//     Q15s, K6 and K7).
+func worktreeRootInRepoRefusal(worktreeRoot, baseRepo, verb string) string {
+	if !samePath(worktreeRoot, baseRepo) && !pathStrictlyUnder(worktreeRoot, baseRepo) {
+		return ""
+	}
+	return fmt.Sprintf("refusing to %s worktree: %s is the repository %s or inside it; "+
+		"a worktree location must be outside the repository", verb, worktreeRoot, baseRepo)
+}
+
+// listedWorktree is one entry of `git worktree list --porcelain -z`. It holds the
+// path as git lists it, and whether the entry has a "bare" line.
+type listedWorktree struct {
+	path string
+	bare bool
+}
+
+// d5Kill is err when the D5 deadline (gitTimeout) of ctx stopped the failed git call,
+// and nil otherwise. err is then the exec error, for example "signal: killed".
+func d5Kill(ctx context.Context, err error) error {
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return err
+	}
+	return nil
+}
+
+// worktreeList runs a light `git worktree list --porcelain -z` in repo, with its
+// listing, and returns the entries in list order. git lists the main checkout first.
+// It returns nil when the call fails. Both worktree methods with a worktreeRoot make
+// this call. The error is d5Kill of the call. Any other failure, such as a git older
+// than 2.36 without `worktree list -z`, gives a nil error.
+func worktreeList(repo string) ([]listedWorktree, error) {
+	ctx, cancel := gitCtx()
+	defer cancel()
+	b, err := hardenedGitCmd(ctx, repo, false, true, "worktree", "list", "--porcelain", "-z").Output()
+	if err != nil {
+		return nil, d5Kill(ctx, err)
+	}
+	out := strings.TrimRight(string(b), "\n")
+	var list []listedWorktree
+	for _, line := range strings.Split(out, "\x00") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			list = append(list, listedWorktree{path: strings.TrimPrefix(line, "worktree ")})
+		case len(list) == 0:
+		case line == "bare":
+			list[len(list)-1].bare = true
+		}
+	}
+	return list, nil
+}
+
+// worktreeRootCheckoutRefusal is the refusal of a worktreeRoot that passes
+// worktreeRootInRepoRefusal but leads into a checkout of the repository, or "" when
+// the root passes. The main form comes first, then the linked form. So the main
+// checkout wins over a linked worktree nearer to the root (rows Y6 and Y11c).
+// topLevel is the answer of `rev-parse --show-toplevel` in baseRepo, and listed is
+// the answer of worktreeList. verb is "create" or "remove".
+func worktreeRootCheckoutRefusal(worktreeRoot, baseRepo, topLevel string, listed []listedWorktree, verb string) string {
+	if msg := worktreeRootResolvesIntoRepoRefusal(worktreeRoot, baseRepo, topLevel, listed, verb); msg != "" {
+		return msg
+	}
+	return worktreeRootInLinkedWorktreeRefusal(worktreeRoot, baseRepo, listed, verb)
+}
+
+// worktreeRootResolvesIntoRepoRefusal is the main form. It resolves the root as
+// canonicalPathOfGone does: the symlinks of its longest existing prefix are resolved,
+// and the missing rest is appended. Then it walks from that path up to "/".
+// The outermost path on that walk that is the same file (device and inode) as
+// topLevel, or as the main checkout, refuses the root. The text names that path, a
+// prefix of the resolved root, and worktreeRoot and baseRepo as sent. It answers "" when neither
+// checkout can be found. f6010b97 and 89cb6289 send the same frames on Linux and
+// macOS VMs:
+//   - A symlinked root, or one under a symlinked prefix that does not exist (Linux
+//     rows Q6s, Q17, Q18, K4, K8 and E1, macOS rows MX12 and E1).
+//   - A baseRepo below the top level, such as T/sub (Linux rows Q19, K9 and E2).
+//   - A linked worktree W as baseRepo with the root in the main checkout T. The text
+//     names T (rows W1, W3, Y6 and Y11c). The root in W itself names W (row Y4).
+//   - A path that is the same file under another spelling: a bind mount (Linux row
+//     Y8), a firmlink (macOS row Y8m) and a case variant (macOS row E8). macOS /tmp
+//     gives "/private/tmp" (row E3). With baseRepo in a linked worktree, a bind
+//     mount (Linux row T1) or a case variant (macOS row T1m) of the main checkout
+//     matches too.
+//   - When the root is under topLevel and under the main checkout, the main
+//     checkout names the path (row T2b). It is also the outer one there, and
+//     claustrum names the outer match.
+func worktreeRootResolvesIntoRepoRefusal(worktreeRoot, baseRepo, topLevel string, listed []listedWorktree, verb string) string {
+	var checkouts []os.FileInfo
+	if topLevel != "" {
+		if fi, err := os.Stat(topLevel); err == nil {
+			checkouts = append(checkouts, fi)
+		}
+	}
+	// A bare first entry has no main checkout, so it is not compared. That is
+	// claustrum's choice (not measured).
+	if len(listed) > 0 && !listed[0].bare {
+		if fi, err := os.Stat(listed[0].path); err == nil {
+			checkouts = append(checkouts, fi)
+		}
+	}
+	if len(checkouts) == 0 {
+		return ""
+	}
+	outer := ""
+	for at := canonicalPathOfGone(worktreeRoot); ; at = filepath.Dir(at) {
+		if fi, err := os.Stat(at); err == nil {
+			for _, c := range checkouts {
+				if os.SameFile(fi, c) {
+					outer = at
+				}
+			}
+		}
+		if filepath.Dir(at) == at {
+			break
+		}
+	}
+	if outer == "" {
+		return ""
+	}
+	return fmt.Sprintf("refusing to %s worktree: %s leads into the repository %s (at %s); "+
+		"a worktree location must be outside the repository", verb, worktreeRoot, baseRepo, outer)
+}
+
+// worktreeRootInLinkedWorktreeRefusal is the linked form. It takes the entries of
+// listed in list order, without the first one (the main checkout) and without an
+// entry whose listed path does not exist. The first entry whose path, as listed, is
+// the resolved root or a parent of it by whole components refuses the root. The test
+// compares strings. It resolves no symlink in the listed path, folds no case and
+// compares no file identity. The text names that entry twice, and worktreeRoot and
+// baseRepo as sent. f6010b97 and 89cb6289 send the same frames on Linux and macOS
+// VMs:
+//   - Refused: the root is a linked worktree w0 of the repository, or lies in one
+//     (rows W2, W4, Y1, Y2c, Y5 and Y11a). A root under a symlink into w0 that does
+//     not exist (row Y10). Of two nested worktrees, the outer one is named (row Y6n).
+//   - Passed: w0 listed through a symlinked spelling (row Y2), a case variant of w0
+//     (macOS row Y3), a bind mount of w0 (Linux row Y8w), a root that holds w0 (row
+//     Y7) and a w0 that was deleted (row Y9). A locked w0 that was deleted passes too
+//     (row T3).
+//
+// Only a listed path that does not exist is skipped. Any other error of the lstat
+// keeps the entry. That is claustrum's choice (not measured).
+func worktreeRootInLinkedWorktreeRefusal(worktreeRoot, baseRepo string, listed []listedWorktree, verb string) string {
+	resolved := canonicalPathOfGone(worktreeRoot)
+	for i, w := range listed {
+		if i == 0 {
+			continue
+		}
+		if _, err := os.Lstat(w.path); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if samePath(resolved, w.path) || pathStrictlyUnder(resolved, w.path) {
+			return fmt.Sprintf("refusing to %s worktree: %s leads into %s, a worktree of the repository %s (at %s); "+
+				"a worktree location must be outside the repository's checkouts", verb, worktreeRoot, w.path, baseRepo, w.path)
+		}
+	}
+	return ""
+}
+
+// worktreeRootMissingRefusal is the refusal of git.worktree_remove for a
+// worktreeRoot that does not exist or does not resolve, or "" when it resolves. It
+// comes after worktreeRootCheckoutRefusal, before any later step of the removal, and
+// nothing is deleted. The first slot is worktreeRoot as sent. f6010b97 and 89cb6289
+// send the same frames on Linux and macOS VMs:
+//   - A root that does not exist gives "<root> does not exist", with the root as
+//     sent. That holds for a deleted linked worktree (rows Y9 and T3) and for two
+//     missing levels (row T4).
+//   - A symlink that does not resolve gives the error of filepath.EvalSymlinks, for
+//     example "lstat <target>: no such file or directory" (row T5).
+//
+// claustrum sends other resolve errors the same way (not measured). Any other error
+// of the lstat keeps the old answer. For "permission denied" that answer has the
+// frame of the references, after 2 more git calls (Linux row T6).
+func worktreeRootMissingRefusal(worktreeRoot string) string {
+	reason := worktreeRoot + " does not exist"
+	_, err := os.Lstat(worktreeRoot)
+	if err == nil {
+		if _, err = filepath.EvalSymlinks(worktreeRoot); err == nil {
+			return ""
+		}
+		reason = err.Error()
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
+	return fmt.Sprintf("failed to remove worktree: the worktree location %s is not reachable (%s); "+
+		"nothing was removed — retry once it is available, or remove the worktree by hand", worktreeRoot, reason)
+}
+
+// repoTopLevel is the answer of a light `rev-parse --show-toplevel` in repo, or ""
+// when the call fails. precursor chooses whether the call gets its own listing (see
+// hardenedGitCmd). The error is d5Kill of the call.
+func repoTopLevel(repo string, precursor bool) (string, error) {
+	ctx, cancel := gitCtx()
+	defer cancel()
+	b, err := hardenedGitCmd(ctx, repo, false, precursor, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", d5Kill(ctx, err)
+	}
+	return strings.TrimRight(string(b), "\n"), nil
 }
 
 // worktreeExternalDirSymlinkRefusal reports 7d193f89's refusal when the <directory>
@@ -140,52 +351,50 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // baseRepo that exists. When it refuses, the reason is the trust refusal text if the
 // trust check refuses, and else the count refusal. See docs/PROTOCOL.md, "The
 // daemon's own git environment".
-func externalWorkTreeRefusal(repo string) string {
+//
+// Its second answer is the git top level of baseRepo when the removal goes on, or ""
+// when git cannot give it. worktreeRootCheckoutRefusal uses it.
+func externalWorkTreeRefusal(repo string) (string, string) {
 	if _, err := os.Stat(repo); err == nil {
 		if msg, bad := daemonCountRefusal(); bad {
 			if t := requestGitDirTrust(repo, false); t.verdict == gitDirRefused {
 				msg = t.refusal
 			}
-			return workTreeUnknownPrefix + msg
+			return workTreeUnknownPrefix + msg, ""
 		}
 	}
 	if err := unenterableBaseListing(repo); err != nil {
-		return workTreeUnknownPrefix + hooksRefusalPrefix + err.Error()
+		return workTreeUnknownPrefix + hooksRefusalPrefix + err.Error(), ""
 	}
 	switch t := requestGitDirTrust(repo, false); t.verdict {
 	case gitDirRefused:
-		return workTreeUnknownPrefix + t.refusal
+		return workTreeUnknownPrefix + t.refusal, ""
 	case gitDirNoRepo:
 		if !goneNonEntryGitFile(repo) {
-			return workTreeUnknownPrefix + "exit status 128"
+			return workTreeUnknownPrefix + "exit status 128", ""
 		}
 	}
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
 	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).
 	if detail, bad := hostileConfigRefusal(repo, false); bad {
-		return workTreeUnknownPrefix + detail
+		return workTreeUnknownPrefix + detail, ""
 	}
 	// The call after that light listing is `rev-parse --show-toplevel` in baseRepo,
-	// on f6010b97 (Linux VM, rows WR00, WR07, WR09 and WR14). claustrum makes the
-	// call and does not use its answer. The checks below decide.
-	hardenedGitFirst(repo, false, "rev-parse", "--show-toplevel")
+	// on f6010b97 (Linux VM, rows WR00, WR07, WR09 and WR14). Its answer does not
+	// decide the reasons below. worktreeRootCheckoutRefusal compares the root with
+	// it. If the D5 deadline stops the call, the reason is the exec error. That is
+	// claustrum's choice (not measured).
+	topLevel, killed := repoTopLevel(repo, false)
+	if killed != nil {
+		return workTreeUnknownPrefix + killed.Error(), ""
+	}
 	if baseIsGitDir(repo) {
-		return workTreeUnknownPrefix + "exit status 128"
+		return workTreeUnknownPrefix + "exit status 128", ""
 	}
 	if err := repositoryCheckError(repo, true); err != nil {
-		return workTreeUnknownPrefix + err.Error()
+		return workTreeUnknownPrefix + err.Error(), ""
 	}
-	return ""
-}
-
-// externalWorktreeListing makes the two git calls that f6010b97 makes before it
-// decides whether worktreePath is a registered worktree of baseRepo: a light
-// `worktree list --porcelain -z`, then a heavy `rev-parse --absolute-git-dir`, each
-// in baseRepo with its listing. Measured on a Linux VM (rows WR00, WR07, WR09 and
-// WR14). claustrum does not use their answers.
-func externalWorktreeListing(repo string) {
-	hardenedGit(repo, false, "worktree", "list", "--porcelain", "-z")
-	hardenedGit(repo, true, "rev-parse", "--absolute-git-dir")
+	return "", topLevel
 }
 
 // unenterableBaseListing covers a baseRepo that exists but that git cannot start in:
