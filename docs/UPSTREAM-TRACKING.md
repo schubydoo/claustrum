@@ -375,6 +375,25 @@ If a Go release rewords the text, the loop frame changes from `unsafe_path` to
 `mkdir_failed`. The S1, S1b, S1c and S1d cases in
 `worktree_create_chain_unix_test.go` then fail. Check them after each Go bump.
 
+### Windows junctions in `filepath.EvalSymlinks`
+
+Two refusals rest on a failed `filepath.EvalSymlinks`. One is the trust-root test
+of the worktree methods (`baseRepoWalkFails`, `worktreecontain.go`). The other is
+`unresolvable` (`methods_git.go`), which `git.status` applies to `baseRepo` and
+`git.list_branches` to `path`. On Windows both depend on the `winsymlink` GODEBUG
+setting, which Go 1.23 turned on. With it on, `os.Lstat` reports a junction as
+neither a symbolic link nor a directory. With it off, a junction is a symbolic link.
+With it on, the walk of `EvalSymlinks` fails at a junction before the last
+component. claustrum answers Windows VM rows J1 and J3 with the trust-root refusal
+for that reason. With `GODEBUG=winsymlink=0` in the daemon environment, the walk
+follows the junction instead. claustrum's answers to rows J1 and J3 then flip, and
+so do the `git.status` and `git.list_branches` answers for `<dir>\<junction>\T`.
+Other code resolves `baseRepo` through `EvalSymlinks` too, so other Windows junction
+rows can move as well. A `go` line below 1.23 in `go.mod` has the same effect. This
+entry is derived from the Go source (`os/types_windows.go` and
+`path/filepath/symlink.go`), not measured. Check those rows after each Go bump that
+changes `winsymlink`.
+
 ## Automating it
 
 - [`.github/workflows/upstream-desktop-watch.yml`](https://github.com/schubydoo/claustrum/blob/main/.github/workflows/upstream-desktop-watch.yml)

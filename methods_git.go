@@ -712,8 +712,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// 7d193f89 refuses a baseRepo that sits inside a managed worktrees tree as an
 	// invalid trust root, before the repo check. Measured against 7d193f89 on an
 	// ephemeral VM. A session worktree must be created from a real top-level repo,
-	// never from inside another session's worktree tree.
-	if baseRepoUnderManagedWorktrees(repo) {
+	// never from inside another session's worktree tree. A baseRepo that fails
+	// claustrum's own trust-root test gets the same refusal (baseRepoWalkFails). It
+	// comes before the count check (f6010b97, round 1 row C1 P1 on the Windows VM).
+	if baseRepoUnderManagedWorktrees(repo) || baseRepoWalkFails(repo) {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     managedWorktreesRefusal,
@@ -772,7 +774,18 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if msg := externalWorktreeUnsupportedRefusal(p.WorktreeRoot, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
-		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
+		if msg := worktreeExternalSpellingRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		// f6010b97 refuses a relative baseRepo, an absent one included, or one with a
+		// ".." component, with the texts of the worktreePath check. The text names
+		// baseRepo as sent. It comes after the repo check, and nothing is created (rows
+		// C7, C8 and C9 on Linux and macOS VMs). Its order against the other checks of
+		// this branch is not measured. It sits where git.worktree_remove has it.
+		if msg := sessionFolderSpellingRefusal(p.BaseRepo, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		if msg := worktreeExternalShapeRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		// The root-chain step comes before the root refusals. The <directory> symlink
@@ -807,7 +820,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 				ErrorCode: "mkdir_failed",
 			})
 		}
-		if msg := worktreePathRefusal(repo, p.WorktreePath, "create"); msg != "" {
+		// The text names baseRepo as sent, so an absent one reads "" (f6010b97, row C6
+		// on Linux and macOS VMs). filepath.Rel reads "" as ".", so the test is the
+		// same as on repo.
+		if msg := worktreePathRefusal(p.BaseRepo, p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
 		if msg := worktreeSymlinkRefusal(repo, p.WorktreePath, "create"); msg != "" {
@@ -1143,20 +1159,35 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	if _, err := os.Stat(repo); !errors.Is(err, fs.ErrNotExist) && baseRepoUnderManagedWorktrees(repo) {
 		return refuse(managedWorktreesRefusal)
 	}
-	// Empty is failed as a non-directory, not as a relative path (measured against
-	// 7d193f89).
-	if p.WorktreePath == "" {
-		return refuse(fmt.Sprintf("failed to remove worktree: %q does not name a directory", p.WorktreePath))
+	// A baseRepo that fails claustrum's own trust-root test gets the same refusal
+	// (baseRepoWalkFails). It comes before the worktreePath checks, the Windows
+	// worktreeRoot refusal and the count check. f6010b97 showed that order in round 1
+	// rows O1 to O4, WR1 and A1 P1 (Windows VM).
+	if baseRepoWalkFails(repo) {
+		return refuse(managedWorktreesRefusal)
 	}
 	var target removeTarget
 	var err error
 	if p.WorktreeRoot != "" {
 		// With a worktreeRoot the worktree lives outside the repo. The external checks
 		// replace the in-repo containment. Measured against 7d193f89 and f6010b97.
+		// An empty worktreePath is judged as a relative path here (f6010b97, row R10
+		// on Linux and macOS VMs).
 		if msg := externalWorktreeUnsupportedRefusal(p.WorktreeRoot, "remove"); msg != "" {
 			return refuse(msg)
 		}
-		if msg := worktreeExternalContainmentRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
+		if msg := worktreeExternalSpellingRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
+			return refuse(msg)
+		}
+		// f6010b97 then refuses a relative baseRepo, an absent one included, or one with
+		// a ".." component, with the same texts. The text names baseRepo as sent. It
+		// comes before the shape check and runs no git (rows R1 to R4, R9 and R11 on
+		// Linux and macOS VMs). The ".." test is by whole component (rows R12 to R14 on
+		// Linux and macOS VMs).
+		if msg := sessionFolderSpellingRefusal(p.BaseRepo, "remove"); msg != "" {
+			return refuse(msg)
+		}
+		if msg := worktreeExternalShapeRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
 			return refuse(msg)
 		}
 		// The work-tree check comes before the dir-symlink check. A base that the check
@@ -1175,10 +1206,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		}
 		target, err = locateExternalWorktree(p.WorktreePath)
 	} else {
+		// Empty is failed as a non-directory, not as a relative path (measured against
+		// 7d193f89).
+		if p.WorktreePath == "" {
+			return refuse(fmt.Sprintf("failed to remove worktree: %q does not name a directory", p.WorktreePath))
+		}
 		// The containment of 7d193f89: only a path strictly inside the repo goes on, so
 		// a "~"-expanded home path is refused here, with the reference's wording, before
-		// the home guard is consulted.
-		if msg := worktreePathRefusal(repo, p.WorktreePath, "remove"); msg != "" {
+		// the home guard is consulted. The text names baseRepo as sent, so an absent one
+		// reads "" (f6010b97, rows A12 and A12b on Linux and macOS VMs, A12 on Windows).
+		// filepath.Rel reads "" as ".", so the test is the same as on repo.
+		if msg := worktreePathRefusal(p.BaseRepo, p.WorktreePath, "remove"); msg != "" {
 			return refuse(msg)
 		}
 		// A symlinked component under the repo, the leaf excluded, is refused before
@@ -1242,6 +1280,13 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if v := requestGitDirTrust(repo, false).verdict; v == gitDirRefused || v == gitDirNoRepo {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
+		// A refused daemon GIT_CONFIG_COUNT gets the same answer. hostileConfigRefusal
+		// below does not refuse a baseRepo that does not stat, such as <T>/missing/..,
+		// so the count is checked here. f6010b97 answers so in row A1 P1 (Linux and
+		// macOS VMs).
+		if _, bad := daemonCountRefusal(); bad {
+			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
 		// The listing carries the heavy profile of the rev-parse that follows it, as on
 		// f6010b97 (Linux, macOS and Windows VMs). When the check fails, f6010b97 runs it
 		// once more before it answers: a second listing, and a second rev-parse when that
@@ -1269,8 +1314,8 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// E06). Rows E01 to E08, L03, X03 and X04.
 		//
 		// With a refused daemon GIT_CONFIG_COUNT, externalWorkTreeRefusal has already
-		// refused a baseRepo that exists. For a missing baseRepo without a ".."
-		// component, the answer is a lock-check refusal that names the repository
+		// refused a baseRepo that exists. For a missing absolute baseRepo without a
+		// ".." component, the answer is a lock-check refusal that names the repository
 		// (docs/PROTOCOL.md).
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(unreadableRepoLockCheckRefusal(p.WorktreePath, repo))
