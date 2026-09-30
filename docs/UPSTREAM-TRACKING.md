@@ -198,7 +198,7 @@ opt-in?
 | D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal |
 | D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
 | D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-` |
-| D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where the reference answers success and deletes the branch |
+| D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where `f6010b97` answers success and deletes the branch (`89cb6289` not measured there) |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept) |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
@@ -273,7 +273,9 @@ traps that matter for telling drift from expected:
   post-exit drain at ~5 s and SIGKILLs the process group, which is parity with
   `4534d86` (`scratch/probe/wt-success-lingering-4534d86.md`). It gates success
   against `errorCode:"timeout"`+rollback on the caller `timeoutMs`. The off default
-  (no `timeoutMs`, D5 off) is unbounded on every path, matching the reference.
+  (no `timeoutMs`, D5 off) is unbounded on every path, matching the reference. The
+  one exception is the branch step, which both binaries bound since `89cb6289`
+  (PROTOCOL.md → The branch step).
 - D5 has a wire-invisible arm. When the deadline kills `git ls-files` or
   `git check-ignore`, `git.worktree_create` still answers `{"success":true}`, and the seeded files are
   absent. That covers both passes: the `.worktreeinclude` manifest copy and the
@@ -290,6 +292,30 @@ traps that matter for telling drift from expected:
   splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
   back. That difference is not drift.
+- The branch step of `git.worktree_remove` and of the create rollbacks splits the
+  pins. claustrum follows `89cb6289`, while `scripts/UPSTREAM_SHA` still names
+  `f6010b97`. Against `f6010b97`, `server.capabilities` differs by the
+  `git.worktree_remove.unpushedGuard` feature. On remove, every kept case of the
+  branch step differs. claustrum keeps the branch and adds `"branchKept":true`, where
+  `f6010b97` adds no member. In most of these cases `f6010b97` also deletes
+  the branch. The kept classes, with their rows:
+  - A commit that no other ref reaches: R02, R05 to R08, R10b, R17a, R19, R20, R24b
+    and B2-04a. Also R21, R21b, B2-08 and B2-12, where `89cb6289` and claustrum keep
+    a branch with the member, and `f6010b97` deletes both branches.
+  - A lock file on the branch: R14. There `f6010b97` keeps the branch too.
+  - 10001 or more heads: R15a and R15c.
+  - A letter-case twin: R16 and R16b.
+  - No repository at `baseRepo`: R18 and R18b. Neither side deletes anything there.
+  - A `baseRepo` that does not exist: X3. Neither side deletes anything there.
+  - for-each-ref stopped at the 60 s bound: R22a and B2-02.
+  - rev-list stopped at that bound, or failed: B2-01 and B2-03.
+  - update-ref stopped: R23a and R23b.
+
+  In the create rollbacks, these rows differ from `f6010b97`: C02, C04, C05, C06, C06b,
+  C09, C10, B2-09a, B2-09b, B2-09c, B2-09f and B2-10. There `f6010b97` deletes the
+  branch and adds no branch text. Those differences are not drift. Rows C07a, C07b,
+  B2-09e, X1 and X2 equal `f6010b97`. See [PROTOCOL.md](PROTOCOL.md) → The branch
+  step.
 - D12 needs a VALID zstd body. D13's ordering answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and

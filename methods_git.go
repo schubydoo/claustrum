@@ -69,7 +69,8 @@ func (p *gitParams) repoDir() string {
 
 // gitTimeout optionally bounds every git invocation. **It is OFF by default (0),
 // which is the parity position**: the reference daemon showed no deadline at or
-// below the 75 s probed, so a wedged git — an index/config lock, a credential
+// below the 75 s probed (outside the branch step of 89cb6289, which has its own
+// bounds, worktreebranch.go), so a wedged git — an index/config lock, a credential
 // prompt, a stalled network or filesystem, a hung checkout hook — leaves the
 // request goroutine waiting without bound there, and now here too.
 //
@@ -141,7 +142,8 @@ var gitTimeout time.Duration
 // huge value, so exec.CommandContext has nothing to fire and ctx.Err() is nil by
 // construction — a wedged git then blocks, as the reference
 // did at every duration probed (no deadline at or below 75 s, measured on
-// git.worktree_remove only; above that, unmeasured on both binaries).
+// git.worktree_remove only, outside the branch step; above that, unmeasured on both
+// binaries).
 func gitCtx() (context.Context, context.CancelFunc) {
 	if gitTimeout <= 0 {
 		return context.Background(), func() {}
@@ -163,8 +165,8 @@ func gitCtx() (context.Context, context.CancelFunc) {
 //
 //	compare or discard   isRepo, isRepoGitDir — exit status or an exact "true",
 //	                     both of which a warning-prefixed string fails safely
-//	                     (show-ref --verify and the update-ref branch deletes now
-//	                     run through hardenedGit instead)
+//	                     (show-ref --verify now runs through hardenedGit, and the
+//	                     branch step through its own calls in worktreebranch.go)
 //	echoes it verbatim   --show-toplevel → root/repo, branch --show-current →
 //	                     branch (rev-parse --short HEAD supplies only the
 //	                     detached-HEAD sha fallback), remote get-url → repoSlug,
@@ -1033,7 +1035,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 		// The fallback add names branchName and gets the start point that
 		// sourceBranch resolved to, if any, as the new-branch path does. The worktree
-		// then ends up on that new branch, and the rollbacks below delete it. If the
+		// then ends up on that new branch, and the rollbacks below run the branch step
+		// on it. If the
 		// fallback also fails, the frame quotes both texts, each one made on its own.
 		// Measured against f6010b97 and 90fca6e6 on a macOS VM.
 		attachStderr, attachErr := addStderr, addErr
@@ -1076,10 +1079,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// Every rollback below appends an undo text when one of its steps fails.
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs)
+		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
 		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
-			ErrorCode: "timeout",
+			Success:    false,
+			Error:      msg + undo,
+			ErrorCode:  "timeout",
+			BranchKept: kept,
 		})
 	}
 	// Second half of the two-step: the read-tree fills the working tree from the new
@@ -1106,25 +1111,30 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// Measured against f6010b97 and 90fca6e6 on a macOS VM.
 			msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s",
 				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
 			return okResult(req.ID, worktreeResult{
-				Success:   false,
-				Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
-				ErrorCode: "timeout",
+				Success:    false,
+				Error:      msg + undo,
+				ErrorCode:  "timeout",
+				BranchKept: kept,
 			})
 		case rtErr != nil:
 			// The checkout failed on its own (for example a tree object it cannot
 			// read). The request fails with git's text, and the rollback removes the
-			// new directory, its registration and the branch this call created. The
+			// new directory and its registration. The branch step then deletes the
+			// branch this call created only when another ref reaches its tip. The
 			// frame matches 90fca6e6 byte for byte, apart from git's graft-file
 			// deprecation hint: lines. f6010b97 and claustrum both set GIT_GRAFT_FILE,
 			// so where git prints the hint, their text starts with it. In attach mode
 			// createdBranch is "", so the attached branch is kept, as measured against
 			// f6010b97.
 			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
 			return okResult(req.ID, worktreeResult{
-				Success:   false,
-				Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
-				ErrorCode: "worktree_add_failed",
+				Success:    false,
+				Error:      msg + undo,
+				ErrorCode:  "worktree_add_failed",
+				BranchKept: kept,
 			})
 		}
 	}
@@ -1155,10 +1165,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// and 90fca6e6 on a macOS VM.
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs)
+		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
 		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     msg + undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint),
-			ErrorCode: "timeout",
+			Success:    false,
+			Error:      msg + undo,
+			ErrorCode:  "timeout",
+			BranchKept: kept,
 		})
 	}
 	return okResult(req.ID, worktreeResult{Success: true, Path: p.WorktreePath, SourceBranch: source, Branch: worktreeBranch})
@@ -1422,9 +1434,10 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		return refuse(worktreeRemoveText(err))
 	}
 	// The entry goes after the tree. A verified entry that cannot be deleted is
-	// reported, and the branch is still deleted (rows D01 to D03). Without a verified
-	// entry, the one entry whose record names the worktree is deleted, and a failure
-	// is not reported (rows R01 to R04).
+	// reported (rows D01 to D03 of the f6010b97 runs). The branch step still runs
+	// (rows R19 and B2-06 of the 89cb6289 runs). Without a verified entry, the one
+	// entry whose record names the worktree is deleted. A failure of that delete is
+	// not reported (rows R01 to R04 of the f6010b97 runs).
 	pending := ""
 	if entry != "" {
 		if err := dropWorktreeEntry(commonDir, entry); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -1433,17 +1446,15 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	} else {
 		dropWorktreeEntryByPath(commonDir, sp)
 	}
-	deleteWorktreeBranch(repo, p.BranchName)
-	if pending != "" {
-		return refuse(pending)
-	}
-	return okResult(req.ID, worktreeRemoveResult{Success: true})
+	// The branch step adds no text to the reply. A kept branch adds the member only.
+	kept := runBranchStep(repo, p.BranchName).kept()
+	return okResult(req.ID, worktreeRemoveResult{Success: pending == "", Error: pending, BranchKept: kept})
 }
 
 // removeGoneWorktree answers a remove whose worktree directory is not there. The
 // registration is checked by path. A locked one is refused. Else the one entry whose
-// record names the worktree is deleted, and then the branch. path is the spelling of
-// the worktree, or "" when a parent directory is missing too.
+// record names the worktree is deleted. Then the branch step runs. path is the
+// spelling of the worktree, or "" when a parent directory is missing too.
 //
 // In the repo, a config that cannot be listed, or a git directory that fails the trust
 // check, is refused with its reason (rows G07, T01 and T02). A baseRepo that holds no
@@ -1504,8 +1515,11 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		}
 		dropWorktreeEntryByPath(commonDir, sp)
 	}
-	deleteWorktreeBranch(repo, p.BranchName)
-	return okResult(req.ID, worktreeRemoveResult{Success: true})
+	// The branch step runs on this path too (rows R17a and R17b). Without a
+	// repository its for-each-ref fails, and the branch counts as kept (rows R18 and
+	// R18b).
+	kept := runBranchStep(repo, p.BranchName).kept()
+	return okResult(req.ID, worktreeRemoveResult{Success: true, BranchKept: kept})
 }
 
 // worktreeRemoveHomeRefusal is the home guard of git.worktree_remove (D2). It refuses a

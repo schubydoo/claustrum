@@ -126,7 +126,7 @@ type branchesResult struct {
 // worktreeRemoveResult is git.worktree_remove's reply. On some failures the
 // reference emits an `error` field beside `success`. The lenient cases still
 // answer a bare {"success":true}: removing a nonexistent worktree, or naming a
-// branch that does not exist.
+// branch that the branch step finds absent. A kept branch adds "branchKept":true.
 //
 // Every refusal and failure branch of gitWorktreeRemoveLocked populates `error`.
 // Three of those branches are:
@@ -138,7 +138,8 @@ type branchesResult struct {
 //	worktreePath is/contains the home directory           (claustrum-only)
 //
 // The last two are frames the reference cannot emit — it showed no deadline at or
-// below the 75 s probed, and at 5db5e4a it deleted a home directory.
+// below the 75 s probed outside the branch step, and at 5db5e4a it deleted a home
+// directory.
 //
 // ⚠️ This comment used to add "all three are confined to pathological paths;
 // every reference-reachable reply is still the bare {"success":true}". Both
@@ -152,6 +153,11 @@ type branchesResult struct {
 type worktreeRemoveResult struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
+	// BranchKept is true when the branch step kept the branch (89cb6289). That is
+	// every outcome except a delete, an absent branch, or a skipped name. It follows
+	// success, or error when error is present. It is only ever true, and absent
+	// otherwise (row R02 on Linux, macOS and Windows VMs, row R19 on a Linux VM).
+	BranchKept bool `json:"branchKept,omitempty"`
 }
 
 type worktreeResult struct {
@@ -165,6 +171,11 @@ type worktreeResult struct {
 	// is present on every success. Absent (omitempty) on failure, where success:false
 	// carries error/errorCode instead. Measured against 19f30c46.
 	Branch string `json:"branch,omitempty"`
+	// BranchKept is true when a rollback kept the branch because it holds commits that
+	// no other ref reaches (89cb6289). It follows errorCode (rows C02, C04, C05 and
+	// B2-10). No measured frame with it has sourceBranch or branch. Its place after
+	// them is claustrum's choice (not measured).
+	BranchKept bool `json:"branchKept,omitempty"`
 }
 
 type reattachResult struct {

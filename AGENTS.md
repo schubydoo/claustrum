@@ -127,7 +127,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A LOCKED worktree is refused, not deleted.
       On Windows a junction at `.claude` or `.claude\worktrees` is refused too,
-      where the reference answers success and deletes the branch. That is D19.
+      where `f6010b97` answers success and deletes the branch. That is D19.
       Since `7d193f89`, the containment of the reference refuses a
       home path first: `worktreePath` must be strictly inside `baseRepo`. On the
       default branch `wipesHomeDir` is therefore defense-in-depth. It fires in
@@ -143,9 +143,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       step. It also runs after a post-checkout drain that exceeded that
       `timeoutMs`, and after a failed read-tree checkout. It deletes the entries
       of the leaf in the order that the directory read returns them, and it
-      stops at the first failure. Then it deletes the registration and the
-      created branch, and then the empty leaf. A step that fails appends a
-      measured undo text to the frame.
+      stops at the first failure. Then it deletes the registration, runs the
+      branch step on the created branch, and then removes the empty leaf. A step
+      that fails appends an undo text to the frame.
       `wipesHomeDir` guards every delete as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint
       identity of the leaf again, so a swap while create runs cannot redirect

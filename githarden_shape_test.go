@@ -393,6 +393,73 @@ func TestHardenedGitCallShape(t *testing.T) {
 		checkHardenedEnv(t, "worktree_remove", calls)
 	})
 
+	// The branch step of 89cb6289 (row R01 on Linux, macOS and Windows VMs, and rows
+	// R11 and B2-09d for a missing branch). Each call follows a light listing, runs
+	// in baseRepo, carries the light -c set, and has its own env: the light profile
+	// without GIT_ALLOW_PROTOCOL, the pin, the hook pins, then the three heavy
+	// variables. rev-list adds -c core.commitGraph=false. update-ref sends the old
+	// value.
+	t.Run("worktree_remove branch step", func(t *testing.T) {
+		raw, _ := run("git.worktree_create", map[string]any{
+			"baseRepo": f.top, "branchName": "b1", "worktreePath": f.leaf()})
+		if !strings.Contains(raw, `"success":true`) {
+			t.Fatalf("create reply = %s", raw)
+		}
+		tip := f.out(t, f.top, "rev-parse", "HEAD")
+		c2 := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+			"-c", "branch.autoSetupMerge=false", "-c", "fetch.bundleURI=", "-c", "http.saveCookies=false",
+			"-c", "core.alternateRefsCommand=", "-c", "alias.remote-https=", "-c", "alias.remote-http=",
+			"-c", "alias.remote-ssh=", "-c", "core.excludesFile=" + shapeNull, "-c", "submodule.recurse=false",
+			"-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=false"}
+		wantEnv := []string{"GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + shapeNull,
+			"GIT_COMMON_DIR"}
+		wantEnv = append(append(wantEnv, shapePins...),
+			"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_ASKPASS=")
+		check := func(t *testing.T, calls []shapeCall, want [][]string) {
+			t.Helper()
+			i := slices.IndexFunc(calls, func(c shapeCall) bool { return c.has("for-each-ref") })
+			if i < 1 || len(calls) != i-1+2*len(want) {
+				t.Fatalf("calls = %q, want a listing and a call for each of %q at the end", calls, want)
+			}
+			for k, w := range want {
+				pre, c := calls[i-1+2*k], calls[i+2*k]
+				if !pre.listing() || !sameShapeEnv(pre.keysAndValues(), wantShapeEnv(false, false)) {
+					t.Errorf("call before %q = %q %q, want the light listing", w, pre.argv, pre.env)
+				}
+				if want := append(slices.Clone(c2), w...); !slices.Equal(c.argv, want) {
+					t.Errorf("argv = %q\nwant   %q", c.argv, want)
+				}
+				if !sameShapeEnv(c.keysAndValues(), wantEnv) {
+					t.Errorf("%q env = %q\nwant %q", w, c.keysAndValues(), wantEnv)
+				}
+				j := slices.IndexFunc(c.env, func(kv string) bool { return strings.HasPrefix(kv, "GIT_COMMON_DIR=") })
+				if j < 0 || canonicalPath(strings.TrimPrefix(c.env[j], "GIT_COMMON_DIR=")) != canonicalPath(filepath.Join(f.top, ".git")) {
+					t.Errorf("%q env = %q, want GIT_COMMON_DIR=%s", w, c.env, filepath.Join(f.top, ".git"))
+				}
+				for _, x := range []shapeCall{pre, c} {
+					if canonicalPath(x.cwd) != canonicalPath(f.top) {
+						t.Errorf("%q runs in %s, want %s", x.argv, x.cwd, f.top)
+					}
+				}
+			}
+		}
+		forEachRef := []string{"for-each-ref", "--count=10001", "--format=%(objectname)%00%(refname)%00%(symref)", "refs/heads/"}
+		raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf(), "branchName": "b1"})
+		if raw != removeOK {
+			t.Fatalf("reply = %s, want %s", raw, removeOK)
+		}
+		check(t, calls, [][]string{
+			forEachRef,
+			{"-c", "core.commitGraph=false", "rev-list", "-n", "1", tip, "--not", "--remotes", "--not", "--stdin", "--"},
+			{"update-ref", "--no-deref", "-d", "refs/heads/b1", tip},
+		})
+		raw, calls = run("git.worktree_remove", map[string]any{"baseRepo": f.top, "worktreePath": f.leaf(), "branchName": "nosuch"})
+		if raw != removeOK {
+			t.Fatalf("reply = %s, want %s", raw, removeOK)
+		}
+		check(t, calls, [][]string{forEachRef, {"rev-parse", "--verify", "--quiet", "refs/heads/nosuch^{commit}"}})
+	})
+
 	// With worktreeRoot, the refusal listing is light, and the heavy rev-parse
 	// --absolute-git-dir runs its own heavy listing: the order of f6010b97's listings
 	// on a Linux VM. Windows refuses a worktreeRoot before any git.

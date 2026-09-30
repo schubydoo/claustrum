@@ -115,22 +115,33 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 // a failed read-tree checkout, or after the caller's timeoutMs expired during the
 // add, the checkout, a checkout drain that overran the drain cap, or the copy step.
 // It returns "" when the undo finished, or the text that the caller appends to the
-// frame's error. The errorCode of the frame does not change. The steps and the two
-// texts were measured against f6010b97 and 90fca6e6 on a Windows VM:
+// frame's error. The errorCode of the frame does not change. kept is true when the
+// branch step kept the branch because it holds commits that no other ref reaches.
+// The frame then carries "branchKept":true. The steps and the leaf texts were
+// measured against f6010b97 and 90fca6e6 on a Windows VM:
 //
 //   - Step A deletes the entries at the top of the leaf, one at a time, in the order
 //     that the directory read returns them, not sorted. It stops at the first entry
 //     that it cannot delete. Then the text is
 //     "; and the undo could not finish for <leaf>: the worktree directory, its
 //     registration, and the branch all remain; remove them by hand before retrying
-//     (RemoveAll <entry>: <OS error>)", and nothing else is undone.
-//   - Step B deletes the worktree's registration and the branch that the call
-//     created (update-ref --no-deref -d). In attach mode branch is "", so no git
-//     call runs. After the attach fallback, the call created branchName.
+//     (RemoveAll <entry>: <OS error>)", and nothing else is undone. In attach mode
+//     the call made no branch, and the text reads "the worktree directory and its
+//     registration both remain" instead (f6010b97 and 89cb6289, row C08b).
+//   - Step B deletes the worktree's registration, then runs the branch step
+//     (runBranchStep) on the branch that the call created. In attach mode branch is
+//     "", so no git call runs. After the attach fallback, the call created
+//     branchName. The caller's expired deadline does not stop the branch step (rows
+//     C04 and B2-10).
 //   - Step C removes the leaf directory, which is now empty. If that fails, the text
 //     is "; and the undo could not finish for <leaf>: the worktree directory remains
 //     (re-populated while undoing?); remove it by hand before retrying (removeat
 //     <leaf base name>: <OS error>)".
+//
+// A branch that the branch step keeps adds its own part (rollbackBranchText) after
+// the leaf part, joined by "; " (row C05). A kept branch together with a failed rmdir
+// is the only pair that a row measured. Any other pair of the two parts uses the same
+// join. That is claustrum's choice (not measured).
 //
 // With a plain baseRepo, the registrations directory (<common git dir>/worktrees)
 // stays, empty when the call created it. With a linked-worktree baseRepo, the
@@ -140,9 +151,10 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //
 // Steps A and C are recursive or plain deletes of an RPC-supplied path, so each one
 // first applies the always-on home guard (D2) and the leaf identity check. A refusal
-// skips the leaf and adds no text. That is claustrum's own guard: no honest input
-// reaches it.
-func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint) string {
+// skips the leaf and adds no leaf text. The leaf then stays, so a kept branch gets
+// its text without the "the worktree itself was removed, but " start. That is
+// claustrum's own guard (not measured): no honest input reaches it.
+func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint) (text string, kept bool) {
 	// The admin dir is found through the leaf's .git file, which step A deletes.
 	adminDir := createdWorktreeAdminDir(repo, worktreePath)
 	leafSafe := func() bool {
@@ -151,22 +163,33 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 	touchLeaf := leafSafe()
 	if touchLeaf {
 		if detail := clearWorktreeLeaf(worktreePath); detail != "" {
-			return fmt.Sprintf("; and the undo could not finish for %s: the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (%s)", worktreePath, detail)
+			remain := "the worktree directory, its registration, and the branch all remain"
+			if branch == "" {
+				remain = "the worktree directory and its registration both remain"
+			}
+			return fmt.Sprintf("; and the undo could not finish for %s: %s; remove them by hand before retrying (%s)", worktreePath, remain, detail), false
 		}
 	}
 	if adminDir != "" {
 		_ = os.RemoveAll(adminDir)
 	}
-	if branch != "" {
-		hardenedGit(repo, false, "update-ref", "--no-deref", "-d", "refs/heads/"+branch)
+	res := runBranchStep(repo, branch)
+	var parts []string
+	leafGone := false
+	if touchLeaf && leafSafe() {
+		if err := removeEmptyLeaf(worktreePath); err != nil {
+			parts = append(parts, fmt.Sprintf("the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (%v)", err))
+		} else {
+			leafGone = true
+		}
 	}
-	if !touchLeaf || !leafSafe() {
-		return ""
+	if t := rollbackBranchText(repo, branch, res, !leafGone); t != "" {
+		parts = append(parts, t)
 	}
-	if err := removeEmptyLeaf(worktreePath); err != nil {
-		return fmt.Sprintf("; and the undo could not finish for %s: the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (%v)", worktreePath, err)
+	if len(parts) == 0 {
+		return "", false
 	}
-	return ""
+	return "; and the undo could not finish for " + worktreePath + ": " + strings.Join(parts, "; "), res.kind == branchUnique
 }
 
 // clearWorktreeLeaf is step A of undoFailedCheckout. It deletes each entry at the top

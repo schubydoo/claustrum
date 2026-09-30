@@ -26,12 +26,16 @@ var capabilityMethods = []string{
 // process.spawn.shellAgentSocket after existingBranch and before external_root
 // (process.spawn hands a child the login shell's SSH_AUTH_SOCK, and takes a
 // disableShellAgentSocket param), present on every OS. claustrum's Windows
-// spawn never probes. The array itself is always emitted.
+// spawn never probes. 89cb6289 inserted git.worktree_remove.unpushedGuard after
+// existingBranch and before shellAgentSocket. git.worktree_remove then keeps a branch
+// that no other ref reaches, and answers branchKept. Linux, macOS and Windows VMs
+// show the feature. The array itself is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
 	"git.worktree_create.timeoutMs",
 	"git.worktree_create.existingBranch",
+	"git.worktree_remove.unpushedGuard",
 	"process.spawn.shellAgentSocket",
 }, externalRootCapabilityFeatures...), "server.instance_id")
 

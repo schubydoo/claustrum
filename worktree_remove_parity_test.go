@@ -47,6 +47,9 @@ func removeFrame(t *testing.T, params map[string]any) string {
 
 const removeOK = `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`
 
+// removeKept is the reply of 89cb6289 when the branch step keeps the branch (row R02).
+const removeKept = `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
+
 // removeErrorField decodes a git.worktree_remove frame and returns result.error.
 func removeErrorField(t *testing.T, raw string) string {
 	t.Helper()
@@ -181,14 +184,18 @@ func TestWorktreeRemoveGoneWorktree(t *testing.T) {
 
 // A gone worktree under a baseRepo that holds no repository answers success. There are
 // no registrations to check (rows G05 and G05b). Before, the lock-check text answered.
+// Since 89cb6289 the branch step still runs there. Its for-each-ref fails, so the reply
+// adds "branchKept":true (rows R18 and R18b, Linux VM).
 func TestWorktreeRemoveGoneWithoutRepository(t *testing.T) {
 	base := t.TempDir()
+	// Inside a checkout, git finds that repository instead, and the answer changes.
+	requireTempOutsideCheckout(t, base)
 	if err := os.MkdirAll(filepath.Join(base, ".claude", "worktrees"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	wp := filepath.Join(base, ".claude", "worktrees", "gone")
-	if raw := removeFrame(t, map[string]any{"baseRepo": base, "worktreePath": wp, "branchName": "gone"}); raw != removeOK {
-		t.Errorf("reply = %s, want %s", raw, removeOK)
+	if raw := removeFrame(t, map[string]any{"baseRepo": base, "worktreePath": wp, "branchName": "gone"}); raw != removeKept {
+		t.Errorf("reply = %s, want %s", raw, removeKept)
 	}
 }
 
