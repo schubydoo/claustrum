@@ -807,6 +807,11 @@ func TestInheritedCountRefusalRound4(t *testing.T) {
 				if err := os.RemoveAll(root); err != nil {
 					t.Fatal(err)
 				}
+				// The VM runs made R for every row. Without R, some rows get the "not
+				// reachable" refusal instead.
+				if err := os.MkdirAll(root, 0o755); err != nil {
+					t.Fatal(err)
+				}
 				switch r.leaf {
 				case leafEmpty:
 					if err := os.MkdirAll(w9, 0o755); err != nil {

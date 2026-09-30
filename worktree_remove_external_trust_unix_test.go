@@ -471,11 +471,13 @@ func TestWorktreeRemoveExternalLinkedBaseCannotRedirect(t *testing.T) {
 
 // With worktreeRoot, a D5 (git-timeout) kill of the repository check answers the
 // work-tree refusal with the exec error. Nothing is deleted, and no further git
-// command runs.
+// command runs. `rev-parse --show-toplevel` answers at once, so that its own kill
+// refusal does not come first.
 func TestWorktreeRemoveExternalRepositoryCheckTimeoutRefuses(t *testing.T) {
 	bin := t.TempDir()
 	ran := filepath.Join(bin, "ran")
-	script := "#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in config) exit 0 ;; rev-parse) exec sleep 30 ;; esac; done\n" +
+	script := "#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in config) exit 0 ;; --show-toplevel) exit 0 ;; " +
+		"--absolute-git-dir) exec sleep 30 ;; esac; done\n" +
 		"echo \"$*\" >> '" + ran + "'\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)

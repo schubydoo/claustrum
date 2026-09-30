@@ -394,6 +394,17 @@ entry is derived from the Go source (`os/types_windows.go` and
 `path/filepath/symlink.go`), not measured. Check those rows after each Go bump that
 changes `winsymlink`.
 
+### The git version under the checkout tests
+
+With a `worktreeRoot`, both worktree methods read `git worktree list --porcelain -z`
+(`worktreeList`, `worktreeexternal.go`). The `-z` option needs git 2.36 or later. On
+an older git the call fails, and the checkout tests then compare the root with the
+git top level of `baseRepo` only. A root in another checkout of the repository then
+passes, and `git.worktree_remove` goes on as it did before these tests. The
+references on such a git are not measured. Several tests in
+`worktree_root_checkout_unix_test.go` expect a working call, so they fail there.
+Check them after the git of a CI runner or a test VM changes.
+
 ## Automating it
 
 - [`.github/workflows/upstream-desktop-watch.yml`](https://github.com/schubydoo/claustrum/blob/main/.github/workflows/upstream-desktop-watch.yml)

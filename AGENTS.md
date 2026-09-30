@@ -249,8 +249,8 @@ reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
 bypasses its limiter entirely. That is the "never simplify" rule of Part A.
 
 On `git.worktree_remove` the deadline of D5 gates no delete. That method runs no
-`git worktree remove`, and no git failure or kill leads to a delete there. A
-failure only refuses or skips a step. `git.worktree_create` is the exception. Its
+`git worktree remove`, and no D5 kill leads to a delete there. A kill only refuses
+or skips a step. `git.worktree_create` is the exception. Its
 rollback deletes after a failed or killed read-tree checkout, and it removes an
 empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
 Opting D5 in is wire-visible.

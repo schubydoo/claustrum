@@ -86,7 +86,7 @@ func (p *gitParams) repoDir() string {
 //
 // ⚠️ A TIMEOUT IS NOT "the same as any other git failure" for a caller that acts on
 // the failure. git.worktree_remove runs no `git worktree remove`. On that method no
-// git failure or kill leads to a delete. A failure only refuses or skips a step.
+// D5 kill leads to a delete. A kill only refuses or skips a step.
 // git.worktree_create is the exception: its rollback deletes after a failed or killed
 // read-tree checkout, and it removes an empty leaf after a failed add. A caller that
 // deletes on a git failure must tell our deadline from git's verdict first.
@@ -788,9 +788,27 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalShapeRefusal(p.WorktreeRoot, p.WorktreePath, "create"); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}
-		// The root-chain step comes before the root refusals. The <directory> symlink
-		// refusal comes after them, then the <directory> step. docs/PROTOCOL.md
-		// gives the measured order.
+		// A root in the repository is refused before the root-chain step. The first
+		// test compares the cleaned paths and resolves no symlink (rows K1 to K3 and
+		// MX14). Then claustrum makes the calls that f6010b97 and 89cb6289 make before
+		// their next refusal. They are a light `rev-parse --show-toplevel`, a heavy
+		// `rev-parse --absolute-git-dir` and a light `worktree list --porcelain -z`.
+		// Each runs in baseRepo with its listing. With the repo check that is 9 calls
+		// (Linux and macOS VMs, rows E2, W3, W4 and Y11a to Y11c). claustrum does not
+		// use the answer of the absolute-git-dir call. worktreeRootCheckoutRefusal then
+		// refuses a root that leads into a checkout of the repository.
+		if msg := worktreeRootInRepoRefusal(p.WorktreeRoot, p.BaseRepo, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		topLevel, _ := repoTopLevel(repo, true)
+		_ = repositoryCheckError(repo, true)
+		listed, _ := worktreeList(repo)
+		if msg := worktreeRootCheckoutRefusal(p.WorktreeRoot, p.BaseRepo, topLevel, listed, "create"); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
+		}
+		// The root-chain step comes before the owner and write refusals of the root.
+		// The <directory> symlink refusal comes after them, then the <directory> step.
+		// docs/PROTOCOL.md gives the measured order.
 		dir, msg, code := externalChainCheck(p.WorktreeRoot, p.WorktreePath)
 		if msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})
@@ -1190,17 +1208,50 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg := worktreeExternalShapeRefusal(p.WorktreeRoot, p.WorktreePath, "remove"); msg != "" {
 			return refuse(msg)
 		}
+		// A root that is baseRepo or lies beneath it is refused after the shape check,
+		// with no git call. The leaf is not looked at. f6010b97 and 89cb6289 do the
+		// same on Linux and macOS VMs. Rows Q2 to Q6 and MX10 get the shape text first.
+		// Rows Q8 and MX11, with no leaf, and row Q16, with a symlinked <directory>,
+		// get this refusal. The macOS rows are MX3, MX4, MX11, MX13 and MX15.
+		if msg := worktreeRootInRepoRefusal(p.WorktreeRoot, p.BaseRepo, "remove"); msg != "" {
+			return refuse(msg)
+		}
 		// The work-tree check comes before the dir-symlink check. A base that the check
 		// refuses gets the work-tree refusal even when the directory level is a symlink.
 		// Measured side by side against f6010b97 on a Linux VM (rows K10, K11, K14 and
 		// K16 with a symlinked directory level).
-		if msg := externalWorkTreeRefusal(repo); msg != "" {
+		msg, topLevel := externalWorkTreeRefusal(repo)
+		if msg != "" {
 			return refuse(msg)
 		}
 		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
 			return refuse(msg)
 		}
-		externalWorktreeListing(repo)
+		// f6010b97 makes two more git calls before it decides whether worktreePath is a
+		// registered worktree of baseRepo. They are a light `worktree list --porcelain
+		// -z`, then a heavy `rev-parse --absolute-git-dir`. Each runs in baseRepo with its
+		// listing (Linux VM, rows WR00, WR07, WR09 and WR14). claustrum does not use the
+		// answer of the second call. Right after the first call, the 7th git call,
+		// f6010b97 and 89cb6289 refuse a root that leads into a checkout of the
+		// repository. Then they refuse a root that does not exist or does not resolve.
+		// Nothing is deleted (Linux and macOS VMs, rows Q6s, Q17 to Q19, E1, W1, W2, Y1,
+		// Y5, Y6, Y9 and Y10). Rows T2b to T5 on both VMs, Linux row T1 and macOS row T1m
+		// measured the same. If the D5 deadline stops `worktree list`, the removal answers
+		// the work-tree refusal with the exec error. A D5 hit on `rev-parse
+		// --show-toplevel` or on the repository check does the same. After any other
+		// failure of that call, the checkout tests compare the root with topLevel only.
+		// Both are claustrum's choice (not measured).
+		listed, killed := worktreeList(repo)
+		if killed != nil {
+			return refuse(workTreeUnknownPrefix + killed.Error())
+		}
+		if msg := worktreeRootCheckoutRefusal(p.WorktreeRoot, p.BaseRepo, topLevel, listed, "remove"); msg != "" {
+			return refuse(msg)
+		}
+		if msg := worktreeRootMissingRefusal(p.WorktreeRoot); msg != "" {
+			return refuse(msg)
+		}
+		hardenedGit(repo, true, "rev-parse", "--absolute-git-dir")
 		if msg := worktreeRemoveHomeRefusal(p.WorktreePath); msg != "" {
 			return refuse(msg)
 		}

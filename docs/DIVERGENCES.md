@@ -290,20 +290,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** With the deadline on, claustrum bounds every git invocation (shared
   `gitCtx` across `git` / `gitStdoutErr` and the hardened helpers). That method runs
-  no `git worktree remove`. On `git.worktree_remove` no git failure or kill leads to a
-  delete. A failure only refuses or skips a step. If the worktree directory exists, a
+  no `git worktree remove`. On `git.worktree_remove` no D5 kill leads to a
+  delete. A kill only refuses or skips a step. If the worktree directory exists, a
   hit on the config or repository check answers the lock-check refusal. For a gone
   worktree, the hit gives the lock-check text with the hooks refusal, or skips the
   registration step. With `worktreeRoot` a hit answers the work-tree refusal (`cannot
-  determine the repository's work tree`). A killed `update-ref` keeps the branch, and
+  determine the repository's work tree`), and so does a hit on `rev-parse
+  --show-toplevel` or `worktree list`. A killed `update-ref` keeps the branch, and
   the reply is still `{"success":true}`.
   On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
   A killed repo-detection call answers `isRepo:false`. A killed
   `branch --show-current` in `git.info` leaves out the `branch` member.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
-- **Never read a timeout as "git refused."** `git.worktree_remove` deletes nothing on
-  a git failure. `git.worktree_create` does: its rollback deletes after a failed or
+- **Never read a timeout as "git refused."** On `git.worktree_remove` no D5 kill
+  leads to a delete. `git.worktree_create` does: its rollback deletes after a failed or
   killed read-tree checkout, and it removes an empty leaf after a failed add. A caller
   that deletes on a git failure must tell the deadline apart from the verdict of git
   first. The cap is also softer than it reads on the
