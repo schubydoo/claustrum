@@ -189,6 +189,37 @@ func TestInstallRefusedLauncherRunsNothing(t *testing.T) {
 	}
 }
 
+// TestInstallNoCliPathAddsNoLauncherField pins the rows without -cli-version, with
+// and without -cli-dir (Linux VM, 89cb6289). With the gate, the facts line of an
+// empty cliPath carries no launcher field. That holds for a usable launcher, an
+// unusable one and none. Nothing runs.
+func TestInstallNoCliPathAddsNoLauncherField(t *testing.T) {
+	f := newInstallFixture(t)
+	helperMode(t, "wrap", "cli-log")
+	t.Setenv(managedLauncherGateEnv, "1")
+	for _, state := range []string{"usable", "unusable", "none"} {
+		switch state {
+		case "usable":
+			f.settings(t, f.wrap)
+		case "unusable":
+			f.settings(t, "wrap")
+		case "none":
+			if err := os.Remove(f.base); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, o := range []installOpts{{}, {cliDir: f.cliDir}} {
+			out := captureInstallOutput(t, o)
+			if want := `"cliPath":"","cliWasPresent":false}` + "\n"; !strings.HasSuffix(out, want) {
+				t.Errorf("%s, cliDir %q: facts line %q, want the end %q", state, o.cliDir, out, want)
+			}
+		}
+	}
+	if readLog(t, f.cliLog)+readLog(t, f.wrapLog) != "" {
+		t.Error("an install with no CLI path must run nothing")
+	}
+}
+
 // TestInstallLauncherRunFails pins I5, I7 and I11: a failed launcher run is
 // probe_failed with the reason and the capped stderr; the CLI file stays,
 // cliWasPresent stays true and there is no cliError. A signal reads "terminated by

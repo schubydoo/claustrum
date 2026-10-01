@@ -76,13 +76,15 @@ func runInstall(o installOpts) {
 	if o.cliDir != "" && o.cliVersion != "" {
 		f.CliPath = filepath.Join(o.cliDir, o.cliVersion)
 	}
-	// With CLAUDE_SSH_MANAGED_LAUNCHER=1 the launcher is resolved for the CLI path
-	// before the CLI runs, and installCLICheck runs the CLI through it.
-	if managedLauncherGateOn() {
-		installManaged = &installManagedState{res: resolveManagedLauncher(f.CliPath)}
-	}
-
 	if f.CliPath != "" {
+		// With CLAUDE_SSH_MANAGED_LAUNCHER=1 the launcher is resolved for the CLI path
+		// before the CLI runs, and installCLICheck runs the CLI through it. With no
+		// CLI path the facts line gains no launcher field (measured without
+		// -cli-version, Linux VM).
+		if managedLauncherGateOn() {
+			installManaged = &installManagedState{res: resolveManagedLauncher(f.CliPath)}
+		}
+
 		// "present" requires the file to exist AND be runnable (real binary checks
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
 		checkErr := errCLINotRunnable

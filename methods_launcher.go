@@ -617,15 +617,14 @@ func refuseManagedLauncher(launcher []string, command string) error {
 // claustrum's choice (not measured): this check runs before the launcher starts, so
 // a bad command wins over a launcher that does not start.
 func launchedCommandError(command string) error {
-	fi, err := os.Stat(command)
-	if err != nil {
+	if _, err := os.Stat(command); err != nil {
 		var pe *fs.PathError
 		if errors.As(err, &pe) {
 			return &fs.PathError{Op: "fork/exec", Path: command, Err: pe.Err}
 		}
 		return err
 	}
-	if !fi.Mode().IsRegular() || !isExecutableRegular(command) {
+	if !isExecutableRegular(command) {
 		return &fs.PathError{Op: "fork/exec", Path: command, Err: syscall.EACCES}
 	}
 	return nil

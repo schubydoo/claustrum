@@ -31,7 +31,9 @@ import (
 func fifoWatchdog(t *testing.T, fifo string) (check func()) {
 	t.Helper()
 	var opened atomic.Bool
+	done := make(chan struct{})
 	timer := time.AfterFunc(5*time.Second, func() {
+		defer close(done)
 		fd, err := syscall.Open(fifo, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
 		if err == nil {
 			opened.Store(true)
@@ -40,7 +42,12 @@ func fifoWatchdog(t *testing.T, fifo string) (check func()) {
 	})
 	return func() {
 		t.Helper()
-		timer.Stop()
+		// Stop reports false once the function fired or is firing. Join it then. The
+		// blocked reader wakes when the watchdog's Open returns, which is before the
+		// Store, so the read below can otherwise come first.
+		if !timer.Stop() {
+			<-done
+		}
 		if opened.Load() {
 			t.Errorf("the resolve opened the FIFO %s and blocked on it", fifo)
 		}
@@ -48,9 +55,13 @@ func fifoWatchdog(t *testing.T, fifo string) (check func()) {
 }
 
 // tempManagedSettingsDir points the managed-settings folder at a fresh temp folder and returns it.
+// It also points the system folder at an absent path. managedSettingsDir reads the
+// system folder first, and a policy on the host there makes the resolve ignore the
+// variable.
 func tempManagedSettingsDir(t *testing.T) string {
 	t.Helper()
 	d := t.TempDir()
+	setManagedSystemDir(t, filepath.Join(t.TempDir(), "absent-system"))
 	t.Setenv(managedSettingsDirEnv, d)
 	return d
 }
@@ -839,9 +850,9 @@ func TestLauncherResolveSystemFolderFirst(t *testing.T) {
 	s := newTestServer(t)
 	root := t.TempDir()
 	sys := filepath.Join(root, "sys")
-	setManagedSystemDir(t, sys)
 	w := mkExec(t, filepath.Join(root, "bin", "wrap"))
 	varDir := tempManagedSettingsDir(t)
+	setManagedSystemDir(t, sys) // after the fixture, which points the system folder elsewhere
 	varBase := filepath.Join(varDir, managedSettingsBase)
 	writeFileMode(t, varBase, []byte(envSettings(t, w+` --x "a b"`)), 0o644)
 	sysBase := filepath.Join(sys, managedSettingsBase)

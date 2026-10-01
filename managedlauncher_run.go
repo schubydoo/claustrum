@@ -139,7 +139,8 @@ func (c *cappedText) String() string {
 }
 
 // installManaged carries the launcher through one -install run. runInstall sets it
-// when the gate is on, and installCLICheck reads it. nil means the gate is off.
+// when the gate is on and there is a CLI path, and installCLICheck reads it. nil
+// means that no launcher resolve ran.
 var installManaged *installManagedState
 
 type installManagedState struct {

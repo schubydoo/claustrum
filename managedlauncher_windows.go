@@ -6,8 +6,9 @@ package main
 // -install and -probe-cli run the CLI directly. Measured on a Windows VM: 89cb6289
 // answered {"status":"none"} for every fixture tried. The fixtures were a settings
 // file in C:\Program Files\ClaudeCode, the E2E variable folder and
-// C:\ProgramData\ClaudeCode. The launcher never ran. With CLAUDE_SSH_MANAGED_LAUNCHER=1,
-// -install appends "launcherStatus":"none" and -probe-cli shows no difference.
+// C:\ProgramData\ClaudeCode. The launcher never ran. With CLAUDE_SSH_MANAGED_LAUNCHER=1
+// and a CLI path, -install appends "launcherStatus":"none" and -probe-cli shows no
+// difference.
 func managedSettingsDir() (dir string, ignoredVar bool) { return "", false }
 
 // managedIgnoredVarLine is never logged on Windows: managedSettingsDir never

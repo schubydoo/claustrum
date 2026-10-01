@@ -3182,13 +3182,21 @@ The managed launcher (`89cb6289` parity):
   trailing space) and an unset variable add no field and run no launcher, even with
   a usable launcher. claustrum treats every value other than `1` as off. That is
   claustrum's choice (not measured for other values).
-- With the gate, `-install` resolves the launcher for the CLI path, as
+- With the gate and a CLI path, `-install` resolves the launcher for that path, as
   `launcher.resolve` does. The facts line then gains launcher fields after
   `cliWasPresent` and `cliError`, in this order: `cliUnresponsive`,
   `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
   `launcherReason`, `launcherStderr`. A field that does not apply is omitted.
   claustrum keeps `fetch` last, after them. That is claustrum's choice (not
   measured).
+- With an empty `cliPath` the facts line gains no launcher field. Without
+  `-cli-version`, with or without `-cli-dir`, the line ends
+  `"cliPath":"","cliWasPresent":false}` and no launcher runs. That is measured on
+  a Linux VM with the gate, for a usable launcher, an unusable one and none.
+- With `-cli-version` and no `-cli-dir`, the reference uses a default CLI folder,
+  so its `cliPath` is not empty (measured on a Linux VM). claustrum has no default
+  folder. It prints an empty `cliPath`, creates no folder and runs nothing there,
+  with the gate and without it. That is an older gap.
 - `none`: the CLI runs directly, as without the gate. That run keeps the gate in
   its env. The facts end `"cliWasPresent":true,"launcherStatus":"none"}`.
 - `usable`: the CLI runs once, as `<launcher argv...> <cli> --version`. No direct
@@ -3233,7 +3241,7 @@ The managed launcher (`89cb6289` parity):
   That is claustrum's choice (not measured).
 - `-install` still exits `0` with an empty stderr, and it writes no
   `[LauncherHandler]` line.
-- On Windows the resolve answers none. With the gate `-install` appends
+- On Windows the resolve answers none. With the gate and a CLI path `-install` appends
   `"launcherStatus":"none"` last and runs the CLI directly (measured on a Windows
   VM).
 
