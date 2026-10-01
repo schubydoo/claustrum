@@ -441,6 +441,10 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
+| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. See "Git-directory trust check" (`89cb6289`) |
+| git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a configuration key over 1048576 bytes. `89cb6289` measured `git.info`. See "Hardened git calls" |
+| git.* | `config-defined hooks could not be pinned off; git not run: too many configured hooks to pin` / `config-defined hooks could not be pinned off; git not run: configured hook names exceed the aggregate pin byte bound` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`). It answers more than 1024 hook names, or names over 65536 bytes in sum. `89cb6289` measured `git.info`. See "Hardened git calls" |
+| git.* | `the repository's git directory could not be trusted; git not run: commondir not as git writes it: <S1, S2 or S3>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a stray `commondir`. "Git-directory trust check" gives the three texts (`89cb6289`) |
 | git.worktree_create / git.worktree_remove | `baseRepo is inside a managed worktrees directory (beneath .claude/worktrees, or beneath a directory holding a .claude-managed-worktrees marker), or could not be validated as a trust root` | in `error`. Create adds `errorCode:"nested_base_repo"`, and remove has none. It answers a `baseRepo` under a managed worktrees tree, or one that fails claustrum's own trust-root test. No git runs. See the method sections |
 | git.worktree_create | `branchName is required` | |
 | git.worktree_create | `not a git repository` | in `error`, `errorCode:"not_a_repo"` |
@@ -478,11 +482,12 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `refusing to remove worktree: <t> changed while the removal was checking it` | in `error`, with no `errorCode`. claustrum's own text for a leaf that another directory replaced between two looks. Only a race reaches it, and no run has measured the reference there. Nothing is deleted |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it and answered `success:true`. |
 | git.worktree_remove | `refusing to remove worktree: <p> is gone but its registration is locked (git worktree lock); unlock it to remove the registration and branch` | in `error`, with no `errorCode`, for a gone worktree with a locked registration. Nothing is deleted (`f6010b97`, macOS VM) |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal text (`f6010b97`, macOS VM). `<reason>` is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows VMs). With `worktreeRoot` and a missing absolute `baseRepo` without a `..` component, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS VMs) |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal text (`f6010b97`, macOS VM). Since `89cb6289` it is also the `git cannot run` text (row L11). claustrum puts a limit refusal of the listing there too. `89cb6289` measured the limits on `git.info` only. `<reason>` is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows VMs). With `worktreeRoot` and a missing absolute `baseRepo` without a `..` component, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS VMs) |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`, without `worktreeRoot`) |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (its registrations could not be examined); retry` | in `error`, with no `errorCode`. Without `worktreeRoot`, for a worktree directory that exists: the configuration of `baseRepo` cannot be read, `baseRepo` holds no repository, or the trust check refuses its git directory. When the daemon's `GIT_CONFIG_COUNT` is refused, the same holds. Linux and macOS VMs measured that also for a `baseRepo` of `<T>/missing/..`, which does not resolve. In both modes, for a worktree directory that exists: the worktree registry exists but cannot be read. Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`, when the daemon's `GIT_CONFIG_COUNT` is refused, `baseRepo` is missing and the worktree directory exists. This row covers an absolute `baseRepo` without a `..` component. Nothing is deleted (`f6010b97`, Linux and macOS VMs) |
-| git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT`. Nothing is deleted. See the method section (`f6010b97`, Linux VM) |
+| git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`, when the daemon's `GIT_CONFIG_COUNT` is refused, `baseRepo` is missing and the worktree directory exists. This row covers an absolute `baseRepo` without a `..` component. Nothing is deleted (`f6010b97`, Linux and macOS VMs). With no `git` on `PATH`, the same text answers a missing `baseRepo` in three rows (`f6010b97` and `89cb6289`, Linux VM). The worktree directory holds a file (row L13wa), is empty (row L13we), or holds a `.git` file that names its entry (row DG1) |
+| git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT` (`f6010b97`, Linux VM). Since `89cb6289` it is also `git finds no repository here: <git text>` (row N04). With no `git` on `PATH`, both references answer the exec error alone in nine rows where `baseRepo` exists (Linux VM, see "Git-directory trust check"). claustrum also puts the `git cannot run` text and a limit refusal of the listing there. Neither is measured with `worktreeRoot`. Nothing is deleted. See the method section |
+| git.worktree_remove | `failed to remove worktree: cannot list the repository's worktrees: <exec error>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `git worktree list --porcelain -z` and then `git worktree list --porcelain` both fail in `baseRepo`. Nothing is deleted. `89cb6289` answers `exit status 128` for a repository with a valid `HEAD` whose `.git/commondir` is a dangling relative symlink (row DG2s-g, Linux VM) |
 | git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). Nothing is deleted |
 | git.worktree_remove | `failed to remove worktree: RemoveAll <entry>: <errno text>` | in `error`, when the delete of the worktree fails part-way. If an entry other than `.git` fails, `.git` stays. The entry of the worktree and the branch stay in every case (`f6010b97`, macOS VM) |
 | git.worktree_remove | `removed the worktree but could not drop its registration (RemoveAll <name>: <errno text>)` | in `error`, `success:false`, when the verified entry cannot be deleted after the tree. The branch step still runs. On `f6010b97` the branch is deleted (macOS VM). Since `89cb6289` a kept branch adds `"branchKept":true` after `error` (row R19, Linux VM) |
@@ -663,7 +668,7 @@ Windows VMs saw it at that place.
 | method | params | result |
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
-| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `instanceId` and `startedAt` are present on every OS |
+| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `instanceId` and `startedAt` are present on every OS |
 | `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler waits until the teardown starts to close connections, and then returns the reply. The frame arrives only when its write wins the race with the close. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
@@ -689,7 +694,10 @@ Windows VMs saw it at that place.
   the login shell's SSH agent socket. `89cb6289` inserted
   `git.worktree_remove.unpushedGuard` after `git.worktree_create.existingBranch`,
   because `git.worktree_remove` keeps a branch that no other ref reaches. The Linux,
-  macOS and Windows VMs saw it at that place. `git.worktree_create.timeoutMs`,
+  macOS and Windows VMs saw it at that place. `89cb6289` also inserted
+  `git.info.discovered_root` after `git.status.baseRepo`. In that build `git.info`
+  runs no `rev-parse --show-toplevel` on Linux and macOS (row L01). The Linux, macOS
+  and Windows VMs saw the feature at that place. `git.info.discovered_root`, `git.worktree_create.timeoutMs`,
   `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard` and
   `process.spawn.shellAgentSocket` are present on every OS. `89cb6289` also
   inserted `launcher.managed` after `process.spawn.shellAgentSocket`, for
@@ -853,10 +861,11 @@ git in. That is `path` for `git.info` and `git.list_branches`. It is `baseRepo`
 for `git.status`, `git.worktree_create` and `git.worktree_remove`. Every `git.*`
 method runs the check before git runs in that directory. Unless a rule names its
 OS, it is measured side by side against `f6010b97` on a Linux VM, and on macOS and
-Windows VMs where the case can exist. The check has three
+Windows VMs where the case can exist. The rules for a stray `commondir` come from
+`89cb6289`, measured on Linux, macOS and Windows VMs. The check has three
 outcomes. "Trusted" lets git run. "No repository" answers as if the directory held
-no repository. "Refused" answers with one of the texts M1 to M5, and git does not
-run.
+no repository. "Refused" answers with one of the texts M2 to M5 and S1 to S3, and
+git does not run.
 
 The daemon finds the git directory as follows, when its own environment sets
 neither `GIT_DIR` nor `GIT_COMMON_DIR`:
@@ -865,8 +874,8 @@ neither `GIT_DIR` nor `GIT_COMMON_DIR`:
   refusal names the resolved path, never the alias.
 - A `.git` directory that passes the git-directory test is the git directory.
 - A `.git` directory that fails the test ends the walk. If it holds a `commondir`
-  entry of any type, it is the git directory, and M1 refuses it. Otherwise the
-  answer is "no repository". Git itself walks on to an outer repository here, so
+  entry of any type, it is the git directory, and the stray-commondir rules below
+  judge it. Otherwise the answer is "no repository". Git itself walks on to an outer repository here, so
   this answer differs from git's own.
 - A `.git` regular file starts with the exact bytes `gitdir:` and holds at most
   1 MiB. The rest is trimmed of white space. A relative target is taken relative to
@@ -891,9 +900,10 @@ The daemon then judges the git directory G:
   a main repository, a bare repository and a submodule all count.
 - G is not an entry and holds no `commondir`: trusted. This is a normal main, bare
   or submodule git directory.
-- G is not an entry and holds a `commondir` of any type: M1. Git writes that file
-  only in an entry. A `commondir` that names G itself is refused too. An entry whose
-  grandparent fails the test is not an entry, so its honest `commondir` gets M1.
+- G is not an entry and holds a `commondir`: the stray-commondir rules below judge
+  it. Git writes that file only in an entry. An entry whose grandparent fails the
+  test is not an entry, so its honest `commondir` (`../..`) gets S1. That answer
+  follows from the rules and is not measured on `89cb6289`.
 - G is an entry without `commondir`: M3.
 - G is an entry whose `commondir` is not a regular file of at most 1048576 bytes:
   M4. A symlink is followed only when it is relative and stays inside the entry.
@@ -920,8 +930,50 @@ The daemon then judges the git directory G:
 - On Windows the daemon does not expand 8.3 short names in G. A `.git` file or a
   daemon `GIT_DIR` can name an entry as `…\GIT~1\WORKTR~1\<name>`. That G is not
   an entry, because its parent is not named `worktrees`. Its `commondir` therefore
-  gets M1, which names the short path. Measured on a Windows 11 VM. The daemon
-  resolves G only when a component of it is a symlink or a junction.
+  gets S1 for the content `../..`, which names the short path. `f6010b97` refused it
+  on a Windows 11 VM. The S1 text follows from the rules and is not measured on
+  `89cb6289`. When a component of G is a symlink or a junction, the daemon resolves
+  G. Else it keeps G as spelled.
+
+A stray `commondir` is one in a git directory G that is not an entry. G is a main
+`.git`, a bare repository or a submodule's git directory. `89cb6289` judges it in
+these steps (rows T00 to T11):
+
+1. A `commondir` symlink that leaves G is not followed (rows T07a, T07d and T07e). A
+   dangling symlink whose target is relative and stays in
+   G counts as none when G passes the git-directory test. G is then trusted (row
+   T07c, target `nothing-here`). Git itself then fails to read the file. The method
+   answers what git's failure gives: `git.info` with no `branch`,
+   `git.list_branches` `-32603 "exit status 128"`, and the failed add on
+   `git.worktree_create`. With `worktreeRoot`, `git.worktree_remove` answers `cannot
+   list the repository's worktrees: exit status 128` and deletes nothing (row
+   DG2s-g, Linux VM). Without `worktreeRoot` it answers
+   `{"success":true,"branchKept":true}`. It deletes the worktree directory and its
+   entry, and the branch stays (row DG3-g, Linux VM). When the directory is gone
+   before the request, it deletes the entry (row DG3x-g, Linux VM). When G fails the
+   git-directory test, that symlink gets S3. `89cb6289` answers so for a `HEAD` that
+   reads `garbage` (rows DG2-g, DG2-info and DG2-status, each a main `.git`, Linux
+   VM).
+2. A `commondir` that is not a regular file of at most 1048576 bytes gets S2 with
+   its reason (rows T05 to T09). A relative symlink that stays in G is followed
+   (row T07b). A dangling symlink that is absolute, or that leaves G, gets S2 with
+   `openat commondir: path escapes from parent` (rows T07d and T07e on a Linux VM).
+   Their targets were `/nonexistent` and `../nothing`.
+3. The content with every trailing CR and LF removed is exactly `.` or `./`.
+   A space or a tab is not trimmed in the measured rows. Any other content gets S1, which quotes it (rows T01 to
+   T04 and T10b). So ` .`, `. `, `.<TAB>`, `./x`, `..`, an empty file, `.\` and
+   the absolute path of G itself are all refused.
+4. G then passes the git-directory test, or it gets S3 (row T10a). The content
+   test comes first.
+5. Else G is trusted, and git runs with `GIT_COMMON_DIR` pinned to G. That covers a
+   main `.git` (row T01), a bare repository (row T11a) and a submodule's git
+   directory under `.git/modules/` (row T11b).
+
+These cases are not measured on `89cb6289`. One is a leading CR or LF. Others are a
+lone CR and `.//`. claustrum cuts the content to 60 runes after the trim, and that
+order is not measured. Nor is the order of an S2 reason and a bad `HEAD`. A
+dangling symlink in a git directory with missing `objects` or `refs` is not
+measured. Neither is S2 for a FIFO or a mode-000 file on Windows.
 
 The daemon's own environment changes the check as follows:
 
@@ -929,10 +981,10 @@ The daemon's own environment changes the check as follows:
   a plain one. A relative value is taken relative to the request directory. A
   `GIT_DIR` that names a gone entry gets M5. On Linux and macOS a `GIT_DIR` that
   names a `.git` file means "no repository". On Windows that `.git` file is trusted
-  and pinned to itself. Git then fails on the entry the file names, and `git.info`
-  and `git.list_branches` answer `-32603 config-defined hooks could not be pinned
-  off; git not run: listing the configuration in force: exit status 128: fatal: not a
-  git repository: <entry>`. Any other `GIT_DIR` that does not exist is left to git.
+  and pinned to itself. Git then fails on the entry the file names, and the
+  configuration listing says `fatal: not a git repository`. So the methods answer
+  their "no repository" shapes (`89cb6289`, row N05 on a Windows VM). Any other
+  `GIT_DIR` that does not exist is left to git.
   Git then runs with `GIT_COMMON_DIR` pinned to that `GIT_DIR`, unless the daemon's
   environment sets `GIT_COMMON_DIR`. A relative value is
   first joined to the request directory. On Windows `/dev/null` names nothing, so it
@@ -945,22 +997,29 @@ The daemon's own environment changes the check as follows:
 - `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS` and `GIT_CEILING_DIRECTORIES` do not change
   the check.
 
-M1 to M4 start with `the repository's git directory could not be trusted; git not
-run: commondir not as git writes it: `. Each `%q` is Go quoting of a path cut to
-its first 300 runes. A non-ASCII path is cut by runes, not bytes. An invalid UTF-8
+M2 to M4 and S1 to S3 start with `the repository's git directory could not be
+trusted; git not run: commondir not as git writes it: `. Each `%q` of a path is Go
+quoting of the path cut to its first 300 runes. The content in S1 is cut to its
+first 60 runes instead. A non-ASCII path is cut by runes, not bytes. An invalid UTF-8
 byte stays a byte and prints as `\xff`. The rest of the text is never cut.
 
 | id | text after the prefix | operands |
 |---|---|---|
-| M1 | `%q exists where git itself never writes one (git keeps that file only in a linked worktree's entry under .git/worktrees/); remove it if you did not create it, and treat its appearance as tampering` | `<G>/commondir` |
 | M2 | `%q does not name the entry's own repository, %q; restore the file to read ../.. or remove that worktree entry and add the worktree again` | `<entry>/commondir`, `<repo git dir>` |
 | M3 | `worktree entry %q has none (git always writes one there, containing ../..); the entry is damaged or was not made by git — recreate the worktree with git worktree add, or remove the entry` | `<entry>` |
 | M4 | `%q is not a small plain file (<reason>); remove it, or remove that worktree entry and add the worktree again so git rewrites it` | `<entry>/commondir` |
+| S1 | `%q reads %q; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir`, the content |
+| S2 | `%q is not a small plain file (<reason>); git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did` | `<G>/commondir` |
+| S3 | `%q sits in a git directory git would not take as a repository (its HEAD, objects or refs missing or invalid), so git would look for one somewhere else; repair that directory (usually its HEAD file)` | `<G>/commondir` |
 
-The M4 reasons seen include `commondir is not a regular file`,
+`<name>` in S1 and S2 is literal text, and the JSON encoder writes it as
+`\u003cname\u003e`. `f6010b97` answered every stray `commondir` with one older text,
+M1, and `89cb6289` printed it in no measured row.
+
+The M4 and S2 reasons seen include `commondir is not a regular file`,
 `commondir is larger than 1048576 bytes`,
 `openat commondir: path escapes from parent`,
-`openat commondir: no such file or directory` or
+`openat commondir: no such file or directory` (M4 only) or
 `openat commondir: permission denied`. On Windows the OS text differs, for
 example `openat commondir: The system cannot find the file specified.`.
 
@@ -979,11 +1038,68 @@ The lock-check refusal is
 `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (its registrations could not be examined); retry"}`.
 It has no `errorCode`, and the path is neither quoted nor cut. The work-tree
 refusal is `{"success":false,"error":"failed to remove worktree: cannot determine the
-repository's work tree: <reason>"}`, also with no `errorCode`.
+repository's work tree: <reason>"}`, also with no `errorCode`. With `worktreeRoot`,
+the listing classes below give their own reason. With `worktreeRoot` and no `git`
+on `PATH`, the exec error replaces both texts of the table in the measured rows
+(class 1 below).
 
-When git cannot list the configuration in force, the method answers the hooks
-refusal: `config-defined hooks could not be pinned off; git not run: listing the
-configuration in force: <exec error>: <git text>`. claustrum makes `<git text>`
+When the configuration listing fails, `89cb6289` sorts the failure into a class.
+The classes come in this order (Linux, macOS and Windows VMs):
+
+1. No `git` on `PATH`: "no repository", and no process starts. Linux, macOS and
+   Windows VMs measured `git.info` (row L13). A Linux VM measured the other methods
+   (rows L13xa to L13xd, L13t and L13u to L13z). `git.list_branches`, `git.status` and
+   `git.worktree_create` answer their "no repository" shapes. The create answers so
+   with and without `worktreeRoot`. `git.worktree_remove` without `worktreeRoot`
+   answers `{"success":true,"branchKept":true}` for a gone worktree with a
+   `branchName`, and the lock-check refusal for a worktree directory that exists.
+   With `worktreeRoot`, both references answer the work-tree refusal with the exec
+   error alone in nine rows: `exec: "git": executable file not found in $PATH`. In
+   each row `baseRepo` exists. Rows L13xc and L13xd are a repository with the worktree directory present
+   and gone. Rows L13u and L13v are a regular file and a repository folder of mode
+   0600. Rows L13y and L13z are a `.git` file to nowhere and a plain folder. Row L13t
+   is a git directory that the trust check refuses, so this answer comes before the
+   trust check. Rows LNKb and LNKr are chains of 45 symlinks to a repository. In
+   claustrum a refused daemon `GIT_CONFIG_COUNT` answers before the exec error when
+   `stat` reads `baseRepo`. For the chains of rows LNKb and LNKr, claustrum runs no
+   count check. Neither order is measured. A `baseRepo` that does not exist gets no work-tree
+   refusal (rows L13wa to L13wr, see `git.worktree_remove`). Not measured: a
+   daemon-created worktree under `worktreeRoot`, and `commondir` contents other than
+   `x`. Rows L13xa and L13xb ran one repository layout only.
+2. The listing exits 128, and its stderr has `fatal: not a git repository` at its
+   start in every measured row.
+   Leading white space is dropped first, and letter case does not count (rows L14a,
+   L14b, L14d, L14e and N01 to N05). The answer is "no repository". Take
+   `git.worktree_remove` without `worktreeRoot`, with a `branchName`. It runs a
+   second listing for the branch step and keeps the branch. A gone worktree then
+   answers `{"success":true,"branchKept":true}`. For a worktree directory that
+   exists, claustrum answers the lock-check refusal. Not measured. With
+   `worktreeRoot` the work-tree refusal carries `git finds no repository here: <git
+   text>` (row N04). Exit 1 with that text is not this class (row L14c).
+3. Any other failure, a failed start included. The daemon runs `git version` with no
+   `-c` option. It runs in `/` on Linux and macOS, and in the daemon's working
+   directory on Windows. Its environment is the one of the failed listing without
+   the `GIT_COMMON_DIR` pin and without `LC_ALL=C` and `LANGUAGE=C`. If that call
+   fails too, the text is `git cannot run on this host; git not run: <exec error>:
+   <git text>` (rows L11, L12 and L15). Else it is the hooks refusal (rows L10 and
+   L14c). With `worktreeRoot`, when git cannot start in `baseRepo`, `git version`
+   gets the light environment (rows L16a and L16b, Linux VM).
+
+When git cannot start in the directory itself (a file, or a folder of mode 0600),
+the listing fails at the chdir. That is no hostile configuration, and the method
+goes on.
+`89cb6289` still runs `git version` there, and claustrum does too. The frames do not
+change (rows L16a, L16b, L16d and L16f).
+
+Some points are not measured. claustrum tests the class-2 text as a prefix, not as a
+substring. Exit codes other than 1 and 128 are not measured. The "cannot run"
+text carries the listing's detail. In rows L11, L12 and L15 the version call gives
+the same text. `git version` does not get the daemon's own `LC_ALL` and `LANGUAGE`
+back. On Windows the daemon's working directory and its socket folder were the same
+folder, so the two are not told apart.
+
+The hooks refusal is `config-defined hooks could not be pinned off; git not run:
+listing the configuration in force: <exec error>: <git text>`. claustrum makes `<git text>`
 with the text rule of `git.worktree_create`. The rule takes git's raw stderr, keeps
 its first 512 bytes, drops invalid UTF-8, turns each non-printable rune into one
 space, and then trims spaces. A stub git on a Windows VM measured this frame against
@@ -1013,8 +1129,9 @@ below against `f6010b97`. Each point names the VMs that measured it.
   first value (see the next section). The heavy variables are, in this order,
   `GIT_NO_LAZY_FETCH=1`, `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty
   `GIT_ASKPASS` and `GIT_TERMINAL_PROMPT=0`. Then comes `GIT_COMMON_DIR` when the
-  trust check pins it. Then come the two hook pins, from `GIT_CONFIG_COUNT=2`.
-  The daemon's own `GIT_CONFIG_COUNT` moves them (see the next section).
+  trust check pins it. Then come the hook pins, from `GIT_CONFIG_COUNT`: two base
+  pins, and two for each hook name of the listing before the call (see below). The
+  daemon's own `GIT_CONFIG_COUNT` moves them (see the next section).
   Linux, macOS and Windows VMs.
 - Heavy calls. `git status` and `rev-parse --absolute-git-dir` use the heavy
   profile. Every other hardened call uses the light profile, except the calls of
@@ -1027,14 +1144,44 @@ below against `f6010b97`. Each point names the VMs that measured it.
   `/dev/null` on Windows. Windows VM. claustrum only: its `git status` call passes
   `-c core.excludesFile=/dev/null` on Windows too. That is divergence D16.
 - Configuration listing. Before each hardened call except the first (see the next
-  point), the daemon runs
-  `git config -z --list --name-only` in the same directory. The listing carries the
-  profile variables of the call after it, and `GIT_COMMON_DIR`. Before a call of the
-  branch step it carries the light variables. It carries no hook
-  pins. The listing before the checkout and the listing before the `git status`
-  call start with `--git-dir=<dir>`. Linux, macOS and Windows VMs.
+  point), the daemon runs `git config -z --list` in the same directory. `89cb6289`
+  dropped `--name-only`. The listing carries the profile variables of the call after
+  it, and `GIT_COMMON_DIR`. Before a call of the branch step it carries the light
+  variables. It carries no hook pins. The listing before the checkout and the
+  listing before the `git status` call start with `--git-dir=<dir>`. Linux, macOS
+  and Windows VMs.
+- Listing locale. The listing drops the daemon's own `LC_ALL` and `LANGUAGE` and
+  ends with `LC_ALL=C` and `LANGUAGE=C`, after the `GIT_COMMON_DIR` pin. `LANG` and
+  the rest keep their places. git then writes its listing errors in English (row
+  L03, Linux VM). The call after the listing keeps the daemon's `LC_ALL`, `LANGUAGE`
+  and `LANG` (row L02, Linux, macOS and Windows VMs). Other `LC_*`
+  variables stay too. Only `LC_ALL`, `LANGUAGE` and `LANG` were measured.
+- Hook pins. `git config -z --list` ends each record with a NUL byte and puts a LF
+  between key and value. A hook key that stands in a value pins nothing (row L04). A
+  key `hook.<name>.<var>` names a hook.
+  The name is the text between the first and the last dot. It can be empty or hold
+  dots. `hook.<var>` names none. Each name counts once, in the order the
+  listing first shows it, and gets `hook.<name>.enabled=false` and an empty
+  `hook.<name>.event` (row L05). Each hardened call takes the names of the listing
+  right before it. That choice is not measured: only configurations that stay the
+  same during a request were run. Three limits refuse the method after the first listing, before
+  any hardened call. A key over 1048576 bytes gets the hooks refusal with `a
+  configuration key is longer than the listing reads` (row L08c). More than 1024
+  names get `config-defined hooks could not be pinned off; git not run: too many
+  configured hooks to pin` (row L06b). Names whose bytes add up to more than 65536
+  get `…git not run: configured hook names exceed the aggregate pin byte bound` (row
+  L07b). A value has no cap: 2 MiB passes (row L09). Linux, macOS and Windows VMs.
+  Some points are not measured. Only `command` and `event` were used as `<var>`.
+  claustrum pins two names that differ in letter case as two names. It counts a
+  name under two keys once in the limits. It tests the count before the byte sum.
+  A sum over 65536 made of names of at most 1024 bytes was not run. Nor was a value
+  over 2 MiB. Every measured failure hit the first listing. A later listing that
+  fails or exceeds a limit does not refuse the call after it. That call gets the two
+  base pins only.
 - Hooks refusal check. The first listing of a method is the hooks refusal check. It
-  is not an extra call. If it fails, the method answers the hooks refusal. `git.info`,
+  is not an extra call. If it fails, the method answers by the class of the failure
+  (see [Git-directory trust check](#git-directory-trust-check)). If it exceeds a
+  limit, the method answers the limit refusal (see Hook pins above). `git.info`,
   `git.list_branches` and `git.worktree_create` run it with the light profile.
   `git.status` and `git.worktree_remove` run it with the heavy profile. Linux, macOS
   and Windows VMs. With `worktreeRoot`, `git.worktree_remove` runs a light check.
@@ -1085,10 +1232,17 @@ below against `f6010b97`. Each point names the VMs that measured it.
   make more calls than claustrum. Linux and macOS VMs. If the D5 deadline kills
   `rev-parse --show-toplevel` or `worktree list`, the checkout tests run without that
   answer. The root-chain tests still refuse a root that has, or lies below, a
-  `.git` entry, with their own text. That is claustrum's choice (not measured).
+  `.git` entry, with their own text. That is claustrum's choice (not measured). A
+  create also goes on after any other failure of `worktree list --porcelain -z`. A
+  remove with `worktreeRoot` runs the second call there. If that call fails too, the
+  remove refuses.
+  The references are not measured on a create there.
 - Some calls of `f6010b97` have no claustrum counterpart. Examples are a
   `rev-parse --show-toplevel` with `--git-dir` and `--work-tree` in
-  `git.worktree_create`, and the plumbing calls of its `git status`. claustrum's
+  `git.worktree_create`, and the plumbing calls of its `git status`. claustrum runs
+  that `rev-parse` pair in two places only. One is `git.info` on Windows. The other
+  is `git.worktree_create`, after an admin record that does not name `worktreePath`
+  after symlink resolution. claustrum's
   `git.status` runs a light `rev-parse` in `path`, with its
   listing, that `f6010b97` does not run. The replies are the same.
 
@@ -1109,9 +1263,10 @@ hardened calls, `worktree add`, the checkout and the `git status` call.
 - A listing gets the daemon's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and
   `GIT_CONFIG_VALUE_<n>` as they are. Linux, macOS and Windows VMs.
 - A hardened call gets these names after the profile and the `GIT_COMMON_DIR`
-  pin. First comes `GIT_CONFIG_COUNT=<count+2>`. Then come the daemon's pairs `0`
-  to `count-1`, in index order. Then come the two hook pins as the pairs `count`
-  and `count+1`: `hook.enabled=false`, then an empty `hook.event`. The
+  pin. First comes `GIT_CONFIG_COUNT`, with the number of all the pairs. Then come
+  the daemon's pairs `0` to `count-1`, in index order. Then come the hook pins, from
+  the pair `count` on. They are `hook.enabled=false`, an empty `hook.event`, and
+  then the two pins of each hook name (`89cb6289`, rows L04 to L07). The
   `GIT_INDEX_FILE` of the checkout and the `GIT_OPTIONAL_LOCKS` of `git status`
   follow them. The values were measured on Linux, macOS and Windows VMs, and the
   order on Linux and macOS VMs.
@@ -1184,6 +1339,11 @@ check (Windows VM).
 #### git.info
 `{path}` → repo: `{"isRepo":true,"repo":"<dir>","branch":"<b>","root":"<abs>","repoSlug":"<owner/repo>","defaultBranch":"<b>"}` · non-repo: `{"isRepo":false,"repoSlug":"","defaultBranch":""}`
 
+- `repo` is the base name of `root`. A name that starts with `-` or `+` leaves the
+  member out, and the other members keep their order: `{"isRepo":true,"branch":"main","root":"<F>/-repo","repoSlug":"i/r","defaultBranch":"main"}`.
+  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I11a and I11b). The
+  general rule behind those two rows is not measured.
+
 - A refused daemon `GIT_CONFIG_COUNT` changes the answers of this method (see "The
   daemon's own git environment").
 - Since `f6010b97` the git-directory trust check runs on `path`. A refused
@@ -1197,8 +1357,36 @@ check (Windows VM).
   git's error text never appears there. An example is a HEAD that git fails to
   resolve (`ref: refs/heads/main` or 40 hex digits, each followed by junk). Measured
   side by side against `90fca6e6` and `f6010b97` on a Linux VM.
-- `root` is the absolute repo top-level (`git rev-parse --show-toplevel`). It stays
-  the same even when `path` is a subdirectory (added by reference `7cbfa471`).
+- `root` is the absolute repo top-level. A subdirectory as `path` gives the same
+  `root` (added by reference `7cbfa471`). Since `89cb6289` it is the folder where
+  the walk of the trust check found the repository, the one that holds the `.git`
+  directory or file. Its spelling is `path` after symlink resolution and the walk
+  up. A component that is not a symlink keeps its letter case and Unicode form as
+  sent (rows I07a, I07b and I08 on a macOS VM). A symlink resolves before a
+  later `..` pops it (row D01). `core.worktree`, and the daemon's `GIT_DIR` and
+  `GIT_WORK_TREE`, do not move it. A walk that finds a git directory with no work
+  tree, or nothing, answers the non-repo body after `rev-parse --git-dir` (rows I04,
+  I05 and T11a). On Linux and macOS no `rev-parse --show-toplevel` runs. On the first
+  request, a repository with no `origin/HEAD` takes 9 calls. They are the excludes
+  read, then a listing before each of `rev-parse --git-dir`, `remote get-url
+  origin`, `symbolic-ref` and `branch --show-current` (row L01).
+- On Windows git checks the root. After `rev-parse --git-dir` the daemon runs `git
+  --git-dir=<pin> config -z --list` and `git -c … --git-dir=<pin> --work-tree=<walk
+  root> rev-parse --show-toplevel`, both in `<pin>`, the `GIT_COMMON_DIR` pin (row
+  W01). When git's answer names the same directory as the walk root, the root is
+  git's answer as printed. Else it is the walk root with forward slashes (rows W14 to
+  W16). A directory symlink resolves in the walk and a junction does not (row D03).
+  Some points are not measured. claustrum tests the same directory by file identity
+  (`os.SameFile`). That is derived from rows W08 and W09. claustrum takes no
+  relative answer. The spelling of the walk root is not measured. With no pin,
+  claustrum runs the pair on the git directory of the walk. A path with a junction
+  before its last component gets no pin on claustrum. `89cb6289` sets one there (rows
+  D03-junction and W09, equal frames). One measured frame differs for
+  that reason. In row W09b-in the junction is inside repository P and points into a
+  subfolder of repository R. Both sides answer the `root` and `repo` of P and the
+  `branch` of R. `89cb6289` answers the `repoSlug` of P, and claustrum that of R.
+- The excludes read runs before the trust check, so it also runs before a trust
+  refusal, as on both references.
 - `7c2f88d` added `repoSlug` and `defaultBranch`. Both are always present,
   including on the non-repo body. Each is an empty string when the daemon cannot
   determine it.
@@ -1220,7 +1408,13 @@ check (Windows VM).
       last test is case-sensitive and suffix-only, so `GIZMO.WIKI` and a repo named
       `wiki` are accepted.
 - `defaultBranch` is what `refs/remotes/origin/HEAD` points to. It is empty when
-  `refs/remotes/origin/HEAD` is unset.
+  `refs/remotes/origin/HEAD` is unset. The daemon checks the name. A name that
+  starts with `-` gives `""` with no further call. Else a light `rev-parse --verify --quiet
+  refs/remotes/origin/<name>^{commit}` runs, with its listing, and only exit 0 keeps
+  the name. A dangling `origin/HEAD` and one that names a blob give `""` too.
+  `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I10a to I10c). Not
+  measured: other invalid names, and a `symbolic-ref` answer outside
+  `refs/remotes/origin/` (claustrum verifies it the same way).
 
 #### git.status
 `{path,baseRepo}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
@@ -1396,7 +1590,11 @@ check (Windows VM).
   (Windows only, before the containment check), `"<p> is not
   inside the repository <repo>; session worktrees are only created and removed under
   <repository>/.claude/worktrees"`, and `"<p> already exists, and a new worktree is
-  only ever created in a fresh directory"`. `<repo>` is `baseRepo` as sent. An
+  only ever created in a fresh directory"`. Take Windows without `worktreeRoot`.
+  There the `<p>` of that last text has the on-disk letter case of each component
+  that exists (row W15, both references). claustrum keeps the volume name and any
+  8.3 short name as sent. Neither is measured. The case rule with `worktreeRoot` is
+  not measured. `<repo>` is `baseRepo` as sent. An
   absent `baseRepo` gives the empty string, so a space comes before the semicolon
   (`f6010b97`, Linux and macOS VMs). The recommended location is
   `<repo>/.claude/worktrees/<id>`, but the enforced rule is only containment in the
@@ -1665,8 +1863,29 @@ check (Windows VM).
   worktree. For a linked-worktree `baseRepo`, the git dir is that worktree's own
   admin dir. The daemon gets it with `rev-parse --absolute-git-dir` before the add.
   The index goes to a file in a new temporary directory, named by `GIT_INDEX_FILE`.
-  Its config precursor, `--git-dir=<git dir> config -z --list --name-only`, runs in
+  Its config precursor, `--git-dir=<git dir> config -z --list`, runs in
   the new worktree too. Measured against `f6010b97` and `90fca6e6` on a Windows VM.
+  On Linux and macOS, `--work-tree` names the new worktree with its symlinks
+  resolved, as on `f6010b97` and `89cb6289` (rows D02, I01c, I01e and CSc). Those
+  rows are creates without `worktreeRoot`. A symlinked `worktreeRoot` is not
+  measured. On Windows claustrum passes the path as sent. The resolved form is not
+  measured there.
+- Before the checkout the daemon reads the new worktree's `.git` file, the admin
+  directory it names, and that directory's `gitdir` record. It compares the record
+  with `<worktreePath>/.git` byte for byte, with `worktreePath` taken after symlink
+  resolution. If they differ, the create answers `{"success":false,"error":"refusing to create
+  worktree: <worktreePath> carries a .git file naming an admin directory whose own
+  record is of a different worktree","errorCode":"unsafe_path"}`, runs no checkout
+  and rolls nothing back. The leaf, the entry and the branch stay. Before the answer
+  it runs the `rev-parse --show-toplevel` pair with `--git-dir` and `--work-tree=<baseRepo>`
+  in the git dir. On a macOS VM both references refuse an NFC folder sent in NFD,
+  because git records the path in NFC (row I07a). An NFD folder sent in NFC succeeds
+  (row I07b). The raw bytes of the record are not measured. The byte compare is
+  inferred from I07a and I07b. The symlink resolution is claustrum's choice: a
+  `/tmp` path creates as usual on both references (row I01e). Linux is not measured.
+  claustrum checks there too. On a Linux VM the creates of rows CSa to CSd succeeded
+  on both references and on claustrum. The check is off for a relative path or
+  record, and on Windows. That is claustrum's choice (measured on macOS only).
   After git exits 0, claustrum moves that index into the worktree's registration
   and removes the temporary directory. The registration of a reference create
   holds an `index` file too. A process that the checkout leaves behind starts in
@@ -1855,7 +2074,7 @@ copies end still fails it, as `timeoutMs` above describes:
   split points to the byte against `f6010b97`. The largest rows had 2 400
   children on Windows and 30 000 on Linux. On
   macOS the `.claude/` batches were not measured. Before each batch, the daemon
-  runs `git config -z --list --name-only`, as it does before most hardened
+  runs `git config -z --list`, as it does before most hardened
   calls. `f6010b97` also makes that call before each batch. A failed batch is
   skipped, and the other batches still copy. The pass copies what git lists, minus
   the exclusions in the bullets below. A `.claude/` the repo
@@ -1916,20 +2135,33 @@ copies end still fails it, as `timeoutMs` above describes:
   repository's work tree: <reason>"}`, with no `errorCode`, and nothing is deleted.
   It comes before the "already gone" success, so a missing worktree gets it too.
   The reasons, in order:
-  1. Git cannot start in `baseRepo`, because it is a regular file or a directory
-     without search permission (mode 0600). `<reason>` is the hooks refusal with the
+  1. Git cannot start in `baseRepo`. It is a regular file, a directory without
+     search permission (mode 0600), or a path that the kernel does not follow.
+     `<reason>` is the hooks refusal with the
      start error, for example `…listing the configuration in force: fork/exec
      /usr/bin/git: permission denied` or `…: not a directory`. The path is the git
-     that `PATH` resolves.
+     that `PATH` resolves. `git version` runs after that listing (`89cb6289`, row
+     L16b). If it fails too, the text starts with `git cannot run on this host`
+     instead, which is not measured here. A `baseRepo` behind a chain of 45
+     symlinks, which the kernel does not follow, gets this reason too. Its text ends
+     with `chdir <baseRepo>: too many levels of symbolic links`, and nothing is
+     deleted (`89cb6289`, rows LNKb-g and LNKr-g on a Linux VM). Not measured: chain
+     lengths other than 5 and 45, absolute link targets, a chain to a plain folder
+     and a chain to nothing. Nor are a chain with a locked or marked worktree, a
+     chain without `worktreeRoot`, and a path that is too long for the kernel.
   2. The trust check refuses the git directory of `baseRepo`. `<reason>` is the
-     refusal text M1 to M5. A plain folder as the target gets this text too.
+     refusal text M2 to M5 or S1 to S3. A plain folder as the target gets this text
+     too.
   3. The trust check finds no repository. `<reason>` is `exit status 128`. Examples
      are a plain directory, an empty nested `.git` directory, a `.git` file with no
      `gitdir:` line, and a linked worktree whose entry is gone. A `.git` file whose
      target is gone and is not a worktree entry goes on to the next step instead.
-  4. Git cannot list the configuration. `<reason>` is the hooks refusal text. The
-     `.git` file with a gone target gets `…exit status 128: fatal: not a git
-     repository: <target>` here.
+  4. Git cannot list the configuration. `<reason>` is the refusal text of the
+     failure class. When the listing says git finds no repository, `<reason>` is `git
+     finds no repository here: <git text>`. The `.git` file with a gone target gets
+     `git finds no repository here: fatal: not a git repository: <target>` here
+     (`89cb6289`, row N04 on Linux and macOS VMs). `f6010b97` gave the hooks refusal
+     text there.
   5. `baseRepo` is itself a git directory, such as a bare repository or a `.git`
      directory. `<reason>` is `exit status 128`. A repository whose config sets
      `core.bare` still passes.
@@ -1937,9 +2169,40 @@ copies end still fails it, as `timeoutMs` above describes:
      is its exec error, for example `exit status 128`. A daemon `GIT_DIR` that names
      nothing is one example.
 
-  A `baseRepo` that does not exist skips every reason. One that is not a directory
-  gets reason 1. Each reason and the order around this step were measured side by
-  side against `f6010b97` on a Linux VM.
+  With no `git` on `PATH`, claustrum gives a `baseRepo` that exists one reason
+  before these six. It is the exec error alone, `exec: "git": executable file not
+  found in $PATH`. Both references answer so in nine rows. One is a git directory
+  that the trust check refuses (`89cb6289`, row L13t on a Linux VM). Class 1 of the
+  failed listing gives the other rows and the place of the `GIT_CONFIG_COUNT` check
+  (see [Git-directory trust check](#git-directory-trust-check)). The other examples of
+  reason 3 are not measured with no `git`.
+
+  A `baseRepo` that does not exist gets no work-tree refusal, and no git call runs
+  for this step. That holds with `git` on `PATH` and without it (`89cb6289`, Linux
+  VM). The removal then goes on. Each request sent a `branchName`. The answer
+  depends on the worktree directory:
+  - It is gone, and the `<directory>` level exists (row L13wb), or the root exists
+    and is empty (row L13wc): `{"success":true,"branchKept":true}`. The twins with
+    `git` answer the same.
+  - It is gone, and the root does not exist (row L13wr): the "is not reachable"
+    refusal. The twin with `git` answers the same.
+  - It holds a file and no `.git` file. With `git` it gets the "is not a worktree of"
+    refusal (row L13wa-g). With no `git` it gets `could not check whether
+    <worktreePath> is locked (the repository at <baseRepo> could not be read); retry`
+    (row L13wa).
+  - It is empty. With `git` the directory is removed, and the answer is success with
+    `branchKept` (row L13we-g). With no `git` the lock-check text above answers, and
+    the directory stays (row L13we).
+  - Its `.git` file names an entry of the missing repository, and it holds other
+    files. With `git` the directory is deleted, and the answer is success with
+    `branchKept` (row DG1-g). With no `git` the lock-check text above answers, and
+    the directory stays (row DG1). `f6010b97` does the same, with no `branchKept`.
+
+  Any other stat error of `baseRepo` keeps the six reasons and the no-`git` answer.
+  claustrum runs no `GIT_CONFIG_COUNT` check then (not measured).
+  A `baseRepo` that is not a directory gets reason 1. Each of the six reasons and
+  the order around this step were measured side by side against `f6010b97` on a
+  Linux VM.
 - By default, with no `worktreeRoot`, `7d193f89` confines the removal to inside the
   repository. `worktreePath` must be absolute, carry no `..` component, and sit
   strictly under `baseRepo`. Otherwise the reply is `{"success":false,"error":"refusing
@@ -1975,10 +2238,14 @@ copies end still fails it, as `timeoutMs` above describes:
   not measured. A root is not refused for holding the repository or a linked
   worktree (rows Q15s and Y7). Neither is a root in a checkout of another repository beside it (rows
   Q20 and Q20b). Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs
-  (the Q, E, W and Y rows of the R0 runs). If `worktree list` fails without a D5
-  kill, the second test compares the root with the git top level of `baseRepo` only.
-  The third test is then skipped. That is claustrum's choice (not measured). A git
-  older than 2.36 fails that call.
+  (the Q, E, W and Y rows of the R0 runs). If `worktree list --porcelain -z` fails
+  without a D5 kill, the daemon runs one more listing and `worktree list
+  --porcelain`. If that call fails too, the answer is `failed to remove worktree:
+  cannot list the repository's worktrees: <exec error>`, and nothing is deleted.
+  `89cb6289` answers so with `exit status 128` (row DG2s-g on a Linux VM). If the
+  second call succeeds, claustrum reads its lines and the tests run as usual. That
+  case is not measured. A git older than 2.36 has no `-z` form. A `baseRepo` that
+  does not exist runs neither call.
 - The managed-worktrees refusal skips a `baseRepo` that does not exist. Measured
   against `f6010b97` on a macOS VM.
 - claustrum's own trust-root test also gives the managed-worktrees refusal. It fails a
@@ -2072,8 +2339,13 @@ copies end still fails it, as `timeoutMs` above describes:
   whose own record is of a different worktree`. Another read error gives the
   transient reply `{"success":false,"error":"failed to remove worktree: could not
   verify that <p> is a worktree of <repo> (<detail>); retry"}`. There `<p>` is the
-  cleaned path. That text is claustrum's own, and no run has measured the reference
-  on those inputs. A refused daemon `GIT_CONFIG_COUNT` changes these answers (see
+  cleaned path. One input is measured, with `git` on `PATH` (row DG1c-g, Linux VM).
+  It is a missing `baseRepo` and a `.git` file that names an entry of another
+  missing repository. Both
+  references send this frame there, and nothing is deleted. Their `<detail>` is the
+  hooks refusal with `chdir <baseRepo>: no such file or directory`. claustrum's
+  `<detail>` is `open <baseRepo>/.git/worktrees: no such file or directory`. No run
+  has measured the reference on the other inputs. A refused daemon `GIT_CONFIG_COUNT` changes these answers (see
   "The daemon's own git environment").
 - For a worktree whose directory is gone, the daemon checks the registration by path.
   A locked one answers `{"success":false,"error":"refusing to remove worktree: <p> is
@@ -2088,10 +2360,14 @@ copies end still fails it, as `timeoutMs` above describes:
   does not stop this path: with `worktreeRoot` the reply is `{"success":true}`
   (row K13, Linux VM). Without
   `worktreeRoot` that case is not measured. Without `worktreeRoot`, two more answers
-  come first. A configuration that
-  git cannot list, or a refused git directory, answers `{"success":false,"error":"failed
+  come first. A configuration listing that fails, or a refused git directory, answers
+  `{"success":false,"error":"failed
   to remove worktree: could not check whether <p> is locked (<reason>); retry"}`.
-  `<reason>` is the hooks refusal or the trust refusal text. A `baseRepo` that holds
+  `<reason>` is the hooks refusal, the `git cannot run` text, a limit refusal or the
+  trust refusal text. A listing that says git finds no repository skips the
+  registration instead, and so does a `PATH` with no `git`. The reply is then success,
+  with `branchKept` when the branch step keeps a branch (see
+  [Git-directory trust check](#git-directory-trust-check)). A `baseRepo` that holds
   no repository answers `{"success":true}`, and so does one that does not exist.
   The branch step runs on this path too (rows R17a and R17b). Without a repository its
   for-each-ref fails, so a request that names a branch gets `"branchKept":true`
@@ -2127,7 +2403,9 @@ copies end still fails it, as `timeoutMs` above describes:
   A kill only refuses or skips a step. When a hit stops the config or repository
   check, the request refuses, or it skips the registration of a gone worktree. With
   `worktreeRoot` that hit answers the work-tree refusal, and so does a hit on
-  `rev-parse --show-toplevel` or `worktree list`. A D5 stop of a call of the branch
+  `rev-parse --show-toplevel` or the first `worktree list` call. A hit on the second
+  `worktree list` call answers the `cannot list the repository's worktrees` text. A
+  D5 stop of a call of the branch
   step keeps the branch, and the reply adds `"branchKept":true`. Not measured. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D5.
 
@@ -2174,7 +2452,9 @@ the Linux, macOS and Windows VMs of each row. `<b>` is `branchName` as sent.
 - The steps, in order. "Keep" means that the branch stays.
   1. for-each-ref fails or is stopped: keep (rows R18 and R22a, L, B2-02, M W). A
      listing that does not parse keeps the branch too. That is claustrum's choice
-     (not measured).
+     (not measured). If the configuration listing before for-each-ref exits 128
+     with `fatal: not a git repository`, for-each-ref does not run. The branch is
+     then kept (`89cb6289`, rows L14a, L14b, L14d, L14e and N01 to N04, L M).
   2. The listing holds 10001 records: keep. This comes before step 4, so a branch
      past the 10001st record is kept with no rev-parse (rows R15a and R15c, L M W).
      With 10000 heads the whole check runs (row R15b, L M W).

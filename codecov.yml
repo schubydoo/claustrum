@@ -175,6 +175,11 @@ component_management:
         # sourceBranch start-commit choice for git.worktree_create.
         - worktreesource.go
         - githarden.go
+        # the configuration listing before each hardened call and its hook pins (89cb6289).
+        - gitlisting.go
+        # the git.info root per OS (89cb6289).
+        - gitinforoot_other.go
+        - gitinforoot_windows.go
         # the daemon's own GIT_* variables on the git calls of the git methods.
         - gitenv.go
         # the git-directory trust check every git.* method runs first (f6010b97).

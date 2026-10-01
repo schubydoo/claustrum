@@ -21,11 +21,26 @@ import (
 // The texts, written out here independently of the implementation's constants.
 const (
 	wantTrustPrefix = "the repository's git directory could not be trusted; git not run: commondir not as git writes it: "
-	wantM1Tail      = " exists where git itself never writes one (git keeps that file only in a linked worktree's entry under .git/worktrees/); remove it if you did not create it, and treat its appearance as tampering"
+	wantTRTail      = `; git writes that file only inside .git/worktrees/<name>/, and Claude Code's sandbox may leave one containing just "."; anything else sends git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did`
+	wantTPTail      = "; git writes that file only inside .git/worktrees/<name>/; one here can send git's configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did"
+	wantShapeTail   = " sits in a git directory git would not take as a repository (its HEAD, objects or refs missing or invalid), so git would look for one somewhere else; repair that directory (usually its HEAD file)"
 	wantM5          = "config-defined hooks could not be pinned off; git not run: the worktree entry this folder's .git names no longer exists"
 )
 
-func wantM1(cd string) string { return wantTrustPrefix + fmt.Sprintf("%q", cd) + wantM1Tail }
+// wantTR is the refusal of a stray commondir whose content v (trailing CR and LF
+// removed) is not "." or "./" (89cb6289, rows T03 and T04). v must be valid UTF-8.
+func wantTR(cd, v string) string {
+	if r := []rune(v); len(r) > 60 {
+		v = string(r[:60])
+	}
+	return wantTrustPrefix + fmt.Sprintf("%q", cd) + " reads " + fmt.Sprintf("%q", v) + wantTRTail
+}
+
+// wantTP is the refusal of a stray commondir that is not a small plain file (rows T05
+// to T09).
+func wantTP(cd, reason string) string {
+	return wantTrustPrefix + fmt.Sprintf("%q", cd) + " is not a small plain file (" + reason + ")" + wantTPTail
+}
 
 func wantM2(cd, repo string) string {
 	return wantTrustPrefix + fmt.Sprintf("%q", cd) + " does not name the entry's own repository, " +
@@ -225,7 +240,7 @@ const (
 )
 
 // The refusal shape of each method: a commondir in a main
-// repository's git directory is refused with M1 on every method that runs in that
+// repository's git directory is refused with S1 on every method that runs in that
 // repository. For git.status the check is on baseRepo, not on path. A linked worktree
 // of the same repository still works for info and list_branches, because its own git
 // directory is an honest entry. Remove refuses and deletes nothing. The honest control
@@ -235,8 +250,8 @@ func TestGitDirTrustStrayCommondirInMainRepo(t *testing.T) {
 	wantResultPrefix(t, "control info(T)", info(t, r.T), `{"isRepo":true`)
 
 	cd := filepath.Join(r.T, ".git", "commondir")
-	writeFile(t, cd, ".\n", 0o644)
-	m1 := wantM1(cd)
+	writeFile(t, cd, "x\n", 0o644)
+	m1 := wantTR(cd, "x")
 
 	wantRPCError(t, "info(T)", info(t, r.T), m1)
 	wantRPCError(t, "list_branches(T)", listBranches(t, r.T), m1)
@@ -251,27 +266,34 @@ func TestGitDirTrustStrayCommondirInMainRepo(t *testing.T) {
 	wantResultPrefix(t, "list_branches(TW)", listBranches(t, r.TW), `{"isRepo":true`)
 }
 
-// A commondir of ANY type is refused, and so is one that names the git
-// directory itself.
+// A commondir that is not a plain file is refused, and so is one that names the
+// git directory itself by its absolute path (89cb6289, rows T05 and T03g).
 func TestGitDirTrustStrayCommondirAnyType(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		make func(t *testing.T, cd, gitDir string)
+		make func(t *testing.T, cd, gitDir string) string
 	}{
-		{"directory", func(t *testing.T, cd, _ string) {
+		{"directory", func(t *testing.T, cd, _ string) string {
 			if err := os.Mkdir(cd, 0o755); err != nil {
 				t.Fatal(err)
 			}
+			return wantTP(cd, "commondir is not a regular file")
 		}},
-		{"names itself", func(t *testing.T, cd, gitDir string) { writeFile(t, cd, gitDir+"\n", 0o644) }},
-		{"empty", func(t *testing.T, cd, _ string) { writeFile(t, cd, "", 0o644) }},
+		{"names itself", func(t *testing.T, cd, gitDir string) string {
+			writeFile(t, cd, gitDir+"\n", 0o644)
+			return wantTR(cd, gitDir)
+		}},
+		{"empty", func(t *testing.T, cd, _ string) string {
+			writeFile(t, cd, "", 0o644)
+			return wantTR(cd, "")
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newTrustRepo(t)
 			gitDir := filepath.Join(r.T, ".git")
 			cd := filepath.Join(gitDir, "commondir")
-			tc.make(t, cd, gitDir)
-			wantRPCError(t, "info(T)", info(t, r.T), wantM1(cd))
+			want := tc.make(t, cd, gitDir)
+			wantRPCError(t, "info(T)", info(t, r.T), want)
 		})
 	}
 }
@@ -404,7 +426,8 @@ func TestGitDirTrustCommondirMustBeASmallPlainFile(t *testing.T) {
 
 // A `.git` directory that fails the git-directory test ends the walk.
 // With no commondir inside, that is no repository, where git itself walks on to the
-// outer repository. With a commondir inside, it is refused with M1.
+// outer repository. With a commondir inside, the stray rules judge it: the content
+// here gets S1.
 func TestGitDirTrustBrokenNestedDotGitStopsTheWalk(t *testing.T) {
 	t.Run("empty .git directory", func(t *testing.T) {
 		r := newTrustRepo(t)
@@ -429,8 +452,8 @@ func TestGitDirTrustBrokenNestedDotGitStopsTheWalk(t *testing.T) {
 		a := filepath.Join(r.T, "a")
 		cd := filepath.Join(a, ".git", "commondir")
 		writeFile(t, cd, "../../.git\n", 0o644)
-		wantRPCError(t, "info(T/a)", info(t, a), wantM1(cd))
-		wantRPCError(t, "status(SW,T/a)", status(t, r.SW, a), wantM1(cd))
+		wantRPCError(t, "info(T/a)", info(t, a), wantTR(cd, "../../.git"))
+		wantRPCError(t, "status(SW,T/a)", status(t, r.SW, a), wantTR(cd, "../../.git"))
 	})
 }
 
@@ -536,7 +559,7 @@ func TestGitDirTrustHeadTest(t *testing.T) {
 
 // A linked-worktree entry counts as an entry only
 // when its grandparent passes the git-directory test and its own name is not ".git".
-// Otherwise its honest commondir counts as stray: M1. A regular file named objects
+// Otherwise its honest commondir counts as stray: S1 for "../..". A regular file named objects
 // still passes the test, so the entry is judged as an entry and git answers for itself.
 func TestGitDirTrustEntryNeedsAValidRepository(t *testing.T) {
 	t.Run("main objects missing", func(t *testing.T) {
@@ -545,7 +568,7 @@ func TestGitDirTrustEntryNeedsAValidRepository(t *testing.T) {
 		if err := os.Rename(obj, obj+".gone"); err != nil {
 			t.Fatal(err)
 		}
-		m1 := wantM1(filepath.Join(r.entry(), "commondir"))
+		m1 := wantTR(filepath.Join(r.entry(), "commondir"), "../..")
 		wantRPCError(t, "info(TW)", info(t, r.TW), m1)
 		wantCreateRefused(t, r.TW, r.T, m1)
 		// T itself now fails the test: no repository, so remove from T is refused.
@@ -570,7 +593,7 @@ func TestGitDirTrustEntryNeedsAValidRepository(t *testing.T) {
 			t.Fatal(err)
 		}
 		writeFile(t, filepath.Join(r.TW, ".git"), "gitdir: "+dotEntry+"\n", 0o644)
-		wantRPCError(t, "info(TW)", info(t, r.TW), wantM1(filepath.Join(dotEntry, "commondir")))
+		wantRPCError(t, "info(TW)", info(t, r.TW), wantTR(filepath.Join(dotEntry, "commondir"), "../.."))
 	})
 }
 
@@ -610,7 +633,7 @@ func TestGitDirTrustGitFile(t *testing.T) {
 }
 
 // A bare repository: with no `.git`, the directory itself is
-// the git directory. A stray commondir there is refused.
+// the git directory. A stray commondir there that does not read "." is refused.
 func TestGitDirTrustBareRepository(t *testing.T) {
 	requireGit(t)
 	base := realTempDir(t)
@@ -618,13 +641,14 @@ func TestGitDirTrustBareRepository(t *testing.T) {
 	runGit(t, base, "init", "-q", "--bare", "-b", "main", b)
 	wantResult(t, "control list_branches(B)", listBranches(t, b), `{"isRepo":true,"branches":[]}`)
 	cd := filepath.Join(b, "commondir")
-	writeFile(t, cd, ".\n", 0o644)
-	wantRPCError(t, "list_branches(B)", listBranches(t, b), wantM1(cd))
-	wantRPCError(t, "info(B)", info(t, b), wantM1(cd))
+	writeFile(t, cd, "x\n", 0o644)
+	wantRPCError(t, "list_branches(B)", listBranches(t, b), wantTR(cd, "x"))
+	wantRPCError(t, "info(B)", info(t, b), wantTR(cd, "x"))
 }
 
 // A submodule-style git directory: a `.git` file names a git directory
-// under .git/modules/. With no commondir it is trusted. With one it is refused.
+// under .git/modules/. With no commondir it is trusted. With one that does not read
+// "." it is refused.
 func TestGitDirTrustSubmoduleGitDir(t *testing.T) {
 	r := newTrustRepo(t)
 	sub := filepath.Join(r.T, "sub")
@@ -637,8 +661,8 @@ func TestGitDirTrustSubmoduleGitDir(t *testing.T) {
 	runGit(t, r.base, "init", "-q", "-b", "main", "--separate-git-dir", modGit, sub)
 	wantResultPrefix(t, "control info(sub)", info(t, sub), `{"isRepo":true`)
 	cd := filepath.Join(modGit, "commondir")
-	writeFile(t, cd, ".\n", 0o644)
-	wantRPCError(t, "info(sub)", info(t, sub), wantM1(cd))
+	writeFile(t, cd, "x\n", 0o644)
+	wantRPCError(t, "info(sub)", info(t, sub), wantTR(cd, "x"))
 	wantResultPrefix(t, "info(T)", info(t, r.T), `{"isRepo":true`)
 }
 
@@ -722,13 +746,13 @@ func TestGitDirTrustDaemonGitDir(t *testing.T) {
 		x := filepath.Join(r.base, "X")
 		initTrustMain(t, x)
 		cd := filepath.Join(x, ".git", "commondir")
-		writeFile(t, cd, ".\n", 0o644)
+		writeFile(t, cd, "x\n", 0o644)
 		plain := filepath.Join(r.base, "N")
 		if err := os.Mkdir(plain, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		t.Setenv("GIT_DIR", filepath.Join(x, ".git"))
-		m1 := wantM1(cd)
+		m1 := wantTR(cd, "x")
 		wantRPCError(t, "info(N)", info(t, plain), m1)
 		wantRPCError(t, "list_branches(T)", listBranches(t, r.T), m1)
 		wantRPCError(t, "status(SW,T)", status(t, r.SW, r.T), m1)
@@ -791,9 +815,9 @@ func TestGitDirTrustDaemonCommonDir(t *testing.T) {
 	r := newTrustRepo(t)
 	gitDir := filepath.Join(r.T, ".git")
 	cd := filepath.Join(gitDir, "commondir")
-	writeFile(t, cd, ".\n", 0o644)
+	writeFile(t, cd, "x\n", 0o644)
 	t.Setenv("GIT_COMMON_DIR", gitDir)
-	m1 := wantM1(cd)
+	m1 := wantTR(cd, "x")
 	wantResultPrefix(t, "info(T)", info(t, r.T), `{"isRepo":true`)
 	wantResultPrefix(t, "list_branches(T)", listBranches(t, r.T), `{"isRepo":true`)
 	wantRPCError(t, "status(SW,T)", status(t, r.SW, r.T), m1)
@@ -838,12 +862,12 @@ func TestGitDirTrustOperandIsCutTo300Runes(t *testing.T) {
 			T := filepath.Join(deep, "T")
 			initTrustMain(t, T)
 			cd := filepath.Join(T, ".git", "commondir")
-			writeFile(t, cd, ".\n", 0o644)
+			writeFile(t, cd, "x\n", 0o644)
 			if utf8.RuneCountInString(cd) <= 300 {
 				t.Fatalf("fixture path %d runes, want > 300", utf8.RuneCountInString(cd))
 			}
 			cut := string([]rune(cd)[:300])
-			wantRPCError(t, "info(T)", info(t, T), wantTrustPrefix+fmt.Sprintf("%q", cut)+wantM1Tail)
+			wantRPCError(t, "info(T)", info(t, T), wantTrustPrefix+fmt.Sprintf("%q", cut)+` reads "x"`+wantTRTail)
 		})
 	}
 }
@@ -939,8 +963,8 @@ func TestGitInfoOmitsABranchGitCannotResolve(t *testing.T) {
 // The light profile carries the replace and graft switches. The heavy one, used only
 // by git.status, does not.
 func TestHardenedEnvReplaceAndGraftSwitches(t *testing.T) {
-	light := hardenedGitEnv(false, nil)
-	heavy := hardenedGitEnv(true, nil)
+	light := hardenedGitEnv(false, nil, nil)
+	heavy := hardenedGitEnv(true, nil, nil)
 	for _, kv := range []string{"GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + os.DevNull} {
 		if !slices.Contains(light, kv) {
 			t.Errorf("light env lacks %s", kv)

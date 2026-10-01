@@ -14,8 +14,8 @@ import (
 //   - A repository call drops GIT_CONFIG and GIT_CONFIG_PARAMETERS. The names match
 //     case-sensitively.
 //   - The daemon's GIT_CONFIG_COUNT must parse, and each of its pairs must be set.
-//   - A hardened call gets GIT_CONFIG_COUNT, the inherited pairs and the two hook
-//     pins after the profile and the GIT_COMMON_DIR pin. Every other
+//   - A hardened call gets GIT_CONFIG_COUNT, the inherited pairs and the hook pins
+//     after the profile and the GIT_COMMON_DIR pin. Every other
 //     GIT_CONFIG_KEY_<digits> and GIT_CONFIG_VALUE_<digits> name is removed.
 //   - The light profile keeps only the https and ssh entries of the daemon's
 //     GIT_ALLOW_PROTOCOL.
@@ -93,22 +93,31 @@ func withoutConfigCountSet(env []string) []string {
 }
 
 // configPinEnv follows the profile and the GIT_COMMON_DIR pin in a hardened call's
-// environment. It is GIT_CONFIG_COUNT as count+2, then the count inherited pairs of
-// env in index order, read by their canonical names. Then come the hook pins
-// hook.enabled=false and an empty hook.event, as the pairs count and count+1.
-func configPinEnv(env []string, count int) []string {
-	out := []string{configCountName + "=" + strconv.Itoa(count+2)}
+// environment. It is GIT_CONFIG_COUNT, then the count inherited pairs of env in index
+// order, read by their canonical names. Then come the hook pins: hook.enabled=false
+// and an empty hook.event, then hook.<name>.enabled=false and an empty
+// hook.<name>.event for each name of hooks, in order. The count covers every pair.
+// 89cb6289 has that order on Linux, macOS and Windows VMs (rows L04 to L07).
+func configPinEnv(env []string, count int, hooks []string) []string {
+	out := []string{configCountName + "=" + strconv.Itoa(count+2+2*len(hooks))}
 	for i := range count {
 		n := strconv.Itoa(i)
 		k, _ := lookupExact(env, configKeyPrefix+n)
 		v, _ := lookupExact(env, configValPrefix+n)
 		out = append(out, configKeyPrefix+n+"="+k, configValPrefix+n+"="+v)
 	}
-	return append(out,
-		configKeyPrefix+strconv.Itoa(count)+"=hook.enabled",
-		configValPrefix+strconv.Itoa(count)+"=false",
-		configKeyPrefix+strconv.Itoa(count+1)+"=hook.event",
-		configValPrefix+strconv.Itoa(count+1)+"=")
+	pin := func(key, value string) {
+		n := strconv.Itoa(count)
+		out = append(out, configKeyPrefix+n+"="+key, configValPrefix+n+"="+value)
+		count++
+	}
+	pin("hook.enabled", "false")
+	pin("hook.event", "")
+	for _, h := range hooks {
+		pin("hook."+h+".enabled", "false")
+		pin("hook."+h+".event", "")
+	}
+	return out
 }
 
 // countFromText reads a GIT_CONFIG_COUNT value. The empty value is 0. Else any

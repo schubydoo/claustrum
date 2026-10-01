@@ -34,11 +34,14 @@ var capabilityMethods = []string{
 // that no other ref reaches, and answers branchKept. Linux, macOS and Windows VMs
 // show the feature. 89cb6289 also inserted launcher.managed after shellAgentSocket
 // and before external_root (launcher.resolve and the process.spawn launcher param).
-// Windows lists it too, although a Windows spawn refuses every launcher. The array
-// itself is always emitted.
+// Windows lists it too, although a Windows spawn refuses every launcher. 89cb6289
+// also inserted git.info.discovered_root after git.status.baseRepo. In that build
+// git.info runs no `rev-parse --show-toplevel` on Linux and macOS (row L01). Linux,
+// macOS and Windows VMs show the feature at that place. The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
+	"git.info.discovered_root",
 	"git.worktree_create.timeoutMs",
 	"git.worktree_create.existingBranch",
 	"git.worktree_remove.unpushedGuard",

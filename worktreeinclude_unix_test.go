@@ -531,7 +531,7 @@ func TestIncludeUnixConstants(t *testing.T) {
 
 // TestClaudeDirPassBatchCalls runs the `.claude/` pass with 1845 children of
 // 60 bytes, the Lc_n01845 row. f6010b97 makes two `ls-files` calls and runs
-// `config -z --list --name-only` before each one. Every child is copied.
+// `config -z --list` before each one. Every child is copied.
 func TestClaudeDirPassBatchCalls(t *testing.T) {
 	requireGit(t)
 	isolateGitConfig(t)
@@ -550,7 +550,7 @@ func TestClaudeDirPassBatchCalls(t *testing.T) {
 		switch {
 		case slices.Equal(c, []string{"config", "--includes", "--path", "core.excludesFile"}):
 			// The resolver of the user's excludes file, not part of the pass.
-		case slices.Equal(c, []string{"config", "-z", "--list", "--name-only"}):
+		case slices.Equal(c, []string{"config", "-z", "--list"}):
 			shape = append(shape, "config")
 		case len(c) > len(claudeDirPassFixedArgs) && slices.Equal(c[:len(claudeDirPassFixedArgs)], claudeDirPassFixedArgs):
 			shape = append(shape, fmt.Sprintf("ls-files(%d)", len(c)-len(claudeDirPassFixedArgs)))

@@ -210,7 +210,7 @@ func TestHardenedGitEnvPairs(t *testing.T) {
 			clearDaemonConfigEnv(t)
 			plantEnv(t, tc.plant...)
 			for _, heavy := range []bool{false, true} {
-				if got, want := configEntries(hardenedGitEnv(heavy, nil)), sorted(tc.want...); !slices.Equal(got, want) {
+				if got, want := configEntries(hardenedGitEnv(heavy, nil, nil)), sorted(tc.want...); !slices.Equal(got, want) {
 					t.Errorf("hardened call (heavy %v) = %q\nwant %q", heavy, got, want)
 				}
 				// The listing passes the planted set as it is.
@@ -228,7 +228,7 @@ func TestHardenedGitEnvKeepsOtherConfigNames(t *testing.T) {
 	keep := []string{"GIT_CONFIGX=S4MARK_a", "GIT_CONFIG_=S4MARK_b", "GIT_CONFIG_S4=S4MARK_c",
 		"GIT_CONFIG_COUNTX=S4MARK_d"}
 	plantEnv(t, keep...)
-	for _, env := range [][]string{hardenedGitEnv(false, nil), hardenedGitEnv(true, nil), precursorEnv(false, nil)} {
+	for _, env := range [][]string{hardenedGitEnv(false, nil, nil), hardenedGitEnv(true, nil, nil), precursorEnv(false, nil)} {
 		for _, kv := range keep {
 			if !slices.Contains(env, kv) {
 				t.Errorf("env lacks %s (round1 C2)", kv)
@@ -287,10 +287,10 @@ func TestHardenedGitEnvOrder(t *testing.T) {
 				"GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + os.DevNull}, tc.tail)
 			heavy := slices.Concat(head, []string{"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
 				"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, tc.tail)
-			if got := hardenedEnvFrom(tc.daemon, false, pin); !slices.Equal(got, light) {
+			if got := hardenedEnvFrom(tc.daemon, false, pin, nil); !slices.Equal(got, light) {
 				t.Errorf("light hardened env\n got %q\nwant %q", got, light)
 			}
-			if got := hardenedEnvFrom(tc.daemon, true, pin); !slices.Equal(got, heavy) {
+			if got := hardenedEnvFrom(tc.daemon, true, pin, nil); !slices.Equal(got, heavy) {
 				t.Errorf("heavy hardened env\n got %q\nwant %q", got, heavy)
 			}
 		})
@@ -1075,7 +1075,7 @@ func TestListBranchesEmptyPathCountRefusal(t *testing.T) {
 }
 
 // A trust refusal wins over the count refusal. The rows are val2 Y1 with a stray
-// commondir in T (M1) and val2 N3c with an entry whose commondir names another
+// commondir in T and val2 N3c with an entry whose commondir names another
 // repository (M2). The val3 Z3 rows remove R/cp/w9 with worktreeRoot R and baseRepo
 // the Y1 repository: Z3a with the leaf absent, Z3a2 with R/cp present, Z3b with an
 // empty leaf and Z3c with a file in the leaf. Nothing is deleted. On Windows the
@@ -1084,8 +1084,8 @@ func TestTrustRefusalBeforeCountRefusal(t *testing.T) {
 	stray := newTrustRepo(t)
 	requireTempOutsideCheckout(t, stray.base)
 	strayCD := filepath.Join(stray.T, ".git", "commondir")
-	writeFile(t, strayCD, ".\n", 0o644)
-	m1 := wantM1(strayCD)
+	writeFile(t, strayCD, "x\n", 0o644)
+	m1 := wantTR(strayCD, "x")
 	foreign := newTrustRepo(t)
 	other := filepath.Join(foreign.base, "X")
 	initTrustMain(t, other)

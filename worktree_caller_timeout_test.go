@@ -102,7 +102,7 @@ func installGitSlowStub(t *testing.T, realGit string) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-slow")
 	t.Setenv("CLAUSTRUM_GITSTUB_REAL", realGit)
-	for _, k := range []string{"LOG", "CTXLOG", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP",
+	for _, k := range []string{"LOG", "CTXLOG", "ENVLOG", "EXPAND", "STDERR_FILE", "STDERR2_FILE", "EXIT", "ACTION", "LEAF", "SNAP",
 		"MATCH2", "MODE2", "MS2", "EXIT2", "ACTION2", "LEAF2"} {
 		t.Setenv("CLAUSTRUM_GITSTUB_"+k, "")
 	}
@@ -963,7 +963,7 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 					env := strings.Split(parts[3], "\x1f")
 					if slices.Contains(argv, "read-tree") {
 						rt, rtCwd, index, rtEnv = argv, parts[0], parts[1], env
-					} else if len(argv) == 5 && argv[1] == "config" && strings.HasPrefix(argv[0], "--git-dir=") {
+					} else if len(argv) == 4 && argv[1] == "config" && strings.HasPrefix(argv[0], "--git-dir=") {
 						pre, preCwd, preEnv = argv, parts[0], env
 					}
 				}
@@ -976,12 +976,20 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 					}
 				}
 				gitDirArg := func(a string) string { return canonicalPath(strings.TrimPrefix(a, "--git-dir=")) }
-				if !slices.Equal(pre[1:], []string{"config", "-z", "--list", "--name-only"}) || gitDirArg(pre[0]) != wantGitDir {
-					t.Errorf("precursor = %q, want --git-dir=%s config -z --list --name-only", pre, wantGitDir)
+				if !slices.Equal(pre[1:], []string{"config", "-z", "--list"}) || gitDirArg(pre[0]) != wantGitDir {
+					t.Errorf("precursor = %q, want --git-dir=%s config -z --list", pre, wantGitDir)
+				}
+				// Off Windows the --work-tree is the leaf with its symlinks resolved. The
+				// temporary directory of macOS is behind a symlink.
+				workTree := f.leaf()
+				if runtime.GOOS != "windows" {
+					if workTree, err = filepath.EvalSymlinks(f.leaf()); err != nil {
+						t.Fatal(err)
+					}
 				}
 				profile := hardenedProfileArgs(false)
 				tail := []string{"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
-					"--git-dir=GITDIR", "--work-tree=" + f.leaf(),
+					"--git-dir=GITDIR", "--work-tree=" + workTree,
 					"read-tree", "-u", "--reset", "--no-recurse-submodules", "refs/heads/w1"}
 				got := slices.Clone(rt)
 				gd := len(profile) + 4

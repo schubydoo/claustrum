@@ -321,3 +321,55 @@ func verifyCreatedWorktree(worktreePath string, cp worktreeCheckpoint) string {
 	}
 	return ""
 }
+
+// adminRecordMismatch reports whether the admin record that `git worktree add` wrote
+// for the new worktree names another path than worktreePath. It reads
+// <worktreePath>/.git, the admin directory that file names, and that directory's
+// `gitdir` record, and compares the record with <worktreePath>/.git byte for byte.
+// worktreePath is taken after filepath.EvalSymlinks, which keeps the spelling of every
+// component that is not a symlink. 89cb6289 and f6010b97 refuse such a create on a
+// macOS VM when the request spells the folder in Unicode NFD and git records it in
+// NFC (row I07a). They run no checkout and roll nothing back. The same request in NFC
+// for an NFD folder succeeds (row I07b). Linux is not measured, and claustrum checks
+// there too. On a Linux VM every create of rows CSa to CSd succeeded on both
+// references and on claustrum.
+//
+// Not measured: the raw bytes of the record (the NFC spelling was read from `git
+// worktree list`), whether the compare is bytewise (inferred from I07a and I07b
+// together), and the resolution of symlinks before the compare. A symlinked path
+// such as /tmp on macOS creates as usual on both references (row I01e), so
+// claustrum resolves them. A relative worktreePath or record, and any read that
+// fails, give no mismatch. The check is off on Windows (adminRecordChecked). That is
+// claustrum's choice.
+func adminRecordMismatch(worktreePath string) bool {
+	if !adminRecordChecked || !filepath.IsAbs(worktreePath) {
+		return false
+	}
+	admin := worktreeAdminDir(worktreePath)
+	if admin == "" {
+		return false
+	}
+	if !filepath.IsAbs(admin) {
+		admin = filepath.Join(worktreePath, admin)
+	}
+	b, err := os.ReadFile(filepath.Join(admin, "gitdir"))
+	if err != nil {
+		return false
+	}
+	record := strings.TrimRight(string(b), "\n")
+	if !filepath.IsAbs(record) {
+		return false
+	}
+	resolved, err := evalSymlinks(worktreePath)
+	if err != nil {
+		return false
+	}
+	return record != filepath.Join(resolved, ".git")
+}
+
+// adminRecordRefusal is the answer of git.worktree_create when adminRecordMismatch
+// reports a mismatch. It names worktreePath as sent (row I07a).
+func adminRecordRefusal(worktreePath string) string {
+	return fmt.Sprintf("refusing to create worktree: %s carries a .git file naming an admin directory "+
+		"whose own record is of a different worktree", worktreePath)
+}

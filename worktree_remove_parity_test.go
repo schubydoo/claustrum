@@ -222,11 +222,11 @@ func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 	})
 	t.Run("stray commondir", func(t *testing.T) {
 		f := newRmFixture(t)
-		writeFile(t, filepath.Join(f.repo, ".git", "commondir"), ".\n", 0o644)
+		writeFile(t, filepath.Join(f.repo, ".git", "commondir"), "x\n", 0o644)
 		wp := filepath.Join(filepath.Dir(f.wt), "gone")
 		got := removeErrorField(t, removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": wp}))
 		want := "failed to remove worktree: could not check whether " + wp + " is locked (" +
-			refuseStrayCommondir(filepath.Join(f.repo, ".git", "commondir")).refusal + "); retry"
+			refuseStrayContent(filepath.Join(f.repo, ".git", "commondir"), "x").refusal + "); retry"
 		if got != want {
 			t.Errorf("error = %q\nwant  %q", got, want)
 		}

@@ -18,8 +18,9 @@ import (
 // check describes it.
 //
 // The check finds the git directory, then judges it. A linked-worktree entry must carry
-// a `commondir` file that names its own repository. Any other git directory must carry
-// no `commondir` at all. Three verdicts come out:
+// a `commondir` file that names its own repository. Any other git directory carries no
+// `commondir`, or one that reads "." or "./". A dangling relative symlink that stays
+// in that directory counts as none (judgeStrayCommondir). Three verdicts come out:
 //
 //   - trusted: git runs with GIT_COMMON_DIR pinned to the repository git directory.
 //     For a linked-worktree entry that is the repository the entry names. For any
@@ -68,22 +69,56 @@ type gitDirTrust struct {
 // quoteOperand cuts s to its first operandMaxRunes runes and quotes it with Go %q. An
 // invalid UTF-8 byte counts as one rune and stays a byte, so %q prints it as \xNN.
 func quoteOperand(s string) string {
-	n := 0
-	for i := range s {
-		if n == operandMaxRunes {
-			s = s[:i]
+	return quoteCut(s, operandMaxRunes)
+}
+
+// quoteCut is quoteOperand with the rune count n.
+func quoteCut(s string, n int) string {
+	i := 0
+	for at := range s {
+		if i == n {
+			s = s[:at]
 			break
 		}
-		n++
+		i++
 	}
 	return fmt.Sprintf("%q", s)
 }
 
-func refuseStrayCommondir(cd string) gitDirTrust {
+// The refusals of a commondir in a git directory that is not a linked-worktree entry.
+// 89cb6289 answers them on Linux, macOS and Windows VMs (rows T03 to T10). The
+// `<name>` in each text is literal.
+const (
+	strayContentTail = "; git writes that file only inside .git/worktrees/<name>/, and Claude Code's " +
+		"sandbox may leave one containing just \".\"; anything else sends git's configuration and hooks " +
+		"elsewhere, so treat it as tampering: delete it, and if you did not create it, find out what did"
+	strayFileTail = "; git writes that file only inside .git/worktrees/<name>/; one here can send git's " +
+		"configuration and hooks elsewhere, so treat it as tampering: delete it, and if you did not " +
+		"create it, find out what did"
+	strayShapeTail = " sits in a git directory git would not take as a repository (its HEAD, objects or " +
+		"refs missing or invalid), so git would look for one somewhere else; repair that directory " +
+		"(usually its HEAD file)"
+	// strayValueMaxRunes is the cut of the quoted content (rows T04a, T04b and T06b).
+	strayValueMaxRunes = 60
+)
+
+// refuseStrayContent refuses a stray commondir whose content v, trailing CR and LF
+// removed, is not "." or "./".
+func refuseStrayContent(cd, v string) gitDirTrust {
 	return gitDirTrust{verdict: gitDirRefused, refusal: gitDirTrustPrefix + quoteOperand(cd) +
-		" exists where git itself never writes one (git keeps that file only in a linked " +
-		"worktree's entry under .git/worktrees/); remove it if you did not create it, and " +
-		"treat its appearance as tampering"}
+		" reads " + quoteCut(v, strayValueMaxRunes) + strayContentTail}
+}
+
+// refuseStrayFile refuses a stray commondir that is not a small plain file.
+func refuseStrayFile(cd, reason string) gitDirTrust {
+	return gitDirTrust{verdict: gitDirRefused, refusal: gitDirTrustPrefix + quoteOperand(cd) +
+		" is not a small plain file (" + reason + ")" + strayFileTail}
+}
+
+// refuseStrayShape refuses a stray commondir with trusted content in a directory that
+// fails the git-directory test.
+func refuseStrayShape(cd string) gitDirTrust {
+	return gitDirTrust{verdict: gitDirRefused, refusal: gitDirTrustPrefix + quoteOperand(cd) + strayShapeTail}
 }
 
 func refuseForeignCommondir(cd, repo string) gitDirTrust {
@@ -159,17 +194,50 @@ func gitDirTrustFor(dir string) gitDirTrust {
 		}
 		return judgeGitDir(gd, true)
 	}
-	g, ok := findGitDir(start)
+	g, _, ok := findGitDir(start)
 	if !ok {
 		return gitDirTrust{verdict: gitDirNoRepo}
 	}
 	return judgeGitDir(g, false)
 }
 
+// gitWalkRoot is the root of git.info on Linux and macOS. It is the folder where a walk
+// like that of the trust check finds the repository. That folder holds the `.git`
+// directory or `.git` file. It is spelled as the walk has it: dir after walkRootStart
+// (filepath.EvalSymlinks there) and filepath.Abs, then walked up. EvalSymlinks keeps the
+// spelling of every component that is not a symlink, so letter case and Unicode form
+// stay as sent (rows I07a, I07b and I08 on a macOS VM). The daemon's GIT_DIR and
+// GIT_WORK_TREE do not change it (rows I04a and I04b). It is "" when the walk found a
+// git directory with no work tree (a bare repository, a path inside .git) or nothing.
+// gitDir is the git directory the walk found. 89cb6289 takes its root so on Linux and
+// macOS VMs (rows I01 to I08, D01 and T11).
+//
+// Not measured: the spelling when one component is a symlink and another a case
+// variant.
+func gitWalkRoot(dir string) (root, gitDir string) {
+	if dir == "" {
+		dir = "."
+	}
+	start, err := walkRootStart(dir)
+	if err != nil {
+		return "", ""
+	}
+	if start, err = filepath.Abs(start); err != nil {
+		return "", ""
+	}
+	g, holder, ok := findGitDir(start)
+	if !ok {
+		return "", ""
+	}
+	return holder, g
+}
+
 // findGitDir walks up from start the way git discovers a repository. It returns false
 // for "no repository". Unlike git, a `.git` directory that fails the git-directory test
 // and holds no commondir ends the walk: git itself walks on to an outer repository.
-func findGitDir(start string) (string, bool) {
+// holder is the folder that holds the `.git` directory or file, or "" when the git
+// directory found is the folder itself (a bare repository, a path inside .git).
+func findGitDir(start string) (g, holder string, ok bool) {
 	for d := start; ; {
 		dotGit := filepath.Join(d, ".git")
 		fi, err := os.Stat(dotGit)
@@ -177,23 +245,27 @@ func findGitDir(start string) (string, bool) {
 		case err != nil:
 			// No `.git` here: the directory itself can be a bare git directory.
 			if isGitDirShape(d) {
-				return d, true
+				return d, "", true
 			}
 		case fi.IsDir():
 			if isGitDirShape(dotGit) {
-				return dotGit, true
+				return dotGit, d, true
 			}
 			if _, err := os.Lstat(filepath.Join(dotGit, "commondir")); err == nil {
-				return dotGit, true // judged next, and refused as a stray commondir
+				return dotGit, d, true // judged next as a stray commondir
 			}
-			return "", false
+			return "", "", false
 		case fi.Mode().IsRegular():
-			return readGitFile(dotGit, d)
+			target, ok := readGitFile(dotGit, d)
+			if !ok {
+				return "", "", false
+			}
+			return target, d, true
 		}
 		// A `.git` of another type (a FIFO, a device) is skipped.
 		parent := filepath.Dir(d)
 		if parent == d {
-			return "", false
+			return "", "", false
 		}
 		d = parent
 	}
@@ -247,14 +319,13 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 	g = resolveGitDirLinks(g)
 	cd := filepath.Join(g, "commondir")
 	if !isWorktreeEntry(g) {
-		// Git writes commondir only in a linked worktree's entry. One of any type
-		// anywhere else is refused, even when it names g itself.
-		if _, err := os.Lstat(cd); err == nil {
-			return refuseStrayCommondir(cd)
+		if t, refused := judgeStrayCommondir(g, cd); refused {
+			return t
 		}
 		// Pinned to itself. Where g is a `.git` file (Windows only, see
 		// nonDirGitDirIsNoRepo), git then fails with its own "not a git repository"
-		// for the entry the file names. Measured against f6010b97 on a Windows 11 VM.
+		// for the entry the file names, and the method answers "no repository"
+		// (hostileConfigRefusal). Measured against 89cb6289 on a Windows 11 VM.
 		return gitDirTrust{pinCommonDir: g}
 	}
 	repo := filepath.Dir(filepath.Dir(g))
@@ -288,6 +359,56 @@ func isWorktreeEntry(g string) bool {
 		isGitDirShape(filepath.Dir(parent))
 }
 
+// judgeStrayCommondir judges <g>/commondir, where g is a git directory that is not a
+// linked-worktree entry: a main `.git`, a bare repository, or a submodule's git
+// directory. Git writes no commondir there. 89cb6289 takes these steps on Linux, macOS
+// and Windows VMs (rows T00 to T11):
+//
+//  1. No commondir: g is trusted. A dangling symlink whose target is relative and
+//     stays in g counts as none when g passes the git-directory test (row T07c,
+//     target `nothing-here`). When g fails that test, the symlink is refused with the
+//     shape text of step 4. 89cb6289 answers so for a HEAD that reads "garbage" on a
+//     Linux VM (rows DG2-g, DG2-info and DG2-status).
+//  2. A commondir that is not a small plain file is refused with its reason (rows
+//     T05 to T09). A dangling symlink that is absolute, or that leaves g, is refused
+//     here with "openat commondir: path escapes from parent" (rows T07d and T07e on a
+//     Linux VM). Their targets were `/nonexistent` and `../nothing`.
+//  3. The content with every trailing CR and LF removed is exactly "." or "./". A space
+//     or a tab is not trimmed in the measured rows. Anything else is refused and quoted
+//     (rows T01 to T04, T06b and T10b). The content test comes before the shape test.
+//  4. g then passes the git-directory test, or it is refused (row T10a).
+//
+// It reports false when g is trusted. Not measured: leading CR or LF, a lone CR and
+// ".//". Nor is whether the 60-rune cut comes before the trim (claustrum trims first).
+// Nor are the order of a reason and a bad HEAD, and a dangling symlink in a git
+// directory with missing objects or refs. Two cases that PROTOCOL.md once refused with
+// the older text were not run on 89cb6289. One is an entry whose grandparent fails the
+// git-directory test. The other is a Windows entry named through 8.3 short names.
+// Their honest content "../.." is refused by step 3.
+func judgeStrayCommondir(g, cd string) (gitDirTrust, bool) {
+	if _, err := os.Lstat(cd); errors.Is(err, fs.ErrNotExist) {
+		return gitDirTrust{}, false
+	}
+	content, reason, openErr := readCommondirAt(g)
+	switch {
+	case errors.Is(openErr, fs.ErrNotExist):
+		if !isGitDirShape(g) {
+			return refuseStrayShape(cd), true
+		}
+		return gitDirTrust{}, false
+	case reason != "":
+		return refuseStrayFile(cd, reason), true
+	}
+	v := strings.TrimRight(content, "\r\n")
+	if v != "." && v != "./" {
+		return refuseStrayContent(cd, v), true
+	}
+	if !isGitDirShape(g) {
+		return refuseStrayShape(cd), true
+	}
+	return gitDirTrust{}, false
+}
+
 // readCommondir reads <entry>/commondir. present is false when there is no commondir
 // entry at all. A non-empty reason means the file is not a small plain file. It must be
 // a regular file of at most commondirMaxBytes. A symlink is followed only when the link
@@ -296,37 +417,44 @@ func readCommondir(entry string) (content, reason string, present bool) {
 	if _, err := os.Lstat(filepath.Join(entry, "commondir")); errors.Is(err, fs.ErrNotExist) {
 		return "", "", false
 	}
-	root, err := os.OpenRoot(entry)
+	content, reason, _ = readCommondirAt(entry)
+	return content, reason, true
+}
+
+// readCommondirAt is readCommondir without the first test. openErr is the error of
+// the open of the file, so a caller can tell a dangling symlink apart.
+func readCommondirAt(dir string) (content, reason string, openErr error) {
+	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return "", err.Error(), true
+		return "", err.Error(), nil
 	}
 	defer func() { _ = root.Close() }()
 	// Opened without blocking, so a FIFO is judged at once instead of waiting for a
 	// writer.
 	f, err := root.OpenFile("commondir", os.O_RDONLY|openNonBlocking, 0)
 	if err != nil {
-		return "", err.Error(), true
+		return "", err.Error(), err
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
-		return "", err.Error(), true
+		return "", err.Error(), nil
 	}
 	if !fi.Mode().IsRegular() {
-		return "", "commondir is not a regular file", true
+		return "", "commondir is not a regular file", nil
 	}
 	tooLarge := fmt.Sprintf("commondir is larger than %d bytes", commondirMaxBytes)
 	if fi.Size() > commondirMaxBytes {
-		return "", tooLarge, true
+		return "", tooLarge, nil
 	}
 	b, err := io.ReadAll(io.LimitReader(f, commondirMaxBytes+1))
 	if err != nil {
-		return "", err.Error(), true
+		return "", err.Error(), nil
 	}
 	if len(b) > commondirMaxBytes {
-		return "", tooLarge, true
+		return "", tooLarge, nil
 	}
-	return string(b), "", true
+	return string(b), "", nil
 }
 
 // isGitDirShape is the git-directory test: `objects` and `refs` exist (of any type) and

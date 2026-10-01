@@ -43,7 +43,8 @@ func TestHooksRefusalCapsBeforeTrim(t *testing.T) {
 
 	dir := t.TempDir()
 	shapeAsGitRepo(t, dir)
-	got, bad := hostileConfigRefusal(dir, false)
+	got := hostileConfigRefusal(dir, false).refusal
+	bad := got != ""
 	want := "config-defined hooks could not be pinned off; git not run: " +
 		"listing the configuration in force: exit status 128: " +
 		strings.TrimSpace(strings.ReplaceAll(lines.String()[:512-80], "\n", " "))

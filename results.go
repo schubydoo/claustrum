@@ -87,14 +87,17 @@ type spawnResult struct {
 }
 
 type gitInfoResult struct {
-	IsRepo bool   `json:"isRepo"`
-	Repo   string `json:"repo"`
+	IsRepo bool `json:"isRepo"`
+	// Repo is the base name of Root. It is omitted when that name starts with "-" or
+	// "+" (infoRepoName).
+	Repo string `json:"repo,omitempty"`
 	// Branch is omitted when git cannot name it (for example, a HEAD git cannot resolve). Never
 	// empty otherwise: an unborn branch has its name, a detached HEAD "detached:<sha>".
 	Branch string `json:"branch,omitempty"`
-	// Root is the absolute repo top-level (git rev-parse --show-toplevel) — the
-	// repo root even when path points at a subdirectory. Added by the reference
-	// daemon in 7cbfa471 (the 8de85faa baseline omitted it).
+	// Root is the absolute repo top-level, the repo root even when path points at a
+	// subdirectory: the folder where the trust check's walk found the repository
+	// (gitWalkRoot), and on Windows git's confirmation of it (gitInfoRoot). Added by
+	// the reference daemon in 7cbfa471 (the 8de85faa baseline omitted it).
 	Root string `json:"root"`
 	// RepoSlug and DefaultBranch were added by the reference daemon in 7c2f88d.
 	// Both are always present (never omitempty), empty when undeterminable.

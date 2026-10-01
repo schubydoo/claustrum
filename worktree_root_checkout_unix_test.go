@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 // of <T>, made by plain git. worktreeRoot is unix-only.
 
 const (
-	r0cListing    = "config -z --list --name-only"
+	r0cListing    = "config -z --list"
 	r0cLinkedTail = "; a worktree location must be outside the repository's checkouts"
 )
 
@@ -347,8 +348,8 @@ func stubGitCall(t *testing.T, call, cmd string, d time.Duration) {
 }
 
 // The row has the shape of W2: the root is the linked worktree w0, and the dirty leaf
-// is inside it. If the D5 deadline stops `worktree list`, the remove answers the
-// work-tree refusal with the exec error. No git call runs after `worktree list`, and
+// is inside it. If the D5 deadline stops the first `worktree list` call, the remove
+// answers the work-tree refusal with the exec error. No git call runs after it, and
 // nothing is deleted. The reference has no such deadline, so this is claustrum's
 // choice (not measured).
 func TestWorktreeRemoveListKilledRefuses(t *testing.T) {
@@ -382,13 +383,56 @@ func TestWorktreeRemoveTopLevelKilledRefuses(t *testing.T) {
 	r.remove(t)
 }
 
-// After any other failure of `worktree list`, the checkout tests compare the root with
-// the git top level of baseRepo only. So the remove of the same W2-shaped row goes on
-// and deletes the leaf, as it did before those tests. Here the call exits 129 before
-// the deadline. That is claustrum's choice (not measured).
-func TestWorktreeRemoveListFailureGoesOn(t *testing.T) {
+// After any other failure of `worktree list --porcelain -z`, the daemon runs `worktree
+// list --porcelain` with its listing. If that call fails too, the removal is refused
+// and nothing is deleted. 89cb6289 answers so with exit status 128 (row DG2s-g on a
+// Linux VM). Here both calls exit 129, which is not measured. Mutation: go on after
+// the failed calls.
+func TestWorktreeRemoveListFailsTwiceRefuses(t *testing.T) {
 	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
-		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exit 129", 0) }}
+		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list", "exit 129", 0) },
+		calls: append(slices.Clone(r0cRemoveCalls), r0cListing, "worktree list --porcelain"),
+		want:  "failed to remove worktree: cannot list the repository's worktrees: exit status 129"}
+	r.remove(t)
+}
+
+// When only the -z form fails, the second call succeeds, and the daemon reads its
+// lines. The W2-shaped row then gets its refusal, as with a working -z form. A git
+// older than 2.36 has no -z form. This case is claustrum's choice (not measured).
+// Mutation: do not read the output of the second call.
+func TestWorktreeRemoveListWithoutZIsRead(t *testing.T) {
+	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
+		after: func(t *testing.T, f *r0Fixture) { stubGitCall(t, "worktree list --porcelain -z", "exit 129", 0) },
+		calls: append(slices.Clone(r0cRemoveCalls), r0cListing, "worktree list --porcelain"),
+		want:  "refusing to remove worktree: <B>/X/o/w0 leads into <B>/X/o/w0, a worktree of the repository <T> (at <B>/X/o/w0)" + r0cLinkedTail}
+	r.remove(t)
+}
+
+// If the first `worktree list` call fails and the D5 deadline stops the second one,
+// the answer is the worktree-list refusal with "signal: killed". Nothing is deleted.
+// The reference has no such deadline, so this text is claustrum's own (not measured).
+func TestWorktreeRemoveListSecondCallKilledRefuses(t *testing.T) {
+	r := r0cRow{root: "<B>/X/o/w0", wp: "<B>/X/o/w0/cp/w1", leaf: "<B>/X/o/w0/cp/w1", setup: withW0,
+		after: func(t *testing.T, f *r0Fixture) {
+			real, err := exec.LookPath("git")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bin := t.TempDir()
+			script := "#!/bin/sh\ncase \" $* \" in\n" +
+				"*\" worktree list --porcelain -z \"*) exit 129 ;;\n" +
+				"*\" worktree list --porcelain \"*) exec sleep 30 ;;\n" +
+				"esac\nexec '" + real + "' \"$@\"\n"
+			if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			old := gitTimeout
+			gitTimeout = 2 * time.Second
+			t.Cleanup(func() { gitTimeout = old })
+		},
+		anyCalls: true,
+		want:     "failed to remove worktree: cannot list the repository's worktrees: signal: killed"}
 	r.remove(t)
 }
 

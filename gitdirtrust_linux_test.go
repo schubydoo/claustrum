@@ -17,11 +17,11 @@ func TestGitDirTrustInvalidUTF8Operand(t *testing.T) {
 	base := realTempDir(t)
 	T := filepath.Join(base, "bad\xffname", "T")
 	initTrustMain(t, T)
-	writeFile(t, filepath.Join(T, ".git", "commondir"), ".\n", 0o644)
+	writeFile(t, filepath.Join(T, ".git", "commondir"), "x\n", 0o644)
 	alias := filepath.Join(base, "L")
 	if err := os.Symlink(T, alias); err != nil {
 		t.Fatal(err)
 	}
-	want := wantTrustPrefix + `"` + base + `/bad\xffname/T/.git/commondir"` + wantM1Tail
+	want := wantTrustPrefix + `"` + base + `/bad\xffname/T/.git/commondir" reads "x"` + wantTRTail
 	wantRPCError(t, "info(L)", info(t, alias), want)
 }
