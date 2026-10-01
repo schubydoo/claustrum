@@ -115,8 +115,8 @@ func wantAncestor(t *testing.T, root, want string) {
 // and other write bits. Rows P-M1 to P-M8 of the test list.
 func TestRootAncestorFault(t *testing.T) {
 	euid, egid := os.Geteuid(), os.Getegid()
-	if euid == 65534 {
-		t.Skip("the test user is uid 65534, the foreign owner of these rows")
+	if u := uint32(euid); u == 65534 || u == 4294967294 {
+		t.Skipf("the test user is uid %d, a foreign owner of these rows", u)
 	}
 	const writeFmt = "writable by %s without the sticky bit (mode %s), so they could replace what is " +
 		"beneath it; choose a location under directories only you (or the system) control, or remove " +

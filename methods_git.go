@@ -817,10 +817,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// A worktreeRoot is refused below a directory owned by a user other than you
 		// or uid 0. It is also refused below a directory writable by a shared group or
 		// by every user, without the sticky bit. The refusal comes after the 9 calls,
-		// with no further git call (rows K1, G2 to G18, Linux and macOS VMs). It comes before the checkout tests. In rows Y11d
-		// and T7 both references send it where the checkout text also applies. It
-		// comes before the root-chain step (rows G18, G36a, G40a and G40b) and the
-		// tests of the root itself (rows G16 and G17).
+		// with no further git call (rows K1, G2 to G18, Linux and macOS VMs). It comes
+		// before the checkout tests. In rows Y11d and T7 both references send it where
+		// the checkout text also applies. It comes before the root-chain step (rows
+		// G18, G36a, G40a and G40b) and the tests of the root itself (rows G16 and
+		// G17).
 		if msg := worktreeRootAncestorRefusal(p.WorktreeRoot); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "unsafe_path"})
 		}

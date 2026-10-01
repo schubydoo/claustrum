@@ -222,6 +222,8 @@ func rootAncestorFault(uid, gid uint32, mode fs.FileMode, euid int) string {
 //   - An ancestor that cannot be searched, with more levels below it. The resolve
 //     fails and the walk returns "". No directory below it is judged.
 //   - Whether "/" is judged. claustrum judges it. It passes on every host measured.
+//   - A root of "/" itself. It is the one root that is judged, because it is its
+//     own parent.
 //   - A failed stat of a path that the walk just resolved. The walk returns "".
 //   - The target of a symlinked root is not judged itself, as the root is not.
 func worktreeRootAncestorRefusal(worktreeRoot string) string {
@@ -249,7 +251,8 @@ func worktreeRootAncestorRefusal(worktreeRoot string) string {
 				return "", true
 			}
 			if fault := rootAncestorFault(uid, gid, mode, euid); fault != "" {
-				return "refusing to create worktree: " + worktreeRoot + " passes through " + d + ", which is " + fault, true
+				return fmt.Sprintf("refusing to create worktree: %s passes through %s, which is %s",
+					worktreeRoot, d, fault), true
 			}
 		}
 		return "", false
