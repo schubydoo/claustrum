@@ -104,7 +104,7 @@ func d5Kill(ctx context.Context, err error) error {
 // the call. Any other failure, such as a git older
 // than 2.36 without `worktree list -z`, gives a nil error.
 func worktreeList(repo string) ([]listedWorktree, error) {
-	list, killed, err := worktreeListCall(repo, "\x00", "-z")
+	list, killed, err := worktreeListCall(repo, true)
 	if err != nil && killed {
 		return nil, err
 	}
@@ -112,13 +112,16 @@ func worktreeList(repo string) ([]listedWorktree, error) {
 }
 
 // worktreeListCall runs a light `git worktree list --porcelain` in repo, with its
-// listing and with the extra options opts. sep ends each line of the output: a NUL
-// byte with -z, a LF without it. It returns the entries, whether the D5 deadline
-// stopped the call, and its exec error.
-func worktreeListCall(repo, sep string, opts ...string) (list []listedWorktree, killed bool, err error) {
+// listing. With nul it adds -z, and a NUL byte ends each line of the output. Without
+// nul a LF ends each line. It returns the entries, whether the D5 deadline stopped the
+// call, and its exec error.
+func worktreeListCall(repo string, nul bool) (list []listedWorktree, killed bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	args := append([]string{"worktree", "list", "--porcelain"}, opts...)
+	args, sep := []string{"worktree", "list", "--porcelain"}, "\n"
+	if nul {
+		args, sep = append(args, "-z"), "\x00"
+	}
 	b, err := hardenedGitCmd(ctx, repo, false, nil, args...).Output()
 	if err != nil {
 		return nil, d5Kill(ctx, err) != nil, err
@@ -164,14 +167,14 @@ func worktreeListForRemove(repo string) (listed []listedWorktree, refusal string
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return nil, ""
 	}
-	listed, killed, err := worktreeListCall(repo, "\x00", "-z")
+	listed, killed, err := worktreeListCall(repo, true)
 	if err == nil {
 		return listed, ""
 	}
 	if killed {
 		return nil, workTreeUnknownPrefix + err.Error()
 	}
-	if listed, _, err = worktreeListCall(repo, "\n"); err != nil {
+	if listed, _, err = worktreeListCall(repo, false); err != nil {
 		return nil, worktreeListRefusalPrefix + err.Error()
 	}
 	return listed, ""

@@ -131,6 +131,8 @@ func runListing(ctx context.Context, dir, gitDir string, env []string) listingRu
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Env = env
+	// Stderr is set before Output, so (*exec.ExitError).Stderr stays empty. Read
+	// listingRun.stderr, never ee.Stderr.
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	out, err := cmd.Output()

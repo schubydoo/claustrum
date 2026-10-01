@@ -920,9 +920,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// No probe sent an in-repo path with a slash to this refusal. On Windows the
 		// in-repo path is spelled with the on-disk letter case of each component that
 		// exists (existingPathSpelling, row W15).
-		existing := existingPathSpelling(p.WorktreePath)
-		if p.WorktreeRoot != "" {
-			existing = filepath.Clean(p.WorktreePath)
+		existing := filepath.Clean(p.WorktreePath)
+		if p.WorktreeRoot == "" {
+			existing = existingPathSpelling(p.WorktreePath)
 		}
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
