@@ -321,6 +321,46 @@ traps that matter for telling drift from expected:
   `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
   env strip, and the gated launcher runs of `-install` and `-probe-cli`.
   `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
+- The configuration listing, the stray `commondir` rules and the `git.info` root
+  split the pins too. claustrum follows `89cb6289` there. Against `f6010b97` these
+  differences are not drift:
+  - `server.capabilities` carries `git.info.discovered_root`.
+  - A stray `commondir` that reads `.` or `./` is served when its git directory is
+    valid (rows T01, T02 and T11). With a bad `HEAD` it gets S3 (row T10a). A
+    dangling relative symlink that stays in a valid git directory counts as none
+    (row T07c). With `worktreeRoot`, `git.worktree_remove` then answers `cannot list
+    the repository's worktrees: exit status 128` (row DG2s-g). Without
+    `worktreeRoot` it answers `{"success":true,"branchKept":true}` and keeps the
+    branch. It deletes the entry. If the worktree exists, it deletes that too (rows
+    DG3-g and DG3x-g). `f6010b97` refuses there and keeps everything. With a bad `HEAD` the
+    symlink gets S3 too (row DG2-g). Any other content or file gets S1 or S2. In all
+    these rows but DG3-g, `f6010b97` gives one older text: `%q exists where git
+    itself never writes one (git keeps that file only in a linked worktree's entry
+    under .git/worktrees/); remove it if you did not create it, and treat its
+    appearance as tampering`. In row DG3-g it answers the lock-check text with `its
+    registrations could not be examined`.
+  - A listing error is in English under a German daemon locale (row L03).
+  - A configuration key of 1048576 bytes passes, and one byte more gets the key
+    text. `f6010b97` refuses both with `bufio.Scanner: token too long` (rows L08b
+    and L08c).
+  - A listing that exits 128 with `fatal: not a git repository` answers the "no
+    repository" shapes, and `git.worktree_remove` with `worktreeRoot` gives `git
+    finds no repository here: …`. `f6010b97` gives the hooks refusal (rows L14a,
+    L14b, L14d, L14e and N01 to N04, and N05 on Windows).
+  - When `git version` also fails, the text says git cannot run. `f6010b97` gives
+    the hooks refusal, or the "no repository" shape for a git that cannot start
+    (rows L11, L12 and L15).
+  - The `git.info` root comes from the walk, so a daemon `GIT_DIR` with a plain
+    folder answers the non-repo body (rows I04a and I04b). The slug after `lnk/..`
+    is the one of the resolved repository (row D01). On Windows the daemon does not
+    take a toplevel answer that names another folder or is relative (rows W14 and
+    W16). A symlink there resolves before `..` (row D03).
+  - claustrum keeps D16 as it is. The status of a worktree whose `.git` names a fake
+    entry with no `commondir` (row T12-G04) still differs from both references on
+    macOS and Windows. That gap is open and is not reconciled.
+
+  See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
+  and git.info.
 - D12 needs a VALID zstd body. D13's ordering answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
@@ -420,19 +460,23 @@ for that reason. With `GODEBUG=winsymlink=0` in the daemon environment, the walk
 follows the junction instead. claustrum's answers to rows J1 and J3 then flip, and
 so do the `git.status` and `git.list_branches` answers for `<dir>\<junction>\T`.
 Other code resolves `baseRepo` through `EvalSymlinks` too, so other Windows junction
-rows can move as well. A `go` line below 1.23 in `go.mod` has the same effect. This
+rows can move as well. A `go` line below 1.23 in `go.mod` has the same effect. The
+`git.info` root for a path with a junction before its last component rests on the
+same failure (rows D03-junction and W09). With the walk following the junction, those
+roots can move too. This
 entry is derived from the Go source (`os/types_windows.go` and
 `path/filepath/symlink.go`), not measured. Check those rows after each Go bump that
 changes `winsymlink`.
 
 ### The git version under the checkout tests
 
-With a `worktreeRoot`, both worktree methods read `git worktree list --porcelain -z`
-(`worktreeList`, `worktreeexternal.go`). The `-z` option needs git 2.36 or later. On
-an older git the call fails, and the checkout tests then compare the root with the
-git top level of `baseRepo` only. A root in another checkout of the repository then
-passes, and `git.worktree_remove` goes on as it did before these tests. The
-references on such a git are not measured. Several tests in
+With a `worktreeRoot`, both worktree methods run `git worktree list --porcelain -z`
+(`worktreeListCall`, `worktreeexternal.go`). The `-z` option needs git 2.36 or
+later. On an older git that call fails. `git.worktree_create` then compares the root
+with the git top level of `baseRepo` only. A root in another checkout of the
+repository then passes. `git.worktree_remove` then runs `git worktree list
+--porcelain` and reads its lines, so its tests run as usual. The references on such
+a git are not measured. Several tests in
 `worktree_root_checkout_unix_test.go` expect a working call. They skip there
 (`requireWorktreeListZ`), so a skip in CI means a git older than 2.36.
 Check them after the git of a CI runner or a test VM changes.

@@ -296,13 +296,20 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   worktree, the hit gives the lock-check text with the hooks refusal, or skips the
   registration step. With `worktreeRoot` a hit answers the work-tree refusal (`cannot
   determine the repository's work tree`), and so does a hit on `rev-parse
-  --show-toplevel` or `worktree list`. A D5 stop of a call of the branch step keeps
+  --show-toplevel` or the first `worktree list` call. If the D5 deadline stops the
+  second `worktree list` call, the answer is `cannot list the repository's worktrees:
+  signal: killed`. If the deadline expires in the listing before that call, the text
+  ends with `context deadline exceeded`. That call runs only after the first one
+  failed. The second text has no test. A D5 stop of a call of the branch step keeps
   the branch, and the reply adds `"branchKept":true`. In a `git.worktree_create`
   rollback such a stop adds an undo text instead. It is one of the branch-step texts
   in PROTOCOL.md → The branch step.
   On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
   A killed repo-detection call answers `isRepo:false`. A killed
-  `branch --show-current` in `git.info` leaves out the `branch` member.
+  `branch --show-current` in `git.info` leaves out the `branch` member. A killed
+  `defaultBranch` verify there gives `defaultBranch` `""`. On Windows a killed root
+  pair of `git.info` falls back to the walk root. A killed first listing of a method
+  runs `git version`, and the method answers by that failure class.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
 - **Never read a timeout as "git refused."** On `git.worktree_remove` no D5 kill

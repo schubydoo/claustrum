@@ -203,11 +203,12 @@ func withGitTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 }
 
 // branchStepCmd builds one call of the branch step: the light -c set, the working
-// directory repo, and branchStepEnv. The caller runs its config listing first.
-func branchStepCmd(ctx context.Context, repo string, args ...string) *exec.Cmd {
+// directory repo, and branchStepEnv with the hooks of the config listing that the
+// caller runs first.
+func branchStepCmd(ctx context.Context, repo string, hooks []string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false, args...)...)
 	cmd.Dir = repo
-	cmd.Env = branchStepEnv(commonDirPinEnv(repo))
+	cmd.Env = branchStepEnv(commonDirPinEnv(repo), hooks)
 	return cmd
 }
 
@@ -220,8 +221,14 @@ func branchStepCmd(ctx context.Context, repo string, args ...string) *exec.Cmd {
 func branchCheckGit(ctx context.Context, repo string, stdin io.Reader, args ...string) (out string, stopped bool, err error) {
 	ctx, cancel := withGitTimeout(ctx)
 	defer cancel()
-	hookPrecursor(ctx, repo, false)
-	cmd := branchStepCmd(ctx, repo, args...)
+	// A listing that says "not a git repository" ends the step: the call does not run,
+	// and the listing's error stands for it. 89cb6289 runs no for-each-ref after such a
+	// listing (rows L14a, L14b, L14d, L14e and N01 to N04 on Linux and macOS VMs).
+	pre := hookPrecursor(ctx, repo, false)
+	if pre.saysNoRepository() {
+		return "", ctx.Err() != nil, pre.err
+	}
+	cmd := branchStepCmd(ctx, repo, pre.hooks(), args...)
 	cmd.Stdin = stdin
 	b, err := cmd.Output()
 	return string(b), ctx.Err() != nil, err
@@ -235,10 +242,10 @@ func branchCheckGit(ctx context.Context, repo string, stdin io.Reader, args ...s
 func deleteBranchRef(repo, target, tip string) error {
 	d5, cancelD5 := withGitTimeout(context.Background())
 	defer cancelD5()
-	hookPrecursor(d5, repo, false)
+	hooks := hookPrecursor(d5, repo, false).hooks()
 	ctx, cancel := context.WithTimeout(d5, updateRefStop)
 	defer cancel()
-	cmd := branchStepCmd(ctx, repo, "update-ref", "--no-deref", "-d", target, tip)
+	cmd := branchStepCmd(ctx, repo, hooks, "update-ref", "--no-deref", "-d", target, tip)
 	cmd.Cancel = func() error { return stopUpdateRef(cmd.Process) }
 	cmd.WaitDelay = updateRefKillAfter
 	return cmd.Run()

@@ -366,7 +366,7 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		// listing (row B2-09e: SIGTERM 5 s after update-ref started). A slow listing
 		// therefore does not use up the stop, and the delete goes through.
 		{name: "the stop counts from the start of update-ref", deleteBounds: 200 * time.Millisecond, arm: func(t *testing.T) {
-			stubRule2(t, "config,-z,--list,--name-only", "", 500*time.Millisecond, "", "", "")
+			stubRule2(t, "config,-z,--list", "", 500*time.Millisecond, "", "", "")
 		}},
 		// With -git-timeout (D5) opted in, a call of the branch step gets the D5
 		// deadline too, and a stopped call keeps the branch. Not measured.

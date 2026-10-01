@@ -3,11 +3,14 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -110,10 +113,10 @@ const (
 		"commondir not as git writes it: "
 )
 
-func strayText(cd string) string {
-	return wtUnknown + trustText + `"` + cd + `" exists where git itself never writes one ` +
-		"(git keeps that file only in a linked worktree's entry under .git/worktrees/); " +
-		"remove it if you did not create it, and treat its appearance as tampering"
+// strayText is the reason for a stray commondir of baseRepo. want is the trust text
+// (wantTR or wantTP).
+func strayText(want string) string {
+	return wtUnknown + want
 }
 
 func foreignText(cd, repo string) string {
@@ -130,22 +133,24 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 		// the expected error text.
 		plant func(t *testing.T, f *wrFixture) (base, target, branch, want string)
 	}{
-		{"WR01_stray_commondir_dot", func(t *testing.T, f *wrFixture) (string, string, string, string) {
+		// On f6010b97 WR01 planted "." and was refused. 89cb6289 trusts "." (row T01),
+		// so the row plants "x" here.
+		{"WR01_stray_commondir_x", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.T, ".git", "commondir")
-			wrWrite(t, cd, ".\n")
-			return f.T, f.e0, "e0", strayText(cd)
+			wrWrite(t, cd, "x\n")
+			return f.T, f.e0, "e0", strayText(wantTR(cd, "x"))
 		}},
 		{"WR02_stray_commondir_own_abs", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.T, ".git", "commondir")
 			wrWrite(t, cd, filepath.Join(f.T, ".git")+"\n")
-			return f.T, f.e0, "e0", strayText(cd)
+			return f.T, f.e0, "e0", strayText(wantTR(cd, filepath.Join(f.T, ".git")))
 		}},
 		{"WR03_stray_commondir_is_dir", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.T, ".git", "commondir")
 			if err := os.MkdirAll(cd, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			return f.T, f.e0, "e0", strayText(cd)
+			return f.T, f.e0, "e0", strayText(wantTP(cd, "commondir is not a regular file"))
 		}},
 		{"WR04_linked_base_commondir_other_repo", func(t *testing.T, f *wrFixture) (string, string, string, string) {
 			cd := filepath.Join(f.eTW, "commondir")
@@ -181,8 +186,8 @@ func TestWorktreeRemoveExternalRefusedGitDir(t *testing.T) {
 	t.Run("WR08_stray_commondir_plain_folder", func(t *testing.T) {
 		f := newWRFixture(t)
 		cd := filepath.Join(f.T, ".git", "commondir")
-		wrWrite(t, cd, ".\n")
-		if got, want := f.remove(t, f.T, f.p0, "p0"), refusalFrame(t, strayText(cd)); got != want {
+		wrWrite(t, cd, "x\n")
+		if got, want := f.remove(t, f.T, f.p0, "p0"), refusalFrame(t, strayText(wantTR(cd, "x"))); got != want {
 			t.Errorf("got  %s\nwant %s", got, want)
 		}
 		if _, err := os.Stat(filepath.Join(f.p0, "keep.txt")); err != nil {
@@ -569,19 +574,20 @@ func TestWorktreeRemoveExternalUnenterableBase(t *testing.T) {
 	})
 }
 
-// Row K16: a `.git` file that names a path that is gone and is not a worktree entry.
-// git's configuration listing fails there, so the reason is the hooks refusal. The
-// check also comes before the dir-symlink check. git 2.47 names the missing path
-// in its text, and a newer git prints "(null)" there. The daemon passes git's text
-// through, so the test accepts either.
+// Row K16 (f6010b97) and row N04 (89cb6289): a `.git` file that names a path that is
+// gone and is not a worktree entry. git's configuration listing fails there with "not
+// a git repository", so the reason is "git finds no repository here: " and git's
+// text. The check also comes before the dir-symlink check. git 2.47 names the
+// missing path in its text, and a newer git prints "(null)" there. The daemon passes
+// git's text through, so the test accepts either. Mutation: keep the listing refusal
+// text for this class.
 func TestWorktreeRemoveExternalGitFileToNowhere(t *testing.T) {
 	f := newWRFixture(t)
 	g := filepath.Join(f.base, "G")
 	nowhere := filepath.Join(f.base, "nowhere")
 	wrWrite(t, filepath.Join(g, ".git"), "gitdir: "+nowhere+"\n")
 	wantFor := func(name string) string {
-		return refusalFrame(t, wtUnknown+"config-defined hooks could not be pinned off; git not run: "+
-			"listing the configuration in force: exit status 128: fatal: not a git repository: "+name)
+		return refusalFrame(t, wtUnknown+"git finds no repository here: fatal: not a git repository: "+name)
 	}
 	want := wantFor(nowhere)
 	got := f.remove(t, g, f.p0, "")
@@ -636,4 +642,402 @@ func TestWorktreeRemoveExternalRegistryUnreadable(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.p0, "keep.txt")); err != nil {
 		t.Errorf("the plain folder was touched: %v", err)
 	}
+}
+
+// wrRow is one request of the no-git table: baseRepo, worktreePath, worktreeRoot ("" is
+// the root of the fixture) and the frame. stays and gone are paths to check after it.
+type wrRow struct {
+	base, target, root, want string
+	stays, gone              []string
+}
+
+// git.worktree_remove with worktreeRoot when PATH holds no git, and the twins with git
+// on PATH (89cb6289, Linux VM). Each row sends branchName w1.
+//
+// In the no-git rows where baseRepo exists, the answer is the work-tree refusal with
+// the exec error alone. That answer comes before the trust check (row L13t). A
+// baseRepo that does not exist skips the work-tree check. A worktree folder that
+// holds a file, or is empty, then gets the lock-check text that names the repository.
+// So does one whose `.git` file names an entry of the missing repository (row DG1).
+// With git that folder is deleted, as on both references (row DG1-g). A gone one
+// answers as it does with git. Nothing is deleted with no git.
+//
+// Mutations for a baseRepo that exists: drop the no-git answer, or give it after the
+// trust check. Mutation for a missing baseRepo: answer the exec error.
+func TestWorktreeRemoveExternalNoGitOnPath(t *testing.T) {
+	const success = `{"jsonrpc":"2.0","id":1,"result":{"success":true,"branchKept":true}}`
+	gitx := refusalFrame(t, wtUnknown+`exec: "git": executable file not found in $PATH`)
+	lock := func(target, base string) string {
+		return refusalFrame(t, "failed to remove worktree: could not check whether "+target+
+			" is locked (the repository at "+base+" could not be read); retry")
+	}
+	nope := func(f *wrFixture) string { return filepath.Join(f.base, "nope") }
+	strayX := func(t *testing.T, f *wrFixture) string {
+		cd := filepath.Join(f.T, ".git", "commondir")
+		wrWrite(t, cd, "x\n")
+		return cd
+	}
+	emptyLeaf := func(t *testing.T, f *wrFixture) string {
+		leaf := filepath.Join(f.R, "proj", "empty")
+		if err := os.MkdirAll(leaf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return leaf
+	}
+	// entryLeaf is a worktree folder whose `.git` file names an entry of the missing
+	// baseRepo, with two files in it (rows DG1 and DG1-g).
+	entryLeaf := func(t *testing.T, f *wrFixture) string {
+		leaf := filepath.Join(f.R, "proj", "lx")
+		wrWrite(t, filepath.Join(leaf, ".git"), "gitdir: "+filepath.Join(nope(f), ".git", "worktrees", "x")+"\n")
+		wrWrite(t, filepath.Join(leaf, "a.txt"), "a\n")
+		wrWrite(t, filepath.Join(leaf, "sub", "b.txt"), "b\n")
+		return leaf
+	}
+	emptyRoot := func(t *testing.T, f *wrFixture) string {
+		root := filepath.Join(f.base, "ext")
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	unreachable := func(root string) string {
+		return refusalFrame(t, "failed to remove worktree: the worktree location "+root+" is not reachable ("+root+
+			" does not exist); nothing was removed — retry once it is available, or remove the worktree by hand")
+	}
+	for _, tc := range []struct {
+		name  string
+		noGit bool
+		arm   func(t *testing.T, f *wrFixture) wrRow
+	}{
+		{"L13xc_repository", true, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: f.T, target: f.p0, want: gitx}
+		}},
+		{"L13xd_repository_registered_worktree_gone", true, func(t *testing.T, f *wrFixture) wrRow {
+			if err := os.RemoveAll(f.e0); err != nil {
+				t.Fatal(err)
+			}
+			return wrRow{base: f.T, target: f.e0, want: gitx}
+		}},
+		{"L13u_base_is_regular_file", true, func(t *testing.T, f *wrFixture) wrRow {
+			file := filepath.Join(f.base, "F")
+			wrWrite(t, file, "f\n")
+			return wrRow{base: file, target: f.p0, want: gitx}
+		}},
+		{"L13v_mode0600_repository", true, func(t *testing.T, f *wrFixture) wrRow {
+			if os.Geteuid() == 0 {
+				t.Skip("root ignores the permission this test depends on")
+			}
+			if err := os.Chmod(f.T, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(f.T, 0o755) })
+			return wrRow{base: f.T, target: f.p0, want: gitx}
+		}},
+		{"L13y_git_file_to_nowhere", true, func(t *testing.T, f *wrFixture) wrRow {
+			g := filepath.Join(f.base, "G")
+			wrWrite(t, filepath.Join(g, ".git"), "gitdir: "+filepath.Join(f.base, "nowhere")+"\n")
+			return wrRow{base: g, target: f.p0, want: gitx}
+		}},
+		{"L13z_plain_folder", true, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: wrPlainFolder(t, f), target: f.p0, want: gitx}
+		}},
+		{"L13z-g_plain_folder_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: wrPlainFolder(t, f), target: f.p0, want: refusalFrame(t, wtUnknown+"exit status 128")}
+		}},
+		{"L13t_refused_git_directory", true, func(t *testing.T, f *wrFixture) wrRow {
+			strayX(t, f)
+			return wrRow{base: f.T, target: f.p0, want: gitx}
+		}},
+		{"L13t-g_refused_git_directory_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: f.T, target: f.p0, want: refusalFrame(t, strayText(wantTR(strayX(t, f), "x")))}
+		}},
+		{"L13wa_base_missing_worktree_holds_a_file", true, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: nope(f), target: f.p0, want: lock(f.p0, nope(f))}
+		}},
+		{"L13wa-g_base_missing_worktree_holds_a_file_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: nope(f), target: f.p0, want: refusalFrame(t, "refusing to remove worktree: "+f.p0+
+				" is not a worktree of "+nope(f)+" ("+f.p0+" has no .git file), so it is left in place; remove it by hand if it is a leftover")}
+		}},
+		{"L13we_base_missing_worktree_empty", true, func(t *testing.T, f *wrFixture) wrRow {
+			leaf := emptyLeaf(t, f)
+			return wrRow{base: nope(f), target: leaf, want: lock(leaf, nope(f)), stays: []string{leaf}}
+		}},
+		{"L13we-g_base_missing_worktree_empty_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			leaf := emptyLeaf(t, f)
+			return wrRow{base: nope(f), target: leaf, want: success, gone: []string{leaf}}
+		}},
+		{"DG1_base_missing_worktree_names_its_entry", true, func(t *testing.T, f *wrFixture) wrRow {
+			leaf := entryLeaf(t, f)
+			return wrRow{base: nope(f), target: leaf, want: lock(leaf, nope(f)),
+				stays: []string{filepath.Join(leaf, ".git"), filepath.Join(leaf, "a.txt"), filepath.Join(leaf, "sub", "b.txt")}}
+		}},
+		{"DG1-g_base_missing_worktree_names_its_entry_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			leaf := entryLeaf(t, f)
+			return wrRow{base: nope(f), target: leaf, want: success, gone: []string{leaf}}
+		}},
+		{"L13wb_base_missing_worktree_gone", true, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: nope(f), target: filepath.Join(f.R, "proj", "gone"), want: success}
+		}},
+		{"L13wb-g_base_missing_worktree_gone_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			return wrRow{base: nope(f), target: filepath.Join(f.R, "proj", "gone"), want: success}
+		}},
+		{"L13wc_base_missing_root_empty", true, func(t *testing.T, f *wrFixture) wrRow {
+			root := emptyRoot(t, f)
+			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: success}
+		}},
+		{"L13wc-g_base_missing_root_empty_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			root := emptyRoot(t, f)
+			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: success}
+		}},
+		{"L13wr_base_missing_root_missing", true, func(t *testing.T, f *wrFixture) wrRow {
+			root := filepath.Join(f.base, "ext")
+			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: unreachable(root)}
+		}},
+		{"L13wr-g_base_missing_root_missing_with_git", false, func(t *testing.T, f *wrFixture) wrRow {
+			root := filepath.Join(f.base, "ext")
+			return wrRow{base: nope(f), target: filepath.Join(root, "cp", "w1"), root: root, want: unreachable(root)}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newWRFixture(t)
+			row := tc.arm(t, f)
+			if row.root == "" {
+				row.root = f.R
+			}
+			resetUserExcludesCache(t)
+			if tc.noGit {
+				t.Setenv("PATH", t.TempDir())
+			}
+			got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+				"baseRepo": row.base, "worktreePath": row.target, "branchName": "w1", "worktreeRoot": row.root}))
+			if got != row.want {
+				t.Errorf("got  %s\nwant %s", got, row.want)
+			}
+			for _, p := range append(row.stays, filepath.Join(f.p0, "keep.txt")) {
+				if _, err := os.Lstat(p); err != nil {
+					t.Errorf("%s was touched: %v", p, err)
+				}
+			}
+			for _, p := range row.gone {
+				if _, err := os.Lstat(p); err == nil {
+					t.Errorf("%s is still there", p)
+				}
+			}
+		})
+	}
+}
+
+// wrPlainFolder makes a folder with no .git beside the repositories of f.
+func wrPlainFolder(t *testing.T, f *wrFixture) string {
+	t.Helper()
+	n := filepath.Join(f.base, "N")
+	if err := os.MkdirAll(n, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// With git on PATH, a baseRepo that does not exist runs no `git version`. 89cb6289
+// runs only the one-time excludes read there (rows L13wa-g and L13wb-g on a Linux
+// VM). Mutation: run the configuration check for a baseRepo that does not exist.
+func TestWorktreeRemoveExternalMissingBaseRunsNoGitVersion(t *testing.T) {
+	f := newListingFixture(t)
+	root := filepath.Join(filepath.Dir(f.top), "ext")
+	leaf := filepath.Join(root, "cp", "w1")
+	wrWrite(t, filepath.Join(leaf, "keep.txt"), "k\n")
+	nope := filepath.Join(filepath.Dir(f.top), "nope")
+	raw, calls := f.call(t, "git.worktree_remove", map[string]any{
+		"baseRepo": nope, "worktreePath": leaf, "branchName": "w1", "worktreeRoot": root})
+	if !strings.Contains(raw, "is not a worktree of "+nope) {
+		t.Fatalf("remove = %s, want the not-a-worktree refusal", raw)
+	}
+	for _, c := range calls {
+		if c.version() {
+			t.Errorf("git version ran in %s", c.cwd)
+		}
+	}
+}
+
+// wrSymlinkChain makes n relative symlinks in the folder of target. Link 1 names
+// target, and each later link names the one before it. It returns the last link.
+func wrSymlinkChain(t *testing.T, target string, n int) string {
+	t.Helper()
+	dir, name := filepath.Dir(target), filepath.Base(target)
+	for i := 1; i <= n; i++ {
+		link := "l" + strconv.Itoa(i)
+		if err := os.Symlink(name, filepath.Join(dir, link)); err != nil {
+			t.Fatal(err)
+		}
+		name = link
+	}
+	return filepath.Join(dir, name)
+}
+
+// Rows LNKb, LNKr and their twins with git (89cb6289 and f6010b97, Linux VM).
+// baseRepo is the head of a chain of 45 relative symlinks to a repository. The kernel does not
+// follow that chain, so os.Stat fails, but the trust check resolves it. The removal is
+// refused, and the registered worktree and its entry stay. With no git on PATH the
+// reason is the exec error. With git it is the hooks refusal with the chdir error.
+//
+// Mutations: skip the work-tree check for every baseRepo that fails os.Stat. The
+// removal then deletes the worktree of the bare repository. Another mutation leaves
+// the chain to the later checks. The fixture lives in the test's temporary directory
+// only.
+func TestWorktreeRemoveExternalDeepSymlinkChainBase(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		bare, noGit bool
+	}{
+		{"LNKb_bare_no_git", true, true},
+		{"LNKb-g_bare_with_git", true, false},
+		{"LNKr_work_tree_no_git", false, true},
+		{"LNKr-g_work_tree_with_git", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newWRFixture(t)
+			repo, target, branch := f.T, f.e0, "e0"
+			entry := filepath.Join(f.T, ".git", "worktrees", "e0")
+			if tc.bare {
+				repo = filepath.Join(f.base, "B.git")
+				runGit(t, f.base, "clone", "-q", "--bare", f.T, repo)
+				target, branch = filepath.Join(f.R, "proj", "w1"), "w1"
+				runGit(t, repo, "worktree", "add", "-q", target, "-b", branch)
+				entry = filepath.Join(repo, "worktrees", "w1")
+			}
+			head := wrSymlinkChain(t, repo, 45)
+			if _, err := os.Stat(head); !errors.Is(err, syscall.ELOOP) {
+				// Linux follows 40 links and macOS 32, so the chain fails there.
+				if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+					t.Fatalf("stat of a chain of 45 symlinks = %v, want ELOOP", err)
+				}
+				t.Skipf("stat of a chain of 45 symlinks = %v, want ELOOP on this host", err)
+			}
+			want := refusalFrame(t, wtUnknown+"config-defined hooks could not be pinned off; git not run: "+
+				"listing the configuration in force: chdir "+head+": too many levels of symbolic links")
+			resetUserExcludesCache(t)
+			if tc.noGit {
+				t.Setenv("PATH", t.TempDir())
+				want = refusalFrame(t, wtUnknown+`exec: "git": executable file not found in $PATH`)
+			}
+			if got := f.remove(t, head, target, branch); got != want {
+				t.Errorf("got  %s\nwant %s", got, want)
+			}
+			for _, p := range []string{filepath.Join(target, ".git"), entry} {
+				if _, err := os.Lstat(p); err != nil {
+					t.Errorf("%s is gone (%v), but a refusal deletes nothing", p, err)
+				}
+			}
+		})
+	}
+}
+
+// Row DG2s-g (89cb6289, Linux VM): the repository has a good HEAD, and its
+// `.git/commondir` is a dangling relative symlink that stays in `.git`. The trust check
+// passes it, and git then fails each `worktree list`. The removal is refused, and the
+// worktree, its `.git` file and its entry stay. The fixture lives in the test's
+// temporary directory only. Mutation: go on after the failed `worktree list -z`. The
+// removal then deletes the worktree and its entry.
+func TestWorktreeRemoveExternalWorktreeListFails(t *testing.T) {
+	f := newWRFixture(t)
+	if err := os.Symlink("nothing-here", filepath.Join(f.T, ".git", "commondir")); err != nil {
+		t.Fatal(err)
+	}
+	want := refusalFrame(t, "failed to remove worktree: cannot list the repository's worktrees: exit status 128")
+	if got := f.remove(t, f.T, f.e0, "e0"); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	f.kept(t, f.e0, "e0")
+	if _, err := os.Lstat(filepath.Join(f.e0, ".git")); err != nil {
+		t.Errorf("the .git file of the worktree is gone: %v", err)
+	}
+}
+
+// Row DG2s-g, the git calls. After the failed `worktree list --porcelain -z`, the
+// daemon runs one more configuration listing. Then it runs `worktree list --porcelain`
+// with no -z. No git call follows the second failure. Mutation: answer after the
+// first failed call.
+func TestWorktreeRemoveExternalWorktreeListSecondCall(t *testing.T) {
+	f := newListingFixture(t)
+	root := filepath.Join(filepath.Dir(f.top), "ext")
+	leaf := filepath.Join(root, "cp", "w1")
+	runGit(t, f.top, "worktree", "add", "-q", leaf, "-b", "w1")
+	if err := os.Symlink("nothing-here", filepath.Join(f.top, ".git", "commondir")); err != nil {
+		t.Fatal(err)
+	}
+	raw, calls := f.call(t, "git.worktree_remove", map[string]any{
+		"baseRepo": f.top, "worktreePath": leaf, "branchName": "w1", "worktreeRoot": root})
+	if !strings.Contains(raw, "cannot list the repository's worktrees: exit status 128") {
+		t.Fatalf("remove = %s, want the worktree-list refusal", raw)
+	}
+	n := len(calls)
+	if n < 3 || !argvEndsWith(calls[n-3].argv, []string{"worktree", "list", "--porcelain", "-z"}) ||
+		!calls[n-2].listing() || !argvEndsWith(calls[n-1].argv, []string{"worktree", "list", "--porcelain"}) {
+		t.Errorf("calls end with %q, want worktree list -z, a listing, worktree list", tailArgv(calls, 3))
+	}
+	if _, err := os.Lstat(filepath.Join(leaf, ".git")); err != nil {
+		t.Errorf("the worktree is gone: %v", err)
+	}
+}
+
+// tailArgv is the argv of the last n calls.
+func tailArgv(calls []envCall, n int) [][]string {
+	var out [][]string
+	for _, c := range calls[max(0, len(calls)-n):] {
+		out = append(out, c.argv)
+	}
+	return out
+}
+
+// Rows DG2-g, DG2-info, DG2-status, DG2h-g and DG2i-g (89cb6289, Linux VM). The git
+// directory has a HEAD that reads "garbage". With a dangling relative commondir symlink
+// that stays in `.git`, the trust check refuses it with the shape text. That holds on
+// a remove with worktreeRoot, on git.info and on git.status. A remove without worktreeRoot
+// keeps the lock-check text. With the bad HEAD alone, the remove with worktreeRoot
+// answers "exit status 128". Nothing is deleted. Mutation: trust the dangling symlink
+// before the git-directory test.
+func TestGitDirTrustDanglingCommondirWithBadHead(t *testing.T) {
+	arm := func(t *testing.T, link bool) (f *wrFixture, inRepo, shape string) {
+		f = newWRFixture(t)
+		inRepo = filepath.Join(f.T, ".claude", "worktrees", "w1")
+		runGit(t, f.T, "worktree", "add", "-q", inRepo, "-b", "w1")
+		wrWrite(t, filepath.Join(f.T, ".git", "HEAD"), "garbage\n")
+		cd := filepath.Join(f.T, ".git", "commondir")
+		if link {
+			if err := os.Symlink("nothing-here", cd); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return f, inRepo, wantShapeRefusal(cd)
+	}
+	t.Run("DG2-g_remove_with_root", func(t *testing.T) {
+		f, _, shape := arm(t, true)
+		if got, want := f.remove(t, f.T, f.e0, "e0"), refusalFrame(t, wtUnknown+shape); got != want {
+			t.Errorf("got  %s\nwant %s", got, want)
+		}
+		f.kept(t, f.e0, "e0")
+	})
+	t.Run("DG2-info", func(t *testing.T) {
+		f, _, shape := arm(t, true)
+		wantRPCError(t, "info(T)", info(t, f.T), shape)
+	})
+	t.Run("DG2-status", func(t *testing.T) {
+		f, _, shape := arm(t, true)
+		wantRPCError(t, "status(T,T)", status(t, f.T, f.T), shape)
+	})
+	t.Run("DG2i-g_remove_in_repository", func(t *testing.T) {
+		f, inRepo, _ := arm(t, true)
+		got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_remove", map[string]any{
+			"baseRepo": f.T, "worktreePath": inRepo, "branchName": "w1"}))
+		if want := refusalFrame(t, wantLockCheck(inRepo)); got != want {
+			t.Errorf("got  %s\nwant %s", got, want)
+		}
+		f.kept(t, inRepo, "w1")
+	})
+	t.Run("DG2h-g_bad_head_only", func(t *testing.T) {
+		f, _, _ := arm(t, false)
+		if got, want := f.remove(t, f.T, f.e0, "e0"), refusalFrame(t, wtUnknown+"exit status 128"); got != want {
+			t.Errorf("got  %s\nwant %s", got, want)
+		}
+		f.kept(t, f.e0, "e0")
+	})
 }

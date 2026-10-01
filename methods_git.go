@@ -167,7 +167,9 @@ func gitCtx() (context.Context, context.CancelFunc) {
 //	                     both of which a warning-prefixed string fails safely
 //	                     (show-ref --verify now runs through hardenedGit, and the
 //	                     branch step through its own calls in worktreebranch.go)
-//	echoes it verbatim   --show-toplevel → root/repo, branch --show-current →
+//	echoes it verbatim   --show-toplevel → root/repo on Windows only, and only when
+//	                     it names the walk root (gitInfoRoot). On Linux and macOS
+//	                     git.info does not run it. branch --show-current →
 //	                     branch (rev-parse --short HEAD supplies only the
 //	                     detached-HEAD sha fallback), remote get-url → repoSlug,
 //	                     symbolic-ref → defaultBranch, rev-parse --abbrev-ref
@@ -262,9 +264,9 @@ func callerTimeoutFired(ctx context.Context) bool {
 }
 
 // isRepo runs right after hostileConfigRefusal on dir, so it runs no precursor
-// (hardenedGitFirst).
-func isRepo(dir string) bool {
-	out, ok := hardenedGitFirst(dir, false, "rev-parse", "--is-inside-work-tree")
+// (hardenedGitFirst) and pins the hooks of that check's listing l.
+func isRepo(dir string, l configListing) bool {
+	out, ok := hardenedGitFirst(dir, false, l, "rev-parse", "--is-inside-work-tree")
 	return ok && out == "true"
 }
 
@@ -275,8 +277,9 @@ func gitInfo(req *request) response {
 	}
 	// The excludesFile the reference reads at git.info is now resolved once (cached)
 	// and applied to every git op via hardenedProfileArgs/userExcludesFile, rather than
-	// probed here and discarded.
-	//
+	// probed here and discarded. The read comes first, so it also runs before a trust
+	// refusal, as on f6010b97 and 89cb6289 (every trust refusal row).
+	userExcludesFile()
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
 	// repository" answer (docs/PROTOCOL.md).
@@ -293,20 +296,26 @@ func gitInfo(req *request) response {
 	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603
 	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
-	if msg, bad := hostileConfigRefusal(p.Path, false); bad {
-		return errResult(req.ID, codeInternal, msg)
+	c := hostileConfigRefusal(p.Path, false)
+	if c.refusal != "" {
+		return errResult(req.ID, codeInternal, c.refusal)
 	}
-	// isRepo now requires BOTH a git dir and a work tree, under the light hardening
-	// profile: a bare repo has a git dir but no work tree, so --show-toplevel fails
-	// and it reports the bare notRepoResult (matching the old --is-inside-work-tree
-	// verdict via a different pair of commands).
-	if _, ok := hardenedGitFirst(p.Path, false, "rev-parse", "--git-dir"); !ok {
+	if c.noRepo {
 		return okResult(req.ID, notRepoResult{})
 	}
-	top, ok := hardenedGit(p.Path, false, "rev-parse", "--show-toplevel")
-	if !ok {
+	if _, ok := hardenedGitFirst(p.Path, false, c.listing, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, notRepoResult{})
 	}
+	// The root is the folder where the walk of the trust check found the repository
+	// (gitWalkRoot). 89cb6289 runs no `rev-parse --show-toplevel` here on Linux and
+	// macOS VMs. A walk that found a git directory with no work tree (a bare repository,
+	// a path inside .git), or nothing, answers the bare shape (rows I04a, I04b, I05a,
+	// I05b and T11a). On Windows git is asked to confirm the root (gitInfoRoot).
+	walkRoot, walkGitDir := gitWalkRoot(p.Path)
+	if walkRoot == "" {
+		return okResult(req.ID, notRepoResult{})
+	}
+	top := gitInfoRoot(walkRoot, walkGitDir, commonDirPinEnv(p.Path))
 	// slug and defaultBranch come before the branch, matching the reference order.
 	slug := gitRepoSlug(p.Path)
 	defBranch := gitDefaultBranch(p.Path)
@@ -327,12 +336,24 @@ func gitInfo(req *request) response {
 	}
 	return okResult(req.ID, gitInfoResult{
 		IsRepo:        true,
-		Repo:          filepath.Base(top),
+		Repo:          infoRepoName(top),
 		Branch:        branch,
 		Root:          top,
 		RepoSlug:      slug,
 		DefaultBranch: defBranch,
 	})
+}
+
+// infoRepoName is the `repo` member of git.info: the base name of the root. A name that
+// starts with "-" or "+" leaves the member out. f6010b97 and 89cb6289 do so on Linux
+// and macOS VMs (rows I11a and I11b). Every other measured name kept it. The general
+// rule behind those two rows is not measured.
+func infoRepoName(root string) string {
+	name := filepath.Base(root)
+	if strings.HasPrefix(name, "-") || strings.HasPrefix(name, "+") {
+		return ""
+	}
+	return name
 }
 
 // gitRepoSlug returns the "owner/repo" slug parsed from remote.origin.url, or ""
@@ -463,12 +484,27 @@ func validSlugRepo(s string) bool {
 // gitDefaultBranch returns the branch refs/remotes/origin/HEAD points to (e.g.
 // "main"), or "" when origin/HEAD is unset. Added by the reference daemon in
 // 7c2f88d.
+//
+// The name is verified. A name that starts with "-" gives "" with no further call.
+// Else the light `rev-parse --verify --quiet refs/remotes/origin/<name>^{commit}` runs
+// in dir, with its listing. Exit 0 keeps the name, and any failure gives "".
+// f6010b97 and 89cb6289 do so on Linux and macOS VMs (rows I10a to I10c: a dangling
+// origin/HEAD, one that names a blob, and origin/-x). Not measured: other invalid
+// names, and a symbolic-ref answer that does not start with refs/remotes/origin/.
+// claustrum verifies that answer the same way.
 func gitDefaultBranch(dir string) string {
 	ref, ok := hardenedGit(dir, false, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if !ok {
 		return ""
 	}
-	return strings.TrimPrefix(ref, "refs/remotes/origin/")
+	name := strings.TrimPrefix(ref, "refs/remotes/origin/")
+	if strings.HasPrefix(name, "-") {
+		return ""
+	}
+	if _, ok := hardenedGit(dir, false, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+name+"^{commit}"); !ok {
+		return ""
+	}
+	return name
 }
 
 func gitStatus(req *request) response {
@@ -510,8 +546,10 @@ func gitStatus(req *request) response {
 	// 90fca6e6 names ".git/config" (Linux VM, K06). The listing carries the heavy
 	// profile, as the first listing of f6010b97's git.status does on Linux, macOS and
 	// Windows VMs.
-	if msg, bad := hostileConfigRefusal(p.BaseRepo, true); bad {
-		return errResult(req.ID, codeInternal, msg)
+	if c := hostileConfigRefusal(p.BaseRepo, true); c.refusal != "" {
+		return errResult(req.ID, codeInternal, c.refusal)
+	} else if c.noRepo {
+		return okResult(req.ID, gitStatusResult{})
 	}
 	gitDir, commonDir, ok := gitStatusWorktreeOf(p.Path, p.BaseRepo)
 	if !ok {
@@ -659,15 +697,19 @@ func gitListBranches(req *request) response {
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
 	// measured on an ephemeral VM.
-	if msg, bad := hostileConfigRefusal(p.Path, false); bad {
-		return errResult(req.ID, codeInternal, msg)
+	c := hostileConfigRefusal(p.Path, false)
+	if c.refusal != "" {
+		return errResult(req.ID, codeInternal, c.refusal)
+	}
+	if c.noRepo {
+		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// 7d193f89 runs this under the light hardening profile with the config
 	// precursor; the repo gate is `rev-parse --git-dir` (true for a bare repo and
 	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
 	// reference returns the full branches shape (branches:[]) on a non-repo, not
 	// git.info's bare notRepoResult. The refusal check above was its precursor.
-	if _, ok := hardenedGitFirst(p.Path, false, "rev-parse", "--git-dir"); !ok {
+	if _, ok := hardenedGitFirst(p.Path, false, c.listing, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// stdout only, AND propagate a failure — the same two rules git.status
@@ -750,17 +792,18 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
 	// detail under errorCode worktree_add_failed. Measured on an ephemeral VM.
-	if msg, bad := hostileConfigRefusal(repo, false); bad {
+	c := hostileConfigRefusal(repo, false)
+	if c.refusal != "" {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
-			Error:     msg,
+			Error:     c.refusal,
 			ErrorCode: "worktree_add_failed",
 		})
 	}
 	// The reference checks the target is a repo BEFORE attempting the worktree
 	// add, returning a clean not_a_repo error rather than leaking git's raw
 	// "fatal: not a git repository …" output as a worktree_add_failed.
-	if !isRepo(repo) {
+	if c.noRepo || !isRepo(repo, c.listing) {
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     "not a git repository",
@@ -811,8 +854,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// refuses a root that has, or lies below, a .git entry. A root in a listed
 		// worktree whose .git entry is gone then goes on. That is claustrum's choice
 		// (not measured).
-		topLevel, _ := repoTopLevel(repo, true)
-		_ = repositoryCheckError(repo, true)
+		topLevel, _ := repoTopLevel(repo, nil)
+		_ = repositoryCheckError(repo, nil)
 		listed, _ := worktreeList(repo)
 		// A worktreeRoot is refused below a directory owned by a user other than you
 		// or uid 0. It is also refused below a directory writable by a shared group or
@@ -874,8 +917,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// With a worktreeRoot the refusal names the cleaned path: f6010b97 and
 		// 90fca6e6 quote "R/cp/w1" for a worktreePath sent as "R/cp/w1/" (measured
 		// on Linux and macOS VMs). Without a worktreeRoot it names the path as sent.
-		// No probe sent an in-repo path with a slash to this refusal.
-		existing := p.WorktreePath
+		// No probe sent an in-repo path with a slash to this refusal. On Windows the
+		// in-repo path is spelled with the on-disk letter case of each component that
+		// exists (existingPathSpelling, row W15).
+		existing := existingPathSpelling(p.WorktreePath)
 		if p.WorktreeRoot != "" {
 			existing = filepath.Clean(p.WorktreePath)
 		}
@@ -1099,14 +1144,29 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			BranchKept: kept,
 		})
 	}
+	// The admin record of the new worktree names worktreePath after symlink resolution.
+	// If it does not, the create is refused, with no checkout and no rollback. Before
+	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
+	// as the work tree (row I07a, macOS VM). claustrum makes the calls and does not use their
+	// answer: what 89cb6289 takes from them is not measured.
+	if adminRecordMismatch(p.WorktreePath) {
+		_, _ = gitDirWorkTreeToplevel(gitDir, repo, commonDirPinEnv(repo))
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     adminRecordRefusal(p.WorktreePath),
+			ErrorCode: "unsafe_path",
+		})
+	}
 	// Second half of the two-step: the read-tree fills the working tree from the new
 	// branch. It runs in the leaf with --git-dir set to the git dir of baseRepo and its
-	// index in a new temporary directory (GIT_INDEX_FILE). After git exits 0, that
+	// index in a new temporary directory (GIT_INDEX_FILE). Its --work-tree is the leaf
+	// with its symlinks resolved on Linux and macOS (checkoutWorkTree). After git exits 0, that
 	// index becomes the new worktree's own index. Measured against f6010b97 and
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		rtStderr, rtDrained, rtErr := runWorktreeCheckout(callerCtx, p.WorktreePath, gitDir, adminDir, checkoutRev, commonDirPinEnv(repo))
+		rtStderr, rtDrained, rtErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
+			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir, adminDir, checkoutRev, commonDirPinEnv(repo))
 		switch {
 		case rtDrained:
 			// git exited 0, but a checkout descendant held the daemon's output pipe
@@ -1268,14 +1328,16 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// repository. Then they refuse a root that does not exist or does not resolve.
 		// Nothing is deleted (Linux and macOS VMs, rows Q6s, Q17 to Q19, E1, W1, W2, Y1,
 		// Y5, Y6, Y9 and Y10). Rows T2b to T5 on both VMs, Linux row T1 and macOS row T1m
-		// measured the same. If the D5 deadline stops `worktree list`, the removal answers
-		// the work-tree refusal with the exec error. A D5 hit on `rev-parse
-		// --show-toplevel` or on the repository check does the same. After any other
-		// failure of that call, the checkout tests compare the root with topLevel only.
-		// Both are claustrum's choice (not measured).
-		listed, killed := worktreeList(repo)
-		if killed != nil {
-			return refuse(workTreeUnknownPrefix + killed.Error())
+		// measured the same. If the D5 deadline stops the first `worktree list`, the removal
+		// answers the work-tree refusal with the exec error. A D5 hit on `rev-parse
+		// --show-toplevel` or on the repository check does the same. Both are claustrum's
+		// choice (not measured). After any other failure of `worktree list -z`, the
+		// daemon runs `worktree list --porcelain` with its listing. If that call fails
+		// too, the removal is refused and nothing is deleted (89cb6289, row DG2s-g on a
+		// Linux VM). See worktreeListForRemove.
+		listed, msg := worktreeListForRemove(repo)
+		if msg != "" {
+			return refuse(msg)
 		}
 		if msg := worktreeRootCheckoutRefusal(p.WorktreeRoot, p.BaseRepo, topLevel, listed, "remove"); msg != "" {
 			return refuse(msg)
@@ -1376,9 +1438,16 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// listing passes. That repeat was measured on Linux and macOS VMs (a corrupt
 		// config, and a git directory that git cannot use). The answer is the same
 		// whatever the second check finds.
-		if _, bad := hostileConfigRefusal(repo, true); bad || noRepositoryAt(repo) {
-			if _, bad := hostileConfigRefusal(repo, true); !bad {
-				noRepositoryAt(repo)
+		//
+		// A listing that answers "no repository" (hostileConfigRefusal) gets the same
+		// answer here. With no git on PATH, 89cb6289 answers so too (row L13xa on a Linux
+		// VM). For a listing that says "not a git repository", 89cb6289 was measured with
+		// the worktree folder absent only. Those rows are L14a, L14b, L14d, L14e and N01
+		// to N04. With the folder present, claustrum answers the lock-check refusal. Not
+		// measured.
+		if c := hostileConfigRefusal(repo, true); c.refused() || noRepositoryAt(repo, c.listing) {
+			if c := hostileConfigRefusal(repo, true); !c.refused() {
+				noRepositoryAt(repo, c.listing)
 			}
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
@@ -1403,6 +1472,16 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(unreadableRepoLockCheckRefusal(p.WorktreePath, repo))
 		}
+		// With no git on PATH the answer is the same refusal. Only a baseRepo that does
+		// not exist comes this far then: externalWorkTreeRefusal refuses every other
+		// one. 89cb6289 and f6010b97 answer so on a Linux VM for a leaf that holds a
+		// file (row L13wa) and for an empty leaf (row L13we). With git the empty leaf is
+		// removed below (row L13we-g). A leaf whose `.git` file names an entry of the
+		// missing repository gets this refusal too (row DG1). With git that leaf is
+		// deleted below, as on both references (row DG1-g).
+		if gitLookupError() != nil {
+			return refuse(unreadableRepoLockCheckRefusal(p.WorktreePath, repo))
+		}
 		locked, readable := worktreeLockedByPath(commonDir, sp)
 		if !readable {
 			return refuse(lockCheckRefusal(p.WorktreePath))
@@ -1420,8 +1499,11 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 				return refuse(fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%v), "+
 					"so it is left in place; remove it by hand if it is a leftover", p.WorktreePath, repo, dotGitErr))
 			}
-			// claustrum's text from before, with the cleaned path. No run has measured
-			// the reference on this input.
+			// claustrum's text from before, with the cleaned path. One input is measured,
+			// with git on PATH (row DG1c-g on a Linux VM). It is a missing baseRepo and a
+			// `.git` file that names an entry of another missing repository. The references send
+			// this frame there with the hooks refusal and a chdir error as the detail.
+			// claustrum's detail is the error of the open, so the two texts differ.
 			return refuse(fmt.Sprintf("failed to remove worktree: could not verify that %s is a "+
 				"worktree of %s (%v); retry", filepath.Clean(p.WorktreePath), repo, dotGitErr))
 		}
@@ -1496,10 +1578,16 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		case gitDirNoRepo:
 			checkRegistration = false
 		default:
-			if detail, bad := hostileConfigRefusal(repo, true); bad {
-				return lockCheck(detail)
+			// A listing that answers "no repository" skips the registration. The branch
+			// step then runs its own listing, which fails the same way, and keeps the
+			// branch with no other call. 89cb6289 runs those two listings and nothing
+			// else (rows L14a, L14b, L14d, L14e and N01 to N04 on Linux and macOS VMs,
+			// row P7 on Windows).
+			c := hostileConfigRefusal(repo, true)
+			if c.refusal != "" {
+				return lockCheck(c.refusal)
 			}
-			checkRegistration = !noRepositoryAt(repo)
+			checkRegistration = !c.noRepo && !noRepositoryAt(repo, c.listing)
 		}
 	} else if msg, bad := daemonCountRefusal(); bad {
 		return lockCheck(msg)

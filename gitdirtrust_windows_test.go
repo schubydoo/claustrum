@@ -48,21 +48,18 @@ func TestGitDirTrustCommondirWindowsSpelling(t *testing.T) {
 // On Windows, with GIT_DIR=.git in the daemon's environment, a linked worktree's
 // `.git` file is trusted as a git directory that is not an entry. Git runs with the
 // common directory pinned to it. Git then fails on the entry the file
-// names, and the method answers the hooks refusal with git's own error. Without the
-// pin, git reads the worktree normally and answers isRepo:true. Measured against
-// f6010b97 on a Windows 11 VM (E02).
+// names: the listing exits 128 and says "fatal: not a git repository". That is the
+// "no repository" class of a failed listing, so the method answers its "no
+// repository" shape. f6010b97 answered the hooks refusal with git's error there (row
+// E02, Windows 11 VM). 89cb6289 answers the "no repository" shapes for an entry that
+// exists (row E02w-rel on a Windows VM). There the daemon started in a folder with no
+// `.git`. Row N05 on a Windows VM gives that class for a gone entry. Without the pin,
+// git reads the worktree normally and answers isRepo:true.
 func TestGitDirTrustRelativeGitDirOnLinkedWorktreeWindows(t *testing.T) {
 	r := newTrustRepo(t)
-	gitFile, err := os.ReadFile(filepath.Join(r.TW, ".git"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	entry := strings.TrimPrefix(strings.TrimSpace(string(gitFile)), "gitdir: ")
 	t.Setenv("GIT_DIR", ".git")
-	want := "config-defined hooks could not be pinned off; git not run: listing the configuration " +
-		"in force: exit status 128: fatal: not a git repository: " + entry
-	wantRPCError(t, "info(TW)", info(t, r.TW), want)
-	wantRPCError(t, "list_branches(TW)", listBranches(t, r.TW), want)
+	wantResult(t, "info(TW)", info(t, r.TW), notRepoInfo)
+	wantResult(t, "list_branches(TW)", listBranches(t, r.TW), notRepoList)
 	wantResultPrefix(t, "info(T)", info(t, r.T), `{"isRepo":true`)
 }
 
@@ -100,14 +97,16 @@ func shortPathName(t *testing.T, p string) string {
 
 // A `.git` file or a daemon GIT_DIR can name the entry through 8.3 short names. That
 // path is not an entry, because its parent is WORKTR~1 and not "worktrees". The short
-// name is not expanded, so the entry's commondir gets M1 with the short path. Measured side by
+// name is not expanded, so the entry's commondir counts as stray, and its content "../.."
+// is refused with the short path. That answer follows from the stray-commondir rule of
+// 89cb6289 and is not measured on it. Measured side by
 // side against f6010b97 on a Windows 11 VM (rows K04 and K10).
 func TestGitDirTrustShortNameEntryWindows(t *testing.T) {
 	t.Run("gitfile", func(t *testing.T) {
 		r := newTrustRepo(t)
 		short := shortPathName(t, r.entry())
 		writeFile(t, filepath.Join(r.TW, ".git"), "gitdir: "+short+"\n", 0o644)
-		want := wantM1(filepath.Join(short, "commondir"))
+		want := wantTR(filepath.Join(short, "commondir"), "../..")
 		wantRPCError(t, "info(TW)", info(t, r.TW), want)
 		wantRPCError(t, "list_branches(TW)", listBranches(t, r.TW), want)
 	})
@@ -115,7 +114,7 @@ func TestGitDirTrustShortNameEntryWindows(t *testing.T) {
 		r := newTrustRepo(t)
 		short := shortPathName(t, r.entry())
 		t.Setenv("GIT_DIR", short)
-		want := wantM1(filepath.Join(short, "commondir"))
+		want := wantTR(filepath.Join(short, "commondir"), "../..")
 		wantRPCError(t, "info(T)", info(t, r.T), want)
 		wantRPCError(t, "info(TW)", info(t, r.TW), want)
 	})

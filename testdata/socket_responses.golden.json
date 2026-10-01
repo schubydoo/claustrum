@@ -54,6 +54,7 @@
       "features": [
         "process.stdin.offset",
         "git.status.baseRepo",
+        "git.info.discovered_root",
         "git.worktree_create.timeoutMs",
         "git.worktree_create.existingBranch",
         "git.worktree_remove.unpushedGuard",

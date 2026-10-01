@@ -53,7 +53,7 @@ func readShapeCalls(t *testing.T, log string) []shapeCall {
 }
 
 func (c shapeCall) listing() bool {
-	return argvEndsWith(c.argv, []string{"config", "-z", "--list", "--name-only"})
+	return argvEndsWith(c.argv, []string{"config", "-z", "--list"})
 }
 
 func (c shapeCall) hardened() bool {
@@ -250,6 +250,14 @@ func TestHardenedGitCallShape(t *testing.T) {
 		return raw, readShapeCalls(t, ctxlog)
 	}
 	inTop := func(shapeCall) string { return f.top }
+	// On Windows git.info runs its root pair in the pinned git directory. Both calls
+	// of the pair carry --git-dir. No other call of git.info does.
+	inTopOrGitDir := func(c shapeCall) string {
+		if slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") }) {
+			return filepath.Join(f.top, ".git")
+		}
+		return f.top
+	}
 
 	t.Run("info", func(t *testing.T) {
 		raw, calls := run("git.info", map[string]any{"path": f.top})
@@ -270,7 +278,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if len(calls) < 2 || !calls[0].listing() || !calls[1].has("rev-parse", "--git-dir") {
 			t.Fatalf("calls = %q, want one listing, then rev-parse --git-dir", calls)
 		}
-		checkAlternation(t, "info", calls, inTop)
+		checkAlternation(t, "info", calls, inTopOrGitDir)
 		checkHardenedEnv(t, "info", calls)
 	})
 
@@ -348,7 +356,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 			t.Fatalf("last call = %q, want status", st.argv)
 		}
 		if !pre.listing() || !strings.HasPrefix(pre.argv[0], "--git-dir=") || pre.argv[0] != st.argv[slices.IndexFunc(st.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") })] {
-			t.Errorf("status precursor = %q, want --git-dir=<the status call's temp git dir> config -z --list --name-only", pre.argv)
+			t.Errorf("status precursor = %q, want --git-dir=<the status call's temp git dir> config -z --list", pre.argv)
 		}
 		checkAlternation(t, "status", calls[len(calls)-2:], func(shapeCall) string { return f.leaf() })
 		checkHardenedEnv(t, "status", calls[len(calls)-1:])
@@ -527,6 +535,26 @@ func TestHardenedGitCallShape(t *testing.T) {
 		unit := 1
 		if wantHardened {
 			unit = 2
+		} else {
+			// Each failed listing is followed by `git version` in the root directory
+			// (89cb6289, row L10). It is checked here and then left out of the count.
+			var kept []shapeCall
+			for i, c := range calls {
+				if !slices.Equal(c.argv, []string{"version"}) {
+					kept = append(kept, c)
+					continue
+				}
+				if i == 0 || !calls[i-1].listing() {
+					t.Errorf("call %d = git version, want it right after a failed listing", i)
+				}
+				if runtime.GOOS != "windows" && c.cwd != "/" {
+					t.Errorf("git version runs in %s, want /", c.cwd)
+				}
+			}
+			if len(calls)-len(kept) != 2 {
+				t.Errorf("calls = %q, want one git version after each of the two listings", calls)
+			}
+			calls = kept
 		}
 		if len(calls) != 2*unit {
 			t.Fatalf("calls = %q, want the check twice (%d calls)", calls, 2*unit)

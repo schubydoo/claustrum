@@ -80,7 +80,8 @@ func worktreeRootInRepoRefusal(worktreeRoot, baseRepo, verb string) string {
 		"a worktree location must be outside the repository", verb, worktreeRoot, baseRepo)
 }
 
-// listedWorktree is one entry of `git worktree list --porcelain -z`. It holds the
+// listedWorktree is one entry of `git worktree list --porcelain`, with or without -z.
+// It holds the
 // path as git lists it, and whether the entry has a "bare" line.
 type listedWorktree struct {
 	path string
@@ -98,19 +99,32 @@ func d5Kill(ctx context.Context, err error) error {
 
 // worktreeList runs a light `git worktree list --porcelain -z` in repo, with its
 // listing, and returns the entries in list order. git lists the main checkout first.
-// It returns nil when the call fails. Both worktree methods with a worktreeRoot make
-// this call. The error is d5Kill of the call. Any other failure, such as a git older
+// It returns nil when the call fails. git.worktree_create with a worktreeRoot makes
+// this call. git.worktree_remove uses worktreeListForRemove. The error is d5Kill of
+// the call. Any other failure, such as a git older
 // than 2.36 without `worktree list -z`, gives a nil error.
 func worktreeList(repo string) ([]listedWorktree, error) {
+	list, killed, err := worktreeListCall(repo, "\x00", "-z")
+	if err != nil && killed {
+		return nil, err
+	}
+	return list, nil
+}
+
+// worktreeListCall runs a light `git worktree list --porcelain` in repo, with its
+// listing and with the extra options opts. sep ends each line of the output: a NUL
+// byte with -z, a LF without it. It returns the entries, whether the D5 deadline
+// stopped the call, and its exec error.
+func worktreeListCall(repo, sep string, opts ...string) (list []listedWorktree, killed bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	b, err := hardenedGitCmd(ctx, repo, false, true, "worktree", "list", "--porcelain", "-z").Output()
+	args := append([]string{"worktree", "list", "--porcelain"}, opts...)
+	b, err := hardenedGitCmd(ctx, repo, false, nil, args...).Output()
 	if err != nil {
-		return nil, d5Kill(ctx, err)
+		return nil, d5Kill(ctx, err) != nil, err
 	}
 	out := strings.TrimRight(string(b), "\n")
-	var list []listedWorktree
-	for _, line := range strings.Split(out, "\x00") {
+	for _, line := range strings.Split(out, sep) {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			list = append(list, listedWorktree{path: strings.TrimPrefix(line, "worktree ")})
@@ -119,7 +133,48 @@ func worktreeList(repo string) ([]listedWorktree, error) {
 			list[len(list)-1].bare = true
 		}
 	}
-	return list, nil
+	return list, false, nil
+}
+
+// worktreeListRefusalPrefix starts the refusal of git.worktree_remove with
+// worktreeRoot when git cannot list the worktrees of baseRepo.
+const worktreeListRefusalPrefix = "failed to remove worktree: cannot list the repository's worktrees: "
+
+// worktreeListForRemove is the `worktree list` step of git.worktree_remove with
+// worktreeRoot. It answers the entries, or a refusal, and then nothing is deleted.
+//
+// In row DG2s-g (Linux VM), `worktree list --porcelain -z` exits 128 on 89cb6289. It
+// then runs one more listing and `worktree list --porcelain` with no -z. That call
+// exits 128 too, and the answer is worktreeListRefusalPrefix with that exec error. The
+// worktree and its entry stay. The repository of that row has a valid HEAD, and its
+// `.git/commondir` is a dangling relative symlink. claustrum takes the same steps
+// after every failure of the first call that is not a D5 stop.
+//
+// If the D5 deadline stops the first call, the answer is the work-tree refusal with
+// the exec error, as before. That is claustrum's choice (not measured). Not measured
+// either: a second call that succeeds. claustrum then reads its output line by line
+// and goes on. A path with a newline in it is not measured in that form. A git older
+// than 2.36, which has no `worktree list -z`, takes that path.
+//
+// A baseRepo that does not exist runs no call here, and the removal goes on. In rows
+// L13wa-g and L13wb-g (Linux VM) the excludes read is the only git call, on 89cb6289
+// and on claustrum. The later git calls of claustrum for that baseRepo do not start:
+// the working directory does not exist.
+func worktreeListForRemove(repo string) (listed []listedWorktree, refusal string) {
+	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
+		return nil, ""
+	}
+	listed, killed, err := worktreeListCall(repo, "\x00", "-z")
+	if err == nil {
+		return listed, ""
+	}
+	if killed {
+		return nil, workTreeUnknownPrefix + err.Error()
+	}
+	if listed, _, err = worktreeListCall(repo, "\n"); err != nil {
+		return nil, worktreeListRefusalPrefix + err.Error()
+	}
+	return listed, ""
 }
 
 // worktreeRootCheckoutRefusal is the refusal of a worktreeRoot that passes
@@ -258,12 +313,12 @@ func worktreeRootMissingRefusal(worktreeRoot string) string {
 }
 
 // repoTopLevel is the answer of a light `rev-parse --show-toplevel` in repo, or ""
-// when the call fails. precursor chooses whether the call gets its own listing (see
-// hardenedGitCmd). The error is d5Kill of the call.
-func repoTopLevel(repo string, precursor bool) (string, error) {
+// when the call fails. pre is nil when the call gets its own listing, else the
+// listing it pins (see hardenedGitCmd). The error is d5Kill of the call.
+func repoTopLevel(repo string, pre *configListing) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	b, err := hardenedGitCmd(ctx, repo, false, precursor, "rev-parse", "--show-toplevel").Output()
+	b, err := hardenedGitCmd(ctx, repo, false, pre, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		return "", d5Kill(ctx, err)
 	}
@@ -335,27 +390,55 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //  3. The trust check finds no repository. The reason is "exit status 128" (rows
 //     WR10 to WR13, K03 and K05). A `.git` file with a gone target that is not an
 //     entry goes on to reason 4 (row K16).
-//  4. The configuration cannot be listed. The reason is the hooks refusal text
-//     (rows WR15, K06 and K16).
+//  4. The configuration cannot be listed. The reason is the refusal text of
+//     hostileConfigRefusal (rows WR15, K06 and K16). When the listing says git finds
+//     no repository, the reason is "git finds no repository here: " and git's text
+//     (89cb6289, row N04 on Linux and macOS VMs).
 //  5. baseRepo is itself a git directory. The reason is "exit status 128" (rows
 //     K07 and K25). A work tree whose own repository has core.bare set still passes
 //     (row K17).
 //  6. The hardened `git rev-parse --absolute-git-dir` fails in baseRepo. The reason
 //     is the exec error, for example "exit status 128" (rows K12, K18 and K21).
 //
-// A baseRepo that does not exist skips every reason. Every row, and the order against
-// the containment and dir-symlink checks, was measured side by side against f6010b97
-// on a Linux VM.
+// A baseRepo that does not exist skips every reason, and no git call runs here. That
+// holds with git on PATH and without it (89cb6289, rows L13wa, L13wb, L13wa-g and
+// L13wb-g on a Linux VM). The removal then goes on. A baseRepo that fails os.Stat
+// with any other error keeps every reason. Only the GIT_CONFIG_COUNT check does not
+// run for it. Every other row, and the order
+// against the containment and dir-symlink checks, was measured side by side against
+// f6010b97 on a Linux VM.
 //
 // Before these reasons comes the check of the daemon's own GIT_CONFIG_COUNT, for a
-// baseRepo that exists. When it refuses, the reason is the trust refusal text if the
+// baseRepo that os.Stat reads. When it refuses, the reason is the trust refusal text if the
 // trust check refuses, and else the count refusal. See docs/PROTOCOL.md, "The
 // daemon's own git environment".
+//
+// Then, with no git on PATH, the reason is the exec error alone: `exec: "git":
+// executable file not found in $PATH`. It comes before the six reasons, so it also
+// answers a git directory that the trust check refuses. 89cb6289 and f6010b97 answer
+// so on a Linux VM in these rows:
+//   - a repository, with the worktree folder present and gone (L13xc and L13xd)
+//   - a regular file (L13u) and a repository folder of mode 0600 (L13v)
+//   - a `.git` file to nowhere (L13y) and a plain folder (L13z)
+//   - a git directory with a stray commondir that reads "x" (L13t)
+//   - a chain of 45 symlinks to a repository (LNKb and LNKr)
+//
+// Not measured with no git: the place of the GIT_CONFIG_COUNT check (claustrum keeps
+// it first when os.Stat reads baseRepo), other commondir contents, and the other
+// shapes of reason 3.
 //
 // Its second answer is the git top level of baseRepo when the removal goes on, or ""
 // when git cannot give it. worktreeRootCheckoutRefusal uses it.
 func externalWorkTreeRefusal(repo string) (string, string) {
-	if _, err := os.Stat(repo); err == nil {
+	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
+	// baseRepo behind a symlink chain that the kernel does not follow still resolves in
+	// the trust check. If the reasons are skipped for it, the removal deletes its
+	// worktree.
+	_, statErr := os.Stat(repo)
+	if errors.Is(statErr, fs.ErrNotExist) {
+		return "", ""
+	}
+	if statErr == nil {
 		if msg, bad := daemonCountRefusal(); bad {
 			if t := requestGitDirTrust(repo, false); t.verdict == gitDirRefused {
 				msg = t.refusal
@@ -363,8 +446,11 @@ func externalWorkTreeRefusal(repo string) (string, string) {
 			return workTreeUnknownPrefix + msg, ""
 		}
 	}
-	if err := unenterableBaseListing(repo); err != nil {
-		return workTreeUnknownPrefix + hooksRefusalPrefix + err.Error(), ""
+	if err := gitLookupError(); err != nil {
+		return workTreeUnknownPrefix + err.Error(), ""
+	}
+	if msg := unenterableBaseListing(repo); msg != "" {
+		return workTreeUnknownPrefix + msg, ""
 	}
 	switch t := requestGitDirTrust(repo, false); t.verdict {
 	case gitDirRefused:
@@ -376,56 +462,84 @@ func externalWorkTreeRefusal(repo string) (string, string) {
 	}
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
 	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).
-	if detail, bad := hostileConfigRefusal(repo, false); bad {
-		return workTreeUnknownPrefix + detail, ""
+	c := hostileConfigRefusal(repo, false)
+	if c.refusal != "" {
+		return workTreeUnknownPrefix + c.refusal, ""
+	}
+	if c.noRepo {
+		return workTreeUnknownPrefix + noRepositoryHerePrefix + c.noRepoText, ""
 	}
 	// The call after that light listing is `rev-parse --show-toplevel` in baseRepo,
 	// on f6010b97 (Linux VM, rows WR00, WR07, WR09 and WR14). Its answer does not
 	// decide the reasons below. worktreeRootCheckoutRefusal compares the root with
 	// it. If the D5 deadline stops the call, the reason is the exec error. That is
 	// claustrum's choice (not measured).
-	topLevel, killed := repoTopLevel(repo, false)
+	topLevel, killed := repoTopLevel(repo, &c.listing)
 	if killed != nil {
 		return workTreeUnknownPrefix + killed.Error(), ""
 	}
 	if baseIsGitDir(repo) {
 		return workTreeUnknownPrefix + "exit status 128", ""
 	}
-	if err := repositoryCheckError(repo, true); err != nil {
+	if err := repositoryCheckError(repo, nil); err != nil {
 		return workTreeUnknownPrefix + err.Error(), ""
 	}
 	return "", topLevel
 }
 
+// noRepositoryHerePrefix starts the reason of git.worktree_remove with worktreeRoot when
+// the listing says git finds no repository (externalWorkTreeRefusal).
+const noRepositoryHerePrefix = "git finds no repository here: "
+
 // unenterableBaseListing covers a baseRepo that exists but that git cannot start in:
 // a regular file, or a directory without search permission (mode 0600). It then runs
 // the configuration listing with baseRepo as the working directory and returns the
-// start error. Go names the git that PATH resolves, for example "fork/exec
-// /usr/bin/git: permission denied" or "fork/exec /usr/bin/git: not a directory". The
-// frame matches f6010b97, measured side by side on a Linux VM (rows K10, K11 and K14).
-// It returns nil for every other baseRepo and runs nothing then.
-func unenterableBaseListing(repo string) error {
+// refusal text with the start error. Go names the git that PATH resolves, for example
+// "fork/exec /usr/bin/git: permission denied" or "fork/exec /usr/bin/git: not a
+// directory". The frame matches f6010b97, measured side by side on a Linux VM (rows
+// K10, K11 and K14). It returns "" for every other baseRepo that os.Stat reads, and
+// runs nothing then.
+//
+// A third case is a baseRepo that os.Stat cannot follow and filepath.EvalSymlinks
+// resolves. For a chain of 45 relative symlinks, 89cb6289 and f6010b97 answer the
+// hooks refusal on a Linux VM. Its text ends with "chdir <baseRepo>: too many levels
+// of symbolic links". They delete nothing (rows LNKb-g and LNKr-g: a bare repository
+// and a work tree). Not measured: chain lengths other than 5 and 45, absolute link
+// targets, a chain to a plain folder and a chain to nothing. Nor are a chain with a
+// locked or marked worktree, and a path that is too long for the kernel.
+//
+// `git version` runs after the failed listing, as on 89cb6289 (rows L16a and L16b on
+// a Linux VM). When it fails too, the text starts with gitCannotRunPrefix (see
+// failedListingText). That case is not measured here. This `git version` gets the
+// light environment, as on 89cb6289 (rows L16a and L16b on a Linux VM). In the
+// symlink-chain rows LNKb-g and LNKr-g, 89cb6289 runs no `git version` (Linux VM).
+// claustrum runs it there.
+//
+// The caller answers a PATH with no git before it calls this function.
+func unenterableBaseListing(repo string) string {
 	fi, err := os.Stat(repo)
-	if err != nil {
-		return nil
-	}
-	if fi.IsDir() {
+	switch {
+	case err != nil:
+		// The kernel cannot follow baseRepo, but the daemon's own walk resolves it. A
+		// chain of more symlinks than the kernel follows is one case.
+		if _, werr := filepath.EvalSymlinks(repo); werr != nil {
+			return ""
+		}
+	case fi.IsDir():
 		if _, err := os.Lstat(filepath.Join(repo, ".git")); !errors.Is(err, fs.ErrPermission) {
-			return nil
+			return ""
 		}
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "-z", "--list", "--name-only")
-	cmd.Dir = repo
 	// This listing does not use precursorEnv. Git never starts here, so its
 	// environment never reaches git, and only the Go start error reaches the frame.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh")
+	r := runListing(ctx, repo, "", append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh"))
 	var ee *exec.ExitError
-	if _, err := cmd.Output(); err != nil && !errors.As(err, &ee) {
-		return err
+	if r.err != nil && !errors.As(r.err, &ee) {
+		return failedListingText(r, false)
 	}
-	return nil
+	return ""
 }
 
 // goneNonEntryGitFile reports whether the walk of the trust check found a `.git` file
@@ -445,7 +559,7 @@ func goneNonEntryGitFile(repo string) bool {
 	if start, err = filepath.Abs(start); err != nil {
 		return false
 	}
-	g, ok := findGitDir(start)
+	g, _, ok := findGitDir(start)
 	if !ok {
 		return false
 	}
@@ -468,7 +582,7 @@ func baseIsGitDir(repo string) bool {
 	if start, err = filepath.Abs(start); err != nil {
 		return false
 	}
-	g, ok := findGitDir(start)
+	g, _, ok := findGitDir(start)
 	return ok && g == start
 }
 

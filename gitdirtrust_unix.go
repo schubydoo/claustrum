@@ -30,3 +30,14 @@ func resolveGitDirLinks(g string) string {
 	}
 	return g
 }
+
+// gitVersionDir is the working directory of the `git version` call after a failed
+// configuration listing: the root directory, as 89cb6289 runs it on Linux and macOS
+// VMs (rows L10 and L11).
+const gitVersionDir = "/"
+
+// walkRootStart is where the walk for the git.info root starts: dir with its symlinks
+// resolved (gitWalkRoot).
+func walkRootStart(dir string) (string, error) {
+	return filepath.EvalSymlinks(dir)
+}

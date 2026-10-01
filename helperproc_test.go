@@ -187,6 +187,11 @@ func runGitLingering(args []string) int {
 // record separator follows, then every GIT_* entry of its environment as KEY=value,
 // in the order of the environment, joined by 0x1f.
 //
+// When CLAUSTRUM_GITSTUB_ENVLOG names a file, every call appends its working
+// directory, its argv and its whole environment, as one record that ends "\x1d\n".
+// With CLAUSTRUM_GITSTUB_EXPAND=1 the stderr payload expands $NAME from the stub's own
+// environment first.
+//
 // A second rule, CLAUSTRUM_GITSTUB_MATCH2, picks another call, so that a test can
 // fail the checkout with the first rule and change a call of the rollback's branch
 // step with the second. A call that it matches first applies CLAUSTRUM_GITSTUB_ACTION2
@@ -209,6 +214,10 @@ func runGitSlow(args []string) int {
 			}
 		}
 		appendLine(log, wd+"\x1e"+os.Getenv("GIT_INDEX_FILE")+"\x1e"+strings.Join(args, "\x1f")+"\x1e"+env+"\x1e"+strings.Join(all, "\x1f"))
+	}
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_ENVLOG"); log != "" {
+		wd, _ := os.Getwd()
+		appendLine(log, wd+"\x1e"+strings.Join(args, "\x1f")+"\x1e"+strings.Join(os.Environ(), "\x1f")+"\x1d")
 	}
 	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) {
 		leaf := os.Getenv("CLAUSTRUM_GITSTUB_LEAF2")
@@ -255,7 +264,11 @@ func runGitSlow(args []string) int {
 			b, _ := os.ReadFile(file)
 			return b
 		}
-		return []byte(strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace(os.Getenv("CLAUSTRUM_GITSTUB_STDERR")))
+		b := strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace(os.Getenv("CLAUSTRUM_GITSTUB_STDERR"))
+		if os.Getenv("CLAUSTRUM_GITSTUB_EXPAND") == "1" {
+			b = os.ExpandEnv(b)
+		}
+		return []byte(b)
 	}
 	if slow {
 		if mode != "postfail" {

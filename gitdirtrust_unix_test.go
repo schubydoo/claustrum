@@ -237,7 +237,8 @@ func TestGitDirTrustHeadUnixKinds(t *testing.T) {
 
 // A main HEAD made a symlink to another file makes the main git directory fail the
 // test. The linked worktree's entry is then not an entry, and its commondir counts
-// as stray (M1). T itself is then no repository, so remove from T is refused.
+// as stray: its content "../.." is refused. T itself is then no repository, so remove
+// from T is refused.
 func TestGitDirTrustMainHeadSymlinkMakesEntryStray(t *testing.T) {
 	r := newTrustRepo(t)
 	head := filepath.Join(r.T, ".git", "HEAD")
@@ -245,7 +246,7 @@ func TestGitDirTrustMainHeadSymlinkMakesEntryStray(t *testing.T) {
 		t.Fatal(err)
 	}
 	symlink(t, "HEAD.real", head)
-	m1 := wantM1(filepath.Join(r.entry(), "commondir"))
+	m1 := wantTR(filepath.Join(r.entry(), "commondir"), "../..")
 	wantRPCError(t, "info(TW)", info(t, r.TW), m1)
 	wantCreateRefused(t, r.TW, r.T, m1)
 	wantRemoveRefused(t, r.T, r.D, "d0", r.T)
@@ -277,9 +278,9 @@ func TestGitDirTrustSymlinkedPaths(t *testing.T) {
 		alias := filepath.Join(r.base, "L")
 		symlink(t, r.T, alias)
 		cd := filepath.Join(r.T, ".git", "commondir")
-		writeFile(t, cd, ".\n", 0o644)
-		wantRPCError(t, "info(L)", info(t, alias), wantM1(cd))
-		wantCreateRefused(t, alias, r.T, wantM1(cd))
+		writeFile(t, cd, "x\n", 0o644)
+		wantRPCError(t, "info(L)", info(t, alias), wantTR(cd, "x"))
+		wantCreateRefused(t, alias, r.T, wantTR(cd, "x"))
 	})
 	t.Run("alias to a subdirectory walks the resolved parents", func(t *testing.T) {
 		// L points at T/sub. Walking up from the alias itself reaches base, which holds
@@ -292,8 +293,8 @@ func TestGitDirTrustSymlinkedPaths(t *testing.T) {
 		alias := filepath.Join(r.base, "L")
 		symlink(t, filepath.Join(r.T, "sub"), alias)
 		cd := filepath.Join(r.T, ".git", "commondir")
-		writeFile(t, cd, ".\n", 0o644)
-		wantRPCError(t, "info(L/deep)", info(t, filepath.Join(alias, "deep")), wantM1(cd))
+		writeFile(t, cd, "x\n", 0o644)
+		wantRPCError(t, "info(L/deep)", info(t, filepath.Join(alias, "deep")), wantTR(cd, "x"))
 	})
 	t.Run(".git symlink to a gitdir file", func(t *testing.T) {
 		r := newTrustRepo(t)
@@ -366,7 +367,7 @@ func TestGitDirTrustOperandQuoting(t *testing.T) {
 	T := filepath.Join(base, "q\"uo\nte\t\x7f é 𝄞", "T")
 	initTrustMain(t, T)
 	cd := filepath.Join(T, ".git", "commondir")
-	writeFile(t, cd, ".\n", 0o644)
-	want := wantTrustPrefix + `"` + base + `/q\"uo\nte\t\x7f é\u00a0𝄞/T/.git/commondir"` + wantM1Tail
+	writeFile(t, cd, "x\n", 0o644)
+	want := wantTrustPrefix + `"` + base + `/q\"uo\nte\t\x7f é\u00a0𝄞/T/.git/commondir" reads "x"` + wantTRTail
 	wantRPCError(t, "info(T)", info(t, T), want)
 }
