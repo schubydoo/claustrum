@@ -125,6 +125,155 @@ func externalDirLevelCheck(dir string) (msg, code string) {
 	return "", ""
 }
 
+// rootAncestorStat reads the owner, the group and the mode of path. It does not
+// follow a final symlink. Tests replace it to report a foreign owner.
+var rootAncestorStat = func(path string) (uid, gid uint32, mode fs.FileMode, err error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("%s: no owner in the stat answer", path)
+	}
+	return st.Uid, st.Gid, fi.Mode(), nil
+}
+
+// rootAncestorFault judges one directory above a worktreeRoot. uid, gid and mode
+// are its owner, group and mode, and euid is the daemon user. It returns "" when
+// the directory passes. Otherwise it returns the part of the refusal after
+// "which is ". The rules match f6010b97 and 89cb6289 on Linux and macOS VMs:
+//
+//   - The owner test comes first. uid 0 and the daemon user pass. Any other owner
+//     refuses, and the sticky bit does not clear it (rows G9, G10, G31 and G32).
+//     The uid prints as an unsigned number (4294967294 on macOS).
+//   - The sticky bit clears both mode tests (rows G4, G5 and G27).
+//   - The group-write bit refuses unless the group is private, as in
+//     rootGroupIsPrivate (rows K1, G1, G6, G6b, G7, G8 and G33c). The other-write
+//     bit always refuses (rows G2 and G3). An owner of uid 0 gets no exemption
+//     here (rows G8, G28, G33a and G33b).
+//   - The mode prints the permission bits only, as four octal digits (rows G7,
+//     G36a and G36b).
+//
+// Rows G1, G32, G33a, G33c, G34b and G36b ran on Linux only. A macOS VM ran the
+// other round 2 rows against 89cb6289 only. Not measured: whether "you" is the
+// real or the effective uid. claustrum uses the effective uid, as the root's own
+// write test does. The private-group test on an ancestor is measured only for the
+// stock layouts.
+func rootAncestorFault(uid, gid uint32, mode fs.FileMode, euid int) string {
+	if uid != 0 && int64(uid) != int64(euid) {
+		return fmt.Sprintf("owned by uid %d, neither you nor the system; "+
+			"choose a location you reach through your own directories", uid)
+	}
+	if mode&fs.ModeSticky != 0 {
+		return ""
+	}
+	perm := mode.Perm()
+	groupShared := perm&0o020 != 0 && !rootGroupIsPrivate(int(gid), euid)
+	who := writableWho(groupShared, perm&0o002 != 0)
+	if who == "" {
+		return ""
+	}
+	return fmt.Sprintf("writable by %s without the sticky bit (mode %04o), so they could "+
+		"replace what is beneath it; choose a location under directories only you (or the "+
+		"system) control, or remove the extra write permission (chmod go-w)", who, perm)
+}
+
+// worktreeRootAncestorRefusal refuses a worktreeRoot below a directory owned by a
+// user other than you or uid 0. It also refuses one below a directory writable by
+// a shared group or by every user, without the sticky bit. It returns "" when the
+// root passes. Only git.worktree_create runs it, with a worktreeRoot (rows G21 to
+// G26). The text names worktreeRoot as sent and the failing directory with its
+// symlinks resolved.
+// The walk matches f6010b97 and 89cb6289 on Linux and macOS VMs:
+//
+//  1. It takes the directories above the cleaned root, top first. The root itself
+//     is not judged. Only the root's chain is walked, not the chain of baseRepo
+//     (row G20).
+//  2. It resolves each one with filepath.EvalSymlinks. A missing level ends the
+//     walk. Every level below it is missing too, so no existing level above the
+//     root is skipped for that reason (rows G13a and G13b). Any other failed resolve also
+//     ends the walk with "". The root-chain step then gives its own answer (rows
+//     G37b and G39).
+//  3. It judges each directory from "/" down to that resolved path, with
+//     rootAncestorFault, and skips one it judged before. So a directory above a
+//     symlink target and a lexical directory above a symlink are both judged
+//     (rows G14 to G15b, G14b, G14d and G27g).
+//  4. Last it resolves the root itself. It judges each directory from "/" down to
+//     the parent of the resolved root, and skips one it judged before. So when the
+//     root is a symlink, the chain above its target is judged (row G42, Linux
+//     and macOS VMs, 89cb6289 only). A root that does not resolve ends the walk
+//     with "".
+//  5. The first failing directory reached refuses the create. When the failing
+//     directories lie on one chain, that is the highest one (rows G11, G12, G34a,
+//     G34b and G35).
+//
+// A directory is judged before the walk looks into it. So a failing directory above
+// the root is named even when its owner has no search access to it (row G36a).
+//
+// Rows G1, G32, G33a, G33c, G34b and G36b ran on Linux only. A macOS VM ran the
+// other round 2 rows and row G42 against 89cb6289 only. Not measured, and
+// claustrum's choice:
+//   - Two failing directories on different branches of the resolution, where the
+//     first one reached is not the highest. claustrum names the first one reached.
+//   - A failing directory above a symlink loop, a dangling link or a regular file.
+//     The walk reaches the failing directory first and refuses.
+//   - A regular file above the root. Its mode is judged like a directory's.
+//   - An ancestor that cannot be searched, with more levels below it. The resolve
+//     fails and the walk returns "". No directory below it is judged.
+//   - Whether "/" is judged. claustrum judges it. It passes on every host measured.
+//   - A root of "/" itself. It is the one root that is judged, because it is its
+//     own parent.
+//   - A failed stat of a path that the walk just resolved. The walk returns "".
+//   - The target of a symlinked root is not judged itself, as the root is not.
+func worktreeRootAncestorRefusal(worktreeRoot string) string {
+	root := filepath.Clean(worktreeRoot)
+	var above []string
+	for d, prev := filepath.Dir(root), root; d != prev; d, prev = filepath.Dir(d), d {
+		above = append([]string{d}, above...)
+	}
+	euid := os.Geteuid()
+	judged := map[string]bool{}
+	// judge judges each directory from "/" down to top. It reports whether the walk
+	// ends, with the refusal or "".
+	judge := func(top string) (string, bool) {
+		var chain []string
+		for d, prev := top, ""; d != prev; d, prev = filepath.Dir(d), d {
+			chain = append([]string{d}, chain...)
+		}
+		for _, d := range chain {
+			if judged[d] {
+				continue
+			}
+			judged[d] = true
+			uid, gid, mode, err := rootAncestorStat(d)
+			if err != nil {
+				return "", true
+			}
+			if fault := rootAncestorFault(uid, gid, mode, euid); fault != "" {
+				return fmt.Sprintf("refusing to create worktree: %s passes through %s, which is %s",
+					worktreeRoot, d, fault), true
+			}
+		}
+		return "", false
+	}
+	for _, p := range above {
+		resolved, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			return ""
+		}
+		if msg, done := judge(resolved); done {
+			return msg
+		}
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return ""
+	}
+	msg, _ := judge(filepath.Dir(resolved))
+	return msg
+}
+
 // worktreeRootShareRefusal reports 7d193f89's ownership/writability refusal for an
 // external worktreeRoot, or "" if the root is safe. Checks run in the reference's
 // order (measured byte-for-byte against 7d193f89 on an ephemeral VM):
