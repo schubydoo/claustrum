@@ -11,4 +11,4 @@ package main
 // there), so this stays a no-op. m.runDir may be non-empty on windows (execChildRunDir
 // accepts a run-shaped socket on every OS), but its only windows consumers are no-ops, so
 // it has no effect.
-func (m *procManager) recordChild(pid int, argv0 string) {}
+func (m *procManager) recordChild(pid int, argv0, program string) {}

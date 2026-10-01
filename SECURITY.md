@@ -28,6 +28,15 @@ socket plus a valid token is therefore equivalent to shell access for that user.
 Everything below assumes an actor who does not already hold both. An actor who
 holds both can do whatever the daemon's user can.
 
+A caller passes a managed launcher to `process.spawn` in its `launcher` param.
+The child then runs through that program, as `89cb6289` does. Before this parity,
+claustrum ignored the param and ran the command directly, past the wrapper. The
+daemon now refuses a launcher that fails its checks, and it refuses every launcher
+on Windows. The daemon does not enforce the launcher. A spawn without the param
+runs the command directly. The param gives a caller no power that the socket and
+token did not already give. See
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md) → process.spawn and launcher.resolve.
+
 ### Auth & tokens
 
 - Auth is an in-band per-request token. The `-serve` daemon takes it from

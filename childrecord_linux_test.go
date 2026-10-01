@@ -63,7 +63,7 @@ func TestRecordChild(t *testing.T) {
 	m.runDir = runDir
 	m.instanceID = "inst-32hex-abc"
 
-	m.recordChild(os.Getpid(), "/bin/sleep")
+	m.recordChild(os.Getpid(), "/bin/sleep", "")
 	data, err := os.ReadFile(filepath.Join(runDir, "children", strconv.Itoa(os.Getpid())+".json"))
 	if err != nil {
 		t.Fatalf("record not written: %v", err)
@@ -101,17 +101,17 @@ func TestRecordChild(t *testing.T) {
 	}
 
 	// Gate: no run dir -> no write (and no panic).
-	newTestProcManager(t).recordChild(os.Getpid(), "/bin/sleep")
+	newTestProcManager(t).recordChild(os.Getpid(), "/bin/sleep", "")
 
 	// Gate: pid < 2 -> skip.
-	m.recordChild(1, "/sbin/init")
+	m.recordChild(1, "/sbin/init", "")
 	if _, err := os.Stat(filepath.Join(runDir, "children", "1.json")); !os.IsNotExist(err) {
 		t.Errorf("pid 1 was recorded; the pid<2 gate must skip it")
 	}
 
 	// Gate: unreadable start-time (a dead/bogus pid) -> skip.
 	bogus := 1 << 30
-	m.recordChild(bogus, "/x")
+	m.recordChild(bogus, "/x", "")
 	if _, err := os.Stat(filepath.Join(runDir, "children", strconv.Itoa(bogus)+".json")); !os.IsNotExist(err) {
 		t.Errorf("a pid with no readable start-time was recorded; the start==0 gate must skip it")
 	}
@@ -126,7 +126,7 @@ func TestRecordChild(t *testing.T) {
 	mBad := newTestProcManager(t)
 	mBad.runDir = badDir
 	mBad.instanceID = "x"
-	mBad.recordChild(os.Getpid(), "/bin/sleep")
+	mBad.recordChild(os.Getpid(), "/bin/sleep", "")
 	if _, err := os.Stat(filepath.Join(badDir, "children", strconv.Itoa(os.Getpid())+".json")); err == nil {
 		t.Error("a record was written despite the write failing")
 	}

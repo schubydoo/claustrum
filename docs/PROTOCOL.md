@@ -402,6 +402,8 @@ contract.
 | `-32603` | internal error, for example `open <path>: no such file or directory`. A recovered handler panic also gives this code, with `recovered panic: <v>` |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes`, from `process.stdin` with an `offset` past the applied high-water (added in `7c2f88d`) |
 | `-32002` | `stdin backpressure: queue full`, from `process.stdin` when the per-process async stdin queue is already full (16 MiB). The write is rejected, not blocked. |
+| `-32004` | `the managed launcher cannot be used: <reason>`, from `process.spawn` when the checks refuse its `launcher` param, and for any `launcher` on Windows (added in `89cb6289`) |
+| `-32005` | `the managed launcher <path> could not be started: <reason>`, from `process.spawn` when the launcher passes the checks but does not start (added in `89cb6289`) |
 | `-32001` | `Unauthorized: invalid or missing auth token` |
 
 ### Error-string catalogue
@@ -486,6 +488,10 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `failed to remove worktree: openat .claude\worktrees: path escapes from parent` | D19, Windows, in `error`, with no `errorCode`, when `.claude` or `.claude\worktrees` is a junction. claustrum's own text. Nothing is deleted, and the branch stays |
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error`. It sits behind `7d193f89` containment on the default branch, where it fires only if a repo is an ancestor of home. It is the active home guard on the `external_root` branch |
 | process.spawn | `Process ID is required` / `Command is required` | |
+| process.spawn | `command must be an absolute path when a launcher is given` | with a `launcher` param |
+| process.spawn | `the managed launcher cannot be used: <reason>` | -32004. The reasons are the `launcher.resolve` texts, and `a launcher cannot be applied on a Windows host` |
+| process.spawn | `the managed launcher <path> could not be started: <reason>` | -32005 |
+| launcher.resolve | `cliPath is required` | `{}`, `null` params, a `null` or empty `cliPath`, or a wrong key |
 | process.stdin | `Invalid base64 data` / `Process not found` / `Process not running` | order: decode → not-found → offset verdict (`-32003`/duplicate) → not-running (fresh write only) |
 | process.stdin | `stdin offset gap: offset ahead of applied bytes` | -32003 |
 | process.stdin | `stdin backpressure: queue full` | -32002 (queue full, ~16 MiB) |
@@ -628,7 +634,7 @@ from a path the daemon cannot examine:
   regular file), `file name too long`, and `invalid argument` (a NUL byte in the
   path).
 
-## Methods (19)
+## Methods (20)
 
 `server.capabilities` self-describes the set. Order as returned:
 
@@ -636,6 +642,7 @@ from a path the daemon cannot examine:
 server.ping  server.capabilities  server.shutdown
 files.list   files.validate  files.stat  files.read  files.extract_tar
 git.info     git.status      git.list_branches  git.worktree_create  git.worktree_remove
+launcher.resolve
 process.spawn  process.stdin  process.kill  process.killAndWait  process.reattach
 plugins.prune
 ```
@@ -646,14 +653,16 @@ brought the set to 18. Calling `server.version` now answers
 `-32601 "Unknown method: server.version"`. The `-version` CLI flag is a separate
 surface and still prints the daemon's version. `19f30c46` appended
 `plugins.prune` last and brought the set back to 19. `plugins.prune` is the only
-member of the `plugins.*` namespace.
+member of the `plugins.*` namespace. `89cb6289` added `launcher.resolve` between
+`git.worktree_remove` and `process.spawn`, for 20 methods. The Linux, macOS and
+Windows VMs saw it at that place.
 
 ### server.*
 
 | method | params | result |
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
-| `server.capabilities` | none | `{"version":"<id>","methods":[…19…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the 19th method, appended last on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `instanceId` and `startedAt` are present on every OS |
+| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `instanceId` and `startedAt` are present on every OS |
 | `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler waits until the teardown starts to close connections, and then returns the reply. The frame arrives only when its write wins the race with the close. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
@@ -681,7 +690,12 @@ member of the `plugins.*` namespace.
   because `git.worktree_remove` keeps a branch that no other ref reaches. The Linux,
   macOS and Windows VMs saw it at that place. `git.worktree_create.timeoutMs`,
   `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard` and
-  `process.spawn.shellAgentSocket` are present on every OS.
+  `process.spawn.shellAgentSocket` are present on every OS. `89cb6289` also
+  inserted `launcher.managed` after `process.spawn.shellAgentSocket`, for
+  `launcher.resolve` and the `process.spawn` `launcher` param. Windows lists it
+  too, although a Windows spawn refuses every managed launcher. The VMs of all
+  three OSes saw it at that place. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not
+  change the capabilities frame (measured on macOS).
 - `server.shutdown` is not authenticated. See [Authentication](#authentication).
 - On the reference, `server.shutdown` usually closes the connection with no
   reply. Its `{"ok":true}` frame arrived in 24 of 800 single-connection runs
@@ -2256,13 +2270,182 @@ The create rollback adds a text part after `; and the undo could not finish for
   5 s stop of the rollback's update-ref. `f6010b97` gives the same bytes (L, and M
   for B2-09e).
 
+### launcher.* (added `89cb6289`)
+
+A host administrator names a managed launcher in the managed settings. The
+managed launcher is a program that runs the Claude Code CLI on this host. The
+daemon puts its argv in front of the CLI command. Three surfaces use it:
+`launcher.resolve` below, the `launcher` param of
+[process.spawn](#processspawn), and the launcher runs of `-install` and
+`-probe-cli`. Every rule below is measured against `89cb6289` on a Linux VM
+unless it says otherwise. A rule that names macOS or Windows was measured there too.
+
+#### launcher.resolve
+`{cliPath}` → one of four shapes. Each shape keeps this field order:
+
+```jsonc
+{"status":"none"}
+{"status":"usable","argv":["<launcher>","<arg>",…],"source":"<file>"}
+{"status":"unusable","source":"<file>","reason":"<text>"}
+{"status":"unreadable","reason":"<text>","path":"<file or folder>"}
+```
+
+- No `params` member, a non-object `params` or a non-string `cliPath` →
+  `-32602 Invalid params`. `{}`, `"params":null`, a `null` or empty `cliPath`, or a
+  wrong key (wrong key: Windows only) → `-32602 cliPath is required`. Any other string is a `cliPath`, a
+  relative one too. Another `launcher.<x>` method → `-32601 Unknown method:
+  launcher.<x>`. The params checks are the same on Windows.
+- The method reads the settings files on every call. It caches nothing, so an
+  edit shows on the next call. It never runs the launcher. The
+  `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change a frame (measured on macOS).
+- claustrum does not `~`-expand `cliPath`. That is claustrum's choice (not
+  measured).
+
+The settings folder and its files:
+
+- The folder is `/etc/claude-code` on Linux and `/Library/Application Support/ClaudeCode`
+  on macOS. The base file is `managed-settings.json` in it. The drop-in folder is
+  `managed-settings.d` in it.
+- `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` moves the folder only when the system
+  folder has neither the base file nor a drop-in. With the system folder absent,
+  `89cb6289` reads the variable's folder and logs nothing (row RX, measured on
+  Linux and macOS). A base file in the system folder makes it ignore the variable
+  and read the system folder (row RXs, Linux and macOS). A drop-in there does too
+  (row RXd, Linux). A hidden `.json` entry alone in `managed-settings.d` counts as
+  well (row RXd2, Linux). The resolve then answers from the system folder and
+  skips that entry, so it answers `{"status":"none"}`. It then logs
+  `[launcher] CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR ignored: <system folder> holds this host's policy`
+  once per daemon (row RXs: two resolves, the line only on the first).
+  `<system folder>` is the folder of the OS. An existing but empty system folder
+  does not count (row RXe, Linux). An empty value counts as unset, and the system
+  folder is read (row RY, measured on Linux and macOS). claustrum's choices (not
+  measured) follow. A base file counts when its path exists, a dangling symlink
+  too. A base file counts whatever it holds, `{}` or an unreadable file too. A
+  `managed-settings.d` counts when it holds an entry whose name ends in `.json`
+  and that is a file or a symlink, a dangling symlink too. A non-`.json` entry and
+  a folder entry do not count, as for the drop-in rule. More than two resolves
+  still log one line. `-install` and `-probe-cli` honor the variable the same way
+  and log nothing.
+- On Windows `89cb6289` answered `{"status":"none"}` for every fixture tried. The
+  fixtures were a file in `C:\Program Files\ClaudeCode` (both keys, also with the
+  gate), the E2E folder and `C:\ProgramData\ClaudeCode`. The launcher never ran.
+  claustrum answers none on Windows and reads no file.
+- A missing or empty folder answers none, with no log line. So does a base file
+  of `{}`, of zero bytes or of white space only.
+- The base file is read first, then the drop-ins in name order. A later file
+  with a value wins, and `source` names that file. A missing base file is fine.
+- A drop-in name ends in `.json` in lower case and does not start with a dot. So
+  `.hidden.json`, `x.JSON` and `a.js` are skipped. A folder entry and a FIFO
+  entry are skipped. The FIFO is not opened.
+- A symlink entry is followed. `source` then keeps the link path. A dangling
+  symlink is skipped. A symlink to a folder makes the answer unreadable, with
+  `is a directory`.
+- A regular file named `managed-settings.d` is ignored.
+- A value of the wrong type in a later file is skipped, and the earlier value
+  stays. Rows: `{"processWrapper":5}`, `{"env":"x"}` and
+  `{"env":{"CLAUDE_CODE_PROCESS_WRAPPER":true}}`.
+- One unreadable file makes the whole answer unreadable, and `path` names it. A
+  valid base file does not help.
+- claustrum's choices (not measured) follow. The drop-ins sort in byte order. The
+  first unreadable file in read order is the one reported. Each file gives one
+  value, so a later file's `processWrapper` wins over an earlier file's env key.
+
+| unreadable file | `reason` |
+|---|---|
+| mode 000, daemon not root (Linux and macOS) | `permission denied` |
+| a folder | `is a directory` |
+| a FIFO (answered at once, not opened) | `not a regular file` |
+| more than 2097152 bytes (2097152 is read) | `larger than 2 MiB` |
+| `{` | `not valid JSON` |
+| `[]` or `null` | `not a JSON object` |
+| a UTF-16BE BOM, or a raw U+00A0 before the JSON | `not valid JSON` |
+| a drop-in folder whose listing fails | `the drop-in directory could not be listed: permission denied`, with the folder as `path` |
+
+claustrum gives a regular-file drop-in, and the target of a drop-in symlink, the
+same reasons (not measured, except `is a directory` and `not valid JSON`).
+
+A UTF-8 BOM is dropped. A UTF-16LE BOM with UTF-16LE text is read. Both answer
+usable. claustrum drops a trailing odd byte of UTF-16LE text. That is
+claustrum's choice (not measured).
+
+The value:
+
+- Two keys carry it: `env.CLAUDE_CODE_PROCESS_WRAPPER` and `processWrapper`, each a
+  string. Both keys gave the same frames on every R10 and R11 row. In one file the env key
+  wins, in both key orders.
+- An env value of `""` counts as unset, so `processWrapper` answers. An env value
+  of three spaces counts as set with no launcher. claustrum also counts a
+  `processWrapper` of `""` as unset. That is claustrum's choice (not measured).
+- A value that starts with `[`, after leading white space, is a JSON array of
+  strings. JSON escapes decode, and the metacharacter check does not apply.
+- Any other value is an argv list, not a shell command. A space, U+00A0 and U+FEFF
+  split words. U+0085 does not. Double quotes group, so a quoted metacharacter is
+  fine. Inside double quotes `\"` gives `"` and `\\` gives `\`. Any other
+  backslash stays, so `"e\nf"` keeps its two characters. Outside quotes a
+  backslash is a plain character, and a `"` after it opens a quote. Single
+  quotes are plain characters.
+- An invalid byte in the file comes out as U+FFFD.
+- claustrum's choice (not measured): the other white space of Go's
+  `unicode.IsSpace`, except U+0085, splits words too. The scan stops at the first
+  unquoted metacharacter.
+
+The reason texts. The frame escapes `&`, `<`, `>` and `"` as JSON does. The log
+line writes them raw. `—` is the raw bytes `e2 80 94` in both.
+
+| case | `reason` |
+|---|---|
+| no launcher: three spaces, `""`, `[]` or `[""]` | `the value is set but contains no launcher — unset it to run without one, or set it to the absolute path of your launcher` |
+| a later empty JSON element, `["<w>",""]` | `the JSON array contains an empty element — remove it, or fill in the value it was a placeholder for` |
+| a JSON element that is not a string | `JSON form must be an array of strings` |
+| starts with `[` and is not valid JSON | ``value starts with `[` but is not valid JSON`` |
+| an unquoted `;` `\|` `&` `$` `(` `)` backtick `<` `>` | ``the value contains an unquoted shell metacharacter (one of ; \| & $ ( ) ` < >) — it is an argv list, not a shell command`` |
+| an open double quote | `unterminated double quote` |
+| a later empty `""` word | ``the value contains an empty `""` token — remove it, or fill in the value it was a placeholder for`` |
+| argv[0] is not absolute | `the launcher must be an absolute path, not a bare name resolved via PATH` |
+| argv[0] equals `cliPath` | ``launcher `<argv0>` is Claude Code's own path`` |
+| argv[0] ends in `.js`, `.mjs`, `.ts`, `.tsx` or `.jsx` (case-sensitive) | ``launcher `<argv0>` is a script the SDK would run in place of Claude Code`` |
+| argv[0] is missing, a folder or not executable | ``launcher `<argv0>` does not exist or is not an executable regular file`` |
+
+The launcher checks:
+
+- They check argv[0] only. The launcher args are not checked against files.
+- The own-path check is a string compare. It comes before the absolute check and
+  before the existence check. So `c` with `cliPath` `c` is the own-path text,
+  and a missing `/opt/claude/cli` with that `cliPath` is too.
+- A symlink to an executable file is usable, and `argv` keeps the link path.
+  argv[0] is quoted as parsed, not cleaned or resolved.
+- A long argv[0] is cut in the text. One row is measured: a 300-byte path with a
+  3-byte character at bytes 254 to 256 kept 254 bytes, then `…` (`e2 80 a6`),
+  inside the backticks. The log line shows the same cut, and `argv` keeps the whole
+  path. claustrum's choice (not measured): the limit is 256 bytes, cut back to the
+  start of a character, for the own-path, script and existence texts alike.
+- claustrum's choice (not measured): the script check comes before the existence
+  check, so a missing `x.js` gets the script text.
+
+Output bytes follow Go's default JSON encoder. In a `usable` frame `<`, `&`, `>`
+and U+2028 come out as JSON escapes. U+0085, U+FFFD and `—` stay raw.
+
+Log lines. An unusable or unreadable answer writes one line. A usable or none
+answer writes none:
+
+```text
+[LauncherHandler] managed launcher from <source> refused: <reason>
+[LauncherHandler] managed settings unreadable: <path>: <reason>
+```
+
+A repeat of the same answer writes no line. A usable answer between two equal
+refusals makes the second one log again. A `process.spawn` refusal writes no
+`[LauncherHandler]` line. claustrum's choices (not measured) follow. The repeat
+test compares the whole line. A none answer resets it like a usable one. The
+lines log at WARN.
+
 ### process.* (the agent/MCP-hosting core)
 
 The client supplies its own `id`, which is any string. The daemon delivers output
 as id-less stream notifications, and it buffers them for a later replay.
 
 #### process.spawn
-`{id,command[,args][,cwd][,env][,disableShellAgentSocket][,wantPid]}` → `{"success":true}`, then stream frames
+`{id,command[,args][,cwd][,env][,disableShellAgentSocket][,launcher][,wantPid]}` → `{"success":true}`, then stream frames
 - `args`: string[]. `env`: `{KEY:VAL}`, merged over the daemon environment.
 - Missing `id` → `-32602 Process ID is required`. Missing `command` →
   `-32602 Command is required`.
@@ -2307,6 +2490,53 @@ as id-less stream notifications, and it buffers them for a later replay.
   - On Windows the capability and the param exist, but spawn runs no login shell
     and adds no `SSH_AUTH_SOCK`. Measured with a Git bash `$SHELL` whose profile
     exports a live socket: neither daemon starts it.
+- The `launcher` param is `89cb6289` parity: a string array that names a
+  managed launcher. The child runs as `<launcher...> <command> <args...>`. The
+  launcher is the process, and its stream frames are its own.
+  - `launcher` absent or `null` means no launcher, and the command runs directly. A
+    non-array `launcher` or a non-string element → `-32602 Invalid params`, with no
+    log line. A `null` element becomes an empty arg.
+  - The checks run in this order. First, on Windows any non-null `launcher`, `[]`
+    too, → `-32004 the managed launcher cannot be used: a launcher cannot be
+    applied on a Windows host`. The command does not run.
+  - Second, a relative `command` with any non-null `launcher` →
+    `-32602 command must be an absolute path when a launcher is given`.
+  - Third, the launcher checks of [launcher.resolve](#launcherresolve) run, with
+    the command in place of `cliPath`. A refusal →
+    `-32004 the managed launcher cannot be used: <reason>`. `[]` gives the
+    no-launcher text.
+  - Fourth, the cwd check gives its usual frame (its place before the command
+    check is inferred from log order). Fifth, a command that is missing, a folder
+    or not executable gives the same `-32603 fork/exec <command>: <reason>` frame
+    as a spawn without a launcher. The launcher does not run. Measured for a
+    missing file, a folder and a 0644 file, on Linux and macOS.
+  - Sixth, a launcher that passes the checks but does not start →
+    `-32005 the managed launcher <path> could not be started: <reason>`. A missing
+    `#!` interpreter, or a script with Windows CRLF line endings, gives
+    `its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)`.
+    A 0755 text file with no `#!` gives `exec format error`. macOS gives the same
+    interpreter text (S6a only). claustrum gives the same frames through its
+    exec-child trampoline (tested, not VM-measured).
+  - claustrum's choices (not measured) follow. The Windows refusal comes before
+    the relative-command check. The bad-command check comes before the launcher
+    starts. Any other start failure gives its errno text.
+  - The log lines are `[process.Manager] Failed to start process <id>: <message>`
+    for each refusal, and
+    `[process.Manager] Process <id> started, PID=<n>, command=<command> via launcher <argv0>`
+    for a start. The started line names argv[0] only. A refusal writes no
+    `[LauncherHandler]` line.
+  - A spawn does not read the managed settings. Rows SP-a and SP-b measured this
+    on Linux: with a usable launcher in the settings, a spawn without the param
+    runs the command directly, and a spawn with the param runs the launcher it
+    names. The caller resolves the launcher with `launcher.resolve` and passes it
+    here. The
+    `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not change a spawn.
+- Every spawned child loses `CLAUDE_SSH_MANAGED_LAUNCHER` and
+  `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` (`89cb6289` parity, measured on Linux and
+  macOS). A child with a launcher also loses `CLAUDE_CODE_PROCESS_WRAPPER`. A
+  child without one keeps it. The strip covers the
+  daemon env and the spawn `env` param. claustrum strips on Windows too. That is
+  claustrum's choice (not measured).
 - `wantPid` is a claustrum-only opt-in, CT-1. With `"wantPid":true` the reply gains
   two fields after `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
   `pid` is the child's OS pid. `startTime` is the daemon's wall clock in epoch
@@ -2352,7 +2582,11 @@ as id-less stream notifications, and it buffers them for a later replay.
   is an ordered JSON object:
   `{"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<ticks>","argv0":"<child argv0>","start":"<ticks>","at":<epoch-ms>}`.
   The field ORDER and the string-vs-number typing are the on-disk contract,
-  measured byte-for-byte against `19f30c46`. `daemonStart` and `start` are STRINGS,
+  measured byte-for-byte against `19f30c46`. With a `launcher`, `argv0` is the
+  launcher, and a `program` field holds the command, after `argv0` and before
+  `start`. That is `89cb6289` parity, measured on Linux. claustrum omits `program`
+  without a launcher, so that record keeps its `19f30c46` bytes. That is
+  claustrum's choice (not measured). `daemonStart` and `start` are STRINGS,
   holding clock ticks on linux and a `ps` timestamp on darwin. `pid`, `daemonPid`
   and `at` are numbers. This record is off-wire, because it adds no JSON-RPC
   frame. On linux and darwin the daemon reaps these records at `-serve` startup.
@@ -2935,6 +3169,68 @@ The `cliError` catalogue follows:
 | `cli version "…" collides with the install download blob` | version starting `.blob-` (D18) |
 | `clearing stale dir at <path>: <err>` | an occupied `cliPath` directory that claustrum cannot remove |
 | `staging file vanished before install: <err>` | a concurrent sweep took the staging file |
+| `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s, with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
+
+The managed launcher (`89cb6289` parity):
+- `-install` uses the [managed launcher](#launcher-added-89cb6289) only when
+  `CLAUDE_SSH_MANAGED_LAUNCHER` is exactly `1`. The values `true` and `1 ` (a
+  trailing space) and an unset variable add no field and run no launcher, even with
+  a usable launcher. claustrum treats every value other than `1` as off. That is
+  claustrum's choice (not measured for other values).
+- With the gate, `-install` resolves the launcher for the CLI path, as
+  `launcher.resolve` does. The facts line then gains launcher fields after
+  `cliWasPresent` and `cliError`, in this order: `cliUnresponsive`,
+  `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
+  `launcherReason`, `launcherStderr`. A field that does not apply is omitted.
+  claustrum keeps `fetch` last, after them. That is claustrum's choice (not
+  measured).
+- `none`: the CLI runs directly, as without the gate. That run keeps the gate in
+  its env. The facts end `"cliWasPresent":true,"launcherStatus":"none"}`.
+- `usable`: the CLI runs once, as `<launcher argv...> <cli> --version`. No direct
+  run happens. The launcher's stdout is not reported, and its stderr does not
+  reach `-install` stderr. The facts add `launcher` and `launcherSource`.
+- `unusable` or `unreadable`: the CLI does not run at all. `cliWasPresent` stays
+  true, and there is no `cliError`. The facts add `launcherSource` or
+  `launcherPath`, and `launcherReason`.
+- A launcher run that exits non-zero, or ends on a signal, is `probe_failed`.
+  `launcherReason` is `exit status <n>` or `terminated by SIGTERM`. The CLI file
+  stays, `cliWasPresent` stays true, and there is no `cliError`.
+  `launcherStderr` holds the launcher's stderr and is omitted when it is empty.
+- `launcherStderr` keeps 8192 bytes. More stderr adds `\n[… <n> more
+  bytes]`, with the JSON escape `\n` on the line and `…` as raw `e2 80 a6`.
+  `<n>` is the count of dropped bytes. Measured with 10000 bytes: 8192 kept and
+  1808 named. claustrum's choices (not measured): it keeps the first bytes, and it
+  adds the `\n` even when the kept part ends in a newline.
+- A launcher run that has not ended at 33 s is stopped. The facts then read
+  `"cliWasPresent":false`, the `cli unresponsive: …` `cliError` above,
+  `"cliUnresponsive":true`, `"launcherStatus":"unresponsive"` and
+  `"launcherReason":"did not exit within 33s and was stopped"`. The CLI file
+  stays. The reference stopped a 60 s launcher at 33.057 s and left no process.
+  This bound is parity, and it applies to every launcher run. It is not the
+  opt-in `-cli-probe-timeout` (D11), which bounds only a direct run.
+- claustrum's choices (not measured): the stop kills the run's whole process
+  group, then waits up to 2 s for its output. No install follows a stopped run
+  on a cache hit, so nothing is swept or pruned. The texts name the launcher's
+  argv[0] only. `cliUnresponsive` appears only for a stopped launcher run.
+- A fresh install extracts, then runs the CLI once through a usable launcher.
+  The facts read `"cliWasPresent":false` with the usable fields. The reference
+  runs the extracted CLI at its final path. claustrum passes its staged
+  `.fetch-<random>` file, as its direct run does. That is an older gap, not
+  launcher behaviour.
+- claustrum's choices (not measured) for a run right after a fresh extract
+  follow. It has the same 33 s bound. A failed run still installs the CLI. A
+  stopped run installs nothing. An unusable or unreadable launcher installs the
+  CLI without a run. The `123s for a first run` in the captured text is not
+  measured.
+- The launcher run gets the daemon env without `CLAUDE_SSH_MANAGED_LAUNCHER`
+  (measured on Linux and macOS). claustrum also drops `CLAUDE_CODE_PROCESS_WRAPPER`
+  and `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` there, as for a spawn with a launcher.
+  That is claustrum's choice (not measured).
+- `-install` still exits `0` with an empty stderr, and it writes no
+  `[LauncherHandler]` line.
+- On Windows the resolve answers none. With the gate `-install` appends
+  `"launcherStatus":"none"` last and runs the CLI directly (measured on a Windows
+  VM).
 
 Download progress and `fetch` stats came with `4534d86`, on the `-cli-url` path:
 - While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to stdout
@@ -3102,8 +3398,41 @@ Staging and cleanup:
 - If the binary is missing or does not run, stdout is `__CLI_BAD__\n`. Not running
   means it either fails to start or exits non-zero.
 
-The bound is a fixed 30 s, always applied. It is not the opt-in
-`-cli-probe-timeout` (D11), which bounds only the `-install` runnability probe and is
+With `CLAUDE_SSH_MANAGED_LAUNCHER=1` the probe uses the
+[managed launcher](#launcher-added-89cb6289) (`89cb6289` parity). Every
+`-probe-cli` row exits `0`, and each stderr text below ends in one newline:
+
+- A usable launcher runs `<launcher argv...> <path> --version`. If the run exits
+  0, stdout and stderr stay empty.
+- An unusable launcher prints `__CLI_LAUNCHER__\n`, and the CLI does not run.
+  stderr is `claude-ssh: <path> was not run: managed launcher unusable: <reason>`.
+- Unreadable settings print `__CLI_LAUNCHER__\n`, and the CLI does not run. stderr
+  is `claude-ssh: <path> was not run: managed settings unreadable: <file>: <reason>`.
+- A failed launcher run prints `__CLI_LAUNCHER__\n`, not `__CLI_BAD__`. stderr
+  holds four lines. The launcher output `L5: to stderr\n` is followed by one more
+  newline:
+
+```text
+claude-ssh: the managed launcher's run printed:
+L5: to stderr
+
+claude-ssh: <path> --version through the managed launcher <argv0> did not succeed: exit status 3
+```
+
+- A launcher run that has not ended at 33 s is stopped. stdout is
+  `__CLI_HUNG__\n`, and stderr is `claude-ssh: ` and the `cli unresponsive: …`
+  text of `-install`. The reference stopped a 150 s launcher at 33.069 s.
+- Without the gate the probe runs directly, as before. On Windows the gate shows
+  no difference (measured on a Windows VM).
+- claustrum's choices (not measured) follow. A none answer runs the probe
+  directly. An empty launcher stderr leaves out the `printed:` block. The stderr
+  cap of `-install` applies. A signal reads `terminated by SIG<name>`.
+
+The `-help` text of `-probe-cli` names this mode. It is the one `-help` line that
+differs from `f6010b97` (measured on Linux, macOS and Windows).
+
+The direct bound is a fixed 30 s, always applied. It is not the opt-in
+`-cli-probe-timeout` (D11), which bounds only the direct `-install` runnability probe and is
 off by default. The mode unsets `CLAUDE_RPC_TOKEN` so the
 probed child never inherits it. The probe runs in its own process group. On Unix the
 fixed deadline group-kills the whole subtree, so a `--version` that forks a descendant

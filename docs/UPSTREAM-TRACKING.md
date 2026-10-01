@@ -295,7 +295,8 @@ traps that matter for telling drift from expected:
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
   pins. claustrum follows `89cb6289`, while `scripts/UPSTREAM_SHA` still names
   `f6010b97`. Against `f6010b97`, `server.capabilities` differs by the
-  `git.worktree_remove.unpushedGuard` feature. On remove, every kept case of the
+  `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
+  `launcher.resolve` method. On remove, every kept case of the
   branch step differs. claustrum keeps the branch and adds `"branchKept":true`, where
   `f6010b97` adds no member. In most of these cases `f6010b97` also deletes
   the branch. The kept classes, with their rows:
@@ -316,6 +317,10 @@ traps that matter for telling drift from expected:
   branch and adds no branch text. Those differences are not drift. Rows C07a, C07b,
   B2-09e, X1 and X2 equal `f6010b97`. See [PROTOCOL.md](PROTOCOL.md) → The branch
   step.
+- The managed launcher splits the pins the same way, not drift. claustrum follows
+  `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
+  env strip, and the gated launcher runs of `-install` and `-probe-cli`.
+  `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
 - D12 needs a VALID zstd body. D13's ordering answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
   read only: `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and

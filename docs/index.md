@@ -29,11 +29,14 @@ The daemon is one binary. A flag selects the mode:
 - `-probe-cli` runs the bounded `<cli> --version` probe on one CLI binary, and it
   exits 0. If the CLI runs, it prints nothing. If the 30 s deadline killed the
   CLI, it prints `__CLI_HUNG__`. If the CLI is missing or does not run, it prints
-  `__CLI_BAD__`.
+  `__CLI_BAD__`. With `CLAUDE_SSH_MANAGED_LAUNCHER=1` it runs the CLI through the
+  host's managed launcher, and that run stops at 33 s with `__CLI_HUNG__`. It
+  prints `__CLI_LAUNCHER__` for an unusable launcher, unreadable settings or a
+  failed launcher run. With no launcher, and on Windows, it runs directly.
 - `-stop` sends `server.shutdown`. `-version` reports the build.
 
-The daemon supplies 19 methods across the `server.*`, `files.*`, `git.*`,
-`process.*`, and `plugins.*` namespaces. Auth is in-band per request. Spawned processes
+The daemon supplies 20 methods across the `server.*`, `files.*`, `git.*`,
+`launcher.*`, `process.*`, and `plugins.*` namespaces. Auth is in-band per request. Spawned processes
 stream base64 stdout and stderr frames. A client that connects late, or that
 connects again, can replay those frames with `reattach`.
 

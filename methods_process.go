@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"time"
 )
 
@@ -43,6 +44,12 @@ type spawnParams struct {
 	// this spawn (see shellagent.go). A non-bool value fails the decode, so it
 	// answers -32602 like any other mistyped param; null is accepted as false.
 	DisableShellAgentSocket bool `json:"disableShellAgentSocket"`
+	// Launcher is the managed launcher param (89cb6289): the child runs as
+	// <launcher...> <command> <args...>. A pointer, so absent or null (no launcher)
+	// differs from [] (a launcher with no argv, refused). A non-array or a
+	// non-string element fails the decode (-32602 Invalid params). A null element
+	// decodes to an empty arg (all measured).
+	Launcher *[]string `json:"launcher"`
 }
 
 func (s *server) processSpawn(c *conn, req *request) response {
@@ -56,8 +63,12 @@ func (s *server) processSpawn(c *conn, req *request) response {
 	if p.Command == "" {
 		return errResult(req.ID, codeInvalidParam, "Command is required")
 	}
-	mp, err := s.procs.spawn(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket)
+	mp, err := s.procs.spawnVia(c, p.ID, p.Command, p.Args, p.Cwd, p.Env, p.DisableShellAgentSocket, p.Launcher)
 	if err != nil {
+		var sr *spawnRefusal
+		if errors.As(err, &sr) {
+			return errResult(req.ID, sr.code, sr.msg)
+		}
 		return errResult(req.ID, codeInternal, err.Error())
 	}
 	res := spawnResult{Success: true}

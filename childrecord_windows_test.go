@@ -20,7 +20,7 @@ func TestRecordChildWindowsNoop(t *testing.T) {
 	m.runDir = runDir
 	m.instanceID = "inst-32hex-abc"
 
-	m.recordChild(os.Getpid(), `C:\Windows\System32\cmd.exe`)
+	m.recordChild(os.Getpid(), `C:\Windows\System32\cmd.exe`, "")
 
 	if _, err := os.Stat(filepath.Join(runDir, "children", strconv.Itoa(os.Getpid())+".json")); !os.IsNotExist(err) {
 		t.Errorf("recordChild wrote a record on windows; it must be a no-op (never the run-dir lock holder)")

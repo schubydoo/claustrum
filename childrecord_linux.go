@@ -23,7 +23,7 @@ var machineIDPaths = []string{"/etc/machine-id", "/var/lib/dbus/machine-id"}
 // The record's identity (node, host, instance, the daemon's pid and start-time) is
 // what a later daemon uses to decide whether a leftover child of a since-exited
 // daemon is an orphan to reap. Reaping itself is a separate slice.
-func (m *procManager) recordChild(pid int, argv0 string) {
+func (m *procManager) recordChild(pid int, argv0, program string) {
 	if m.runDir == "" || pid < 2 {
 		return
 	}
@@ -39,6 +39,7 @@ func (m *procManager) recordChild(pid int, argv0 string) {
 		DaemonPid:   os.Getpid(),
 		DaemonStart: strconv.FormatInt(ownStartTicks(), 10),
 		Argv0:       argv0,
+		Program:     program,
 		Start:       strconv.FormatInt(start, 10),
 		At:          time.Now().UnixMilli(),
 	})

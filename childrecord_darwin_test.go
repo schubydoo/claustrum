@@ -31,7 +31,7 @@ func TestRecordChildDarwin(t *testing.T) {
 	m.runDir = runDir
 	m.instanceID = "d39d31249f6771a7855a7b81d23e5d0c"
 
-	m.recordChild(os.Getpid(), "/bin/sleep")
+	m.recordChild(os.Getpid(), "/bin/sleep", "")
 	data, err := os.ReadFile(filepath.Join(runDir, "children", strconv.Itoa(os.Getpid())+".json"))
 	if err != nil {
 		t.Fatalf("record not written: %v", err)
@@ -85,15 +85,15 @@ func TestRecordChildDarwin(t *testing.T) {
 	}
 
 	// Gate: no run dir -> no write, no panic.
-	newTestProcManager(t).recordChild(os.Getpid(), "/bin/sleep")
+	newTestProcManager(t).recordChild(os.Getpid(), "/bin/sleep", "")
 	// Gate: pid < 2 -> skip.
-	m.recordChild(1, "/sbin/launchd")
+	m.recordChild(1, "/sbin/launchd", "")
 	if _, err := os.Stat(filepath.Join(runDir, "children", "1.json")); !os.IsNotExist(err) {
 		t.Error("pid 1 was recorded; the pid<2 gate must skip it")
 	}
 	// Gate: unreadable start-time (a pid darwinProcStart returns "" for) -> skip.
 	bogus := 1 << 30
-	m.recordChild(bogus, "/x")
+	m.recordChild(bogus, "/x", "")
 	if _, err := os.Stat(filepath.Join(runDir, "children", strconv.Itoa(bogus)+".json")); !os.IsNotExist(err) {
 		t.Error("a pid with no readable start-time was recorded; the start=='' gate must skip it")
 	}

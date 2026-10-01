@@ -24,6 +24,13 @@ const (
 	// producer that outruns a non-reading child gets an error frame once ~16 MiB is
 	// queued (probe scratch/probe/stdincap).
 	codeStdinBackpressure = -32002 // stdin queue full (backpressure)
+	// codeLauncherUnusable is the process.spawn code for a launcher that the
+	// checks refuse, and for any launcher on a Windows host. codeLauncherStart is
+	// the code for a launcher that passes the checks but does not start. 89cb6289
+	// added both with the managed launcher. -32004 is VM-measured on Linux, macOS
+	// and Windows, and -32005 on Linux and macOS.
+	codeLauncherUnusable = -32004
+	codeLauncherStart    = -32005
 )
 
 // request is one inbound JSON-RPC line.
@@ -142,6 +149,8 @@ func (s *server) route(c *conn, req request) *response {
 		return ptr(s.handleProcess(c, &req))
 	case "plugins":
 		return ptr(s.handlePlugins(&req))
+	case "launcher":
+		return ptr(s.handleLauncher(&req))
 	default:
 		return ptr(errResult(req.ID, codeMethod, "Unknown namespace: "+ns))
 	}

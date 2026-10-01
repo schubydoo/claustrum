@@ -133,6 +133,13 @@ component_management:
         - methods_files.go
         - methods_git.go
         - methods_process.go
+        # 89cb6289 managed launcher: launcher.resolve, the settings reader, the
+        # process.spawn launcher checks and the child env strip, with its OS split.
+        - methods_launcher.go
+        - managedlauncher_unix.go
+        - managedlauncher_windows.go
+        - managedlauncherdir_darwin.go
+        - managedlauncherdir_other.go
         - worktreecopy.go
         # The .worktreeinclude directory scan: version gate, opening rules, caps.
         - worktreeinclude.go
@@ -259,6 +266,8 @@ component_management:
         - install.go
         # 4534d86 -install download: __INSTALL_PROGRESS__ ticker + 60 s read-idle abort.
         - installfetch.go
+        # 89cb6289 launcher runs of -install and -probe-cli behind the gate.
+        - managedlauncher_run.go
         - libc_linux.go
         - libc_other.go
     - component_id: env_compat

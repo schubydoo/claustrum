@@ -37,9 +37,23 @@ type installFacts struct {
 	CliPath       string `json:"cliPath"`
 	CliWasPresent bool   `json:"cliWasPresent"`
 	CliError      string `json:"cliError,omitempty"`
+	// The managed launcher fields (89cb6289) come after cliError, only when
+	// CLAUDE_SSH_MANAGED_LAUNCHER=1. The order was measured across every row:
+	// cliUnresponsive, launcherStatus, launcher, launcherSource, launcherPath,
+	// launcherReason, launcherStderr. A field that does not apply is omitted.
+	// claustrum's choice (not measured): cliUnresponsive appears only for a stopped
+	// launcher run.
+	CliUnresponsive bool     `json:"cliUnresponsive,omitempty"`
+	LauncherStatus  string   `json:"launcherStatus,omitempty"`
+	Launcher        []string `json:"launcher,omitempty"`
+	LauncherSource  string   `json:"launcherSource,omitempty"`
+	LauncherPath    string   `json:"launcherPath,omitempty"`
+	LauncherReason  string   `json:"launcherReason,omitempty"`
+	LauncherStderr  string   `json:"launcherStderr,omitempty"`
 	// Fetch is the download stats object 4534d86 appends LAST, whenever a -cli-url
 	// download was attempted (even a 0-byte 404). omitempty (a pointer) drops it on
 	// the -cli-zst / cache-hit / no-source paths, where the reference emits no fetch.
+	// claustrum's choice (not measured): it stays last, after the launcher fields.
 	Fetch *fetchStats `json:"fetch,omitempty"`
 }
 
@@ -48,6 +62,10 @@ func runInstall(o installOpts) {
 	// attempted, and it is read back into f.Fetch below (4534d86).
 	lastInstallFetch = nil
 	lastInstallFinal = nil
+	// installManaged lives for this run only, so a later direct ensureCLI call
+	// (tests) never sees a stale launcher.
+	installManaged = nil
+	defer func() { installManaged = nil }()
 	f := installFacts{
 		ServerVersion: Version,
 		OS:            runtime.GOOS,
@@ -57,9 +75,29 @@ func runInstall(o installOpts) {
 
 	if o.cliDir != "" && o.cliVersion != "" {
 		f.CliPath = filepath.Join(o.cliDir, o.cliVersion)
+	}
+	// With CLAUDE_SSH_MANAGED_LAUNCHER=1 the launcher is resolved for the CLI path
+	// before the CLI runs, and installCLICheck runs the CLI through it.
+	if managedLauncherGateOn() {
+		installManaged = &installManagedState{res: resolveManagedLauncher(f.CliPath)}
+	}
+
+	if f.CliPath != "" {
 		// "present" requires the file to exist AND be runnable (real binary checks
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
-		if isRegularFile(f.CliPath) && isRunnable(f.CliPath) {
+		checkErr := errCLINotRunnable
+		if isRegularFile(f.CliPath) {
+			checkErr = installCLICheck(f.CliPath)
+		}
+		var unresponsive *managedUnresponsiveError
+		if errors.As(checkErr, &unresponsive) {
+			// A launcher run that was stopped: cliWasPresent false, the cliError
+			// text and cliUnresponsive, and the CLI file stays (measured). claustrum's
+			// choice (not measured): no install is attempted, so nothing is swept
+			// or pruned.
+			f.CliError = checkErr.Error()
+			f.CliUnresponsive = true
+		} else if checkErr == nil {
 			// Cache hit: the reference touches the cli-dir at all only when it
 			// attempts an install, so neither the orphan sweep nor the prune
 			// runs here.
@@ -75,6 +113,7 @@ func runInstall(o installOpts) {
 			err := ensureCLI(o, f.CliPath)
 			if err != nil {
 				f.CliError = err.Error()
+				f.CliUnresponsive = errors.As(err, &unresponsive)
 			}
 			// The sweep runs whether or not the install succeeded; the prune
 			// runs only when it succeeded. Both probe-measured at 5db5e4a:
@@ -94,6 +133,9 @@ func runInstall(o installOpts) {
 	// fetchToFile), including a cache hit that still downloaded is impossible — a
 	// cache hit skips ensureCLI entirely, so lastInstallFetch stays nil there.
 	f.Fetch = lastInstallFetch
+	if installManaged != nil {
+		installManaged.fillFacts(&f)
+	}
 	b, _ := json.Marshal(f)
 	fmt.Printf("__INSTALL_RESULT__%s\n", b)
 }
@@ -356,9 +398,14 @@ func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 		return true, err
 	}
 	// Verify the extracted CLI actually runs; if not, discard the temp and report.
-	if !isRunnable(tmp) {
+	// With the managed launcher gate on, installCLICheck runs it through a usable
+	// launcher instead, and a stopped run reports the unresponsive text.
+	if err := installCLICheck(tmp); err != nil {
 		_ = os.Remove(tmp)
-		return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
+		if errors.Is(err, errCLINotRunnable) {
+			return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
+		}
+		return true, err
 	}
 	// Clear the destination ONLY when it is a directory, then rename into place.
 	//
