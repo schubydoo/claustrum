@@ -418,6 +418,35 @@ func applyGitStubAction(action, leaf string) error {
 	return fmt.Errorf("unknown CLAUSTRUM_GITSTUB_ACTION %q", action)
 }
 
+// runWrapLauncher implements the "wrap" helper mode. See runHelper.
+func runWrapLauncher(args []string) int {
+	if log := os.Getenv("CLAUSTRUM_TEST_WRAP_LOG"); log != "" {
+		appendLine(log, "LAUNCH "+strings.Join(args, " "))
+	}
+	fmt.Fprint(os.Stderr, "WRAP:"+strings.Join(args, " ")+"\n")
+	if len(args) == 0 {
+		return 2
+	}
+	// An unset next mode does not leave the helper mode empty, or this binary
+	// runs the whole suite. An unknown mode exits 2 instead.
+	next := os.Getenv("CLAUSTRUM_TEST_WRAP_NEXT")
+	if next == "" {
+		next = "wrap-next-unset"
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Env = append(os.Environ(), "CLAUSTRUM_TEST_HELPER="+next)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode()
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return 126
+	}
+	return 0
+}
+
 // appendLine appends line and a newline to the file at path.
 func appendLine(path, line string) {
 	if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
@@ -575,6 +604,45 @@ func runHelper(mode string, args []string) int {
 		// Stand-in `git` for the git.worktree_create caller-timeout tests. It passes
 		// every call through to the real git and slows one chosen call. See runGitSlow.
 		return runGitSlow(args)
+	case "wrap":
+		// A managed-launcher stand-in, the shape of the VM rows' W: it writes
+		// "WRAP:<args>" to stderr, then runs args[0] with args[1:] and exits with
+		// its code. The run gets CLAUSTRUM_TEST_HELPER=$CLAUSTRUM_TEST_WRAP_NEXT, so
+		// the command is this binary in another mode. When CLAUSTRUM_TEST_WRAP_LOG
+		// names a file, a "LAUNCH <args>" line is appended to it first, to prove the
+		// launcher ran.
+		return runWrapLauncher(args)
+	case "fail-launcher":
+		// A launcher that fails: it writes CLAUSTRUM_TEST_LAUNCH_STDERR to stderr and
+		// exits with CLAUSTRUM_TEST_LAUNCH_EXIT. It appends to CLAUSTRUM_TEST_WRAP_LOG
+		// like "wrap", and never runs its args.
+		if log := os.Getenv("CLAUSTRUM_TEST_WRAP_LOG"); log != "" {
+			appendLine(log, "LAUNCH "+strings.Join(args, " "))
+		}
+		fmt.Fprint(os.Stderr, os.Getenv("CLAUSTRUM_TEST_LAUNCH_STDERR"))
+		n, err := strconv.Atoi(os.Getenv("CLAUSTRUM_TEST_LAUNCH_EXIT"))
+		if err != nil {
+			return 1
+		}
+		return n
+	case "selfterm":
+		// A launcher that ends itself with SIGTERM (Unix. Windows has no such signal).
+		if p, err := os.FindProcess(os.Getpid()); err == nil {
+			_ = p.Signal(syscall.SIGTERM)
+		}
+		time.Sleep(10 * time.Second)
+		return 1
+	case "cli-log":
+		// A stand-in CLI that appends "CLI <args> gate=<value>" to
+		// CLAUSTRUM_TEST_CLI_LOG and exits 0, to prove that it ran, with which args,
+		// and whether CLAUDE_SSH_MANAGED_LAUNCHER reached it.
+		appendLine(os.Getenv("CLAUSTRUM_TEST_CLI_LOG"),
+			"CLI "+strings.Join(args, " ")+" gate="+os.Getenv("CLAUDE_SSH_MANAGED_LAUNCHER"))
+	case "printenvs":
+		// print <name>=<value> for each arg, one per line, "" when absent.
+		for _, name := range args {
+			fmt.Print(name + "=" + os.Getenv(name) + "\n")
+		}
 	case "runlock-hold":
 		// Run-dir eviction fixture (Unix): open the lock file, take the flock, write
 		// an owner record naming this process as a serve daemon, announce readiness by

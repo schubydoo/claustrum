@@ -528,6 +528,24 @@ func (p *managedProc) emit(f streamFrame) {
 // returns the managedProc so the caller can read its (immutable) pid/startTime
 // for the CT-1 opt-in; the wire reply is otherwise unaffected.
 func (m *procManager) spawn(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool) (*managedProc, error) {
+	return m.spawnVia(c, id, command, args, cwd, env, noShellAgent, nil)
+}
+
+// spawnVia is spawn with the process.spawn launcher param (89cb6289). A nil launcher
+// (the param absent or null) spawns the command itself. A non-nil launcher, an
+// empty one too, goes through refuseManagedLauncher before anything else. When it
+// passes, the child argv is the launcher argv, then the command, then the args. The
+// launcher is then the process, and its stream frames are its own.
+func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd string, env map[string]string, noShellAgent bool, launcher *[]string) (*managedProc, error) {
+	path, argv := command, args
+	if launcher != nil {
+		if err := refuseManagedLauncher(*launcher, command); err != nil {
+			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+		path = (*launcher)[0]
+		argv = append(append(append([]string{}, (*launcher)[1:]...), command), args...)
+	}
 	// Read the drain cap ONCE, here in the caller's goroutine, rather than from
 	// inside the exit waiter. The waiter outlives the request — and outlives the
 	// test that spawned it — so reading the package var there races any later
@@ -546,7 +564,7 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// claustrum prunes inline here as well as on its timer, so a busy daemon sheds
 	// long-dead entries without waiting for the next sweep.
 	m.pruneExited()
-	cmd := exec.Command(command, args...)
+	cmd := exec.Command(path, argv...)
 	if cwd != "" {
 		// Stat the cwd before exec so an unusable one names the directory at
 		// fault, as the reference does, instead of Go's `fork/exec <command>:
@@ -567,10 +585,21 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		}
 		cmd.Dir = cwd
 	}
-	cmd.Env = buildEnv(env)
+	// The launcher variables are stripped after the caller's env is merged, so the
+	// strip covers the spawn env param as well as the daemon env.
+	cmd.Env = stripManagedLauncherEnv(buildEnv(env), launcher != nil)
 	// After the caller's env and before the trampoline adds its markers, so an
 	// SSH_AUTH_SOCK from the daemon or the caller (even an empty one) wins.
 	cmd.Env = addShellAgentSocket(cmd.Env, noShellAgent)
+	if launcher != nil {
+		// The command has to be runnable before the launcher starts. This comes
+		// after the env is built, as the reference's two [shellenv] lines come
+		// before this failure (measured log order).
+		if err := launchedCommandError(command); err != nil {
+			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
+	}
 	cmd.SysProcAttr = newSysProcAttr()
 	// Under a run/<clientId>/ socket, launch through the exec-child trampoline so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
@@ -612,6 +641,9 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
+		if launcher != nil {
+			err = managedLauncherStartError(path, err)
+		}
 		logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		closeExecErr()
@@ -629,6 +661,9 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	if execErrR != nil {
 		_ = execErrW.Close() // drop the parent's write end so the read below terminates
 		if execErr := readExecChildError(execErrR); execErr != nil {
+			if launcher != nil {
+				execErr = managedLauncherStartError(path, execErr)
+			}
 			logErrorf("[process.Manager] Failed to start process %s: %v", id, execErr)
 			_ = cmd.Wait() // reap the trampoline, which reported the error and exited
 			closeAll(stdoutR, stderrR)
@@ -638,7 +673,14 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// Stamp the start time the instant the child exists, so the CT-1 startTime is
 	// the process's birth moment (within ms), not a later bookkeeping point.
 	startTime := float64(time.Now().UnixNano()) / 1e9
-	logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
+	// With a launcher the line names the launcher's argv[0] only (measured).
+	program := ""
+	if launcher != nil {
+		program = command
+		logInfof("[process.Manager] Process %s started, PID=%d, command=%s via launcher %s", id, cmd.Process.Pid, command, path)
+	} else {
+		logInfof("[process.Manager] Process %s started, PID=%d, command=%s", id, cmd.Process.Pid, command)
+	}
 	met.spawns.Add(1)
 
 	// Confine the child (and its descendants) so kill can tear down the whole
@@ -687,7 +729,8 @@ func (m *procManager) spawn(c *conn, id, command string, args []string, cwd stri
 	// behind. Done AFTER the child is in m.procs, so a concurrent server.shutdown /
 	// killAll cannot miss it during this synchronous filesystem work. Best-effort and
 	// non-destructive: errors are logged, and it never affects the spawn result.
-	m.recordChild(cmd.Process.Pid, command)
+	// With a launcher, argv0 is the launcher and program is the command.
+	m.recordChild(cmd.Process.Pid, path, program)
 
 	// Now that the new session process is registered, evict any prior process of the
 	// same session (4534d86). Non-session spawns (empty key) skip this.

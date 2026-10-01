@@ -51,7 +51,8 @@ There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 |------|------|
 | `rpc.go` | request/response types, error codes, and `dispatch`. The dispatch order is parse → auth → version → route. Probes showed that dispatch tests auth before the jsonrpc version, except on the unauthenticated `server.shutdown` |
 | `server.go` | the `-serve` daemon: `AF_UNIX` listener (mode `0600`), per-conn read loop, concurrent dispatch, self-daemonize, graceful shutdown |
-| `methods_*.go` | the 19 methods across `server.*` / `files.*` / `git.*` / `process.*` / `plugins.*`. `7d193f89` removed `server.version`. `19f30c46` added `plugins.prune` |
+| `methods_*.go` | the 20 methods across `server.*` / `files.*` / `git.*` / `launcher.*` / `process.*` / `plugins.*`. `7d193f89` removed `server.version`. `19f30c46` added `plugins.prune`. `89cb6289` added `launcher.resolve` (`methods_launcher.go`, which also holds the `process.spawn` launcher checks and the child env strip) |
+| `managedlauncher*.go` | the managed launcher's OS split (the settings folder, the Windows refusal) and the launcher runs of `-install` and `-probe-cli` behind `CLAUDE_SSH_MANAGED_LAUNCHER=1` (`89cb6289`) |
 | `results.go` | result structs, with fields declared in the exact order the reference emits. Never use a map. A map sorts its keys and diverges from the wire contract |
 | `process.go` | `procManager` / `managedProc`: spawn in own process group, base64 stream frames, async stdin writer (bounded queue + backpressure), per-process replay buffer, `reattach` |
 | `bridge.go` | `-bridge`: a stdio↔socket relay. SSH attaches to it. It injects no auth |

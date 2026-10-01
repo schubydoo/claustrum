@@ -229,3 +229,19 @@ type notRepoResult struct {
 	RepoSlug      string `json:"repoSlug"`
 	DefaultBranch string `json:"defaultBranch"`
 }
+
+// managedLauncherResult is the launcher.resolve reply (89cb6289). One struct makes
+// all four shapes, because each shape keeps the fields in this order and drops the
+// empty ones. VM-measured on Linux and macOS:
+//
+//	{"status":"none"}
+//	{"status":"usable","argv":[…],"source":"<file>"}
+//	{"status":"unusable","source":"<file>","reason":"<text>"}
+//	{"status":"unreadable","reason":"<text>","path":"<file or folder>"}
+type managedLauncherResult struct {
+	Status string   `json:"status"`
+	Argv   []string `json:"argv,omitempty"`
+	Source string   `json:"source,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+	Path   string   `json:"path,omitempty"`
+}

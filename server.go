@@ -80,6 +80,10 @@ type server struct {
 	wlog    *wireLog      // optional JSON-RPC frame recorder; nil unless -wire-log set
 	connSeq atomic.Uint64 // per-daemon connection counter, only to correlate wire-log records
 
+	// managedLog holds the last [LauncherHandler] line, so a repeat of the same
+	// launcher.resolve answer writes no second line (see managedLauncherLog).
+	managedLog managedLauncherLog
+
 	// idleTimeout closes a connection with no read/write activity for this long.
 	// The reference closes a connection idle for 5 minutes (idleConnTimeout),
 	// measured against f6010b97. So this is always-on to match. A test overrides

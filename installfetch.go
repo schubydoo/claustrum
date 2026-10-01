@@ -35,9 +35,9 @@ var lastInstallFetch *fetchStats
 // passes (emitFinalProgress). runInstall resets it with lastInstallFetch.
 var lastInstallFinal *progressLine
 
-// fetchStats is the `fetch` object 4534d86 appends (last) to __INSTALL_RESULT__
-// whenever a -cli-url download was attempted — even a 0-byte 404. Field order
-// bytes, ms, longestPauseMs, all always present. bytes is the total read, ms the
+// fetchStats is the `fetch` object 4534d86 adds to __INSTALL_RESULT__ whenever a
+// -cli-url download was attempted, even a 0-byte 404. installFacts has its place.
+// Field order bytes, ms, longestPauseMs, all always present. bytes is the total read, ms the
 // download duration, longestPauseMs the largest gap between reads (the ~60s stall
 // gap on an idle abort; 0 on a clean single-read download).
 type fetchStats struct {

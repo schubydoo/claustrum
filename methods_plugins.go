@@ -76,7 +76,7 @@ func (s *server) pluginsPrune(req *request) response {
 	// detail ("Invalid params: json: cannot unmarshal ..."), matching the reference —
 	// which is why PruneParams lives in package handlers (the type name reaches the
 	// wire). This differs from the shared bindParams path, whose bare "Invalid params"
-	// the other 18 methods use.
+	// the other methods use.
 	var p handlers.PruneParams
 	if len(req.Params) > 0 {
 		if err := json.Unmarshal(req.Params, &p); err != nil {

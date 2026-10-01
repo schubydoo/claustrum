@@ -96,7 +96,7 @@ claustrum -bridge  -socket <path>                       # dumb stdio<->socket re
 claustrum -stop    -socket <path>                       # ask a running daemon to shut down
 claustrum -install -cli-dir <dir> -cli-version <v> [-cli-url <url> -cli-checksum <sha256>] [-cli-zst <file>] [-cli-keep <n>]
 claustrum -version
-claustrum -probe-cli <cli>                              # probe <cli> --version (30s): empty=runs / __CLI_HUNG__ / __CLI_BAD__; exit 0
+claustrum -probe-cli <cli>                              # probe <cli> --version (30s direct, 33s via a managed launcher): empty=runs / __CLI_HUNG__ / __CLI_BAD__ / __CLI_LAUNCHER__; exit 0
 ```
 
 ### Start a daemon and talk to it
@@ -137,8 +137,8 @@ through the replay buffer. They extract a plugin tarball.
   reads `CLAUDE_RPC_TOKEN` nowhere, and strips it from
   spawned children. One method is the exception to auth itself: `server.shutdown` is not
   authenticated, which matches the reference. Therefore `-stop` sends no token at all.
-- The daemon has 19 methods, across `server.*`, `files.*`, `git.*`, `process.*`, and
-  `plugins.*`. `server.capabilities` self-describes them.
+- The daemon has 20 methods, across `server.*`, `files.*`, `git.*`, `launcher.*`,
+  `process.*`, and `plugins.*`. `server.capabilities` self-describes them.
 - `process.*` is the core. A client supplies its own `id` on `spawn`. The daemon streams id-less
   `{"type":"stream",…}` notifications, which carry base64 stdout and stderr and an `exit`. The
   daemon buffers those notifications and replays them on `reattach{fromSeq}`. This is how the

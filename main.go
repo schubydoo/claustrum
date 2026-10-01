@@ -129,7 +129,7 @@ func main() {
 		stop      = flag.Bool("stop", false, "Stop the running server (server.shutdown RPC)")
 		version   = flag.Bool("version", false, "Print version and exit")
 		install   = flag.Bool("install", false, "Ensure CLI present, prune old versions, print JSON facts")
-		probeCLI  = flag.String("probe-cli", "", "Run the bounded --version probe on this CLI binary and exit 0: prints nothing if it runs, __CLI_HUNG__ if it had to be killed, __CLI_BAD__ if it is missing or does not run")
+		probeCLI  = flag.String("probe-cli", "", "Run the bounded --version probe on this CLI binary and exit 0: prints nothing if it runs, __CLI_HUNG__ if it had to be killed, __CLI_BAD__ if it is missing or does not run; with CLAUDE_SSH_MANAGED_LAUNCHER=1 it runs through the host's managed launcher and prints __CLI_LAUNCHER__ when the launcher is unusable, the managed settings are unreadable, or the launcher's run of it failed (reason on stderr)")
 		socket    = flag.String("socket", "", "Path to the daemon's Unix socket")
 		tokenFile = flag.String("token-file", "", "Read auth token from this file at startup, then unlink it. Used by the daemonized child so the token never appears in /proc/<pid>/environ.")
 		tokenFd   = flag.Int("token-fd", -1, "Read the auth token from this already-open file descriptor (e.g. 0 for stdin) instead of -token-file — this handoff never touches disk. -serve only.")
@@ -193,9 +193,11 @@ func main() {
 		// SIGINT (exit 130, empty stdout, measured), which is Go's default here.
 		// Ignore SIGPIPE so a closed stdout does not kill the probe mid-write (the
 		// token goes to fd 1, which Go would otherwise let SIGPIPE terminate).
+		// With CLAUDE_SSH_MANAGED_LAUNCHER=1 the probe runs through the managed
+		// launcher (89cb6289, see runProbeCLI).
 		ignoreSigpipe()
 		_ = os.Unsetenv("CLAUDE_RPC_TOKEN")
-		writeProbeCLIResult(os.Stdout, probeCLIRunnable(*probeCLI))
+		runProbeCLI(os.Stdout, os.Stderr, *probeCLI)
 		return
 	}
 

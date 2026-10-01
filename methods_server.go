@@ -4,8 +4,11 @@ var capabilityMethods = []string{
 	"server.ping", "server.capabilities", methodShutdown,
 	"files.list", "files.validate", "files.stat", "files.read", "files.extract_tar",
 	"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove",
+	// launcher.resolve (89cb6289) sits between git.worktree_remove and process.spawn
+	// on Linux, macOS and Windows (VM-measured). It takes the method count to 20.
+	"launcher.resolve",
 	"process.spawn", "process.stdin", "process.kill", "process.killAndWait", "process.reattach",
-	// plugins.prune (19f30c46) is appended last, taking the method count to 19.
+	// plugins.prune (19f30c46) is appended last.
 	"plugins.prune",
 }
 
@@ -29,7 +32,10 @@ var capabilityMethods = []string{
 // spawn never probes. 89cb6289 inserted git.worktree_remove.unpushedGuard after
 // existingBranch and before shellAgentSocket. git.worktree_remove then keeps a branch
 // that no other ref reaches, and answers branchKept. Linux, macOS and Windows VMs
-// show the feature. The array itself is always emitted.
+// show the feature. 89cb6289 also inserted launcher.managed after shellAgentSocket
+// and before external_root (launcher.resolve and the process.spawn launcher param).
+// Windows lists it too, although a Windows spawn refuses every launcher. The array
+// itself is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
@@ -37,6 +43,7 @@ var capabilityFeatures = append(append([]string{
 	"git.worktree_create.existingBranch",
 	"git.worktree_remove.unpushedGuard",
 	"process.spawn.shellAgentSocket",
+	"launcher.managed",
 }, externalRootCapabilityFeatures...), "server.instance_id")
 
 func (s *server) handleServer(c *conn, req *request) *response {

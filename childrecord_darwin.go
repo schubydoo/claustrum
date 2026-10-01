@@ -20,7 +20,7 @@ import (
 // and the start-times are the process start formatted as a UTC ANSIC timestamp (the
 // same value `ps -o lstart` prints under TZ=UTC) rather than /proc clock ticks. The
 // on-disk record (field order, string-vs-number typing, path) is identical to linux.
-func (m *procManager) recordChild(pid int, argv0 string) {
+func (m *procManager) recordChild(pid int, argv0, program string) {
 	if m.runDir == "" || pid < 2 {
 		return
 	}
@@ -36,6 +36,7 @@ func (m *procManager) recordChild(pid int, argv0 string) {
 		DaemonPid:   os.Getpid(),
 		DaemonStart: darwinProcStart(os.Getpid()),
 		Argv0:       argv0,
+		Program:     program,
 		Start:       start,
 		At:          time.Now().UnixMilli(),
 	})

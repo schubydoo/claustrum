@@ -114,14 +114,18 @@ func TestCapabilitiesAdvertisesNewSurface(t *testing.T) {
 	if !strings.Contains(joined, "process.kill,process.killAndWait,process.reattach") {
 		t.Errorf("methods missing killAndWait in the right slot: %v", got.Methods)
 	}
-	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "git.worktree.external_root", "server.instance_id"}
+	if !strings.Contains(joined, "git.worktree_remove,launcher.resolve,process.spawn") {
+		t.Errorf("methods missing launcher.resolve between git.worktree_remove and process.spawn: %v", got.Methods)
+	}
+	wantFeatures := []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "launcher.managed", "git.worktree.external_root", "server.instance_id"}
 	if runtime.GOOS == "windows" {
 		// external_root is gated off on Windows (capfeatures_windows.go), matching the
 		// reference, which drops the feature from its Windows capabilities frame.
 		// git.worktree_create.timeoutMs, .existingBranch, git.worktree_remove.unpushedGuard
-		// and process.spawn.shellAgentSocket are present on every OS;
+		// process.spawn.shellAgentSocket and launcher.managed are present on every OS
+		// (89cb6289 lists launcher.managed on Windows too);
 		// server.instance_id is always last.
-		wantFeatures = []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "server.instance_id"}
+		wantFeatures = []string{"process.stdin.offset", "git.status.baseRepo", "git.worktree_create.timeoutMs", "git.worktree_create.existingBranch", "git.worktree_remove.unpushedGuard", "process.spawn.shellAgentSocket", "launcher.managed", "server.instance_id"}
 	}
 	if strings.Join(got.Features, ",") != strings.Join(wantFeatures, ",") {
 		t.Errorf("features = %v, want %v", got.Features, wantFeatures)

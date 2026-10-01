@@ -14,7 +14,8 @@ Claustrum is one Go binary. A flag selects the mode. The build is static
 | `server.go` | `-serve` daemon: AF_UNIX listener, per-connection loop, concurrent dispatch, graceful shutdown (kills children, or leaves them with `-keep-children`) |
 | `rpc.go` | JSON-RPC request and response types, error codes, dispatch + params gate |
 | `results.go` | result structs (field order is part of the wire contract) |
-| `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_process.go` / `methods_plugins.go` | the 19 method handlers (`19f30c46` added `plugins.prune`) |
+| `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_launcher.go` / `methods_process.go` / `methods_plugins.go` | the 20 method handlers (`19f30c46` added `plugins.prune`, `89cb6289` added `launcher.resolve`). `methods_launcher.go` also holds the settings reader, the `process.spawn` launcher checks and the child env strip |
+| `managedlauncher*.go` | the managed launcher's OS split and the launcher runs of `-install` and `-probe-cli` (`89cb6289`) |
 | `handlers/prune.go` | the sole non-`main` package: `handlers.PruneParams`, so `plugins.prune`'s `-32602` body carries the reference's `handlers.PruneParams` type name byte-for-byte |
 | `process.go` | process manager: registry, per-process seq, replay buffer, subscribers. It captures the immutable `pid`/`startTime` pair behind the CT-1 `wantPid` opt-in |
 | `bridge.go` | `-bridge` relay and `-stop` |
@@ -311,13 +312,24 @@ sits in front of those calls so operators can quiet the daemon:
                               // a third-binary claim; see the provenance note below.
   "cliPath": "<cli-dir>/<cli-version>",
   "cliWasPresent": false,     // true only if it existed AND answered --version — within
-                              // -cli-probe-timeout when that is set; no deadline by default (D11)
+                              // -cli-probe-timeout when that is set; no deadline by default (D11).
+                              // That is without CLAUDE_SSH_MANAGED_LAUNCHER=1; the gated rules
+                              // are in PROTOCOL.md → -install
   "cliError": "…",            // omitted on success
-  "fetch": {                  // 4534d86: present (LAST) whenever a -cli-url download was
-    "bytes": 0,               // attempted, even a 0-byte 404; omitted on -cli-zst / cache hit
+  // 89cb6289: cliUnresponsive and the launcher* fields appear only with CLAUDE_SSH_MANAGED_LAUNCHER=1,
+  // each omitted when it does not apply. See PROTOCOL.md → -install.
+  "cliUnresponsive": true,    // a managed launcher run stopped at 33 s (123 s after a fresh install)
+  "fetch": {                  // 4534d86: present whenever a -cli-url download was
+    "bytes": 0,               // attempted, even a 0-byte 404. Omitted on -cli-zst / cache hit.
     "ms": 0,                  // download duration
     "longestPauseMs": 0       // largest gap between reads (~60000 on a read-idle stall abort)
-  }
+  },                          // It is the last field without the gate.
+  "launcherStatus": "usable", // none / usable / unusable / unreadable / probe_failed / unresponsive
+  "launcher": ["<argv>"],     // the launcher argv, when one was resolved
+  "launcherSource": "<file>", // the settings file that gave the value
+  "launcherPath": "<file>",   // the unreadable file or folder
+  "launcherReason": "…",      // why it was refused, failed or stopped
+  "launcherStderr": "…"       // the failed run's stderr, 8192 bytes kept
 }
 ```
 
@@ -343,6 +355,7 @@ count. If you need a count, re-derive it from `ensureCLI`:
 | | `installed cli at <path> is not runnable` |
 | | `clearing stale dir at <path>: <err>` |
 | | `staging file vanished before install: <err>` |
+| managed launcher | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish`. Only with `CLAUDE_SSH_MANAGED_LAUNCHER=1` |
 
 The download forms use different wording on purpose, to match the reference. The
 status and stall forms are fully worded and go out bare. Every other download

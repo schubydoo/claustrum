@@ -24,8 +24,13 @@ type childRecord struct {
 	DaemonPid   int    `json:"daemonPid"`
 	DaemonStart string `json:"daemonStart"`
 	Argv0       string `json:"argv0"`
-	Start       string `json:"start"`
-	At          int64  `json:"at"`
+	// Program is the command of a spawn with a launcher, where Argv0 is the
+	// launcher. 89cb6289 writes it after argv0 and before start (VM-measured on
+	// Linux). claustrum's choice (not measured): a spawn without a launcher omits
+	// it, so that record keeps its 19f30c46 bytes.
+	Program string `json:"program,omitempty"`
+	Start   string `json:"start"`
+	At      int64  `json:"at"`
 }
 
 // writeChildRecord marshals rec and writes it atomically to

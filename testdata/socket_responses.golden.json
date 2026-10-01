@@ -41,6 +41,7 @@
         "git.list_branches",
         "git.worktree_create",
         "git.worktree_remove",
+        "launcher.resolve",
         "process.spawn",
         "process.stdin",
         "process.kill",
@@ -57,6 +58,7 @@
         "git.worktree_create.existingBranch",
         "git.worktree_remove.unpushedGuard",
         "process.spawn.shellAgentSocket",
+        "launcher.managed",
         "git.worktree.external_root",
         "server.instance_id"
       ]
