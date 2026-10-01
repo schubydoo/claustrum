@@ -53,8 +53,8 @@ func TestWatchedBodyEmitsProgressLine(t *testing.T) {
 	}
 }
 
-// The 4534d86 install-download frames are byte-exact: fetch comes LAST in
-// __INSTALL_RESULT__ (after cliError), the fetch object is bytes/ms/longestPauseMs,
+// The 4534d86 install-download frames are byte-exact: fetch comes after cliError,
+// the fetch object is bytes/ms/longestPauseMs,
 // and a progress line is phase/bytes/total with total omitempty.
 func TestInstallFetchMarshaling(t *testing.T) {
 	cases := []struct {

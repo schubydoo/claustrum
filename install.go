@@ -43,18 +43,20 @@ type installFacts struct {
 	// launcherReason, launcherStderr. A field that does not apply is omitted.
 	// claustrum's choice (not measured): cliUnresponsive appears only for a stopped
 	// launcher run.
-	CliUnresponsive bool     `json:"cliUnresponsive,omitempty"`
-	LauncherStatus  string   `json:"launcherStatus,omitempty"`
-	Launcher        []string `json:"launcher,omitempty"`
-	LauncherSource  string   `json:"launcherSource,omitempty"`
-	LauncherPath    string   `json:"launcherPath,omitempty"`
-	LauncherReason  string   `json:"launcherReason,omitempty"`
-	LauncherStderr  string   `json:"launcherStderr,omitempty"`
-	// Fetch is the download stats object 4534d86 appends LAST, whenever a -cli-url
-	// download was attempted (even a 0-byte 404). omitempty (a pointer) drops it on
-	// the -cli-zst / cache-hit / no-source paths, where the reference emits no fetch.
-	// claustrum's choice (not measured): it stays last, after the launcher fields.
-	Fetch *fetchStats `json:"fetch,omitempty"`
+	CliUnresponsive bool `json:"cliUnresponsive,omitempty"`
+	// Fetch is the download stats object of 4534d86. It is present whenever a
+	// -cli-url download was attempted (even a 0-byte 404). omitempty (a pointer)
+	// drops it on the -cli-zst / cache-hit / no-source paths, where the reference
+	// emits no fetch. Without the gate it is the last field. With the gate it comes
+	// after cliUnresponsive and before launcherStatus (measured on a Linux VM for
+	// the statuses usable, none, unusable, probe_failed and unresponsive).
+	Fetch          *fetchStats `json:"fetch,omitempty"`
+	LauncherStatus string      `json:"launcherStatus,omitempty"`
+	Launcher       []string    `json:"launcher,omitempty"`
+	LauncherSource string      `json:"launcherSource,omitempty"`
+	LauncherPath   string      `json:"launcherPath,omitempty"`
+	LauncherReason string      `json:"launcherReason,omitempty"`
+	LauncherStderr string      `json:"launcherStderr,omitempty"`
 }
 
 func runInstall(o installOpts) {
@@ -89,7 +91,7 @@ func runInstall(o installOpts) {
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
 		checkErr := errCLINotRunnable
 		if isRegularFile(f.CliPath) {
-			checkErr = installCLICheck(f.CliPath)
+			checkErr = installCLICheck(f.CliPath, false)
 		}
 		var unresponsive *managedUnresponsiveError
 		if errors.As(checkErr, &unresponsive) {
@@ -401,8 +403,11 @@ func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 	}
 	// Verify the extracted CLI actually runs; if not, discard the temp and report.
 	// With the managed launcher gate on, installCLICheck runs it through a usable
-	// launcher instead, and a stopped run reports the unresponsive text.
-	if err := installCLICheck(tmp); err != nil {
+	// launcher instead, and a stopped run reports the unresponsive text. A stopped
+	// run still installs the CLI: the reference left the CLI at its final path
+	// (measured on a Linux VM, -cli-url and -cli-zst).
+	var stopped *managedUnresponsiveError
+	if err := installCLICheck(tmp, true); err != nil && !errors.As(err, &stopped) {
 		_ = os.Remove(tmp)
 		if errors.Is(err, errCLINotRunnable) {
 			return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
@@ -438,6 +443,9 @@ func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 		}
 		_ = os.Remove(tmp)
 		return true, err
+	}
+	if stopped != nil {
+		return true, stopped
 	}
 	return true, nil
 }

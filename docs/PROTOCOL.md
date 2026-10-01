@@ -3174,7 +3174,7 @@ The `cliError` catalogue follows:
 | `cli version "…" collides with the install download blob` | version starting `.blob-` (D18) |
 | `clearing stale dir at <path>: <err>` | an occupied `cliPath` directory that claustrum cannot remove |
 | `staging file vanished before install: <err>` | a concurrent sweep took the staging file |
-| `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s, with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
+| `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s (123 s after a fresh install), with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
 
 The managed launcher (`89cb6289` parity):
 - `-install` uses the [managed launcher](#launcher-added-89cb6289) only when
@@ -3187,8 +3187,9 @@ The managed launcher (`89cb6289` parity):
   `cliWasPresent` and `cliError`, in this order: `cliUnresponsive`,
   `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
   `launcherReason`, `launcherStderr`. A field that does not apply is omitted.
-  claustrum keeps `fetch` last, after them. That is claustrum's choice (not
-  measured).
+  With `-cli-url`, `fetch` comes after `cliUnresponsive` and before
+  `launcherStatus`. That is measured on a Linux VM for the statuses `usable`,
+  `none`, `unusable`, `probe_failed` and `unresponsive`.
 - With an empty `cliPath` the facts line gains no launcher field. Without
   `-cli-version`, with or without `-cli-dir`, the line ends
   `"cliPath":"","cliWasPresent":false}` and no launcher runs. That is measured on
@@ -3214,13 +3215,20 @@ The managed launcher (`89cb6289` parity):
   `<n>` is the count of dropped bytes. Measured with 10000 bytes: 8192 kept and
   1808 named. claustrum's choices (not measured): it keeps the first bytes, and it
   adds the `\n` even when the kept part ends in a newline.
-- A launcher run that has not ended at 33 s is stopped. The facts then read
-  `"cliWasPresent":false`, the `cli unresponsive: …` `cliError` above,
+- On a cache hit, a launcher run that has not ended at 33 s is stopped. The facts
+  then read `"cliWasPresent":false`, the `cli unresponsive: …` `cliError` above,
   `"cliUnresponsive":true`, `"launcherStatus":"unresponsive"` and
   `"launcherReason":"did not exit within 33s and was stopped"`. The CLI file
   stays. The reference stopped a 60 s launcher at 33.057 s and left no process.
-  This bound is parity, and it applies to every launcher run. It is not the
-  opt-in `-cli-probe-timeout` (D11), which bounds only a direct run.
+  This bound is parity. It is not the opt-in `-cli-probe-timeout` (D11), which
+  bounds only a direct run.
+- The run right after a fresh install has a bound of 123 s. The reference stopped
+  a 300 s launcher at 123.048 s after a `-cli-url` install and at 123.066 s after
+  a `-cli-zst` install (Linux VM). It let a 100 s launcher finish as `usable`
+  after a `-cli-url` install.
+  The stopped facts are the ones above, with
+  `"launcherReason":"did not exit within 123s and was stopped"`. The `cliError`
+  text is the same. The CLI is installed all the same, and the blob is consumed.
 - claustrum's choices (not measured): the stop kills the run's whole process
   group, then waits up to 2 s for its output. No install follows a stopped run
   on a cache hit, so nothing is swept or pruned. The texts name the launcher's
@@ -3230,11 +3238,12 @@ The managed launcher (`89cb6289` parity):
   runs the extracted CLI at its final path. claustrum passes its staged
   `.fetch-<random>` file, as its direct run does. That is an older gap, not
   launcher behaviour.
-- claustrum's choices (not measured) for a run right after a fresh extract
-  follow. It has the same 33 s bound. A failed run still installs the CLI. A
-  stopped run installs nothing. An unusable or unreadable launcher installs the
-  CLI without a run. The `123s for a first run` in the captured text is not
-  measured.
+- Right after a fresh `-cli-url` install, a failed run still installs the CLI.
+  An unusable launcher installs the CLI without a run. Both are measured on a
+  Linux VM. claustrum does the same for an unreadable answer and for `-cli-zst`.
+  That is claustrum's choice (not measured).
+- claustrum's choices (not measured) after a stopped first run: no prune
+  follows, and an install step that then fails gives its own `cliError`.
 - The launcher run gets the daemon env without `CLAUDE_SSH_MANAGED_LAUNCHER`
   (measured on Linux and macOS). claustrum also drops `CLAUDE_CODE_PROCESS_WRAPPER`
   and `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` there, as for a spawn with a launcher.
@@ -3257,7 +3266,8 @@ Download progress and `fetch` stats came with `4534d86`, on the `-cli-url` path:
   mismatch.
 - The ticker lines in between are time-driven, so their byte counts jump
   irregularly. A consumer treats them as progress, not as a byte-exact sequence.
-- The `__INSTALL_RESULT__` facts line gains a `fetch` object LAST, after `cliError`:
+- The `__INSTALL_RESULT__` facts line gains a `fetch` object after `cliError`. It is
+  the last field, except with the managed launcher gate (see above):
   `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}`. Those are bytes read, download
   duration, and the largest gap between reads. It appears whenever a `-cli-url`
   download was attempted, even a 0-byte 404. It is dropped on the `-cli-zst` path

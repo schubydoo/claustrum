@@ -4,9 +4,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -96,6 +101,13 @@ func setManagedRunBound(t *testing.T, d time.Duration) {
 	old := managedRunBound
 	managedRunBound = d
 	t.Cleanup(func() { managedRunBound = old })
+}
+
+func setManagedFirstRunBound(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := managedFirstRunBound
+	managedFirstRunBound = d
+	t.Cleanup(func() { managedFirstRunBound = old })
 }
 
 func denySettingsRead(t *testing.T) {
@@ -280,8 +292,11 @@ func TestInstallLauncherRunStopped(t *testing.T) {
 // TestInstallFreshExtractThroughLauncher pins I10: a fresh install extracts, then
 // runs the CLI once through the launcher, and reports cliWasPresent false with the
 // usable fields. The launcher gets the staged file, not the final path (GAP-3, an
-// older gap of claustrum). A run stopped right after the extract (claustrum's
-// choice) reports the unresponsive cliError and installs nothing.
+// older gap of claustrum). The run right after the extract has its own bound: a
+// launcher that outlasts the cache-hit bound still ends as usable (row H4 measured
+// that with -cli-url). A run stopped at the first-run bound reports the
+// unresponsive cliError and names 123s in launcherReason. The CLI is installed all
+// the same (row H2, Linux VM).
 func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 	f := newInstallFixture(t)
 	if err := os.Remove(f.cli); err != nil {
@@ -309,15 +324,87 @@ func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 	if err := os.Remove(f.cli); err != nil {
 		t.Fatal(err)
 	}
-	helperMode(t, "slow:5", "")
+	helperMode(t, "slow:1", "")
 	setManagedRunBound(t, 300*time.Millisecond)
+	setManagedFirstRunBound(t, 30*time.Second)
 	writeFileMode(t, blob, zstdOf(t, []byte("#\n")), 0o644)
-	got := f.install(t, blob)
-	if !strings.HasPrefix(got, `"cliWasPresent":false,"cliError":"cli unresponsive: `) || !strings.Contains(got, `,"cliUnresponsive":true,"launcherStatus":"unresponsive",`) {
-		t.Errorf("fresh extract, stopped run: facts tail %q", got)
+	if got := f.install(t, blob); got != want {
+		t.Errorf("H4: a first run longer than the cache-hit bound: facts tail\n got %q\nwant %q", got, want)
 	}
-	if isRegularFile(f.cli) {
-		t.Error("a stopped run right after the extract must not install the CLI")
+	if !isRegularFile(f.cli) {
+		t.Error("H4: the CLI was not installed")
+	}
+
+	if err := os.Remove(f.cli); err != nil {
+		t.Fatal(err)
+	}
+	helperMode(t, "slow:5", "")
+	setManagedFirstRunBound(t, 300*time.Millisecond)
+	writeFileMode(t, blob, zstdOf(t, []byte("#\n")), 0o644)
+	want = `"cliWasPresent":false,"cliError":"cli unresponsive: the installed Claude Code binary was started through the host's managed launcher ` + f.wrap +
+		` and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish","cliUnresponsive":true,"launcherStatus":"unresponsive","launcher":["` +
+		f.wrap + `"],"launcherSource":"` + f.base + `","launcherReason":"did not exit within 123s and was stopped"}` + "\n"
+	if got := f.install(t, blob); got != want {
+		t.Errorf("H2: facts tail\n got %q\nwant %q", got, want)
+	}
+	if !isRegularFile(f.cli) {
+		t.Error("H2: a stopped first run still installs the CLI")
+	}
+	if _, err := os.Lstat(blob); !os.IsNotExist(err) {
+		t.Errorf("H2: the blob must be consumed, Lstat err = %v", err)
+	}
+}
+
+// TestInstallFetchComesBeforeLauncherFields pins the -cli-url rows with the gate
+// (Linux VM, 89cb6289): fetch comes after cliError and cliUnresponsive and before
+// launcherStatus. Rows F-U (usable), F-E404 (a failed download) and H1 (a stopped
+// first run).
+func TestInstallFetchComesBeforeLauncherFields(t *testing.T) {
+	f := newInstallFixture(t)
+	if err := os.Remove(f.cli); err != nil {
+		t.Fatal(err)
+	}
+	f.settings(t, f.wrap)
+	t.Setenv(managedLauncherGateEnv, "1")
+	helperMode(t, "fail-launcher", "")
+	t.Setenv("CLAUSTRUM_TEST_LAUNCH_STDERR", "")
+	t.Setenv("CLAUSTRUM_TEST_LAUNCH_EXIT", "0")
+	zst := zstdOf(t, []byte("#\n"))
+	sum := sha256.Sum256(zst)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cli.zst" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(zst)
+	}))
+	defer srv.Close()
+	fetch := `"fetch":\{"bytes":\d+,"ms":\d+,"longestPauseMs":\d+\},`
+	usable := `"launcherStatus":"usable","launcher":\["` + regexp.QuoteMeta(f.wrap) + `"\],"launcherSource":"` + regexp.QuoteMeta(f.base) + `"`
+	run := func(row, path, wantTail string) {
+		t.Helper()
+		out := captureInstallOutput(t, installOpts{cliDir: f.cliDir, cliVersion: "9.9.9",
+			cliURL: srv.URL + path, cliChecksum: hex.EncodeToString(sum[:])})
+		if !regexp.MustCompile(`"cliWasPresent":false,` + wantTail + `\}\n$`).MatchString(out) {
+			t.Errorf("%s: facts line %q, want the tail %s", row, out, wantTail)
+		}
+	}
+	run("F-U", "/cli.zst", fetch+usable)
+	if !isRegularFile(f.cli) {
+		t.Fatal("F-U: the CLI was not installed")
+	}
+	if err := os.Remove(f.cli); err != nil {
+		t.Fatal(err)
+	}
+	run("F-E404", "/missing", `"cliError":"download failed with status 404",`+fetch+usable)
+
+	helperMode(t, "slow:5", "")
+	setManagedFirstRunBound(t, 300*time.Millisecond)
+	run("H1", "/cli.zst", `"cliError":"cli unresponsive: [^"]*","cliUnresponsive":true,`+fetch+
+		`"launcherStatus":"unresponsive","launcher":\["`+regexp.QuoteMeta(f.wrap)+`"\],"launcherSource":"`+regexp.QuoteMeta(f.base)+
+		`","launcherReason":"did not exit within 123s and was stopped"`)
+	if !isRegularFile(f.cli) {
+		t.Error("H1: a stopped first run still installs the CLI")
 	}
 }
 

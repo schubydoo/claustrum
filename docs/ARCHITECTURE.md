@@ -316,20 +316,20 @@ sits in front of those calls so operators can quiet the daemon:
                               // That is without CLAUDE_SSH_MANAGED_LAUNCHER=1; the gated rules
                               // are in PROTOCOL.md → -install
   "cliError": "…",            // omitted on success
-  // 89cb6289: the next seven fields appear only with CLAUDE_SSH_MANAGED_LAUNCHER=1,
+  // 89cb6289: cliUnresponsive and the launcher* fields appear only with CLAUDE_SSH_MANAGED_LAUNCHER=1,
   // each omitted when it does not apply. See PROTOCOL.md → -install.
-  "cliUnresponsive": true,    // a managed launcher run stopped at 33 s
+  "cliUnresponsive": true,    // a managed launcher run stopped at 33 s (123 s after a fresh install)
+  "fetch": {                  // 4534d86: present whenever a -cli-url download was
+    "bytes": 0,               // attempted, even a 0-byte 404. Omitted on -cli-zst / cache hit.
+    "ms": 0,                  // download duration
+    "longestPauseMs": 0       // largest gap between reads (~60000 on a read-idle stall abort)
+  },                          // It is the last field without the gate.
   "launcherStatus": "usable", // none / usable / unusable / unreadable / probe_failed / unresponsive
   "launcher": ["<argv>"],     // the launcher argv, when one was resolved
   "launcherSource": "<file>", // the settings file that gave the value
   "launcherPath": "<file>",   // the unreadable file or folder
   "launcherReason": "…",      // why it was refused, failed or stopped
-  "launcherStderr": "…",      // the failed run's stderr, 8192 bytes kept
-  "fetch": {                  // 4534d86: present (LAST) whenever a -cli-url download was
-    "bytes": 0,               // attempted, even a 0-byte 404; omitted on -cli-zst / cache hit
-    "ms": 0,                  // download duration
-    "longestPauseMs": 0       // largest gap between reads (~60000 on a read-idle stall abort)
-  }
+  "launcherStderr": "…"       // the failed run's stderr, 8192 bytes kept
 }
 ```
 

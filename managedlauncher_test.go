@@ -87,6 +87,7 @@ func TestManagedLauncherTexts(t *testing.T) {
 		managedSpawnCannotUse:             "the managed launcher cannot be used: ",
 		managedNoInterpreter:              "its interpreter was not found (the program on its #! line, or the loader of an ELF binary; a script saved with Windows CRLF line endings fails this way)",
 		managedRunStopped:                 "did not exit within 33s and was stopped",
+		managedFirstRunStopped:            "did not exit within 123s and was stopped",
 		managedUnresponsiveText("/fx/l6"): "cli unresponsive: the installed Claude Code binary was started through the host's managed launcher /fx/l6 and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish",
 		managedStatusProbeFailed:          "probe_failed",
 		managedStatusUnresponsive:         "unresponsive",
@@ -217,7 +218,7 @@ func TestManagedRunReasonExitStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:3")
-	r := runViaManagedLauncher([]string{exe}, "cli")
+	r := runViaManagedLauncher([]string{exe}, "cli", managedRunBound)
 	if r.hung || r.err == nil {
 		t.Fatalf("run = %+v, want a failed run", r)
 	}

@@ -31,13 +31,17 @@ func managedLauncherGateOn() bool { return os.Getenv(managedLauncherGateEnv) == 
 
 // managedRunBound stops a launcher run of -install and -probe-cli. The reference
 // stopped a launcher that slept 60 s at 33.057 s (-install) and one that slept
-// 150 s at 33.069 s (-probe-cli). This is reference behaviour, on every launcher
-// run. It is not the opt-in -cli-probe-timeout (D11), which bounds only the direct
-// -install run.
-// claustrum's choice (not measured): the run right after a fresh extract gets the
-// same 33 s. The "123s for a first run" of the unresponsive text is not measured.
+// 150 s at 33.069 s (-probe-cli). The -install row is a cache hit. This is
+// reference behaviour. It is not the opt-in -cli-probe-timeout (D11), which bounds
+// only the direct -install run.
 // A var only so tests shrink it.
 var managedRunBound = 33 * time.Second
+
+// managedFirstRunBound stops the launcher run of -install right after a fresh
+// install. The reference stopped a launcher that slept 300 s at 123.048 s after a
+// -cli-url install and at 123.066 s after a -cli-zst install. It let a launcher
+// that took 100 s finish (Linux VM). A var only so tests shrink it.
+var managedFirstRunBound = 123 * time.Second
 
 // managedRunStderrCap is how much launcher stderr -install reports (measured: 10000
 // bytes gave 8192 bytes and a tail naming the other 1808).
@@ -48,6 +52,7 @@ const (
 	managedStatusProbeFailed  = "probe_failed"
 	managedStatusUnresponsive = "unresponsive"
 	managedRunStopped         = "did not exit within 33s and was stopped"
+	managedFirstRunStopped    = "did not exit within 123s and was stopped"
 )
 
 // managedUnresponsiveText is the cliError of a stopped launcher run, and the
@@ -60,12 +65,13 @@ func managedUnresponsiveText(a0 string) string {
 
 // managedRun is the outcome of one launcher run.
 type managedRun struct {
-	hung   bool   // stopped at managedRunBound
+	hung   bool   // stopped at its bound
+	first  bool   // the run right after a fresh install
 	err    error  // nil when the launcher exited 0
 	stderr string // the launcher's stderr, capped
 }
 
-// runViaManagedLauncher runs `<argv...> <cli> --version` under managedRunBound. The
+// runViaManagedLauncher runs `<argv...> <cli> --version` under bound. The
 // run gets the daemon env without the launcher variables, so the gate does not reach
 // it (measured). claustrum's choice (not measured): CLAUDE_CODE_PROCESS_WRAPPER and
 // the E2E variable are dropped too, as for a launched spawn.
@@ -74,8 +80,8 @@ type managedRun struct {
 // with SIGKILL. The output drain then waits at most probeCLIKillGrace. That is the
 // teardown of the direct -probe-cli run. The reference left no process behind
 // (measured).
-func runViaManagedLauncher(argv []string, cli string) managedRun {
-	ctx, cancel := context.WithTimeout(context.Background(), managedRunBound)
+func runViaManagedLauncher(argv []string, cli string, bound time.Duration) managedRun {
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
 	defer cancel()
 	args := append(append(append([]string{}, argv[1:]...), cli), "--version")
 	cmd := exec.CommandContext(ctx, argv[0], args...)
@@ -151,7 +157,7 @@ type installManagedState struct {
 // errCLINotRunnable is a direct `<cli> --version` run that failed.
 var errCLINotRunnable = errors.New("cli is not runnable")
 
-// managedUnresponsiveError is a launcher run that managedRunBound stopped.
+// managedUnresponsiveError is a launcher run that its bound stopped.
 type managedUnresponsiveError struct{ launcher string }
 
 func (e *managedUnresponsiveError) Error() string { return managedUnresponsiveText(e.launcher) }
@@ -163,9 +169,15 @@ func (e *managedUnresponsiveError) Error() string { return managedUnresponsiveTe
 // A stopped run is managedUnresponsiveError. An unusable or unreadable answer runs
 // nothing and counts as runnable (measured on a cache hit).
 //
-// claustrum's choices (not measured) follow. The run right after a fresh extract
-// follows the same rules. It passes the staged file, as the direct run does.
-func installCLICheck(path string) error {
+// first marks the run right after a fresh install. That run gets
+// managedFirstRunBound, and its launcherReason names 123s (measured). It passes the
+// staged file, as the direct run does (an older gap: the reference passes the final
+// path).
+//
+// Right after a fresh -cli-url install, a failed run and an unusable answer follow
+// the cache-hit rules (measured). claustrum's choice (not measured): an unreadable
+// answer does too, and so do all three after a -cli-zst install.
+func installCLICheck(path string, first bool) error {
 	st := installManaged
 	if st == nil || st.res.Status == managedStatusNone {
 		if isRunnable(path) {
@@ -176,7 +188,12 @@ func installCLICheck(path string) error {
 	if st.res.Status != managedStatusUsable {
 		return nil
 	}
-	r := runViaManagedLauncher(st.res.Argv, path)
+	bound := managedRunBound
+	if first {
+		bound = managedFirstRunBound
+	}
+	r := runViaManagedLauncher(st.res.Argv, path, bound)
+	r.first = first
 	st.run = &r
 	if r.hung {
 		return &managedUnresponsiveError{launcher: st.res.Argv[0]}
@@ -196,6 +213,9 @@ func (st *installManagedState) fillFacts(f *installFacts) {
 		case st.run == nil:
 		case st.run.hung:
 			f.LauncherStatus, f.LauncherReason = managedStatusUnresponsive, managedRunStopped
+			if st.run.first {
+				f.LauncherReason = managedFirstRunStopped
+			}
 		case st.run.err != nil:
 			f.LauncherStatus = managedStatusProbeFailed
 			f.LauncherReason, f.LauncherStderr = managedRunReason(st.run.err), st.run.stderr
@@ -239,7 +259,7 @@ func probeViaManagedLauncher(stdout, stderr io.Writer, path string, res managedL
 		fmt.Fprintf(stderr, "claude-ssh: %s was not run: managed settings unreadable: %s: %s\n", path, res.Path, res.Reason)
 		return
 	}
-	r := runViaManagedLauncher(res.Argv, path)
+	r := runViaManagedLauncher(res.Argv, path, managedRunBound)
 	switch {
 	case r.hung:
 		fmt.Fprintln(stdout, "__CLI_HUNG__")
