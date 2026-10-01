@@ -18,6 +18,12 @@ func externalDirLevelCheck(dir string) (msg, code string) {
 	return "", ""
 }
 
+// worktreeRootAncestorRefusal is not needed on Windows for the same reason.
+func worktreeRootAncestorRefusal(worktreeRoot string) string {
+	_ = worktreeRoot
+	return ""
+}
+
 // worktreeRootShareRefusal is a no-op on Windows: the uid/gid ownership and
 // world/group-writable checks read syscall.Stat_t fields that do not exist on
 // Windows, so claustrum accepts an external worktreeRoot on the containment check
