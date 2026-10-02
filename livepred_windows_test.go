@@ -107,3 +107,37 @@ func TestStaleSocketIdentNoFile(t *testing.T) {
 		t.Errorf("staleSocketIdent = %v with no file, want nil", fi)
 	}
 }
+
+// TestStaleSocketIdentKeepsTheFileItSaw pins that the identity is the one of the file
+// that was at the path when staleSocketIdent ran. The first file stays alive under
+// another name, so the new file at the path cannot get its identity again.
+func TestStaleSocketIdentKeepsTheFileItSaw(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "rpc.sock")
+	if err := os.WriteFile(p, []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale := staleSocketIdent(p)
+	if stale == nil {
+		t.Fatal("staleSocketIdent = nil for a file on disk")
+	}
+	if err := os.Rename(p, p+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("b"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(fi, stale) {
+		t.Fatal("the identity taken before the replace matches the new file at the path")
+	}
+	old, err := os.Stat(p + ".old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(old, stale) {
+		t.Fatal("the identity taken before the replace does not match the first file")
+	}
+}

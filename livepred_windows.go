@@ -28,5 +28,9 @@ func staleSocketIdent(socket string) os.FileInfo {
 	if err != nil {
 		return nil
 	}
+	// On Windows os.Stat does not read the file identity. os.SameFile reads it at the
+	// first compare, through the path. This compare reads it now, while the stale file is
+	// still the file at that path.
+	_ = os.SameFile(fi, fi)
 	return fi
 }
