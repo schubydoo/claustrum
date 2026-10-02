@@ -72,7 +72,7 @@ The test is this question:
 If the honest input is reachable, and the caller cannot turn the guard off, then
 always-on is not justified. This holds no matter how the reference behaves on the
 hostile path. This test flipped every timeout and size cap from always-on to
-opt-in (D3, D5, D10, D11, D12, and the retired D14). D4 is the non-threshold sibling.
+opt-in (D3, D5, D10, D12, and the retired D11 and D14). D4 is the non-threshold sibling.
 
 *Canonical example:* D2 satisfies both halves. The reference's home-wipe is
 unrecoverable data loss, and no honest caller has a legitimate *use* for deleting
@@ -109,7 +109,7 @@ candidate.
 Every opt-in tag rests on one claim about the driver: Claude Desktop owns the
 daemon's argv on both `-serve` and `-install`. Therefore an operator cannot reach
 a flag-only knob, and the `claustrum.conf` key (read beside the executable) is the
-reachable one. This claim is the premise under D3, D4, D5, D10, D11, D12 and
+reachable one. This claim is the premise under D3, D4, D5, D10, D12 and
 under the "(opt-in)" tag itself.
 
 So much rests on the claim that it gets one canonical record. Its provenance, its
@@ -139,17 +139,24 @@ rather than repeating them in each entry:
 - No opt-in bound is a hang detector. Each bound is a threshold, so an
   honest-but-slow or honest-but-large input trips it too. That is precisely why
   they are off by default.
-- At the shipped defaults, no claustrum-chosen `-install` wall-clock bound
-  applies. The stdlib transport clocks (`net.Dialer{Timeout: 30s}`,
+- At the shipped defaults, each `-install` wall-clock bound in this list is a
+  bound of the reference. The direct `--version` run is stopped at 30 s on a cache hit
+  and at 120 s after an install in the same run. A managed launcher run is
+  stopped at 33 s and at 123 s. The download gives up after 60 s without response
+  headers, and after 60 s without a body byte. The `ldd` libc probe has a 5 s
+  bound on ldd itself and a 2 s drain after ldd exits.
+  [PROTOCOL.md](PROTOCOL.md) → `-install` names the measurement behind each one.
+  One clock is claustrum's own choice and is not measured: the wait of up to 2 s
+  for the output of a stopped launcher run.
+  The stdlib transport clocks (`net.Dialer{Timeout: 30s}`,
   `TLSHandshakeTimeout: 10s`) apply on `-cli-url` only. They are always-on,
-  unnumbered, and unprobed on the reference. The `ldd` libc probe has the
-  reference's 5 s bound on ldd itself and a 2 s drain after ldd exits.
+  unnumbered, and unprobed on the reference.
 
 ## Catalog
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or contains `$HOME` | always-on | always-on | rule 3 clause (a) | an honest caller legitimately targeting a path that is/contains home |
+| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a) | an honest caller legitimately targeting a path that is/contains home |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D4](#d4) | `files.read` refuses non-regular files | off | `-files-read-regular-only` / key | rule 4 | opt-in refuses a legit read, or default parks/OOMs the daemon in normal use |
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
@@ -157,7 +164,6 @@ rather than repeating them in each entry:
 | [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log` | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
 | [D9](#d9) | Namespace-wide params binding (type error in an unread field → `-32602`) | always-on | always-on | rule 3 clause (b) | a real client sending a type-mismatched unread namespace field |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
-| [D11](#d11) | Deadline on the `<cli> --version` runnability probe | off (`0`) | `-cli-probe-timeout` / key | rule 4 | Desktop turning out not to parse `cliError` (retraction rider) |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`, and `-cli-zst` with a checksum) | always-on | always-on | **UNRESOLVED**: clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
@@ -181,6 +187,54 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D2 · Refuse a home directory as a destructive path target (always-on) { #d2 }
 
+- **`-install` is guarded too.** The install removes a folder at the CLI path,
+  `<cli-dir>/<version>`, as a tree before the new CLI runs. With a cli-dir that
+  is the parent of the home folder and a version that is its leaf name, that
+  path is the home folder. D6 does not cover that case. claustrum refuses a CLI
+  path that is the home folder or contains it:
+  `cli path must not be or contain the home directory: "<path>"`. The folder is
+  not removed, the blob stays and no CLI runs. The reference removes the home folder
+  as a tree and puts the CLI file there. It does so for a folder that contains
+  the home folder too. When the new CLI then fails, the folder is gone and
+  nothing is left at the path (Linux cell H2, macOS cell HX2L).
+  This guard compares folders, not only path texts. The lexical test of the RPC
+  paths (`wipesHomeDir`) runs first. Then the guard compares the folder at the
+  CLI path with the home folder and with each parent folder of it, by file
+  identity. It does that for the home path as given and for its resolved path.
+  On the RPC paths `wipesHomeDir` stays lexical.
+  Measured with `-cli-zst`. In each cell of the list below claustrum refuses and
+  `89cb6289` removes the folder.
+  Linux, 39 runs: H1, H2 and H5 once, and three runs each of twelve HS cells.
+  HS1, HS2, HS3, HS4 and HS6 have a symlink in the home path or in the cli-dir.
+  HS7 has a link that points below the folder. HS8 has a chain of two symlinks,
+  and HS9 has a relative symlink. HS10a has a trailing slash on the cli-dir, and
+  HS10b has `sub/..` in it. HS11 has a relative `-cli-dir`. In HS12 the home
+  path is a bind mount of the real folder. `f6010b97` ran 25 of those 39 runs,
+  and it removes the folder in each.
+  macOS, 51 runs: HX1, HX2, HX2L, HX5L and HX5 have both paths in one spelling.
+  HX1S, HX1R, HX2S and HX2R have the `/tmp` symlink in one of the two paths.
+  HXL1 and HXL2 have a home path that is a symlink. HXK1 to HXK5 have another
+  letter case, and HXKS and HXKR have it with the `/tmp` symlink. HXB has a link
+  that points below the folder. HXTS has a trailing slash on the cli-dir, and
+  HXDD has `..` in it.
+  Windows, 38 runs: HX1b and HX2, and three runs each of HJ1 to HJ8 and HJ10 to
+  HJ13. The HJ cells are a junction in the home path or in the cli-dir, a
+  directory symbolic link and another letter case. They are also an 8.3 short
+  name, a junction that points below the folder, a chain of two junctions and a
+  `subst` drive.
+  A folder at the CLI path that is not the home folder and does not contain it
+  is replaced, as on the reference. The control cells are H3, HS5 and HS13 on Linux,
+  HX3, HXC, HXKC and HXKC0 on macOS, and HX3, E11b, HJ9 and HJ14 on Windows.
+  With no source flag neither binary removes anything.
+  A second mount of the same folder is measured in one shape, on Linux: the home
+  path is the mount point, and the final name is the mount source (HS12). No
+  cell covers the reverse shape or a mount of a parent folder. No cell covers a
+  home folder that does not exist, a hard link, or Unicode normalization forms.
+  No cell covers a case-sensitive volume on macOS or a UNC path. Not measured:
+  `-cli-url`.
+  This guard and `wipesHomeDir` take the home folder from `os.UserHomeDir`. That
+  is the `HOME` variable, or `USERPROFILE` on Windows. With that variable unset
+  or empty they refuse nothing. This follows from the code and is not measured.
 - **Behavior.** Three methods hand a caller-supplied, `~`-expanded path to
   a recursive delete. `files.extract_tar` wipes `destDir`. `git.worktree_remove`
   deletes `worktreePath` itself, through an `os.Root` on its parent. A locked
@@ -230,16 +284,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   case. It is the active guard on the `external_root` branch, which skips that
   containment. And no honest
   caller has a legitimate *use* for deleting home. A caller can still reach that path
-  by accident, which is the point.
+  by accident, which is the point. The same holds for `-install`: no honest
+  install replaces the home folder with the CLI file, and the delete is not
+  recoverable.
 - **Not a security boundary.** The socket + token already grant `process.spawn`
   ([SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
-  This guard stops the accidental, generated, or mistyped path. It does not
-  resolve symlinks.
+  This guard stops the accidental, generated, or mistyped path. On the RPC
+  paths it does not resolve symlinks. The `-install` guard compares folders by
+  identity.
 - **Reopen trigger.** An honest caller legitimately naming a destructive target
   that *is or contains* a home directory.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `files.extract_tar` and `git.worktree_remove` (the `git.worktree_create` guard emits no frame). Also `homeguard.go` and
   `homeguard_test.go` (`wipeDestDir` seams the destructive call, so the suite is
-  safe against an unfixed tree). Measurement: forensics.
+  safe against an unfixed tree). For `-install`: `stageAndInstall` in
+  `install.go`, and [PROTOCOL.md](PROTOCOL.md) → `-install` → Staging and
+  cleanup. Measurement: forensics.
 
 ### D3 · Make the `files.extract_tar` size cap opt-in { #d3 }
 
@@ -380,10 +439,18 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D6 · `-cli-version` must name a single path component (always-on) { #d6 }
 
-- **Behavior.** The install's clearing step is
-  `os.RemoveAll(filepath.Join(cliDir, cliVersion))`, so a version that reaches
-  outside the cli-dir deletes unrelated data. claustrum answers `cli version "…"
-  must be a single path component` and touches nothing. It refuses `.`, `..`, and
+- **Behavior.** The install's clearing step is an `os.RemoveAll` of the CLI
+  path, `<cli-dir>/<version>` (`<version>.exe` on Windows), so a version that
+  reaches outside the cli-dir deletes unrelated data. claustrum answers `cli version "…"
+  must be a single path component` and touches nothing. That rule runs on the install path. A regular file that
+  is already at the joined path is first run with `--version`, as the cache-hit
+  check. A run that passes answers `"cliWasPresent":true` with that path, as
+  on the reference. That is measured with `-cli-version ../x` on Linux against
+  `f6010b97` and `89cb6289`, and on macOS against `89cb6289`. A run that is
+  stopped answers the unresponsive text and sweeps the cli-dir. D6 answers only
+  when that run fails, or when no file is there. The reference has no such rule.
+  With `../x` and a blob it installs to `<parent>/x`, outside the cli-dir, and
+  runs that file. That is cell V1c on Linux, macOS and Windows. It refuses `.`, `..`, and
   both `/` and `\` on every OS, so the accepted set does not change with the
   platform.
 - **A single component rather than a lexical containment check.** A lexical check
@@ -483,36 +550,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) and `install.go` (`fetchToFile`,
   `zstdDecompress`). RSS and cap-below-free-space tables: forensics.
 
-### D11 · Make the `-install` runnability probe deadline opt-in { #d11 }
-
-- **Behavior.** `isRunnable` runs `<cli> --version`. There are two probe sites: the
-  cache-hit guard, and the probe after extraction. A timeout on the first site is
-  indistinguishable from a cache miss, so an opted-in timeout produces one of three
-  outcomes, depending on the flags. With no source it answers `cli <v> missing and
-  no --cli-url or --cli-zst provided`. With a fast replacement it performs a
-  *silent* reinstall, where only `cliWasPresent:false` moves. With the same slow CLI
-  supplied it answers `installed cli at <path> is not runnable`. On `-cli-zst`
-  claustrum
-  consumes the blob whenever decompression succeeds.
-- **Default.** `0` = no deadline (byte-identical). **Activate:** `-cli-probe-timeout
-  <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
-- **A bound is not a hang detector.** Measured 2026-08-07: a CLI that answers
-  honestly in 20 s makes an opted-in claustrum fail the install, delete the staged
-  binary and consume the blob. The reference installs that CLI and returns at 20 s.
-  The reference also installed a 90 s CLI, and it waited 91 s. So the reference has
-  no deadline at or below 90 s, and any finite bound diverges for some honest input.
-  Picking 30 s or 60 s only moves the boundary. Above 90 s is unmeasured on both.
-- **Why opt-in.** The deadline cleared clause (a)'s not-a-frame half (the
-  reference showed no deadline at or below 90 s), but an honest-but-slow CLI pays and,
-  with Desktop owning the argv, cannot decline (rule 4). We verified the flip
-  against the reference. We did not only argue it.
-- **Reopen trigger** (a retraction rider, not the flip): Desktop turning out not to
-  parse `cliError` after all. See
-  [ARCHITECTURE.md](ARCHITECTURE.md#driver-claims-and-their-provenance). Whether any
-  client reads `cliWasPresent` is unprobed either way.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) and `install.go`. Probe-site table, 20 s /
-  90 s table, sweep/prune, zero-parsing edges: forensics.
-
 ### D12 · Make the `-install` CLI download bound opt-in { #d12 }
 
 - **Behavior.** The download once ran with `http.Client{Timeout: 5m}`. It now runs
@@ -522,11 +559,14 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Default.** `0` = no bound (byte-identical). `http.Client{Timeout: 0}` is the
   stdlib's own "no timeout" sentinel. **Activate:** `-cli-download-timeout <dur>` or
   the key.
-- **Zero frees the body read, not every clock.** `fetchToFile` leaves `Transport`
-  nil, so `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
+- **Zero frees the body read, not every clock.** `fetchToFile` uses a clone of
+  `http.DefaultTransport`, which still applies `net.Dialer{Timeout: 30s}` and
   `TLSHandshakeTimeout: 10s` on `-cli-url`. A SYN-black-holed host therefore fails
   at 30 s with the bound off. Both clocks are always-on stdlib defaults, unnumbered
-  and unprobed on the reference.
+  and unprobed on the reference. The wait for the response headers has a 60 s
+  limit, always on. That limit is parity, not this divergence: `f6010b97` and
+  `89cb6289` give up there too (measured on Linux and Windows). A bound set below
+  60 s fires first. No row measures that pair.
 - **Why opt-in.** `4534d86` bounds a fully STALLED body itself, at a 60 s read-idle
   abort that claustrum reproduces always-on as parity. That is NOT this divergence
   (see [PROTOCOL.md](PROTOCOL.md) → `-install` download). What a non-zero
@@ -557,9 +597,18 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   verifies the checksum, and then decompresses. On a blob that is both
   undecompressable and wrong-checksummed the reference says
   `decompressing: unexpected EOF` where claustrum says `checksum mismatch`. A
-  *genuine mid-transfer interruption* never reaches the checksum on claustrum,
-  because `io.Copy`'s error returns first. That case diverges on the prefix instead:
-  `download failed: <err>` against the reference's `decompressing: <err>`.
+  connection reset in the body is not a D13 row. It answers
+  `download interrupted after <got>/<total> bytes: <err>` on both
+  binaries. Measured on a Linux VM against `f6010b97` and `89cb6289`. A body that
+  ends before its length is not measured.
+- **One more measured effect.** The order also shows without a text delta. The
+  body was 4096 bytes that are not a zstd archive, with the right checksum for
+  those bytes. Both binaries answer
+  `decompressing: invalid input: magic number mismatch`. The reference reports
+  `"fetch":{"bytes":4,…}` and prints one progress line. claustrum reports
+  `"bytes":4096` and prints two progress lines, because it reads and verifies the
+  whole body before it decompresses. Measured on a Linux VM against `f6010b97`
+  and `89cb6289`.
 - **Why it is unresolved.** We wrote clause (c) for this entry and, measured, it
   did not meet it. On both honest-path rows the reference created an empty
   cli-dir where claustrum created nothing (when the cli-dir did not already
@@ -567,14 +616,17 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   directory is state a caller keeps, and a caller can distinguish it with a
   `files.stat`. The reopen fixture run 2026-08-08 did not meet its condition.
 - **That on-disk delta is gone.** claustrum now creates the cli-dir before any
-  network access, as the reference does (measured on `f6010b97`). No new
-  measurement of the D13 rows exists yet. So whether D13 now meets clause (c) is
-  open, and D13 stays unresolved until a run settles it.
+  network access, as the reference does (measured on `f6010b97`). The `-cli-url`
+  row was measured again on `89cb6289`, on Linux, macOS and Windows. The body was
+  the first half of the blob, with the checksum of the full blob. The texts
+  differ as above, and both binaries leave an empty cli-dir. The `-cli-zst` row
+  was not run again. Whether D13 now meets clause (c) is open, and D13 stays
+  unresolved.
 - **The trigger is reachable** (not "an input no honest caller produces", which was
   measured wrong): a bad mirror, a partial upload, or a stale short proxy object is
   undecompressable *and* checksum-mismatched with no adversary. This is *not* the
-  generic "flaky network" case: a genuine interruption is the prefix-divergence row
-  above.
+  generic "flaky network" case: a connection reset answers the same text on
+  both binaries, as above.
 - **Why still always-on despite being unresolved.** The delta stays cheap because
   neither string is disk-full-shaped. Therefore Desktop (per the `cliError` driver
   claim) classifies both the same way and retries rather than fails terminally. That
@@ -848,9 +900,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   unknown keys and invalid values, which keeps the format forward-compatible and
   fail-safe. Precedence: explicit CLI flag > config > default.
 - Keys mirror the flags: `version-override`, `keep-children`, `metrics-addr`,
-  `wire-log`, `wire-log-max-string`, `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10), `cli-probe-timeout`
-  (D11), `cli-download-timeout` (D12), `git-timeout`
-  (D5), `files-read-regular-only` (D4). Durations use `time.ParseDuration`, which
+  `wire-log`, `wire-log-max-string`, `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10),
+  `cli-download-timeout` (D12), `git-timeout`
+  (D5), `files-read-regular-only` (D4). Two more keys are deprecated and set
+  nothing: `cli-probe-timeout` (retired D11) and `libc-probe-timeout` (retired
+  D14). Durations use `time.ParseDuration`, which
   rejects a bare number, except zero. Zero parses in unboundedly many spellings and
   always means disabled. No accepted oddity can switch a divergence *on*.
 - `version-override` makes claustrum a permanent drop-in. The desktop client
@@ -911,8 +965,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ## Retired entries
 
-A retired entry is a divergence that a later reference build made moot. Its
-number is not reused, and its old link points here.
+A retired entry is a divergence that a later reference build, or a later
+measurement of the reference, made moot. Its number is not reused, and its old
+link points here.
 
 ### D1 · Verify the `-cli-zst` blob against a supplied checksum (retired) { #d1 }
 
@@ -942,6 +997,34 @@ number is not reused, and its old link points here.
   install removes it once it is that old. A cache hit does not.
 - claustrum now does the same. Measured on a Linux VM against `4534d86` through
   `f6010b97`. [D6](#d6) still applies to every version.
+
+### D11 · Deadline on the `<cli> --version` run of `-install` (retired) { #d11 }
+
+- D11 made the deadline on the direct `<cli> --version` run opt-in and off by
+  default. Its premise was that the reference has no deadline at or below 90 s.
+  That premise is false.
+- The reference stops a present CLI that has not answered after 30 s. It stops
+  a CLI that it installed in the same run after 120 s. Measured on `f6010b97` and
+  `89cb6289`, on Linux, macOS and Windows. A present CLI that answers at 28 s
+  passes, and a new CLI that answers at 118 s passes. On Linux and Windows a
+  present CLI that answers at 31 s is stopped, and a new CLI that answers at
+  121 s is stopped. Each stop came at 30.0 s or at 120.0 s.
+- The two older numbers of this entry fit those bounds. A CLI that answers at
+  20 s installs, and a CLI that answers at 90 s installs after 91 s. Both are
+  under 120 s, the bound of a new CLI.
+- The outcome at the bound is not one of the three that this entry named. The
+  reference answers a `cli unresponsive: …` `cliError` with
+  `"cliUnresponsive":true`. On a cache hit it installs nothing. After an install
+  it keeps the new CLI. [PROTOCOL.md](PROTOCOL.md) → `-install` holds the rows.
+- claustrum now does the same, always. The bounds are unit-tested with shrunk
+  values.
+- The `-cli-probe-timeout` flag and its `claustrum.conf` key are deprecated.
+  Both are still accepted, both set nothing, and either one logs one warning on
+  `-install`.
+- Not measured: which reference build first had the two bounds. `f6010b97` has
+  them.
+- No knob stays to change the bounds. A different bound is a new divergence, and
+  rule 2 puts the burden of proof on it.
 
 ### D14 · Deadline on the `ldd --version` libc probe (retired) { #d14 }
 

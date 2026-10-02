@@ -154,7 +154,7 @@ func main() {
 		cliKeep     = flag.Int("cli-keep", 3, "How many most-recent CLI versions to keep")
 		maxCLI      = flag.Int64("max-cli-bytes", 0, "Cap the decompressed CLI and the download response body, in bytes. 0 (the default) means no cap, which is what the reference does; a non-zero value is an opt-in divergence. -install only. Claude Desktop owns the argv, so the max-cli-bytes key in claustrum.conf is usually the reachable way to set this.")
 
-		cliProbe = flag.Duration("cli-probe-timeout", 0, "Bound the <cli> --version runnability probe with this wall-clock `duration` (e.g. 30s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that rejects any CLI slower than it. -install only. Claude Desktop owns the argv, so the cli-probe-timeout key in claustrum.conf is usually the reachable way to set this.")
+		_ = flag.Duration("cli-probe-timeout", 0, "Deprecated and ignored. The direct <cli> --version run of -install always uses the bounds of the reference: 30s for a CLI that is present, 120s for a CLI that this run installed. Passing this flag, or setting the cli-probe-timeout key in claustrum.conf, logs one warning on -install and changes nothing.")
 
 		readRegularOnly = flag.Bool("files-read-regular-only", false, "Make files.read refuse anything that is not a regular file (FIFO, socket, character/block device) with -32602 \"files.read: not a regular file\". Off by default, which is what the reference does — it reads /dev/null happily and blocks on a writerless FIFO; on is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the files-read-regular-only key in claustrum.conf is usually the reachable way to set this.")
 
@@ -206,7 +206,7 @@ func main() {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: cannot resolve home directory: %v\n", err)
-		osExit(1)
+		osExit(homeFailureExitCode(*install, *cliVersion, *cliDir))
 	}
 	// When -socket is omitted, -bridge/-stop fall back to the reference's default
 	// daemon socket. (The deployment always passes -socket explicitly; this only
@@ -227,10 +227,10 @@ func main() {
 		// no other mode performs. Set before runInstall because the value is read
 		// deep in those helpers, not carried through installOpts.
 		maxCLIBytes = cfg.effectiveMaxCLIBytes(*maxCLI, cliSet["max-cli-bytes"])
-		// Same reasoning for the runnability probe's deadline: isRunnable is
-		// called from the runInstall path's two call sites (the cache-hit guard
-		// here, and stageAndInstall via ensureCLI), not handed an option struct.
-		cliProbeTimeout = cfg.effectiveCLIProbeTimeout(*cliProbe, cliSet["cli-probe-timeout"])
+		// -cli-probe-timeout and its config key are deprecated no-ops. They set
+		// nothing, so the direct --version run keeps the reference's bounds
+		// (cliRunBound, cliFirstRunBound).
+		warnDeprecatedCLIProbe(cliSet["cli-probe-timeout"], cfg.cliProbeTimeoutSeen)
 		// -libc-probe-timeout and its config key are deprecated no-ops. They set
 		// nothing, so the ldd probe keeps its 5 s bound (lddProbeTimeout).
 		warnDeprecatedLibcProbe(cliSet["libc-probe-timeout"], cfg.libcProbeTimeoutSeen)
@@ -240,6 +240,7 @@ func main() {
 		runInstall(installOpts{
 			cliDir: *cliDir, cliVersion: *cliVersion, cliURL: *cliURL,
 			cliChecksum: *cliChecksum, cliZst: *cliZst, cliKeep: *cliKeep,
+			home: home,
 		})
 		return
 	case *bridge:
@@ -289,4 +290,27 @@ func warnDeprecatedLibcProbe(flagSet, keySeen bool) {
 	if flagSet || keySeen {
 		logWarnf("[Install] -libc-probe-timeout is deprecated and ignored. The ldd probe always uses its 5s bound")
 	}
+}
+
+// warnDeprecatedCLIProbe logs one warning when the deprecated -cli-probe-timeout
+// flag or its claustrum.conf key is present. It sets nothing: the reference
+// bounds the direct --version run itself, at 30 s and at 120 s, so D11 is retired.
+func warnDeprecatedCLIProbe(flagSet, keySeen bool) {
+	if flagSet || keySeen {
+		logWarnf("[Install] -cli-probe-timeout is deprecated and ignored. The direct --version run always uses its 30s and 120s bounds")
+	}
+}
+
+// homeFailureExitCode is the exit code of a mode that cannot resolve the home
+// folder. `-install -cli-version <v>` with no -cli-dir needs the home folder for
+// its default cli folder, and it exits 2. That is row H07: a Linux VM, f6010b97
+// and 89cb6289, with HOME not in the environment. Every other case keeps exit 1.
+//
+// Not measured: a missing home folder together with -cli-dir, without
+// -cli-version, in another mode, on macOS, and a missing USERPROFILE on Windows.
+func homeFailureExitCode(install bool, cliVersion, cliDir string) int {
+	if install && cliVersion != "" && cliDir == "" {
+		return 2
+	}
+	return 1
 }

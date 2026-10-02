@@ -37,29 +37,34 @@ The JSON-RPC surface is the same on every OS. Only the `*_unix.go` /
 
 ### 1 · CLI-version manager (`-install`)
 
-This mode makes sure the pinned `claude` CLI is present under `-cli-dir`.
+This mode makes sure the pinned `claude` CLI is present under `-cli-dir`. With
+no `-cli-dir` the folder is `<home>/.claude/remote/ccd-cli`. On Windows the CLI
+file is `<cli-version>.exe`.
 
 - If `<cli-dir>/<cli-version>` exists *and* is runnable (`<cli> --version`
-  exits 0), claustrum keeps it as it is. The probe has no deadline by
-  default. That matches the reference on every input measured: the reference
-  installed a CLI that answered at 90 s. Above 90 s, nothing was probed. The `-cli-probe-timeout`
-  flag, or the `cli-probe-timeout` configuration key, opts into a deadline. A CLI that
-  works but is slower than that deadline then fails this guard. See
-  [D11](DIVERGENCES.md#d11).
+  exits 0), claustrum keeps it as it is. That direct run is stopped when it has
+  not ended after 30 s, as on the reference. `-install` then reports the CLI as
+  unresponsive and installs nothing. The direct run of a CLI that this `-install`
+  put in place is stopped after 120 s. A managed launcher run has 33 s and
+  123 s. See
+  [PROTOCOL.md](PROTOCOL.md) → `-install`. The retired
+  [D11](DIVERGENCES.md#d11) holds the history of this bound.
 - If not, claustrum gets the blob from one of two sources:
-    - `-cli-zst` names a local `.zst` file. Claustrum consumes it as soon as
-      decompression succeeds. A runnability probe that fails after that point
-      does not undo the consumption. A supplied `-cli-checksum` makes claustrum
+    - `-cli-zst` names a local `.zst` file. Claustrum consumes it after the
+      `--version` run, whenever decompression succeeded. A run that fails does
+      not keep the blob. The home guard refusal (D2) does. A supplied `-cli-checksum` makes claustrum
       verify the blob against it, case-sensitively. Without that flag claustrum
       does not verify the blob. The reference does the same. Claustrum creates
       the cli-dir before it opens the blob.
     - `-cli-url` makes claustrum download the blob. Claustrum then verifies its
       SHA-256 against `-cli-checksum` *unconditionally* (even an empty checksum
       fails).
-- Claustrum decompresses the blob with zstd, applies `chmod 0755`, and probes it
-  again for runnability. It does all of this at a temp path, then renames the
-  file into place atomically. An interrupted install never leaves a
-  half-written CLI.
+- Claustrum decompresses the blob with zstd to a temp path, applies
+  `chmod 0755` and renames the file into place atomically. An interrupted
+  install never leaves a half-written CLI. A folder at the final path is removed
+  before the rename, and a file there is replaced by it. Claustrum then runs
+  `<cli> --version` at the final path, and it removes a new CLI that exits
+  non-zero.
 - Claustrum prunes the directory to the `-cli-keep` most-recent CLI versions (by
   mtime, default 3). The prune skips `.blob-*` and every name the sweep claims.
 - Claustrum prints one line: `__INSTALL_RESULT__{json}`.
@@ -310,15 +315,17 @@ sits in front of those calls so operators can quiet the daemon:
                               // The driver uses
                               // this field to pick which CLI build to download —
                               // a third-binary claim; see the provenance note below.
-  "cliPath": "<cli-dir>/<cli-version>",
-  "cliWasPresent": false,     // true only if it existed AND answered --version — within
-                              // -cli-probe-timeout when that is set; no deadline by default (D11).
+  "cliPath": "<cli-dir>/<cli-version>", // <cli-version>.exe on Windows. It is "" when the
+                              // cli-dir cannot be made, and without -cli-version
+  "cliWasPresent": false,     // true only if it existed AND answered --version within 30 s.
                               // That is without CLAUDE_SSH_MANAGED_LAUNCHER=1; the gated rules
                               // are in PROTOCOL.md → -install
   "cliError": "…",            // omitted on success
-  // 89cb6289: cliUnresponsive and the launcher* fields appear only with CLAUDE_SSH_MANAGED_LAUNCHER=1,
+  "cliUnresponsive": true,    // a --version run that its bound stopped. A direct run has 30 s,
+                              // and 120 s after an install in the same run. A managed launcher
+                              // run has 33 s and 123 s. Omitted when it does not apply.
+  // 89cb6289: the launcher* fields appear only with CLAUDE_SSH_MANAGED_LAUNCHER=1,
   // each omitted when it does not apply. See PROTOCOL.md → -install.
-  "cliUnresponsive": true,    // a managed launcher run stopped at 33 s (123 s after a fresh install)
   "fetch": {                  // 4534d86: present whenever a -cli-url download was
     "bytes": 0,               // attempted, even a 0-byte 404. Omitted on -cli-zst / cache hit.
     "ms": 0,                  // download duration
@@ -342,25 +349,29 @@ count. If you need a count, re-derive it from `ensureCLI`:
 |---|---|
 | version check | `cli version "<v>" must be a single path component` |
 | | `cli version "<v>" collides with the install download blob` |
-| source | `cli <v> missing and no --cli-url or --cli-zst provided`. A second route reaches it. A present, working CLI answers `--version` more slowly than an opted-in `-cli-probe-timeout`, and no source flag was given. That route is unreachable at the default, which has no deadline (D11) |
+| source | `cli <v> missing and no --cli-url or --cli-zst provided` |
 | | `opening input: <err>` (`-cli-zst` read) |
-| download | `download failed: <err>`. This is the catch-all wrap for any download error that is neither a bare status nor a bare stall. Those errors are a transport failure and a disk error while streaming the body. They also include the D10 cap (`response exceeds <n> bytes`) and the D12 deadline (`context deadline exceeded (…)`, off by default) |
+| download | `download failed: <err>`. This is the catch-all wrap for any download error that is not one of the three bare forms below. Those errors are a transport failure before the body, the 60 s response-header limit (`Get "<url>": net/http: timeout awaiting response headers`) and a disk error while streaming the body. They also include the D10 cap (`response exceeds <n> bytes`) and the D12 deadline (`context deadline exceeded (…)`, off by default) |
 | | `download failed with status <code>`. Non-200, no URL, no reason phrase (bare, no prefix) |
 | | `download stalled: no data for <n>s after <got>/<total> bytes`. This is the 60s read-idle abort (always-on, `4534d86` parity, bare, no prefix) |
+| | `download interrupted after <got>/<total> bytes: <err>`. A body read that ended with a transport error (always-on, parity, bare, no prefix) |
 | verify | `checksum mismatch: expected=<a>, actual=<b>` |
 | install | `mkdir cli dir: <err>` |
 | | `staging cli: <err>` |
 | | `decompressing: <err>` |
 | | `decompressing: decompressed CLI exceeds <n> bytes` |
 | | `installed cli at <path> is not runnable` |
+| | `cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)`. A direct `--version` run that its bound stopped |
+| | `cli path must not be or contain the home directory: "<path>"`. The D2 home guard, claustrum-only |
 | | `clearing stale dir at <path>: <err>` |
 | | `staging file vanished before install: <err>` |
 | managed launcher | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish`. Only with `CLAUDE_SSH_MANAGED_LAUNCHER=1` |
 
 The download forms use different wording on purpose, to match the reference. The
-status and stall forms are fully worded and go out bare. Every other download
-error carries the `download failed: ` prefix. Those other errors are a transport
-failure, the D10 cap, the D12 deadline, and a disk error. The
+status, stall and interrupted forms are fully worded and go out bare. Every other
+download error carries the `download failed: ` prefix. Those other errors are a
+transport failure before the body, the response-header limit, the D10 cap, the
+D12 deadline, and a disk error. The
 status form omits the URL, so a signed URL cannot reach whatever captures the
 `__INSTALL_RESULT__` line. A bare `chmod`/`rename` failure propagates as the raw
 Go error.
@@ -390,7 +401,7 @@ load-bearing:
   field to pick which CLI build to download.
 - "Desktop owns the argv". An operator has no way to influence the daemon's
   argv. A divergence reachable only through an argv flag is therefore unreachable
-  on Desktop-driven hosts. This premise lets D3, D4, D5, D10, D11 and D12 be
+  on Desktop-driven hosts. This premise lets D3, D4, D5, D10 and D12 be
   opt-in. It also defines the "(opt-in)" tagging convention: a flag and
   a configuration key, because the configuration key is the reachable knob.
 
@@ -416,7 +427,7 @@ fail, an SFTP upload was re-invoked as `-cli-zst`. Both records live in `scratch
 
 The `cliError` and `libc` claims remain design constraints. The argv claim is a
 driver result, not a parity one. Four argv dependents (D3, D4, D5, D12) carry
-reopen triggers for their own behavior. The other two (D10, D11) carry riders about
+reopen triggers for their own behavior. The other one (D10) carries a rider about
 the `cliError` claim, as does D13. All live in [DIVERGENCES.md](DIVERGENCES.md). If
 someone finds a route to influence the daemon's argv, the argv claim reopens. A
 Desktop release that adds such a route reopens it too. That route is a new configuration
@@ -424,8 +435,8 @@ field, or a configuration file it turns into argv. A forwarded env var does not
 qualify, because nothing in `config.go` or `main.go` reads the
 environment for these knobs. The dependents list is maintained by hand, and it was
 incomplete every time somebody checked it. Treat it as best-known, not complete. The
-argv claim underpins D3, D4, D5, D10, D11 and D12. `cliError` underpins D10,
-D11 (retraction rider), D13 and clause (c)'s error-string rider. `libc` underpins
-no current entry. It underpinned the retired D14. One further driver claim is
+argv claim underpins D3, D4, D5, D10 and D12. `cliError` underpins D10,
+D13 and clause (c)'s error-string rider. Both underpinned the retired D11. `libc`
+underpins no current entry. It underpinned the retired D14. One further driver claim is
 untracked and unprovenanced: D6's clause-(b) evidence, which rests on what Desktop
 emits as `-cli-version`.

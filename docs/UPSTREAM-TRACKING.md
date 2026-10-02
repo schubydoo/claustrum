@@ -184,7 +184,7 @@ opt-in?
 ### Which divergences a probe can see
 
 `battery-visible?` asks whether the standard frame battery (`validate.sh` /
-`battery.js`) shows a diff. The install-path bounds (D10–D13) run under
+`battery.js`) shows a diff. The install-path entries (D10, D12 and D13) run under
 `-install`, which the frame battery never drives at all.
 
 | ID | Default | Battery-visible? | What it is |
@@ -193,9 +193,8 @@ opt-in?
 | D4 | Off | Yes. `battery.js` id 70 reads `/dev/null`. No diff at the default (guard off), and it turns red once armed | `files.read` regular-file guard |
 | D5 | Off (`0` = no deadline) | No. Off the default path | git-invocation deadline |
 | D10 | Off (`0` = unlimited) | No. Install path | `-install` CLI size cap |
-| D11 | Off (`0` = no deadline) | No. Install path | `-install` runnability-probe deadline |
 | D12 | Off (`0` = no bound) | No. Install path | `-install` download bound |
-| D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal |
+| D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift |
 | D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
 | D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-` |
 | D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where `f6010b97` answers success and deletes the branch (`89cb6289` not measured there) |
@@ -209,8 +208,8 @@ opt-in?
 | CT-4 | Not built. A deferred idea, recorded in DIVERGENCES.md only | No. There is no code | opt-in hardened token persistence (a `persist-token` key, or a Windows owner-only DACL) |
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
 
-D1, D7 and D14 are retired. The reference changed on each path, and claustrum
-now matches it. A difference on those paths is drift, not a divergence, unless
+D1, D7, D11 and D14 are retired. The reference changed on the path, or a later
+measurement corrected the premise, and claustrum now matches it. A difference on those paths is drift, not a divergence, unless
 an entry in the table above covers it (for example D6, D10, D13, D18). See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries).
 
@@ -227,9 +226,11 @@ An opt-in key that is *present* is not a deadline that is *in force*. A mistyped
 inert value leaves the divergence off, and the parity behavior that results reads
 exactly like drift. When a symptom matches a D-shaped divergence on a stock
 claustrum, check for the key or flag first. Then make sure that the value parses to
-a positive duration. Three knobs take a duration: D5 (`git-timeout`), D11
-(`cli-probe-timeout`) and D12 (`cli-download-timeout`). D5 logs under `[Server]`.
-The other two log under `[Install]`. All three parse the same way:
+a positive duration. Two knobs take a duration: D5 (`git-timeout`) and D12
+(`cli-download-timeout`). D5 logs under `[Server]`, and D12 logs under
+`[Install]`. Both parse the same way. The deprecated `cli-probe-timeout` and
+`libc-probe-timeout` set nothing, whatever their value. A flag value that does
+not parse still exits 2, as in the table:
 
 | Value shape | Configuration key in `claustrum.conf` | `-…` flag on the argv |
 |-------------|--------------------------------|-----------------------|
@@ -238,11 +239,13 @@ The other two log under `[Install]`. All three parse the same way:
 | Any zero (`0`, `+0`, `-0`, `0s`, `-0m`, `-0.4ns`) | Accepted. It reads as opted-in but the deadline stays off | Accepted, with the deadline off |
 
 The configuration path is silent, and that silence is the shape that looks like
-drift. A missing `__INSTALL_RESULT__` does not by itself mean a malformed flag. A
-stock claustrum blocked on a CLI that never answers also prints no facts line, which
-is the deadline-off parity behavior. Discriminate on exit. Exit 2 with `parse error`
-on stderr is the bad flag. Still running with nothing on stderr is the parity
-wait.
+drift. A missing `__INSTALL_RESULT__` does not by itself mean a malformed flag.
+`-install` prints no facts line while it waits for a CLI that does not answer.
+That wait ends at 30 s on a cache hit and at 120 s after an install. Through a
+usable managed launcher it ends at 33 s and at 123 s. The
+facts line then carries `"cliUnresponsive":true`. That is parity. Discriminate on
+exit. Exit 2 with `parse error` on stderr is the bad flag. Exit 2 with
+`cannot resolve home directory` on stderr is a missing home folder.
 
 D4 is the one exception. It is a bool, not a duration (`files-read-regular-only`).
 The forms parse like this:
@@ -363,12 +366,21 @@ traps that matter for telling drift from expected:
   and git.info.
 - D12 needs a VALID zstd body. D13's ordering answers an invalid one at 0 s,
   which reads like "no divergence". Also, a zero download timeout frees the body
-  read only: `http.DefaultTransport` still applies `net.Dialer{Timeout: 30s}` and
-  `TLSHandshakeTimeout: 10s`.
-- D13 has two honest shapes a triager must not merge. A short or truncated
-  artifact reaches the checksum (claustrum `checksum mismatch: …`). A genuine
-  interrupted transfer never does, because `io.Copy`'s error returns first.
-  Claustrum therefore diverges on the *prefix* (`download failed: <err>`).
+  read only: the transport still applies `net.Dialer{Timeout: 30s}`,
+  `TLSHandshakeTimeout: 10s` and the 60 s response-header limit. That last limit
+  is parity.
+- D13 has one honest shape: a short or truncated artifact reaches the checksum
+  (claustrum `checksum mismatch: …`). A connection reset in the body is not a D13
+  case. It answers
+  `download interrupted after <got>/<total> bytes: <err>` on both binaries
+  (measured on Linux against `f6010b97` and `89cb6289`). A different text there
+  is drift. A body that ends before its length is not measured, so do not call a
+  difference there drift.
+- D13 also shows with equal texts. For a download that is not a zstd archive,
+  with the right checksum, both binaries answer `decompressing: …`. The reference
+  reported `fetch.bytes` 4 and one progress line in the measured row. claustrum reports the full body
+  size (4096 in the measured row) and two progress lines. That delta is D13, not
+  drift (Linux VM, `f6010b97` and `89cb6289`).
 - The `ldd` libc probe bounds ldd itself at 5 s on both binaries (parity since
   `19f30c46`). There is no libc probe off linux at all.
 - claustrum made seven changes for `90fca6e6` while the JSON-RPC surface stood still.

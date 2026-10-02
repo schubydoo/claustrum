@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,6 +25,24 @@ import (
 type installOpts struct {
 	cliDir, cliVersion, cliURL, cliChecksum, cliZst string
 	cliKeep                                         int
+	// home is the user's home folder. runInstall uses it only for the default
+	// cli folder, when -cli-version is given and -cli-dir is absent or empty.
+	home string
+}
+
+// defaultCLIDir is the cli folder of an -install with -cli-version and no
+// -cli-dir, or an empty one: <home>/.claude/remote/ccd-cli. Measured on 89cb6289
+// (rows H01, H03, H04 and H05, each on Linux, macOS and Windows). On Windows
+// <home> is USERPROFILE, and HOME is not read (row H10).
+func defaultCLIDir(home string) string {
+	return filepath.Join(home, ".claude", "remote", "ccd-cli")
+}
+
+// installCLIPath is the final path of the CLI file. On Windows the file name is
+// <version>.exe, always, also for a version that ends in ".exe" already (rows
+// W01 and W06, Windows VM, 89cb6289). cliExeSuffix is empty on the other systems.
+func installCLIPath(cliDir, cliVersion string) string {
+	return filepath.Join(cliDir, cliVersion+cliExeSuffix)
 }
 
 // installFacts mirrors the __INSTALL_RESULT__ JSON the real binary prints, in the
@@ -37,12 +56,14 @@ type installFacts struct {
 	CliPath       string `json:"cliPath"`
 	CliWasPresent bool   `json:"cliWasPresent"`
 	CliError      string `json:"cliError,omitempty"`
-	// The managed launcher fields (89cb6289) come after cliError, only when
+	// cliUnresponsive comes right after cliError. It is true for a --version run
+	// that its bound stopped (89cb6289). A direct run is measured on Linux, macOS
+	// and Windows. A launcher run is measured on Linux and macOS.
+	//
+	// The managed launcher fields come after it, only when
 	// CLAUDE_SSH_MANAGED_LAUNCHER=1. The order was measured across every row:
 	// cliUnresponsive, launcherStatus, launcher, launcherSource, launcherPath,
 	// launcherReason, launcherStderr. A field that does not apply is omitted.
-	// claustrum's choice (not measured): cliUnresponsive appears only for a stopped
-	// launcher run.
 	CliUnresponsive bool `json:"cliUnresponsive,omitempty"`
 	// Fetch is the download stats object of 4534d86. It is present whenever a
 	// -cli-url download was attempted (even a 0-byte 404). omitempty (a pointer)
@@ -64,6 +85,7 @@ func runInstall(o installOpts) {
 	// attempted, and it is read back into f.Fetch below (4534d86).
 	lastInstallFetch = nil
 	lastInstallFinal = nil
+	installSwept = false
 	// installManaged lives for this run only, so a later direct ensureCLI call
 	// (tests) never sees a stale launcher.
 	installManaged = nil
@@ -75,8 +97,15 @@ func runInstall(o installOpts) {
 		Libc:          detectLibc(),
 	}
 
-	if o.cliDir != "" && o.cliVersion != "" {
-		f.CliPath = filepath.Join(o.cliDir, o.cliVersion)
+	// Without -cli-version there is no CLI path, and the default folder does not
+	// apply (row H06, macOS and Windows).
+	if o.cliVersion != "" {
+		if o.cliDir == "" && o.home != "" {
+			o.cliDir = defaultCLIDir(o.home)
+		}
+		if o.cliDir != "" {
+			f.CliPath = installCLIPath(o.cliDir, o.cliVersion)
+		}
 	}
 	if f.CliPath != "" {
 		// With CLAUDE_SSH_MANAGED_LAUNCHER=1 the launcher is resolved for the CLI path
@@ -89,22 +118,26 @@ func runInstall(o installOpts) {
 
 		// "present" requires the file to exist AND be runnable (real binary checks
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
+		// On Windows only <version>.exe counts. A file with the bare name counts
+		// for nothing (rows W02 to W05).
 		checkErr := errCLINotRunnable
 		if isRegularFile(f.CliPath) {
 			checkErr = installCLICheck(f.CliPath, false)
 		}
-		var unresponsive *managedUnresponsiveError
-		if errors.As(checkErr, &unresponsive) {
-			// A launcher run that was stopped: cliWasPresent false, the cliError
-			// text and cliUnresponsive, and the CLI file stays (measured). claustrum's
-			// choice (not measured): no install is attempted, so nothing is swept
-			// or pruned.
+		var stopped *cliStoppedError
+		if errors.As(checkErr, &stopped) {
+			// A run of a present CLI that its bound stopped, direct or through a
+			// launcher: cliWasPresent false, the cliError text and cliUnresponsive.
+			// The CLI file stays, the sweep runs and nothing is pruned (89cb6289,
+			// rows B04 to B11, B15, L03, L05). No source flag is used: rows B10 and
+			// B11 for a direct run. With a launcher that is not measured.
 			f.CliError = checkErr.Error()
 			f.CliUnresponsive = true
+			sweepFetchTemps(o.cliDir, time.Now())
 		} else if checkErr == nil {
-			// Cache hit: the reference touches the cli-dir at all only when it
-			// attempts an install, so neither the orphan sweep nor the prune
-			// runs here.
+			// Cache hit with a good run: neither the orphan sweep nor the prune
+			// runs here, as on the reference. A stopped run is the branch above,
+			// and it sweeps.
 			//
 			// The citation used to be "a cache-hit run with 4 versions and
 			// -cli-keep 3 left all four in place". That fixture supports the
@@ -117,16 +150,33 @@ func runInstall(o installOpts) {
 			err := ensureCLI(o, f.CliPath)
 			if err != nil {
 				f.CliError = err.Error()
-				f.CliUnresponsive = errors.As(err, &unresponsive)
+				f.CliUnresponsive = errors.As(err, &stopped)
+				// A cli folder that cannot be made answers an empty cliPath
+				// (row E10, Linux VM, 89cb6289).
+				// The reference prints no launcher field beside that empty
+				// cliPath, with the gate set (cell G1, Linux VM).
+				var mk *cliDirError
+				if errors.As(err, &mk) {
+					f.CliPath = ""
+					installManaged = nil
+				}
 			}
-			// The sweep runs whether or not the install succeeded; the prune
-			// runs only when it succeeded. Both probe-measured at 5db5e4a:
+			// The sweep runs once per attempted install, whether or not the
+			// install succeeded. The prune runs only when it succeeded.
 			//
-			//	scenario                 sweep  prune
-			//	cache hit                no     no
-			//	install attempted+failed yes    no
-			//	install succeeded        yes    yes
-			sweepFetchTemps(o.cliDir, time.Now())
+			//	scenario                       sweep            prune
+			//	cache hit, good run            no               no
+			//	cache hit, stopped run         yes              no
+			//	install fails before the run   yes              no
+			//	install, good run              before the run   yes
+			//	install, stopped run           before the run   no
+			//	install, new CLI does not run  before the run   no
+			//
+			// stageAndInstall sweeps before the run of a new CLI and sets
+			// installSwept. Every other path sweeps here.
+			if !installSwept {
+				sweepFetchTemps(o.cliDir, time.Now())
+			}
 			if err == nil && o.cliKeep > 0 {
 				pruneCLI(o.cliDir, o.cliKeep)
 			}
@@ -143,6 +193,18 @@ func runInstall(o installOpts) {
 	b, _ := json.Marshal(f)
 	fmt.Printf("__INSTALL_RESULT__%s\n", b)
 }
+
+// installSwept records that stageAndInstall ran the sweep of this -install run
+// already, before the --version run of a new CLI. runInstall resets it and then
+// sweeps only when it is false, so one run sweeps once. A second sweep after a
+// long --version run removes an entry that passed the age gate during the run.
+var installSwept bool
+
+// cliDirError is a cli folder that cannot be made. Its text lands in cliError,
+// and runInstall answers an empty cliPath for it.
+type cliDirError struct{ err error }
+
+func (e *cliDirError) Error() string { return fmt.Sprintf("mkdir cli dir: %v", e.err) }
 
 // hashBlobFile is sha256File behind a seam, so ensureCLI's -cli-zst hash-failure arm is
 // reachable from a test: the blob has just been opened and read a byte at that
@@ -182,6 +244,7 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// as zeros, a 14 KB blob, is 9 MB on both binaries — so the post-change number
 	// is baseline, not workload.
 	var blobPath, blobSum string
+	var blobIsTemp bool
 	var err error
 	// On every cache miss the cli-dir is created FIRST, before the source check,
 	// before the blob is opened and before any network access. The reference
@@ -195,8 +258,15 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// 0700, not 0755: the reference creates the whole cli-dir chain owner-only.
 	// Probe-measured under umask 022 against 5db5e4a. The "mkdir cli dir: "
 	// prefix is measured against 5db5e4a too, and it lands in cliError.
+	//
+	// A cli-dir entry that is not a folder is replaced first (clearNonFolderCLIDir).
+	// It runs only for a cliPath that runInstall made from the cli-dir, so the
+	// path it works on is the cli-dir itself.
+	if o.cliDir != "" {
+		clearNonFolderCLIDir(filepath.Dir(cliPath))
+	}
 	if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
-		return fmt.Errorf("mkdir cli dir: %v", err)
+		return &cliDirError{err: err}
 	}
 	switch {
 	case o.cliZst != "":
@@ -259,8 +329,18 @@ func ensureCLI(o installOpts, cliPath string) error {
 			if errors.As(err, &st) {
 				return err
 			}
+			// A body read that ended with a transport error is fully worded too
+			// (row E07, see interruptedError).
+			var it *interruptedError
+			if errors.As(err, &it) {
+				return err
+			}
 			return fmt.Errorf("download failed: %v", err)
 		}
+		// The download blob is claustrum's own temp file. stageAndInstall removes
+		// it before the --version run of a new CLI. This defer covers every
+		// other path.
+		blobIsTemp = true
 		defer func() { _ = os.Remove(blobPath) }()
 		// Downloads are verified UNCONDITIONALLY — an empty -cli-checksum still
 		// fails ("checksum mismatch: expected=, actual=<sha>") — matching the
@@ -281,21 +361,21 @@ func ensureCLI(o installOpts, cliPath string) error {
 	}
 	// Stage, verify and install, retried ONCE if a concurrent install's sweep
 	// reclaimed our staging file. See stageAndInstall for when that can happen.
-	decompressed, err := stageAndInstall(blobPath, cliPath)
+	consumeBlob, err := stageAndInstall(blobPath, cliPath, blobIsTemp)
 	if err != nil && errors.Is(err, errStagingVanished) {
-		// Accumulate rather than overwrite. Decompression is a fact about the
-		// blob, not about an attempt: once any attempt has decompressed it, the
-		// consume rule below is satisfied for good. Assigning here instead would
-		// let a retry that fails BEFORE its own decompress (a CreateTemp or write
-		// error) report false and keep a blob the first attempt had already
-		// decompressed — contradicting the rule stated right below.
+		// Accumulate rather than overwrite. The answer is about the blob, not
+		// about an attempt: once one attempt says that the blob is consumed, the
+		// consume rule below holds for good. With a plain assignment, a retry
+		// that fails BEFORE its own decompress (a CreateTemp or write error)
+		// answers false and keeps a blob that the first attempt had already
+		// decompressed. That contradicts the rule stated right below.
 		//
 		// Not shown to be reachable: the sweep that triggers the retry removes
 		// `.fetch-*`, not the cli-dir, so a second-pass CreateTemp failure needs
 		// state the retry path does not itself produce. This is invariant
 		// hygiene, and it costs one variable.
-		retryDecompressed, retryErr := stageAndInstall(blobPath, cliPath)
-		decompressed = decompressed || retryDecompressed
+		retryConsume, retryErr := stageAndInstall(blobPath, cliPath, blobIsTemp)
+		consumeBlob = consumeBlob || retryConsume
 		err = retryErr
 	}
 	// The uploaded .zst blob is consumed once DECOMPRESSION SUCCEEDED — not only
@@ -315,70 +395,118 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// matches the reference — which is the whole point of the change.
 	//
 	// So a failure BEFORE decompression succeeds leaves the blob alone, and a
-	// failure after it does not. (Not "before the staged file exists":
-	// os.CreateTemp makes that file before zstdDecompress runs, so the bad-zstd
-	// row has a staged file and still keeps the blob.) The cliError strings are byte-identical
-	// on all four. The failures between decompression and rename (chmod, the
-	// destination clear) were not provoked; they sit on the consumed side of the
-	// measured boundary by construction, not by observation.
-	if o.cliZst != "" && decompressed {
+	// failure after it does not, with one exception: the home guard refusal
+	// (D2) keeps the blob. (Not "before the staged file exists": os.CreateTemp
+	// makes that file before zstdDecompress runs, so the bad-zstd row has a
+	// staged file and still keeps the blob.) The cliError strings are
+	// byte-identical on all four. The chmod failure and a failed clear sit on
+	// the consumed side by construction, not by observation.
+	if o.cliZst != "" && consumeBlob {
 		_ = os.Remove(o.cliZst)
 	}
 	return err
+}
+
+// cliVersionMarker is the name of the one file beside the cli-dir that
+// clearNonFolderCLIDir removes. The name is literal.
+const cliVersionMarker = "ccd-cli-version"
+
+// clearNonFolderCLIDir makes room for the cli folder when the cli-dir path names
+// something that is not a folder. Measured against f6010b97 and 89cb6289, one
+// run for each cell: E12x-a to E12x-n on Linux and macOS, 13 cells on Windows.
+//
+//   - The trigger is an existing entry of one of three kinds. They are a regular
+//     file (cells a, b, g, h, j, l, m), a symlink to a regular file (d) and a
+//     FIFO (k). The reference then removes that entry. For a symlink it removes
+//     the link and keeps the target.
+//   - It also removes the file named exactly "ccd-cli-version" in the parent
+//     folder of the cli-dir. A file named other-version, ccd-cli-version.bak or
+//     zzz-version stays (g, l).
+//   - Then it makes the cli folder with mode 0700 and goes on. That happens with
+//     no source flag too, before the "missing" answer (j).
+//   - A folder (c), a symlink to a folder (e) and an absent entry (n) trigger
+//     nothing. A dangling symlink (f) does not either. The version file stays.
+//   - With a parent folder that is not writable nothing is removed, and the
+//     answer is the mkdir error (i).
+//
+// Both deletes are a plain os.Remove of one path. Nothing here is recursive, and
+// nothing follows a symlink to delete. Nothing here opens the FIFO: Lstat and
+// Stat do not open it.
+//
+// Not measured: an entry of another type (a socket, a device, a symlink to a
+// FIFO), and a "ccd-cli-version" that is a folder or a symlink. claustrum leaves
+// these alone. Windows has no FIFO cell and no cell with a parent that is not
+// writable. Not measured either: the order of the two deletes. claustrum removes
+// the version file first and the entry second. When the entry stays, for example
+// below a parent that is not writable, MkdirAll gives the mkdir error.
+func clearNonFolderCLIDir(dir string) {
+	li, err := os.Lstat(dir)
+	if err != nil {
+		return
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return // a dangling symlink (cell f)
+	}
+	if !fi.Mode().IsRegular() && li.Mode()&os.ModeNamedPipe == 0 {
+		return
+	}
+	marker := filepath.Join(filepath.Dir(dir), cliVersionMarker)
+	if mi, err := os.Lstat(marker); err == nil && mi.Mode().IsRegular() {
+		if err := os.Remove(marker); err != nil {
+			return
+		}
+	}
+	_ = os.Remove(dir)
 }
 
 // errStagingVanished marks the one failure ensureCLI retries: the staging file
 // was removed by another process between its creation and the rename.
 var errStagingVanished = errors.New("staging file vanished")
 
-// stageAndInstall decompresses zst to a staging file beside cliPath, verifies it
-// runs, and renames it into place.
+// stageAndInstall decompresses the blob to a staging file beside cliPath, puts
+// it at cliPath and then runs it. It follows the order of the reference,
+// measured on 89cb6289:
 //
-// The staging step ITSELF is a pre-existing claustrum divergence (IMPROVEMENTS
-// #4). Here cliPath only ever appears as a complete, 0755, verified binary. The
-// end state is identical — same facts, same "not runnable" error — so nothing on
-// the wire changes. Everything below about losing a staging file follows from that
-// choice, not from a new one.
+//  1. What is at cliPath goes before the new CLI runs. A folder there is removed
+//     as a tree, with the file in it (row E11 on Linux and macOS, row E11b on
+//     Windows). A file there is replaced (row F14, Linux).
+//  2. The new CLI is at cliPath. The sweep has run, and the download blob is
+//     gone. The cli folder holds no `.fetch-` temp of this install (rows F01, F02
+//     and W01, on Linux, macOS and Windows).
+//  3. `<cliPath> --version` runs. The CLI and a managed launcher get the final
+//     path (rows L06, L08 to L10).
+//  4. A stopped run keeps the new CLI (rows F05 to F11, F14, F15, L07, L09). A
+//     run that exits non-zero removes it and answers the "not runnable" text with
+//     the final path (rows F12 and G05).
 //
-// This used to say flatly that "the reference extracts in place". Measured
-// 2026-08-08 on -cli-url, that is wrong as a general statement: mid-download the
-// reference's cli-dir holds a ".fetch-<random>" whose first bytes are the
-// DECOMPRESSED CLI's. What the original measurement actually established is
-// narrower and still holds — across the post-extraction --version window the
-// reference shows only the installed version, where claustrum still holds a
-// staging file. So the windows differ, not the presence of staging as such, and
-// the divergence this comment describes is about how long cliPath's replacement
-// stays incomplete. The probe-window half was measured on BOTH source paths; the
-// mid-download finding is -cli-url only.
+// The delete of step 1 is an os.RemoveAll of cliPath. The delete of step 4 is
+// an os.Remove of the file that this call put there. ensureCLI runs
+// validateCLIVersion (D6) before it calls this function, so cliPath is a direct
+// child of the cli folder. D6 does not say which folder that child is, so
+// cliFolderHoldsHome runs right before the delete of step 1. That guard is a
+// divergence (D2): the reference removes a home folder there.
 //
-// Staged under the reference's own temp name, ".fetch-<random>" in the cli-dir,
-// rather than "<cliPath>.tmp": sweepFetchTemps reaps ".fetch-*" but knew nothing
-// about a ".tmp", so claustrum's own interrupted-install litter was never cleaned
-// up while the reference's was.
+// Not measured: how the reference writes the final file, and the order of its
+// sweep against that write. claustrum writes a staging file and renames it, so
+// cliPath only ever holds a complete 0755 binary, and it sweeps after the rename.
+// Not measured either: a new CLI that exits non-zero over a file or a folder at
+// cliPath. claustrum then leaves nothing at cliPath, as for an empty one.
 //
-// That choice has a cost the reference does not pay in ONE window. Measured with
-// a CLI that sleeps 3s on --version, claustrum shows ".fetch-XXXX" in the cli-dir
-// for that whole probe window while the reference shows only the installed
-// version, on both the -cli-zst and -cli-url paths. So across the probe window
-// the reference has no in-flight file for its own sweep to hit, and claustrum
-// does. Since the sweep's age gate (sweepMinAge), a concurrent install sweeps
-// ours only once it is more than ten minutes old, for example behind a CLI whose
-// --version takes that long.
+// Only a folder is removed in step 1. rename(2) replaces a file atomically, so a
+// staging file that vanished costs an installed CLI nothing: the rename fails and
+// the old file stays. A folder at cliPath is a stale blocker, not an install.
 //
-// This used to say the reference's sweep "can NEVER hit its own in-flight file".
-// That is too strong, and a different window falsifies it: measured 2026-08-08
-// mid-DOWNLOAD against a deliberately slow origin, the reference's cli-dir holds
-// a ".fetch-<random>" of its own (decompressed output, by its first bytes). The
-// original measurement only ever looked at the post-extraction probe window, so
-// it could not have seen this. Claustrum's exposure is the STAGING window —
-// decompress, chmod, probe, rename — not the download, and the retry below covers
-// all of it, since a loss is only detected at the rename anyway. The download blob
-// is covered separately, by being outside isSweptName so no sweep claims it.
-// The reference's own exposure is the reference's to carry.
+// The staging name is the reference's own temp name, ".fetch-<random>" in the
+// cli-dir, so sweepFetchTemps reaps an interrupted install's litter. Mid-download
+// the reference's cli-dir holds a ".fetch-<random>" of its own, with the
+// decompressed CLI's first bytes (measured 2026-08-08, -cli-url only).
 //
-// The caller retries once on errStagingVanished, which covers that case. The
-// age gate is the reference's own rule, not a guard for this: a staging file
-// older than the gate is indistinguishable from litter by name and age alone.
+// A concurrent install's sweep can remove the staging file once it is more than
+// ten minutes old (sweepMinAge). The loss shows at the rename, and the caller
+// retries once on errStagingVanished. The exposed window is decompress and
+// chmod. The download blob is outside isSweptName, so no sweep claims it.
+//
 // chmodStaged is os.Chmod behind a seam, so the one branch between decompress
 // and rename that no fixture can otherwise provoke is reachable from a test.
 // That branch matters more than its size: it is on the CONSUMED side of the
@@ -386,7 +514,7 @@ var errStagingVanished = errors.New("staging file vanished")
 // construction. Production never reassigns it.
 var chmodStaged = os.Chmod
 
-func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
+func stageAndInstall(blobPath, cliPath string, blobIsTemp bool) (consumeBlob bool, err error) {
 	tmpFile, err := os.CreateTemp(filepath.Dir(cliPath), ".fetch-*")
 	if err != nil {
 		return false, fmt.Errorf("staging cli: %v", err)
@@ -401,35 +529,16 @@ func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 		_ = os.Remove(tmp)
 		return true, err
 	}
-	// Verify the extracted CLI actually runs; if not, discard the temp and report.
-	// With the managed launcher gate on, installCLICheck runs it through a usable
-	// launcher instead, and a stopped run reports the unresponsive text. A stopped
-	// run still installs the CLI: the reference left the CLI at its final path
-	// (measured on a Linux VM, -cli-url and -cli-zst).
-	var stopped *managedUnresponsiveError
-	if err := installCLICheck(tmp, true); err != nil && !errors.As(err, &stopped) {
-		_ = os.Remove(tmp)
-		if errors.Is(err, errCLINotRunnable) {
-			return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
-		}
-		return true, err
-	}
-	// Clear the destination ONLY when it is a directory, then rename into place.
-	//
-	// Only a directory blocks rename(2) — a regular file is replaced atomically —
-	// so a directory is the only case that needs clearing, and it is the same case
-	// the reference clears: measured at 5db5e4a, the reference removes the blocker
-	// and installs successfully while claustrum returned `rename …: file exists`
-	// and left it in place. End states match the reference for every destination
-	// shape (absent / regular file / non-empty directory).
-	//
-	// The narrowness is the point. Clearing unconditionally destroys the
-	// destination BEFORE knowing the staging file survived, so a swept staging
-	// file left an installed, working CLI deleted and nothing put back. An
-	// installed CLI is always a regular file (the cache-hit check requires it), so
-	// it is never what gets cleared here; a directory at cliPath is a stale
-	// blocker, not an install.
 	if fi, err := os.Lstat(cliPath); err == nil && fi.IsDir() {
+		// The home guard (D2). A folder at cliPath that is the home folder, or
+		// that contains it, is not removed. The reference removes it as a tree
+		// (measured on Linux, macOS and Windows, see docs/DIVERGENCES.md D2). See
+		// cliFolderHoldsHome. The folder is not removed here, and the blob is not
+		// consumed: the answer is false, so ensureCLI keeps the -cli-zst blob.
+		if cliFolderHoldsHome(cliPath, fi) {
+			_ = os.Remove(tmp)
+			return false, fmt.Errorf("cli path must not be or contain the home directory: %q", cliPath)
+		}
 		if rmErr := os.RemoveAll(cliPath); rmErr != nil {
 			_ = os.Remove(tmp)
 			return true, fmt.Errorf("clearing stale dir at %s: %v", cliPath, rmErr)
@@ -438,22 +547,77 @@ func stageAndInstall(blobPath, cliPath string) (decompressed bool, err error) {
 	if err := os.Rename(tmp, cliPath); err != nil {
 		if _, statErr := os.Lstat(tmp); statErr != nil {
 			// Our staging file is gone — a concurrent install's sweep took it.
-			// cliPath is deliberately left alone; there is nothing to install.
+			// A file at cliPath is deliberately left alone.
 			return true, fmt.Errorf("%w before install: %v", errStagingVanished, err)
 		}
 		_ = os.Remove(tmp)
 		return true, err
 	}
-	if stopped != nil {
-		return true, stopped
+	if blobIsTemp {
+		_ = os.Remove(blobPath)
 	}
-	return true, nil
+	sweepFetchTemps(filepath.Dir(cliPath), time.Now())
+	installSwept = true
+	err = installCLICheck(cliPath, true)
+	var stopped *cliStoppedError
+	if err == nil || errors.As(err, &stopped) {
+		return true, err
+	}
+	_ = os.Remove(cliPath)
+	return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
+}
+
+// cliFolderHoldsHome is the home guard of the tree delete in stageAndInstall.
+// fi is the Lstat answer of the folder at cliPath. Two tests run, and one yes
+// refuses the delete:
+//
+//  1. wipesHomeDir, the lexical test of the RPC paths.
+//  2. The folder is the home folder or one of its parent folders, by identity
+//     (os.SameFile). The spelling of the two paths does not matter.
+//
+// Test 2 runs for the home path as given. It runs again for the path that
+// finalDirPath gives, when that differs: the parents of a path through a link
+// are not the parents of the folder it names.
+//
+// wipesHomeDir stays lexical because a destination that does not exist is legal
+// on the RPC paths. Here the folder exists: its Lstat just succeeded.
+func cliFolderHoldsHome(cliPath string, fi os.FileInfo) bool {
+	if wipesHomeDir(cliPath) {
+		return true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	if abs, err := filepath.Abs(home); err == nil {
+		home = abs
+	}
+	if folderIsAtOrAbove(fi, home) {
+		return true
+	}
+	final := finalDirPath(home)
+	return final != home && folderIsAtOrAbove(fi, final)
+}
+
+// folderIsAtOrAbove reports whether the folder of fi is p or a parent folder of
+// p. A step of p that Stat cannot read is skipped, and the walk goes on.
+func folderIsAtOrAbove(fi os.FileInfo, p string) bool {
+	for {
+		if pi, err := os.Stat(p); err == nil && os.SameFile(fi, pi) {
+			return true
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return false
+		}
+		p = parent
+	}
 }
 
 // validateCLIVersion rejects a -cli-version the install cannot honestly carry
 // out. Two rules, both claustrum-only.
 //
-//  1. A SINGLE PATH COMPONENT (D6). cliPath is filepath.Join(cliDir, cliVersion)
+//  1. A SINGLE PATH COMPONENT (D6). cliPath is installCLIPath(cliDir, cliVersion)
 //     and ensureCLI's os.RemoveAll deletes cliPath recursively, so a version that
 //     reaches outside cliDir destroys unrelated data. Measured, the reference
 //     destroys the target on "../victim". "../victim" escapes because Join
@@ -538,45 +702,119 @@ func sha256File(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// cliProbeTimeout bounds the `<cli> --version` runnability probe in isRunnable.
+// cliRunBound stops the direct `<cli> --version` run of -install on a cache hit.
+// cliFirstRunBound stops the direct run of a CLI that this -install run put in
+// place. Both are reference behavior, measured on f6010b97 and 89cb6289.
 //
-// ZERO (the default) DISABLES IT, which is the parity position: the reference
-// showed no deadline at or below 45 s against a CLI that never answers, and it
-// INSTALLED a CLI that answers in 90 s, waiting 91 s for it.
+//   - A present CLI that answers at 28 s passes (row B03). One that answers at
+//     33 s is stopped at 30.0 s (row B04). Both on Linux, macOS and Windows.
+//   - A present CLI that answers at 31 s is stopped (row B15, Linux and Windows).
+//   - A new CLI that answers at 118 s passes (row F04). One that answers at
+//     123 s is stopped at 120.0 s (row F05). Both on Linux, macOS and Windows.
+//   - A new CLI that answers at 121 s is stopped (row F15, Linux and Windows).
+//   - The class follows the install in this run, not the existence of a file
+//     before the run (row F14, Linux).
 //
-// ⚠️ A deadline is NOT a hang detector. It cannot separate "never answers" from
-// "answers slowly", so any non-zero value rejects some honest CLI. Measured at
-// 5db5e4a with a CLI that sleeps 20 s, prints its version and exits 0: the
-// reference installs it, while claustrum with the old hardcoded 15 s answered
+// A "direct" run is a run with no usable managed launcher. A launcher run has
+// its own bounds (managedRunBound, managedFirstRunBound).
 //
-//	cliError "installed cli at <path> is not runnable"
-//
-// and deleted the staged binary, leaving the cli-dir empty. That is why raising
-// the constant was rejected in favour of disabling it — every finite deadline
-// invents a boundary the reference was not observed to have — measured only at or
-// below 90 s; above that it is unmeasured on this path.
-//
-// The probe shipped bounded at a hardcoded 15 s and is the sibling of the
-// files.extract_tar and -install size caps, which were flipped the same way in
-// PRs 236 and 238. Opt in with -cli-probe-timeout or the cli-probe-timeout key
-// in claustrum.conf; the config key is the reachable one, because Claude Desktop
-// owns the argv on -install. Also set directly by tests. Divergence D11.
-var cliProbeTimeout time.Duration
+// The bounds are always on. They are vars only so tests shrink them.
+var (
+	cliRunBound      = 30 * time.Second
+	cliFirstRunBound = 120 * time.Second
+)
 
-// isRunnable reports whether `<path> --version` exits 0 (the real binary's CLI
-// validity check).
+// cliUnresponsiveText is the cliError of a direct run that its bound stopped. It
+// is copied from a VM capture, and it is the same text for both bounds.
+const cliUnresponsiveText = "cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)"
+
+// cliRunResult is the outcome of one direct `<cli> --version` run.
+type cliRunResult int
+
+const (
+	cliRunOK      cliRunResult = iota // exited 0
+	cliRunFailed                      // did not start, or exited non-zero
+	cliRunStopped                     // still ran at the bound and was stopped
+)
+
+// startCLIRun is (*exec.Cmd).Start behind a seam, so a test can make the start
+// call slow. Production never reassigns it.
+var startCLIRun = (*exec.Cmd).Start
+
+// afterCLIBound is time.AfterFunc behind a seam, so a test can hold the stop
+// step of runCLIVersion. Production never reassigns it.
+var afterCLIBound = time.AfterFunc
+
+// runCLIVersion runs `<path> --version` and stops it at bound.
 //
-// With cliProbeTimeout disabled the probe runs with NO deadline at all — the
-// context is not created, rather than created with a large timeout. Same rule as
-// the two size caps: the bypass is the parity behaviour, and a huge-but-finite
-// deadline is a different thing that merely looks equivalent.
-func isRunnable(path string) bool {
-	if cliProbeTimeout <= 0 {
-		return exec.Command(path, "--version").Run() == nil
+// The clock starts right before the process start call. Measured on a Windows
+// VM against 89cb6289: a stopped run has a wall time of 30.01 to 30.06 s, or
+// 120.02 to 120.06 s. The start delay of the CLI does not change it. A clock
+// that starts after the start call stops 0.07 to 0.30 s later there. That the
+// clock starts before the start call is inferred from those wall times. On Linux
+// and macOS a process starts in a few milliseconds. Both readings fit the rows.
+// A download before the run does not use up the bound (row F13).
+//
+// The CLI runs in its own process group (newSysProcAttr), as on the reference
+// (Linux and macOS: the stub's pgid is its pid). At the bound the whole group is
+// killed on Linux and macOS. A child in that group ends with the CLI, and a
+// child in a new session survives (rows B08, B09, F10, F11). On Windows only the
+// CLI process is ended and its children stay (rows B08, B09). That is the
+// teardown of probeCLIRunnable.
+//
+// Not measured: the name of the stop signal. The stub logs no signal and a stub
+// that ignores SIGTERM is stopped at the same time (rows B07, F09), so claustrum
+// sends SIGKILL.
+//
+// The CLI gets no output pipe: stdout and stderr are the null device. A process
+// that holds the CLI's output after the CLI exits therefore delays nothing
+// (row B14). Not measured: what the reference gives the CLI as stdin, stdout and
+// stderr, and its environment beyond the launcher gate variable, which stays.
+func runCLIVersion(path string, bound time.Duration) cliRunResult {
+	cmd := exec.Command(path, "--version")
+	cmd.SysProcAttr = newSysProcAttr()
+	began := time.Now()
+	if err := startCLIRun(cmd); err != nil {
+		return cliRunFailed
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), cliProbeTimeout)
-	defer cancel()
-	return exec.CommandContext(ctx, path, "--version").Run() == nil
+	// The stop step and the end of cmd.Wait share one lock. After cmd.Wait the
+	// pid of the CLI is free, and so is its group id, so a group kill then hits
+	// whatever holds that id. A stop step that starts after cmd.Wait returned
+	// therefore does nothing. A stop step that is already in its kill holds the
+	// lock, and the flag is set only after it finished. time.Timer.Stop does not
+	// wait for a stop step that started, so this function waits for it: no
+	// goroutine of this run is left when it returns.
+	var (
+		mu      sync.Mutex
+		waited  bool // cmd.Wait returned
+		stopped bool // the stop step killed the CLI
+	)
+	fired := make(chan struct{})
+	timer := afterCLIBound(bound-time.Since(began), func() {
+		defer close(fired)
+		mu.Lock()
+		defer mu.Unlock()
+		if waited {
+			return
+		}
+		stopped = true
+		reapProcessGroup(cmd.Process)
+		_ = cmd.Process.Kill()
+	})
+	err := cmd.Wait()
+	mu.Lock()
+	waited = true
+	mu.Unlock()
+	if !timer.Stop() {
+		<-fired
+	}
+	switch {
+	case err == nil:
+		return cliRunOK
+	case stopped:
+		return cliRunStopped
+	}
+	return cliRunFailed
 }
 
 // probeCLIVerdict classifies the outcome of the -probe-cli bounded runnability
@@ -591,9 +829,10 @@ const (
 )
 
 // probeCLITimeout is the fixed wall-clock bound the -probe-cli mode puts on the
-// `<cli> --version` probe. The reference value is not probe-measured. It is NOT
-// the opt-in -cli-probe-timeout (D11) divergence: -probe-cli is a standalone mode
-// Claude Desktop drives to classify a CLI binary, and the reference always bounds it.
+// `<cli> --version` probe. Measured on 89cb6289 (rows Q1 and Q2, Linux, macOS and
+// Windows): a CLI that answers at 28 s passes, and one that answers at 33 s gives
+// __CLI_HUNG__ at 30.0 s. -probe-cli is a standalone mode Claude Desktop drives to
+// classify a CLI binary, and the reference always bounds it.
 // It is a var, not a const, only so tests can shrink it (same idiom as
 // stdinQueueCap in process.go).
 var probeCLITimeout = 30 * time.Second
@@ -607,8 +846,10 @@ const probeCLIKillGrace = 2 * time.Second
 // probeCLIRunnable runs `<path> --version` under probeCLITimeout and classifies the
 // outcome the way the reference's -probe-cli mode does: it exited 0 (runs), the
 // deadline had to kill it (hung), or it is missing / failed to start / exited
-// non-zero (bad). Unlike isRunnable, -probe-cli always bounds the probe, so this
-// always creates the context.
+// non-zero (bad).
+//
+// On Windows a path with no file at exactly that name is bad, and nothing starts
+// (probeCLIPathMissing).
 //
 // The probe runs in its OWN process group (newSysProcAttr) and the deadline tears
 // down the WHOLE group, not just the direct child, so a `--version` that forks a
@@ -623,6 +864,9 @@ const probeCLIKillGrace = 2 * time.Second
 // exit 130 and empty stdout (19f30c46). Do NOT add a SIGINT reaper here: it would
 // diverge.
 func probeCLIRunnable(path string) probeCLIVerdict {
+	if probeCLIPathMissing(path) {
+		return probeCLIBad
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), probeCLITimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version")
@@ -761,18 +1005,19 @@ func (e *httpStatusError) Error() string {
 // needs six minutes trips it exactly as a black hole does, and one that finishes
 // in 4:59 does not. That is the same threshold-not-intent problem D3 and D10 were
 // flipped for, and Claude Desktop owns the argv on `-install`, so the caller who
-// pays cannot decline. (D11's runnability probe has the same shape and took the
-// same flip; both are opt-in and default-off now.)
+// pays cannot decline.
 //
 // Zero is the stdlib's own "no timeout" sentinel, so assigning it straight through
 // IS the bypass — no huge-but-finite value stands in for "off", which is the same
 // property D3 and D10 get by skipping their `io.LimitReader`s.
 //
 // ⚠️ That disables the bound on the BODY READ, not every clock on the path.
-// fetchToFile leaves Transport nil, so it uses http.DefaultTransport, which
-// carries net.Dialer{Timeout: 30s} and TLSHandshakeTimeout: 10s. A host that
+// fetchToFile uses a clone of http.DefaultTransport, which carries
+// net.Dialer{Timeout: 30s} and TLSHandshakeTimeout: 10s. A host that
 // black-holes SYN still fails at 30 s with the bound "off". Those are stdlib
 // defaults, always-on, and unnumbered — neither has been probed on the reference.
+// The wait for the response headers has its own always-on limit
+// (installHeaderTimeout), which is reference behavior.
 // Opt in with
 // -cli-download-timeout or the cli-download-timeout key in claustrum.conf. Also
 // set directly by tests. Divergence D12.
@@ -802,7 +1047,15 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 	// the watched body overwrites lastInstallFetch with real stats once the download
 	// begins. Set on every -cli-url path so runInstall always sees a fetch object.
 	start := time.Now()
-	client := &http.Client{Timeout: cliDownloadTimeout}
+	// The transport is the stdlib default plus the response-header limit, so the
+	// proxy, dial and TLS settings stay the defaults.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.ResponseHeaderTimeout = installHeaderTimeout
+	// The transport keeps the connection after the body. Do not close the idle
+	// connections here. The cloned default transport has an idle limit of 90 s
+	// (IdleConnTimeout), and that closes it. Measured on a macOS VM (cells F08b,
+	// L08b, L09b): 89cb6289 and claustrum both close it 90.0 to 90.1 s after it.
+	client := &http.Client{Timeout: cliDownloadTimeout, Transport: tr}
 	resp, err := client.Get(url)
 	if err != nil {
 		lastInstallFetch = &fetchStats{Ms: time.Since(start).Milliseconds()}
@@ -820,7 +1073,7 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 		return "", "", &httpStatusError{code: resp.StatusCode}
 	}
 	// ⚠️ The prefix must be one isSweptName does NOT claim. sweepFetchTemps runs
-	// after EVERY attempted install and takes old ".fetch-*" and "*.zst" from the
+	// once in every attempted install and takes old ".fetch-*" and "*.zst" from the
 	// cli-dir, so naming the blob ".fetch-*" would let a concurrent install's
 	// sweep delete the staging file AND the blob the retry re-reads — defeating
 	// errStagingVanished in exactly the case it exists for, and able to fail the

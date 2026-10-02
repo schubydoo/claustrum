@@ -3181,7 +3181,7 @@ never "a huge limit".
 | `-git-timeout <dur>` | `git-timeout` | `0` | deadline on git invocations (D5) | -serve |
 | `-files-read-regular-only` | `files-read-regular-only` | off | refuse non-regular `files.read` (D4) | -serve |
 | `-max-cli-bytes <n>` | `max-cli-bytes` | `0` | cap CLI decompress + download (D10) | -install |
-| `-cli-probe-timeout <dur>` | `cli-probe-timeout` | `0` | `<cli> --version` deadline (D11) | -install |
+| `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
 | `-libc-probe-timeout <dur>` | `libc-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The `ldd` probe always has its 5 s bound (retired D14) | -install |
 | `-cli-keep <n>` | none | `3` | versions to retain on prune | -install |
@@ -3424,34 +3424,41 @@ See
 ### -install — ensure the agent CLI
 
 ```text
-claustrum -install -cli-dir <d> -cli-version <v> \
+claustrum -install -cli-version <v> [-cli-dir <d>] \
           [-cli-url <u> -cli-checksum <sha256>] [-cli-zst <p>] [-cli-keep <n>] \
-          [-max-cli-bytes <n>] [-cli-probe-timeout <dur>] [-cli-download-timeout <dur>]
+          [-max-cli-bytes <n>] [-cli-download-timeout <dur>]
 ```
 
 `-install` downloads, verifies, extracts and prunes, and then prints one
 `__INSTALL_RESULT__<json>` facts line (schema in
-[ARCHITECTURE.md](ARCHITECTURE.md)). `-install` always exits `0`. It reports a
-failure inside the facts as `cliError`, not through the exit code. `-install`
+[ARCHITECTURE.md](ARCHITECTURE.md)). `-install` exits `0` whenever it prints
+the facts line. It reports a failure inside the facts as `cliError`, not through
+the exit code. Three cases print no facts line. A flag that does not parse exits
+`2`. `-cli-version` with no `-cli-dir` and no home folder exits `2`. Any other
+run with no home folder exits `1` (see the default CLI folder below). `-install`
 reaches the network only with `-cli-url`.
 
 The `cliError` catalogue follows:
 
 | `cliError` | trigger |
 |---|---|
-| `installed cli at <path> is not runnable` | post-extraction `--version` probe failed (or timed out, D11) |
-| `cli <v> missing and no --cli-url or --cli-zst provided` | cache miss (or a cache-hit probe timeout, D11) with no source flag |
+| `installed cli at <path> is not runnable` | the `--version` run of a new CLI did not start or exited non-zero. `<path>` is the final path |
+| `cli <v> missing and no --cli-url or --cli-zst provided` | cache miss with no source flag |
+| `cli unresponsive: the installed Claude Code binary started but did not answer --version within 30s (120s for a first run) and was stopped; the host is not letting it run (endpoint security software or a stalled network home are the usual causes)` | a direct `--version` run stopped at 30 s (120 s after an install in the same run). Always-on, parity (see below) |
 | `checksum mismatch: expected=<x>, actual=<y>` | `-cli-checksum` verify failed. This applies to `-cli-url` always, and to `-cli-zst` only when a checksum is supplied. The compare is case-sensitive |
 | `opening input: <err>` | `-cli-zst` read error |
 | `decompressing: <err>` | bad zstd blob, for example `invalid input: magic number mismatch` |
 | `decompressing: decompressed CLI exceeds <n> bytes` | D10 cap, opt-in |
 | `download failed: response exceeds <n> bytes` | D10 cap on the download body, opt-in |
-| `download failed: <transport err>` | `io.Copy` transport error, for example `read tcp …: connection reset by peer` |
+| `download failed: <transport err>` | a transport error before the body, for example a refused connection |
+| `download failed: Get "<url>": net/http: timeout awaiting response headers` | no response headers for 60 s (always-on, parity, see below) |
+| `download interrupted after <got>/<total> bytes: <transport err>` | a body read that ended with a transport error, for example `read tcp …: read: connection reset by peer` (parity, see below) |
 | `download failed: context deadline exceeded (Client.Timeout or context cancellation while reading body)` | D12 download deadline, opt-in |
 | `download stalled: no data for 60s after <got>/<total> bytes` | read-idle abort, meaning no bytes for 60 s on the `-cli-url` body (always-on, `4534d86` parity, VM-measured) |
-| `mkdir cli dir: <err>` | cli-dir uncreatable |
+| `mkdir cli dir: <err>` | cli-dir uncreatable. `cliPath` is then empty. A file or a FIFO at the cli-dir path is replaced first (see Staging and cleanup) |
 | `cli version "…" must be a single path component` | D6 hardening |
 | `cli version "…" collides with the install download blob` | version starting `.blob-` (D18) |
+| `cli path must not be or contain the home directory: "<path>"` | a folder at the final path that is the home folder or one of its parent folders (D2 hardening) |
 | `clearing stale dir at <path>: <err>` | an occupied `cliPath` directory that claustrum cannot remove |
 | `staging file vanished before install: <err>` | a concurrent sweep took the staging file |
 | `cli unresponsive: the installed Claude Code binary was started through the host's managed launcher <argv0> and the run did not answer --version within 33s (123s for a first run), so it was stopped; the launcher or the host is not letting it finish` | a managed launcher run stopped at 33 s (123 s after a fresh install), with `CLAUDE_SSH_MANAGED_LAUNCHER=1` (see below) |
@@ -3464,22 +3471,27 @@ The managed launcher (`89cb6289` parity):
   claustrum's choice (not measured for other values).
 - With the gate and a CLI path, `-install` resolves the launcher for that path, as
   `launcher.resolve` does. The facts line then gains launcher fields after
-  `cliWasPresent` and `cliError`, in this order: `cliUnresponsive`,
+  `cliWasPresent`, `cliError` and `cliUnresponsive`, in this order:
   `launcherStatus`, `launcher`, `launcherSource`, `launcherPath`,
   `launcherReason`, `launcherStderr`. A field that does not apply is omitted.
   With `-cli-url`, `fetch` comes after `cliUnresponsive` and before
   `launcherStatus`. That is measured on a Linux VM for the statuses `usable`,
   `none`, `unusable`, `probe_failed` and `unresponsive`.
-- With an empty `cliPath` the facts line gains no launcher field. Without
+- Without `-cli-version` the `cliPath` is empty and the facts line gains no
+  launcher field. A `cliPath` that is empty because the cli-dir cannot be made
+  gains no launcher field either (measured on a Linux VM with the gate, against
+  `f6010b97` and `89cb6289`). Without
   `-cli-version`, with or without `-cli-dir`, the line ends
   `"cliPath":"","cliWasPresent":false}` and no launcher runs. That is measured on
   a Linux VM with the gate, for a usable launcher, an unusable one and none.
-- With `-cli-version` and no `-cli-dir`, the reference uses a default CLI folder,
-  so its `cliPath` is not empty (measured on a Linux VM). claustrum has no default
-  folder. It prints an empty `cliPath`, creates no folder and runs nothing there,
-  with the gate and without it. That is an older gap.
-- `none`: the CLI runs directly, as without the gate. That run keeps the gate in
-  its env. The facts end `"cliWasPresent":true,"launcherStatus":"none"}`.
+- With `-cli-version` and no `-cli-dir`, the CLI path is in the default CLI
+  folder (see below), with the gate and without it. The launcher gets that path
+  (measured on macOS).
+- `none`: the CLI runs directly, as without the gate, under the direct bounds
+  below. That run keeps the gate in its env. The facts end
+  `"cliWasPresent":true,"launcherStatus":"none"}`. A stopped direct run ends
+  `"cliUnresponsive":true,"launcherStatus":"none"}` (measured on Linux, macOS and
+  Windows).
 - `usable`: the CLI runs once, as `<launcher argv...> <cli> --version`. No direct
   run happens. The launcher's stdout is not reported, and its stderr does not
   reach `-install` stderr. The facts add `launcher` and `launcherSource`.
@@ -3500,8 +3512,9 @@ The managed launcher (`89cb6289` parity):
   `"cliUnresponsive":true`, `"launcherStatus":"unresponsive"` and
   `"launcherReason":"did not exit within 33s and was stopped"`. The CLI file
   stays. The reference stopped a 60 s launcher at 33.057 s and left no process.
-  This bound is parity. It is not the opt-in `-cli-probe-timeout` (D11), which
-  bounds only a direct run.
+  This bound is parity. With a usable launcher the direct bounds below do not
+  apply. A CLI that answers at 31 s through a launcher is present (measured on
+  Linux and macOS).
 - The run right after a fresh install has a bound of 123 s. The reference stopped
   a 300 s launcher at 123.048 s after a `-cli-url` install and at 123.066 s after
   a `-cli-zst` install (Linux VM). It let a 100 s launcher finish as `usable`
@@ -3509,21 +3522,21 @@ The managed launcher (`89cb6289` parity):
   The stopped facts are the ones above, with
   `"launcherReason":"did not exit within 123s and was stopped"`. The `cliError`
   text is the same. The CLI is installed all the same, and the blob is consumed.
+- No install follows a stopped launcher run on a cache hit, and nothing is
+  pruned. The sweep runs: a swept file more than 10 minutes old is removed
+  (measured on Linux and macOS).
 - claustrum's choices (not measured): the stop kills the run's whole process
-  group, then waits up to 2 s for its output. No install follows a stopped run
-  on a cache hit, so nothing is swept or pruned. The texts name the launcher's
-  argv[0] only. `cliUnresponsive` appears only for a stopped launcher run.
-- A fresh install extracts, then runs the CLI once through a usable launcher.
-  The facts read `"cliWasPresent":false` with the usable fields. The reference
-  runs the extracted CLI at its final path. claustrum passes its staged
-  `.fetch-<random>` file, as its direct run does. That is an older gap, not
-  launcher behaviour.
+  group, then waits up to 2 s for its output. The texts name the launcher's
+  argv[0] only. No install follows a stopped launcher run on a cache hit when a
+  source flag is given either.
+- A fresh install puts the CLI at its final path, then runs it once through a
+  usable launcher. The facts read `"cliWasPresent":false` with the usable fields.
+  The launcher gets the final path (measured on Linux and macOS).
 - Right after a fresh `-cli-url` install, a failed run still installs the CLI.
   An unusable launcher installs the CLI without a run. Both are measured on a
   Linux VM. claustrum does the same for an unreadable answer and for `-cli-zst`.
   That is claustrum's choice (not measured).
-- claustrum's choices (not measured) after a stopped first run: no prune
-  follows, and an install step that then fails gives its own `cliError`.
+- After a stopped first run no prune follows (measured on Linux and macOS).
 - The launcher run gets the daemon env without `CLAUDE_SSH_MANAGED_LAUNCHER`
   (measured on Linux and macOS). claustrum also drops `CLAUDE_CODE_PROCESS_WRAPPER`
   and `CLAUDE_SSH_E2E_MANAGED_SETTINGS_DIR` there, as for a spawn with a launcher.
@@ -3534,24 +3547,150 @@ The managed launcher (`89cb6289` parity):
   `"launcherStatus":"none"` last and runs the CLI directly (measured on a Windows
   VM).
 
+The direct `--version` run and its bounds are parity. They are measured on
+`f6010b97` and `89cb6289`. A direct run is a run with no usable launcher: the gate
+is unset, or the launcher status is `none`.
+- On a cache hit, a run that has not ended after 30 s is stopped. The facts
+  then read `"cliWasPresent":false`, the `cli unresponsive: …` `cliError` of a
+  direct run and `"cliUnresponsive":true`. `-install` exits `0` with an empty
+  stderr. A CLI that answers at 28 s is present. Measured on Linux, macOS and
+  Windows. A CLI that answers at 31 s is stopped (Linux and Windows).
+- The run of a CLI that this run installed is stopped at 120 s, with the same
+  text. A CLI that answers at 118 s installs with no error. Measured on Linux,
+  macOS and Windows. A CLI that answers at 121 s is stopped (Linux and Windows).
+- The class of the bound follows the install in this run. With a file that does
+  not run at the final path and a blob, the new CLI gets the 120 s bound
+  (measured on Linux).
+- The download time is outside the bound. A 15 s download and a CLI that answers
+  at 110 s install with no error (measured on Linux and Windows).
+- claustrum starts the clock right before the process start call. Measured on
+  Windows against `89cb6289`: a stopped run has a wall time of 30.01 to 30.06 s,
+  or 120.02 to 120.06 s. The start delay of the CLI does not change it. That the clock
+  of the reference starts before the start call is inferred from those wall
+  times. On Linux and macOS both readings fit the rows.
+- On Linux and macOS the CLI runs in a process group of its own, in the session
+  of `-install`. The stop ends a child in the group of the CLI. A child in a new
+  session survives. A CLI that ignores SIGTERM is stopped at the same time.
+  claustrum kills the group with SIGKILL. The name of the signal is not measured.
+- On Windows the stop ends the CLI process. Its children stay alive (measured).
+- A process that holds the stdout and stderr of the CLI after the CLI exited
+  delays nothing (measured on Linux, macOS and Windows). claustrum gives the CLI
+  the null device as stdin, stdout and stderr. What the reference gives it is
+  not measured.
+- After a stopped cache hit the CLI file stays, and nothing is installed. A
+  `-cli-zst` blob stays and nothing is pruned. The sweep runs. Measured on
+  Linux, macOS and Windows. A `-cli-url` server gets no request (Linux and
+  Windows).
+- After a stopped first run the new CLI stays at its final path, the `-cli-zst`
+  blob is consumed and nothing is pruned. Measured on Linux, macOS and Windows.
+  With `-cli-url` the facts carry `fetch` after `cliUnresponsive`.
+- Not measured: a CLI that exits non-zero after a long time, and a second
+  `-install` on the CLI that a stopped first run left.
+
+The default CLI folder is parity, measured on `89cb6289`:
+- With `-cli-version` and no `-cli-dir`, or an empty `-cli-dir`, the CLI folder
+  is `<home>/.claude/remote/ccd-cli`. Measured on Linux, macOS and Windows. On
+  Windows `<home>` is `USERPROFILE`, and `HOME` is not read.
+- The other steps work in that folder as in an explicit one. The install from
+  `-cli-zst` or `-cli-url` is measured on Linux, macOS and Windows. The cache hit
+  is measured on macOS and Windows. The launcher run is measured on macOS.
+- A cache miss makes the folder chain, with or without a source flag. Each new
+  level gets mode `0700`. A level that exists keeps its mode. Measured on Linux
+  and macOS. With umask `000` the new levels still get `0700` (Linux). The
+  Windows listing shows no modes.
+- Without `-cli-version` the `cliPath` is empty, nothing runs and no folder is
+  made. The default folder does not apply (measured on macOS and Windows).
+- With no home folder, `-install -cli-version <v>` with no `-cli-dir` prints
+  nothing on stdout and exits `2`. The reference prints
+  `claude-ssh: cannot resolve home directory: $HOME is not defined` on stderr.
+  claustrum prints the same line with its own prefix, `claustrum: `. Measured on
+  Linux against `f6010b97` and `89cb6289`, with `HOME` not in the environment.
+- Not measured: no home folder together with `-cli-dir`, without `-cli-version`,
+  or in another mode. claustrum exits `1` in each of those cases, with the same
+  stderr line.
+- Not measured either: macOS, and a missing `USERPROFILE` on Windows. claustrum
+  exits `2` there for the same arguments. On Windows its stderr line names
+  `%userprofile%`.
+
+The CLI file name on Windows is parity, measured on a Windows VM against
+`89cb6289`:
+- The CLI file is `<cli-dir>\<version>.exe`. The `cliPath`, the file on disk,
+  the path of the `--version` run and the `not runnable` text all carry that
+  name. The `missing` text names the version with no suffix.
+- Only `<version>.exe` counts as present. A file with the bare name counts for
+  nothing, and it does not run.
+- The suffix is added always. `-cli-version 9.9.9.exe` installs `9.9.9.exe.exe`.
+- The prune counts every file, with or without the suffix.
+- A folder at the bare name stays. A folder at the `.exe` name is replaced by
+  the CLI file.
+- A CLI that an older claustrum installed at the bare name counts for nothing.
+  `-install` answers `missing` for it until a source flag installs the `.exe`
+  file beside it.
+- Not measured: a version that ends in `.EXE`, and which of `<v>` and `<v>.exe`
+  the prune keeps when `-cli-keep` leaves room for one of them. A version that
+  the sweep claims by its end, such as `1.0.zst`, installs as `1.0.zst.exe`. The
+  sweep does not claim that name. No row measures that case.
+
 Download progress and `fetch` stats came with `4534d86`, on the `-cli-url` path:
-- While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to stdout
-  on a ticker of about 1 s: `{"phase":"download","bytes":<n>[,"total":<m>]}`.
+- While downloading, `-install` prints `__INSTALL_PROGRESS__<json>` lines to
+  stdout: `{"phase":"download","bytes":<n>[,"total":<m>]}`.
   `total` carries the Content-Length and is dropped when the server sends none,
   as with a chunked body.
-- A leading `bytes:0` line comes first, before any byte is read. A final
+- A leading `bytes:0` line comes first, after the response headers and before
+  any body byte. A server that sends no headers gets no line (measured on
+  `89cb6289` on Linux and Windows). A final
   `bytes:<n>` line comes only after the checksum passes. A failed check prints no
   final line. Measured on a Linux VM against `f6010b97` with a 57-byte blob, 5 of
   5 runs per row: `bytes:0` then `bytes:57` on success, and `bytes:0` alone on a
   mismatch.
-- The ticker lines in between are time-driven, so their byte counts jump
+- Between those two lines a tick comes each 1 s. A tick prints a line only when
+  the byte count differs from the last printed line. Measured on `89cb6289`: a
+  body of 6 parts that are 20 s apart prints 7 lines, not one line per second
+  (Linux, macOS and Windows). A body with no byte prints the leading line only
+  (Linux and Windows). A body with no Content-Length follows the same rule (Linux and
+  Windows). claustrum printed a line on every tick before.
+- The tick lines show the count at the tick, so their byte counts jump
   irregularly. A consumer treats them as progress, not as a byte-exact sequence.
+- Not measured: whether the final line repeats a count that a tick printed
+  already, and what starts the tick clock. claustrum always prints the final
+  line, and it starts the tick clock when the body becomes readable.
 - The `__INSTALL_RESULT__` facts line gains a `fetch` object after `cliError`. It is
   the last field, except with the managed launcher gate (see above):
   `{"bytes":<n>,"ms":<n>,"longestPauseMs":<n>}`. Those are bytes read, download
   duration, and the largest gap between reads. It appears whenever a `-cli-url`
   download was attempted, even a 0-byte 404. It is dropped on the `-cli-zst` path
   and on the cache-hit path.
+- claustrum does not close its idle connections after the download. Its
+  transport is a copy of the Go default transport, whose idle limit is 90 s.
+  When the client closes the download connection is measured with three kinds
+  of server:
+    - macOS, a server that never closes first (18 runs). `89cb6289` and
+      claustrum both close the connection 90.0 to 90.1 s after the last body
+      byte, while the CLI runs.
+    - macOS, a server that closes at its own 5 s limit (18 runs): neither
+      binary closes first.
+    - Linux, a server that sends `Connection: close`: `89cb6289` closes 2 to
+      51 ms after the last body byte, and claustrum 0 to 5 ms after it.
+    - Not measured: Windows, and a CLI run shorter than 90 s against a server
+      that never closes first.
+- The wait for the response headers has an always-on 60 s limit. A server that
+  reads the request and sends nothing fails the install with
+  `download failed: Get "<url>": net/http: timeout awaiting response headers`.
+  No progress line is printed, and `fetch` reads `"bytes":0` and
+  `"longestPauseMs":0`. This is parity: `f6010b97` and `89cb6289` give up after
+  60.0 s (measured on Linux and Windows). claustrum had no such limit before.
+  Not measured: macOS, and the exact start point of the limit.
+- A body read that ends with a transport error fails the install with
+  `download interrupted after <got>/<total> bytes: <transport err>`, with no
+  `download failed: ` prefix. The wait from the last byte to the error counts for
+  `longestPauseMs`. One progress line is printed, and the cli-dir stays empty.
+  This is parity: measured on a Linux VM against `f6010b97` and `89cb6289` with a
+  connection reset after half the body. claustrum answered
+  `download failed: <transport err>` with `"longestPauseMs":0` before. Not
+  measured: any other read error, a body with no Content-Length, and an error
+  before the first body byte. claustrum words them the same way, with a `<total>`
+  of `0` for a body with no length. The opted-in D12 deadline keeps its own
+  text.
 - The `-cli-url` body has an always-on 60 s read-idle abort, reset on every byte,
   that fails the install with the `download stalled: …` cliError above. This is
   parity, not a divergence, because the reference does it. It is a read-idle bound,
@@ -3565,10 +3704,16 @@ Checksum and verify ordering:
   always-on and unresolved. The reference decompresses first, and claustrum
   checksums first. A blob that is both undecompressable and wrong-checksummed
   diverges on the string. A short artifact yields `checksum mismatch` where the
-  reference says `decompressing: unexpected EOF`. A genuine interrupted transfer
-  never reaches the checksum on claustrum at all. claustrum answers
-  `download failed: <transport>` there, where the reference answers
-  `decompressing: <transport>`. Both binaries fail the install either way. See
+  reference says `decompressing: unexpected EOF`. A connection reset in the
+  body is not a D13 case: both binaries answer the `download interrupted after …`
+  text above (Linux VM). Any other interruption is not measured. Both binaries
+  fail the install either way. A download that is not
+  a zstd archive, with the right checksum for its bytes, gives the same
+  `decompressing: invalid input: magic number mismatch` text on both. The
+  reference reports 4 bytes there: `"fetch":{"bytes":4,…}` and one progress
+  line. claustrum reads the whole body first: `"bytes":4096` for a 4096-byte
+  body, and two progress lines. Measured on a Linux VM against `f6010b97` and
+  `89cb6289`. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D13.
 - On the `-cli-zst` path claustrum verifies the blob only when a `-cli-checksum`
   is supplied, as the reference does since `7d193f89`. A mismatch answers
@@ -3584,26 +3729,29 @@ Checksum and verify ordering:
   refused connection and a missing source all leave it. That matches the
   reference: on every measured build from `5db5e4a` for `-cli-zst`, and on
   `f6010b97` for `-cli-url` and a missing source. Measured on a Linux VM.
+- The folder that claustrum creates is the cleaned cli-dir path. For
+  `-cli-dir <dir>/sub/..` that is `<dir>`, so it makes no folder `sub`. That is
+  a code fact. `89cb6289` creates `<dir>/sub` (mode `0700`), when no folder
+  `sub` exists before the run (Linux cell HS10b, three runs). In that cell
+  claustrum refuses at the home guard, and no folder `sub` exists after the run.
 
-The opt-in wall-clock bounds are both off by default, so a stock claustrum
-applies none of them, on linux or anywhere. At the shipped defaults no
-claustrum-chosen `-install` bound applies. The stdlib transport clocks
-(`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on `-cli-url` only.
-The `ldd` probe has the reference's 5 s bound on ldd itself and a 2 s drain after
-ldd exits. Off is parity, because the reference showed no deadline at the
-durations probed. See [`DIVERGENCES.md`](DIVERGENCES.md):
+One opt-in wall-clock bound exists, and it is off by default, so a stock
+claustrum does not apply it. The other `-install` clocks in this paragraph are
+always on, and each one is a clock of the reference. The direct `--version` run has its
+30 s and 120 s bounds, and a launcher run has its 33 s and 123 s bounds. The
+download has the 60 s response-header limit and the 60 s read-idle abort. The `ldd` probe has the
+reference's 5 s bound on ldd itself and a 2 s drain after ldd exits. The stdlib
+transport clocks (`net.Dialer{Timeout:30s}`, `TLSHandshakeTimeout:10s`) apply on
+`-cli-url` only. They are always on, and they are not probed on the reference.
+One clock is claustrum's own choice and is not measured: the wait of up to 2 s
+for the output of a stopped launcher run.
+See [`DIVERGENCES.md`](DIVERGENCES.md):
 - `-cli-download-timeout <dur>` is D12. `0` gives `http.Client{Timeout:0}`, which
   is no bound. When armed, it bounds the whole exchange. An honest download that is
   merely too slow therefore trips `download failed: context deadline exceeded (…)`
   as surely as a black hole does.
-- `-cli-probe-timeout <dur>` is D11. `0` puts no deadline on the `<cli> --version`
-  runnability probe, on every platform. When armed, a CLI slower than the deadline
-  diverges. After extraction it diverges as `installed cli at <path> is not
-  runnable`, and claustrum deletes the staged binary. On the cache-hit test it
-  diverges as a silent reinstall. With `-cli-url` and a timely replacement it
-  diverges as no `cliError` at all. It is a threshold, not a hang detector, so an
-  honest-but-slow CLI trips it too. The cached binary survives every failure before
-  the rename.
+- `-cli-probe-timeout <dur>` is a deprecated no-op. It was the opt-in D11, which
+  is retired: the reference bounds the direct `--version` run itself.
 - The `ldd --version` libc probe bounds ldd itself at 5 s, as on the reference
   since `19f30c46`. It is not a knob. `-libc-probe-timeout` is a deprecated no-op. See
   Staging and cleanup below.
@@ -3617,10 +3765,19 @@ mean unbounded memory. See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
 
 `-cli-version` hardening is claustrum-only:
 - D6 requires a single path component. The clearing step is an `os.RemoveAll`
-  on `filepath.Join(cliDir, cliVersion)`. A version that escapes the cli-dir
+  on the CLI path, `<cli-dir>/<version>` (on Windows `<version>.exe`). A version
+  that escapes the cli-dir
   therefore deletes unrelated data. Measured, the reference destroys the target on
   `../victim`. `link/1.0.0` through an intermediate symlink also escapes. claustrum answers
-  `cli version "…" must be a single path component` and touches nothing. It
+  `cli version "…" must be a single path component` and touches nothing. That rule runs on the install path. A regular file that
+  is already at the joined path is first run with `--version`, as the cache-hit
+  check. A run that passes answers `"cliWasPresent":true` with that path, as
+  on the reference. That is measured with `-cli-version ../x` on Linux against
+  `f6010b97` and `89cb6289`, and on macOS against `89cb6289`. A run that is
+  stopped answers the unresponsive text and sweeps the cli-dir. D6 answers only
+  when that run fails, or when no file is there. The reference has no such rule.
+  With `../x` and a blob it installs to `<parent>/x`, outside the cli-dir, and
+  runs that file. That is cell V1c on Linux, macOS and Windows. It
   refuses `.`, `..`, `/` and `\` on every OS. claustrum uses a single-component
   test and not lexical containment, because containment accepts `link/1.0.0`, and
   `EvalSymlinks` adds a TOCTOU window. A final component that is itself a
@@ -3633,8 +3790,77 @@ mean unbounded memory. See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   reference since `4534d86`. The retired D7 refused such a version.
 
 Staging and cleanup:
-- claustrum stages the CLI at `<cli-dir>/.fetch-<random>`, mode `0600`, and
-  renames it into place. It never stages at `<cliPath>.tmp`. This is one code path
+- An install follows the order of the reference. The new CLI is put at its
+  final path, the sweep runs and the download blob is removed. Then
+  `<final path> --version` runs. At that run the
+  cli-dir holds no `.fetch-` temp of this install, no `.blob-` file and no swept
+  file more than 10 minutes old. The prune follows a good run only. A run that
+  exits non-zero removes the new CLI again, so nothing is left at the final
+  path. A stopped run keeps the new CLI. Measured on `89cb6289` on Linux, macOS
+  and Windows. claustrum ran its staged `.fetch-<random>` file before, and it
+  swept after the run.
+- What is at the final path goes before the new CLI runs. A folder there is
+  removed with the file in it, and at the run the cli-dir holds the CLI file
+  only. Measured on Linux, macOS and Windows. A file there that does not run is
+  replaced by the new CLI before the run (measured on Linux). claustrum replaced
+  both only after the run before.
+- claustrum does not remove a folder at the final path that is the home folder
+  or contains it. It answers
+  `cli path must not be or contain the home directory: "<path>"`. The folder is
+  not removed, the blob stays and no CLI runs. This is a divergence
+  ([D2](DIVERGENCES.md#d2)). The reference removes that folder as a tree and puts
+  the CLI file there. When the new CLI then fails, the folder is gone and nothing
+  is left at the path (Linux cell H2, macOS cell HX2L). Measured with
+  `-cli-zst` on Linux, macOS and Windows. [D2](DIVERGENCES.md#d2) lists the
+  cells and what no cell covers. Not measured: `-cli-url`.
+- That guard compares the folder at the final path with the home folder and
+  with each parent folder of it, by file identity. It does that for the home
+  path as given and for its resolved path. The home guard of the RPC paths
+  stays lexical.
+- The volume of the macOS VM ignores letter case. There a `-cli-version` in
+  another letter case names the folder on disk. With `-cli-version ALICE` and a
+  folder `alice` that is not the home folder, both binaries replace the folder.
+  The new file has the name `ALICE`, as the command gave it (cells HXKC and
+  HXKC0). With `-cli-version USERS` and a folder `users` that contains the home
+  folder, `89cb6289` removes the folder and names the new file `USERS`.
+  claustrum refuses, and the folder keeps its name (cell HXK5).
+- Not measured: a new CLI that exits non-zero over a file or a folder at the
+  final path. claustrum then leaves nothing at the final path, as for an empty
+  one.
+- Not measured: how the reference writes the final file, and the order of its
+  sweep against that write.
+  claustrum decompresses to `<cli-dir>/.fetch-<random>`, renames that file to the
+  final path and then sweeps. It consumes the `-cli-zst` blob after the run.
+- A cli-dir path that names something that is not a folder is replaced, as on
+  the reference. The trigger is a regular file, a symlink to a regular file or a
+  FIFO at the cli-dir path. `-install` removes that entry. For a symlink it
+  removes the link and keeps the target. It also removes the regular file named
+  exactly `ccd-cli-version` in the parent folder of the cli-dir. Then it makes
+  the cli folder with mode `0700` and goes on. That holds for the default CLI
+  folder too, and with no source flag, before the `missing` answer.
+- The name `ccd-cli-version` is literal. It does not follow the name of the
+  cli-dir, and a file named `other-version`, `ccd-cli-version.bak` or
+  `zzz-version` stays.
+- A folder, a symlink to a folder and an absent cli-dir trigger nothing, and
+  `ccd-cli-version` stays. A dangling symlink triggers nothing either: the
+  answer is `mkdir cli dir: mkdir <path>: file exists` with an empty `cliPath`.
+- With a parent folder that is not writable nothing is removed. The answer is
+  `mkdir cli dir: mkdir <path>: not a directory` with an empty `cliPath`.
+- The four bullets above are measured against `f6010b97` and `89cb6289`, one
+  run for each shape: 14 shapes on Linux and on macOS, 13 on Windows. Windows has
+  no FIFO row and no row with a parent that is not writable. The `mkdir` texts
+  above are the Linux and macOS texts. No mode is claimed on Windows.
+- Both removes are plain removes of one path. Nothing is removed as a tree.
+  claustrum's remove does not open the FIFO. When a FIFO stays behind the
+  cli-dir path, claustrum's sweep after the mkdir error opens that path once as
+  a directory. That open fails at once (measured on Linux).
+- Not measured: a socket, a device or a symlink to a FIFO at the cli-dir path.
+  A `ccd-cli-version` that is a folder or a symlink is not measured either.
+  claustrum leaves each of them alone. Not measured: the `-cli-url` source and the launcher gate with
+  these shapes, and the order of the two removes. claustrum removes the version
+  file first.
+- claustrum stages the CLI at `<cli-dir>/.fetch-<random>` and renames it into
+  place. It never stages at `<cliPath>.tmp`. This is one code path
   for `-cli-url` and `-cli-zst` alike. The orphan sweep matches `.fetch-*`, so it
   reclaims the litter of an interrupted install.
 - A `-cli-url` download lands at `<cli-dir>/.blob-<random>`, because `ensureCLI`
@@ -3642,10 +3868,21 @@ Staging and cleanup:
   `$TMPDIR/claustrum-fetch-<random>`. The `.blob-` prefix is deliberately
   different, so that the `-cli-keep` prune does not count it and the sweep does
   not claim an in-flight blob. That is also why claustrum refuses a
-  `-cli-version` that starts with `.blob-` (D18). The install removes the blob on
-  every path. Only a SIGKILLed download leaves it behind, and nothing reclaims
+  `-cli-version` that starts with `.blob-` (D18). The install removes the blob
+  before the `--version` run of a new CLI. An attempt that ends earlier removes
+  the blob at its end. Only a SIGKILLed download
+  leaves it behind, and nothing reclaims
   it. The sweep must not take it, because a retry re-reads the blob after the
   staging file, which is never older. No frame changes either way.
+- Two differences on a completed install, which claustrum keeps for now.
+  Measured on macOS against `89cb6289`, 4 runs per binary (cell HX5C). No rule
+  is claimed beyond these rows.
+    - `89cb6289` removes empty folders that sit beside the new CLI file in the
+      cli-dir. claustrum keeps them. Both keep a regular file and a folder that
+      is not empty.
+    - With `-cli-zst`, the blob is already gone when the CLI runs `--version` on
+      `89cb6289`. On claustrum it is still there during that run, and gone
+      after it.
 - The `-cli-keep` prune counts every other non-directory as a version. It skips
   every name the sweep claims, at any age. Measured on a Linux VM against
   `f6010b97`: a fresh `.fetch-o` and `x.zst` beside three real CLIs, with
@@ -3653,14 +3890,15 @@ Staging and cleanup:
 - claustrum consumes the `-cli-zst` blob once decompression succeeds, and not
   only on a fully successful install. An extracted CLI that fails the runnability
   test still costs the blob. claustrum leaves a blob that is not valid zstd alone.
+  One exception: the home guard refusal (D2) keeps the blob.
 - claustrum clears an occupied `cliPath`, and that is not fatal. `rename(2)`
-  refuses to replace a non-empty directory, so claustrum removes it first. It
-  removes it only when `cliPath` is a directory. A regular file, which an
-  installed CLI always is, is replaced atomically. If claustrum cannot remove it →
+  refuses to replace a non-empty directory, so claustrum removes it first, as a
+  tree. It removes it only when `cliPath` is a directory. A regular file, which an
+  installed CLI always is, is replaced atomically by the rename. If claustrum cannot remove it →
   `clearing stale dir at <path>: <err>`. If the staging file vanished →
-  `staging file vanished before install: <err>`, and `cliPath` stays untouched. The
-  end states match the reference for every destination shape: absent, a regular
-  file, and a non-empty directory.
+  `staging file vanished before install: <err>`, and a file at `cliPath` stays
+  untouched. On Windows the cleared name is `<version>.exe`. The D6 rule runs
+  before this step, so `cliPath` is a direct child of the cli-dir.
 - The orphan sweep removes a `.fetch-*` or `*.zst` entry only when its mtime is
   about 10 minutes old or more. The gate exists from `4534d86` on. `5db5e4a` and
   `7d193f89` swept at every age. On `19f30c46` through `f6010b97`, 599 s stays,
@@ -3670,12 +3908,13 @@ Staging and cleanup:
   judged by the link, and only the link goes. The sweep uses one `os.Remove` per
   entry. It therefore clears files and *empty* directories, and leaves a
   non-empty `.fetch-dir/` at every age. Unrelated files survive. Measured on a
-  Linux VM. The sweep runs whenever an
-  install was attempted, and the `-cli-keep` prune runs only on success. claustrum
-  stages its extract in this same `.fetch-*` namespace and holds it across the
-  probe. A concurrent install can reclaim that staging file only once it is more
+  Linux VM. The sweep runs once whenever an
+  install was attempted, and after a stopped run on a cache hit. The `-cli-keep`
+  prune runs only on success. claustrum
+  stages its extract in this same `.fetch-*` namespace, until the rename. A concurrent
+  install can reclaim that staging file only once it is more
   than 10 minutes old. claustrum handles that case with a single retry of the
-  stage-verify-rename step.
+  staging step.
 - claustrum runs `ldd` on every libc probe since build 3ef9370, and its output
   decides the answer. A "musl" banner reports `musl`, and any other output reports
   `glibc`. The `/lib/ld-musl-*.so.*` marker is consulted only when `ldd` produced
@@ -3700,6 +3939,12 @@ Staging and cleanup:
 - If the deadline had to kill it, stdout is `__CLI_HUNG__\n`.
 - If the binary is missing or does not run, stdout is `__CLI_BAD__\n`. Not running
   means it either fails to start or exits non-zero.
+- On Windows, a path with no file at exactly that name gives `__CLI_BAD__\n`, and
+  nothing starts. The probe never adds `.exe`. Measured on a Windows VM against
+  `89cb6289`: with only `9.9.9.exe` on disk, `-probe-cli <dir>\9.9.9` answers
+  `__CLI_BAD__` and the CLI does not run. claustrum ran `9.9.9.exe` there before.
+  Not measured: the exact test of the reference, a folder, a relative path and a
+  path with another extension. claustrum tests only that the path exists.
 
 With `CLAUDE_SSH_MANAGED_LAUNCHER=1` the probe uses the
 [managed launcher](#launcher-added-89cb6289) (`89cb6289` parity). Every
@@ -3734,9 +3979,9 @@ claude-ssh: <path> --version through the managed launcher <argv0> did not succee
 The `-help` text of `-probe-cli` names this mode. It is the one `-help` line that
 differs from `f6010b97` (measured on Linux, macOS and Windows).
 
-The direct bound is a fixed 30 s, always applied. It is not the opt-in
-`-cli-probe-timeout` (D11), which bounds only the direct `-install` runnability probe and is
-off by default. The mode unsets `CLAUDE_RPC_TOKEN` so the
+The direct bound is a fixed 30 s, always applied. Measured on `89cb6289` on
+Linux, macOS and Windows: a CLI that answers at 28 s passes, and one that answers
+at 33 s gives `__CLI_HUNG__` at 30.0 s. The mode unsets `CLAUDE_RPC_TOKEN` so the
 probed child never inherits it. The probe runs in its own process group. On Unix the
 fixed deadline group-kills the whole subtree, so a `--version` that forks a descendant
 cannot outlive the probe. On Windows the direct child is killed and `WaitDelay` bounds

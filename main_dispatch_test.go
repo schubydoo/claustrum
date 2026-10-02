@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -22,17 +24,14 @@ var lastMainFlagSet *flag.FlagSet
 // -install output doesn't pollute the test log.
 //
 // The -install and -serve arms of main() also WRITE package globals
-// (cliProbeTimeout, cliDownloadTimeout, maxCLIBytes, maxExtractBytes) and never
-// restore them, so
+// (cliDownloadTimeout, maxCLIBytes, maxExtractBytes) and never restore them, so
 // without the save/restore below a `-install` run here leaks its resolved values
-// into every later test. Reproduced 2026-08-07: with a claustrum.conf holding
-// `cli-probe-timeout = 30s` beside a pre-built test binary, 4 of 6 -test.shuffle
-// seeds failed TestCLIProbeTimeoutDefaultsOff with "default = 30s"; the two that
-// passed were the seeds that ran the assertion first, and the same seeds with no
-// conf present passed. Not reachable under plain `go test` (loadConfig reads
-// beside os.Executable(), the build-cache temp dir), but it goes live with
-// -shuffle, with a pre-built binary run from a directory holding a conf, or as
-// soon as a case here passes one of those flags.
+// into every later test. Reproduced 2026-08-07 with the cli-probe-timeout key,
+// which is retired since. A claustrum.conf beside a pre-built test binary made 4
+// of 6 -test.shuffle seeds fail a default-is-off assertion. Plain `go test` does
+// not reach it: loadConfig reads beside os.Executable(), the build-cache temp
+// dir. It goes live with -shuffle and with a pre-built binary that runs from a
+// directory with a conf. It also goes live when a case here passes such a flag.
 func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	t.Helper()
 	stubOsExit(t)
@@ -41,7 +40,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// t.Cleanup, NOT the defer below: the defer runs when runMain returns, which
 	// would put the globals back before the caller can assert on what main()
 	// actually resolved. t.Cleanup still contains the leak to this one test.
-	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
+	oldDownload := cliDownloadTimeout
 	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
 	// gitTimeout joined this list with D5's flip: the -serve arm writes it too, so
 	// without the restore a -serve case here would leak a deadline into every later
@@ -54,7 +53,7 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// three unrelated tests into seed-dependent failures under -shuffle.
 	oldRegularOnly := filesReadRegularOnly
 	t.Cleanup(func() {
-		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
+		cliDownloadTimeout = oldDownload
 		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 		gitTimeout = oldGitTimeout
 		filesReadRegularOnly = oldRegularOnly
@@ -81,12 +80,15 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 }
 
 // The -install arm's flag-to-global wiring, which nothing else covers. Setting
-// the deadline directly (as the isRunnable/fetchToFile tests do) exercises the
-// READ; asserting flag.DefValue covers the DECLARED default. The line joining
-// them — main() resolving each flag into its own global — was unasserted, and
-// swapping the two assignment targets passed the whole suite, `-race` included,
-// while shipping a binary where -cli-download-timeout set the probe deadline and
-// vice versa.
+// the deadline directly (as the fetchToFile tests do) exercises the READ.
+// Asserting flag.DefValue covers the DECLARED default. The line that joins them
+// was unasserted: main() resolves each flag into its own global.
+//
+// Three duration flags sit side by side in main's -install arm. Two of them are
+// deprecated no-ops: -cli-probe-timeout (D11, retired) and -libc-probe-timeout
+// (D14, retired). Only -cli-download-timeout sets a global. A crossed line
+// compiles and passes every isolated test. So this test pins that neither
+// deprecated flag reaches any bound, and that each logs its own warning once.
 //
 // Distinct values on purpose: equal ones would pass under a swap.
 func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
@@ -95,40 +97,91 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 		"-cli-download-timeout", "42s", "-libc-probe-timeout", "23s"); exited {
 		t.Fatal("-install should return, not exit")
 	}
-	if cliProbeTimeout != 7*time.Second {
-		t.Errorf("cliProbeTimeout = %s, want 7s (-cli-probe-timeout must reach it, not the download global)", cliProbeTimeout)
-	}
 	if cliDownloadTimeout != 42*time.Second {
-		t.Errorf("cliDownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, not the probe global)", cliDownloadTimeout)
+		t.Errorf("cliDownloadTimeout = %s, want 42s (-cli-download-timeout must reach it, and no other flag may)", cliDownloadTimeout)
 	}
-	// ⚠️ The sharpest check. -libc-probe-timeout is a deprecated no-op, and the
-	// ldd bound is the reference's fixed 5 s. Neither the deprecated flag nor its
-	// near-twin -cli-probe-timeout may reach lddProbeTimeout. Both are durations
-	// resolved side by side in main's -install arm, so a crossed line compiles and
-	// passes every isolated test.
+	// ⚠️ The sharpest checks. The four bounds below are the reference's fixed
+	// values, and no flag reaches any of them.
+	if cliRunBound != 30*time.Second {
+		t.Errorf("cliRunBound = %s, want the fixed 30s (no flag may reach it)", cliRunBound)
+	}
+	if cliFirstRunBound != 120*time.Second {
+		t.Errorf("cliFirstRunBound = %s, want the fixed 120s (no flag may reach it)", cliFirstRunBound)
+	}
 	if lddProbeTimeout != 5*time.Second {
 		t.Errorf("lddProbeTimeout = %s, want the fixed 5s (no flag may reach it)", lddProbeTimeout)
 	}
+	if installHeaderTimeout != 60*time.Second {
+		t.Errorf("installHeaderTimeout = %s, want the fixed 60s (no flag may reach it)", installHeaderTimeout)
+	}
 	if n := strings.Count(buf.String(), "-libc-probe-timeout is deprecated and ignored"); n != 1 {
-		t.Errorf("deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
+		t.Errorf("-libc-probe-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
+	}
+	// Both texts of the deprecated flag name the direct run. A launcher run has
+	// other bounds.
+	if !strings.Contains(buf.String(), "The direct --version run always uses its 30s and 120s bounds") {
+		t.Errorf("the -cli-probe-timeout warning does not name the direct run; log:\n%s", buf.String())
+	}
+	if f := lastMainFlagSet.Lookup("cli-probe-timeout"); f == nil || !strings.Contains(f.Usage, "The direct <cli> --version run of -install") {
+		t.Errorf("the -cli-probe-timeout help text does not name the direct run: %+v", f)
+	}
+	if n := strings.Count(buf.String(), "-cli-probe-timeout is deprecated and ignored"); n != 1 {
+		t.Errorf("-cli-probe-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
 	}
 }
 
-// The deprecation warning fires for the flag or the config key, once, and not
+// Each deprecation warning fires for the flag or the config key, once, and not
 // at all when neither is present.
-func TestWarnDeprecatedLibcProbe(t *testing.T) {
-	for _, tc := range []struct {
-		flagSet, keySeen bool
-		want             int
-	}{{false, false, 0}, {true, false, 1}, {false, true, 1}, {true, true, 1}} {
-		var buf syncBuffer
-		oldOut := log.Writer()
-		log.SetOutput(&buf)
-		warnDeprecatedLibcProbe(tc.flagSet, tc.keySeen)
-		log.SetOutput(oldOut)
-		if n := strings.Count(buf.String(), "deprecated and ignored"); n != tc.want {
-			t.Errorf("flag=%v key=%v: %d warnings, want %d", tc.flagSet, tc.keySeen, n, tc.want)
+func TestWarnDeprecatedProbeFlags(t *testing.T) {
+	for name, warn := range map[string]func(bool, bool){
+		"-libc-probe-timeout": warnDeprecatedLibcProbe,
+		"-cli-probe-timeout":  warnDeprecatedCLIProbe,
+	} {
+		for _, tc := range []struct {
+			flagSet, keySeen bool
+			want             int
+		}{{false, false, 0}, {true, false, 1}, {false, true, 1}, {true, true, 1}} {
+			var buf syncBuffer
+			oldOut := log.Writer()
+			log.SetOutput(&buf)
+			warn(tc.flagSet, tc.keySeen)
+			log.SetOutput(oldOut)
+			if n := strings.Count(buf.String(), name+" is deprecated and ignored"); n != tc.want {
+				t.Errorf("%s flag=%v key=%v: %d warnings, want %d", name, tc.flagSet, tc.keySeen, n, tc.want)
+			}
 		}
+	}
+}
+
+// The claustrum.conf key reaches the same warning as the flag. With
+// `cli-probe-timeout = 20s` in the file and no flag, -install logs the
+// -cli-probe-timeout warning once and no -libc-probe-timeout warning.
+func TestInstallWarnsForTheDeprecatedCLIProbeConfigKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, configFileName), []byte("cli-probe-timeout = 20s\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stubOsExecutable(t, filepath.Join(dir, "claustrum"), nil)
+	buf := captureLogBuf(t)
+	if _, exited := runMain(t, "-install"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	if n := strings.Count(buf.String(), "-cli-probe-timeout is deprecated and ignored"); n != 1 {
+		t.Errorf("-cli-probe-timeout deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
+	}
+	if strings.Contains(buf.String(), "-libc-probe-timeout is deprecated") {
+		t.Errorf("the cli-probe-timeout key logged the -libc-probe-timeout warning:\n%s", buf.String())
+	}
+}
+
+// A plain -install with neither deprecated flag logs neither warning.
+func TestInstallWithoutDeprecatedFlagsLogsNoWarning(t *testing.T) {
+	buf := captureLogBuf(t)
+	if _, exited := runMain(t, "-install"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	if strings.Contains(buf.String(), "deprecated and ignored") {
+		t.Errorf("a plain -install logged a deprecation warning:\n%s", buf.String())
 	}
 }
 
@@ -137,16 +190,16 @@ func TestWarnDeprecatedLibcProbe(t *testing.T) {
 // Asserting it needs the cleanup to have RUN, so the call goes in a subtest and
 // the assertion follows it — t.Cleanup fires at the subtest's end.
 func TestRunMainRestoresInstallGlobals(t *testing.T) {
-	oldProbe, oldDownload := cliProbeTimeout, cliDownloadTimeout
+	oldDownload := cliDownloadTimeout
 	oldMaxCLI, oldMaxExtract := maxCLIBytes, maxExtractBytes
-	cliProbeTimeout, cliDownloadTimeout = 3*time.Second, 4*time.Second
+	cliDownloadTimeout = 4 * time.Second
 	maxCLIBytes, maxExtractBytes = 11, 22
 	t.Cleanup(func() {
-		cliProbeTimeout, cliDownloadTimeout = oldProbe, oldDownload
+		cliDownloadTimeout = oldDownload
 		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 	})
 	t.Run("inner", func(t *testing.T) {
-		if _, exited := runMain(t, "-install", "-cli-probe-timeout", "9s",
+		if _, exited := runMain(t, "-install",
 			"-cli-download-timeout", "8s", "-max-cli-bytes", "99"); exited {
 			t.Fatal("-install should return, not exit")
 		}
@@ -156,7 +209,6 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 		got  any
 		want any
 	}{
-		{"cliProbeTimeout", cliProbeTimeout, 3 * time.Second},
 		{"cliDownloadTimeout", cliDownloadTimeout, 4 * time.Second},
 		{"maxCLIBytes", maxCLIBytes, int64(11)},
 		{"maxExtractBytes", maxExtractBytes, int64(22)},
@@ -305,7 +357,7 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 		t.Error("filesReadRegularOnly = false, want true — -files-read-regular-only must reach the runtime var")
 	}
 	// The DECLARED default, not the package var and not the resolver — the same
-	// assertion -cli-probe-timeout and -cli-download-timeout each carry. Moving a
+	// assertion -cli-download-timeout carries. Moving a
 	// 60s into flag.Duration's default argument survives every other gitTimeout
 	// assertion in the suite while shipping a binary that deadlines every -serve
 	// git. Declared, not resolved: a real claustrum.conf beside the binary sets the
@@ -342,6 +394,75 @@ func TestMainExitsWhenHomeUnresolvable(t *testing.T) {
 	code, exited := runMain(t)
 	if !exited || code != 1 {
 		t.Errorf("main with no resolvable home: exited=%v code=%d, want exited=true code=1", exited, code)
+	}
+}
+
+// `-install -cli-version <v>` with no -cli-dir needs the home folder for its
+// default cli folder. With no home folder it exits 2, prints the reason on stderr
+// and prints nothing on stdout. Measured on a Linux VM against f6010b97 and
+// 89cb6289 (row H07, HOME not in the environment). The stderr prefix is
+// claustrum's own. Every other case keeps exit 1, and no row measures those.
+func TestInstallExitsTwoWithoutHomeForTheDefaultCLIDir(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"version, no dir (H07)", []string{"-install", "-cli-version", "9.9.9"}, 2},
+		{"version, empty dir", []string{"-install", "-cli-version", "9.9.9", "-cli-dir", ""}, 2},
+		{"version and dir", []string{"-install", "-cli-version", "9.9.9", "-cli-dir", t.TempDir()}, 1},
+		{"no version", []string{"-install"}, 1},
+		{"bridge", []string{"-bridge", "-cli-version", "9.9.9"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldErr := os.Stderr
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			os.Stderr = w
+			code, exited := runMain(t, tc.args...)
+			_ = w.Close()
+			os.Stderr = oldErr
+			errOut, _ := io.ReadAll(r)
+			_ = r.Close()
+			if !exited || code != tc.want {
+				t.Errorf("exited=%v code=%d, want exit %d", exited, code, tc.want)
+			}
+			if !strings.HasPrefix(string(errOut), "claustrum: cannot resolve home directory: ") ||
+				strings.Count(string(errOut), "\n") != 1 {
+				t.Errorf("stderr = %q, want one line with the home-directory reason", errOut)
+			}
+			if want := "claustrum: cannot resolve home directory: $HOME is not defined\n"; runtime.GOOS == "linux" && string(errOut) != want {
+				t.Errorf("stderr = %q, want %q", errOut, want)
+			}
+		})
+	}
+}
+
+// main hands the home folder to runInstall, so `-install -cli-version <v>` with no
+// -cli-dir works in <home>/.claude/remote/ccd-cli. The run ends with the
+// "missing" answer and still makes the folder chain (rows H01 and H10).
+func TestInstallDefaultCLIDirComesFromTheHomeFolder(t *testing.T) {
+	home := t.TempDir()
+	other := t.TempDir()
+	if runtime.GOOS == "windows" {
+		// USERPROFILE is the home folder on Windows, and HOME is not read (H10).
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("HOME", other)
+	} else {
+		t.Setenv("HOME", home)
+	}
+	if _, exited := runMain(t, "-install", "-cli-version", "9.9.9"); exited {
+		t.Fatal("-install should return, not exit")
+	}
+	if fi, err := os.Stat(filepath.Join(home, ".claude", "remote", "ccd-cli")); err != nil || !fi.IsDir() {
+		t.Errorf("the default cli folder was not made under the home folder: %v", err)
+	}
+	if ents, err := os.ReadDir(other); err != nil || len(ents) != 0 {
+		t.Errorf("the other folder holds %v (err %v), want it untouched", ents, err)
 	}
 }
 
