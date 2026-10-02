@@ -277,6 +277,7 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 	t.Cleanup(func() { shutdownRecordWait = old })
 	s, cl, runDir := runShapedServer(t)
 	s.keepChildren = true
+	t.Cleanup(s.procs.killAll) // the kept children must end with the test
 	pids := []int{spawnSleeper(t, cl, "c1"), spawnSleeper(t, cl, "c2")}
 
 	done := make(chan struct{})
