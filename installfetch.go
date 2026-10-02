@@ -143,8 +143,8 @@ func (w *watchedBody) Read(p []byte) (int, error) {
 		stalled, got, total := w.stalled, w.bytes, w.total
 		interrupted := !stalled && err != io.EOF && !isDownloadDeadline(err)
 		if interrupted {
-			if p := time.Since(w.lastAt); p > w.longest {
-				w.longest = p
+			if pause := time.Since(w.lastAt); pause > w.longest {
+				w.longest = pause
 			}
 		}
 		w.mu.Unlock()

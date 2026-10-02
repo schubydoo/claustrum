@@ -97,6 +97,73 @@ func TestInstallDirectRunStopsTheWholeGroup(t *testing.T) {
 	}
 }
 
+// The stop step of the bound against the end of the run. After cmd.Wait the pid
+// of the CLI is free, and so is its group id, so a group kill then hits whatever
+// holds that id. The seam holds the stop step at its start until the CLI exited
+// by itself and was reaped. Then two things hold. runCLIVersion does not return
+// before the stop step finished. And the stop step does nothing: the CLI exits
+// 1, so a stop step that set its flag and killed shows as cliRunStopped.
+func TestRunCLIVersionStopStepAfterTheRunEndedKillsNothing(t *testing.T) {
+	f := newStubFixture(t)
+	placeStub(t, f.cli)
+	stubDelay(t, 2*time.Second)
+	t.Setenv("CLAUSTRUM_TEST_STUB_EXIT", "1")
+	entered, release := make(chan struct{}), make(chan struct{})
+	old := afterCLIBound
+	afterCLIBound = func(d time.Duration, stop func()) *time.Timer {
+		return old(d, func() {
+			close(entered)
+			<-release
+			stop()
+		})
+	}
+	t.Cleanup(func() { afterCLIBound = old })
+
+	done := make(chan cliRunResult, 1)
+	go func() { done <- runCLIVersion(f.cli, 300*time.Millisecond) }()
+	released := false
+	t.Cleanup(func() {
+		if !released {
+			close(release)
+		}
+	})
+	select {
+	case <-entered:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the stop step did not start")
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	line := ""
+	for line == "" {
+		if line, _ = f.stubLogLine(t, "START "); line == "" {
+			if time.Now().After(deadline) {
+				t.Fatal("the stub wrote no START line")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	// ESRCH means that cmd.Wait reaped the stub. The pause lets it return.
+	if pid := stubField(t, line, "pid"); !goneWithin(pid, 20*time.Second) {
+		t.Fatalf("the stub %d did not exit by itself", pid)
+	}
+	time.Sleep(500 * time.Millisecond)
+	select {
+	case got := <-done:
+		t.Fatalf("runCLIVersion returned %d while the stop step still ran", got)
+	default:
+	}
+	released = true
+	close(release)
+	select {
+	case got := <-done:
+		if got != cliRunFailed {
+			t.Errorf("result %d, want cliRunFailed: the stop step acted after the run ended", got)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("runCLIVersion did not return after the stop step finished")
+	}
+}
+
 // Rows B09, F11. A child of the CLI in a new session survives the stop.
 func TestInstallDirectRunStopLeavesANewSessionChild(t *testing.T) {
 	f := newStubFixture(t)

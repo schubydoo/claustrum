@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -360,21 +361,21 @@ func ensureCLI(o installOpts, cliPath string) error {
 	}
 	// Stage, verify and install, retried ONCE if a concurrent install's sweep
 	// reclaimed our staging file. See stageAndInstall for when that can happen.
-	decompressed, err := stageAndInstall(blobPath, cliPath, blobIsTemp)
+	consumeBlob, err := stageAndInstall(blobPath, cliPath, blobIsTemp)
 	if err != nil && errors.Is(err, errStagingVanished) {
-		// Accumulate rather than overwrite. Decompression is a fact about the
-		// blob, not about an attempt: once any attempt has decompressed it, the
-		// consume rule below is satisfied for good. Assigning here instead would
-		// let a retry that fails BEFORE its own decompress (a CreateTemp or write
-		// error) report false and keep a blob the first attempt had already
-		// decompressed — contradicting the rule stated right below.
+		// Accumulate rather than overwrite. The answer is about the blob, not
+		// about an attempt: once one attempt says that the blob is consumed, the
+		// consume rule below holds for good. With a plain assignment, a retry
+		// that fails BEFORE its own decompress (a CreateTemp or write error)
+		// answers false and keeps a blob that the first attempt had already
+		// decompressed. That contradicts the rule stated right below.
 		//
 		// Not shown to be reachable: the sweep that triggers the retry removes
 		// `.fetch-*`, not the cli-dir, so a second-pass CreateTemp failure needs
 		// state the retry path does not itself produce. This is invariant
 		// hygiene, and it costs one variable.
-		retryDecompressed, retryErr := stageAndInstall(blobPath, cliPath, blobIsTemp)
-		decompressed = decompressed || retryDecompressed
+		retryConsume, retryErr := stageAndInstall(blobPath, cliPath, blobIsTemp)
+		consumeBlob = consumeBlob || retryConsume
 		err = retryErr
 	}
 	// The uploaded .zst blob is consumed once DECOMPRESSION SUCCEEDED — not only
@@ -400,7 +401,7 @@ func ensureCLI(o installOpts, cliPath string) error {
 	// staged file and still keeps the blob.) The cliError strings are
 	// byte-identical on all four. The chmod failure and a failed clear sit on
 	// the consumed side by construction, not by observation.
-	if o.cliZst != "" && decompressed {
+	if o.cliZst != "" && consumeBlob {
 		_ = os.Remove(o.cliZst)
 	}
 	return err
@@ -513,7 +514,7 @@ var errStagingVanished = errors.New("staging file vanished")
 // construction. Production never reassigns it.
 var chmodStaged = os.Chmod
 
-func stageAndInstall(blobPath, cliPath string, blobIsTemp bool) (decompressed bool, err error) {
+func stageAndInstall(blobPath, cliPath string, blobIsTemp bool) (consumeBlob bool, err error) {
 	tmpFile, err := os.CreateTemp(filepath.Dir(cliPath), ".fetch-*")
 	if err != nil {
 		return false, fmt.Errorf("staging cli: %v", err)
@@ -740,6 +741,10 @@ const (
 // call slow. Production never reassigns it.
 var startCLIRun = (*exec.Cmd).Start
 
+// afterCLIBound is time.AfterFunc behind a seam, so a test can hold the stop
+// step of runCLIVersion. Production never reassigns it.
+var afterCLIBound = time.AfterFunc
+
 // runCLIVersion runs `<path> --version` and stops it at bound.
 //
 // The clock starts right before the process start call. Measured on a Windows
@@ -772,18 +777,41 @@ func runCLIVersion(path string, bound time.Duration) cliRunResult {
 	if err := startCLIRun(cmd); err != nil {
 		return cliRunFailed
 	}
-	var stopped atomic.Bool
-	timer := time.AfterFunc(bound-time.Since(began), func() {
-		stopped.Store(true)
+	// The stop step and the end of cmd.Wait share one lock. After cmd.Wait the
+	// pid of the CLI is free, and so is its group id, so a group kill then hits
+	// whatever holds that id. A stop step that starts after cmd.Wait returned
+	// therefore does nothing. A stop step that is already in its kill holds the
+	// lock, and the flag is set only after it finished. time.Timer.Stop does not
+	// wait for a stop step that started, so this function waits for it: no
+	// goroutine of this run is left when it returns.
+	var (
+		mu      sync.Mutex
+		waited  bool // cmd.Wait returned
+		stopped bool // the stop step killed the CLI
+	)
+	fired := make(chan struct{})
+	timer := afterCLIBound(bound-time.Since(began), func() {
+		defer close(fired)
+		mu.Lock()
+		defer mu.Unlock()
+		if waited {
+			return
+		}
+		stopped = true
 		reapProcessGroup(cmd.Process)
 		_ = cmd.Process.Kill()
 	})
 	err := cmd.Wait()
-	timer.Stop()
+	mu.Lock()
+	waited = true
+	mu.Unlock()
+	if !timer.Stop() {
+		<-fired
+	}
 	switch {
 	case err == nil:
 		return cliRunOK
-	case stopped.Load():
+	case stopped:
 		return cliRunStopped
 	}
 	return cliRunFailed
