@@ -3,8 +3,14 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,7 +21,7 @@ import (
 // claims its run dir (which evicts a still-live predecessor on the same socket), it
 // reaps children that a since-exited predecessor daemon of THIS run dir left behind. The
 // daemon reads the per-spawn records the child registry wrote (childRecord, written by
-// writeChildRecord to <runDir>/children/<pid>.json) and, for each one whose owning daemon
+// writeChildRecordIn to <runDir>/children/<pid>.json) and, for each one whose owning daemon
 // is gone, verifies the live process really is that recorded child before ending its
 // process group.
 //
@@ -32,14 +38,16 @@ import (
 //
 // The safety invariant: reap a process only when it is (a) the same process the record
 // names (its start-time still matches, so the pid was not reused), (b) its own process
-// group leader, (c) running the recorded program, (d) tagged with OUR run dir in its
+// group leader, (c) running the recorded program, or the program that the record's
+// launcher was given (recordMatchesLive), (d) tagged with OUR run dir in its
 // environment, and (e) marked as a direct daemon child (its CLAUDE_SSH_CHILD names its
 // own pid and start). A record whose owning daemon is still alive, or that belongs to
-// another boot or machine, is never reaped.
+// another boot or machine, is never reaped. Only a regular file is read as a record.
 
 // reapGrace is how long the reap waits for a group to exit after SIGTERM before it
-// escalates to SIGKILL. reapEscalate is how long it waits after SIGKILL. Both values are
-// claustrum's own, not probe-measured.
+// escalates to SIGKILL. Measured on Linux against 89cb6289: the SIGKILL comes 2.04 to
+// 2.09 s after the start of the daemon (rows RP02, RP03, RP04, RP10). reapEscalate is how
+// long it waits after SIGKILL. That value is claustrum's own, not probe-measured.
 const (
 	reapGrace    = 2 * time.Second
 	reapEscalate = 1 * time.Second
@@ -50,6 +58,10 @@ const (
 	// reapPollInterval is how often each wait re-checks a signaled group for exit.
 	// claustrum's own value, not probe-measured.
 	reapPollInterval = 100 * time.Millisecond
+	// reapSettle is the pause before a second read of a process. A read can catch a
+	// process in the middle of a change, and the pause lets that change end. claustrum's
+	// own value, not probe-measured.
+	reapSettle = 50 * time.Millisecond
 )
 
 // maxReapTargets caps how many orphans one sweep signals. The cap is claustrum's own, not
@@ -86,6 +98,16 @@ type liveProc struct {
 	program    string // argv[0]
 	runDir     string // CLAUDE_SSH_RUN_DIR from the environment (wantEnv only)
 	childMark  string // CLAUDE_SSH_CHILD from the environment (wantEnv only)
+	// args is the arguments after the program. On linux they are the real arguments,
+	// each one whole (wantEnv only). On darwin they are the words of cmdText after the
+	// first. A record with a program key is matched against them, see recordMatchesLive.
+	args []string
+	// cmdText is the command text that `ps` prints for the process. Only the darwin
+	// reader sets it. It is empty on linux.
+	cmdText string
+	// unreadable says why a wantEnv read gave procNotOurs, when the reader knows a
+	// text for it. Only the linux reader sets it, for an environment it cannot read.
+	unreadable string
 }
 
 // Seams. Each is a package var so a unit test replaces it to drive the decision tree and
@@ -108,11 +130,13 @@ var (
 )
 
 // reapTarget is one process the sweep decided to end. start is kept for the pid-reuse
-// re-check just before the kill, and name is the record to forget once handled.
+// re-check just before the kill, and name is the record to forget once handled. rec is
+// the whole record, for the full test that comes before the SIGKILL.
 type reapTarget struct {
 	pid   int
 	start string
 	name  string
+	rec   childRecord
 }
 
 // reapCounts is the tally the sweep returns. The six fields mirror reference build 19f30c46's
@@ -129,23 +153,66 @@ type reapCounts struct {
 	skipped        int // records left in place (owner alive, foreign and fresh, or disowning)
 }
 
-// reapOrphans is the -serve startup reap. It reads <runDir>/children, decides each record,
-// ends the verified orphans in two phases, and logs a summary. It is a no-op when runDir
-// is empty (a non-run-shaped socket has no registry). ownInstance is this daemon's
-// instance id, used to skip this daemon's own children.
-func reapOrphans(runDir, ownInstance string) {
-	if runDir == "" {
+// reapCtx is what one sweep works with: the children folder, held open, the run dir
+// path that a child carries in its environment, and this daemon's own pids.
+//
+// Every read and every delete of the sweep goes through dir, with a bare entry name.
+// So the sweep never leaves the children folder that it opened, also when someone
+// swaps the children entry of the run dir while the sweep runs.
+type reapCtx struct {
+	dir                                 *os.Root
+	runDir                              string
+	ownDaemonPid, ownParentPid, ownPgid int
+}
+
+// openChildrenDir opens the children folder below root, which is the run dir. The
+// entry must be a real folder. A symlink is not followed, so a children entry that
+// leads out of the run dir is never listed. Measured on Linux (rows SYa and SYb):
+// with a children entry that is a symlink to a folder, outside or inside the run dir,
+// f6010b97 and 89cb6289 send no signal and remove nothing. No other shape of the
+// entry is measured.
+func openChildrenDir(root *os.Root) (*os.Root, error) {
+	fi, err := root.Lstat(childrenDirName)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.IsDir() {
+		return nil, errChildrenNotDir
+	}
+	return root.OpenRoot(childrenDirName)
+}
+
+// reapOrphans is the -serve startup reap. It lists the children folder of the run dir
+// that the daemon holds open, decides each record, ends the verified orphans in two
+// phases, and logs a summary. It is a no-op when the socket is not run-shaped (there is
+// no registry) and when the children entry is absent or is not a real folder.
+func (m *procManager) reapOrphans() {
+	if m.runDir == "" {
 		return
 	}
-	ownDaemonPid := os.Getpid()
-	ownParentPid := os.Getppid()
-	ownPgid, _ := syscall.Getpgid(ownDaemonPid)
-	ownNode, ownHost := ownReapIdentity()
-
-	entries, err := os.ReadDir(filepath.Join(runDir, "children"))
+	root, err := m.runDirRoot()
+	if err != nil {
+		return
+	}
+	dir, err := openChildrenDir(root)
+	if errors.Is(err, errChildrenNotDir) {
+		// The text is the reference's. Rows SYa and SYb measure it on f6010b97 and
+		// 89cb6289 for a symlink to a folder, before the listening line. claustrum
+		// prints it for every children entry that is not a real folder. The other
+		// shapes are not measured. The level is that of the sibling line of a spawn.
+		logErrorf("[process.Registry] %s/%s is not a directory; reaping nothing", m.runDir, childrenDirName)
+	}
 	if err != nil {
 		return // no registry dir means nothing was ever recorded here
 	}
+	defer dir.Close()
+	// A listing that fails part of the way still returns the entries before the
+	// failure. The sweep handles those.
+	entries, _ := fs.ReadDir(dir.FS(), ".")
+	ownInstance := m.instanceID
+	c := &reapCtx{dir: dir, runDir: m.runDir, ownDaemonPid: os.Getpid(), ownParentPid: os.Getppid()}
+	c.ownPgid, _ = syscall.Getpgid(c.ownDaemonPid)
+	ownNode, ownHost := ownReapIdentity()
 
 	var counts reapCounts
 	var targets []reapTarget
@@ -154,11 +221,23 @@ func reapOrphans(runDir, ownInstance string) {
 		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		rec, ok := readChildRecord(runDir, name)
+		// Only a regular file is a record. A symlink, a FIFO or a folder with a .json
+		// name is removed and never opened, so a record outside children/ cannot make
+		// the reap signal a process, and a FIFO cannot hold the start. The removal is
+		// one plain remove of the entry itself: a symlink goes and its target stays,
+		// and a folder goes only when it is empty. Measured on Linux (rows ED16a to
+		// ED16c): the reference removes each of the three, sends no signal and logs
+		// no line.
+		if !e.Type().IsRegular() {
+			c.forget(name)
+			counts.forgotten++
+			continue
+		}
+		rec, ok := c.read(name)
 		// A record that will not parse, names an out-of-range pid, or does not sit at its
-		// own "<pid>.json" path (a leftover temp name) is dropped.
+		// own "<pid>.json" path is dropped. (A leftover temp name does not end in ".json".)
 		if !ok || rec.Pid < 2 || rec.Pid > maxPid || name != strconv.Itoa(rec.Pid)+".json" {
-			forgetChildRecord(runDir, name)
+			c.forget(name)
 			counts.forgotten++
 			continue
 		}
@@ -169,24 +248,25 @@ func reapOrphans(runDir, ownInstance string) {
 		if rec.Node == ownNode {
 			// Same boot and machine: a predecessor of this run dir. Reap its children only
 			// once that daemon itself is gone.
-			if daemonAlive(rec.DaemonPid, rec.DaemonStart, ownDaemonPid) {
+			if daemonAlive(rec.DaemonPid, rec.DaemonStart, c.ownDaemonPid) {
 				counts.skipped++
 				continue
 			}
-			verdict, reason := verifyOrphan(rec, runDir, ownDaemonPid, ownParentPid, ownPgid)
+			verdict, why := c.verify(rec)
+			reason := why.own
 			switch verdict {
 			case verdictReap:
 				if len(targets) < maxReapTargets {
-					targets = append(targets, reapTarget{pid: rec.Pid, start: rec.Start, name: name})
+					targets = append(targets, reapTarget{pid: rec.Pid, start: rec.Start, name: name, rec: rec})
 				} else {
 					counts.skipped++ // batch full; leave for the next startup
 				}
 			case verdictGone:
-				forgetChildRecord(runDir, name)
+				c.forget(name)
 				counts.forgotten++
 			case verdictSkip:
 				logInfof("[process.Reaper] child %d (%s): not reaping, %s", rec.Pid, name, reason)
-				forgetChildRecord(runDir, name)
+				c.forget(name)
 				counts.forgotten++
 			case verdictPassthrough:
 				logInfof("[process.Reaper] child %d (%s): %s", rec.Pid, name, reason)
@@ -197,7 +277,7 @@ func reapOrphans(runDir, ownInstance string) {
 		// Another boot or machine. Forget a record from an earlier boot of THIS machine, and
 		// forget a foreign record only once it is past the stale window.
 		if earlierBootOfThisMachine(rec.Host, rec.Node, ownHost, ownNode) {
-			forgetChildRecord(runDir, name)
+			c.forget(name)
 			counts.forgotten++
 			continue
 		}
@@ -205,11 +285,11 @@ func reapOrphans(runDir, ownInstance string) {
 			counts.skipped++ // foreign and fresh; cannot verify it from here
 			continue
 		}
-		forgetChildRecord(runDir, name)
+		c.forget(name)
 		counts.forgotten++
 	}
 
-	reapTargets(runDir, targets, &counts)
+	reapTargets(c, targets, &counts)
 
 	// A sweep that only forgot stale records logs nothing: the summary fires when the sweep
 	// signalled a target or skipped (kept) a record, never for forgotten alone (VM-confirmed
@@ -220,64 +300,100 @@ func reapOrphans(runDir, ownInstance string) {
 	}
 }
 
-// verifyOrphan decides one record whose owning daemon is gone and whose node matches ours.
-// It returns a verdict and, for a skip, a short reason for the log. The reasons are
-// claustrum's own phrasing.
+// skipReason says why a record is not a child to end, in two wordings. own is
+// claustrum's wording, which the [process.Reaper] lines print. ref is the wording of
+// 89cb6289 for the same test, measured on Linux, which the no-longer-verifies line
+// prints. Where no row shows a reference text, ref equals own.
+type skipReason struct{ own, ref string }
+
+// sameReason is a reason with no measured reference text.
+func sameReason(text string) skipReason { return skipReason{own: text, ref: text} }
+
+// verifyOrphan is the record test with claustrum's wording only.
 func verifyOrphan(rec childRecord, runDir string, ownDaemonPid, ownParentPid, ownPgid int) (int, string) {
+	c := &reapCtx{runDir: runDir, ownDaemonPid: ownDaemonPid, ownParentPid: ownParentPid, ownPgid: ownPgid}
+	verdict, why := c.verify(rec)
+	return verdict, why.own
+}
+
+// verify decides one record whose owning daemon is gone and whose node matches ours.
+// It returns a verdict and, for a skip, the reason. The reference texts are measured on
+// Linux against 89cb6289 (rows RP07, ED01a, ED02a, ED04b, ED07, ED10a to ED10d, and
+// PG05a for the unreadable environment). claustrum quotes each value with %q. Not
+// measured: a value that %q escapes.
+func (c *reapCtx) verify(rec childRecord) (int, skipReason) {
 	pid := rec.Pid
 	switch {
 	case pid < 2 || pid > maxPid:
-		return verdictSkip, "pid is out of range"
-	case pid == ownDaemonPid:
-		return verdictSkip, "pid is this daemon"
-	case pid == ownParentPid || (ownPgid > 1 && pid == ownPgid):
-		return verdictSkip, "pid is this daemon's parent or process group"
+		return verdictSkip, sameReason("pid is out of range")
+	case pid == c.ownDaemonPid:
+		return verdictSkip, sameReason("pid is this daemon")
+	case pid == c.ownParentPid || (c.ownPgid > 1 && pid == c.ownPgid):
+		return verdictSkip, sameReason("pid is this daemon's parent or process group")
 	case rec.Start == "":
-		return verdictSkip, "record has no start time to verify against"
+		return verdictSkip, sameReason("record has no start time to verify against")
 	case rec.Argv0 == "":
-		return verdictSkip, "record names no program to verify against"
+		return verdictSkip, skipReason{"record names no program to verify against", "the record names no program to verify against"}
 	}
 
 	lp := readLiveProc(pid, true)
 	switch lp.state {
 	case procGone:
-		return settleThenVerdict(pid, verdictGone, "")
+		return verdictGone, skipReason{}
 	case procNotOurs:
 		// The process disowns this daemon (another pid namespace on linux, or an unreadable
 		// live-process read). Keep the record and let a daemon that owns it decide.
-		return verdictPassthrough, "process is not in this daemon's namespace"
+		//
+		// A read can also fail because the process has just ended. So this arm settles
+		// like the skips below: a process that is gone after the pause has ended, and is
+		// never one that no longer verifies (Linux rows K5 and ED04a).
+		if verdict, _ := settleThenVerdict(pid, verdictPassthrough, ""); verdict == verdictGone {
+			return verdictGone, skipReason{}
+		}
+		why := sameReason("process is not in this daemon's namespace")
+		if lp.unreadable != "" {
+			why.ref = lp.unreadable
+		}
+		return verdictPassthrough, why
 	}
 
+	skip := func(own, ref string) (int, skipReason) {
+		verdict, _ := settleThenVerdict(pid, verdictSkip, own)
+		if verdict == verdictGone {
+			return verdictGone, skipReason{}
+		}
+		return verdictSkip, skipReason{own, ref}
+	}
 	// The pid-reuse guard: the live start-time must still match the record's.
 	if lp.startTicks != rec.Start {
-		return settleThenVerdict(pid, verdictSkip, "the pid was reused")
+		return skip("the pid was reused", fmt.Sprintf("it did not start at the recorded %q: the pid has been reused", rec.Start))
 	}
 	if pid != lp.pgid {
-		return settleThenVerdict(pid, verdictSkip, "process is not its own group leader")
+		return skip("process is not its own group leader", "it does not lead its own process group")
 	}
-	if !programMatches(rec.Argv0, lp.program) {
-		return settleThenVerdict(pid, verdictSkip, "process is not running the recorded program")
-	}
-	if lp.runDir != runDir {
-		if lp.runDir == "" {
-			return settleThenVerdict(pid, verdictSkip, "process has no run-dir marker")
+	if !recordMatchesLive(rec, lp) {
+		ref := fmt.Sprintf("it does not run the recorded program %q", rec.Argv0)
+		if rec.Program != "" {
+			ref += fmt.Sprintf(" and neither runs nor was handed %q", rec.Program)
 		}
-		return settleThenVerdict(pid, verdictSkip, "process belongs to another run dir")
+		return skip("process is not running the recorded program", ref)
+	}
+	if lp.runDir != c.runDir {
+		if lp.runDir == "" {
+			return skip("process has no run-dir marker", "it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it")
+		}
+		return skip("process belongs to another run dir", "it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one")
 	}
 	if lp.childMark != strconv.Itoa(pid)+":"+lp.startTicks {
-		return settleThenVerdict(pid, verdictSkip, "process was not started directly by a daemon")
+		return skip("process was not started directly by a daemon", "it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)")
 	}
-	return verdictReap, ""
+	return verdictReap, skipReason{}
 }
 
 // settleThenVerdict re-reads the process after a 50ms pause before it returns a skip, so a
-// process that exited in the meantime is reported gone rather than skipped. It passes a
-// gone verdict through unchanged.
+// process that exited in the meantime is reported gone rather than skipped.
 func settleThenVerdict(pid, verdict int, reason string) (int, string) {
-	if verdict == verdictGone {
-		return verdictGone, reason
-	}
-	reapSleep(50 * time.Millisecond)
+	reapSleep(reapSettle)
 	if readLiveProc(pid, false).state == procGone {
 		return verdictGone, ""
 	}
@@ -291,6 +407,92 @@ func programMatches(recorded, live string) bool {
 		return false
 	}
 	return recorded == live || filepath.Base(recorded) == filepath.Base(live)
+}
+
+// recordMatchesLive reports whether the live process is the program that the record
+// names. A record holds argv0, and a spawn with a launcher also holds program: argv0
+// is then the launcher and program is the command. Three cases pass, as measured on
+// Linux against 89cb6289:
+//
+//   - the process runs argv0, by its full argv[0] or by its base name
+//   - the process runs program, by its full argv[0] or by its base name (rows PG02a,
+//     ED03a, ED03b): a launcher that replaced itself with the command
+//   - one whole argument of the process equals program byte for byte (rows PG02b,
+//     ED04a, ED04e): a launcher that still runs and was given the command
+//
+// On darwin the process is judged by the command text of `ps`, so "runs" and "one
+// whole argument" have the meaning that runsProgram gives.
+//
+// An argument does not match by its base name, by a cleaned path, or as a part of a
+// longer argument (rows ED04b, ED04c, ED04d). An empty program adds nothing (rows
+// ED06a, ED06b). The caller refuses an empty argv0 before it comes here, whatever
+// program holds (row ED02c). f6010b97 sends no signal in rows ED03a to ED04e. On macOS
+// the rows B1 to B8 measure the command text rule of runsProgram.
+func recordMatchesLive(rec childRecord, lp liveProc) bool {
+	if runsProgram(rec.Argv0, lp) {
+		return true
+	}
+	if rec.Program == "" {
+		return false
+	}
+	return runsProgram(rec.Program, lp) || slices.Contains(lp.args, rec.Program)
+}
+
+// runsProgram reports whether the live process runs the program p of a record.
+//
+// On linux the process is read from /proc: lp.program is argv[0] and lp.args are the
+// real arguments. p matches when it equals argv[0] or has its last path component.
+//
+// On darwin the process is judged by the command text that `ps` prints (lp.cmdText),
+// as the macOS rows of 89cb6289 do. lp.program is the first word of that text and
+// lp.args are the other words, cut at blanks. p matches in three cases:
+//
+//   - p equals the whole command text (a program with a blank in its path and no
+//     arguments)
+//   - the command text starts with p and one blank (rows PG04s and PG02s: a program
+//     at "/tmp/e/bin/my stub" is reaped)
+//   - p has the last path component of the first word (row PG05b: the same base name
+//     in another folder)
+//
+// A program key with a blank is never "handed" on darwin, because no single word
+// equals it (row ED04e: no signal). On linux it is, because the argument is whole
+// (Linux row ED04e: SIGTERM).
+//
+// One more case follows from the rule: a record that names "/tmp/e/bin/my" matches a
+// live process that runs "/tmp/e/bin/my stub", on darwin. Its first word is that path.
+// The macOS rows B2 and B2f measure it: SIGTERM on 89cb6289 and on claustrum.
+func runsProgram(p string, lp liveProc) bool {
+	if programMatches(p, lp.program) {
+		return true
+	}
+	return p != "" && lp.cmdText != "" && (p == lp.cmdText || strings.HasPrefix(lp.cmdText, p+" "))
+}
+
+// splitCommandText cuts the command text of `ps` into its words: the program, which is
+// the first word, and the arguments. A word ends at a blank, the space character, so two
+// blanks give an empty word. The macOS rows B4a to B4c measure two blanks and a tab, equal
+// on 89cb6289 and claustrum. There `ps` prints a tab as the four characters \011.
+func splitCommandText(text string) (program string, args []string) {
+	words := strings.Split(text, " ")
+	return words[0], words[1:]
+}
+
+// parsePSLine cuts one line of `ps -o pgid=,stat=,command=` into the group id, the
+// state and the command text. `ps` pads the first two columns with blanks. The command
+// text is the rest of the line after those blanks, with its own blanks kept. ok is
+// false for a line with fewer than three parts.
+func parsePSLine(line string) (pgid int, stat, text string, ok bool) {
+	first, rest, found := strings.Cut(strings.TrimLeft(line, " "), " ")
+	if !found {
+		return 0, "", "", false
+	}
+	stat, rest, found = strings.Cut(strings.TrimLeft(rest, " "), " ")
+	text = strings.TrimLeft(rest, " ")
+	if !found || text == "" {
+		return 0, "", "", false
+	}
+	pgid, _ = strconv.Atoi(first)
+	return pgid, stat, text, true
 }
 
 // daemonAlive reports whether the daemon that spawned a child is still running. A daemon
@@ -334,15 +536,18 @@ func earlierBootOfThisMachine(recHost, recNode, ownHost, ownNode string) bool {
 
 // reapTargets ends the collected orphans in two phases: SIGTERM the group and wait the
 // grace, then SIGKILL any survivor and wait the escalate. It re-reads the process
-// (sameLeader) before each signal AND on every wait poll, so a pid reused between the sweep
-// and a signal is dropped rather than killed. When a target's leader exits while a group
+// (sameLeader) before the SIGTERM, so a pid reused between the sweep and the signal is
+// dropped rather than signalled. During the grace every survivor takes the whole record
+// test again at each poll, and once more before the SIGKILL. A group that no longer
+// passes is dropped at that poll and gets nothing more. When a target's leader exits
+// while a group
 // member lingers, the wait SIGKILLs the group so the survivor is not left behind. It records
 // how many targets it signalled and splits the reap total into the grace and escalate
 // buckets. A group still alive after the escalate is counted survived and its record is KEPT,
 // so a later daemon can still find a group this one could not end; every other handled record
 // is forgotten. It updates counts. (The survivor arm is claustrum's own, not probe-measured:
 // a process cannot be made to outlive SIGKILL on demand.)
-func reapTargets(runDir string, targets []reapTarget, counts *reapCounts) {
+func reapTargets(c *reapCtx, targets []reapTarget, counts *reapCounts) {
 	if len(targets) == 0 {
 		return
 	}
@@ -353,78 +558,218 @@ func reapTargets(runDir string, targets []reapTarget, counts *reapCounts) {
 		switch sameLeader(t.pid, t.start) {
 		case verdictGone:
 			counts.reapedGrace++ // already gone before we signaled
-			forgetChildRecord(runDir, t.name)
+			c.forget(t.name)
 		case verdictSkip:
 			counts.forgotten++ // reused or no longer a group leader; never signal
-			forgetChildRecord(runDir, t.name)
+			c.forget(t.name)
 		default: // verdictReap: still the same live leader
 			if err := killGroup(t.pid, syscall.SIGTERM); err != nil {
 				counts.forgotten++
-				forgetChildRecord(runDir, t.name)
+				c.forget(t.name)
 				continue
 			}
 			signaled = append(signaled, t)
 		}
 	}
 
-	// Grace wait: poll, re-validating identity and cleaning up any group whose leader exited
-	// but whose members linger. Returns the targets still alive at the deadline.
-	survivors := reapWait(runDir, signaled, reapGrace, &counts.reapedGrace, counts)
+	// Grace wait: poll, with the whole record test at each poll. A process can change
+	// after the SIGTERM: it can replace itself with another program. Such a group is
+	// dropped at the poll that sees it, with the no-longer-verifies line, and is counted
+	// in forgotten, never as reaped. Measured on Linux against 89cb6289 (row PG05a,
+	// three sets of ten runs): in 21 runs the reference logs that line, sends nothing
+	// more and drops the record. In the last two sets the line comes 0.1 to 0.3 s after
+	// its start. The line and its reason are the reference's.
+	//
+	// In the other 9 runs the reference sent a SIGKILL within 4 ms of the SIGTERM, and
+	// the child ended. claustrum waits for a settle before that signal: see settleGone.
+	survivors := reapWait(c, signaled, reapGrace, &counts.reapedGrace, counts, true)
 
-	// Phase 2: SIGKILL the groups still alive after the grace, then wait the escalate. The
-	// grace wait re-validated each survivor's identity on its last poll, so a pid reused
-	// during the grace was dropped there rather than carried here.
+	// Phase 2: SIGKILL the groups that still pass the record test after the grace, then
+	// wait the escalate. The test runs once more here, right before the signal.
+	var killed, gone []reapTarget
 	for _, t := range survivors {
-		_ = killGroup(t.pid, syscall.SIGKILL)
+		verdict, reason := c.check(t, true)
+		switch verdict {
+		case verdictReap:
+			_ = killGroup(t.pid, syscall.SIGKILL)
+			killed = append(killed, t)
+		case verdictGone:
+			gone = append(gone, t) // the leader ended between the last poll and this test
+		default:
+			c.drop(t, reason, counts)
+		}
 	}
-	for _, t := range reapWait(runDir, survivors, reapEscalate, &counts.reapedEscalate, counts) {
+	// A leader that is alive again after the settle pause gets one last test. If that
+	// test cannot tell either, the target is dropped and gets no signal. That last arm
+	// and its text are claustrum's own, not measured.
+	for _, t := range c.settleGone(gone, &counts.reapedGrace) {
+		verdict, reason := c.check(t, true)
+		switch verdict {
+		case verdictReap:
+			_ = killGroup(t.pid, syscall.SIGKILL)
+			killed = append(killed, t)
+		case verdictGone:
+			c.drop(t, "its state changed between two reads", counts)
+		default:
+			c.drop(t, reason, counts)
+		}
+	}
+	for _, t := range reapWait(c, killed, reapEscalate, &counts.reapedEscalate, counts, false) {
 		counts.survived++ // outlived SIGKILL (a zombie or an uninterruptible sleep)
 		logInfof("[process.Reaper] child %d (%s): still present after SIGKILL", t.pid, t.name)
 		// The record is KEPT so a later daemon can find a group this one could not end.
 	}
 }
 
-// reapWait polls up to timeout for each target's process group to exit, re-validating the
-// leader's identity on every poll. A target
-// whose leader is gone is counted reaped (via reapedCounter, so the caller buckets it as
-// grace or escalate), and if its group still has members they are SIGKILLed; a target whose
-// leader pid was reused (its start-time changed) is dropped without a signal; a target still
-// holding the same live leader stays pending. It forgets every resolved target's record and
+// reapWait polls up to timeout for each target's process group to exit, and tests the
+// leader again on every poll. With full set it runs the whole record test (the grace).
+// Without it, it tests the start value and the group only (the escalate, after the
+// SIGKILL). A target
+// whose leader is gone, and still gone after the settle pause, is counted reaped (via
+// reapedCounter, so the caller buckets it as
+// grace or escalate), and if its group still has members they are SIGKILLed; a target
+// that fails the test is dropped without a signal; a target that still passes stays
+// pending. It forgets every resolved target's record and
 // returns the targets still pending at the deadline.
-func reapWait(runDir string, targets []reapTarget, timeout time.Duration, reapedCounter *int, counts *reapCounts) []reapTarget {
+func reapWait(c *reapCtx, targets []reapTarget, timeout time.Duration, reapedCounter *int, counts *reapCounts, full bool) []reapTarget {
 	if len(targets) == 0 {
 		return nil
 	}
 	deadline := reapNow().Add(timeout)
 	pending := targets
 	for {
-		var still []reapTarget
+		var still, gone []reapTarget
 		for _, t := range pending {
-			switch sameLeader(t.pid, t.start) {
+			verdict, reason := c.check(t, full)
+			switch verdict {
 			case verdictReap:
-				still = append(still, t) // same live leader; keep waiting
+				still = append(still, t) // still the recorded child; keep waiting
 			case verdictGone:
-				// The leader is gone. Re-confirm it is still gone immediately before the
-				// group SIGKILL: while the pid is absent, any process still in group <pid> is
-				// a descendant of the original orphan, because a live process can hold pgid ==
-				// pid only by being pid itself. If the pid was recycled as a new group leader
-				// in the meantime, skip the signal so an unrelated group is never hit.
-				if readLiveProc(t.pid, false).state == procGone && groupAlive(t.pid) {
-					_ = killGroup(t.pid, syscall.SIGKILL) // leader gone, group members linger
-				}
-				*reapedCounter++
-				forgetChildRecord(runDir, t.name)
-			default: // verdictSkip: the pid was reused; it is not ours to signal
-				counts.forgotten++
-				forgetChildRecord(runDir, t.name)
+				gone = append(gone, t)
+			default: // no longer ours to signal
+				c.drop(t, reason, counts)
 			}
 		}
-		pending = still
+		// A leader that is alive again after the pause stays pending. The next poll,
+		// or the test before the SIGKILL, gives it the normal test.
+		pending = append(still, c.settleGone(gone, reapedCounter)...)
 		if len(pending) == 0 || !reapNow().Before(deadline) {
 			return pending
 		}
 		reapSleep(reapPollInterval)
 	}
+}
+
+// check tests one signalled target again. With full set it is the whole record test,
+// and the reason is the reference's wording. Without it, it is sameLeader, with no
+// reason. A gone verdict is not final: settleGone decides it.
+func (c *reapCtx) check(t reapTarget, full bool) (int, string) {
+	if !full {
+		return sameLeader(t.pid, t.start), ""
+	}
+	verdict, why := c.verify(t.rec)
+	return verdict, why.ref
+}
+
+// settleGone decides the targets whose leader read as gone at one poll. It waits
+// reapSettle once for all of them and reads each leader again. A leader that is still
+// gone is settled by reapGoneLeader. A leader that is alive again is returned: it is
+// not counted reaped and its group gets no signal here.
+//
+// The pause is the guard of the group SIGKILL in reapGoneLeader. A read can take a live
+// leader for gone. Seen on the development host, not on the VM: the stat of a Go
+// program that replaces its program shows state Z and a vsize of 0 for a moment, on
+// two reads in a row, while the group still answers a signal 0. A group SIGKILL in
+// that moment ends a live child that no longer runs the recorded program. Measured on
+// Linux (row PG05a): that outcome came in 2 of 10 runs of claustrum before this pause,
+// and in 9 of the first 30 of 89cb6289. With the pause it came in no measured run (D20). The
+// pause is a threshold: a replacement that takes longer than it still gets the SIGKILL.
+//
+// The read after the pause also keeps the older guard: while the pid is absent, any
+// process still in group <pid> is a descendant of the original orphan, because a live
+// process can hold pgid == pid only by being pid itself. If the pid was recycled as a
+// new group leader in the meantime, the leader reads alive and the group gets no signal.
+//
+// The cost: a leader that really ended, with members that linger, gets the group
+// SIGKILL one pause later (Linux row RP05a measures that SIGKILL right after the
+// SIGTERM, on 89cb6289 and on claustrum before this pause).
+func (c *reapCtx) settleGone(gone []reapTarget, reapedCounter *int) []reapTarget {
+	if len(gone) == 0 {
+		return nil
+	}
+	reapSleep(reapSettle)
+	var alive []reapTarget
+	for _, t := range gone {
+		if readLiveProc(t.pid, false).state == procGone {
+			reapGoneLeader(c, t, reapedCounter)
+		} else {
+			alive = append(alive, t)
+		}
+	}
+	return alive
+}
+
+// drop forgets a signalled target that is no longer ours to signal, and counts it in
+// forgotten. With a reason it logs the reference's line for it.
+func (c *reapCtx) drop(t reapTarget, reason string, counts *reapCounts) {
+	if reason != "" {
+		logInfof("[process.Registry] group %d no longer verifies (%s); nothing more is sent to it", t.pid, reason)
+	}
+	counts.forgotten++
+	c.forget(t.name)
+}
+
+// reapGoneLeader settles a target whose leader is gone, as settleGone confirmed with its
+// read after the pause right before this call: it SIGKILLs the group when members linger, counts
+// the target reaped (in the bucket that reapedCounter names), and forgets the record.
+func reapGoneLeader(c *reapCtx, t reapTarget, reapedCounter *int) {
+	if groupAlive(t.pid) {
+		_ = killGroup(t.pid, syscall.SIGKILL) // leader gone, group members linger
+	}
+	*reapedCounter++
+	c.forget(t.name)
+}
+
+// read reads and parses the record name in the children folder. It returns the record
+// and true on success, and false when the entry is unreadable, is not a regular file,
+// or is not valid JSON, in which case the reap forgets the record.
+//
+// The entry must be a regular file itself (Lstat, which follows no symlink). The open
+// does not block on a FIFO (O_NONBLOCK), and the read happens only after the open file
+// proves to be that same regular file. The sweep already skips every entry that is not
+// a regular file, so this is the second guard, for an entry that someone swaps between
+// the directory read and the open.
+func (c *reapCtx) read(name string) (childRecord, bool) {
+	entry, err := c.dir.Lstat(name)
+	if err != nil || !entry.Mode().IsRegular() {
+		return childRecord{}, false
+	}
+	f, err := c.dir.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return childRecord{}, false
+	}
+	defer f.Close()
+	// The read comes last in this test, so it runs only for the entry that Lstat saw.
+	var rec childRecord
+	if opened, err := f.Stat(); err != nil || !os.SameFile(entry, opened) || !decodeRecord(f, &rec) {
+		return childRecord{}, false
+	}
+	return rec, true
+}
+
+// decodeRecord reads r to its end and parses it as one record.
+func decodeRecord(r io.Reader, rec *childRecord) bool {
+	data, err := io.ReadAll(r)
+	return err == nil && json.Unmarshal(data, rec) == nil
+}
+
+// forget removes one entry of the children folder. The reap calls it to drop a record
+// it has handled (reaped, gone, or skipped-and-stale), and an entry that is not a
+// regular file. It is one plain remove of the entry itself, by its bare name, through
+// the held children folder: never recursive, and a symlink is removed, not followed.
+// Best-effort: a removal error is ignored.
+func (c *reapCtx) forget(name string) {
+	_ = c.dir.Remove(name)
 }
 
 // sameLeader re-reads the process just before a kill and reports whether the target is

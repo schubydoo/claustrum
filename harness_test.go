@@ -58,6 +58,7 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	// so a run/<clientId>/rpc.sock boot trampolines spawns and a bare socket does not,
 	// and the daemon instance id is threaded into the proc manager for child records.
 	s.procs.runDir = execChildRunDir(sock)
+	s.procs.holdRunDir()
 	s.procs.instanceID = s.instanceID
 	go func() {
 		for {

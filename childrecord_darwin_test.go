@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -96,5 +97,33 @@ func TestRecordChildDarwin(t *testing.T) {
 	m.recordChild(bogus, "/x", "")
 	if _, err := os.Stat(filepath.Join(runDir, "children", strconv.Itoa(bogus)+".json")); !os.IsNotExist(err) {
 		t.Error("a pid with no readable start-time was recorded; the start=='' gate must skip it")
+	}
+}
+
+// TestDarwinPSIsStartedByFullPath pins that the record and the reap start /bin/ps and
+// not the first `ps` in the PATH. A shim named `ps` comes first in the PATH and prints
+// a text of its own. Both readers still answer with the output of the real ps for this
+// process. With a bare `ps` name the shim answers instead.
+func TestDarwinPSIsStartedByFullPath(t *testing.T) {
+	if darwinPSPath != "/bin/ps" {
+		t.Fatalf("darwinPSPath = %q, want /bin/ps", darwinPSPath)
+	}
+	shimDir := t.TempDir()
+	shim := "#!/bin/sh\necho SHIM-PS-RAN\n"
+	if err := os.WriteFile(filepath.Join(shimDir, "ps"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// The control: a bare `ps` name now leads to the shim.
+	if p, err := exec.LookPath("ps"); err != nil || p != filepath.Join(shimDir, "ps") {
+		t.Fatalf("LookPath(ps) = %q, %v, want the shim %s", p, err, filepath.Join(shimDir, "ps"))
+	}
+
+	if start := darwinProcStart(os.Getpid()); start == "" || strings.Contains(start, "SHIM") {
+		t.Errorf("darwinProcStart(self) = %q, want the start text of the real ps", start)
+	}
+	line := runPS(os.Getpid(), "pgid=,stat=,command=")
+	if line == "" || strings.Contains(line, "SHIM") {
+		t.Errorf("runPS(self) = %q, want the line of the real ps", line)
 	}
 }

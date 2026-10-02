@@ -198,6 +198,7 @@ opt-in?
 | D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
 | D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-` |
 | D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where `f6010b97` answers success and deletes the branch (`89cb6289` not measured there) |
+| D20 | Always-on, Linux and macOS | No. Off the wire. It is a signal time at a daemon start, not a frame | 50 ms settle before the group `SIGKILL` of a leader that reads as gone. In row RP05a that `SIGKILL` comes about 50 ms later than on `89cb6289`. In row PG05a claustrum ends the child in no run, where `89cb6289` ends it in some Linux runs. In rows where the child ends on `SIGTERM`, `89cb6289` also sends a group `SIGKILL` right after it in some Linux runs, and claustrum sends none. None of these is drift |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept) |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
@@ -324,6 +325,12 @@ traps that matter for telling drift from expected:
   `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
   env strip, and the gated launcher runs of `-install` and `-probe-cli`.
   `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
+- The reap of a child record with a `program` key splits the pins too, off the
+  wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
+  holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,
+  ED03a, ED03b, ED04a and ED04e show that. `f6010b97` sends no signal in rows ED03a
+  to ED04e. That difference is not drift. See
+  [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - The configuration listing, the stray `commondir` rules and the `git.info` root
   split the pins too. claustrum follows `89cb6289` there. Against `f6010b97` these
   differences are not drift:

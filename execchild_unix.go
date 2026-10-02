@@ -142,6 +142,17 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 	return r, w
 }
 
+// trampolineFallbackEnv is the environment of a command that spawn starts directly
+// after the start of the trampoline failed. env is the environment before the wrap.
+// The command gets the run dir entry, and no CLAUDE_SSH_CHILD entry, because only the
+// trampoline can stamp that one. This is the same environment as the direct start in
+// wrapCmdWithTrampoline for a daemon with no re-executable binary. It is claustrum's
+// choice and is not measured: the one measured row (CW03, Linux) has a direct start
+// that fails too.
+func trampolineFallbackEnv(env []string, runDir string) []string {
+	return replaceOrAppendEnv(env, envRunDir, runDir)
+}
+
 // holdGoEnv stashes each Go-runtime var present in env under CLAUDE_SSH_HELD_<name> and
 // removes the bare var, so the re-exec'd trampoline starts with default Go runtime
 // settings. runExecChild restores them before exec'ing the target.

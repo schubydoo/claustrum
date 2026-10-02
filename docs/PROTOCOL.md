@@ -2847,11 +2847,26 @@ as id-less stream notifications, and it buffers them for a later replay.
   before the target runs, so they do not perturb the transient trampoline. A
   command that
   does not resolve to a runnable file is not trampolined, so its spawn error frame
-  is unchanged (`fork/exec …` or `exec: … not found in $PATH`). A bare or
-  non-run-shaped socket spawns directly, with no trampoline and no markers. This is
-  off-wire. It adds no JSON-RPC frame and it changes none. It was verified against
+  is unchanged (`fork/exec …` or `exec: … not found in $PATH`). When the
+  trampoline itself does not start, the daemon starts the command directly and
+  answers with the error of that start. Measured on Linux against `89cb6289` with
+  a `cwd` of mode 000 (row CW03): the frame is
+  `-32603 fork/exec <command>: permission denied`. The daemon first logs
+  `[process.Manager] exec trampoline failed for <id> (fork/exec /proc/self/exe: permission denied); starting it directly — a successor daemon will not be able to reap it`.
+  That log text is the Linux text. This changes one `process.spawn` frame of
+  claustrum. For a `cwd` that the daemon cannot enter, the error text named the
+  trampoline before (`fork/exec /proc/self/exe: permission denied`). It now names
+  the command (row CW03). Not measured: the trampoline start fails and the direct
+  start works. claustrum then answers success, where it answered an error before.
+  It gives that child `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD`. A bare or
+  non-run-shaped socket spawns directly, with no trampoline and no markers. That
+  part is not matched: `f6010b97` and `89cb6289` set both markers on every socket
+  shape (Linux rows EV01a to EV01i and K3). The
+  trampoline is off-wire and adds no JSON-RPC frame. The start failure above is
+  the one frame that it changes. It was verified against
   `19f30c46` on a VM. The marker set and format match, and the values are
-  per-process. The held Go vars round-trip. A missing target, a
+  per-process. On macOS the start text in `CLAUDE_SSH_CHILD` is not matched:
+  claustrum writes two blanks before a one-digit day, and `89cb6289` writes one. The order of the entries in rows EV02e and EV03e is not matched either. The held Go vars round-trip. A missing target, a
   non-executable-format target, and a relative-under-`cwd` target each return the
   identical `-32603 fork/exec …` frame, or are trampolined exactly as the
   reference does. Darwin links the same subsystem, with the start-time from `ps`
@@ -2859,10 +2874,17 @@ as id-less stream notifications, and it buffers them for a later replay.
   windows the reference daemon reports it is not the run-dir lock holder, so it
   stamps neither marker. A windows VM showed that a run-shaped-socket child has the
   same environment as a bare-socket child.
-- The orphan-child registry record is `19f30c46` parity on linux and darwin. Under
+- The orphan-child registry record is `19f30c46` parity on linux and darwin, with
+  two parts that are not matched. The references write the record on every socket
+  shape (Linux rows EV01a to EV01i). On macOS the start text has two blanks before
+  a one-digit day, so the mixed macOS cells RP15c, RP15d, RP15f and RP15g end no
+  child. Under
   that same `run/<clientId>/` socket, each spawned child with a pid of 2 or more
   and a readable start-time is recorded to `<runDir>/children/<pid>.json`. The
-  daemon writes it atomically, through a temp file renamed into place. A later
+  daemon writes it atomically, through a temp file renamed into place. The temp
+  file is `children/.rec-<pid>.json.<12 chars>` (`89cb6289`, measured on Linux, row
+  SP06). The source of the 12 chars is not measured. claustrum uses the nanosecond
+  clock in base 36. A later
   daemon reads these to reap children a since-exited daemon left behind. The record
   is an ordered JSON object:
   `{"pid":<int>,"node":"<boot-id>/pid:[<inode>]","host":"machine-id:<hex>","instance":"<daemon instance id>","daemonPid":<int>,"daemonStart":"<ticks>","argv0":"<child argv0>","start":"<ticks>","at":<epoch-ms>}`.
@@ -2881,6 +2903,163 @@ as id-less stream notifications, and it buffers them for a later replay.
   run-dir lock holder, so it records no children and reaps none. A windows VM
   showed that a spawned child leaves the children dir empty, and that planted
   records survive startup.
+- The life of a record on linux and darwin. Each row is measured on Linux against
+  `89cb6289`. The macOS rows SP01a to SP09b are equal on `89cb6289` and claustrum.
+  - The end of the child removes its record (rows SP01, SP03, SP04, SP06 and
+    CW02b). The removal comes before the pipe drain, so it does not wait for the
+    exit frame (row SP05).
+  - A graceful shutdown leaves no record at the default, without `-keep-children`
+    (rows RP12a, STa and STb, equal on `89cb6289` and claustrum). claustrum waits
+    for the children that it killed, for 1 s at most. That bound is claustrum's own
+    value. Not measured: a child that outlives the bound.
+  - A daemon that is killed leaves its records. The next daemon on that socket
+    reads them at its start.
+  - If `children` is a regular file or a symlink, the daemon writes no record
+    through it. It logs
+    `[process.Registry] <runDir>/children is not a directory; recording nothing`.
+    Row SP07a measures a regular file. Row SP07b measures a symlink that leads out
+    of the run dir. Linux rows SLa and SLb and macOS rows KDa and KDb measure a
+    relative symlink to a folder inside the run dir. Neither side writes a record
+    through it.
+  - If the record cannot be written, the daemon logs
+    `[process.Registry] cannot record child <pid>: <error>`. Row SP07c measures a
+    `children` folder of mode 000, where the error is
+    `openat children/.rec-<pid>.json.<12 chars>: permission denied`.
+  - In rows SP07a to SP07c the daemon still tries the removal at the end of
+    the child. It logs
+    `[process.Registry] cannot remove record of child <pid>: removeat children/<pid>.json: <reason>`
+    before the exited line. The reason is `not a directory` for a regular file,
+    `path escapes from parent` for a symlink that leads out of the run dir, and
+    `permission denied` for mode 000.
+  - The removal goes through a relative symlink to a folder inside the run dir.
+    Both sides remove a file `<pid>.json` in that folder at the end of the child
+    (Linux row SLb, macOS row KDb). With no such file both sides log nothing
+    (Linux row SLa, macOS row KDa).
+  - A relative symlink that leads out of the run dir is refused like an absolute
+    one. Both sides keep a file `<pid>.json` in the outside folder and log the
+    `path escapes from parent` line (Linux row SLc, macOS row KDc).
+  - A removal that finds no record logs nothing. That is claustrum's choice (not
+    measured).
+  - The daemon holds its run dir open. After a rename of the run dir, a record goes
+    under the new name, and the old path is not made again (row SP08).
+  - claustrum prints each of these lines after its level tag.
+- The reap of the records at a `-serve` start on linux and darwin. Each row is
+  measured on Linux against `89cb6289`, unless the bullet names macOS.
+  - Only a regular file is read as a record. A symlink, a FIFO or an empty folder
+    with a `.json` name is removed, with no signal and no log line (rows ED16a to
+    ED16c). The target of the symlink stays.
+  - A record with a `program` key is accepted in three cases. The process runs
+    `argv0`. The process runs `program`, by its full path or by its base name
+    (rows PG02a, ED03a and ED03b). One whole argument of the process equals
+    `program` byte for byte (rows PG02b, ED04a and ED04e).
+  - An argument does not match by its base name, by a cleaned path, or as a part
+    of a longer argument (rows ED04b, ED04c and ED04d). An empty `argv0` is refused
+    before `program` is read (row ED02c). `f6010b97` sends no signal in rows ED03a
+    to ED04e.
+  - On Linux the daemon reads the process from `/proc`. The program is the first
+    argument of `/proc/<pid>/cmdline`, and the arguments are whole, blanks included.
+    A recorded name matches the program when the two are equal or have the same
+    last path component. A `program` with a blank matches the argument that equals
+    it (Linux row ED04e: `SIGTERM`).
+  - On macOS the daemon judges the process by the command text that `ps` prints,
+    as the macOS rows of `89cb6289` do. The words of that text are cut at blanks. The first
+    word is the program. A recorded name matches in three cases. It equals the
+    whole text. The text starts with it and one blank. It has the last path
+    component of the first word.
+  - So on macOS a program at a path with a blank is still ended (rows PG04s and
+    PG02s, `/tmp/e/bin/my stub`). A `program` with a blank is never taken as an
+    argument, because no single word equals it (macOS row ED04e: no signal).
+  - These macOS rows are equal on `89cb6289` and claustrum in 3 of 3 runs: PG02a,
+    PG02b, ED03a, ED04a and B1 to B8 send `SIGTERM` or none as the rule gives, and
+    ED01a sends none. Rows ED03b and ED04b to ED04d are measured on `89cb6289`
+    only. For claustrum they follow from the rule.
+  - Rows B4a to B4c measure two blanks and a tab on macOS. A path with two blanks
+    is ended when the record holds both blanks (B4a), and is not when the record
+    holds one (B4b). `ps` prints a tab as the four characters `\011`, so a record
+    with a tab matches no text and the child gets no signal (B4c). Not measured: a
+    `program` key with two blanks or a tab.
+  - The children folder must be a real folder inside the run dir. The daemon lists
+    it through the run dir that it holds open, so the reap never leaves the run
+    dir. If `children` is a symlink to a folder, the daemon reads nothing, sends
+    nothing and removes nothing. It logs
+    `[process.Registry] <runDir>/children is not a directory; reaping nothing`
+    before the listening line. Rows SYa and SYb measure that on `f6010b97` and
+    `89cb6289`, for a folder outside the run dir and for one inside it. claustrum
+    does the same for every `children` entry that is not a real folder. The other
+    shapes are not measured.
+  - During the 2 s grace, a group that got `SIGTERM` takes the whole record test
+    again at each poll, and once more before the `SIGKILL`. If the test fails, the
+    daemon sends nothing more and drops the record at that poll. Row PG05a
+    measures a child that replaced itself with another program: `89cb6289` logs
+    the line below 0.1 to 0.3 s after its start.
+  - The line is
+    `[process.Registry] group <pgid> no longer verifies (<reason>); nothing more is sent to it`.
+    The reason is the text of `89cb6289` for the test that failed, where a row
+    measures one. Otherwise the text is claustrum's own. For row PG05a it
+    is `it does not run the recorded program "<argv0>"`. With a `program` key the
+    text goes on with `and neither runs nor was handed "<program>"` (rows ED04b to
+    ED04d).
+  - The other reason texts are these. `it does not lead its own process group`
+    (row RP07). `it did not start at the recorded "<start>": the pid has been reused`
+    (row ED07).
+    `it was not started by a daemon of this run dir: no CLAUDE_SSH_RUN_DIR names it`
+    (row ED10a).
+    `it belongs to a daemon of another run dir: its CLAUDE_SSH_RUN_DIR names a different one`
+    (row ED10b).
+    `it was not started by a daemon itself: its CLAUDE_SSH_CHILD does not name its own pid and start (something a child started)`
+    (rows ED10c and ED10d).
+    `environment unreadable: open /proc/<pid>/environ: permission denied` (one run
+    of row PG05a).
+  - Those rows measure each text in another line of the reference, at the first
+    test of a record. In the `no longer verifies` line, only the program text and
+    the environment text are measured.
+  - A group that is gone at a poll counts as ended on the `SIGTERM`. A read that
+    fails because the process has just ended is not a failed test. Rows K5 and
+    ED04a measure a child that exits on the `SIGTERM`: `89cb6289` logs
+    `1 ended on SIGTERM`.
+  - A read that takes the leader for gone is not final. claustrum waits 50 ms and
+    reads the leader again. If the leader is still gone and the group still
+    answers, the daemon sends `SIGKILL` to the group. Row RP05a measures that
+    `SIGKILL` for a leader that exited and left members that ignore `SIGTERM`.
+    There `89cb6289` sends it right after the `SIGTERM`, with no wait.
+  - The 50 ms wait is claustrum's own value. It is there for a child that replaces
+    its program on the `SIGTERM`. In the first 30 runs of row PG05a (three sets of
+    ten), `89cb6289` sent a `SIGKILL` within 4 ms of the `SIGTERM` in 9 runs, and
+    the child ended. In its other 21 runs the child stayed alive. With the wait, a
+    leader that reads alive again takes the record test and gets the
+    `no longer verifies` line. This is [`DIVERGENCES.md`](DIVERGENCES.md) → D20.
+  - Measured on Linux with the wait, in 30 later runs of row PG05a for each
+    binary: claustrum ended the child in no run, and `89cb6289` in 5 runs. In 10
+    runs of row RP05a, claustrum sent the group `SIGKILL` 51 to 55 ms after the
+    `SIGTERM` in 9 runs and 152 ms after it in one. `89cb6289` sent it 0.4 to
+    4.9 ms after the `SIGTERM`.
+- The log lines of a spawn and of an exit. They are off-wire. Each one is measured
+  against `89cb6289`. The macOS rows CW01 to CW05 are equal on `89cb6289` and
+  claustrum.
+  - A `cwd` that is missing or is not a folder logs
+    `[process.Manager] Failed to start process <id>: <message>`. The message is the
+    message of the error frame (Linux rows CW01, CW02a, CW02c, CW04c and CW05,
+    Windows rows CW01, CW02a, CW02c and CW04c). On Windows, rows K4, CW01,
+    CW02a, CW02c, CW04a, CW04b and CW04c are equal on `89cb6289` and claustrum:
+    the same frame, and the same line apart from the level tag. Neither side
+    makes a `children` folder or a record file there.
+  - The exited line is `[process.Manager] Process <id> exited with code <n>`. A
+    child that a client request ended adds `, signalled at client request` (Linux
+    rows SP03a and SP03b). A child that a signal ended adds
+    `, terminated by <signal>` (Linux row SP04, with `SIGKILL`). A plain exit adds
+    nothing (Linux row SP01).
+  - A line with both parts has the signal part first. `89cb6289` printed
+    `Process <id> exited with code -1, terminated by SIGKILL, signalled at shutdown request`
+    in Linux row STb, a `server.shutdown` request with two children.
+  - That line is a race on the reference. `89cb6289` printed it in row STb, and
+    printed no exited line in two runs of rows RP11 and RP12a. claustrum prints it
+    when the exit goroutine reaches the line before the daemon exits. Measured on
+    Linux: one line for two ended children in rows STa and STb (three or more runs each).
+    In rows RP11, RP12a and RP12b the count was none, one or two, and it changed
+    between runs.
+  - When the drain grace expires, the daemon logs
+    `[process.Manager] Process <id>: pipe drain grace expired (grandchild holding stdio?); force-closing`
+    before the two read-error lines (Linux row SP05).
 
 #### process.stdin
 `{id,data[,offset]}` → `{"success":true,"applied":<int>[,"duplicate":true]}`

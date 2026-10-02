@@ -2,8 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -33,54 +34,82 @@ type childRecord struct {
 	At      int64  `json:"at"`
 }
 
-// writeChildRecord marshals rec and writes it atomically to
-// <runDir>/children/<rec.Pid>.json — the on-disk path measured against 19f30c46. It
-// makes the children dir 0700, writes a temp file, then renames it into place so a
-// reader never sees a half-written record. Pure filesystem work and so cross-platform;
-// the linux and darwin callers supply the record. Uses encoding/json.Marshal, whose HTML
-// escaping is inherited wire behaviour (see docs/ARCHITECTURE.md), so the observable
-// record bytes match 19f30c46's.
-func writeChildRecord(runDir string, rec childRecord) error {
+// childrenDirName is the registry folder inside the run dir. Every record call names
+// its file as "children/<file>" below a root that is the run dir. The error texts
+// then hold that relative name, as the measured log lines do (Linux rows SP07a to
+// SP07c).
+const childrenDirName = "children"
+
+// errChildrenNotDir reports that <runDir>/children exists and is not a real folder: a
+// regular file, a symlink, or another kind. The daemon then writes no record.
+var errChildrenNotDir = errors.New("children is not a directory")
+
+// childRecordName is the name of the record of pid, relative to the run dir.
+func childRecordName(pid int) string {
+	return childrenDirName + "/" + strconv.Itoa(pid) + ".json"
+}
+
+// childRecordTempName is the temp name of the record of pid, relative to the run dir:
+// "children/.rec-<pid>.json.<12 chars>". The shape is measured on Linux (row SP06).
+// The source of the 12 chars is NOT measured. claustrum uses the nanosecond clock in
+// base 36, which gives 12 chars at the present date.
+// A var so a test can read the name.
+var childRecordTempName = func(pid int) string {
+	return childrenDirName + "/.rec-" + strconv.Itoa(pid) + ".json." + strconv.FormatInt(time.Now().UnixNano(), 36)
+}
+
+// writeChildRecordIn marshals rec and writes it to children/<rec.Pid>.json below
+// root, which is the run dir. It makes the children folder 0700, writes a temp file,
+// then renames it into place, so a reader never sees a half-written record.
+//
+// Every step goes through the os.Root, so no step leaves the run dir. A children
+// entry that is not a real folder gets no record: the Lstat does not follow a
+// symlink, and the call returns errChildrenNotDir (Linux rows SP07a and SP07b). The
+// os.Root also holds the run dir itself, so a renamed run dir gets the record under
+// its new name (Linux row SP08).
+//
+// Uses encoding/json.Marshal, whose HTML escaping is inherited wire behaviour (see
+// docs/ARCHITECTURE.md), so the observable record bytes match 19f30c46's.
+func writeChildRecordIn(root *os.Root, rec childRecord) error {
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(runDir, "children")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := root.Mkdir(childrenDirName, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return err
 	}
-	final := filepath.Join(dir, strconv.Itoa(rec.Pid)+".json")
-	tmp := filepath.Join(dir, strconv.Itoa(rec.Pid)+"."+strconv.FormatInt(time.Now().UnixNano(), 10)+".json")
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// The entry exists. It is a record folder only when it is a real folder itself.
+	if fi, err := root.Lstat(childrenDirName); err != nil || !fi.IsDir() {
+		return errChildrenNotDir
+	}
+	tmp := childRecordTempName(rec.Pid)
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, final); err != nil {
-		_ = os.Remove(tmp) // do not leave a stray temp behind on a failed rename
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = root.Rename(tmp, childRecordName(rec.Pid))
+	}
+	if err != nil {
+		_ = root.Remove(tmp) // do not leave a stray temp behind
 		return err
 	}
 	return nil
 }
 
-// readChildRecord reads and parses one <runDir>/children/<name> record written by
-// writeChildRecord — the inverse used by the orphan reap at startup. It returns the
-// record and true on success, and false when the file is unreadable or is not valid
-// JSON, in which case the reap forgets the record. Pure
-// filesystem work, so cross-platform; the reap on linux and darwin is its only caller.
-func readChildRecord(runDir, name string) (childRecord, bool) {
-	data, err := os.ReadFile(filepath.Join(runDir, "children", name))
-	if err != nil {
-		return childRecord{}, false
+// removeChildRecordIn removes children/<pid>.json below root, which is the run dir. It
+// is one plain remove of one name, never recursive, and the os.Root keeps it inside the
+// run dir. A record that does not exist is not an error. As 89cb6289 does, the remove
+// goes through a children symlink that stays inside the run dir (Linux rows SLa, SLb,
+// macOS KDa, KDb). A symlink that leads out is refused (row SP07b).
+func removeChildRecordIn(root *os.Root, pid int) error {
+	err := root.Remove(childRecordName(pid))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
 	}
-	var rec childRecord
-	if err := json.Unmarshal(data, &rec); err != nil {
-		return childRecord{}, false
-	}
-	return rec, true
-}
-
-// forgetChildRecord removes one <runDir>/children/<name> record. The reap calls it to
-// drop a record it has handled (reaped, gone, or skipped-and-stale). Best-effort: a
-// removal error is ignored. Pure filesystem work, so cross-platform.
-func forgetChildRecord(runDir, name string) {
-	_ = os.Remove(filepath.Join(runDir, "children", name))
+	return err
 }

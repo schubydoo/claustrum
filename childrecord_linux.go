@@ -31,7 +31,7 @@ func (m *procManager) recordChild(pid int, argv0, program string) {
 	if start == 0 {
 		return
 	}
-	err := writeChildRecord(m.runDir, childRecord{
+	m.writeRecord(childRecord{
 		Pid:         pid,
 		Node:        nodeID(),
 		Host:        "machine-id:" + machineID(),
@@ -43,9 +43,6 @@ func (m *procManager) recordChild(pid int, argv0, program string) {
 		Start:       strconv.FormatInt(start, 10),
 		At:          time.Now().UnixMilli(),
 	})
-	if err != nil {
-		logErrorf("[process.Manager] failed to record child %d: %v", pid, err)
-	}
 }
 
 // machineID returns the host machine id (/etc/machine-id, falling back to

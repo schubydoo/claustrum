@@ -509,6 +509,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// spawn launches children through the exec-child trampoline; empty for a
 	// non-run-shaped socket, where children spawn directly (see execchild.go).
 	s.procs.runDir = execChildRunDir(socket)
+	// Hold the run dir open from here on, so a child record follows the folder
+	// through a rename (linux and darwin, a no-op on windows and for a socket that
+	// is not run-shaped).
+	s.procs.holdRunDir()
 	// The daemon instance id, stamped into each child's orphan-registry record so a
 	// later daemon can tell this daemon's children from its own.
 	s.procs.instanceID = s.instanceID
@@ -517,7 +521,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// recorded children become candidates; reapOrphans independently re-checks that each
 	// owning daemon is gone before it touches a child. Synchronous at startup. A no-op when
 	// the socket is not run-shaped or off linux and darwin (see childreap_*.go).
-	reapOrphans(s.procs.runDir, s.procs.instanceID)
+	s.procs.reapOrphans()
 	// Start the host cleaner: a background sweep that ends stranded sibling daemons and
 	// orphaned Claude Code process groups under this install's roots and tidies their stale
 	// run dirs. It runs unconditionally at startup. It is a no-op when the
@@ -1154,4 +1158,11 @@ func (s *server) stopChildren() {
 		return
 	}
 	s.procs.killAll()
+	// Wait for the killed children to end, so the end of each one removes its
+	// registry record before the daemon exits (linux and darwin with a run-shaped
+	// socket, a no-op elsewhere). The wait is bounded by shutdownRecordWait. It does
+	// not cover the exited line of such a child. That line prints only when the exit
+	// goroutine reaches it before the daemon exits (see exitLogSuffix). With
+	// -keep-children the children stay, and this wait does not run.
+	s.procs.awaitRecordsRemoved()
 }

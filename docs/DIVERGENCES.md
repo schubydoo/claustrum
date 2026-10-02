@@ -171,6 +171,7 @@ rather than repeating them in each entry:
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
 | [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
+| [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -853,6 +854,57 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `scratch/i429/remove-val-windows-6bed4ee.md`,
   `scratch/i429/remove-val-windows-8755717.md` and
   `scratch/i429/remove-val-windows-8755717-jcr.md`.
+
+### D20 · Wait for a settle before the group `SIGKILL` of a leader that reads as gone (Linux and macOS) { #d20 }
+
+- **Behavior.** At a `-serve` start the daemon ends the child groups that a dead
+  predecessor left: `SIGTERM` to the group, then a wait of 2 s. If the leader of a
+  group reads as gone in that wait and the group still answers, the daemon sends
+  `SIGKILL` to the group. claustrum first waits 50 ms and reads the leader again. A
+  leader that is alive again takes the record test. A leader that fails that test
+  gets no more signals. This is off-wire. No frame changes.
+- **Reference side, measured.** `89cb6289` sends that `SIGKILL` with no wait.
+  - Row RP05a (the leader exits on `SIGTERM`, two members ignore it), Linux, the
+    20 runs of the last three run sets: the `SIGKILL` comes 0.3 to 4.9 ms after the
+    `SIGTERM`.
+  - Row PG05a (a child that replaces its program on `SIGTERM`), Linux, six run
+    sets of 10, 10, 10, 30, 10 and 10 runs: `89cb6289` ended the child in 4, 2, 3,
+    5, 1 and 5 runs. That is 20 of 80 runs. In the other 60 runs the child stayed
+    alive.
+  - Row PG05a, macOS, three run sets of 21, 20 and 10 runs: `89cb6289` ended the
+    child in no run.
+  - Rows where the child ends on `SIGTERM`, Linux: `89cb6289` also sends a group
+    `SIGKILL` right after the `SIGTERM`, in 15 of 42 runs of one run set. claustrum
+    sends none there and reads the group again after the wait.
+- **claustrum side, measured.** With the wait, claustrum ended the child of row
+  PG05a in none of 50 Linux runs (the last three run sets) and in none of 51 macOS
+  runs. In the Linux set of the build right before the wait, it ended the child
+  in 2 of 10 runs.
+- **Default.** Always-on, Linux and macOS. **Activate:** always-on. There is no
+  flag and no key. The 50 ms is claustrum's own value.
+- **Why always-on (rule 3 clause (a)).** The harm it refuses is a `SIGKILL` to a
+  live process that is no longer the recorded child. That loss cannot be taken
+  back. It is the same shape as [D15](#d15), which refuses to signal an identity
+  that the daemon cannot verify. On the honest path the outcome stays inside what
+  the rows of `89cb6289` show: in row PG05a the child stays alive, as in 60 of its
+  80 Linux runs, and in row RP05a the group still gets its `SIGKILL`. The only
+  difference on the honest path is the time of one signal at a daemon start, off
+  the wire.
+- **Cost.** In row RP05a the group `SIGKILL` comes about 50 ms later. Measured on
+  Linux in the same 20 runs: 51 to 55 ms after the `SIGTERM` in 19 runs, and 152 ms
+  in one. Measured on macOS in 13 runs of row RP05q (three run sets): the members end
+  51 to 80 ms after their `SIGTERM` in 12 runs and 100 ms after it in one, against
+  25 ms at most on `89cb6289`. A reap
+  whose groups all end on the `SIGTERM` returns one wait later.
+- **The wait is a threshold.** A program replacement that takes longer than 50 ms
+  still gets the `SIGKILL`. No measured run shows that.
+- **Reopen trigger.** A measurement that shows the reference waiting before that
+  `SIGKILL` (then this becomes parity). Or a report of a child that outlived a
+  daemon restart because it replaced its program.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → process.spawn. Also `childreap.go`
+  (`settleGone`, `reapGoneLeader`). Evidence in
+  `scratch/89cb6289/e-linux/REPORT.md` and `REPORT-val1.md` to `REPORT-val5.md`
+  there, and in `scratch/89cb6289/e-macos/REPORT-val1.md` to `REPORT-val3.md`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

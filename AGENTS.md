@@ -307,6 +307,10 @@ harm it refuses is the cleaner SIGTERMing a daemon that is serving a client on a
 host where `lsof` cannot answer. The sibling lock read is deliberately NOT
 covered. See the entry.
 
+D20 is off-wire, on Linux and macOS. Before the group `SIGKILL` of a child-group
+leader that reads as gone, the reap of a `-serve` start waits 50 ms and reads the
+leader again. See the entry.
+
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →
 [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Per-method wire frames →
