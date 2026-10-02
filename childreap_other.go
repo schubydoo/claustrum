@@ -10,4 +10,4 @@ package main
 // daemon startup untouched, for the reference and for claustrum alike). Claustrum holds no
 // run-dir lock on windows either (its claimRunDir is a no-op there),
 // so this stays a no-op.
-func reapOrphans(runDir, ownInstance string) {}
+func (m *procManager) reapOrphans() {}

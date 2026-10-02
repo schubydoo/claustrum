@@ -222,8 +222,11 @@ component_management:
         # struct + atomic write are cross-platform; the identity gather is OS-specific —
         # linux (boot_id/pidns, machine-id, /proc start-ticks) and darwin (boot-session
         # UUID, hostname, ps start-time) each have their own, and the remaining targets use
-        # the no-op (childrecord_other.go); windows lands in the windows track.
+        # the no-op (childrecord_other.go); windows lands in the windows track. The handle on
+        # the run dir, the record log lines and the removal at the end of a child are shared
+        # by linux and darwin (childrecord_unix.go).
         - childrecord.go
+        - childrecord_unix.go
         - childrecord_linux.go
         - childrecord_darwin.go
         - childrecord_other.go

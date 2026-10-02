@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -168,6 +169,12 @@ type managedProc struct {
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
+	// forgetRecord removes the child's registry record. The exit goroutine calls it
+	// as soon as the wait on the child returns, before the pipe drain, and then
+	// closes recordDone. Both are set once at spawn. A nil value means there is
+	// nothing to do.
+	forgetRecord func()
+	recordDone   chan struct{}
 
 	// Async stdin: process.stdin enqueues here and returns immediately, while a
 	// single stdinWriter goroutine drains the queue to the child's stdin pipe. This
@@ -221,6 +228,12 @@ type procManager struct {
 	// child's orphan-registry record (childRecord.Instance) so a later daemon can tell
 	// this daemon's children apart from its own. Read-only after startup.
 	instanceID string
+
+	// runRoot is the run dir, held open for the child records (linux and darwin, see
+	// childrecord_unix.go). runRootOnce guards the one open. Unused on windows.
+	runRootOnce sync.Once
+	runRoot     *os.Root
+	runRootErr  error
 }
 
 // sessionSpawnLock is one per-session-key mutex plus a reference count, so the
@@ -576,12 +589,20 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		//
 		// so the stat error is wrapped but the not-a-directory case is its own
 		// message rather than a wrapped ENOTDIR.
+		//
+		// The reference logs each of the two with its Failed to start line, and the
+		// text after the id is the frame message. Measured on Linux (rows CW01,
+		// CW02a, CW02c, CW04c, CW05) and on Windows (rows CW01, CW02a, CW02c, CW04c).
 		fi, err := os.Stat(cwd)
 		if err != nil {
-			return nil, fmt.Errorf("chdir %s: %w", cwd, err)
+			err = fmt.Errorf("chdir %s: %w", cwd, err)
+			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
 		}
 		if !fi.IsDir() {
-			return nil, fmt.Errorf("chdir %s: not a directory", cwd)
+			err = fmt.Errorf("chdir %s: not a directory", cwd)
+			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
 		}
 		cmd.Dir = cwd
 	}
@@ -605,7 +626,11 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
 	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
 	// its error frame is unchanged). Applied after buildEnv/SysProcAttr so it can rewrite
-	// the resolved argv and hold the Go-runtime env.
+	// the resolved argv and hold the Go-runtime env. When the trampoline itself does
+	// not start, the command is started directly below.
+	// The path, argv and env before the wrap are kept for the direct start below.
+	// The env is a copy, because the wrap edits the env slice in place.
+	directPath, directArgs, directEnv := cmd.Path, cmd.Args, slices.Clone(cmd.Env)
 	execErrR, execErrW := wrapCmdWithTrampoline(cmd, m.runDir)
 	// closeExecErr releases the trampoline's exec-error pipe on any pre-Start bail-out
 	// below; a no-op (both ends nil) when the spawn was not trampolined.
@@ -640,7 +665,34 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		closeExecErr()
 		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	if err != nil && execErrR != nil {
+		// The start of the trampoline itself failed, so nothing ran. The reference
+		// logs that and starts the command directly, and the frame then holds the
+		// error of the direct start. Measured on Linux with a cwd of mode 000 (row
+		// CW03): the frame names the command, not /proc/self/exe. The text of the
+		// line is the reference's. Not measured: a direct start that then works.
+		// claustrum gives that child the run dir entry and no CLAUDE_SSH_CHILD entry,
+		// as the direct start for a daemon with no re-executable binary does.
+		logWarnf("[process.Manager] exec trampoline failed for %s (%v); starting it directly — a successor daemon will not be able to reap it", id, err)
+		closeExecErr()
+		execErrR, execErrW = nil, nil
+		// exec.Cmd.Start closed the failed command's stdin pipe. The stdout and
+		// stderr write ends are plain files of ours, so they are still open.
+		cmd = &exec.Cmd{
+			Path:        directPath,
+			Args:        directArgs,
+			Env:         trampolineFallbackEnv(directEnv, m.runDir),
+			Dir:         cmd.Dir,
+			SysProcAttr: cmd.SysProcAttr,
+			Stdout:      stdoutW,
+			Stderr:      stderrW,
+		}
+		if stdin, err = cmdStdinPipe(cmd); err == nil {
+			err = cmd.Start()
+		}
+	}
+	if err != nil {
 		if launcher != nil {
 			err = managedLauncherStartError(path, err)
 		}
@@ -702,7 +754,12 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		cmd:        cmd,
 		group:      group,
 		done:       make(chan struct{}),
+		recordDone: make(chan struct{}),
 	}
+	// The end of the child removes its registry record (linux and darwin, a no-op
+	// on windows). The pid is copied here, so the exit goroutine needs no lock.
+	childPid := cmd.Process.Pid
+	p.forgetRecord = func() { m.removeChildRecord(childPid) }
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
 	// Reusing a live id replaces the registry entry (matching the reference:
@@ -726,7 +783,7 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 
 	// Record the spawned child in the orphan registry (linux and darwin, run-shaped socket
 	// only; a no-op on windows/other) so a later daemon can reap it if this daemon exits leaving it
-	// behind. Done AFTER the child is in m.procs, so a concurrent server.shutdown /
+	// behind. The end of the child removes the record again (waitReapAndDrain). Done AFTER the child is in m.procs, so a concurrent server.shutdown /
 	// killAll cannot miss it during this synchronous filesystem work. Best-effort and
 	// non-destructive: errors are logged, and it never affects the spawn result.
 	// With a launcher, argv0 is the launcher and program is the command.
@@ -769,6 +826,17 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.mu.Lock()
 	p.reaped = true
 	p.mu.Unlock()
+	// The child has ended, so its registry record goes now, before the drain wait
+	// below. Measured on Linux: the record of the reference is gone 60 ms after the
+	// end of a child whose grandchild holds the pipes, and the exit frame comes 5 s
+	// later (row SP05). A failed removal logs its line here, before the exit line
+	// (rows SP07a to SP07c).
+	if p.forgetRecord != nil {
+		p.forgetRecord()
+	}
+	if p.recordDone != nil {
+		close(p.recordDone)
+	}
 	// A child can leave a grandchild holding the same stdout — `npm run dev &`,
 	// anything that daemonizes. The pipes then stay open long after the process
 	// we spawned is gone. On the reference the exit frame lands 5 seconds after
@@ -781,6 +849,9 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	select {
 	case <-drained:
 	case <-time.After(grace):
+		// The text is the reference's, and it comes before the two read-error lines
+		// that the close below causes (measured on Linux, row SP05).
+		logWarnf("[process.Manager] Process %s: pipe drain grace expired (grandchild holding stdio?); force-closing", p.id)
 		closeAll(stdoutR, stderrR)
 	}
 	// Both pumps have returned by here: either they hit EOF on their own, or
@@ -809,11 +880,37 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	// Release the OS group handle now the child is gone. On Windows this drops
 	// the Job Object's last handle, reaping any descendants it left behind.
 	p.group.close()
-	logInfof("[process.Manager] Process %s exited with code %d", p.id, code)
+	sigName := exitSignalName(err)
+	logInfof("[process.Manager] Process %s exited with code %d%s", p.id, code, exitLogSuffix(sigName, killedBy))
 	met.processExits.Add(1)
-	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: exitSignalName(err), KilledBy: killedBy})
+	p.emit(streamFrame{Stream: "exit", ExitCode: &code, Signal: sigName, KilledBy: killedBy})
 	// Signal any killAndWait waiter now the child is fully reaped.
 	close(p.done)
+}
+
+// exitLogSuffix is the tail of the exited line. It holds the same two facts as the
+// exit frame: sigName is the frame's signal member and killedBy is its killedBy
+// member. Measured on Linux against 89cb6289: a process.kill or a
+// process.killAndWait that ends a child with exit code 0 gives ", signalled at
+// client request" (rows SP03a, SP03b). A SIGKILL from outside the daemon gives
+// ", terminated by SIGKILL" (row SP04). A plain exit gives no suffix (row SP01).
+// A line with both parts has the signal first: 89cb6289 printed ", terminated by
+// SIGKILL, signalled at shutdown request" in row STb, a server.shutdown request
+// with two children.
+//
+// That shutdown line is a race on the reference, not a rule. 89cb6289 printed it in
+// row STb, and printed no exited line in two runs of rows RP11 and RP12a. claustrum
+// prints it when the exit goroutine reaches the line before the daemon exits. The
+// shutdown wait (shutdownRecordWait) ends earlier, at the removal of the record.
+func exitLogSuffix(sigName, killedBy string) string {
+	suffix := ""
+	if sigName != "" {
+		suffix += ", terminated by " + sigName
+	}
+	if killedBy != "" {
+		suffix += ", signalled at " + killedBy + " request"
+	}
+	return suffix
 }
 
 func pumpStream(p *managedProc, name string, r io.Reader) {

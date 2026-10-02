@@ -570,6 +570,24 @@ func runHelper(mode string, args []string) int {
 		ignoreSigterm()
 		fmt.Print("ready\n")
 		time.Sleep(60 * time.Second)
+	case "term-exit0":
+		// Exit-line fixture (Unix): on SIGTERM, exit with code 0. Announce readiness
+		// on stdout so the test only signals once the handler is installed.
+		exitZeroOnSigterm()
+		fmt.Print("ready\n")
+		time.Sleep(60 * time.Second)
+	case "term-exit0-gate":
+		// Reap fixture (Unix): on SIGTERM, wait until the file args[0] exists, then
+		// exit with code 0. So the test decides the moment at which the child ends.
+		exitZeroOnSigtermAfter(args[0])
+		fmt.Print("ready\n")
+		time.Sleep(60 * time.Second)
+	case "term-exec":
+		// Reap fixture (Unix): on SIGTERM, replace this program with args[0], run as
+		// the "sleep 60" helper. The pid and the start value stay, the program changes.
+		execOnSigterm(args[0])
+		fmt.Print("ready\n")
+		time.Sleep(60 * time.Second)
 	case "pwd": // /bin/pwd -P: the physical working directory
 		wd, err := os.Getwd()
 		if err != nil {

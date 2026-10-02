@@ -28,7 +28,7 @@ func (m *procManager) recordChild(pid int, argv0, program string) {
 	if start == "" {
 		return
 	}
-	err := writeChildRecord(m.runDir, childRecord{
+	m.writeRecord(childRecord{
 		Pid:         pid,
 		Node:        bootSessionUUID(),
 		Host:        darwinHostname(),
@@ -40,9 +40,6 @@ func (m *procManager) recordChild(pid int, argv0, program string) {
 		Start:       start,
 		At:          time.Now().UnixMilli(),
 	})
-	if err != nil {
-		logErrorf("[process.Manager] failed to record child %d: %v", pid, err)
-	}
 }
 
 // bootSessionUUID returns this boot's session UUID (sysctl
@@ -68,6 +65,13 @@ var darwinHostname = func() string {
 	return h
 }
 
+// darwinPSPath is the `ps` that the record and the reap start, by its full path. A bare
+// name is looked up in the PATH of the daemon, so another `ps` earlier in that PATH
+// answers instead, and the answer decides whether the reap sends a signal. Measured on
+// macOS: a watcher saw f6010b97 and 89cb6289 start /bin/ps. With a shim folder first in
+// the PATH, the shim ran for all 207 `ps` calls before this path and for none with it.
+const darwinPSPath = "/bin/ps"
+
 // darwinProcStart returns pid's start-time as a UTC ANSIC timestamp string (e.g.
 // "Sun Sep 13 07:56:41 2026"), the pid-reuse-safe value the record and the
 // CLAUDE_SSH_CHILD marker carry on darwin. It matches `ps -o lstart` under TZ=UTC —
@@ -76,9 +80,11 @@ var darwinHostname = func() string {
 // reader used at reap time. Returns "" when the process is gone or ps fails. A seam so
 // tests never shell out. It is the darwin analogue of procStartTicks.
 var darwinProcStart = func(pid int) string {
-	cmd := exec.Command("ps", "-ww", "-o", "lstart=", "-p", strconv.Itoa(pid))
-	// TZ=UTC forces the UTC rendering the reference records; C locale + a fixed PATH
-	// keep the field format stable and independent of the caller's environment.
+	cmd := exec.Command(darwinPSPath, "-ww", "-o", "lstart=", "-p", strconv.Itoa(pid))
+	// TZ=UTC forces the UTC rendering the reference records; the C locale keeps the
+	// field format stable and independent of the caller's environment. The PATH entry
+	// is the environment of `ps` itself. It does not choose which `ps` starts: the
+	// full path above does.
 	cmd.Env = []string{"TZ=UTC", "LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 	out, err := cmd.Output()
 	if err != nil {

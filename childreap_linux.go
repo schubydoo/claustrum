@@ -16,6 +16,10 @@ import (
 // fake procfs tree and exercise the parse-error arms.
 var procRoot = "/proc"
 
+// procReadFile reads one file of a /proc/<pid> folder. A var so a test can let the
+// process end between two reads of one realReadLiveProc call.
+var procReadFile = os.ReadFile
+
 // ownReapIdentity returns this daemon's node and host for the reap's record-matching gate,
 // from the same linux sources childrecord writes: node = <boot_id>/pid:[<pidns-inode>],
 // host = "machine-id:<id>".
@@ -29,7 +33,7 @@ func ownReapIdentity() (node, host string) {
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
 	proc := procRoot + "/" + strconv.Itoa(pid)
-	stat, err := os.ReadFile(proc + "/stat")
+	stat, err := procReadFile(proc + "/stat")
 	if err != nil {
 		return lp // gone
 	}
@@ -69,23 +73,26 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 			return lp
 		}
 	}
-	cmdline, err := os.ReadFile(proc + "/cmdline")
+	cmdline, err := procReadFile(proc + "/cmdline")
 	if err != nil {
-		lp.state = procNotOurs
+		lp.state = endedOr(pid, procNotOurs)
 		return lp
 	}
 	if len(cmdline) == 0 {
 		lp.state = procGone
 		return lp
 	}
-	if j := strings.IndexByte(string(cmdline), 0); j >= 0 {
-		lp.program = string(cmdline[:j])
-	} else {
-		lp.program = string(cmdline)
-	}
-	environ, err := os.ReadFile(proc + "/environ")
+	// cmdline holds each argument with a NUL after it, so an argument stays whole,
+	// spaces included. The first one is the program and the rest are the arguments.
+	argv := strings.Split(strings.TrimSuffix(string(cmdline), "\x00"), "\x00")
+	lp.program, lp.args = argv[0], argv[1:]
+	environ, err := procReadFile(proc + "/environ")
 	if err != nil {
-		lp.state = procNotOurs
+		if lp.state = endedOr(pid, procNotOurs); lp.state == procGone {
+			return lp
+		}
+		// The text is the reference's reason for this case (89cb6289, Linux row PG05a).
+		lp.unreadable = "environment unreadable: " + err.Error()
 		return lp
 	}
 	for _, e := range strings.Split(string(environ), "\x00") {
@@ -96,4 +103,20 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 		}
 	}
 	return lp
+}
+
+// endedOr answers a read of cmdline or environ that failed. The stat read came first
+// and showed a live process, so the process can have ended in between: a reaped
+// process has no /proc folder any more, and a zombie refuses the read of its environ.
+// A new read of the stat tells the two cases apart. It returns procGone when the
+// process has ended, and state when it is still there and really is unreadable.
+//
+// Measured on Linux (rows K5 and ED04a, 2 of 52 cells): a child that exited on the
+// SIGTERM was read as not ours, and the reap logged it as a group that no longer
+// verifies. 89cb6289 counts such a group as ended on SIGTERM.
+func endedOr(pid, state int) int {
+	if realReadLiveProc(pid, false).state == procGone {
+		return procGone
+	}
+	return state
 }

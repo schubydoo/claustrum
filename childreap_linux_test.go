@@ -12,238 +12,6 @@ import (
 	"time"
 )
 
-// fakeLiveProcs seams readLiveProc at a fixed table keyed by pid; an unlisted pid reads
-// as gone. It also silences reapSleep so settleThenVerdict's 50ms settle does not slow the test.
-func fakeLiveProcs(t *testing.T, table map[int]liveProc) {
-	t.Helper()
-	oldRead, oldSleep := readLiveProc, reapSleep
-	t.Cleanup(func() { readLiveProc, reapSleep = oldRead, oldSleep })
-	readLiveProc = func(pid int, wantEnv bool) liveProc {
-		if lp, ok := table[pid]; ok {
-			return lp
-		}
-		return liveProc{state: procGone}
-	}
-	reapSleep = func(time.Duration) {}
-}
-
-type killRec struct {
-	pid int
-	sig syscall.Signal
-}
-
-// procSim is a stateful fake for the wait tests. It seams readLiveProc, killGroup,
-// groupAlive, reapNow and reapSleep so a process can die (or be reused) in response to a
-// real signal while the wait polls, and the clock advances only when the wait sleeps, so
-// the two-phase loops terminate deterministically without real time.
-type procSim struct {
-	live   map[int]*liveProc
-	group  map[int]bool
-	onKill map[int]func(sig syscall.Signal) error
-	kills  []killRec
-	now    time.Time
-}
-
-func newProcSim(t *testing.T) *procSim {
-	t.Helper()
-	s := &procSim{
-		live:   map[int]*liveProc{},
-		group:  map[int]bool{},
-		onKill: map[int]func(syscall.Signal) error{},
-		now:    time.Now(), // realistic, so the foreign-record age check is meaningful
-	}
-	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, killGroup, groupAlive, reapNow, reapSleep
-	t.Cleanup(func() {
-		readLiveProc, killGroup, groupAlive, reapNow, reapSleep = oldRead, oldKill, oldGroup, oldNow, oldSleep
-	})
-	readLiveProc = func(pid int, wantEnv bool) liveProc {
-		if lp, ok := s.live[pid]; ok {
-			return *lp
-		}
-		return liveProc{state: procGone}
-	}
-	killGroup = func(pid int, sig syscall.Signal) error {
-		s.kills = append(s.kills, killRec{pid, sig})
-		if fn := s.onKill[pid]; fn != nil {
-			return fn(sig)
-		}
-		return nil
-	}
-	groupAlive = func(pid int) bool { return s.group[pid] }
-	reapNow = func() time.Time { return s.now }
-	reapSleep = func(d time.Duration) { s.now = s.now.Add(d) }
-	return s
-}
-
-// add registers a live, group-leading process with the given start-ticks.
-func (s *procSim) add(pid int, start string) {
-	s.live[pid] = &liveProc{state: procAlive, startTicks: start, pgid: pid}
-}
-
-// diesOn makes the process exit (and its group empty) when killGroup signals it with
-// dieSig; other signals are recorded but leave it running.
-func (s *procSim) diesOn(pid int, dieSig syscall.Signal) {
-	s.onKill[pid] = func(sig syscall.Signal) error {
-		if sig == dieSig {
-			delete(s.live, pid)
-			s.group[pid] = false
-		}
-		return nil
-	}
-}
-
-func (s *procSim) sigCount(sig syscall.Signal) int {
-	n := 0
-	for _, k := range s.kills {
-		if k.sig == sig {
-			n++
-		}
-	}
-	return n
-}
-
-func (s *procSim) signaled(pid int) bool {
-	for _, k := range s.kills {
-		if k.pid == pid {
-			return true
-		}
-	}
-	return false
-}
-
-// TestVerifyOrphan walks the whole verdict tree: each guard returns its skip and the all-
-// pass record returns a reap. A mutant that drops any single guard flips exactly one row.
-func TestVerifyOrphan(t *testing.T) {
-	const runDir = "/run/c0ffee01"
-	const pid = 424242
-	// A live process that passes every check, so each case below removes exactly one.
-	pass := liveProc{
-		state:      procAlive,
-		startTicks: "9000",
-		pgid:       pid,
-		program:    "/usr/bin/node",
-		runDir:     runDir,
-		childMark:  strconv.Itoa(pid) + ":9000",
-	}
-	rec := childRecord{Pid: pid, Start: "9000", Argv0: "/usr/bin/node"}
-	// Pick owner/parent/pgid values distinct from pid for the all-pass rows.
-	const ownDaemon, ownParent, ownPgid = 10, 11, 12
-
-	cases := []struct {
-		name        string
-		rec         childRecord
-		live        liveProc
-		ownDaemon   int
-		ownParent   int
-		ownPgid     int
-		wantVerdict int
-		wantReason  string
-	}{
-		{"pid below 2", childRecord{Pid: 1, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is out of range"},
-		{"pid is this daemon", childRecord{Pid: ownDaemon, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon"},
-		{"pid is parent", childRecord{Pid: ownParent, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon's parent or process group"},
-		{"pid is pgroup", childRecord{Pid: ownPgid, Start: "1", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "pid is this daemon's parent or process group"},
-		{"no start", childRecord{Pid: pid, Start: "", Argv0: "x"}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "record has no start time to verify against"},
-		{"no program", childRecord{Pid: pid, Start: "1", Argv0: ""}, pass, ownDaemon, ownParent, ownPgid, verdictSkip, "record names no program to verify against"},
-		{"live gone", rec, liveProc{state: procGone}, ownDaemon, ownParent, ownPgid, verdictGone, ""},
-		{"live not ours", rec, liveProc{state: procNotOurs}, ownDaemon, ownParent, ownPgid, verdictPassthrough, "process is not in this daemon's namespace"},
-		{"pid reused", rec, liveProc{state: procAlive, startTicks: "8888", pgid: pid, program: "/usr/bin/node", runDir: runDir, childMark: strconv.Itoa(pid) + ":8888"}, ownDaemon, ownParent, ownPgid, verdictSkip, "the pid was reused"},
-		{"not group leader", rec, liveProc{state: procAlive, startTicks: "9000", pgid: 7, program: "/usr/bin/node", runDir: runDir, childMark: strconv.Itoa(pid) + ":9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process is not its own group leader"},
-		{"wrong program", rec, liveProc{state: procAlive, startTicks: "9000", pgid: pid, program: "/bin/sh", runDir: runDir, childMark: strconv.Itoa(pid) + ":9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process is not running the recorded program"},
-		{"no run-dir marker", rec, liveProc{state: procAlive, startTicks: "9000", pgid: pid, program: "/usr/bin/node", runDir: "", childMark: strconv.Itoa(pid) + ":9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process has no run-dir marker"},
-		{"other run dir", rec, liveProc{state: procAlive, startTicks: "9000", pgid: pid, program: "/usr/bin/node", runDir: "/run/other", childMark: strconv.Itoa(pid) + ":9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process belongs to another run dir"},
-		{"child mark mismatch", rec, liveProc{state: procAlive, startTicks: "9000", pgid: pid, program: "/usr/bin/node", runDir: runDir, childMark: "999:9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process was not started directly by a daemon"},
-		{"empty live program", rec, liveProc{state: procAlive, startTicks: "9000", pgid: pid, program: "", runDir: runDir, childMark: strconv.Itoa(pid) + ":9000"}, ownDaemon, ownParent, ownPgid, verdictSkip, "process is not running the recorded program"},
-		{"reap when all pass", rec, pass, ownDaemon, ownParent, ownPgid, verdictReap, ""},
-		{"reap by basename match", childRecord{Pid: pid, Start: "9000", Argv0: "node"}, pass, ownDaemon, ownParent, ownPgid, verdictReap, ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			fakeLiveProcs(t, map[int]liveProc{tc.rec.Pid: tc.live})
-			v, reason := verifyOrphan(tc.rec, runDir, tc.ownDaemon, tc.ownParent, tc.ownPgid)
-			if v != tc.wantVerdict || reason != tc.wantReason {
-				t.Errorf("verdict/reason = %d/%q, want %d/%q", v, reason, tc.wantVerdict, tc.wantReason)
-			}
-		})
-	}
-}
-
-// TestSettleThenVerdictReportsGone proves the skip path re-reads /proc after a short settle and
-// reports gone when the process exited in the meantime, rather than logging a skip for a
-// process that just raced away.
-func TestSettleThenVerdictReportsGone(t *testing.T) {
-	const pid = 555
-	calls := 0
-	oldRead, oldSleep := readLiveProc, reapSleep
-	t.Cleanup(func() { readLiveProc, reapSleep = oldRead, oldSleep })
-	reapSleep = func(time.Duration) {}
-	readLiveProc = func(p int, wantEnv bool) liveProc {
-		calls++
-		if calls == 1 { // the verify read: alive but failing a check
-			return liveProc{state: procAlive, startTicks: "1", pgid: 999, program: "x", runDir: "/run/x", childMark: "1:1"}
-		}
-		return liveProc{state: procGone} // the settle re-read: now gone
-	}
-	rec := childRecord{Pid: pid, Start: "1", Argv0: "x"}
-	v, _ := verifyOrphan(rec, "/run/x", 1, 2, 3)
-	if v != verdictGone {
-		t.Errorf("verdict = %d, want verdictGone after the settle re-read", v)
-	}
-}
-
-// TestSameLeader covers the pre-kill re-check: reused pid, no longer group leader, gone,
-// and still safe to signal.
-func TestSameLeader(t *testing.T) {
-	const pid = 700
-	cases := []struct {
-		name    string
-		recStrt string
-		live    liveProc
-		want    int
-	}{
-		{"reused", "100", liveProc{state: procAlive, startTicks: "200", pgid: pid}, verdictSkip},
-		{"gone", "100", liveProc{state: procGone}, verdictGone},
-		{"not leader", "100", liveProc{state: procAlive, startTicks: "100", pgid: 9}, verdictSkip},
-		{"ok", "100", liveProc{state: procAlive, startTicks: "100", pgid: pid}, verdictReap},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			fakeLiveProcs(t, map[int]liveProc{pid: tc.live})
-			if got := sameLeader(pid, tc.recStrt); got != tc.want {
-				t.Errorf("sameLeader = %d, want %d", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestDaemonAlive covers the owner-liveness gate that decides whether a child is an orphan.
-func TestDaemonAlive(t *testing.T) {
-	const dpid = 800
-	const ownPid = 42
-	cases := []struct {
-		name  string
-		pid   int
-		start string
-		live  liveProc
-		want  bool
-	}{
-		{"pid below 2", 1, "", liveProc{state: procAlive}, false},
-		{"pid is us", ownPid, "", liveProc{state: procAlive, startTicks: "5"}, false},
-		{"gone", dpid, "", liveProc{state: procGone}, false},
-		{"alive no recorded start", dpid, "", liveProc{state: procAlive, startTicks: "5"}, true},
-		{"alive matching start", dpid, "5", liveProc{state: procAlive, startTicks: "5"}, true},
-		{"alive mismatched start", dpid, "5", liveProc{state: procAlive, startTicks: "6"}, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			fakeLiveProcs(t, map[int]liveProc{tc.pid: tc.live})
-			if got := daemonAlive(tc.pid, tc.start, ownPid); got != tc.want {
-				t.Errorf("daemonAlive = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 // TestEarlierBootOfThisMachine pins the machine/boot comparison.
 func TestEarlierBootOfThisMachine(t *testing.T) {
 	const host = "machine-id:abc"
@@ -265,20 +33,6 @@ func TestEarlierBootOfThisMachine(t *testing.T) {
 			}
 		})
 	}
-}
-
-// writeRec writes one <runDir>/children/<pid>.json record and returns its file name.
-func writeRec(t *testing.T, runDir string, rec childRecord) string {
-	t.Helper()
-	if err := writeChildRecord(runDir, rec); err != nil {
-		t.Fatalf("writeChildRecord: %v", err)
-	}
-	return strconv.Itoa(rec.Pid) + ".json"
-}
-
-func recordExists(runDir, name string) bool {
-	_, err := os.Stat(filepath.Join(runDir, "children", name))
-	return err == nil
 }
 
 // TestReapOrphansGate is the end-to-end sweep: our own child, a live-owner child, a real
@@ -385,153 +139,6 @@ func TestReapOrphansGate(t *testing.T) {
 	}
 }
 
-// TestReapOrphansForgetsBadRecords proves a record that will not parse, names a bad pid,
-// or sits at a mismatched file name is dropped without a kill.
-func TestReapOrphansForgetsBadRecords(t *testing.T) {
-	runDir := t.TempDir()
-	dir := filepath.Join(runDir, "children")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "12.json"), []byte("{bad json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// A valid record whose pid does not match its file name (a leftover temp name).
-	tempName := "424242.111.json"
-	if err := os.WriteFile(filepath.Join(dir, tempName), []byte(`{"pid":424242,"start":"1"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// A non-json file is ignored entirely (left in place, never read).
-	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	fakeLiveProcs(t, map[int]liveProc{})
-	oldKill := killGroup
-	t.Cleanup(func() { killGroup = oldKill })
-	killed := 0
-	killGroup = func(int, syscall.Signal) error { killed++; return nil }
-
-	reapOrphans(runDir, "inst")
-
-	if killed != 0 {
-		t.Errorf("killGroup called %d times for bad records; want 0", killed)
-	}
-	if recordExists(runDir, "12.json") || recordExists(runDir, tempName) {
-		t.Error("a malformed or mismatched record survived; both must be forgotten")
-	}
-	if !recordExists(runDir, "notes.txt") {
-		t.Error("a non-.json file was removed; the sweep must ignore it")
-	}
-}
-
-// TestReapTargetsTwoPhase proves the escalation: a group that survives the grace after
-// SIGTERM is sent SIGKILL and, when it then exits, is counted reaped in the escalate bucket;
-// one that outlives SIGKILL is counted survived. The reaped group's record is forgotten, but
-// the survivor's record is KEPT (the reaper does not forget a group it could not end).
-func TestReapTargetsTwoPhase(t *testing.T) {
-	runDir := t.TempDir()
-	dir := filepath.Join(runDir, "children")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t1 := reapTarget{pid: 1001, start: "10", name: "1001.json"}
-	t2 := reapTarget{pid: 1002, start: "20", name: "1002.json"}
-	for _, tt := range []reapTarget{t1, t2} {
-		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	sim := newProcSim(t)
-	sim.add(t1.pid, "10")
-	sim.add(t2.pid, "20")
-	sim.diesOn(t1.pid, syscall.SIGKILL) // survives SIGTERM + the grace, dies to the escalation
-	// t2 has no death policy: it outlives SIGKILL (a zombie or an uninterruptible sleep).
-	var counts reapCounts
-	reapTargets(runDir, []reapTarget{t1, t2}, &counts)
-
-	if sim.sigCount(syscall.SIGTERM) != 2 || sim.sigCount(syscall.SIGKILL) != 2 {
-		t.Errorf("signals: %d SIGTERM, %d SIGKILL; want 2 and 2", sim.sigCount(syscall.SIGTERM), sim.sigCount(syscall.SIGKILL))
-	}
-	if counts.signalled != 2 || counts.reapedEscalate != 1 || counts.survived != 1 {
-		t.Errorf("counts signalled=%d reapedEscalate=%d survived=%d, want 2, 1 and 1",
-			counts.signalled, counts.reapedEscalate, counts.survived)
-	}
-	if counts.reapedGrace != 0 || counts.forgotten != 0 {
-		t.Errorf("counts reapedGrace=%d forgotten=%d, want 0 and 0", counts.reapedGrace, counts.forgotten)
-	}
-	if recordExists(runDir, t1.name) {
-		t.Error("the reaped target's record survived; it must be forgotten")
-	}
-	if !recordExists(runDir, t2.name) {
-		t.Error("the survivor's record was forgotten; a group the reaper could not end must be KEPT")
-	}
-}
-
-// TestReapOrphansForgetOnlyIsSilent proves the summary gate excludes forgotten: a sweep that
-// only forgets stale records (nothing signalled, left alive, or kept) logs no summary line,
-// matching reference build 19f30c46 (VM-confirmed). A mutant that puts forgotten back in the
-// gate logs a summary here and fails this test.
-func TestReapOrphansForgetOnlyIsSilent(t *testing.T) {
-	runDir := t.TempDir()
-	dir := filepath.Join(runDir, "children")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	// An unparseable record is forgotten without any signal or keep, so only forgotten is
-	// non-zero after the sweep.
-	if err := os.WriteFile(filepath.Join(dir, "12.json"), []byte("not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	fakeLiveProcs(t, map[int]liveProc{})
-	out := captureLog(t, func() { reapOrphans(runDir, "inst") })
-	if strings.Contains(out, "orphan sweep") {
-		t.Errorf("a forget-only sweep logged a summary; it must be silent:\n%s", out)
-	}
-	if recordExists(runDir, "12.json") {
-		t.Error("the malformed record was not forgotten")
-	}
-}
-
-// TestReapTargetsPreKillReuse proves the sameLeader re-check stops a signal to a pid that
-// was reused or exited between the sweep and the kill.
-func TestReapTargetsPreKillReuse(t *testing.T) {
-	runDir := t.TempDir()
-	dir := filepath.Join(runDir, "children")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	reused := reapTarget{pid: 2001, start: "10", name: "2001.json"}
-	gone := reapTarget{pid: 2002, start: "20", name: "2002.json"}
-	sigfail := reapTarget{pid: 2003, start: "30", name: "2003.json"}
-	for _, tt := range []reapTarget{reused, gone, sigfail} {
-		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	sim := newProcSim(t)
-	sim.live[reused.pid] = &liveProc{state: procAlive, startTicks: "999", pgid: reused.pid} // start changed => reused
-	// gone.pid is absent from the sim, so it reads gone.
-	sim.add(sigfail.pid, "30")
-	sim.onKill[sigfail.pid] = func(syscall.Signal) error { return syscall.ESRCH } // the signal fails
-	var counts reapCounts
-	reapTargets(runDir, []reapTarget{reused, gone, sigfail}, &counts)
-
-	// A reused pid and a gone pid are never signaled; sigfail is signaled once and its
-	// error stops it there.
-	if sim.signaled(reused.pid) || sim.signaled(gone.pid) {
-		t.Errorf("a reused or gone pid was signaled: kills=%v", sim.kills)
-	}
-	if recordExists(runDir, reused.name) || recordExists(runDir, gone.name) || recordExists(runDir, sigfail.name) {
-		t.Error("a handled target's record survived; all must be forgotten")
-	}
-	// The phase-1 already-gone target lands in the grace bucket; the reused and signal-failed
-	// targets are forgotten. A mutant that mis-buckets the phase-1 gone case flips these.
-	if counts.signalled != 3 || counts.reapedGrace != 1 || counts.forgotten != 2 {
-		t.Errorf("counts signalled=%d reapedGrace=%d forgotten=%d, want 3, 1 and 2",
-			counts.signalled, counts.reapedGrace, counts.forgotten)
-	}
-}
-
 // TestReapOrphansBatchOverflow proves the sweep signals at most maxReapTargets orphans and
 // leaves the rest for the next startup.
 func TestReapOrphansBatchOverflow(t *testing.T) {
@@ -563,16 +170,6 @@ func TestReapOrphansBatchOverflow(t *testing.T) {
 	if sim.sigCount(syscall.SIGTERM) != 1 {
 		t.Errorf("signaled %d orphans, want exactly maxReapTargets=1", sim.sigCount(syscall.SIGTERM))
 	}
-}
-
-// TestReapOrphansNoop proves the two early returns: an empty run dir and a missing children
-// dir both do nothing (and never kill).
-func TestReapOrphansNoop(t *testing.T) {
-	oldKill := killGroup
-	t.Cleanup(func() { killGroup = oldKill })
-	killGroup = func(int, syscall.Signal) error { t.Fatal("killGroup called in a no-op sweep"); return nil }
-	reapOrphans("", "inst")          // no run dir
-	reapOrphans(t.TempDir(), "inst") // run dir with no children/ subdir
 }
 
 // TestRealReadLiveProc reads this live process through the real reader and confirms the
@@ -647,6 +244,15 @@ func TestRealReadLiveProcFakeProcfs(t *testing.T) {
 	if lp.state != procAlive || lp.program != "/usr/bin/node" || lp.runDir != "/run/x" || lp.childMark != "13:4242" {
 		t.Errorf("full record parsed wrong: %+v", lp)
 	}
+	if len(lp.args) != 1 || lp.args[0] != "--flag" {
+		t.Errorf("args = %q, want the one argument after argv[0]", lp.args)
+	}
+	// An argument with a space stays one argument: the reap matches a program key
+	// against whole arguments.
+	mk(17, "17 (proc) R "+fields19(), "/bin/sh\x00/f/bin/my target\x00-x\x00", "")
+	if lp := realReadLiveProc(17, true); len(lp.args) != 2 || lp.args[0] != "/f/bin/my target" || lp.args[1] != "-x" {
+		t.Errorf("args = %q, want the two whole arguments", lp.args)
+	}
 	if lp.pgid != 13 {
 		t.Errorf("pgid = %d, want 13 (stat field 5)", lp.pgid)
 	}
@@ -662,8 +268,13 @@ func TestRealReadLiveProcFakeProcfs(t *testing.T) {
 	}
 	// A readable cmdline but an unreadable environ -> not ours.
 	mk(16, "16 (proc) R "+fields19(), "/bin/x\x00", "-")
-	if lp := realReadLiveProc(16, true); lp.state != procNotOurs {
-		t.Errorf("missing environ: state = %d, want procNotOurs", lp.state)
+	lp16 := realReadLiveProc(16, true)
+	if lp16.state != procNotOurs {
+		t.Errorf("missing environ: state = %d, want procNotOurs", lp16.state)
+	}
+	// The read says why, in the reference's words, for the no-longer-verifies line.
+	if want := "environment unreadable: open " + filepath.Join(root, "16", "environ") + ": no such file or directory"; lp16.unreadable != want {
+		t.Errorf("missing environ: unreadable = %q, want %q", lp16.unreadable, want)
 	}
 }
 
@@ -698,13 +309,6 @@ func TestRealReadLiveProcOtherNamespace(t *testing.T) {
 	}
 }
 
-// TestReadChildRecordMissing covers the unreadable-file arm of readChildRecord.
-func TestReadChildRecordMissing(t *testing.T) {
-	if _, ok := readChildRecord(t.TempDir(), "nope.json"); ok {
-		t.Error("readChildRecord reported ok for a missing file")
-	}
-}
-
 // fields19 returns stat fields 4..23 with pgrp (field 5) = 13, starttime (field 22) =
 // 4242 and a non-zero vsize (field 23), so a "<pid> (proc) <state> " prefix plus this
 // yields a parseable line.
@@ -730,95 +334,4 @@ func fields19() string {
 		out += s
 	}
 	return out
-}
-
-// TestReapWaitDropsReusedAndCleansGroup covers the two lifecycle guards inside the wait: a
-// pid reused during the grace is dropped without a signal (never SIGKILLed), and a target
-// whose leader exits while a group member lingers has its group SIGKILLed. A target that
-// stays the same live leader is returned as still pending at the deadline.
-func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
-	runDir := t.TempDir()
-	dir := filepath.Join(runDir, "children")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	staysAlive := reapTarget{pid: 3001, start: "10", name: "3001.json"}
-	reused := reapTarget{pid: 3002, start: "20", name: "3002.json"}
-	groupSurvivor := reapTarget{pid: 3003, start: "30", name: "3003.json"}
-	for _, tt := range []reapTarget{staysAlive, reused, groupSurvivor} {
-		if err := os.WriteFile(filepath.Join(dir, tt.name), []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	sim := newProcSim(t)
-	sim.add(staysAlive.pid, "10")                                                           // same live leader throughout
-	sim.live[reused.pid] = &liveProc{state: procAlive, startTicks: "777", pgid: reused.pid} // start changed => reused
-	// groupSurvivor.pid is absent (leader gone), but its group still has a member.
-	sim.group[groupSurvivor.pid] = true
-
-	var counts reapCounts
-	pending := reapWait(runDir, []reapTarget{staysAlive, reused, groupSurvivor}, reapGrace, &counts.reapedGrace, &counts)
-
-	if len(pending) != 1 || pending[0].pid != staysAlive.pid {
-		t.Errorf("pending = %v, want only the live leader %d", pending, staysAlive.pid)
-	}
-	if sim.signaled(reused.pid) {
-		t.Error("a pid reused during the grace was signaled; it must be dropped")
-	}
-	if sim.sigCount(syscall.SIGKILL) != 1 || !sim.signaled(groupSurvivor.pid) {
-		t.Errorf("group survivor not cleaned up: kills=%v", sim.kills)
-	}
-	if counts.reapedGrace != 1 || counts.forgotten != 1 {
-		t.Errorf("counts reapedGrace=%d forgotten=%d, want 1 and 1", counts.reapedGrace, counts.forgotten)
-	}
-	if recordExists(runDir, reused.name) || recordExists(runDir, groupSurvivor.name) {
-		t.Error("a resolved target's record survived; it must be forgotten")
-	}
-	if !recordExists(runDir, staysAlive.name) {
-		t.Error("a still-pending target's record was forgotten early")
-	}
-}
-
-// TestReapWaitSkipsGroupKillOnLeaderReuse proves the group cleanup re-confirms the leader
-// is still gone right before the SIGKILL: if the pid was recycled as a new group leader
-// between the poll's sameLeader read and the signal, the group is NOT SIGKILLed.
-func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
-	runDir := t.TempDir()
-	dir := filepath.Join(runDir, "children")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	tg := reapTarget{pid: 5001, start: "10", name: "5001.json"}
-	if err := os.WriteFile(filepath.Join(dir, tg.name), []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	oldRead, oldKill, oldGroup, oldNow, oldSleep := readLiveProc, killGroup, groupAlive, reapNow, reapSleep
-	t.Cleanup(func() {
-		readLiveProc, killGroup, groupAlive, reapNow, reapSleep = oldRead, oldKill, oldGroup, oldNow, oldSleep
-	})
-	reads := 0
-	readLiveProc = func(pid int, wantEnv bool) liveProc {
-		reads++
-		if reads == 1 {
-			return liveProc{state: procGone} // sameLeader: the leader is gone
-		}
-		return liveProc{state: procAlive, startTicks: "999", pgid: tg.pid} // re-check: pid reused as a new leader
-	}
-	killed := 0
-	killGroup = func(int, syscall.Signal) error { killed++; return nil }
-	groupAlive = func(int) bool { return true } // a group with this pgid exists (the reused leader's)
-	reapNow = time.Now
-	reapSleep = func(time.Duration) {}
-
-	var counts reapCounts
-	pending := reapWait(runDir, []reapTarget{tg}, reapGrace, &counts.reapedGrace, &counts)
-	if killed != 0 {
-		t.Errorf("group SIGKILL sent despite the leader pid being reused; want 0, got %d", killed)
-	}
-	if len(pending) != 0 || counts.reapedGrace != 1 {
-		t.Errorf("pending=%v reapedGrace=%d, want [] and 1 (the gone leader is still counted reaped)", pending, counts.reapedGrace)
-	}
-	if recordExists(runDir, tg.name) {
-		t.Error("record survived; a gone-leader target must be forgotten")
-	}
 }

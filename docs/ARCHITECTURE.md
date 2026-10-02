@@ -110,7 +110,9 @@ children it spawns.
   `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go` /
   `childrecord_darwin.go`). The file is an ordered JSON record. A later daemon reads it to
   reap children that a since-exited daemon left behind. The write is atomic on linux and
-  darwin. On windows the
+  darwin. The daemon holds the run dir open. It writes each record below that handle, so
+  no write follows a symlink out of the run dir (`childrecord_unix.go`). The end of a
+  child removes its record the same way, before the pipe drain. On windows the
   reference daemon reports it is not the run-dir lock holder, so it records no children. A
   windows VM showed a spawned child leaves the children dir empty. This behavior is
   off-wire. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
@@ -121,10 +123,17 @@ children it spawns.
   Three conditions must hold before the daemon reaps a child. The record's node matches ours
   (same boot and machine). The owning daemon is gone. The live process still is that
   recorded child. For that third condition, the start-time matches, so there is no pid
-  reuse. The process leads its own group and runs the recorded program. It also carries
-  `CLAUDE_SSH_RUN_DIR` for this run dir plus a self-naming `CLAUDE_SSH_CHILD`. A verified
+  reuse. The process leads its own group and runs the recorded program. For a record with
+  a `program` key, the process runs `argv0` or `program`, or holds `program` as one whole
+  argument. It also carries
+  `CLAUDE_SSH_RUN_DIR` for this run dir plus a self-naming `CLAUDE_SSH_CHILD`. Only a
+  regular file is read as a record. A verified
   orphan's process group gets `SIGTERM`, a 2s grace, then `SIGKILL` and a 1s escalate.
-  These two timings are claustrum's own values, not probe-measured.
+  During the grace the process takes the whole record test again at each poll, and once
+  more before the `SIGKILL`. A group that fails it is dropped at that poll and gets
+  nothing more. The reap lists the children folder through the run dir that the daemon
+  holds open, and it follows no symlink there. The 2s grace is measured on Linux against `89cb6289` (rows RP02,
+  RP03, RP04 and RP10). The 1s escalate is claustrum's own value, not probe-measured.
   The record is then forgotten. A record whose owner is still alive, or from another boot
   or machine, is never reaped. It runs on linux and darwin. On windows the reference daemon
   reports it is not the run-dir lock holder, so it reaps nothing. A windows VM showed planted

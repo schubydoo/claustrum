@@ -19,6 +19,30 @@ func fakePS(t *testing.T, start, fieldsLine string, env []string) {
 	readProcEnv = func(int) []string { return env }
 }
 
+// TestRealReadLiveProcDarwinCommandText proves the darwin reader hands the record test
+// the command text of `ps` and its words, through the runPS seam. The line has the
+// padding that `ps` puts after the first two columns, and a program path with a blank.
+// The run on a Mac covers only this wiring. What a real `ps` prints is measured on the
+// VM, not here.
+func TestRealReadLiveProcDarwinCommandText(t *testing.T) {
+	const start = "Sun Sep 13 08:32:51 2026"
+	fakePS(t, start, "54321 S    /tmp/e/bin/my stub --log /tmp/e/c1.log", nil)
+	lp := realReadLiveProc(54321, true)
+	if lp.cmdText != "/tmp/e/bin/my stub --log /tmp/e/c1.log" || lp.program != "/tmp/e/bin/my" {
+		t.Fatalf("cmdText = %q, program = %q, want the whole command text and its first word", lp.cmdText, lp.program)
+	}
+	if want := []string{"stub", "--log", "/tmp/e/c1.log"}; len(lp.args) != 3 || lp.args[0] != want[0] || lp.args[1] != want[1] || lp.args[2] != want[2] {
+		t.Errorf("args = %q, want %q", lp.args, want)
+	}
+	// Rows PG04s and PG02s: the record of a program with a blank in its path matches.
+	if !recordMatchesLive(childRecord{Argv0: "/tmp/e/bin/my stub"}, lp) {
+		t.Error("a record of the program with a blank in its path did not match")
+	}
+	if !recordMatchesLive(childRecord{Argv0: "/tmp/e/bin/wrap", Program: "/tmp/e/bin/my stub"}, lp) {
+		t.Error("a launcher record whose program has a blank in its path did not match")
+	}
+}
+
 // TestRealReadLiveProcDarwin exercises the darwin reader's arms: a full live record with both
 // env markers, the two gone paths (no start-time, no ps line), a zombie, and a short line that
 // is not ours to judge.

@@ -26,15 +26,17 @@ func ownReapIdentity() (node, host string) {
 
 // psReapEnv is the pinned environment for the reap's `ps` invocations. TZ=UTC forces the
 // same UTC start-time rendering childrecord recorded, so the pid-reuse start-time compares
-// equal; C locale + a fixed PATH keep the field format stable. A seam so a test can drive
-// the reader without a real ps.
+// equal; the C locale keeps the field format stable. The PATH entry is the environment
+// of `ps` itself. It does not choose which `ps` starts: runPS starts darwinPSPath. A
+// var so a test can change it.
 var psReapEnv = []string{"TZ=UTC", "LC_ALL=C", "LANG=C", "PATH=/bin:/usr/bin:/usr/sbin"}
 
-// runPS runs `ps` with the pinned env and the given -o keyword string for one pid, and
+// runPS runs /bin/ps (darwinPSPath, never a `ps` from the PATH of the daemon) with the
+// pinned env and the given -o keyword string for one pid, and
 // returns the single trimmed output line (empty when ps found no such process). A seam for
 // tests.
 var runPS = func(pid int, keys string) string {
-	cmd := exec.Command("ps", "-ww", "-o", keys, "-p", strconv.Itoa(pid))
+	cmd := exec.Command(darwinPSPath, "-ww", "-o", keys, "-p", strconv.Itoa(pid))
 	cmd.Env = psReapEnv
 	out, err := cmd.Output()
 	if err != nil {
@@ -44,7 +46,7 @@ var runPS = func(pid int, keys string) string {
 }
 
 // realReadLiveProc reads a live process for the reap. It always reads the group id, state and
-// program via `ps`; the start-time comes from darwinProcStart so it is byte-identical to the
+// command text via `ps`; the start-time comes from darwinProcStart so it is byte-identical to the
 // value childrecord recorded (the pid-reuse guard compares them as strings). When wantEnv is
 // set it also reads the two env markers from the process's environment.
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
@@ -57,18 +59,22 @@ func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	if line == "" {
 		return lp // gone
 	}
-	fields := strings.Fields(line)
-	if len(fields) < 3 {
+	pgid, stat, text, ok := parsePSLine(line)
+	if !ok {
 		lp.state = procNotOurs
 		return lp
 	}
 	// A zombie (state begins with 'Z') is gone; there is no separate dead state in ps output.
-	if strings.HasPrefix(fields[1], "Z") {
+	if strings.HasPrefix(stat, "Z") {
 		return lp
 	}
-	lp.pgid, _ = strconv.Atoi(fields[0])
+	lp.pgid = pgid
 	lp.startTicks = start
-	lp.program = fields[2] // argv[0]
+	// The command text of `ps`, and its words cut at blanks. The first word is the
+	// program and the others are the arguments. The record test of darwin judges the
+	// process by this text, not by its real argument list: see runsProgram.
+	lp.cmdText = text
+	lp.program, lp.args = splitCommandText(text)
 	lp.state = procAlive
 	if !wantEnv {
 		return lp

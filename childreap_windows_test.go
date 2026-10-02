@@ -26,7 +26,9 @@ func TestReapOrphansWindowsNoop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reapOrphans(runDir, "our-instance")
+	m := newTestProcManager(t)
+	m.runDir, m.instanceID = runDir, "our-instance"
+	m.reapOrphans()
 
 	if _, err := os.Stat(rec); err != nil {
 		t.Errorf("reapOrphans touched a planted record on windows; it must leave it alone (never the run-dir lock holder): %v", err)

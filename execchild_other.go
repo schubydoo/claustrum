@@ -22,3 +22,7 @@ func maybeRunExecChild() {}
 // wrapCmdWithTrampoline is a no-op on windows — the command is spawned directly, so it
 // returns no exec-error pipe and adds no environment markers.
 func wrapCmdWithTrampoline(*exec.Cmd, string) (execErrR, execErrW *os.File) { return nil, nil }
+
+// trampolineFallbackEnv is never reached on windows: no command is wrapped, so no
+// start of a trampoline can fail. It returns env unchanged.
+func trampolineFallbackEnv(env []string, _ string) []string { return env }
