@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -661,6 +662,28 @@ func runHelper(mode string, args []string) int {
 			return 1
 		}
 		time.Sleep(60 * time.Second)
+	case "tree-stdio":
+		// Like "tree-stdout", but the grandchild inherits stdout AND stderr of this
+		// process. A kill of this process alone then leaves both pipes of the daemon
+		// open until the exit drain gives up.
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, "60")
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.Stdout = os.Stdout
+		child.Stderr = os.Stderr
+		if err := child.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		time.Sleep(60 * time.Second)
 	case "orphan-stdout":
 		// Fixture for the bounded exit drain: start a grandchild that INHERITS
 		// this process's stdout (child.Stdout, unlike "tree" above), print one
@@ -737,6 +760,50 @@ func runHelper(mode string, args []string) int {
 		for _, name := range args {
 			fmt.Print(name + "=" + os.Getenv(name) + "\n")
 		}
+	case "detach-launch":
+		// A stand-in for the -serve launcher. It waits for the go-ahead on stdin, so
+		// the test can put this process in a job first. It then starts a detached
+		// sleeper the way daemonizeWithToken starts the daemon child
+		// (detachSysProcAttr and startDetached), writes its pid to args[0] and exits.
+		var b [1]byte
+		_, _ = os.Stdin.Read(b[:])
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		child := exec.Command(exe, "60")
+		child.Env = buildEnv(map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"})
+		child.SysProcAttr = detachSysProcAttr()
+		if err := startDetached(child); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(child.Process.Pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	case "spawn-hold":
+		// A stand-in for a daemon that owns one child: spawn a sleeper through the
+		// production process manager, write its pid to args[0], then linger until the
+		// test ends this process hard.
+		client, server := net.Pipe()
+		go func() { _, _ = io.Copy(io.Discard, server) }()
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		p, err := newProcManager().spawn(&conn{nc: client}, "held", exe, []string{"60"}, "", map[string]string{"CLAUSTRUM_TEST_HELPER": "sleep"}, true)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := os.WriteFile(args[0], []byte(strconv.Itoa(p.pid)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		time.Sleep(60 * time.Second)
 	case "runlock-hold":
 		// Run-dir eviction fixture (Unix): open the lock file, take the flock, write
 		// an owner record naming this process as a serve daemon, announce readiness by

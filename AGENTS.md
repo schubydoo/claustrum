@@ -60,7 +60,7 @@ There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 | `metrics.go` | opt-in Prometheus counters at `/metrics`. The `-metrics-addr` flag creates the listener. Without that flag there is no listener. Counting is always-on atomics |
 | `wirelog.go` | opt-in `-wire-log` JSON-RPC frame capture (CT-3). It is a pure side channel over already-marshaled bytes, and it is off by default. It redacts credentials by key only, not by payload contents. It forces `0600` on every open |
 | `install.go` | `-install`: CLI download / verify (SHA-256) / extract (zstd) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob, as the reference does. The compare is case-sensitive |
-| `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups / Windows Job Objects, login-shell PATH, the POSIX-only `-keep-children`) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5) |
+| `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups on Unix, login-shell PATH) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5). On Windows a kill ends the direct child only, and no child is in a job of the daemon. The daemon starts outside the job of its launcher. If that job refuses, the daemon starts inside it and the launcher logs one line. `-keep-children` works on Windows as claustrum's own flag: `89cb6289` exits 2 on it |
 
 The JSON-RPC surface is identical on every OS. Full internals →
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -310,6 +310,12 @@ covered. See the entry.
 D20 is off-wire, on Linux and macOS. Before the group `SIGKILL` of a child-group
 leader that reads as gone, the reap of a `-serve` start waits 50 ms and reads the
 leader again. See the entry.
+
+D21 is off-wire and Windows-only. A second daemon that starts on a live socket
+writes to the same `remote-server.log`. claustrum appends. If both daemons are
+this build, no line is lost. `89cb6289` truncates the file at that start, so the
+earlier lines of the first daemon are lost. Keeping the lines is the maintainer's
+decision of 2026-10-02, not a rule 3 clause. See the entry.
 
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →

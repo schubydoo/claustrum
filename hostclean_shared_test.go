@@ -13,6 +13,21 @@ import (
 
 // Host-cleaner tests that need no /proc and no lsof, so they run on linux and darwin alike.
 
+// TestRootResolutionFailureKeepsTheRootAsGiven: when the root cannot be resolved, the list
+// holds only the root as given, and a binary under that spelling still counts.
+func TestRootResolutionFailureKeepsTheRootAsGiven(t *testing.T) {
+	oldEval := hcEvalSymlinks
+	t.Cleanup(func() { hcEvalSymlinks = oldEval })
+	hcEvalSymlinks = func(string) (string, error) { return "", os.ErrNotExist }
+	r, err := deriveRoots("/opt/claude/run/c1/rpc.sock", "/opt/claude/srv/d1/server", true)
+	if err != nil {
+		t.Fatalf("deriveRoots: %v", err)
+	}
+	if len(r.roots) != 1 || r.roots[0] != "/opt/claude" {
+		t.Errorf("roots = %v, want only /opt/claude", r.roots)
+	}
+}
+
 // hcRunRoot makes <tmp>/run and opens it as the tidy's run root. The root closes at cleanup.
 func hcRunRoot(t *testing.T) (runRoot string, root *os.Root) {
 	t.Helper()
@@ -94,9 +109,9 @@ func TestHcDirIdleIgnoresANonRegularLog(t *testing.T) {
 	}
 }
 
-// TestRunDirsCapLogNeedsA65thDir: the cap line fires only when a 65th candidate exists.
-//
-// Not measured: the Linux run did not stage this rule.
+// TestRunDirsCapLogNeedsA65thDir: the cap line fires only when a 65th candidate exists. The
+// text is the reference's, measured on a Linux VM (rows HC06b and HC07: 64 dirs give no
+// line, 65 give the line).
 func TestRunDirsCapLogNeedsA65thDir(t *testing.T) {
 	oldClock := hcClock
 	t.Cleanup(func() { hcClock = oldClock })
@@ -112,7 +127,7 @@ func TestRunDirsCapLogNeedsA65thDir(t *testing.T) {
 		c := &hostCleaner{roots: &hostRoots{roots: []string{base}}}
 		dirs, done := c.runDirs()
 		done()
-		logged := strings.Contains(buf.String(), fmt.Sprintf("run-dir count over %d: capping this sweep at the first %d", hcMaxRunDirs, hcMaxRunDirs))
+		logged := strings.Contains(buf.String(), "[hostclean] more than 64 run dirs under "+filepath.Join(base, "run")+"; only the first 64 are examined\n")
 		if len(dirs) != hcMaxRunDirs || logged != (n > hcMaxRunDirs) {
 			t.Errorf("%d dirs: listed %d, cap logged %v", n, len(dirs), logged)
 		}

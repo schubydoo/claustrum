@@ -11,7 +11,7 @@ import (
 // named-pipe transport exists only because a Python asyncio client cannot consume
 // an AF_UNIX socket on Windows; on every other platform such clients use the
 // socket directly, so the flag has no meaning. Rather than fail, we ignore it and
-// warn — the same shape as honorKeepChildren's Windows no-op.
+// warn.
 func honorListenPipe(requested bool) bool {
 	if requested {
 		logWarnf("[Server] -listen-pipe is only supported on Windows and is ignored: other platforms serve JSON-RPC over the AF_UNIX socket directly")

@@ -66,7 +66,7 @@ func TestShutdownReplyWaitsForDropConns(t *testing.T) {
 	t.Cleanup(func() { shutdownReplyWait = old })
 	s := newTestServer(t)
 	// A failed run below still releases the handler goroutine.
-	t.Cleanup(s.dropConns)
+	t.Cleanup(func() { s.dropConns() })
 	done := make(chan *response, 1)
 	go func() {
 		done <- s.dispatch(nil, []byte(`{"jsonrpc":"2.0","id":1,"method":"server.shutdown"}`))

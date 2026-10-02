@@ -195,8 +195,12 @@ record into that file. The record is a JSON object
 omitted when the machine identity is unknown. Reference build `4534d86` added
 this, and claustrum matches it. It is off the JSON-RPC wire, because it is a file
 beside the socket. On graceful shutdown the daemon truncates the record and drops
-the lock, but it leaves the file in place. `daemon.token` is unlinked instead. This
-shutdown handling is claustrum's own, not probe-measured.
+the lock, but it leaves the file in place. `daemon.token` is unlinked instead. A
+Linux VM measured the same end state against `89cb6289` in the stop rows:
+`daemon.token` and `rpc.sock` removed, `daemon.lock` left empty. The `instanceId`
+of the record is the instance of the listening line, and the `instanceId` that
+`server.capabilities` answers. On a Linux VM, the listening line, the lock and
+`server.capabilities` of `89cb6289` held one value in 36 of 36 daemons.
 
 A prior live daemon can still hold the lock. The newcomer then evicts it before it
 takes over, with `SIGTERM` and then `SIGKILL` after a grace period. A restart
@@ -206,20 +210,112 @@ socket, on this machine. See the guards in `daemon_runlock_unix.go`. Claiming is
 best-effort. Any failure logs a warning, and the daemon serves without run-dir
 ownership rather than aborting.
 
+A process that is no daemon can hold the lock, with no owner record in the file.
+The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
+`f6010b97` and `89cb6289` logged the same three texts:
+
+```
+[daemon] serve: WARNING <dir>/daemon.lock is held by a live process we will not signal (its holder is not a daemon (role "")); leaving it alone
+[daemon] serve: previous owner of <dir>: survivor
+[daemon] serve: not the run dir's lock holder; leaving any predecessor's children alone and recording none
+```
+
+claustrum logs the third line at every start that ends without the lock. The other
+cases without the lock are not measured. A record with another role text is not
+measured. On Linux and macOS claustrum still records and reaps children in that
+state. What the reference does in that state is not measured.
+
 The lock, the owner record, and the eviction run on Linux and macOS only. The
 machine identity (`node`) is the boot id joined to the pid-namespace inode on
 Linux, and `sysctl kern.bootsessionuuid` on macOS. Windows ships no run-dir
 lock. Mutual exclusion on Windows stays the socket remove-then-rebind handoff.
+On Windows the "not the run dir's lock holder" line above is the first log line of
+every start. A Windows VM (row K11) measured that against `f6010b97` and
+`89cb6289`.
 On macOS claustrum makes sure of the holder through `sysctl KERN_PROCARGS2`,
 where the reference skips that test. This holds for the
 eviction and for `-stop`. See [DIVERGENCES.md](DIVERGENCES.md) D15.
 
 ### Host cleaner (off-wire, Linux and macOS)
 
-A periodic sweep ends stranded sibling daemons and tidies stale run dirs. It
+A periodic sweep ends orphaned Claude Code process groups, retires abandoned
+daemons and tidies stale run dirs. It
 reaches no JSON-RPC frame, so nothing here is a wire contract. It is recorded
 because one of its decisions is an always-on divergence that a client can feel as
 a lost session.
+
+The sweep ends no stranded daemon. A stranded daemon is a daemon whose socket path
+no longer leads to it. The cleaner sends no signal to such a daemon and none to its
+children. On a Linux VM, `f6010b97` and `89cb6289` sent none in every staged shape
+(rows ST01, ST02, ST04 to ST10, HC16 to HC19, HC23 to HC26). The stranded daemon
+ends by itself. See [Orphan-exit self-probe](#orphan-exit-self-probe). On a macOS
+VM, `f6010b97` and `89cb6289` sent none either (rows ST01, ST09, ST10, HC16,
+HC18). In row ST01 on that VM, claustrum sent none either.
+
+The cleaner retires an abandoned daemon with `SIGTERM`. On Linux the signal goes
+through `pidfd_send_signal`, as on the reference (rows HC10, HC12 to HC15, by
+`strace`). `89cb6289` and claustrum open the descriptor with `pidfd_open`, then read
+`/proc/<pid>/stat`, then send the signal. A Linux VM saw that order in 26 of 26
+retires for each binary (rows HC10, HC12a, HC13, HC14). On a kernel without that
+call claustrum uses `kill`. That fallback is
+not measured. macOS uses `kill`. The call of the macOS reference is not measured.
+On a macOS VM, the cleaners of `89cb6289` and claustrum ended the same daemons and
+orphan groups and removed the same folders (rows K9, HC01, HC10, HC14c, HC20,
+HC22d).
+
+The cleaner is on in one case only. The cleaned socket path is absolute, and its
+last three components read `run/<id>/rpc.sock`. The folder above `run` is the
+root. The resolved daemon binary is `<root>/srv/<id>/<name>` under that root, or
+under the symlink-resolved form of that root. In every other case the cleaner is
+off and runs no pass. The daemon then logs one of two lines, right after the
+listening line:
+
+```
+[daemon] host cleaning off: socket path "<socket>" is not <root>/run/<id>/rpc.sock
+[daemon] host cleaning off: executable "<binary>" is not a deployed daemon under <root>/srv
+```
+
+The socket line names the socket as given. The executable line names the resolved
+binary and the `srv` of the root as given. If the daemon cannot read its own
+executable path, the binary test does not run. That case is not measured.
+
+A pass acts on one folder. Its root list holds the root as the socket path gives
+it. When the resolved form of that root differs, the list also holds that form,
+which is the same folder under its real path. The root of the binary is never
+added. A pass lists each run folder once, and its lines name the run folders in
+the spelling of the socket as given. If the resolution of the root fails, the list
+holds only the root as given. That case is not measured.
+
+A Linux VM measured the decisions of this gate against `89cb6289`, in start rows
+and in rows with staged fixtures. claustrum gave the same decision in each row:
+
+| start row | `89cb6289` and claustrum |
+|---|---|
+| `<R>/run/c1/rpc.sock`, binary `<R>/srv/d1/<name>` | on, a pass 15 s after the start |
+| `<R>/run/./k1/rpc.sock`, `<R>//run/k1/rpc.sock` (rows KS-i-j, KS-i-k) | on |
+| `<R>/b/s.sock`, `<R>/b/rpc.sock`, `<R>/run/rpc.sock`, `<R>/run/c1/x.sock`, `<R>/run/c1/d/rpc.sock`, `<R>/RUN/c1/rpc.sock` | off, socket line |
+| `<R>/lnk/c1/rpc.sock`, where `lnk` is a symlink to `run` | off, socket line |
+| relative `run/c1/rpc.sock` (rows START-i-h, START-p-h, KREL) | off, socket line |
+| `<R>/run/c1/rpc.sock`, binary outside `<R>/srv` (the plain layout) | off, executable line |
+| binary `<R>/srv/<name>`, or `<R>/srv/d1/sub/<name>` | off, executable line |
+| binary `<R>/srv/d1/<name>` that is a symlink to a file outside | off, executable line with the resolved path |
+| binary under the `srv` of another root (rows START-x-e, KXB, KS-x-e) | off, executable line |
+| another file name in `<R>/srv/d1` | on |
+| binary started through a symlink to `<R>`, socket through the real path (row KS-u-e) | on |
+| socket through a symlink `<R>l` to `<R>`, binary through either path (rows KS-m-e, KS-q-e) | on, the lines name `<R>l/run/<id>` |
+| binary and socket through a symlink one level above the root | on |
+
+The socket rows gave the socket line in the install layout and in the plain
+layout. In rows KREL and KXB `89cb6289` sent no signal and removed no folder. In
+rows KS-m-e and KS-q-e it ran one pass with staged fixtures. `f6010b97` logged the
+same two texts in its rows (EV01, K3, ST08 and every plain-layout row). A macOS VM
+measured nine gate shapes against `89cb6289` (rows GSa to GSg3). claustrum made the
+same decision in each one, with the same log lines. In row GSc the daemon binary
+runs through a symlinked root and the socket has the real path: both run the
+cleaner.
+
+claustrum links no cleaner on Windows. The Windows references logged no cleaner
+line and changed nothing in 120 s (row WN06, with no positive control).
 
 Before it signals a daemon whose run dir went idle past the threshold, or whose run
 dir name carries `.removing-` from an earlier removal, the cleaner
@@ -240,8 +336,9 @@ If the socket's parent directory is missing, the `-serve` launcher creates it
 (mode `0700`). The launcher then does not return until the socket path exists. It
 polls every 20 ms, up to a bound of 10 seconds. To make sure that the daemon is
 ready, it dials the socket and closes the connection again. A freshly started
-daemon's log therefore opens with a `New connection from: @` /
-`Connection closed: @` pair from the launcher's own probe.
+daemon's log therefore holds a `New connection from: @` /
+`Connection closed: @` pair from the launcher's own probe, after the listening
+line.
 
 It waits for the path to exist, not for a successful dial. It also does not give
 up early when the child dies. Both behaviours are measured against `5db5e4a`:
@@ -251,6 +348,11 @@ up early when the child dies. Both behaviours are measured against `5db5e4a`:
 | normal | path appears, and the dial succeeds | exit `0` |
 | socket path occupied by a directory | path exists immediately | exit `0` (~0.01 s, reference 0.08 s) |
 | child can never bind (uncreatable parent dir) | path never appears | exit `1` at ~10.04 s (reference 10.06 s) |
+
+A Windows VM measured the occupied path against `89cb6289` (rows OCC and OCCf, two
+runs each). An empty folder or a regular file was at the socket path. On both
+sides the launcher exited `0` at once, the entry was removed, and the daemon
+served on a socket at that path. A folder with content is not measured.
 
 On a timeout the launcher prints
 `claustrum: timeout waiting for daemon to accept on <socket>` to stderr and
@@ -279,6 +381,31 @@ JSON-RPC wire, because it is launcher lifecycle. The departing daemon's matching
 half is the inode-ownership unlink under
 [Token persistence](#token-persistence-daemontoken).
 
+A killed daemon leaves its socket file on disk. On Windows the launcher records
+the socket file that is on disk before it starts the child. While the path still
+holds that file and no daemon answers a dial, the launcher keeps waiting. It then
+dials the new daemon once. On a Windows VM (rows WN03 and WN05), the log of a new
+`f6010b97` or `89cb6289` daemon held the connection pair in that case. A dial
+that a live older daemon answers ends the wait at once, as before. A client that
+connects in that window is not measured.
+
+On Windows the launcher starts the serving process outside the job of the
+launcher (`CREATE_BREAKAWAY_FROM_JOB`). The SSH server of the Windows VM puts each
+session in a job with the limit flags `0x2800`. That job ends its processes when
+the session ends, and it allows breakaway. On that VM (rows WJ01 to WJ07), the
+serving process of `f6010b97` and `89cb6289` was outside the session job. Row WJ08
+shows the same for `89cb6289`. It was alive 120 s after the session closed (row
+WJ01). The serving process of claustrum was outside that job in rows WJ01 to WJ08.
+How the reference leaves the job is not measured. A job that refuses breakaway
+refuses that start. The launcher then starts the serving process inside the job
+and prints one line on its stderr. On a Windows VM (row JB, a job with the limit
+flags `0x2000`), `89cb6289` and claustrum both served from inside that job. Both
+printed this text after a time stamp, and claustrum puts its level tag before it:
+
+```
+[daemon] detached spawn failed (fork/exec <binary>: Access is denied.); retrying without breakaway
+```
+
 ### Idle-connection close
 
 A `-serve` daemon closes any accepted connection that goes 5 minutes with no read
@@ -288,7 +415,8 @@ it. The daemon stamps the last activity time on every read and write of the
 connection. A per-connection watcher polls for silence, at a quarter of the
 timeout, bounded to at most 30 s. Once the idle span reaches the timeout, the
 watcher closes the socket and logs
-`[Server] closing idle connection <addr> (idle for <d>)`. The watcher stops as
+`[Server] closing connection idle <d> in both directions: <addr>`. On a Linux VM
+(rows HC12a and HC12b), `89cb6289` logged that text with `5m0s` and `@`. The watcher stops as
 soon as the connection closes for any other reason, and as soon as the daemon
 shuts down. It therefore never outlives its connection. This is off the JSON-RPC wire, because it is connection lifecycle and
 sends no frame. It closes only an idle *connection*, never the daemon. A
@@ -297,8 +425,9 @@ client-less orphan daemon is retired by the separate orphan-exit self-probe belo
 ### Daemon log (`remote-server.log`)
 
 The launcher creates `remote-server.log` in the socket's directory with mode
-`0600`. Every start gets a fresh file. The launcher rotates any existing log to
-`remote-server.log.old` and creates a fresh one. This matches `4534d86`, which
+`0600`. The launcher rotates any existing log to
+`remote-server.log.old` and creates a fresh one. One Windows case gets no fresh
+file: a second daemon on a live socket (see below). This matches `4534d86`, which
 keeps the previous session's log as `.old` on every restart. The launcher
 redirects the daemonized child's stdout and stderr into that file, so the
 launcher's own streams stay empty. On Linux and macOS, when the limit raise
@@ -308,23 +437,34 @@ ready banner follows, with no timestamp:
 
 ```
 2026/07/31 00:17:30 INFO  [daemon] child processes will start with an open-files limit of 65536
-Claustrum remote server listening on /run/user/1000/claude/rpc.sock
+Claustrum remote server listening on /run/user/1000/claude/rpc.sock (pid 4711, instance 5f1c0a9e2b7d4c3e8a6f0b1d2c3e4f50)
+2026/07/31 00:17:30 INFO  [daemon] host cleaning off: socket path "/run/user/1000/claude/rpc.sock" is not <root>/run/<id>/rpc.sock
 2026/07/31 00:17:30 INFO  [Server] New connection from: @
 ```
 
-The value is the soft limit it set, which is the lower of 65536 and the hard limit. `f6010b97`
+The value of the first line is the soft limit it set, which is the lower of 65536 and the hard limit. `f6010b97`
 writes the same line, with no level tag, before its banner. Linux and macOS VMs
 measured this, with the value 65536. On the Windows VM the reference log has no
 such line, and claustrum writes none there. A failed raise was not measured.
 Claustrum writes no line then.
 
+The banner ends with the pid of the daemon and its instance. The instance is the
+`instanceId` of `server.capabilities`. `f6010b97` and `89cb6289` print the same
+suffix (Linux, macOS and Windows VMs). The name `Claustrum` is claustrum's own.
+The reference prints `Claude` there. The banner beside the lines of
+`-listen-pipe` and `-metrics-addr` is not measured.
+
 For a planted symlink in a writable directory, claustrum renames the link, not its
 target, to `remote-server.log.old`. It then creates a fresh regular log with
-`O_EXCL`. The link is never followed, and the victim stays untouched. If claustrum
+`O_EXCL`. On Linux and macOS the link is never followed, and the victim stays untouched. If claustrum
 cannot rename the existing entry, the exclusive create fails too. One such case is a
-sticky directory that holds another user's file or symlink. claustrum then declines the
-log entirely and falls back to inherited stdio. In both cases claustrum never
-follows the link, and it never writes into a file another user owns. This is
+sticky directory that holds another user's file or symlink. On Linux and macOS
+claustrum then declines the
+log entirely and falls back to inherited stdio. In both cases, on Linux and macOS,
+claustrum never follows the link and never writes into a file another user owns.
+On Windows the launcher then opens an existing regular file for append (see
+below). That open tests the file type first and has no owner test. A swap between
+the test and the open is not measured. This follows from the code. This is
 intentional divergence D8, and it is always-on. `4534d86` no longer
 plain-truncates a foreign regular log, and claustrum matches the `.old` rotation. But in a root-owned sticky directory the
 reference still follows a planted `remote-server.log` symlink. It then writes its
@@ -332,6 +472,19 @@ log into the victim, or it refuses to start. claustrum declines instead. The
 trigger is not reachable on the deployed path, because the socket directory
 (`~/.claude/remote/`) is per-user and not world-writable. That is why D8 is
 always-on and not opt-in. See [`DIVERGENCES.md`](DIVERGENCES.md) → D8.
+
+On Windows a second daemon can start on a live socket (rows WN04 and WJ04). The
+first daemon holds `remote-server.log` open, so the launcher cannot rotate it. The
+launcher then opens the same file for append, and the second daemon logs there.
+Each daemon writes to the end of the file. On a Windows VM the file of claustrum
+kept the 16 earlier lines of the first daemon. The later lines of both followed in
+time order. `89cb6289` logs to the file too, and both launchers return at once. It
+truncates the file at that start. The 16 earlier lines of its first daemon were
+lost, and the later lines of that daemon sat behind a block of NUL bytes. This is
+divergence D21, a maintainer decision of 2026-10-02: claustrum keeps the lines.
+See [`DIVERGENCES.md`](DIVERGENCES.md) → D21. A first daemon of an earlier
+claustrum build does not write in append mode. It writes at its own offset. That
+mix follows from the code and is not measured.
 
 claustrum does not remove the log on graceful shutdown. This differs from the
 socket and from `daemon.token`. The log outlives the daemon, so a post-mortem
@@ -360,8 +513,28 @@ its own socket, sends an authed `server.capabilities`, and compares the reply's
 changed file identity that still leads back is not orphaned. Two consecutive
 failed probes, 60 seconds apart, trigger a graceful shutdown. That shutdown closes
 listeners, drops clients, and stops child process groups unless `-keep-children`
-is set. It is never a bare exit. The 60-second interval and the 10-minute grace
-are claustrum's own values, not probe-measured.
+is set. It is never a bare exit.
+
+A Linux VM measured the self-exit of a stranded reference daemon (rows ST09 and
+ST11, several runs). The log lines of `89cb6289` in one run:
+
+```
+[Server] socket path <socket> no longer leads to this daemon; shutting down if that holds for 10m0s with nobody connected
+[Server] socket path <socket> did not lead back to this daemon (1/2); re-checking before acting
+[Server] orphaned for 11m0s (socket path gone or re-bound, 2 self-probes failed, no connections); shutting down and killing 0 child process(es)
+[Server] shutdown requested
+[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
+```
+
+The second line came 9 min 59 s after the first, and the third line one minute
+later. `f6010b97` logged the second and third line one minute later
+(`orphaned for 12m0s`), in its one run. `89cb6289` logged `11m0s` in four rows and
+`12m0s` in three. Each daemon exited with code 0, with no signal from another
+process, and removed `daemon.token`. At its self-exit `89cb6289` ended both
+children with `SIGKILL` (row ST11). On a Linux VM, claustrum logged the same
+texts, ended both children and exited with code 0 (rows ST09 and ST11). It logged
+`orphaned for 12m0s` in each of its six rows. The cause of the 60 s difference is
+not measured, and the interval of the reference is not measured.
 
 The behavior is identical on every OS, because `os.SameFile` gives the
 file-identity compare portably. It is a no-op when the daemon has no captured
@@ -726,11 +899,20 @@ Windows VMs saw it at that place.
   VM, the reference wrote the two lines before its connection close in 36 of
   36 traced runs. Its `Connection closed` line came after the close in 32 of
   them. Each of the other 4 runs also wrote the shutdown reply.
-  The reference then logs
-  `[Server] cleanup: closed <n> connection(s), killed <n> child process group(s)`.
-  claustrum does not log that line. This is a measured log difference. On a Linux
-  VM with one connection, the `f6010b97` log ended with that line in 50 of 50
-  runs. The claustrum log had no `cleanup:` line in 50 of 50 runs.
+  The daemon then logs
+  `[Server] cleanup: closed <n> connection(s), killed <n> child process group(s)`,
+  as the reference does. The first count includes the connection that sent the
+  request. On a Windows VM `89cb6289` logged `closed 0` in 2 of 9 such stops in one
+  run. The rate is not measured. On Linux and Windows VMs, `f6010b97` and `89cb6289` logged that line at
+  every clean shutdown (rows RP11, RP12a, RP12b, ST03, ST09, WN03, WJ03). The
+  counts for a child that ended just before the shutdown are not measured.
+- Log lines on a shutdown by `SIGTERM`. The daemon logs
+  `[daemon] received terminated; shutting down (children will be killed)`, then
+  `[Server] shutdown requested`, then the `cleanup:` line. On a Linux VM,
+  `f6010b97` and `89cb6289` logged these three lines (rows RP11, RP12b, ST03).
+  The line for `SIGINT` names that signal and is not measured. With
+  `-keep-children` claustrum writes `kept` in place of `killed` in the first line.
+  The `cleanup:` line then says `killed 0 child process group(s)`.
 - Reply delivery is a measured timing difference, not parity. The claustrum
   reply arrives at a different rate. Each count below is from 50 runs with a ping before the shutdown. The
   runs were measured in one session against `f6010b97`, on one Linux VM and one
@@ -2735,9 +2917,13 @@ as id-less stream notifications, and it buffers them for a later replay.
 - Missing `id` → `-32602 Process ID is required`. Missing `command` →
   `-32602 Command is required`.
 - A request that reuses a still-live `id` succeeds and replaces the registry entry,
-  like the reference. claustrum also kills the now-orphaned previous process
-  tree. It drops the subscribers first, so no stray frame arrives under the
-  reused id. This is OS-level only and changes no wire byte.
+  like the reference. claustrum also kills the now-orphaned previous process:
+  the whole tree on Linux and macOS, the direct child on Windows. It drops the subscribers first, so no stray frame arrives under the
+  reused id. This is OS-level only and changes no wire byte. On a Windows VM (rows
+  EV and EVInh), `89cb6289` left the first process alive, also after `-stop` of
+  the daemon. claustrum ended it at once. Both answered the second spawn with
+  `{"success":true}`, and no frame arrived on the first connection on either
+  side. The reference is not measured for this case on Linux and macOS.
 - Session superseding is `4534d86` parity. A `process.spawn` whose `args` name a
   stream-json CLI session terminates any OTHER running process of the SAME session
   id. Such `args` carry an `--input-format=stream-json` or
@@ -2749,6 +2935,11 @@ as id-less stream notifications, and it buffers them for a later replay.
   no session key, or with a different session id, supersedes nothing. The eviction,
   the `client` kill reason, and the session-key rules above are measured against
   the reference. claustrum also serializes concurrent spawns of one session.
+  A Windows VM measured one difference in time (rows SS and SSInh, one run each).
+  The end states were equal: the first child ended, and its descendants lived on.
+  `89cb6289` answered the second spawn after the first child ended. With
+  descendants that hold the pipes of the first child, that was after 5 s.
+  claustrum answered the second spawn at once.
 - The SSH agent hand-off is `f6010b97` parity on linux and darwin, advertised as
   `process.spawn.shellAgentSocket`, and measured on both. The daemon builds the
   child env from its own env, the login-shell PATH and the caller's `env`. If that
@@ -3055,6 +3246,9 @@ as id-less stream notifications, and it buffers them for a later replay.
     printed no exited line in two runs of rows RP11 and RP12a. claustrum prints it
     when the exit goroutine reaches the line before the daemon exits. Measured on
     Linux: one line for two ended children in rows STa and STb (three or more runs each).
+    In a later Linux stop row with two children, each side printed one such line,
+    for one child. `89cb6289` printed it after the `cleanup:` line, and claustrum
+    before it.
     In rows RP11, RP12a and RP12b the count was none, one or two, and it changed
     between runs.
   - When the drain grace expires, the daemon logs
@@ -3118,11 +3312,71 @@ as id-less stream notifications, and it buffers them for a later replay.
       child only, and a backgrounded grandchild keeps running. A graceful
       `process.kill` does not kill the tree. Use `signal:"KILL"`, or use
       `killAndWait` with `escalate:true`.
-  The split does not apply on Windows. There claustrum terminates the Job Object,
-  which takes the tree either way.
+  The split does not apply on Windows. There every signal form ends the direct
+  child only, with exit code 1. See [Windows child trees](#windows-child-trees).
 - claustrum diverges here. It skips the signal when the child has already exited,
   because the OS can recycle a reaped pgid. This is OS-level only, and the reply is
   identical.
+
+##### Windows child trees
+
+On Windows a spawned child is in no Job Object. A kill ends the direct child only,
+with exit code 1. The descendants of the child live on. A Windows VM measured this
+against `89cb6289` with a tree of a child, a grandchild, a great-grandchild and an
+orphaned grandchild:
+
+| action | direct child | descendants at 1 s, 5 s, 15 s |
+|---|---|---|
+| `process.kill` with no signal, `TERM`, `INT`, `HUP`, `KILL`, `SIGTERM`, `SIGKILL` | ended, code 1 | alive |
+| `process.killAndWait` default, `escalate:false`, `signal:"KILL"` | ended, code 1 | alive |
+| `-stop` and `server.shutdown` | ended, code 1 | alive |
+| `taskkill /F` of the daemon | alive | alive |
+
+A later `-stop` of the daemon does not end the descendants either. A child reported
+`job=false jobflags=none`. On a Windows VM, the children of `f6010b97` and
+`89cb6289` were alive 60 s after `taskkill /F` of the daemon (rows WJ02, WJ05,
+WJ06). A new daemon on the socket did not end them in 120 s (row WJ07). A second
+daemon beside a live first one left them alive for 60 s (row WJ04). A clean stop
+ended them with exit code 1 (row WJ03, and row WJ08 on `89cb6289`).
+
+A later run on that VM put claustrum beside `89cb6289`. In each row of the table
+and in rows WJ01 to WJ08, the same processes were alive on both. The children of
+claustrum reported `job=false jobflags=none` too.
+
+With descendants that have their own stdio, both sent these frames with equal bytes.
+`process.kill` answers `{"jsonrpc":"2.0","id":1,"result":{"success":true}}`.
+`process.killAndWait` answers
+`{"jsonrpc":"2.0","id":1,"result":{"found":true,"died":true}}`. The exit frame is
+`{"type":"stream","processId":"c1","stream":"exit","seq":1,"exitCode":1,"killedBy":"client"}`.
+The log line of each killed child is
+`[process.Manager] Process c1 exited with code 1, signalled at client request`.
+
+Descendants that inherit the stdout and stderr of the child hold the pipes of the
+daemon open after the child ends. The exit drain then runs to its 5 s bound, as on
+Linux. Measured against `89cb6289`, with the same frames on claustrum:
+
+- `process.kill`, also with `signal:"KILL"`: the reply comes at once, and the
+  exit frame comes 5.002 s to 5.004 s later.
+- `process.killAndWait` with defaults, also with `signal:"KILL"`: the reply comes
+  after 5.004 s to 5.006 s, and it is
+  `{"jsonrpc":"2.0","id":1,"result":{"found":true,"died":true,"escalated":true}}`.
+  In claustrum the 3000 ms grace ends before the drain does, so the daemon
+  escalates. The kill of the escalation meets a child that has ended. Both log
+  `[process.Manager] KillAndWait c1: group kill failed: TerminateProcess: Access is denied.`
+- `process.killAndWait` with `escalate:false`: the reply comes after 3.002 s, and
+  it is `{"jsonrpc":"2.0","id":1,"result":{"found":true,"died":false}}`. The exit
+  frame comes at 5.004 s.
+- In each of these forms both log
+  `[process.Manager] Process c1: pipe drain grace expired (grandchild holding stdio?); force-closing`,
+  then `[process.Manager] stdout read error for process c1: read |0: file already closed`
+  and the same line for `stderr`.
+
+This is a wire change on Windows against earlier claustrum builds. Those builds
+ended the whole tree through a Job Object, so the pipes closed at once. For the
+same requests one such build sent the exit frame within milliseconds. Its
+`killAndWait` answered `{"found":true,"died":true}` with no `escalated` member.
+That is one build on a Windows VM. Not measured: a child that ignores a console
+signal, and more than three generations.
 
 #### process.killAndWait
 `{id[,signal][,timeoutMs][,escalate]}` → `{"found":<bool>,"died":<bool>[,"alreadyExited":true][,"escalated":true]}`
@@ -3158,7 +3412,8 @@ reports the outcome as a *result*. An unknown id is not an error:
       grandchild that holds the stdout pipe can keep the drain pending past the
       grace. `false` leaves the process running and reports
       `{"found":true,"died":false}`, with no `escalated` and no SIGKILL, which
-      spares the tree.
+      spares the tree. On Windows the escalation ends the direct child only. See
+      [Windows child trees](#windows-child-trees).
 - A process that dies within the grace → `{"found":true,"died":true}`, with no
   `escalated`.
 
@@ -3354,7 +3609,7 @@ never "a huge limit".
 | `-metrics-addr <a>` | `metrics-addr` | `""` | Prometheus `/metrics` (claustrum-only, CT-3) | -serve |
 | `-wire-log <p>` | `wire-log` | `""` | append every JSON-RPC frame to `<p>` as JSONL (claustrum-only, CT-3) | -serve |
 | `-wire-log-max-string <n>` | `wire-log-max-string` | `512` | bytes kept per string value. `0` keeps whole payloads | -serve |
-| `-keep-children` | `keep-children` | off | survive restart, POSIX-only (CT-2) | -serve |
+| `-keep-children` | `keep-children` | off | survive restart (CT-2) | -serve |
 | `-listen-pipe` | `listen-pipe` | off | named-pipe transport, Windows-only (CT-5) | -serve |
 | `-max-extract-bytes <n>` | `max-extract-bytes` | `0` | cap `files.extract_tar` bytes (D3) | -serve |
 | `-git-timeout <dur>` | `git-timeout` | `0` | deadline on git invocations (D5) | -serve |
@@ -3381,7 +3636,8 @@ claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a
 
 The binary self-daemonizes, which means it reparents to init and detaches. It then
 extracts the login-shell PATH on Unix, and then runs the RPC server. On success it
-prints `Claustrum remote server listening on <socket>` to stdout.
+prints `Claustrum remote server listening on <socket> (pid <pid>, instance <32-hex>)`
+to stdout.
 
 When `$SHELL` is an executable file, login-shell PATH extraction on Unix runs
 `$SHELL -l -i -c …`. Otherwise it runs the first usable of `/bin/zsh`,
@@ -3440,15 +3696,19 @@ Claustrum-only extras follow. They are off the wire, and the canonical detail is
   `-wire-log-max-string=0` the record carries the frame as `raw` instead, verbatim,
   preserving the field order and number formatting that *is* the wire contract. An
   unopenable path is fatal, not silent.
-- `-keep-children` is CT-2 and POSIX-only. It is off by default, so a graceful
-  shutdown kills the whole child tree. When set, it leaves spawned children running
+- `-keep-children` is CT-2. It is off by default, so a graceful
+  shutdown kills the children: the whole tree on Linux and macOS, the direct child
+  on Windows. When set, it leaves spawned children running
   across a restart, and logs `[Server] -keep-children: leaving <n> running child
   process(es) alive across shutdown`. The new daemon does not re-adopt them, and
   the survivors lose their stdio. Their stdin reaches EOF, and a stdout or stderr
   write gets SIGPIPE, or EPIPE for a child that ignores SIGPIPE, such as Node. It
-  therefore suits only children that tolerate dead stdio. Windows ignores it and
-  logs a warning (`[Server] -keep-children is not supported on Windows …`), because
-  the Job Object terminates children in every case.
+  therefore suits only children that tolerate dead stdio. The stdio of a survivor
+  is not measured on Windows. The flag works on
+  Windows too, as claustrum's own flag. There it changes each graceful shutdown:
+  the direct child stays alive as well. On a Windows VM the whole tree of claustrum
+  was alive after `-stop` and after `server.shutdown` with the flag. The reference
+  has no such flag. On that VM `89cb6289` refused it with exit code 2.
 - `-listen-pipe` is CT-5 and Windows-only. See [Named-pipe
   transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.

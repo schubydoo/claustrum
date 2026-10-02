@@ -56,7 +56,7 @@ Claustrum requires Go 1.25 or later. The toolchain is held below 1.27, because t
 [docs/UPSTREAM-TRACKING.md](docs/UPSTREAM-TRACKING.md). Build with the `go.mod` toolchain.
 
 One dependency is cross-platform: `github.com/klauspost/compress`, for zstd. Two more modules
-are compiled into Windows builds only. `golang.org/x/sys` does the Job Object teardown.
+are compiled into Windows builds only. `golang.org/x/sys` provides Windows system calls, such as the kill of a child.
 `github.com/Microsoft/go-winio` provides the opt-in `-listen-pipe` named-pipe transport
 (CT-5).
 
@@ -153,7 +153,7 @@ These knobs belong to claustrum only, and they stay off the wire:
 - `CLAUSTRUM_LOG_LEVEL` raises the threshold of the leveled stderr log. Logging is always on.
 - `-metrics-addr` opts into a local Prometheus `/metrics` endpoint. Without the flag, no
   listener exists.
-- `-keep-children` (CT-2, POSIX only) leaves spawned children running across a graceful
+- `-keep-children` (CT-2) leaves spawned children running across a graceful
   shutdown.
 - `-listen-pipe` (CT-5, Windows only) also serves the same JSON-RPC over a named pipe.
 - `-wire-log` (CT-3) appends every JSON-RPC frame to a file for diagnostics. It redacts
@@ -189,7 +189,7 @@ six targets. It is a static `CGO_ENABLED=0` Go binary. OS-specific behavior is i
 `*_unix.go` and `*_windows.go` files. Examples of that behavior:
 
 - The daemonize step.
-- Process groups on Unix, and Job Objects on Windows, for a whole-tree kill.
+- Process groups on Unix for a whole-tree kill. On Windows a kill ends the direct child only.
 - Login-shell PATH extraction.
 - The Windows-only `-listen-pipe` transport.
 

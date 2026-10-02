@@ -37,7 +37,7 @@ func runlockHoldFixture(args []string) int {
 		Pid:        os.Getpid(),
 		Role:       "serve",
 		Node:       node,
-		InstanceID: newRunDirInstanceID(),
+		InstanceID: newDaemonInstanceID(),
 		StartedAt:  time.Now().UnixMilli(),
 	})
 	if termMode == "term-ignore" {
@@ -261,7 +261,7 @@ func TestReadOwnerRecordMissingFile(t *testing.T) {
 func TestClaimRunDirHappyPath(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	release := claimRunDir(sock, "serve")
+	release := claimRunDir(sock, "serve", newDaemonInstanceID())
 	t.Cleanup(release)
 
 	lockPath := filepath.Join(dir, runDirLockName)
@@ -351,7 +351,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve")
+	release := claimRunDir(sock, "serve", newDaemonInstanceID())
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -386,7 +386,7 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
 	buf := captureLogBuf(t)
-	release := claimRunDir(sock, "serve") // evicts synchronously, logging the ladder
+	release := claimRunDir(sock, "serve", newDaemonInstanceID()) // evicts synchronously, logging the ladder
 	t.Cleanup(release)
 	_ = waitForExit(holder.Process.Pid, 3*time.Second)
 
@@ -450,7 +450,7 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve")
+	release := claimRunDir(sock, "serve", newDaemonInstanceID())
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -594,8 +594,13 @@ func TestClaimRunDirRefusesSymlinkLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	release := claimRunDir(sock, "serve")
+	buf := captureLogBuf(t)
+	release := claimRunDir(sock, "serve", newDaemonInstanceID())
 	t.Cleanup(release)
+	// The daemon serves without the lock, and says so.
+	if !strings.Contains(buf.String(), runDirNotHolderLine+"\n") {
+		t.Errorf("log = %q, want the line %q", buf.String(), runDirNotHolderLine)
+	}
 
 	got, err := os.ReadFile(victim)
 	if err != nil {
@@ -630,7 +635,7 @@ func TestClaimRunDirDoesNotSIGKILLAReusedPid(t *testing.T) {
 	}
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve")
+	release := claimRunDir(sock, "serve", newDaemonInstanceID())
 	t.Cleanup(release)
 
 	if calls < 2 {
@@ -657,7 +662,7 @@ func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve")
+	release := claimRunDir(sock, "serve", newDaemonInstanceID())
 	t.Cleanup(release)
 
 	// The holder must be left alive, and it must still hold the lock (our claim gave

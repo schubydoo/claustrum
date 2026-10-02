@@ -343,6 +343,59 @@ func lockFileHeld(fi os.FileInfo) bool {
 
 // ---- OS-primitive seams (linux implementations; darwin provides its own) ----
 
+// The two pidfd system calls. The syscall package holds no constant for them. The numbers
+// are the same on every linux architecture that claustrum builds for (amd64 and arm64).
+const (
+	sysPidfdSendSignal = 424
+	sysPidfdOpen       = 434
+)
+
+// hcPidfdOpen, hcPidfdSend and hcKillPid are the three system calls of hcHoldDaemon behind
+// seams. A test can then see which one carried the signal, and it can stage a kernel
+// without pidfd.
+var (
+	hcPidfdOpen = func(pid int) (int, error) {
+		fd, _, errno := syscall.Syscall(sysPidfdOpen, uintptr(pid), 0, 0)
+		if errno != 0 {
+			return -1, errno
+		}
+		return int(fd), nil
+	}
+	hcPidfdSend = func(fd int, sig syscall.Signal) error {
+		if _, _, errno := syscall.Syscall6(sysPidfdSendSignal, uintptr(fd), uintptr(sig), 0, 0, 0, 0); errno != 0 {
+			return errno
+		}
+		return nil
+	}
+	hcKillPid = syscall.Kill
+)
+
+// hcHoldDaemon opens a pid file descriptor for the single process pid (pidfd_open). The
+// send that it returns signals through that descriptor (pidfd_send_signal), and release
+// closes it. The reference retires a daemon with pidfd_send_signal(<fd>, SIGTERM, NULL, 0).
+// A Linux VM measured that with strace against f6010b97 and 89cb6289 (rows HC10, HC12 to
+// HC15). The caller checks the identity of pid between the open and the send.
+//
+// If the kernel has no such call (ENOSYS), the signal goes out with kill(pid, sig). That
+// fallback is claustrum's own choice. The reference on such a kernel is not measured. Any
+// other error of the open comes back from send, and no signal goes out.
+func hcHoldDaemon(pid int) (send func(syscall.Signal) error, release func()) {
+	fd, err := hcPidfdOpen(pid)
+	if err == syscall.ENOSYS {
+		return func(sig syscall.Signal) error { return hcKillPid(pid, sig) }, func() {}
+	}
+	if err != nil {
+		return func(syscall.Signal) error { return err }, func() {}
+	}
+	send = func(sig syscall.Signal) error {
+		if err := hcPidfdSend(fd, sig); err != syscall.ENOSYS {
+			return err
+		}
+		return hcKillPid(pid, sig)
+	}
+	return send, func() { _ = syscall.Close(fd) }
+}
+
 // hcReadIdent returns the pid-reuse-proof identity (process group and start-ticks) of pid.
 func hcReadIdent(pid int) (pgid int, startTicks string, ok bool) {
 	s := hcReadStat(pid)

@@ -6,14 +6,13 @@ import (
 	"os"
 	"sync"
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
 // newSysProcAttr puts the child in a new process group (Windows has no setpgid;
-// CREATE_NEW_PROCESS_GROUP is the closest analogue). The whole-tree teardown is
-// handled by the Job Object set up in confineProcess, not by the process group.
+// CREATE_NEW_PROCESS_GROUP is the closest analogue). A kill ends the direct child only
+// (see procGroup).
 func newSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 }
@@ -21,113 +20,73 @@ func newSysProcAttr() *syscall.SysProcAttr {
 // reapProcessGroup is the Windows counterpart of the Unix kill(-pgid) that
 // git.worktree_create uses to reap a checkout descendant that outlived git and held
 // the output pipe. Windows has no POSIX process-group signal, and this git exec path
-// is not confined to a Job Object, so there is nothing to tear down here beyond what
+// runs in no Job Object, so there is nothing to tear down here beyond what
 // cmd.WaitDelay already did (it closed the daemon's own pipe ends, so the reply is
 // bounded). The measured pipe-holding-descendant scenario is a POSIX smudge/hook
 // orphan and is not reproduced on Windows; a stray descendant is left to exit on its
 // own rather than reaped. Nil-safe no-op so the shared caller stays cross-platform.
 func reapProcessGroup(proc *os.Process) {}
 
-// honorKeepChildren forces -keep-children OFF on Windows. Children are confined to
-// a Job Object created with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (see confineProcess);
-// the daemon holds that job handle, so when it exits the OS terminates the whole
-// tree regardless of any shutdown-time decision. Rather than silently kill while
-// claiming to keep, we ignore the flag and warn. (The hosted channel that uses
-// this is POSIX-only anyway.)
-func honorKeepChildren(requested bool) bool {
-	if requested {
-		logWarnf("[Server] -keep-children is not supported on Windows and is ignored: child processes are confined to a Job Object that the OS terminates when the daemon exits")
-	}
-	return false
-}
-
-// procGroup confines a spawned child — and everything it spawns — to a Windows
-// Job Object, so the entire tree can be torn down at once. This is the analogue
-// of a Unix process-group kill: the previous best-effort TerminateProcess hit
-// only the parent, leaking any grandchildren.
+// procGroup is the kill handle of one spawned child on Windows: a process handle with
+// the right to terminate. There is no Job Object. A kill ends the direct child only, with
+// exit code 1. The descendants of the child live on.
 //
-// The job is created with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, so closing the
-// handle (on the child's exit, or if the daemon itself dies) reaps any lingering
-// descendants instead of orphaning them.
+// Measured on a Windows VM against 89cb6289: a spawned child is in no job (stub line
+// "job=false jobflags=none"). process.kill in every signal form, process.killAndWait in
+// every form, -stop and server.shutdown end only the direct child, with exit code 1. The
+// grandchild, the great-grandchild and an orphaned grandchild are alive 1 s, 5 s and 15 s
+// later. A later -stop does not end them. A hard kill of the daemon ends no child.
+// claustrum gave the same states beside 89cb6289 in a later run on that VM.
+//
+// The handle stays open until the exit drain of the child is over (close). A kill in
+// that window meets a process that has ended, and TerminateProcess answers "Access is
+// denied.". 89cb6289 logged that text for the escalation of process.killAndWait when
+// kids of the child held its stdout and stderr.
 type procGroup struct {
-	mu  sync.Mutex
-	job windows.Handle // 0 once closed, or if confinement failed
+	mu sync.Mutex
+	h  windows.Handle // 0 once closed, or after a failed open
 }
 
-// confineProcess creates a Job Object and assigns the just-started child to it.
-// It always returns a non-nil *procGroup: on any failure the group has a zero
-// job handle, and signal() falls back to killing just the parent — preserving
-// the previous best-effort behavior rather than failing the spawn.
-//
-// There is a small unavoidable race: the child is assigned to the job just after
-// CreateProcess returns, so a grandchild spawned in that window could escape.
-// os/exec doesn't expose the suspended main thread, so CREATE_SUSPENDED + resume
-// isn't available to us; in practice the window is negligible.
+// confineProcess opens the kill handle of the just-started child. It always returns a
+// non-nil *procGroup: on a failure the group has a zero handle, and signal() falls back
+// to proc.Kill, rather than failing the spawn. os.Process keeps its own handle
+// privately, so the process is opened again by pid. That pid cannot be reused while
+// os.Process holds its handle.
 func confineProcess(proc *os.Process) (*procGroup, error) {
-	job, err := windows.CreateJobObject(nil, nil)
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(proc.Pid))
 	if err != nil {
 		return &procGroup{}, err
 	}
-	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
-		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
-			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-		},
-	}
-	if _, err := windows.SetInformationJobObject(
-		job,
-		windows.JobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(&info)),
-		uint32(unsafe.Sizeof(info)),
-	); err != nil {
-		_ = windows.CloseHandle(job)
-		return &procGroup{}, err
-	}
-	// AssignProcessToJobObject needs a handle carrying these rights; os.Process
-	// keeps its own handle privately, so reopen the process by pid.
-	h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(proc.Pid))
-	if err != nil {
-		_ = windows.CloseHandle(job)
-		return &procGroup{}, err
-	}
-	defer windows.CloseHandle(h)
-	if err := windows.AssignProcessToJobObject(job, h); err != nil {
-		_ = windows.CloseHandle(job)
-		return &procGroup{}, err
-	}
-	return &procGroup{job: job}, nil
+	return &procGroup{h: h}, nil
 }
 
-// signal terminates the entire job — the child and every descendant. Windows has
-// no POSIX signals, so signame is ignored (matching the previous proc.Kill()
-// behavior). If the job was never established, it falls back to killing just the
-// parent. Nil-receiver safe.
-func (g *procGroup) signal(proc *os.Process, _ string) {
-	if g == nil || !g.terminate() {
-		_ = proc.Kill()
+// signal ends the direct child. Windows has no POSIX signals, so signame is ignored:
+// every signal form ends the child the same way (measured, see procGroup). It returns
+// the error of TerminateProcess. With no handle it falls back to proc.Kill and returns
+// nil. Nil-receiver safe.
+func (g *procGroup) signal(proc *os.Process, _ string) error {
+	if g != nil {
+		g.mu.Lock()
+		if g.h != 0 {
+			err := windows.TerminateProcess(g.h, 1)
+			g.mu.Unlock()
+			return os.NewSyscallError("TerminateProcess", err)
+		}
+		g.mu.Unlock()
 	}
+	_ = proc.Kill()
+	return nil
 }
 
-// terminate kills the job tree under the lock and reports whether it did so.
-func (g *procGroup) terminate() bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.job == 0 {
-		return false
-	}
-	return windows.TerminateJobObject(g.job, 1) == nil
-}
-
-// close releases the job handle. With KILL_ON_JOB_CLOSE set, dropping the last
-// handle also terminates any descendants still alive. Nil-receiver safe and
-// idempotent.
+// close releases the kill handle. It ends nothing. Nil-receiver safe and idempotent.
 func (g *procGroup) close() {
 	if g == nil {
 		return
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.job != 0 {
-		_ = windows.CloseHandle(g.job)
-		g.job = 0
+	if g.h != 0 {
+		_ = windows.CloseHandle(g.h)
+		g.h = 0
 	}
 }

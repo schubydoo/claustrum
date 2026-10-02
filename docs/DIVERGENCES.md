@@ -161,7 +161,7 @@ rather than repeating them in each entry:
 | [D4](#d4) | `files.read` refuses non-regular files | off | `-files-read-regular-only` / key | rule 4 | opt-in refuses a legit read, or default parks/OOMs the daemon in normal use |
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
-| [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log` | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
+| [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log`. Both halves hold on Linux and macOS only | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
 | [D9](#d9) | Namespace-wide params binding (type error in an unread field → `-32602`) | always-on | always-on | rule 3 clause (b) | a real client sending a type-mismatched unread namespace field |
 | [D10](#d10) | Cap `-install` CLI size (decompressed + download body) | off (`0`) | `-max-cli-bytes` / key | rule 4 (who-pays) | Desktop ceasing to treat a disk-full message as terminal |
 | [D12](#d12) | Bound on the `-install` download exchange | off (`0`) | `-cli-download-timeout` / key | rule 4 | operator with the bound set reporting an honest slow download failed |
@@ -172,6 +172,7 @@ rather than repeating them in each entry:
 | [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
+| [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -479,8 +480,14 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   never followed, and the victim file stays untouched. On a sticky directory where
   claustrum cannot rename the existing entry (another user's file or symlink), the
   rename cannot proceed and the exclusive create fails. claustrum then declines the
-  log and falls back to inherited stdio. In both cases claustrum never follows the
-  link or writes into a file it does not own.
+  log and falls back to inherited stdio. In both cases, on Linux and macOS,
+  claustrum never follows the link or writes into a file it does not own.
+- **Windows.** After a failed rename and a failed create, the Windows launcher
+  opens an existing regular `remote-server.log` for append. That is the path of
+  [D21](#d21). A path that is not a regular file is refused. The type test and the
+  open are two calls, and the open has no owner test. Both halves of this entry
+  therefore hold on Linux and macOS only. This follows from the code and is not
+  measured.
 - **The upstream state changed, and this entry was revised to match it.** Measured
   2026-09-06: `4534d86` no longer plain-truncates a foreign *regular* file. `5db5e4a`
   did, measured 2026-08-06. claustrum now matches the `.old` rotation on the common
@@ -684,8 +691,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Not the only identity gate.** This entry covers the run-dir lock's eviction path
   and `-stop` alone. claustrum's host cleaner has its own gate in `retireAbandoned`, which
   re-reads the pid's identity before its SIGTERM. That gate is not a numbered
-  divergence. Its reference side is not probe-measured, unlike this entry's own macOS
-  measurement. Do not read the two as one divergence.
+  divergence. On a Linux VM, `f6010b97` and `89cb6289` refused a live listener that is
+  not their daemon binary (row HC04). They also refused one that serves another socket
+  (row ST06). On that Linux VM claustrum refused both with the same texts. On a
+  macOS VM the references refused the listener of row HC04 too. Row ST06 is not
+  measured on macOS. In row GSg2 on a macOS VM, claustrum and `89cb6289` refused
+  the same listener with the `not our daemon binary` text. Do not read the two as
+  one divergence.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Run-dir lock and `-stop`. Also
   `daemon_runlock_unix.go` (`holderSignalRefusal`, `stopRunDirHolder`),
   `daemon_runlock_darwin.go` (`realIsServeCmdline`, `procArgv`),
@@ -790,7 +802,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   an implementation detail.
 - **Linux is outside this entry.** On Linux the busy read comes from `/proc`, not
   `lsof`. If `/proc` cannot read a daemon's descriptors or its `net/unix` table, the
-  retire refuses that daemon. The stranded-daemon judge never reaps it. The reference's
+  retire refuses that daemon. The reference's
   retire refusal, captured on the Linux run for a busy daemon, uses one text for both
   cases: "a connection is attached to it right now, or that could not be read". The Linux
   run did not stage an unreadable `/proc`, so neither arm is measured. Neither arm is a numbered divergence, because neither is known to
@@ -906,6 +918,47 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `scratch/89cb6289/e-linux/REPORT.md` and `REPORT-val1.md` to `REPORT-val5.md`
   there, and in `scratch/89cb6289/e-macos/REPORT-val1.md` to `REPORT-val3.md`.
 
+### D21 · A second daemon on a live socket appends to `remote-server.log` (Windows) { #d21 }
+
+- **Behavior.** On Windows a second `-serve` can start on a live socket, and the
+  first daemon stays alive. The first daemon holds `remote-server.log` open, so the
+  launcher of the second one cannot rotate it. claustrum then opens that file for
+  append. If both daemons are this build, each one writes to the end of the file,
+  and no line of either one is lost. A first daemon of an earlier build writes at
+  its own offset. That follows from the code and is not measured. This is
+  off-wire. No frame changes.
+- **Reference side, measured.** On a Windows VM (rows WN04 and WJ04), `89cb6289`
+  writes to the same file and truncates it at the second start.
+  - The 16 lines that its first daemon wrote before that start were lost.
+  - The later lines of the first daemon were kept, behind a block of NUL bytes.
+  - After both daemons ended, the file held 12 lines.
+- **claustrum side, measured.** In the same rows the file kept the 16 lines of the
+  first daemon. The later lines of both daemons followed in time order. After both
+  daemons ended, the file held 28 lines.
+- **Equal in those rows.** The launcher of the second daemon returned at once with
+  empty stdout and stderr. Both daemons and the three children stayed alive.
+  `-stop` ended the second daemon only.
+- **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
+  and no key. On Linux a second daemon evicts the first, and the log rotates to
+  `.old` on both sides (rows LOCK-0, LOCK-2, ST03).
+- **Why always-on.** The maintainer's decision of 2026-10-02: claustrum keeps the
+  lines. No frame, no reply and no exit status differs from `89cb6289` in the
+  measured rows. The difference is in the log file only. No clause of rule 3
+  covers this entry. It stands on that decision, and the reopen trigger below
+  takes it back.
+- **Cost.** A reader of the log file sees the difference: it gets the kept lines
+  from claustrum. The file holds the lines of two daemons with no mark of which
+  daemon wrote a line. It does not start with the start lines of the second
+  daemon, as the file of `89cb6289` does.
+- **Not measured.** A first daemon of another build beside a second daemon of this
+  one. An earlier claustrum build does not write in append mode.
+- **Reopen trigger.** A measurement that shows the reference keeping the earlier
+  lines of the first daemon (then this becomes parity). Or a reader of the log
+  that needs the file to start with the lines of the second daemon.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Daemon log. Also `server.go`
+  (`openDaemonLog`) and `detach_windows.go` (`openHeldDaemonLog`). Evidence in
+  `scratch/89cb6289/e-windows/REPORT-val4.md`, section 3.3.
+
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
 - `process.spawn` / `process.reattach` accept an optional `"wantPid":true`. The
@@ -929,16 +982,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 ### CT-2 · Opt-in `-keep-children` serve flag { #ct-2 }
 
 - A `-serve` flag, off the wire: it changes no method, no frame and no capability.
-  At the default (off), graceful shutdown kills the whole child tree. When set, it
+  At the default (off), graceful shutdown kills the children: the whole tree on
+  Linux and macOS, the direct child on Windows. When set, it
   leaves spawned children running so they survive a daemon restart/upgrade, and it
   logs one line with the surviving count. The new daemon does not re-adopt them. An
   out-of-band consumer reconciles them through the CT-1 `pid`/`startTime`.
 - Caveat: survivors lose their stdio. The daemon-side pipe ends die with the
   daemon: the child sees EOF on stdin, and a later write gets SIGPIPE/EPIPE.
-  Therefore only children that tolerate dead stdio genuinely survive.
-- **POSIX-only.** On Windows a Job Object confines the children, and the OS
-  terminates that Job Object on daemon exit in any case. claustrum therefore ignores
-  the flag and prints a startup warning (`honorKeepChildren`).
+  Therefore only children that tolerate dead stdio genuinely survive. Not measured
+  on Windows.
+- **Windows.** The flag works there too. A child is in no Job Object, so the exit
+  of the daemon does not end it. On a Windows VM
+  (rows WN03, WJ02, WJ05, WJ06), the children of `f6010b97` and `89cb6289` survive a
+  killed daemon. With the flag, `-stop` and `server.shutdown` leave the direct child
+  alive too. On that VM the whole tree of claustrum was alive at 1 s, 5 s and 15 s
+  after both. The reference has no such flag: `89cb6289` exits with code 2 for it.
 - **Activate:** `-keep-children` or the `keep-children` key.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) (`-serve` flags).
 

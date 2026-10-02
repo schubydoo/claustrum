@@ -59,9 +59,7 @@ Thus no extra changes the frames that a client sees. For details, see the
 - Token handoff: `-token-fd` supplies the token on a file descriptor, so
   you write no token file. The daemon still persists `daemon.token` beside the
   socket. See [PROTOCOL.md](PROTOCOL.md).
-- Windows process kill: on Windows, Job Objects kill the full tree of child
-  processes.
-- `-keep-children` (CT-2, POSIX only) keeps spawned processes
+- `-keep-children` (CT-2) keeps spawned processes
   alive across a graceful shutdown, so the processes survive a daemon restart.
   The flag is off by default, and the default shutdown kills the processes.
 

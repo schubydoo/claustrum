@@ -174,19 +174,19 @@ func TestKeepaliveLogsAChtimesFailure(t *testing.T) {
 	}
 }
 
-// TestHcSignalPidRealBody exercises the seam's own implementation, which every other test
-// replaces. Signal 0 delivers nothing and only reports whether the pid can be signalled, so
+// TestHcSignalPidRealBody exercises the seam's own implementation (hcHoldDaemon, through
+// the test helper hcSignalDaemon), which every other test replaces. Signal 0 delivers nothing and only reports whether the pid can be signalled, so
 // the assertions are safe: this process is signallable, a reaped child's pid is not. Without
 // the ESRCH half a stub body of `return nil` would satisfy the test.
 func TestHcSignalPidRealBody(t *testing.T) {
-	if err := hcSignalPid(os.Getpid(), 0); err != nil {
-		t.Errorf("hcSignalPid(self, 0) = %v, want nil", err)
+	if err := hcSignalDaemon(os.Getpid(), 0); err != nil {
+		t.Errorf("hcSignalDaemon(self, 0) = %v, want nil", err)
 	}
 
 	// A pid above pid_max can never exist, so this arm is race-free: it is the one that has
 	// to hold for the test to be an oracle at all.
-	if err := hcSignalPid(1<<30, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Errorf("hcSignalPid(impossible pid, 0) = %v, want ESRCH", err)
+	if err := hcSignalDaemon(1<<30, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Errorf("hcSignalDaemon(impossible pid, 0) = %v, want ESRCH", err)
 	}
 
 	// The same answer for a pid that existed and was reaped, which is the shape the cleaner
@@ -203,34 +203,8 @@ func TestHcSignalPidRealBody(t *testing.T) {
 	if _, err := os.Stat("/proc/" + strconv.Itoa(dead)); err == nil {
 		t.Skipf("pid %d was reused before the assertion", dead)
 	}
-	if err := hcSignalPid(dead, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Skipf("hcSignalPid(reaped pid %d, 0) = %v, not ESRCH: the pid was reused mid-test", dead, err)
-	}
-}
-
-// TestEndDaemonsNoTargets: an empty target list returns before anything else runs. The
-// summary and the signal lists alone cannot prove that — a mutant without the guard walks an
-// empty loop and answers identically — so the test also asserts the clock is never read,
-// which is the first thing the body past the guard does (twice, for the two wait deadlines).
-func TestEndDaemonsNoTargets(t *testing.T) {
-	root, _, _ := fakeProc(t)
-	single, group := hcSeamSignals(t, root) // also seams the clock, which we override below
-	oldClock := hcClock
-	t.Cleanup(func() { hcClock = oldClock })
-	clocks := 0
-	hcClock = func() time.Time { clocks++; return time.Unix(2_000_000, 0) }
-
-	var sum hcSummary
-	(&hostCleaner{}).endDaemons(nil, &sum)
-
-	if sum != (hcSummary{}) {
-		t.Errorf("summary = %+v, want the zero summary for an empty target list", sum)
-	}
-	if len(*single) != 0 || len(*group) != 0 {
-		t.Errorf("signals sent for an empty target list: single=%v group=%v", *single, *group)
-	}
-	if clocks != 0 {
-		t.Errorf("endDaemons read the clock %d times for an empty target list; it should have returned first", clocks)
+	if err := hcSignalDaemon(dead, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Skipf("hcSignalDaemon(reaped pid %d, 0) = %v, not ESRCH: the pid was reused mid-test", dead, err)
 	}
 }
 
@@ -238,8 +212,8 @@ func TestEndDaemonsNoTargets(t *testing.T) {
 func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 	t.Run("a group that is already gone is not counted as signalled", func(t *testing.T) {
 		root, mk, _ := fakeProc(t)
-		oldGrp, oldSig, oldClock, oldSleep := killGroup, hcSignalPid, hcClock, hcSleep
-		t.Cleanup(func() { killGroup, hcSignalPid, hcClock, hcSleep = oldGrp, oldSig, oldClock, oldSleep })
+		oldGrp, oldSig, oldClock, oldSleep := killGroup, hcHoldPid, hcClock, hcSleep
+		t.Cleanup(func() { killGroup, hcHoldPid, hcClock, hcSleep = oldGrp, oldSig, oldClock, oldSleep })
 		now := time.Unix(2_000_000, 0)
 		hcClock = func() time.Time { return now }
 		hcSleep = func(d time.Duration) { now = now.Add(d) }
@@ -247,7 +221,7 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 		// but the kernel says it is gone by the time the signal lands.
 		mk(7001, "stat", hcRunningStat(7001, 1, 7001, "1"))
 		killGroup = func(int, syscall.Signal) error { return syscall.ESRCH }
-		hcSignalPid = func(int, syscall.Signal) error { return syscall.ESRCH }
+		hcHoldPid = holdWith(func(int, syscall.Signal) error { return syscall.ESRCH })
 
 		signalled, survived := endGroupsTwoPhase([]tracked{{pid: 7001, pgid: 7001, startTicks: "1"}}, "orphaned process group", "")
 		if signalled != 0 || survived != 0 {
@@ -258,8 +232,8 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 
 	t.Run("a pid reused during the grace is never SIGKILLed", func(t *testing.T) {
 		root, mk, _ := fakeProc(t)
-		oldGrp, oldSig, oldClock, oldSleep := killGroup, hcSignalPid, hcClock, hcSleep
-		t.Cleanup(func() { killGroup, hcSignalPid, hcClock, hcSleep = oldGrp, oldSig, oldClock, oldSleep })
+		oldGrp, oldSig, oldClock, oldSleep := killGroup, hcHoldPid, hcClock, hcSleep
+		t.Cleanup(func() { killGroup, hcHoldPid, hcClock, hcSleep = oldGrp, oldSig, oldClock, oldSleep })
 
 		const pid = 7002
 		mk(pid, "stat", hcRunningStat(pid, 1, pid, "1"))
@@ -272,7 +246,7 @@ func TestEndGroupsTwoPhaseSignalArms(t *testing.T) {
 			sent = append(sent, sig)
 			return nil // SIGTERM lands but the process does not exit
 		}
-		hcSignalPid = func(_ int, sig syscall.Signal) error { sent = append(sent, sig); return nil }
+		hcHoldPid = holdWith(func(_ int, sig syscall.Signal) error { sent = append(sent, sig); return nil })
 
 		// The wait reads the clock once for the deadline, then once per poll after the
 		// liveness checks. One sleep jumps the whole grace, so the third read is the one

@@ -976,8 +976,9 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 	oldSignal := signalGroup
 	t.Cleanup(func() { signalGroup = oldSignal })
 	var signals []string
-	signalGroup = func(_ *procGroup, _ *os.Process, name string) {
+	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
 		signals = append(signals, name)
+		return nil
 	}
 
 	m := newTestProcManager(t)
@@ -1033,10 +1034,11 @@ func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 	t.Cleanup(func() { signalGroup = oldSignal })
 	var mu sync.Mutex
 	signaledPids := map[int]bool{}
-	signalGroup = func(_ *procGroup, proc *os.Process, _ string) {
+	signalGroup = func(_ *procGroup, proc *os.Process, _ string) error {
 		mu.Lock()
 		signaledPids[proc.Pid] = true
 		mu.Unlock()
+		return nil
 	}
 
 	m := newTestProcManager(t)
@@ -1081,9 +1083,14 @@ func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
 	oldSignal := signalGroup
 	t.Cleanup(func() { signalGroup = oldSignal })
 	var signals []string
-	signalGroup = func(_ *procGroup, _ *os.Process, name string) {
+	signalGroup = func(_ *procGroup, _ *os.Process, name string) error {
 		signals = append(signals, name)
+		if name == "KILL" {
+			return errors.New("kill refused by the fake")
+		}
+		return nil
 	}
+	buf := captureLogBuf(t)
 	oldGrace := killReapGrace
 	killReapGrace = 20 * time.Millisecond
 	t.Cleanup(func() { killReapGrace = oldGrace })
@@ -1103,6 +1110,10 @@ func TestKillAndWaitProcReportsUnreapedAfterKillGrace(t *testing.T) {
 	if strings.Join(signals, ",") != "TERM,KILL" {
 		t.Errorf("signals = %v, want [TERM KILL]", signals)
 	}
+	// A kill that reports an error gets one line. On Unix the real kill reports none.
+	if want := "[process.Manager] KillAndWait WEDGED: group kill failed: kill refused by the fake\n"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log = %q, want the line %q", buf.String(), want)
+	}
 }
 
 // TestSignalIsAtomicWithTheReapedCheck pins that the check and the delivery
@@ -1121,15 +1132,16 @@ func TestSignalIsAtomicWithTheReapedCheck(t *testing.T) {
 	var p *managedProc
 	held := false
 	delivered := false
-	signalGroup = func(*procGroup, *os.Process, string) {
+	signalGroup = func(*procGroup, *os.Process, string) error {
 		delivered = true
 		// TryLock succeeds only if the lock is free — i.e. only if the check was
 		// released before the signal.
 		if p.mu.TryLock() {
 			p.mu.Unlock()
-			return
+			return nil
 		}
 		held = true
+		return nil
 	}
 
 	p = &managedProc{

@@ -367,25 +367,6 @@ func parseLsofFtn(out string) []lsofRec {
 	return recs
 }
 
-// hcFdTargets returns each fd mapped to its lsof name. The second result is false when lsof
-// returned nothing for the pid (the process gone or its files unreadable), and also when the
-// run was abandoned. Both read as "unreadable", which is what the callers already act on.
-func hcFdTargets(pid int) (map[string]string, bool) {
-	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
-	if !ok {
-		return nil, false
-	}
-	recs := parseLsofFtn(out)
-	if len(recs) == 0 {
-		return nil, false
-	}
-	m := make(map[string]string, len(recs))
-	for _, r := range recs {
-		m[r.fd] = r.name
-	}
-	return m, true
-}
-
 // hcBusy reports whether the process has a live client on one of its unix sockets. A unix
 // record whose name shows a connected peer ("->") is an immediate yes; otherwise more than one
 // unix endpoint means an accepted connection sits alongside the bare listener.
@@ -429,7 +410,7 @@ func hcStdioArePipes(pid int) (pipes, canRead bool) {
 	}
 	recs := parseLsofFtn(out)
 	if len(recs) == 0 {
-		return false, false // lsof returned nothing for the pid, as hcFdTargets reads it
+		return false, false // lsof returned nothing for the pid
 	}
 	n := 0
 	for _, r := range recs {
@@ -455,6 +436,13 @@ func hcLockHeldAt(path string, _ os.FileInfo) bool {
 		}
 	}
 	return false
+}
+
+// hcHoldDaemon returns a send that signals the single process pid with kill. darwin has no
+// pid file descriptor, so there is no hold and release does nothing. Which call the macOS
+// reference uses to retire a daemon is not measured.
+func hcHoldDaemon(pid int) (send func(syscall.Signal) error, release func()) {
+	return func(sig syscall.Signal) error { return syscall.Kill(pid, sig) }, func() {}
 }
 
 // hcSelfExe returns this daemon's own executable path, from its KERN_PROCARGS2 exec path — the

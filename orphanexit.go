@@ -27,8 +27,16 @@ import (
 // listeners closed, clients dropped, and child process groups stopped unless
 // -keep-children), never a bare exit.
 
-// Orphan-exit timing. These are claustrum's own values and are not probe-measured.
-// Package vars so a test can shrink them.
+// Orphan-exit timing. Package vars so a test can shrink them.
+//
+// Measured on a Linux VM (rows ST09 and ST11, several runs). The reference prints the
+// "no longer leads to this daemon" line with "10m0s", then the "(1/2)" line. Then it
+// prints the "orphaned for" line and the two shutdown lines. In one run 89cb6289 printed
+// "(1/2)" 9 min 59 s after the first line and "orphaned for 11m0s" one minute later.
+// 89cb6289 printed "11m0s" in four rows and "12m0s" in three. f6010b97 printed "12m0s" in
+// its one row. The texts of these lines are the reference's. claustrum printed the same
+// texts in those rows, with "12m0s" in each of six rows. The cause of the 60 s
+// difference is not measured. The check interval of the reference is not measured.
 var (
 	orphanCheckInterval = 60 * time.Second
 	orphanGrace         = 10 * time.Minute
@@ -111,6 +119,7 @@ func (s *server) exitWhenOrphaned(socket string) {
 		}
 		logWarnf("[Server] orphaned for %s (socket path gone or re-bound, %d self-probes failed, no connections); shutting down and killing %d child process(es)",
 			time.Since(orphanedSince).Round(time.Second), failedProbes, s.procs.runningCount())
+		logInfof("[Server] shutdown requested")
 		s.signalShutdown()
 		return
 	}

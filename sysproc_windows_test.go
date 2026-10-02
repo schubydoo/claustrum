@@ -17,9 +17,10 @@ import (
 )
 
 // These tests are the Windows analogue of sysproc_unix_test.go: they exercise
-// the Job Object confinement/teardown in sysproc_windows.go (IMPROVEMENTS #14)
-// with a real two-level process tree, so the file's behavior — not just its
-// compilation — is pinned in CI (IMPROVEMENTS #20).
+// the kill handle in sysproc_windows.go
+// with a real two-level process tree. CI therefore pins the behavior of the file and not
+// only its compilation (IMPROVEMENTS item 20). A kill ends the direct child only,
+// so every test ends the grandchild that it started by its recorded pid.
 
 func TestNewSysProcAttrNewProcessGroup(t *testing.T) {
 	attr := newSysProcAttr()
@@ -42,14 +43,17 @@ func TestDetachSysProcAttrFlags(t *testing.T) {
 	if attr.CreationFlags&syscall.CREATE_NEW_PROCESS_GROUP == 0 {
 		t.Errorf("CreationFlags = %#x, want CREATE_NEW_PROCESS_GROUP set", attr.CreationFlags)
 	}
+	if attr.CreationFlags&createBreakawayFromJob == 0 {
+		t.Errorf("CreationFlags = %#x, want CREATE_BREAKAWAY_FROM_JOB set", attr.CreationFlags)
+	}
 }
 
 // startConfinedTree starts this test binary in "tree" helper mode
-// (helperproc_test.go), confines it to a Job Object, and only then releases
-// the helper to spawn its grandchild sleeper — mirroring the production order
-// (process.spawn confines right after start) and guaranteeing the grandchild
-// is born inside the job. Returns the parent cmd, the grandchild PID, and the
-// job group.
+// (helperproc_test.go), takes its kill handle, and only then releases
+// the helper to spawn its grandchild sleeper, mirroring the production order
+// (process.spawn takes the handle right after start). Returns the parent cmd, the
+// grandchild PID, and the group. The cleanup ends the parent and the grandchild, each by
+// its recorded pid, also after a failed assertion.
 func startConfinedTree(t *testing.T) (*exec.Cmd, int, *procGroup) {
 	t.Helper()
 	exe, err := os.Executable()
@@ -67,68 +71,92 @@ func startConfinedTree(t *testing.T) (*exec.Cmd, int, *procGroup) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
 	group, err := confineProcess(cmd.Process)
 	if err != nil {
 		t.Fatalf("confineProcess: %v", err)
 	}
-	// Go-ahead: the helper spawns its grandchild only now, inside the job.
+	t.Cleanup(group.close)
+	// Go-ahead: the helper spawns its grandchild only now.
 	if _, err := io.WriteString(stdin, "g"); err != nil {
 		t.Fatalf("release helper: %v", err)
 	}
 	gpid := readPIDFile(t, pidFile)
-	t.Cleanup(func() {
-		group.signal(cmd.Process, "KILL")
-		group.close()
-		_ = cmd.Wait()
-	})
+	t.Cleanup(func() { killOwnPid(gpid) })
 	return cmd, gpid, group
 }
 
-// signal must terminate the entire job — the child and its descendants. A
-// mutant that breaks TerminateJobObject (or the job==0 guard) leaves the
-// grandchild alive, which this catches; the Unix twin is
-// TestSignalProcessGroupKillsWholeGroup.
-func TestSignalKillsWholeJobTree(t *testing.T) {
+// killOwnPid ends a process that this test started, by its pid. It is a no-op for a pid
+// that is gone.
+func killOwnPid(pid int) {
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return
+	}
+	_ = windows.TerminateProcess(h, 1)
+	_ = windows.CloseHandle(h)
+}
+
+// signal ends the direct child only. Its grandchild lives on. Measured on a Windows VM
+// against 89cb6289: every kill form ends only the direct child, and the grandchild is
+// alive 1 s, 5 s and 15 s later. A Job Object around the child ends the grandchild here.
+func TestSignalEndsOnlyTheDirectChild(t *testing.T) {
 	cmd, gpid, group := startConfinedTree(t)
 
 	if !processAlive(t, gpid) {
 		t.Fatalf("grandchild %d not alive before signal", gpid)
 	}
-	group.signal(cmd.Process, "KILL")
-	if !waitProcessGone(gpid, 5*time.Second) {
-		t.Errorf("grandchild %d survived the job kill — signal hit only the parent, not the job", gpid)
+	if err := group.signal(cmd.Process, "KILL"); err != nil {
+		t.Fatalf("signal: %v", err)
 	}
 	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
-		t.Errorf("parent %d survived the job kill", cmd.Process.Pid)
+		t.Errorf("parent %d survived the kill", cmd.Process.Pid)
+	}
+	time.Sleep(time.Second)
+	if !processAlive(t, gpid) {
+		t.Errorf("grandchild %d ended with its parent: the kill reached more than the direct child", gpid)
 	}
 }
 
-// close drops the last job handle; with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE set
-// at creation, that alone must reap every process still in the job. A mutant
-// that drops the LimitFlags leaves the tree running after close.
-func TestCloseReapsJobTree(t *testing.T) {
+// A kill of a child that has ended, while its handle is still open, answers the text that
+// 89cb6289 logged on a Windows VM: "TerminateProcess: Access is denied.".
+func TestSignalOnAnEndedChildIsAccessDenied(t *testing.T) {
+	cmd, _, group := startConfinedTree(t)
+
+	if err := group.signal(cmd.Process, "KILL"); err != nil {
+		t.Fatalf("first signal: %v", err)
+	}
+	_ = cmd.Wait()
+	err := group.signal(cmd.Process, "KILL")
+	if err == nil || err.Error() != "TerminateProcess: Access is denied." {
+		t.Errorf("signal on an ended child = %v, want %q", err, "TerminateProcess: Access is denied.")
+	}
+}
+
+// close drops the kill handle and ends nothing. The daemon's death closes the handle the
+// same way. The children of the reference survive a killed daemon (rows WN03, WJ02, WJ05,
+// WJ06 on a Windows VM).
+func TestCloseEndsNothing(t *testing.T) {
 	cmd, gpid, group := startConfinedTree(t)
 
-	if !processAlive(t, gpid) {
-		t.Fatalf("grandchild %d not alive before close", gpid)
-	}
 	group.close()
-	if !waitProcessGone(gpid, 5*time.Second) {
-		t.Errorf("grandchild %d survived close — KILL_ON_JOB_CLOSE not in effect", gpid)
+	time.Sleep(time.Second)
+	if !processAlive(t, gpid) {
+		t.Errorf("grandchild %d ended at close", gpid)
 	}
-	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
-		t.Errorf("parent %d survived close", cmd.Process.Pid)
+	if !processAlive(t, cmd.Process.Pid) {
+		t.Errorf("parent %d ended at close", cmd.Process.Pid)
 	}
 }
 
-// With no job established (zero handle or nil receiver — the confinement
-// failure paths), signal must still fall back to killing the parent process.
-func TestSignalFallsBackWithoutJob(t *testing.T) {
+// With no handle (zero handle or nil receiver, the failure paths of confineProcess),
+// signal must still fall back to killing the parent process.
+func TestSignalFallsBackWithoutHandle(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		group *procGroup
 	}{
-		{"zero job handle", &procGroup{}},
+		{"zero handle", &procGroup{}},
 		{"nil receiver", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,28 +172,26 @@ func TestSignalFallsBackWithoutJob(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 
-			tc.group.signal(cmd.Process, "KILL")
+			if err := tc.group.signal(cmd.Process, "KILL"); err != nil {
+				t.Errorf("signal = %v, want nil from the fallback", err)
+			}
 			if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
-				t.Errorf("parent %d survived — signal did not fall back to proc.Kill", cmd.Process.Pid)
+				t.Errorf("parent %d survived: signal did not fall back to proc.Kill", cmd.Process.Pid)
 			}
 		})
 	}
 }
 
-// close is idempotent (double-close must not panic or double-release), and a
-// closed group reports terminate()==false so signal falls back to the parent
-// kill rather than terminating a stale handle.
-func TestCloseIdempotentAndTerminateAfterClose(t *testing.T) {
+// close is idempotent (a second close must not panic or release twice). A closed group
+// falls back to proc.Kill, so a signal after close still ends the parent.
+func TestCloseIdempotentAndSignalAfterClose(t *testing.T) {
 	cmd, _, group := startConfinedTree(t)
 
 	group.close()
 	group.close() // second close must be a no-op
-	if group.terminate() {
-		t.Error("terminate() after close returned true; want false (zero handle)")
+	if err := group.signal(cmd.Process, "KILL"); err != nil {
+		t.Errorf("signal after close = %v, want nil from the fallback", err)
 	}
-	// The fallback path must still tear the parent down (the job close already
-	// killed it; signal on the closed group must not panic and must not hang).
-	group.signal(cmd.Process, "KILL")
 	if !waitProcessGone(cmd.Process.Pid, 5*time.Second) {
 		t.Errorf("parent %d still alive after close + fallback signal", cmd.Process.Pid)
 	}
@@ -202,7 +228,7 @@ func processAlive(t *testing.T, pid int) bool {
 	if err != nil {
 		return false
 	}
-	defer windows.CloseHandle(h)
+	defer func() { _ = windows.CloseHandle(h) }()
 	var code uint32
 	if err := windows.GetExitCodeProcess(h, &code); err != nil {
 		return false
@@ -220,7 +246,7 @@ func waitProcessGone(pid int, d time.Duration) bool {
 		}
 		var code uint32
 		gone := windows.GetExitCodeProcess(h, &code) != nil || code != stillActive
-		windows.CloseHandle(h)
+		_ = windows.CloseHandle(h)
 		if gone {
 			return true
 		}

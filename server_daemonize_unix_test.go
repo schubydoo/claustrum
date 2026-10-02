@@ -9,7 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -238,6 +242,19 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 	if n := strings.Count(string(b), limitLine); n != banner {
 		t.Errorf("the limit line appears %d times, want %d and only as the first line", n, banner)
 	}
+	// The banner of the real start ends with the pid and the instance.
+	if !regexp.MustCompile(` \(pid \d+, instance [0-9a-f]{32}\)$`).MatchString(logLines[banner]) {
+		t.Errorf("banner = %q, want it to end with the pid and the instance", logLines[banner])
+	}
+	// The real start runs the cleaner start check right after the banner. This socket is
+	// not run-shaped, so the check logs why the cleaner stays off. Linux and macOS only:
+	// no other system links a cleaner.
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		want := `[daemon] host cleaning off: socket path "` + sock + `" is not <root>/run/<id>/rpc.sock`
+		if len(logLines) < banner+2 || !strings.HasSuffix(logLines[banner+1], want) {
+			t.Errorf("log after the banner = %q, want the line %q", logLines[banner+1:], want)
+		}
+	}
 
 	// Graceful shutdown removes the socket and daemon.token; the log stays.
 	_, _ = nc.Write([]byte(`{"jsonrpc":"2.0","id":99,"method":"server.shutdown","auth":"` + token + `"}` + "\n"))
@@ -254,6 +271,86 @@ func TestServeWritesRemoteServerLog(t *testing.T) {
 	}
 	if _, err := os.Stat(logPath); err != nil {
 		t.Errorf("remote-server.log did not survive graceful shutdown: %v", err)
+	}
+}
+
+// TestServeShutsDownOnSIGTERM: SIGTERM to a real daemon gives the three lines of a
+// shutdown by signal in remote-server.log, and the daemon removes its socket. The signal
+// goes to one pid only: the daemon that this test started, as its banner in the log of
+// this test's own temp folder names it.
+func TestServeShutsDownOnSIGTERM(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and spawns the real binary; skipped under -short")
+	}
+	bin := buildClaustrum(t)
+	dir, err := os.MkdirTemp("", "cld")
+	if err != nil {
+		t.Fatalf("tempdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s.sock")
+	const token = "sigterm-token"
+	cmd := exec.Command(bin, "-serve", "-socket", sock, "-token-fd", "0")
+	cmd.Stdin = strings.NewReader(token + "\n")
+	cmd.Env = append(removeEnvKey(os.Environ(), daemonChildEnv), daemonChildMarker+"=1")
+	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+		t.Fatalf("launcher failed: %v\n%s", runErr, out)
+	}
+	nc := dialWithRetry(t, sock, 10*time.Second)
+	reply := roundTrip(t, nc, `{"jsonrpc":"2.0","id":1,"method":"server.capabilities","auth":"`+token+`"}`)
+	_ = nc.Close()
+	result, _ := reply["result"].(map[string]any)
+	instance, _ := result["instanceId"].(string)
+
+	logPath := filepath.Join(dir, daemonLogName)
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The pid comes from the banner of the daemon that answered with this instance.
+	m := regexp.MustCompile(`listening on ` + regexp.QuoteMeta(sock) + ` \(pid (\d+), instance ([0-9a-f]{32})\)`).FindStringSubmatch(string(b))
+	if m == nil || instance == "" || m[2] != instance {
+		t.Fatalf("no banner of this daemon (instance %q) in the log:\n%s", instance, b)
+	}
+	pid, err := strconv.Atoi(m[1])
+	if err != nil || pid < 2 {
+		t.Fatalf("banner pid %q", m[1])
+	}
+	stopped := false
+	t.Cleanup(func() {
+		if !stopped { // a failed run leaves no daemon behind
+			_ = exec.Command(bin, "-stop", "-socket", sock).Run()
+		}
+	})
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		t.Fatalf("SIGTERM to the daemon %d: %v", pid, err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		if _, err := os.Stat(sock); os.IsNotExist(err) {
+			stopped = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !stopped {
+		t.Fatal("the socket is still there 10 s after SIGTERM")
+	}
+	// The cleanup line comes last. Give the daemon a moment to write it.
+	var got string
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		b, _ = os.ReadFile(logPath)
+		if got = string(b); strings.Contains(got, "[Server] cleanup: closed") {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	wantLinesInOrder(t, got,
+		"[daemon] received terminated; shutting down (children will be killed)",
+		"[Server] shutdown requested")
+	// The connection of this test closed before the signal, but the daemon may not have
+	// seen the close yet. The connection count is therefore 0 or 1.
+	if !regexp.MustCompile(`\[Server\] cleanup: closed [01] connection\(s\), killed 0 child process group\(s\)\n`).MatchString(got) {
+		t.Errorf("log lacks the cleanup line:\n%s", got)
 	}
 }
 

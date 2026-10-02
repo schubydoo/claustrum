@@ -14,3 +14,19 @@ import "os"
 func livePredecessorIdent(socket string) os.FileInfo {
 	return nil
 }
+
+// staleSocketIdent returns the identity of the socket file that is on disk before the
+// launcher starts its child, or nil when there is none. waitForDaemonAccept uses it:
+// while the path still holds that file and no daemon answers, the launcher waits. So the
+// stale socket of a killed daemon is not taken for the socket of the new one. Measured on
+// a Windows VM against f6010b97 and 89cb6289 (rows WN03 and WN05).
+//
+// On NTFS a file that is deleted and made again at the same path can keep its identity.
+// The wait then ends at the first dial that a daemon answers.
+func staleSocketIdent(socket string) os.FileInfo {
+	fi, err := os.Stat(socket)
+	if err != nil {
+		return nil
+	}
+	return fi
+}

@@ -17,15 +17,17 @@ import (
 )
 
 // The host cleaner (reference build 19f30c46). The cleaner is a periodic,
-// host-wide sweep the daemon starts at -serve startup: it ends stranded sibling daemons and
-// orphaned Claude Code process groups, and tidies their stale run dirs. This file holds the
+// host-wide sweep the daemon starts at -serve startup: it ends orphaned Claude Code process
+// groups, retires abandoned daemons and tidies their stale run dirs. It ends no stranded
+// daemon (see Pass). This file holds the
 // shared decision layer — the containment (roots + membership), the judges, the destructive
 // enders, the run-dir tidy, and the Start/Pass/Keepalive lifecycle. The OS-specific reads it
 // drives (process inspection, snapshot, socket-peer, lock and open-file probes) live in
 // hostclean_linux.go (/proc, SO_PEERCRED, /proc/locks) and hostclean_darwin.go (sysctl
 // kern.proc, KERN_PROCARGS2, lsof, LOCAL_PEERPID). Everything it touches is confined to the
-// install "roots" derived from the daemon's own socket and executable, and to this user's own
-// processes, so the sweep never reaches an unrelated process or path.
+// install root of the daemon's own socket. That is one folder, under the path as given
+// and under its real path. It is also confined to this user's own processes. The sweep
+// therefore never reaches an unrelated process or path.
 //
 // This path is DESTRUCTIVE: the cleaner ends OTHER daemons under its roots. Every process read,
 // kill, dial, rename and remove goes through a package-var seam, so unit tests exercise the
@@ -34,15 +36,22 @@ import (
 // a throwaway VM; a cleaner-enabled -serve must never run on a host that also runs siblings.
 // Windows links no cleaner. It is a no-op (hostclean_other.go).
 
-// hostRoots is the containment envelope. roots holds the install root dir(s) the cleaner may
-// touch (a daemon socket <root>/run/<id>/rpc.sock yields <root>); daemonBin is the deployed
-// daemon binary's basename, which sits at <root>/srv/<id>/<daemonBin>.
+// hostRoots is the containment envelope. roots is the root list. It holds the install
+// root dir that the cleaner acts within, as the socket path gives it. A daemon socket
+// <root>/run/<id>/rpc.sock yields <root>. When the symlink-resolved form of that root differs, the list also
+// holds that form. Both entries then name one folder. daemonBin is the deployed daemon
+// binary's basename, which sits at <root>/srv/<id>/<daemonBin>. deriveRoots is the only
+// producer outside the tests.
 type hostRoots struct {
-	roots     []string // install root dir(s): the socket's root, plus the exe's root when it differs
+	roots     []string // the root of the daemon's own socket as given, then its resolved form if that differs
 	daemonBin string   // the deployed daemon binary basename (from this daemon's own exe)
 	socket    string   // this daemon's own socket, <root>/run/<id>/rpc.sock
 	runDir    string   // this daemon's own run dir, <root>/run/<id>
 }
+
+// hcEvalSymlinks is filepath.EvalSymlinks behind a seam, so a test can make the resolution
+// of the root fail.
+var hcEvalSymlinks = filepath.EvalSymlinks
 
 const (
 	runComponent    = "run"
@@ -52,33 +61,56 @@ const (
 )
 
 // deriveRoots builds the containment from the daemon's own socket and, when haveExe is set,
-// its resolved executable. The socket must be <root>/run/<id>/rpc.sock. When haveExe is set
-// the executable must be a deployed daemon under <root>/srv, and its root is added when it
-// differs from the socket's. It returns an error when the socket is not run-dir shaped or the
-// executable is not a deployed daemon.
+// its executable. It returns an error when host cleaning stays off.
+//
+// The socket path is cleaned first. It must be absolute, and its last three components
+// must read run/<id>/rpc.sock. The root is the folder above run, as the cleaned socket path
+// gives it. No symlink of the socket path decides the shape. The root list holds that root.
+// When the symlink-resolved form of the root differs from it, the list also holds the
+// resolved form: the same folder under its real path. If the resolution fails, the list
+// holds only the root as given. The root of the executable is never added.
+//
+// When haveExe is set, the executable is resolved through its symlinks. It must be
+// <root>/srv/<id>/<name> under one root of the list, with exactly one folder level between
+// srv and the file. An executable under the srv of another folder matches no root.
+//
+// The two error texts are the reasons of the "host cleaning off" line (startHostCleaner).
+// The executable text names the srv of the root as given. The decisions of the gate and both texts
+// equal those of 89cb6289 in the rows of a Linux VM. The start rows hold nine socket shapes in the
+// install layout and in the plain layout, and six places of the executable. Rows KREL,
+// KXB, KS-i-j, KS-i-k, KS-m-e, KS-q-e and KS-u-e ran with staged fixtures. A relative socket
+// is "not <root>/run/<id>/rpc.sock" in both layouts. A socket path through a symlink to
+// the root keeps the cleaner on (rows KS-m-e, KS-q-e). So does a symlink one level above
+// the root.
+//
+// Not measured: a root whose resolution fails and an unreadable own executable (haveExe
+// false). A macOS VM measured nine gate shapes against 89cb6289 (rows GSa to GSg3).
 func deriveRoots(socket, exe string, haveExe bool) (*hostRoots, error) {
+	socketShape := fmt.Errorf("socket path %q is not <root>/run/<id>/rpc.sock", socket)
 	socket = filepath.Clean(socket)
-	if filepath.Base(socket) != rpcSockBasename {
-		return nil, fmt.Errorf("socket %q is not a run-dir socket", socket)
+	if !filepath.IsAbs(socket) || filepath.Base(socket) != rpcSockBasename {
+		return nil, socketShape
 	}
 	runDir := filepath.Dir(socket)  // <root>/run/<id>
 	runRoot := filepath.Dir(runDir) // <root>/run
 	if filepath.Base(runRoot) != runComponent {
-		return nil, fmt.Errorf("socket %q is not a run-dir socket", socket)
+		return nil, socketShape
 	}
 	root := filepath.Dir(runRoot) // <root>
 	r := &hostRoots{roots: []string{root}, socket: socket, runDir: runDir}
+	if real, err := hcEvalSymlinks(root); err == nil && real != root {
+		r.roots = append(r.roots, real)
+	}
 	if !haveExe {
 		return r, nil
 	}
 	exe = filepath.Clean(exe)
-	r.daemonBin = filepath.Base(exe)
-	exeRoot := filepath.Dir(filepath.Dir(filepath.Dir(exe))) // <exeRoot>/srv/<id>/<bin> -> <exeRoot>
-	if exeRoot != root {
-		r.roots = append(r.roots, exeRoot)
+	if real, err := hcEvalSymlinks(exe); err == nil {
+		exe = real
 	}
+	r.daemonBin = filepath.Base(exe)
 	if !r.isDaemonBinary(exe) {
-		return nil, fmt.Errorf("executable %q is not a deployed daemon", exe)
+		return nil, fmt.Errorf("executable %q is not a deployed daemon under %s", exe, filepath.Join(root, srvComponent))
 	}
 	return r, nil
 }
@@ -110,23 +142,6 @@ func (r *hostRoots) isDaemonBinary(exe string) bool {
 func (r *hostRoots) isCliBinary(exe string) bool {
 	for _, root := range r.roots {
 		if filepath.Dir(exe) == filepath.Join(root, cliComponent) {
-			return true
-		}
-	}
-	return false
-}
-
-// isRunDirSocket reports whether path is a run-dir socket, either <root>/run/<id>/rpc.sock or
-// <root>/rpc.sock.
-func (r *hostRoots) isRunDirSocket(path string) bool {
-	if filepath.Base(path) != rpcSockBasename {
-		return false
-	}
-	if r.under(path, runComponent, 2) {
-		return true
-	}
-	for _, root := range r.roots {
-		if filepath.Clean(path) == filepath.Join(root, rpcSockBasename) {
 			return true
 		}
 	}
@@ -283,25 +298,6 @@ func hcDirIdle(root *os.Root, name string, now time.Time) (time.Duration, bool) 
 		}
 	}
 	return idle, true
-}
-
-// hcHasOpenNamed reports whether pid holds a file whose base name is base open on any
-// descriptor. canRead is false when the descriptor list could not be read. The compare is on
-// the name the descriptor shows now. On linux an unlinked file shows as "<path> (deleted)",
-// so a lock whose file was deleted does not count as open by name. A daemon whose run dir
-// was removed under it is then judged like one whose lock file was renamed. The reference
-// side of the deleted case is not measured.
-func hcHasOpenNamed(pid int, base string) (open, canRead bool) {
-	m, ok := hcFdTargets(pid)
-	if !ok {
-		return false, false
-	}
-	for _, t := range m {
-		if filepath.Base(t) == base {
-			return true, true
-		}
-	}
-	return false, true
 }
 
 // ---- ownership / liveness / lock + socket probes ----
@@ -537,41 +533,37 @@ func waitGone(entries []waitEntry, deadline time.Time) []waitEntry {
 // ---- the cleaner: lifecycle, summary, and the destructive enders ----
 
 // Timing and count gates. The 15 s first-pass delay matches the reference, as measured on
-// Linux and macOS VMs (issue 429). The other values are claustrum's own, not probe-measured.
+// Linux and macOS VMs (issue 429). The 3 s grace after SIGTERM and the cap of 64 orphan
+// groups match the reference too. A Linux VM measured both against f6010b97 and 89cb6289
+// (rows HC21a and HC22). The other values are claustrum's own, not probe-measured.
 const (
-	hcMinAge     = 5 * time.Minute            // a daemon or orphan younger than this is never touched
-	hcMarkerAge  = 2 * hcMinAge               // an unmarked --serve daemon older than this is spared, not skipped
-	hcIdleAge    = 30 * 24 * time.Hour        // a run dir must be idle this long before tidy acts on it, unless its name carries the staging marker
-	hcTermGrace  = 3 * time.Second            // wait after SIGTERM before SIGKILL
-	hcKillSettle = 1 * time.Second            // wait after SIGKILL before warning
-	hcDaemonWait = hcTermGrace + hcKillSettle // wait for a SIGKILLed daemon to leave the kernel
-	hcPassDelay  = 15 * time.Second           // delay before the first pass
-	hcPassEvery  = 24 * time.Hour             // interval between passes and keepalives
-	hcMaxDaemons = 16                         // per-pass cap on stranded daemons ended
-	hcMaxGroups  = 64                         // per-pass cap on orphan groups ended
+	hcMinAge     = 5 * time.Minute     // a daemon or orphan younger than this is never touched
+	hcIdleAge    = 30 * 24 * time.Hour // a run dir must be idle this long before tidy acts on it, unless its name carries the staging marker
+	hcTermGrace  = 3 * time.Second     // wait after SIGTERM before SIGKILL
+	hcKillSettle = 1 * time.Second     // wait after SIGKILL before warning
+	hcPassDelay  = 15 * time.Second    // delay before the first pass
+	hcPassEvery  = 24 * time.Hour      // interval between passes and keepalives
+	hcMaxGroups  = 64                  // per-pass cap on orphan groups ended
 )
 
 // hcSummary counts what one pass did. Its zero value renders as "nothing to do".
 type hcSummary struct {
-	strandedSignalled int
-	strandedEnded     int
-	strandedSurvived  int
-	strandedLeftover  int
-	orphanSignalled   int
-	orphanSurvived    int
-	daemonsRetired    int
-	runDirsRemoved    int
-	undecided         int
+	orphanSignalled int
+	orphanSurvived  int
+	daemonsRetired  int
+	runDirsRemoved  int
+	undecided       int
 }
 
 // String renders the pass summary in the reference's measured words, and returns a short
-// "nothing to do" when the pass counted nothing.
+// "nothing to do" when the pass counted nothing. The stranded-daemon part keeps its text
+// with zeros. The cleaner ends no stranded daemon (see Pass), and the reference printed
+// zeros there in every measured row.
 func (s hcSummary) String() string {
 	if s == (hcSummary{}) {
 		return "nothing to do"
 	}
-	return fmt.Sprintf("stranded daemons signalled %d (ended %d, survived %d) plus %d process(es)/group(s) they left behind; orphaned Claude Code groups signalled %d (survived %d); abandoned daemons retired %d; dead run dirs removed %d; candidates left undecided %d",
-		s.strandedSignalled, s.strandedEnded, s.strandedSurvived, s.strandedLeftover,
+	return fmt.Sprintf("stranded daemons signalled 0 (ended 0, survived 0) plus 0 process(es)/group(s) they left behind; orphaned Claude Code groups signalled %d (survived %d); abandoned daemons retired %d; dead run dirs removed %d; candidates left undecided %d",
 		s.orphanSignalled, s.orphanSurvived, s.daemonsRetired, s.runDirsRemoved, s.undecided)
 }
 
@@ -585,20 +577,13 @@ type hostCleaner struct {
 	selfStart string // this daemon's own /proc start-ticks
 }
 
-// hcSignalPid signals a single process (not its group). A seam so tests never signal a real
-// process; the group signal reuses killGroup from the reap.
-var hcSignalPid = func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }
-
-// hcSignalTracked signals a leftover process: a group leader
-// (pid == pgid) has its whole group signalled (kill(-pid)); a non-leader gets a single-pid
-// signal. A helper spawned without its own group would be missed by a blind kill(-pid), which
-// returns ESRCH for a pgid that does not exist.
-func hcSignalTracked(t tracked, sig syscall.Signal) error {
-	if t.pid == t.pgid {
-		return killGroup(t.pid, sig)
-	}
-	return hcSignalPid(t.pid, sig)
-}
+// hcHoldPid takes hold of a single process (not its group) before the last identity check
+// of retireAbandoned, its one caller. It returns send, which signals that process, and
+// release, which drops the hold. A seam so tests never signal a real process. The group
+// signal reuses killGroup from the reap. The real hold is OS-specific (hcHoldDaemon). On
+// linux it is a pid file descriptor: pidfd_open here, pidfd_send_signal in send. On darwin
+// there is no hold, and send is kill.
+var hcHoldPid = hcHoldDaemon
 
 // newHostCleaner builds a cleaner for this daemon's own socket and executable, or returns an
 // error when the socket is not run-dir shaped or the executable is not a deployed daemon.
@@ -621,10 +606,15 @@ func newHostCleaner(socket string) (*hostCleaner, error) {
 }
 
 // endGroupsTwoPhase signals a set of process groups SIGTERM, waits the grace, SIGKILLs the
-// survivors, waits the settle, and reports the ones that outlived SIGKILL. label names the
-// entity in the logs ("orphaned process group", "process left behind by a stranded daemon").
+// survivors, waits the settle, and reports the ones that outlived SIGKILL. Each entry is a
+// group leader (pid == pgid), and every signal goes to the group (kill(-pid)). label names
+// the entity in the logs ("orphaned process group").
 // termLog, when not empty, is a format with one %d (the pid) logged before each SIGTERM.
 // It returns the count signalled and the count that survived SIGKILL.
+//
+// The line before the SIGKILL is the reference's, measured on a Linux VM against f6010b97
+// and 89cb6289 (row HC21a). A group that waitGone ends early, because its leader is gone,
+// gets no line. The reference printed none there either (row HC21, the kid variant).
 func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, survived int) {
 	var live []waitEntry
 	for _, g := range groups {
@@ -637,7 +627,7 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 		if termLog != "" {
 			logInfof(termLog, g.pid)
 		}
-		err := hcSignalTracked(g, syscall.SIGTERM)
+		err := killGroup(g.pid, syscall.SIGTERM)
 		if err != nil {
 			if hcIsNoSuchProcess(err) {
 				continue // already gone
@@ -658,7 +648,8 @@ func endGroupsTwoPhase(groups []tracked, label, termLog string) (signalled, surv
 		if !g.same() {
 			continue // exited or was replaced during the grace: never SIGKILL a reused pid
 		}
-		_ = hcSignalTracked(g.tracked, syscall.SIGKILL)
+		logInfof("[hostclean] group %d outlived SIGTERM for %s: SIGKILL", g.pid, hcTermGrace)
+		_ = killGroup(g.pid, syscall.SIGKILL)
 	}
 	for _, g := range waitGone(survivors, hcClock().Add(hcKillSettle)) {
 		survived++
@@ -675,67 +666,16 @@ func (c *hostCleaner) endGroups(groups []tracked, sum *hcSummary) {
 	sum.orphanSurvived += surv
 }
 
-// daemonTarget is a stranded daemon judgeDaemon marked for reaping, plus the leftover child
-// process groups the endDaemons phase-B pass should clean up once the daemon is dead.
-type daemonTarget struct {
-	tracked
-	socket   string // the socket its argv names
-	runDir   string
-	children []tracked
-}
-
-// endDaemons SIGKILLs each stranded daemon (single pid, no grace — it is already stranded),
-// waits for them to exit, then SIGTERM/SIGKILLs the process groups they left behind (Pass
-// step 7). A daemon that outlives SIGKILL keeps its children, which are left until it exits.
-func (c *hostCleaner) endDaemons(targets []daemonTarget, sum *hcSummary) {
-	if len(targets) == 0 {
-		return
-	}
-	var live []waitEntry
-	signaled := make(map[int]bool, len(targets))
-	for _, t := range targets {
-		// Re-validate identity immediately before signalling, the way endGroupsTwoPhase and
-		// retireAbandoned do. The judging loop can take seconds, and a target that exits in that span
-		// can have its pid taken by an unrelated process.
-		if !t.same() {
-			continue
-		}
-		sum.strandedSignalled++
-		logInfof("[hostclean] ending stranded daemon pid %d: it was started for %q, which no longer leads to it, and it holds no run-dir lock: SIGKILL", t.pid, t.socket)
-		err := hcSignalPid(t.pid, syscall.SIGKILL)
-		if err != nil && errors.Is(err, syscall.EPERM) {
-			logInfof("[hostclean] stranded daemon pid %d belongs to another owner; not signalling it", t.pid)
-			continue
-		}
-		live = append(live, waitEntry{tracked: t.tracked})
-		signaled[t.pid] = true
-	}
-	survivors := waitGone(live, hcClock().Add(hcDaemonWait))
-	stuck := make(map[int]bool, len(survivors))
-	for _, d := range survivors {
-		stuck[d.pid] = true
-		sum.strandedSurvived++
-		logInfof("[hostclean] WARNING stranded daemon pid %d outlived SIGKILL and is wedged in the kernel; its children stay put until it finally exits", d.pid)
-	}
-	sum.strandedEnded += len(live) - len(survivors)
-	// Phase B: end the child groups of daemons that were signaled and actually died. A child
-	// of a daemon that outlived SIGKILL (still its parent) is left alone.
-	var reapable []tracked
-	for _, t := range targets {
-		if signaled[t.pid] && !stuck[t.pid] {
-			reapable = append(reapable, t.children...)
-		}
-	}
-	sig, _ := endGroupsTwoPhase(reapable, "process left behind by a stranded daemon", "")
-	sum.strandedLeftover += sig
-}
-
 // hcDaemonChildMarker is the environment entry a daemon-spawned process carries.
 const hcDaemonChildMarker = "CLAUDE_SSH_DAEMON_CHILD=1"
 
 // verifyListener returns "" when the process answering a socket is verifiably one of our
 // daemons serving that socket, or a short reason otherwise. It is the strict gate before the
-// cleaner treats a live listener as (or evicts it as) our daemon.
+// cleaner retires a live listener as our daemon.
+//
+// Two reasons are the reference's, measured on a Linux VM against f6010b97 and 89cb6289.
+// They are "not our daemon binary" (row HC04) and "not serving that socket" (row ST06).
+// The other four keep claustrum's own wording. Their reference texts are not measured.
 func (c *hostCleaner) verifyListener(pid int, socket string) string {
 	t, res := inspect(pid, true)
 	if res != hcInspectOK {
@@ -748,109 +688,15 @@ func (c *hostCleaner) verifyListener(pid int, socket string) string {
 		return "the listener runs in another namespace"
 	}
 	if t.exe == "" || !c.roots.isDaemonBinary(t.exe) {
-		return "its binary is not our deployed daemon"
+		return "the listener could not be verified as a daemon of ours (not our daemon binary)"
 	}
 	if s := serveArgv(t.argv, c.roots.daemonBin); s == "" || !c.roots.sameSocketPath(s, socket) {
-		return "it serves a different socket"
+		return "the listener could not be verified as a daemon of ours (not serving that socket)"
 	}
 	if !hcHasEnv(t.env, hcDaemonChildMarker) {
 		return "it lacks the daemon-child marker"
 	}
 	return ""
-}
-
-// daemonVerdict is judgeDaemon's decision.
-type daemonVerdict int
-
-const (
-	dvSkip  daemonVerdict = iota // silent: not a candidate
-	dvSpare                      // logged with a reason
-	dvReap                       // end it
-)
-
-// judgeDaemon decides one of our daemon-binary processes: skip (not a candidate), spare
-// (with a reason), or reap. It reaps ONLY a marked, old-enough --serve daemon on a run-dir
-// socket that has no daemon.lock open, whose socket no longer leads to it, and that is not
-// still serving a client. Anything ambiguous is spared, and anything fresh, not ours, or
-// still healthy is skipped. d is already inspected (with its environment).
-//
-// A daemon that holds a file named daemon.lock open is skipped BEFORE its socket is dialled.
-// The Linux measurement for issue 429 showed the reference does not dial such a daemon while it
-// judges stranded daemons. That
-// matters because a dial writes a line to the daemon's log, and the tidy reads that log's
-// mtime as activity. The order of the other gates is claustrum's own.
-func (c *hostCleaner) judgeDaemon(d hcTracked) (daemonVerdict, string, *daemonTarget) {
-	if d.pid == c.selfPid {
-		return dvSkip, "", nil // never ourselves
-	}
-	if d.stopped {
-		return dvSpare, "could not read it (it is stopped)", nil
-	}
-	if !d.sameNS || !d.sameUID {
-		return dvSkip, "", nil // not ours: another namespace or another user
-	}
-	if !d.haveAge {
-		return dvSpare, "its age could not be determined", nil
-	}
-	age := hcClock().Sub(d.startWall)
-	if age < hcMinAge {
-		return dvSkip, "", nil // too young to touch
-	}
-	if d.exe == "" || !c.roots.isDaemonBinary(d.exe) {
-		return dvSkip, "", nil
-	}
-	if d.argv == nil {
-		return dvSpare, "its argv could not be read", nil
-	}
-	socket := serveArgv(d.argv, c.roots.daemonBin)
-	if socket == "" || !c.roots.isRunDirSocket(socket) {
-		return dvSkip, "", nil // not a --serve daemon on one of our run-dir sockets
-	}
-	if d.env == nil {
-		return dvSpare, "its environ could not be read", nil
-	}
-	if !hcHasEnv(d.env, hcDaemonChildMarker) {
-		if age > hcMarkerAge {
-			return dvSpare, "it runs our --serve daemon without the daemon-child marker (started by hand, or predating the marker)", nil
-		}
-		return dvSkip, "", nil // unmarked but not yet old enough to flag
-	}
-	open, canRead := hcHasOpenNamed(d.pid, runDirLockName)
-	if !canRead {
-		return dvSpare, "its open descriptors were unreadable", nil
-	}
-	if open {
-		return dvSkip, "", nil // it holds its run-dir lock: never dialled or reaped by this judge
-	}
-	switch state, peer, uid := probeSocket(socket); state {
-	case hcSockUnknown:
-		return dvSpare, fmt.Sprintf("the probe of its socket %s was inconclusive", socket), nil
-	case hcSockLive:
-		switch {
-		case peer == d.pid:
-			return dvSkip, "", nil // its socket still leads to itself: healthy
-		case uid != uint32(hcGetuid()):
-			return dvSpare, "another user's process answers its socket", nil
-		case peer == c.selfPid:
-			if !c.roots.sameSocketPath(socket, c.ownSocket) {
-				return dvSpare, "its socket leads to this daemon, which serves a different path", nil
-			}
-		default:
-			if detail := c.verifyListener(peer, socket); detail != "" {
-				return dvSpare, fmt.Sprintf("pid %d answers its socket but did not verify as one of our daemons (%s)", peer, detail), nil
-			}
-		}
-		// Another verified daemon of ours (or this one) serves that path now. The candidate
-		// no longer owns its socket and holds no lock, so it is stranded.
-	}
-	busy, ok := hcBusyCheck(d.pid)
-	if !ok {
-		return dvSpare, "its connections could not be read", nil
-	}
-	if busy {
-		return dvSpare, "it still has a live connection; skipped until that closes", nil
-	}
-	return dvReap, "", &daemonTarget{tracked: d.asTracked(), socket: socket, runDir: filepath.Dir(socket)}
 }
 
 // hcArgvHasStreamJSON reports whether argv marks a Claude Code stream process.
@@ -952,11 +798,20 @@ func (c *hostCleaner) retireAbandoned(e runDirEntry, pid int, uid uint32) (bool,
 	// holds it for up to hcBusyWindow. A daemon that exits in that span can have its pid
 	// taken by an unrelated process, and the SIGTERM below would then reach whatever now
 	// holds the number.
+	//
+	// The order is: take the hold, check the identity, signal through the hold. On linux
+	// the hold is a pid file descriptor, so a pid that changes hands after the check gets
+	// no signal. On a Linux VM 89cb6289 made the same calls in that order in 26 of 26
+	// retires (strace). On darwin there is no such hold, and the check is the only guard.
+	send, release := hcHoldPid(pid)
 	if !t.asTracked().same() {
+		release()
 		return false, "it is no longer the process that was inspected"
 	}
 	logInfof("[hostclean] retiring abandoned daemon pid %d: its run dir %q has seen no connection for %s: SIGTERM", pid, e.dirPath, hcDays(e.idle))
-	if err := hcSignalPid(pid, syscall.SIGTERM); err != nil && !hcIsNoSuchProcess(err) {
+	err := send(syscall.SIGTERM)
+	release()
+	if err != nil && !hcIsNoSuchProcess(err) {
 		return false, fmt.Sprintf("the SIGTERM was refused (%v)", err)
 	}
 	if len(waitGone([]waitEntry{{tracked: t.asTracked()}}, hcClock().Add(hcTermGrace))) == 0 {
@@ -1048,7 +903,8 @@ func (c *hostCleaner) runDirs() ([]runDirEntry, func()) {
 				continue
 			}
 			if len(out) >= hcMaxRunDirs {
-				logInfof("[hostclean] run-dir count over %d: capping this sweep at the first %d", hcMaxRunDirs, hcMaxRunDirs)
+				// The reference's line, measured on a Linux VM (row HC06b).
+				logInfof("[hostclean] more than %d run dirs under %s; only the first %d are examined", hcMaxRunDirs, runRoot, hcMaxRunDirs)
 				return out, closeAll
 			}
 			idle, ok := hcDirIdle(root, name, now)
@@ -1075,7 +931,10 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 			continue // too fresh and not an interrupted removal
 		}
 		if tries >= hcMaxRetire {
-			logInfof("[hostclean] run dir %q not examined this sweep: the retire budget of %d attempts is spent", e.dirPath, tries)
+			// The reference's line, measured on a Linux VM (row HC14c). claustrum counts
+			// attempts, refused ones included. The reference count after a refused attempt
+			// is not measured.
+			logInfof("[hostclean] run dir %q unused for %s: left for a later pass (%d retirements this pass already)", e.dirPath, hcDays(e.idle), tries)
 			continue
 		}
 		idle, ok := hcDirIdle(e.root, e.name, hcClock())
@@ -1116,7 +975,8 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 		}
 		switch ls, _, _ := lockProbe(e.dirPath); ls {
 		case hcLockHeld:
-			logInfof("[hostclean] run dir %q kept: a live process holds its run-dir lock", e.dirPath)
+			// The reference's line, measured on a Linux VM (row HC03).
+			logInfof("[hostclean] run dir %q unused for %s: kept, a live process holds its %s", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnknown:
 			logInfof("[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined", e.dirPath)
@@ -1180,10 +1040,22 @@ func (c *hostCleaner) undoRename(e runDirEntry, target, reason string) {
 }
 
 // Pass runs one host-wide sweep and returns what it did. It refuses to act unless its own
-// socket still leads to itself. It lists the run dirs right after the process snapshot,
-// before any daemon is judged or dialled, ends stranded daemons and their leftover groups,
-// ends orphaned Claude Code groups, and (unless the host has too many processes) tidies the
-// run dirs it listed.
+// socket still leads to itself. It lists the run dirs right after the process snapshot. It
+// then ends orphaned Claude Code groups. Unless the host has too many processes, it tidies
+// the run dirs it listed.
+//
+// The pass ends no stranded daemon, and it signals no child of one. A stranded daemon is a
+// daemon whose socket path no longer leads to it. On a Linux VM, f6010b97 and 89cb6289
+// sent no signal to such a daemon or to its children. The rows are ST01, ST02, ST04 to
+// ST10, HC16 to HC19 and HC23 to HC26. The daemon ends by itself after its own timer
+// (exitWhenOrphaned). On a macOS VM the two references sent none either (rows ST01, ST09,
+// ST10, HC16, HC18).
+//
+// The two lines about a limit are the reference's, measured on the Linux VM. One is for
+// more than hcMaxSnapshot processes (rows HC24 and HC25). The other is for more than
+// hcMaxGroups orphan groups (rows HC22 and HC26). Row HC24f has 4097 processes. In one
+// earlier run of it 89cb6289 printed no limit line. In five later runs both sides printed
+// the line, 5 of 5 each.
 func (c *hostCleaner) Pass() hcSummary {
 	var sum hcSummary
 	logInfof("[hostclean] pass starting (the next connection logged is this pass probing its own socket)")
@@ -1200,44 +1072,19 @@ func (c *hostCleaner) Pass() hcSummary {
 		logInfof("[hostclean] could not enumerate this user's process list; skipping this sweep")
 		return sum
 	}
+	if tooMany {
+		logInfof("[hostclean] more than %d processes for this user: this pass only acts on per-process facts (no run-dir retirement)", hcMaxSnapshot)
+	}
 	procs := make([]hcTracked, 0, len(pids))
 	for _, pid := range pids {
 		if t, res := inspect(pid, true); res == hcInspectOK {
 			procs = append(procs, t)
 		}
 	}
-	// The run dirs and their idle ages are read here, before the daemon phase dials anything.
+	// The run dirs and their idle ages are read here, before the tidy dials anything.
 	// A dial writes a line to the dialled daemon's log, which would make its dir read fresh.
 	entries, closeAll := c.runDirs()
 	defer closeAll()
-
-	// Stranded daemons.
-	selfParent := hcGetppid()
-	var targets []daemonTarget
-	for _, t := range procs {
-		if t.pid <= 1 || t.pid == c.selfPid || t.pid == selfParent || t.exe == "" || !c.roots.isDaemonBinary(t.exe) {
-			continue
-		}
-		v, reason, target := c.judgeDaemon(t)
-		if v == dvSpare {
-			logInfof("[hostclean] spared daemon pid %d this sweep: %s", t.pid, reason)
-			sum.undecided++
-			continue
-		}
-		if v != dvReap {
-			continue
-		}
-		if len(targets) >= hcMaxDaemons {
-			break // per-pass cap on stranded daemons ended
-		}
-		for _, ch := range procs {
-			if ch.ppid == t.pid && ch.pid != t.pid {
-				target.children = append(target.children, ch.asTracked())
-			}
-		}
-		targets = append(targets, *target)
-	}
-	c.endDaemons(targets, &sum)
 
 	// Orphaned Claude Code groups: a group leader re-parented to pid 1 that runs one of our
 	// CLI binaries.
@@ -1255,6 +1102,7 @@ func (c *hostCleaner) Pass() hcSummary {
 			continue
 		}
 		if len(orphanGroups) >= hcMaxGroups {
+			logInfof("[hostclean] more orphaned Claude Code groups than one pass ends (%d); leaving the rest for the next pass", hcMaxGroups)
 			break // per-pass cap on orphan groups ended
 		}
 		orphanGroups = append(orphanGroups, t.asTracked())
@@ -1296,15 +1144,24 @@ func (c *hostCleaner) Start() {
 }
 
 // startHostCleaner builds the cleaner for this daemon's socket and starts its background
-// sweep. It is a no-op when the socket is not a run-dir socket or the executable is not a
-// deployed daemon (the cleaner has no roots to act within). Called from -serve startup.
+// sweep. The cleaner stays off when the socket as given is not an absolute
+// <root>/run/<id>/rpc.sock. It also stays off when the executable is not
+// <root>/srv/<id>/<name> under the root of that socket. One line then says why (see
+// deriveRoots for the measured rows).
+// Called from -serve startup, right after the listening line.
+//
+// The "host cleaning off" line and its two reasons are the reference's, measured on a Linux
+// VM against f6010b97 and 89cb6289. The reference printed it right after its listening
+// line. On Windows the reference printed no such line (rows WN03 and WN06), and
+// hostclean_other.go prints none.
 func startHostCleaner(socket string) {
 	if socket == "" {
 		return
 	}
 	c, err := newHostCleaner(socket)
 	if err != nil {
-		return // not a deployed run-dir daemon; nothing to clean
+		logInfof("[daemon] host cleaning off: %v", err) // not a deployed run-dir daemon
+		return
 	}
 	c.Start()
 }

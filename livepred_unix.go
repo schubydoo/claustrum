@@ -34,3 +34,7 @@ func livePredecessorIdent(socket string) os.FileInfo {
 	}
 	return fi
 }
+
+// staleSocketIdent is nil off Windows: the wait for the daemonized child there is not
+// changed by a stale socket file (see waitForDaemonAccept).
+func staleSocketIdent(socket string) os.FileInfo { return nil }
