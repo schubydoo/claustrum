@@ -291,8 +291,8 @@ func TestInstallLauncherRunStopped(t *testing.T) {
 
 // TestInstallFreshExtractThroughLauncher pins I10: a fresh install extracts, then
 // runs the CLI once through the launcher, and reports cliWasPresent false with the
-// usable fields. The launcher gets the staged file, not the final path (GAP-3, an
-// older gap of claustrum). The run right after the extract has its own bound: a
+// usable fields. The launcher gets the final path, as on the reference (rows L06,
+// L08 to L10, Linux VM). The run right after the extract has its own bound: a
 // launcher that outlasts the cache-hit bound still ends as usable (row H4 measured
 // that with -cli-url). A run stopped at the first-run bound reports the
 // unresponsive cliError and names 123s in launcherReason. The CLI is installed all
@@ -314,8 +314,8 @@ func TestInstallFreshExtractThroughLauncher(t *testing.T) {
 	if got := f.install(t, blob); got != want {
 		t.Errorf("I10: facts tail\n got %q\nwant %q", got, want)
 	}
-	if log := readLog(t, f.wrapLog); !strings.HasPrefix(log, "LAUNCH "+f.cliDir+string(filepath.Separator)+".fetch-") || !strings.HasSuffix(log, " --version\n") || strings.Count(log, "LAUNCH") != 1 {
-		t.Errorf("I10: launcher log %q, want one run on the staged file", log)
+	if log, want := readLog(t, f.wrapLog), "LAUNCH "+f.cli+" --version\n"; log != want {
+		t.Errorf("I10: launcher log %q, want one run on the final path %q", log, want)
 	}
 	if !isRegularFile(f.cli) {
 		t.Error("I10: the CLI was not installed")

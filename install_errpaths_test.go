@@ -80,10 +80,10 @@ func TestEnsureCLIMkdirDenied(t *testing.T) {
 func TestEnsureCLIClearsOccupiedPath(t *testing.T) {
 	dir := t.TempDir()
 	// A DOTTED leaf, matching the real cliPath (a version string) and the sibling
-	// TestEnsureCLIFromZst. Not cosmetic: isRunnable shells out via os/exec, whose
+	// TestEnsureCLIFromZst. Not cosmetic: the run shells out via os/exec, whose
 	// Windows lookup treats a name with no dot as needing a PATHEXT suffix, so it
 	// probes "v1.EXE"/"v1.COM" and never the file itself. An extension-less leaf
-	// therefore fails isRunnable on Windows for a reason that has nothing to do
+	// therefore fails the run on Windows for a reason that has nothing to do
 	// with what this test is asserting.
 	cliPath := filepath.Join(dir, "1.0.0")
 	if err := os.MkdirAll(filepath.Join(cliPath, "occupied"), 0o700); err != nil {
@@ -266,7 +266,10 @@ func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 				}
 				return p
 			}
-			cliPath := filepath.Join(cliDir, v)
+			// On Windows the file is <v>.exe, and "1.0.zst.exe" is no swept name.
+			// No row measures that case. The test follows isSweptName.
+			cliPath := installCLIPath(cliDir, v)
+			swept := isSweptName(filepath.Base(cliPath))
 
 			f := captureInstallFacts(t, installOpts{cliDir: cliDir, cliVersion: v, cliZst: blob()})
 			if f.CliError != "" {
@@ -290,8 +293,9 @@ func TestEnsureCLIInstallsSweptVersionNames(t *testing.T) {
 			if f.CliError != "" {
 				t.Fatalf("second install CliError = %q, want success", f.CliError)
 			}
-			if _, err := os.Lstat(cliPath); !os.IsNotExist(err) {
-				t.Errorf("%s, 601 s old, survived a later install's sweep (lstat err %v)", v, err)
+			if _, err := os.Lstat(cliPath); os.IsNotExist(err) != swept {
+				t.Errorf("%s, 601 s old: gone=%v after a later install's sweep, want %v (lstat err %v)",
+					filepath.Base(cliPath), os.IsNotExist(err), swept, err)
 			}
 		})
 	}
@@ -512,5 +516,90 @@ func TestFetchToFileFailsWhenNoTempDirUsable(t *testing.T) {
 	t.Setenv("TEMP", tmp)
 	if _, _, err := fetchToFile(srv.URL, missing); err == nil {
 		t.Fatal("fetchToFile with no usable temp dir succeeded, want an error")
+	}
+}
+
+// The staging file can vanish mid-install: it lives in the ".fetch-*" namespace
+// that every concurrent install's sweep claims, for the decompress and chmod
+// window (see stageAndInstall).
+//
+// A CLI that is installed at cliPath must survive that. Only a folder is cleared
+// before the rename. A file is replaced by the rename itself, so a rename whose
+// source is gone leaves it alone.
+//
+// The chmod seam removes the staging file, as a concurrent sweep does, with no
+// sleeps. It removes it on the retry too, so the install fails.
+func TestEnsureCLIKeepsDestinationWhenStagingVanishes(t *testing.T) {
+	old := chmodStaged
+	chmodStaged = func(p string, _ os.FileMode) error { return os.Remove(p) }
+	t.Cleanup(func() { chmodStaged = old })
+
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cliPath := filepath.Join(cliDir, "1.0.0")
+	const installed = "the previously installed CLI"
+	if err := os.WriteFile(cliPath, []byte(installed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ensureCLI(installOpts{cliDir: cliDir, cliVersion: "1.0.0", cliZst: zstPath}, cliPath)
+	if err == nil || !strings.Contains(err.Error(), "staging file vanished") {
+		t.Fatalf("ensureCLI = %v, want the staging-vanished error", err)
+	}
+	if b, readErr := os.ReadFile(cliPath); readErr != nil || string(b) != installed {
+		t.Errorf("the destination was destroyed for an install that could not finish: err %v, content %q", readErr, b)
+	}
+}
+
+// The concurrent-install case Greptile reported: another install's sweep
+// reclaims our staging file, and the install must still SUCCEED rather than
+// report "staging file vanished".
+//
+// A name-only sweep guard cannot fix this. In the staggered ordering the other
+// install staged BEFORE this one began, so its file is indistinguishable from
+// litter by name — which is why the fix is a bounded retry rather than a smarter
+// sweep, and why the sweep itself stays unconditional.
+//
+// Deterministic, no sleeps: the chmod seam removes the staging file on its FIRST
+// call only. So the rename finds its source gone once, and the retry's copy
+// survives.
+func TestEnsureCLIRetriesWhenStagingIsSweptOnce(t *testing.T) {
+	old := chmodStaged
+	var calls int
+	chmodStaged = func(p string, m os.FileMode) error {
+		calls++
+		if calls == 1 {
+			return os.Remove(p)
+		}
+		return old(p, m)
+	}
+	t.Cleanup(func() { chmodStaged = old })
+
+	root := t.TempDir()
+	cliDir := filepath.Join(root, "clidir")
+	if err := os.MkdirAll(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	zstPath := filepath.Join(root, "cli.zst")
+	if err := os.WriteFile(zstPath, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cliPath := filepath.Join(cliDir, "1.0.0")
+	if err := ensureCLI(installOpts{cliDir: cliDir, cliVersion: "1.0.0", cliZst: zstPath}, cliPath); err != nil {
+		t.Fatalf("ensureCLI = %v, want the retry to recover from a swept staging file", err)
+	}
+	if calls != 2 {
+		t.Fatalf("the staging step ran %d times, want 2 (one retry)", calls)
+	}
+	if !isRegularFile(cliPath) || !isRunnable(cliPath) {
+		t.Error("the CLI was not installed after the retry")
 	}
 }

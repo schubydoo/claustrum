@@ -304,111 +304,40 @@ func TestPrecedenceMaxCLIBytes(t *testing.T) {
 		t.Errorf("empty config should leave the cap off, got %d", got)
 	}
 	// A negative flag normalises to disabled rather than reaching zstdDecompress /
-	// fetchToFile as a negative — the asymmetry effectiveNumeric centralises for
-	// all six numeric knobs. (The sibling probe/download-timeout tests cover their
-	// own negative arms; this pins maxCLIBytes's, which the precedence cases above
-	// did not exercise.)
+	// fetchToFile as a negative. effectiveNumeric centralises that for all the
+	// numeric knobs. The sibling download-timeout test covers its own negative
+	// arm. This pins the arm of maxCLIBytes, which the precedence cases above
+	// did not exercise.
 	if got := (config{}).effectiveMaxCLIBytes(-1, true); got != 0 {
 		t.Errorf("negative CLI should normalise to 0, got %d", got)
 	}
 }
 
-// The runnability probe's deadline is the third opt-in numeric key and the first
-// that is a duration, so a bare number must be REJECTED rather than silently
-// meaning nanoseconds.
-func TestParseConfig_CLIProbeTimeout(t *testing.T) {
-	cases := []struct {
-		name, body string
-		want       *time.Duration
-	}{
-		{"seconds", "cli-probe-timeout = 30s", durp(30 * time.Second)},
-		{"minutes", "cli-probe-timeout = 2m", durp(2 * time.Minute)},
-		{"negative rejected", "cli-probe-timeout = -1s", nil},
-		{"bare number rejected", "cli-probe-timeout = 15", nil},
-		// Go's parser special-cases a bare zero, so "0" and "+0" DO parse. Pinned
-		// because the docs say "a bare number is rejected" and this is the
-		// exception to it — harmless (0 means disabled either way) but real.
-		{"bare zero is accepted by Go's parser", "cli-probe-timeout = 0", durp(0)},
-		{"bare +0 likewise", "cli-probe-timeout = +0", durp(0)},
-		// "-0" and "-0s" are negative in spelling but parse to zero, so they pass
-		// the d >= 0 guard and are ACCEPTED rather than dropped. Pinned because
-		// "a negative is rejected" is otherwise read as covering them.
-		{"negative zero is accepted, not dropped", "cli-probe-timeout = -0", durp(0)},
-		{"negative zero with a unit likewise", "cli-probe-timeout = -0s", durp(0)},
-		{"any zero-valued duration, any sign", "cli-probe-timeout = -0m", durp(0)},
-		// A genuinely negative value that truncates to zero. Not a spelling of
-		// zero — it is why "a negative is rejected" is false at the edge.
-		{"negative truncating to zero is accepted", "cli-probe-timeout = -0.4ns", durp(0)},
-		// The spelling an operator most often writes meaning "disabled".
-		{"plain 0s", "cli-probe-timeout = 0s", durp(0)},
-		{"non-duration rejected", "cli-probe-timeout = soon", nil},
-		{"empty rejected", "cli-probe-timeout =", nil},
-		{"case-insensitive key", "CLI-PROBE-TIMEOUT = 45s", durp(45 * time.Second)},
+// The cli-probe-timeout key is deprecated: the reference bounds the direct
+// --version run of -install itself (cliRunBound, cliFirstRunBound), so D11 is
+// retired. The key is recognised, so main can warn, and it sets nothing, whatever
+// its value.
+func TestParseConfig_CLIProbeTimeoutKeyIsIgnored(t *testing.T) {
+	for _, body := range []string{
+		"cli-probe-timeout = 30s", "cli-probe-timeout = 0", "cli-probe-timeout = soon",
+		"cli-probe-timeout =", "CLI-PROBE-TIMEOUT = 45s",
+	} {
+		got := parse(t, body)
+		if !got.cliProbeTimeoutSeen {
+			t.Errorf("%q: the deprecated key was not recognised, so no warning can fire", body)
+		}
+		if got.cliDownloadTimeout != nil || got.gitTimeout != nil || got.maxCLIBytes != nil || got.maxExtractBytes != nil {
+			t.Errorf("%q: the retired key set a value: download=%v git=%v cli=%v extract=%v", body,
+				got.cliDownloadTimeout, got.gitTimeout, got.maxCLIBytes, got.maxExtractBytes)
+		}
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := parse(t, tc.body).cliProbeTimeout
-			switch {
-			case tc.want == nil && got != nil:
-				t.Fatalf("cliProbeTimeout = %s, want unset (value rejected)", *got)
-			case tc.want != nil && got == nil:
-				t.Fatalf("cliProbeTimeout unset, want %s", *tc.want)
-			case tc.want != nil && *got != *tc.want:
-				t.Fatalf("cliProbeTimeout = %s, want %s", *got, *tc.want)
-			}
-		})
-	}
-	// Same non-aliasing assertion the two byte-count keys carry: this key must not
-	// reach either of them, and neither of them must reach it.
-	// "0" on purpose, not "30s": a duration-only spelling fails ParseInt, so it
-	// could never observe a leak into the int64 keys. 0 parses both ways.
-	if got := parse(t, "cli-probe-timeout = 0"); got.maxCLIBytes != nil || got.maxExtractBytes != nil {
-		t.Errorf("cli-probe-timeout leaked into a size cap: cli=%v extract=%v", got.maxCLIBytes, got.maxExtractBytes)
-	}
-	if got := parse(t, "max-cli-bytes = 4096"); got.cliProbeTimeout != nil {
-		t.Errorf("max-cli-bytes also set cliProbeTimeout = %s, want unset", *got.cliProbeTimeout)
-	}
-	// ...and against the OTHER duration key, which the int64 assertions above
-	// cannot cover. Unioning the two duration cases into one body that sets both
-	// fields is not a dead no-op — it is cross-contamination: opting into D11
-	// would silently switch D12's download bound on at the same value. That mutant
-	// passes gofmt, vet, golangci-lint and the whole suite without this line.
-	if got := parse(t, "cli-probe-timeout = 30s"); got.cliDownloadTimeout != nil {
-		t.Errorf("cli-probe-timeout also set cliDownloadTimeout = %s, want unset", *got.cliDownloadTimeout)
+	if parse(t, "cli-download-timeout = 30s").cliProbeTimeoutSeen {
+		t.Error("cli-download-timeout was read as the deprecated cli-probe-timeout key")
 	}
 }
 
-// -cli-probe-timeout follows the same CLI-over-config-over-default precedence as
-// the two size caps, with the same 0-is-a-real-value wrinkle.
-func TestPrecedenceCLIProbeTimeout(t *testing.T) {
-	withFile := config{cliProbeTimeout: durp(20 * time.Second)}
-	if got := withFile.effectiveCLIProbeTimeout(45*time.Second, true); got != 45*time.Second {
-		t.Errorf("explicit CLI should win, got %s", got)
-	}
-	if got := withFile.effectiveCLIProbeTimeout(0, false); got != 20*time.Second {
-		t.Errorf("config value should apply when CLI unset, got %s", got)
-	}
-	if got := withFile.effectiveCLIProbeTimeout(0, true); got != 0 {
-		t.Errorf("explicit CLI 0 should disable the deadline, got %s", got)
-	}
-	if got := (config{cliProbeTimeout: durp(0)}).effectiveCLIProbeTimeout(0, false); got != 0 {
-		t.Errorf("config 0 should apply, got %s", got)
-	}
-	if got := (config{}).effectiveCLIProbeTimeout(0, false); got != 0 {
-		t.Errorf("empty config should leave the deadline off, got %s", got)
-	}
-	// A negative flag normalises to disabled rather than reaching isRunnable as a
-	// negative, where context.WithTimeout would expire the probe immediately.
-	if got := (config{}).effectiveCLIProbeTimeout(-1*time.Second, true); got != 0 {
-		t.Errorf("negative CLI should normalise to 0, got %s", got)
-	}
-}
-
-// The download bound is the second duration-valued key (cli-probe-timeout, D11,
-// came first), so a bare number must be REJECTED rather than silently meaning
-// nanoseconds — with the zero exception. Kept separate from the probe-timeout test
-// on purpose: these two are the pair a careless merge would collapse into one
-// case, and two independent tests are what would catch that.
+// The download bound is a duration-valued key, so a bare number must be REJECTED
+// rather than silently meaning nanoseconds. Zero is the exception.
 func TestParseConfig_CLIDownloadTimeout(t *testing.T) {
 	cases := []struct {
 		name, body string
@@ -452,10 +381,10 @@ func TestParseConfig_CLIDownloadTimeout(t *testing.T) {
 	if got := parse(t, "max-cli-bytes = 4096"); got.cliDownloadTimeout != nil {
 		t.Errorf("max-cli-bytes also set cliDownloadTimeout = %s, want unset", *got.cliDownloadTimeout)
 	}
-	// The mirror of the cross-assertion in TestParseConfig_CLIProbeTimeout; see
-	// the note there for why the int64 pair cannot stand in for it.
-	if got := parse(t, "cli-download-timeout = 10m"); got.cliProbeTimeout != nil {
-		t.Errorf("cli-download-timeout also set cliProbeTimeout = %s, want unset", *got.cliProbeTimeout)
+	// Against the OTHER duration key, which the int64 assertions above cannot
+	// cover: a fused switch case sets both, and it passes gofmt, vet and lint.
+	if got := parse(t, "cli-download-timeout = 10m"); got.gitTimeout != nil {
+		t.Errorf("cli-download-timeout also set gitTimeout = %s, want unset", *got.gitTimeout)
 	}
 }
 
@@ -671,13 +600,8 @@ func TestParseConfig_GitTimeout(t *testing.T) {
 	// plausibly be crossed: a fused switch case passes gofmt, vet, lint and the rest
 	// of this suite while making one key a dead no-op.
 	//
-	if got := parse(t, "git-timeout = 60s"); got.cliProbeTimeout != nil ||
-		got.cliDownloadTimeout != nil {
-		t.Errorf("git-timeout leaked into an -install duration: probe=%v download=%v",
-			got.cliProbeTimeout, got.cliDownloadTimeout)
-	}
-	if got := parse(t, "cli-probe-timeout = 20s"); got.gitTimeout != nil {
-		t.Errorf("cli-probe-timeout also set gitTimeout = %s, want unset", *got.gitTimeout)
+	if got := parse(t, "git-timeout = 60s"); got.cliDownloadTimeout != nil {
+		t.Errorf("git-timeout leaked into the -install duration: download=%v", got.cliDownloadTimeout)
 	}
 }
 
@@ -745,9 +669,9 @@ func TestParseConfig_LibcProbeTimeoutKeyIsIgnored(t *testing.T) {
 	if !got.libcProbeTimeoutSeen {
 		t.Error("the deprecated libc-probe-timeout key was not recognised, so no warning can fire")
 	}
-	if got.cliProbeTimeout != nil || got.cliDownloadTimeout != nil || got.gitTimeout != nil {
-		t.Errorf("the retired libc-probe-timeout key set a duration: probe=%v download=%v git=%v",
-			got.cliProbeTimeout, got.cliDownloadTimeout, got.gitTimeout)
+	if got.cliProbeTimeoutSeen || got.cliDownloadTimeout != nil || got.gitTimeout != nil {
+		t.Errorf("the retired libc-probe-timeout key set a value: probeSeen=%v download=%v git=%v",
+			got.cliProbeTimeoutSeen, got.cliDownloadTimeout, got.gitTimeout)
 	}
 }
 

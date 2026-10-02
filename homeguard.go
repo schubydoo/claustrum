@@ -15,7 +15,9 @@ import (
 // recursive delete: files.extract_tar wipes destDir before unpacking
 // (methods_files.go), git.worktree_remove deletes worktreePath itself
 // (worktreeremove.go; a locked worktree is refused, not deleted), and the rollback
-// of git.worktree_create deletes the worktree it created (worktreeverify.go). The
+// of git.worktree_create deletes the worktree it created (worktreeverify.go).
+// -install is a fourth caller of this guard: it deletes a folder at the CLI path
+// (install.go, stageAndInstall). The RPC
 // paths are `~`-expanded first — bindParams
 // calls expandPaths on EVERY request (rpc.go), and expandPath returns the home
 // directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` reaches
@@ -48,16 +50,16 @@ import (
 // shape the incident actually had — so lexical containment is the right depth.
 //
 // ACKNOWLEDGED LIMITATIONS — this list is meant to be exhaustive, so that a
-// reader can trust it. There are two:
+// reader can trust it. There are three:
 //
 //  1. Symlinks are not resolved. A path that reaches home through a symlink is
 //     accepted. Closing it would mean an EvalSymlinks on every request, whose
-//     failure modes (a non-existent destDir is legal here) cost more than the
-//     residual risk.
+//     failure modes (a non-existent destDir is legal here) cost more.
 //  2. A path is resolved against the daemon's working directory, not the
-//     caller's. That is the correct root — it is the one os.RemoveAll uses — but
-//     it means a client cannot predict the guard's verdict on a relative path
-//     without knowing where the daemon was started.
+//     caller's. That is the root os.RemoveAll uses, but a client cannot predict
+//     the verdict on a relative path without knowing where the daemon started.
+//  3. Home is what os.UserHomeDir gives: HOME, or USERPROFILE on Windows. With
+//     that variable unset or empty the guard refuses nothing.
 func wipesHomeDir(p string) bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {

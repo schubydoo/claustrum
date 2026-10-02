@@ -42,11 +42,11 @@ func zstdOf(t *testing.T, b []byte) []byte {
 }
 
 // fakeCLI returns the bytes of a stand-in CLI that exits with the given code
-// when invoked (`<cli> --version`, the isRunnable probe). On Unix it is a tiny
+// when invoked (`<cli> --version`, the -install run). On Unix it is a tiny
 // sh script. Windows can't exec a shebang script, so there it is a copy of
 // this very test binary, steered into helper mode via CLAUSTRUM_TEST_HELPER
 // (helperproc_test.go) — set with t.Setenv so the probed CLI inherits it.
-// Call it right before the isRunnable/ensureCLI step it backs: a later call
+// Call it right before the ensureCLI step it backs: a later call
 // with a different exit code overrides the mode for the whole test process.
 func fakeCLI(t *testing.T, exitCode int) []byte {
 	t.Helper()
@@ -81,11 +81,8 @@ func fakeCLI(t *testing.T, exitCode int) []byte {
 // not-runnable branch's os.Remove leaks past TestEnsureCLINotRunnable. The old
 // assertions passed under both.
 //
-// ⚠️ Only meaningful for a test that calls ensureCLI DIRECTLY. ensureCLI does
-// not sweep — sweepFetchTemps runs in runInstall, after it returns — so a leak
-// survives to be seen here. Called from a test that goes through runInstall
-// (captureInstallFacts), the sweep erases the leftover first and this goes
-// inert again, which is the defect it was written to fix.
+// The sweep cannot hide a leak from this helper. It removes only entries more
+// than ten minutes old (sweepMinAge), and a leaked staging file is fresh.
 //
 // Prefix-matched rather than counting entries: a caller may legitimately have
 // other files in the cli-dir (installed versions, an in-flight blobTempPrefix
@@ -104,17 +101,16 @@ func assertNoStagingLeftover(t *testing.T, cliPath string) {
 }
 
 // slowCLI returns the bytes of a stand-in CLI that answers `--version` with exit
-// 0 only after `seconds` — the honest-but-slow shape divergence D11 is about.
+// 0 only after `seconds`: the honest-but-slow shape.
 // Same Unix/Windows split as fakeCLI above, and the same "call it right before
 // the step it backs" caveat on Windows.
 // ⚠️ `seconds` is a process-leak budget on the Unix legs, not just a duration.
-// The sh branch makes `sleep` a GRANDCHILD, and exec.CommandContext kills only
-// the direct `sh` child — measured: with `sleep 30` the probe returned
-// `signal: killed` at 100 ms while the sleeper was reparented to PID 1 and still
-// alive a second later. At 1 s it self-exits and nothing leaks, which is the only
-// reason this is safe. Raising it to "make the test more robust" leaks one
-// process per run on macOS and linux and changes nothing on Windows, whose branch
-// is a single process.
+// The sh branch makes `sleep` a GRANDCHILD, and a stop that kills only the
+// direct `sh` child leaves it. Measured with `sleep 30`: a direct kill returned
+// `signal: killed` at 100 ms. The sleeper was reparented to PID 1 and was still
+// alive a second later. At 1 s it self-exits and nothing leaks. A higher value
+// leaks one process per run on macOS and linux under such a stop. It changes
+// nothing on Windows, whose branch is a single process.
 func slowCLI(t *testing.T, seconds int) []byte {
 	t.Helper()
 	if runtime.GOOS != "windows" {
@@ -132,84 +128,23 @@ func slowCLI(t *testing.T, seconds int) []byte {
 	return b
 }
 
-// setCLIProbeTimeout sets the package-level probe deadline for one test and
-// restores it afterwards, so a failure cannot leak a deadline into the rest of
-// the suite (every other isRunnable caller here expects the default: none).
-func setCLIProbeTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	old := cliProbeTimeout
-	cliProbeTimeout = d
-	t.Cleanup(func() { cliProbeTimeout = old })
-}
+// isRunnable reports whether `<path> --version` exits 0. It is the direct run of
+// -install under a bound that no fixture of these tests reaches.
+func isRunnable(path string) bool { return runCLIVersion(path, time.Minute) == cliRunOK }
 
-// D11: the runnability probe's deadline is opt-in and OFF by default, so an
-// honest-but-slow CLI installs — which is what the reference does (measured at
-// 5db5e4a: it installed a CLI answering in 90 s, waiting 91 s for it).
-//
-// The two arms discriminate against different mistakes. The "off" arm fails if
-// disabled is ever implemented as a zero-valued context.WithTimeout instead of
-// no context at all, because a 0 deadline expires before exec. The "on" arm
-// fails if the deadline stops being applied. Neither arm re-measures the 15 s
-// constant this replaced — a test that slow would be its own problem; that
-// number is settled by the differential run recorded in docs/DIVERGENCES.md D11.
-func TestIsRunnable_ProbeTimeoutOptIn(t *testing.T) {
-	dir := t.TempDir()
-	// .exe suffix for the same reason as TestIsRunnable: Go's exec on Windows
-	// only resolves paths that carry an extension.
-	slow := filepath.Join(dir, "slow.exe")
-	if err := os.WriteFile(slow, slowCLI(t, 1), 0o755); err != nil {
-		t.Fatal(err)
+// The shipped bounds of the direct `<cli> --version` run are the reference's.
+// They are 30 s on a cache hit and 120 s after an install in the same run. Measured on
+// f6010b97 and 89cb6289 (rows B03, B04, B15, F04, F05, F15). The tests shrink the
+// two vars, so this pins the values a user gets.
+func TestCLIRunBoundsAreTheReferenceValues(t *testing.T) {
+	if cliRunBound != 30*time.Second {
+		t.Errorf("cliRunBound = %s, want 30s", cliRunBound)
 	}
-
-	setCLIProbeTimeout(t, 0)
-	if !isRunnable(slow) {
-		t.Error("with the deadline disabled (the default), a slow-but-honest CLI must still be runnable")
+	if cliFirstRunBound != 120*time.Second {
+		t.Errorf("cliFirstRunBound = %s, want 120s", cliFirstRunBound)
 	}
-
-	setCLIProbeTimeout(t, 100*time.Millisecond)
-	if isRunnable(slow) {
-		t.Error("with a 100ms deadline opted in, a 1s CLI must be rejected")
-	}
-
-	// Third arm, and it is not redundant: the two above only ever assert
-	// "rejected", so they cannot tell an applied deadline from one that always
-	// expires. A negated duration and a duration divided by 1000 both satisfy them.
-	// This arm asserts the deadline is honoured at the value the operator gave.
-	setCLIProbeTimeout(t, 5*time.Second)
-	if !isRunnable(slow) {
-		t.Error("a 1s CLI must still be runnable under a 5s opted-in deadline")
-	}
-}
-
-// The default must be 0 — no deadline — because that is the parity position and
-// the whole point of the flip. Asserted on the package variable, since a wrong
-// default is invisible in every test that sets it explicitly.
-func TestCLIProbeTimeoutDefaultsOff(t *testing.T) {
-	if cliProbeTimeout != 0 {
-		t.Fatalf("cliProbeTimeout default = %s, want 0 (no deadline = reference parity)", cliProbeTimeout)
-	}
-	if got := (config{}).effectiveCLIProbeTimeout(0, false); got != 0 {
-		t.Fatalf("resolved default = %s, want 0", got)
-	}
-	// The package variable and the resolver are not the value a user gets — the
-	// flag's own DECLARED default is. Moving the 15 s into flag.Duration's default
-	// argument survives both assertions above while shipping a binary that
-	// deadlines every -install.
-	//
-	// Assert the declared default, not the resolved value: a real claustrum.conf
-	// beside the binary sets the resolved one legitimately, and a test that reads
-	// it fails for a correct reason. (Measured — with `cli-probe-timeout = 30s`
-	// beside a pre-built test binary, the resolved-value form of this assertion
-	// failed exactly as the config intended.)
-	if _, exited := runMain(t, "-install"); exited {
-		t.Fatal("-install should return, not exit")
-	}
-	f := lastMainFlagSet.Lookup("cli-probe-timeout")
-	if f == nil {
-		t.Fatal("main() did not register -cli-probe-timeout")
-	}
-	if f.DefValue != "0s" {
-		t.Fatalf("-cli-probe-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
+	if installHeaderTimeout != 60*time.Second {
+		t.Errorf("installHeaderTimeout = %s, want 60s", installHeaderTimeout)
 	}
 }
 
@@ -429,7 +364,9 @@ func TestIsRegularFile(t *testing.T) {
 	}
 }
 
-func TestIsRunnable(t *testing.T) {
+// runCLIVersion tells three outcomes apart: exit 0, a failed run and a run that
+// the bound stopped. A CLI under the bound is not stopped.
+func TestRunCLIVersion(t *testing.T) {
 	dir := t.TempDir()
 	// .exe suffix: Go's exec on Windows only resolves paths that carry an
 	// extension (harmless on Unix, where the shebang decides).
@@ -437,18 +374,29 @@ func TestIsRunnable(t *testing.T) {
 	if err := os.WriteFile(ok, fakeCLI(t, 0), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if !isRunnable(ok) {
-		t.Error("an exit-0 CLI should be runnable")
+	if got := runCLIVersion(ok, time.Minute); got != cliRunOK {
+		t.Errorf("an exit-0 CLI: result %d, want cliRunOK", got)
 	}
 	bad := filepath.Join(dir, "bad.exe")
 	if err := os.WriteFile(bad, fakeCLI(t, 3), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if isRunnable(bad) {
-		t.Error("an exit-3 CLI should not be runnable")
+	if got := runCLIVersion(bad, time.Minute); got != cliRunFailed {
+		t.Errorf("an exit-3 CLI: result %d, want cliRunFailed", got)
 	}
-	if isRunnable(filepath.Join(dir, "missing")) {
-		t.Error("a missing path is not runnable")
+	if got := runCLIVersion(filepath.Join(dir, "missing"), time.Minute); got != cliRunFailed {
+		t.Errorf("a missing path: result %d, want cliRunFailed", got)
+	}
+	// A 1 s CLI (the leak budget of slowCLI) against both sides of a bound.
+	slow := filepath.Join(dir, "slow.exe")
+	if err := os.WriteFile(slow, slowCLI(t, 1), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLIVersion(slow, 100*time.Millisecond); got != cliRunStopped {
+		t.Errorf("a 1s CLI under a 100ms bound: result %d, want cliRunStopped", got)
+	}
+	if got := runCLIVersion(slow, 30*time.Second); got != cliRunOK {
+		t.Errorf("a 1s CLI under a 30s bound: result %d, want cliRunOK", got)
 	}
 }
 
@@ -468,9 +416,9 @@ func setCLIDownloadTimeout(t *testing.T, d time.Duration) {
 //
 // The three arms discriminate against different mistakes. Arm 1 fails if the
 // bound is ever applied by default. Arm 2 fails if an opted-in bound stops being
-// applied. Arm 3 fails if the bound is applied with the wrong sign or unit — the
-// shapes that survived the first mutation run on D11's sibling, because asserting
-// only "rejected" cannot tell an applied deadline from one that always expires.
+// applied. Arm 3 fails if the bound is applied with the wrong sign or unit. An
+// assertion of only "rejected" cannot tell an applied deadline from one that
+// always expires.
 func TestFetchToFile_DownloadTimeoutOptIn(t *testing.T) {
 	// Sends headers immediately, then stalls before the body. http.Client.Timeout
 	// covers the whole exchange, so this is what an honest-but-slow link looks
@@ -839,6 +787,10 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 		mk(t, dir, "3.0.0", 30)
 		mk(t, dir, "2.0.0", 20)
 		mk(t, dir, "1.0.0", 10)
+		// The present CLI carries the file name of this system (4.0.0.exe on Windows).
+		if err := os.Rename(filepath.Join(dir, "4.0.0"), installCLIPath(dir, "4.0.0")); err != nil {
+			t.Fatal(err)
+		}
 		f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: "4.0.0", cliKeep: 2})
 		if !f.CliWasPresent {
 			t.Fatal("fixture did not take the cache-hit branch")
@@ -980,7 +932,7 @@ func TestPruneBudgetIgnoresOrphans(t *testing.T) {
 		left = append(left, e.Name())
 	}
 	sort.Strings(left)
-	want := []string{"3.0.0", "4.0.0", "5.0.0"}
+	want := []string{"3.0.0", "4.0.0", "5.0.0" + cliExeSuffix}
 	if len(left) != len(want) {
 		t.Fatalf("cli-dir = %v, want %v (orphans must not consume the keep budget); install result: %+v", left, want, facts)
 	}
@@ -1325,7 +1277,7 @@ func TestRunInstallFacts(t *testing.T) {
 	if runtime.GOOS != "linux" && f.Libc != "" {
 		t.Errorf("facts carry libc=%q on %s, want empty", f.Libc, runtime.GOOS)
 	}
-	if f.CliPath != filepath.Join(o.cliDir, o.cliVersion) {
+	if f.CliPath != filepath.Join(o.cliDir, o.cliVersion+cliExeSuffix) {
 		t.Errorf("cliPath = %q", f.CliPath)
 	}
 
@@ -1600,8 +1552,8 @@ func TestPruneIgnoresFreshSweepLitter(t *testing.T) {
 		age  time.Duration
 		want []string
 	}{
-		{"fresh litter", 0, []string{".fetch-o", "1.1.0", "1.2.0", "2.0.0", "x.zst"}},
-		{"601 s litter (control)", 601 * time.Second, []string{"1.1.0", "1.2.0", "2.0.0"}},
+		{"fresh litter", 0, []string{".fetch-o", "1.1.0", "1.2.0", "2.0.0" + cliExeSuffix, "x.zst"}},
+		{"601 s litter (control)", 601 * time.Second, []string{"1.1.0", "1.2.0", "2.0.0" + cliExeSuffix}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "cli")

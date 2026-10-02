@@ -32,8 +32,9 @@ func managedLauncherGateOn() bool { return os.Getenv(managedLauncherGateEnv) == 
 // managedRunBound stops a launcher run of -install and -probe-cli. The reference
 // stopped a launcher that slept 60 s at 33.057 s (-install) and one that slept
 // 150 s at 33.069 s (-probe-cli). The -install row is a cache hit. This is
-// reference behaviour. It is not the opt-in -cli-probe-timeout (D11), which bounds
-// only the direct -install run.
+// reference behaviour. With a usable launcher the direct bounds (cliRunBound,
+// cliFirstRunBound) do not apply. A CLI that answers at 31 s through a launcher
+// passes (row L01, Linux and macOS).
 // A var only so tests shrink it.
 var managedRunBound = 33 * time.Second
 
@@ -157,22 +158,25 @@ type installManagedState struct {
 // errCLINotRunnable is a direct `<cli> --version` run that failed.
 var errCLINotRunnable = errors.New("cli is not runnable")
 
-// managedUnresponsiveError is a launcher run that its bound stopped.
-type managedUnresponsiveError struct{ launcher string }
+// cliStoppedError is a `--version` run that its bound stopped, a direct run or a
+// launcher run. Its text is the cliError.
+type cliStoppedError struct{ text string }
 
-func (e *managedUnresponsiveError) Error() string { return managedUnresponsiveText(e.launcher) }
+func (e *cliStoppedError) Error() string { return e.text }
 
 // installCLICheck is the -install check that the CLI at path runs. Without the gate,
-// or with a none answer, it is the direct isRunnable run. With a usable launcher it
-// is one launcher run. A failed launcher run still counts as runnable: the CLI stays,
-// cliWasPresent stays true and the facts say probe_failed (measured on a cache hit).
-// A stopped run is managedUnresponsiveError. An unusable or unreadable answer runs
-// nothing and counts as runnable (measured on a cache hit).
+// or with a none answer, it is the direct run (runCLIVersion) under cliRunBound or
+// cliFirstRunBound. With a usable launcher it is one launcher run, and the direct
+// bounds and the direct text do not apply. A failed launcher run still counts as
+// runnable: the CLI stays, cliWasPresent stays true and the facts say probe_failed
+// (measured on a cache hit). A stopped run, direct or launcher, is cliStoppedError.
+// An unusable or unreadable answer runs nothing and counts as runnable (measured on
+// a cache hit).
 //
-// first marks the run right after a fresh install. That run gets
-// managedFirstRunBound, and its launcherReason names 123s (measured). It passes the
-// staged file, as the direct run does (an older gap: the reference passes the final
-// path).
+// first marks the run right after a fresh install. A direct run then gets
+// cliFirstRunBound. A launcher run gets managedFirstRunBound, and its
+// launcherReason names 123s (measured). Every run gets the final path of the
+// CLI.
 //
 // Right after a fresh -cli-url install, a failed run and an unusable answer follow
 // the cache-hit rules (measured). claustrum's choice (not measured): an unreadable
@@ -180,8 +184,15 @@ func (e *managedUnresponsiveError) Error() string { return managedUnresponsiveTe
 func installCLICheck(path string, first bool) error {
 	st := installManaged
 	if st == nil || st.res.Status == managedStatusNone {
-		if isRunnable(path) {
+		bound := cliRunBound
+		if first {
+			bound = cliFirstRunBound
+		}
+		switch runCLIVersion(path, bound) {
+		case cliRunOK:
 			return nil
+		case cliRunStopped:
+			return &cliStoppedError{text: cliUnresponsiveText}
 		}
 		return errCLINotRunnable
 	}
@@ -196,7 +207,7 @@ func installCLICheck(path string, first bool) error {
 	r.first = first
 	st.run = &r
 	if r.hung {
-		return &managedUnresponsiveError{launcher: st.res.Argv[0]}
+		return &cliStoppedError{text: managedUnresponsiveText(st.res.Argv[0])}
 	}
 	return nil
 }

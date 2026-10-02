@@ -10,8 +10,7 @@ import (
 )
 
 // setProbeCLITimeout sets the -probe-cli probe deadline for one test and restores
-// it, so a shrunk deadline cannot leak into the rest of the suite (mirrors
-// setCLIProbeTimeout for the D11 probe).
+// it, so a shrunk deadline cannot leak into the rest of the suite.
 func setProbeCLITimeout(t *testing.T, d time.Duration) {
 	t.Helper()
 	old := probeCLITimeout
@@ -30,7 +29,7 @@ func TestProbeCLIRunnableClassifies(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name string, b []byte) string {
 		// .exe suffix: Go's exec on Windows only resolves a path that carries an
-		// extension (same reason TestIsRunnable_ProbeTimeoutOptIn uses it).
+		// extension (same reason TestRunCLIVersion uses it).
 		p := filepath.Join(dir, name)
 		if err := os.WriteFile(p, b, 0o755); err != nil {
 			t.Fatal(err)

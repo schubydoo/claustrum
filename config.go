@@ -70,10 +70,11 @@ type config struct {
 	// config key matters more than the flag for the same reason: Claude Desktop
 	// owns the argv on the -install invocation too.
 	maxCLIBytes *int64
-	// cliProbeTimeout mirrors -cli-probe-timeout; nil means "not set in the file".
-	// Same reachability argument as maxCLIBytes: it applies on -install, whose
-	// argv Claude Desktop owns.
-	cliProbeTimeout *time.Duration
+	// cliProbeTimeoutSeen records that the file carries the deprecated
+	// cli-probe-timeout key. The value is ignored: the direct --version run of
+	// -install always uses the reference's bounds (cliRunBound,
+	// cliFirstRunBound). main logs one warning on -install.
+	cliProbeTimeoutSeen bool
 	// cliDownloadTimeout mirrors -cli-download-timeout; nil means "not set in the
 	// file". Same reachability argument as maxCLIBytes: it applies on -install,
 	// whose argv Claude Desktop owns.
@@ -198,20 +199,8 @@ func applyConfigKey(cfg *config, key, val string) {
 			cfg.maxCLIBytes = &n
 		}
 	case "cli-probe-timeout":
-		// A Go duration ("20s", "2m"); 0 disables the deadline (the default).
-		// Negative and unparseable values are rejected, so a typo can never
-		// silently impose a deadline the reference does not have. A bare number is
-		// unparseable on purpose — "15" meaning 15ns would be a trap — EXCEPT for
-		// zero, of which there are unboundedly many spellings: "0"/"+0"/"-0" via
-		// ParseDuration's special case, plus every zero-valued duration carrying a
-		// unit ("0s", "-0m", "0h0m0s", "-0.0s"), plus "-0.4ns", a negative that
-		// truncates to zero. All reach d == 0 and pass the guard below. Harmless —
-		// zero IS the disabled value, so nothing here can switch the deadline on —
-		// but "a bare number is always rejected" and "a negative is always
-		// dropped" are both false at the edges. Do not special-case "-0s".
-		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
-			cfg.cliProbeTimeout = &d
-		}
+		// Deprecated and ignored, whatever the value. See cliProbeTimeoutSeen.
+		cfg.cliProbeTimeoutSeen = true
 	case "cli-download-timeout":
 		// A Go duration ("10m", "90s"); 0 disables the bound (the default).
 		// Negative and unparseable values are rejected, so a typo can never
@@ -221,7 +210,7 @@ func applyConfigKey(cfg *config, key, val string) {
 		// ParseDuration's special case, every zero-valued duration with a unit, and
 		// a negative that truncates like "-0.4ns"). All reach d == 0 and pass the
 		// guard, which is harmless: zero IS the disabled value, so nothing accepted
-		// here can switch the bound ON.
+		// here can switch the bound ON. Do not special-case "-0s".
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
 			cfg.cliDownloadTimeout = &d
 		}
@@ -231,7 +220,7 @@ func applyConfigKey(cfg *config, key, val string) {
 	case "git-timeout":
 		// A Go duration ("60s", "2m"); 0 disables the deadline (the default).
 		// Negative and unparseable values are rejected on the same reasoning as the
-		// two -install durations above, including the zero-spelling edge cases: all
+		// -install duration above, including the zero-spelling edge cases: all
 		// of them reach d == 0, which IS the disabled value, so nothing accepted here
 		// can switch the deadline on by accident.
 		if d, err := time.ParseDuration(val); err == nil && d >= 0 {
@@ -329,7 +318,7 @@ func (cfg config) effectiveWireLogMaxString(cliVal int64, cliSet bool) int64 {
 
 // effectiveNumeric applies CLI-over-config-over-default precedence for the numeric
 // flags and normalises a negative CLI value to 0 (the disabled position), calling
-// warnNeg to log it. Shared by the six size-cap / timeout flags so the precedence
+// warnNeg to log it. Shared by the size-cap / timeout flags so the precedence
 // and the negative->0 rule live in one place: a negative reached the daemon
 // unvalidated through the flag path before, disagreeing with the config path's
 // rejection, and centralising it keeps the two from drifting apart again.
@@ -364,16 +353,6 @@ func (cfg config) effectiveMaxCLIBytes(cliVal int64, cliSet bool) int64 {
 	// and effectiveMaxCLIBytes is reached only from the -install arm.
 	return effectiveNumeric(cliVal, cliSet, cfg.maxCLIBytes, func() {
 		logWarnf("[Install] -max-cli-bytes %d is negative; treating it as 0 (cap disabled)", cliVal)
-	})
-}
-
-// effectiveCLIProbeTimeout applies the same precedence for -cli-probe-timeout,
-// and the same negative handling as the two size caps: normalise to the disabled
-// value rather than letting the flag and config paths disagree about a negative.
-func (cfg config) effectiveCLIProbeTimeout(cliVal time.Duration, cliSet bool) time.Duration {
-	// [Install], not [Server]: isRunnable is reached only from the -install arm.
-	return effectiveNumeric(cliVal, cliSet, cfg.cliProbeTimeout, func() {
-		logWarnf("[Install] -cli-probe-timeout %s is negative; treating it as 0 (no deadline)", cliVal)
 	})
 }
 

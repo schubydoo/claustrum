@@ -156,9 +156,47 @@ The JSON-RPC surface is identical on every OS. Full internals →
       The empty-leaf rmdir tests only two things: the path still resolves to
       the leaf, and the parent is still the held parent. An rmdir cannot
       delete content.
-    - `-install` deletes `filepath.Join(cliDir, cliVersion)`, which is operator
-      input. The single-path-component rule of D6 guards it instead, not
-      `wipesHomeDir`.
+    - `-install` deletes the CLI path, which is operator input:
+      `<cli-dir>/<cli-version>`, and `<cli-version>.exe` on Windows. The cli-dir
+      is `-cli-dir`, or `<home>/.claude/remote/ccd-cli` without it. A folder at
+      that path goes as a tree BEFORE the new CLI runs, as on the reference. A
+      file there is replaced by the new CLI. A new CLI that does not run goes
+      with a plain remove, so nothing is left at that path.
+      Two guards run before that tree delete. The single-path-component rule
+      of D6 runs first: `ensureCLI` runs it before it touches any file. D6
+      makes the version one path component, so the CLI path is a direct child
+      of the cli-dir. D6 does not test which folder that child is. With a
+      cli-dir that is the parent of the home folder and a version that is its
+      leaf name, the CLI path is the home folder. So `cliFolderHoldsHome`
+      runs right before the tree delete and refuses a CLI path that is home or
+      contains it. It runs `wipesHomeDir` first. Then it compares the folder at
+      the CLI path with home and with each parent folder of home by identity
+      (`os.SameFile`). It does that for the home path as given and for its
+      resolved path. The reference deletes home there (measured on Linux, macOS
+      and Windows).
+      `-install` also removes two operator-named paths with a plain
+      `os.Remove`, never as a tree (`clearNonFolderCLIDir`). The first is the
+      cli-dir entry itself, only when it is a regular file, a symlink to a
+      regular file or a FIFO. A symlink goes as a link, and its target stays.
+      The second is the regular file named exactly `ccd-cli-version` in the
+      parent folder of the cli-dir. No other name and no other file kind is
+      removed. The reference does both (Linux, macOS and Windows VMs). Do not
+      widen either delete, and do not build either path from anything but the
+      cli-dir.
+      `-install` also sweeps the cli-dir. The sweep is one plain `os.Remove`
+      for each entry named `.fetch-*` or `*.zst` that is more than 10 minutes
+      old, never as a tree. It runs before the run of a new CLI, after a
+      failed attempt and after a stopped run on a cache hit. That last sweep
+      runs outside `ensureCLI`, so no D6 test comes before it. It names only
+      the cli-dir, never the version.
+      The `-cli-keep` prune runs after a good install only, so after D6. It
+      is one plain `os.Remove` for each entry of the cli-dir that is not a
+      folder, oldest first, past the keep count. It skips the sweep's names
+      and the `.blob-` names.
+      `-install` removes the `-cli-zst` blob, an operator-named path, with one
+      plain `os.Remove` once decompression succeeded. The home guard refusal
+      is the one exception: it keeps the blob. No guard runs before the remove
+      beyond that: the path was read as a zstd archive first.
 
   `wipesHomeDir` refuses a target that is home or contains home. It resolves a
   relative path with `filepath.Abs` first. It still permits a path under home,
@@ -219,11 +257,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
   extracts, unconditionally. Every dial `-serve` makes is to a local `AF_UNIX`
   socket, never network egress.
 - The `ldd` libc probe bounds ldd itself at 5 s (`lddProbeTimeout`), as on the
-  reference since `19f30c46`. Its old flag, `-libc-probe-timeout`, is a
-  deprecated no-op that logs one warning. `-cli-probe-timeout` sets the near-twin
-  `cliProbeTimeout`. A line that sets the `ldd` bound from either flag compiles
-  and passes every isolated test. `TestInstallArmWiresEachFlagToItsOwnGlobal` is
-  the guard against it.
+  reference since `19f30c46`. The direct `<cli> --version` run of `-install` is
+  stopped at 30 s on a cache hit (`cliRunBound`), as on the reference. After an
+  install in the same run it is stopped at 120 s (`cliFirstRunBound`). The old flags
+  `-libc-probe-timeout` and `-cli-probe-timeout` are deprecated no-ops, and each
+  logs one warning. `-cli-download-timeout` sits beside them in the `-install`
+  arm of `main`. A line that sets one of these bounds from a flag compiles and
+  passes every isolated test. `TestInstallArmWiresEachFlagToItsOwnGlobal` is the
+  guard against it.
 - A disabled limiter bypasses its `io.LimitReader` / `context.WithTimeout`
   entirely. Never "simplify" it into a huge value. For the caps, the `cap+1`
   (or `max-total+1`) arithmetic defines the boundary. For the deadlines, an
@@ -233,16 +274,15 @@ The JSON-RPC surface is identical on every OS. Full internals →
 
 ## Gotchas — Part B: the opt-in wire divergences
 
-Six divergences are opt-in flags:
+Five divergences are opt-in flags:
 
 - D3 (`max-extract-bytes`)
 - D4 (`files-read-regular-only`)
 - D5 (`git-timeout`)
 - D10 (`max-cli-bytes`)
-- D11 (`cli-probe-timeout`)
 - D12 (`cli-download-timeout`)
 
-All six default OFF. That is the parity position.
+All five default OFF. That is the parity position.
 The reference applies no such cap, deadline, or refusal at any input that the
 probe can reach. A non-off default therefore fails an operation that the
 reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
@@ -257,7 +297,7 @@ empty leaf after a failed add. Never read a fired `git-timeout` as "git refused"
 Opting D5 in is wire-visible.
 
 D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is
-always-on, but it is unresolved, not justified. D1, D7 and D14 are retired,
+always-on, but it is unresolved, not justified. D1, D7, D11 and D14 are retired,
 because claustrum now matches the reference on those paths.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave

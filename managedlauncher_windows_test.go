@@ -106,7 +106,7 @@ func TestInstallAndProbeOnWindowsWithGate(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cli := filepath.Join(dir, "9.9.9")
+	cli := installCLIPath(dir, "9.9.9")
 	if err := os.WriteFile(cli, fakeCLI(t, 0), 0o755); err != nil {
 		t.Fatal(err)
 	}

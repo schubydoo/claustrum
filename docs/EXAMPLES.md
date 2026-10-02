@@ -164,7 +164,8 @@ rm -rf "$D"
 ```sh
 claustrum -install -cli-dir "$D/cli" -cli-version 1.2.3 \
   -cli-url https://example.invalid/cli.zst -cli-checksum <sha256-of-the-zst>
-# during the download it prints __INSTALL_PROGRESS__{"phase":"download","bytes":N,"total":M} on a ~1s ticker, then:
+# during the download it prints __INSTALL_PROGRESS__{"phase":"download","bytes":N,"total":M} lines,
+# at most one each second and only when the byte count changed, then:
 # __INSTALL_RESULT__{"serverVersion":"…","os":"linux","arch":"amd64","libc":"glibc",
 #                    "cliPath":"…/cli/1.2.3","cliWasPresent":false,"cliError":"…",
 #                    "fetch":{"bytes":N,"ms":N,"longestPauseMs":N}}

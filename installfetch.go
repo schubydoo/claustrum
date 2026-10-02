@@ -2,14 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 )
 
-// installProgressInterval is the cadence of the __INSTALL_PROGRESS__ ticker on the
-// -install download (4534d86). var so tests can shrink it.
+// installProgressInterval is the tick of the __INSTALL_PROGRESS__ lines on the
+// -install download (4534d86). A tick prints only a changed byte count (see
+// emitProgress). var so tests can shrink it.
 var installProgressInterval = time.Second
 
 // installIdleTimeout aborts the -cli-url download after this long with no bytes —
@@ -20,6 +23,16 @@ var installProgressInterval = time.Second
 // bound D12 (cliDownloadTimeout), which no measurement of the reference has shown
 // within the window measured. var so tests can shrink it.
 var installIdleTimeout = 60 * time.Second
+
+// installHeaderTimeout is how long the -cli-url download waits for the response
+// headers. It is reference behavior and always on. Measured on f6010b97 and
+// 89cb6289 (row G12, Linux and Windows): a server that reads the request and
+// sends nothing gets a closed connection after 60.0 s, and the cliError is
+// `download failed: Get "<url>": net/http: timeout awaiting response headers`.
+// That is the text of the Go transport's ResponseHeaderTimeout. Not measured: the
+// exact start point of the limit, macOS, and this limit together with an opted-in
+// -cli-download-timeout below 60 s. var so tests can shrink it.
+var installHeaderTimeout = 60 * time.Second
 
 // lastInstallFetch holds the -cli-url download's fetch stats for the current
 // -install run. -install is a one-shot, single-threaded process (the -serve daemon
@@ -39,7 +52,8 @@ var lastInstallFinal *progressLine
 // -cli-url download was attempted, even a 0-byte 404. installFacts has its place.
 // Field order bytes, ms, longestPauseMs, all always present. bytes is the total read, ms the
 // download duration, longestPauseMs the largest gap between reads (the ~60s stall
-// gap on an idle abort; 0 on a clean single-read download).
+// gap on an idle abort, and 0 on a clean single-read download). The wait from the
+// last byte to a read error counts as a gap too (row E07).
 type fetchStats struct {
 	Bytes          int64 `json:"bytes"`
 	Ms             int64 `json:"ms"`
@@ -64,6 +78,7 @@ type watchedBody struct {
 
 	mu      sync.Mutex
 	bytes   int64
+	printed int64 // the byte count of the last progress line
 	longest time.Duration
 	lastAt  time.Time
 	hadRead bool
@@ -85,7 +100,7 @@ func newWatchedBody(inner io.ReadCloser, total int64, start time.Time) *watchedB
 	// says 0. Printed from the ticker goroutine, it raced the first Read and
 	// once said bytes:57 with no bytes:0 line. The reference printed bytes:0
 	// first in every measured run.
-	w.emitProgress()
+	w.emitProgress(false)
 	w.idle = time.AfterFunc(installIdleTimeout, w.onIdle)
 	go w.ticker()
 	return w
@@ -126,12 +141,50 @@ func (w *watchedBody) Read(p []byte) (int, error) {
 	if err != nil {
 		w.mu.Lock()
 		stalled, got, total := w.stalled, w.bytes, w.total
+		interrupted := !stalled && err != io.EOF && !isDownloadDeadline(err)
+		if interrupted {
+			if p := time.Since(w.lastAt); p > w.longest {
+				w.longest = p
+			}
+		}
 		w.mu.Unlock()
 		if stalled {
 			return n, &stalledError{secs: int(installIdleTimeout / time.Second), got: got, total: total}
 		}
+		if interrupted {
+			return n, &interruptedError{got: got, total: total, err: err}
+		}
 	}
 	return n, err
+}
+
+// interruptedError is a body read that ended with a transport error. Measured on
+// f6010b97 and 89cb6289 (row E07, Linux), with a connection reset after half the
+// body. The answer is `download interrupted after 381089/762179 bytes: read tcp
+// <a>-><b>: read: connection reset by peer`. It has no "download failed: "
+// prefix. The wait from the last byte to the error is the longestPauseMs.
+// ensureCLI returns it as-is.
+//
+// Not measured: a read error other than a reset, for example a body that ends
+// before its Content-Length. Not measured: an error before the first body byte.
+// Not measured: a body with no length. claustrum prints total 0 for it, as
+// stalledError does.
+type interruptedError struct {
+	got, total int64
+	err        error
+}
+
+func (e *interruptedError) Error() string {
+	return fmt.Sprintf("download interrupted after %d/%d bytes: %v", e.got, e.total, e.err)
+}
+
+// isDownloadDeadline reports whether a body read error is the opted-in D12
+// deadline (cliDownloadTimeout). That error keeps its documented text,
+// `download failed: context deadline exceeded (…)`. It is claustrum-only, so no
+// row measures it.
+func isDownloadDeadline(err error) bool {
+	var ne net.Error
+	return cliDownloadTimeout > 0 && errors.As(err, &ne) && ne.Timeout()
 }
 
 // stalledError is a read-idle abort of a -cli-url download (4534d86 aborts a body
@@ -179,13 +232,22 @@ func (w *watchedBody) ticker() {
 		case <-w.stop:
 			return
 		case <-t.C:
-			w.emitProgress()
+			w.emitProgress(true)
 		}
 	}
 }
 
-func (w *watchedBody) emitProgress() {
+// emitProgress prints one progress line. On a tick it prints nothing when the
+// byte count equals the count of the last printed line. Measured on 89cb6289
+// (rows G02 to G11). A body of 6 parts 20 s apart gives 7 lines, not one per
+// second. A body with no byte gives the leading line only.
+func (w *watchedBody) emitProgress(tick bool) {
 	w.mu.Lock()
+	if tick && w.bytes == w.printed {
+		w.mu.Unlock()
+		return
+	}
+	w.printed = w.bytes
 	pl := progressLine{Phase: "download", Bytes: w.bytes}
 	if w.total > 0 {
 		pl.Total = w.total
@@ -194,7 +256,9 @@ func (w *watchedBody) emitProgress() {
 	printProgress(pl)
 }
 
-// emitFinalProgress prints lastInstallFinal, if a download completed.
+// emitFinalProgress prints lastInstallFinal, if a download completed. Not
+// measured: whether the reference prints this last line when a tick printed the
+// full count already. claustrum always prints it.
 func emitFinalProgress() {
 	if lastInstallFinal != nil {
 		printProgress(*lastInstallFinal)

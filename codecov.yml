@@ -269,6 +269,10 @@ component_management:
       name: install pipeline
       paths:
         - install.go
+        # The CLI file name per system (<version>.exe on Windows) and the
+        # Windows-only file test of -probe-cli.
+        - install_other.go
+        - install_windows.go
         # 4534d86 -install download: __INSTALL_PROGRESS__ ticker + 60 s read-idle abort.
         - installfetch.go
         # 89cb6289 launcher runs of -install and -probe-cli behind the gate.
