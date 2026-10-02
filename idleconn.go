@@ -82,8 +82,10 @@ func (s *server) closeWhenIdle(a *activityConn, done <-chan struct{}) {
 				if !a.claimClose() {
 					return
 				}
-				logInfof("[Server] closing idle connection %s (idle for %s)",
-					a.RemoteAddr(), idle.Round(time.Second))
+				// The text is the reference's, measured on a Linux VM against
+				// 89cb6289 (rows HC12a and HC12b, a connection idle for 5 minutes).
+				logInfof("[Server] closing connection idle %s in both directions: %s",
+					idle.Round(time.Second), a.RemoteAddr())
 				_ = a.Close()
 				return
 			}

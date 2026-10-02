@@ -199,12 +199,13 @@ opt-in?
 | D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-` |
 | D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where `f6010b97` answers success and deletes the branch (`89cb6289` not measured there) |
 | D20 | Always-on, Linux and macOS | No. Off the wire. It is a signal time at a daemon start, not a frame | 50 ms settle before the group `SIGKILL` of a leader that reads as gone. In row RP05a that `SIGKILL` comes about 50 ms later than on `89cb6289`. In row PG05a claustrum ends the child in no run, where `89cb6289` ends it in some Linux runs. In rows where the child ends on `SIGTERM`, `89cb6289` also sends a group `SIGKILL` right after it in some Linux runs, and claustrum sends none. None of these is drift |
-| D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept) |
+| D21 | Always-on, Windows only | No. Off the wire. It is the content of `remote-server.log`, not a frame | a second daemon on a live socket appends to `remote-server.log`. `89cb6289` truncates the file at that start. The earlier lines of its first daemon are lost. The later lines of that daemon sit behind a block of NUL bytes (rows WN04, WJ04). Keeping the lines is a maintainer decision of 2026-10-02. The longer log of claustrum is not drift |
+| D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
 | D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | status call `core.excludesFile` is `/dev/null`, not `NUL` |
 | CT-1 | Opt-in (`wantPid`) | Yes, on request. It adds `pid`/`startTime` | spawn/reattach reply extension |
-| CT-2 | Opt-in (`-keep-children`, POSIX) | No | children survive shutdown |
+| CT-2 | Opt-in (`-keep-children`) | No | children survive shutdown |
 | CT-3 | Opt-in (`claustrum.conf`) | Only `version-override`, via the static check's `-version` diff | the configuration file itself |
 | CT-4 | Not built. A deferred idea, recorded in DIVERGENCES.md only | No. There is no code | opt-in hardened token persistence (a `persist-token` key, or a Windows owner-only DACL) |
 | CT-5 | Opt-in (`-listen-pipe`, Windows) | No | additional named-pipe transport |
@@ -216,8 +217,8 @@ an entry in the table above covers it (for example D6, D10, D13, D18). See
 
 Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
 numbers several more claustrum-only behaviors, and they are just as real. They are
-item 16 (`-metrics-addr`), item 17 (claustrum tears down the orphaned previous
-process tree), and item 18 (`-token-fd`). Item 21 is another: claustrum skips the
+item 16 (`-metrics-addr`), item 17 (claustrum ends the orphaned previous
+process), and item 18 (`-token-fd`). Item 21 is another: claustrum skips the
 kill signal for a child that already exited. Check both the divergence catalog and
 the shipped ledger before you conclude that something is drift.
 
@@ -407,6 +408,38 @@ traps that matter for telling drift from expected:
   seventh change that the first pass had missed. A new value inside an existing
   function shows in no symbol list, so a quiet symbol comparison does not prove
   that nothing changed. Re-check the whole build after the slices merge.
+
+- A reference daemon that stays alive after its socket path is gone is not drift.
+  On a Linux VM, the host cleaner of `f6010b97` and `89cb6289` sent no signal to
+  such a daemon. It sent none to its children (rows ST01, ST02, ST04 to ST10, HC16 to
+  HC19). The daemon ended by itself after 11 to 12 minutes (rows ST09 and ST11). The
+  cleaner of claustrum sends none either. On a macOS VM the two references sent none
+  either (rows ST01, ST09, ST10, HC16, HC18).
+- On Windows a serving process that outlives its SSH session is not drift, and
+  children that outlive a killed daemon are not drift. A Windows VM measured both
+  against `f6010b97` and `89cb6289` (rows WJ01 to WJ07 and WN03, and row WJ08 on
+  `89cb6289`). A later run on that VM measured the same on claustrum (rows WJ01 to
+  WJ08, WN03). A spawned child is in no job on either side, and a kill ends the direct
+  child only (kill forms: `89cb6289`). Descendants that outlive a kill or a `-stop` are not drift.
+- Four differences on Windows are known and open. They are not drift.
+    - At a stop with one connection, `89cb6289` logged `closed 0 connection(s)`
+      in 2 of 9 runs. claustrum logged `closed 1` in 9 of 9. The rate is not
+      measured.
+    - The environment block of a child comes in name order. The Go 1.26 toolchain
+      sorts it. `f6010b97` and `89cb6289` keep the order of the daemon and put
+      `CLAUDE_SSH_DAEMON_CHILD=1` last (rows WN01a, WN01b). The stdout frame of
+      `cmd /c set` therefore differs in bytes.
+    - A second `process.spawn` with the `id` of a live process: `89cb6289` leaves
+      the first process alive, also after `-stop`. claustrum ends it (rows EV,
+      EVInh). The reference is not measured there on Linux and macOS.
+    - A session supersede: `89cb6289` answers the second spawn after the first
+      child ended, 5 s later with descendants that hold its pipes. claustrum
+      answers at once. The end states are equal (rows SS, SSInh, one run each).
+- A longer `remote-server.log` after a second daemon started on a live socket on
+  Windows is not drift. `89cb6289` truncates the file at that start, and claustrum
+  appends to it (rows WN04, WJ04). That is [DIVERGENCES.md](DIVERGENCES.md) D21.
+- The log lines of claustrum keep its level tag and the name `Claustrum` in the
+  listening line. Both differ from the reference by design.
 
 ## Toolchain-induced drift — the Go 1.27 `jsonv2` hold
 

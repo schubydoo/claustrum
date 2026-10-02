@@ -105,13 +105,18 @@ func (m *procManager) lockSessionSpawn(key string) func() {
 // own goroutine via killAndWait (SIGTERM, grace, then SIGKILL) so a slow teardown
 // does not block the spawn. The victim's exit frame reaches its client, carrying
 // killedBy once that field ships.
+//
+// On Linux and macOS the escalation ends the whole tree of the victim. On Windows the
+// kill ends the direct child only, and its descendants live on. A Windows VM measured
+// equal end states against 89cb6289 (rows SS and SSInh, one run each). There 89cb6289
+// answers the new spawn after the victim ended, and claustrum answers at once.
 func (m *procManager) supersedeSession(key, newID string) {
 	if key == "" {
 		return
 	}
 	// Capture the victim PROCESSES, not their client-visible ids. A concurrent
 	// spawn that reuses a victim's id replaces m.procs[id] (and the reused-id path
-	// in spawn already tears the original down), so re-resolving the id in the kill
+	// in spawn already ends the original), so re-resolving the id in the kill
 	// goroutine could terminate the innocent replacement instead. killAndWaitProc
 	// signals the captured identity directly.
 	m.mu.Lock()

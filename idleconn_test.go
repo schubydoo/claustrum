@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"net"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -18,6 +19,7 @@ func TestCloseWhenIdle(t *testing.T) {
 		s := &server{shutdown: make(chan struct{}), idleTimeout: 80 * time.Millisecond}
 		done := make(chan struct{})
 		returned := make(chan struct{})
+		buf := captureLogBuf(t)
 		go func() { s.closeWhenIdle(ac, done); close(returned) }()
 
 		select {
@@ -28,6 +30,12 @@ func TestCloseWhenIdle(t *testing.T) {
 		}
 		if _, err := ac.Read(make([]byte, 1)); err == nil {
 			t.Error("connection was not actually closed")
+		}
+		// The line of the reference (rows HC12a and HC12b on a Linux VM, 89cb6289):
+		// "[Server] closing connection idle 5m0s in both directions: @". The peer text
+		// of a net.Pipe is "pipe".
+		if got := buf.String(); !regexp.MustCompile(`\[Server\] closing connection idle \d+s in both directions: pipe\n$`).MatchString(got) {
+			t.Errorf("log = %q, want the idle-close line", got)
 		}
 	})
 

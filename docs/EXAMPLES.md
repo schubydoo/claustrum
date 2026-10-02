@@ -216,17 +216,18 @@ CLAUSTRUM_LOG_LEVEL=warn claustrum -serve -socket "$D/rpc.sock" -token-file "$D/
 
 ### `-keep-children`
 
-Use `-keep-children` (CT-2, POSIX-only) to let child processes survive a daemon
+Use `-keep-children` (CT-2) to let child processes survive a daemon
 restart or upgrade. A graceful shutdown leaves the spawned children running.
 
-- Off by default. A shutdown kills the whole process tree.
+- Off by default. A shutdown kills the children: the whole tree on Linux and
+  macOS, the direct child on Windows.
 - No re-adoption. The new daemon does not re-adopt the survivors. Reconcile
   them out-of-band with the CT-1 `pid` and `startTime`.
 - Survivors lose stdio. Stdin gets EOF, and writes to stdout and stderr hit
   a closed pipe (SIGPIPE/EPIPE, see [PROTOCOL.md](PROTOCOL.md)). Thus only
   children that tolerate this condition outlive the daemon.
-- Windows ignores it. Windows drops the flag and prints a warning. In every
-  case, a Job Object kills the children as the daemon exits.
+- Windows honors it too. A child is in no Job Object, so the children live on
+  after the daemon exits.
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children

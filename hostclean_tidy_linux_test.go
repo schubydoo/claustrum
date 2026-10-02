@@ -23,9 +23,6 @@ import (
 // rather than because no test was written: runDirs' name == "." || ".." skip.
 // Readdirnames never yields those entries.
 //
-// judgeDaemon's argv == nil spare used to be listed here too. It is reachable now, because
-// that gate runs before serveArgv, and TestJudgeDaemonBranches drives it.
-//
 // retireAbandoned's hcSettledBusy arm used to be listed here as well. It is reachable
 // now: hcSettledBusy is one shared implementation that samples for real on linux too, so
 // TestRetireAbandonedSparesABusyDaemon drives that branch.
@@ -43,17 +40,17 @@ func hcRetireFixture(t *testing.T, proot string, mk func(int, string, string), l
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socketArgv}, true, "1", uid)
 	link(self, "fd/1", "/dev/null") // readable connections, none of them a client
 
-	oldSig, oldSleep := hcSignalPid, hcSleep
-	t.Cleanup(func() { hcSignalPid, hcSleep = oldSig, oldSleep })
+	oldSig, oldSleep := hcHoldPid, hcSleep
+	t.Cleanup(func() { hcHoldPid, hcSleep = oldSig, oldSleep })
 	hcSleep = func(time.Duration) {}
 	rounds := 0
-	hcSignalPid = func(pid int, _ syscall.Signal) error {
+	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error {
 		// The daemon exits and its pid is taken by something else: the tracked identity no
 		// longer matches, which is how waitGone reports it gone.
 		rounds++
 		mk(pid, "stat", hcRunningStat(pid, 1, pid, strconv.Itoa(100+rounds)))
 		return nil
-	}
+	})
 	return self
 }
 
@@ -120,7 +117,7 @@ func TestTidyRunDirsKeepsADaemonItCannotRetire(t *testing.T) {
 	}
 	// "Nothing happened" is also true of a mutant that never tried to retire. The log is what
 	// distinguishes a REFUSED retire from a skipped one, so it is asserted here.
-	if got := buf.String(); !strings.Contains(got, "was not retired: it serves a different socket") {
+	if got := buf.String(); !strings.Contains(got, "was not retired: the listener could not be verified as a daemon of ours (not serving that socket)") {
 		t.Errorf("log = %q, want the refusal that shows the retire was attempted and declined", got)
 	}
 }
@@ -168,7 +165,8 @@ func TestTidyRunDirsStopsAtTheRetireBudget(t *testing.T) {
 		t.Errorf("runDirsRemoved = %d, want %d: the entry past the budget is skipped", sum.runDirsRemoved, hcMaxRetire)
 	}
 	last := entries[hcMaxRetire].dirPath
-	if want := fmt.Sprintf("run dir %q not examined this sweep: the retire budget of %d attempts is spent", last, hcMaxRetire); !strings.Contains(buf.String(), want) {
+	// The reference's text, measured on a Linux VM (row HC14c).
+	if want := fmt.Sprintf("run dir %q unused for 40 days: left for a later pass (%d retirements this pass already)", last, hcMaxRetire); !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want %q", buf.String(), want)
 	}
 }
@@ -201,7 +199,7 @@ func TestTidyRunDirsBudgetCountsAttempts(t *testing.T) {
 	if dials != hcMaxRetire {
 		t.Errorf("dials = %d, want %d: the ninth dir is not probed once eight attempts failed", dials, hcMaxRetire)
 	}
-	if want := "the retire budget of 8 attempts is spent"; !strings.Contains(buf.String(), want) {
+	if want := "unused for 40 days: left for a later pass (8 retirements this pass already)"; !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want %q", buf.String(), want)
 	}
 }
@@ -347,10 +345,15 @@ func TestPassBailsWhenTheProcessListIsUnreadable(t *testing.T) {
 }
 
 // TestPassClassifiesAWholeHost drives one sweep over a fake host carrying every shape the
-// classification loops branch on: a stranded daemon with a child, a daemon that must be
-// spared, a process group with no leader, an orphan that must be spared, an orphan that must
-// be reaped, a plain process, and a pid that vanishes mid-read. The counters and the signal
-// lists together pin which arm handled which.
+// classification loop branches on. Two are daemons: a stranded one with a child, and an
+// unmarked one. Three are CLI processes: a group with no leader, an orphan that must be
+// spared, and an orphan that must be reaped. The last two are a plain process and a pid
+// that vanishes mid-read. The counters and the signal lists together pin which arm handled
+// which.
+//
+// The stranded daemon and its child get no signal. On a Linux VM, f6010b97 and 89cb6289
+// sent none (rows ST01, ST10, HC16 and HC17). A pass with the old stranded judge fails
+// here: it sent SIGKILL to the daemon and SIGTERM to the child group.
 func TestPassClassifiesAWholeHost(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 
@@ -358,7 +361,7 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 	// product's own install path. The fake clock sits in 1970, so every ordinary run dir
 	// under it reads as fresh and is skipped — but a leftover <name>.removing-<pid>-<ts> staging
 	// dir SKIPS the idle gate by design, and removeRunDir then calls hcRemoveAll on it with
-	// no rename. Measured against the same shape in TestPassReapsStrandedDaemon: a staging
+	// no rename. Measured: a staging
 	// dir holding a file was really deleted with these seams absent, while an ordinary
 	// 40-day-idle dir was left alone. So both destructive calls are seamed before Pass runs.
 	oldRen, oldRm := hcRename, hcRemoveAll
@@ -366,21 +369,7 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 	hcRename = func(*os.Root, string, string) error { return nil }
 	hcRemoveAll = func(*os.Root, string) error { return nil }
 
-	ownSock := filepath.Join(t.TempDir(), "rpc.sock")
-	ln, err := net.Listen("unix", ownSock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go func() {
-		for {
-			conn, e := ln.Accept()
-			if e != nil {
-				return
-			}
-			conn.Close()
-		}
-	}()
+	ownSock := hcOwnSocket(t)
 
 	single, group := hcSeamSignals(t, proot) // clock, sleep, and signals that make a pid exit
 	oldUID := hcGetuid
@@ -394,20 +383,21 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 	deadSock := "/opt/claude/run/claustrum-test-gone/rpc.sock"
 	stream := []string{"claude", "--output-format=stream-json"}
 
-	stranded := self + 1 // reaped: marked, old, its own socket is gone, no lock, not busy
+	stranded := self + 1 // left alone: marked, old, its own socket is gone, no lock, not busy
 	hcFakeDaemonUID(t, proot, mk, link, stranded, daemonExe,
 		[]string{daemonExe, "--serve", "--socket", deadSock}, true, "1", uid)
 	link(stranded, "fd/1", "/dev/null") // readable descriptors, no daemon.lock, no client
 
-	child := self + 2 // its child: ended in phase B once the daemon is dead
+	child := self + 2 // its child: a full stream-json group under a living daemon, left alone
 	hcFakeDaemonUID(t, proot, mk, link, child, cliExe, stream, true, "1", uid)
 	mk(child, "stat", hcRunningStat(child, stranded, child, "1")) // ppid = the stranded daemon
+	hcPipeStdio(link, child)
 
-	unmarked := self + 3 // spared: our --serve daemon, old, but no daemon-child marker
+	unmarked := self + 3 // our --serve daemon, old, no daemon-child marker: no judge looks at it
 	hcFakeDaemonUID(t, proot, mk, link, unmarked, daemonExe,
 		[]string{daemonExe, "--serve", "--socket", "/opt/claude/run/u/rpc.sock"}, false, "1", uid)
 
-	plain := self + 4 // neither a daemon nor a CLI: skipped in both loops
+	plain := self + 4 // neither a daemon nor a CLI: skipped
 	hcFakeDaemonUID(t, proot, mk, link, plain, "/usr/bin/unrelated", []string{"unrelated"}, false, "1", uid)
 
 	leaderless := self + 5 // its group leader is not in the snapshot
@@ -433,33 +423,92 @@ func TestPassClassifiesAWholeHost(t *testing.T) {
 	}
 	sum := c.Pass()
 
-	if sum.strandedEnded != 1 {
-		t.Errorf("strandedEnded = %d, want 1", sum.strandedEnded)
-	}
-	if sum.strandedLeftover != 1 {
-		t.Errorf("strandedLeftover = %d, want 1: the stranded daemon's child", sum.strandedLeftover)
-	}
-	// One spared daemon (unmarked) and one spared orphan (stopped).
-	if sum.undecided != 2 {
-		t.Errorf("undecided = %d, want 2 (the unmarked daemon and the stopped orphan)", sum.undecided)
+	// One spared orphan (stopped). No daemon is judged, so the unmarked one counts nowhere.
+	if sum.undecided != 1 {
+		t.Errorf("undecided = %d, want 1 (the stopped orphan)", sum.undecided)
 	}
 	if sum.orphanSignalled != 1 {
 		t.Errorf("orphanSignalled = %d, want 1", sum.orphanSignalled)
 	}
-	if len(*single) != 1 || (*single)[0] != stranded {
-		t.Errorf("single-pid signals = %v, want exactly the stranded daemon %d", *single, stranded)
+	if len(*single) != 0 {
+		t.Errorf("single-pid signals = %v, want none: no daemon is ended (stranded pid %d)", *single, stranded)
 	}
-	// The child and the orphan are both group leaders, so both are signalled as groups.
-	var groups []int
-	groups = append(groups, *group...)
-	wantGroups := map[int]bool{child: true, orphan: true}
-	for _, pid := range groups {
-		if !wantGroups[pid] {
-			t.Errorf("group signal to pid %d, which should not have been ended (%v)", pid, groups)
+	// Only the orphan is ended. The child of the stranded daemon gets nothing.
+	if len(*group) != 1 || (*group)[0] != orphan {
+		t.Errorf("group signals = %v, want exactly the orphan %d (child of the stranded daemon: %d)", *group, orphan, child)
+	}
+	for _, pid := range []int{stranded, child} {
+		if _, err := os.Stat(filepath.Join(proot, strconv.Itoa(pid))); err != nil {
+			t.Errorf("pid %d was ended by the pass: %v", pid, err)
 		}
-		delete(wantGroups, pid)
 	}
-	if len(wantGroups) != 0 {
-		t.Errorf("these pids were never ended: %v (group signals: %v)", wantGroups, groups)
+}
+
+// TestPassLeavesAStrandedDaemonAlone is the smallest stranded shape: one daemon that is
+// marked, old and idle, with no socket path and no lock, plus one child group. The pass
+// sends nothing and its summary reads "nothing to do" (rows ST01, ST02b, ST02c, ST07, ST10,
+// HC16 and HC17 on a Linux VM). The seams record every signal, so the test is safe without
+// the change: the old judge only reaches the recording seams.
+func TestPassLeavesAStrandedDaemonAlone(t *testing.T) {
+	proot, mk, link := fakeProc(t)
+	oldRen, oldRm := hcRename, hcRemoveAll
+	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
+	hcRename = func(*os.Root, string, string) error { return nil }
+	hcRemoveAll = func(*os.Root, string) error { return nil }
+	ownSock := hcOwnSocket(t)
+	single, group := hcSeamSignals(t, proot)
+	oldUID := hcGetuid
+	t.Cleanup(func() { hcGetuid = oldUID })
+	uid := os.Getuid()
+	hcGetuid = func() int { return uid }
+
+	self := os.Getpid()
+	daemonExe := "/opt/claude/srv/a/server"
+	stranded, child := self+1, self+2
+	hcFakeDaemonUID(t, proot, mk, link, stranded, daemonExe,
+		[]string{daemonExe, "--serve", "--socket", "/opt/claude/run/claustrum-test-gone/rpc.sock"}, true, "1", uid)
+	link(stranded, "fd/1", "/dev/null")
+	hcFakeDaemonUID(t, proot, mk, link, child, "/opt/claude/ccd-cli/2.1.0",
+		[]string{"claude", "--output-format=stream-json"}, true, "1", uid)
+	mk(child, "stat", hcRunningStat(child, stranded, child, "1"))
+	hcPipeStdio(link, child)
+
+	c := &hostCleaner{
+		roots:     &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"},
+		ownSocket: ownSock, ownRunDir: filepath.Dir(ownSock), selfPid: self,
 	}
+	buf := captureLogBuf(t)
+	sum := c.Pass()
+
+	if len(*single) != 0 || len(*group) != 0 {
+		t.Errorf("signals: single=%v group=%v, want none", *single, *group)
+	}
+	if got := sum.String(); got != "nothing to do" {
+		t.Errorf("summary = %q, want %q", got, "nothing to do")
+	}
+	if strings.Contains(buf.String(), "stranded") {
+		t.Errorf("log names a stranded daemon: %q", buf.String())
+	}
+}
+
+// hcOwnSocket binds a real socket that accepts and closes, so the self-probe of a pass
+// confirms this test process. It returns the socket path.
+func hcOwnSocket(t *testing.T) string {
+	t.Helper()
+	ownSock := filepath.Join(t.TempDir(), "rpc.sock")
+	ln, err := net.Listen("unix", ownSock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			conn, e := ln.Accept()
+			if e != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+	return ownSock
 }

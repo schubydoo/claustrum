@@ -3,7 +3,7 @@
 Claustrum is one Go binary. A flag selects the mode. The build is static
 (`CGO_ENABLED=0`). It has one cross-platform dependency, `klauspost/compress`
 (zstd). Two more dependencies go into Windows builds only. They are
-`golang.org/x/sys` (Job Object teardown) and `github.com/Microsoft/go-winio`
+`golang.org/x/sys` (Windows system calls) and `github.com/Microsoft/go-winio`
 (the opt-in `-listen-pipe` named-pipe transport).
 
 ## Source layout (flat `package main`)
@@ -11,7 +11,7 @@ Claustrum is one Go binary. A flag selects the mode. The build is static
 | file | responsibility |
 |---|---|
 | `main.go` | flag parsing, mode dispatch, version resolution |
-| `server.go` | `-serve` daemon: AF_UNIX listener, per-connection loop, concurrent dispatch, graceful shutdown (kills children, or leaves them with `-keep-children`) |
+| `server.go` | `-serve` daemon: AF_UNIX listener, per-connection loop, concurrent dispatch, graceful shutdown (kills children, or leaves them with `-keep-children`). The flag works on Windows too, as claustrum's own flag: `89cb6289` exits 2 on it |
 | `rpc.go` | JSON-RPC request and response types, error codes, dispatch + params gate |
 | `results.go` | result structs (field order is part of the wire contract) |
 | `methods_server.go` / `methods_files.go` / `methods_git.go` / `methods_launcher.go` / `methods_process.go` / `methods_plugins.go` | the 20 method handlers (`19f30c46` added `plugins.prune`, `89cb6289` added `launcher.resolve`). `methods_launcher.go` also holds the settings reader, the `process.spawn` launcher checks and the child env strip |
@@ -23,10 +23,10 @@ Claustrum is one Go binary. A flag selects the mode. The build is static
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`). The level tag precedes the byte-intact `[Component]` prefixes |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`, with no listener by default) |
 | `wirelog.go` | opt-in `-wire-log` frame capture (CT-3). A pure side channel over already-marshaled bytes, off by default, with by-key credential redaction |
-| `sysproc_unix.go` / `sysproc_windows.go` | whole-tree kill: process group (setpgid + negative-pid signal) vs Windows Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`). It also holds the `-keep-children` POSIX-only policy (`honorKeepChildren`) |
+| `sysproc_unix.go` / `sysproc_windows.go` | the kill of a child: the process group on Unix (setpgid + negative-pid signal), the direct child only on Windows (no Job Object, as on the reference). A Windows VM measured that against `89cb6289`: no child is in a job of the daemon |
 | `pipetransport.go` | `-listen-pipe` shared helpers: `rpc.pipe` name-file lifecycle (atomic write / remove), owner-only SDDL builder, pipe-name + instance-id generation (all platform-neutral) |
 | `pipetransport_windows.go` / `pipetransport_other.go` | the optional Windows named-pipe listener (`startPipeTransport` via go-winio, owner-only DACL) vs the non-Windows no-op stub + `honorListenPipe` warning |
-| `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS) |
+| `detach_unix.go` / `detach_windows.go` | daemonize attr (setsid vs DETACHED_PROCESS with `CREATE_BREAKAWAY_FROM_JOB`) and the start of the daemonized child. On Windows the daemon starts outside the job of its launcher. If that job refuses breakaway, the daemon starts inside it and the launcher logs one line, as `89cb6289` does (row JB of a Windows VM) |
 | `shellenv_unix.go` / `shellenv_windows.go` | login-shell PATH extraction (Unix) / no-op (Windows) |
 | `shellagent.go` / `shellagent_unix.go` / `shellagent_windows.go` | `process.spawn` SSH agent hand-off: the login shell's `SSH_AUTH_SOCK`, checked and cached (Unix) / no-op (Windows) |
 
@@ -144,23 +144,31 @@ children it spawns.
 - Also at `-serve` startup the daemon starts a periodic host cleaner (the shared decision
   layer in `hostclean.go`, with the OS reads in `hostclean_linux.go` / `hostclean_darwin.go`).
   The cleaner is a background sweep that keeps the install tidy. It runs 15s after startup
-  and then daily. It is confined to the install roots derived from the daemon's own
-  socket and executable (`<root>/run`, `<root>/srv` and `<root>/ccd-cli`). It is also confined to this
+  and then daily. It is confined to the install root of the daemon's own
+  socket (`<root>/run`, `<root>/srv` and `<root>/ccd-cli`). Its root list holds that root as
+  the socket path gives it, and also its symlink-resolved form when that differs. Both
+  name one folder. It runs only when the
+  cleaned socket path is an absolute `<root>/run/<id>/rpc.sock`. The daemon binary must
+  also be `<root>/srv/<id>/<name>` under a root of that list. If the daemon cannot read
+  its own executable path, that binary test does not run (not measured). A Linux VM measured the decisions of that gate
+  against `89cb6289` (see PROTOCOL.md → Host cleaner). It is also confined to this
   user's own processes. It therefore never reaches an unrelated process or path. Each pass first makes sure that
   its own socket still leads to itself, and without that the pass does not act.
   Next it lists the run dirs and reads the idle age of each one. It does this before it
-  judges or dials any other daemon, because a dial writes a line to that daemon's log.
-  A pass then ends stranded sibling daemons. A stranded sibling is our `--serve` daemon on a
-  run-dir socket, older than 5 min, and carrying the daemon-child marker. It has no file
-  named `daemon.lock` open, and the cleaner checks that before it dials the socket. Its
-  socket no longer leads to it. Another verified daemon on that socket does not spare it.
-  Each one gets `SIGKILL`, and its leftover child groups get `SIGTERM`→`SIGKILL`.
-  A pass also ends orphaned Claude Code process groups. An orphan is a `stream-json` daemon
+  dials any other daemon, because a dial writes a line to that daemon's log.
+  A pass ends no stranded daemon. A stranded daemon is a daemon whose socket path no longer
+  leads to it. The cleaner sends no signal to it and none to its children. On a Linux VM,
+  `f6010b97` and `89cb6289` sent none (rows ST01, ST02, ST04 to ST10, HC16 to HC19, HC23 to
+  HC26). On a macOS VM they sent none either (rows ST01, ST09, ST10, HC16, HC18). The
+  stranded daemon ends by itself after its own timer.
+  A pass ends orphaned Claude Code process groups. An orphan is a `stream-json` daemon
   child that leads its own process group. Its parent is pid 1, its binary sits directly in
   `<root>/ccd-cli`, and its stdin, stdout and stderr are pipes. It gets `SIGTERM`, a 3s
-  grace, then `SIGKILL`.
-  The 15s delay matches the reference, as measured on Linux and macOS against `f6010b97`. The daily
-  period, the 5 min age, the 3s grace and the 30-day idle age are claustrum's own values,
+  grace, then `SIGKILL`. One pass ends 64 groups at most.
+  The 15s delay matches the reference, as measured on Linux and macOS against `f6010b97`.
+  The 3s grace and the limit of 64 groups match the reference too. A Linux VM measured
+  both against `f6010b97` and `89cb6289` (rows HC21a and HC22). The daily
+  period, the 5 min age and the 30-day idle age are claustrum's own values,
   not probe-measured.
   A pass also retires stale run dirs. A stale run dir is idle past 30
   days, or its name carries `.removing-` from an earlier removal. Its socket is unanswered, and no live process holds its lock. An empty lock file is
@@ -172,22 +180,29 @@ children it spawns.
   socket can appear after the rename, or its lock can become held or unreadable. The
   cleaner then renames the dir back. A dir whose daemon it retires goes in the same pass,
   once that daemon's socket is gone.
-  The cleaner spares an ambiguous daemon or orphan with a logged
-  reason. It keeps a run dir it cannot probe conclusively. The reap path never touches a
-  fresh or foreign daemon, or one that has a file named `daemon.lock` open. "Busy" is weaker
-  than the other three: it is a 3-second sampling
+  The cleaner spares an ambiguous orphan with a logged
+  reason. It keeps a run dir it cannot probe conclusively. The retire path never touches a
+  fresh or foreign daemon. "Busy" is weaker
+  than those two: it is a 3-second sampling
   window, not a state. A daemon that is idle across the window and gains a client a
-  moment later is still signalled. This path is DESTRUCTIVE and host-wide. Every process read,
+  moment later is still signalled. On Linux the retire signal goes through
+  `pidfd_send_signal`, as on the reference (rows HC10, HC12 to HC15). This path is DESTRUCTIVE and host-wide. Every process read,
   kill, dial, rename and remove therefore sits behind a seam, and tests never touch a real
   process. A test that lets a rename or a remove run for real does so inside its own temp
   dir. Its real behavior is measured only on a throwaway VM, never on a host that
   runs sibling daemons. It runs on linux and darwin. On windows it is a no-op. This
   behavior is off-wire. Its log lines carry the `[hostclean]` prefix after claustrum's level
-  tag. The lines that the Linux and macOS measurements against `f6010b97` captured use the captured
-  texts. The other lines keep claustrum's own wording. On macOS it reads an `lsof` run it
+  tag. The lines that the Linux and macOS measurements against `f6010b97` and `89cb6289`
+  captured use the captured texts. Among them are four limit lines: more than 4096
+  processes, more than 64 orphan groups, more than 64 run dirs, and 8 retirements.
+  claustrum counts retire attempts there. The reference count after a refused attempt is
+  not measured. The
+  line before a `SIGKILL` is one more. So are the reasons for a held lock and for a
+  listener that is not our daemon. The
+  other lines keep claustrum's own wording. When the cleaner is off, the daemon logs one
+  `[daemon] host cleaning off:` line after the listening line. On macOS it reads an `lsof` run it
   gave up on as busy, and the reference side of that is not probe-measured. That one is a numbered divergence,
-  [DIVERGENCES.md](DIVERGENCES.md) D17. The reap path never ends a daemon whose socket still
-  leads to itself. After 30 days
+  [DIVERGENCES.md](DIVERGENCES.md) D17. After 30 days
   of run-dir idleness, or at once for a run dir named with `.removing-`, the retire path can
   SIGTERM a socket-live daemon.
 - On Unix, claustrum extracts the interactive PATH from the login shell in a

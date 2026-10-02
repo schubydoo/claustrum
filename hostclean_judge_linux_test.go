@@ -11,21 +11,13 @@ import (
 	"time"
 )
 
-// The containment helpers, the two probes, and the spare/skip arms of the judges. Every
-// verdict here decides whether the cleaner ends another process, so each assertion names the
-// exact verdict and reason rather than accepting "something non-empty".
+// The containment helpers, the two probes, and the spare/skip arms of the orphan judge and
+// of the retire. Every verdict here decides whether the cleaner ends another process, so
+// each assertion names the exact verdict and reason rather than accepting "something
+// non-empty".
 
 func TestHostRootsRemainingForms(t *testing.T) {
 	r := &hostRoots{roots: []string{"/opt/claude", "/srv/other"}, daemonBin: "server"}
-
-	// A socket directly under a root, not under run/<id>/. Both forms are real layouts, so a
-	// mutant that recognised only run/<id>/rpc.sock would treat this one as foreign.
-	if !r.isRunDirSocket("/opt/claude/rpc.sock") {
-		t.Error("<root>/rpc.sock not recognised as a run-dir socket")
-	}
-	if r.isRunDirSocket("/elsewhere/rpc.sock") {
-		t.Error("a socket outside every root was recognised")
-	}
 
 	// stripRoot answers "" for a path no root contains, which is what makes sameSocketPath
 	// refuse two unrelated paths instead of calling them equal.
@@ -49,7 +41,7 @@ func TestProbeSocketUnusableConnections(t *testing.T) {
 
 	// A connection with no SO_PEERCRED behind it: the dial succeeded, but nothing identifies
 	// the listener, so the probe must not report a live daemon. A mutant that returned
-	// hcSockLive here hands judgeDaemon a peer pid of 0.
+	// hcSockLive here hands the tidy a peer pid of 0.
 	conn := newFakePeerConn(t).(*net.UnixConn)
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
@@ -103,53 +95,10 @@ func TestVerifyListenerServesAnotherSocket(t *testing.T) {
 	// A daemon that verifies in every respect except the socket it serves.
 	hcFakeDaemon(t, proot, mk, link, 73, "/opt/claude/srv/a/server",
 		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", "/opt/claude/run/other/rpc.sock"}, true, "1")
-	if reason := c.verifyListener(73, "/opt/claude/run/x/rpc.sock"); reason != "it serves a different socket" {
-		t.Errorf("verifyListener = %q, want %q", reason, "it serves a different socket")
-	}
-}
-
-// TestJudgeDaemonAnotherVerifiedDaemon covers the socket-live case where a DIFFERENT process
-// answers the candidate's socket and verifies as one of our daemons serving it. The candidate
-// no longer owns its socket and holds no daemon.lock, so it is stranded and reaped. That is
-// the measured m2 case (issue 429): the reference ends it with SIGKILL. claustrum used
-// to skip it silently.
-func TestJudgeDaemonAnotherVerifiedDaemon(t *testing.T) {
-	proot, mk, link := fakeProc(t)
-	c := hcTestCleaner(t, "/opt/claude")
-	socket := "/opt/claude/run/x/rpc.sock"
-	oldDial := hcDial
-	t.Cleanup(func() { hcDial = oldDial })
-	hcDial = func(string) (net.Conn, error) { return newFakePeerConn(t), nil } // peer = this process
-	// SO_PEERCRED reports the RUNNER's real uid, which judgeDaemon compares against
-	// hcGetuid() and verifyListener against the uid in the fake status file. All three must
-	// be the same number, or the verdict depends on whether the runner happens to be uid
-	// 1000 (hcFakeDaemon's default).
-	uid := os.Getuid()
-	hcGetuid = func() int { return uid }
-
-	// The answerer: this test process, fully verifiable as a daemon serving that socket.
-	hcFakeDaemonUID(t, proot, mk, link, os.Getpid(), "/opt/claude/srv/a/server",
-		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
-	// The candidate: another daemon that claims the same socket but no longer answers it. Its
-	// lock was renamed aside, so it holds no daemon.lock BY NAME.
-	hcFakeDaemonUID(t, proot, mk, link, 74, "/opt/claude/srv/a/server",
-		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
-	link(74, "fd/3", "/opt/claude/run/x-old/daemon.lock.aside")
-
-	v, reason, target := c.judgeDaemon(mustInspect(t, 74))
-	if v != dvReap || target == nil || target.pid != 74 {
-		t.Fatalf("verdict = %v (reason %q, target %v), want reap: another verified daemon owns its socket", v, reason, target)
-	}
-	if target.socket != socket {
-		t.Errorf("target socket = %q, want %q for the ending log line", target.socket, socket)
-	}
-
-	// The same candidate WITH daemon.lock open by name is skipped (measured m1).
-	hcFakeDaemonUID(t, proot, mk, link, 76, "/opt/claude/srv/a/server",
-		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", uid)
-	link(76, "fd/3", "/opt/claude/run/x-old/daemon.lock")
-	if v, reason, _ := c.judgeDaemon(mustInspect(t, 76)); v != dvSkip {
-		t.Errorf("verdict = %v (reason %q), want skip: it holds its daemon.lock", v, reason)
+	// The reference's text, measured on a Linux VM (row ST06).
+	want := "the listener could not be verified as a daemon of ours (not serving that socket)"
+	if reason := c.verifyListener(73, "/opt/claude/run/x/rpc.sock"); reason != want {
+		t.Errorf("verifyListener = %q, want %q", reason, want)
 	}
 }
 
@@ -204,9 +153,9 @@ func TestRetireAbandonedGuards(t *testing.T) {
 
 	var signals []int
 	var sleeps int
-	oldSig, oldSleep, oldClock := hcSignalPid, hcSleep, hcClock
-	t.Cleanup(func() { hcSignalPid, hcSleep, hcClock = oldSig, oldSleep, oldClock })
-	hcSignalPid = func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return nil }
+	oldSig, oldSleep, oldClock := hcHoldPid, hcSleep, hcClock
+	t.Cleanup(func() { hcHoldPid, hcSleep, hcClock = oldSig, oldSleep, oldClock })
+	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return nil })
 	// The sleep stub ADVANCES the fake clock rather than doing nothing. A guard that a
 	// mutation removes lets control reach waitGone, and with a frozen clock that poll loop
 	// never reaches its deadline: the mutant would fail by hanging until the go test timeout
@@ -243,7 +192,7 @@ func TestRetireAbandonedGuards(t *testing.T) {
 	// A signal that fails for a reason other than "already gone" ends the attempt: the
 	// daemon is still there, so there is nothing to wait for. A mutant that fell through
 	// would poll the wait out to its deadline.
-	hcSignalPid = func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return syscall.EPERM }
+	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return syscall.EPERM })
 	sleeps = 0
 	victim := 77
 	hcFakeDaemon(t, proot, mk, link, victim, "/opt/claude/srv/a/server",

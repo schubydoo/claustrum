@@ -178,9 +178,9 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
 - Orphan reap. At startup the daemon reaps a child that a since-exited daemon of
   this run dir left behind. It first makes sure that the live process is that child. Linux
   and darwin only.
-- Host cleaner. A periodic sweep ends stranded sibling daemons and orphaned
-  Claude Code process groups under this install's roots. It also tidies stale run
-  dirs. Linux and darwin only.
+- Host cleaner. A periodic sweep ends orphaned
+  Claude Code process groups under this install's roots. It also retires abandoned
+  daemons and tidies stale run dirs. Linux and darwin only.
 - Inherited file limit. At serve startup, claustrum sets its soft RLIMIT_NOFILE
   to min(hard, 65536), so a process.spawn child inherits that limit when the raise
   succeeds. A child inherited 65536 in the reference measurement. Linux and darwin

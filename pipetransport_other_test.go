@@ -12,7 +12,7 @@ import (
 
 // TestHonorListenPipeNonWindows: the named-pipe transport is Windows-only, so on
 // every other platform the flag is forced OFF (with a warning) rather than
-// failing — mirroring honorKeepChildren's Windows no-op.
+// failing.
 func TestHonorListenPipeNonWindows(t *testing.T) {
 	if honorListenPipe(true) {
 		t.Error("honorListenPipe(true) = true, want false off Windows")

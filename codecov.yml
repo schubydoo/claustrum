@@ -240,9 +240,9 @@ component_management:
         - childreap_linux.go
         - childreap_darwin.go
         - childreap_other.go
-        # 19f30c46 host cleaner: a periodic -serve background sweep that ends stranded sibling
-        # daemons and orphaned Claude Code process groups under this install's roots and tidies
-        # their stale run dirs. The shared decision layer (hostclean.go, linux||darwin) drives
+        # 19f30c46 host cleaner: a periodic -serve background sweep that ends
+        # orphaned Claude Code process groups under this install's roots, retires abandoned
+        # daemons and tidies their stale run dirs. The shared decision layer (hostclean.go, linux||darwin) drives
         # OS-specific reads: /proc on linux, sysctl kern.proc + KERN_PROCARGS2 + lsof on darwin
         # (hostclean_darwin.go). Windows uses the no-op (hostclean_other.go).
         # Every read, kill, dial, rename and remove is seamed so the

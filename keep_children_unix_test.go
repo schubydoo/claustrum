@@ -14,16 +14,6 @@ import (
 // bookkeeping.
 func pidAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
-// On POSIX, -keep-children is honored verbatim.
-func TestHonorKeepChildrenUnix(t *testing.T) {
-	if !honorKeepChildren(true) {
-		t.Error("honorKeepChildren(true) = false, want true on POSIX")
-	}
-	if honorKeepChildren(false) {
-		t.Error("honorKeepChildren(false) = true, want false")
-	}
-}
-
 // With -keep-children set, graceful shutdown must leave a running child alive. We
 // drive stopChildren (the exact step teardown runs) rather than teardown itself,
 // which calls os.Exit and would take the test process down with it.

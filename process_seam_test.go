@@ -9,8 +9,8 @@ import (
 
 // TestSpawnSurvivesConfinementFailure covers spawn's confinement arm. Unlike the
 // pipe seams next door this arm is deliberately NON-fatal: on Windows — the only
-// OS where it can fail — a failed confinement costs the Job Object teardown and
-// kill falls back to the parent alone, not the spawn (on Unix the process group
+// OS where it can fail — a failed confinement costs the kill handle and
+// kill falls back to proc.Kill, not the spawn (on Unix the process group
 // from newSysProcAttr is signalled whatever the handle), so the process must still
 // be registered with whatever group confinement handed back (nil from this seam;
 // see the last paragraph for production). On Unix the
@@ -21,15 +21,15 @@ import (
 // The assertions are on the OUTCOME, not on coverage: spawn must return the
 // process and no error, p.group must be whatever confinement handed back rather
 // than a handle spawn fabricated, and the warning must name the process and the
-// reason — on Windows that log line is the only signal an operator gets that kill
-// is now parent-only.
+// reason — on Windows that log line is the only signal an operator gets that the
+// kill handle is missing.
 //
 // The seam returns nil, so p.group is asserted nil HERE. That is the pass-through
 // check, not a claim about production: Windows' confineProcess returns
-// &procGroup{} with a zero job handle on every failure path, never nil (its
+// &procGroup{} with a zero handle on every failure path, never nil (its
 // signal() then falls back to the parent). Both are nil-safe.
 func TestSpawnSurvivesConfinementFailure(t *testing.T) {
-	errConfine := errors.New("job object: access is denied")
+	errConfine := errors.New("open process: access is denied")
 	old := confineProc
 	t.Cleanup(func() { confineProc = old })
 	confineProc = func(*os.Process) (*procGroup, error) { return nil, errConfine }

@@ -2,8 +2,8 @@ name: CI
 
 # Format, vet, module hygiene, race tests (ubuntu + macos + windows — the
 # suites use the test binary itself as the process fixture, helperproc_test.go,
-# and AF_UNIX is supported on Windows ≥ 1803, so the Windows-only Job Object
-# code in sysproc_windows.go actually executes in CI — IMPROVEMENTS #20),
+# and AF_UNIX is supported on Windows ≥ 1803, so the Windows-only kill
+# code in sysproc_windows.go actually executes in CI, IMPROVEMENTS item 20),
 # cross-build of all 6 release targets, and a coverage floor. A single
 # aggregator job (`ci required checks passed`) is what branch protection gates
 # on — extend it by adding jobs to its `needs`.

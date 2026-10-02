@@ -218,8 +218,8 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	if hcBusy(1) {
 		t.Error("bare listener read as busy")
 	}
-	if m, ok := hcFdTargets(1); !ok || m["3"] != "/run/x/rpc.sock" {
-		t.Errorf("hcFdTargets = %v, ok=%v", m, ok)
+	if recs := parseLsofFtn("p1\nf3\ntunix\nn/run/x/rpc.sock\nf5\ntPIPE\nn->0xabc\n"); len(recs) != 2 || recs[0].fd != "3" || recs[0].name != "/run/x/rpc.sock" {
+		t.Errorf("parseLsofFtn = %v", recs)
 	}
 
 	// Listener plus an accepted connection: two unix records -> busy.
@@ -234,12 +234,6 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true }
 	if !hcBusy(1) {
 		t.Error("connected unix peer not read as busy")
-	}
-
-	// No lsof output -> process gone / nothing found.
-	runLsof = func(...string) (string, bool) { return "", true }
-	if _, ok := hcFdTargets(1); ok {
-		t.Error("hcFdTargets ok=true with no lsof output")
 	}
 }
 

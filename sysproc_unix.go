@@ -29,16 +29,10 @@ func reapProcessGroup(proc *os.Process) {
 	_ = syscall.Kill(-proc.Pid, syscall.SIGKILL)
 }
 
-// honorKeepChildren reports the effective -keep-children setting. On POSIX it is
-// honored verbatim: children spawn into their own process groups (Setpgid) and
-// are reparented to init when the detached daemon exits, so simply not signalling
-// them on shutdown leaves them running. (Windows overrides this — see its file.)
-func honorKeepChildren(requested bool) bool { return requested }
-
 // procGroup is the per-process kill handle. On Unix the child already lives in
 // its own process group (Setpgid, above), so there is no extra OS state to
-// hold; the type exists only so the cross-platform caller can treat every OS
-// uniformly (on Windows it wraps a Job Object).
+// hold. The type exists only so the cross-platform caller can treat every OS
+// uniformly. On Windows it wraps a process handle of the direct child.
 type procGroup struct{}
 
 // confineProcess is a no-op on Unix — the process group was established by
@@ -46,9 +40,11 @@ type procGroup struct{}
 func confineProcess(*os.Process) (*procGroup, error) { return &procGroup{}, nil }
 
 // signal delivers the signal to the child's whole process group. Nil-receiver
-// safe (it doesn't touch the receiver).
-func (*procGroup) signal(proc *os.Process, signame string) {
+// safe (it doesn't touch the receiver). It returns nil: a failed kill is not
+// reported on Unix, as before. Only the Windows twin returns an error.
+func (*procGroup) signal(proc *os.Process, signame string) error {
 	signalProcessGroup(proc, signame)
+	return nil
 }
 
 // close has nothing to release on Unix.

@@ -109,17 +109,17 @@ func hcNewPassFixture(t *testing.T) *hcPassFix {
 	}()
 
 	oldDial, oldUID, oldClock, oldSleep := hcDial, hcGetuid, hcClock, hcSleep
-	oldSig, oldGrp, oldRen, oldRm := hcSignalPid, killGroup, hcRename, hcRemoveAll
+	oldSig, oldGrp, oldRen, oldRm := hcHoldPid, killGroup, hcRename, hcRemoveAll
 	t.Cleanup(func() {
 		hcDial, hcGetuid, hcClock, hcSleep = oldDial, oldUID, oldClock, oldSleep
-		hcSignalPid, killGroup, hcRename, hcRemoveAll = oldSig, oldGrp, oldRen, oldRm
+		hcHoldPid, killGroup, hcRename, hcRemoveAll = oldSig, oldGrp, oldRen, oldRm
 	})
 	hcGetuid = func() int { return f.uid }
 	now := time.Now()
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	die := func(pid int) { _ = os.RemoveAll(filepath.Join(f.proot, strconv.Itoa(pid))) }
-	hcSignalPid = func(pid int, _ syscall.Signal) error { f.single = append(f.single, pid); die(pid); return nil }
+	hcHoldPid = holdWith(func(pid int, _ syscall.Signal) error { f.single = append(f.single, pid); die(pid); return nil })
 	killGroup = func(pid int, sig syscall.Signal) error {
 		if sig == 0 {
 			if _, err := os.Stat(filepath.Join(f.proot, strconv.Itoa(pid))); err != nil {
@@ -145,23 +145,14 @@ func hcNewPassFixture(t *testing.T) *hcPassFix {
 	return f
 }
 
-// plantDaemon plants a marked, old daemon of ours serving socket. Its descriptor list reads and
-// holds neither a lock nor a client.
-func (f *hcPassFix) plantDaemon(t *testing.T, pid int, socket string) {
-	t.Helper()
-	exe := filepath.Join(f.base, "srv", "a", "server")
-	hcFakeDaemonUID(t, f.proot, f.mk, f.link, pid, exe, []string{exe, "--serve", "--socket", socket}, true, "1", f.uid)
-	f.link(pid, "fd/1", "/dev/null")
-}
+// ---- Order: the run dirs are listed before the orphan phase ----
 
-// ---- Order: the run dirs are listed before any daemon is dialled ----
-
-// TestPassListsRunDirsBeforeTheDaemonPhase pins the pass order (issue 429). The
-// sibling N holds no daemon.lock by name, so the daemon phase dials it, and that dial writes
-// its log, as a real daemon does. The run dir was listed before the dial, with its old age, so
-// the tidy sees it, re-reads it, and keeps it with the measured line. Listing the dirs after
-// the daemon phase reads the fresh log instead and skips N without a word.
-func TestPassListsRunDirsBeforeTheDaemonPhase(t *testing.T) {
+// TestPassListsRunDirsBeforeTheOrphanPhase pins the pass order (issue 429). The run dir N is
+// listed right after the snapshot, with its old age. Something then writes its log while the
+// pass ends an orphan group. The tidy sees N, re-reads it, and keeps it with the measured
+// line, before any dial. Listing the dirs after the orphan phase reads the fresh log instead
+// and skips N without a word.
+func TestPassListsRunDirsBeforeTheOrphanPhase(t *testing.T) {
 	f := hcNewPassFixture(t)
 	nDir := filepath.Join(f.runRoot, "N")
 	if err := os.MkdirAll(nDir, 0o755); err != nil {
@@ -174,29 +165,40 @@ func TestPassListsRunDirsBeforeTheDaemonPhase(t *testing.T) {
 	hcBackdate(t, logPath, 454*24*time.Hour)
 	hcBackdate(t, nDir, 454*24*time.Hour)
 	nSock := filepath.Join(nDir, rpcSockBasename)
-	pid := os.Getpid() + 1
-	f.plantDaemon(t, pid, nSock)
-	f.link(pid, "fd/3", filepath.Join(nDir, "daemon.lock.aside")) // the lockaside case
+
+	orphan := os.Getpid() + 1
+	hcFakeDaemonUID(t, f.proot, f.mk, f.link, orphan, filepath.Join(f.base, "ccd-cli", "2.1.0"),
+		[]string{"claude", "--output-format=stream-json"}, true, "1", f.uid)
+	hcPipeStdio(f.link, orphan)
+	record := killGroup
+	killGroup = func(pid int, sig syscall.Signal) error {
+		if sig == syscall.SIGTERM {
+			now := hcClock()
+			_ = os.Chtimes(logPath, now, now) // N comes back into use during the orphan phase
+		}
+		return record(pid, sig)
+	}
 
 	dials := 0
 	f.dial = func(addr string) (net.Conn, error) {
 		if addr == nSock {
 			dials++
-			now := hcClock()
-			_ = os.Chtimes(logPath, now, now) // the daemon logs "New connection"
 		}
-		return nil, &net.OpError{Op: "dial", Err: syscall.EIO} // inconclusive: spared
+		return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT}
 	}
 	buf := captureLogBuf(t)
 
 	f.c.Pass()
 
+	if len(f.group) != 1 || f.group[0] != orphan {
+		t.Fatalf("group signals = %v, want the orphan %d: the fixture did not reach the orphan phase", f.group, orphan)
+	}
 	want := fmt.Sprintf("[hostclean] run dir %q: kept, in use again since this pass listed it", nDir)
 	if !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want %q", buf.String(), want)
 	}
-	if dials != 1 {
-		t.Errorf("N's socket was dialled %d times, want 1 (the judge's dial, and no tidy probe)", dials)
+	if dials != 0 {
+		t.Errorf("N's socket was dialled %d times, want 0: the re-read keeps it before any probe", dials)
 	}
 }
 
@@ -438,37 +440,6 @@ func TestRemoveRunDirActsInsideTheRoot(t *testing.T) {
 	}
 }
 
-// TestEndDaemonsRechecksIdentity: a target whose pid now belongs to another process is not
-// signalled. The judging loop can take seconds, and the pid can be reused in that span.
-func TestEndDaemonsRechecksIdentity(t *testing.T) {
-	root, mk, _ := fakeProc(t)
-	single, _ := hcSeamSignals(t, root)
-	mk(3200, "stat", hcRunningStat(3200, 1, 3200, "999")) // judged with start-ticks 1, now 999
-	var sum hcSummary
-	(&hostCleaner{}).endDaemons([]daemonTarget{{tracked: tracked{pid: 3200, pgid: 3200, startTicks: "1"}, socket: "/r/run/X/rpc.sock"}}, &sum)
-	if len(*single) != 0 {
-		t.Errorf("SIGKILL sent to a reused pid: %v", *single)
-	}
-	if sum.strandedSignalled != 0 {
-		t.Errorf("strandedSignalled = %d, want 0", sum.strandedSignalled)
-	}
-}
-
-// TestHasOpenNamedDeletedLock pins that on linux a lock whose file was deleted does not count
-// as open by name (the kernel shows it as "<path> (deleted)"). The reference side is not
-// measured. This test makes a change to that choice a deliberate one.
-func TestHasOpenNamedDeletedLock(t *testing.T) {
-	_, _, link := fakeProc(t)
-	link(3300, "fd/3", "/opt/claude/run/x/daemon.lock (deleted)")
-	if open, canRead := hcHasOpenNamed(3300, runDirLockName); open || !canRead {
-		t.Errorf("deleted lock: open=%v canRead=%v, want false true", open, canRead)
-	}
-	link(3301, "fd/3", "/opt/claude/run/x/daemon.lock")
-	if open, _ := hcHasOpenNamed(3301, runDirLockName); !open {
-		t.Error("a live lock did not count as open by name")
-	}
-}
-
 // TestRetireAbandonedRefusesParentAndForeignUID: the retire refuses this daemon's parent and
 // a peer of another uid before anything else, with no reason.
 // Not measured: the Linux run did not stage this rule.
@@ -599,19 +570,6 @@ func TestPassOwnSocketLines(t *testing.T) {
 		t.Errorf("summary = %+v, want zero", sum)
 	}
 	if want := `own socket "/opt/claude/run/self/rpc.sock" does not lead to this daemon (state 1, pid 0); skipping this pass`; !strings.Contains(buf.String(), want) {
-		t.Errorf("log = %q, want %q", buf.String(), want)
-	}
-}
-
-func TestEndDaemonsMeasuredLine(t *testing.T) {
-	root, mk, _ := fakeProc(t)
-	hcSeamSignals(t, root)
-	mk(3100, "stat", hcRunningStat(3100, 1, 3100, "1"))
-	buf := captureLogBuf(t)
-	var sum hcSummary
-	(&hostCleaner{}).endDaemons([]daemonTarget{{tracked: tracked{pid: 3100, pgid: 3100, startTicks: "1"}, socket: "/r/run/X/rpc.sock"}}, &sum)
-	want := `[hostclean] ending stranded daemon pid 3100: it was started for "/r/run/X/rpc.sock", which no longer leads to it, and it holds no run-dir lock: SIGKILL`
-	if !strings.Contains(buf.String(), want) {
 		t.Errorf("log = %q, want %q", buf.String(), want)
 	}
 }

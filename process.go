@@ -165,7 +165,7 @@ type managedProc struct {
 	// killGroupAfterExit read it under p.mu for their own reasons, not to protect
 	// this write-once pointer.
 	cmd   *exec.Cmd
-	group *procGroup // OS handle for whole-tree teardown (Job Object on Windows)
+	group *procGroup // OS kill handle (the process group on Unix, the direct child on Windows)
 	// done is closed once by the exit goroutine after the child is reaped, so
 	// killAndWait can block until the process is actually gone.
 	done chan struct{}
@@ -404,8 +404,8 @@ func (p *managedProc) isLive() bool {
 // process" guards are testable without actually delivering a signal to whatever
 // now owns a recycled pgid — which is precisely the accident being guarded
 // against. Production never reassigns it.
-var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
-	g.signal(proc, signame)
+var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+	return g.signal(proc, signame)
 }
 
 // signalIfLive delivers signame to the process group unless the process has
@@ -435,16 +435,19 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) {
 // back for re-measurement it can never satisfy. What is defensible: the guard
 // can only ever suppress a signal, so claustrum's behaviour here is at most
 // narrower than the reference's, never wider.
-func (p *managedProc) signalIfLive(signame, killedBy string) {
+//
+// It reports whether it delivered the signal.
+func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.running || p.reaped || p.cmd == nil || p.cmd.Process == nil {
-		return
+		return false
 	}
 	if killedBy != "" && p.killedBy == "" {
 		p.killedBy = killedBy
 	}
-	signalGroup(p.group, p.cmd.Process, signame)
+	_ = signalGroup(p.group, p.cmd.Process, signame)
+	return true
 }
 
 // killGroupAfterExit SIGKILLs the process group once the managed process itself
@@ -461,13 +464,16 @@ func (p *managedProc) signalIfLive(signame, killedBy string) {
 // comment used to say "the reference has no such guard anywhere" — an absence
 // assertion no probe can confirm. Matching the observable sweep is the claim;
 // how the reference arrives at it is not something this comment can know.
-func (p *managedProc) killGroupAfterExit() {
+//
+// It returns the error of the kill. On Unix that is nil. On Windows it is the error of
+// TerminateProcess on the direct child.
+func (p *managedProc) killGroupAfterExit() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.cmd == nil || p.cmd.Process == nil {
-		return
+		return nil
 	}
-	signalGroup(p.group, p.cmd.Process, "KILL")
+	return signalGroup(p.group, p.cmd.Process, "KILL")
 }
 
 // emit assigns the next per-process seq, buffers the frame, and fans it out to
@@ -735,9 +741,10 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	}
 	met.spawns.Add(1)
 
-	// Confine the child (and its descendants) so kill can tear down the whole
-	// tree. On Unix this is the process group from newSysProcAttr; on Windows a
-	// Job Object. A failure here is non-fatal — kill falls back to the parent.
+	// Take the kill handle of the child. On Unix this is the process group from
+	// newSysProcAttr, so a kill can end the whole tree. On Windows it is a process
+	// handle of the direct child only. A failure here is non-fatal: kill falls back
+	// to the parent.
 	group, err := confineProc(cmd.Process)
 	if err != nil {
 		logWarnf("[process.Manager] process-group confinement failed for %s: %v", id, err)
@@ -765,11 +772,13 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	// Reusing a live id replaces the registry entry (matching the reference:
 	// both spawns succeed). The previous process would otherwise be orphaned —
 	// unreachable via kill/stdin/reattach (which now key to the new process) and
-	// missed by killAll — so we tear its tree down here rather than leak it. We
+	// missed by killAll — so we end it here rather than leak it. On Linux and macOS
+	// that ends its whole tree. On Windows it ends the direct child only, and the
+	// descendants live on. We
 	// first drop its subscribers so its teardown frames (a late exit/stdout under
 	// the now-reused id) don't reach clients. OS-level only — no wire frame
-	// change. The reference side of this teardown is not probe-measured (see
-	// docs/PROTOCOL.md).
+	// change. On a Windows VM 89cb6289 leaves the previous process alive (rows EV and
+	// EVInh). The reference is not measured there on Linux and macOS (docs/PROTOCOL.md).
 	if old := m.procs[id]; old != nil {
 		old.mu.Lock()
 		old.subs = map[*conn]struct{}{}
@@ -877,8 +886,8 @@ func (p *managedProc) waitReapAndDrain(wg *sync.WaitGroup, stdoutR, stderrR *os.
 	p.stdinDone = true
 	p.stdinCond.Broadcast()
 	p.stdinMu.Unlock()
-	// Release the OS group handle now the child is gone. On Windows this drops
-	// the Job Object's last handle, reaping any descendants it left behind.
+	// Release the OS group handle now the child is gone. On Windows this closes
+	// the kill handle of the direct child. It ends nothing.
 	p.group.close()
 	sigName := exitSignalName(err)
 	logInfof("[process.Manager] Process %s exited with code %d%s", p.id, code, exitLogSuffix(sigName, killedBy))
@@ -1101,7 +1110,7 @@ func (p *managedProc) stdinWriter() {
 // kill is best-effort and signals the whole process group (OS-specific). An
 // already-exited child is skipped: once cmd.Wait has reaped it, its Unix pgid
 // can be recycled, so a late negative-pid signal could hit an unrelated
-// process group. (Windows is immune — the job handle pins identity.) OS-level
+// process group. (Windows is immune: the process handle pins identity.) OS-level
 // hardening only; the wire reply does not depend on the signal side effect.
 func (m *procManager) kill(id, signal string) {
 	p := m.get(id)
@@ -1215,12 +1224,11 @@ var (
 	cmdStdinPipe = (*exec.Cmd).StdinPipe
 )
 
-// confineProc is confineProcess behind a seam. Confinement cannot fail on Unix
-// (the process group is already set by newSysProcAttr, so the call returns a nil
-// error unconditionally) and fails on Windows only when a Job Object call, or the
-// OpenProcess it needs, fails, so spawn's non-fatal warn-and-continue arm — which warns and keeps
-// the group confinement handed back rather than aborting the spawn — is
-// otherwise unreachable. Production never reassigns it.
+// confineProc is confineProcess behind a seam. Confinement cannot fail on Unix: the
+// process group is already set by newSysProcAttr, so the call returns a nil error. On
+// Windows it fails only when the OpenProcess it needs fails. The warn-and-continue arm
+// of spawn is therefore unreachable without the seam. That arm warns, keeps the group
+// that came back and does not abort the spawn. Production never reassigns it.
 var confineProc = confineProcess
 
 // closeAll closes every file, ignoring errors. Used on the spawn error paths and
@@ -1279,8 +1287,10 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	select {
 	case <-p.done:
 		if escalate {
-			// The reference ends the whole tree even when the graceful signal
-			// already did the job. Measured at 5db5e4a with a child that
+			// On Linux and macOS the reference ends the whole tree even when the graceful signal
+			// already did the job. On Windows this kill ends nothing: the direct child
+			// ended already, and 89cb6289 leaves the descendants alive there (measured on
+			// a Windows VM). Measured at 5db5e4a on Linux with a child that
 			// backgrounds a sleeper: killAndWait with escalate:true leaves no
 			// grandchild alive, escalate:false spares it — and the child itself
 			// dies promptly either way, so this is not the post-grace escalation
@@ -1288,7 +1298,7 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 			//
 			// Side effect only: every returned flag is unchanged, so the reply
 			// frame is byte-identical to what it was before.
-			p.killGroupAfterExit()
+			_ = p.killGroupAfterExit()
 		}
 		return true, true, false, false
 	case <-time.After(grace):
@@ -1308,7 +1318,16 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	// which is precisely how claustrum came to leave grandchildren running where
 	// the reference kills them. Measured: killAndWait with escalate:true left the
 	// backgrounded sleeper alive on claustrum and dead on the reference.
-	p.killGroupAfterExit()
+	//
+	// On Windows the kill ends the direct child only, and here that child has ended
+	// already. TerminateProcess then fails, and the line below is the reference's.
+	// Measured on a Windows VM against 89cb6289, with kids of the child holding its
+	// stdout and stderr. The line was "KillAndWait c1: group kill failed:
+	// TerminateProcess: Access is denied.". On Unix the kill reports no error, so no
+	// line prints there.
+	if err := p.killGroupAfterExit(); err != nil {
+		logWarnf("[process.Manager] KillAndWait %s: group kill failed: %v", p.id, err)
+	}
 	select {
 	case <-p.done:
 		return true, true, false, true
@@ -1415,13 +1434,21 @@ func (m *procManager) runningCount() int {
 	return n
 }
 
-func (m *procManager) killAll() {
+func (m *procManager) killAll() { m.killAllCount() }
+
+// killAllCount sends the shutdown kill to every live child. It returns how many children
+// got it, for the "cleanup:" line of the shutdown.
+func (m *procManager) killAllCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	n := 0
 	for _, p := range m.procs {
 		// Skip exited children — their pgid may already be recycled (see kill).
-		p.signalIfLive("KILL", "shutdown")
+		if p.signalIfLive("KILL", "shutdown") {
+			n++
+		}
 	}
+	return n
 }
 
 // buildEnv merges the caller-supplied env map over the daemon's environment.

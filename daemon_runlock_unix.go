@@ -3,8 +3,6 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -84,10 +82,24 @@ type ownerRecord struct {
 // truncates the record and drops the flock on graceful shutdown; the file itself is left
 // in place (not unlinked). When the lock could not be taken
 // the release func is a no-op.
-func claimRunDir(socket, role string) func() {
+//
+// instanceID goes into the owner record. It is the daemon's own instance id, the value
+// that server.capabilities answers.
+//
+// A daemon that does not get the lock prints the "not the run dir's lock holder" line last.
+// The reference printed it on a Linux VM (row ST02, f6010b97 and 89cb6289). There a process
+// with no daemon record held the lock, and two other lines came first. claustrum prints it
+// on every arm that ends without the lock. The other arms are not measured. The line says "recording
+// none". claustrum still records and reaps children in that state. What the reference does
+// there is not measured.
+func claimRunDir(socket, role, instanceID string) func() {
 	dir := filepath.Dir(socket)
 	path := filepath.Join(dir, runDirLockName)
-	noop := func() {}
+	// notHolder is the return of every arm that ends without the lock.
+	notHolder := func() func() {
+		logInfof("%s", runDirNotHolderLine)
+		return func() {}
+	}
 
 	// O_NOFOLLOW: never follow a pre-existing daemon.lock symlink. If the socket dir is
 	// shared-writable, another local user could plant a symlink to a daemon-writable file
@@ -102,17 +114,17 @@ func claimRunDir(socket, role string) func() {
 	fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		logWarnf("[daemon] serve: cannot open %s (%v); proceeding without run-dir ownership", path, err)
-		return noop
+		return notHolder()
 	}
 	if !lockRunDir(fd, path, socket) {
 		_ = syscall.Close(fd)
-		return noop
+		return notHolder()
 	}
 	writeOwnerRecord(fd, ownerRecord{
 		Pid:        os.Getpid(),
 		Role:       role,
 		Node:       nodeID(),
-		InstanceID: newRunDirInstanceID(),
+		InstanceID: instanceID,
 		StartedAt:  time.Now().UnixMilli(),
 	})
 	return func() {
@@ -166,6 +178,15 @@ func evictRunDirHolder(path, socket string) bool {
 		logInfof("[daemon] serve: previous owner of %s: %s", rundir, outcome)
 	}
 	holder, err := readOwnerRecord(path)
+	// A holder whose record names no daemon role is left alone. That covers a lock file
+	// with no record at all (role ""). The two lines are the reference's, measured on a
+	// Linux VM against f6010b97 and 89cb6289 (row ST02). In that row a helper holds the
+	// lock and the file is empty. A record with another role text is not measured.
+	if holder.Role != "serve" && holder.Role != "stop" {
+		logWarnf("[daemon] serve: WARNING %s is held by a live process we will not signal (its holder is not a daemon (role %q)); leaving it alone", path, holder.Role)
+		summary("survivor")
+		return false
+	}
 	if err != nil || holder.Pid <= 1 {
 		logWarnf("[daemon] serve: %s is locked but its owner record is unusable; proceeding without run-dir ownership", path)
 		return false
@@ -474,21 +495,6 @@ func selfBase() string {
 		return ""
 	}
 	return filepath.Base(exe)
-}
-
-// newRunDirInstanceID returns a 32-hex-character random id for the owner record, the
-// same 32-hex shape the reference records. It returns "" on the (unreachable)
-// crypto/rand failure, and the field is then omitted.
-//
-// Standalone note: this is generated here so the run-dir lock is a self-contained PR.
-// When the capabilities instanceId (a separate slice) also lands, unify the two so the
-// on-disk record carries the same instanceId the daemon reports on the wire.
-func newRunDirInstanceID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(b[:])
 }
 
 // writeOwnerRecord marshals rec and writes it, followed by a newline, at offset 0 of the

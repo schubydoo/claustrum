@@ -62,8 +62,8 @@ func TestKillAndWaitEscalationReapsOrphanedGroup(t *testing.T) {
 // against a process that was never started — reachable when a spawn failed
 // before exec. It must be a silent no-op, not a nil dereference.
 func TestKillGroupAfterExitIgnoresUnstartedProcess(t *testing.T) {
-	(&managedProc{id: "never-started"}).killGroupAfterExit()
-	(&managedProc{id: "no-os-process", cmd: &exec.Cmd{}}).killGroupAfterExit()
+	_ = (&managedProc{id: "never-started"}).killGroupAfterExit()
+	_ = (&managedProc{id: "no-os-process", cmd: &exec.Cmd{}}).killGroupAfterExit()
 }
 
 // waitPIDFile polls until the file holds a parseable PID.

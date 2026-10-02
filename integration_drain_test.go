@@ -55,7 +55,7 @@ func killFixtureGroup(t *testing.T, s *server, processID string) {
 	t.Helper()
 	t.Cleanup(func() {
 		if p := s.procs.get(processID); p != nil {
-			p.killGroupAfterExit()
+			_ = p.killGroupAfterExit()
 		}
 	})
 }

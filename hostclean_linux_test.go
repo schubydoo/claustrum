@@ -286,77 +286,6 @@ func TestVerifyListener(t *testing.T) {
 	}
 }
 
-func TestJudgeDaemon(t *testing.T) {
-	proot, mk, link := fakeProc(t)
-	c := hcTestCleaner(t, "/opt/claude")
-	socket := "/opt/claude/run/x/rpc.sock"
-	oldDial := hcDial
-	t.Cleanup(func() { hcDial = oldDial })
-
-	inspectDaemon := func(pid int, marked bool, start string) hcTracked {
-		hcFakeDaemon(t, proot, mk, link, pid, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, marked, start)
-		tr, res := inspect(pid, true)
-		if res != hcInspectOK {
-			t.Fatalf("inspect(%d) = %v", pid, res)
-		}
-		return tr
-	}
-
-	// REAP: marked, old, socket no longer answers, no lock open, not busy.
-	dials := 0
-	hcDial = func(string) (net.Conn, error) {
-		dials++
-		return nil, &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}
-	}
-	link(42, "fd/1", "/dev/null") // a readable descriptor list with no lock and no socket
-	v, _, target := c.judgeDaemon(inspectDaemon(42, true, "100"))
-	if v != dvReap || target == nil || target.pid != 42 {
-		t.Errorf("stranded daemon not reaped: v=%v target=%v", v, target)
-	}
-	// SPARE: an unmarked daemon older than the marker age -> hand-started reason.
-	v2, reason2, _ := c.judgeDaemon(inspectDaemon(45, false, "100"))
-	if v2 != dvSpare || reason2 == "" {
-		t.Errorf("unmarked old daemon: v=%v reason=%q, want spare", v2, reason2)
-	}
-	// SKIP: it is us.
-	self := inspectDaemon(c.selfPid, true, "100")
-	if v, _, _ := c.judgeDaemon(self); v != dvSkip {
-		t.Errorf("self not skipped: %v", v)
-	}
-	// SKIP: a marked --serve daemon younger than the age gate is never touched. Its start-ticks
-	// sit just below the fake uptime (100000s at 100Hz), so its age is ~100s.
-	if v, _, _ := c.judgeDaemon(inspectDaemon(46, true, "9990000")); v != dvSkip {
-		t.Errorf("young daemon not skipped: %v", v)
-	}
-	// SKIP: a daemon that holds a file named daemon.lock open is left alone WITHOUT a dial of
-	// its socket. The lock is open by name even though its dir was moved aside, which is the
-	// measured m1 case. A dial writes to the daemon's log and makes its run dir read fresh.
-	hcFakeDaemon(t, proot, mk, link, 47, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "100")
-	link(47, "fd/3", "/opt/claude/run/x-old/daemon.lock")
-	dials = 0
-	if v, _, _ := c.judgeDaemon(mustInspect(t, 47)); v != dvSkip {
-		t.Errorf("daemon with its run-dir lock open not skipped: %v", v)
-	}
-	if dials != 0 {
-		t.Errorf("the socket of a daemon holding daemon.lock was dialled %d times, want 0", dials)
-	}
-	// A lock file renamed aside is no longer open BY NAME, so that daemon is dialled (the
-	// measured lockaside case) and, with a dead socket, reaped.
-	hcFakeDaemon(t, proot, mk, link, 49, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "100")
-	link(49, "fd/3", "/opt/claude/run/x/daemon.lock.aside")
-	dials = 0
-	if v, _, _ := c.judgeDaemon(mustInspect(t, 49)); v != dvReap || dials != 1 {
-		t.Errorf("daemon with its lock renamed aside: v=%v dials=%d, want reap after 1 dial", v, dials)
-	}
-	// SPARE: a daemon whose open files cannot be read (no fd directory) is spared, not reaped,
-	// and not dialled.
-	hcFakeDaemon(t, proot, mk, link, 48, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "100")
-	dials = 0
-	if v, reason, _ := c.judgeDaemon(mustInspect(t, 48)); v != dvSpare || reason != "its open descriptors were unreadable" || dials != 0 {
-		t.Errorf("daemon with unreadable open files: v=%v reason=%q dials=%d, want spare, no dial", v, reason, dials)
-	}
-}
-
 func mustInspect(t *testing.T, pid int) hcTracked {
 	t.Helper()
 	tr, res := inspect(pid, true)
@@ -513,12 +442,72 @@ func TestTidyRunDirsRemoveAndUndo(t *testing.T) {
 	if sum.runDirsRemoved != 1 || len(removed) != 1 {
 		t.Errorf("stale dir not removed: removed=%v sum=%d", removed, sum.runDirsRemoved)
 	}
-	// A fresh dir (idle below the threshold) is left alone.
+	// A fresh dir (idle below the threshold) is left alone, with no line about it.
 	sum = hcSummary{}
 	removed = nil
+	buf := captureLogBuf(t)
 	c.tidyRunDirs([]runDirEntry{hcEntry(t, runRoot, root, "fresh", time.Hour)}, &sum)
 	if sum.runDirsRemoved != 0 || len(removed) != 0 {
 		t.Errorf("fresh dir was removed: removed=%v", removed)
+	}
+	if got := buf.String(); strings.Contains(got, "[hostclean]") {
+		t.Errorf("log for a fresh dir = %q, want no cleaner line", got)
+	}
+}
+
+// TestTidyIdleAgeIsThirtyDays: one tidy call with a folder that is 29 days idle and one
+// that is 31 days idle. The first stays and the second goes.
+func TestTidyIdleAgeIsThirtyDays(t *testing.T) {
+	fakeProc(t)
+	c := hcTestCleaner(t, "/opt/claude")
+	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
+	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
+	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
+	hcRename = func(*os.Root, string, string) error { return nil }
+	var removed []string
+	hcRemoveAll = func(_ *os.Root, p string) error { removed = append(removed, p); return nil }
+	runRoot, root := hcRunRoot(t)
+	entries := []runDirEntry{
+		hcEntry(t, runRoot, root, "d29", 29*24*time.Hour),
+		hcEntry(t, runRoot, root, "d31", 31*24*time.Hour),
+	}
+	var sum hcSummary
+	c.tidyRunDirs(entries, &sum)
+	if sum.runDirsRemoved != 1 || len(removed) != 1 || !strings.HasPrefix(removed[0], "d31"+hcStagingMarker) {
+		t.Errorf("removed = %v (summary %d), want only the 31-day folder", removed, sum.runDirsRemoved)
+	}
+}
+
+// TestTidyKeepsADirThatCameBackAfterTheProbes: a 40-day folder passes the first two age
+// reads. Its log file then gets a write while the tidy probes the socket. The last age
+// read sees that, and the folder stays, with the "in use again" line.
+func TestTidyKeepsADirThatCameBackAfterTheProbes(t *testing.T) {
+	fakeProc(t)
+	c := hcTestCleaner(t, "/opt/claude")
+	oldDial, oldRen, oldRm := hcDial, hcRename, hcRemoveAll
+	t.Cleanup(func() { hcDial, hcRename, hcRemoveAll = oldDial, oldRen, oldRm })
+	runRoot, root := hcRunRoot(t)
+	e := hcEntry(t, runRoot, root, "back", 40*24*time.Hour)
+	hcDial = func(string) (net.Conn, error) {
+		// The folder comes back into use during the socket probe.
+		logFile := filepath.Join(e.dirPath, hcLogName)
+		if err := os.WriteFile(logFile, []byte("x\n"), 0o600); err != nil {
+			t.Error(err)
+		}
+		hcBackdate(t, logFile, 0)
+		return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT}
+	}
+	var renamed, removed []string
+	hcRename = func(_ *os.Root, from, to string) error { renamed = append(renamed, from+"=>"+to); return nil }
+	hcRemoveAll = func(_ *os.Root, p string) error { removed = append(removed, p); return nil }
+	buf := captureLogBuf(t)
+	var sum hcSummary
+	c.tidyRunDirs([]runDirEntry{e}, &sum)
+	if sum.runDirsRemoved != 0 || len(renamed) != 0 || len(removed) != 0 {
+		t.Errorf("renamed %v, removed %v (summary %d), want the folder untouched", renamed, removed, sum.runDirsRemoved)
+	}
+	if want := fmt.Sprintf("[hostclean] run dir %q: kept, in use again since this pass listed it\n", e.dirPath); !strings.Contains(buf.String(), want) {
+		t.Errorf("log = %q, want the line %q", buf.String(), want)
 	}
 }
 
@@ -527,13 +516,13 @@ func TestTidyRunDirsRemoveAndUndo(t *testing.T) {
 func hcSeamSignals(t *testing.T, root string) (single, group *[]int) {
 	t.Helper()
 	var s, g []int
-	oldSig, oldGrp, oldClock, oldSleep := hcSignalPid, killGroup, hcClock, hcSleep
-	t.Cleanup(func() { hcSignalPid, killGroup, hcClock, hcSleep = oldSig, oldGrp, oldClock, oldSleep })
+	oldSig, oldGrp, oldClock, oldSleep := hcHoldPid, killGroup, hcClock, hcSleep
+	t.Cleanup(func() { hcHoldPid, killGroup, hcClock, hcSleep = oldSig, oldGrp, oldClock, oldSleep })
 	now := time.Unix(2_000_000, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	die := func(pid int) { _ = os.RemoveAll(filepath.Join(root, strconv.Itoa(pid))) }
-	hcSignalPid = func(pid int, sig syscall.Signal) error { s = append(s, pid); die(pid); return nil }
+	hcHoldPid = holdWith(func(pid int, sig syscall.Signal) error { s = append(s, pid); die(pid); return nil })
 	killGroup = func(pid int, sig syscall.Signal) error {
 		if sig == 0 { // hcGroupExists probe: the group exists iff its leader pid is still present
 			if _, err := os.Stat(filepath.Join(root, strconv.Itoa(pid))); err != nil {
@@ -552,35 +541,11 @@ func TestSummaryString(t *testing.T) {
 	if (hcSummary{}).String() != "nothing to do" {
 		t.Errorf("empty summary = %q, want %q", hcSummary{}.String(), "nothing to do")
 	}
-	s := hcSummary{strandedEnded: 2, runDirsRemoved: 1}
-	if !strings.Contains(s.String(), "ended 2") || !strings.Contains(s.String(), "run dirs removed 1") {
-		t.Errorf("summary string missing counts: %q", s.String())
-	}
-}
-
-func TestEndDaemons(t *testing.T) {
-	root, mk, _ := fakeProc(t)
-	single, group := hcSeamSignals(t, root)
-	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 111}
-	// A daemon (dies to SIGKILL) with one leftover child group. Both are present in procfs with
-	// matching identity so the re-validation before signalling passes.
-	mk(3000, "stat", hcRunningStat(3000, 1, 3000, "1"))                   // daemon, present until signaled
-	mk(3001, "stat", "3001 (x) R 1 3001 "+strings.Repeat("0 ", 16)+"2 x") // leftover child group leader
-	targets := []daemonTarget{{
-		tracked:  tracked{pid: 3000, pgid: 3000, startTicks: "1"},
-		runDir:   "/opt/claude/run/x",
-		children: []tracked{{pid: 3001, pgid: 3001, startTicks: "2"}},
-	}}
-	var sum hcSummary
-	c.endDaemons(targets, &sum)
-	if len(*single) != 1 || (*single)[0] != 3000 {
-		t.Errorf("daemon SIGKILL = %v, want [3000]", *single)
-	}
-	if len(*group) == 0 || (*group)[0] != 3001 {
-		t.Errorf("child group not signaled: %v", *group)
-	}
-	if sum.strandedSignalled != 1 || sum.strandedEnded != 1 {
-		t.Errorf("counts: signalled=%d ended=%d, want 1/1", sum.strandedSignalled, sum.strandedEnded)
+	// The stranded-daemon part keeps its text with zeros: the cleaner ends no stranded daemon.
+	s := hcSummary{orphanSignalled: 2, runDirsRemoved: 1}
+	want := "stranded daemons signalled 0 (ended 0, survived 0) plus 0 process(es)/group(s) they left behind; orphaned Claude Code groups signalled 2 (survived 0); abandoned daemons retired 0; dead run dirs removed 1; candidates left undecided 0"
+	if s.String() != want {
+		t.Errorf("summary = %q, want %q", s.String(), want)
 	}
 }
 
@@ -661,62 +626,6 @@ func TestPassSelfProbeBail(t *testing.T) {
 	}
 }
 
-func TestPassReapsStrandedDaemon(t *testing.T) {
-	proot, mk, link := fakeProc(t)
-	// A real own socket so the self-probe confirms this pid; do NOT seam hcDial (real dials).
-	ownSock := filepath.Join(t.TempDir(), "rpc.sock")
-	ln, err := net.Listen("unix", ownSock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go func() {
-		for {
-			conn, e := ln.Accept()
-			if e != nil {
-				return
-			}
-			conn.Close()
-		}
-	}()
-	single, _ := hcSeamSignals(t, proot) // seams clock/sleep/signals (dies on signal)
-	oldUID := hcGetuid
-	t.Cleanup(func() { hcGetuid = oldUID })
-	uid := os.Getuid()
-	hcGetuid = func() int { return uid }
-	// Pass ends with a real tidy sweep over the roots, and this root is the product's own
-	// install path. The fake clock sits in 1970, so every ordinary run dir under it reads as
-	// fresh and is skipped — but a leftover <name>.removing-<pid>-<ts> staging dir SKIPS the idle
-	// gate by design, and removeRunDir then calls hcRemoveAll on it with no rename. Measured:
-	// with these two seams absent, a staging dir holding a file was really deleted. An
-	// interrupted removal is exactly what leaves one behind, so this is not hypothetical.
-	oldRen, oldRm := hcRename, hcRemoveAll
-	t.Cleanup(func() { hcRename, hcRemoveAll = oldRen, oldRm })
-	hcRename = func(*os.Root, string, string) error { return nil }
-	hcRemoveAll = func(*os.Root, string) error { return nil }
-	// A stranded daemon owned by our uid whose own socket (a dead path under a temp dir that
-	// is guaranteed absent) no longer answers. Its pid must differ from this test process's
-	// (which is the cleaner's selfPid, and would be skipped as self).
-	strandedPid := os.Getpid() + 1
-	deadSock := "/opt/claude/run/claustrum-test-gone/rpc.sock"
-	hcFakeDaemonUID(t, proot, mk, link, strandedPid, "/opt/claude/srv/a/server",
-		[]string{"/opt/claude/srv/a/server", "--serve", "--socket", deadSock}, true, "1", uid)
-	link(strandedPid, "fd/1", "/dev/null")
-	c := &hostCleaner{
-		roots:     &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"},
-		ownSocket: ownSock,
-		ownRunDir: filepath.Dir(ownSock),
-		selfPid:   os.Getpid(),
-	}
-	sum := c.Pass()
-	if len(*single) != 1 || (*single)[0] != strandedPid {
-		t.Errorf("stranded daemon not reaped by Pass: signals=%v", *single)
-	}
-	if sum.strandedEnded != 1 {
-		t.Errorf("summary strandedEnded=%d, want 1", sum.strandedEnded)
-	}
-}
-
 func TestEndGroupsWrapper(t *testing.T) {
 	root, mk, _ := fakeProc(t)
 	_, group := hcSeamSignals(t, root)
@@ -729,155 +638,6 @@ func TestEndGroupsWrapper(t *testing.T) {
 	}
 	if len(*group) == 0 || (*group)[0] != 6001 {
 		t.Errorf("group not signaled: %v", *group)
-	}
-}
-
-func TestJudgeDaemonSocketLive(t *testing.T) {
-	proot, mk, link := fakeProc(t)
-	c := hcTestCleaner(t, "/opt/claude")
-	socket := "/opt/claude/run/x/rpc.sock"
-	oldDial := hcDial
-	t.Cleanup(func() { hcDial = oldDial })
-	// Match the peer's real uid so the "another user" gate passes and the verifyListener
-	// branch (the one this test exercises) is reached deterministically on any runner uid.
-	hcGetuid = func() int { return os.Getuid() }
-
-	inspectDaemon := func(pid int) hcTracked {
-		// The daemon's uid is the runner's too: the judge skips a daemon of another uid.
-		hcFakeDaemonUID(t, proot, mk, link, pid, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", os.Getuid())
-		link(pid, "fd/1", "/dev/null") // readable descriptors with no daemon.lock open
-		tr, res := inspect(pid, true)
-		if res != hcInspectOK {
-			t.Fatalf("inspect(%d)=%v", pid, res)
-		}
-		return tr
-	}
-	// The socket is answered by a live process that is not this candidate daemon and cannot
-	// be verified as ours (its pid is not in our fake /proc) -> spare, not reap.
-	hcDial = func(string) (net.Conn, error) { return newFakePeerConn(t), nil }
-	if v, reason, _ := c.judgeDaemon(inspectDaemon(70)); v != dvSpare || reason == "" {
-		t.Errorf("socket answered by an unverifiable peer: v=%v reason=%q, want spare", v, reason)
-	}
-}
-
-func TestJudgeDaemonBranches(t *testing.T) {
-	proot, mk, link := fakeProc(t)
-	c := hcTestCleaner(t, "/opt/claude") // selfPid 999999, hcGetuid 1000, hcClock at Unix(1e6)
-	oldDial := hcDial
-	t.Cleanup(func() { hcDial = oldDial })
-	daemonExe := "/opt/claude/srv/a/server"
-	serve := []string{daemonExe, "--serve", "--socket", "/opt/claude/run/x/rpc.sock"}
-	now := hcClock()
-
-	// Every early return, driven by a directly-built record (no socket needed).
-	cases := []struct {
-		name string
-		d    hcTracked
-		want daemonVerdict
-	}{
-		{"stopped", hcTracked{pid: 100, sameNS: true, sameUID: true, stopped: true}, dvSpare},
-		{"foreign-ns", hcTracked{pid: 100, sameNS: false}, dvSkip},
-		{"foreign-uid", hcTracked{pid: 100, sameNS: true, sameUID: false}, dvSkip},
-		{"non-daemon-exe", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: "/usr/bin/other", haveAge: true, startWall: now.Add(-20 * time.Minute)}, dvSkip},
-		{"argv-unreadable", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, haveAge: true, startWall: now.Add(-20 * time.Minute)}, dvSpare},
-		{"not-serve", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: []string{daemonExe, "--bridge"}, haveAge: true, startWall: now.Add(-20 * time.Minute)}, dvSkip},
-		{"not-a-run-dir-socket", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: []string{daemonExe, "--serve", "--socket", "/tmp/x/rpc.sock"}, haveAge: true, startWall: now.Add(-20 * time.Minute), env: []string{hcDaemonChildMarker}}, dvSkip},
-		{"env-unreadable", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-20 * time.Minute)}, dvSpare},
-		{"age-unknown", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: serve, haveAge: false}, dvSpare},
-		{"too-young", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-time.Minute)}, dvSkip},
-		{"old-unmarked", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-20 * time.Minute), env: []string{"PATH=/x"}}, dvSpare},
-		{"unmarked-not-old-enough", hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-6 * time.Minute), env: []string{"PATH=/x"}}, dvSkip},
-	}
-	for _, tc := range cases {
-		if v, _, _ := c.judgeDaemon(tc.d); v != tc.want {
-			t.Errorf("%s: verdict=%v, want %v", tc.name, v, tc.want)
-		}
-	}
-
-	// Marked + old, socket probe inconclusive (a dial error that is not missing/refused/wrong-type).
-	// Its descriptors read and hold no daemon.lock, so the judge reaches the dial.
-	link(100, "fd/4", "socket:[555]")
-	marked := hcTracked{pid: 100, sameNS: true, sameUID: true, exe: daemonExe, argv: serve, haveAge: true, startWall: now.Add(-20 * time.Minute), env: []string{hcDaemonChildMarker}}
-	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.EIO} }
-	if v, reason, _ := c.judgeDaemon(marked); v != dvSpare || reason != "the probe of its socket /opt/claude/run/x/rpc.sock was inconclusive" {
-		t.Errorf("inconclusive socket: v=%v reason=%q, want spare", v, reason)
-	}
-
-	// Marked + old, socket dead, no lock, but the connections cannot be read (a socket fd
-	// and no net/unix table) -> spare.
-	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
-	if v, reason, _ := c.judgeDaemon(marked); v != dvSpare || reason != "its connections could not be read" {
-		t.Errorf("unreadable connections: v=%v reason=%q, want spare", v, reason)
-	}
-
-	// Marked + old, socket dead, no lock, but the daemon still holds a live connection -> spare.
-	mk(100, "net/unix", "Num RefCount Protocol Flags Type St Inode Path\n0: 00000002 0 0 0001 03 555 /opt/claude/run/x/rpc.sock\n")
-	_ = proot
-	if v, reason, _ := c.judgeDaemon(marked); v != dvSpare || reason != "it still has a live connection; skipped until that closes" {
-		t.Errorf("busy daemon: v=%v reason=%q, want spare", v, reason)
-	}
-}
-
-// TestJudgeDaemonSocketLiveHealthyAndForeign covers the two socket-live sub-cases the primary
-// live test does not: the socket still answering the candidate itself (healthy -> skip), and a
-// foreign-uid answerer (-> spare).
-func TestJudgeDaemonSocketLiveHealthyAndForeign(t *testing.T) {
-	proot, mk, link := fakeProc(t)
-	c := hcTestCleaner(t, "/opt/claude")
-	socket := "/opt/claude/run/x/rpc.sock"
-	oldDial := hcDial
-	t.Cleanup(func() { hcDial = oldDial })
-	hcDial = func(string) (net.Conn, error) { return newFakePeerConn(t), nil } // peer = this test process
-	self := os.Getpid()
-
-	// Its socket still leads to itself (peer == pid): healthy, skip. The candidate's pid is this
-	// process, which is what SO_PEERCRED reports for the fake peer connection.
-	hcGetuid = func() int { return os.Getuid() }
-	hcFakeDaemonUID(t, proot, mk, link, self, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", os.Getuid())
-	link(self, "fd/1", "/dev/null")
-	if v, _, _ := c.judgeDaemon(mustInspect(t, self)); v != dvSkip {
-		t.Errorf("healthy self-answered daemon: v=%v, want skip", v)
-	}
-	// The socket is answered by a process owned by another user -> spare. The candidate itself
-	// runs as the cleaner's uid, and the answerer (this process) does not.
-	hcGetuid = func() int { return os.Getuid() + 12345 }
-	hcFakeDaemonUID(t, proot, mk, link, 71, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1", os.Getuid()+12345)
-	link(71, "fd/1", "/dev/null")
-	if v, reason, _ := c.judgeDaemon(mustInspect(t, 71)); v != dvSpare || reason != "another user's process answers its socket" {
-		t.Errorf("foreign-uid answerer: v=%v reason=%q, want spare", v, reason)
-	}
-}
-
-// TestEndDaemonsEPERMAndSurvivor covers the "not ours to signal" arm and the SIGKILL-survivor
-// warning in endDaemons.
-func TestEndDaemonsEPERMAndSurvivor(t *testing.T) {
-	_, mk, _ := fakeProc(t)
-	oldSig, oldGrp, oldClock, oldSleep := hcSignalPid, killGroup, hcClock, hcSleep
-	t.Cleanup(func() { hcSignalPid, killGroup, hcClock, hcSleep = oldSig, oldGrp, oldClock, oldSleep })
-	now := time.Unix(9_000_000, 0)
-	hcClock = func() time.Time { return now }
-	hcSleep = func(d time.Duration) { now = now.Add(d) }
-	killGroup = func(int, syscall.Signal) error { return nil }
-	// Daemon 8001: EPERM (not ours) -> dropped. Daemon 8002: signalled but never exits -> survivor.
-	mk(8001, "stat", "8001 (server) R 1 8001 "+strings.Repeat("0 ", 16)+"1 x")
-	mk(8002, "stat", "8002 (server) R 1 8002 "+strings.Repeat("0 ", 16)+"1 x")
-	hcSignalPid = func(pid int, _ syscall.Signal) error {
-		if pid == 8001 {
-			return syscall.EPERM
-		}
-		return nil // 8002 stays alive in procfs -> waitGone times out -> survivor
-	}
-	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 111}
-	var sum hcSummary
-	c.endDaemons([]daemonTarget{
-		{tracked: tracked{pid: 8001, pgid: 8001, startTicks: "1"}, runDir: "/opt/claude/run/a"},
-		{tracked: tracked{pid: 8002, pgid: 8002, startTicks: "1"}, runDir: "/opt/claude/run/b"},
-	}, &sum)
-	if sum.strandedSignalled != 2 {
-		t.Errorf("strandedSignalled=%d, want 2", sum.strandedSignalled)
-	}
-	if sum.strandedSurvived != 1 {
-		t.Errorf("strandedSurvived=%d, want 1 (8002 never exited)", sum.strandedSurvived)
 	}
 }
 
@@ -1172,19 +932,24 @@ func TestRemoveRunDirUndoOnReappear(t *testing.T) {
 func TestRetireAbandonedLeftRunning(t *testing.T) {
 	proot, mk, link := fakeProc(t)
 	// Signals recorded but the process does NOT die (no die-on-signal), so it survives the grace.
-	oldSig, oldClock, oldSleep, oldUID := hcSignalPid, hcClock, hcSleep, hcGetuid
-	t.Cleanup(func() { hcSignalPid, hcClock, hcSleep, hcGetuid = oldSig, oldClock, oldSleep, oldUID })
+	oldSig, oldClock, oldSleep, oldUID := hcHoldPid, hcClock, hcSleep, hcGetuid
+	t.Cleanup(func() { hcHoldPid, hcClock, hcSleep, hcGetuid = oldSig, oldClock, oldSleep, oldUID })
 	now := time.Unix(3_000_000, 0)
 	hcClock = func() time.Time { return now }
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 	hcGetuid = func() int { return 1000 }
-	hcSignalPid = func(int, syscall.Signal) error { return nil } // no death
+	var sent []syscall.Signal
+	hcHoldPid = holdWith(func(_ int, sig syscall.Signal) error { sent = append(sent, sig); return nil }) // no death
 	socket := "/opt/claude/run/x/rpc.sock"
 	hcFakeDaemon(t, proot, mk, link, 4100, "/opt/claude/srv/a/server", []string{"/opt/claude/srv/a/server", "--serve", "--socket", socket}, true, "1")
 	link(4100, "fd/1", "/dev/null") // readable connections, none a client
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
 	if hcRetire(c, 4100, socket) {
 		t.Error("daemon that outlived SIGTERM was reported retired")
+	}
+	// The retire sends one SIGTERM and nothing more. It does not escalate.
+	if len(sent) != 1 || sent[0] != syscall.SIGTERM {
+		t.Errorf("signals to the daemon = %v, want exactly one SIGTERM", sent)
 	}
 }
 
@@ -1395,31 +1160,6 @@ func TestHcSnapshotOverflow(t *testing.T) {
 	}
 }
 
-// TestEndGroupsTwoPhaseNonLeaderSingly proves a non-leader child (pid != pgid) is signalled by
-// its single pid, while a group leader (pid == pgid) is signalled as a whole group. A blind
-// kill(-pid) on a non-leader would target a non-existent group and miss the helper.
-func TestEndGroupsTwoPhaseNonLeaderSingly(t *testing.T) {
-	root, mk, _ := fakeProc(t)
-	single, group := hcSeamSignals(t, root)
-	// Both are live at signal time (present in procfs with matching pgid+start-ticks).
-	mk(3001, "stat", "3001 (x) R 1 3001 "+strings.Repeat("0 ", 16)+"1 x")
-	mk(3002, "stat", "3002 (x) R 1 4000 "+strings.Repeat("0 ", 16)+"1 x")
-	groups := []tracked{
-		{pid: 3001, pgid: 3001, startTicks: "1"}, // leader -> group signal
-		{pid: 3002, pgid: 4000, startTicks: "1"}, // non-leader helper -> single pid
-	}
-	sig, _ := endGroupsTwoPhase(groups, "process left behind by a stranded daemon", "")
-	if sig != 2 {
-		t.Errorf("signalled=%d, want 2", sig)
-	}
-	if len(*group) != 1 || (*group)[0] != 3001 {
-		t.Errorf("group signals = %v, want [3001] (the leader)", *group)
-	}
-	if len(*single) != 1 || (*single)[0] != 3002 {
-		t.Errorf("single signals = %v, want [3002] (the non-leader helper)", *single)
-	}
-}
-
 // TestEndGroupsTwoPhaseSkipsReusedPid proves the ender re-validates identity before signalling:
 // a tracked child whose pid is now held by a different process (a different start-ticks) is not
 // signalled, so a pid reused during the wait cannot get an unrelated process killed.
@@ -1507,13 +1247,9 @@ func TestDeriveRoots(t *testing.T) {
 		t.Errorf("roots = %v, want a single root (exe root == socket root)", r.roots)
 	}
 
-	// Exe under a DIFFERENT root -> second root added.
-	r, err = deriveRoots("/opt/claude/run/c0ffee01/rpc.sock", "/home/u/.claude/srv/abc123/server", true)
-	if err != nil {
-		t.Fatalf("valid exe (other root): %v", err)
-	}
-	if len(r.roots) != 2 || r.roots[1] != "/home/u/.claude" {
-		t.Errorf("roots = %v, want the socket root plus /home/u/.claude", r.roots)
+	// Exe under the srv of ANOTHER root -> refused. Its root is never added (row KXB).
+	if r, err := deriveRoots("/opt/claude/run/c0ffee01/rpc.sock", "/home/u/.claude/srv/abc123/server", true); err == nil {
+		t.Errorf("an executable under another root was accepted, roots = %v", r.roots)
 	}
 
 	// Exe that is not a deployed daemon (not under srv) -> error.
@@ -1549,17 +1285,6 @@ func TestRootsMembership(t *testing.T) {
 	}
 	if r.isCliBinary("/opt/claude/srv/abc/server") {
 		t.Error("a daemon was accepted as a CLI binary")
-	}
-
-	// isRunDirSocket
-	if !r.isRunDirSocket("/opt/claude/run/c0ffee01/rpc.sock") {
-		t.Error("run-dir socket not recognized")
-	}
-	if r.isRunDirSocket("/opt/claude/run/c0ffee01/other.sock") {
-		t.Error("non-rpc.sock accepted")
-	}
-	if r.isRunDirSocket("/other/run/x/rpc.sock") {
-		t.Error("out-of-root socket accepted")
 	}
 
 	// runRoots
