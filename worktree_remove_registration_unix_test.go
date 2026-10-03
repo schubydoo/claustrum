@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -53,7 +54,7 @@ func hasBranch(repo, branch string) bool {
 // removeCallLog puts the logging git stand-in on PATH and returns a function that
 // sends one request and gives its frame and its git calls. Each call is one line:
 //
-//	<cwd>|<H, R, L or ->|<the argv without the -c pairs>
+//	<cwd>|<H, R, L or ->|<the argv without the -c pairs>[ D=<GIT_DIR>][ C=<GIT_COMMON_DIR>]
 //
 // H is the heavy environment, R that of the branch step, L the light one. <fx> is
 // root. The daemon environment of a row is set with t.Setenv after this call, so the
@@ -115,24 +116,41 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 			if slices.Contains(c.argv, "core.excludesFile") {
 				cwd = "<temp>"
 			}
-			lines = append(lines, strings.ReplaceAll(cwd+"|"+env+"|"+strings.Join(argv, " "), root, "<fx>"))
+			line := cwd + "|" + env + "|" + strings.Join(argv, " ")
+			for _, k := range []string{"GIT_DIR", "GIT_COMMON_DIR"} {
+				for _, kv := range c.all {
+					if v, ok := strings.CutPrefix(kv, k+"="); ok {
+						line += " " + k[4:5] + "=" + v
+					}
+				}
+			}
+			lines = append(lines, strings.ReplaceAll(line, root, "<fx>"))
 		}
 		return raw, lines
 	}
 }
 
-const callExcludes = "<temp>|-|config --includes --path core.excludesFile"
+// callExcludes is the read of the user excludes with no daemon environment.
+const callExcludes = "<temp>|-|config --includes --path core.excludesFile D=/dev/null"
+
+// The GIT_DIR and GIT_COMMON_DIR part of a call line: the pin of T, the daemon
+// environment of rows 1 to 4, and the value in a folder with no repository.
+const (
+	pinT      = " C=<fx>/T/.git"
+	pinX      = " D=<fx>/X/.git C=<fx>/X/.git"
+	pinNoRepo = " D=/dev/null"
+)
 
 // callsCheck is the heavy listing and `rev-parse --absolute-git-dir` in cwd.
-func callsCheck(cwd string) []string {
-	return []string{cwd + "|H|config -z --list", cwd + "|H|rev-parse --absolute-git-dir"}
+func callsCheck(cwd, pin string) []string {
+	return []string{cwd + "|H|config -z --list" + pin, cwd + "|H|rev-parse --absolute-git-dir" + pin}
 }
 
 // callsPair is the pair of registrationProbe.
-func callsPair(gitDir, workTree string) []string {
+func callsPair(gitDir, workTree, pin string) []string {
 	return []string{
-		gitDir + "|L|--git-dir=" + gitDir + " config -z --list",
-		gitDir + "|L|--git-dir=" + gitDir + " --work-tree=" + workTree + " rev-parse --show-toplevel",
+		gitDir + "|L|--git-dir=" + gitDir + " config -z --list" + pin,
+		gitDir + "|L|--git-dir=" + gitDir + " --work-tree=" + workTree + " rev-parse --show-toplevel" + pin,
 	}
 }
 
@@ -190,7 +208,7 @@ func TestWorktreeRemoveDaemonGitDirKeepsEntryOfBaseRepo(t *testing.T) {
 	if !hasBranch(f.T, "s0") {
 		t.Error("the branch s0 of T is gone")
 	}
-	wantRemoveCalls(t, "row 1", calls, 9, []string{callExcludes}, callsCheck("<fx>/T"), callsCheck("<fx>/T"))
+	wantRemoveCalls(t, "row 1", calls, 9, []string{callExcludes + " C=<fx>/X/.git"}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
 }
 
 // E2, probe row 2 (C-own): the same environment. The daemon creates w1, which git
@@ -224,7 +242,7 @@ func TestWorktreeRemoveDaemonGitDirDropsOwnEntryInOtherRepo(t *testing.T) {
 	if !exists(f.entry(f.T, "s0")) {
 		t.Error("the entry s0 of T is gone")
 	}
-	wantRemoveCalls(t, "row 2", calls, 8, callsCheck("<fx>/T"))
+	wantRemoveCalls(t, "row 2", calls, 8, callsCheck("<fx>/T", pinX))
 }
 
 // E3, probe row 3 (B-xrec): the same environment. X holds an entry zz whose record
@@ -245,8 +263,8 @@ func TestWorktreeRemoveDaemonGitDirDropsEntryByPathInOtherRepo(t *testing.T) {
 	if !exists(f.entry(f.T, "s0")) {
 		t.Error("the entry s0 of T is gone, want it kept (row 3)")
 	}
-	wantRemoveCalls(t, "row 3", calls, 11, []string{callExcludes}, callsCheck("<fx>/T"), callsCheck("<fx>/T"),
-		callsPair("<fx>/X/.git", "<fx>/T"))
+	wantRemoveCalls(t, "row 3", calls, 11, []string{callExcludes + " C=<fx>/X/.git"}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX),
+		callsPair("<fx>/X/.git", "<fx>/T", pinX))
 }
 
 // E4, probe row 4 (B-xbranch): the same environment. X holds a merged branch s0. The
@@ -269,7 +287,7 @@ func TestWorktreeRemoveDaemonGitDirBranchOfOtherRepo(t *testing.T) {
 	if !hasBranch(f.T, "s0") {
 		t.Error("the branch s0 of T is gone")
 	}
-	wantRemoveCalls(t, "row 4", calls, 11, []string{callExcludes}, callsCheck("<fx>/T"), callsCheck("<fx>/T"))
+	wantRemoveCalls(t, "row 4", calls, 11, []string{callExcludes + " C=<fx>/X/.git"}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
 }
 
 // E5, probe row 5 (B-cd-only): the daemon has GIT_COMMON_DIR of X only. The entry s0
@@ -286,7 +304,7 @@ func TestWorktreeRemoveDaemonCommonDirOnlyDropsEntryOfBaseRepo(t *testing.T) {
 	if exists(f.S) || exists(f.entry(f.T, "s0")) {
 		t.Error("the folder or the entry s0 of T stays, want both gone (row 5)")
 	}
-	wantRemoveCalls(t, "row 5", calls, 7, []string{callExcludes}, callsCheck("<fx>/T"))
+	wantRemoveCalls(t, "row 5", calls, 7, []string{callExcludes + " C=<fx>/X/.git"}, callsCheck("<fx>/T", " C=<fx>/X/.git"))
 }
 
 // E6, probe row 6 (B-gd-only): the daemon has GIT_DIR of X only. The entry s0 of T
@@ -302,7 +320,7 @@ func TestWorktreeRemoveDaemonGitDirOnlyCalls(t *testing.T) {
 	if exists(f.S) || !exists(f.entry(f.T, "s0")) {
 		t.Error("want the folder gone and the entry s0 of T kept (row 6)")
 	}
-	wantRemoveCalls(t, "row 6", calls, 9, []string{callExcludes}, callsCheck("<fx>/T"), callsCheck("<fx>/T"))
+	wantRemoveCalls(t, "row 6", calls, 9, []string{callExcludes}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
 }
 
 // E7, probe row 7c and battery rows A1, A3 and G3: baseRepo is <T>/missing/.. with
@@ -345,7 +363,7 @@ func TestWorktreeRemoveMissingBaseRepoLockedStillRefused(t *testing.T) {
 // E9: the call logs of the rows whose end state was equal before. Each row runs with
 // no daemon environment.
 func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
-	check, pair := callsCheck("<fx>/T"), callsPair("<fx>/T/.git", "<fx>/T")
+	check, pair := callsCheck("<fx>/T", pinT), callsPair("<fx>/T/.git", "<fx>/T", pinT)
 	lockedText := "is locked (git worktree lock); unlock it to remove it"
 	goneLockedText := "is gone but its registration is locked (git worktree lock)"
 	for _, c := range []struct {
@@ -401,10 +419,20 @@ func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
 				t.Fatal(err)
 			}
 			return map[string]any{"baseRepo": plain, "worktreePath": filepath.Join(plain, ".claude", "worktrees", "s0"), "branchName": "s0"}
-		}, removeKept, 5, [][]string{callsCheck("<fx>/plain")}, []string{"s0"}},
+		}, removeKept, 5, [][]string{callsCheck("<fx>/plain", pinNoRepo)}, []string{"s0"}},
+		// Battery rows W01 to W07-b, W14, W15 and W16 (Windows VM): the folder and its
+		// entry are gone, and the worktrees directory is empty. The pair runs twice.
+		{"W01 gone, no entry", func(t *testing.T, f regFixture) map[string]any {
+			for _, p := range []string{f.S, f.entry(f.T, "s0")} {
+				if err := os.RemoveAll(p); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return nil
+		}, removeOK, 13, [][]string{check, pair, pair}, nil},
 		{"17 A5", func(t *testing.T, f regFixture) map[string]any {
 			return map[string]any{"baseRepo": f.T + "/..", "worktreePath": f.S}
-		}, "(its registrations could not be examined); retry", 5, [][]string{callsCheck("<fx>"), callsCheck("<fx>")}, []string{"s0"}},
+		}, "(its registrations could not be examined); retry", 5, [][]string{callsCheck("<fx>", pinNoRepo), callsCheck("<fx>", pinNoRepo)}, []string{"s0"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newRegFixture(t)
@@ -454,15 +482,15 @@ func TestWorktreeRemoveExternalUnreadableRootCalls(t *testing.T) {
 		t.Fatalf("frame = %s\nwant %s", raw, want)
 	}
 	wantRemoveCalls(t, "T6", calls, 7, []string{callExcludes,
-		"<fx>/T|L|config -z --list", "<fx>/T|L|rev-parse --show-toplevel"}, callsCheck("<fx>/T"),
-		[]string{"<fx>/T|L|config -z --list", "<fx>/T|L|worktree list --porcelain -z"})
+		"<fx>/T|L|config -z --list" + pinT, "<fx>/T|L|rev-parse --show-toplevel" + pinT}, callsCheck("<fx>/T", pinT),
+		[]string{"<fx>/T|L|config -z --list" + pinT, "<fx>/T|L|worktree list --porcelain -z" + pinT})
 }
 
 // Battery rows Q20, Q20b and Y8w (Linux VM): a worktree beneath a worktreeRoot whose
 // `.git` file names a git dir that is not a verified entry of baseRepo. Nothing is
 // deleted. The calls after the first 7 are those of 89cb6289.
 func TestWorktreeRemoveExternalUnverifiedCalls(t *testing.T) {
-	check := callsCheck("<fx>/T")
+	check := callsCheck("<fx>/T", pinT)
 	for _, c := range []struct {
 		name   string
 		setup  func(t *testing.T, f regFixture, leaf string)
@@ -483,13 +511,13 @@ func TestWorktreeRemoveExternalUnverifiedCalls(t *testing.T) {
 		{"Q20b", func(t *testing.T, f regFixture, leaf string) {
 			writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+f.entry(f.X, "w1")+"\n", 0o644)
 		}, "carries a .git file that does not name this repository's own worktree admin directory", 13,
-			func(leaf string) [][]string { return [][]string{check, check, callsPair("<fx>/T/.git", leaf)} }},
+			func(leaf string) [][]string { return [][]string{check, check, callsPair("<fx>/T/.git", leaf, pinT)} }},
 		// Y8w: the `.git` file names an entry of T whose record is of another worktree.
 		{"Y8w", func(t *testing.T, f regFixture, leaf string) {
 			writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+f.entry(f.T, "s0")+"\n", 0o644)
 		}, "carries a .git file naming an admin directory whose own record is of a different worktree", 15,
 			func(leaf string) [][]string {
-				pair := callsPair("<fx>/T/.git", leaf)
+				pair := callsPair("<fx>/T/.git", leaf, pinT)
 				return [][]string{check, pair, check, pair}
 			}},
 	} {
@@ -508,10 +536,179 @@ func TestWorktreeRemoveExternalUnverifiedCalls(t *testing.T) {
 			if !exists(filepath.Join(leaf, "keep.txt")) {
 				t.Error("the worktree folder was deleted")
 			}
-			head := [][]string{{callExcludes, "<fx>/T|L|config -z --list", "<fx>/T|L|rev-parse --show-toplevel"}, check,
-				{"<fx>/T|L|config -z --list", "<fx>/T|L|worktree list --porcelain -z"}}
+			head := [][]string{{callExcludes, "<fx>/T|L|config -z --list" + pinT, "<fx>/T|L|rev-parse --show-toplevel" + pinT}, check,
+				{"<fx>/T|L|config -z --list" + pinT, "<fx>/T|L|worktree list --porcelain -z" + pinT}}
 			wantRemoveCalls(t, c.name, calls, c.total,
 				slices.Concat(head, c.tail(strings.ReplaceAll(leaf, f.root, "<fx>")))...)
 		})
 	}
+}
+
+// wantAllCalls compares every call of a request.
+func wantAllCalls(t *testing.T, what string, got []string, want ...string) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("%s: %d calls, want %d\ngot:\n  %s\nwant:\n  %s", what, len(got), len(want),
+			strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+}
+
+const callForEachRef = "|R|for-each-ref --count=10001 --format=%(objectname)%00%(refname)%00%(symref) refs/heads/"
+
+// Probe row 16 and battery rows R18, R18b and N00 (Linux and macOS VMs): baseRepo is a
+// plain folder and the worktree folder is gone. Each call carries GIT_DIR=/dev/null,
+// the two calls of the branch step too.
+func TestWorktreeRemoveNoRepositoryCallsCarryNullGitDir(t *testing.T) {
+	f := newRegFixture(t)
+	plain := filepath.Join(f.root, "plain")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := removeCallLog(t, f.root)
+	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": plain,
+		"worktreePath": filepath.Join(plain, ".claude", "worktrees", "w1"), "branchName": "w1"})
+	if raw != removeKept {
+		t.Fatalf("frame = %s\nwant %s", raw, removeKept)
+	}
+	wantAllCalls(t, "N00", calls, callExcludes,
+		"<fx>/plain|H|config -z --list"+pinNoRepo,
+		"<fx>/plain|H|rev-parse --absolute-git-dir"+pinNoRepo,
+		"<fx>/plain|L|config -z --list"+pinNoRepo,
+		"<fx>/plain"+callForEachRef+pinNoRepo)
+}
+
+// Battery row N04 (Linux and macOS VMs): the `.git` file of baseRepo names a git dir
+// that is gone. The two listings of the removal fail and carry
+// GIT_COMMON_DIR=<that git dir>. With worktreeRoot the one listing carries it too.
+func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
+	f := newRegFixture(t)
+	r := filepath.Join(f.root, "R")
+	gone := filepath.Join(f.root, "nonexistent")
+	writeFile(t, filepath.Join(r, ".git"), "gitdir: "+gone+"\n", 0o644)
+	leaf := filepath.Join(f.root, "ext", "cp", "w1")
+	writeFile(t, filepath.Join(leaf, "keep.txt"), "k\n", 0o644)
+	pin := " C=<fx>/nonexistent"
+	run := removeCallLog(t, f.root)
+	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": r,
+		"worktreePath": filepath.Join(r, ".claude", "worktrees", "w1"), "branchName": "w1"})
+	if raw != removeKept {
+		t.Fatalf("frame = %s\nwant %s", raw, removeKept)
+	}
+	wantAllCalls(t, "N04 remove", calls, callExcludes, "<fx>/R|H|config -z --list"+pin, "<fx>/R|L|config -z --list"+pin)
+	raw, calls = run("git.worktree_remove", map[string]any{"baseRepo": r, "worktreePath": leaf,
+		"branchName": "w1", "worktreeRoot": filepath.Join(f.root, "ext")})
+	want := "cannot determine the repository's work tree: git finds no repository here: fatal: not a git repository: " + gone
+	if !strings.Contains(raw, want) {
+		t.Fatalf("frame = %s\nwant %s", raw, want)
+	}
+	wantAllCalls(t, "N04 remove with worktreeRoot", calls, "<fx>/R|L|config -z --list"+pin)
+}
+
+// Battery row N05a (Linux and macOS VMs): the daemon GIT_DIR names the `.git` file of
+// a linked worktree. The folder is gone. The reply carries branchKept, and the request
+// makes no git call. In the row the read of the user excludes came with an earlier
+// request. Here the removal is the first request, and claustrum makes that read.
+func TestWorktreeRemoveDaemonGitDirFileMakesNoCall(t *testing.T) {
+	f := newRegFixture(t)
+	twt := filepath.Join(f.root, "T_wt")
+	runGit(t, f.T, "worktree", "add", "-q", "-b", "twt", twt)
+	run := removeCallLog(t, f.root)
+	daemonGitEnv(t, filepath.Join(twt, ".git"), "")
+	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": f.T,
+		"worktreePath": filepath.Join(f.T, ".claude", "worktrees", "w1"), "branchName": "w1"})
+	if raw != removeKept {
+		t.Fatalf("frame = %s\nwant %s", raw, removeKept)
+	}
+	wantAllCalls(t, "N05a", calls, callExcludes)
+}
+
+// Battery rows L13z-g and DG2h-g (Linux VM): with worktreeRoot and a baseRepo that
+// holds no repository, the request makes a light listing and `rev-parse
+// --show-toplevel`, both with GIT_DIR=/dev/null.
+func TestWorktreeRemoveExternalNoRepositoryCalls(t *testing.T) {
+	f := newRegFixture(t)
+	n := filepath.Join(f.root, "N")
+	if err := os.MkdirAll(n, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(f.root, "ext", "cp", "w1")
+	writeFile(t, filepath.Join(leaf, "keep.txt"), "k\n", 0o644)
+	run := removeCallLog(t, f.root)
+	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": n, "worktreePath": leaf,
+		"branchName": "w1", "worktreeRoot": filepath.Join(f.root, "ext")})
+	want := `"error":"failed to remove worktree: cannot determine the repository's work tree: exit status 128"`
+	if !strings.Contains(raw, want) {
+		t.Fatalf("frame = %s\nwant %s", raw, want)
+	}
+	wantAllCalls(t, "L13z-g", calls, callExcludes,
+		"<fx>/N|L|config -z --list"+pinNoRepo, "<fx>/N|L|rev-parse --show-toplevel"+pinNoRepo)
+}
+
+// Battery rows LNKb-g and LNKr-g (Linux VM, LNKb-g on a macOS VM): baseRepo is the
+// head of a chain of 45 symlinks. The one git call is the read of the user excludes.
+func TestWorktreeRemoveExternalSymlinkChainCalls(t *testing.T) {
+	f := newRegFixture(t)
+	prev := f.T
+	for i := 1; i <= 45; i++ {
+		link := filepath.Join(f.root, "l"+strconv.Itoa(i))
+		if err := os.Symlink(filepath.Base(prev), link); err != nil {
+			t.Fatal(err)
+		}
+		prev = link
+	}
+	leaf := filepath.Join(f.root, "ext", "cp", "w1")
+	writeFile(t, filepath.Join(leaf, "keep.txt"), "k\n", 0o644)
+	run := removeCallLog(t, f.root)
+	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": prev, "worktreePath": leaf,
+		"branchName": "w1", "worktreeRoot": filepath.Join(f.root, "ext")})
+	want := "listing the configuration in force: chdir " + prev + ": too many levels of symbolic links"
+	if !strings.Contains(raw, want) {
+		t.Fatalf("frame = %s\nwant %s", raw, want)
+	}
+	wantAllCalls(t, "LNKr-g", calls, callExcludes)
+}
+
+// Battery row DG2i-g (Linux VM): the HEAD of baseRepo reads "garbage" and its
+// commondir is a dangling symlink. The worktree folder is present. The one git call
+// is the read of the user excludes.
+func TestWorktreeRemoveRefusedGitDirReadsExcludes(t *testing.T) {
+	f := newRegFixture(t)
+	writeFile(t, filepath.Join(f.T, ".git", "HEAD"), "garbage\n", 0o644)
+	if err := os.Symlink("nothing-here", filepath.Join(f.T, ".git", "commondir")); err != nil {
+		t.Fatal(err)
+	}
+	run := removeCallLog(t, f.root)
+	raw, calls := run("git.worktree_remove", f.removeParams())
+	want := "could not check whether " + f.S + " is locked (its registrations could not be examined); retry"
+	if !strings.Contains(raw, want) {
+		t.Fatalf("frame = %s\nwant %s", raw, want)
+	}
+	if !exists(f.S) {
+		t.Error("the worktree folder was deleted")
+	}
+	wantAllCalls(t, "DG2i-g", calls, callExcludes)
+}
+
+// Battery row DG1c-g (Linux VM): with worktreeRoot, baseRepo does not exist and the
+// `.git` file of the leaf names an entry of another missing repository. The frame is
+// that of 89cb6289, and the one git call is the read of the user excludes.
+func TestWorktreeRemoveExternalMissingBaseRepoFrame(t *testing.T) {
+	f := newRegFixture(t)
+	gone := filepath.Join(f.root, "gone")
+	leaf := filepath.Join(f.root, "ext", "cp", "w1")
+	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+filepath.Join(f.root, "other", ".git", "worktrees", "x")+"\n", 0o644)
+	writeFile(t, filepath.Join(leaf, "a.txt"), "a\n", 0o644)
+	run := removeCallLog(t, f.root)
+	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": gone, "worktreePath": leaf,
+		"branchName": "w1", "worktreeRoot": filepath.Join(f.root, "ext")})
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"failed to remove worktree: could not verify that ` + leaf +
+		` is a worktree of ` + gone + ` (config-defined hooks could not be pinned off; git not run: listing the configuration in force: chdir ` +
+		gone + `: no such file or directory); retry"}}`
+	if raw != want {
+		t.Fatalf("frame = %s\nwant  %s", raw, want)
+	}
+	if !exists(filepath.Join(leaf, "a.txt")) {
+		t.Error("the leaf was deleted")
+	}
+	wantAllCalls(t, "DG1c-g", calls, callExcludes)
 }

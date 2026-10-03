@@ -460,6 +460,14 @@ func externalWorkTreeRefusal(repo string) (string, string) {
 		return workTreeUnknownPrefix + t.refusal, ""
 	case gitDirNoRepo:
 		if !goneNonEntryGitFile(repo) {
+			// The call log of 89cb6289 shows a light listing and `rev-parse
+			// --show-toplevel` here, both with GIT_DIR=<null device>. The rev-parse
+			// exits 128 (rows L13z-g and DG2h-g on a Linux VM). claustrum makes the two
+			// calls and does not read their answers. Not measured: a listing that fails
+			// there.
+			if c := hostileConfigRefusal(repo, false); !c.refused() {
+				_, _ = repoTopLevel(repo, &c.listing)
+			}
 			return workTreeUnknownPrefix + "exit status 128", ""
 		}
 	}
@@ -515,8 +523,8 @@ const noRepositoryHerePrefix = "git finds no repository here: "
 // a Linux VM). When it fails too, the text starts with gitCannotRunPrefix (see
 // failedListingText). That case is not measured here. This `git version` gets the
 // light environment, as on 89cb6289 (rows L16a and L16b on a Linux VM). In the
-// symlink-chain rows LNKb-g and LNKr-g, 89cb6289 runs no `git version` (Linux VM).
-// claustrum runs it there.
+// symlink-chain rows LNKb-g and LNKr-g, the call log of 89cb6289 shows the read of
+// the user excludes and no `git version` (Linux VM). claustrum does the same.
 //
 // The caller answers a PATH with no git before it calls this function.
 func unenterableBaseListing(repo string) string {
@@ -540,6 +548,13 @@ func unenterableBaseListing(repo string) string {
 	r := runListing(ctx, repo, "", append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https:ssh"))
 	var ee *exec.ExitError
 	if r.err != nil && !errors.As(r.err, &ee) {
+		if err != nil {
+			// The symlink chain. The one git call of 89cb6289 is the read of the user
+			// excludes, and no `git version` runs (rows LNKb-g and LNKr-g on a Linux VM,
+			// LNKb-g on a macOS VM).
+			userExcludesFile()
+			return hooksRefusalPrefix + r.detail()
+		}
 		return failedListingText(r, false)
 	}
 	return ""

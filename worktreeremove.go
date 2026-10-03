@@ -359,11 +359,12 @@ func (r registrationProbe) run() string {
 	return out
 }
 
-// beforeScan runs the pair before a look at the entries of commonDir by path.
-// 89cb6289 runs it there when <commonDir>/worktrees exists, and not when it is missing
-// (probe rows 1, 4 and 6 against rows 3 and 12, and row Q20 against Q20b). claustrum
-// does not use the answer. Not measured: a worktrees directory that is empty or cannot
-// be read. claustrum runs the pair there.
+// beforeScan runs the pair before claustrum looks at the entries of commonDir by
+// path. If <commonDir>/worktrees exists, the request of 89cb6289 makes the pair (probe
+// rows 3 and 12, row Q20b). If it is missing, it does not (rows 1, 4, 6 and Q20). An
+// empty directory gets the pair too (battery row W01 on a Windows VM). claustrum does
+// not use the answer. Not measured: a worktrees directory that cannot be read.
+// claustrum runs the pair there.
 func (r registrationProbe) beforeScan(commonDir string) {
 	if fi, err := os.Stat(filepath.Join(commonDir, worktreesSubdir)); err == nil && fi.IsDir() {
 		r.run()
@@ -423,9 +424,10 @@ func dropWorktreeEntryByPath(commonDir string, sp worktreePathSet) {
 //
 // respell is called when the record names another path than sp holds. It returns one
 // more spelling of the worktree, or "". The entry is verified when the record names
-// that spelling. respell is nil when there is none. 89cb6289 runs the pair of
-// registrationProbe at that point. Through a `subst` drive or a junction the entry is
-// then deleted (Windows VM, probe row D-subst, battery rows J2, Q1 and Q2). With a
+// that spelling. respell is nil when there is none. In the rows below, the call log
+// of 89cb6289 shows the pair of registrationProbe. Through a `subst` drive or a
+// junction the entry is deleted (Windows VM, probe row D-subst, battery rows J2, Q1
+// and Q2). With a
 // record of another worktree it is not (probe row 13 on Linux, macOS and Windows VMs,
 // row D-83 on Windows). Not measured: a record that cannot be read. claustrum does not
 // call respell there.

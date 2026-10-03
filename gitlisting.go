@@ -235,7 +235,7 @@ func listingEnvBase() []string {
 // is not measured. heavy is the profile of the failed listing. After the listing of
 // unenterableBaseListing, this call gets the light environment, as on 89cb6289 (rows
 // L16a and L16b on a Linux VM). In the symlink-chain rows LNKb-g and LNKr-g, 89cb6289
-// runs no `git version` (Linux VM). claustrum runs it there.
+// runs no `git version` (Linux VM), and claustrum runs none there.
 func gitVersionFails(heavy bool) bool {
 	ctx, cancel := gitCtx()
 	defer cancel()

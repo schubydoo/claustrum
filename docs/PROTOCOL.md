@@ -2721,7 +2721,8 @@ copies end still fails it, as `timeoutMs` above describes:
      instead, which is not measured here. A `baseRepo` behind a chain of 45
      symlinks, which the kernel does not follow, gets this reason too. Its text ends
      with `chdir <baseRepo>: too many levels of symbolic links`, and nothing is
-     deleted (`89cb6289`, rows LNKb-g and LNKr-g on a Linux VM). Not measured: chain
+     deleted (`89cb6289`, rows LNKb-g and LNKr-g on a Linux VM). The one git call
+     there is the read of the user excludes. Not measured: chain
      lengths other than 5 and 45, absolute link targets, a chain to a plain folder
      and a chain to nothing. Nor are a chain with a locked or marked worktree, a
      chain without `worktreeRoot`, and a path that is too long for the kernel.
@@ -2896,20 +2897,37 @@ copies end still fails it, as `timeoutMs` above describes:
   - An entry under `<G>/worktrees` whose record names another path gets the pair
     first, then the check (row 13, and row D-83 on Windows). On Windows the pair
     alone follows through a `subst` drive, and the entry goes (row D-subst).
-  - If `<G>/worktrees` exists, the pair runs before the look at the entries by
-    path (rows K1, 3, 11, 12, 13, 14, 15, 15b and R17a). If the directory is
-    missing, the pair does not run (rows 1, 4 and 6). An empty directory is not
-    measured.
-  - If no entry names the folder, the pair runs once more after the delete of
-    the folder (rows K1 and K1b, battery row E13, row D-83).
+  - If `<G>/worktrees` exists, the request makes the pair (rows K1, 3, 11, 12, 13,
+    14, 15, 15b and R17a). An empty directory gets it too (battery row W01 on a
+    Windows VM). If the directory is missing, the request does not make the pair
+    (rows 1, 4 and 6). claustrum runs the pair before it looks at the entries by
+    path.
+  - If no entry names the folder, the request makes the pair once more (rows K1
+    and K1b, battery row E13, row D-83). claustrum runs it after the delete of the
+    folder. With the folder already gone, the request makes the pair twice too
+    (battery rows W01 to W07-b, W14, W15 and W16 on a Windows VM).
   - A `baseRepo` that holds no repository gets the check twice before the
     lock-check refusal (row A5). With the folder gone, it gets the check once (row
-    16).
-  - claustrum's tests compare the working directory, the profile and the arguments
-    of each call with these rows. They do not compare each environment value.
-- With `worktreeRoot`, `89cb6289` runs `rev-parse --absolute-git-dir` before
-  `worktree list`, and the check once more after it located the folder. A root
-  that cannot be read answers after 7 calls (row T6 on a Linux VM). For a `.git`
+    16). Each call there carries `GIT_DIR=<null device>`, the calls of the branch
+    step too. Rows 16, A5, R18, R18b and N00 show that on Linux and macOS VMs, and
+    rows 16, A5 and N00 on a Windows VM.
+  - A `baseRepo` whose `.git` file names a git dir that is gone, with the folder
+    gone: the request makes two listings, and each fails. Both carry
+    `GIT_COMMON_DIR=<that git dir>` (row N04 on Linux and macOS VMs).
+  - A daemon `GIT_DIR` that names a file, with the folder gone: the reply carries
+    `branchKept`, and the request makes no git call (row N05a on Linux and macOS
+    VMs).
+  - A git directory that the trust check refuses, with the folder present: the
+    one git call is the read of the user excludes (row DG2i-g on a Linux VM).
+  - claustrum's tests compare the working directory, the profile, the arguments
+    and the `GIT_DIR` and `GIT_COMMON_DIR` values of each call with these rows.
+- With `worktreeRoot`, the call log of `89cb6289` shows `rev-parse
+  --absolute-git-dir` before `worktree list`, and the check once more after it.
+  That second check does not run for a `worktreeRoot` that cannot be read. That
+  request answers after 7 calls (row T6 on a Linux VM). For a `baseRepo` that
+  holds no repository, the request makes a light listing and `rev-parse
+  --show-toplevel`. Both carry `GIT_DIR=<null device>` (rows L13z-g and DG2h-g on
+  a Linux VM). For a `.git`
   file that names no verified entry, the calls follow the rules above. The pair
   carries `--work-tree=<worktreePath>` there (rows Q20, Q20b and Y8w on a Linux
   VM). Nothing is deleted in those rows.
@@ -2981,9 +2999,12 @@ copies end still fails it, as `timeoutMs` above describes:
   cleaned path. One input is measured, with `git` on `PATH` (row DG1c-g, Linux VM).
   It is a missing `baseRepo` and a `.git` file that names an entry of another
   missing repository. Both
-  references send this frame there, and nothing is deleted. Their `<detail>` is the
-  hooks refusal with `chdir <baseRepo>: no such file or directory`. claustrum's
-  `<detail>` is `open <baseRepo>/.git/worktrees: no such file or directory`. No run
+  references send this frame there, and nothing is deleted. The `<detail>` is the
+  hooks refusal with `chdir <baseRepo>: no such file or directory`, and the one git
+  call is the read of the user excludes. claustrum sends the same text for a
+  `baseRepo` that does not exist. For a `baseRepo` that exists, its `<detail>` is the
+  error of the open, such as `open <baseRepo>/.git/worktrees: no such file or
+  directory` (row Q20 on a Linux VM, where `89cb6289` sends the same frame). No run
   has measured the reference on the other inputs. A refused daemon `GIT_CONFIG_COUNT` changes these answers (see
   "The daemon's own git environment").
 - For a worktree whose directory is gone, the daemon checks the registration by path.

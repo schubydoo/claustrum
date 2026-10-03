@@ -1267,9 +1267,10 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		}
 		// 89cb6289 makes two more git calls here: a light `worktree list --porcelain -z`,
 		// then a heavy `rev-parse --absolute-git-dir`. Each runs in baseRepo with its
-		// listing. The second one comes after the worktree folder was located: a
-		// worktreeRoot that cannot be read answers its lstat error after 7 calls, with
-		// no such call (Linux VM, row T6). f6010b97 made the same two calls (rows WR00,
+		// listing. The second one does not run for a worktreeRoot that cannot be read:
+		// that request answers its lstat error after 7 calls (Linux VM, row T6).
+		// claustrum runs the second call after it located the worktree folder.
+		// f6010b97 made the same two calls (rows WR00,
 		// WR07, WR09 and WR14). Right after the first call, the 7th git call,
 		// f6010b97 and 89cb6289 refuse a root that leads into a checkout of the
 		// repository. Then they refuse a root that does not exist or does not resolve.
@@ -1389,6 +1390,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// before that answer (row A5 on Linux, macOS and Windows VMs).
 		verdict := requestGitDirTrust(repo, false).verdict
 		if verdict == gitDirRefused {
+			// The one git call of 89cb6289 is the read of the user excludes (row DG2i-g
+			// on a Linux VM).
+			userExcludesFile()
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		// A refused daemon GIT_CONFIG_COUNT gets the same answer. hostileConfigRefusal
@@ -1515,13 +1519,18 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 				return refuse(fmt.Sprintf("refusing to remove worktree: %s is not a worktree of %s (%v), "+
 					"so it is left in place; remove it by hand if it is a leftover", p.WorktreePath, repo, dotGitErr))
 			}
-			// claustrum's text from before, with the cleaned path. One input is measured,
-			// with git on PATH (row DG1c-g on a Linux VM). It is a missing baseRepo and a
-			// `.git` file that names an entry of another missing repository. The references send
-			// this frame there with the hooks refusal and a chdir error as the detail.
-			// claustrum's detail is the error of the open, so the two texts differ.
+			// One input is measured, with git on PATH (row DG1c-g on a Linux VM). It is a
+			// missing baseRepo and a `.git` file that names an entry of another missing
+			// repository. 89cb6289 sends this frame there. Its detail is the hooks refusal
+			// with the chdir error of baseRepo, and its one git call is the read of the
+			// user excludes. For a baseRepo that exists, the detail is claustrum's text
+			// from before, the error of the open (row Q20).
+			detail := dotGitErr.Error()
+			if repoMissing {
+				detail = hooksRefusalPrefix + (&fs.PathError{Op: "chdir", Path: repo, Err: errors.Unwrap(statErr)}).Error()
+			}
 			return refuse(fmt.Sprintf("failed to remove worktree: could not verify that %s is a "+
-				"worktree of %s (%v); retry", filepath.Clean(p.WorktreePath), repo, dotGitErr))
+				"worktree of %s (%s); retry", filepath.Clean(p.WorktreePath), repo, detail))
 		}
 	}
 	// The lock check. A verified entry is locked when it carries a `locked` marker of
@@ -1549,10 +1558,11 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// reported (rows D01 to D03 of the f6010b97 runs). The branch step still runs
 	// (rows R19 and B2-06 of the 89cb6289 runs). Without a verified entry, the one
 	// entry whose record names the worktree is deleted. A failure of that delete is
-	// not reported (rows R01 to R04 of the f6010b97 runs). When the lock check found
-	// no entry by path, 89cb6289 runs the pair of registrationProbe once more after
-	// the delete of the tree (probe rows K1 and K1b, battery row E13, row D-83 on a
-	// Windows VM). With one entry or two it does not (rows 12 and 11).
+	// not reported (rows R01 to R04 of the f6010b97 runs). If no entry names the
+	// folder, the call log of 89cb6289 shows the pair of registrationProbe once more
+	// (probe rows K1 and K1b, battery row E13, row D-83 on a Windows VM). With one
+	// entry or two it does not (rows 12 and 11). claustrum runs that pair after the
+	// delete of the tree.
 	pending := ""
 	switch {
 	case !dropEntry:
@@ -1599,6 +1609,13 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		if t.verdict == gitDirRefused {
 			return lockCheck(t.refusal)
 		}
+		// A daemon GIT_DIR that names a file: no git call, and the branch is kept
+		// (gitDirTrust.noGit). An empty branchName is not measured there.
+		if t.verdict == gitDirNoRepo && t.noGit {
+			if _, bad := daemonCountRefusal(); !bad {
+				return okResult(req.ID, worktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
+			}
+		}
 		if msg, bad := daemonCountRefusal(); bad {
 			return lockCheck(msg)
 		}
@@ -1631,15 +1648,20 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		return lockCheck(msg)
 	}
 	if checkRegistration {
-		// Without worktreeRoot the registrations are those of registrationGitDir, and
-		// the pair of registrationProbe runs before the look at them. 89cb6289 runs it
-		// once there (probe rows 15, 15b and R17a on Linux and macOS VMs, 15 and 15b on
-		// Windows). Not measured: no entry that names the worktree. claustrum runs the
-		// pair once there too. With worktreeRoot nothing changed.
+		// Without worktreeRoot the registrations are those of registrationGitDir. If
+		// <git dir>/worktrees exists, the call log of 89cb6289 shows the pair of
+		// registrationProbe once (probe rows 15, 15b and R17a on Linux and macOS VMs, 15
+		// and 15b on Windows). If no entry names the worktree, it shows the pair twice
+		// (battery rows W01 to W07-b, W14, W15 and W16 on a Windows VM, with an empty
+		// worktrees directory). claustrum runs the first pair before it looks at the
+		// entries and the second before the delete of the entry. With worktreeRoot
+		// nothing changed.
 		commonDir := verifyGitDir(repo)
+		var probe registrationProbe
 		if p.WorktreeRoot == "" {
 			commonDir = registrationGitDir(repo, answered)
-			newRegistrationProbe(answered, inRepoWorkTree(repo)).beforeScan(commonDir)
+			probe = newRegistrationProbe(answered, inRepoWorkTree(repo))
+			probe.beforeScan(commonDir)
 		}
 		// The baseRepo part of the path is also matched in its resolved form, and the
 		// rest as sent. So a baseRepo sent in 8.3 form or through a junction still finds
@@ -1656,9 +1678,13 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		// A worktrees directory that cannot be read does not stop a gone remove. The
 		// reference answers success there (Linux VM, row K13 with worktreeRoot and a
 		// gone target). Without worktreeRoot no row measures it.
-		if locked, _, _ := worktreeLockedByPath(commonDir, sp); locked {
+		locked, _, matches := worktreeLockedByPath(commonDir, sp)
+		if locked {
 			return refuse("refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
 				"registration is locked (git worktree lock); unlock it to remove the registration and branch")
+		}
+		if matches == 0 {
+			probe.beforeScan(commonDir)
 		}
 		dropWorktreeEntryByPath(commonDir, sp)
 	}
