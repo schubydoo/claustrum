@@ -4,6 +4,32 @@ All notable changes to claustrum are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.14.0 (2026-10-03)
+
+[Compare with 1.13.0](https://github.com/schubydoo/claustrum/compare/v1.13.0...v1.14.0)
+
+### Features
+
+- `git.info` takes its root from repository discovery, and `server.capabilities` advertises `git.info.discovered_root`. The git methods pin each hook name of the configuration listing and trust a stray `commondir` of `.` or `./`. They answer a failed listing by its cause, as `89cb6289` does. ([#450](https://github.com/schubydoo/claustrum/pull/450))
+- The host cleaner no longer ends stranded daemons. On Windows the daemon starts outside the job of its SSH session, a kill ends only the direct child, and `-keep-children` works. If descendants hold the pipes of a killed child, `process.killAndWait` answers `escalated:true` after 5 s. The shutdown and cleaner lines carry the measured `89cb6289` texts. ([#454](https://github.com/schubydoo/claustrum/pull/454))
+- `-install` stops the direct `--version` run at 30 s (120 s after an install), as `89cb6289` does. It gains the default CLI folder and `<version>.exe` on Windows. It replaces a file at the `-cli-dir` path. `-cli-probe-timeout` is ignored. ([#451](https://github.com/schubydoo/claustrum/pull/451))
+- Adds the `89cb6289` managed launcher: `launcher.resolve`, the `process.spawn` `launcher` param (claustrum ignored it before), a child env strip, and launcher runs in `-install` and `-probe-cli`. ([#448](https://github.com/schubydoo/claustrum/pull/448))
+- `git.worktree_remove` and the `git.worktree_create` rollbacks now keep a branch that holds commits no other branch or remote-tracking ref reaches, and answer `"branchKept":true`, as `89cb6289` does. ([#446](https://github.com/schubydoo/claustrum/pull/446))
+
+### Fixes
+
+- On Linux and macOS the daemon now records and marks children on every socket shape and binds its socket after the reap of its start. On every system it sends no signal to a process whose `id` a new spawn takes. A session supersede ends the old process before the new one starts. The `-serve` launcher waits 12 s for the daemon, and a signal during a start no longer ends the start. `process.killAndWait` and a session supersede send the group `SIGKILL` only when the grace runs out. ([#455](https://github.com/schubydoo/claustrum/pull/455))
+- A daemon start now ends children that a launcher started. When a child ends, its record goes. For a `cwd` the daemon cannot enter, the `process.spawn` error names the command. ([#453](https://github.com/schubydoo/claustrum/pull/453))
+- The git methods now drop the daemon's `GIT_CONFIG` and `GIT_CONFIG_PARAMETERS` from repository calls. They keep its `GIT_CONFIG_COUNT` pairs, filter its `GIT_ALLOW_PROTOCOL`, and refuse a malformed count. `git.status` answers `isRepo:false` for a `baseRepo` that does not resolve, such as `<dir>/missing/..`. `git.list_branches` does so for such a `path` and for one inside a managed worktrees directory. ([#441](https://github.com/schubydoo/claustrum/pull/441))
+- `git.status` answers by the worktree entries of `baseRepo`, as `89cb6289` answers. It adds the submodule entries, cuts long entries, and no longer waits on a FIFO in an entry. ([#459](https://github.com/schubydoo/claustrum/pull/459))
+- The host cleaner now follows the reference as measured on Linux and macOS: it reads run-dir ages before it dials a sibling. Its log prefix changes from `[process.HostClean]` to `[hostclean]`. ([#434](https://github.com/schubydoo/claustrum/pull/434))
+- With `worktreeRoot`, both worktree methods now refuse a relative, absent or `..` `baseRepo` (Linux, macOS). Both refuse a `baseRepo` that is not missing but does not resolve, like `<T>/a.txt/..` or a Windows junction mid-path. Without `worktreeRoot`, remove now refuses `<T>/missing/..` under a refused `GIT_CONFIG_COUNT` and keeps the worktree (Linux, macOS). ([#443](https://github.com/schubydoo/claustrum/pull/443))
+- `git.worktree_create` now uses the reference directory modes and parent-step texts on Linux and macOS. It keeps an existing marker and refuses a worktree location inside a git checkout or a symlink loop. ([#438](https://github.com/schubydoo/claustrum/pull/438))
+- `git.worktree_remove` now deletes the worktree and its entry itself and refuses symlink or file leaves, matching the measured `f6010b97` cases. Create refuses a junctioned `.claude` or `.claude\worktrees`, and remove refuses it too (D19). ([#433](https://github.com/schubydoo/claustrum/pull/433))
+- `git.worktree_create` now refuses, as the reference does, a `worktreeRoot` below a directory that another non-root user owns. It also refuses one below a shared-writable directory without the sticky bit. ([#447](https://github.com/schubydoo/claustrum/pull/447))
+- `git.worktree_remove` now refuses, as the reference does, a `worktreeRoot` such as `<repo>/.claude` or one that does not exist, and deletes nothing. ([#445](https://github.com/schubydoo/claustrum/pull/445))
+- `git.worktree_create` refuses a group-writable `worktreeRoot` unless /etc/passwd and /etc/group show its group as the user's private group, as the reference does on Linux and macOS. ([#439](https://github.com/schubydoo/claustrum/pull/439))
+
 ## 1.13.0 (2026-09-28)
 
 [Compare with 1.12.0](https://github.com/schubydoo/claustrum/compare/v1.12.0...v1.13.0)
