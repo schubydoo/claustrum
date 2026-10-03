@@ -144,7 +144,7 @@ the traffic of the real desktop client. This is the method:
   commit them.
 
 We last ran this capture against a then-pinned reference, `8de85faa`. That build is
-now well behind the current baseline, `f6010b97`. It used a real Desktop session and
+now well behind the current baseline, `89cb6289`. It used a real Desktop session and
 covered the full `process.*` lifecycle. That lifecycle included a >32 KiB output
 stream and a mid-stream disconnect and reconnect that drove `process.reattach`. The
 result was byte-identical for the methods that build exposed. The `server.capabilities`
@@ -297,8 +297,8 @@ traps that matter for telling drift from expected:
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
   back. That difference is not drift.
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
-  pins. claustrum follows `89cb6289`, while `scripts/UPSTREAM_SHA` still names
-  `f6010b97`. Against `f6010b97`, `server.capabilities` differs by the
+  pins. claustrum follows `89cb6289`, the build that `scripts/UPSTREAM_SHA`
+  names. Against `f6010b97`, `server.capabilities` differs by the
   `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
   `launcher.resolve` method. On remove, every kept case of the
   branch step differs. claustrum keeps the branch and adds `"branchKept":true`, where
@@ -539,7 +539,7 @@ Go 1.27 does exactly that. It enables the `jsonv2` GOEXPERIMENT by default
 UTF-8 byte as the literal U+FFFD character (bytes `EF BF BD`). Go 1.26
 and earlier emit the six-ASCII
 `\ufffd` escape, and so did the reference daemon at `5db5e4a`. The build pinned
-today, `f6010b97`, carries a go1.25.14 stamp (`go version` on the binary), so it
+today, `89cb6289`, carries a go1.25.14 stamp (`go version` on the binary), so it
 emits the same escape. `files.read`
 puts raw file bytes into the `content` string. Under Go 1.27, every read of a file
 holding a non-UTF-8 byte therefore diverges from the
