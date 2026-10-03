@@ -31,3 +31,8 @@ var windowsPathSpellingHazard = func(p string) bool {
 	}
 	return false
 }
+
+// statusRefusesWindowsSpellings turns on the spelling refusals of a git.status `path`
+// inside baseRepo (statusSpellingRefused). 89cb6289 answers them on a Windows VM
+// (rows x1 to x4b).
+const statusRefusesWindowsSpellings = true

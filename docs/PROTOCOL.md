@@ -1784,7 +1784,8 @@ entries under the common directory of `baseRepo` and looks for the one entry tha
 names `path`. Each rule names its rows. The rows are from a side-by-side probe of
 `89cb6289` and claustrum on Linux, macOS and Windows VMs. Rows C1 to C13, row n07L
 and the `.t` rows are from the macOS VM. Rows D1 to D16, K02 to K15 and W03 to W06
-are from the Windows VM. Rows o1 to o25 and v2 to v6b are from the Linux VM. Rows
+and x1 to x11 are from the Windows VM. Rows o1 to o25 and v2 to v6b are from the
+Linux VM. Rows
 o19a to o19d are from the macOS VM. Rows E07a and E07b ran on Linux and macOS VMs
 with a `GIT_COMMON_DIR` in the daemon's environment. The FIFO rows n05a,
 n14b, N05a, C20a and C20b did not run on Windows. Every other row ran on all three
@@ -1819,13 +1820,26 @@ the read of the user's excludes.
    - `path` lies inside `baseRepo` and one of its components below `baseRepo` is a
      symbolic link (rows n07 and n07L) or, on Windows, a junction (row n07-j). The
      link in those rows is `.claude`. A link at the last component fails too (row
-     v4). The same layout with no link passes (rows n07b and n08).
+     v4, and row x10 for a junction). The same layout with no link passes (rows n07b
+     and n08).
+   - On Windows, `path` lies inside `baseRepo` and a component below `baseRepo` ends
+     in a dot or a space or holds a colon (rows x1, x2 and x3), or `path` has a `..`
+     component (rows x4 and x4b). Outside `baseRepo` a trailing dot or space passes
+     (rows D14dot and D14sp). Not measured: both spellings on Linux and macOS. There
+     claustrum takes a dot, a space and a colon as plain characters. A `..` after a
+     folder that exists is cleaned away. One after a folder that does not exist
+     answers `isRepo:false`, because the path does not open.
+   - A `baseRepo` that is a dangling junction answers `isRepo:false` with call 1 only
+     (rows n11-j and x11).
 5. Calls 4 and 5 run in the common directory: `--git-dir=<common> config -z --list`,
    then the light `--git-dir=<common> --work-tree=<dir> rev-parse --show-toplevel`.
    - `<dir>` is `path` with its symlinks resolved (rows n06 and C12). When `path` lies
      inside `baseRepo` or is `baseRepo`, `<dir>` is `baseRepo` (rows A04, A05a, N05a,
      N05b, n07b, n08, n18b and K02b). An empty `path` gives `.` (rows n25d1 and
-     n25d2). On Windows `<dir>` has the letter case on disk and the long names, and
+     n25d2). A relative `path` goes to git as sent, also when it lies inside
+     `baseRepo` (rows n25c and x5). In row x5 git exits 128 on it, and the answer is
+     `isRepo:false` after 5 calls. Not measured: a relative `path` inside `baseRepo`
+     on Linux and macOS. On Windows `<dir>` has the letter case on disk and the long names, and
      keeps a junction, a `subst` drive and a `\\?\` prefix (rows D3, D6, D8, D13
      and D16).
    - A listing that fails here is the hooks refusal, and `git version` runs after it
@@ -1856,9 +1870,10 @@ the read of the user's excludes.
      lies below a symlink. The second spelling is claustrum's choice for it.
    - On macOS another letter case, the NFD form and `/System/Volumes/Data` in `path`
      do not match (rows C9, C6, C2 and C3). Another letter case in the `gitdir` file
-     does not match (row C10, macOS VM, and row D9, Windows VM). Row D9 changed the
-     case of the whole value. Not measured: a value with one folder name in another
-     case on Windows. claustrum compares by text there too.
+     does not match on macOS (row C10). On Windows the folder compare ignores letter
+     case: one folder name in another case matches, in the `gitdir` file (row x6)
+     and in `path` (row x8). The `.git` name does not: a value that ends in `.GIT`
+     fails (rows x7 and D9).
    - Exactly one entry matches. Two matching entries answer `isRepo:false` (row n01),
      and so does none (rows n18b and n25). A second entry whose `gitdir` is a
      directory is passed over (row v2).
@@ -1873,7 +1888,7 @@ the read of the user's excludes.
      entry folder, and the result is cleaned (rows n19c and n19d).
    - It equals the common directory as text, in the spelling of call 3. On macOS a
      value under `/tmp` fails, because git answers `/private/tmp` (row n19b.t).
-     Another letter case fails (row C11, macOS VM, and rows D10 and W04, Windows VM).
+     Another letter case fails (row C11, macOS VM, and rows D10, W04 and x9, Windows VM).
      On Windows an absolute value with forward or back slashes passes (rows D11f and
      D11b). A short name, a `\\?\` prefix and a value with no drive letter fail
      (rows K05a, K07a, K15a, W05 and W06).
@@ -1913,7 +1928,7 @@ claustrum opens each file without blocking and reads a regular file only.
 - The temporary git folder holds copies of `HEAD` and `index` of the entry and a
   `commondir` file (row K1). It also holds `config.worktree` when the entry has one
   (rows n12 and o17), `info/sparse-checkout` (row o17, Linux VM) and each
-  `sharedindex.*` file (rows o16b1 and o16b2, Linux VM). In a reftable repository it
+  `sharedindex.*` file (rows o16b1 and o16b2). In a reftable repository it
   holds `reftable/tables.list` and each table that the list names (rows o19a and
   o19b). In row o19d `89cb6289` also copied a table that the list did not name,
   before it answered `isRepo:false`. Not measured: whether it copies such a table in
@@ -1992,8 +2007,14 @@ claustrum opens each file without blocking and reads a regular file only.
   `diff-index` calls there and returns the status. With a user excludes file the
   Windows rows equal the Linux rows (pass X). See [DIVERGENCES.md](DIVERGENCES.md)
   D16.
-- Not measured on Windows: the rows o1 to o25, a FIFO, and a `path` inside
-  `baseRepo` that ends in a dot or a space or holds a colon.
+- On Windows a gitlink path that is a regular file gives no entry (row o4, Windows
+  VM), and a gitlink path that is a junction gives the "could not be inspected" text
+  (row o5b, Windows VM). The o rows ran on the Windows VM too, except o5c, o15b,
+  o19 and o20. `89cb6289` and claustrum `84f67dd` gave equal frames in each.
+- The daemon removes the temporary folder before the reply. From the code: if the
+  folder is still there, it tries again in the background for about 4 seconds. On
+  a Windows VM claustrum `84f67dd` left the empty folder once in 4 runs of row n17c.
+  The cause is not measured.
 
 #### git.list_branches
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`

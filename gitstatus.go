@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // git.status as 89cb6289 answers it. The request passes a gate first, and then four
@@ -174,11 +175,16 @@ func resolvedDir(p string) string {
 // `path` with 8.3 short names below a baseRepo in short names found no entry (row
 // K02b), and a worktree outside baseRepo named in short names found its entry (row
 // D13). Not measured: a `path` inside a baseRepo that lies below a symlink, where
-// the second spelling is claustrum's choice, and another letter case below baseRepo
-// on Windows.
+// the second spelling is claustrum's choice.
 func statusPathOf(path, baseRepo string) (statusPath, bool) {
 	clean := filepath.Clean(path)
-	if fi, err := os.Stat(clean); err != nil || !fi.IsDir() {
+	// The test is on `path` as sent, because git gets it as sent: on Linux and macOS
+	// a `q/..` with no folder `q` does not open.
+	sent := path
+	if sent == "" {
+		sent = clean
+	}
+	if fi, err := os.Stat(sent); err != nil || !fi.IsDir() {
 		return statusPath{}, false
 	}
 	absPath, err := filepath.Abs(clean)
@@ -190,8 +196,10 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 		return statusPath{}, false
 	}
 	sp := statusPath{spellings: []string{absPath}}
-	if pathStrictlyUnder(absPath, absBase) {
-		if linkBelow(absBase, absPath) {
+	// A relative `path` is not taken as inside baseRepo. It goes to the next call as
+	// sent, and git answers for it (rows n25c and x5).
+	if filepath.IsAbs(clean) && pathStrictlyUnder(absPath, absBase) {
+		if linkBelow(absBase, absPath) || statusSpellingRefused(path, absBase, absPath) {
 			return statusPath{}, false
 		}
 		sp.probeTree = resolvedDir(baseRepo)
@@ -209,6 +217,30 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 		}
 	}
 	return sp, true
+}
+
+// statusSpellingRefused reports the Windows spelling refusals of a `path` inside
+// baseRepo. On a Windows VM each answers isRepo:false with 3 calls in total:
+//
+//   - a component below baseRepo that ends in a dot or a space (rows x1 and x2) or
+//     holds a colon (row x3). The measured component is the last one.
+//   - a `..` component in `path` as sent, with or without the folder before it (rows
+//     x4 and x4b).
+//
+// Outside baseRepo a trailing dot or space passes (rows D14dot and D14sp). On Linux
+// and macOS neither spelling is measured. claustrum refuses neither there. A `..`
+// after a folder that exists is cleaned away, and one after a folder that does not
+// exist fails the directory test of statusPathOf. A dot, a space and a colon are
+// plain characters of a name.
+func statusSpellingRefused(sent, absBase, absPath string) bool {
+	if !statusRefusesWindowsSpellings {
+		return false
+	}
+	if pathHasDotDot(sent) {
+		return true
+	}
+	rel, err := filepath.Rel(absBase, absPath)
+	return err != nil || windowsPathSpellingHazard(rel)
 }
 
 // linkBelow reports whether a component of p below base is a symbolic link or a
@@ -317,9 +349,9 @@ func entryPathValue(entry string, content []byte) string {
 // does not match (rows C2, C3, C6, C9 and C10 on a macOS VM). Exactly one entry must
 // match (rows n01, n18b and n25).
 //
-// On Windows the compare is by text too. Row D9 failed with the whole value in
-// another letter case, `.git` included. A value with only one folder name in another
-// case is not measured. An entry whose `gitdir` cannot be read is passed over: a
+// On Windows the compare of the folder ignores letter case: one folder name in
+// another case matches, in the `gitdir` file (row x6) and in `path` (row x8). The
+// `.git` name does not: `.GIT` fails (rows x7 and D9). An entry whose `gitdir` cannot be read is passed over: a
 // second entry whose `gitdir` is a directory changes no answer (row v2, Linux VM).
 func statusMatchEntry(common string, spellings []string) (string, bool) {
 	dir := filepath.Join(common, "worktrees")
@@ -338,7 +370,8 @@ func statusMatchEntry(common string, spellings []string) (string, bool) {
 			continue
 		}
 		v := entryPathValue(entry, b)
-		if filepath.Base(v) != ".git" || !slices.Contains(spellings, filepath.Dir(v)) {
+		holder := filepath.Dir(v)
+		if filepath.Base(v) != ".git" || !slices.ContainsFunc(spellings, func(s string) bool { return sameCanonicalPath(s, holder) }) {
 			continue
 		}
 		found = entry
@@ -352,8 +385,8 @@ func statusMatchEntry(common string, spellings []string) (string, bool) {
 // --absolute-git-dir` gave. A missing file fails (row n19a), and so do a FIFO (rows
 // C20a and C20b), an absolute symlink (row n19f) and a file over the bound (row
 // n19g). On macOS a value under /tmp fails, because git answers /private/tmp (row
-// n19b.t). Another letter case fails (rows C11, D10 and W04), and so does a short
-// name (rows K05a, K07a and K15a).
+// n19b.t). Another letter case fails, on Windows too (rows C11, D10, W04 and x9),
+// and so does a short name (rows K05a, K07a and K15a).
 func statusEntryNamesCommon(entry, common string) bool {
 	b, err := readEntryFile(entry, "commondir", statusEntryFileMaxBytes)
 	if err != nil {
@@ -611,6 +644,39 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 	return tmp, nil
 }
 
+// statusRemoveAll and statusRemoveRetry are the remove call and the retry times of
+// removeStatusGitDir. (var, so tests can replace them.)
+var (
+	statusRemoveAll   = os.RemoveAll
+	statusRemoveRetry = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, time.Second, 3 * time.Second}
+)
+
+// removeStatusGitDir removes the temporary git folder. On a Windows VM claustrum
+// left the empty folder behind in 1 of 4 runs of row n17c, where `status` fails.
+// 89cb6289 left none in 4 runs. The cause is not measured. A folder that another
+// process still holds open cannot be removed on Windows, and its files can. So when
+// the folder is still there after the first try, the daemon tries again in the
+// background, after each time of statusRemoveRetry. The reply does not wait for it.
+func removeStatusGitDir(tmp string) {
+	gone := func() bool {
+		_ = statusRemoveAll(tmp)
+		_, err := os.Lstat(tmp)
+		return errors.Is(err, fs.ErrNotExist)
+	}
+	if gone() {
+		return
+	}
+	go func() {
+		for _, d := range statusRemoveRetry {
+			time.Sleep(d)
+			if gone() {
+				return
+			}
+		}
+		logWarnf("[git] temporary git folder %s could not be removed", tmp)
+	}()
+}
+
 // statusRun runs the git commands of one answer.
 type statusRun struct {
 	ctx    context.Context
@@ -721,7 +787,7 @@ func statusChanges(path, common string, e statusEntry) ([]string, error) {
 	attrSource := attrSourceArgs() != nil
 	tmp, err := buildStatusGitDir(e, common)
 	if tmp != "" {
-		defer func() { _ = os.RemoveAll(tmp) }()
+		defer removeStatusGitDir(tmp)
 	}
 	if err != nil {
 		return nil, err
@@ -812,7 +878,8 @@ func submoduleEntry(name, text string) string {
 //     tree, and a folder of mode 000 (rows o4, o5 and o5c).
 //
 // There is one entry for each index stage, so a conflicted gitlink gives three (row
-// o12).
+// o12). On a Windows VM a gitlink path that is a regular file gives no entry (row
+// o4 there): Windows reports <name>/.git as not there.
 func presentSubmodules(workTree string, lsFiles []byte) []string {
 	var entries []string
 	root, rootErr := os.OpenRoot(workTree)

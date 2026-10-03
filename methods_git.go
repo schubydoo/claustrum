@@ -548,6 +548,11 @@ func gitStatus(req *request) response {
 		statusNoRepoCalls(p.BaseRepo)
 		return notRepo
 	}
+	// A baseRepo that resolves and cannot be opened answers here, with no further git
+	// call. On a Windows VM that is a dangling junction (rows n11-j and x11).
+	if _, err := os.Stat(p.BaseRepo); err != nil {
+		return notRepo
+	}
 	// A repo whose config cannot be enumerated is refused with -32603 (row o22b). The
 	// listing runs in baseRepo as sent and carries the heavy profile (K1 call 2).
 	c := hostileConfigRefusal(p.BaseRepo, true)

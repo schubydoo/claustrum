@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -132,11 +133,12 @@ func TestGitStatusSubmoduleEntries(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, []string{subPresent}},
-		// Row o4: the gitlink path is a regular file.
+		// Row o4: the gitlink path is a regular file. On a Linux VM that gives the
+		// "could not be inspected" entry. On a Windows VM it gives no entry.
 		{"o4 gitlink path is a file", func(t *testing.T, f statusFixture) {
 			f.commitGitlink(t)
 			writeFile(t, filepath.Join(f.W, "gl"), "file\n", 0o644)
-		}, []string{subUnread}},
+		}, map[bool][]string{false: {subUnread}, true: nil}[runtime.GOOS == "windows"]},
 		// Rows o9b and o9c: a staged gitlink gives "change staged".
 		{"o9b staged gitlink", func(t *testing.T, f statusFixture) {
 			f.stageGitlink(t, "gl", other)

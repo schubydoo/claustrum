@@ -165,3 +165,24 @@ func TestGitStatusInsidePathBelowSymlinkedParent(t *testing.T) {
 		t.Errorf("git.status = %s\nwant %s", got, statusClean)
 	}
 }
+
+// A `..` component in a path inside baseRepo. On a Windows VM 89cb6289 answers
+// isRepo:false (rows x4 and x4b). On Linux and macOS it is not measured. There
+// claustrum answers isRepo:false when the folder before the `..` does not exist,
+// because the path does not open, and the status when it does. This test pins that
+// choice.
+func TestGitStatusDotDotInsideBaseRepoUnix(t *testing.T) {
+	f := newStatusFixture(t)
+	s0 := filepath.Join(f.T, ".claude", "worktrees", "s0")
+	runGit(t, f.T, "worktree", "add", "-q", "-b", "s0", s0)
+	path := f.T + "/.claude/worktrees/q/../s0"
+	if got := statusFrame(t, path, f.T); got != statusNotRepo {
+		t.Errorf("no folder q: git.status = %s\nwant %s", got, statusNotRepo)
+	}
+	if err := os.Mkdir(filepath.Join(f.T, ".claude", "worktrees", "q"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := statusFrame(t, path, f.T); got != statusClean {
+		t.Errorf("folder q there: git.status = %s\nwant %s", got, statusClean)
+	}
+}
