@@ -8,10 +8,9 @@ import (
 )
 
 // git.status refuses any path that is not a linked worktree of baseRepo before it
-// runs status, answering the bare isRepo:false shape. Two arms of gitStatusWorktreeOf
-// that the worktree-based suites do not reach: the MAIN checkout (rev-parse succeeds
-// but git-dir equals common-dir) and a NON-repository path (rev-parse fails). Both
-// match 7d193f89.
+// runs status, answering the bare isRepo:false shape. Two cases that the
+// worktree-based suites do not reach: the MAIN checkout (no entry names it) and a
+// NON-repository path. Both match 7d193f89.
 func TestGitStatusRejectsNonWorktreePaths(t *testing.T) {
 	requireGit(t)
 	s := newTestServer(t)

@@ -521,11 +521,19 @@ func gitStatus(req *request) response {
 	if p.BaseRepo == "" {
 		return errResult(req.ID, codeInvalidParam, "baseRepo is required")
 	}
-	// A baseRepo that does not resolve answers the bare shape, before any git call and
-	// before the check of the daemon's own GIT_CONFIG_COUNT (docs/PROTOCOL.md).
-	if unresolvable(p.BaseRepo) {
-		return okResult(req.ID, gitStatusResult{})
+	// The gate of 89cb6289 (gitstatus.go, docs/PROTOCOL.md). Every failure of it
+	// answers the full status shape with isRepo:false, not the bare notRepoResult of
+	// git.info.
+	notRepo := okResult(req.ID, gitStatusResult{})
+	// A baseRepo that does not resolve, or that lies in a managed worktrees tree,
+	// answers before any git call and before the check of the daemon's own
+	// GIT_CONFIG_COUNT (rows n10, n11 and o23).
+	if unresolvable(p.BaseRepo) || statusBaseInManagedTree(p.BaseRepo) {
+		return notRepo
 	}
+	// The read of the user's excludes comes next, so it also runs before a trust
+	// refusal (rows o20 and o21, Linux VM).
+	userExcludesFile()
 	// The git-directory trust check runs on baseRepo, not on path (gitdirtrust.go).
 	// The count check comes after a trust refusal and before the "no repository"
 	// answer.
@@ -537,85 +545,50 @@ func gitStatus(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
-		return okResult(req.ID, gitStatusResult{})
+		statusNoRepoCalls(p.BaseRepo)
+		return notRepo
 	}
-	// A repo whose config cannot be enumerated is refused with -32603 before status
-	// runs (7d193f89). The enumeration is on baseRepo. With the GIT_COMMON_DIR pin of
-	// the trust check, git names the config by its absolute path. f6010b97 names the
-	// absolute path in this frame too, measured side by side on Linux and macOS VMs.
-	// 90fca6e6 names ".git/config" (Linux VM, K06). The listing carries the heavy
-	// profile, as the first listing of f6010b97's git.status does on Linux, macOS and
-	// Windows VMs.
-	if c := hostileConfigRefusal(p.BaseRepo, true); c.refusal != "" {
+	// A repo whose config cannot be enumerated is refused with -32603 (row o22b). The
+	// listing runs in baseRepo as sent and carries the heavy profile (K1 call 2).
+	c := hostileConfigRefusal(p.BaseRepo, true)
+	if c.refusal != "" {
 		return errResult(req.ID, codeInternal, c.refusal)
 	} else if c.noRepo {
-		return okResult(req.ID, gitStatusResult{})
+		return notRepo
 	}
-	gitDir, commonDir, ok := gitStatusWorktreeOf(p.Path, p.BaseRepo)
+	// K1 call 3. Its answer is the common directory, in the spelling that git gives
+	// it. A failure answers isRepo:false (row n17b).
+	out, err := hardenedGitRunPre(p.BaseRepo, true, &c.listing, nil, "rev-parse", "--absolute-git-dir")
+	if err != nil || out == "" {
+		return notRepo
+	}
+	common := filepath.Clean(strings.TrimRight(out, "\r"))
+	// No `worktrees` folder in the common directory: no further git call (rows n18
+	// and n18c).
+	if fi, err := os.Stat(filepath.Join(common, "worktrees")); err != nil || !fi.IsDir() {
+		return notRepo
+	}
+	sp, ok := statusPathOf(p.Path, p.BaseRepo)
 	if !ok {
-		// The reference returns the full status shape (clean:false), not the
-		// bare notRepoResult that git.info uses.
-		return okResult(req.ID, gitStatusResult{})
+		return notRepo
 	}
-	// 7d193f89 runs status under the heavy hardening profile with
-	// `--untracked-files=all --ignore-submodules=all`. `--untracked-files=all` is
-	// wire-visible: an untracked file inside an untracked directory is listed
-	// individually (`?? sub/u.txt`) rather than as the directory (`?? sub/`).
-	//
-	// The reference builds status in an ISOLATED temp gitdir so the caller's index is
-	// never refreshed: a fresh GIT_DIR with GIT_COMMON_DIR pointing at the shared
-	// repo, and --work-tree at the worktree. hardenedGitStatus reproduces that
-	// assembly (reconstructed from the reference's runtime git argv+env,
-	// scratch/probe/gitargv). It is byte-identical on Linux and macOS. On Windows it
-	// is NOT: the reference's own git.status of a linked worktree errors -32603
-	// "exit status 128" there (measured), while claustrum returns the status. That
-	// is intentional divergence D16 (claustrum more correct). With Git for Windows
-	// 2.55.0, git status exits 128 when core.excludesFile is NUL. The reference
-	// passes NUL there when the user has no global excludes file. claustrum passes
-	// /dev/null to that one call (statusExcludesFile). See docs/DIVERGENCES.md D16.
-	// A path with no work tree still exits 128, and the reference propagates the
-	// bare Go error string, not git's "fatal:" output.
-	//
-	// --attr-source=<empty-tree> makes git ignore the repo's in-repo .gitattributes,
-	// matching 4534d86: without it a .gitattributes clean filter runs during status
-	// and flips a file's modified-ness (wire-visible) plus executes its command. It is
-	// a top-level option before the subcommand, and a no-op on a repo with no
-	// attribute rules (so ordinary status stays byte-identical).
-	// hardenedGitStatus puts it first.
-	out, err := hardenedGitStatus(p.Path, gitDir, commonDir, "status", "--porcelain",
-		"--untracked-files=all", "--ignore-submodules=all")
+	if ok, err := statusWorkTreeProbe(common, sp.probeTree, []string{"GIT_COMMON_DIR=" + common}); err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
+	} else if !ok {
+		return notRepo
+	}
+	entry, ok := statusEntryOf(common, sp)
+	if !ok {
+		return notRepo
+	}
+	// The exec error of a failed command goes on the wire as it is, for example
+	// "exit status 128", never the text of git. A relative path passes the gate and
+	// then fails here, because git gets it as sent (row n25c).
+	changes, err := statusChanges(p.Path, common, entry)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
-	if out == "" {
-		return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: true})
-	}
-	var changes []string
-	// 7d193f89 rebuilt git.status to pass the porcelain through verbatim: every
-	// line keeps its leading space, the FIRST included. 5db5e4a trimmed the whole
-	// blob before splitting, so its first line lost its leading space, and claustrum
-	// reproduced that. Re-measured against the reference daemons 7d193f89 AND 4534d86:
-	// a worktree whose first two entries are " M a1" and " M a2" comes back as
-	// [" M a1"," M a2"], NOT ["M a1"," M a2"] (5db5e4a). So split on the trailing
-	// newline only — never TrimSpace the blob, which eats the first line's leading
-	// space. Evidence: scratch/probe/attrsrc (git.status vs each reference build).
-	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		// Past the first line, pass porcelain through verbatim apart from the
-		// line ending: the XY status column is positional, so the leading space
-		// of an unstaged-only change (" M f") is data, not padding. Trimming it
-		// made staged ("M  f") and unstaged (" M f") differ only in space count.
-		//
-		// Kept as a single guarded append rather than an `if ... { continue }`:
-		// gitStdoutErr already strips the trailing newline and an empty `out`
-		// returns earlier, so no blank line reaches this loop in practice, and a
-		// bare `continue` is then a statement coverage can never reach. The blank
-		// skip itself stays as cheap insurance against a porcelain blob that ends
-		// in a stray separator.
-		if t := strings.TrimRight(line, "\r\n"); strings.TrimSpace(t) != "" {
-			changes = append(changes, t)
-		}
-	}
-	return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: false, Changes: changes})
+	return okResult(req.ID, gitStatusResult{IsRepo: true, Clean: len(changes) == 0, Changes: changes})
 }
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
@@ -626,45 +599,11 @@ func unresolvable(p string) bool {
 	return err != nil
 }
 
-// gitStatusWorktreeOf reports whether path is a linked git worktree whose main
-// repository is baseRepo — the gate 7d193f89's git.status applies before it will
-// run status. One `git rev-parse` at path yields the three facts that decide it:
-// path must be the worktree's own top level (so a subdir inside a worktree is
-// rejected), it must be a LINKED worktree (git-dir differs from the common dir,
-// so the main checkout is rejected), and the common dir's parent must be baseRepo
-// (so a worktree of another repository is rejected). Reproduces the reference's
-// isRepo verdict on all six probed shapes; git failing at path (absent, not a
-// repo) falls through to false.
-func gitStatusWorktreeOf(path, baseRepo string) (gitDir, commonDir string, ok bool) {
-	// git canonicalizes the paths it reports (--show-toplevel / --git-common-dir
-	// resolve symlinks — macOS /tmp -> /private/tmp — and expand Windows 8.3 short
-	// names), so canonicalize our own operands the same way before comparing.
-	// Without this a valid worktree under a symlinked or short-named directory
-	// never matches git's output and status wrongly answers isRepo:false. No-op on
-	// Linux paths with no symlinks, so the frame battery stays byte-identical.
-	path = canonicalPath(path)
-	baseRepo = canonicalPath(baseRepo)
-	out, o := hardenedGit(path, false, "rev-parse", "--path-format=absolute",
-		"--show-toplevel", "--git-dir", "--git-common-dir")
-	if !o {
-		return "", "", false
-	}
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 3 {
-		return "", "", false
-	}
-	top, gd, cd := lines[0], lines[1], lines[2]
-	if samePath(top, path) && !samePath(gd, cd) && samePath(filepath.Dir(cd), baseRepo) {
-		return gd, cd, true
-	}
-	return "", "", false
-}
-
 // canonicalPath resolves p to the spelling git reports — symlinks resolved and
 // (on Windows) 8.3 short names expanded. Defined per-OS in pathcanon_{unix,windows}.go.
 
 // samePath compares two paths after lexical cleaning. Callers that compare against
-// git's output canonicalize their operands first (see gitStatusWorktreeOf).
+// git's output canonicalize their operands first.
 func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }

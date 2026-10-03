@@ -138,8 +138,8 @@ func precursorEnv(heavy bool, pin []string) []string {
 // profile, pin, and configPinEnv: the count, the inherited pairs and the hook pins of
 // hooks (gitenv.go). docs/PROTOCOL.md gives the order.
 //
-// GIT_OPTIONAL_LOCKS=0 is not part of it. hardenedGitStatus adds it to the status
-// call only. The heavy `rev-parse --absolute-git-dir` of git.worktree_create and
+// GIT_OPTIONAL_LOCKS=0 is not part of it. git.status adds it to its status, ls-files
+// and diff-index calls only (gitstatus.go). The heavy `rev-parse --absolute-git-dir` of git.worktree_create and
 // git.worktree_remove runs without it.
 func hardenedGitEnv(heavy bool, pin, hooks []string) []string {
 	return hardenedEnvFrom(os.Environ(), heavy, pin, hooks)
@@ -488,110 +488,6 @@ func hardenedGitRunPre(dir string, heavy bool, pre *configListing, stdin io.Read
 	defer cancel()
 	cmd := hardenedGitCmd(ctx, dir, heavy, pre, args...)
 	cmd.Stdin = stdin
-	out, err := cmd.Output()
-	return strings.TrimRight(string(out), "\n"), err
-}
-
-// readStatusFile, writeStatusFile and chtimesStatusFile are seams over the three
-// filesystem calls that assemble hardenedGitStatus's temp gitdir below. The read
-// after a successful Stat fails on a race (TOCTOU) or on a HEAD/index that exists
-// but is unreadable — stageable only on Unix as non-root, so the seam makes the arm
-// reachable on every CI leg; the write and the Chtimes target a directory and a file
-// this function just created, which no fixture can make fail. Swallowing any of the
-// three would run status with incomplete metadata, so the arms propagate. Production
-// never reassigns them.
-var (
-	readStatusFile    = os.ReadFile
-	writeStatusFile   = os.WriteFile
-	chtimesStatusFile = os.Chtimes
-)
-
-// hardenedGitStatus runs git.status through an ISOLATED temp gitdir, the way the
-// reference does, so status never refreshes the caller's index. It builds a fresh
-// GIT_DIR (the worktree's own HEAD and index copied in) with GIT_COMMON_DIR pointing at
-// the shared repo and --work-tree at the worktree, under the heavy hardening profile.
-// Reconstructed from the reference's runtime git argv+env (scratch/probe/gitargv), which
-// showed --git-dir=<temp>, GIT_COMMON_DIR=<repo>/.git and --work-tree=<wt>.
-//
-// On Linux and macOS this is byte-identical to a direct `git -C <wt> status` (measured),
-// and to the reference. On Windows the reference's own git.status of a linked worktree
-// answers exit status 128 (measured), and this returns the status. That is the
-// deliberate divergence D16. With Git for Windows 2.55.0 its cause is the
-// core.excludesFile value of the status call (statusExcludesFile). See
-// docs/DIVERGENCES.md. Returns stdout and the raw exec error, like
-// hardenedGitStdout, so a non-zero exit surfaces as "exit status N", the same
-// string the reference puts on the wire.
-//
-// The call has the shape of f6010b97 on Linux and macOS VMs. Its working
-// directory is the worktree. The argv is --attr-source (attrSourceArgs), the heavy
-// profile, --git-dir, --work-tree, then args. Its config precursor is `--git-dir=<temp>
-// config -z --list` in the worktree. Both carry the heavy profile and
-// GIT_COMMON_DIR=commonDir, cleaned. git prints commonDir with forward slashes on
-// Windows, and f6010b97 pins it with backslashes on a Windows VM. The status
-// call alone adds GIT_OPTIONAL_LOCKS=0: 4534d86
-// sets it on its status commands. Without it a plain `git status` REWRITES the
-// worktree's index (refreshing the stat cache) and takes index.lock — a mutation of
-// the caller's repo on a read. With it the status output is byte-identical
-// (measured) but the index is not touched, matching the reference.
-func hardenedGitStatus(worktree, gitDir, commonDir string, args ...string) (string, error) {
-	tmp, err := os.MkdirTemp("", statusGitDirTempPrefix)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = os.RemoveAll(tmp) }()
-	// Copy the worktree's own HEAD and index into the temp gitdir so status compares
-	// against the right commit and staged state; objects and refs resolve through
-	// GIT_COMMON_DIR. A genuinely absent file (a worktree with no index yet) is skipped
-	// — git rebuilds it from HEAD. A file that EXISTS but cannot be read (permission,
-	// I/O, transient error) is propagated, not swallowed: skipping it would run status
-	// with incomplete metadata and fabricate deletions or untracked entries.
-	for _, f := range []string{"HEAD", "index"} {
-		src := filepath.Join(gitDir, f)
-		fi, e := os.Stat(src)
-		if e != nil {
-			if os.IsNotExist(e) {
-				continue
-			}
-			return "", e
-		}
-		b, e := readStatusFile(src)
-		if e != nil {
-			if os.IsNotExist(e) {
-				continue
-			}
-			return "", e
-		}
-		dst := filepath.Join(tmp, f)
-		if e := writeStatusFile(dst, b, 0o600); e != nil {
-			return "", e
-		}
-		// Preserve the source mtime. For the index this is load-bearing: git's
-		// racy-clean check compares each work-tree file's mtime against the index's
-		// own mtime, and a fresh (newer) index would make git trust the stale stat
-		// cache and miss an unstaged modification whose size is unchanged (a "two\n"
-		// over a "one\n"). Copying the mtime keeps status byte-identical to a direct
-		// run against the worktree's real index.
-		if e := chtimesStatusFile(dst, fi.ModTime(), fi.ModTime()); e != nil {
-			return "", e
-		}
-	}
-	// The temp gitdir must carry a `commondir` file naming the shared repo, so git
-	// resolves a branch symref HEAD (`ref: refs/heads/<wt>`) against the common refs.
-	// GIT_COMMON_DIR alone is not enough for that ref resolution (measured): without
-	// commondir a branch worktree reports every tracked file as a fresh add.
-	if e := writeStatusFile(filepath.Join(tmp, "commondir"), []byte(commonDir+"\n"), 0o600); e != nil {
-		return "", e
-	}
-	ctx, cancel := gitCtx()
-	defer cancel()
-	attr := attrSourceArgs()
-	excludes := statusExcludesFile()
-	pin := []string{"GIT_COMMON_DIR=" + filepath.Clean(commonDir)}
-	hooks := runListing(ctx, worktree, tmp, precursorEnv(true, pin)).hooks()
-	full := append(attr, profileArgsWithExcludes(true, excludes, append([]string{"--git-dir=" + tmp, "--work-tree=" + worktree}, args...)...)...)
-	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Dir = worktree
-	cmd.Env = append(hardenedGitEnv(true, pin, hooks), "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\n"), err
 }

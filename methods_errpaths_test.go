@@ -95,7 +95,7 @@ func TestGitStatusCleanRepo(t *testing.T) {
 }
 
 // TestGitStatusDetectsSameSizeModification pins the index-mtime preservation in the
-// isolated temp-gitdir assembly (hardenedGitStatus): the os.Chtimes that copies the
+// isolated temp-gitdir assembly (copyEntryFile): the os.Chtimes that copies the
 // source index's mtime onto the temp copy. git.status runs against a COPY of the
 // worktree's index in a temp gitdir. git's racy-clean rule re-hashes a work-tree file
 // only when its cached entry mtime is not older than the index file's own mtime; a fresh
