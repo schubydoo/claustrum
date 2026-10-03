@@ -354,20 +354,28 @@ func runServe(socket, tokenFile string, tokenFd int, metricsAddr string, wlopt w
 	// in-process tests never mutate the test process's own limit.
 	raiseInheritedFileLimit()
 
-	// Extract a real interactive PATH from the login shell so spawned children
-	// resolve tools the way an interactive session would. Run in a goroutine so
-	// a stalling login shell does not delay the daemon socket opening (matches
-	// reference binary behavior; extractLoginPATH has its own internal timeout).
-	// buildEnv awaits it, so no child is built from a pre-extraction PATH.
+	// Arm the read of the login-shell PATH, so spawned children resolve tools the
+	// way an interactive session does. No shell runs here: the first process.spawn
+	// runs the read (buildEnv, see shellenv.go), as on 89cb6289 (Linux and macOS
+	// rows G1 to G3).
 	// Kept in this shell — not newServerOnSocket — so tests booting a server
-	// never fork a login shell (which mutates the test process's PATH).
-	startLoginPATH()
+	// never fork a login shell.
+	armLoginPATH()
+
+	// The handler for SIGTERM and SIGINT is in place before the claim of the run dir,
+	// so a signal during the start does not end the start (see signalWatch).
+	sigc := make(chan os.Signal, 1)
+	notifySignals(sigc, syscall.SIGTERM, syscall.SIGINT)
+	watch := watchSignals(sigc, keepChildren)
 
 	s, err := newServerOnSocket(socket, token, metricsAddr, wlopt, keepChildren, listenPipe)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: %v\n", err)
 		osExit(1)
 	}
+	// A signal that came during the start requests the shutdown here, before the
+	// listening line.
+	watch.attach(s)
 
 	fmt.Print(s.listeningLine(socket))
 	// Start the host cleaner. It is a background sweep that ends orphaned Claude Code
@@ -446,9 +454,10 @@ func childToken(tokenFile string) (string, error) {
 var chmodSocket = os.Chmod
 
 // newServerOnSocket performs the daemonized child's startup in its exact
-// original order — clear stale socket, listen, chmod, persist the token, gate
+// order: claim the run dir, reap the children of a dead predecessor, clear the
+// stale socket, listen, chmod, complete the owner record, persist the token, gate
 // the Windows-only flag, construct the server, start the optional
-// metrics and pipe listeners — and hands back the ready-to-run server. Split
+// metrics and pipe listeners. It hands back the ready-to-run server. Split
 // out of runServe (same pattern as enablePipe/startAcceptLoops) so the whole
 // boot sequence is testable without the daemonize/osExit shell.
 func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, keepChildren, listenPipe bool) (*server, error) {
@@ -465,24 +474,48 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	// recovers from a boot failure — would otherwise leak the open file. Close is
 	// nil-safe, so this is a no-op when logging is off.
 	ok := false
-	// Claim the run dir BEFORE binding the socket (run-dir claim -> socket bind ->
-	// token persist). This evicts a prior live
-	// sibling serve daemon so a restart deterministically replaces it. Best-effort:
-	// claimRunDir never fails the boot, only logs and serves without ownership. On
-	// Windows it takes no lock and prints one line (see daemon_runlock_windows.go).
+	// The order of a start is: claim the run dir, reap, bind, complete the owner
+	// record, persist the token. Measured on Linux and macOS against 89cb6289 (rows
+	// D1 to D3, XA and XL). On Linux the order of the calls is the open of
+	// daemon.lock, the signals of the reap, the unlink of the old socket file, bind
+	// and listen (row D1, strace). The strace rows hold no write to the lock. The
+	// place of the last step comes from the startedAt of the full record (see below).
 	//
-	// The owner record carries this daemon's instance id, the same value that
-	// server.capabilities answers and that the listening line prints. On a Linux VM,
-	// the listening line, the lock and server.capabilities of 89cb6289 held one value in
-	// 36 of 36 daemons.
+	// The claim evicts a prior live sibling serve daemon, so a restart
+	// deterministically replaces it. Best-effort: claimRunDir never fails the boot,
+	// only logs and serves without ownership. It writes the short owner record. On
+	// Windows it takes no lock and prints one line (see daemon_runlock_windows.go).
 	instanceID := newDaemonInstanceID()
-	releaseRunDir := claimRunDir(socket, "serve", instanceID)
+	claim := claimRunDir(socket, "serve")
+	procs := newProcManager()
 	defer func() {
 		if !ok {
 			wlog.Close()
-			releaseRunDir()
+			claim.release()
+			procs.close()
 		}
 	}()
+	// The run dir (CLAUDE_SSH_RUN_DIR) is the folder of the socket path, on every
+	// socket shape. spawn launches children through the exec-child trampoline (see
+	// execchild.go).
+	procs.runDir = execChildRunDir(socket)
+	// Hold the run dir open from here on, so a child record follows the folder
+	// through a rename (linux and darwin, a no-op on windows).
+	procs.holdRunDir()
+	// The daemon instance id, stamped into each child's orphan-registry record so a
+	// later daemon can tell this daemon's children from its own.
+	procs.instanceID = instanceID
+	// Reap children a since-exited predecessor daemon of this run dir left orphaned. The
+	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
+	// recorded children become candidates. reapOrphans independently re-checks that each
+	// owning daemon is gone before it touches a child. Synchronous, and BEFORE the bind:
+	// while the reap waits for a group to end, the old socket file stays as it is and
+	// nothing listens. A client that connects in that wait gets ECONNREFUSED from a
+	// stale socket file, or ENOENT when there is none (rows D1a and D1b: the first
+	// connection worked 2.2 to 2.4 s after the start, for a child that ignores
+	// SIGTERM). A no-op off linux and darwin (see childreap_*.go).
+	procs.reapOrphans()
+
 	_ = os.Remove(socket) // clear a stale socket
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
@@ -491,6 +524,14 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	if err := chmodSocket(socket, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "claustrum: chmod socket: %v\n", err)
 	}
+	// The owner record gets its instanceId and startedAt now. Both are the values that
+	// server.capabilities answers, and the instance is the one of the listening line
+	// and of the child records (row D3: the four instance values are equal, and the
+	// startedAt of the lock equals the one of server.capabilities). startedAt is read
+	// right after the bind. Measured on Linux against 89cb6289 (rows D1 and D2, 8 of 8
+	// runs): the startedAt of the lock was within 1.5 ms of the listen call.
+	startedAt := time.Now().UnixMilli()
+	claim.complete(instanceID, startedAt)
 
 	// Persist the token beside the now-listenable socket so a client can
 	// reconnect to this daemon and re-authenticate after the original -token-file
@@ -509,7 +550,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	s := &server{
 		token:         token,
 		ln:            ln,
-		procs:         newProcManager(),
+		procs:         procs,
 		conns:         make(map[*conn]struct{}),
 		shutdown:      make(chan struct{}),
 		keepChildren:  keepChildren,
@@ -517,27 +558,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		idleTimeout:   idleConnTimeout,
 		sockInfo:      sockFI,
 		tokenInfo:     tokenFI,
-		releaseRunDir: releaseRunDir,
+		releaseRunDir: claim.release,
 		instanceID:    instanceID,
-		startedAt:     time.Now().UnixMilli(),
+		startedAt:     startedAt,
 	}
-	// The run/<clientId> dir (CLAUDE_SSH_RUN_DIR), derived from the socket. When set,
-	// spawn launches children through the exec-child trampoline; empty for a
-	// non-run-shaped socket, where children spawn directly (see execchild.go).
-	s.procs.runDir = execChildRunDir(socket)
-	// Hold the run dir open from here on, so a child record follows the folder
-	// through a rename (linux and darwin, a no-op on windows and for a socket that
-	// is not run-shaped).
-	s.procs.holdRunDir()
-	// The daemon instance id, stamped into each child's orphan-registry record so a
-	// later daemon can tell this daemon's children from its own.
-	s.procs.instanceID = s.instanceID
-	// Reap children a since-exited predecessor daemon of this run dir left orphaned. The
-	// run-dir claim above evicts a live predecessor (unless eviction is refused), so its
-	// recorded children become candidates; reapOrphans independently re-checks that each
-	// owning daemon is gone before it touches a child. Synchronous at startup. A no-op when
-	// the socket is not run-shaped or off linux and darwin (see childreap_*.go).
-	s.procs.reapOrphans()
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
 	if metricsAddr != "" {
@@ -649,11 +673,15 @@ func openDaemonLog(socket string) *os.File {
 // the token to no disk, no argv, and no environment; an empty forwardToken means the child
 // reads its own -token-file as before.
 // daemonStartTimeout caps how long the -serve launcher waits for the daemonized
-// child to start accepting before it returns anyway. It is 10s. The reference
-// also gives up after about 10s, measured with no token source (DIVERGENCES.md).
+// child to start accepting before it returns anyway. It is 12 s. Measured on Linux
+// against 89cb6289 (row P7): with a zero-byte -token-file the daemon child ends before
+// its bind, and the launcher exits 1 after 12.06 s in three forms (a stale socket
+// file, no socket file, an empty run folder). macOS row P7 gives 12.08 to 12.16 s, and
+// two Windows rows give 12.058 s. 5db5e4a gave up after 10.06 s in the
+// same case, and this value was 10 s until that row.
 // The launcher then prints "timeout waiting for daemon to accept on <socket>".
 // var so tests can shrink it.
-var daemonStartTimeout = 10 * time.Second
+var daemonStartTimeout = 12 * time.Second
 
 // startDaemonChild is cmd.Start behind a seam over the re-exec below: the
 // launcher re-execs its own executable, which fails only on resource exhaustion
@@ -726,8 +754,8 @@ func daemonizeWithToken(socket, forwardToken string) {
 	// inode, BEFORE the child rebinds the path — so the wait below can tell the
 	// successor's fresh socket from the predecessor's (7d193f89 handoff).
 	predInfo := livePredecessorIdent(socket)
-	// The socket file that is on disk before the child starts. Windows only (nil on unix):
-	// the wait below does not take a stale file of a dead daemon for the child's socket.
+	// The socket file that is on disk before the child starts. The wait below does not
+	// take the stale file of a dead daemon for the socket of the child.
 	staleInfo := staleSocketIdent(socket)
 	if err := startDaemonChild(cmd); err != nil {
 		fmt.Fprintf(os.Stderr, "daemonize: %v\n", err)
@@ -747,7 +775,8 @@ func daemonizeWithToken(socket, forwardToken string) {
 		// reference reports exactly this and exits 1 — measured with a zero-byte
 		// -token-file, where its child refuses to start:
 		// "claude-ssh: timeout waiting for daemon to accept on <socket>", exit 1,
-		// after the full 10.06s deadline. When a predecessor was still holding the
+		// after the full deadline (10.06 s on 5db5e4a, 12.06 s on 89cb6289, Linux row
+		// P7). When a predecessor was still holding the
 		// socket, claustrum reports the distinct "daemon did not take over" instead.
 		if predInfo != nil {
 			fmt.Fprintf(os.Stderr, "claustrum: daemon did not take over %s (predecessor still owns it)\n", socket)
@@ -771,16 +800,19 @@ func daemonizeWithToken(socket, forwardToken string) {
 //	socket path occupied by a directory  path exists at once -> exit 0 in 0.08s
 //	child never binds (empty token file) path never appears  -> exit 1 at 10.06s
 //
+// On 89cb6289 the second case is exit 1 at 12.06 s (Linux row P7).
+//
 // A dial-based wait would invert both: it would sit out the full deadline on the
 // occupied path (nothing ever accepts there) and it would give up early on any
 // child that dies, where the reference keeps waiting. The confirming dial's
 // result is deliberately ignored for the same reason.
 //
 // stale is the socket file that was on disk before the child started (staleSocketIdent,
-// Windows only, nil on unix). While the path still holds that file and the dial fails, the
-// wait goes on. So with the stale socket of a killed daemon on disk, the launcher waits
-// for the new daemon and dials it once. Measured on a Windows VM against f6010b97 and
-// 89cb6289 (rows WN03 and WN05). The log of the new daemon holds the connection pair right
+// nil when the path held no socket). While the path still holds that file and the dial
+// fails, the wait goes on. So with the stale socket of a killed daemon on disk, the
+// launcher waits for the new daemon and dials it once. Measured on a Windows VM against
+// f6010b97 and 89cb6289 (rows WN03 and WN05), and on Linux (row XA). The log of the new
+// daemon holds the connection pair right
 // after the listening line. A dial that succeeds returns at once, also when a live older
 // daemon answers it. With stale nil the wait is the one described above.
 func waitForDaemonAccept(socket string, pred, stale os.FileInfo) bool {
@@ -789,8 +821,9 @@ func waitForDaemonAccept(socket string, pred, stale os.FileInfo) bool {
 		if fi, err := os.Stat(socket); err == nil {
 			// A socket is present. When a LIVE predecessor was on this path, wait
 			// until the inode differs — the successor has unlinked the old socket and
-			// bound a fresh one (handoff complete). With no predecessor, any present
-			// socket is the child's, exactly as before.
+			// bound a fresh one (handoff complete). With no predecessor, a present
+			// socket is the child's, unless it is the stale file of a dead daemon. The
+			// stale test below covers that file.
 			if pred == nil || !os.SameFile(fi, pred) {
 				c, err := net.Dial("unix", socket)
 				if err == nil {
@@ -857,9 +890,6 @@ func (s *server) startAcceptLoops() {
 }
 
 func (s *server) run(socket string) {
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
-	go func() { s.shutdownOnSignal(<-sigc) }()
 	s.startAcceptLoops()
 	// Retire this daemon if its socket path is taken over by a successor and no client
 	// is connected (matching 4534d86). Exits with the daemon's shutdown; no-op unless
@@ -1082,17 +1112,79 @@ func (s *server) handleRequest(c *conn, raw []byte, req request, ordered bool, t
 // signalShutdown requests a graceful stop exactly once.
 func (s *server) signalShutdown() { s.once.Do(func() { close(s.shutdown) }) }
 
-// shutdownOnSignal logs the two lines of a shutdown by signal and requests the stop. Both
-// lines are the reference's for SIGTERM, measured on a Linux VM against f6010b97 and
-// 89cb6289 (rows RP11, RP12b and ST03). "received terminated" is the name of that signal.
-// The line for SIGINT uses the same sentence with the name of that signal. It is not
-// measured. With -keep-children the first line says "kept". That flag is claustrum's own.
-func (s *server) shutdownOnSignal(sig os.Signal) {
+// signalWatch handles the first SIGTERM or SIGINT of a daemon. runServe starts it
+// before the claim of the run dir, so a signal that comes before the bind does not end
+// the start. It handles one signal only.
+//
+// Measured on Linux against 89cb6289 (row P5, 5 of 5 runs). A second daemon sent
+// SIGTERM to a first daemon that waited in the reap of its start. The first daemon
+// logged the "received" line at once. It then finished the reap (the SIGKILL to the
+// recorded group and the summary line), bound and listened, wrote its token, logged
+// "[Server] shutdown requested", printed the listening line, logged the cleanup line
+// and exited 0. The log lines came in that order. macOS row P5 gives the same lines.
+//
+// More Linux rows against 89cb6289, with the same result on claustrum build ac5cadb:
+//   - A SIGTERM or a SIGINT to one daemon in its reap: the same flow (rows H8a, H8b).
+//   - Two SIGTERM 0.3 s apart: one "received" line, the same flow (row H8c).
+//   - A SIGTERM during the eviction wait: the daemon still sends the holder SIGKILL
+//     after the grace, takes the lock, reaps, binds and exits 0 (row N4).
+//   - A -stop during the reap: one SIGTERM, the same flow (row N5).
+//
+// Both lines of the signal are the reference's for SIGTERM, measured on a Linux VM
+// against f6010b97 and 89cb6289 (rows RP11, RP12b and ST03) for a daemon that serves.
+// "received terminated" is the name of that signal. The line for SIGINT uses the same
+// sentence with the name of that signal: "received interrupt" (row H8b). With
+// -keep-children the first line says "kept". That flag is claustrum's own.
+type signalWatch struct {
+	keepChildren bool
+
+	mu    sync.Mutex
+	fired bool    // a signal came
+	srv   *server // the server, once the start made it
+}
+
+// notifySignals is signal.Notify behind a seam, so a test gives the daemon a signal
+// through the channel and sends no real one. Production never reassigns it.
+var notifySignals = signal.Notify
+
+// watchSignals starts the watch. It takes the first signal of sigc.
+func watchSignals(sigc <-chan os.Signal, keepChildren bool) *signalWatch {
+	w := &signalWatch{keepChildren: keepChildren}
+	go func() { w.handle(<-sigc) }()
+	return w
+}
+
+// handle logs the "received" line. It requests the shutdown now when the server
+// exists. If not, attach requests it.
+func (w *signalWatch) handle(sig os.Signal) {
 	fate := "killed"
-	if s.keepChildren {
+	if w.keepChildren {
 		fate = "kept"
 	}
 	logInfof("[daemon] received %v; shutting down (children will be %s)", sig, fate)
+	w.mu.Lock()
+	w.fired = true
+	s := w.srv
+	w.mu.Unlock()
+	if s != nil {
+		s.requestShutdown()
+	}
+}
+
+// attach gives the watch the server of the finished start. It requests the shutdown
+// when a signal came during the start.
+func (w *signalWatch) attach(s *server) {
+	w.mu.Lock()
+	w.srv = s
+	fired := w.fired
+	w.mu.Unlock()
+	if fired {
+		s.requestShutdown()
+	}
+}
+
+// requestShutdown logs the second line of a shutdown by signal and requests the stop.
+func (s *server) requestShutdown() {
 	logInfof("[Server] shutdown requested")
 	s.signalShutdown()
 }
@@ -1169,6 +1261,13 @@ func (s *server) closeAll(socket string) {
 	// same ownership guard: only if it is still the inode we published, so a successor's
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
 	removePipeNameFileIfOwned(socket, s.pipeInfo)
+	// With -keep-children the kept children lose their records while this daemon
+	// still holds the lock. A successor takes the lock only after the release below,
+	// so its reap finds no record of a kept child (linux and darwin, a no-op
+	// elsewhere). claustrum's own rule: see forgetKeptRecords.
+	if s.keepChildren {
+		s.procs.forgetKeptRecords()
+	}
 	// Drop the run-dir lock: truncate the owner record and unlock daemon.lock,
 	// leaving the file in place. No-op when not held.
 	if s.releaseRunDir != nil {
@@ -1213,7 +1312,8 @@ func (s *server) dropConns() int {
 // default it kills the children: the whole tree on Unix, the direct child on Windows. With
 // -keep-children set, it
 // instead leaves every running child alive so they survive a daemon
-// restart/upgrade, logging one honest line with the surviving count. The new
+// restart/upgrade, logging one honest line with the surviving count. closeAll
+// removes their records before it releases the lock. The new
 // daemon does not re-adopt them. An out-of-band consumer reconciles them via the
 // CT-1 pid/startTime. Split out from teardown so the gate is unit-testable
 // without teardown's os.Exit.
@@ -1227,8 +1327,8 @@ func (s *server) stopChildren() int {
 	}
 	killed := s.procs.killAllCount()
 	// Wait for the killed children to end, so the end of each one removes its
-	// registry record before the daemon exits (linux and darwin with a run-shaped
-	// socket, a no-op elsewhere). The wait is bounded by shutdownRecordWait. It does
+	// registry record before the daemon exits (linux and darwin, a no-op
+	// elsewhere). The wait is bounded by shutdownRecordWait. It does
 	// not cover the exited line of such a child. That line prints only when the exit
 	// goroutine reaches it before the daemon exits (see exitLogSuffix). With
 	// -keep-children the children stay, and this wait does not run.

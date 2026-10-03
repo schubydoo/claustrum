@@ -11,8 +11,8 @@ import (
 	"syscall"
 )
 
-// The exec-child trampoline (reference build 19f30c46). When the daemon spawns a child
-// under a run/<clientId>/ socket, it does not exec the target directly: it re-execs ITSELF
+// The exec-child trampoline (reference build 19f30c46). When the daemon spawns a child,
+// on every socket shape, it does not exec the target directly: it re-execs ITSELF
 // as `<self> --exec-child <execPath> <argv...>`. The re-exec'd trampoline — running AS the
 // child, after fork and before exec — stamps CLAUDE_SSH_CHILD with its own pid and
 // start-time (knowable only there), restores the child's held Go-runtime env, then execs
@@ -84,6 +84,9 @@ func runExecChild(argv []string) {
 	}
 	syscall.CloseOnExec(execErrExtraFD)
 	env := restoreHeldEnv(os.Environ())
+	// The parent removed every CLAUDE_SSH_CHILD entry (runDirEnv), so this adds the
+	// entry at the end. It comes right after CLAUDE_SSH_RUN_DIR: restoreHeldEnv puts a
+	// held Go runtime variable back at its own place, before that entry.
 	env = replaceOrAppendEnv(env, envChildMarker, childIdentity())
 	err := execChildExec(argv[0], argv[1:], env)
 	// Only reached when the target exec failed. Report it exactly as exec.Cmd.Start would
@@ -102,7 +105,7 @@ func childIdentity() string {
 
 // wrapCmdWithTrampoline rewrites cmd to launch through the exec-child trampoline and
 // returns the exec-error pipe's read end (nil when not wrapped). It wraps only when a run
-// dir is known (the socket is run/<clientId>/ shaped) and the command already resolved — a
+// dir is known (the daemon has a socket path) and the command already resolved. A
 // bare name exec.Command could not find leaves cmd.Err set, and is left untouched so
 // cmd.Start reproduces the exact "exec: … not found in $PATH". cmd.Path (resolved by
 // exec.Command) is passed as the exec path and the original cmd.Args (argv[0] = the
@@ -124,7 +127,7 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 		// an uninstall its children keep CLAUDE_SSH_RUN_DIR and just lack the CLAUDE_SSH_CHILD
 		// marker the re-exec would have added, rather than failing to spawn. On linux
 		// trampolineSelf is /proc/self/exe, which survives an unlink, so this path is not taken.
-		cmd.Env = replaceOrAppendEnv(cmd.Env, envRunDir, runDir)
+		cmd.Env = runDirEnv(cmd.Env, runDir)
 		return nil, nil
 	}
 	r, w, err := execChildErrPipe()
@@ -135,11 +138,26 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 	cmd.Args = append([]string{self, execChildFlag, cmd.Path}, cmd.Args...)
 	cmd.Path = self
 	cmd.Env = holdGoEnv(cmd.Env)
-	// Authoritative: the daemon's run dir must win, so replace any existing
-	// CLAUDE_SSH_RUN_DIR (caller-supplied or inherited) rather than appending a second entry
-	// a getenv could resolve to the stale value — same as the CLAUDE_SSH_CHILD marker below.
-	cmd.Env = replaceOrAppendEnv(cmd.Env, envRunDir, runDir)
+	cmd.Env = runDirEnv(cmd.Env, runDir)
 	return r, w
+}
+
+// runDirEnv returns env with the run dir entry of the daemon as its last entry. It
+// first removes every CLAUDE_SSH_RUN_DIR and CLAUDE_SSH_CHILD entry, so a value from
+// the caller or from the daemon environment never reaches the child and holds no
+// earlier place. The trampoline then adds CLAUDE_SSH_CHILD after it.
+//
+// Measured on Linux and macOS against 89cb6289. The child environment ends with
+// CLAUDE_SSH_RUN_DIR and then CLAUDE_SSH_CHILD (rows F1 to F5). A caller value of
+// either one does not reach the child (rows EV02a, EV02e). A copy in the daemon
+// environment does not keep its place (rows EV03a, EV03e).
+//
+// An environment that holds one of the five Go runtime variables ends with the same
+// two entries (Linux rows P4a to P4c, GOGC and GOMAXPROCS). holdGoEnv and
+// restoreHeldEnv keep such a variable at its own place, before this entry.
+func runDirEnv(env []string, runDir string) []string {
+	env = removeEnvKey(removeEnvKey(env, envRunDir), envChildMarker)
+	return append(env, envRunDir+"="+runDir)
 }
 
 // trampolineFallbackEnv is the environment of a command that spawn starts directly
@@ -150,19 +168,24 @@ func wrapCmdWithTrampoline(cmd *exec.Cmd, runDir string) (execErrR, execErrW *os
 // choice and is not measured: the one measured row (CW03, Linux) has a direct start
 // that fails too.
 func trampolineFallbackEnv(env []string, runDir string) []string {
-	return replaceOrAppendEnv(env, envRunDir, runDir)
+	return runDirEnv(env, runDir)
 }
 
-// holdGoEnv stashes each Go-runtime var present in env under CLAUDE_SSH_HELD_<name> and
-// removes the bare var, so the re-exec'd trampoline starts with default Go runtime
+// holdGoEnv renames each Go-runtime var present in env to CLAUDE_SSH_HELD_<name>, at
+// the place of the var, so the re-exec'd trampoline starts with default Go runtime
 // settings. runExecChild restores them before exec'ing the target.
+//
+// The held entry keeps the place of the variable, so the child gets the variable
+// where it was. Measured on Linux against 89cb6289 (rows P4a to P4c): a GOGC of the
+// daemon environment stays at its place there, before CLAUDE_SSH_DAEMON_CHILD. A
+// GOMAXPROCS of the spawn env stands where a new caller key stands, before
+// CLAUDE_SSH_RUN_DIR. The other three names are not measured. They get the same rule.
 func holdGoEnv(env []string) []string {
 	for _, name := range heldGoRuntimeEnv {
 		prefix := name + "="
 		for i, e := range env {
 			if strings.HasPrefix(e, prefix) {
-				env = append(env, heldEnvPrefix+e)
-				env = append(env[:i], env[i+1:]...)
+				env[i] = heldEnvPrefix + e
 				break
 			}
 		}
@@ -171,29 +194,38 @@ func holdGoEnv(env []string) []string {
 }
 
 // restoreHeldEnv is the inverse of holdGoEnv: for each of the SAME Go-runtime vars holdGoEnv
-// stashes, CLAUDE_SSH_HELD_<name>=<val> is un-prefixed back to <name>=<val> (overriding any
-// bare <name>) and the held entry is dropped. It recognizes ONLY those known names,
+// stashes, CLAUDE_SSH_HELD_<name>=<val> is un-prefixed back to <name>=<val> at the place
+// of the held entry, and a bare <name> entry is dropped. It recognizes ONLY those known names,
 // symmetric with holdGoEnv — a stray CLAUDE_SSH_HELD_<other> (one a process.spawn caller put
 // in the env) is not a held var, so it is passed through untouched rather than un-prefixed,
 // and cannot smuggle an arbitrary <other>=<val> into the target.
 func restoreHeldEnv(env []string) []string {
-	heldKey := make(map[string]string, len(heldGoRuntimeEnv)) // "CLAUDE_SSH_HELD_<name>" -> "<name>"
-	for _, name := range heldGoRuntimeEnv {
-		heldKey[heldEnvPrefix+name] = name
-	}
-	out := make([]string, 0, len(env))
-	var held [][2]string
+	// held is the set of names that env holds: such a name has a CLAUDE_SSH_HELD_ entry.
+	held := make(map[string]bool, len(heldGoRuntimeEnv))
 	for _, e := range env {
-		if i := strings.IndexByte(e, '='); i > 0 {
-			if name, ok := heldKey[e[:i]]; ok {
-				held = append(held, [2]string{name, e[i+1:]})
-				continue
+		for _, name := range heldGoRuntimeEnv {
+			if strings.HasPrefix(e, heldEnvPrefix+name+"=") {
+				held[name] = true
 			}
 		}
-		out = append(out, e)
 	}
-	for _, h := range held {
-		out = replaceOrAppendEnv(out, h[0], h[1])
+	out := make([]string, 0, len(env))
+	at := make(map[string]int, len(held)) // the place in out of each restored name
+	for _, e := range env {
+		key, _, _ := strings.Cut(e, "=")
+		name, isHeld := strings.CutPrefix(key, heldEnvPrefix)
+		switch {
+		case isHeld && held[name]:
+			restored := strings.TrimPrefix(e, heldEnvPrefix)
+			if i, again := at[name]; again {
+				out[i] = restored // a second held entry of one name: the last value wins
+				continue
+			}
+			at[name] = len(out)
+			out = append(out, restored)
+		case !held[key]:
+			out = append(out, e)
+		}
 	}
 	return out
 }

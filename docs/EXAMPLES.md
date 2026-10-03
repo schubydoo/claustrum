@@ -228,6 +228,10 @@ restart or upgrade. A graceful shutdown leaves the spawned children running.
   children that tolerate this condition outlive the daemon.
 - Windows honors it too. A child is in no Job Object, so the children live on
   after the daemon exits.
+- Two limits on Linux and macOS. The host cleaner ends an orphaned Claude Code
+  group under the install root by its own rule, a kept one too. The next daemon
+  start ends a kept process whose `id` a later spawn took. See
+  [DIVERGENCES.md](DIVERGENCES.md) CT-2.
 
 ```sh
 claustrum -serve -socket "$D/rpc.sock" -token-file "$D/token" -keep-children

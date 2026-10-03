@@ -173,14 +173,52 @@ func TestDaemonizePredecessorHandoffPrintsToStderr(t *testing.T) {
 	}
 }
 
-// The success tail of the launcher: a STALE socket file (a crashed daemon's
-// leftover — present on disk, nothing accepting) is not a live predecessor, and
-// waitForDaemonAccept counts any existing path as up, so the launcher exits 0.
-// Same measured reference behaviour TestWaitForDaemonAcceptReturnsForAnOccupiedPath
-// pins one level down; driven here through daemonizeWithToken so the exit-0 tail
-// is what runs. A stale SOCKET, not a plain file: a socket dials ECONNREFUSED on
-// every unix target, where a regular file's error differs by OS.
-func TestDaemonizeExitsZeroWhenTheSocketPathIsOccupied(t *testing.T) {
+// The stale socket file of a killed daemon is not the socket of the new one: the
+// launcher waits past it, and exits 0 when a daemon accepts on the path. Measured on
+// Linux against f6010b97 and 89cb6289 (row XA): the -serve command returned 2.06 s
+// after its start, when the new daemon had ended a recorded child and bound. The
+// helper child here never binds, so the test binds the path itself after a pause.
+func TestDaemonizeWaitsPastAStaleSocketFile(t *testing.T) {
+	old := daemonStartTimeout
+	daemonStartTimeout = 10 * time.Second
+	t.Cleanup(func() { daemonStartTimeout = old })
+	stubOsExit(t)
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
+
+	dir, err := os.MkdirTemp("", "doc") // short path: macOS sun_path limit
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "rpc.sock")
+	staleSocketFile(t, sock)
+
+	const bindAfter = 300 * time.Millisecond
+	bound := make(chan net.Listener, 1)
+	start := time.Now()
+	go func() {
+		time.Sleep(bindAfter)
+		_ = os.Remove(sock)
+		ln, _ := net.Listen("unix", sock)
+		bound <- ln
+	}()
+	code, exited := catchExit(func() { daemonizeWithToken(sock, "") })
+	took := time.Since(start)
+	if ln := <-bound; ln != nil {
+		_ = ln.Close()
+	}
+	if !exited || code != 0 {
+		t.Errorf("daemonizeWithToken over a stale socket that a daemon then binds: exited=%v code=%d, want exit 0", exited, code)
+	}
+	if took < bindAfter {
+		t.Errorf("the launcher returned after %v, want %v or more: it took the stale socket file for the new socket", took, bindAfter)
+	}
+}
+
+// With a stale socket file and a child that never binds, the launcher gives up at its
+// deadline with the timeout line and exit 1. That outcome is claustrum's own and is
+// not measured: no row has a stale socket file and a daemon that never binds.
+func TestDaemonizeTimesOutOnAStaleSocketFile(t *testing.T) {
 	shortDaemonStart(t)
 	stubOsExit(t)
 	t.Setenv("CLAUSTRUM_TEST_HELPER", "exit:0")
@@ -191,15 +229,10 @@ func TestDaemonizeExitsZeroWhenTheSocketPathIsOccupied(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "rpc.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ln.(*net.UnixListener).SetUnlinkOnClose(false) // leave the socket file behind
-	_ = ln.Close()
+	staleSocketFile(t, sock)
 
-	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 0 {
-		t.Errorf("daemonizeWithToken over a stale socket: exited=%v code=%d, want exit 0", exited, code)
+	if code, exited := catchExit(func() { daemonizeWithToken(sock, "") }); !exited || code != 1 {
+		t.Errorf("daemonizeWithToken over a stale socket that nothing binds: exited=%v code=%d, want exit 1", exited, code)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -199,11 +200,51 @@ func TestRunServeChildFatalArms(t *testing.T) {
 		t.Fatal(err)
 	}
 	stubLoginPATHExtractor(t) // genuinely inert; see the helper
+	// The start installs its signal handler before the bind. Take it out again.
+	t.Cleanup(func() { signal.Reset(syscall.SIGTERM, syscall.SIGINT) })
 	code, exited = catchExit(func() {
 		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wireLogOptions{}, false, false)
 	})
 	if !exited || code != 1 {
 		t.Errorf("child with unbindable socket: exited=%v code=%d, want exit 1", exited, code)
+	}
+}
+
+// TestRunServeChildRunsNoLoginShellAtItsStart pins the wiring of row G1 and G2: the
+// start of the daemon arms the read of the login-shell PATH and runs no shell. The
+// first build of a child environment then runs the read, one time.
+func TestRunServeChildRunsNoLoginShellAtItsStart(t *testing.T) {
+	stubOsExit(t)
+	t.Setenv(daemonChildEnv, "1")
+	t.Setenv(tokenPipeEnv, "")
+	dir := shortTempDir(t)
+	tf := filepath.Join(dir, "token")
+	if err := os.WriteFile(tf, []byte("tok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := loginPATHExtractor
+	var runs atomic.Int32
+	loginPATHExtractor = func() { runs.Add(1) }
+	t.Cleanup(func() {
+		loginPATHExtractor = old
+		resetLoginPATHForTest()
+		// The start installs its signal handler before the bind. Take it out again.
+		signal.Reset(syscall.SIGTERM, syscall.SIGINT)
+	})
+	// The socket folder does not exist, so the daemon stops at the bind, after the
+	// place where it arms the read.
+	if code, exited := catchExit(func() {
+		runServe(filepath.Join(dir, "no-dir", "s.sock"), tf, -1, "", wireLogOptions{}, false, false)
+	}); !exited || code != 1 {
+		t.Fatalf("child with unbindable socket: exited=%v code=%d, want exit 1", exited, code)
+	}
+	if n := runs.Load(); n != 0 {
+		t.Fatalf("the start of the daemon ran the login shell %d times, want 0", n)
+	}
+	buildEnv(nil)
+	buildEnv(nil)
+	if n := runs.Load(); n != 1 {
+		t.Errorf("two builds of a child environment ran the read %d times, want 1 (the start did not arm it, or it ran twice)", n)
 	}
 }
 
@@ -243,7 +284,7 @@ func shortDaemonStart(t *testing.T) {
 func TestRunServeParentDaemonizes(t *testing.T) {
 	// The stub child is an exit-0 helper that never binds a socket, so the
 	// launcher's wait-for-accept correctly reports a failed start. Shrink the
-	// deadline so the test does not sit out the production 10s, and expect exit
+	// deadline so the test does not sit out the production 12s, and expect exit
 	// 1 — that is the right answer for a daemon that never came up.
 	shortDaemonStart(t)
 
@@ -273,7 +314,7 @@ func TestRunServeParentDaemonizes(t *testing.T) {
 func TestDaemonizeWithoutForwardedToken(t *testing.T) {
 	// The stub child is an exit-0 helper that never binds a socket, so the
 	// launcher's wait-for-accept correctly reports a failed start. Shrink the
-	// deadline so the test does not sit out the production 10s, and expect exit
+	// deadline so the test does not sit out the production 12s, and expect exit
 	// 1 — that is the right answer for a daemon that never came up.
 	shortDaemonStart(t)
 
@@ -302,7 +343,7 @@ func TestDaemonizeWithoutForwardedToken(t *testing.T) {
 func TestDaemonizeFallsBackWhenLogUnopenable(t *testing.T) {
 	// The stub child is an exit-0 helper that never binds a socket, so the
 	// launcher's wait-for-accept correctly reports a failed start. Shrink the
-	// deadline so the test does not sit out the production 10s, and expect exit
+	// deadline so the test does not sit out the production 12s, and expect exit
 	// 1 — that is the right answer for a daemon that never came up.
 	shortDaemonStart(t)
 	skipIfRoot(t) // root creates the log in a 0500 directory regardless
@@ -402,7 +443,7 @@ func TestRunServeChildFullLifecycle(t *testing.T) {
 func TestMainServeDispatch(t *testing.T) {
 	// The stub child is an exit-0 helper that never binds a socket, so the
 	// launcher's wait-for-accept correctly reports a failed start. Shrink the
-	// deadline so the test does not sit out the production 10s, and expect exit
+	// deadline so the test does not sit out the production 12s, and expect exit
 	// 1 — that is the right answer for a daemon that never came up.
 	shortDaemonStart(t)
 
@@ -446,7 +487,7 @@ func TestRunServeChildRejectsMissingTokenSource(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")
 	// No login-PATH stub here on purpose. An earlier version installed one, but
-	// the check under test exits before startLoginPATH is ever reached, so the
+	// the check under test exits before armLoginPATH is ever reached, so the
 	// stub protected nothing and implied this path forks a login shell when it
 	// does not. The sibling arms that DO reach it still stub it.
 
@@ -476,7 +517,7 @@ func TestRunServeChildRejectsMissingTokenSource(t *testing.T) {
 //
 // The stub child is the exit-0 helper, so it never binds and the launcher
 // correctly reports a failed start; shortDaemonStart keeps that off the
-// production 10 s deadline.
+// production 12 s deadline.
 func TestRunServeLauncherDaemonizesWithoutATokenSource(t *testing.T) {
 	shortDaemonStart(t)
 	stubOsExit(t)

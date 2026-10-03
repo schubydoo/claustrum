@@ -374,7 +374,9 @@ var (
 // send that it returns signals through that descriptor (pidfd_send_signal), and release
 // closes it. The reference retires a daemon with pidfd_send_signal(<fd>, SIGTERM, NULL, 0).
 // A Linux VM measured that with strace against f6010b97 and 89cb6289 (rows HC10, HC12 to
-// HC15). The caller checks the identity of pid between the open and the send.
+// HC15). The host cleaner checks the identity of pid between the open and the send. The
+// serve eviction of the run-dir lock holder does the same (holdHolder, row P6). -stop
+// (realSignalHolder) does not: it checks before the open only.
 //
 // If the kernel has no such call (ENOSYS), the signal goes out with kill(pid, sig). That
 // fallback is claustrum's own choice. The reference on such a kernel is not measured. Any

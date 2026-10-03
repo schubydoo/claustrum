@@ -2,24 +2,24 @@ package main
 
 import "sync"
 
-// Login-shell PATH extraction is started once at daemon boot and awaited by the
-// first child-env build. Splitting it into start/await keeps both properties the
-// reference has: the socket opens without waiting for a slow login shell, *and*
-// no spawned child is built from a pre-extraction PATH.
+// The daemon reads the PATH of the login shell once, inside the first process.spawn
+// that builds a child environment. It runs no login shell at its start. The result is
+// kept for the life of the daemon, and a failed read is kept too: no later spawn
+// tries again.
 //
-// The reference completes extraction before the first process.spawn builds its
-// child env (its first-spawn latency is 250ms-1s where claustrum's was <50ms).
-// Running the goroutine fire-and-forget let the first spawn race it and lose:
-// booted with PATH=/usr/bin:/bin, the first child saw only that while the second
-// saw the full login PATH. In a real session the first spawn *is* the agent CLI,
-// so binaries under ~/.local/bin, nvm or cargo failed on attempt 1 and worked on
-// retry.
+// Measured on Linux and macOS against 89cb6289 (rows G1 to G3). A daemon with no
+// spawn runs no shell in 20 s. The first spawn runs the login shell and its reply
+// comes after the read. The second spawn runs no shell. With a login shell that
+// sleeps 10 s, the shell is killed after 4 s (loginPATHTimeout), the first spawn
+// answers late, and the second spawn answers at once.
 //
-// The wait is bounded by extractLoginPATH's own loginPATHTimeout, so a hung
-// login shell delays the first spawn rather than blocking it forever.
+// Every spawn waits for the one read, so no child is built from a PATH from before
+// the read: a spawn that comes while the read runs waits for its end.
 var (
-	loginPATHMu   sync.Mutex
-	loginPATHWait chan struct{} // non-nil only while an extraction is in flight or done
+	loginPATHMu sync.Mutex
+	// loginPATHOnce is non-nil once the daemon armed the read (armLoginPATH). It runs
+	// the read one time.
+	loginPATHOnce *sync.Once
 
 	// loginPATH holds the PATH the login shell resolved, for spawned children
 	// ONLY. It is deliberately not installed into the daemon's own environment:
@@ -49,28 +49,24 @@ func currentLoginPATH() string {
 	return loginPATH
 }
 
-// startLoginPATH begins login-shell PATH extraction in the background. Callers
-// that later build a child env must call awaitLoginPATH first.
-func startLoginPATH() {
-	ch := make(chan struct{})
+// armLoginPATH arms the read of the login-shell PATH. It runs no shell. The first
+// awaitLoginPATH after it runs the read. Only the daemon arms it (runServe), so a
+// test that boots a server through newServerOnSocket never starts a login shell.
+func armLoginPATH() {
 	loginPATHMu.Lock()
-	loginPATHWait = ch
+	loginPATHOnce = new(sync.Once)
 	loginPATHMu.Unlock()
-	go func() {
-		defer close(ch)
-		loginPATHExtractor()
-	}()
 }
 
-// awaitLoginPATH blocks until a started extraction finishes. It returns
-// immediately when extraction was never started — the case for every test that
-// boots a server through newServerOnSocket, which deliberately does not fork a
-// login shell.
+// awaitLoginPATH runs the armed read of the login-shell PATH if no call ran it
+// before, and returns when it is done. A call that comes while the read runs waits
+// for it. It returns at once when the read is not armed or is done. The wait is
+// bounded by the loginPATHTimeout of extractLoginPATH.
 func awaitLoginPATH() {
 	loginPATHMu.Lock()
-	ch := loginPATHWait
+	once := loginPATHOnce
 	loginPATHMu.Unlock()
-	if ch != nil {
-		<-ch
+	if once != nil {
+		once.Do(func() { loginPATHExtractor() })
 	}
 }

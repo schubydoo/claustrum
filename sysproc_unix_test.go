@@ -57,6 +57,38 @@ func TestParseSignal(t *testing.T) {
 	}
 }
 
+// TestSignalToOneProcessGoesThroughItsHandle pins that every signal but SIGKILL goes
+// to the one process through its process handle (signalOne), not through kill(pid).
+// On Linux the handle of a started child sends pidfd_send_signal (89cb6289, rows E,
+// A2 and B1). The seam takes the call, so no signal goes out.
+func TestSignalToOneProcessGoesThroughItsHandle(t *testing.T) {
+	old := signalOne
+	t.Cleanup(func() { signalOne = old })
+	type call struct {
+		proc *os.Process
+		sig  syscall.Signal
+	}
+	var calls []call
+	signalOne = func(proc *os.Process, sig syscall.Signal) error {
+		calls = append(calls, call{proc, sig})
+		return nil
+	}
+	// A pid above every pid limit: a signal that misses the seam finds no process.
+	proc := &os.Process{Pid: 1 << 30}
+	for _, name := range []string{"TERM", "", "INT", "HUP"} {
+		signalProcessGroup(proc, name)
+	}
+	want := []syscall.Signal{syscall.SIGTERM, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP}
+	if len(calls) != len(want) {
+		t.Fatalf("signalOne got %d calls, want %d", len(calls), len(want))
+	}
+	for i, c := range calls {
+		if c.proc != proc || c.sig != want[i] {
+			t.Errorf("call %d = (%p, %v), want (%p, %v)", i, c.proc, c.sig, proc, want[i])
+		}
+	}
+}
+
 func TestDetachSysProcAttr(t *testing.T) {
 	if detachSysProcAttr() == nil {
 		t.Error("detachSysProcAttr should return a non-nil SysProcAttr")

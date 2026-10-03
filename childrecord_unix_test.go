@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -87,6 +88,65 @@ func TestChildEndRemovesRecord(t *testing.T) {
 	killChild(t, cl, "c1")
 	if _, err := os.Stat(rec); !os.IsNotExist(err) {
 		t.Errorf("the record is still there after the exit frame (stat error: %v)", err)
+	}
+}
+
+// TestSameIDKeepsTheOldProcessAndItsRecord pins a second spawn with the id of a child
+// that still runs (89cb6289, Linux and macOS rows A1 and A2). The first child gets no
+// signal and its record stays beside the record of the second. A process.kill of the
+// id ends the second child only, and only its record goes.
+func TestSameIDKeepsTheOldProcessAndItsRecord(t *testing.T) {
+	// The seam counts the signals to the first child. It is set before the daemon
+	// starts, so no goroutine of the daemon reads the seam while the test writes it.
+	var firstProc atomic.Pointer[os.Process]
+	var toFirst atomic.Int32
+	realSignal := signalGroup
+	signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
+		if proc == firstProc.Load() {
+			toFirst.Add(1)
+		}
+		return realSignal(g, proc, signame)
+	}
+	t.Cleanup(func() { signalGroup = realSignal })
+
+	s, cl, runDir := runShapedServer(t)
+	first := spawnSleeper(t, cl, "c1")
+	old := s.procs.get("c1")
+	if old == nil {
+		t.Fatal("the first spawn is not in the table")
+	}
+	firstProc.Store(old.cmd.Process)
+	// The daemon no longer ends the first child, so the test ends its own child and
+	// waits for its exit line.
+	t.Cleanup(func() { endOwnChild(t, old) })
+	second := spawnSleeper(t, cl, "c1")
+	rec := func(pid int) string { return filepath.Join(runDir, "children", strconv.Itoa(pid)+".json") }
+	for _, pid := range []int{first, second} {
+		if _, err := os.Stat(rec(pid)); err != nil {
+			t.Errorf("no record of child %d after the second spawn: %v", pid, err)
+		}
+	}
+	// A kill of the old process goes out inside the second spawn, before its reply. So
+	// the count is final here, and no pause is needed.
+	if n := toFirst.Load(); n != 0 {
+		t.Fatalf("the second spawn sent %d signal(s) to the first child, want none", n)
+	}
+	if readLiveProc(first, false).state != procAlive {
+		t.Fatalf("the first child %d is not alive after the second spawn", first)
+	}
+
+	killChild(t, cl, "c1")
+	if _, err := os.Stat(rec(second)); !os.IsNotExist(err) {
+		t.Errorf("the record of the second child is still there after its end (stat error: %v)", err)
+	}
+	if _, err := os.Stat(rec(first)); err != nil {
+		t.Errorf("the record of the first child went with the kill of the second: %v", err)
+	}
+	if n := toFirst.Load(); n != 0 {
+		t.Errorf("the kill of the id sent %d signal(s) to the first child, want none", n)
+	}
+	if readLiveProc(first, false).state != procAlive {
+		t.Errorf("the first child %d is not alive after the kill of the id", first)
 	}
 }
 
@@ -269,8 +329,14 @@ func TestRemoveRecordThroughChildrenSymlinkInsideRunDir(t *testing.T) {
 }
 
 // TestKeepChildrenSkipsShutdownWait pins that a shutdown with -keep-children does not
-// wait for the records. The children stay alive, so their records stay, and a wait for
-// them takes the whole bound. The bound is 30 s here, and the call returns at once.
+// wait for the end of the children. The children stay alive, so a wait for them takes
+// the whole bound. The bound is 30 s here, and the call returns at once.
+//
+// It also pins claustrum's own rule for the records: the kept children lose their
+// records at that shutdown, so the reap of the next start sends them no signal. The
+// records go before the run-dir lock is released, so a successor that takes the lock
+// finds none of them. The reap below reads the real processes, and only its signal
+// is seamed.
 func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 	old := shutdownRecordWait
 	shutdownRecordWait = 30 * time.Second
@@ -279,9 +345,20 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 	s.keepChildren = true
 	t.Cleanup(s.procs.killAll) // the kept children must end with the test
 	pids := []int{spawnSleeper(t, cl, "c1"), spawnSleeper(t, cl, "c2")}
+	if n := len(childrenNames(t, filepath.Join(runDir, "children"))); n != 2 {
+		t.Fatalf("%d records while the children run, want 2", n)
+	}
+	// The seam runs on the closeAll goroutine, so it records and does not fail the test.
+	var atRelease []os.DirEntry
+	var releaseErr error
+	released := false
+	s.releaseRunDir = func() {
+		atRelease, releaseErr = os.ReadDir(filepath.Join(runDir, "children"))
+		released = true
+	}
 
 	done := make(chan struct{})
-	go func() { defer close(done); s.stopChildren() }()
+	go func() { defer close(done); s.closeAll(filepath.Join(runDir, "rpc.sock")) }()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
@@ -290,13 +367,34 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 		<-done
 		t.Fatal("the shutdown with -keep-children waited for the records")
 	}
-	if n := len(childrenNames(t, filepath.Join(runDir, "children"))); n != 2 {
-		t.Errorf("%d records after the shutdown step, want the 2 records of the kept children", n)
+	if !released {
+		t.Fatal("closeAll did not run the run-dir release")
+	}
+	if releaseErr != nil || len(atRelease) != 0 {
+		t.Errorf("records at the run-dir release: %d (read error %v), want none for the kept children", len(atRelease), releaseErr)
+	}
+	if names := childrenNames(t, filepath.Join(runDir, "children")); len(names) != 0 {
+		t.Errorf("records after the shutdown step: %v, want none for the kept children", names)
 	}
 	for _, pid := range pids {
 		if err := syscall.Kill(pid, 0); err != nil {
 			t.Errorf("kept child %d is gone: %v", pid, err)
 		}
+	}
+
+	// The next daemon on this socket: its reap must send nothing. The signal is
+	// seamed, so a reap that finds a record ends no child of this test.
+	oldKill, oldSleep := killGroup, reapSleep
+	t.Cleanup(func() { killGroup, reapSleep = oldKill, oldSleep })
+	var kills []killRec
+	killGroup = func(pid int, sig syscall.Signal) error {
+		kills = append(kills, killRec{pid, sig})
+		return nil
+	}
+	reapSleep = func(time.Duration) {}
+	reapOrphans(runDir, "inst-next")
+	if len(kills) != 0 {
+		t.Errorf("the reap of the next start signalled kept children: %v", kills)
 	}
 }
 

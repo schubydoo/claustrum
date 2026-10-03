@@ -157,6 +157,12 @@ leaves the file behind, because the daemon removes it only on the graceful
 `server.shutdown` / `SIGTERM` path. `-stop` also removes it after a failed
 connect, unless it prints `survivor`. See the `-stop` section below.
 
+A new daemon replaces the token of a dead daemon only after its bind. On a Linux
+VM (row P12, two runs), a dead daemon left its `daemon.token` and one recorded
+child that ignored `SIGTERM`. For the 2.2 s of the reap, the file still held the
+token of the dead daemon. `89cb6289` and claustrum renamed the new token into
+place after the `SIGKILL` of the reap, the `bind` and the `listen`.
+
 The fixed name and the socket-dir location are the reconnect contract, so they are
 not configurable. On Windows `0600` is not an owner-only DACL. This is a Go
 `os.CreateTemp` limitation, and the per-user session dir is the confinement. It is
@@ -190,10 +196,11 @@ wire.
 
 Before it binds the socket, a `-serve` daemon takes an exclusive `flock` on
 `daemon.lock` in the socket's directory (mode `0600`). It then writes an owner
-record into that file. The record is a JSON object
-`{pid, role, node, instanceId, startedAt}`, where `role` is `serve`. `node` is
-omitted when the machine identity is unknown. Reference build `4534d86` added
-this, and claustrum matches it. It is off the JSON-RPC wire, because it is a file
+record into that file. The record is a JSON object. At first it is
+`{pid, role, node}`, where `role` is `serve`. After the reap of the start and the
+bind, the daemon writes it again as `{pid, role, node, instanceId, startedAt}`.
+`node` is omitted when the machine identity is unknown. Reference build `4534d86`
+added the lock, and claustrum matches it. It is off the JSON-RPC wire, because it is a file
 beside the socket. On graceful shutdown the daemon truncates the record and drops
 the lock, but it leaves the file in place. `daemon.token` is unlinked instead. A
 Linux VM measured the same end state against `89cb6289` in the stop rows:
@@ -202,13 +209,121 @@ of the record is the instance of the listening line, and the `instanceId` that
 `server.capabilities` answers. On a Linux VM, the listening line, the lock and
 `server.capabilities` of `89cb6289` held one value in 36 of 36 daemons.
 
+Linux and macOS VMs measured the two forms of the record against `89cb6289`. In
+row D1 a dead daemon left one recorded child that ignores `SIGTERM`. The lock of
+the new daemon held `{"pid":<n>,"role":"serve","node":"<node>"}` for about 2 s.
+Then it held the full record. With nothing to reap (row D2), the first read on
+macOS showed the full record. On Linux one read of row D2b showed the short form.
+The `startedAt` of the record is the `startedAt` that `server.capabilities`
+answers. Row D3 measured that on `89cb6289` in one Linux read and in 3 of 3 macOS
+reads.
+
 A prior live daemon can still hold the lock. The newcomer then evicts it before it
-takes over, with `SIGTERM` and then `SIGKILL` after a grace period. A restart
+takes over, with `SIGTERM` and then `SIGKILL` after a grace period. On Linux the
+`SIGTERM` goes out as `pidfd_open` and then `pidfd_send_signal`. A Linux VM
+measured those two calls with `strace` against `89cb6289` (row E3). The
+`SIGKILL` is `pidfd_send_signal` with the same descriptor number (rows H7 and
+N3). macOS uses `kill`. The call of the macOS reference is not measured. The identity
+reads of the holder come between the open and the send. On a Linux VM (row P6, by
+`strace`, 2 of 2 runs), `89cb6289` made these calls in this order: `pidfd_open`,
+the read of `/proc/<pid>/ns/pid`, the read of `/proc/<pid>/cmdline`, then
+`pidfd_send_signal`. claustrum is built to that order.
+
+After the `SIGTERM` the newcomer waits for the lock, not for the pid. On a Linux
+VM (row H7, by `strace`), the holder was stopped with `SIGSTOP`. `89cb6289` tried
+`flock(LOCK_EX|LOCK_NB)` on `daemon.lock` every 50 ms, and the call answered
+`EAGAIN` 43 times. It sent the `SIGKILL` 2.02 s after the `SIGTERM`, and it got
+the lock 50 ms later. It sent no `kill(pid, 0)` in that row, and none in rows E3,
+P5, P6, N3 and N4. claustrum is built to it: it tries the lock every 50 ms for 2 s,
+sends the `SIGKILL`, and tries for 1 s more. That 1 s is claustrum's own value
+and is not measured. Before the `SIGKILL` claustrum tests the identity of the
+holder again. A restart
 therefore replaces its predecessor deterministically. The eviction only fires
 against a holder that is verifiably one of our own `-serve` daemons for this
 socket, on this machine. See the guards in `daemon_runlock_unix.go`. Claiming is
 best-effort. Any failure logs a warning, and the daemon serves without run-dir
 ownership rather than aborting.
+
+If the record of the holder has no instance, the eviction lines name its pid
+alone. On a Linux VM and on a macOS VM, `89cb6289` logged these two lines for a
+holder with the short record (row P5, 5 of 5 runs on each system):
+
+```
+serve: run dir is held by a live daemon, pid <n>; sending SIGTERM
+serve: previous daemon pid <n> exited after SIGTERM
+```
+
+For a holder with the full record, both lines read
+`pid <n> (instance "<hex>")` (row E3). claustrum is built to both rows.
+
+A holder that still has the lock after the 2 s gets `SIGKILL`. On a Linux VM
+(row H7), `89cb6289` then logged these two lines:
+
+```
+serve: WARNING previous daemon pid <n> (instance "<hex>") ignored SIGTERM for 2s; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)
+serve: previous owner of <dir>: killed
+```
+
+For a holder with the short record, the first line reads `pid <n>` with no
+instance (row N3). claustrum is built to both rows.
+
+A signal can reach a daemon during its start. On a Linux VM (row P5, 5 of 5
+runs), a second daemon started 0.5 s after a first one. The first daemon still
+waited in the reap of its start, for a recorded child that ignored `SIGTERM`. The
+second daemon sent `SIGTERM` to the first one. The first daemon of `89cb6289` did
+not end there. Its log held these lines in this order:
+
+```
+[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<inst>" (pid <dpid>): SIGTERM
+[daemon] received terminated; shutting down (children will be killed)
+[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL
+[daemon] serve: predecessor's children — 1 orphaned group(s): 0 ended on SIGTERM, 1 on SIGKILL, 0 survived; 0 stale record(s) dropped, 0 kept
+[Server] shutdown requested
+Claude remote server listening on <socket> (pid <n>, instance <32-hex>)
+[daemon] host cleaning off: executable "<binary>" is not a deployed daemon under <root>/srv
+[Server] cleanup: closed 0 connection(s), killed 0 child process group(s)
+```
+
+The first daemon bound, listened and wrote its token, then removed the socket
+and the token and exited 0. The recorded child got one `SIGTERM` and one
+`SIGKILL`, both from the first daemon. The second daemon signalled no child, and
+it served. On a macOS VM (row P5, 5 runs), the first daemon of `89cb6289` went
+on in the same way. Its log held the received line, the outlived line, the
+summary line, the `shutdown requested` line, its listening line and the cleanup
+line, in that order.
+claustrum is built to that row. It installs its handler for `SIGTERM` and `SIGINT`
+before the claim of the lock, and it handles one signal.
+
+More Linux rows measured a signal or a second start during a start. In each row
+the recorded child of a dead daemon ignored `SIGTERM`. Build `ac5cadb` of
+claustrum sent the same signals and gave the same end state as `89cb6289` in
+each row but one, the 0.05 s gap:
+
+- A `SIGTERM` or a `SIGINT` 1 s into the reap (rows H8a and H8b). The daemon
+  logged `received terminated; shutting down (children will be killed)`, or
+  `received interrupt` with the same tail. It sent the `SIGKILL` of the reap at
+  2.1 s, bound and exited 0. The run folder then held `children`, an empty
+  `daemon.lock` and the logs.
+- Two `SIGTERM` 0.3 s apart (row H8c). The daemon logged one `received` line and
+  did the same.
+- A `SIGTERM` to a daemon that waits in its eviction of an older holder (row N4).
+  The daemon still sent the holder `SIGKILL` after the 2 s, took the lock, sent
+  the child of that holder `SIGTERM`, bound and exited 0. Its launcher exited 1
+  after 12.08 s with `daemon did not take over <socket> (predecessor still owns it)`.
+- A `-stop` 0.5 s into the reap (row N5). The connect of `-stop` was refused. It
+  sent the daemon one `SIGTERM` and tried the lock every 50 ms. The daemon
+  finished the reap, bound and exited 0. `-stop` then got the lock, printed
+  `terminated` and exited 0, 1.7 s after its start. The launcher of the daemon
+  exited 1 after 12.09 s with the timeout line.
+- A second daemon 0.2 s after the first (row N3, 3 runs). The second daemon sent
+  `SIGTERM` only. The first one finished, bound and exited 0. The second one
+  then bound and held the lock with its full record.
+- A second daemon 0.05 s after the first (row N3, 3 runs). The first daemon was
+  still in its start after the 2 s, so the second daemon sent it `SIGKILL`.
+  `89cb6289` then got the lock, bound and wrote its own full record. It sent the
+  recorded child no signal. Build `ac5cadb` of
+  claustrum read the killed daemon as alive and served without the lock. claustrum
+  now waits on the lock as `89cb6289` does, and it is built to this row.
 
 A process that is no daemon can hold the lock, with no owner record in the file.
 The daemon then signals nothing and logs three lines. On a Linux VM (row ST02),
@@ -334,25 +449,52 @@ is serving a client. The reference side is not probe-measured.
 
 If the socket's parent directory is missing, the `-serve` launcher creates it
 (mode `0700`). The launcher then does not return until the socket path exists. It
-polls every 20 ms, up to a bound of 10 seconds. To make sure that the daemon is
+polls every 20 ms, up to a bound of 12 seconds. To make sure that the daemon is
 ready, it dials the socket and closes the connection again. A freshly started
 daemon's log therefore holds a `New connection from: @` /
 `Connection closed: @` pair from the launcher's own probe, after the listening
 line.
 
-It waits for the path to exist, not for a successful dial. It also does not give
-up early when the child dies. Both behaviours are measured against `5db5e4a`:
+It waits for the path to exist, not for a successful dial. One case differs on
+Linux and macOS: the stale socket file of a killed daemon. That case is below. It
+also does not give up early when the child dies. Both behaviours are measured
+against `5db5e4a`:
 
 | start | what the launcher sees | outcome |
 |---|---|---|
 | normal | path appears, and the dial succeeds | exit `0` |
 | socket path occupied by a directory | path exists immediately | exit `0` (~0.01 s, reference 0.08 s) |
-| child can never bind (uncreatable parent dir) | path never appears | exit `1` at ~10.04 s (reference 10.06 s) |
+| child can never bind (uncreatable parent dir) | path never appears | exit `1` at the launcher bound (`5db5e4a` 10.06 s) |
+
+The launcher bound of claustrum is 12 s. On a Linux VM (row P7), a daemon child of
+`89cb6289` ended before its bind, and the launcher exited `1` after 12.06 s. The
+row holds three forms: a stale socket file, no socket file, and an empty run
+folder. A macOS VM measured 12.08 to 12.16 s in the same three forms (row P7). A
+Windows VM measured 12.058 s with a stale socket file and with none. The bound is
+shared code, and claustrum took 12.01 to 12.13 s in those rows. The bound of
+`5db5e4a` in the table was about 10 s, and claustrum used 10 s until that row.
 
 A Windows VM measured the occupied path against `89cb6289` (rows OCC and OCCf, two
 runs each). An empty folder or a regular file was at the socket path. On both
 sides the launcher exited `0` at once, the entry was removed, and the daemon
 served on a socket at that path. A folder with content is not measured.
+
+On Linux and macOS the daemon binds the socket only after the reap of its start.
+The order is: claim `daemon.lock`, reap the recorded children of a dead daemon,
+remove the old socket file, bind, complete the owner record. On a Linux VM the
+calls of `89cb6289` came in this order (row D1, by `strace`): the open of
+`daemon.lock`, the signals of the reap, the unlink of the old socket file, `bind`
+and `listen`. The `strace` rows hold no write to the lock. The place of the last
+step comes from the `startedAt` of the full record. In 8 of 8 Linux runs of rows
+D1 and D2 it was within 1.5 ms of the `listen` call. While the reap waits
+for a group to end, nothing listens on the path. In row D1 a recorded child
+ignored `SIGTERM`, so the wait took about 2 s. A client that connected in that
+wait got `ECONNREFUSED` when the socket file of the dead daemon was there (row
+D1a). It got `ENOENT` when no socket file was there (row D1b). Linux and macOS VMs
+measured both against `89cb6289`. The first connection worked 2.2 to 2.4 s after
+the start. With nothing to reap, the first connection
+worked 0.1 to 0.24 s after the start (row D2). See
+[process.spawn](#processspawn) for the reap itself.
 
 On a timeout the launcher prints
 `claustrum: timeout waiting for daemon to accept on <socket>` to stderr and
@@ -372,7 +514,8 @@ one the predecessor is still serving. A predecessor can be present and the
 deadline can pass with the inode unchanged. The launcher then prints the distinct
 message `claustrum: daemon did not take over <socket> (predecessor still owns it)`
 to stderr and exits `1`, in place of the plain timeout line above. With no live
-predecessor the wait is unchanged, because any present socket is the child's. The
+predecessor and no socket file on disk, the wait is unchanged. The next paragraph
+covers a stale socket file. The
 inode-difference wait and that distinct message are unix-only. On Windows the
 predecessor probe is a no-op that always reports no predecessor. Startup there
 always takes the no-predecessor path, and on failure it emits only the ordinary
@@ -381,13 +524,19 @@ JSON-RPC wire, because it is launcher lifecycle. The departing daemon's matching
 half is the inode-ownership unlink under
 [Token persistence](#token-persistence-daemontoken).
 
-A killed daemon leaves its socket file on disk. On Windows the launcher records
+A killed daemon leaves its socket file on disk. The launcher records
 the socket file that is on disk before it starts the child. While the path still
 holds that file and no daemon answers a dial, the launcher keeps waiting. It then
 dials the new daemon once. On a Windows VM (rows WN03 and WN05), the log of a new
-`f6010b97` or `89cb6289` daemon held the connection pair in that case. A dial
-that a live older daemon answers ends the wait at once, as before. A client that
-connects in that window is not measured.
+`f6010b97` or `89cb6289` daemon held the connection pair in that case. On a Linux
+VM (row XA), the `-serve` command of `f6010b97` and `89cb6289` returned when the
+socket accepted, 2.06 s after its start. A dial
+that a live older daemon answers ends the wait at once, as before. On Windows a
+client that connects in that window is not measured. On Linux and macOS only a
+socket file makes the launcher wait. Another kind of file at the path counts as
+present, as in the table above. A stale socket file and a daemon that never binds
+give the timeout line at the bound and exit `1`. That is form a of row P7 above:
+`89cb6289` exited `1` after 12.06 s.
 
 On Windows the launcher starts the serving process outside the job of the
 launcher (`CREATE_BREAKAWAY_FROM_JOB`). The SSH server of the Windows VM puts each
@@ -849,8 +998,12 @@ Windows VMs saw it at that place.
 - `instanceId` and `startedAt` were added by `4534d86`. They sit between `methods`
   and `features`. `instanceId` is a 32-hex string, and `startedAt` is the daemon's
   boot time in unix milliseconds. Both are present on every OS. claustrum
-  generates `instanceId` from 16 crypto/rand bytes at startup and stamps
-  `startedAt` then. It echoes both on the capabilities reply for parity.
+  generates `instanceId` from 16 crypto/rand bytes at startup. It stamps
+  `startedAt` after the reap of the start and the bind. On a Linux VM the
+  `startedAt` of `89cb6289` was within 1.5 ms of its `listen` call (rows D1 and
+  D2, 8 of 8 runs). macOS has no call times. The owner record of
+  `daemon.lock` holds the same two values. It echoes both on the capabilities
+  reply for parity.
 - The `features` array was added by `7c2f88d`. It follows `instanceId` and
   `startedAt`, and it advertises optional extensions. `process.stdin.offset`, the
   resumable and idempotent stdin contract, landed first. `7d193f89` added
@@ -2916,30 +3069,112 @@ as id-less stream notifications, and it buffers them for a later replay.
 - `args`: string[]. `env`: `{KEY:VAL}`, merged over the daemon environment.
 - Missing `id` → `-32602 Process ID is required`. Missing `command` →
   `-32602 Command is required`.
-- A request that reuses a still-live `id` succeeds and replaces the registry entry,
-  like the reference. claustrum also kills the now-orphaned previous process:
-  the whole tree on Linux and macOS, the direct child on Windows. It drops the subscribers first, so no stray frame arrives under the
-  reused id. This is OS-level only and changes no wire byte. On a Windows VM (rows
-  EV and EVInh), `89cb6289` left the first process alive, also after `-stop` of
-  the daemon. claustrum ended it at once. Both answered the second spawn with
-  `{"success":true}`, and no frame arrived on the first connection on either
-  side. The reference is not measured for this case on Linux and macOS.
+- A request with the `id` of a process that still runs succeeds and replaces the
+  table entry. The first process gets no signal and keeps running. A
+  `process.kill` of that `id` then reaches the second process only (row A2). In
+  claustrum `process.stdin` and `process.reattach` name the second process too.
+  `-stop` and `server.shutdown` end only the processes of the table, so the first
+  process outlives the daemon (row A3). Linux and macOS VMs measured this against `89cb6289` (rows
+  A1 to A4), and a Windows VM too (rows EV and EVInh). On Linux and macOS the
+  record of the first process stays, and the next daemon start ends that process
+  from it (row A4). The first process keeps its own connection. On a Linux VM
+  (row P2, two runs), the first process of `89cb6289` wrote and ended after the
+  replace. Its stream frames still came on its own connection, under the same
+  `processId`, with seq 2 to 9. Its exit frame came there with seq 10. The
+  connection of the second process got the frames of the second process only.
+  claustrum is built to that row. macOS row P2 and Windows row EVc gave the same
+  split of the frames on `89cb6289` and on claustrum. Three more Linux rows
+  measured two processes under one `id`. `89cb6289` and claustrum gave the same
+  frames in each:
+    - Both spawns come on one connection (row N2a). That connection gets both
+      streams under the one `processId`. Each process counts its own `seq`, so
+      seq 1 to 9 and an exit frame with seq 10 come twice.
+    - The connection of the first process sends `process.reattach` for the `id`
+      with `fromSeq` 0 (row N2b). The reply names the second process
+      (`"firstSeq":1,"lastSeq":2`), and its two frames come before the reply. The
+      connection of the second process gets EOF. The first connection then
+      carries both processes up to both exit frames.
+    - The first connection closes, and a third connection sends
+      `process.reattach` with `fromSeq` 5 (row N2c). The reply is
+      `{"found":true,"running":true,"firstSeq":1,"lastSeq":3,"stdinApplied":0}`
+      with no replay. The second connection gets EOF. The third one gets seq 4 to
+      9 and the exit frame of the second process, and no frame of the first.
 - Session superseding is `4534d86` parity. A `process.spawn` whose `args` name a
   stream-json CLI session terminates any OTHER running process of the SAME session
   id. Such `args` carry an `--input-format=stream-json` or
   `--output-format=stream-json` arg, or a bare `stream-json` arg. They also carry a
   valid `--session-id` or `--resume` token, with the resume fallback suppressed by
   `--fork-session`. The superseded process is killed through the
-  SIGTERM-then-SIGKILL path, and its exit frame reaches its client. The
-  `killedBy:"client"` marker on that frame ships in a separate slice. A spawn with
+  SIGTERM-then-SIGKILL path, and its exit frame reaches its client. That
+  frame carries `killedBy:"client"` (rows B1 to B3 below). A spawn with
   no session key, or with a different session id, supersedes nothing. The eviction,
   the `client` kill reason, and the session-key rules above are measured against
   the reference. claustrum also serializes concurrent spawns of one session.
-  A Windows VM measured one difference in time (rows SS and SSInh, one run each).
-  The end states were equal: the first child ended, and its descendants lived on.
-  `89cb6289` answered the second spawn after the first child ended. With
-  descendants that hold the pipes of the first child, that was after 5 s.
-  claustrum answered the second spawn at once.
+  The daemon ends the other process and waits for its end before it starts the new
+  one. The reply of the new spawn therefore comes after the exit frame of the old
+  process. Linux and macOS VMs measured that against `89cb6289` (rows B1 to B4, two
+  runs each):
+    - The old process exits on `SIGTERM`: the reply follows at once (row B1). Its
+      group gets no `SIGKILL` (Linux row X2a, see
+      [process.killAndWait](#processkillandwait)).
+    - The old process ignores `SIGTERM`: the daemon sends `SIGKILL` to its group
+      after 3 s, and the reply follows (row B2).
+    - The old process exits, and a process in another group holds its pipes: the
+      exit frame and the reply come 5 s after the request (row B3).
+    - A spawn with the `id` and the session of a process that still runs
+      supersedes nothing and sends no signal (row B4).
+  The daemon log holds the exit line of the old process, then the `supersedes`
+  line, then the started line of the new process. A Windows VM measured the same
+  order of exit frame and reply on `89cb6289` and on claustrum (rows SS and SSInh,
+  3 runs each).
+  There the first child ended and its descendants lived on. Not measured: two or
+  more other processes of one session. claustrum ends them one after the other.
+  - A session spawn whose command does not exist supersedes nothing. On a Linux VM
+    (rows P3 and H1) and on a macOS VM (row P3), `89cb6289` answered
+    `-32603 fork/exec <path>: no such file or directory`. The old
+    process got no signal and kept its record. claustrum is built to those rows. It
+    tests the command after it builds the child environment and before the
+    supersede.
+  - The test is one `stat` of the command path. Linux rows H1 to H6 and H9
+    measured it with `strace`. `89cb6289` and claustrum made the same `stat`
+    calls and gave the same replies in each row:
+      - The path is read as the request gives it, and it is not joined with `cwd`.
+        A session spawn of `./tool` with a `cwd` that holds `tool` answered
+        `fork/exec ./tool: no such file or directory` (row H3). The same request
+        with no session arguments started.
+      - A spawn with no session key runs no `stat` of the command (row H2).
+      - A command that exists and does not start passes the test. A file of mode
+        0644, a directory and a script with a missing interpreter each got the
+        supersede first. The old process got `SIGTERM` and ended, and the start
+        error came after it (rows H4a to H4c).
+      - A bare command name that the lookup does not find answers
+        `exec: "<name>": executable file not found in $PATH`. The old process
+        gets no signal (row H9).
+      - A `cwd` that is missing or is a file answers its own error, and the old
+        process gets no signal (rows H5a and H5b). That test comes before the
+        PATH read of the first spawn (row H6) and before the `stat` of the
+        command (row H3).
+    With a `launcher`, the fifth check below is that test.
+  - On Windows the lookup answers first. Then claustrum runs one `stat` of an
+    absolute command path. On a Windows VM (row SSm-path, 3 of 3 runs),
+    `89cb6289` answered
+    `-32603 fork/exec <path>: The system cannot find the file specified.` for a
+    missing path that ends in `.exe`, and the old process lived on. Build
+    `ac5cadb` of claustrum ended the old process there. claustrum is now built to
+    that row. A bare name (row SSm-bare) and a path with no extension (row
+    SSm-noext) answered `exec: "<name>": executable file not found in %PATH%` on
+    both, with no supersede. Not measured: a relative path. claustrum runs no
+    `stat` of it.
+  - A `-stop` can come while a spawn waits for the old process. Linux and macOS
+    VMs measured that against `89cb6289` (row P1, 7 Linux runs and 2 macOS runs). The old process
+    did not end on `SIGTERM`, and `-stop` came 1 s after the spawn request. The spawn got
+    no reply, and no connection got an exit frame. The new process never started.
+    The daemon sent `SIGKILL` to the group of the old process and removed its
+    record. `-stop` printed `stopped` and exited 0. The log held no `supersedes`
+    line and no exit line. claustrum gave the same events. Its log differs: build
+    `ac5cadb` wrote the exit line of the old process and the `supersedes` line in
+    1 of 6 Linux runs and in 2 of 2 macOS runs. That difference is open. See
+    [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
 - The SSH agent hand-off is `f6010b97` parity on linux and darwin, advertised as
   `process.spawn.shellAgentSocket`, and measured on both. The daemon builds the
   child env from its own env, the login-shell PATH and the caller's `env`. If that
@@ -2952,9 +3187,11 @@ as id-less stream notifications, and it buffers them for a later replay.
   - The daemon runs `<shell> -l -i -c …` on the first spawn that needs a socket,
     not at startup. The shell choice is the one the PATH extraction uses: `$SHELL`
     when it is executable, then `/bin/zsh`, `/bin/bash` and `/bin/sh`. The run has
-    a 4 s deadline, and a shell that the kill cannot end is given up on at 5 s. The
-    spawn that runs the shell therefore answers about 4 s later when the shell
-    does not exit, and about 5 s later when the kill cannot end it.
+    a 4 s deadline, and a shell that the kill cannot end is given up on at 5 s. This
+    run therefore adds about 4 s to its spawn when the shell does not exit, and
+    about 5 s when the kill cannot end it. The first spawn of a daemon also runs
+    the PATH read, which has its own 4 s deadline. On a Linux VM with a shell that
+    sleeps 10 s, the first spawn of `89cb6289` answered after 8 s (row G3).
   - A socket that does not accept a connection within 250 ms is not handed on. The
     daemon caches the answer and runs the login shell again only 10 minutes after
     the last run. After 3 failed runs in a row it stops asking. A connection
@@ -3025,14 +3262,16 @@ as id-less stream notifications, and it buffers them for a later replay.
   frame is byte-identical to `{"success":true}`. An older daemon ignores the
   unknown param through its tolerant decode. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → CT-1.
-- The exec-child trampoline is `19f30c46` parity on linux and darwin. When the
-  daemon's socket is `run/<clientId>/rpc.sock` shaped, a spawned child is launched
+- The exec-child trampoline is `19f30c46` parity on linux and darwin. On every
+  socket shape, a spawned child is launched
   through a self-re-exec trampoline (`<self> --exec-child <path> <argv…>`). That
   trampoline adds two environment markers that give the child a stable,
   pid-reuse-safe identity. The first is `CLAUDE_SSH_RUN_DIR=<run dir>`, set by the
-  daemon. The second is `CLAUDE_SSH_CHILD=<pid>:<startTicks>`, set by the
+  daemon. The run dir is the folder of the socket path, cleaned and not made
+  absolute. The second is `CLAUDE_SSH_CHILD=<pid>:<startTicks>`, set by the
   trampoline from the child's own pid and its start-time. On linux the start-time
-  is the `/proc` clock ticks. On darwin it is the `ps` start-time. The five
+  is the `/proc` clock ticks. On darwin it is a date text: the `ps` start-time
+  with one blank between its words. The five
   Go-runtime vars (`GODEBUG`, `GOGC`, `GOMAXPROCS`, `GOMEMLIMIT`, `GOTRACEBACK`)
   are stashed under `CLAUDE_SSH_HELD_<name>` across the re-exec. They are restored
   before the target runs, so they do not perturb the transient trampoline. A
@@ -3049,15 +3288,47 @@ as id-less stream notifications, and it buffers them for a later replay.
   trampoline before (`fork/exec /proc/self/exe: permission denied`). It now names
   the command (row CW03). Not measured: the trampoline start fails and the direct
   start works. claustrum then answers success, where it answered an error before.
-  It gives that child `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD`. A bare or
-  non-run-shaped socket spawns directly, with no trampoline and no markers. That
-  part is not matched: `f6010b97` and `89cb6289` set both markers on every socket
-  shape (Linux rows EV01a to EV01i and K3). The
+  It gives that child `CLAUDE_SSH_RUN_DIR` and no `CLAUDE_SSH_CHILD`.
+  `f6010b97` and `89cb6289` set both markers on every socket
+  shape (Linux and macOS rows EV01a to EV01i, and Linux row K3). Linux and macOS VMs measured the
+  values and the order against `89cb6289` (Linux rows F1 to F5, macOS rows F1 to
+  F4). The socket
+  `<R>/b/s.sock` gives `CLAUDE_SSH_RUN_DIR=<R>/b`. A relative socket `s.sock` gives
+  `CLAUDE_SSH_RUN_DIR=.`. The socket `<R>//run/./c1/rpc.sock` gives `<R>/run/c1`.
+  Not measured: an abstract socket name (`@name`). claustrum gives it the run dir
+  `.`.
+  The child environment is the daemon environment, where
+  `CLAUDE_SSH_DAEMON_CHILD` is the last entry. A caller key that the daemon
+  environment holds replaces that entry in place. A new caller key comes after the
+  daemon entries. `CLAUDE_SSH_RUN_DIR` and then `CLAUDE_SSH_CHILD` are the last two
+  entries. A caller value of those two does not reach the child (Linux rows EV02a
+  and EV02e). An empty caller value of `CLAUDE_SSH_DAEMON_CHILD` stays empty.
+  claustrum builds the environment by these rules. A Go-runtime variable keeps its
+  place. On a Linux VM (rows P4a to P4c), a `GOGC` of the daemon environment of
+  `89cb6289` stayed at its place there, before `CLAUDE_SSH_DAEMON_CHILD`. A
+  `GOMAXPROCS` of the spawn `env` stood with the new caller keys, before
+  `CLAUDE_SSH_RUN_DIR`. The two markers were the last two entries. claustrum is
+  built to those rows. `GODEBUG`, `GOMEMLIMIT` and `GOTRACEBACK` are not measured,
+  and claustrum treats them the same way. Two or more new caller keys have no
+  fixed order on `89cb6289`. A Linux VM ran 20 spawns per row. For the request
+  order `ZZ, AA, MM` it gave `ZZ, AA, MM` 16 times, `AA, MM, ZZ` 3 times and
+  `MM, ZZ, AA` once (row P9). For the request order `ZZ, MM, AA` it gave
+  `ZZ, MM, AA` 16 times, `MM, AA, ZZ` 3 times and `AA, ZZ, MM` once (row N7). Each
+  order is a rotation of the request order. Build `ac5cadb` of claustrum gave name
+  order in 20 of 20 spawns of both rows, and name order is not one of the three
+  orders of row N7. claustrum now iterates the decoded map again and builds no
+  order of its own. That gave a rotation of the request order in each of the 20
+  spawns of a row (Linux rows P9 and N7, macOS row EV20). A request with more keys
+  is not measured. The
   trampoline is off-wire and adds no JSON-RPC frame. The start failure above is
   the one frame that it changes. It was verified against
   `19f30c46` on a VM. The marker set and format match, and the values are
-  per-process. On macOS the start text in `CLAUDE_SSH_CHILD` is not matched:
-  claustrum writes two blanks before a one-digit day, and `89cb6289` writes one. The order of the entries in rows EV02e and EV03e is not matched either. The held Go vars round-trip. A missing target, a
+  per-process. On macOS the start text in `CLAUDE_SSH_CHILD` has one blank before
+  a one-digit day (`Fri Oct 2 17:35:19 2026`), where `ps -o lstart=` prints two. A
+  macOS VM measured that on `89cb6289` (rows F1 to F4). In those rows the text of
+  the record and the text of the marker were byte-equal, on `89cb6289` and on
+  claustrum. Only days 1 and 2 of a
+  month are measured. The held Go vars round-trip. A missing target, a
   non-executable-format target, and a relative-under-`cwd` target each return the
   identical `-32603 fork/exec …` frame, or are trampolined exactly as the
   reference does. Darwin links the same subsystem, with the start-time from `ps`
@@ -3065,13 +3336,27 @@ as id-less stream notifications, and it buffers them for a later replay.
   windows the reference daemon reports it is not the run-dir lock holder, so it
   stamps neither marker. A windows VM showed that a run-shaped-socket child has the
   same environment as a bare-socket child.
-- The orphan-child registry record is `19f30c46` parity on linux and darwin, with
-  two parts that are not matched. The references write the record on every socket
-  shape (Linux rows EV01a to EV01i). On macOS the start text has two blanks before
-  a one-digit day, so the mixed macOS cells RP15c, RP15d, RP15f and RP15g end no
-  child. Under
-  that same `run/<clientId>/` socket, each spawned child with a pid of 2 or more
-  and a readable start-time is recorded to `<runDir>/children/<pid>.json`. The
+- The orphan-child registry record is `19f30c46` parity on linux and darwin. On
+  every socket shape, each spawned child with a pid of 2 or more
+  and a readable start-time is recorded to `<runDir>/children/<pid>.json`. The run
+  dir is the folder of the socket path. The references write the record on every
+  socket shape (Linux and macOS rows EV01a to EV01i, and rows F1 to F4 of both
+  systems on `89cb6289`). On macOS the start text of the record has one blank between its
+  words, as in `CLAUDE_SSH_CHILD`. A macOS VM measured mixed pairs of `89cb6289`
+  and claustrum (rows RP15c, RP15d, RP15f and RP15g, 3 runs each). A daemon of
+  one binary ended the recorded child of a dead daemon of the other, in both
+  directions, with a launcher and without one. claustrum compares the start
+  texts exactly at the reap, as `89cb6289` does. A record whose `start` holds two
+  blanks before a one-digit day does not match. `89cb6289` and claustrum dropped
+  such a record, sent no signal and logged the same line (rows TBr and TBe):
+  `[process.Registry] record <pid>.json: pid <pid> is not a child to end (it did not start at the recorded "<text>": the pid has been reused); dropping the record, signalling nothing`.
+  A `daemonStart` with two blanks does not match either. Both binaries then read
+  that daemon as gone and ended its recorded child, while the daemon was alive
+  (row N6, 2 runs each). With the one-blank text they kept the record and sent no
+  signal (row N6k). From the code: an older claustrum build wrote two
+  blanks on day 1 to 9 of a month. The first start of a newer daemon on macOS
+  does not end a child of that build from those days.
+  The
   daemon writes it atomically, through a temp file renamed into place. The temp
   file is `children/.rec-<pid>.json.<12 chars>` (`89cb6289`, measured on Linux, row
   SP06). The source of the 12 chars is not measured. claustrum uses the nanosecond
@@ -3085,9 +3370,10 @@ as id-less stream notifications, and it buffers them for a later replay.
   `start`. That is `89cb6289` parity, measured on Linux. claustrum omits `program`
   without a launcher, so that record keeps its `19f30c46` bytes. That is
   claustrum's choice (not measured). `daemonStart` and `start` are STRINGS,
-  holding clock ticks on linux and a `ps` timestamp on darwin. `pid`, `daemonPid`
+  holding clock ticks on linux and a date text on darwin. `pid`, `daemonPid`
   and `at` are numbers. This record is off-wire, because it adds no JSON-RPC
-  frame. On linux and darwin the daemon reaps these records at `-serve` startup.
+  frame. On linux and darwin the daemon reaps these records at `-serve` startup,
+  before it binds the socket.
   See [ARCHITECTURE.md](ARCHITECTURE.md) → orphan reap. On darwin the node is the
   boot-session UUID and the host is the hostname, and the start-times come from
   `ps` rather than `/proc`. On windows the reference daemon reports it is not the
@@ -3103,6 +3389,17 @@ as id-less stream notifications, and it buffers them for a later replay.
     (rows RP12a, STa and STb, equal on `89cb6289` and claustrum). claustrum waits
     for the children that it killed, for 1 s at most. That bound is claustrum's own
     value. Not measured: a child that outlives the bound.
+  - With `-keep-children` the shutdown removes the records of the children that it
+    leaves alive. The next daemon then finds no record of them and sends them no
+    signal. That rule is claustrum's own, as the flag is. A Linux VM ran it on
+    claustrum only (row P14). `-stop` of a daemon with the flag sent no kill and
+    removed the records of its two children. A new daemon then sent no signal and
+    logged no reap line, with the flag and without it. Both children stayed
+    alive. The rule has two limits. A process whose `id` a later spawn took keeps
+    its record. The host cleaner does not read the records. See
+    [DIVERGENCES.md](DIVERGENCES.md) CT-2.
+  - A spawn that takes the `id` of a running child leaves the record of that child
+    in place. Linux and macOS rows A1 to A3 measure that.
   - A daemon that is killed leaves its records. The next daemon on that socket
     reads them at its start.
   - If `children` is a regular file or a symlink, the daemon writes no record
@@ -3115,7 +3412,10 @@ as id-less stream notifications, and it buffers them for a later replay.
   - If the record cannot be written, the daemon logs
     `[process.Registry] cannot record child <pid>: <error>`. Row SP07c measures a
     `children` folder of mode 000, where the error is
-    `openat children/.rec-<pid>.json.<12 chars>: permission denied`.
+    `openat children/.rec-<pid>.json.<12 chars>: permission denied`. Row P11a
+    measures a `children` folder of mode 755 that another user owns. On `89cb6289`
+    and claustrum the spawn succeeded, the child got both markers, no record was
+    written, and the log held that line.
   - In rows SP07a to SP07c the daemon still tries the removal at the end of
     the child. It logs
     `[process.Registry] cannot remove record of child <pid>: removeat children/<pid>.json: <reason>`
@@ -3136,6 +3436,61 @@ as id-less stream notifications, and it buffers them for a later replay.
   - claustrum prints each of these lines after its level tag.
 - The reap of the records at a `-serve` start on linux and darwin. Each row is
   measured on Linux against `89cb6289`, unless the bullet names macOS.
+  - The reap runs on every socket shape, in the folder of the socket (Linux and
+    macOS rows EV01a to EV01i).
+  - The daemon walks the children folder in directory order, the order of `ls -U`.
+    One start handles the first 128 names that end in `.json`. One more such name
+    ends the walk, and the daemon logs
+    `[process.Registry] more than 128 records in <runDir>/children; leaving the rest for the next start`.
+    Row C1: of 131 names, the first 128 of the directory order were gone after the
+    first start. The second start removed the last 3 and logged no line. Not
+    measured: whether a name that does not end in `.json` counts. claustrum does
+    not count it.
+  - At most 64 groups get `SIGTERM` at one start, in the order of the walk (rows C2
+    and C4). For more verified groups the daemon logs
+    `[process.Registry] <n> more orphaned group(s) recorded in <runDir>/children than the 64 one start ends; leaving those for the next start`.
+    Row C4: with 70 recorded children, 64 got `SIGTERM` and 6 records stayed.
+  - claustrum reads at most 4096 bytes of a record. A record whose first 4096
+    bytes are not one JSON value is removed, with no signal and no line. On
+    `89cb6289`, records of 5259 and 5290 bytes were removed with no signal and no
+    line while their children ran (rows C3a and C3b). Both held an `argv0` of 5000
+    characters, so the rows do not tell a read limit from a field limit. A
+    valid record with blanks after it, 2 MiB in all, was read (row ED14g). Row P8
+    measured the bound with a pad in an added last field. Records of 4095 and
+    4096 bytes got `SIGTERM`. Records of 4097 and 5000 bytes got no signal and no
+    line, and they were removed. `89cb6289` and claustrum did the same in each
+    of the four sizes, so the bound is 4096 bytes on both.
+  - Records that the daemon keeps count toward the 128 too. Row P10 staged 128
+    records of another machine and then one record of a live orphan, the last in
+    directory order. In two starts, `89cb6289` and claustrum sent no signal and
+    removed no record. Each start logged the 128 line and a summary with
+    `0 orphaned group(s)` and `128 kept`. The orphan stayed alive.
+  - The owner of a record file is not tested. Row P11b replaced the record of a
+    live child with a copy that root owns (mode 644, same bytes). The next start
+    of `89cb6289` and of claustrum sent `SIGTERM` to that child and removed the
+    record.
+  - A record that is not a child to end is dropped at once, with the line
+    `[process.Registry] record <pid>.json: pid <pid> is not a child to end (<reason>); dropping the record, signalling nothing`.
+    The reason is one of the texts that the bullets below list. Not measured: the
+    place of this line when the 128 line and the 64 line print too. claustrum
+    prints the 128 line, then the record lines, then the 64 line.
+  - Each group that gets `SIGTERM` logs
+    `[process.Registry] ending orphaned process group <pgid> recorded by daemon instance "<instance>" (pid <daemon pid>): SIGTERM`.
+    A group that gets the `SIGKILL` after the 2 s grace logs
+    `[process.Registry] group <pgid> outlived SIGTERM for 2s: SIGKILL`.
+    Linux and macOS rows A4 and D1 measure both lines.
+  - The records of the groups that got `SIGTERM` are removed together, when the
+    last group is done. Row RP04: of five groups, all five records were gone at
+    the 2.1 s poll and none earlier.
+  - The sweep ends with one summary line when it sent a `SIGTERM` or kept a record:
+    `[daemon] serve: predecessor's children — <n> orphaned group(s): <a> ended on SIGTERM, <b> on SIGKILL, <c> survived; <d> stale record(s) dropped, <e> kept`.
+    A sweep that only removed records logs no summary (row C1, second start).
+    `<n>` counts the groups that got `SIGTERM`. `kept` counts the records of a live
+    owner or of another machine, and the verified groups over 64 (row C4:
+    `6 kept`). `dropped` counts a record with the record line (row RP07), a record of a
+    dead pid (row C1: `127 stale record(s) dropped`), and a group that no longer
+    verifies after its `SIGTERM` (row PG05a). Not measured: the number
+    that the other removed records take. claustrum counts each of them as dropped.
   - Only a regular file is read as a record. A symlink, a FIFO or an empty folder
     with a `.json` name is removed, with no signal and no log line (rows ED16a to
     ED16c). The target of the symlink stays.
@@ -3180,7 +3535,9 @@ as id-less stream notifications, and it buffers them for a later replay.
     shapes are not measured.
   - During the 2 s grace, a group that got `SIGTERM` takes the whole record test
     again at each poll, and once more before the `SIGKILL`. If the test fails, the
-    daemon sends nothing more and drops the record at that poll. Row PG05a
+    daemon sends nothing more. claustrum removes that record at the end of the
+    sweep, with the records of the other groups. When `89cb6289` removes it is not
+    measured. Row PG05a
     measures a child that replaced itself with another program: `89cb6289` logs
     the line below 0.1 to 0.3 s after its start.
   - The line is
@@ -3224,6 +3581,10 @@ as id-less stream notifications, and it buffers them for a later replay.
     runs of row RP05a, claustrum sent the group `SIGKILL` 51 to 55 ms after the
     `SIGTERM` in 9 runs and 152 ms after it in one. `89cb6289` sent it 0.4 to
     4.9 ms after the `SIGTERM`.
+  - claustrum prints each line of the reap after its level tag. `89cb6289` prints
+    no level. The level of each line is claustrum's own choice. The 128 line, the
+    64 line and the outlived line are WARN. The `is not a directory` line is
+    ERROR. The others are INFO.
 - The log lines of a spawn and of an exit. They are off-wire. Each one is measured
   against `89cb6289`. The macOS rows CW01 to CW05 are equal on `89cb6289` and
   claustrum.
@@ -3310,10 +3671,19 @@ as id-less stream notifications, and it buffers them for a later replay.
       child tree dies.
     - Every other signal (`TERM`, `INT`, `HUP`, and the default) goes to the direct
       child only, and a backgrounded grandchild keeps running. A graceful
-      `process.kill` does not kill the tree. Use `signal:"KILL"`, or use
-      `killAndWait` with `escalate:true`.
+      `process.kill` does not kill the tree. Use `signal:"KILL"` for that.
+      `killAndWait` with `escalate:true` sends the group `SIGKILL` only when its
+      grace runs out.
   The split does not apply on Windows. There every signal form ends the direct
   child only, with exit code 1. See [Windows child trees](#windows-child-trees).
+- On Linux the `TERM` to the direct child is `pidfd_send_signal` on the pid file
+  descriptor that the start of the child gave. A `KILL` is `kill(-<pid>, SIGKILL)`.
+  A Linux VM measured both calls with `strace` against `89cb6289` (row E), for
+  `process.kill` and for `process.killAndWait`. The `SIGTERM` of a session
+  supersede is the same call (row B1). In claustrum `INT` and `HUP` go the same
+  way, and they are not measured. On a kernel without pid file descriptors, and on
+  macOS, the daemon sends `kill(<pid>, <signal>)`. The reference on such a kernel
+  is not measured.
 - claustrum diverges here. It skips the signal when the child has already exited,
   because the OS can recycle a reaped pgid. This is OS-level only, and the reply is
   identical.
@@ -3408,14 +3778,32 @@ reports the outcome as a *result*. An unknown id is not an error:
       grace, `true` escalates to a process-group `SIGKILL`, waits up to 7 s
       for the reap, and adds `"escalated":true`. This is measured. `timeoutMs:500`
       against an unreapable child makes the reference reply at 7.51 s. The daemon
-      sends the SIGKILL even when the graceful signal already killed the child. A
-      grandchild that holds the stdout pipe can keep the drain pending past the
-      grace. `false` leaves the process running and reports
+      sends the SIGKILL at the end of the grace also when the graceful signal
+      already ended the child. A process in the group of the child that holds the
+      stdout pipe keeps the drain pending past the grace. A Linux VM measured both
+      cases against `89cb6289`: a child that ignores `SIGTERM` (row B2), and a
+      child that exited with such a pipe holder in its group (row X1). In both,
+      `kill(-<pid>, SIGKILL)` came about 3 s after the `SIGTERM`. `false` leaves the process running and reports
       `{"found":true,"died":false}`, with no `escalated` and no SIGKILL, which
       spares the tree. On Windows the escalation ends the direct child only. See
       [Windows child trees](#windows-child-trees).
 - A process that dies within the grace → `{"found":true,"died":true}`, with no
-  `escalated`.
+  `escalated`. Its group gets no `SIGKILL`. On a Linux VM (rows X2a and X2b, by
+  `strace`), the child exited on `SIGTERM`, and a kid in its group had its own
+  stdio. `89cb6289` sent the `SIGTERM` to the one process and made no other call.
+  That holds for `process.killAndWait` with the default (3 of 3 runs) and for a
+  session supersede (4 of 4 runs). The kid was alive 5 s later. Build `ac5cadb`
+  of claustrum sent `kill(-<pid>, SIGKILL)` right after the exit of the child,
+  and the kid ended. claustrum is now built to those rows.
+    - That group `SIGKILL` came from a run against `5db5e4a` with a child that
+      backgrounds a sleeper. Whether the sleeper held the pipes of the child is
+      not recorded.
+    - Four more forms were equal on `89cb6289` and build `ac5cadb` (rows X2c to
+      X2f). `escalate:false` and a plain `process.kill` sent the one `SIGTERM`.
+      `process.kill` with `signal:"KILL"` and `-stop` sent one group `SIGKILL`.
+    - macOS rows X2a to X2c give the same on `89cb6289` and claustrum: the kid
+      lives, 3 of 3 runs each. Windows has no X2 row. There is no group there, so
+      nothing changes.
 
 #### process.reattach
 `{id,fromSeq[,wantPid]}` → `{"found","running","firstSeq","lastSeq","stdinApplied"}`
@@ -3635,9 +4023,18 @@ claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a
 ```
 
 The binary self-daemonizes, which means it reparents to init and detaches. It then
-extracts the login-shell PATH on Unix, and then runs the RPC server. On success it
+runs the RPC server. On success it
 prints `Claustrum remote server listening on <socket> (pid <pid>, instance <32-hex>)`
 to stdout.
+
+On Unix the daemon runs no login shell at its start. The first `process.spawn`
+reads the login-shell PATH, and that spawn waits for the read. The daemon keeps
+the result for its life, and it keeps a failed read too. Linux and macOS VMs
+measured that against `89cb6289` (rows G1 and G2). No shell ran in 20 s without a
+spawn. The first spawn ran the shell, and the second spawn ran none. A Linux VM
+measured a login shell that sleeps 10 s (row G3). The shell was killed after 4 s.
+The first spawn answered after 8 s, because the SSH agent read ran that shell
+again for 4 s. The second spawn answered at once.
 
 When `$SHELL` is an executable file, login-shell PATH extraction on Unix runs
 `$SHELL -l -i -c …`. Otherwise it runs the first usable of `/bin/zsh`,
@@ -3648,14 +4045,44 @@ environment, so it never changes how the daemon resolves a `command`. The
 extraction has a cap of 4 s. On a timeout the daemon discards whatever the shell
 printed, even a valid PATH, and children fall back to the inherited PATH.
 
+The cap also holds after the shell is gone, while another process holds the
+output pipe of the shell. On a Linux VM (rows P13 and P13k), the login shell left
+`setsid sleep 30` on the pipe and ended after 0.06 s. The first spawn of
+`89cb6289` answered after 4.6 s, in 3 of 3 runs. Its log held
+`[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (<shell>)`.
+The daemon sent no signal, and the second spawn answered at once. claustrum is
+built to those rows. claustrum answered after 4.6 to 4.7 s with the same line
+(Linux row P13, 3 runs). A macOS VM measured the same (row P13): the first spawn
+answered after 4.7 s on `89cb6289` and after 4.7 to 4.9 s on claustrum, with the
+same line. One part is claustrum's own and is not measured: it closes its end of
+that pipe two caps after the shell ended.
+
+The shell of the PATH read gets a small environment. On a Linux VM (row P13v),
+the PATH shell of `89cb6289` got seven entries from the daemon. They were
+`DISABLE_AUTO_UPDATE=true`, `HOME`, `PATH`, `SHELL`, an empty `TERM`, `USER` and
+`ZSH_DISABLE_COMPFIX=true`. The daemon had no `TERM`. Its `LANG` and its
+`CLAUDE_SSH_DAEMON_CHILD` did not reach the shell. claustrum is built to that
+row. macOS rows P13v and P13z gave the same seven entries on `89cb6289` and on
+claustrum. In row P13z the daemon had no `SHELL`, and the entry was empty on
+both. Not measured: the order of the entries, and a daemon that has a `TERM`.
+Also not measured: a daemon with no `HOME`, `PATH` or `USER`.
+claustrum copies the five values from its environment and writes an empty value
+for a name that is not set. The shell of the SSH agent read gets another
+environment. In Linux row P13v and macOS row P13z that one was equal on
+`89cb6289` and claustrum.
+
 A token source is required. The detached child tests for it, not the launcher:
 - Both flags missing → the launcher daemonizes anyway, the child refuses to start,
-  and the launcher reports its accept timeout after about 10 s:
+  and the launcher reports its accept timeout after 12 s:
   `claustrum: timeout waiting for daemon to accept on <socket>`, exit `1`. The
   specific reason (`claustrum: daemonized child requires --token-file or
   --token-fd`) reaches only the child's detached stderr. This is deliberate
-  parity, because the reference exits 1 at about 10 s the same way. A zero-byte
-  `-token-file` behaves identically.
+  parity. `5db5e4a` exited 1 after 10.07 s in that case. A zero-byte
+  `-token-file` behaves identically. On a Linux VM (row P7), the launcher of
+  `89cb6289` exited 1 after 12.06 s with a zero-byte `-token-file`, in three
+  forms: a stale socket file, no socket file, and an empty run folder. The
+  launcher bound of claustrum is 12 s, to that row. Both flags missing is not
+  measured on `89cb6289`.
 - The daemon reads the token as a line. It strips one trailing `\n` or `\r\n`, and
   preserves other surrounding whitespace verbatim.
 - A bad `-token-file` → `claustrum: read --token-file: <err>`, exit `1`.
@@ -3700,7 +4127,10 @@ Claustrum-only extras follow. They are off the wire, and the canonical detail is
   shutdown kills the children: the whole tree on Linux and macOS, the direct child
   on Windows. When set, it leaves spawned children running
   across a restart, and logs `[Server] -keep-children: leaving <n> running child
-  process(es) alive across shutdown`. The new daemon does not re-adopt them, and
+  process(es) alive across shutdown`. On Linux and macOS that shutdown also
+  removes the records of the kept children. The reap of the next daemon start
+  then sends them no signal. That rule is claustrum's own, and CT-2 names its two
+  limits: a process whose `id` a later spawn took, and the host cleaner. The new daemon does not re-adopt them, and
   the survivors lose their stdio. Their stdin reaches EOF, and a stdout or stderr
   write gets SIGPIPE, or EPIPE for a child that ignores SIGPIPE, such as Node. It
   therefore suits only children that tolerate dead stdio. The stdio of a survivor
@@ -3797,6 +4227,13 @@ reference text:
 <ts> WARN  [daemon] stop: WARNING <dir>/daemon.lock is held by a live process we will not signal (pid <N> is not a <basename> --serve process for <sock>); leaving it alone
 <ts> WARN  [daemon] stop: WARNING previous daemon pid <N> (instance "<hex32>") survived SIGKILL (uninterruptible?); proceeding without run-dir ownership
 ```
+
+A holder with the short record, a daemon that has not bound yet, gives the first
+two lines with `pid <N>` and no instance. On a Linux VM (row N5), `89cb6289`
+logged `[daemon] stop: run dir is held by a live daemon, pid <N>; sending SIGTERM`
+and `[daemon] stop: previous daemon pid <N> exited after SIGTERM`. claustrum is
+built to that row. The other lines are not measured for a short record, and
+claustrum writes them with `(instance "")`.
 
 This line is claustrum's own. It comes from the second holder check:
 

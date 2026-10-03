@@ -991,6 +991,20 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   daemon: the child sees EOF on stdin, and a later write gets SIGPIPE/EPIPE.
   Therefore only children that tolerate dead stdio genuinely survive. Not measured
   on Windows.
+- **The records of the kept children.** On Linux and macOS a child has a record in
+  `<runDir>/children`. The reap of the next daemon start ends each recorded
+  child of a daemon that is gone. With the flag, the graceful shutdown removes the
+  records of the children that it leaves alive. The next daemon then finds no
+  record of them and sends them no signal. This rule is claustrum's own, and the
+  reference has no such flag. A Linux VM ran the flag on claustrum (row P14, two
+  children, one of them ignores `SIGTERM`). `-stop` sent no kill and removed both
+  records. Both children were alive after it, with parent pid 1. A new daemon
+  then sent no signal and logged no reap line, with the flag and without it.
+- Two limits of that rule. It covers the processes of the process table only. A
+  process whose `id` a later spawn took keeps its record, so the next start ends
+  it. The host cleaner does not read the records. By its own rule it ends an
+  orphaned Claude Code group under the install root, a kept one too. That is not
+  measured with the flag.
 - **Windows.** The flag works there too. A child is in no Job Object, so the exit
   of the daemon does not end it. On a Windows VM
   (rows WN03, WJ02, WJ05, WJ06), the children of `f6010b97` and `89cb6289` survive a
@@ -1165,9 +1179,11 @@ scheduled.
   `stat`-first variant that removes only a socket keeps those two shapes, and it
   is a divergence. It does not change the socket case.
 - **Fail fast on a missing `-serve` token source.** The check runs in the detached
-  child, so the launcher reports its ~10 s accept timeout, and the real reason
+  child, so the launcher reports its accept timeout, and the real reason
   reaches only the child's log. That is reference parity (measured 10.02 s vs
-  10.07 s). A parent-side check answered in 0.03 s and named the actual problem: a
+  10.07 s on `5db5e4a`). With a zero-byte `-token-file`, the launcher of
+  `89cb6289` exited after 12.06 s (Linux row P7, also measured on macOS and Windows), and the bound of claustrum is
+  12 s now. A parent-side check answered in 0.03 s and named the actual problem: a
   better operator experience, and a divergence.
 - **The macOS lock read's abandoned run.** `hcLockHeldAt` reads an `lsof` run it gave
   up on as not-held. The argument behind [D17](#d17) reaches

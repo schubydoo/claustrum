@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -129,9 +130,10 @@ func TestTrampolineStartFailureAnswersWithDirectStart(t *testing.T) {
 // No row measures it. claustrum's own choice: the child runs with the run dir entry
 // and with no CLAUDE_SSH_CHILD entry, which only the trampoline can stamp.
 func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
-	// The test process can itself be a child of a daemon. An empty inherited entry
-	// prints the same as an absent one.
+	// Two stale entries: a run dir entry in the daemon env and a child marker in the
+	// spawn env. The direct start removes the marker and puts the run dir entry last.
 	t.Setenv(envChildMarker, "")
+	t.Setenv(envRunDir, "/stale")
 	logs := captureLogBuf(t)
 	old := trampolineSelf
 	t.Cleanup(func() { trampolineSelf = old })
@@ -143,7 +145,8 @@ func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
 	t.Cleanup(m.killAll)
 	m.runDir = runDir
 	c, frames := pipeConn(t)
-	exe, env := helperCommand(t, "printenvs")
+	exe, env := helperCommand(t, "environ")
+	env[envChildMarker] = "1:1"
 	// A Go runtime entry in the spawn env. The trampoline wrap moves it to a held name
 	// in place. The direct start must get the env from before the wrap: the entry
 	// under its own name, and no held twin.
@@ -152,11 +155,24 @@ func TestTrampolineStartFailureDirectStartRuns(t *testing.T) {
 	// The wrap can change the env in place only when its slice has spare room. The
 	// strip of this daemon entry leaves that room.
 	t.Setenv(managedSettingsDirEnv, t.TempDir())
-	if _, err := m.spawn(c, "p1", exe, []string{envRunDir, envChildMarker, "GOTRACEBACK", held}, "", env, false); err != nil {
+	if _, err := m.spawn(c, "p1", exe, nil, "", env, false); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	if got, want := untilExit(t, frames), envRunDir+"="+runDir+"\n"+envChildMarker+"=\nGOTRACEBACK=all\n"+held+"=\n"; got != want {
-		t.Errorf("child printed %q, want %q", got, want)
+	// The env of the child is only searched, never printed: it is the host env.
+	lines := strings.Split(strings.TrimSuffix(untilExit(t, frames), "\n"), "\n")
+	if last, want := lines[len(lines)-1], envRunDir+"="+runDir; last != want {
+		t.Errorf("the last entry of the child env is %q, want %q", last, want)
+	}
+	for i, e := range lines {
+		if strings.HasPrefix(e, envChildMarker+"=") || strings.HasPrefix(e, held+"=") {
+			t.Errorf("the child env holds %q", e)
+		}
+		if strings.HasPrefix(e, envRunDir+"=") && i != len(lines)-1 {
+			t.Errorf("the child env holds the run dir entry %q before its last entry", e)
+		}
+	}
+	if !slices.Contains(lines, "GOTRACEBACK=all") {
+		t.Error("the child env has no GOTRACEBACK=all")
 	}
 	if want := "[process.Manager] exec trampoline failed for p1 (fork/exec " + noSelf + ": no such file or directory); starting it directly"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q\nwant it to hold %q", logs.String(), want)

@@ -95,8 +95,9 @@ children it spawns.
   still sets `CLAUDE_SSH_DAEMON_CHILD=1` in the daemon's environ, so
   `process.spawn` children inherit it exactly as they do under the reference (see
   [PROTOCOL.md](PROTOCOL.md)).
-- Under a `run/<clientId>/` socket, `19f30c46` launches `process.spawn` children
-  through a self-re-exec exec-child trampoline. The child then carries a
+- `19f30c46` launches `process.spawn` children
+  through a self-re-exec exec-child trampoline. `f6010b97` and `89cb6289` do so on
+  every socket shape (Linux and macOS rows EV01a to EV01i), and claustrum does too. The child then carries a
   `CLAUDE_SSH_CHILD=<pid>:<startTicks>` identity and `CLAUDE_SSH_RUN_DIR`. That pair is a
   stable marker in the child's environment, and pid reuse cannot confuse it. The target's
   Go-runtime env is held and restored across the re-exec. Claustrum reproduces this
@@ -106,9 +107,10 @@ children it spawns.
   holder and stamps neither marker. A windows VM showed a child under a run-shaped socket has
   the same environment as one under a bare socket.
   This behavior is off-wire. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
-- Under that same socket the daemon also records each spawned child to
+- The daemon also records each spawned child to
   `<runDir>/children/<pid>.json` (`childrecord.go` + `childrecord_linux.go` /
-  `childrecord_darwin.go`). The file is an ordered JSON record. A later daemon reads it to
+  `childrecord_darwin.go`). The run dir is the folder of the socket path, on every
+  socket shape. The file is an ordered JSON record. A later daemon reads it to
   reap children that a since-exited daemon left behind. The write is atomic on linux and
   darwin. The daemon holds the run dir open. It writes each record below that handle, so
   no write follows a symlink out of the run dir (`childrecord_unix.go`). The end of a
@@ -118,8 +120,16 @@ children it spawns.
   off-wire. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - At `-serve` startup the daemon reaps those
   records (shared `childreap.go`, with the live-process read in `childreap_linux.go` /
-  `childreap_darwin.go`). The reap happens right after the daemon claims the run dir.
+  `childreap_darwin.go`). The reap happens right after the daemon claims the run dir,
+  and before it binds the socket. During the reap the owner record of `daemon.lock`
+  holds `pid`, `role` and `node` only. After the bind the daemon adds `instanceId` and
+  `startedAt` (Linux and macOS rows D1 and XL against `89cb6289`).
   That claim evicts a live predecessor on the same socket, unless eviction is refused.
+  One start handles the first 128 record names of the directory order. It sends
+  `SIGTERM` to 64 groups at most, in that order (Linux rows C1, C2 and C4 against
+  `89cb6289`). The daemon reads at most 4096 bytes of a record. On `89cb6289` and
+  claustrum, a record of 4096 bytes got the signal and one of 4097 bytes got none
+  (Linux row P8).
   Three conditions must hold before the daemon reaps a child. The record's node matches ours
   (same boot and machine). The owning daemon is gone. The live process still is that
   recorded child. For that third condition, the start-time matches, so there is no pid
@@ -134,7 +144,8 @@ children it spawns.
   nothing more. The reap lists the children folder through the run dir that the daemon
   holds open, and it follows no symlink there. The 2s grace is measured on Linux against `89cb6289` (rows RP02,
   RP03, RP04 and RP10). The 1s escalate is claustrum's own value, not probe-measured.
-  The record is then forgotten. A record whose owner is still alive, or from another boot
+  The records of the groups that got `SIGTERM` are removed together, when the last
+  group is done (Linux row RP04). A record whose owner is still alive, or from another boot
   or machine, is never reaped. It runs on linux and darwin. On windows the reference daemon
   reports it is not the run-dir lock holder, so it reaps nothing. A windows VM showed planted
   child records survive a daemon startup untouched. The kill and every live-process read sit
@@ -205,9 +216,17 @@ children it spawns.
   [DIVERGENCES.md](DIVERGENCES.md) D17. After 30 days
   of run-dir idleness, or at once for a run dir named with `.removing-`, the retire path can
   SIGTERM a socket-live daemon.
-- On Unix, claustrum extracts the interactive PATH from the login shell in a
-  separate goroutine. A slow login shell therefore does not delay the moment the
-  socket becomes available.
+- On Unix, claustrum reads the interactive PATH from the login shell inside the
+  first `process.spawn`, not at its start. A slow login shell therefore does not
+  delay the moment the socket becomes available. It delays the first spawn. The
+  read has a 4 s deadline. At that deadline the daemon kills the group of the
+  shell (Linux row G3: the shell and its `sleep` child ended at 4 s). The
+  deadline also holds after the shell is gone, while a process of the profile in
+  another session holds the output pipe open. The daemon then sends no signal and
+  takes the read as timed out (Linux rows P13 and P13k and macOS row P13 against `89cb6289`). The
+  shell of that read gets `HOME`, `PATH`, `SHELL`, `TERM`, `USER` and two fixed
+  entries only (Linux row P13v). The result is kept for the life of the daemon (Linux
+  and macOS rows G1 and G2, Linux row G3, against `89cb6289`).
 - With `-listen-pipe` (Windows-only, opt-in), the daemon *additionally*
   opens a Windows named pipe. That pipe serves the identical JSON-RPC dispatch
   through a second `acceptLoop` over the same `serveConn`. Before it accepts on
@@ -236,7 +255,8 @@ session attaches to it. It injects no auth.)
   interleave safely.
 - Each managed process has a monotonic `seq`, an append-only frame buffer, and a
   set of subscriber connections. `spawn` subscribes the connection that spawned
-  the process. `reattach` REPLACES the whole subscriber set with the requester. It then
+  the process. A process whose `id` a later spawn took keeps its subscribers, as
+  on `89cb6289` (Linux and macOS row P2, Windows row EVc). `reattach` REPLACES the whole subscriber set with the requester. It then
   replays buffered frames with `seq > fromSeq`. Any connection attached before
   stops receiving frames for that process. Since `90fca6e6` it also closes each
   connection it displaced. Claustrum detaches a dead

@@ -661,11 +661,12 @@ func TestKillAllTerminatesLiveProcess(t *testing.T) {
 	}
 }
 
-// process.spawn with an already-live id replaces the registry entry (both spawns
-// succeed, matching the reference) AND tears down the now-orphaned old process
-// rather than leaking it — a claustrum divergence (OS-level, no wire change,
-// IMPROVEMENTS #17).
-func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
+// process.spawn with the id of a process that still runs replaces the table entry
+// (both spawns succeed) and sends the old process no signal. Measured against
+// 89cb6289 on Linux and macOS (rows A1 to A4) and on Windows (row EV). The shutdown
+// kill then reaches only the process of the table, so the old process stays alive
+// (row A3).
+func TestSpawnDuplicateIDReplacesAndKeepsOld(t *testing.T) {
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
 
@@ -678,27 +679,86 @@ func TestSpawnDuplicateIDReplacesAndKillsOld(t *testing.T) {
 	if old == nil {
 		t.Fatal("first spawn was not registered")
 	}
+	// No kill of the daemon reaches the old process after the replace, so the test
+	// ends its own child.
+	t.Cleanup(func() { endOwnChild(t, old) })
+	signals := countSignalsTo(t, old)
 
 	c2, _ := pipeConn(t)
 	if _, err := m.spawn(c2, "dup", sleep, []string{"60"}, "", env, false); err != nil {
 		t.Fatalf("second spawn with duplicate id: %v (both spawns must succeed)", err)
 	}
-
-	if neu := m.get("dup"); neu == old {
+	if n := signals.Load(); n != 0 {
+		t.Errorf("the second spawn sent %d signal(s) to the old process, want none", n)
+	}
+	neu := m.get("dup")
+	if neu == old {
 		t.Fatal("duplicate-id spawn did not replace the registry entry")
 	} else if !neu.isRunning() {
 		t.Error("replacement process should be running")
 	}
 
-	// The orphaned first process must be torn down, not left running.
-	deadline := time.After(4 * time.Second)
-	for old.isRunning() {
+	// The shutdown kill ends the process of the table only.
+	if n := m.killAllCount(); n != 1 {
+		t.Errorf("killAllCount = %d, want 1 (the new process only)", n)
+	}
+	select {
+	case <-neu.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the new process did not end on the shutdown kill")
+	}
+	if !old.isLive() {
+		t.Error("the old process ended, want it alive after the replace and the shutdown kill")
+	}
+}
+
+// TestSameIDKeepsTheFramesOfTheOldProcess pins Linux row P2 (89cb6289): after a spawn
+// took the id of a process that still runs, the stream frames and the exit frame of
+// the old process still reach its own connection, under the same processId. The
+// connection of the new process gets none of them.
+func TestSameIDKeepsTheFramesOfTheOldProcess(t *testing.T) {
+	m := newTestProcManager(t)
+	t.Cleanup(m.killAll)
+
+	c1, frames1 := pipeConn(t)
+	cat, env := helperCommand(t, "cat")
+	old, err := m.spawn(c1, "dup", cat, nil, "", env, false)
+	if err != nil {
+		t.Fatalf("first spawn: %v", err)
+	}
+	// No kill of the daemon reaches the old process after the replace.
+	t.Cleanup(func() { endOwnChild(t, old) })
+	c2, frames2 := pipeConn(t)
+	repl, err := m.spawn(c2, "dup", cat, nil, "", env, false)
+	if err != nil {
+		t.Fatalf("second spawn: %v", err)
+	}
+	t.Cleanup(func() { endOwnChild(t, repl) })
+
+	// The old process writes after the replace: cat copies its stdin to its stdout.
+	old.enqueueStdin([]byte("after the replace\n"))
+	next := func() streamFrame {
+		t.Helper()
 		select {
-		case <-deadline:
-			t.Fatal("old process was not killed on duplicate-id replace (still running)")
-		default:
-			time.Sleep(10 * time.Millisecond)
+		case f := <-frames1:
+			return f
+		case <-time.After(10 * time.Second):
+			t.Fatal("no frame of the old process on its connection in 10 s")
+			return streamFrame{}
 		}
+	}
+	f := next()
+	if want := base64.StdEncoding.EncodeToString([]byte("after the replace\n")); f.Stream != "stdout" || f.ProcessID != "dup" || f.Seq != 1 || f.Data != want {
+		t.Errorf("first frame of the old process = %+v, want stdout, dup, seq 1, data %q", f, want)
+	}
+	endOwnChild(t, old)
+	if f := next(); f.Stream != "exit" || f.ProcessID != "dup" || f.Seq != 2 {
+		t.Errorf("second frame of the old process = %+v, want exit, dup, seq 2", f)
+	}
+	select {
+	case f := <-frames2:
+		t.Errorf("the connection of the new process got the frame %+v", f)
+	default:
 	}
 }
 
@@ -1025,9 +1085,9 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 // TestKillAndWaitProcTargetsCapturedIdentity guards the supersede reused-id race:
 // supersedeSession captures the victim *managedProc, and killAndWaitProc signals
 // THAT process, not whatever the client-visible id resolves to at kill time. A
-// concurrent spawn that reuses the id replaces m.procs[id] (and the reused-id path
-// in spawn already tears the original down), so re-resolving the id would terminate
-// the innocent replacement. The mutant (re-resolve p by id inside killAndWaitProc)
+// concurrent spawn that reuses the id replaces m.procs[id] and leaves the original
+// running. A kill that resolves the id again then ends the innocent replacement.
+// The mutant (re-resolve p by id inside killAndWaitProc)
 // signals the replacement and fails this test.
 func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 	oldSignal := signalGroup

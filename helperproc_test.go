@@ -760,6 +760,11 @@ func runHelper(mode string, args []string) int {
 		for _, name := range args {
 			fmt.Print(name + "=" + os.Getenv(name) + "\n")
 		}
+	case "environ":
+		// print the whole environment, one entry per line, in its order.
+		for _, e := range os.Environ() {
+			fmt.Print(e + "\n")
+		}
 	case "detach-launch":
 		// A stand-in for the -serve launcher. It waits for the go-ahead on stdin, so
 		// the test can put this process in a job first. It then starts a detached

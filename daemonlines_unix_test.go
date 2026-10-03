@@ -30,13 +30,15 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		t.Fatalf("flock: %v", err)
 	}
-	oldSignal := signalHolder
-	t.Cleanup(func() { signalHolder = oldSignal })
+	oldHold := holdHolder
+	t.Cleanup(func() { holdHolder = oldHold })
 	signals := 0
-	signalHolder = func(int, syscall.Signal) bool { signals++; return false }
+	holdHolder = func(int) (func(syscall.Signal) error, func()) {
+		return func(syscall.Signal) error { signals++; return syscall.ESRCH }, func() {}
+	}
 	buf := captureLogBuf(t)
 
-	release := claimRunDir(sock, "serve", newDaemonInstanceID())
+	release := claimRunDir(sock, "serve").release
 	release()
 
 	wantLinesInOrder(t, buf.String(),
@@ -60,7 +62,7 @@ func TestClaimRunDirHeldByANonDaemon(t *testing.T) {
 func TestClaimRunDirHolderGetsNoNotHolderLine(t *testing.T) {
 	dir := shortTempDir(t)
 	buf := captureLogBuf(t)
-	release := claimRunDir(filepath.Join(dir, "rpc.sock"), "serve", newDaemonInstanceID())
+	release := claimRunDir(filepath.Join(dir, "rpc.sock"), "serve").release
 	release()
 	// Another test can leave a goroutine that logs into this buffer. Look for the line only.
 	if got := buf.String(); strings.Contains(got, runDirNotHolderLine) {

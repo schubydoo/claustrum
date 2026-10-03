@@ -46,8 +46,8 @@ var runPS = func(pid int, keys string) string {
 }
 
 // realReadLiveProc reads a live process for the reap. It always reads the group id, state and
-// command text via `ps`; the start-time comes from darwinProcStart so it is byte-identical to the
-// value childrecord recorded (the pid-reuse guard compares them as strings). When wantEnv is
+// command text via `ps`. The start-time comes from darwinProcStart, so it has the form
+// of the value childrecord recorded (the pid-reuse guard compares them as strings). When wantEnv is
 // set it also reads the two env markers from the process's environment.
 func realReadLiveProc(pid int, wantEnv bool) liveProc {
 	lp := liveProc{state: procGone}
