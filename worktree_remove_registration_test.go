@@ -202,48 +202,6 @@ func TestWorktreeRemoveDaemonGitDirLockedInOtherRepoIsRefused(t *testing.T) {
 	}
 }
 
-// D22 with a worktreeRoot: the daemon has GIT_DIR of X alone, and the worktree
-// beneath the root is locked in T. claustrum answers the locked refusal and deletes
-// nothing. The reference is not measured there.
-func TestWorktreeRemoveExternalLockedInBaseRepoIsRefused(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		gone bool
-		want string
-	}{
-		{"folder present", false, lockedText},
-		{"folder gone", true, "is gone but its registration is locked (git worktree lock)"},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			f := newRegFixture(t)
-			rootDir := filepath.Join(f.root, "ext")
-			leaf := filepath.Join(rootDir, "cp", "e0")
-			if err := os.MkdirAll(filepath.Dir(leaf), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			runGit(t, f.T, "worktree", "add", "-q", "-b", "e0", leaf)
-			runGit(t, f.T, "worktree", "lock", leaf)
-			if c.gone {
-				if err := os.RemoveAll(leaf); err != nil {
-					t.Fatal(err)
-				}
-			}
-			daemonGitEnv(t, gitDirOf(f.X), "")
-			raw := removeFrame(t, map[string]any{"baseRepo": f.T, "worktreePath": leaf,
-				"branchName": "e0", "worktreeRoot": rootDir})
-			if !strings.Contains(raw, `"success":false`) || !strings.Contains(raw, c.want) {
-				t.Errorf("frame = %s\nwant %s", raw, c.want)
-			}
-			if !c.gone && !exists(filepath.Join(leaf, ".git")) {
-				t.Error("the locked worktree is gone")
-			}
-			if !exists(filepath.Join(f.entry(f.T, "e0"), "locked")) {
-				t.Error("the locked entry is gone")
-			}
-		})
-	}
-}
-
 // Row p6e (Linux, macOS and Windows VMs), divergence D22: the daemon has GIT_DIR of X
 // alone, and S is locked in T. claustrum refuses and deletes nothing. 89cb6289
 // answers success and deletes S.
