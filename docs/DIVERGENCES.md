@@ -170,7 +170,7 @@ rather than repeating them in each entry:
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
 | [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
-| [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
+| [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
@@ -311,7 +311,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   <n>` or the `max-extract-bytes` key. The disabled state bypasses `io.LimitReader`
   (`io.Copy(out, tr)`).
 - **Why opt-in.** Measured, the reference completes a 629 MB extraction with no cap
-  at the pin. That is a frame, not an unbounded wait, so a non-zero default fails an
+  at `5db5e4a`. That is a frame, not an unbounded wait, so a non-zero default fails an
   extraction the reference completes, and Desktop owns the argv (rule 4).
 - **Reopen trigger.** An operator's cap refusing a legitimate extraction, or the
   default letting a size bomb through in normal use.
@@ -843,18 +843,19 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   It still deletes the branch. When the junction leads to a live worktree, that
   worktree is left on a deleted branch. With no worktree behind the junction, it
   answers `{"success":true}` too (rows JCR1 and JCR2, after the refused create).
-  Neither daemon deleted anything outside the fixture. `89cb6289` is not measured
-  here. Its branch step deletes a branch only when another ref reaches its tip.
+  Neither daemon deleted anything outside the fixture. The whole-build check of
+  issue 442 measured `89cb6289` the same (Windows rows JC, J03 to J05, JCR1 and
+  JCR2), for a branch that another ref reaches.
 - **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
   and no key.
 - **Why always-on.** Rule 3 clause (b), by the maintainer's decision of 2026-09-27.
   The `git.worktree_create` of both daemons refuses a junctioned `.claude` or
   `.claude\worktrees` with `mkdir_failed` and creates nothing (reference measured on a
   Windows VM, rows JCR1 and JCR2). So neither daemon creates a worktree there. Only a
-  worktree made outside the daemon sits there. For it, claustrum keeps the branch that
-  the reference deletes.
+  worktree made outside the daemon sits there. For it, claustrum keeps a branch that
+  the reference deletes, which on `89cb6289` is a branch that another ref reaches.
 - **Cost.** A Windows client that diffs frames against the reference sees
-  `success:false` where the reference sends `success:true`. The branch that the
+  `success:false` where the reference sends `success:true`. A branch that the
   reference deletes stays with claustrum. A client that relies on the remove to
   delete the branch there must delete it itself.
 - **Reopen trigger.** The reference refusing the junction with the same text (then

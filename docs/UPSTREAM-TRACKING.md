@@ -144,7 +144,7 @@ the traffic of the real desktop client. This is the method:
   commit them.
 
 We last ran this capture against a then-pinned reference, `8de85faa`. That build is
-now well behind the current baseline, `f6010b97`. It used a real Desktop session and
+now well behind the current baseline, `89cb6289`. It used a real Desktop session and
 covered the full `process.*` lifecycle. That lifecycle included a >32 KiB output
 stream and a mid-stream disconnect and reconnect that drove `process.reattach`. The
 result was byte-identical for the methods that build exposed. The `server.capabilities`
@@ -197,7 +197,7 @@ opt-in?
 | D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift |
 | D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
 | D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-` |
-| D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where `f6010b97` answers success and deletes the branch (`89cb6289` not measured there) |
+| D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where `f6010b97` answers success and deletes the branch, and `89cb6289` does the same for a branch that another ref reaches |
 | D20 | Always-on, Linux and macOS | No. Off the wire. It is a signal time at a daemon start, not a frame | 50 ms settle before the group `SIGKILL` of a leader that reads as gone. In row RP05a that `SIGKILL` comes about 50 ms later than on `89cb6289`. In row PG05a claustrum ends the child in no run, where `89cb6289` ends it in some Linux runs. In rows where the child ends on `SIGTERM`, `89cb6289` also sends a group `SIGKILL` right after it in some Linux runs, and claustrum sends none. None of these is drift |
 | D21 | Always-on, Windows only | No. Off the wire. It is the content of `remote-server.log`, not a frame | a second daemon on a live socket appends to `remote-server.log`. `89cb6289` truncates the file at that start. The earlier lines of its first daemon are lost. The later lines of that daemon sit behind a block of NUL bytes (rows WN04, WJ04). Keeping the lines is a maintainer decision of 2026-10-02. The longer log of claustrum is not drift |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
@@ -295,10 +295,11 @@ traps that matter for telling drift from expected:
 - In a repo with no `.claude/`, a `timeoutMs` that expires during the copy step
   splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
-  back. That difference is not drift.
+  back. `89cb6289` answers like claustrum (the Linux timeout set of the whole-build
+  check of issue 442). That difference is not drift.
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
-  pins. claustrum follows `89cb6289`, while `scripts/UPSTREAM_SHA` still names
-  `f6010b97`. Against `f6010b97`, `server.capabilities` differs by the
+  pins. claustrum follows `89cb6289`, the build that `scripts/UPSTREAM_SHA`
+  names. Against `f6010b97`, `server.capabilities` differs by the
   `git.worktree_remove.unpushedGuard` and `launcher.managed` features and by the
   `launcher.resolve` method. On remove, every kept case of the
   branch step differs. claustrum keeps the branch and adds `"branchKept":true`, where
@@ -539,7 +540,7 @@ Go 1.27 does exactly that. It enables the `jsonv2` GOEXPERIMENT by default
 UTF-8 byte as the literal U+FFFD character (bytes `EF BF BD`). Go 1.26
 and earlier emit the six-ASCII
 `\ufffd` escape, and so did the reference daemon at `5db5e4a`. The build pinned
-today, `f6010b97`, carries a go1.25.14 stamp (`go version` on the binary), so it
+today, `89cb6289`, carries a go1.25.14 stamp (`go version` on the binary), so it
 emits the same escape. `files.read`
 puts raw file bytes into the `content` string. Under Go 1.27, every read of a file
 holding a non-UTF-8 byte therefore diverges from the

@@ -2604,18 +2604,24 @@ copies end still fails it, as `timeoutMs` above describes:
   `baseRepo`. For a main repository that is `<baseRepo>/.git`. For a linked worktree
   it is the git directory of the main repository. For a subdirectory of a repository
   and for a submodule it is the git directory of that repository. With a daemon
-  `GIT_DIR` it is the directory that `GIT_DIR` names. The `worktrees` directory itself
-  stays. After its last entry goes, it stays as an empty directory. The rules below
-  were measured side by side against `f6010b97` on VMs. On macOS all 107 cases are
-  equal. On Linux every remove case is equal. On Windows every case is equal except
-  the junction rows of D19. The full Windows set was measured on an earlier build,
+  `GIT_DIR` alone, it is the directory that `GIT_DIR` names. Row E13 sets `GIT_DIR`
+  and `GIT_COMMON_DIR` to the `.git` of another repository. There `f6010b97` and
+  `89cb6289` keep `<baseRepo>/.git/worktrees/<name>`, and claustrum deletes it
+  (Linux, macOS and Windows). That is an open gap on issue 429. The `worktrees`
+  directory itself stays. After its last entry goes, it stays as an empty
+  directory. The rules below were measured side by side against `f6010b97` on
+  VMs. On macOS all 107 cases are equal. On Linux every remove case is equal. On
+  Windows every case is equal except the junction rows of D19. Row E13 above is
+  a later exception on all three systems. The full Windows set was measured on an earlier build,
   and the fixed rows again on the shipped one. A sentence marked "not measured" has
   no row behind it.
 - On Windows, a junction at `.claude` or at `.claude\worktrees` is refused. Nothing
   is deleted, and the branch stays. The reply is `{"success":false,"error":"failed to remove
   worktree: openat .claude\\worktrees: path escapes from parent"}`. That text is
   claustrum's own. `f6010b97` answers `{"success":true}` there, deletes nothing,
-  and deletes the branch. `89cb6289` is not measured there. See
+  and deletes the branch. The whole-build check of issue 442 measured `89cb6289`
+  the same (Windows rows JC, J03 to J05, JCR1 and JCR2), for a branch that another
+  ref reaches. A branch tip that no other ref reaches is not measured there. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D19.
 - The last component of `<p>` is checked first. In the repository no git runs before
   this check. A symbolic link answers `{"success":false,"error":"refusing to remove
