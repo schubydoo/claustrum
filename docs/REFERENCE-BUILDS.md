@@ -77,7 +77,8 @@ uncommitted files and its branch. PR 451 stops the direct `--version` run of
 
 **How it was bounded.** The slices were measured side by side on Linux, macOS
 and Windows VMs. A whole-build check of main `4495db6` against this build then
-ran on all three systems. The frame battery was byte-equal on each. The check
+ran on all three systems. The frame battery was byte-equal on each, apart from
+the fields that change per run and the D16 frame on Windows. The check
 found no new frame difference that a slice had not taken. Its other differences
 went on issue 429. They are git calls, log texts, and timing and rates with
 equal frames. One more is an older end-state gap that `f6010b97` shares
