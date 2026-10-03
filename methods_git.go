@@ -1453,9 +1453,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		probe = newRegistrationProbe(answered, inRepoWorkTree(repo))
 	}
 	sp := newWorktreePathSet(target.path, p.WorktreePath)
-	// A worktree that is locked in the repository of baseRepo is refused, also when
+	// A worktree that is locked in the `.git` folder of baseRepo is refused, also when
 	// the entries are read from another git directory (D22, lockedInBaseRepo). That
-	// holds with worktreeRoot too.
+	// holds with worktreeRoot too (rows q2 and q3 on a Linux VM).
 	{
 		named := ""
 		if namesGitDir {
@@ -1702,9 +1702,9 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
 		goneLocked := "refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
 			"registration is locked (git worktree lock); unlock it to remove the registration and branch"
-		// D22: a locked entry in the repository of baseRepo is refused too, with and
-		// without worktreeRoot. 89cb6289 answers success there and deletes nothing
-		// (row p6f on Linux, macOS and Windows VMs, without worktreeRoot).
+		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
+		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (row
+		// p6f on Linux, macOS and Windows VMs, row q4 with worktreeRoot on Linux).
 		if locked, readable := lockedInBaseRepo(repo, commonDir, "", path, sp); !readable {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		} else if locked {

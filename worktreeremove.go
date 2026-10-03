@@ -305,8 +305,8 @@ func worktreeLockedByPath(commonDir string, sp worktreePathSet) (locked, readabl
 // and Windows VMs) and deletes an entry of X (rows 2 and 3). With GIT_DIR of X and
 // GIT_COMMON_DIR of a third repository, the entry that goes is in X too (rows p3, p3b
 // and p3c on Linux and macOS VMs). With GIT_COMMON_DIR alone it deletes the entry of baseRepo
-// (row 5), and the call answers the git directory of baseRepo there. The same holds on
-// Linux and macOS VMs for a submodule, a subfolder of the repository and a bare
+// (row 5). There git itself answers the git directory of baseRepo: git's behavior, no row
+// logs that answer. The same holds on Linux and macOS VMs for a submodule, a subfolder, a bare
 // repository as baseRepo (rows p2a, p2b and p2c). In every other case it is verifyGitDir, as before.
 //
 // Not measured: an answer that is a linked-worktree entry while the daemon sets
@@ -327,15 +327,15 @@ func registrationGitDir(repo, answered string) string {
 // (commonDir). It looks under <repo>/.git/worktrees: at the entry that the `.git` file
 // of the worktree names, when gitDir is not "", and at each entry whose record names
 // the worktree. It runs no git call. readable is false when <repo>/.git/worktrees
-// exists and cannot be read. The caller then answers the lock-check refusal: for a
-// delete guard, a lock that cannot be read counts as a refusal. That is claustrum's
-// choice (not measured). A directory that does not exist is not locked.
+// exists and cannot be read. The caller then answers the lock-check refusal. 89cb6289
+// answers it with no daemon environment (rows q5 and q5b, Linux VM). A directory that
+// does not exist is not locked. A baseRepo with no `.git` folder is not looked at.
 //
-// This is divergence D22. claustrum always refuses a locked worktree. 89cb6289
-// answers success for a worktree that is locked in baseRepo in these rows, on Linux,
-// macOS and Windows VMs: with GIT_DIR and GIT_COMMON_DIR of another repository in the
-// daemon's environment (row p6, and row p6f with the folder gone), and with GIT_DIR
-// alone (row p6e). With worktreeRoot the reference is not measured.
+// This is divergence D22: a worktree locked in the `.git` folder of baseRepo is
+// refused. 89cb6289 answers success for it in these rows, on Linux, macOS and
+// Windows VMs: with GIT_DIR and GIT_COMMON_DIR of another repository in the daemon's
+// environment (row p6, and row p6f with the folder gone), and with GIT_DIR alone (row
+// p6e). With worktreeRoot it deletes nothing (rows q2 to q4 on a Linux VM).
 func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (locked, readable bool) {
 	base := filepath.Join(repo, ".git")
 	if canonicalPath(base) == canonicalPath(commonDir) {

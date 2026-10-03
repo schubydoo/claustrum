@@ -2842,9 +2842,9 @@ copies end still fails it, as `timeoutMs` above describes:
   WR1 and A1 P1).
 - The daemon runs no `git worktree remove` and no `git worktree prune`. It deletes the
   worktree directory itself, then the entry of the worktree under `<git dir>/worktrees`.
-  The entry stays for a `baseRepo` that does not exist. With a daemon `GIT_DIR` and
-  `GIT_COMMON_DIR`, the entry that goes is in the repository that they name. The
-  rows are below.
+  Without `worktreeRoot`, the entry stays for a `baseRepo` that does not exist.
+  Without `worktreeRoot` and with a daemon `GIT_DIR` and `GIT_COMMON_DIR`, the entry
+  that goes is in the repository that `GIT_DIR` names. The rows are below.
   `<git dir>` is the repository git directory that the trust check pinned for
   `baseRepo`. For a main repository that is `<baseRepo>/.git`. For a linked worktree
   it is the git directory of the main repository. For a subdirectory of a repository
@@ -2972,8 +2972,9 @@ copies end still fails it, as `timeoutMs` above describes:
   worktree made claustrum delete that sibling, its entry and its branch.
 - The entry comes from the `.git` file of `<p>`. The file must hold `gitdir: ` and a
   path of the form `<something>/worktrees/<name>`. The entry `<git dir>/worktrees/<name>`
-  must be a directory. Its `commondir` must lead back to `<git dir>`, and its `gitdir`
-  record must name `<p>`. Without `worktreeRoot`, a record in another spelling of
+  must be a directory. Its `commondir` must lead back to `<git dir>`, or without
+  `worktreeRoot` to the git directory that `rev-parse --absolute-git-dir` answered in
+  `baseRepo`. Its `gitdir` record must name `<p>`. Without `worktreeRoot`, a record in another spelling of
   `<p>` passes too: `<p>` with its `baseRepo` part as git names that folder. So a
   request through a `subst` drive or a junction drops its entry (Windows VM, rows
   D-subst, J2, Q1 and Q2). No row tests each of these steps on its own. The path match is exact, so on macOS a spelling of `<p>` that
@@ -2987,9 +2988,9 @@ copies end still fails it, as `timeoutMs` above describes:
   is the lock-check refusal above. A locked worktree answers
   `{"success":false,"error":"refusing to remove worktree: <p> is locked (git worktree
   lock); unlock it to remove it"}`, and nothing is deleted.
-- claustrum always refuses a locked worktree. That is divergence D22. In four
-  states `89cb6289` answers success for a worktree that is locked in the
-  repository of `baseRepo`, and claustrum refuses.
+- claustrum refuses a worktree that is locked in the `.git` folder of `baseRepo`.
+  That is divergence D22. In four states `89cb6289` answers success for such a
+  worktree, and claustrum refuses.
   - Row p6: the daemon has `GIT_DIR` and `GIT_COMMON_DIR` of another repository X.
     `89cb6289` answers `{"success":true}` and deletes the folder (Linux, macOS and
     Windows VMs).
@@ -3002,13 +3003,22 @@ copies end still fails it, as `timeoutMs` above describes:
     `{"success":true}` and deletes nothing (the three systems).
 
   In rows p6, p6e and p6d claustrum answers the locked refusal above and deletes
-  nothing. In row p6f it answers the gone-and-locked refusal below. For that,
-  claustrum also reads the entries under `<baseRepo>/.git/worktrees`, with no git
-  call, with and without `worktreeRoot`. If that folder exists and cannot be read,
-  the reply is the lock-check refusal. The reference is not measured with
-  `worktreeRoot` or with such a folder. A lock on an entry of X that names the
+  nothing. In row p6f it answers the gone-and-locked refusal below. If the
+  removal reads its entries from another git directory, claustrum also reads the
+  entries under `<baseRepo>/.git/worktrees`. It makes no git call for that, with
+  or without `worktreeRoot`. If that folder exists and cannot be read, the reply is
+  the lock-check refusal. With `worktreeRoot` and a lock in T, `89cb6289` deletes
+  nothing (rows q2 to q4 on a Linux VM). In rows q2 and q3 it answers the
+  transient `could not verify` reply below, with the detail `open
+  <X>/.git/worktrees: no such file or directory`. In row q4 it answers
+  `{"success":true}`. claustrum answers the
+  locked refusals there. A `baseRepo` with no `.git` folder of its own, such as a
+  subfolder of T, a linked worktree or a submodule, is not covered. With a daemon
+  `GIT_DIR` of another repository, claustrum deletes a worktree that is locked
+  there, as the reference does in row p6. A lock on an entry of X that names the
   worktree is refused on both sides (row p6b). So is a lock with no daemon
-  environment (rows p6c and p6g). See [`DIVERGENCES.md`](DIVERGENCES.md) → D22.
+  environment (row p6c on Linux, macOS and Windows VMs, row p6g on a Linux VM).
+  See [`DIVERGENCES.md`](DIVERGENCES.md) → D22.
 - The delete first removes each entry of `<p>` except `.git`, in the order of the
   directory read. It stops at the first failure. Then it removes the rest, `.git`
   included, and `<p>` itself. Every delete goes through an `os.Root`, so no delete
@@ -3063,9 +3073,11 @@ copies end still fails it, as `timeoutMs` above describes:
   when the worktree and its parent are gone (rows GL1 and GL2, with GL0 as the
   control). With `worktreeRoot`, a root that does not exist is refused before
   this path. A worktrees directory that cannot be read
-  does not stop this path: with `worktreeRoot` the reply is `{"success":true}`
-  (row K13, Linux VM). Without
-  `worktreeRoot` that case is not measured. Without `worktreeRoot`, two more answers
+  does not stop this path: with `worktreeRoot` and no daemon environment the reply
+  is `{"success":true}` (row K13, Linux VM). If the removal reads its entries from
+  another git directory and `<baseRepo>/.git/worktrees` cannot be read, the reply
+  is the lock-check refusal (D22). Without `worktreeRoot` the case
+  is not measured. Without `worktreeRoot`, two more answers
   come first. A configuration listing that fails, or a refused git directory, answers
   `{"success":false,"error":"failed
   to remove worktree: could not check whether <p> is locked (<reason>); retry"}`.
