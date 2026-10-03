@@ -1936,10 +1936,12 @@ the read of the user's excludes.
       symlink (row r3).
     - Not measured: a size bound of a table or of the list, a folder inside
       `reftable`, and a symlink that the list does not name. claustrum bounds a
-      table at 1 GiB and the list at 1 MiB, and leaves the other two out. Not
-      measured either: a `reftable` folder that is a symlink out of the entry.
-      claustrum reads the entry through one open folder handle, which refuses that
-      link, and answers `isRepo:false`.
+      table at 1 GiB and the list at 1 MiB, and leaves the other two out.
+    - A `reftable` that is not a real folder counts as none. Nothing of it is
+      copied, and the request goes on. That holds for a symlink to a folder outside
+      the entry (row w1, Linux and macOS VMs, and row w1b, macOS VM) and for a
+      regular file (row w2, Linux and macOS VMs). In a reftable repository git then
+      shows every tracked file as added (rows w1 and w1b, macOS VM).
 
 Not measured: the order of rules 7 to 11, and the size bound of `HEAD` and
 `config.worktree`. claustrum bounds both at 1 MiB. No read of an entry file blocks:

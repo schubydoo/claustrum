@@ -559,16 +559,19 @@ var statusEntryMatched = func(string) {}
 //
 // Not measured: a size bound of a table or of the list, a folder inside `reftable`,
 // and a symlink that the list does not name. claustrum bounds a table at statusIndexMaxBytes and the list at
-// statusFileMaxBytes, and leaves a folder out. Not measured either: a `reftable`
-// folder that is a symlink out of the entry. The root refuses it, and claustrum
-// answers isRepo:false, as for a `reftable` that is not a folder.
+// statusFileMaxBytes, and leaves a folder out.
+//
+// A `reftable` that is not a real folder counts as none: nothing of it is copied,
+// and the request goes on. That is measured for a symlink to a folder outside the
+// entry (row w1 on Linux and macOS VMs, row w1b on a macOS VM) and for a regular file
+// (row w2 on Linux and macOS VMs). The test is on the entry root, with no link
+// followed.
 func statusReftable(root *os.Root) (files []string, ok bool) {
-	names, err := statusDirNames(root, "reftable")
-	switch {
-	case err == nil:
-	case errors.Is(err, fs.ErrNotExist):
+	if fi, err := root.Lstat("reftable"); err != nil || !fi.IsDir() {
 		return nil, true
-	default:
+	}
+	names, err := statusDirNames(root, "reftable")
+	if err != nil {
 		return nil, false
 	}
 	for _, name := range names {

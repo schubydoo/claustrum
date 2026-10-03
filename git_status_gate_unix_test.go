@@ -240,13 +240,50 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 	})
 }
 
-// A `reftable` folder that is a symlink out of the entry. No row measured it. The
-// root of the entry refuses it, and the answer is isRepo:false.
-func TestStatusReftableSymlinkOutOfEntry(t *testing.T) {
-	entry, out := t.TempDir(), t.TempDir()
-	writeFile(t, filepath.Join(out, "a.ref"), "table", 0o644)
-	mustSymlink(t, out, filepath.Join(entry, "reftable"))
-	if files, ok := statusReftable(statusEntryAt(t, entry).root); ok {
-		t.Errorf("statusReftable = %q true, want false", files)
+// Rows w1 and w2 (Linux and macOS VMs): in a plain repository an entry `reftable`
+// that is a symlink out of the entry, or a regular file, counts as no folder. The
+// answer is the clean status.
+func TestGitStatusReftableNotAFolder(t *testing.T) {
+	t.Run("w1 symlink out of the entry", func(t *testing.T) {
+		f := newStatusFixture(t)
+		out := filepath.Join(f.root, "out")
+		writeFile(t, filepath.Join(out, "a.ref"), "table", 0o644)
+		mustSymlink(t, out, filepath.Join(f.entry, "reftable"))
+		if got := f.status(t); got != statusClean {
+			t.Errorf("git.status = %s\nwant %s", got, statusClean)
+		}
+	})
+	t.Run("w2 regular file", func(t *testing.T) {
+		f := newStatusFixture(t)
+		f.write(t, "reftable", "x\n")
+		if got := f.status(t); got != statusClean {
+			t.Errorf("git.status = %s\nwant %s", got, statusClean)
+		}
+	})
+	// Rows w1 and w1b (macOS VM): in a reftable repository the folder is moved out
+	// and a symlink takes its place. Nothing of it is copied and the gate passes.
+	// git decides the frame: on the VM it showed every tracked file as added.
+	for name, keepList := range map[string]bool{"w1 moved out": true, "w1b moved out, no list": false} {
+		t.Run(name, func(t *testing.T) {
+			f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
+			out := filepath.Join(f.root, "out")
+			if err := os.Rename(filepath.Join(f.entry, "reftable"), out); err != nil {
+				t.Fatal(err)
+			}
+			if !keepList {
+				if err := os.Remove(filepath.Join(out, "tables.list")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			mustSymlink(t, out, filepath.Join(f.entry, "reftable"))
+			e := statusEntryAt(t, f.entry)
+			if files, ok := statusReftable(e.root); !ok || files != nil {
+				t.Errorf("statusReftable = %q %v, want no file and true", files, ok)
+			}
+			got := f.status(t)
+			if !strings.Contains(got, `"isRepo":true`) && !strings.Contains(got, `"message":"exit status `) {
+				t.Errorf("git.status = %s\nwant a status or the exit status of git", got)
+			}
+		})
 	}
 }
