@@ -519,11 +519,12 @@ func TestInstallRefusesToReplaceTheHomeFolder(t *testing.T) {
 }
 
 // Row F13. A download before the run is outside the bound, so a download
-// that takes longer than the bound does not use it up.
+// that takes longer than the bound does not use it up. The bound leaves the
+// first start of the new stub 9.5 s: a Windows runner took more than 4.5 s.
 func TestInstallDownloadTimeIsOutsideTheBound(t *testing.T) {
 	f := newStubFixture(t)
 	stubDelay(t, 100*time.Millisecond)
-	const serverDelay = 5 * time.Second
+	const serverDelay = 10 * time.Second
 	setCLIRunBounds(t, time.Minute, serverDelay-500*time.Millisecond)
 	zst := stubZst(t)
 	sum := sha256.Sum256(zst)
