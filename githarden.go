@@ -790,11 +790,22 @@ func noRepositoryAt(dir string, l configListing) bool {
 // Windows VMs. pre is the listing of hostileConfigRefusal when this is the first call
 // after it on dir, else nil (see hardenedGitCmd).
 func repositoryCheckError(dir string, pre *configListing) error {
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return nil
-	}
-	_, err := hardenedGitRunPre(dir, true, pre, nil, "rev-parse", "--absolute-git-dir")
+	_, err := repositoryGitDir(dir, pre)
 	return err
+}
+
+// repositoryGitDir is repositoryCheckError with the answer of the call: the git
+// directory that git names for dir. The answer is "" where repositoryCheckError
+// answers nil without a call, and after a failed call.
+func repositoryGitDir(dir string, pre *configListing) (string, error) {
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return "", nil
+	}
+	out, err := hardenedGitRunPre(dir, true, pre, nil, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(out, "\r\n"), nil
 }
 
 // statInsideDir looks at name inside dir through a handle on dir, without

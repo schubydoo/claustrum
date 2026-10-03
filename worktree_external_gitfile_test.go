@@ -22,7 +22,7 @@ func verifyWorktreeForTest(t *testing.T, repo, wp string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return verifiedWorktreeEntry(gitDir, filepath.Join(repo, ".git"), wp, newWorktreePathSet(wp))
+	return verifiedWorktreeEntry(gitDir, filepath.Join(repo, ".git"), "", wp, newWorktreePathSet(wp), nil)
 }
 
 // The `.git` file of a worktree names its entry only when the entry is a directory under
@@ -118,5 +118,57 @@ func TestVerifiedWorktreeEntry(t *testing.T) {
 	var r *worktreeRefusal
 	if !errors.Is(err, fs.ErrNotExist) || errors.As(err, &r) {
 		t.Errorf("no worktrees dir = %v, want the open error of the worktrees dir", err)
+	}
+}
+
+// E8, the part of probe row D-subst and battery rows J2, Q1 and Q2 (Windows VM) that
+// runs on every system. An entry whose record names another spelling of the worktree
+// is verified when respell gives that spelling. A `commondir` that leads to the git
+// directory that git answered passes too. respell is not called when the record
+// names the worktree as sent.
+func TestVerifiedWorktreeEntryRespell(t *testing.T) {
+	requireGit(t)
+	base := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	wp := filepath.Join(repo, ".claude", "worktrees", "w1")
+	runGit(t, repo, "worktree", "add", "-q", "-b", "w1", wp)
+	commonDir := filepath.Join(repo, ".git")
+	gitDir := filepath.Join(commonDir, "worktrees", "w1")
+	sent := filepath.Join(base, "other-spelling", ".claude", "worktrees", "w1")
+	calls := 0
+	respell := func(answer string) func() string {
+		return func() string { calls++; return answer }
+	}
+
+	if name, err := verifiedWorktreeEntry(gitDir, commonDir, "", wp, newWorktreePathSet(wp), respell("")); err != nil || name != "w1" || calls != 0 {
+		t.Errorf("record as sent: name=%q err=%v respell calls=%d, want w1, nil, 0", name, err, calls)
+	}
+	if name, err := verifiedWorktreeEntry(gitDir, commonDir, "", sent, newWorktreePathSet(sent), respell(wp)); err != nil || name != "w1" || calls != 1 {
+		t.Errorf("respelled: name=%q err=%v respell calls=%d, want w1, nil, 1", name, err, calls)
+	}
+	const other = "whose own record is of a different worktree"
+	if _, err := verifiedWorktreeEntry(gitDir, commonDir, "", sent, newWorktreePathSet(sent), respell("")); err == nil || !strings.Contains(err.Error(), other) {
+		t.Errorf("no other spelling: err=%v, want %q", err, other)
+	}
+	if _, err := verifiedWorktreeEntry(gitDir, commonDir, "", sent, newWorktreePathSet(sent), respell(sent)); err == nil || !strings.Contains(err.Error(), other) {
+		t.Errorf("a spelling that the record does not name: err=%v, want %q", err, other)
+	}
+
+	// The commondir of the entry names a directory that is not commonDir.
+	answered := filepath.Join(base, "answered", ".git")
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte(answered+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const notOurs = "does not name this repository's own worktree admin directory"
+	if _, err := verifiedWorktreeEntry(gitDir, commonDir, "", wp, newWorktreePathSet(wp), nil); err == nil || !strings.Contains(err.Error(), notOurs) {
+		t.Errorf("foreign commondir: err=%v, want %q", err, notOurs)
+	}
+	if name, err := verifiedWorktreeEntry(gitDir, commonDir, filepath.ToSlash(answered), wp, newWorktreePathSet(wp), nil); err != nil || name != "w1" {
+		t.Errorf("commondir names the answered git dir: name=%q err=%v, want w1, nil", name, err)
 	}
 }
