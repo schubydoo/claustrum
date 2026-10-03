@@ -85,10 +85,11 @@ jobs:
     timeout-minutes: 15 # the windows legs are markedly slower than ubuntu/macos
     strategy:
       fail-fast: false
-      # Windows runs the suite in two shards, because the top-level tests run
+      # Windows runs the suite in three shards, because the top-level tests run
       # one at a time and are slowest there. On one Windows run the worktree
-      # tests took 204 s and the rest 184 s. One shard runs the -run pattern
-      # and the other skips it, so together they run every test once.
+      # tests took 204 s and the rest 184 s. With the git.status tests the rest
+      # took 467 s, against the 600 s limit of go test. Two shards run a -run
+      # pattern and the third skips both, so together they run every test once.
       matrix:
         include:
           - os: ubuntu-latest
@@ -97,8 +98,11 @@ jobs:
             shard: worktree
             select: -run=^TestWorktree
           - os: windows-latest
+            shard: status
+            select: -run=^TestGitStatus
+          - os: windows-latest
             shard: rest
-            select: -skip=^TestWorktree
+            select: -skip=^(TestWorktree|TestGitStatus)
     env:
       # Renovate bumps this via a customManagers entry in the shared
       # schubydoo/renovate-config:claustrum preset — the same shape as
@@ -171,7 +175,7 @@ jobs:
         run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 ./...
       # Upload from EVERY leg, tagged with its OS as a Codecov flag, so Test Analytics
       # (flaky/slow tests) breaks out per platform — which is the axis claustrum
-      # actually varies on. Both Windows shards upload under the one Windows flag,
+      # actually varies on. All Windows shards upload under the one Windows flag,
       # and each shard's junit.xml holds different tests.
       #
       # No token: claustrum is a public repo, so codecov-action uploads tokenless (same

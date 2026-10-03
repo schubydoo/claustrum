@@ -177,6 +177,8 @@ component_management:
         - githarden.go
         # the configuration listing before each hardened call and its hook pins (89cb6289).
         - gitlisting.go
+        # the gate and the answer of git.status (89cb6289).
+        - gitstatus.go
         # the git.info root per OS (89cb6289).
         - gitinforoot_other.go
         - gitinforoot_windows.go

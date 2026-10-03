@@ -172,7 +172,8 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 		}
 		// The status call spells the null device /dev/null on every OS (D16).
 		excludes := shapeNull
-		if c.has("status") {
+		if c.heavy() && slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--work-tree=") }) &&
+			(c.has("status") || c.has("ls-files") || c.has("diff-index")) {
 			extra = append(extra, "GIT_OPTIONAL_LOCKS=0")
 			excludes = "/dev/null"
 		}
@@ -351,15 +352,29 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if !probed {
 			t.Errorf("calls = %q, want the --attr-source probe", calls)
 		}
-		pre, st := calls[len(calls)-2], calls[len(calls)-1]
-		if !st.has("status") {
-			t.Fatalf("last call = %q, want status", st.argv)
+		// The status call is the first of the four commands of the answer
+		// (TestGitStatusCallOrder has the whole order).
+		at := slices.IndexFunc(calls, func(c shapeCall) bool { return c.hardened() && c.has("status") })
+		if at < 1 {
+			t.Fatalf("calls = %q, want a status call", calls)
 		}
+		pre, st := calls[at-1], calls[at]
 		if !pre.listing() || !strings.HasPrefix(pre.argv[0], "--git-dir=") || pre.argv[0] != st.argv[slices.IndexFunc(st.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") })] {
 			t.Errorf("status precursor = %q, want --git-dir=<the status call's temp git dir> config -z --list", pre.argv)
 		}
-		checkAlternation(t, "status", calls[len(calls)-2:], func(shapeCall) string { return f.leaf() })
-		checkHardenedEnv(t, "status", calls[len(calls)-1:])
+		checkAlternation(t, "status", calls[at-1:at+1], func(shapeCall) string { return f.leaf() })
+		// The status, ls-files and diff-index calls carry GIT_OPTIONAL_LOCKS=0 and the
+		// /dev/null excludes of D16.
+		var locked int
+		for _, c := range calls[at:] {
+			if c.hardened() && (c.has("status") || c.has("ls-files") || c.has("diff-index")) {
+				locked++
+				checkHardenedEnv(t, "status", []shapeCall{c})
+			}
+		}
+		if locked != 3 {
+			t.Errorf("calls = %q, want status, ls-files and diff-index", calls)
+		}
 		wantFirst := "-c"
 		if attrSourceOK {
 			wantFirst = "--attr-source=" + gitEmptyTree

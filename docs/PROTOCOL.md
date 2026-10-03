@@ -761,6 +761,9 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
+| git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
+| git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, `sharedindex.*`, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
+| git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when the temporary git folder or a file in it cannot be made. The reference is not measured there |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
 | git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. See "Git-directory trust check" (`89cb6289`) |
@@ -1470,14 +1473,16 @@ below against `f6010b97`. Each point names the VMs that measured it.
   Linux, macOS and Windows VMs.
 - Heavy calls. `git status` and `rev-parse --absolute-git-dir` use the heavy
   profile. Every other hardened call uses the light profile, except the calls of
-  [the branch step](#the-branch-step), which have their own variables. Of the claustrum calls,
-  only `git status` adds `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
+  [the branch step](#the-branch-step), which have their own variables. `git.status`
+  runs more heavy calls (see its section). Of the claustrum calls, only its `status`,
+  `ls-files` and `diff-index` calls add `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
   Linux, macOS and Windows VMs.
 - Null device. `<null>` is `/dev/null` on Linux and macOS, and `NUL` on Windows.
   The same value goes into `-c core.excludesFile` when the user has no global
   excludes file. The `-c core.hooksPath` and `-c core.attributesFile` values stay
-  `/dev/null` on Windows. Windows VM. claustrum only: its `git status` call passes
-  `-c core.excludesFile=/dev/null` on Windows too. That is divergence D16.
+  `/dev/null` on Windows. Windows VM. claustrum only: the `status`, `ls-files` and
+  `diff-index` calls of `git.status` pass `-c core.excludesFile=/dev/null` on Windows
+  too. That is divergence D16.
 - Configuration listing. Before each hardened call except the first (see the next
   point), the daemon runs `git config -z --list` in the same directory. `89cb6289`
   dropped `--name-only`. The listing carries the profile variables of the call after
@@ -1572,23 +1577,21 @@ below against `f6010b97`. Each point names the VMs that measured it.
   remove with `worktreeRoot` runs the second call there. If that call fails too, the
   remove refuses.
   The references are not measured on a create there.
-- Some calls of `f6010b97` have no claustrum counterpart. Examples are a
+- Some calls of `f6010b97` have no claustrum counterpart. One example is a
   `rev-parse --show-toplevel` with `--git-dir` and `--work-tree` in
-  `git.worktree_create`, and the plumbing calls of its `git status`. claustrum runs
-  that `rev-parse` pair in two places only. One is `git.info` on Windows. The other
-  is `git.worktree_create`, after an admin record that does not name `worktreePath`
-  after symlink resolution. claustrum's
-  `git.status` runs a light `rev-parse` in `path`, with its
-  listing, that `f6010b97` does not run. The replies are the same.
+  `git.worktree_create`. claustrum runs that `rev-parse` pair in three places only.
+  One is `git.info` on Windows. One is `git.worktree_create`, after an admin record
+  that does not name `worktreePath` after symlink resolution. One is the gate of
+  `git.status`, whose calls follow `89cb6289` (see its section).
 
 #### The daemon's own git environment
 
 A logging git wrapper measured the rules below against `f6010b97`. Each point names
 its VMs.
 
-Three calls get the daemon's environment as it is, with only their own additions.
-These are the excludes read, the `--attr-source` version probe and the `git version`
-call of the include scan. Linux, macOS and Windows VMs. The other git calls of the
+Four calls get the daemon's environment as it is, with only their own additions.
+These are the excludes read, the `--attr-source` version probe, the `git version`
+call of the include scan and the `config --no-includes --file -` call of `git.status`. Linux, macOS and Windows VMs. The other git calls of the
 git methods are the repository calls. These are the configuration listings, the
 hardened calls, `worktree add`, the checkout and the `git status` call.
 
@@ -1602,8 +1605,8 @@ hardened calls, `worktree add`, the checkout and the `git status` call.
   the daemon's pairs `0` to `count-1`, in index order. Then come the hook pins, from
   the pair `count` on. They are `hook.enabled=false`, an empty `hook.event`, and
   then the two pins of each hook name (`89cb6289`, rows L04 to L07). The
-  `GIT_INDEX_FILE` of the checkout and the `GIT_OPTIONAL_LOCKS` of `git status`
-  follow them. The values were measured on Linux, macOS and Windows VMs, and the
+  `GIT_INDEX_FILE` of the checkout and the `GIT_OPTIONAL_LOCKS` of the `status`,
+  `ls-files` and `diff-index` calls follow them. The values were measured on Linux, macOS and Windows VMs, and the
   order on Linux and macOS VMs.
 - A hardened call gets no other `GIT_CONFIG_KEY_<digits>` or
   `GIT_CONFIG_VALUE_<digits>`. A leading-zero index such as `GIT_CONFIG_KEY_01` is
@@ -1659,7 +1662,7 @@ remove of a gone worktree.
 | `git.list_branches` | the same, also for a plain dir, a file, and an empty or absent `path`. For an empty or absent `path`, the daemon's working directory was a repository or a plain dir. Linux, macOS and Windows VMs |
 | `git.list_branches`, `path` not empty and does not resolve, or inside a managed worktrees directory | `{"isRepo":false,"branches":[]}`, before the check and with no git call. See the method section |
 | `git.status` | the same, also for a `path` that is a plain dir, the repository, missing or a file, and for a plain-dir `baseRepo`. Linux, macOS and Windows VMs |
-| `git.status`, `baseRepo` does not resolve | `{"isRepo":false,"clean":false}`, before the check and with no git call. See the method section |
+| `git.status`, `baseRepo` does not resolve | `{"isRepo":false,"clean":false}`, before the check and with no git call. See the method section. From the code: a `baseRepo` in a managed worktrees tree answers the same way. That case is not measured with a refused count |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, also for a plain-dir or missing `baseRepo` and a relative `worktreePath`. Also for a `worktreePath` with a `..` component, outside the repository or that exists. A missing `branchName` gets its `-32602` frame first. A `baseRepo` inside a managed worktrees directory gets its `nested_base_repo` frame first. Linux, macOS and Windows VMs. On Windows the check comes before the `worktreeRoot` refusal (Windows VM). A `baseRepo` that fails claustrum's own trust-root test gets that frame first too. Only the Windows VM measured that order (round 1 row C1 P1) |
 | `git.worktree_remove` | Some refusals come first, with their usual frames. These are for a relative path, a path outside the repository, the repository itself and a `..` component (Linux, macOS and Windows VMs). They are also for a path outside `worktreeRoot`, and with `worktreeRoot` for a `..` `baseRepo` (Linux and macOS VMs). A `baseRepo` that fails claustrum's own trust-root test gets the managed-worktrees refusal first. Only the Windows VM measured that order (round 1 row A1 P1). Without `worktreeRoot`, `open <baseRepo>: not a directory` comes first for a regular-file `baseRepo` (Linux, macOS and Windows VMs). So does `statat .claude: permission denied` for a `baseRepo` with mode 0600 (Linux and macOS VMs). With `worktreeRoot`, so does the refusal of a root in `baseRepo` (row E7, Linux and macOS VMs) |
 | `git.worktree_remove`, no `worktreeRoot`, worktree directory gone | `{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked (<text>); retry"}`, also for a plain-dir or missing `baseRepo`. Linux, macOS and Windows VMs |
@@ -1754,14 +1757,10 @@ check (Windows VM).
 #### git.status
 `{path,baseRepo}` → clean: `{"isRepo":true,"clean":true}` · dirty: `{…,"clean":false,"changes":["M  a.txt"," M b.txt","?? new"]}`
 
-- `7d193f89` rebuilt this method around session worktrees. `baseRepo` is now
-  required. An absent one answers `-32602 baseRepo is required`. Status is
-  reported only when `path` is a linked worktree whose main repository is
-  `baseRepo`. Everything else answers the bare `{"isRepo":false,"clean":false}`,
-  which is the full shape, unlike `git.info`. Everything else means a plain path,
-  a plain subdirectory, a nested repository, or the repository root itself. It also
-  means a worktree of a *different* repository, and the right worktree named
-  against the wrong `baseRepo`.
+- `baseRepo` is required since `7d193f89`. An absent one answers
+  `-32602 baseRepo is required`. Status is reported only when `path` passes the gate
+  below. Every other request answers `{"isRepo":false,"clean":false}`, which is the
+  full shape, unlike `git.info`.
 - A refused daemon `GIT_CONFIG_COUNT` changes the answers of this method (see "The
   daemon's own git environment").
 - A `baseRepo` that does not resolve answers `{"isRepo":false,"clean":false}`
@@ -1777,44 +1776,285 @@ check (Windows VM).
 - Since `f6010b97` the git-directory trust check runs on `baseRepo`, not on
   `path`. A refused git directory answers `-32603` with the refusal text, even when
   `path` is an honest linked worktree. "No repository" answers
-  `{"isRepo":false,"clean":false}`. Damage inside the linked worktree's own entry
-  does not trigger the check. A `GIT_COMMON_DIR` in the daemon's environment does
-  not turn the check off here. See
+  `{"isRepo":false,"clean":false}`. A `GIT_COMMON_DIR` in the daemon's environment
+  does not turn the check off here. See
   [Git-directory trust check](#git-directory-trust-check).
 - Status honours replace objects (`refs/replace`), as the reference does. A
   replaced `HEAD` commit therefore shows in `changes`.
-- `changes` is the stdout of
-  `git status --porcelain --untracked-files=all --ignore-submodules=all`, and
-  nothing else. Stderr warnings never appear. Lines are verbatim minus the line
-  ending. The two-character XY column is positional, so the leading space of an
-  unstaged-only change is data. `"M  a.txt"` is staged and `" M b.txt"` is
-  unstaged. `--untracked-files=all` is wire-visible. An untracked file inside an
-  untracked directory is listed individually (`"?? sub/u.txt"`), not as the
-  directory (`"?? sub/"`).
-- The invocation prepends `--attr-source=<empty-tree>`, git's canonical empty tree,
-  so the repository's in-repo `.gitattributes` is ignored. This matches `4534d86`.
-  It is wire-visible on a repo with a `.gitattributes` filter. Without it a clean
-  filter runs during status, and it can flip a file between clean and dirty and
-  execute the filter's command. It is a no-op on a repo with no attribute rules.
-  It is omitted when the runtime git predates `--attr-source` (git 2.40).
-- The status runs in an isolated temp gitdir, matching `4534d86`. That gitdir is a
-  fresh `GIT_DIR` holding the worktree's own `HEAD` and `index`, with
-  `GIT_COMMON_DIR` at the shared repo and `--work-tree` at the worktree, under
-  `GIT_OPTIONAL_LOCKS=0`. It therefore does not refresh or rewrite the caller's
-  index, and it does not take `index.lock`. On Linux and macOS this is
-  byte-identical to the reference and to a direct status.
-- Windows divergence D16. On Windows the reference's own `git.status` of a linked
-  worktree errors `-32603 "exit status 128"`, as measured, while claustrum returns
-  the status. With Git for Windows 2.55.0 the cause is the
-  `-c core.excludesFile=NUL` of the reference's status call. The reference passes
-  `NUL` when the user has no global excludes file. `git status` exits 128 on that
-  value. Claustrum passes `/dev/null` there instead. This is a reachable, always-on Windows divergence, and
-  claustrum is more correct. See [DIVERGENCES.md](DIVERGENCES.md) D16.
-- Every line is verbatim, the first one included. The daemon splits on the trailing
-  newline only, so entry 0 keeps its leading space. `[" M a1"," M a2"]` returns
-  `[" M a1"," M a2"]`. 5db5e4a lost entry 0's leading space. 7d193f89 and 4534d86 do not.
-- A failing git → `-32603` that carries the Go error string (`exit status 128`, not
-  git's `fatal:` text). With opt-in D5 the same `-32603` can carry `signal: killed`.
+
+**The gate.** The git call logs of `89cb6289` show no git call inside `path` before
+the gate decides. Its answers follow the worktree entries under the common directory
+of `baseRepo`: the request passes when exactly one entry names `path`. Each rule names its rows. The rows are from a side-by-side probe of
+`89cb6289` and claustrum on Linux, macOS and Windows VMs. Rows C1 to C13, row n07L
+and the `.t` rows are from the macOS VM. Rows D1 to D16, K02 to K15 and W03 to W06
+and x1 to x11 are from the Windows VM. Rows y1 to y7 are from Linux and macOS VMs.
+Rows y8a to y10, o1 to o25 and v2 to v6b are from the Linux VM. Rows o19a to o19d
+and r1 to r4 are from the macOS VM. Rows E07a and E07b ran on Linux and macOS VMs
+with a `GIT_COMMON_DIR` in the daemon's environment. The FIFO rows n05a, n14b,
+N05a, N05b, C20a and C20b did not run on Windows. Rule 11 names the systems of the
+w rows. Every other row ran on all three systems. On Windows the frames are those of the pass with a user excludes file (see
+D16 below). The call numbers are those of row K1, which has 22 git calls. Call 1 is
+the read of the user's excludes.
+
+1. No git call, `isRepo:false`:
+   - `baseRepo` has the components `.claude/worktrees` in it, or is that folder (rows
+     n10, n10b1 and n10c1). `X/.claude` alone passes (rows n10b2 and n10c2).
+   - `baseRepo` does not resolve (rows n11 and n11c1), as above.
+   - A folder one or two levels above `baseRepo` holds an entry named
+     `.claude-managed-worktrees` and no `.git` (rows o23, o23c and o23d, Linux VM).
+     The entry can be a file or a directory. With a `.git` in that folder the request
+     passes (row o23b, Linux VM). A marker inside `baseRepo` itself is ignored (row
+     v5). Not measured: more than two levels. claustrum
+     refuses them too.
+2. The read of the user's excludes comes next. It also runs before a trust refusal
+   (rows o20 and o21, Linux VM). On Windows a `baseRepo` that is a dangling junction
+   answers `isRepo:false` with this call only (rows n11-j and x11).
+3. Calls 2 and 3 run in `baseRepo` as sent: the configuration listing, then the heavy
+   `rev-parse --absolute-git-dir`. The answer of call 3 is the common directory.
+   - `baseRepo` can be a symlink to the repository, `T/` or `T/sub/..` (rows n11b,
+     n11c2 and n11c3). It can be a bare repository, a submodule checkout or a
+     subfolder of a repository (rows A03, B08, A04, A05b and N05a).
+   - A listing that fails is the hooks refusal (row o22b, Linux VM).
+   - A `rev-parse` that fails answers `isRepo:false` (row n17b).
+   - Where the trust check finds no repository, both calls carry `GIT_DIR=<null>` in
+     place of the `GIT_COMMON_DIR` pin, and the answer is `isRepo:false` (row n10b2).
+   - A common directory with no `worktrees` folder answers `isRepo:false` with no
+     further call (rows n18 and n18c).
+4. Tests on `path`, each `isRepo:false` with 3 calls in total:
+   - `path` is a regular file (row n09), or its folder is gone (row n26b).
+   - `path` lies inside `baseRepo` and one of its components below `baseRepo` is a
+     symbolic link (rows n07 and n07L) or, on Windows, a junction (row n07-j). The
+     link in those rows is `.claude`. A link at the last component fails too (row
+     v4, and row x10 for a junction). The same layout with no link passes (rows n07b
+     and n08).
+   - `path` lies inside `baseRepo` and has a `..` component, with or without the
+     folder before it (rows x4 and x4b, Windows VM, and rows y3, y4 and y5, Linux
+     and macOS VMs). A `.` component passes (row y10, Linux VM). Outside `baseRepo`
+     a `..` passes (row y2).
+   - On Windows, `path` lies inside `baseRepo` and its last component ends in a dot
+     or a space or holds a colon (rows x1, x2 and x3). Outside `baseRepo` a trailing
+     dot or space passes (rows D14dot and D14sp). Not measured: another
+     component with such a name. claustrum refuses it too.
+5. Calls 4 and 5 run in the common directory: `--git-dir=<common> config -z --list`,
+   then the light `--git-dir=<common> --work-tree=<dir> rev-parse --show-toplevel`.
+   - `<dir>` is `path` with its symlinks resolved (rows n06 and C12). When `path` lies
+     inside `baseRepo` or is `baseRepo`, `<dir>` is `baseRepo` (rows A04, A05a, N05a,
+     N05b, n07b, n08, n18b and K02b). An empty `path` gives `.` (rows n25d1 and
+     n25d2). Not measured: an empty `path` on a daemon whose working directory is a
+     linked worktree of `baseRepo`. A relative `path` goes to git as sent, also when it lies inside
+     `baseRepo` (rows n25c, x5 and y6). In row x5 git exits 128 on it, and the answer is
+     `isRepo:false` after 5 calls. Row y6 gives the same answer on Linux and macOS.
+     On Windows `<dir>` has the letter case on disk and the long names, and
+     keeps a junction, a `subst` drive and a `\\?\` prefix (rows D3, D6, D8, D13
+     and D16).
+   - A listing that fails here is the hooks refusal, and `git version` runs after it
+     (row o22, Linux VM). Not measured: a listing here that fails with git's "not a
+     git repository" text. claustrum answers the hooks refusal for it too.
+   - A `rev-parse` that fails answers `isRepo:false` (row n17). Not measured: what
+     `89cb6289` does with the output. claustrum does not read it.
+   - When the daemon's own environment sets `GIT_COMMON_DIR`, calls 4 and 5 keep
+     that value and get no pin (rows E07a and E07b).
+6. The entry match. An entry is a real folder under `<common>/worktrees`. A symlinked
+   entry does not count (row n02). A real folder that a symlink also points at counts
+   once (row n02b).
+   - Its `gitdir` file is a regular file of at most 1 MiB (row n05c passes at 1 MiB,
+     row n05b fails at 1 MiB + 1). A FIFO does not match, with no wait (row n05a,
+     Linux and macOS VMs).
+   - A relative value counts from the entry folder (row n03). Its last component is
+     `.git` (row n04).
+   - The folder before `.git` equals `path` as text. Two spellings of `path` match:
+     as sent, and with its symlinks resolved (rows n06 and C12). A relative `path`
+     counts from the working directory of the daemon (row n25c). On Windows a `subst`
+     drive, a junction, a `\\?\` path, short names, another letter case and a
+     trailing dot or space in `path` match too (rows D3, D4, D6, D8, D13, D14dot,
+     D14sp and D16, Windows VM). claustrum takes the path that the file system
+     reports for the open folder as a third spelling there.
+   - For a `path` inside `baseRepo`, claustrum compares two spellings: as sent, and
+     the resolved `baseRepo` joined with the part below `baseRepo` as sent. On
+     Windows a `path` with short names below a `baseRepo` in short names finds no
+     entry (row K02b, Windows VM). Not measured: a `path` inside a `baseRepo` that
+     lies below a symlink. The second spelling is claustrum's choice for it.
+   - On macOS another letter case, the NFD form and `/System/Volumes/Data` in `path`
+     do not match (rows C9, C6, C2 and C3). Another letter case in the `gitdir` file
+     does not match on macOS (row C10). On Windows the folder compare ignores letter
+     case: one folder name in another case matches, in the `gitdir` file (row x6)
+     and in `path` (row x8). The `.git` name does not: a value that ends in `.GIT`
+     fails (rows x7 and D9).
+   - Exactly one entry matches. Two matching entries answer `isRepo:false` (row n01),
+     and so does none (rows n18b and n25). A second entry whose `gitdir` is a
+     directory is passed over (row v2).
+   - The `.git` inside `path` plays no part. Missing, damaged or naming another
+     place, the answer is `isRepo:true` (the G rows, n26c and n26d). A locked
+     worktree answers `isRepo:true` (row n26).
+7. The `commondir` file of the matched entry is a regular file, or a relative
+   symlink to a file in the entry folder (row n19e). An absolute symlink fails (row
+   n19f). A file of 1 MiB + 1 fails (row n19g). Not measured: a file of exactly 1
+   MiB, which claustrum takes, and a relative symlink that leaves the entry folder,
+   which claustrum refuses. A missing file fails (row n19a). A FIFO fails with no wait (rows C20a and C20b, Linux and macOS
+   VMs).
+   - The value loses the white space at both ends. A relative value counts from the
+     entry folder, and the result is cleaned (rows n19c and n19d).
+   - It equals the common directory as text, in the spelling of call 3. On macOS a
+     value under `/tmp` fails, because git answers `/private/tmp` (row n19b.t).
+     Another letter case fails (row C11, macOS VM, and rows D10, W04 and x9, Windows VM).
+     On Windows an absolute value with forward or back slashes passes (rows D11f and
+     D11b). A short name, a `\\?\` prefix and a value with no drive letter fail
+     (rows K05a, K07a, K15a, W05 and W06).
+8. The `HEAD` file of the entry holds 40 or 64 hex characters, or a `ref:` line under
+   `refs/` (rows o14b, o14c, o14d and o14f, Linux VM). `garbage`, 39 hex characters
+   and `ref: x` answer `isRepo:false` (rows n15, o14a and o14e). A branch that does
+   not exist and a detached commit pass (rows n16 and n16b).
+9. The `index` of the entry. A relative symlink to a file in the entry folder passes
+   (row o15a). Not measured: a symlink that leaves the entry folder. claustrum
+   refuses it. A FIFO
+   answers `isRepo:false` with no wait (row o15b). An `index` of 1 GiB + 1 answers
+   `isRepo:false`, and exactly 1 GiB passes (rows o15c and o15e). An `index` of 1 GiB
+   beside a `sharedindex.x` of 1 GiB + 1 answers `isRepo:false` (row o16). A missing
+   `index` passes (row o15d). All Linux VM. Not measured: whether the bound is for
+   each file or for their sum, and a bound on the count of `sharedindex.*` files.
+   claustrum bounds each file and not the count.
+10. The `config.worktree` file of the entry. A missing file passes. A folder, a FIFO
+    and a syntax error answer `isRepo:false`, with no wait on the FIFO (rows n14,
+    n14b and n14c).
+    - The daemon runs `git config --no-includes --file - --list -z` with the file on
+      stdin. The call runs in the daemon's working directory with the daemon's
+      environment (rows n12, n12b, n13 and n14c). It is call 6 there.
+    - A file with `core.sparseCheckout` or `index.sparse` passes (rows n12 and n12b),
+      and so does one with `core.sparseCheckoutCone` (rows o17 and v3a). `user.name`
+      and `core.bare` answer `isRepo:false` (rows n13 and v3b). Not measured: every
+      other key. claustrum answers `isRepo:false` for each of them.
+11. The `reftable` folder of the entry, in a repository with the reftable format
+    (rows o19a to o19d and r1 to r4, macOS VM).
+    - Every regular file of the folder goes into the temporary folder, also a table
+      that `tables.list` does not name (row r1).
+    - An entry that is not a regular file is left out. With a FIFO as `tables.list`
+      the daemon does not wait, copies no list, and answers the status. git then
+      shows every tracked file as added (row r2).
+    - A `tables.list` that is copied names at least one table (row r4), and each
+      name is a file that is copied. Else the answer is `isRepo:false` after 5
+      calls: for a missing table (rows o19c and o19d) and for a table that is a
+      symlink (row r3).
+    - Not measured: a size bound of a table or of the list, a folder inside
+      `reftable`, and a symlink that the list does not name. claustrum bounds a
+      table at 1 GiB and the list at 1 MiB, and leaves the other two out.
+    - A `reftable` that is not a real folder counts as none. Nothing of it is
+      copied, and the request goes on. That holds for a symlink to a folder outside
+      the entry (row w1, Linux and macOS VMs, and row w1b, macOS VM) and for a
+      regular file (row w2, Linux, macOS and Windows VMs). On Windows it holds for
+      a junction and for a directory symbolic link (rows w1 and w1s, Windows VM).
+      In a reftable repository git then shows every tracked file as added (rows w1
+      and w1b, macOS VM).
+
+Not measured: the order of rules 7 to 11, and the size bound of `HEAD` and
+`config.worktree`. claustrum bounds both at 1 MiB. No read of an entry file blocks:
+claustrum opens each file without blocking and reads a regular file only.
+
+**The answer.**
+
+- The temporary git folder holds copies of `HEAD` and `index` of the entry and a
+  `commondir` file (row K1). It also holds `config.worktree` when the entry has one
+  (rows n12 and o17), `info/sparse-checkout` (row o17, Linux VM) and each
+  `sharedindex.*` file (rows o16b1 and o16b2). In a reftable repository it
+  holds the regular files of the entry's `reftable` folder (rows o19a and r1, macOS
+  VM). Not measured: an `info/sparse-checkout` that is not a regular file, such as
+  a FIFO. From the code: claustrum does not wait and answers `-32603` (see the
+  failures below). No entry is left after the reply. The status therefore does not refresh or rewrite the caller's index, and it
+  does not take `index.lock`. The folder name starts with `claustrum-git-dir-`.
+- After the gate comes the `git --attr-source=<empty tree> version` probe (call 6).
+  From the code: claustrum runs it once for each daemon. Each measured request was
+  the first of its daemon. Then four commands run, each with `path` as its working directory
+  (calls 10, 14, 18 and 22):
+  `status --porcelain --untracked-files=all --ignore-submodules=all`,
+  `ls-files -s -z`, `rev-parse --verify -q HEAD^{commit}` and
+  `diff-index --cached --raw -z --ignore-submodules=none HEAD --`.
+- Three calls come before each command (calls 7 to 9). Two run in the working
+  directory of the daemon: `--git-dir=<common> config -z --list` and the heavy
+  `--git-dir=<common> hash-object -t tree <null>`. The third runs in `path`:
+  `--git-dir=<temp> config -z --list`. When the daemon's own environment sets
+  `GIT_COMMON_DIR`, the two `<common>` calls keep that value. The third call and the
+  command get `GIT_COMMON_DIR=<common>` (rows E07a and E07b).
+- Each command carries `--attr-source=<id>`, the heavy profile,
+  `--git-dir=<temp>` and `--work-tree=<path as sent>`. `status`, `ls-files` and
+  `diff-index` add `GIT_OPTIONAL_LOCKS=0`. The `--attr-source` option makes git ignore
+  the `.gitattributes` of the repository, so no clean filter runs. It is left out
+  when the runtime git predates it (git 2.40). `<id>` is the answer of the
+  `hash-object` call right before the command. In a SHA-256 repository it has 64 hex
+  characters (rows v6a and v6b). The probe keeps the SHA-1 id there. When
+  `hash-object` fails, `<id>` is the SHA-1 id of the empty tree (row n17f).
+- When `rev-parse --verify` fails, `HEAD` names no commit. The two `<common>` calls
+  run once more, and `diff-index` gets the id of the empty tree in place of `HEAD`
+  (rows n16, o13 and o14d, 24 calls).
+- Failures. A `status`, `ls-files` or `diff-index` that fails answers `-32603` with
+  the Go error string, for example `exit status 1` (rows n17c, n17d and n17e). The
+  text of git does not show for these three commands. A `hash-object` that fails changes no answer (row n17f).
+  A relative `path` passes the gate. git gets it as sent, `status` exits 128, and
+  the answer is `-32603 exit status 128` (row n25c). A `path` outside `baseRepo`
+  such as `W/missing/..` passes the gate cleaned. git then does not start in the
+  path as sent. The answer is `-32603` with the hooks refusal text and
+  `chdir <path>: no such file or directory`. No `git version` follows the refusal
+  (row y1, Linux and macOS VMs). With opt-in D5 the same
+  `-32603` can carry `signal: killed`.
+- claustrum's own `-32603` texts, from the copy into the temporary folder after the
+  gate passed. The reference is not measured in any of them. `<file>: not a regular
+  file` answers an `info/sparse-checkout` that is a folder or a FIFO.
+  `<file> is larger than <n> bytes` answers a copied file over its bound, also one
+  that grew after the gate. A file that cannot be copied
+  and a temporary folder that cannot be made answer the raw Go error, for example
+  `openat index: permission denied`.
+- Not measured: a failure of the listing in the temporary folder. claustrum answers
+  the hooks refusal, as for the listing of rule 5.
+- `changes` starts with the stdout lines of `status`. Stderr warnings never appear.
+  Each line is verbatim minus the line ending, the first one included. The XY column
+  is positional, so the leading space of an unstaged change is data: `"M  a.txt"`
+  is staged and `" M b.txt"` is unstaged. `--untracked-files=all` lists an untracked
+  file inside an untracked directory by itself (`"?? sub/u.txt"`).
+- An entry longer than 512 bytes is cut to 512 bytes of the whole line, and `…`
+  follows (row o1, Linux VM). At most 10000 `status` entries pass, and no entry
+  marks the cut (row o2, Linux VM). Submodule entries still follow (row o3). Not
+  measured: a cut in the middle of a multi-byte character. Row o1 used an ASCII path.
+  claustrum's own behavior there: the cut can split a character, which is possible
+  with `core.quotePath=false`, and no profile pins that key. The JSON encoding then
+  sends U+FFFD for each leftover byte. The reference is not measured there.
+- Submodule entries follow the `status` lines. Each is ` S `, the quoted name and one
+  of three texts. All rows below are from a Linux VM. Rows n20 to n20e ran on macOS
+  and Windows VMs too.
+  - `ls-files` shows each index entry of mode 160000. For each one the daemon looks
+    at `<name>/.git` inside the work tree. It follows no link out of the work tree. Not there: no
+    entry (rows n20e and o6d). There, as a file, a folder or a dangling symlink:
+    ` (submodule present; contents not inspected)` (rows n20, o6a, o6b and o6c). A
+    gitlink path that is a symlink to a folder inside the work tree counts as
+    present (row o5b).
+  - If it cannot be looked at, the text is ` (submodule; could not be inspected)`.
+    Three gitlink paths are measured: a regular file (row o4), a symlink to a
+    folder outside the work tree (row o5), and a folder of mode 000 (row o5c).
+  - There is one entry for each index stage, so a conflicted gitlink gives three
+    (row o12).
+  - For each `diff-index` record whose old or new mode is 160000, the text is
+    ` (submodule change staged; contents not inspected)` (rows o7, o8, o9, o9b, o9c
+    and o13).
+  - The order is the `status` lines, the `ls-files` entries, then the `diff-index`
+    entries (rows o7, o8, o9, o10 and o12). One gitlink can have all three.
+  - A name longer than 200 bytes is cut to 200 bytes, and `…` follows. The name is
+    then quoted with double quotes, `\"`, `\n`, `\t`, and `\xff` for a byte that is
+    not valid UTF-8. A printable character outside ASCII stays (row o11). Not
+    measured: a cut in the middle of a character, and a name with `<`, `&`, `>` or
+    U+2028. claustrum's own behavior for the cut: it can split a character, and the
+    quoting then writes each leftover byte as `\xNN` text. The reference is not
+    measured there.
+  - At most 100 submodule entries pass. Then one entry gives the count of the rest:
+    ` S … (+20 more submodule entries)` (row o10, and row n20d with 1).
+- `clean` is true only for an empty `changes`.
+- Windows divergence D16. On Windows, when the user has no global excludes file,
+  `89cb6289` passes `-c core.excludesFile=NUL` to its `status` call. git 2.55 exits
+  128 on that value, and the reference answers `-32603 "exit status 128"` (pass A of
+  the Windows rows). claustrum passes `/dev/null` to its `status`, `ls-files` and
+  `diff-index` calls there and returns the status. With a user excludes file the
+  Windows rows equal the Linux rows (pass X). See [DIVERGENCES.md](DIVERGENCES.md)
+  D16.
+- On Windows a gitlink path that is a regular file gives no entry (row o4, Windows
+  VM). A gitlink path that is a junction gives the "could not be inspected" text
+  (row o5b, Windows VM). The o rows ran on the Windows VM too, except o5c, o15b,
+  o19 and o20.
 
 #### git.list_branches
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`

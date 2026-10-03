@@ -365,7 +365,12 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   the branch, and the reply adds `"branchKept":true`. In a `git.worktree_create`
   rollback such a stop adds an undo text instead. It is one of the branch-step texts
   in PROTOCOL.md → The branch step.
-  On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
+  On `git.list_branches` a hit surfaces as `-32603 signal: killed`. On `git.status`
+  the frame of a hit depends on the call that it stops: a hit in one of the four
+  commands surfaces as `-32603 signal: killed`. The frames of a hit in the other
+  calls are from the code and not measured.
+  In `git.status` one deadline covers the 16 git calls of the answer, or 18 when
+  `HEAD` names no commit (from the code). It covered 2 calls before.
   A killed repo-detection call answers `isRepo:false`. A killed
   `branch --show-current` in `git.info` leaves out the `branch` member. A killed
   `defaultBranch` verify there gives `defaultBranch` `""`. On Windows a killed root
@@ -731,14 +736,17 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `commondir`, the temp name, and the listing before the call. In the same replay,
   `git ls-files --others --ignored --exclude-standard` and `git check-ignore`
   accepted `NUL`. The replay is in `scratch/f6010b97/d16-nul-excludes-raw/`.
-- **Derived, not measured.** A Windows user with a global excludes file gets that
-  file in the reference's status call, not `NUL`. The reference's status then
-  works there, and D16 does not arise.
+- **With a user excludes file, measured.** A Windows user with a global excludes
+  file gets that file in the reference's status call, not `NUL`. The reference's
+  status then works, and D16 does not arise. `89cb6289` shows that on a Windows VM:
+  in pass X of the `git.status` rows, row K1 has 22 calls with the user file as
+  `core.excludesFile`.
 - **The one element that differs on purpose.** claustrum's `git status` call has the
   cwd, argv and env of the reference, apart from the temp dir name and the env order
   on Windows. One value differs on purpose. On Windows claustrum passes
   `-c core.excludesFile=/dev/null` where the reference passes `NUL`
-  (`statusExcludesFile` in `githarden.go`). Every other call that passes
+  (`statusExcludesFile` in `githarden.go`). The `ls-files` and `diff-index` calls of
+  `git.status` get the same value as its status call. Every other call that passes
   `-c core.excludesFile` passes `NUL` there, as the reference does. On Linux and
   macOS the null device is `/dev/null`, so nothing differs there. A user with a
   global excludes file gets that file on every OS.
@@ -748,7 +756,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   deliberate REACHABLE wire divergence, unlike the unreachable rule 3 clause (b) cases.
 - **Why diverge (claustrum is more correct).** claustrum reproduces the reference's
   status assembly apart from the excludes value, and returns the correct status on
-  every OS. To match, claustrum must pass `NUL` to its status call as well. The
+  every OS. To match, claustrum must pass `NUL` to its `status`, `ls-files` and `diff-index` calls as well. The
   reference's failure is an error for a valid status of a session worktree, the exact operation the worktree rebuild exists to
   serve. That is the D2 and D8 pattern: the reference doing it is not a reason to
   reproduce a break.
@@ -759,9 +767,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   parity). A Git for Windows release that accepts `NUL` as an exclude file in
   `git status` (then this becomes parity too). Or a decision to put strict 1:1 above correctness, which replaces this entry
   with reproducing the reference's Windows failure so claustrum errors 128 too. That
-  change is one value: `NUL` in the `core.excludesFile` of the status call.
+  change is one value: `NUL` in the `core.excludesFile` of the `status`, `ls-files`
+  and `diff-index` calls. The reference stops at its `status` call with no excludes
+  file, so what it passes to the other two there is not measured.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.status`. Also `methods_git.go`
-  (`gitStatus`) and `githarden.go` (`hardenedGitStatus`, `statusExcludesFile`).
+  (`gitStatus`), `gitstatus.go` (`statusChanges`) and `githarden.go` (`statusExcludesFile`).
   Evidence in `scratch/osparity/` and `scratch/f6010b97/d16-nul-excludes-raw/`.
 
 ### D17 · An abandoned `lsof` run reads as busy, not idle (macOS) { #d17 }

@@ -8,103 +8,108 @@ import (
 	"time"
 )
 
-// gitStatusFixture builds the minimum hardenedGitStatus's temp-gitdir assembly
-// needs to REACH the seamed call: a gitDir carrying a real HEAD and a real index,
-// so the copy loop stats both and proceeds instead of skipping them as absent.
-// Nothing here has to be a valid repository — every arm under test returns before
-// git is executed.
-func gitStatusFixture(t *testing.T) (worktree, gitDir, commonDir string) {
+// gitStatusFixture builds the minimum that buildStatusGitDir needs to reach the
+// seamed call: an entry folder with a HEAD and an index, and a common directory.
+// Nothing here has to be a valid repository: buildStatusGitDir runs no git.
+func gitStatusFixture(t *testing.T) (e statusEntry, commonDir string) {
 	t.Helper()
 	root := t.TempDir()
-	worktree = filepath.Join(root, "wt")
-	gitDir = filepath.Join(root, "gitdir")
+	entry := filepath.Join(root, "entry")
 	commonDir = filepath.Join(root, "common")
-	for _, d := range []string{worktree, gitDir, commonDir} {
+	for _, d := range []string{entry, commonDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, f := range []string{"HEAD", "index"} {
-		if err := os.WriteFile(filepath.Join(gitDir, f), []byte("fixture\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(entry, f), []byte("fixture\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return worktree, gitDir, commonDir
+	return statusEntryAt(t, entry), commonDir
 }
 
-// Every assertion below is errors.Is against the test's OWN sentinel rather than
-// err != nil. With this fixture git itself would fail too (it is not a real
-// repository), so err != nil cannot tell the arm under test from git's own exit
-// status — it would pass with the arm deleted.
+// statusEntryAt is the entry at dir with its root open. The root is closed when the
+// test ends, before the temporary folders are removed.
+func statusEntryAt(t *testing.T, dir string) statusEntry {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	return statusEntry{dir: dir, root: root}
+}
 
-// TestGitStatusPropagatesAReadFailureAfterStat covers the TOCTOU arm: the file
-// existed at Stat and then failed to read. hardenedGitStatus must propagate that
-// rather than continue, because a status run with HEAD or index missing
-// fabricates deletions and untracked entries. A mode-0000 HEAD stages it on Unix as
-// non-root (see git_status_stderr_unix_test.go); the seam covers root and Windows too.
-func TestGitStatusPropagatesAReadFailureAfterStat(t *testing.T) {
+// buildFails runs buildStatusGitDir, removes its folder and returns its error.
+func buildFails(t *testing.T, e statusEntry, common string) error {
+	t.Helper()
+	tmp, err := buildStatusGitDir(e, common)
+	if tmp != "" {
+		_ = os.RemoveAll(tmp)
+	}
+	return err
+}
+
+// Every assertion below is errors.Is against the test's own sentinel, not err != nil.
+
+// TestGitStatusPropagatesACopyFailure covers a file of the entry that exists and
+// cannot be copied. buildStatusGitDir must return that error and not go on: a status
+// with HEAD or index missing reports deletions and untracked entries that do not
+// exist. Only a file that is absent is left out.
+func TestGitStatusPropagatesACopyFailure(t *testing.T) {
 	errRead := errors.New("read HEAD: input/output error")
-	old := readStatusFile
-	t.Cleanup(func() { readStatusFile = old })
-	readStatusFile = func(string) ([]byte, error) { return nil, errRead }
+	old := copyStatusFile
+	t.Cleanup(func() { copyStatusFile = old })
+	copyStatusFile = func(*os.Root, string, string, int64) error { return errRead }
 
-	wt, gitDir, common := gitStatusFixture(t)
-	if _, err := hardenedGitStatus(wt, gitDir, common, "status", "--porcelain"); !errors.Is(err, errRead) {
-		t.Fatalf("hardenedGitStatus with a failing read = %v, want %v", err, errRead)
+	e, common := gitStatusFixture(t)
+	if err := buildFails(t, e, common); !errors.Is(err, errRead) {
+		t.Fatalf("buildStatusGitDir with a failing copy = %v, want %v", err, errRead)
 	}
 }
 
-// TestGitStatusPropagatesAMetadataWriteFailure covers the write of the copied
-// HEAD/index into the temp gitdir. It fails only on a full or failing filesystem,
-// and the destination directory was created by os.MkdirTemp moments earlier.
-func TestGitStatusPropagatesAMetadataWriteFailure(t *testing.T) {
-	errWrite := errors.New("write HEAD: no space left on device")
-	old := writeStatusFile
-	t.Cleanup(func() { writeStatusFile = old })
-	writeStatusFile = func(string, []byte, os.FileMode) error { return errWrite }
-
-	wt, gitDir, common := gitStatusFixture(t)
-	if _, err := hardenedGitStatus(wt, gitDir, common, "status", "--porcelain"); !errors.Is(err, errWrite) {
-		t.Fatalf("hardenedGitStatus with a failing write = %v, want %v", err, errWrite)
-	}
-}
-
-// TestGitStatusPropagatesAChtimesFailure covers the mtime copy. That Chtimes is
-// what keeps git's racy-clean check armed (see
-// TestGitStatusDetectsSameSizeModification), so silently continuing past a
-// failure would report a same-size unstaged edit as clean. It targets the file
-// os.WriteFile just created, so nothing short of a seam makes it fail.
+// TestGitStatusPropagatesAChtimesFailure covers the copy of the modification time.
+// That Chtimes keeps git's racy-clean check armed (see
+// TestGitStatusDetectsSameSizeModification). It targets a file that the copy just
+// made, so only a seam makes it fail.
 func TestGitStatusPropagatesAChtimesFailure(t *testing.T) {
 	errChtimes := errors.New("chtimes index: operation not permitted")
 	old := chtimesStatusFile
 	t.Cleanup(func() { chtimesStatusFile = old })
 	chtimesStatusFile = func(string, time.Time, time.Time) error { return errChtimes }
 
-	wt, gitDir, common := gitStatusFixture(t)
-	if _, err := hardenedGitStatus(wt, gitDir, common, "status", "--porcelain"); !errors.Is(err, errChtimes) {
-		t.Fatalf("hardenedGitStatus with a failing chtimes = %v, want %v", err, errChtimes)
+	e, common := gitStatusFixture(t)
+	if err := buildFails(t, e, common); !errors.Is(err, errChtimes) {
+		t.Fatalf("buildStatusGitDir with a failing chtimes = %v, want %v", err, errChtimes)
 	}
 }
 
-// TestGitStatusPropagatesACommondirWriteFailure covers the commondir write, which
-// is a SEPARATE arm from the metadata write above — the fake is path-sensitive so
-// the HEAD and index copies still succeed and the failure lands after the loop.
-// Without commondir git cannot resolve a branch worktree's symref HEAD and
-// reports every tracked file as a fresh add, so this arm must not be skipped
-// either.
+// TestGitStatusPropagatesACommondirWriteFailure covers the commondir write. Without
+// commondir git cannot resolve the branch HEAD of a worktree and reports every
+// tracked file as a new one.
 func TestGitStatusPropagatesACommondirWriteFailure(t *testing.T) {
 	errCommondir := errors.New("write commondir: no space left on device")
 	old := writeStatusFile
 	t.Cleanup(func() { writeStatusFile = old })
-	writeStatusFile = func(name string, b []byte, mode os.FileMode) error {
-		if filepath.Base(name) == "commondir" {
-			return errCommondir
-		}
-		return old(name, b, mode)
-	}
+	writeStatusFile = func(string, []byte, os.FileMode) error { return errCommondir }
 
-	wt, gitDir, common := gitStatusFixture(t)
-	if _, err := hardenedGitStatus(wt, gitDir, common, "status", "--porcelain"); !errors.Is(err, errCommondir) {
-		t.Fatalf("hardenedGitStatus with a failing commondir write = %v, want %v", err, errCommondir)
+	e, common := gitStatusFixture(t)
+	if err := buildFails(t, e, common); !errors.Is(err, errCommondir) {
+		t.Fatalf("buildStatusGitDir with a failing commondir write = %v, want %v", err, errCommondir)
+	}
+}
+
+// A file of the entry that grew past its bound after the gate looked at it is an
+// error of the copy, and the copy reads no more than the bound plus one byte.
+func TestStatusCopyFileStopsAtItsBound(t *testing.T) {
+	e, _ := gitStatusFixture(t)
+	root := e.root
+	dst := filepath.Join(t.TempDir(), "index")
+	if err := statusCopyFile(root, "index", dst, int64(len("fixture\n"))-1); err == nil {
+		t.Fatal("statusCopyFile of a file over its bound = nil, want an error")
+	}
+	if err := statusCopyFile(root, "index", dst+"2", int64(len("fixture\n"))); err != nil {
+		t.Fatalf("statusCopyFile of a file at its bound = %v", err)
 	}
 }
