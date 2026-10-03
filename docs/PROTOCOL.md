@@ -2896,8 +2896,8 @@ copies end still fails it, as `timeoutMs` above describes:
   - `baseRepo` holds an empty `.git` folder and lies in an outer repository, and
     the folder is gone. The reply carries `branchKept`, and the branch of the
     outer repository stays (row p4 on Linux and macOS VMs).
-  - A locked worktree is always refused. That is divergence D22: see the lock
-    rule below.
+  - A worktree locked in the `.git` folder of `baseRepo` is refused. That is
+    divergence D22: see the lock rule below.
   - On Windows, both paths go through a `subst` drive, or through a junction to
     the repository. The folder and its entry go (probe row D-subst, battery rows
     J2, Q1 and Q2). The claustrum test of the junction row runs on Windows only.
