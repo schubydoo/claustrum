@@ -25,6 +25,12 @@ func statusWithin(t *testing.T, f statusFixture, fifo string) string {
 		if w, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
 			_ = w.Close()
 		}
+		// The goroutine uses t. Let it end before the test fails, so that it cannot
+		// call t after the test is over.
+		select {
+		case <-done:
+		case <-time.After(20 * time.Second):
+		}
 		t.Fatalf("git.status gave no frame in 20 s with a FIFO at %s", fifo)
 		return ""
 	}
@@ -210,8 +216,10 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 			t.Errorf("git.status = %s\nwant %s", got, statusNotRepo)
 		}
 	})
-	// Row r2: a FIFO as tables.list is left out with no wait, and git then reads
-	// every tracked file as added.
+	// Row r2: a FIFO as tables.list is left out with no wait. The temporary folder
+	// then gets the table and no list. git decides the frame: git 2.50 on the macOS
+	// VM read every tracked file as added, and another git can exit non-zero. The
+	// test asserts only that the gate passed and that no read waited.
 	t.Run("r2 tables.list is a FIFO", func(t *testing.T) {
 		f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
 		list := filepath.Join(f.entry, "reftable", "tables.list")
@@ -221,9 +229,13 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 		if err := syscall.Mkfifo(list, 0o644); err != nil {
 			t.Skipf("mkfifo: %v", err)
 		}
-		want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":false,"changes":["A  .gitignore","A  t.txt"]}}`
-		if got := statusWithin(t, f, list); got != want {
-			t.Errorf("git.status = %s\nwant %s", got, want)
+		files, ok := statusReftable(f.entry)
+		if !ok || len(files) != 1 || files[0] == "tables.list" {
+			t.Errorf("statusReftable = %q %v, want the one table, no list, and true", files, ok)
+		}
+		got := statusWithin(t, f, list)
+		if !strings.Contains(got, `"isRepo":true`) && !strings.Contains(got, `"message":"exit status `) {
+			t.Errorf("git.status = %s\nwant a status or the exit status of git", got)
 		}
 	})
 }

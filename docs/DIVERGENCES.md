@@ -366,6 +366,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   rollback such a stop adds an undo text instead. It is one of the branch-step texts
   in PROTOCOL.md → The branch step.
   On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
+  In `git.status` one deadline covers the 16 git calls of the answer, or 18 when
+  `HEAD` names no commit (from the code). It covered 2 calls before.
   A killed repo-detection call answers `isRepo:false`. A killed
   `branch --show-current` in `git.info` leaves out the `branch` member. A killed
   `defaultBranch` verify there gives `defaultBranch` `""`. On Windows a killed root
