@@ -1556,8 +1556,9 @@ below against `f6010b97`. Each point names the VMs that measured it.
   follows the light check, with no listing of its own. Before the daemon decides
   whether `worktreePath` is a registered worktree, it runs a light
   `worktree list --porcelain -z` and a heavy `rev-parse --absolute-git-dir`. Each
-  of them has its listing. claustrum does not use the answer of the last
-  `rev-parse --absolute-git-dir`. For a `baseRepo` that exists, the "leads into"
+  of them has its listing. The `rev-parse` runs after the worktree folder was
+  located. claustrum uses its answer only as the `--git-dir` of the pair (see
+  `git.worktree_remove`). For a `baseRepo` that exists, the "leads into"
   and "not reachable" refusals come right after `worktree list`.
   With the excludes read that is 7 calls, as on `f6010b97` and `89cb6289`. For a
   missing `baseRepo` and a missing root, both references send "not reachable" with
@@ -2844,17 +2845,74 @@ copies end still fails it, as `timeoutMs` above describes:
   `baseRepo`. For a main repository that is `<baseRepo>/.git`. For a linked worktree
   it is the git directory of the main repository. For a subdirectory of a repository
   and for a submodule it is the git directory of that repository. With a daemon
-  `GIT_DIR` alone, it is the directory that `GIT_DIR` names. Row E13 sets `GIT_DIR`
-  and `GIT_COMMON_DIR` to the `.git` of another repository. There `f6010b97` and
-  `89cb6289` keep `<baseRepo>/.git/worktrees/<name>`, and claustrum deletes it
-  (Linux, macOS and Windows). That is an open gap on issue 429. The `worktrees`
+  `GIT_DIR` alone, it is the directory that `GIT_DIR` names. The `worktrees`
   directory itself stays. After its last entry goes, it stays as an empty
   directory. The rules below were measured side by side against `f6010b97` on
   VMs. On macOS all 107 cases are equal. On Linux every remove case is equal. On
-  Windows every case is equal except the junction rows of D19. Row E13 above is
-  a later exception on all three systems. The full Windows set was measured on an earlier build,
-  and the fixed rows again on the shipped one. A sentence marked "not measured" has
-  no row behind it.
+  Windows every case is equal except the junction rows of D19. The full Windows
+  set was measured on an earlier build, and the fixed rows again on the shipped
+  one. A sentence marked "not measured" has no row behind it.
+- Without `worktreeRoot`, these rows of `89cb6289` set which entry goes. T is the
+  repository of `baseRepo`, S is its worktree `s0`, and X is another repository.
+  The frames are equal to those of a plain removal in each row.
+  - The daemon has `GIT_DIR` and `GIT_COMMON_DIR` of X in its environment. The
+    folder of S goes. The entry `s0` of T and the branch `s0` of T stay. Probe row
+    1 and battery row E13 show that on Linux, macOS and Windows VMs.
+  - The same environment, and the daemon created the worktree `w1` itself. git
+    registered `w1` in X. The removal deletes the entry `w1` of X and the branch
+    `w1` of X (row 2, the same three systems).
+  - The same environment, and X holds an entry `zz` whose `gitdir` record names
+    `<S>/.git`. The entry `zz` of X goes, and the entry `s0` of T stays (row 3, the
+    same three systems). The entry `zz` was made by hand. An entry that git itself
+    made in X for a folder of T is not measured.
+  - The same environment, and X holds a merged branch `s0`. The branch `s0` of X
+    goes. The entry and the branch `s0` of T stay (row 4, the same three systems).
+  - The daemon has `GIT_COMMON_DIR` of X alone. The entry `s0` of T goes (row 5,
+    the same three systems).
+  - The daemon has `GIT_DIR` of X alone. The entry `s0` of T stays (row 6, the same
+    three systems).
+  - `baseRepo` is `<T>/missing/..` with no folder `missing`. The folder of S goes,
+    its entry stays, and the reply carries `branchKept`. The one git call is the
+    read of the user excludes. Row 7c shows that on Linux and macOS VMs, and
+    battery rows A1, A3 and G3 on a Linux VM. In rows A1, A3 and G3 the request has
+    no `branchName`, and the reply has no `branchKept`. claustrum still refuses a
+    locked entry there. A lock is
+    not measured for that `baseRepo`, and neither is a folder that is already gone.
+  - On Windows, both paths go through a `subst` drive, or through a junction to
+    the repository. The folder and its entry go (probe row D-subst, battery rows
+    J2, Q1 and Q2). The claustrum test of the junction row runs on Windows only.
+  - The request is in 8.3 short names on Windows, or in another letter case on
+    macOS. The folder and the branch go, and the entry stays (rows D-83 and D-case).
+- The git calls of a removal without `worktreeRoot`, as `89cb6289` makes them on
+  Linux, macOS and Windows VMs. "The check" is a heavy `config -z --list` and
+  `rev-parse --absolute-git-dir` in `baseRepo`. `<G>` is the answer of the check.
+  "The pair" is two calls in `<G>`. The first is `--git-dir=<G> config -z --list`.
+  The second is `--git-dir=<G> --work-tree=<baseRepo> rev-parse --show-toplevel`.
+  - Every removal starts with the check. A worktree whose `.git` file names its own
+    entry under `<G>/worktrees` gets no other call before the branch step (rows K0,
+    2, 5 and 9).
+  - A `.git` file that names a git dir which is not such an entry gets the check
+    once more (rows 1, 3, 4, 6, 12 and 14).
+  - An entry under `<G>/worktrees` whose record names another path gets the pair
+    first, then the check (row 13, and row D-83 on Windows). On Windows the pair
+    alone follows through a `subst` drive, and the entry goes (row D-subst).
+  - If `<G>/worktrees` exists, the pair runs before the look at the entries by
+    path (rows K1, 3, 11, 12, 13, 14, 15, 15b and R17a). If the directory is
+    missing, the pair does not run (rows 1, 4 and 6). An empty directory is not
+    measured.
+  - If no entry names the folder, the pair runs once more after the delete of
+    the folder (rows K1 and K1b, battery row E13, row D-83).
+  - A `baseRepo` that holds no repository gets the check twice before the
+    lock-check refusal (row A5). With the folder gone, it gets the check once (row
+    16).
+  - claustrum's tests compare the working directory, the profile and the arguments
+    of each call with these rows. They do not compare each environment value.
+- With `worktreeRoot`, `89cb6289` runs `rev-parse --absolute-git-dir` before
+  `worktree list`, and the check once more after it located the folder. A root
+  that cannot be read answers after 7 calls (row T6 on a Linux VM). For a `.git`
+  file that names no verified entry, the calls follow the rules above. The pair
+  carries `--work-tree=<worktreePath>` there (rows Q20, Q20b and Y8w on a Linux
+  VM). Nothing is deleted in those rows.
 - On Windows, a junction at `.claude` or at `.claude\worktrees` is refused. Nothing
   is deleted, and the branch stays. The reply is `{"success":false,"error":"failed to remove
   worktree: openat .claude\\worktrees: path escapes from parent"}`. That text is
