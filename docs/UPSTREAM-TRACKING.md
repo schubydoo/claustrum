@@ -203,7 +203,7 @@ opt-in?
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
-| D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | status call `core.excludesFile` is `/dev/null`, not `NUL` |
+| D16 | Always-on, Windows only | Yes on a Windows run. `git.status` of a linked worktree: the reference answers `exit status 128` when the user has no global excludes file, claustrum answers the status | the `core.excludesFile` of the `status`, `ls-files` and `diff-index` calls of `git.status` is `/dev/null`, not `NUL`. The reference stops at its `status` call there, so its value for the other two is not measured |
 | CT-1 | Opt-in (`wantPid`) | Yes, on request. It adds `pid`/`startTime` | spawn/reattach reply extension |
 | CT-2 | Opt-in (`-keep-children`) | No | children survive shutdown |
 | CT-3 | Opt-in (`claustrum.conf`) | Only `version-override`, via the static check's `-version` diff | the configuration file itself |
@@ -368,7 +368,7 @@ traps that matter for telling drift from expected:
     W16). A symlink there resolves before `..` (row D03).
   - claustrum keeps D16 as it is. `git.status` now takes its gate from the worktree
     entries of `baseRepo`, as `89cb6289` does, so the `.git` inside `path` plays no
-    part (rows G01 to G12 and T12-G04, [PROTOCOL.md](PROTOCOL.md) → `git.status`).
+    part ([PROTOCOL.md](PROTOCOL.md) → `git.status`, rule 6).
 
   See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
   and git.info.

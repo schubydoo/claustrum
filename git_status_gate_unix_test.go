@@ -167,8 +167,8 @@ func TestGitStatusInsidePathBelowSymlinkedParent(t *testing.T) {
 	}
 }
 
-// Rows y2 to y5 and y10 (Linux and macOS VMs): a `..` component in a path inside
-// baseRepo answers isRepo:false. Outside baseRepo it passes, and so does a `.`.
+// Rows y2 to y5 (Linux and macOS VMs) and y10 (Linux VM): a `..` component in a path
+// inside baseRepo answers isRepo:false. Outside baseRepo it passes, and so does a `.`.
 func TestGitStatusDotDotRows(t *testing.T) {
 	f := newStatusFixture(t)
 	wt := filepath.Join(f.T, ".claude", "worktrees")

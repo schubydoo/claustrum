@@ -104,7 +104,7 @@ func TestGitStatusEntryGate(t *testing.T) {
 	}{
 		// Row K0.
 		{"K0 control", func(*testing.T, statusFixture) {}, statusClean},
-		// Rows G01 to G12, n26c and n26d: the .git inside path plays no part.
+		// Rows G01, G03 to G10 and G12, n26c and n26d: the .git inside path plays no part.
 		{"G01 no .git in path", func(t *testing.T, f statusFixture) {
 			if err := os.Remove(filepath.Join(f.W, ".git")); err != nil {
 				t.Fatal(err)

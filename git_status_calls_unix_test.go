@@ -246,7 +246,7 @@ func TestGitStatusGateCalls(t *testing.T) {
 		wantStatusCalls(t, "v4", calls, gate[:2])
 	})
 	// Row y1 (Linux and macOS VMs): W/missing/.. passes the gate cleaned. git then
-	// does not start in the path as sent, and no `git version` follows.
+	// does not start in the path as sent, and no `git version` follows the refusal.
 	t.Run("y1", func(t *testing.T) {
 		sent := f.W + "/missing/.."
 		raw, calls := run(sent, f.T)

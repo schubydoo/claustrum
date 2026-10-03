@@ -22,8 +22,8 @@ import (
 //
 // The gate does not ask git inside `path`. It reads the worktree entries under the
 // common directory of baseRepo and looks for the one entry that names `path`. So a
-// damaged or missing `.git` inside `path` plays no part (rows G01 to G12, n26c and
-// n26d), and no git call reads an entry file before the daemon judged it.
+// damaged or missing `.git` inside `path` plays no part (the G rows, n26c and n26d),
+// and no git call reads an entry file before the daemon judged it.
 
 const (
 	// statusEntryFileMaxBytes bounds the `gitdir` and `commondir` files of an entry.
@@ -80,7 +80,7 @@ func (r statusRefusal) Error() string { return string(r) }
 //
 //   - baseRepo has the components `.claude/worktrees` in it, or is that folder (rows
 //     n10, n10b1 and n10c1). `X/.claude` alone passes (rows n10b2 and n10c2).
-//   - A folder above baseRepo, at any level, holds an entry named
+//   - A folder one or two levels above baseRepo holds an entry named
 //     `.claude-managed-worktrees` and no `.git` (rows o23, o23c and o23d, Linux VM).
 //     The entry can be a file or a directory. With a `.git` in that folder the request
 //     passes (row o23b).
@@ -217,7 +217,7 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 //
 //   - a `..` component in `path` as sent, with or without the folder before it (rows
 //     x4 and x4b on a Windows VM, rows y3, y4 and y5 on Linux and macOS VMs). A `.`
-//     component passes (row y10).
+//     component passes (row y10, Linux VM).
 //   - on Windows, a component that ends in a dot or a space (rows x1 and x2) or holds
 //     a colon (row x3). The measured component is the last one. The test reads
 //     `path` as sent and cleaned: the absolute form that Windows gives has lost a
@@ -720,7 +720,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	default:
 		// git did not start, for example because `path` as sent does not open. The
 		// answer is the hooks refusal with the start error, and no `git version`
-		// runs (row y1, Linux and macOS VMs, 8 calls).
+		// follows the refusal (row y1, Linux and macOS VMs).
 		return nil, statusRefusal(hooksRefusalPrefix + l.detail())
 	}
 	full := append(attr, profileArgsWithExcludes(true, excludes,
