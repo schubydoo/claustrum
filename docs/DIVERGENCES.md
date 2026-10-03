@@ -845,7 +845,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   answers `{"success":true}` too (rows JCR1 and JCR2, after the refused create).
   Neither daemon deleted anything outside the fixture. The whole-build check of
   issue 442 measured `89cb6289` the same (Windows rows JC, J03 to J05, JCR1 and
-  JCR2).
+  JCR2), for a branch that another ref reaches.
 - **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
   and no key.
 - **Why always-on.** Rule 3 clause (b), by the maintainer's decision of 2026-09-27.

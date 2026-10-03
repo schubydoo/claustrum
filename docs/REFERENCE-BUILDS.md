@@ -62,9 +62,9 @@ Issue 442 tracked the reconciliation. The build carries a `go1.25.14` stamp
   and its text. A stray `commondir` gets new texts. The listing runs under
   `LC_ALL=C` and `LANGUAGE=C`, so a listing error is in English under a German
   daemon locale (row L03, PR 450).
-- A failed listing is answered by its cause. On Linux and macOS, `git.info`
-  takes its root without `rev-parse --show-toplevel`, and `server.capabilities`
-  gains the `git.info.discovered_root` feature (PR 450).
+- A failed listing is answered by its cause. `server.capabilities` gains the
+  `git.info.discovered_root` feature. On Linux and macOS, `git.info` takes its
+  root without `rev-parse --show-toplevel` (PR 450).
 
 **Off-wire churn.** Every spawned child loses the two launcher variables
 (PR 448). The reap of a child record reads its `program` key, which `f6010b97`
@@ -82,15 +82,8 @@ uncommitted files and its branch. PR 451 stops the direct `--version` run of
 and Windows VMs. A whole-build check of main `4495db6` against this build then
 ran on all three systems. The frame battery was byte-equal on each, apart from
 the fields that change per run and the D16 frame on Windows. The check
-found no new frame difference that a slice had not taken. Its other differences
-went on issue 429. Some of them differ in frames, in older gaps that `f6010b97`
-shares. One is the `git.status` answer in damaged layouts (Linux, macOS and
-Windows). Others are row E07 on create (Linux) and the FIFO wait of
-create (rows C20 and N05 on Linux, row N05 on macOS). The `server.shutdown`
-reply rate differs on Linux, macOS and Windows. The reports map each of these to
-an existing item of issue 429. The rest are git calls, file calls, log texts,
-child environment details, and timing. One more is an older end-state gap that
-`f6010b97` shares (row E13). D20 and D21 are new in this work, and D11 is
+found no new frame difference that a slice had not taken. Issue 429 lists its
+other differences. D20 and D21 are new in this work, and D11 is
 retired. D2 gained its `-install` refusal of a home folder (PR 451).
 
 ### `f6010b978a0b0f4ca0dcb7dadda9cc4271a608a1` — 2026-09-24 (observed)

@@ -16,8 +16,8 @@ import (
 // delete follows a symbolic link out of the directory that holds it. That is a
 // property of os.Root, not a measurement. The rules below were measured side by side
 // against f6010b97 on VMs: all 107 cases equal on macOS, every remove case equal on
-// Linux, and every Windows row equal except the junction rows of D19. The row names
-// are those of those runs. Unit tests pin this code to the rows.
+// Linux, and every Windows row equal except the junction rows of D19. A later row, E13,
+// differs on all three (docs/PROTOCOL.md). Unit tests pin this code to the rows.
 
 // worktreeRefusal is an error of git.worktree_remove about the worktree itself. The
 // reply puts "refusing to remove worktree: " before its text. Any other error gets
