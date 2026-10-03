@@ -261,7 +261,9 @@ func TestStatusGitDirContents(t *testing.T) {
 	}
 	// Row o17, with the sharedindex file of row o16b1.
 	want := []string{"HEAD", "commondir", "config.worktree", "index", "info/sparse-checkout", "sharedindex.abc"}
-	if got := list(statusEntry{dir: entry, shared: []string{"sharedindex.abc"}, hasConfig: true}); !slices.Equal(got, want) {
+	full := statusEntryAt(t, entry)
+	full.shared, full.hasConfig = []string{"sharedindex.abc"}, true
+	if got := list(full); !slices.Equal(got, want) {
 		t.Errorf("temporary folder holds %q\nwant %q", got, want)
 	}
 	// Row K1: an entry with none of the three holds HEAD, commondir and index.
@@ -271,7 +273,7 @@ func TestStatusGitDirContents(t *testing.T) {
 		}
 	}
 	want = []string{"HEAD", "commondir", "index"}
-	if got := list(statusEntry{dir: entry}); !slices.Equal(got, want) {
+	if got := list(statusEntryAt(t, entry)); !slices.Equal(got, want) {
 		t.Errorf("temporary folder holds %q\nwant %q", got, want)
 	}
 }

@@ -67,7 +67,7 @@ func TestResolveUserExcludesFile(t *testing.T) {
 // unusable temp root fails the whole call. TMPDIR is what os.TempDir reads on unix.
 func TestStatusGitDirTempDirFails(t *testing.T) {
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "absent"))
-	if _, err := buildStatusGitDir(statusEntry{dir: t.TempDir()}, t.TempDir()); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := buildStatusGitDir(statusEntryAt(t, t.TempDir()), t.TempDir()); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("buildStatusGitDir with no temp root = %v, want %v", err, fs.ErrNotExist)
 	}
 }
@@ -79,7 +79,7 @@ func TestStatusGitDirIndexOpenFails(t *testing.T) {
 	if err := os.Symlink("index", filepath.Join(entry, "index")); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
-	tmp, err := buildStatusGitDir(statusEntry{dir: entry}, t.TempDir())
+	tmp, err := buildStatusGitDir(statusEntryAt(t, entry), t.TempDir())
 	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
 	if !errors.Is(err, syscall.ELOOP) {
 		t.Fatalf("buildStatusGitDir with a looping index = %v, want %v", err, syscall.ELOOP)
@@ -92,7 +92,7 @@ func TestStatusGitDirIndexNotRegular(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(entry, "index"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tmp, err := buildStatusGitDir(statusEntry{dir: entry}, t.TempDir())
+	tmp, err := buildStatusGitDir(statusEntryAt(t, entry), t.TempDir())
 	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
 	if !errors.Is(err, errNotRegularFile) {
 		t.Fatalf("buildStatusGitDir with a folder named index = %v, want %v", err, errNotRegularFile)

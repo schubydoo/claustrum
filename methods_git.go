@@ -586,6 +586,7 @@ func gitStatus(req *request) response {
 	if !ok {
 		return notRepo
 	}
+	defer func() { _ = entry.root.Close() }()
 	// The exec error of a failed command goes on the wire as it is, for example
 	// "exit status 128". The text of git does not show for status, ls-files and
 	// diff-index. A relative path passes the gate and

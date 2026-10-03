@@ -26,7 +26,19 @@ func gitStatusFixture(t *testing.T) (e statusEntry, commonDir string) {
 			t.Fatal(err)
 		}
 	}
-	return statusEntry{dir: entry}, commonDir
+	return statusEntryAt(t, entry), commonDir
+}
+
+// statusEntryAt is the entry at dir with its root open. The root is closed when the
+// test ends, before the temporary folders are removed.
+func statusEntryAt(t *testing.T, dir string) statusEntry {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	return statusEntry{dir: dir, root: root}
 }
 
 // buildFails runs buildStatusGitDir, removes its folder and returns its error.
@@ -92,11 +104,7 @@ func TestGitStatusPropagatesACommondirWriteFailure(t *testing.T) {
 // error of the copy, and the copy reads no more than the bound plus one byte.
 func TestStatusCopyFileStopsAtItsBound(t *testing.T) {
 	e, _ := gitStatusFixture(t)
-	root, err := os.OpenRoot(e.dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = root.Close() }()
+	root := e.root
 	dst := filepath.Join(t.TempDir(), "index")
 	if err := statusCopyFile(root, "index", dst, int64(len("fixture\n"))-1); err == nil {
 		t.Fatal("statusCopyFile of a file over its bound = nil, want an error")

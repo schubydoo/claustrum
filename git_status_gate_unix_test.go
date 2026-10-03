@@ -229,7 +229,7 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 		if err := syscall.Mkfifo(list, 0o644); err != nil {
 			t.Skipf("mkfifo: %v", err)
 		}
-		files, ok := statusReftable(f.entry)
+		files, ok := statusReftable(statusEntryAt(t, f.entry).root)
 		if !ok || len(files) != 1 || files[0] == "tables.list" {
 			t.Errorf("statusReftable = %q %v, want the one table, no list, and true", files, ok)
 		}
@@ -238,4 +238,15 @@ func TestGitStatusReftableLinkRows(t *testing.T) {
 			t.Errorf("git.status = %s\nwant a status or the exit status of git", got)
 		}
 	})
+}
+
+// A `reftable` folder that is a symlink out of the entry. No row measured it. The
+// root of the entry refuses it, and the answer is isRepo:false.
+func TestStatusReftableSymlinkOutOfEntry(t *testing.T) {
+	entry, out := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(out, "a.ref"), "table", 0o644)
+	mustSymlink(t, out, filepath.Join(entry, "reftable"))
+	if files, ok := statusReftable(statusEntryAt(t, entry).root); ok {
+		t.Errorf("statusReftable = %q true, want false", files)
+	}
 }

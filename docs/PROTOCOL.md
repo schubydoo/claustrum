@@ -763,7 +763,6 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
 | git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
 | git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, `sharedindex.*`, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
-| git.status | `openat reftable/<name>: path escapes from parent` | -32603. claustrum's own text, when the `reftable` folder of the entry is a symlink out of the entry, and the linked folder holds a regular file and no `tables.list`. With no regular file there the request goes on. With a `tables.list` there the answer is `isRepo:false`. The reference is not measured there |
 | git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when the temporary git folder or a file in it cannot be made. The reference is not measured there |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
@@ -1937,7 +1936,10 @@ the read of the user's excludes.
       symlink (row r3).
     - Not measured: a size bound of a table or of the list, a folder inside
       `reftable`, and a symlink that the list does not name. claustrum bounds a
-      table at 1 GiB and the list at 1 MiB, and leaves the other two out.
+      table at 1 GiB and the list at 1 MiB, and leaves the other two out. Not
+      measured either: a `reftable` folder that is a symlink out of the entry.
+      claustrum reads the entry through one open folder handle, which refuses that
+      link, and answers `isRepo:false`.
 
 Not measured: the order of rules 7 to 11, and the size bound of `HEAD` and
 `config.worktree`. claustrum bounds both at 1 MiB. No read of an entry file blocks:
@@ -1992,9 +1994,7 @@ claustrum opens each file without blocking and reads a regular file only.
   gate passed. The reference is not measured in any of them. `<file>: not a regular
   file` answers an `info/sparse-checkout` that is a folder or a FIFO.
   `<file> is larger than <n> bytes` answers a copied file over its bound, also one
-  that grew after the gate. `openat reftable/<name>: path escapes from parent`
-  answers a `reftable` folder that is a symlink out of the entry, when the linked
-  folder holds a regular file and no `tables.list`. A file that cannot be copied
+  that grew after the gate. A file that cannot be copied
   and a temporary folder that cannot be made answer the raw Go error, for example
   `openat index: permission denied`.
 - Not measured: a failure of the listing in the temporary folder. claustrum answers
@@ -2008,6 +2008,9 @@ claustrum opens each file without blocking and reads a regular file only.
   follows (row o1, Linux VM). At most 10000 `status` entries pass, and no entry
   marks the cut (row o2, Linux VM). Submodule entries still follow (row o3). Not
   measured: a cut in the middle of a multi-byte character. Row o1 used an ASCII path.
+  claustrum's own behavior there: the cut can split a character, which is possible
+  with `core.quotePath=false`, and no profile pins that key. The JSON encoding then
+  sends U+FFFD for each leftover byte. The reference is not measured there.
 - Submodule entries follow the `status` lines. Each is ` S `, the quoted name and one
   of three texts. All rows below are from a Linux VM. Rows n20 to n20e ran on macOS
   and Windows VMs too.
@@ -2031,7 +2034,9 @@ claustrum opens each file without blocking and reads a regular file only.
     then quoted with double quotes, `\"`, `\n`, `\t`, and `\xff` for a byte that is
     not valid UTF-8. A printable character outside ASCII stays (row o11). Not
     measured: a cut in the middle of a character, and a name with `<`, `&`, `>` or
-    U+2028.
+    U+2028. claustrum's own behavior for the cut: it can split a character, and the
+    quoting then writes each leftover byte as `\xNN` text. The reference is not
+    measured there.
   - At most 100 submodule entries pass. Then one entry gives the count of the rest:
     ` S … (+20 more submodule entries)` (row o10, and row n20d with 1).
 - `clean` is true only for an empty `changes`.

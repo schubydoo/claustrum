@@ -487,11 +487,13 @@ func TestStatusGitDirReftableContents(t *testing.T) {
 	} {
 		writeFile(t, filepath.Join(entry, filepath.FromSlash(name)), body, 0o644)
 	}
-	files, ok := statusReftable(entry)
+	e := statusEntryAt(t, entry)
+	files, ok := statusReftable(e.root)
 	if want := []string{"a.ref", "b.ref", "tables.list"}; !ok || !slices.Equal(files, want) {
 		t.Fatalf("statusReftable = %q %v, want %q", files, ok, want)
 	}
-	tmp, err := buildStatusGitDir(statusEntry{dir: entry, reftable: files}, common)
+	e.reftable = files
+	tmp, err := buildStatusGitDir(e, common)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +505,38 @@ func TestStatusGitDirReftableContents(t *testing.T) {
 		}
 	}
 	// An entry with no reftable folder has no file to copy.
-	if files, ok := statusReftable(t.TempDir()); !ok || files != nil {
+	if files, ok := statusReftable(statusEntryAt(t, t.TempDir()).root); !ok || files != nil {
 		t.Errorf("statusReftable with no folder = %q %v, want none and true", files, ok)
+	}
+}
+
+// The entry folder is opened once, at the match. A folder that takes its place
+// after the match is never read: the answer comes from the matched folder, or it is
+// isRepo:false. The swapped folder here is the entry without its index, which by
+// itself answers a list of changes (row o15d).
+func TestGitStatusEntrySwappedAfterMatch(t *testing.T) {
+	f := newStatusFixture(t)
+	old := statusEntryMatched
+	t.Cleanup(func() { statusEntryMatched = old })
+	swapped := false
+	statusEntryMatched = func(entry string) {
+		aside := entry + ".aside"
+		if err := os.Rename(entry, aside); err != nil {
+			// Windows does not rename a folder that the daemon holds open. The entry
+			// then stays the matched one.
+			t.Logf("the entry cannot be swapped here: %v", err)
+			return
+		}
+		if err := os.CopyFS(entry, os.DirFS(aside)); err != nil {
+			t.Error(err)
+		}
+		if err := os.Remove(filepath.Join(entry, "index")); err != nil {
+			t.Error(err)
+		}
+		swapped = true
+	}
+	got := f.status(t)
+	if got != statusClean && got != statusNotRepo {
+		t.Errorf("git.status = %s\nwant %s or %s (swapped: %v)", got, statusClean, statusNotRepo, swapped)
 	}
 }

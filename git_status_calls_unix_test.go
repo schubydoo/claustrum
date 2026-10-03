@@ -412,3 +412,29 @@ func TestGitStatusDaemonCommonDirCalls(t *testing.T) {
 		}
 	}
 }
+
+// A git that does not take --attr-source. The two calls of the empty tree still run
+// before each command, and no command carries the option. No row measured this git.
+func TestGitStatusCallOrderWithoutAttrSource(t *testing.T) {
+	f := newStatusFixture(t)
+	run := statusCallLog(t, f.root)
+	// The probe counts as done, with the answer "not supported".
+	attrSourceOnce = sync.Once{}
+	attrSourceOnce.Do(func() {})
+	attrSourceOK = false
+	raw, calls := run(f.W, f.T)
+	if raw != statusClean {
+		t.Fatalf("frame = %s\nwant %s", raw, statusClean)
+	}
+	bare := func(command string) []string {
+		c := statusCommandCalls("<fx>/W", "<fx>/W", command)
+		c[3] = strings.Replace(c[3], "--attr-source="+gitEmptyTree+" ", "", 1)
+		return c
+	}
+	want := statusGateCalls("<fx>/W")
+	want = append(want, bare(callStatus)...)
+	want = append(want, bare(callLsFiles)...)
+	want = append(want, bare(callHead)...)
+	want = append(want, bare(callDiffIndex+"HEAD -- +locks")...)
+	wantStatusCalls(t, "no --attr-source", calls, want)
+}

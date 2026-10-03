@@ -294,14 +294,9 @@ func statusOpenFile(root *os.Root, name string) (*os.File, fs.FileInfo, error) {
 	return f, fi, nil
 }
 
-// statusReadFile reads name inside the entry folder entry (statusOpenFile). A file of
-// more than max bytes is an error.
-func statusReadFile(entry, name string, max int64) ([]byte, error) {
-	root, err := os.OpenRoot(entry)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = root.Close() }()
+// statusReadFile reads name inside the entry folder that root holds (statusOpenFile).
+// A file of more than max bytes is an error.
+func statusReadFile(root *os.Root, name string, max int64) ([]byte, error) {
 	f, _, err := statusOpenFile(root, name)
 	if err != nil {
 		return nil, err
@@ -341,31 +336,57 @@ func entryPathValue(entry string, content []byte) string {
 // another case matches, in the `gitdir` file (row x6) and in `path` (row x8). The
 // `.git` name does not: `.GIT` fails (rows x7 and D9). An entry whose `gitdir` cannot be read is passed over: a
 // second entry whose `gitdir` is a directory changes no answer (row v2, Linux VM).
-func statusMatchEntry(common string, spellings []string) (string, bool) {
+//
+// Each entry folder is opened once, as an os.Root, and its `gitdir` is read through
+// that root. The root of the matched entry is returned open. Every later read of the
+// entry goes through it, so a folder that takes the place of the entry after the
+// match is never read. The caller closes it.
+func statusMatchEntry(common string, spellings []string) (string, *os.Root, bool) {
 	dir := filepath.Join(common, "worktrees")
 	ents, err := os.ReadDir(dir)
 	if err != nil {
-		return "", false
+		return "", nil, false
 	}
-	found, n := "", 0
+	var found string
+	var foundRoot *os.Root
+	n := 0
 	for _, e := range ents {
 		if !e.IsDir() {
 			continue
 		}
 		entry := filepath.Join(dir, e.Name())
-		b, err := statusReadFile(entry, "gitdir", statusFileMaxBytes)
+		root, err := os.OpenRoot(entry)
 		if err != nil {
 			continue
 		}
-		v := entryPathValue(entry, b)
-		holder := filepath.Dir(v)
-		if filepath.Base(v) != ".git" || !slices.ContainsFunc(spellings, func(s string) bool { return sameCanonicalPath(s, holder) }) {
+		if n++; !statusGitdirNames(root, entry, spellings) {
+			n--
+		} else if n == 1 {
+			found, foundRoot = entry, root
 			continue
 		}
-		found = entry
-		n++
+		_ = root.Close()
 	}
-	return found, n == 1
+	if n != 1 {
+		if foundRoot != nil {
+			_ = foundRoot.Close()
+		}
+		return "", nil, false
+	}
+	return found, foundRoot, true
+}
+
+// statusGitdirNames reports whether the `gitdir` file of the entry that root holds
+// names one of spellings.
+func statusGitdirNames(root *os.Root, entry string, spellings []string) bool {
+	b, err := statusReadFile(root, "gitdir", statusFileMaxBytes)
+	if err != nil {
+		return false
+	}
+	v := entryPathValue(entry, b)
+	holder := filepath.Dir(v)
+	return filepath.Base(v) == ".git" &&
+		slices.ContainsFunc(spellings, func(s string) bool { return sameCanonicalPath(s, holder) })
 }
 
 // statusEntryNamesCommon judges the `commondir` file of the matched entry. Its value
@@ -375,8 +396,8 @@ func statusMatchEntry(common string, spellings []string) (string, bool) {
 // n19g). On macOS a value under /tmp fails, because git answers /private/tmp (row
 // n19b.t). Another letter case fails, on Windows too (rows C11, D10, W04 and x9),
 // and so does a short name (rows K05a, K07a and K15a).
-func statusEntryNamesCommon(entry, common string) bool {
-	b, err := statusReadFile(entry, "commondir", statusFileMaxBytes)
+func statusEntryNamesCommon(root *os.Root, entry, common string) bool {
+	b, err := statusReadFile(root, "commondir", statusFileMaxBytes)
 	if err != nil {
 		return false
 	}
@@ -400,20 +421,15 @@ func statusHeadValid(b []byte) bool {
 // that is missing passes (row o15d). One that is not a regular file fails with no
 // wait (row o15b, a FIFO), and so does one over statusIndexMaxBytes (rows o15c and
 // o16). A symlink to a regular file inside the entry passes (row o15a).
-func statusIndexFiles(entry string) ([]string, bool) {
-	root, err := os.OpenRoot(entry)
-	if err != nil {
-		return nil, false
-	}
-	defer func() { _ = root.Close() }()
-	ents, err := os.ReadDir(entry)
+func statusIndexFiles(root *os.Root) ([]string, bool) {
+	names, err := statusDirNames(root, ".")
 	if err != nil {
 		return nil, false
 	}
 	var shared []string
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), "sharedindex.") {
-			shared = append(shared, e.Name())
+	for _, name := range names {
+		if strings.HasPrefix(name, "sharedindex.") {
+			shared = append(shared, name)
 		}
 	}
 	for _, name := range append([]string{"index"}, shared...) {
@@ -428,6 +444,19 @@ func statusIndexFiles(entry string) ([]string, bool) {
 	return shared, true
 }
 
+// statusDirNames lists the folder dir of the entry that root holds, through the root,
+// and returns its names in sorted order.
+func statusDirNames(root *os.Root, dir string) ([]string, error) {
+	d, err := root.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = d.Close() }()
+	names, err := d.Readdirnames(-1)
+	slices.Sort(names)
+	return names, err
+}
+
 // statusEntryConfig judges the `config.worktree` file of the matched entry. present
 // is true when the entry has one. A missing file passes. A folder, a FIFO and a
 // syntax error fail, with no wait on the FIFO (rows n14, n14b and n14c).
@@ -436,11 +465,11 @@ func statusIndexFiles(entry string) ([]string, bool) {
 // file is the stdin of that call, its working directory is that of the daemon, and it
 // gets the environment of the daemon as it is (rows n12, n12b, n13 and n14c). Every
 // key must be one of statusConfigKeys.
-func statusEntryConfig(entry string) (present, ok bool) {
-	if _, err := os.Lstat(filepath.Join(entry, "config.worktree")); errors.Is(err, fs.ErrNotExist) {
+func statusEntryConfig(root *os.Root) (present, ok bool) {
+	if _, err := root.Lstat("config.worktree"); errors.Is(err, fs.ErrNotExist) {
 		return false, true
 	}
-	b, err := statusReadFile(entry, "config.worktree", statusFileMaxBytes)
+	b, err := statusReadFile(root, "config.worktree", statusFileMaxBytes)
 	if err != nil {
 		return true, false
 	}
@@ -467,6 +496,7 @@ func statusEntryConfig(entry string) (present, ok bool) {
 // statusEntry is the matched worktree entry after the gate.
 type statusEntry struct {
 	dir       string   // <common>/worktrees/<name>
+	root      *os.Root // dir, opened once at the match: every read goes through it
 	shared    []string // the sharedindex.* names
 	hasConfig bool     // the entry holds a config.worktree
 	reftable  []string // the file names of the entry's reftable folder to copy
@@ -475,29 +505,44 @@ type statusEntry struct {
 // statusEntryOf runs the entry part of the gate: the match, then `commondir`, `HEAD`,
 // the index sizes and `config.worktree`. Each failure answers isRepo:false. The order
 // of the tests after the match is not measured: each failing row broke one file only.
-func statusEntryOf(common string, sp statusPath) (statusEntry, bool) {
-	dir, ok := statusMatchEntry(common, sp.spellings)
-	if !ok || !statusEntryNamesCommon(dir, common) {
+//
+// The entry comes back with its root open when ok is true. The caller closes it.
+func statusEntryOf(common string, sp statusPath) (e statusEntry, ok bool) {
+	dir, root, ok := statusMatchEntry(common, sp.spellings)
+	if !ok {
 		return statusEntry{}, false
 	}
-	head, err := statusReadFile(dir, "HEAD", statusFileMaxBytes)
+	defer func() {
+		if !ok {
+			_ = root.Close()
+		}
+	}()
+	statusEntryMatched(dir)
+	if !statusEntryNamesCommon(root, dir, common) {
+		return statusEntry{}, false
+	}
+	head, err := statusReadFile(root, "HEAD", statusFileMaxBytes)
 	if err != nil || !statusHeadValid(head) {
 		return statusEntry{}, false
 	}
-	shared, ok := statusIndexFiles(dir)
+	shared, ok := statusIndexFiles(root)
 	if !ok {
 		return statusEntry{}, false
 	}
-	hasConfig, ok := statusEntryConfig(dir)
+	hasConfig, ok := statusEntryConfig(root)
 	if !ok {
 		return statusEntry{}, false
 	}
-	reftable, ok := statusReftable(dir)
+	reftable, ok := statusReftable(root)
 	if !ok {
 		return statusEntry{}, false
 	}
-	return statusEntry{dir: dir, shared: shared, hasConfig: hasConfig, reftable: reftable}, true
+	return statusEntry{dir: dir, root: root, shared: shared, hasConfig: hasConfig, reftable: reftable}, true
 }
+
+// statusEntryMatched is a seam for the tests. It runs right after the match, with the
+// path of the matched entry. Production never reassigns it.
+var statusEntryMatched = func(string) {}
 
 // statusReftable judges the `reftable` folder of the matched entry and returns the
 // names of its files to copy. A repository with the reftable format keeps the HEAD
@@ -514,32 +559,38 @@ func statusEntryOf(common string, sp statusPath) (statusEntry, bool) {
 //
 // Not measured: a size bound of a table or of the list, a folder inside `reftable`,
 // and a symlink that the list does not name. claustrum bounds a table at statusIndexMaxBytes and the list at
-// statusFileMaxBytes, and leaves a folder out.
-func statusReftable(entry string) (files []string, ok bool) {
-	ents, err := os.ReadDir(filepath.Join(entry, "reftable"))
-	if err != nil {
+// statusFileMaxBytes, and leaves a folder out. Not measured either: a `reftable`
+// folder that is a symlink out of the entry. The root refuses it, and claustrum
+// answers isRepo:false, as for a `reftable` that is not a folder.
+func statusReftable(root *os.Root) (files []string, ok bool) {
+	names, err := statusDirNames(root, "reftable")
+	switch {
+	case err == nil:
+	case errors.Is(err, fs.ErrNotExist):
 		return nil, true
+	default:
+		return nil, false
 	}
-	for _, e := range ents {
-		switch fi, err := e.Info(); {
+	for _, name := range names {
+		switch fi, err := root.Lstat("reftable/" + name); {
 		case err != nil:
 			return nil, false
 		case fi.Mode().IsRegular():
 			if fi.Size() > statusIndexMaxBytes {
 				return nil, false
 			}
-			files = append(files, e.Name())
+			files = append(files, name)
 		}
 	}
 	if !slices.Contains(files, "tables.list") {
 		return files, true
 	}
-	b, err := statusReadFile(entry, "reftable/tables.list", statusFileMaxBytes)
-	names := strings.Fields(string(b))
-	if err != nil || len(names) == 0 {
+	b, err := statusReadFile(root, "reftable/tables.list", statusFileMaxBytes)
+	listed := strings.Fields(string(b))
+	if err != nil || len(listed) == 0 {
 		return nil, false
 	}
-	for _, name := range names {
+	for _, name := range listed {
 		if name == "tables.list" || !slices.Contains(files, name) {
 			return nil, false
 		}
@@ -601,11 +652,7 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root, err := os.OpenRoot(e.dir)
-	if err != nil {
-		return tmp, err
-	}
-	defer func() { _ = root.Close() }()
+	root := e.root
 	type item struct {
 		name string
 		max  int64
@@ -708,8 +755,10 @@ func isObjectID(s string) bool {
 // follows row o22, where the listing with --git-dir=<common> failed. A failure of this
 // one listing is not measured.
 func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, error) {
+	// Calls 7 and 8 run before every command, whatever attrSource says.
+	id := r.emptyTree()
 	var attr []string
-	if id := r.emptyTree(); r.attrSource {
+	if r.attrSource {
 		attr = []string{"--attr-source=" + id}
 	}
 	l := runListing(r.ctx, r.path, r.tmp, precursorEnv(true, r.pin))
@@ -816,7 +865,7 @@ func porcelainEntries(out []byte) []string {
 			continue
 		}
 		if len(t) > statusLineMaxBytes {
-			t = t[:statusLineMaxBytes] + "…"
+			t = t[:statusLineMaxBytes] + "…" // can split a character: JSON then sends U+FFFD
 		}
 		entries = append(entries, t)
 	}
@@ -829,7 +878,7 @@ func porcelainEntries(out []byte) []string {
 // is not valid UTF-8. A printable character outside ASCII stays as it is (row o11).
 func submoduleEntry(name, text string) string {
 	if len(name) > statusNameMaxBytes {
-		name = name[:statusNameMaxBytes] + "…"
+		name = name[:statusNameMaxBytes] + "…" // can split a character: quoted as \xNN
 	}
 	return " S " + strconv.Quote(name) + text
 }
