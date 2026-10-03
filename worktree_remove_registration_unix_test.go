@@ -293,7 +293,7 @@ func TestWorktreeRemoveMissingBaseRepoKeepsEntry(t *testing.T) {
 	wantRemoveCalls(t, "row 7c", calls, 1, []string{callExcludes})
 }
 
-// Row p6d (Linux VM): the baseRepo of row 7c with S locked in T. claustrum refuses,
+// Row p6d (Linux and macOS VMs): the baseRepo of row 7c with S locked in T. claustrum refuses,
 // and 89cb6289 deletes S. That is divergence D22.
 func TestWorktreeRemoveMissingBaseRepoLockedStillRefused(t *testing.T) {
 	f := newRegFixture(t)
@@ -693,7 +693,7 @@ func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
 	}
 }
 
-// Row p4 (Linux VM): baseRepo holds an empty `.git` folder and lies in an outer
+// Row p4 (Linux and macOS VMs): baseRepo holds an empty `.git` folder and lies in an outer
 // repository O. The worktree folder is gone. The branch s0 of O stays, and the request
 // makes 5 calls, each with GIT_DIR=/dev/null.
 func TestWorktreeRemoveEmptyGitDirKeepsOuterBranch(t *testing.T) {
@@ -721,4 +721,37 @@ func TestWorktreeRemoveEmptyGitDirKeepsOuterBranch(t *testing.T) {
 		"<fx>/O/sub|H|rev-parse --absolute-git-dir"+pinNoRepo,
 		"<fx>/O/sub|L|config -z --list"+pinNoRepo,
 		"<fx>/O/sub"+callForEachRef+pinNoRepo)
+}
+
+// D22: the daemon has GIT_DIR and GIT_COMMON_DIR of X, and the worktrees folder of T
+// has mode 000. claustrum cannot read the lock there, so it answers the lock-check
+// refusal and deletes nothing. Not measured on the reference.
+func TestWorktreeRemoveUnreadableBaseRepoEntriesRefused(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory of mode 000")
+	}
+	for _, c := range []struct {
+		name string
+		gone bool
+	}{{"folder present", false}, {"folder gone", true}} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newRegFixture(t)
+			if c.gone {
+				if err := os.RemoveAll(f.S); err != nil {
+					t.Fatal(err)
+				}
+			}
+			chmodFor(t, filepath.Join(f.T, ".git", "worktrees"), 0o000)
+			daemonGitEnv(t, gitDirOf(f.X), gitDirOf(f.X))
+			raw := removeFrame(t, f.removeParams())
+			want := `"error":"failed to remove worktree: could not check whether ` + f.S +
+				` is locked (its registrations could not be examined); retry"`
+			if !strings.Contains(raw, want) {
+				t.Errorf("frame = %s\nwant %s", raw, want)
+			}
+			if !c.gone && !exists(f.S) {
+				t.Error("the worktree folder was deleted")
+			}
+		})
+	}
 }

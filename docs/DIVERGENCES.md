@@ -173,7 +173,7 @@ rather than repeating them in each entry:
 | [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
-| [D22](#d22) | `git.worktree_remove` refuses a locked worktree in two states where `89cb6289` deletes its folder: a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, and a `baseRepo` that does not exist as sent | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those two states | a reader of the reply that needs the removal of a locked worktree, or a measurement that shows the reference refusing there |
+| [D22](#d22) | `git.worktree_remove` refuses a locked worktree in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -975,43 +975,59 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** `git.worktree_remove` refuses a worktree that carries a git
   worktree lock, and deletes nothing. Since `7d193f89` the reference refuses it
-  too, with the same text. In two states `89cb6289` deletes the folder of a locked
-  worktree, and claustrum still refuses.
-- **Reference side, measured.** On a Linux VM, 3 of 3 runs each:
-  - Row p6. The daemon has `GIT_DIR` and `GIT_COMMON_DIR` of another repository X.
-    The worktree S is locked in T, the repository of `baseRepo`. `89cb6289` answers
-    `{"success":true}` and deletes the folder of S. The entry of T with its
-    `locked` file stays.
-  - Row p6d. `baseRepo` is `<T>/missing/..` with no folder `missing`, with git on
-    `PATH`. S is locked in T. `89cb6289` answers
+  too, with the same text. In four states `89cb6289` answers success for a
+  worktree S that is locked in T, the repository of `baseRepo`. claustrum refuses
+  in each of them.
+- **Reference side, measured.** 3 of 3 runs on each system named:
+  - Row p6 (Linux, macOS, Windows). The daemon has `GIT_DIR` and `GIT_COMMON_DIR`
+    of another repository X. `89cb6289` answers `{"success":true}` and deletes the
+    folder of S. The entry of T with its `locked` file stays.
+  - Row p6e (Linux, macOS, Windows). The daemon has `GIT_DIR` of X alone.
+    `89cb6289` answers `{"success":true}` and deletes the folder of S.
+  - Row p6d (Linux, macOS). `baseRepo` is `<T>/missing/..` with no folder
+    `missing`, with git on `PATH`. `89cb6289` answers
     `{"success":true,"branchKept":true}` and deletes the folder of S.
-- **claustrum side.** In both rows claustrum answers the locked refusal of
-  [PROTOCOL.md](PROTOCOL.md) and deletes nothing.
-  claustrum at `2dc9d85` answered so in both rows on the same VM. Unit tests pin
-  both rows.
+  - Row p6f (Linux, macOS, Windows). The environment of row p6, and the folder of
+    S is gone. `89cb6289` answers `{"success":true}` and deletes nothing.
+- **claustrum side, measured.** In rows p6, p6e and p6d claustrum answers the
+  locked refusal of [PROTOCOL.md](PROTOCOL.md) and deletes nothing. In row p6f it
+  answers the "is gone but its registration is locked" refusal. Those are the
+  rows of build `87f2326` on the same VMs. claustrum at `2dc9d85` refused in rows
+  p6, p6d and p6f too, and deleted the folder in row p6e.
 - **Equal in the rows beside them.** Row p6b puts the lock on an entry of X whose
-  record names S: both sides refuse. Row p6c has no daemon environment: both
-  sides refuse.
+  record names S: both sides refuse. Rows p6c and p6g have no daemon environment:
+  both sides refuse.
+- **How.** claustrum also reads the entries under `<baseRepo>/.git/worktrees`, with
+  no git call, with and without `worktreeRoot`. If that folder exists and cannot
+  be read, claustrum answers the lock-check refusal and deletes nothing. A folder
+  that does not exist counts as not locked.
 - **Default.** Always-on, on every system. **Activate:** always-on. There is no
   flag and no key.
 - **Why always-on.** The maintainer's decision of 2026-10-03: claustrum always
-  refuses a locked worktree. A lock states that the folder must stay, and a
-  deleted folder cannot be taken back. No clause of rule 3 covers this entry: the
-  frame differs in a state that a caller can reach. It stands on that decision,
-  and the reopen trigger below takes it back.
-- **Cost.** In the two states the frame differs from `89cb6289`: claustrum sends
-  `success:false` with the locked text, and the folder stays. A caller there must
-  unlock the worktree first.
-- **Not measured.** The reference on macOS and Windows in rows p6 and p6d. The
-  reference with a locked worktree whose folder is gone in the state of row p6:
-  claustrum answers the gone-and-locked refusal. The reference with a daemon
-  `GIT_DIR` alone and a lock in T: claustrum refuses there too.
+  refuses a locked worktree. A lock is the user's own instruction not to delete,
+  and a deleted folder cannot be taken back. No clause of rule 3 covers this
+  entry. Rule 4 says that a change to a frame on an honest path is opt-in or does
+  not ship. The maintainer decided on 2026-10-03 to accept this frame difference.
+  Each of the four states needs a state that the request does not create: a
+  `GIT_DIR` in the daemon's environment, a `baseRepo` spelled through a missing
+  name, or a folder removed by hand. No measurement shows a client that reaches
+  one of them. The entry stands on that decision, and the reopen trigger below
+  takes it back.
+- **Cost.** In the four states the frame differs from `89cb6289`: claustrum sends
+  `success:false` with a locked text. In rows p6, p6e and p6d the folder stays. A
+  caller there must unlock the worktree first.
+- **Not measured.** The reference on Windows in row p6d: Windows refuses that
+  `baseRepo` on both sides. The reference with `GIT_DIR` of X, `GIT_COMMON_DIR` of
+  a third repository Y and a lock in T. The reference for a remove with
+  `worktreeRoot` and a lock in T: claustrum refuses there too. The reference with
+  a `<baseRepo>/.git/worktrees` folder that cannot be read.
 - **Reopen trigger.** A caller that needs the removal of a locked worktree in
   these states. Or a measurement that shows the reference refusing there (then
   this becomes parity).
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`. Also
   `worktreeremove.go` (`lockedInBaseRepo`) and `methods_git.go`. Evidence in
-  `scratch/i429/s2-linux/REPORT-rev1.md`.
+  `scratch/i429/s2-linux/REPORT-rev1.md`, and in `REPORT-val3.md` under
+  `scratch/i429/s2-linux`, `s2-macos` and `s2-windows`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

@@ -1378,8 +1378,8 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// of the user excludes. Probe row 7c sends <T>/missing/.. on Linux and macOS VMs.
 	// Battery rows A1, A3 and G3 send <T>/missing/.., <F>/missing/../T and <T>/dl/.. on
 	// a Linux VM. The lock check below still reads <T>/.git/worktrees for that
-	// baseRepo, and a locked worktree is refused. 89cb6289 deletes it (row p6d on a
-	// Linux VM). That refusal is divergence D22.
+	// baseRepo, and a locked worktree is refused. 89cb6289 deletes it (row p6d on
+	// Linux and macOS VMs). That refusal is divergence D22.
 	dropEntry := true
 	_, statErr := os.Stat(repo)
 	repoMissing := errors.Is(statErr, fs.ErrNotExist)
@@ -1454,13 +1454,18 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	}
 	sp := newWorktreePathSet(target.path, p.WorktreePath)
 	// A worktree that is locked in the repository of baseRepo is refused, also when
-	// the entries are read from another git directory (D22, lockedInBaseRepo).
-	if p.WorktreeRoot == "" {
+	// the entries are read from another git directory (D22, lockedInBaseRepo). That
+	// holds with worktreeRoot too.
+	{
 		named := ""
 		if namesGitDir {
 			named = gitDir
 		}
-		if lockedInBaseRepo(repo, commonDir, named, target.path, sp) {
+		locked, readable := lockedInBaseRepo(repo, commonDir, named, target.path, sp)
+		if !readable {
+			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
+		if locked {
 			return refuse(lockedWorktreeRefusal(p.WorktreePath))
 		}
 	}
@@ -1697,9 +1702,12 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
 		goneLocked := "refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
 			"registration is locked (git worktree lock); unlock it to remove the registration and branch"
-		// D22: a locked entry in the repository of baseRepo is refused too. Not
-		// measured on the reference for a folder that is gone.
-		if p.WorktreeRoot == "" && lockedInBaseRepo(repo, commonDir, "", path, sp) {
+		// D22: a locked entry in the repository of baseRepo is refused too, with and
+		// without worktreeRoot. 89cb6289 answers success there and deletes nothing
+		// (row p6f on Linux, macOS and Windows VMs, without worktreeRoot).
+		if locked, readable := lockedInBaseRepo(repo, commonDir, "", path, sp); !readable {
+			return refuse(lockCheckRefusal(p.WorktreePath))
+		} else if locked {
 			return refuse(goneLocked)
 		}
 		// A worktrees directory that cannot be read does not stop a gone remove. The

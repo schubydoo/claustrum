@@ -304,10 +304,10 @@ func worktreeLockedByPath(commonDir string, sp worktreePathSet) (locked, readabl
 // environment, 89cb6289 keeps the entry of baseRepo (probe rows 1 to 4 on Linux, macOS
 // and Windows VMs) and deletes an entry of X (rows 2 and 3). With GIT_DIR of X and
 // GIT_COMMON_DIR of a third repository, the entry that goes is in X too (rows p3, p3b
-// and p3c on a Linux VM). With GIT_COMMON_DIR alone it deletes the entry of baseRepo
+// and p3c on Linux and macOS VMs). With GIT_COMMON_DIR alone it deletes the entry of baseRepo
 // (row 5), and the call answers the git directory of baseRepo there. The same holds on
-// a Linux VM for a submodule, a subfolder of the repository and a bare repository as
-// baseRepo (rows p2a, p2b and p2c). In every other case it is verifyGitDir, as before.
+// Linux and macOS VMs for a submodule, a subfolder of the repository and a bare
+// repository as baseRepo (rows p2a, p2b and p2c). In every other case it is verifyGitDir, as before.
 //
 // Not measured: an answer that is a linked-worktree entry while the daemon sets
 // GIT_COMMON_DIR. claustrum keeps verifyGitDir there.
@@ -326,25 +326,33 @@ func registrationGitDir(repo, answered string) string {
 // the worktree, when the removal reads its entries from another git directory
 // (commonDir). It looks under <repo>/.git/worktrees: at the entry that the `.git` file
 // of the worktree names, when gitDir is not "", and at each entry whose record names
-// the worktree. It runs no git call. A worktrees directory that cannot be read
-// reports false.
+// the worktree. It runs no git call. readable is false when <repo>/.git/worktrees
+// exists and cannot be read. The caller then answers the lock-check refusal: for a
+// delete guard, a lock that cannot be read counts as a refusal. That is claustrum's
+// choice (not measured). A directory that does not exist is not locked.
 //
-// This is divergence D22. claustrum always refuses a locked worktree. With GIT_DIR and
-// GIT_COMMON_DIR of another repository in the daemon's environment, 89cb6289 answers
-// success and deletes a worktree that is locked in baseRepo (row p6 on a Linux VM).
-// With GIT_DIR alone the reference is not measured, and claustrum refuses there too.
-func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) bool {
+// This is divergence D22. claustrum always refuses a locked worktree. 89cb6289
+// answers success for a worktree that is locked in baseRepo in these rows, on Linux,
+// macOS and Windows VMs: with GIT_DIR and GIT_COMMON_DIR of another repository in the
+// daemon's environment (row p6, and row p6f with the folder gone), and with GIT_DIR
+// alone (row p6e). With worktreeRoot the reference is not measured.
+func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (locked, readable bool) {
 	base := filepath.Join(repo, ".git")
 	if canonicalPath(base) == canonicalPath(commonDir) {
-		return false
+		return false, true
+	}
+	// A `.git` that is a file, as in a linked worktree or a submodule, holds no
+	// worktrees directory.
+	if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
+		return false, true
 	}
 	if gitDir != "" {
 		if name, err := verifiedWorktreeEntry(gitDir, base, "", path, sp, nil); err == nil {
-			return verifiedEntryLocked(base, name)
+			return verifiedEntryLocked(base, name), true
 		}
 	}
-	locked, _, _ := worktreeLockedByPath(base, sp)
-	return locked
+	locked, readable, _ = worktreeLockedByPath(base, sp)
+	return locked, readable
 }
 
 // registrationProbe runs the pair of gitDirWorkTreeToplevel that 89cb6289 runs in a

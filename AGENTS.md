@@ -124,12 +124,13 @@ The JSON-RPC surface is identical on every OS. Full internals →
       worktree remove`. It deletes the entries of the leaf except `.git` in the
       order that the directory read returns them, and it stops at the first
       failure. Then it deletes the rest and the leaf, then the entry under
-      `<git dir>/worktrees`. For a `baseRepo` that does not exist the entry stays.
+      `<git dir>/worktrees`. Without `worktreeRoot`, the entry stays for a
+      `baseRepo` that does not exist.
       With a daemon `GIT_DIR` and `GIT_COMMON_DIR`, `<git dir>` is the repository
       that they name. Each delete goes through an `os.Root`, so no delete
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A LOCKED worktree is refused, not deleted,
-      also in the two states where `89cb6289` deletes it (D22).
+      also in the four states where `89cb6289` answers success (D22).
       On Windows a junction at `.claude` or `.claude\worktrees` is refused too,
       where `f6010b97` and `89cb6289` answer success and delete the branch. For
       `89cb6289` that is measured for a branch that another ref reaches.
@@ -322,10 +323,13 @@ this build, no line is lost. `89cb6289` truncates the file at that start, so the
 earlier lines of the first daemon are lost. Keeping the lines is the maintainer's
 decision of 2026-10-02, not a rule 3 clause. See the entry.
 
-D22 is on-wire and always-on. `git.worktree_remove` always refuses a locked
-worktree. `89cb6289` deletes one in two states: a daemon `GIT_DIR` and
-`GIT_COMMON_DIR` of another repository, and a `baseRepo` that does not exist as
-sent. That is the maintainer's decision of 2026-10-03. See the entry.
+D22 is on-wire and always-on. `git.worktree_remove` always refuses a worktree
+that is locked in the repository of `baseRepo`. `89cb6289` answers success in
+four states. Rows p6 and p6f: a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another
+repository, with the folder present or gone. Row p6e: a daemon `GIT_DIR` alone.
+Those three ran on Linux, macOS and Windows VMs. Row p6d: a `baseRepo` that does
+not exist as sent (Linux and macOS VMs). That is the maintainer's decision of
+2026-10-03. See the entry.
 
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →

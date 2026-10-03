@@ -82,7 +82,7 @@ type gitDirTrust struct {
 // A5, battery rows R18, R18b and N00 on Linux and macOS VMs, rows 16, A5 and N00 on a
 // Windows VM, and rows L13z-g and DG2h-g on a Linux VM with worktreeRoot). An empty
 // `.git` folder inside an outer repository gets it too, so the branch of the outer
-// repository stays (row p4 on a Linux VM). Not
+// repository stays (row p4 on Linux and macOS VMs). Not
 // measured: a `.git` file that names no git dir. claustrum sets the same value there.
 func noRepoPin() []string {
 	return []string{"GIT_DIR=" + os.DevNull}

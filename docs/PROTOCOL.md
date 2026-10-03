@@ -805,7 +805,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It keeps the delete off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <t> {is a symbolic link, not a worktree directory / is not a directory}` | in `error`, with no `errorCode`, for a leaf that is a symbolic link or not a directory. `<t>` has the symbolic links of `baseRepo` resolved. With `worktreeRoot`, the links of the `<directory>` level are resolved instead. Nothing is deleted (`f6010b97`, macOS VM) |
 | git.worktree_remove | `refusing to remove worktree: <t> changed while the removal was checking it` | in `error`, with no `errorCode`. claustrum's own text for a leaf that another directory replaced between two looks. Only a race reaches it, and no run has measured the reference there. Nothing is deleted |
-| git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it and answered `success:true`. |
+| git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it and answered `success:true`. In four states `89cb6289` deletes the folder or answers success, and claustrum refuses (D22). |
 | git.worktree_remove | `refusing to remove worktree: <p> is gone but its registration is locked (git worktree lock); unlock it to remove the registration and branch` | in `error`, with no `errorCode`, for a gone worktree with a locked registration. Nothing is deleted (`f6010b97`, macOS VM) |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal text (`f6010b97`, macOS VM). Since `89cb6289` it is also the `git cannot run` text (row L11). claustrum puts a limit refusal of the listing there too. `89cb6289` measured the limits on `git.info` only. `<reason>` is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows VMs). With `worktreeRoot` and a missing absolute `baseRepo` without a `..` component, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS VMs) |
 | git.worktree_remove | `failed to remove worktree: "" does not name a directory` | in `error` (empty `worktreePath`, without `worktreeRoot`) |
@@ -2871,14 +2871,16 @@ copies end still fails it, as `timeoutMs` above describes:
   - The same environment, and X holds a merged branch `s0`. The branch `s0` of X
     goes. The entry and the branch `s0` of T stay (row 4, the same three systems).
   - The daemon has `GIT_COMMON_DIR` of X alone. The entry `s0` of T goes (row 5,
-    the same three systems). The same holds on a Linux VM in three more rows. In
-    row p2a T is a submodule. In row p2b `baseRepo` is a subfolder of T. In row
-    p2c `baseRepo` is bare.
+    the same three systems). The same holds on Linux and macOS VMs in three more
+    rows. In row p2a T is a submodule. In row p2b `baseRepo` is a subfolder of T.
+    In row p2c `baseRepo` is bare. The branch result of these rows and of row 5
+    depends on the commits of the fixture. In rows p2a to p2c `89cb6289` keeps the
+    branch on the Linux VM (7 calls) and deletes it on the macOS VM (9 calls).
   - The daemon has `GIT_DIR` of X alone. The entry `s0` of T stays (row 6, the same
     three systems).
   - The daemon has `GIT_DIR` of X and `GIT_COMMON_DIR` of a third repository Y. The
     entry `s0` of T stays. An entry of X that names S goes, and such an entry of Y
-    stays (rows p3, p3b and p3c on a Linux VM).
+    stays (rows p3, p3b and p3c on Linux and macOS VMs, row p3b on Windows too).
   - Two removals at once with the environment of row 1, each for an entry in X.
     Both folders and both entries go (row p5 on a Linux VM, 10 runs). `89cb6289`
     makes 22 git calls there and claustrum 21: `89cb6289` reads the user excludes
@@ -2893,7 +2895,7 @@ copies end still fails it, as `timeoutMs` above describes:
     and p1b show that for `<T>/missing/..` and `<T>/dl/..` on Linux and macOS VMs.
   - `baseRepo` holds an empty `.git` folder and lies in an outer repository, and
     the folder is gone. The reply carries `branchKept`, and the branch of the
-    outer repository stays (row p4 on a Linux VM).
+    outer repository stays (row p4 on Linux and macOS VMs).
   - A locked worktree is always refused. That is divergence D22: see the lock
     rule below.
   - On Windows, both paths go through a `subst` drive, or through a junction to
@@ -2985,19 +2987,28 @@ copies end still fails it, as `timeoutMs` above describes:
   is the lock-check refusal above. A locked worktree answers
   `{"success":false,"error":"refusing to remove worktree: <p> is locked (git worktree
   lock); unlock it to remove it"}`, and nothing is deleted.
-- claustrum always refuses a locked worktree. That is divergence D22, in two
-  states where `89cb6289` deletes the folder (Linux VM). In row p6 the daemon has
-  `GIT_DIR` and `GIT_COMMON_DIR` of another repository X, and the worktree is
-  locked in the repository of `baseRepo`. `89cb6289` answers `{"success":true}`.
-  In row p6d `baseRepo` is `<T>/missing/..` with git on `PATH`, and the worktree
-  is locked in T. `89cb6289` answers `{"success":true,"branchKept":true}`. In
-  both rows `89cb6289` keeps the locked entry. claustrum answers the locked
-  refusal above in both and deletes nothing. For that, claustrum also reads the
-  entries under `<baseRepo>/.git/worktrees`, with no git call. With the folder
-  gone, claustrum answers the gone-and-locked refusal below. The reference is not
-  measured there. A lock on an entry of X that names the worktree is refused on
-  both sides (row p6b). So is a lock with no daemon environment (row p6c). See
-  [`DIVERGENCES.md`](DIVERGENCES.md) → D22.
+- claustrum always refuses a locked worktree. That is divergence D22. In four
+  states `89cb6289` answers success for a worktree that is locked in the
+  repository of `baseRepo`, and claustrum refuses.
+  - Row p6: the daemon has `GIT_DIR` and `GIT_COMMON_DIR` of another repository X.
+    `89cb6289` answers `{"success":true}` and deletes the folder (Linux, macOS and
+    Windows VMs).
+  - Row p6e: the daemon has `GIT_DIR` of X alone. `89cb6289` answers
+    `{"success":true}` and deletes the folder (the same three systems).
+  - Row p6d: `baseRepo` is `<T>/missing/..` with git on `PATH`. `89cb6289` answers
+    `{"success":true,"branchKept":true}` and deletes the folder (Linux and macOS
+    VMs).
+  - Row p6f: the environment of row p6 with the folder gone. `89cb6289` answers
+    `{"success":true}` and deletes nothing (the three systems).
+
+  In rows p6, p6e and p6d claustrum answers the locked refusal above and deletes
+  nothing. In row p6f it answers the gone-and-locked refusal below. For that,
+  claustrum also reads the entries under `<baseRepo>/.git/worktrees`, with no git
+  call, with and without `worktreeRoot`. If that folder exists and cannot be read,
+  the reply is the lock-check refusal. The reference is not measured with
+  `worktreeRoot` or with such a folder. A lock on an entry of X that names the
+  worktree is refused on both sides (row p6b). So is a lock with no daemon
+  environment (rows p6c and p6g). See [`DIVERGENCES.md`](DIVERGENCES.md) → D22.
 - The delete first removes each entry of `<p>` except `.git`, in the order of the
   directory read. It stops at the first failure. Then it removes the rest, `.git`
   included, and `<p>` itself. Every delete goes through an `os.Root`, so no delete
