@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // git.status as 89cb6289 answers it. The request passes a gate first, and then four
@@ -61,7 +60,7 @@ const (
 // An `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers isRepo:false too
 // (row o16). Whether 89cb6289 bounds each file or their sum is not measured. claustrum
 // bounds each file. It uses the same bound for `info/sparse-checkout` and for each
-// reftable table, which is not measured. (var, not const, so tests can shrink it.)
+// reftable file, which is not measured. (var, not const, so tests can shrink it.)
 var statusIndexMaxBytes int64 = 1 << 30
 
 // statusConfigKeys are the keys a `config.worktree` of an entry can hold. A file with
@@ -178,13 +177,7 @@ func resolvedDir(p string) string {
 // the second spelling is claustrum's choice.
 func statusPathOf(path, baseRepo string) (statusPath, bool) {
 	clean := filepath.Clean(path)
-	// The test is on `path` as sent, because git gets it as sent: on Linux and macOS
-	// a `q/..` with no folder `q` does not open.
-	sent := path
-	if sent == "" {
-		sent = clean
-	}
-	if fi, err := os.Stat(sent); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(clean); err != nil || !fi.IsDir() {
 		return statusPath{}, false
 	}
 	absPath, err := filepath.Abs(clean)
@@ -199,7 +192,7 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 	// A relative `path` is not taken as inside baseRepo. It goes to the next call as
 	// sent, and git answers for it (rows n25c and x5).
 	if filepath.IsAbs(clean) && pathStrictlyUnder(absPath, absBase) {
-		if linkBelow(absBase, absPath) || statusSpellingRefused(path, absBase, absPath) {
+		if linkBelow(absBase, absPath) || statusSpellingRefused(path) {
 			return statusPath{}, false
 		}
 		sp.probeTree = resolvedDir(baseRepo)
@@ -219,28 +212,22 @@ func statusPathOf(path, baseRepo string) (statusPath, bool) {
 	return sp, true
 }
 
-// statusSpellingRefused reports the Windows spelling refusals of a `path` inside
-// baseRepo. On a Windows VM each answers isRepo:false with 3 calls in total:
+// statusSpellingRefused reports the spelling refusals of a `path` inside baseRepo.
+// Each answers isRepo:false with 3 calls in total:
 //
-//   - a component below baseRepo that ends in a dot or a space (rows x1 and x2) or
-//     holds a colon (row x3). The measured component is the last one.
 //   - a `..` component in `path` as sent, with or without the folder before it (rows
-//     x4 and x4b).
+//     x4 and x4b on a Windows VM, rows y3, y4 and y5 on Linux and macOS VMs). A `.`
+//     component passes (row y10).
+//   - on Windows, a component that ends in a dot or a space (rows x1 and x2) or holds
+//     a colon (row x3). The measured component is the last one. The test reads
+//     `path` as sent and cleaned: the absolute form that Windows gives has lost a
+//     trailing dot or space.
 //
-// Outside baseRepo a trailing dot or space passes (rows D14dot and D14sp). On Linux
-// and macOS neither spelling is measured. claustrum refuses neither there. A `..`
-// after a folder that exists is cleaned away, and one after a folder that does not
-// exist fails the directory test of statusPathOf. A dot, a space and a colon are
-// plain characters of a name.
-func statusSpellingRefused(sent, absBase, absPath string) bool {
-	if !statusRefusesWindowsSpellings {
-		return false
-	}
-	if pathHasDotDot(sent) {
-		return true
-	}
-	rel, err := filepath.Rel(absBase, absPath)
-	return err != nil || windowsPathSpellingHazard(rel)
+// Outside baseRepo a `..` passes (row y2), and so does a trailing dot or space on
+// Windows (rows D14dot and D14sp). There `W/missing/..` passes the gate cleaned, and
+// git then fails to start in the path as sent (row y1, statusRun.git).
+func statusSpellingRefused(sent string) bool {
+	return pathHasDotDot(sent) || windowsPathSpellingHazard(filepath.Clean(sent))
 }
 
 // linkBelow reports whether a component of p below base is a symbolic link or a
@@ -481,8 +468,7 @@ type statusEntry struct {
 	dir       string   // <common>/worktrees/<name>
 	shared    []string // the sharedindex.* names
 	hasConfig bool     // the entry holds a config.worktree
-	reftable  bool     // the entry holds a reftable/tables.list
-	tables    []string // the table names of that list
+	reftable  []string // the file names of the entry's reftable folder to copy
 }
 
 // statusEntryOf runs the entry part of the gate: the match, then `commondir`, `HEAD`,
@@ -505,47 +491,59 @@ func statusEntryOf(common string, sp statusPath) (statusEntry, bool) {
 	if !ok {
 		return statusEntry{}, false
 	}
-	reftable, tables, ok := statusReftable(dir)
+	reftable, ok := statusReftable(dir)
 	if !ok {
 		return statusEntry{}, false
 	}
-	return statusEntry{dir: dir, shared: shared, hasConfig: hasConfig, reftable: reftable, tables: tables}, true
+	return statusEntry{dir: dir, shared: shared, hasConfig: hasConfig, reftable: reftable}, true
 }
 
-// statusReftable reads `reftable/tables.list` of the matched entry. A repository
-// with the reftable format keeps the HEAD of a worktree there. present is true when
-// the entry has that file. Each line names a table file in the `reftable` folder. A
-// name whose file is missing answers isRepo:false (rows o19c and o19d, macOS VM).
+// statusReftable judges the `reftable` folder of the matched entry and returns the
+// names of its files to copy. A repository with the reftable format keeps the HEAD
+// of a worktree there. The rows are from a macOS VM:
 //
-// Not measured: a table that is not a regular file, a table over a size bound, and a
-// name that is not a plain file name. claustrum answers isRepo:false for each, with
-// statusIndexMaxBytes as the bound. The list itself is bounded by
-// statusEntryFileMaxBytes, which is not measured either.
-func statusReftable(entry string) (present bool, tables []string, ok bool) {
-	const list = "reftable/tables.list"
-	if _, err := os.Lstat(filepath.Join(entry, filepath.FromSlash(list))); errors.Is(err, fs.ErrNotExist) {
-		return false, nil, true
-	}
-	b, err := readEntryFile(entry, list, statusEntryFileMaxBytes)
+//   - Every regular file of the folder is copied, also a table that `tables.list`
+//     does not name (row r1).
+//   - An entry that is not a regular file is left out, with no wait. With a FIFO as
+//     `tables.list` the list is not copied and the request goes on (row r2).
+//   - A `tables.list` that is copied must name at least one table (row r4), and each
+//     name must be a file that is copied. Else the answer is isRepo:false: for a
+//     table that is missing (rows o19c and o19d) and for one that is a symlink (row
+//     r3).
+//
+// Not measured: a size bound of a table or of the list, a folder inside `reftable`,
+// and a symlink that the list does not name. claustrum bounds a table at statusIndexMaxBytes and the list at
+// statusEntryFileMaxBytes, and leaves a folder out.
+func statusReftable(entry string) (files []string, ok bool) {
+	ents, err := os.ReadDir(filepath.Join(entry, "reftable"))
 	if err != nil {
-		return true, nil, false
+		return nil, true
 	}
-	root, err := os.OpenRoot(entry)
-	if err != nil {
-		return true, nil, false
-	}
-	defer func() { _ = root.Close() }()
-	for _, name := range strings.Fields(string(b)) {
-		if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
-			return true, nil, false
+	for _, e := range ents {
+		switch fi, err := e.Info(); {
+		case err != nil:
+			return nil, false
+		case fi.Mode().IsRegular():
+			if fi.Size() > statusIndexMaxBytes {
+				return nil, false
+			}
+			files = append(files, e.Name())
 		}
-		fi, err := root.Stat("reftable/" + name)
-		if err != nil || !fi.Mode().IsRegular() || fi.Size() > statusIndexMaxBytes {
-			return true, nil, false
-		}
-		tables = append(tables, name)
 	}
-	return true, tables, true
+	if !slices.Contains(files, "tables.list") {
+		return files, true
+	}
+	b, err := readEntryFile(entry, "reftable/tables.list", statusEntryFileMaxBytes)
+	names := strings.Fields(string(b))
+	if err != nil || len(names) == 0 {
+		return nil, false
+	}
+	for _, name := range names {
+		if name == "tables.list" || !slices.Contains(files, name) {
+			return nil, false
+		}
+	}
+	return files, true
 }
 
 // copyStatusFile, writeStatusFile and chtimesStatusFile are seams over the file
@@ -590,11 +588,9 @@ func copyEntryFile(root *os.Root, name, dst string, max int64) error {
 // path. It holds copies of `HEAD` and `index` of the entry and a `commondir` file
 // that names the common directory (row K1). It also holds `config.worktree` when the
 // entry has one (rows n12 and o17), `info/sparse-checkout` (row o17) and each
-// `sharedindex.*` file (rows o16b1 and o16b2). For a reftable repository it holds
-// `reftable/tables.list` and each table that the list names (rows o19a and o19b, macOS
-// VM). In row o19d 89cb6289 also copied a table that the list did not name, before it
-// answered isRepo:false. Whether it copies such a table in a request that passes is
-// not measured. claustrum does not. A file that the entry does not hold is left out
+// `sharedindex.*` file (rows o16b1 and o16b2). For a reftable repository it holds the
+// files that statusReftable returned (rows o19a and r1, macOS VM). A file that the
+// entry does not hold is left out
 // (row o15d). Any other failure is returned. The caller removes the folder.
 //
 // git needs the `commondir` file to resolve a branch HEAD against the refs of the
@@ -623,11 +619,8 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 	if _, err := root.Stat("info/sparse-checkout"); err == nil {
 		items = append(items, item{"info/sparse-checkout", statusIndexMaxBytes})
 	}
-	if e.reftable {
-		items = append(items, item{"reftable/tables.list", statusEntryFileMaxBytes})
-		for _, name := range e.tables {
-			items = append(items, item{"reftable/" + name, statusIndexMaxBytes})
-		}
+	for _, name := range e.reftable {
+		items = append(items, item{"reftable/" + name, statusIndexMaxBytes})
 	}
 	for _, it := range items {
 		dst := filepath.Join(tmp, filepath.FromSlash(it.name))
@@ -642,39 +635,6 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 		return tmp, err
 	}
 	return tmp, nil
-}
-
-// statusRemoveAll and statusRemoveRetry are the remove call and the retry times of
-// removeStatusGitDir. (var, so tests can replace them.)
-var (
-	statusRemoveAll   = os.RemoveAll
-	statusRemoveRetry = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, time.Second, 3 * time.Second}
-)
-
-// removeStatusGitDir removes the temporary git folder. On a Windows VM claustrum
-// left the empty folder behind in 1 of 4 runs of row n17c, where `status` fails.
-// 89cb6289 left none in 4 runs. The cause is not measured. A folder that another
-// process still holds open cannot be removed on Windows, and its files can. So when
-// the folder is still there after the first try, the daemon tries again in the
-// background, after each time of statusRemoveRetry. The reply does not wait for it.
-func removeStatusGitDir(tmp string) {
-	gone := func() bool {
-		_ = statusRemoveAll(tmp)
-		_, err := os.Lstat(tmp)
-		return errors.Is(err, fs.ErrNotExist)
-	}
-	if gone() {
-		return
-	}
-	go func() {
-		for _, d := range statusRemoveRetry {
-			time.Sleep(d)
-			if gone() {
-				return
-			}
-		}
-		logWarnf("[git] temporary git folder %s could not be removed", tmp)
-	}()
 }
 
 // statusRun runs the git commands of one answer.
@@ -752,8 +712,16 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 		attr = []string{"--attr-source=" + id}
 	}
 	l := runListing(r.ctx, r.path, r.tmp, precursorEnv(true, r.pin))
-	if l.err != nil {
+	var exit *exec.ExitError
+	switch {
+	case l.err == nil:
+	case errors.As(l.err, &exit):
 		return nil, statusRefusal(failedListingText(l, true))
+	default:
+		// git did not start, for example because `path` as sent does not open. The
+		// answer is the hooks refusal with the start error, and no `git version`
+		// runs (row y1, Linux and macOS VMs, 8 calls).
+		return nil, statusRefusal(hooksRefusalPrefix + l.detail())
 	}
 	full := append(attr, profileArgsWithExcludes(true, excludes,
 		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...)
@@ -787,7 +755,7 @@ func statusChanges(path, common string, e statusEntry) ([]string, error) {
 	attrSource := attrSourceArgs() != nil
 	tmp, err := buildStatusGitDir(e, common)
 	if tmp != "" {
-		defer removeStatusGitDir(tmp)
+		defer func() { _ = os.RemoveAll(tmp) }()
 	}
 	if err != nil {
 		return nil, err

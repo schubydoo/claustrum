@@ -6,6 +6,3 @@ package main
 // are valid filename characters on POSIX, and the reference accepts such components
 // on unix (measured against 7d193f89).
 var windowsPathSpellingHazard = func(string) bool { return false }
-
-// statusRefusesWindowsSpellings is false off Windows (statusSpellingRefused).
-const statusRefusesWindowsSpellings = false

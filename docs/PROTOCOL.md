@@ -1784,9 +1784,9 @@ entries under the common directory of `baseRepo` and looks for the one entry tha
 names `path`. Each rule names its rows. The rows are from a side-by-side probe of
 `89cb6289` and claustrum on Linux, macOS and Windows VMs. Rows C1 to C13, row n07L
 and the `.t` rows are from the macOS VM. Rows D1 to D16, K02 to K15 and W03 to W06
-and x1 to x11 are from the Windows VM. Rows o1 to o25 and v2 to v6b are from the
+and x1 to x11 are from the Windows VM. Rows y1 to y10 are from Linux and macOS VMs. Rows o1 to o25 and v2 to v6b are from the
 Linux VM. Rows
-o19a to o19d are from the macOS VM. Rows E07a and E07b ran on Linux and macOS VMs
+o19a to o19d and r1 to r4 are from the macOS VM. Rows E07a and E07b ran on Linux and macOS VMs
 with a `GIT_COMMON_DIR` in the daemon's environment. The FIFO rows n05a,
 n14b, N05a, C20a and C20b did not run on Windows. Every other row ran on all three
 systems. On Windows the frames are those of the pass with a user excludes file (see
@@ -1822,13 +1822,13 @@ the read of the user's excludes.
      link in those rows is `.claude`. A link at the last component fails too (row
      v4, and row x10 for a junction). The same layout with no link passes (rows n07b
      and n08).
-   - On Windows, `path` lies inside `baseRepo` and a component below `baseRepo` ends
-     in a dot or a space or holds a colon (rows x1, x2 and x3), or `path` has a `..`
-     component (rows x4 and x4b). Outside `baseRepo` a trailing dot or space passes
-     (rows D14dot and D14sp). Not measured: both spellings on Linux and macOS. There
-     claustrum takes a dot, a space and a colon as plain characters. A `..` after a
-     folder that exists is cleaned away. One after a folder that does not exist
-     answers `isRepo:false`, because the path does not open.
+   - `path` lies inside `baseRepo` and has a `..` component, with or without the
+     folder before it (rows x4 and x4b, Windows VM, and rows y3, y4 and y5, Linux
+     and macOS VMs). A `.` component passes (row y10). Outside `baseRepo` a `..`
+     passes (row y2).
+   - On Windows, `path` lies inside `baseRepo` and a component ends in a dot or a
+     space or holds a colon (rows x1, x2 and x3). Outside `baseRepo` a trailing dot
+     or space passes (rows D14dot and D14sp).
    - A `baseRepo` that is a dangling junction answers `isRepo:false` with call 1 only
      (rows n11-j and x11).
 5. Calls 4 and 5 run in the common directory: `--git-dir=<common> config -z --list`,
@@ -1912,12 +1912,20 @@ the read of the user's excludes.
       and so does one with `core.sparseCheckoutCone` (rows o17 and v3a). `user.name`
       and `core.bare` answer `isRepo:false` (rows n13 and v3b). Not measured: every
       other key. claustrum answers `isRepo:false` for each of them.
-11. The `reftable/tables.list` file of the entry, in a repository with the reftable
-    format. Each line names a table file in the `reftable` folder of the entry. A
-    name whose file is missing answers `isRepo:false` after 5 calls (rows o19c and
-    o19d). Not measured: a table that is not a regular file, a size bound of a table
-    or of the list, and a name with a path separator. claustrum answers
-    `isRepo:false` for each. It bounds a table at 1 GiB and the list at 1 MiB.
+11. The `reftable` folder of the entry, in a repository with the reftable format
+    (rows o19a to o19d and r1 to r4, macOS VM).
+    - Every regular file of the folder goes into the temporary folder, also a table
+      that `tables.list` does not name (row r1).
+    - An entry that is not a regular file is left out. With a FIFO as `tables.list`
+      the daemon does not wait, copies no list, and answers the status. git then
+      shows every tracked file as added (row r2).
+    - A `tables.list` that is copied names at least one table (row r4), and each
+      name is a file that is copied. Else the answer is `isRepo:false` after 5
+      calls: for a missing table (rows o19c and o19d) and for a table that is a
+      symlink (row r3).
+    - Not measured: a size bound of a table or of the list, a folder inside
+      `reftable`, and a symlink that the list does not name. claustrum bounds a
+      table at 1 GiB and the list at 1 MiB, and leaves the other two out.
 
 Not measured: the order of rules 7 to 11, and the size bound of `HEAD` and
 `config.worktree`. claustrum bounds both at 1 MiB. No read of an entry file blocks:
@@ -1929,10 +1937,8 @@ claustrum opens each file without blocking and reads a regular file only.
   `commondir` file (row K1). It also holds `config.worktree` when the entry has one
   (rows n12 and o17), `info/sparse-checkout` (row o17, Linux VM) and each
   `sharedindex.*` file (rows o16b1 and o16b2). In a reftable repository it
-  holds `reftable/tables.list` and each table that the list names (rows o19a and
-  o19b). In row o19d `89cb6289` also copied a table that the list did not name,
-  before it answered `isRepo:false`. Not measured: whether it copies such a table in
-  a request that passes. claustrum does not. No entry is left after the
+  holds the regular files of the entry's `reftable` folder (rows o19a and r1, macOS
+  VM). No entry is left after the
   reply. The status therefore does not refresh or rewrite the caller's index, and it
   does not take `index.lock`. The folder name starts with `claustrum-git-dir-`.
 - After the gate comes the `git --attr-source=<empty tree> version` probe (call 6).
@@ -1963,7 +1969,11 @@ claustrum opens each file without blocking and reads a regular file only.
   the Go error string, for example `exit status 1` (rows n17c, n17d and n17e). The
   text of git never shows. A `hash-object` that fails changes no answer (row n17f).
   A relative `path` passes the gate. git gets it as sent, `status` exits 128, and
-  the answer is `-32603 exit status 128` (row n25c). With opt-in D5 the same
+  the answer is `-32603 exit status 128` (row n25c). A `path` outside `baseRepo`
+  such as `W/missing/..` passes the gate cleaned. git then does not start in the
+  path as sent. The answer is `-32603` with the hooks refusal text and
+  `chdir <path>: no such file or directory`, after 8 calls, and no `git version`
+  runs (row y1, Linux and macOS VMs). With opt-in D5 the same
   `-32603` can carry `signal: killed`.
 - Not measured: a failure of the listing in the temporary folder. claustrum answers
   the hooks refusal, as for the listing of rule 5.
@@ -2011,10 +2021,6 @@ claustrum opens each file without blocking and reads a regular file only.
   VM), and a gitlink path that is a junction gives the "could not be inspected" text
   (row o5b, Windows VM). The o rows ran on the Windows VM too, except o5c, o15b,
   o19 and o20. `89cb6289` and claustrum `84f67dd` gave equal frames in each.
-- The daemon removes the temporary folder before the reply. From the code: if the
-  folder is still there, it tries again in the background for about 4 seconds. On
-  a Windows VM claustrum `84f67dd` left the empty folder once in 4 runs of row n17c.
-  The cause is not measured.
 
 #### git.list_branches
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`

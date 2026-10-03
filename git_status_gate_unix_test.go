@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -166,23 +167,63 @@ func TestGitStatusInsidePathBelowSymlinkedParent(t *testing.T) {
 	}
 }
 
-// A `..` component in a path inside baseRepo. On a Windows VM 89cb6289 answers
-// isRepo:false (rows x4 and x4b). On Linux and macOS it is not measured. There
-// claustrum answers isRepo:false when the folder before the `..` does not exist,
-// because the path does not open, and the status when it does. This test pins that
-// choice.
-func TestGitStatusDotDotInsideBaseRepoUnix(t *testing.T) {
+// Rows y2 to y5 and y10 (Linux and macOS VMs): a `..` component in a path inside
+// baseRepo answers isRepo:false. Outside baseRepo it passes, and so does a `.`.
+func TestGitStatusDotDotRows(t *testing.T) {
 	f := newStatusFixture(t)
-	s0 := filepath.Join(f.T, ".claude", "worktrees", "s0")
-	runGit(t, f.T, "worktree", "add", "-q", "-b", "s0", s0)
-	path := f.T + "/.claude/worktrees/q/../s0"
-	if got := statusFrame(t, path, f.T); got != statusNotRepo {
-		t.Errorf("no folder q: git.status = %s\nwant %s", got, statusNotRepo)
+	wt := filepath.Join(f.T, ".claude", "worktrees")
+	runGit(t, f.T, "worktree", "add", "-q", "-b", "s0", filepath.Join(wt, "s0"))
+	for _, d := range []string{filepath.Join(wt, "q"), filepath.Join(f.W, "sub")} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.Mkdir(filepath.Join(f.T, ".claude", "worktrees", "q"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, c := range []struct{ name, path, want string }{
+		{"y2 outside, folder there", f.W + "/sub/..", statusClean},
+		{"y3 inside, no folder", wt + "/s0/missing/..", statusNotRepo},
+		{"y4 inside, no folder before the leaf", wt + "/none/../s0", statusNotRepo},
+		{"y5 inside, folder there", wt + "/q/../s0", statusNotRepo},
+		{"y10 dot", wt + "/s0/.", statusClean},
+	} {
+		if got := statusFrame(t, c.path, f.T); got != c.want {
+			t.Errorf("%s: git.status = %s\nwant %s", c.name, got, c.want)
+		}
 	}
-	if got := statusFrame(t, path, f.T); got != statusClean {
-		t.Errorf("folder q there: git.status = %s\nwant %s", got, statusClean)
-	}
+}
+
+// Rows r2 and r3 (macOS VM): the reftable rows that need a FIFO or a symlink.
+func TestGitStatusReftableLinkRows(t *testing.T) {
+	// Row r3: a table that is a symlink answers isRepo:false.
+	t.Run("r3 table is a symlink", func(t *testing.T) {
+		f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
+		dir := filepath.Join(f.entry, "reftable")
+		names, err := os.ReadFile(filepath.Join(dir, "tables.list"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		table := filepath.Join(dir, strings.TrimSpace(string(names)))
+		if err := os.Rename(table, filepath.Join(dir, "real.copy")); err != nil {
+			t.Fatal(err)
+		}
+		mustSymlink(t, "real.copy", table)
+		if got := f.status(t); got != statusNotRepo {
+			t.Errorf("git.status = %s\nwant %s", got, statusNotRepo)
+		}
+	})
+	// Row r2: a FIFO as tables.list is left out with no wait, and git then reads
+	// every tracked file as added.
+	t.Run("r2 tables.list is a FIFO", func(t *testing.T) {
+		f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
+		list := filepath.Join(f.entry, "reftable", "tables.list")
+		if err := os.Remove(list); err != nil {
+			t.Fatal(err)
+		}
+		if err := syscall.Mkfifo(list, 0o644); err != nil {
+			t.Skipf("mkfifo: %v", err)
+		}
+		want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":false,"changes":["A  .gitignore","A  t.txt"]}}`
+		if got := statusWithin(t, f, list); got != want {
+			t.Errorf("git.status = %s\nwant %s", got, want)
+		}
+	})
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -104,39 +103,5 @@ func TestCopyEntryFileStopsAtItsBound(t *testing.T) {
 	}
 	if err := copyEntryFile(root, "index", dst+"2", int64(len("fixture\n"))); err != nil {
 		t.Fatalf("copyEntryFile of a file at its bound = %v", err)
-	}
-}
-
-// Row n17c on a Windows VM: the temporary git folder stayed after the reply once.
-// When the first remove leaves the folder, removeStatusGitDir tries again in the
-// background until it is gone.
-func TestRemoveStatusGitDirTriesAgain(t *testing.T) {
-	tmp := filepath.Join(t.TempDir(), "claustrum-git-dir-1")
-	if err := os.Mkdir(tmp, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	oldRemove, oldRetry := statusRemoveAll, statusRemoveRetry
-	t.Cleanup(func() { statusRemoveAll, statusRemoveRetry = oldRemove, oldRetry })
-	statusRemoveRetry = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
-	var calls atomic.Int32
-	statusRemoveAll = func(p string) error {
-		if calls.Add(1) < 3 {
-			return errors.New("the folder is in use")
-		}
-		return os.RemoveAll(p)
-	}
-	removeStatusGitDir(tmp)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, err := os.Lstat(tmp); os.IsNotExist(err) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the folder is still there after %d remove calls", calls.Load())
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if n := calls.Load(); n != 3 {
-		t.Errorf("%d remove calls, want 3", n)
 	}
 }

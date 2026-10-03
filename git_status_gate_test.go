@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -144,9 +145,10 @@ func TestGitStatusEntryGate(t *testing.T) {
 			}
 		}, statusNotRepo},
 		// Row C10 (macOS VM): another letter case in the gitdir file does not match.
+		// On Windows it matches (rows x6 and z1, Windows VM).
 		{"C10 gitdir in another case", func(t *testing.T, f statusFixture) {
 			f.write(t, "gitdir", filepath.Join(f.root, "w", ".git")+"\n")
-		}, statusNotRepo},
+		}, map[bool]string{false: statusNotRepo, true: statusClean}[runtime.GOOS == "windows"]},
 		// Row n19a.
 		{"n19a no commondir", func(t *testing.T, f statusFixture) {
 			if err := os.Remove(filepath.Join(f.entry, "commondir")); err != nil {
@@ -463,9 +465,10 @@ func TestGitStatusReftableRepository(t *testing.T) {
 	if got := f.status(t); got != want {
 		t.Errorf("o19b git.status = %s\nwant %s", got, want)
 	}
-	// Rows o19c and o19d: the list names a table that is not there.
+	// Rows o19c and o19d: the list names a table that is not there. Row r4: the list
+	// is empty.
 	missing := "0x000000000009-0x000000000009-deadbeef.ref\n"
-	for row, body := range map[string]string{"o19c": string(names) + missing, "o19d": missing} {
+	for row, body := range map[string]string{"o19c": string(names) + missing, "o19d": missing, "r4": ""} {
 		writeFile(t, list, body, 0o644)
 		if got := f.status(t); got != statusNotRepo {
 			t.Errorf("%s git.status = %s\nwant %s", row, got, statusNotRepo)
@@ -473,33 +476,34 @@ func TestGitStatusReftableRepository(t *testing.T) {
 	}
 }
 
-// Rows o19a and o19b: the reftable files of the temporary git folder.
+// Rows o19a and r1 (macOS VM): the reftable files of the temporary git folder. Every
+// regular file of the folder is copied, also a table that the list does not name.
 func TestStatusGitDirReftableContents(t *testing.T) {
 	entry, common := t.TempDir(), t.TempDir()
 	for name, body := range map[string]string{
 		"HEAD": "ref: refs/heads/.invalid\n", "index": "idx", "refs/heads": "x\n",
 		"reftable/tables.list": "a.ref\n", "reftable/a.ref": "table", "reftable/b.ref": "not listed",
+		"reftable/sub/c.ref": "in a folder",
 	} {
 		writeFile(t, filepath.Join(entry, filepath.FromSlash(name)), body, 0o644)
 	}
-	present, tables, ok := statusReftable(entry)
-	if !present || !ok || !slices.Equal(tables, []string{"a.ref"}) {
-		t.Fatalf("statusReftable = %v %q %v, want the one listed table", present, tables, ok)
+	files, ok := statusReftable(entry)
+	if want := []string{"a.ref", "b.ref", "tables.list"}; !ok || !slices.Equal(files, want) {
+		t.Fatalf("statusReftable = %q %v, want %q", files, ok, want)
 	}
-	tmp, err := buildStatusGitDir(statusEntry{dir: entry, reftable: present, tables: tables}, common)
+	tmp, err := buildStatusGitDir(statusEntry{dir: entry, reftable: files}, common)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	for name, want := range map[string]bool{"reftable/tables.list": true, "reftable/a.ref": true,
-		"reftable/b.ref": false, "refs": false} {
+		"reftable/b.ref": true, "reftable/sub": false, "refs": false} {
 		if _, err := os.Stat(filepath.Join(tmp, filepath.FromSlash(name))); (err == nil) != want {
 			t.Errorf("%s in the temporary folder: present %v, want %v", name, err == nil, want)
 		}
 	}
-	// Not measured: a name with a separator. claustrum answers isRepo:false.
-	writeFile(t, filepath.Join(entry, "reftable", "tables.list"), "../HEAD\n", 0o644)
-	if _, _, ok := statusReftable(entry); ok {
-		t.Error("statusReftable takes a table name with a separator")
+	// An entry with no reftable folder has no file to copy.
+	if files, ok := statusReftable(t.TempDir()); !ok || files != nil {
+		t.Errorf("statusReftable with no folder = %q %v, want none and true", files, ok)
 	}
 }

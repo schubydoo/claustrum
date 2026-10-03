@@ -245,6 +245,17 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "v4", calls, gate[:2])
 	})
+	// Row y1 (Linux and macOS VMs): W/missing/.. passes the gate cleaned. git then
+	// does not start in the path as sent, and no `git version` follows.
+	t.Run("y1", func(t *testing.T) {
+		sent := f.W + "/missing/.."
+		raw, calls := run(sent, f.T)
+		want := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"config-defined hooks could not be pinned off; git not run: listing the configuration in force: chdir ` + sent + `: no such file or directory"}}`
+		if raw != want {
+			t.Errorf("frame = %s\nwant %s", raw, want)
+		}
+		wantStatusCalls(t, "y1", calls, append(slices.Clone(gate), callEmptyA, callEmptyB))
+	})
 	// Row n15: a bad HEAD stops after the two calls in the common directory.
 	t.Run("n15", func(t *testing.T) {
 		f.write(t, "HEAD", "garbage\n")
