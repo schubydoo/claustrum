@@ -1556,13 +1556,13 @@ below against `f6010b97`. Each point names the VMs that measured it.
   follows the light check, with no listing of its own. Before the daemon decides
   whether `worktreePath` is a registered worktree, it runs a light
   `worktree list --porcelain -z` and a heavy `rev-parse --absolute-git-dir`. Each
-  of them has its listing. The `rev-parse` runs after the worktree folder was
-  located. claustrum uses its answer only as the `--git-dir` of the pair (see
+  of them has its listing. claustrum runs the `rev-parse` after it located the
+  worktree folder. It uses the answer only as the `--git-dir` of the pair (see
   `git.worktree_remove`). For a `baseRepo` that exists, the "leads into"
   and "not reachable" refusals come right after `worktree list`.
   With the excludes read that is 7 calls, as on `f6010b97` and `89cb6289`. For a
   missing `baseRepo` and a missing root, both references send "not reachable" with
-  no git call, and claustrum makes 1 call, the excludes read (row T9). Linux and macOS VMs.
+  no git call, and claustrum makes none there too (row T9). Linux and macOS VMs.
 - `git.worktree_create` with `worktreeRoot`. After the repo test and the in-repo
   root test, claustrum runs a light `rev-parse --show-toplevel`, a heavy
   `rev-parse --absolute-git-dir` and a light `worktree list --porcelain -z` in
@@ -2842,6 +2842,9 @@ copies end still fails it, as `timeoutMs` above describes:
   WR1 and A1 P1).
 - The daemon runs no `git worktree remove` and no `git worktree prune`. It deletes the
   worktree directory itself, then the entry of the worktree under `<git dir>/worktrees`.
+  The entry stays for a `baseRepo` that does not exist. With a daemon `GIT_DIR` and
+  `GIT_COMMON_DIR`, the entry that goes is in the repository that they name. The
+  rows are below.
   `<git dir>` is the repository git directory that the trust check pinned for
   `baseRepo`. For a main repository that is `<baseRepo>/.git`. For a linked worktree
   it is the git directory of the main repository. For a subdirectory of a repository
@@ -2855,57 +2858,74 @@ copies end still fails it, as `timeoutMs` above describes:
   one. A sentence marked "not measured" has no row behind it.
 - Without `worktreeRoot`, these rows of `89cb6289` set which entry goes. T is the
   repository of `baseRepo`, S is its worktree `s0`, and X is another repository.
-  The frames are equal to those of a plain removal in each row.
   - The daemon has `GIT_DIR` and `GIT_COMMON_DIR` of X in its environment. The
     folder of S goes. The entry `s0` of T and the branch `s0` of T stay. Probe row
-    1 and battery row E13 show that on Linux, macOS and Windows VMs.
+    1 shows that on Linux, macOS and Windows VMs, and battery row E13 on Linux and
+    Windows VMs.
   - The same environment, and the daemon created the worktree `w1` itself. git
     registered `w1` in X. The removal deletes the entry `w1` of X and the branch
     `w1` of X (row 2, the same three systems).
   - The same environment, and X holds an entry `zz` whose `gitdir` record names
     `<S>/.git`. The entry `zz` of X goes, and the entry `s0` of T stays (row 3, the
-    same three systems). The entry `zz` was made by hand. An entry that git itself
-    made in X for a folder of T is not measured.
+    same three systems). The entry `zz` was made by hand.
   - The same environment, and X holds a merged branch `s0`. The branch `s0` of X
     goes. The entry and the branch `s0` of T stay (row 4, the same three systems).
   - The daemon has `GIT_COMMON_DIR` of X alone. The entry `s0` of T goes (row 5,
-    the same three systems).
+    the same three systems). The same holds on a Linux VM in three more rows. In
+    row p2a T is a submodule. In row p2b `baseRepo` is a subfolder of T. In row
+    p2c `baseRepo` is bare.
   - The daemon has `GIT_DIR` of X alone. The entry `s0` of T stays (row 6, the same
     three systems).
-  - `baseRepo` is `<T>/missing/..` with no folder `missing`. The folder of S goes,
-    its entry stays, and the reply carries `branchKept`. The one git call is the
-    read of the user excludes. Row 7c shows that on Linux and macOS VMs, and
-    battery rows A1, A3 and G3 on a Linux VM. In rows A1, A3 and G3 the request has
-    no `branchName`, and the reply has no `branchKept`. claustrum still refuses a
-    locked entry there. A lock is
-    not measured for that `baseRepo`, and neither is a folder that is already gone.
+  - The daemon has `GIT_DIR` of X and `GIT_COMMON_DIR` of a third repository Y. The
+    entry `s0` of T stays. An entry of X that names S goes, and such an entry of Y
+    stays (rows p3, p3b and p3c on a Linux VM).
+  - Two removals at once with the environment of row 1, each for an entry in X.
+    Both folders and both entries go (row p5 on a Linux VM, 10 runs). `89cb6289`
+    makes 22 git calls there and claustrum 21: `89cb6289` reads the user excludes
+    in each request, and claustrum reads them once.
+  - `baseRepo` does not exist as sent. The folder of S goes and its entry stays.
+    The one git call is the read of the user excludes. Row 7c sends
+    `<T>/missing/..` with a `branchName` on Linux and macOS VMs, and the reply
+    carries `branchKept`. Battery rows A1, A3 and G3 send `<T>/missing/..`,
+    `<F>/missing/../T` and `<T>/dl/..` (a dangling link) with no `branchName` on a
+    Linux VM. A folder that is already gone is not measured. With no git on
+    `PATH`, the answer is the lock-check refusal, and nothing is deleted. Rows p1
+    and p1b show that for `<T>/missing/..` and `<T>/dl/..` on Linux and macOS VMs.
+  - `baseRepo` holds an empty `.git` folder and lies in an outer repository, and
+    the folder is gone. The reply carries `branchKept`, and the branch of the
+    outer repository stays (row p4 on a Linux VM).
+  - A locked worktree is always refused. That is divergence D22: see the lock
+    rule below.
   - On Windows, both paths go through a `subst` drive, or through a junction to
     the repository. The folder and its entry go (probe row D-subst, battery rows
     J2, Q1 and Q2). The claustrum test of the junction row runs on Windows only.
   - The request is in 8.3 short names on Windows, or in another letter case on
     macOS. The folder and the branch go, and the entry stays (rows D-83 and D-case).
-- The git calls of a removal without `worktreeRoot`, as `89cb6289` makes them on
-  Linux, macOS and Windows VMs. "The check" is a heavy `config -z --list` and
+- The git calls of a removal without `worktreeRoot`, as the call logs of `89cb6289`
+  show them. Each row below ran on Linux, macOS and Windows VMs unless its system
+  is named. "The check" is a heavy `config -z --list` and
   `rev-parse --absolute-git-dir` in `baseRepo`. `<G>` is the answer of the check.
   "The pair" is two calls in `<G>`. The first is `--git-dir=<G> config -z --list`.
   The second is `--git-dir=<G> --work-tree=<baseRepo> rev-parse --show-toplevel`.
-  - Every removal starts with the check. A worktree whose `.git` file names its own
+  - A removal in a `baseRepo` that exists starts with the check, after the read
+    of the user excludes. A worktree whose `.git` file names its own
     entry under `<G>/worktrees` gets no other call before the branch step (rows K0,
-    2, 5 and 9).
+    2 and 5, and row 9 on Linux and macOS).
   - A `.git` file that names a git dir which is not such an entry gets the check
     once more (rows 1, 3, 4, 6, 12 and 14).
   - An entry under `<G>/worktrees` whose record names another path gets the pair
     first, then the check (row 13, and row D-83 on Windows). On Windows the pair
     alone follows through a `subst` drive, and the entry goes (row D-subst).
-  - If `<G>/worktrees` exists, the request makes the pair (rows K1, 3, 11, 12, 13,
-    14, 15, 15b and R17a). An empty directory gets it too (battery row W01 on a
-    Windows VM). If the directory is missing, the request does not make the pair
-    (rows 1, 4 and 6). claustrum runs the pair before it looks at the entries by
-    path.
+  - If `<G>/worktrees` exists, the request makes the pair (rows 3, 11, 12, 13, 14,
+    15 and 15b, row K1 on Linux, row R17a on Linux and macOS). An empty directory
+    gets it too (battery row W01 on Windows). If the directory is missing, the
+    request does not make the pair (rows 1, 4 and 6). claustrum runs the pair
+    before it looks at the entries by path.
   - If no entry names the folder, the request makes the pair once more (rows K1
-    and K1b, battery row E13, row D-83). claustrum runs it after the delete of the
-    folder. With the folder already gone, the request makes the pair twice too
-    (battery rows W01 to W07-b, W14, W15 and W16 on a Windows VM).
+    and K1b on Linux, battery row E13 on Linux and Windows, row D-83 on Windows).
+    claustrum runs it after the delete of the folder. With the folder already
+    gone, the request makes the pair twice too (battery rows W01 to W07-b, W14,
+    W15 and W16 on Windows).
   - A `baseRepo` that holds no repository gets the check twice before the
     lock-check refusal (row A5). With the folder gone, it gets the check once (row
     16). Each call there carries `GIT_DIR=<null device>`, the calls of the branch
@@ -2919,8 +2939,9 @@ copies end still fails it, as `timeoutMs` above describes:
     VMs).
   - A git directory that the trust check refuses, with the folder present: the
     one git call is the read of the user excludes (row DG2i-g on a Linux VM).
-  - claustrum's tests compare the working directory, the profile, the arguments
-    and the `GIT_DIR` and `GIT_COMMON_DIR` values of each call with these rows.
+  - claustrum's tests compare the calls before the branch step with these rows:
+    the working directory, the profile, the arguments and the `GIT_DIR` and
+    `GIT_COMMON_DIR` values. For the branch step they compare the count of calls.
 - With `worktreeRoot`, the call log of `89cb6289` shows `rev-parse
   --absolute-git-dir` before `worktree list`, and the check once more after it.
   That second check does not run for a `worktreeRoot` that cannot be read. That
@@ -2928,9 +2949,9 @@ copies end still fails it, as `timeoutMs` above describes:
   holds no repository, the request makes a light listing and `rev-parse
   --show-toplevel`. Both carry `GIT_DIR=<null device>` (rows L13z-g and DG2h-g on
   a Linux VM). For a `.git`
-  file that names no verified entry, the calls follow the rules above. The pair
-  carries `--work-tree=<worktreePath>` there (rows Q20, Q20b and Y8w on a Linux
-  VM). Nothing is deleted in those rows.
+  file that names no verified entry, the calls follow the rules above (rows Q20,
+  Q20b and Y8w on a Linux VM). The pair carries `--work-tree=<worktreePath>` there
+  (rows Q20b and Y8w). Nothing is deleted in those rows.
 - On Windows, a junction at `.claude` or at `.claude\worktrees` is refused. Nothing
   is deleted, and the branch stays. The reply is `{"success":false,"error":"failed to remove
   worktree: openat .claude\\worktrees: path escapes from parent"}`. That text is
@@ -2950,8 +2971,10 @@ copies end still fails it, as `timeoutMs` above describes:
 - The entry comes from the `.git` file of `<p>`. The file must hold `gitdir: ` and a
   path of the form `<something>/worktrees/<name>`. The entry `<git dir>/worktrees/<name>`
   must be a directory. Its `commondir` must lead back to `<git dir>`, and its `gitdir`
-  record must name `<p>`. Only then is the entry verified. No row tests each of these
-  steps on its own. The path match is exact, so on macOS a spelling of `<p>` that
+  record must name `<p>`. Without `worktreeRoot`, a record in another spelling of
+  `<p>` passes too: `<p>` with its `baseRepo` part as git names that folder. So a
+  request through a `subst` drive or a junction drops its entry (Windows VM, rows
+  D-subst, J2, Q1 and Q2). No row tests each of these steps on its own. The path match is exact, so on macOS a spelling of `<p>` that
   differs only in letter case does not match. On Windows the match ignores letter
   case and slash direction, because git records its paths with forward slashes there.
   An 8.3 short name does not match on Windows, so such a remove keeps the entry. Rows
@@ -2962,6 +2985,19 @@ copies end still fails it, as `timeoutMs` above describes:
   is the lock-check refusal above. A locked worktree answers
   `{"success":false,"error":"refusing to remove worktree: <p> is locked (git worktree
   lock); unlock it to remove it"}`, and nothing is deleted.
+- claustrum always refuses a locked worktree. That is divergence D22, in two
+  states where `89cb6289` deletes the folder (Linux VM). In row p6 the daemon has
+  `GIT_DIR` and `GIT_COMMON_DIR` of another repository X, and the worktree is
+  locked in the repository of `baseRepo`. `89cb6289` answers `{"success":true}`.
+  In row p6d `baseRepo` is `<T>/missing/..` with git on `PATH`, and the worktree
+  is locked in T. `89cb6289` answers `{"success":true,"branchKept":true}`. In
+  both rows `89cb6289` keeps the locked entry. claustrum answers the locked
+  refusal above in both and deletes nothing. For that, claustrum also reads the
+  entries under `<baseRepo>/.git/worktrees`, with no git call. With the folder
+  gone, claustrum answers the gone-and-locked refusal below. The reference is not
+  measured there. A lock on an entry of X that names the worktree is refused on
+  both sides (row p6b). So is a lock with no daemon environment (row p6c). See
+  [`DIVERGENCES.md`](DIVERGENCES.md) → D22.
 - The delete first removes each entry of `<p>` except `.git`, in the order of the
   directory read. It stops at the first failure. Then it removes the rest, `.git`
   included, and `<p>` itself. Every delete goes through an `os.Root`, so no delete
@@ -2996,16 +3032,15 @@ copies end still fails it, as `timeoutMs` above describes:
   whose own record is of a different worktree`. Another read error gives the
   transient reply `{"success":false,"error":"failed to remove worktree: could not
   verify that <p> is a worktree of <repo> (<detail>); retry"}`. There `<p>` is the
-  cleaned path. One input is measured, with `git` on `PATH` (row DG1c-g, Linux VM).
-  It is a missing `baseRepo` and a `.git` file that names an entry of another
-  missing repository. Both
-  references send this frame there, and nothing is deleted. The `<detail>` is the
-  hooks refusal with `chdir <baseRepo>: no such file or directory`, and the one git
-  call is the read of the user excludes. claustrum sends the same text for a
-  `baseRepo` that does not exist. For a `baseRepo` that exists, its `<detail>` is the
-  error of the open, such as `open <baseRepo>/.git/worktrees: no such file or
-  directory` (row Q20 on a Linux VM, where `89cb6289` sends the same frame). No run
-  has measured the reference on the other inputs. A refused daemon `GIT_CONFIG_COUNT` changes these answers (see
+  cleaned path. Two inputs are measured, with `git` on `PATH`, on a Linux VM. Row
+  DG1c-g is a missing `baseRepo` and a `.git` file that names an entry of another
+  missing repository. `89cb6289` sends this frame there, and nothing is deleted.
+  The `<detail>` is the hooks refusal with `chdir <baseRepo>: no such file or
+  directory`. The one git call is the read of the user excludes. claustrum sends
+  that `<detail>` for every such remove with a `baseRepo` that does not exist. Only
+  row DG1c-g measures it. Row Q20 is a `baseRepo` that exists with no `worktrees`
+  directory. The `<detail>` is the error of the open there: `open
+  <baseRepo>/.git/worktrees: no such file or directory`. A refused daemon `GIT_CONFIG_COUNT` changes these answers (see
   "The daemon's own git environment").
 - For a worktree whose directory is gone, the daemon checks the registration by path.
   A locked one answers `{"success":false,"error":"refusing to remove worktree: <p> is
