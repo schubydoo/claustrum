@@ -2620,7 +2620,8 @@ copies end still fails it, as `timeoutMs` above describes:
   worktree: openat .claude\\worktrees: path escapes from parent"}`. That text is
   claustrum's own. `f6010b97` answers `{"success":true}` there, deletes nothing,
   and deletes the branch. The whole-build check of issue 442 measured `89cb6289`
-  the same (Windows rows JC, J03 to J05, JCR1 and JCR2). See
+  the same (Windows rows JC, J03 to J05, JCR1 and JCR2), for a branch that another
+  ref reaches. A branch tip that no other ref reaches is not measured there. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D19.
 - The last component of `<p>` is checked first. In the repository no git runs before
   this check. A symbolic link answers `{"success":false,"error":"refusing to remove

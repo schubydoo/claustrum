@@ -81,7 +81,8 @@ uncommitted files and its branch. PR 451 stops the direct `--version` run of
 **How it was bounded.** The slices were measured side by side on Linux, macOS
 and Windows VMs. A whole-build check of main `4495db6` against this build then
 ran on all three systems. The frame battery was byte-equal on each, apart from
-the fields that change per run and the D16 frame on Windows. The check
+the fields that change per run and the D16 frame on Windows. The D19 junction
+rows are not part of the battery. The check
 found no new frame difference that a slice had not taken. Issue 429 lists its
 other differences. D20 and D21 are new in this work, and D11 is
 retired. D2 gained its `-install` refusal of a home folder (PR 451).
