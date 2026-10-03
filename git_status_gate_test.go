@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -28,14 +29,27 @@ type statusFixture struct {
 
 func newStatusFixture(t *testing.T) statusFixture {
 	t.Helper()
+	return newStatusFixtureInit(t, "status-base")
+}
+
+// newStatusFixtureInit is newStatusFixture with extra `git init` options. key names
+// the fixture template. The test is skipped when this git does not take the options.
+func newStatusFixtureInit(t *testing.T, key string, initArgs ...string) statusFixture {
+	t.Helper()
 	requireGit(t)
+	if len(initArgs) > 0 {
+		probe := exec.Command("git", append(append([]string{"init", "-q"}, initArgs...), t.TempDir())...)
+		if out, err := probe.CombinedOutput(); err != nil {
+			t.Skipf("this git does not take `git init %s`: %v: %s", strings.Join(initArgs, " "), err, out)
+		}
+	}
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	f := statusFixture{root: root, T: filepath.Join(root, "T"), W: filepath.Join(root, "W")}
-	copyFixtureTemplate(t, "status-base", f.T, func(t *testing.T, top string) {
-		runGit(t, top, "init", "-q", "-b", "main")
+	copyFixtureTemplate(t, key, f.T, func(t *testing.T, top string) {
+		runGit(t, top, append([]string{"init", "-q", "-b", "main"}, initArgs...)...)
 		writeFile(t, filepath.Join(top, "t.txt"), "t\n", 0o644)
 		writeFile(t, filepath.Join(top, ".gitignore"), ".claude/worktrees/\n", 0o644)
 		runGit(t, top, "add", ".")
@@ -116,6 +130,12 @@ func TestGitStatusEntryGate(t *testing.T) {
 		}, statusNotRepo},
 		// No row: an empty gitdir names no folder.
 		{"empty gitdir", func(t *testing.T, f statusFixture) { f.write(t, "gitdir", "\n") }, statusNotRepo},
+		// Row v2 (Linux VM): a second entry whose gitdir is a directory is passed over.
+		{"v2 second entry with a gitdir folder", func(t *testing.T, f statusFixture) {
+			if err := os.MkdirAll(filepath.Join(filepath.Dir(f.entry), "other", "gitdir"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, statusClean},
 		// Row n01: two entries name path.
 		{"n01 two matching entries", func(t *testing.T, f statusFixture) {
 			twin := filepath.Join(filepath.Dir(f.entry), "W2")
@@ -171,6 +191,13 @@ func TestGitStatusEntryGate(t *testing.T) {
 		{"n12b config.worktree index.sparse", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[index]\n\tsparse = true\n")
 		}, statusClean},
+		// Rows v3a and v3b (Linux VM).
+		{"v3a config.worktree core.sparseCheckoutCone", func(t *testing.T, f statusFixture) {
+			f.write(t, "config.worktree", "[core]\n\tsparseCheckoutCone = true\n")
+		}, statusClean},
+		{"v3b config.worktree core.bare", func(t *testing.T, f statusFixture) {
+			f.write(t, "config.worktree", "[core]\n\tbare = false\n")
+		}, statusNotRepo},
 		// Row n13.
 		{"n13 config.worktree user.name", func(t *testing.T, f statusFixture) {
 			f.write(t, "config.worktree", "[user]\n\tname = x\n")
@@ -391,5 +418,88 @@ func TestStatusHeadValid(t *testing.T) {
 		if got := statusHeadValid([]byte(in)); got != want {
 			t.Errorf("statusHeadValid(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+// Row v5 (Linux VM): a marker inside baseRepo itself is ignored.
+func TestGitStatusMarkerInsideBaseRepo(t *testing.T) {
+	f := newStatusFixture(t)
+	writeFile(t, filepath.Join(f.T, managedWorktreesMarker), "", 0o644)
+	if got := f.status(t); got != statusClean {
+		t.Errorf("git.status = %s\nwant %s", got, statusClean)
+	}
+}
+
+// Rows v6a and v6b (Linux VM): a SHA-256 repository. The --attr-source value is the
+// empty tree id of that object format, so status runs.
+func TestGitStatusSHA256Repository(t *testing.T) {
+	f := newStatusFixtureInit(t, "status-sha256", "--object-format=sha256")
+	if got := f.status(t); got != statusClean {
+		t.Fatalf("v6a git.status = %s\nwant %s", got, statusClean)
+	}
+	writeFile(t, filepath.Join(f.W, "t.txt"), "changed\n", 0o644)
+	want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":false,"changes":[" M t.txt"]}}`
+	if got := f.status(t); got != want {
+		t.Errorf("v6b git.status = %s\nwant %s", got, want)
+	}
+}
+
+// Rows o19a to o19d (macOS VM): a repository with the reftable format. git takes
+// `--ref-format=reftable` since 2.45, and the test is skipped on an older one.
+func TestGitStatusReftableRepository(t *testing.T) {
+	f := newStatusFixtureInit(t, "status-reftable", "--ref-format=reftable")
+	list := filepath.Join(f.entry, "reftable", "tables.list")
+	names, err := os.ReadFile(list)
+	if err != nil {
+		t.Fatalf("the entry of a reftable worktree has no tables.list: %v", err)
+	}
+	// Row o19a.
+	if got := f.status(t); got != statusClean {
+		t.Fatalf("o19a git.status = %s\nwant %s", got, statusClean)
+	}
+	// Row o19b.
+	writeFile(t, filepath.Join(f.W, "t.txt"), "changed\n", 0o644)
+	want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":true,"clean":false,"changes":[" M t.txt"]}}`
+	if got := f.status(t); got != want {
+		t.Errorf("o19b git.status = %s\nwant %s", got, want)
+	}
+	// Rows o19c and o19d: the list names a table that is not there.
+	missing := "0x000000000009-0x000000000009-deadbeef.ref\n"
+	for row, body := range map[string]string{"o19c": string(names) + missing, "o19d": missing} {
+		writeFile(t, list, body, 0o644)
+		if got := f.status(t); got != statusNotRepo {
+			t.Errorf("%s git.status = %s\nwant %s", row, got, statusNotRepo)
+		}
+	}
+}
+
+// Rows o19a and o19b: the reftable files of the temporary git folder.
+func TestStatusGitDirReftableContents(t *testing.T) {
+	entry, common := t.TempDir(), t.TempDir()
+	for name, body := range map[string]string{
+		"HEAD": "ref: refs/heads/.invalid\n", "index": "idx", "refs/heads": "x\n",
+		"reftable/tables.list": "a.ref\n", "reftable/a.ref": "table", "reftable/b.ref": "not listed",
+	} {
+		writeFile(t, filepath.Join(entry, filepath.FromSlash(name)), body, 0o644)
+	}
+	present, tables, ok := statusReftable(entry)
+	if !present || !ok || !slices.Equal(tables, []string{"a.ref"}) {
+		t.Fatalf("statusReftable = %v %q %v, want the one listed table", present, tables, ok)
+	}
+	tmp, err := buildStatusGitDir(statusEntry{dir: entry, reftable: present, tables: tables}, common)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	for name, want := range map[string]bool{"reftable/tables.list": true, "reftable/a.ref": true,
+		"reftable/b.ref": false, "refs": false} {
+		if _, err := os.Stat(filepath.Join(tmp, filepath.FromSlash(name))); (err == nil) != want {
+			t.Errorf("%s in the temporary folder: present %v, want %v", name, err == nil, want)
+		}
+	}
+	// Not measured: a name with a separator. claustrum answers isRepo:false.
+	writeFile(t, filepath.Join(entry, "reftable", "tables.list"), "../HEAD\n", 0o644)
+	if _, _, ok := statusReftable(entry); ok {
+		t.Error("statusReftable takes a table name with a separator")
 	}
 }

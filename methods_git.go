@@ -572,7 +572,7 @@ func gitStatus(req *request) response {
 	if !ok {
 		return notRepo
 	}
-	if ok, err := statusWorkTreeProbe(common, sp.probeTree, []string{"GIT_COMMON_DIR=" + common}); err != nil {
+	if ok, err := statusWorkTreeProbe(common, sp.probeTree, statusCommonPin(common)); err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	} else if !ok {
 		return notRepo

@@ -95,6 +95,12 @@ func statusCallLog(t *testing.T, root string) func(path, base string) (string, [
 			if slices.Contains(c.env, "GIT_DIR="+os.DevNull) && env != "-" {
 				line += " +nodir"
 			}
+			// A GIT_COMMON_DIR that is not <root>/T/.git shows as " cd=<value>".
+			for _, kv := range c.all {
+				if v, ok := strings.CutPrefix(kv, "GIT_COMMON_DIR="); ok && v != filepath.Join(root, "T", ".git") {
+					line += " cd=" + v
+				}
+			}
 			line = tmpDir.ReplaceAllString(line, "--git-dir=<tmp>")
 			lines = append(lines, strings.ReplaceAll(line, root, "<fx>"))
 		}
@@ -228,6 +234,17 @@ func TestGitStatusGateCalls(t *testing.T) {
 		}
 		wantStatusCalls(t, "n18", calls, gate[:2])
 	})
+	// Row v4 (Linux VM): a symlink as the last component of a path inside baseRepo
+	// stops before the fourth call.
+	t.Run("v4", func(t *testing.T) {
+		l := filepath.Join(f.T, ".claude", "worktrees", "lnk")
+		mustSymlink(t, f.W, l)
+		raw, calls := run(l, f.T)
+		if raw != statusNotRepo {
+			t.Errorf("frame = %s\nwant %s", raw, statusNotRepo)
+		}
+		wantStatusCalls(t, "v4", calls, gate[:2])
+	})
 	// Row n15: a bad HEAD stops after the two calls in the common directory.
 	t.Run("n15", func(t *testing.T) {
 		f.write(t, "HEAD", "garbage\n")
@@ -355,4 +372,32 @@ func TestGitStatusExcludesReadBeforeTrustRefusal(t *testing.T) {
 		t.Errorf("frame = %s\nwant the stray commondir refusal", raw)
 	}
 	wantStatusCalls(t, "o21", calls, statusGateCalls("")[:1])
+}
+
+// Rows E07a and E07b (Linux and macOS VMs): the daemon's own environment sets
+// GIT_COMMON_DIR. The calls with --git-dir=<common> keep the daemon's value. The
+// calls in the temporary folder get GIT_COMMON_DIR=<T>/.git.
+func TestGitStatusDaemonCommonDirCalls(t *testing.T) {
+	f := newStatusFixture(t)
+	x := filepath.Join(f.root, "X")
+	runGit(t, f.root, "init", "-q", "-b", "main", x)
+	runGit(t, x, "commit", "-q", "--allow-empty", "-m", "c0")
+	run := statusCallLog(t, f.root)
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(x, ".git"))
+	raw, calls := run(f.W, f.T)
+	if raw != statusClean {
+		t.Fatalf("frame = %s\nwant %s", raw, statusClean)
+	}
+	if len(calls) != 22 {
+		t.Fatalf("%d calls, want 22:\n  %s", len(calls), strings.Join(calls, "\n  "))
+	}
+	daemon := " cd=<fx>/X/.git"
+	for i, c := range calls {
+		n := i + 1
+		// Calls 9, 10, 13, 14, 17, 18, 21 and 22 run in the temporary folder.
+		inTemp := n >= 9 && (n-9)%4 < 2
+		if strings.HasSuffix(c, daemon) == inTemp {
+			t.Errorf("call %d = %q\nwant the daemon's GIT_COMMON_DIR: %v", n, c, !inTemp)
+		}
+	}
 }

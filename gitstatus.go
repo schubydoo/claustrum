@@ -59,14 +59,14 @@ const (
 // o15e), and one byte more answers isRepo:false with no temporary folder (row o15c).
 // An `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers isRepo:false too
 // (row o16). Whether 89cb6289 bounds each file or their sum is not measured. claustrum
-// bounds each file. It uses the same bound for `info/sparse-checkout`, which is not
-// measured. (var, not const, so tests can shrink it.)
+// bounds each file. It uses the same bound for `info/sparse-checkout` and for each
+// reftable table, which is not measured. (var, not const, so tests can shrink it.)
 var statusIndexMaxBytes int64 = 1 << 30
 
 // statusConfigKeys are the keys a `config.worktree` of an entry can hold. A file with
 // core.sparseCheckout or index.sparse passes (rows n12 and n12b), and so does one with
-// core.sparseCheckoutCone beside core.sparseCheckout (row o17). A file with user.name
-// answers isRepo:false (row n13). No other key is measured. claustrum answers
+// core.sparseCheckoutCone (rows o17 and v3a). A file with user.name or core.bare
+// answers isRepo:false (rows n13 and v3b). No other key is measured. claustrum answers
 // isRepo:false for each of them.
 var statusConfigKeys = []string{"core.sparsecheckout", "core.sparsecheckoutcone", "index.sparse"}
 
@@ -85,9 +85,9 @@ func (r statusRefusal) Error() string { return string(r) }
 //     The entry can be a file or a directory. With a `.git` in that folder the request
 //     passes (row o23b).
 //
-// claustrum tests baseRepo as sent and with its symlinks resolved. Not measured: a
-// marker inside baseRepo itself, and a baseRepo that reaches such a folder only
-// through a symlink.
+// A marker inside baseRepo itself is ignored (row v5, Linux VM). claustrum tests
+// baseRepo as sent and with its symlinks resolved. Not measured: a baseRepo that
+// reaches such a folder only through a symlink.
 func statusBaseInManagedTree(baseRepo string) bool {
 	for _, p := range []string{baseRepo, canonicalPath(baseRepo)} {
 		abs, err := filepath.Abs(p)
@@ -155,8 +155,8 @@ func resolvedDir(p string) string {
 //     and n25d2 pass here and find no entry).
 //   - `path` lies inside baseRepo and one of its components below baseRepo is a
 //     symbolic link (rows n07 and n07L) or, on Windows, a junction (row n07-j). The
-//     same layout with no link passes (rows n07b and n08). The measured link is
-//     `.claude`. A link at the last component is not measured. claustrum refuses it.
+//     same layout with no link passes (rows n07b and n08). A link at the last
+//     component fails too (row v4, Linux VM).
 //
 // The --work-tree value of the next call is `path` with its symlinks resolved (rows
 // n06 and C12). When `path` lies inside baseRepo, it is baseRepo, resolved the same
@@ -319,8 +319,8 @@ func entryPathValue(entry string, content []byte) string {
 //
 // On Windows the compare is by text too. Row D9 failed with the whole value in
 // another letter case, `.git` included. A value with only one folder name in another
-// case is not measured. An entry whose `gitdir` cannot be read is passed over.
-// Whether such an entry beside a matching one changes the answer is not measured.
+// case is not measured. An entry whose `gitdir` cannot be read is passed over: a
+// second entry whose `gitdir` is a directory changes no answer (row v2, Linux VM).
 func statusMatchEntry(common string, spellings []string) (string, bool) {
 	dir := filepath.Join(common, "worktrees")
 	ents, err := os.ReadDir(dir)
@@ -448,6 +448,8 @@ type statusEntry struct {
 	dir       string   // <common>/worktrees/<name>
 	shared    []string // the sharedindex.* names
 	hasConfig bool     // the entry holds a config.worktree
+	reftable  bool     // the entry holds a reftable/tables.list
+	tables    []string // the table names of that list
 }
 
 // statusEntryOf runs the entry part of the gate: the match, then `commondir`, `HEAD`,
@@ -470,7 +472,47 @@ func statusEntryOf(common string, sp statusPath) (statusEntry, bool) {
 	if !ok {
 		return statusEntry{}, false
 	}
-	return statusEntry{dir: dir, shared: shared, hasConfig: hasConfig}, true
+	reftable, tables, ok := statusReftable(dir)
+	if !ok {
+		return statusEntry{}, false
+	}
+	return statusEntry{dir: dir, shared: shared, hasConfig: hasConfig, reftable: reftable, tables: tables}, true
+}
+
+// statusReftable reads `reftable/tables.list` of the matched entry. A repository
+// with the reftable format keeps the HEAD of a worktree there. present is true when
+// the entry has that file. Each line names a table file in the `reftable` folder. A
+// name whose file is missing answers isRepo:false (rows o19c and o19d, macOS VM).
+//
+// Not measured: a table that is not a regular file, a table over a size bound, and a
+// name that is not a plain file name. claustrum answers isRepo:false for each, with
+// statusIndexMaxBytes as the bound. The list itself is bounded by
+// statusEntryFileMaxBytes, which is not measured either.
+func statusReftable(entry string) (present bool, tables []string, ok bool) {
+	const list = "reftable/tables.list"
+	if _, err := os.Lstat(filepath.Join(entry, filepath.FromSlash(list))); errors.Is(err, fs.ErrNotExist) {
+		return false, nil, true
+	}
+	b, err := readEntryFile(entry, list, statusEntryFileMaxBytes)
+	if err != nil {
+		return true, nil, false
+	}
+	root, err := os.OpenRoot(entry)
+	if err != nil {
+		return true, nil, false
+	}
+	defer func() { _ = root.Close() }()
+	for _, name := range strings.Fields(string(b)) {
+		if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+			return true, nil, false
+		}
+		fi, err := root.Stat("reftable/" + name)
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() > statusIndexMaxBytes {
+			return true, nil, false
+		}
+		tables = append(tables, name)
+	}
+	return true, tables, true
 }
 
 // copyStatusFile, writeStatusFile and chtimesStatusFile are seams over the file
@@ -515,8 +557,12 @@ func copyEntryFile(root *os.Root, name, dst string, max int64) error {
 // path. It holds copies of `HEAD` and `index` of the entry and a `commondir` file
 // that names the common directory (row K1). It also holds `config.worktree` when the
 // entry has one (rows n12 and o17), `info/sparse-checkout` (row o17) and each
-// `sharedindex.*` file (rows o16b1 and o16b2). A file that the entry does not hold is
-// left out (row o15d). Any other failure is returned. The caller removes the folder.
+// `sharedindex.*` file (rows o16b1 and o16b2). For a reftable repository it holds
+// `reftable/tables.list` and each table that the list names (rows o19a and o19b, macOS
+// VM). In row o19d 89cb6289 also copied a table that the list did not name, before it
+// answered isRepo:false. Whether it copies such a table in a request that passes is
+// not measured. claustrum does not. A file that the entry does not hold is left out
+// (row o15d). Any other failure is returned. The caller removes the folder.
 //
 // git needs the `commondir` file to resolve a branch HEAD against the refs of the
 // repository. GIT_COMMON_DIR alone is not enough for that.
@@ -541,16 +587,19 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 	if e.hasConfig {
 		items = append(items, item{"config.worktree", statusEntryFileMaxBytes})
 	}
-	items = append(items, item{"info/sparse-checkout", statusIndexMaxBytes})
+	if _, err := root.Stat("info/sparse-checkout"); err == nil {
+		items = append(items, item{"info/sparse-checkout", statusIndexMaxBytes})
+	}
+	if e.reftable {
+		items = append(items, item{"reftable/tables.list", statusEntryFileMaxBytes})
+		for _, name := range e.tables {
+			items = append(items, item{"reftable/" + name, statusIndexMaxBytes})
+		}
+	}
 	for _, it := range items {
 		dst := filepath.Join(tmp, filepath.FromSlash(it.name))
-		if it.name == "info/sparse-checkout" {
-			if _, err := root.Stat(it.name); err != nil {
-				continue
-			}
-			if err := os.Mkdir(filepath.Dir(dst), 0o700); err != nil {
-				return tmp, err
-			}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return tmp, err
 		}
 		if err := copyStatusFile(root, it.name, dst, it.max); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return tmp, err
@@ -568,8 +617,23 @@ type statusRun struct {
 	path   string   // as sent: the working directory and the --work-tree value
 	common string   // the common directory
 	tmp    string   // the temporary git folder
-	pin    []string // GIT_COMMON_DIR=<common>
-	attr   []string // attrSourceArgs
+	pin    []string // GIT_COMMON_DIR=<common>, on the calls in the temporary folder
+	// commonPin is the pin of the calls with --git-dir=<common> (statusCommonPin).
+	commonPin  []string
+	attrSource bool // git takes --attr-source (attrSourceArgs)
+}
+
+// statusCommonPin is the GIT_COMMON_DIR pin of the calls that carry
+// --git-dir=<common>: K1 calls 4 and 5, and the two calls of emptyTree. When the
+// daemon's own environment sets GIT_COMMON_DIR, those calls keep the daemon's value
+// and get no pin. The calls in the temporary folder always get
+// GIT_COMMON_DIR=<common> (rows E07a and E07b, Linux and macOS VMs). No other git
+// variable was in the daemon's environment in those rows.
+func statusCommonPin(common string) []string {
+	if daemonCommonDirSet() {
+		return nil
+	}
+	return []string{"GIT_COMMON_DIR=" + common}
 }
 
 // emptyTree runs the two calls that give the id of the empty tree: `--git-dir=<common>
@@ -578,10 +642,10 @@ type statusRun struct {
 // `hash-object` that fails changes no answer (row n17f): the id is then gitEmptyTree.
 // A listing that fails here is not measured. claustrum goes on with the two base pins.
 func (r *statusRun) emptyTree() string {
-	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.pin)).hooks()
+	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.commonPin)).hooks()
 	cmd := exec.CommandContext(r.ctx, "git", hardenedProfileArgs(true,
 		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull)...)
-	cmd.Env = hardenedGitEnv(true, r.pin, hooks)
+	cmd.Env = hardenedGitEnv(true, r.commonPin, hooks)
 	out, err := cmd.Output()
 	if id := strings.TrimSpace(string(out)); err == nil && isObjectID(id) {
 		return id
@@ -609,19 +673,23 @@ func isObjectID(s string) bool {
 // adds GIT_OPTIONAL_LOCKS=0: without it a `git status` rewrites the index of the
 // worktree. excludes is the core.excludesFile value.
 //
-// The --attr-source value stays gitEmptyTree. Every measured repository is SHA-1,
-// where both ids are equal, so which id 89cb6289 passes there is not measured.
+// The --attr-source value is the id that emptyTree gave right before. In a SHA-256
+// repository it has 64 hex characters (rows v6a and v6b, Linux VM). The probe of
+// attrSourceArgs keeps the SHA-1 id there.
 //
 // A failing listing in the temporary folder is a refusal with the hooks text. That
 // follows row o22, where the listing with --git-dir=<common> failed. A failure of this
 // one listing is not measured.
 func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, error) {
-	r.emptyTree()
+	var attr []string
+	if id := r.emptyTree(); r.attrSource {
+		attr = []string{"--attr-source=" + id}
+	}
 	l := runListing(r.ctx, r.path, r.tmp, precursorEnv(true, r.pin))
 	if l.err != nil {
 		return nil, statusRefusal(failedListingText(l, true))
 	}
-	full := append(slices.Clone(r.attr), profileArgsWithExcludes(true, excludes,
+	full := append(attr, profileArgsWithExcludes(true, excludes,
 		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...)
 	cmd := exec.CommandContext(r.ctx, "git", full...)
 	cmd.Dir = r.path
@@ -650,7 +718,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 // worktree. On Windows the three commands with GIT_OPTIONAL_LOCKS=0 get
 // statusExcludesFile as their core.excludesFile value. That is the divergence D16.
 func statusChanges(path, common string, e statusEntry) ([]string, error) {
-	attr := attrSourceArgs()
+	attrSource := attrSourceArgs() != nil
 	tmp, err := buildStatusGitDir(e, common)
 	if tmp != "" {
 		defer func() { _ = os.RemoveAll(tmp) }()
@@ -661,7 +729,7 @@ func statusChanges(path, common string, e statusEntry) ([]string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	r := &statusRun{ctx: ctx, path: path, common: common, tmp: tmp,
-		pin: []string{"GIT_COMMON_DIR=" + common}, attr: attr}
+		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(common), attrSource: attrSource}
 	excludes := statusExcludesFile()
 
 	porcelain, err := r.git(true, excludes, "status", "--porcelain",

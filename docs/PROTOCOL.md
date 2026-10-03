@@ -1784,7 +1784,9 @@ entries under the common directory of `baseRepo` and looks for the one entry tha
 names `path`. Each rule names its rows. The rows are from a side-by-side probe of
 `89cb6289` and claustrum on Linux, macOS and Windows VMs. Rows C1 to C13, row n07L
 and the `.t` rows are from the macOS VM. Rows D1 to D16, K02 to K15 and W03 to W06
-are from the Windows VM. Rows o1 to o25 are from the Linux VM. The FIFO rows n05a,
+are from the Windows VM. Rows o1 to o25 and v2 to v6b are from the Linux VM. Rows
+o19a to o19d are from the macOS VM. Rows E07a and E07b ran on Linux and macOS VMs
+with a `GIT_COMMON_DIR` in the daemon's environment. The FIFO rows n05a,
 n14b, N05a, C20a and C20b did not run on Windows. Every other row ran on all three
 systems. On Windows the frames are those of the pass with a user excludes file (see
 D16 below). The call numbers are those of row K1, which has 22 git calls. Call 1 is
@@ -1797,7 +1799,8 @@ the read of the user's excludes.
    - A folder above `baseRepo`, at any level, holds an entry named
      `.claude-managed-worktrees` and no `.git` (rows o23, o23c and o23d, Linux VM).
      The entry can be a file or a directory. With a `.git` in that folder the request
-     passes (row o23b, Linux VM). Not measured: a marker inside `baseRepo` itself.
+     passes (row o23b, Linux VM). A marker inside `baseRepo` itself is ignored (row
+     v5).
 2. The read of the user's excludes comes next. It also runs before a trust refusal
    (rows o20 and o21, Linux VM).
 3. Calls 2 and 3 run in `baseRepo` as sent: the configuration listing, then the heavy
@@ -1815,8 +1818,8 @@ the read of the user's excludes.
    - `path` is a regular file (row n09), or its folder is gone (row n26b).
    - `path` lies inside `baseRepo` and one of its components below `baseRepo` is a
      symbolic link (rows n07 and n07L) or, on Windows, a junction (row n07-j). The
-     link in those rows is `.claude`. The same layout with no link passes (rows n07b
-     and n08). Not measured: a link at the last component. claustrum refuses it.
+     link in those rows is `.claude`. A link at the last component fails too (row
+     v4). The same layout with no link passes (rows n07b and n08).
 5. Calls 4 and 5 run in the common directory: `--git-dir=<common> config -z --list`,
    then the light `--git-dir=<common> --work-tree=<dir> rev-parse --show-toplevel`.
    - `<dir>` is `path` with its symlinks resolved (rows n06 and C12). When `path` lies
@@ -1829,6 +1832,8 @@ the read of the user's excludes.
      (row o22, Linux VM).
    - A `rev-parse` that fails answers `isRepo:false` (row n17). Not measured: what
      `89cb6289` does with the output. claustrum does not read it.
+   - When the daemon's own environment sets `GIT_COMMON_DIR`, calls 4 and 5 keep
+     that value and get no pin (rows E07a and E07b).
 6. The entry match. An entry is a real folder under `<common>/worktrees`. A symlinked
    entry does not count (row n02). A real folder that a symlink also points at counts
    once (row n02b).
@@ -1855,7 +1860,8 @@ the read of the user's excludes.
      case of the whole value. Not measured: a value with one folder name in another
      case on Windows. claustrum compares by text there too.
    - Exactly one entry matches. Two matching entries answer `isRepo:false` (row n01),
-     and so does none (rows n18b and n25).
+     and so does none (rows n18b and n25). A second entry whose `gitdir` is a
+     directory is passed over (row v2).
    - The `.git` inside `path` plays no part. Missing, damaged or naming another
      place, the answer is `isRepo:true` (rows G01 to G12, n26c and n26d). A locked
      worktree answers `isRepo:true` (row n26).
@@ -1888,11 +1894,17 @@ the read of the user's excludes.
       stdin, in its own working directory and with its own environment (rows n12,
       n12b, n13 and n14c). It is call 6 there.
     - A file with `core.sparseCheckout` or `index.sparse` passes (rows n12 and n12b),
-      and so does one with `core.sparseCheckoutCone` beside `core.sparseCheckout`
-      (row o17, Linux VM). `user.name` answers `isRepo:false` (row n13). Not
-      measured: every other key. claustrum answers `isRepo:false` for each of them.
+      and so does one with `core.sparseCheckoutCone` (rows o17 and v3a). `user.name`
+      and `core.bare` answer `isRepo:false` (rows n13 and v3b). Not measured: every
+      other key. claustrum answers `isRepo:false` for each of them.
+11. The `reftable/tables.list` file of the entry, in a repository with the reftable
+    format. Each line names a table file in the `reftable` folder of the entry. A
+    name whose file is missing answers `isRepo:false` after 5 calls (rows o19c and
+    o19d). Not measured: a table that is not a regular file, a size bound of a table
+    or of the list, and a name with a path separator. claustrum answers
+    `isRepo:false` for each. It bounds a table at 1 GiB and the list at 1 MiB.
 
-Not measured: the order of rules 7 to 10, and the size bound of `HEAD` and
+Not measured: the order of rules 7 to 11, and the size bound of `HEAD` and
 `config.worktree`. claustrum bounds both at 1 MiB. No read of an entry file blocks:
 claustrum opens each file without blocking and reads a regular file only.
 
@@ -1901,7 +1913,11 @@ claustrum opens each file without blocking and reads a regular file only.
 - The temporary git folder holds copies of `HEAD` and `index` of the entry and a
   `commondir` file (row K1). It also holds `config.worktree` when the entry has one
   (rows n12 and o17), `info/sparse-checkout` (row o17, Linux VM) and each
-  `sharedindex.*` file (rows o16b1 and o16b2, Linux VM). No entry is left after the
+  `sharedindex.*` file (rows o16b1 and o16b2, Linux VM). In a reftable repository it
+  holds `reftable/tables.list` and each table that the list names (rows o19a and
+  o19b). In row o19d `89cb6289` also copied a table that the list did not name,
+  before it answered `isRepo:false`. Not measured: whether it copies such a table in
+  a request that passes. claustrum does not. No entry is left after the
   reply. The status therefore does not refresh or rewrite the caller's index, and it
   does not take `index.lock`. The folder name starts with `claustrum-git-dir-`.
 - After the gate comes the `git --attr-source=<empty tree> version` probe (call 6).
@@ -1914,13 +1930,17 @@ claustrum opens each file without blocking and reads a regular file only.
 - Three calls come before each command (calls 7 to 9). Two run in the working
   directory of the daemon: `--git-dir=<common> config -z --list` and the heavy
   `--git-dir=<common> hash-object -t tree <null>`. The third runs in `path`:
-  `--git-dir=<temp> config -z --list`.
-- Each command carries `--attr-source=<empty tree>`, the heavy profile,
+  `--git-dir=<temp> config -z --list`. When the daemon's own environment sets
+  `GIT_COMMON_DIR`, the two `<common>` calls keep that value. The third call and the
+  command get `GIT_COMMON_DIR=<common>` (rows E07a and E07b).
+- Each command carries `--attr-source=<id>`, the heavy profile,
   `--git-dir=<temp>` and `--work-tree=<path as sent>`. `status`, `ls-files` and
   `diff-index` add `GIT_OPTIONAL_LOCKS=0`. The `--attr-source` option makes git ignore
   the `.gitattributes` of the repository, so no clean filter runs. It is left out
-  when the runtime git predates it (git 2.40). Not measured: the `--attr-source`
-  value in a SHA-256 repository. claustrum passes the SHA-1 id.
+  when the runtime git predates it (git 2.40). `<id>` is the answer of the
+  `hash-object` call right before the command. In a SHA-256 repository it has 64 hex
+  characters (rows v6a and v6b). The probe keeps the SHA-1 id there. When
+  `hash-object` fails, `<id>` is the SHA-1 id of the empty tree (row n17f).
 - When `rev-parse --verify` fails, `HEAD` names no commit. The two `<common>` calls
   run once more, and `diff-index` gets the id of the empty tree in place of `HEAD`
   (rows n16, o13 and o14d, 24 calls).
