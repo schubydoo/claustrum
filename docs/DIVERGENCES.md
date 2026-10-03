@@ -738,7 +738,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   cwd, argv and env of the reference, apart from the temp dir name and the env order
   on Windows. One value differs on purpose. On Windows claustrum passes
   `-c core.excludesFile=/dev/null` where the reference passes `NUL`
-  (`statusExcludesFile` in `githarden.go`). Every other call that passes
+  (`statusExcludesFile` in `githarden.go`). The `ls-files` and `diff-index` calls of
+  `git.status` get the same value as its status call. Every other call that passes
   `-c core.excludesFile` passes `NUL` there, as the reference does. On Linux and
   macOS the null device is `/dev/null`, so nothing differs there. A user with a
   global excludes file gets that file on every OS.
@@ -761,7 +762,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   with reproducing the reference's Windows failure so claustrum errors 128 too. That
   change is one value: `NUL` in the `core.excludesFile` of the status call.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.status`. Also `methods_git.go`
-  (`gitStatus`) and `githarden.go` (`hardenedGitStatus`, `statusExcludesFile`).
+  (`gitStatus`), `gitstatus.go` (`statusChanges`) and `githarden.go` (`statusExcludesFile`).
   Evidence in `scratch/osparity/` and `scratch/f6010b97/d16-nul-excludes-raw/`.
 
 ### D17 · An abandoned `lsof` run reads as busy, not idle (macOS) { #d17 }

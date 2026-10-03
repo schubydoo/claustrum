@@ -366,9 +366,9 @@ traps that matter for telling drift from expected:
     is the one of the resolved repository (row D01). On Windows the daemon does not
     take a toplevel answer that names another folder or is relative (rows W14 and
     W16). A symlink there resolves before `..` (row D03).
-  - claustrum keeps D16 as it is. The status of a worktree whose `.git` names a fake
-    entry with no `commondir` (row T12-G04) still differs from both references on
-    macOS and Windows. That gap is open and is not reconciled.
+  - claustrum keeps D16 as it is. `git.status` now takes its gate from the worktree
+    entries of `baseRepo`, as `89cb6289` does, so the `.git` inside `path` plays no
+    part (rows G01 to G12 and T12-G04, [PROTOCOL.md](PROTOCOL.md) → `git.status`).
 
   See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls
   and git.info.
