@@ -90,10 +90,18 @@ jobs:
       # tests took 204 s and the rest 184 s. With the git.status tests the rest
       # took 467 s, against the 600 s limit of go test. Two shards run a -run
       # pattern and the third skips both, so together they run every test once.
+      # macOS runs two shards. One macOS run took 461 s for the whole suite,
+      # against the same 600 s limit. The git shard runs the worktree and the
+      # git.status tests, and the rest shard skips both.
       matrix:
         include:
           - os: ubuntu-latest
           - os: macos-latest
+            shard: git
+            select: -run=^(TestWorktree|TestGitStatus)
+          - os: macos-latest
+            shard: rest
+            select: -skip=^(TestWorktree|TestGitStatus)
           - os: windows-latest
             shard: worktree
             select: -run=^TestWorktree
@@ -175,7 +183,7 @@ jobs:
         run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 ./...
       # Upload from EVERY leg, tagged with its OS as a Codecov flag, so Test Analytics
       # (flaky/slow tests) breaks out per platform — which is the axis claustrum
-      # actually varies on. All Windows shards upload under the one Windows flag,
+      # actually varies on. The shards of one OS upload under the one flag of that OS,
       # and each shard's junit.xml holds different tests.
       #
       # No token: claustrum is a public repo, so codecov-action uploads tokenless (same
@@ -201,7 +209,7 @@ jobs:
       # Keep the junit files even when the upload is a no-op. The Codecov step is
       # deliberately non-blocking, so a rejected upload is a warning line and
       # nothing else; the coverage job already retains coverage.out for exactly
-      # this reason. Named per matrix cell (OS, plus the shard on Windows),
+      # this reason. Named per matrix cell (OS, plus the shard where the OS has shards),
       # because artifact names must be unique across a matrix.
       - name: Upload test results artifact
         if: ${{ !cancelled() }}
