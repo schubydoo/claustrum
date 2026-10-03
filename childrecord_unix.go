@@ -110,7 +110,7 @@ func (m *procManager) awaitRecordsRemoved() {
 
 // forgetKeptRecords removes the record of every managed process that still runs. The
 // graceful shutdown with -keep-children calls it for the children that it leaves
-// alive. A kept child then has no record, so the next daemon on this socket does not
+// alive, before it releases the run-dir lock. A kept child then has no record, so the next daemon on this socket does not
 // take it for the child of a dead daemon and sends it no signal.
 //
 // This rule is claustrum's own, as the flag is. Without the rule the flag has no use

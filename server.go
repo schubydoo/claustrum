@@ -1267,6 +1267,13 @@ func (s *server) closeAll(socket string) {
 	// same ownership guard: only if it is still the inode we published, so a successor's
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
 	removePipeNameFileIfOwned(socket, s.pipeInfo)
+	// With -keep-children the kept children lose their records while this daemon
+	// still holds the lock. A successor takes the lock only after the release below,
+	// so its reap finds no record of a kept child (linux and darwin, a no-op
+	// elsewhere). claustrum's own rule: see forgetKeptRecords.
+	if s.keepChildren {
+		s.procs.forgetKeptRecords()
+	}
 	// Drop the run-dir lock: truncate the owner record and unlock daemon.lock,
 	// leaving the file in place. No-op when not held.
 	if s.releaseRunDir != nil {
@@ -1311,8 +1318,8 @@ func (s *server) dropConns() int {
 // default it kills the children: the whole tree on Unix, the direct child on Windows. With
 // -keep-children set, it
 // instead leaves every running child alive so they survive a daemon
-// restart/upgrade, logging one honest line with the surviving count. It removes
-// their records, so the reap of the next start sends them nothing. The new
+// restart/upgrade, logging one honest line with the surviving count. closeAll
+// removes their records before it releases the lock. The new
 // daemon does not re-adopt them. An out-of-band consumer reconciles them via the
 // CT-1 pid/startTime. Split out from teardown so the gate is unit-testable
 // without teardown's os.Exit.
@@ -1322,10 +1329,6 @@ func (s *server) dropConns() int {
 func (s *server) stopChildren() int {
 	if s.keepChildren {
 		logInfof("[Server] -keep-children: leaving %d running child process(es) alive across shutdown", s.procs.runningCount())
-		// The kept children lose their records, so the next daemon on this socket
-		// reaps none of them (linux and darwin, a no-op elsewhere). claustrum's own
-		// rule: see forgetKeptRecords.
-		s.procs.forgetKeptRecords()
 		return 0
 	}
 	killed := s.procs.killAllCount()

@@ -334,7 +334,9 @@ func TestRemoveRecordThroughChildrenSymlinkInsideRunDir(t *testing.T) {
 //
 // It also pins claustrum's own rule for the records: the kept children lose their
 // records at that shutdown, so the reap of the next start sends them no signal. The
-// reap below reads the real processes, and only its signal is seamed.
+// records go before the run-dir lock is released, so a successor that takes the lock
+// finds none of them. The reap below reads the real processes, and only its signal
+// is seamed.
 func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 	old := shutdownRecordWait
 	shutdownRecordWait = 30 * time.Second
@@ -346,9 +348,17 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 	if n := len(childrenNames(t, filepath.Join(runDir, "children"))); n != 2 {
 		t.Fatalf("%d records while the children run, want 2", n)
 	}
+	// The seam runs on the closeAll goroutine, so it records and does not fail the test.
+	var atRelease []os.DirEntry
+	var releaseErr error
+	released := false
+	s.releaseRunDir = func() {
+		atRelease, releaseErr = os.ReadDir(filepath.Join(runDir, "children"))
+		released = true
+	}
 
 	done := make(chan struct{})
-	go func() { defer close(done); s.stopChildren() }()
+	go func() { defer close(done); s.closeAll(filepath.Join(runDir, "rpc.sock")) }()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
@@ -356,6 +366,12 @@ func TestKeepChildrenSkipsShutdownWait(t *testing.T) {
 		s.procs.killAll()
 		<-done
 		t.Fatal("the shutdown with -keep-children waited for the records")
+	}
+	if !released {
+		t.Fatal("closeAll did not run the run-dir release")
+	}
+	if releaseErr != nil || len(atRelease) != 0 {
+		t.Errorf("records at the run-dir release: %d (read error %v), want none for the kept children", len(atRelease), releaseErr)
 	}
 	if names := childrenNames(t, filepath.Join(runDir, "children")); len(names) != 0 {
 		t.Errorf("records after the shutdown step: %v, want none for the kept children", names)
