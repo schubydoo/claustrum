@@ -487,7 +487,7 @@ func TestRunServeChildRejectsMissingTokenSource(t *testing.T) {
 	stubOsExit(t)
 	t.Setenv(daemonChildEnv, "1")
 	// No login-PATH stub here on purpose. An earlier version installed one, but
-	// the check under test exits before startLoginPATH is ever reached, so the
+	// the check under test exits before armLoginPATH is ever reached, so the
 	// stub protected nothing and implied this path forks a login shell when it
 	// does not. The sibling arms that DO reach it still stub it.
 

@@ -1085,9 +1085,9 @@ func TestReapedProcessIsNotSignalled(t *testing.T) {
 // TestKillAndWaitProcTargetsCapturedIdentity guards the supersede reused-id race:
 // supersedeSession captures the victim *managedProc, and killAndWaitProc signals
 // THAT process, not whatever the client-visible id resolves to at kill time. A
-// concurrent spawn that reuses the id replaces m.procs[id] (and the reused-id path
-// in spawn already tears the original down), so re-resolving the id would terminate
-// the innocent replacement. The mutant (re-resolve p by id inside killAndWaitProc)
+// concurrent spawn that reuses the id replaces m.procs[id] and leaves the original
+// running. A kill that resolves the id again then ends the innocent replacement.
+// The mutant (re-resolve p by id inside killAndWaitProc)
 // signals the replacement and fails this test.
 func TestKillAndWaitProcTargetsCapturedIdentity(t *testing.T) {
 	oldSignal := signalGroup
