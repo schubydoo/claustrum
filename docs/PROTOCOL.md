@@ -1791,8 +1791,8 @@ and x1 to x11 are from the Windows VM. Rows y1 to y7 are from Linux and macOS VM
 Rows y8a to y10, o1 to o25 and v2 to v6b are from the Linux VM. Rows o19a to o19d
 and r1 to r4 are from the macOS VM. Rows E07a and E07b ran on Linux and macOS VMs
 with a `GIT_COMMON_DIR` in the daemon's environment. The FIFO rows n05a, n14b,
-N05a, N05b, C20a and C20b did not run on Windows. Every other row ran on all three
-systems. On Windows the frames are those of the pass with a user excludes file (see
+N05a, N05b, C20a and C20b did not run on Windows. Rule 11 names the systems of the
+w rows. Every other row ran on all three systems. On Windows the frames are those of the pass with a user excludes file (see
 D16 below). The call numbers are those of row K1, which has 22 git calls. Call 1 is
 the read of the user's excludes.
 
@@ -1940,8 +1940,10 @@ the read of the user's excludes.
     - A `reftable` that is not a real folder counts as none. Nothing of it is
       copied, and the request goes on. That holds for a symlink to a folder outside
       the entry (row w1, Linux and macOS VMs, and row w1b, macOS VM) and for a
-      regular file (row w2, Linux and macOS VMs). In a reftable repository git then
-      shows every tracked file as added (rows w1 and w1b, macOS VM).
+      regular file (row w2, Linux, macOS and Windows VMs). On Windows it holds for
+      a junction and for a directory symbolic link (rows w1 and w1s, Windows VM).
+      In a reftable repository git then shows every tracked file as added (rows w1
+      and w1b, macOS VM).
 
 Not measured: the order of rules 7 to 11, and the size bound of `HEAD` and
 `config.worktree`. claustrum bounds both at 1 MiB. No read of an entry file blocks:
