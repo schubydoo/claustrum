@@ -852,8 +852,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   The `git.worktree_create` of both daemons refuses a junctioned `.claude` or
   `.claude\worktrees` with `mkdir_failed` and creates nothing (reference measured on a
   Windows VM, rows JCR1 and JCR2). So neither daemon creates a worktree there. Only a
-  worktree made outside the daemon sits there. For it, claustrum keeps the branch that
-  the reference deletes.
+  worktree made outside the daemon sits there. For it, claustrum keeps a branch that
+  the reference deletes, which on `89cb6289` is a branch that another ref reaches.
 - **Cost.** A Windows client that diffs frames against the reference sees
   `success:false` where the reference sends `success:true`. A branch that the
   reference deletes stays with claustrum. A client that relies on the remove to
