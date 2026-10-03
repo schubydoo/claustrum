@@ -170,8 +170,10 @@ One is a CLI mode. One raises the inherited file limit. A closing note covers wi
   and exits 0. For a CLI that runs it prints nothing. For one that times out it
   prints `__CLI_HUNG__`. For one that is missing or does not run it prints
   `__CLI_BAD__`. Claude Desktop drives it out of band to classify a CLI binary.
-- Exec-child trampoline. Under a run-shaped socket the daemon re-execs itself to
+- Exec-child trampoline. The daemon re-execs itself to
   stamp a spawned child with `CLAUDE_SSH_RUN_DIR` and a `CLAUDE_SSH_CHILD` identity.
+  Measured under a run-shaped socket. Other shapes are not measured on this
+  build. `f6010b97` and `89cb6289` do it on every shape.
   Linux and darwin only.
 - Orphan-child record. The daemon records each spawned child to
   `<runDir>/children/<pid>.json`, written atomically. Linux and darwin only.

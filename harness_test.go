@@ -36,9 +36,8 @@ func newRunningServer(t *testing.T) (*server, string) {
 }
 
 // newRunningServerAt is newRunningServer on a caller-chosen socket path, so a test
-// can boot the daemon on a run/<clientId>/rpc.sock socket (which enables the
-// exec-child trampoline via procs.runDir) rather than the default bare socket. The
-// caller owns the socket's directory.
+// can boot the daemon on a run/<clientId>/rpc.sock socket rather than the default
+// bare socket. The caller owns the socket's directory.
 func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	t.Helper()
 	ln, err := net.Listen("unix", sock)
@@ -54,9 +53,9 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 		instanceID: testInstanceID,
 		startedAt:  testStartedAt,
 	}
-	// Mirror production (newServerOnSocket): the run dir is derived from the socket,
-	// so a run/<clientId>/rpc.sock boot trampolines spawns and a bare socket does not,
-	// and the daemon instance id is threaded into the proc manager for child records.
+	// Mirror production (newServerOnSocket): the run dir is the folder of the socket,
+	// so every boot trampolines its spawns on linux and darwin, and the daemon
+	// instance id is threaded into the proc manager for child records.
 	s.procs.runDir = execChildRunDir(sock)
 	s.procs.holdRunDir()
 	s.procs.instanceID = s.instanceID

@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -332,6 +333,91 @@ func TestExtractLoginPATHDiscardsTheValueOnTimeout(t *testing.T) {
 	}
 }
 
+// TestExtractLoginPATHStopsAtTheBoundWhenThePipeIsHeld pins Linux rows P13 and P13k
+// (89cb6289). The login shell prints a good sentinel and ends at once, and a process
+// that it started still holds the output pipe. The read ends at the bound with the
+// timed-out line, and the value is not kept. The holder is a sleep of 3 s that the
+// stub starts. It gets no signal and ends by itself.
+func TestExtractLoginPATHStopsAtTheBoundWhenThePipeIsHeld(t *testing.T) {
+	buf := captureLogBuf(t)
+
+	oldTimeout := loginPATHTimeout
+	loginPATHTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { loginPATHTimeout = oldTimeout })
+
+	// Keep the real PATH: the stub has to find `sleep`.
+	shell := writeFakeShell(t, "printf '%s%s\\n' '"+pathSentinel+"' '/zzz/held/pipe'\nsleep 3 &")
+	t.Setenv("SHELL", shell)
+	resetLoginPATHForTest()
+	t.Cleanup(resetLoginPATHForTest)
+
+	start := time.Now()
+	extractLoginPATH()
+	elapsed := time.Since(start)
+
+	if elapsed < loginPATHTimeout {
+		t.Fatalf("the read returned after %v, before the bound of %v: nothing held the pipe", elapsed, loginPATHTimeout)
+	}
+	// The holder lives 3 s. A read that waits for the end of the pipe takes that long.
+	if elapsed > 2*time.Second {
+		t.Errorf("the read took %v, want it to end at the bound of %v", elapsed, loginPATHTimeout)
+	}
+	if want := "[shellenv] Failed to extract PATH from login shell: shell PATH extraction timed out (" + shell + ")"; !strings.Contains(buf.String(), want) {
+		t.Errorf("log has no %q:\n%s", want, buf.String())
+	}
+	if got := currentLoginPATH(); got != "" {
+		t.Errorf("loginPATH = %q after the bound, want empty", got)
+	}
+	if strings.Contains(buf.String(), "Shell command exited with error") {
+		t.Errorf("the bound also logged the exit-status line:\n%s", buf.String())
+	}
+}
+
+// TestLoginPATHShellGetsSevenEntries pins Linux row P13v (89cb6289): the login shell of
+// the PATH read gets HOME, PATH, SHELL, TERM and USER of the daemon, with an empty TERM
+// when the daemon has none, plus the two fixed entries. No other variable of the daemon
+// reaches it.
+func TestLoginPATHShellGetsSevenEntries(t *testing.T) {
+	dump := filepath.Join(t.TempDir(), "env")
+	shell := writeFakeShell(t, "env > '"+dump+"'")
+	t.Setenv("SHELL", shell)
+	t.Setenv("HOME", "/home/row")
+	t.Setenv("USER", "row")
+	t.Setenv("EFX", "daemon-only")
+	t.Setenv("LANG", "C.UTF-8")
+	t.Setenv(daemonChildMarker, "1")
+	t.Setenv("TERM", "x")
+	os.Unsetenv("TERM") // t.Setenv puts the old state back
+	resetLoginPATHForTest()
+	t.Cleanup(resetLoginPATHForTest)
+
+	want := []string{"HOME=/home/row", "PATH=" + os.Getenv("PATH"), "SHELL=" + shell, "TERM=", "USER=row",
+		"DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true"}
+	if got := loginPATHShellEnv(); !slices.Equal(got, want) {
+		t.Errorf("loginPATHShellEnv() = %q, want %q", got, want)
+	}
+
+	extractLoginPATH()
+	b, err := os.ReadFile(dump)
+	if err != nil {
+		t.Fatalf("the stub shell wrote no environment: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for _, w := range want {
+		if !slices.Contains(lines, w) {
+			t.Errorf("the shell environment has no %q:\n%s", w, b)
+		}
+	}
+	// The shell itself adds entries such as PWD. A variable of the daemon is not one.
+	for _, l := range lines {
+		for _, key := range []string{"EFX", "LANG", daemonChildMarker} {
+			if strings.HasPrefix(l, key+"=") {
+				t.Errorf("the shell environment holds %q of the daemon", l)
+			}
+		}
+	}
+}
+
 // The echoed shell output is cut at 200 bytes plus "...". Measured 2026-08-02
 // against 5db5e4a: a 500-byte no-sentinel shell produced a 203-character payload.
 func TestTruncateShellOutput(t *testing.T) {
@@ -389,12 +475,11 @@ func TestExtractLoginPATHTruncatesTheLoggedShellOutput(t *testing.T) {
 // reproduced with `go test -count=15 -run 'TestRunServeChildFullLifecycle|
 // TestExtractLoginPATHDiscardsTheValueOnTimeout'`, which fails with the leaked
 // PATH. Stub the seam, which is what it exists for (see shellenv_test.go).
-// The restore must AWAIT the extraction goroutine. startLoginPATH reads the seam
-// inside the goroutine (shellenv.go:61), so restoring it from cleanup while that
-// goroutine is live is a genuine data race — caught by -race the first time this
-// helper existed, on exactly the tests it was written for. awaitLoginPATH returns
-// immediately when nothing was started, so this is free for tests that never boot
-// a server.
+// The restore first runs or awaits an armed read (awaitLoginPATH), with the stub
+// still in place. So no read that runServe armed in the test runs the real
+// extractor later, and no read is live when the seam goes back. awaitLoginPATH
+// returns at once when nothing is armed, so this is free for tests that never
+// boot a server.
 func stubLoginPATHExtractor(t *testing.T) {
 	t.Helper()
 	old := loginPATHExtractor

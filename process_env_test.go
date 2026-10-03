@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +59,51 @@ func TestBuildEnvMergesOverEnviron(t *testing.T) {
 	}
 	if !slices.Contains(env, "CLAUSTRUM_TEST_ADDED=added") {
 		t.Error("new caller key was not appended")
+	}
+}
+
+// TestNewCallerKeysComeInARotation pins the order of new caller keys (89cb6289, Linux
+// rows P9 and N7, 20 spawns each). For the request order ZZ, MM, AA the reference gave
+// ZZ, MM, AA, then MM, AA, ZZ, then AA, ZZ, MM: the three rotations of the request order.
+// It never gave name order, AA, MM, ZZ, which is not one of them.
+//
+// buildEnv iterates the map that the request decodes into. This test holds what the
+// Go 1.26 toolchain does with that map: each order is a rotation of the request order.
+// If a toolchain changes the walk of a small map, this test fails. Rows P9 and N7 then
+// need a new look.
+func TestNewCallerKeysComeInARotation(t *testing.T) {
+	request := []string{"CLAUSTRUM_TEST_ZZ", "CLAUSTRUM_TEST_MM", "CLAUSTRUM_TEST_AA"}
+	for _, k := range request {
+		if _, had := os.LookupEnv(k); had {
+			t.Skipf("%s is set in the environment of this test", k)
+		}
+	}
+	rotations := map[string]bool{}
+	for i := range request {
+		rotations[strings.Join(append(slices.Clone(request[i:]), request[:i]...), ",")] = true
+	}
+	seen := map[string]int{}
+	for range 400 {
+		// Decode the keys as process.spawn does, in the order of the request.
+		var env map[string]string
+		if err := json.Unmarshal([]byte(`{"`+request[0]+`":"1","`+request[1]+`":"2","`+request[2]+`":"3"}`), &env); err != nil {
+			t.Fatal(err)
+		}
+		got := buildEnv(env)
+		var order []string
+		for _, e := range got[len(got)-3:] {
+			k, _, _ := strings.Cut(e, "=")
+			order = append(order, k)
+		}
+		seen[strings.Join(order, ",")]++
+	}
+	for order, n := range seen {
+		if !rotations[order] {
+			t.Errorf("the new caller keys came as %s in %d of 400 calls, which is no rotation of the request order", order, n)
+		}
+	}
+	if len(seen) < 2 {
+		t.Errorf("the new caller keys came in one order in 400 calls (%v), want more than one rotation", seen)
 	}
 }
 

@@ -3,10 +3,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -49,6 +51,28 @@ func runlockHoldFixture(args []string) int {
 	}
 	time.Sleep(60 * time.Second)
 	return 0
+}
+
+// waitForExit polls for the exit of pid until grace elapses. It returns true once the
+// process is gone. The tests read the end of their own lock-holder child with it.
+func waitForExit(pid int, grace time.Duration) bool {
+	deadline := time.Now().Add(grace)
+	for {
+		if syscall.Kill(pid, 0) == syscall.ESRCH {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// evictGone runs the eviction with no lock descriptor and returns its first result. It
+// is for the arms that end before the wait on the lock, and for a seamed wait.
+func evictGone(path, socket string) bool {
+	gone, _ := evictRunDirHolder(-1, path, socket)
+	return gone
 }
 
 func TestMatchesServeArgv(t *testing.T) {
@@ -200,7 +224,7 @@ func TestEvictRunDirHolderUnusableRecord(t *testing.T) {
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if evictRunDirHolder(path, filepath.Join(dir, "s.sock")) {
+	if evictGone(path, filepath.Join(dir, "s.sock")) {
 		t.Error("eviction must refuse when the owner record is unusable")
 	}
 }
@@ -218,7 +242,7 @@ func TestEvictRunDirHolderAbsentPid(t *testing.T) {
 	oldCmd := isServeCmdline
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
-	if !evictRunDirHolder(path, filepath.Join(dir, "s.sock")) {
+	if !evictGone(path, filepath.Join(dir, "s.sock")) {
 		t.Error("an absent holder pid must resolve as already gone (eviction succeeds)")
 	}
 }
@@ -258,31 +282,40 @@ func TestReadOwnerRecordMissingFile(t *testing.T) {
 	}
 }
 
+// TestClaimRunDirHappyPath pins the two forms of the owner record (89cb6289, Linux
+// and macOS rows D1 and XL). The claim writes pid, role and node only. complete adds
+// instanceId and startedAt. release leaves an empty file.
 func TestClaimRunDirHappyPath(t *testing.T) {
 	dir := shortTempDir(t)
 	sock := filepath.Join(dir, "s.sock")
-	release := claimRunDir(sock, "serve", newDaemonInstanceID())
-	t.Cleanup(release)
+	claim := claimRunDir(sock, "serve")
+	t.Cleanup(claim.release)
 
 	lockPath := filepath.Join(dir, runDirLockName)
-	rec, err := readOwnerRecord(lockPath)
+	short, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("read owner record: %v", err)
 	}
-	if rec.Pid != os.Getpid() {
-		t.Errorf("record pid = %d, want %d", rec.Pid, os.Getpid())
+	node, _ := json.Marshal(nodeID())
+	wantShort := `{"pid":` + strconv.Itoa(os.Getpid()) + `,"role":"serve","node":` + string(node) + "}\n"
+	if nodeID() == "" {
+		wantShort = `{"pid":` + strconv.Itoa(os.Getpid()) + `,"role":"serve"}` + "\n"
 	}
-	if rec.Role != "serve" {
-		t.Errorf("record role = %q, want serve", rec.Role)
-	}
-	if len(rec.InstanceID) != 32 {
-		t.Errorf("record instanceId = %q, want 32 hex chars", rec.InstanceID)
-	}
-	if rec.StartedAt == 0 {
-		t.Error("record startedAt is zero")
+	if string(short) != wantShort {
+		t.Errorf("owner record after the claim = %q, want %q", short, wantShort)
 	}
 
-	release()
+	claim.complete("0123456789abcdef0123456789abcdef", 1790962940734)
+	full, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read owner record: %v", err)
+	}
+	wantFull := strings.TrimSuffix(wantShort, "}\n") + `,"instanceId":"0123456789abcdef0123456789abcdef","startedAt":1790962940734}` + "\n"
+	if string(full) != wantFull {
+		t.Errorf("owner record after complete = %q, want %q", full, wantFull)
+	}
+
+	claim.release()
 	fi, err := os.Stat(lockPath)
 	if err != nil {
 		t.Fatalf("lock file must survive release (truncate, not unlink): %v", err)
@@ -292,10 +325,70 @@ func TestClaimRunDirHappyPath(t *testing.T) {
 	}
 }
 
+// TestCompleteDoesNotTruncateTheLock pins that complete replaces the short owner record
+// with one write and no truncate, so daemon.lock is never empty between the two forms.
+// No seam sits between a truncate and a write, so the test reads the file size. It adds
+// blanks after the short record. A truncate in complete removes them and shows as a
+// smaller file.
+func TestCompleteDoesNotTruncateTheLock(t *testing.T) {
+	dir := shortTempDir(t)
+	claim := claimRunDir(filepath.Join(dir, "s.sock"), "serve")
+	t.Cleanup(claim.release)
+
+	lockPath := filepath.Join(dir, runDirLockName)
+	f, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(strings.Repeat(" ", 512)); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	before, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claim.complete("0123456789abcdef0123456789abcdef", 1790962940734)
+
+	after, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != before.Size() {
+		t.Errorf("daemon.lock is %d bytes after complete, %d before: complete truncated the file", after.Size(), before.Size())
+	}
+	rec, err := readOwnerRecord(lockPath)
+	if err != nil {
+		t.Fatalf("read owner record: %v", err)
+	}
+	if rec.Pid != os.Getpid() || rec.Role != "serve" || rec.InstanceID != "0123456789abcdef0123456789abcdef" || rec.StartedAt != 1790962940734 {
+		t.Errorf("owner record after complete = %+v, want the full record of this process", rec)
+	}
+}
+
 // spawnLockHolder starts the runlock-hold fixture on lockPath and waits for it to be
 // ready (flock taken, record written). termMode is "" or "term-ignore"; nodeOverride
 // forces a foreign machine identity when non-empty.
 func spawnLockHolder(t *testing.T, lockPath, termMode, nodeOverride string) *exec.Cmd {
+	t.Helper()
+	cmd := startLockHolder(t, lockPath, termMode, nodeOverride)
+	// Reap the holder as soon as it exits. It is a child of the test process, so
+	// without this a SIGTERM/SIGKILL leaves a zombie whose pid still answers
+	// Kill(pid,0). The tests read the end of the holder with that probe (waitForExit).
+	// The eviction ladder itself waits on the lock, and needs no reaping.
+	reaped := make(chan struct{})
+	go func() { _, _ = cmd.Process.Wait(); close(reaped) }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-reaped
+	})
+	return cmd
+}
+
+// startLockHolder starts the runlock-hold fixture and waits for it to be ready. It does
+// not reap the child. The caller does.
+func startLockHolder(t *testing.T, lockPath, termMode, nodeOverride string) *exec.Cmd {
 	t.Helper()
 	exe, env := helperCommand(t, "runlock-hold")
 	ready := lockPath + ".ready"
@@ -305,23 +398,15 @@ func spawnLockHolder(t *testing.T, lockPath, termMode, nodeOverride string) *exe
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start lock holder: %v", err)
 	}
-	// Reap the holder as soon as it exits. It is a child of the test process, so
-	// without this a SIGTERM/SIGKILL leaves a zombie whose pid still answers
-	// Kill(pid,0) — masking the exit the eviction ladder polls for. A real
-	// predecessor is not the new daemon's child and is reaped by init, so this only
-	// reproduces production reaping inside the test.
-	reaped := make(chan struct{})
-	go func() { _, _ = cmd.Process.Wait(); close(reaped) }()
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		<-reaped
-	})
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(ready); err == nil {
 			return cmd
 		}
 		if time.Now().After(deadline) {
+			// No cleanup owns the holder yet. End it here, so that it does not keep the lock.
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
 			t.Fatalf("lock holder never became ready")
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -351,7 +436,7 @@ func TestClaimRunDirEvictsPredecessor(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve", newDaemonInstanceID())
+	release := claimRunDir(sock, "serve").release
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -386,7 +471,7 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
 	buf := captureLogBuf(t)
-	release := claimRunDir(sock, "serve", newDaemonInstanceID()) // evicts synchronously, logging the ladder
+	release := claimRunDir(sock, "serve").release // evicts synchronously, logging the ladder
 	t.Cleanup(release)
 	_ = waitForExit(holder.Process.Pid, 3*time.Second)
 
@@ -408,6 +493,117 @@ func TestClaimRunDirEvictionLogsMatchReference(t *testing.T) {
 	}
 }
 
+// TestEvictionLinesNameTheInstanceOnlyWhenTheRecordHasOne pins the two forms of the
+// eviction lines (89cb6289, Linux). A record with an instance gives `pid <n> (instance
+// "<hex>")` (row E3). The short record of a daemon that has not bound yet has no
+// instance, and gives `pid <n>` (row P5). Every signal and every wait is seamed.
+func TestEvictionLinesNameTheInstanceOnlyWhenTheRecordHasOne(t *testing.T) {
+	if nodeID() == "" {
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
+	}
+	oc, ohold, ow := isServeCmdline, holdHolder, waitHolderLock
+	t.Cleanup(func() { isServeCmdline, holdHolder, waitHolderLock = oc, ohold, ow })
+	isServeCmdline = func(int, string) bool { return true }
+	holdHolder = func(int) (func(syscall.Signal) error, func()) {
+		return func(syscall.Signal) error { return nil }, func() {}
+	}
+	waitHolderLock = func(int, time.Duration) bool { return true }
+
+	for _, tc := range []struct{ name, instance, who string }{
+		{"short record", "", "pid 999999"},
+		{"full record", "0123abcd", `pid 999999 (instance "0123abcd")`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := shortTempDir(t)
+			lockPath := filepath.Join(dir, runDirLockName)
+			writeRecordFile(t, lockPath, ownerRecord{Pid: 999999, Role: "serve", Node: nodeID(), InstanceID: tc.instance})
+			buf := captureLogBuf(t)
+			if gone, locked := evictRunDirHolder(-1, lockPath, filepath.Join(dir, "s.sock")); !gone || !locked {
+				t.Errorf("evictRunDirHolder = %v, %v, want true, true", gone, locked)
+			}
+			wantLinesInOrder(t, buf.String(),
+				"[daemon] serve: run dir is held by a live daemon, "+tc.who+"; sending SIGTERM",
+				"[daemon] serve: previous daemon "+tc.who+" exited after SIGTERM",
+				"[daemon] serve: previous owner of "+dir+": terminated")
+		})
+	}
+}
+
+// TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects pins the wait of the eviction
+// (89cb6289, Linux rows H7, P5 and N3, macOS row P5). The holder is a child of this test
+// and the test does not collect it until the claim has returned. Its pid therefore still
+// answers kill(pid, 0) after it ended, as the pid of a daemon under a launcher that
+// still runs does. The lock is free at that point, and the wait reads the lock.
+//
+// The record is the short one of a daemon that has not bound yet (rows P5 and N3).
+// SAFETY: every signal goes to the holder that this test started.
+func TestEvictionWaitsOnTheLockOfAHolderThatNobodyCollects(t *testing.T) {
+	if nodeID() == "" {
+		t.Skip("run-dir eviction needs a machine identity (nodeID)")
+	}
+	for _, tc := range []struct {
+		name, termMode string
+		termGrace      time.Duration
+		want           func(pid int, dir string) []string
+	}{
+		// The grace is 30 s, so a claim that returns sooner did not wait it out.
+		{"exits on SIGTERM", "", 30 * time.Second, func(pid int, dir string) []string {
+			return []string{
+				fmt.Sprintf("[daemon] serve: run dir is held by a live daemon, pid %d; sending SIGTERM", pid),
+				fmt.Sprintf("[daemon] serve: previous daemon pid %d exited after SIGTERM", pid),
+				"[daemon] serve: previous owner of " + dir + ": terminated",
+			}
+		}},
+		{"ignores SIGTERM", "term-ignore", 300 * time.Millisecond, func(pid int, dir string) []string {
+			return []string{
+				fmt.Sprintf("[daemon] serve: run dir is held by a live daemon, pid %d; sending SIGTERM", pid),
+				fmt.Sprintf("[daemon] serve: WARNING previous daemon pid %d ignored SIGTERM for 300ms; sending SIGKILL (its Claude Code children, if any, are ended next, before this daemon serves)", pid),
+				"[daemon] serve: previous owner of " + dir + ": killed",
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ot, ok, op := runDirTermGrace, runDirKillGrace, runDirPollInterval
+			runDirTermGrace, runDirKillGrace, runDirPollInterval = tc.termGrace, 30*time.Second, 10*time.Millisecond
+			oldCmd := isServeCmdline
+			isServeCmdline = func(int, string) bool { return true }
+			t.Cleanup(func() {
+				runDirTermGrace, runDirKillGrace, runDirPollInterval = ot, ok, op
+				isServeCmdline = oldCmd
+			})
+			dir := shortTempDir(t)
+			lockPath := filepath.Join(dir, runDirLockName)
+			holder := startLockHolder(t, lockPath, tc.termMode, "")
+			t.Cleanup(func() {
+				_ = holder.Process.Kill()
+				_, _ = holder.Process.Wait()
+			})
+			pid := holder.Process.Pid
+			writeRecordFile(t, lockPath, ownerRecord{Pid: pid, Role: "serve", Node: nodeID()})
+
+			buf := captureLogBuf(t)
+			start := time.Now()
+			claim := claimRunDir(filepath.Join(dir, "s.sock"), "serve")
+			took := time.Since(start)
+			t.Cleanup(claim.release)
+
+			if took >= 30*time.Second {
+				t.Errorf("the claim took %s: it waited a whole grace on a holder that had ended", took)
+			}
+			got := buf.String()
+			wantLinesInOrder(t, got, tc.want(pid, dir)...)
+			for _, no := range []string{"survived SIGKILL", "no longer our serve holder", runDirNotHolderLine} {
+				if strings.Contains(got, no) {
+					t.Errorf("log holds %q\n--- got ---\n%s", no, got)
+				}
+			}
+			if rec, err := readOwnerRecord(lockPath); err != nil || rec.Pid != os.Getpid() {
+				t.Errorf("owner record = %+v (err %v), want the record of this process", rec, err)
+			}
+		})
+	}
+}
+
 // TestEvictRunDirHolderStopRoleLogs pins the held-by-stop wording (4534d86): a
 // holder whose record role is "stop" is left in place with the "--stop ... has not
 // let go; leaving it" line and a "previous owner of <rundir>: survivor" summary.
@@ -424,7 +620,7 @@ func TestEvictRunDirHolderStopRoleLogs(t *testing.T) {
 	_ = syscall.Close(fd)
 
 	buf := captureLogBuf(t)
-	evicted := evictRunDirHolder(lockPath, sock)
+	evicted := evictGone(lockPath, sock)
 	if evicted {
 		t.Error("evictRunDirHolder evicted a --stop holder; want left in place")
 	}
@@ -450,7 +646,7 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve", newDaemonInstanceID())
+	release := claimRunDir(sock, "serve").release
 	t.Cleanup(release)
 
 	if !waitForExit(holder.Process.Pid, 3*time.Second) {
@@ -468,7 +664,7 @@ func TestClaimRunDirEscalatesToSIGKILL(t *testing.T) {
 // TestEvictRunDirHolderSignalArms drives the signal outcomes a live same-user process
 // cannot reproduce: an undeliverable SIGTERM or SIGKILL (the holder already gone, or
 // present but unsignalable) and a holder that survives SIGKILL (nothing survives SIGKILL
-// on a modern kernel). It seams signalHolder/holderGone/waitForExit and feeds a synthetic
+// on a modern kernel). It seams holdHolder/holderGone/waitHolderLock and feeds a synthetic
 // owner record whose bogus pid passes holderSignalRefusal (a missing /proc entry reads as
 // "already gone" and isServeCmdline is stubbed true). Together with
 // TestClaimRunDirEscalatesToSIGKILL (the delivered-then-exits arm, on a real holder) this
@@ -480,16 +676,16 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 	// The seams report SIGTERM delivered and its grace expired, so evictRunDirHolder
 	// escalates past re-verification into the SIGKILL block, where the case decides.
 	restore := func() func() {
-		oc, osig, oh, ow := isServeCmdline, signalHolder, holderGone, waitForExit
-		return func() { isServeCmdline, signalHolder, holderGone, waitForExit = oc, osig, oh, ow }
+		oc, ohold, oh, ow := isServeCmdline, holdHolder, holderGone, waitHolderLock
+		return func() { isServeCmdline, holdHolder, holderGone, waitHolderLock = oc, ohold, oh, ow }
 	}
 
 	cases := []struct {
 		name            string
-		termDelivered   bool // signalHolder(SIGTERM) result
-		killDelivered   bool // signalHolder(SIGKILL) result (SIGKILL reached only when termDelivered)
+		termDelivered   bool // whether the hold delivers SIGTERM
+		killDelivered   bool // whether the hold delivers SIGKILL (SIGKILL reached only when termDelivered)
 		holderGone      bool // holderGone() result (read on an undeliverable signal)
-		exitedAfterKill bool // waitForExit(killGrace) result (read only when killDelivered)
+		exitedAfterKill bool // waitHolderLock(killGrace) result (read only when killDelivered)
 		wantEvicted     bool
 		wantLog         []string
 		notWantLog      []string
@@ -532,14 +728,16 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(restore())
 			isServeCmdline = func(int, string) bool { return true }
-			signalHolder = func(_ int, sig syscall.Signal) bool {
-				if sig == syscall.SIGKILL {
-					return tc.killDelivered
-				}
-				return tc.termDelivered
+			holdHolder = func(int) (func(syscall.Signal) error, func()) {
+				return func(sig syscall.Signal) error {
+					if (sig == syscall.SIGKILL && tc.killDelivered) || (sig != syscall.SIGKILL && tc.termDelivered) {
+						return nil
+					}
+					return syscall.ESRCH
+				}, func() {}
 			}
 			holderGone = func(int) bool { return tc.holderGone }
-			waitForExit = func(_ int, grace time.Duration) bool {
+			waitHolderLock = func(_ int, grace time.Duration) bool {
 				if grace == runDirKillGrace {
 					return tc.exitedAfterKill
 				}
@@ -557,7 +755,7 @@ func TestEvictRunDirHolderSignalArms(t *testing.T) {
 			_ = syscall.Close(fd)
 
 			buf := captureLogBuf(t)
-			evicted := evictRunDirHolder(lockPath, sock)
+			evicted := evictGone(lockPath, sock)
 
 			if evicted != tc.wantEvicted {
 				t.Errorf("evictRunDirHolder = %v, want %v", evicted, tc.wantEvicted)
@@ -595,7 +793,7 @@ func TestClaimRunDirRefusesSymlinkLock(t *testing.T) {
 	}
 
 	buf := captureLogBuf(t)
-	release := claimRunDir(sock, "serve", newDaemonInstanceID())
+	release := claimRunDir(sock, "serve").release
 	t.Cleanup(release)
 	// The daemon serves without the lock, and says so.
 	if !strings.Contains(buf.String(), runDirNotHolderLine+"\n") {
@@ -635,7 +833,7 @@ func TestClaimRunDirDoesNotSIGKILLAReusedPid(t *testing.T) {
 	}
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve", newDaemonInstanceID())
+	release := claimRunDir(sock, "serve").release
 	t.Cleanup(release)
 
 	if calls < 2 {
@@ -662,7 +860,7 @@ func TestClaimRunDirRefusesForeignHolder(t *testing.T) {
 	isServeCmdline = func(int, string) bool { return true }
 	t.Cleanup(func() { isServeCmdline = oldCmd })
 
-	release := claimRunDir(sock, "serve", newDaemonInstanceID())
+	release := claimRunDir(sock, "serve").release
 	t.Cleanup(release)
 
 	// The holder must be left alive, and it must still hold the lock (our claim gave
@@ -706,5 +904,15 @@ func TestNewServerOnSocketWritesRunLock(t *testing.T) {
 	}
 	if fi.Size() != 0 {
 		t.Errorf("daemon.lock size after closeAll = %d, want 0", fi.Size())
+	}
+}
+
+// TestEvictionTimingValues pins the shipped eviction timing, which every eviction test
+// sets for itself. Linux row H7 (89cb6289) measured the poll of 50 ms and the 2 s
+// before SIGKILL. The 1 s after SIGKILL is claustrum's own.
+func TestEvictionTimingValues(t *testing.T) {
+	if runDirPollInterval != 50*time.Millisecond || runDirTermGrace != 2*time.Second || runDirKillGrace != 1*time.Second {
+		t.Errorf("poll %v, SIGTERM grace %v, SIGKILL grace %v, want 50ms, 2s and 1s",
+			runDirPollInterval, runDirTermGrace, runDirKillGrace)
 	}
 }

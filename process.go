@@ -209,6 +209,11 @@ type procManager struct {
 	// goroutine.
 	pruneAge      time.Duration
 	pruneInterval time.Duration
+	// supersedeGrace is how long a session supersede waits after SIGTERM before the
+	// SIGKILL: the default grace of killAndWait (defaultKillWaitMs). It is copied at
+	// construction for the same reason as the two values above: a spawn request
+	// outlives its test.
+	supersedeGrace time.Duration
 
 	// spawnLocks holds a per-session-key mutex so concurrent spawns of the SAME CLI
 	// session serialize (a new session process must fully register before the next
@@ -217,10 +222,11 @@ type procManager struct {
 	spawnMu    sync.Mutex
 	spawnLocks map[string]*sessionSpawnLock
 
-	// runDir is the daemon's run/<clientId> dir (CLAUDE_SSH_RUN_DIR), or "" when the
-	// socket is not run-shaped. Set once at daemon startup (newServerOnSocket). When
+	// runDir is the run dir of the daemon (CLAUDE_SSH_RUN_DIR): the folder of its
+	// socket path (execChildRunDir). It is "" only for a manager with no socket, as a
+	// unit test builds one. Set once at daemon startup (newServerOnSocket). When
 	// non-empty, spawn launches children through the exec-child trampoline; when
-	// empty (a bare or test socket) it spawns them directly. Read-only after startup.
+	// empty it spawns them directly. Read-only after startup.
 	runDir string
 
 	// instanceID is the daemon's per-boot instance id (== server.capabilities
@@ -278,11 +284,12 @@ var procPruneInterval = time.Minute
 
 func newProcManager() *procManager {
 	m := &procManager{
-		procs:         make(map[string]*managedProc),
-		stop:          make(chan struct{}),
-		pruneAge:      procPruneAge,
-		pruneInterval: procPruneInterval,
-		spawnLocks:    make(map[string]*sessionSpawnLock),
+		procs:          make(map[string]*managedProc),
+		stop:           make(chan struct{}),
+		pruneAge:       procPruneAge,
+		pruneInterval:  procPruneInterval,
+		supersedeGrace: time.Duration(defaultKillWaitMs) * time.Millisecond,
+		spawnLocks:     make(map[string]*sessionSpawnLock),
 	}
 	go m.pruneLoop()
 	return m
@@ -415,9 +422,8 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 // so it must not claim the exit on the wire. The reference emits no killedBy for
 // a process that exited on its own before the signal could reach it (measured
 // against 4534d86: a natural exit killed inside the drain window carries no
-// killedBy). Pass killedBy "" to signal without claiming attribution — the
-// id-reuse eviction, whose exit frame reaches no client. The first reason wins,
-// so a client kill racing the shutdown sweep stays "client".
+// killedBy). Pass killedBy "" to signal without claiming attribution. The first
+// reason wins, so a client kill racing the shutdown sweep stays "client".
 //
 // p.mu is held across the check, the stamp and the delivery: a reaped check that
 // returns before the signal leaves a gap for the exit goroutine to reap in
@@ -426,8 +432,10 @@ var signalGroup = func(g *procGroup, proc *os.Process, signame string) error {
 //
 // One window remains and cannot be closed at this layer: the kernel frees the
 // pid inside cmd.Wait, a moment before the exit goroutine can take p.mu and set
-// reaped. Signaling by pid on POSIX is racy by construction — nothing short of a
-// pidfd fixes it, and a pidfd cannot address a process GROUP.
+// reaped. A signal to the group goes by pid, and a signal by pid on POSIX is racy by
+// construction: a pidfd cannot address a process GROUP. The signal to the one
+// process goes through its handle (see signalProcessGroup), which has no such
+// window on a Linux kernel with pidfd.
 //
 // This guard is a claustrum-only judgement, not a measured parity claim. The
 // comment used to read "the reference has no guard here at all", which asserts
@@ -456,14 +464,14 @@ func (p *managedProc) signalIfLive(signame, killedBy string) bool {
 // the reap, so that guard would make it a no-op and the orphans would survive.
 //
 // This is the one place claustrum knowingly signals a pgid whose leader is gone.
-// It runs immediately after p.done fires, so the window before the kernel could
-// recycle the pgid is as small as it can be.
+// Its one caller is the escalation of killAndWaitProc, after the grace ran out.
+// There the leader has often ended, and a group member that holds its pipes keeps
+// the exit drain pending.
 //
-// What is measured is the OUTCOME, not the absence of a guard: the reference
-// also sweeps up a grandchild left behind after the leader exits (#194). The
-// comment used to say "the reference has no such guard anywhere" — an absence
-// assertion no probe can confirm. Matching the observable sweep is the claim;
-// how the reference arrives at it is not something this comment can know.
+// What is measured is the OUTCOME, not the absence of a guard: 89cb6289 sends the
+// group SIGKILL at the end of the grace in that state (Linux rows B3 and X1). It
+// sends none after a process that ended within the grace (Linux rows X2a and X2b),
+// and killAndWaitProc sends none there either.
 //
 // It returns the error of the kill. On Unix that is nil. On Windows it is the error of
 // TerminateProcess on the direct child.
@@ -573,8 +581,8 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	grace := exitDrainGrace
 	// A stream-json session spawn serializes against other spawns of the same
 	// session (so a new session process fully registers before the next same-key
-	// spawn supersedes it) and, once registered, supersedes the prior process of
-	// that session below. Empty key (the common case) does neither. (4534d86.)
+	// spawn supersedes it). Before it starts its process, it ends the prior process
+	// of that session below. Empty key (the common case) does neither. (4534d86.)
 	sessionKey := cliSessionKey(args)
 	if sessionKey != "" {
 		unlock := m.lockSessionSpawn(sessionKey)
@@ -626,9 +634,17 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
 			return nil, err
 		}
+	} else if sessionKey != "" {
+		// The pre-check of a session spawn: a command that does not exist fails here,
+		// before the supersede below, so the prior process of the session gets no
+		// signal (89cb6289, Linux rows P3 and H1). A launched spawn has its own check above.
+		if err := missingCommandError(cmd); err != nil {
+			logErrorf("[process.Manager] Failed to start process %s: %v", id, err)
+			return nil, err
+		}
 	}
 	cmd.SysProcAttr = newSysProcAttr()
-	// Under a run/<clientId>/ socket, launch through the exec-child trampoline so the
+	// Launch through the exec-child trampoline, on every socket shape, so the
 	// spawned child carries CLAUDE_SSH_RUN_DIR and a CLAUDE_SSH_CHILD identity (linux and
 	// darwin; a no-op on windows/other, and a no-op for a command that would fail at Start, so
 	// its error frame is unchanged). Applied after buildEnv/SysProcAttr so it can rewrite
@@ -671,6 +687,12 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 		closeExecErr()
 		return nil, err
 	}
+	// End the prior process of the same session and wait for its end, before the new
+	// process starts (89cb6289, rows B1 to B4). Non-session spawns (empty key) skip
+	// this. The step comes after the pre-check above and before the start: a command
+	// that does not exist supersedes nothing (row P3). A command that exists and does
+	// not start supersedes first, and its error comes after (Linux rows H4a to H4c).
+	m.supersedeSession(sessionKey, id)
 	err = cmd.Start()
 	if err != nil && execErrR != nil {
 		// The start of the trampoline itself failed, so nothing ran. The reference
@@ -769,40 +791,28 @@ func (m *procManager) spawnVia(c *conn, id, command string, args []string, cwd s
 	p.forgetRecord = func() { m.removeChildRecord(childPid) }
 	p.stdinCond = sync.NewCond(&p.stdinMu)
 	m.mu.Lock()
-	// Reusing a live id replaces the registry entry (matching the reference:
-	// both spawns succeed). The previous process would otherwise be orphaned —
-	// unreachable via kill/stdin/reattach (which now key to the new process) and
-	// missed by killAll — so we end it here rather than leak it. On Linux and macOS
-	// that ends its whole tree. On Windows it ends the direct child only, and the
-	// descendants live on. We
-	// first drop its subscribers so its teardown frames (a late exit/stdout under
-	// the now-reused id) don't reach clients. OS-level only — no wire frame
-	// change. On a Windows VM 89cb6289 leaves the previous process alive (rows EV and
-	// EVInh). The reference is not measured there on Linux and macOS (docs/PROTOCOL.md).
-	if old := m.procs[id]; old != nil {
-		old.mu.Lock()
-		old.subs = map[*conn]struct{}{}
-		old.mu.Unlock()
-		// Skip exited children — their pgid may already be recycled (see kill).
-		// No killedBy: this eviction's exit frame reaches no client (subs cleared).
-		old.signalIfLive("KILL", "")
-	}
+	// A spawn with the id of a process that still runs replaces the table entry, and
+	// both spawns succeed. The old process gets no signal and keeps its record.
+	// Measured against 89cb6289 on Linux and macOS (rows A1 to A4 and B4) and on
+	// Windows (rows EV and EVInh). kill, stdin and reattach then name the new
+	// process. -stop and server.shutdown end only the processes of the table, so
+	// the old process outlives the daemon (row A3). On Linux and macOS its record
+	// stays, and the next start of a daemon reaps it (row A4).
+	//
+	// The old process keeps its subscribers. Its stream frames and its exit frame
+	// still reach its own connection, under the same processId (89cb6289, Linux row
+	// P2: frames seq 2 to 9 and the exit frame seq 10 of the first process came on
+	// connection 1 after the replace). Its seq numbers go on from its own count.
 	m.procs[id] = p
 	m.mu.Unlock()
 
-	// Record the spawned child in the orphan registry (linux and darwin, run-shaped socket
-	// only; a no-op on windows/other) so a later daemon can reap it if this daemon exits leaving it
-	// behind. The end of the child removes the record again (waitReapAndDrain). Done AFTER the child is in m.procs, so a concurrent server.shutdown /
+	// Record the spawned child in the orphan registry, so a later daemon can reap it if
+	// this daemon exits leaving it behind. That holds on linux and darwin, on every
+	// socket shape. It is a no-op on windows/other. The end of the child removes the record again (waitReapAndDrain). Done AFTER the child is in m.procs, so a concurrent server.shutdown /
 	// killAll cannot miss it during this synchronous filesystem work. Best-effort and
 	// non-destructive: errors are logged, and it never affects the spawn result.
 	// With a launcher, argv0 is the launcher and program is the command.
 	m.recordChild(cmd.Process.Pid, path, program)
-
-	// Now that the new session process is registered, evict any prior process of the
-	// same session (4534d86). Non-session spawns (empty key) skip this.
-	if sessionKey != "" {
-		m.supersedeSession(sessionKey, id)
-	}
 
 	go p.stdinWriter()
 	var wg sync.WaitGroup
@@ -1276,8 +1286,8 @@ func (m *procManager) killAndWait(id, signal string, grace time.Duration, escala
 // killAndWaitProc is killAndWait targeting a specific process IDENTITY rather than
 // re-resolving a client-visible id. supersedeSession captures the victim
 // *managedProc under the same lock as its scan and kills THAT process, so a
-// concurrent spawn that reuses the id (which replaces m.procs[id], and via the
-// reused-id path in spawn already tears the original down) cannot redirect the kill
+// concurrent spawn that reuses the id (which replaces m.procs[id] and sends the
+// original no signal) cannot redirect the kill
 // onto the innocent replacement. Do NOT re-resolve p by id here.
 func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.Duration, escalate bool) (found, died, alreadyExited, escalated bool) {
 	if !p.isRunning() {
@@ -1286,20 +1296,19 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 	p.signalIfLive(signal, "client")
 	select {
 	case <-p.done:
-		if escalate {
-			// On Linux and macOS the reference ends the whole tree even when the graceful signal
-			// already did the job. On Windows this kill ends nothing: the direct child
-			// ended already, and 89cb6289 leaves the descendants alive there (measured on
-			// a Windows VM). Measured at 5db5e4a on Linux with a child that
-			// backgrounds a sleeper: killAndWait with escalate:true leaves no
-			// grandchild alive, escalate:false spares it — and the child itself
-			// dies promptly either way, so this is not the post-grace escalation
-			// below, it is an unconditional whole-tree sweep.
-			//
-			// Side effect only: every returned flag is unchanged, so the reply
-			// frame is byte-identical to what it was before.
-			_ = p.killGroupAfterExit()
-		}
+		// The process ended within the grace. Its group gets no SIGKILL here, with
+		// escalate true or false. Measured on Linux with strace against 89cb6289: the
+		// child exits on SIGTERM, and a kid in its group has its own stdio. For
+		// process.killAndWait with the default (row X2b, 3 of 3 runs) and for the
+		// session supersede (row X2a, 4 of 4 runs), 89cb6289 sent the SIGTERM to the
+		// one process and made no other call. The kid was alive 5 s later. Rows B1
+		// and H4a to H4c show no group SIGKILL either.
+		//
+		// Build ac5cadb of claustrum sent a group SIGKILL here, and that ended the
+		// kid. That sweep came from a run against 5db5e4a with a child that
+		// backgrounds a sleeper. Whether that sleeper held the pipes of the child is
+		// not recorded. macOS rows X2a to X2c give the same on both. Windows has no
+		// X2 row: there is no group, and the call ended nothing.
 		return true, true, false, false
 	case <-time.After(grace):
 	}
@@ -1309,7 +1318,10 @@ func (m *procManager) killAndWaitProc(p *managedProc, signal string, grace time.
 		return true, false, false, false
 	}
 	// The graceful signal did not finish the job within the grace — force-kill the
-	// group.
+	// group. 89cb6289 sends kill(-<pid>, SIGKILL) at the end of the grace when the
+	// process does not end (Linux row B2), and when it ended and a kid in its group
+	// holds its pipes (Linux row X1). In row B3 the holder of the pipes is in another
+	// group, and the call answers ESRCH.
 	//
 	// signalIfLive is deliberately NOT used here. By this point the child is very
 	// often already reaped: the graceful signal worked, but a grandchild still
@@ -1455,9 +1467,9 @@ func (m *procManager) killAllCount() int {
 // CLAUDE_RPC_TOKEN is stripped from the base: the reference binary does not
 // propagate the auth token to spawned children (probe-verified 2026-06-09).
 func buildEnv(env map[string]string) []string {
-	// Block until login-shell PATH extraction has finished, so the first spawn
-	// sees the same PATH as every later one. No-op once extraction is done, and
-	// immediate when it was never started.
+	// The first spawn of a daemon reads the login-shell PATH here, and every spawn
+	// waits for that one read. A no-op once the read is done, and when it is not
+	// armed (a test server).
 	awaitLoginPATH()
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
 	// The login-shell PATH is applied HERE, to the child's environment, rather
@@ -1467,6 +1479,20 @@ func buildEnv(env map[string]string) []string {
 	if lp := currentLoginPATH(); lp != "" {
 		base = replaceOrAppendEnv(base, "PATH", lp)
 	}
+	// A caller key that the base holds replaces that entry in place. A new caller key
+	// goes to the end. Measured on Linux and macOS against 89cb6289 (rows F1 to F5).
+	//
+	// Two or more new caller keys have no fixed order on 89cb6289. Measured on Linux, 20
+	// spawns per row. For the request order ZZ, AA, MM it gave ZZ, AA, MM 16 times,
+	// AA, MM, ZZ 3 times and MM, ZZ, AA once (row P9). For the request order ZZ, MM, AA
+	// it gave ZZ, MM, AA 16 times, MM, AA, ZZ 3 times and AA, ZZ, MM once (row N7).
+	// Each order in the two rows is a rotation of the request order. Name order is not
+	// one of the three orders of row N7, and 89cb6289 never gave it there.
+	//
+	// claustrum iterates the decoded map and builds no order of its own. That gave a
+	// rotation of the request order in each of the 20 spawns of a row (Linux P9, N7, macOS
+	// row EV20). TestNewCallerKeysComeInARotation holds that. A request with more keys
+	// is not measured.
 	for k, v := range env {
 		base = replaceOrAppendEnv(base, k, v)
 	}

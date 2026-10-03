@@ -154,7 +154,7 @@ These knobs belong to claustrum only, and they stay off the wire:
 - `-metrics-addr` opts into a local Prometheus `/metrics` endpoint. Without the flag, no
   listener exists.
 - `-keep-children` (CT-2) leaves spawned children running across a graceful
-  shutdown.
+  shutdown. [docs/DIVERGENCES.md](docs/DIVERGENCES.md) CT-2 names its limits.
 - `-listen-pipe` (CT-5, Windows only) also serves the same JSON-RPC over a named pipe.
 - `-wire-log` (CT-3) appends every JSON-RPC frame to a file for diagnostics. It redacts
   credentials by key only.

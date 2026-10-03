@@ -144,6 +144,29 @@ func TestRunStopTerminatesLockHolder(t *testing.T) {
 	}
 }
 
+// A holder with a short record, a daemon that has not bound yet, gives the two lines
+// with no instance. Measured on Linux against 89cb6289 (row N5).
+func TestRunStopLinesForAShortRecord(t *testing.T) {
+	requireNodeID(t)
+	oldGrace := stopTermGrace
+	stopTermGrace = 10 * time.Second
+	t.Cleanup(func() { stopTermGrace = oldGrace })
+	dir := shortTempDir(t)
+	sock := filepath.Join(dir, "rpc.sock")
+	lockPath := filepath.Join(dir, runDirLockName)
+	holder := spawnLockHolder(t, lockPath, "", "")
+	pid := holder.Process.Pid
+	writeRecordFile(t, lockPath, ownerRecord{Pid: pid, Role: "serve", Node: nodeID()})
+	seamServeHolder(t)
+	logs := captureStopLog(t)
+
+	stopPrints(t, sock, "terminated\n")
+
+	wantLinesInOrder(t, logs.String(),
+		fmt.Sprintf("[daemon] stop: run dir is held by a live daemon, pid %d; sending SIGTERM", pid),
+		fmt.Sprintf("[daemon] stop: previous daemon pid %d exited after SIGTERM", pid))
+}
+
 // A serve holder that ignores SIGTERM gets SIGKILL after stopTermGrace, and
 // -stop prints "killed". The grace is a seam, so the test does not wait 4 s.
 func TestRunStopKillsHolderThatIgnoresSIGTERM(t *testing.T) {

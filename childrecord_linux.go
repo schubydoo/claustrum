@@ -14,10 +14,11 @@ import (
 // temp files and exercise the fallback without depending on the host's real id.
 var machineIDPaths = []string{"/etc/machine-id", "/var/lib/dbus/machine-id"}
 
-// recordChild writes the orphan-registry record for a just-spawned child under a
-// run-shaped socket (reference build 19f30c46). Best-effort and non-destructive: a
-// failure is logged, never fatal. It is a no-op when the socket is not
-// run/<clientId>/ shaped (no runDir), when pid < 2, or when the child's start-time
+// recordChild writes the orphan-registry record for a just-spawned child (reference
+// build 19f30c46), on every socket shape (89cb6289, Linux rows F1 to F4).
+// Best-effort and non-destructive: a
+// failure is logged, never fatal. It is a no-op when the manager has no run dir
+// (no socket), when pid < 2, or when the child's start-time
 // cannot be read. Without a pid-reuse-safe start-time, the record cannot identify the
 // child later.
 // The record's identity (node, host, instance, the daemon's pid and start-time) is

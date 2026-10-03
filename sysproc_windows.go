@@ -3,7 +3,10 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -15,6 +18,30 @@ import (
 // (see procGroup).
 func newSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
+}
+
+// statSpawnCommand is the stat of missingCommandError: one stat of the command path
+// that the start uses. It answers only for an absolute path that does not exist.
+//
+// Measured on a Windows VM against 89cb6289 (row SSm-path, 3 of 3 runs): a session
+// spawn of the missing path <dir>\nocmd.exe answers "fork/exec <dir>\nocmd.exe: The
+// system cannot find the file specified." and the prior process of the session lives
+// on. The lookup does not answer for that path: a path that ends in an executable
+// extension passes it with no test of the file. Build ac5cadb of claustrum ran no stat
+// here and ended the prior process first.
+//
+// A bare name and a path with no extension answer the lookup error before this stat
+// (rows SSm-bare and SSm-noext). Not measured: a relative path. It gets its extension
+// only at the start, so this stat leaves it alone. Not measured: a stat error other
+// than a missing file. It passes, and the start answers.
+func statSpawnCommand(path string) error {
+	if !filepath.IsAbs(path) {
+		return nil
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // reapProcessGroup is the Windows counterpart of the Unix kill(-pgid) that

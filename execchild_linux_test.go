@@ -16,91 +16,6 @@ import (
 	"testing"
 )
 
-// TestExecChildRunDir pins the run-dir derivation and the trampoline gate: only a
-// run/<clientId>/rpc.sock socket yields a run dir; every other shape yields "" (so
-// the daemon spawns children directly, no trampoline). Measured against 19f30c46:
-// CLAUDE_SSH_RUN_DIR was the socket's directory only under run/<clientId>/.
-func TestExecChildRunDir(t *testing.T) {
-	cases := []struct {
-		sock, want string
-	}{
-		{"/x/run/c0ffee01/rpc.sock", "/x/run/c0ffee01"},
-		{"/home/u/.claude/remote/run/abcd1234/rpc.sock", "/home/u/.claude/remote/run/abcd1234"},
-		{"/tmp/cl123/s.sock", ""},           // test socket: not rpc.sock
-		{"/tmp/cl123/rpc.sock", ""},         // rpc.sock but parent-of-parent is not "run"
-		{"/x/notrun/c0ffee01/rpc.sock", ""}, // parent-of-parent not "run"
-		{"", ""},
-	}
-	for _, c := range cases {
-		if got := execChildRunDir(c.sock); got != filepath.FromSlash(c.want) {
-			t.Errorf("execChildRunDir(%q) = %q, want %q", c.sock, got, c.want)
-		}
-	}
-}
-
-// TestHoldRestoreGoEnvRoundTrip proves holdGoEnv → restoreHeldEnv is the identity for
-// the five Go-runtime vars (the child ends up with the daemon's values restored),
-// that non-held vars pass through untouched, and that no CLAUDE_SSH_HELD_ residue
-// survives — matching the measured child env, where GODEBUG round-tripped and no
-// held key remained.
-func TestHoldRestoreGoEnvRoundTrip(t *testing.T) {
-	in := []string{
-		"GODEBUG=x=1,y=2", "GOGC=50", "GOMAXPROCS=4", "GOMEMLIMIT=123MiB", "GOTRACEBACK=all",
-		"PATH=/usr/bin", "CLAUDE_SSH_RUN_DIR=/x/run/c0ffee01", "FOO=bar",
-	}
-	held := holdGoEnv(slices.Clone(in))
-	for _, name := range heldGoRuntimeEnv {
-		if slices.ContainsFunc(held, func(e string) bool { return strings.HasPrefix(e, name+"=") }) {
-			t.Errorf("after hold, bare %s still present: %v", name, held)
-		}
-		if !slices.Contains(held, heldEnvPrefix+name+"="+goVal(in, name)) {
-			t.Errorf("after hold, %s%s not stashed", heldEnvPrefix, name)
-		}
-	}
-	got := restoreHeldEnv(held)
-	for _, e := range got {
-		if strings.HasPrefix(e, heldEnvPrefix) {
-			t.Errorf("restore left a held residue: %q", e)
-		}
-	}
-	slices.Sort(got)
-	want := slices.Clone(in)
-	slices.Sort(want)
-	if !slices.Equal(got, want) {
-		t.Errorf("round-trip mismatch:\n got=%v\nwant=%v", got, want)
-	}
-}
-
-// TestRestoreHeldEnvIgnoresStrayPrefix proves restore is symmetric with holdGoEnv: it
-// un-prefixes ONLY the known Go-runtime held vars, so a CLAUDE_SSH_HELD_<other> a
-// process.spawn caller put in the env is passed through untouched and cannot smuggle
-// an arbitrary <other>=<val> into the target, nor override the target's own <other>
-// (greptile P1). The real held Go var is still restored, and its held entry consumed.
-func TestRestoreHeldEnvIgnoresStrayPrefix(t *testing.T) {
-	in := []string{
-		heldEnvPrefix + "GODEBUG=x=1", // a real held Go var -> restored to GODEBUG=x=1
-		heldEnvPrefix + "FOO=evil",    // NOT a held var -> must NOT become FOO=evil
-		"FOO=legit",
-		"PATH=/usr/bin",
-	}
-	got := restoreHeldEnv(in)
-	if !slices.Contains(got, "GODEBUG=x=1") {
-		t.Errorf("held Go var GODEBUG not restored: %v", got)
-	}
-	if slices.Contains(got, "FOO=evil") {
-		t.Errorf("stray %sFOO was un-prefixed into FOO=evil (env injection): %v", heldEnvPrefix, got)
-	}
-	if !slices.Contains(got, "FOO=legit") {
-		t.Errorf("caller's own FOO=legit must survive, not be overridden: %v", got)
-	}
-	if !slices.Contains(got, heldEnvPrefix+"FOO=evil") {
-		t.Errorf("stray held-prefix entry should pass through untouched: %v", got)
-	}
-	if slices.Contains(got, heldEnvPrefix+"GODEBUG=x=1") {
-		t.Errorf("recognized held entry should be consumed, not left as residue: %v", got)
-	}
-}
-
 // TestSocketSpawnTrampolineMarkers is the end-to-end proof: a daemon on a
 // run/<clientId>/rpc.sock socket spawns a child through the exec-child trampoline,
 // and the child's environment carries CLAUDE_SSH_CHILD=<pid>:<ticks> and
@@ -260,15 +175,6 @@ func TestSocketSpawnTrampolineEdgeCases(t *testing.T) {
 	if env := streamBytes(t, cl.waitExit("relB"), "stdout"); !regexp.MustCompile(`(?m)^CLAUDE_SSH_CHILD=\d+:\d+$`).MatchString(env) {
 		t.Errorf("relative command was not trampolined: child env has no CLAUDE_SSH_CHILD:\n%s", env)
 	}
-}
-
-func goVal(env []string, name string) string {
-	for _, e := range env {
-		if v, ok := strings.CutPrefix(e, name+"="); ok {
-			return v
-		}
-	}
-	return ""
 }
 
 // TestWrapCmdWithTrampoline proves a resolved command is rewritten to

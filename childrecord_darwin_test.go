@@ -100,6 +100,26 @@ func TestRecordChildDarwin(t *testing.T) {
 	}
 }
 
+// TestDarwinProcStartHasOneBlank pins the form of the start text: `ps` prints two
+// blanks before a day of one digit, and the record, the CLAUDE_SSH_CHILD entry and the
+// reap hold one blank (macOS rows F1 to F4 and RP15: 89cb6289 holds
+// "Fri Oct 2 17:35:19 2026"). All three read it through darwinProcStart.
+func TestDarwinProcStartHasOneBlank(t *testing.T) {
+	old := darwinPSStart
+	t.Cleanup(func() { darwinPSStart = old })
+	darwinPSStart = func(int) ([]byte, error) { return []byte("Fri Oct  2 17:35:19 2026\n"), nil }
+	if got, want := darwinProcStart(os.Getpid()), "Fri Oct 2 17:35:19 2026"; got != want {
+		t.Errorf("darwinProcStart = %q, want %q", got, want)
+	}
+	if got := ownStartToken(); got != "Fri Oct 2 17:35:19 2026" {
+		t.Errorf("ownStartToken = %q, want the same text", got)
+	}
+	darwinPSStart = func(int) ([]byte, error) { return nil, os.ErrNotExist }
+	if got := darwinProcStart(os.Getpid()); got != "" {
+		t.Errorf("darwinProcStart with a failed ps = %q, want empty", got)
+	}
+}
+
 // TestDarwinPSIsStartedByFullPath pins that the record and the reap start /bin/ps and
 // not the first `ps` in the PATH. A shim named `ps` comes first in the PATH and prints
 // a text of its own. Both readers still answer with the output of the real ps for this

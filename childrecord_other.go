@@ -8,12 +8,12 @@ package main
 // reference daemon reports it is not the run-dir lock holder on windows and records no
 // children (a child spawned under a run-shaped socket leaves children/ empty). Claustrum
 // holds no run-dir lock on windows either (its claimRunDir is a no-op
-// there), so this stays a no-op. m.runDir may be non-empty on windows (execChildRunDir
-// accepts a run-shaped socket on every OS), but its only windows consumers are no-ops, so
+// there), so this stays a no-op. m.runDir is non-empty on windows too (execChildRunDir
+// gives the folder of the socket on every OS), but its only windows consumers are no-ops, so
 // it has no effect.
 func (m *procManager) recordChild(pid int, argv0, program string) {}
 
-// holdRunDir, removeChildRecord and awaitRecordsRemoved are no-ops here for the same
+// holdRunDir, removeChildRecord, awaitRecordsRemoved and forgetKeptRecords are no-ops here for the same
 // reason: no record exists, so there is no run dir to hold, no record to remove when
 // a child ends, and nothing to wait for at shutdown.
 func (m *procManager) holdRunDir() {}
@@ -21,3 +21,5 @@ func (m *procManager) holdRunDir() {}
 func (m *procManager) removeChildRecord(pid int) {}
 
 func (m *procManager) awaitRecordsRemoved() {}
+
+func (m *procManager) forgetKeptRecords() {}

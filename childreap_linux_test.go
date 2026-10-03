@@ -132,11 +132,15 @@ func TestReapOrphansGate(t *testing.T) {
 	if !recordExists(runDir, passthroughName) {
 		t.Error("a passthrough (disowning) record was removed; it must be kept")
 	}
-	// Pin the positive six-number summary format: one orphan reaped in the grace bucket, four
-	// records forgotten, four kept. A mutant that reorders or mis-labels the log args fails here.
-	if want := "orphan sweep: signalled 1, reaped 1 grace + 0 escalate, survived 0, forgot 4, skipped 4"; !strings.Contains(summary, want) {
-		t.Errorf("summary = %q, want it to contain %q", summary, want)
-	}
+	// Pin the lines of the sweep with the texts of 89cb6289: the record line of the
+	// skip, the ending line of the group, and the six numbers of the summary. One group
+	// ended on SIGTERM, four records dropped, four kept. A mutant that reorders or
+	// mis-labels the numbers fails here.
+	wantLinesInOrder(t, summary,
+		"INFO  [process.Registry] record 777.json: pid 777 is not a child to end (it does not lead its own process group); dropping the record, signalling nothing",
+		`INFO  [process.Registry] ending orphaned process group 424242 recorded by daemon instance "inst-old" (pid 999999): SIGTERM`,
+		"INFO  [daemon] serve: predecessor's children — 1 orphaned group(s): 1 ended on SIGTERM, 0 on SIGKILL, 0 survived; 4 stale record(s) dropped, 4 kept",
+	)
 }
 
 // TestReapOrphansBatchOverflow proves the sweep signals at most maxReapTargets orphans and
@@ -166,9 +170,18 @@ func TestReapOrphansBatchOverflow(t *testing.T) {
 		sim.diesOn(pid, syscall.SIGTERM)
 	}
 
-	reapOrphans(runDir, "inst-self")
+	out := captureLog(t, func() { reapOrphans(runDir, "inst-self") })
 	if sim.sigCount(syscall.SIGTERM) != 1 {
 		t.Errorf("signaled %d orphans, want exactly maxReapTargets=1", sim.sigCount(syscall.SIGTERM))
+	}
+	// The line for the groups over the limit comes before the first ending line, and
+	// the summary counts the group that stays as kept.
+	wantLinesInOrder(t, out,
+		"WARN  [process.Registry] 1 more orphaned group(s) recorded in "+runDir+"/children than the 1 one start ends; leaving those for the next start",
+		"INFO  [daemon] serve: predecessor's children — 1 orphaned group(s): 1 ended on SIGTERM, 0 on SIGKILL, 0 survived; 0 stale record(s) dropped, 1 kept",
+	)
+	if names := childrenNames(t, filepath.Join(runDir, "children")); len(names) != 1 {
+		t.Errorf("records left: %v, want the one of the group over the limit", names)
 	}
 }
 

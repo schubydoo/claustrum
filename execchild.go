@@ -23,19 +23,21 @@ func readExecChildError(r *os.File) error {
 	return nil
 }
 
-// execChildRunDir derives the daemon's run dir from its socket path, or "" when the
-// socket is not the run/<clientId>/rpc.sock shape. It is the CLAUDE_SSH_RUN_DIR value
-// stamped on trampolined children and the gate for the exec-child trampoline: a
-// daemon whose socket is not run-shaped (a bare /tmp socket, a test socket) spawns
-// children directly, with no trampoline and no run-dir marker. For socket
-// <X>/run/<clientId>/rpc.sock the run dir is <X>/run/<clientId>.
+// execChildRunDir derives the run dir of the daemon from its socket path. The run dir
+// is the folder of the socket path, cleaned lexically. It is not made absolute and no
+// symlink is resolved. It is "" only for an empty socket path.
+//
+// The run dir is the CLAUDE_SSH_RUN_DIR value of a child, and the child records go to
+// its children folder. Measured on Linux and macOS against 89cb6289 (rows F1 to F4 and
+// K3): the socket <R>/b/s.sock gives <R>/b, the relative socket s.sock gives ".", and
+// <R>//run/./c1/rpc.sock gives <R>/run/c1. The record of the child is in the children
+// folder below that run dir in each row. No test of the socket shape decides it.
+//
+// Not measured: an abstract socket name (@name). It gives the run dir "." here, with
+// no special case.
 func execChildRunDir(socket string) string {
-	if socket == "" || filepath.Base(socket) != "rpc.sock" {
+	if socket == "" {
 		return ""
 	}
-	dir := filepath.Dir(socket) // <X>/run/<clientId>
-	if filepath.Base(filepath.Dir(dir)) != "run" {
-		return ""
-	}
-	return dir
+	return filepath.Dir(socket)
 }

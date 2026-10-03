@@ -35,6 +35,21 @@ func livePredecessorIdent(socket string) os.FileInfo {
 	return fi
 }
 
-// staleSocketIdent is nil off Windows: the wait for the daemonized child there is not
-// changed by a stale socket file (see waitForDaemonAccept).
-func staleSocketIdent(socket string) os.FileInfo { return nil }
+// staleSocketIdent returns the identity of a socket file that is on disk before the
+// launcher starts its child, or nil when the path holds no socket. waitForDaemonAccept
+// uses it: while the path still holds that file and no daemon answers, the launcher
+// waits. The new daemon binds only after the reap of its start, so the stale socket
+// file of a killed daemon stays for that time. Measured on Linux against f6010b97 and
+// 89cb6289 (row XA): the -serve command returns when the socket accepts, 2.06 s after
+// its start, with a recorded child that ignores SIGTERM.
+//
+// A path that holds another kind of file gives nil, so the wait for it is as before:
+// with a directory at the socket path the launcher of the reference exits 0 at once
+// (5db5e4a, see waitForDaemonAccept).
+func staleSocketIdent(socket string) os.FileInfo {
+	fi, err := os.Stat(socket)
+	if err != nil || fi.Mode()&os.ModeSocket == 0 {
+		return nil
+	}
+	return fi
+}

@@ -996,8 +996,8 @@ func TestReapOrphansForgetOnlyIsSilent(t *testing.T) {
 	}
 	fakeLiveProcs(t, map[int]liveProc{})
 	out := captureLog(t, func() { reapOrphans(runDir, "inst") })
-	if strings.Contains(out, "orphan sweep") {
-		t.Errorf("a forget-only sweep logged a summary; it must be silent:\n%s", out)
+	if strings.Contains(out, "predecessor's children") || strings.Contains(out, "[process.Registry]") {
+		t.Errorf("a forget-only sweep logged a line; it must be silent:\n%s", out)
 	}
 	if recordExists(runDir, "12.json") {
 		t.Error("the malformed record was not forgotten")
@@ -1036,10 +1036,11 @@ func TestReapTargetsPreKillReuse(t *testing.T) {
 	if recordExists(runDir, reused.name) || recordExists(runDir, gone.name) || recordExists(runDir, sigfail.name) {
 		t.Error("a handled target's record survived; all must be forgotten")
 	}
-	// The phase-1 already-gone target lands in the grace bucket; the reused and signal-failed
-	// targets are forgotten. A mutant that mis-buckets the phase-1 gone case flips these.
-	if counts.signalled != 3 || counts.reapedGrace != 1 || counts.forgotten != 2 {
-		t.Errorf("counts signalled=%d reapedGrace=%d forgotten=%d, want 3, 1 and 2",
+	// No group got SIGTERM, so none counts as signalled or as ended on SIGTERM. All
+	// three records count as dropped. A mutant that counts a target with no SIGTERM as
+	// a group flips these.
+	if counts.signalled != 0 || counts.reapedGrace != 0 || counts.forgotten != 3 {
+		t.Errorf("counts signalled=%d reapedGrace=%d forgotten=%d, want 0, 0 and 3",
 			counts.signalled, counts.reapedGrace, counts.forgotten)
 	}
 }
@@ -1089,7 +1090,8 @@ func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
 	sim.group[groupSurvivor.pid] = true
 
 	var counts reapCounts
-	pending := reapWait(simCtx(t, runDir), []reapTarget{staysAlive, reused, groupSurvivor}, reapGrace, &counts.reapedGrace, &counts, true)
+	c := simCtx(t, runDir)
+	pending := reapWait(c, []reapTarget{staysAlive, reused, groupSurvivor}, reapGrace, &counts.reapedGrace, &counts, true)
 
 	if len(pending) != 1 || pending[0].pid != staysAlive.pid {
 		t.Errorf("pending = %v, want only the live leader %d", pending, staysAlive.pid)
@@ -1103,6 +1105,11 @@ func TestReapWaitDropsReusedAndCleansGroup(t *testing.T) {
 	if counts.reapedGrace != 1 || counts.forgotten != 1 {
 		t.Errorf("counts reapedGrace=%d forgotten=%d, want 1 and 1", counts.reapedGrace, counts.forgotten)
 	}
+	// The records of the resolved targets stay until the sweep removes them together.
+	if !recordExists(runDir, reused.name) || !recordExists(runDir, groupSurvivor.name) {
+		t.Error("the record of a resolved target went inside the wait, want it to stay until the end of the sweep")
+	}
+	c.forgetLate()
 	if recordExists(runDir, reused.name) || recordExists(runDir, groupSurvivor.name) {
 		t.Error("a resolved target's record survived; it must be forgotten")
 	}
@@ -1146,9 +1153,11 @@ func TestReapWaitSkipsGroupKillOnLeaderReuse(t *testing.T) {
 
 	var counts reapCounts
 	var pending []reapTarget
+	c := simCtx(t, runDir)
 	out := captureLog(t, func() {
-		pending = reapWait(simCtx(t, runDir), []reapTarget{tg}, reapGrace, &counts.reapedGrace, &counts, true)
+		pending = reapWait(c, []reapTarget{tg}, reapGrace, &counts.reapedGrace, &counts, true)
 	})
+	c.forgetLate()
 	if killed != 0 {
 		t.Errorf("group SIGKILL sent despite the leader pid being reused; want 0, got %d", killed)
 	}

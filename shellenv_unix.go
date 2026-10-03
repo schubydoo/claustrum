@@ -119,11 +119,30 @@ func extractLoginPATH() {
 		timedOut.Store(true)
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-	cmd.Env = append(os.Environ(),
-		"DISABLE_AUTO_UPDATE=true",
-		"ZSH_DISABLE_COMPFIX=true",
-	)
-	out, err := cmd.CombinedOutput()
+	cmd.Env = loginPATHShellEnv()
+	// The read ends at the bound also when the shell is gone and another process
+	// still holds its output pipe. The kill above does not cover that case: the
+	// shell ended before the deadline, so no kill goes out. Measured on Linux against
+	// 89cb6289 (rows P13 and P13k): a login shell that leaves `setsid sleep 30` on the
+	// pipe is done after 0.06 s. The first spawn answers after 4.6 s, the daemon
+	// sends no signal, and the log holds the timed-out line below. macOS row P13
+	// gives the same on 89cb6289 (4.7 s) and on claustrum (4.7 to 4.9 s).
+	//
+	// claustrum's own (not measured): WaitDelay closes the pipe of the abandoned read
+	// two bounds after the end of the shell, so that read does not go on for the life
+	// of the holder. It is twice the bound so that the bound always fires first. With
+	// equal values, a shell that ends at once makes both fire together.
+	bound := loginPATHTimeout
+	cmd.WaitDelay = 2 * bound
+	type shellRun struct {
+		out []byte
+		err error
+	}
+	run, finished := waitAtMost(bound, func() shellRun {
+		out, err := cmd.CombinedOutput()
+		return shellRun{out, err}
+	})
+	out, err := run.out, run.err
 	// A timeout DISCARDS whatever the shell printed, even a valid sentinel line,
 	// and reports itself as one line naming the shell. Measured 2026-08-02
 	// against 5db5e4a with a login shell that prints a good sentinel and THEN
@@ -138,7 +157,7 @@ func extractLoginPATH() {
 	// So this is wire-visible too, not log-only: the child's environment differs.
 	// The check must come BEFORE the sentinel scan below, because the scan is
 	// what would otherwise install the discarded value.
-	if timedOut.Load() {
+	if timedOut.Load() || !finished {
 		logWarnf("[shellenv] Failed to extract PATH from login shell: "+
 			"shell PATH extraction timed out (%s)", shell)
 		return
@@ -168,6 +187,31 @@ func extractLoginPATH() {
 	logWarnf("[shellenv] Failed to extract PATH from login shell: "+
 		"PATH sentinel not found in shell output: %s",
 		truncateShellOutput(strings.TrimRight(string(out), "\n")))
+}
+
+// loginPATHShellEnv is the environment of the login shell that extractLoginPATH runs.
+// It holds seven entries and nothing else of the daemon environment.
+//
+// Measured on Linux against 89cb6289 (row P13v). A daemon with HOME, PATH, USER,
+// LANG, EFX, SHELL and CLAUDE_SSH_DAEMON_CHILD gave its PATH shell
+// DISABLE_AUTO_UPDATE=true, HOME, PATH, SHELL, TERM= (empty), USER and
+// ZSH_DISABLE_COMPFIX=true. The shell itself added PWD. LANG, EFX and
+// CLAUDE_SSH_DAEMON_CHILD did not reach it. The agent-socket shell has another
+// environment (probeShellEnv).
+//
+// macOS rows P13v and P13z give the same seven entries on 89cb6289 and on claustrum.
+// In row P13z the daemon has no SHELL, and the entry is empty.
+//
+// Not measured: the order of the entries, a daemon that has a TERM, and a daemon
+// with no HOME, PATH or USER. claustrum copies each of the five values from
+// the daemon environment and writes an empty value for a name that is not set, as the
+// rows show for TERM and SHELL.
+func loginPATHShellEnv() []string {
+	env := make([]string, 0, 7)
+	for _, name := range []string{"HOME", "PATH", "SHELL", "TERM", "USER"} {
+		env = append(env, name+"="+os.Getenv(name))
+	}
+	return append(env, "DISABLE_AUTO_UPDATE=true", "ZSH_DISABLE_COMPFIX=true")
 }
 
 // shellOutputLogLimit is where the reference cuts the shell output it echoes

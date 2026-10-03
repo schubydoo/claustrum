@@ -5,13 +5,20 @@ package main
 // claimRunDir takes no lock on Windows. Measured on a Windows VM, the reference (4534d86)
 // writes no daemon.lock and evicts no predecessor. Windows relies on the socket remove-then-rebind
 // handoff for mutual exclusion, where a second -serve leaves the incumbent alive.
-// claustrum matches: it writes nothing here. The returned release func is a no-op.
+// claustrum matches: it writes nothing here. Both funcs of the returned claim are no-ops.
 //
 // It prints one line. On the reference that line is the first log line of every start. A
 // Windows VM measured it against f6010b97 and 89cb6289 (row K11 and every other daemon row).
-func claimRunDir(socket, role, instanceID string) func() {
+func claimRunDir(socket, role string) runDirClaim {
 	logInfof("%s", runDirNotHolderLine)
-	return func() {}
+	return runDirClaim{release: func() {}, complete: func(string, int64) {}}
+}
+
+// runDirClaim is what claimRunDir gives back. On Windows there is no lock, so release
+// and complete do nothing.
+type runDirClaim struct {
+	release  func()
+	complete func(instanceID string, startedAt int64)
 }
 
 // stopRunDirHolder is the -stop fallback after a failed connect. Windows has no

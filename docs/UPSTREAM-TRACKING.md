@@ -217,8 +217,7 @@ an entry in the table above covers it (for example D6, D10, D13, D18). See
 
 Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
 numbers several more claustrum-only behaviors, and they are just as real. They are
-item 16 (`-metrics-addr`), item 17 (claustrum ends the orphaned previous
-process), and item 18 (`-token-fd`). Item 21 is another: claustrum skips the
+item 16 (`-metrics-addr`) and item 18 (`-token-fd`). Item 21 is another: claustrum skips the
 kill signal for a child that already exited. Check both the divergence catalog and
 the shipped ledger before you conclude that something is drift.
 
@@ -421,7 +420,97 @@ traps that matter for telling drift from expected:
   `89cb6289`). A later run on that VM measured the same on claustrum (rows WJ01 to
   WJ08, WN03). A spawned child is in no job on either side, and a kill ends the direct
   child only (kill forms: `89cb6289`). Descendants that outlive a kill or a `-stop` are not drift.
-- Four differences on Windows are known and open. They are not drift.
+- A daemon that accepts no connection for some seconds after its start is not
+  drift. On Linux and macOS the daemon binds its socket after the reap of its
+  start. With a recorded child that ignored `SIGTERM`, the first connection to
+  `89cb6289` worked 2.2 to 2.4 s after its start (Linux and macOS VMs). Before
+  that a client got `ECONNREFUSED` (row D1a) or `ENOENT` (row D1b). In that
+  time `daemon.lock` holds `pid`, `role` and `node` only. claustrum is built to
+  the same order.
+- Child records and both markers on a socket that is not `run/<id>/rpc.sock` are
+  not drift. `89cb6289` writes them on every socket shape (Linux and macOS rows F1
+  to F4), and claustrum does too.
+- Records that stay after a daemon start are not drift in two cases. One start
+  handles 128 record names (Linux row C1) and ends 64 groups (Linux row C4), on
+  `89cb6289`. claustrum is built to it. The rest goes at a later start.
+- A first process that lives on after a second `process.spawn` took its `id` is
+  not drift. `89cb6289` sends it no signal, and a stop of the daemon leaves it
+  alive. Linux and macOS rows A1 to A4 and Windows rows EV and EVInh measure that.
+  claustrum does the same. The frames of that first process still come on its own
+  connection, under the same `processId` (Linux row P2 against `89cb6289`).
+  claustrum is built to it.
+- A `process.spawn` reply that comes 3 to 5 s late is not drift when the spawn
+  supersedes a session process. `89cb6289` answers after the old process ended
+  (Linux and macOS rows B1 to B3, Windows rows SS and SSInh). claustrum does the
+  same.
+- An old session process that lives on after a failed session spawn is not drift
+  in one case: the command of the new spawn does not exist. `89cb6289` sends the
+  old process no signal there (Linux rows P3, H1 and H9, macOS row P3, Windows
+  rows SSm-path, SSm-bare and SSm-noext). claustrum is built to it. A command
+  that exists and does not start ends the old process first, on `89cb6289` and
+  on claustrum (Linux rows H4a to H4c).
+- A descendant that lives on after `process.killAndWait` or a session supersede
+  is not drift in one case: the process ended on the graceful signal within the
+  grace. `89cb6289` then sends its group no `SIGKILL` (Linux rows X2a and X2b,
+  also B1 and H4a to H4c). claustrum is built to it. When the grace runs out,
+  both send the group `SIGKILL` (Linux rows B2, B3 and X1). macOS rows X2a to
+  X2c give the same. Windows has no X2 row.
+- A daemon that runs no login shell before its first `process.spawn` is not drift
+  (Linux and macOS rows G1 and G2 against `89cb6289`).
+- A first spawn that answers after 4.6 s with a timed-out PATH line is not drift
+  when a process of the login profile holds the output pipe. `89cb6289` does that
+  (Linux rows P13 and P13k), and claustrum is built to it.
+- A `-serve` launcher that gives up after 12 s is not drift. If the daemon child
+  of `89cb6289` ends before the bind, its launcher exits 1 after 12.06 s (Linux
+  row P7, macOS row P7 and two Windows rows). The bound of `5db5e4a` was about
+  10 s.
+- A daemon that gets `SIGTERM` or `SIGINT` during its start, goes on to its bind
+  and then exits 0 is not drift. `89cb6289` does that (Linux rows P5, H8a to H8c,
+  N4 and N5, macOS row P5), and claustrum is built to it. Its launcher then exits
+  1 after 12 s (rows N4 and N5).
+- A daemon that gets `SIGKILL` from a second daemon during its start is not
+  drift. `89cb6289` does that when the two starts are 0.05 s apart (Linux row N3).
+  The second daemon waits on the lock, and claustrum is built to it (row H7).
+- The order of two or more new caller keys in a child environment is not drift.
+  `89cb6289` gave three rotations of the request order in 20 spawns (Linux rows
+  P9 and N7). claustrum iterates the decoded map and builds no order of its own.
+- A record or a marker with two blanks in its macOS start text is not accepted.
+  An older claustrum build wrote that form. `89cb6289` and claustrum
+  drop such a record and send no signal (macOS rows TBr and TBe). A child of such
+  an older build is therefore not ended at the next start.
+- A child of a live daemon that a new daemon ends on macOS is not drift in one
+  case: the `daemonStart` of its record holds two blanks. `89cb6289` and claustrum
+  then read that daemon as gone (macOS row N6).
+- These differences on Linux and macOS are known and open. They are not drift.
+    - At the reap of a start, `89cb6289` probes a group right after its `SIGTERM`.
+      If the group still answers, it sends `SIGKILL` (rows K5, P8k, P8b and C1).
+      claustrum probes after 50 ms. That is [DIVERGENCES.md](DIVERGENCES.md) D20.
+    - At a `-stop` with a live child, `89cb6289` sent the group `SIGKILL` and then
+      removed `daemon.token`. claustrum removed the token first (row P1).
+    - claustrum logs an exit line for a child that a shutdown kills:
+      `Process <id> exited with code -1, terminated by SIGKILL, signalled at shutdown request`.
+      `89cb6289` logs none (Linux row E3, macOS row A3).
+    - After a `-stop` during the wait of a supersede, claustrum can log the exit
+      line of the old process and the `supersedes` line. `89cb6289` logged neither
+      (row P1: Linux 1 of 6 runs against 0 of 7, macOS 2 of 2 against 0 of 2).
+      In that one Linux run build `ac5cadb` also sent the group one more
+      `SIGKILL`, which answered `ESRCH`. From the code: that call is gone, with
+      the group `SIGKILL` after a clean exit.
+    - `89cb6289` calls unlink on one child record up to three times at a stop or
+      a kill. claustrum calls it once. `89cb6289` also calls unlink on a record
+      that it never wrote (Linux rows P1, B1, A3, P11a). The files left are the
+      same.
+    - On macOS `89cb6289` runs one `ps` at the daemon start and one per spawn.
+      claustrum runs none at the start and three per spawn (macOS rows G1 and G2).
+    - With a zero-byte `-token-file` the daemon log of `89cb6289` holds
+      `claude-ssh: empty token in --token-file`. claustrum logs
+      `claustrum: token is empty` (row P7 on Linux and macOS, and two Windows
+      rows).
+    - When a frame cannot reach a closed connection, `89cb6289` logs
+      `[frameSink] write failed, detaching: write unix <socket>->@: use of closed network connection`.
+      claustrum logs `[frameSink] write failed, detaching: use of closed network connection`
+      (Linux row N2c).
+- Two differences on Windows are known and open. They are not drift.
     - At a stop with one connection, `89cb6289` logged `closed 0 connection(s)`
       in 2 of 9 runs. claustrum logged `closed 1` in 9 of 9. The rate is not
       measured.
@@ -429,12 +518,6 @@ traps that matter for telling drift from expected:
       sorts it. `f6010b97` and `89cb6289` keep the order of the daemon and put
       `CLAUDE_SSH_DAEMON_CHILD=1` last (rows WN01a, WN01b). The stdout frame of
       `cmd /c set` therefore differs in bytes.
-    - A second `process.spawn` with the `id` of a live process: `89cb6289` leaves
-      the first process alive, also after `-stop`. claustrum ends it (rows EV,
-      EVInh). The reference is not measured there on Linux and macOS.
-    - A session supersede: `89cb6289` answers the second spawn after the first
-      child ended, 5 s later with descendants that hold its pipes. claustrum
-      answers at once. The end states are equal (rows SS, SSInh, one run each).
 - A longer `remote-server.log` after a second daemon started on a live socket on
   Windows is not drift. `89cb6289` truncates the file at that start, and claustrum
   appends to it (rows WN04, WJ04). That is [DIVERGENCES.md](DIVERGENCES.md) D21.

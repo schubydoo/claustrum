@@ -4,6 +4,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -11,7 +12,7 @@ import (
 // resetLoginPATHForTest clears any extraction state left by an earlier test.
 func resetLoginPATHForTest() {
 	loginPATHMu.Lock()
-	loginPATHWait = nil
+	loginPATHOnce = nil
 	loginPATHMu.Unlock()
 	setLoginPATH("")
 }
@@ -86,11 +87,12 @@ func TestEnvValueMatchesDedupEnvSemantics(t *testing.T) {
 	})
 }
 
-// TestBuildEnvWaitsForLoginPATH is the W10 regression test. Before the fix,
-// extraction ran fire-and-forget and the first spawn built its child env from
-// the pre-extraction PATH — so the first spawn in a session (the agent CLI) could
-// fail to resolve a binary that every later spawn resolved fine.
-func TestBuildEnvWaitsForLoginPATH(t *testing.T) {
+// TestLoginPATHIsReadAtTheFirstSpawnOnly pins when the login-shell PATH is read
+// (89cb6289, Linux and macOS rows G1 to G3). Arming the read runs no shell. The first
+// build of a child environment runs it and uses its result. A second build that
+// comes while the read runs waits for it, so no child gets the PATH from before the
+// read. No later build runs it again.
+func TestLoginPATHIsReadAtTheFirstSpawnOnly(t *testing.T) {
 	origPATH, hadPATH := os.LookupEnv("PATH")
 	origExtractor := loginPATHExtractor
 	t.Cleanup(func() {
@@ -102,36 +104,88 @@ func TestBuildEnvWaitsForLoginPATH(t *testing.T) {
 		}
 		resetLoginPATHForTest()
 	})
+	resetLoginPATHForTest()
 
 	_ = os.Setenv("PATH", "/usr/bin:/bin")
 	const want = "/home/test/.local/bin:/usr/bin:/bin"
 
+	var runs atomic.Int32
 	started := make(chan struct{})
+	release := make(chan struct{})
 	loginPATHExtractor = func() {
-		close(started)
-		// Long enough that a non-waiting buildEnv reliably wins the race.
-		time.Sleep(100 * time.Millisecond)
+		if runs.Add(1) == 1 {
+			close(started)
+		}
+		<-release
 		// setLoginPATH, NOT os.Setenv: the extracted PATH is recorded for child
 		// environments only and never installed into the daemon's own.
 		setLoginPATH(want)
 	}
 
-	startLoginPATH()
-	<-started // extraction is in flight and has NOT yet set PATH
-
-	got, ok := envValue(buildEnv(nil), "PATH")
-	if !ok {
-		t.Fatal("buildEnv produced no PATH entry")
+	armLoginPATH()
+	select {
+	case <-started:
+		t.Fatal("arming the read ran the login shell (row G1: no shell before the first spawn)")
+	case <-time.After(50 * time.Millisecond):
 	}
-	if got != want {
-		t.Fatalf("first-spawn PATH = %q, want %q: buildEnv did not wait for login-shell extraction", got, want)
+
+	// Two builds at once: the first runs the read, the second waits for it.
+	paths := make(chan string, 2)
+	for range 2 {
+		go func() {
+			got, _ := envValue(buildEnv(nil), "PATH")
+			paths <- got
+		}()
+	}
+	<-started
+	select {
+	case got := <-paths:
+		t.Fatalf("a build returned PATH %q while the read still ran", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	for range 2 {
+		if got := <-paths; got != want {
+			t.Errorf("PATH of a first build = %q, want %q", got, want)
+		}
+	}
+
+	if got, _ := envValue(buildEnv(nil), "PATH"); got != want {
+		t.Errorf("PATH of a later build = %q, want %q", got, want)
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("the read ran %d times, want 1 (row G2: the second spawn runs no shell)", n)
 	}
 }
 
-// TestAwaitLoginPATHReturnsWhenNeverStarted guards the deadlock this design
-// could introduce: newServerOnSocket deliberately does not fork a login shell,
-// so every test-booted server reaches buildEnv with no extraction in flight.
+// TestLoginPATHFailureIsKept pins row G3: a read that gives no PATH is not tried
+// again by a later spawn.
+func TestLoginPATHFailureIsKept(t *testing.T) {
+	origExtractor := loginPATHExtractor
+	t.Cleanup(func() {
+		loginPATHExtractor = origExtractor
+		resetLoginPATHForTest()
+	})
+	resetLoginPATHForTest()
+	var runs atomic.Int32
+	loginPATHExtractor = func() { runs.Add(1) } // a failed read sets no PATH
+	armLoginPATH()
+	for range 3 {
+		buildEnv(nil)
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("a failed read ran %d times in three builds, want 1", n)
+	}
+}
+
+// TestAwaitLoginPATHReturnsWhenNeverStarted guards the test servers:
+// newServerOnSocket does not arm the read, so every test-booted server reaches
+// buildEnv with no read to run, and no login shell starts.
 func TestAwaitLoginPATHReturnsWhenNeverStarted(t *testing.T) {
+	origExtractor := loginPATHExtractor
+	t.Cleanup(func() { loginPATHExtractor = origExtractor })
+	var runs atomic.Int32
+	loginPATHExtractor = func() { runs.Add(1) }
 	resetLoginPATHForTest()
 	done := make(chan struct{})
 	go func() {
@@ -141,6 +195,9 @@ func TestAwaitLoginPATHReturnsWhenNeverStarted(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("awaitLoginPATH blocked with no extraction in flight")
+		t.Fatal("awaitLoginPATH blocked with no read armed")
+	}
+	if n := runs.Load(); n != 0 {
+		t.Errorf("a read that nothing armed ran %d times", n)
 	}
 }
