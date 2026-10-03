@@ -96,7 +96,7 @@ func (f statusFixture) write(t *testing.T, name, content string) {
 
 // The entry files decide the gate. One row breaks one file.
 func TestGitStatusEntryGate(t *testing.T) {
-	mib := strings.Repeat("\n", statusEntryFileMaxBytes)
+	mib := strings.Repeat("\n", statusFileMaxBytes)
 	cases := []struct {
 		name string
 		edit func(t *testing.T, f statusFixture)

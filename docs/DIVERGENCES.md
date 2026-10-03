@@ -365,7 +365,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   the branch, and the reply adds `"branchKept":true`. In a `git.worktree_create`
   rollback such a stop adds an undo text instead. It is one of the branch-step texts
   in PROTOCOL.md → The branch step.
-  On `git.status` / `git.list_branches` a hit surfaces as `-32603 signal: killed`.
+  On `git.list_branches` a hit surfaces as `-32603 signal: killed`. On `git.status`
+  the frame of a hit depends on the call that it stops: a hit in one of the four
+  commands surfaces as `-32603 signal: killed`. The frames of a hit in the other
+  calls are from the code and not measured.
   In `git.status` one deadline covers the 16 git calls of the answer, or 18 when
   `HEAD` names no commit (from the code). It covered 2 calls before.
   A killed repo-detection call answers `isRepo:false`. A killed

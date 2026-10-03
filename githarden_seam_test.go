@@ -90,7 +90,7 @@ func TestGitStatusPropagatesACommondirWriteFailure(t *testing.T) {
 
 // A file of the entry that grew past its bound after the gate looked at it is an
 // error of the copy, and the copy reads no more than the bound plus one byte.
-func TestCopyEntryFileStopsAtItsBound(t *testing.T) {
+func TestStatusCopyFileStopsAtItsBound(t *testing.T) {
 	e, _ := gitStatusFixture(t)
 	root, err := os.OpenRoot(e.dir)
 	if err != nil {
@@ -98,10 +98,10 @@ func TestCopyEntryFileStopsAtItsBound(t *testing.T) {
 	}
 	defer func() { _ = root.Close() }()
 	dst := filepath.Join(t.TempDir(), "index")
-	if err := copyEntryFile(root, "index", dst, int64(len("fixture\n"))-1); err == nil {
-		t.Fatal("copyEntryFile of a file over its bound = nil, want an error")
+	if err := statusCopyFile(root, "index", dst, int64(len("fixture\n"))-1); err == nil {
+		t.Fatal("statusCopyFile of a file over its bound = nil, want an error")
 	}
-	if err := copyEntryFile(root, "index", dst+"2", int64(len("fixture\n"))); err != nil {
-		t.Fatalf("copyEntryFile of a file at its bound = %v", err)
+	if err := statusCopyFile(root, "index", dst+"2", int64(len("fixture\n"))); err != nil {
+		t.Fatalf("statusCopyFile of a file at its bound = %v", err)
 	}
 }

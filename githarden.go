@@ -492,13 +492,13 @@ func hardenedGitRunPre(dir string, heavy bool, pre *configListing, stdin io.Read
 	return strings.TrimRight(string(out), "\n"), err
 }
 
-// statusExcludesFile is the core.excludesFile value of the status call. It is
-// userExcludesFile, except that the null device is spelled /dev/null on every OS.
+// statusExcludesFile is the core.excludesFile value of the status, ls-files and
+// diff-index calls of git.status. It is userExcludesFile, except that the null device is spelled /dev/null on every OS.
 // On Windows git status exits 128 with "fatal: cannot use NUL as an exclude file"
 // when core.excludesFile is NUL. It accepts /dev/null there. git ls-files and git
 // check-ignore accept NUL. Measured with Git for Windows 2.55.0 on a Windows 11 VM.
 // f6010b97 passes NUL to its status call on that VM and answers exit status 128.
-// This one value is the divergence D16. On Linux and macOS os.DevNull is /dev/null,
+// This value on those three calls is the divergence D16. On Linux and macOS os.DevNull is /dev/null,
 // so nothing changes there.
 func statusExcludesFile() string {
 	if e := userExcludesFile(); e != os.DevNull {

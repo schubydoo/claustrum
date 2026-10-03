@@ -763,8 +763,8 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
 | git.status | `<file>: not a regular file` | -32603. claustrum's own text, from the copy into the temporary git folder after the gate passed. `<file>` is `info/sparse-checkout` when that entry is a folder or a FIFO. The reference is not measured there |
 | git.status | `<file> is larger than <n> bytes` | -32603. claustrum's own text, for a copied file over its bound, also one that grew after the gate. `<n>` is 1073741824 for `index`, `sharedindex.*`, `info/sparse-checkout` and a reftable file, and 1048576 for `HEAD` and `config.worktree`. The reference is not measured there |
-| git.status | `openat reftable/<name>: path escapes from parent` | -32603. claustrum's own text, when the `reftable` folder of the entry is a symlink out of the entry and holds no `tables.list`. With a `tables.list` there the answer is `isRepo:false`. The reference is not measured there |
-| git.status | `<os error>` of the temporary folder, for example `stat <dir>: no such file or directory` | -32603. The raw Go error when the temporary git folder or a file in it cannot be made. The reference is not measured there |
+| git.status | `openat reftable/<name>: path escapes from parent` | -32603. claustrum's own text, when the `reftable` folder of the entry is a symlink out of the entry, and the linked folder holds a regular file and no `tables.list`. With no regular file there the request goes on. With a `tables.list` there the answer is `isRepo:false`. The reference is not measured there |
+| git.status | `<os error>` of the copy or of the temporary folder, for example `openat index: permission denied` or `stat <dir>: no such file or directory` | -32603. The raw Go error when a file of the entry cannot be copied, as an `index` of mode 000, or when the temporary git folder or a file in it cannot be made. The reference is not measured there |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
 | git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. See "Git-directory trust check" (`89cb6289`) |
@@ -1783,9 +1783,9 @@ check (Windows VM).
 - Status honours replace objects (`refs/replace`), as the reference does. A
   replaced `HEAD` commit therefore shows in `changes`.
 
-**The gate.** `89cb6289` does not ask git inside `path`. It reads the worktree
-entries under the common directory of `baseRepo` and looks for the one entry that
-names `path`. Each rule names its rows. The rows are from a side-by-side probe of
+**The gate.** The git call logs of `89cb6289` show no git call inside `path` before
+the gate decides. Its answers follow the worktree entries under the common directory
+of `baseRepo`: the request passes when exactly one entry names `path`. Each rule names its rows. The rows are from a side-by-side probe of
 `89cb6289` and claustrum on Linux, macOS and Windows VMs. Rows C1 to C13, row n07L
 and the `.t` rows are from the macOS VM. Rows D1 to D16, K02 to K15 and W03 to W06
 and x1 to x11 are from the Windows VM. Rows y1 to y7 are from Linux and macOS VMs.
@@ -1805,7 +1805,8 @@ the read of the user's excludes.
      `.claude-managed-worktrees` and no `.git` (rows o23, o23c and o23d, Linux VM).
      The entry can be a file or a directory. With a `.git` in that folder the request
      passes (row o23b, Linux VM). A marker inside `baseRepo` itself is ignored (row
-     v5).
+     v5). Not measured: more than two levels. claustrum
+     refuses them too.
 2. The read of the user's excludes comes next. It also runs before a trust refusal
    (rows o20 and o21, Linux VM). On Windows a `baseRepo` that is a dangling junction
    answers `isRepo:false` with this call only (rows n11-j and x11).
@@ -1833,7 +1834,8 @@ the read of the user's excludes.
      a `..` passes (row y2).
    - On Windows, `path` lies inside `baseRepo` and its last component ends in a dot
      or a space or holds a colon (rows x1, x2 and x3). Outside `baseRepo` a trailing
-     dot or space passes (rows D14dot and D14sp).
+     dot or space passes (rows D14dot and D14sp). Not measured: another
+     component with such a name. claustrum refuses it too.
 5. Calls 4 and 5 run in the common directory: `--git-dir=<common> config -z --list`,
    then the light `--git-dir=<common> --work-tree=<dir> rev-parse --show-toplevel`.
    - `<dir>` is `path` with its symlinks resolved (rows n06 and C12). When `path` lies
@@ -1950,10 +1952,7 @@ claustrum opens each file without blocking and reads a regular file only.
   holds the regular files of the entry's `reftable` folder (rows o19a and r1, macOS
   VM). Not measured: an `info/sparse-checkout` that is not a regular file, such as
   a FIFO. From the code: claustrum does not wait and answers `-32603` (see the
-  failures below). In rows
-  o19c, r3, r4, o15b and o15c `89cb6289` shows a temporary folder before it answers
-  `isRepo:false`, and claustrum makes none. The frames are equal. No entry is left
-  after the reply. The status therefore does not refresh or rewrite the caller's index, and it
+  failures below). No entry is left after the reply. The status therefore does not refresh or rewrite the caller's index, and it
   does not take `index.lock`. The folder name starts with `claustrum-git-dir-`.
 - After the gate comes the `git --attr-source=<empty tree> version` probe (call 6).
   From the code: claustrum runs it once for each daemon. Each measured request was
@@ -1994,8 +1993,10 @@ claustrum opens each file without blocking and reads a regular file only.
   file` answers an `info/sparse-checkout` that is a folder or a FIFO.
   `<file> is larger than <n> bytes` answers a copied file over its bound, also one
   that grew after the gate. `openat reftable/<name>: path escapes from parent`
-  answers a `reftable` folder that is a symlink out of the entry and holds no
-  `tables.list`. A temporary folder that cannot be made answers the raw Go error.
+  answers a `reftable` folder that is a symlink out of the entry, when the linked
+  folder holds a regular file and no `tables.list`. A file that cannot be copied
+  and a temporary folder that cannot be made answer the raw Go error, for example
+  `openat index: permission denied`.
 - Not measured: a failure of the listing in the temporary folder. claustrum answers
   the hooks refusal, as for the listing of rule 5.
 - `changes` starts with the stdout lines of `status`. Stderr warnings never appear.

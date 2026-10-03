@@ -587,7 +587,8 @@ func gitStatus(req *request) response {
 		return notRepo
 	}
 	// The exec error of a failed command goes on the wire as it is, for example
-	// "exit status 128", never the text of git. A relative path passes the gate and
+	// "exit status 128". The text of git does not show for status, ls-files and
+	// diff-index. A relative path passes the gate and
 	// then fails here, because git gets it as sent (row n25c).
 	changes, err := statusChanges(p.Path, common, entry)
 	if err != nil {

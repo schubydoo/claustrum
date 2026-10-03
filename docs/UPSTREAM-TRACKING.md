@@ -366,8 +366,8 @@ traps that matter for telling drift from expected:
     is the one of the resolved repository (row D01). On Windows the daemon does not
     take a toplevel answer that names another folder or is relative (rows W14 and
     W16). A symlink there resolves before `..` (row D03).
-  - claustrum keeps D16 as it is. `git.status` now takes its gate from the worktree
-    entries of `baseRepo`, as `89cb6289` does, so the `.git` inside `path` plays no
+  - claustrum keeps D16 as it is. `git.status` now answers by the worktree
+    entries of `baseRepo`, as `89cb6289` answers, so the `.git` inside `path` plays no
     part ([PROTOCOL.md](PROTOCOL.md) → `git.status`, rule 6).
 
   See [PROTOCOL.md](PROTOCOL.md) → Git-directory trust check, Hardened git calls

@@ -20,9 +20,9 @@ import (
 //   - The light profile keeps only the https and ssh entries of the daemon's
 //     GIT_ALLOW_PROTOCOL.
 //
-// Three calls get the daemon's environment with only their own additions: the
-// excludes read, the --attr-source version probe and the plain `git version` of
-// worktreeinclude.go.
+// Four calls get the daemon's environment with only their own additions: the
+// excludes read, the --attr-source version probe, the plain `git version` of
+// worktreeinclude.go and the `config --no-includes --file -` call of git.status.
 //
 // GIT_CONFIG_COUNT and its pairs are read by their exact names from the environment
 // list, because os.LookupEnv ignores case on Windows. GIT_ALLOW_PROTOCOL is read

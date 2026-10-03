@@ -26,11 +26,11 @@ import (
 // and no git call reads an entry file before the daemon judged it.
 
 const (
-	// statusEntryFileMaxBytes bounds the `gitdir` and `commondir` files of an entry.
+	// statusFileMaxBytes bounds the `gitdir` and `commondir` files of an entry.
 	// Exactly 1 MiB passes, and one byte more fails (rows n05b, n05c and n19g). The
 	// bound of `HEAD` and `config.worktree` is not measured. claustrum uses the same
 	// value for them.
-	statusEntryFileMaxBytes = 1 << 20
+	statusFileMaxBytes = 1 << 20
 	// statusLineMaxBytes is the longest entry of the porcelain output. A longer one is
 	// cut to this many bytes, and "…" follows (row o1).
 	statusLineMaxBytes = 512
@@ -56,7 +56,8 @@ const (
 )
 
 // statusIndexMaxBytes bounds the `index` of an entry. Exactly 1 GiB is copied (row
-// o15e), and one byte more answers isRepo:false with no temporary folder (row o15c).
+// o15e), and one byte more answers isRepo:false with no temporary folder (row o15c,
+// Linux VM).
 // An `index` of 1 GiB beside a `sharedindex.x` of 1 GiB + 1 answers isRepo:false too
 // (row o16). Whether 89cb6289 bounds each file or their sum is not measured. claustrum
 // bounds each file. It uses the same bound for `info/sparse-checkout` and for each
@@ -83,7 +84,7 @@ func (r statusRefusal) Error() string { return string(r) }
 //   - A folder one or two levels above baseRepo holds an entry named
 //     `.claude-managed-worktrees` and no `.git` (rows o23, o23c and o23d, Linux VM).
 //     The entry can be a file or a directory. With a `.git` in that folder the request
-//     passes (row o23b).
+//     passes (row o23b). More levels are not measured. claustrum refuses them too.
 //
 // A marker inside baseRepo itself is ignored (row v5, Linux VM). claustrum tests
 // baseRepo as sent and with its symlinks resolved. Not measured: a baseRepo that
@@ -272,12 +273,12 @@ func statusWorkTreeProbe(common, workTree string, pin []string) (ok bool, err er
 // errNotRegularFile is the error of an entry file that is not a regular file.
 var errNotRegularFile = errors.New("not a regular file")
 
-// openEntryFile opens name inside the entry folder that root holds. The open does not
+// statusOpenFile opens name inside the entry folder that root holds. The open does not
 // block, so a FIFO is judged at once and no read waits for a writer (rows n05a, C20a,
 // C20b, n14b and o15b). The file must be a regular file. A symbolic link is followed
 // only when it stays inside the entry folder: a relative link passes (rows n19e and
 // o15a), an absolute one fails (row n19f).
-func openEntryFile(root *os.Root, name string) (*os.File, fs.FileInfo, error) {
+func statusOpenFile(root *os.Root, name string) (*os.File, fs.FileInfo, error) {
 	f, err := root.OpenFile(name, os.O_RDONLY|openNonBlocking, 0)
 	if err != nil {
 		return nil, nil, err
@@ -293,15 +294,15 @@ func openEntryFile(root *os.Root, name string) (*os.File, fs.FileInfo, error) {
 	return f, fi, nil
 }
 
-// readEntryFile reads name inside the entry folder entry (openEntryFile). A file of
+// statusReadFile reads name inside the entry folder entry (statusOpenFile). A file of
 // more than max bytes is an error.
-func readEntryFile(entry, name string, max int64) ([]byte, error) {
+func statusReadFile(entry, name string, max int64) ([]byte, error) {
 	root, err := os.OpenRoot(entry)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = root.Close() }()
-	f, _, err := openEntryFile(root, name)
+	f, _, err := statusOpenFile(root, name)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +353,7 @@ func statusMatchEntry(common string, spellings []string) (string, bool) {
 			continue
 		}
 		entry := filepath.Join(dir, e.Name())
-		b, err := readEntryFile(entry, "gitdir", statusEntryFileMaxBytes)
+		b, err := statusReadFile(entry, "gitdir", statusFileMaxBytes)
 		if err != nil {
 			continue
 		}
@@ -375,7 +376,7 @@ func statusMatchEntry(common string, spellings []string) (string, bool) {
 // n19b.t). Another letter case fails, on Windows too (rows C11, D10, W04 and x9),
 // and so does a short name (rows K05a, K07a and K15a).
 func statusEntryNamesCommon(entry, common string) bool {
-	b, err := readEntryFile(entry, "commondir", statusEntryFileMaxBytes)
+	b, err := statusReadFile(entry, "commondir", statusFileMaxBytes)
 	if err != nil {
 		return false
 	}
@@ -439,7 +440,7 @@ func statusEntryConfig(entry string) (present, ok bool) {
 	if _, err := os.Lstat(filepath.Join(entry, "config.worktree")); errors.Is(err, fs.ErrNotExist) {
 		return false, true
 	}
-	b, err := readEntryFile(entry, "config.worktree", statusEntryFileMaxBytes)
+	b, err := statusReadFile(entry, "config.worktree", statusFileMaxBytes)
 	if err != nil {
 		return true, false
 	}
@@ -479,7 +480,7 @@ func statusEntryOf(common string, sp statusPath) (statusEntry, bool) {
 	if !ok || !statusEntryNamesCommon(dir, common) {
 		return statusEntry{}, false
 	}
-	head, err := readEntryFile(dir, "HEAD", statusEntryFileMaxBytes)
+	head, err := statusReadFile(dir, "HEAD", statusFileMaxBytes)
 	if err != nil || !statusHeadValid(head) {
 		return statusEntry{}, false
 	}
@@ -513,7 +514,7 @@ func statusEntryOf(common string, sp statusPath) (statusEntry, bool) {
 //
 // Not measured: a size bound of a table or of the list, a folder inside `reftable`,
 // and a symlink that the list does not name. claustrum bounds a table at statusIndexMaxBytes and the list at
-// statusEntryFileMaxBytes, and leaves a folder out.
+// statusFileMaxBytes, and leaves a folder out.
 func statusReftable(entry string) (files []string, ok bool) {
 	ents, err := os.ReadDir(filepath.Join(entry, "reftable"))
 	if err != nil {
@@ -533,7 +534,7 @@ func statusReftable(entry string) (files []string, ok bool) {
 	if !slices.Contains(files, "tables.list") {
 		return files, true
 	}
-	b, err := readEntryFile(entry, "reftable/tables.list", statusEntryFileMaxBytes)
+	b, err := statusReadFile(entry, "reftable/tables.list", statusFileMaxBytes)
 	names := strings.Fields(string(b))
 	if err != nil || len(names) == 0 {
 		return nil, false
@@ -551,18 +552,18 @@ func statusReftable(entry string) (files []string, ok bool) {
 // a folder and a file that the daemon just made, which no fixture can make fail.
 // Production never reassigns them.
 var (
-	copyStatusFile    = copyEntryFile
+	copyStatusFile    = statusCopyFile
 	writeStatusFile   = os.WriteFile
 	chtimesStatusFile = os.Chtimes
 )
 
-// copyEntryFile copies name of the entry folder that root holds to dst, and gives dst
+// statusCopyFile copies name of the entry folder that root holds to dst, and gives dst
 // the modification time of the source. For the index that time matters: git compares
 // the time of each work-tree file with the time of the index. A newer index makes git
 // trust its stat data and miss a change that keeps the size of a file. A source of
 // more than max bytes is an error.
-func copyEntryFile(root *os.Root, name, dst string, max int64) error {
-	src, fi, err := openEntryFile(root, name)
+func statusCopyFile(root *os.Root, name, dst string, max int64) error {
+	src, fi, err := statusOpenFile(root, name)
 	if err != nil {
 		return err
 	}
@@ -609,12 +610,12 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 		name string
 		max  int64
 	}
-	items := []item{{"HEAD", statusEntryFileMaxBytes}, {"index", statusIndexMaxBytes}}
+	items := []item{{"HEAD", statusFileMaxBytes}, {"index", statusIndexMaxBytes}}
 	for _, s := range e.shared {
 		items = append(items, item{s, statusIndexMaxBytes})
 	}
 	if e.hasConfig {
-		items = append(items, item{"config.worktree", statusEntryFileMaxBytes})
+		items = append(items, item{"config.worktree", statusFileMaxBytes})
 	}
 	if _, err := root.Stat("info/sparse-checkout"); err == nil {
 		items = append(items, item{"info/sparse-checkout", statusIndexMaxBytes})
