@@ -41,21 +41,22 @@ func pidOfName(t *testing.T, name string) int {
 }
 
 // plantOrphanRecords writes n records of a dead daemon into runDir, with pids from
-// first up, and returns their names in directory order. It skips the test when that
-// order is the name order, because the test then cannot tell the two apart.
-func plantOrphanRecords(t *testing.T, runDir string, first, n int) []string {
+// first up, and returns their names in directory order. sorted says that this order is
+// the name order. A test then cannot tell the two apart and skips its order checks.
+func plantOrphanRecords(t *testing.T, runDir string, first, n int) (order []string, sorted bool) {
 	t.Helper()
 	for i := range n {
 		writeRec(t, runDir, orphanRecord(first+i, "/f/bin/sigstub", ""))
 	}
-	order := recordDirOrder(t, filepath.Join(runDir, "children"))
+	order = recordDirOrder(t, filepath.Join(runDir, "children"))
 	if len(order) != n {
 		t.Fatalf("%d record names in the folder, want %d", len(order), n)
 	}
-	if slices.IsSorted(order) {
-		t.Skip("this file system lists the folder in name order, so the walk order cannot be told from it")
+	sorted = slices.IsSorted(order)
+	if sorted {
+		t.Log("this file system lists the folder in name order, so the order checks are skipped")
 	}
-	return order
+	return order, sorted
 }
 
 // liveOrphan makes pid a live process that passes the whole record test for runDir and
@@ -76,7 +77,7 @@ func TestReapHandles128NamesInDirectoryOrder(t *testing.T) {
 	}
 	runDir := t.TempDir()
 	children := filepath.Join(runDir, "children")
-	order := plantOrphanRecords(t, runDir, 800001000, 131)
+	order, sorted := plantOrphanRecords(t, runDir, 800001000, 131)
 	sim := newProcSim(t)
 	live := pidOfName(t, order[97]) // row C1: the live record at place 97
 	liveOrphan(sim, live, runDir, syscall.SIGTERM)
@@ -84,11 +85,16 @@ func TestReapHandles128NamesInDirectoryOrder(t *testing.T) {
 	out := captureLog(t, func() { reapOrphans(runDir, "inst-self") })
 
 	left := recordDirOrder(t, children)
-	slices.Sort(left)
-	want := slices.Clone(order[128:])
-	slices.Sort(want)
-	if !slices.Equal(left, want) {
-		t.Errorf("records left after the first start: %v\nwant the last 3 of the directory order: %v", left, want)
+	if len(left) != 3 {
+		t.Errorf("%d records left after the first start, want 3: %v", len(left), left)
+	}
+	if !sorted {
+		slices.Sort(left)
+		want := slices.Clone(order[128:])
+		slices.Sort(want)
+		if !slices.Equal(left, want) {
+			t.Errorf("records left after the first start: %v\nwant the last 3 of the directory order: %v", left, want)
+		}
 	}
 	if sim.sigCount(syscall.SIGTERM) != 1 || !sim.signaled(live) {
 		t.Errorf("kills = %v, want one SIGTERM to the live group %d", sim.kills, live)
@@ -118,7 +124,7 @@ func TestReapEnds64GroupsInDirectoryOrder(t *testing.T) {
 	}
 	runDir := t.TempDir()
 	children := filepath.Join(runDir, "children")
-	order := plantOrphanRecords(t, runDir, 800002000, 129)
+	order, sorted := plantOrphanRecords(t, runDir, 800002000, 129)
 	sim := newProcSim(t)
 	for _, name := range order {
 		liveOrphan(sim, pidOfName(t, name), runDir, syscall.SIGTERM)
@@ -132,17 +138,30 @@ func TestReapEnds64GroupsInDirectoryOrder(t *testing.T) {
 			termed = append(termed, strconv.Itoa(k.pid)+".json")
 		}
 	}
-	if !slices.Equal(termed, order[:64]) {
-		t.Errorf("SIGTERM order:\n%v\nwant the first 64 names of the directory order:\n%v", termed, order[:64])
+	if len(termed) != 64 {
+		t.Errorf("%d SIGTERM sent, want 64", len(termed))
 	}
 	if left := recordDirOrder(t, children); len(left) != 65 {
 		t.Errorf("%d records left, want 65", len(left))
 	}
+	const limit128 = "WARN  [process.Registry] more than 128 records in "
+	const limit64 = "WARN  [process.Registry] 64 more orphaned group(s) recorded in "
+	const summary = "INFO  [daemon] serve: predecessor's children — 64 orphaned group(s): 64 ended on SIGTERM, 0 on SIGKILL, 0 survived; 0 stale record(s) dropped, 64 kept"
 	wantLinesInOrder(t, out,
-		"WARN  [process.Registry] more than 128 records in "+children+"; leaving the rest for the next start",
-		"WARN  [process.Registry] 64 more orphaned group(s) recorded in "+children+" than the 64 one start ends; leaving those for the next start",
+		limit128+children+"; leaving the rest for the next start",
+		limit64+children+" than the 64 one start ends; leaving those for the next start",
+		summary,
+	)
+	if sorted {
+		return
+	}
+	if !slices.Equal(termed, order[:64]) {
+		t.Errorf("SIGTERM order:\n%v\nwant the first 64 names of the directory order:\n%v", termed, order[:64])
+	}
+	wantLinesInOrder(t, out,
+		limit64+children+" than the 64 one start ends; leaving those for the next start",
 		`INFO  [process.Registry] ending orphaned process group `+strings.TrimSuffix(order[0], ".json")+` recorded by daemon instance "inst-old" (pid 999999999): SIGTERM`,
-		"INFO  [daemon] serve: predecessor's children — 64 orphaned group(s): 64 ended on SIGTERM, 0 on SIGKILL, 0 survived; 0 stale record(s) dropped, 64 kept",
+		summary,
 	)
 }
 
