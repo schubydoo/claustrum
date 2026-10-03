@@ -21,7 +21,7 @@ release.
 
 | Reference SHA | Built (UTC) | Wire changes | Reconciled in |
 |---|---|---|---|
-| `89cb6289…` | 2026-09-28 (built) | one new method, one new `process.spawn` param, three new `server.capabilities` features, the `branchKept` member and new `git.*` texts. See below | [PRs 445–455](https://github.com/schubydoo/claustrum/pull/455) |
+| `89cb6289…` | 2026-09-28 (built) | one new method, one new `process.spawn` param, two new error codes, new `-install` and `-probe-cli` output, three new `server.capabilities` features, the `branchKept` member and new `git.*` texts. See below | [PRs 445–455](https://github.com/schubydoo/claustrum/pull/455) |
 | `f6010b97…` | 2026-09-24 (observed) | several frame changes in `git.*`, one new `process.spawn` param and one new `server.capabilities` feature. See below | [PRs 410–427](https://github.com/schubydoo/claustrum/pull/427) |
 | `90fca6e6…` | 2026-09-14 (built) | no surface change. claustrum made 7 changes, 3 of them client-visible and 1 of those on a frame. See below | [PRs 387–392](https://github.com/schubydoo/claustrum/pull/392) |
 | `19f30c46…` | 2026-09-11 (observed) | 2 changes + 4 off-wire subsystems + a new CLI mode. See below | [PRs 356–371](https://github.com/schubydoo/claustrum/pull/371), and the `ldd` bound under issue 408 |
@@ -50,26 +50,29 @@ Issue 442 tracked the reconciliation. The build carries a `go1.25.14` stamp
 
 - A managed launcher. `launcher.resolve` is a new method, `process.spawn` gains
   the `launcher` param, and `server.capabilities` gains the `launcher.managed`
-  feature. With `CLAUDE_SSH_MANAGED_LAUNCHER=1`, `-install` and `-probe-cli` run
-  the CLI through the launcher (PR 448).
-- `git.worktree_remove` keeps a branch that holds commits no other branch or
-  remote-tracking ref reaches, and answers `"branchKept":true`.
+  feature, with two new error codes. With `CLAUDE_SSH_MANAGED_LAUNCHER=1`,
+  `-install` and `-probe-cli` run the CLI through the launcher. `-install` gains
+  launcher fields, and `-probe-cli` gains the `__CLI_LAUNCHER__` output (PR 448).
+- `git.worktree_remove` and the create rollbacks delete a branch only when
+  another local branch or a remote-tracking ref reaches its tip. Otherwise they
+  keep it and add `"branchKept":true`.
   `server.capabilities` gains the `git.worktree_remove.unpushedGuard` feature
   (PR 446).
 - The configuration listing is `config -z --list`, with a new key-length limit
-  and its text. A stray `commondir` gets new texts (PR 450).
-- A failed listing is answered by its cause. `git.info` takes its root without
-  `rev-parse --show-toplevel`, and `server.capabilities` gains the
-  `git.info.discovered_root` feature (PR 450).
+  and its text. A stray `commondir` gets new texts. The listing runs under
+  `LC_ALL=C` and `LANGUAGE=C`, so a listing error is in English under a German
+  daemon locale (row L03, PR 450).
+- A failed listing is answered by its cause. On Linux and macOS, `git.info`
+  takes its root without `rev-parse --show-toplevel`, and `server.capabilities`
+  gains the `git.info.discovered_root` feature (PR 450).
 
 **Off-wire churn.** Every spawned child loses the two launcher variables
-(PR 448). The listing runs under `LC_ALL=C` and `LANGUAGE=C` (PR 450). The reap
-of a child record reads its `program` key, which `f6010b97` does not read
-(PR 453).
+(PR 448). The reap of a child record reads its `program` key, which `f6010b97`
+does not read (PR 453).
 
 **Older gaps closed in the same work.** Some fixes are for behavior that
-`f6010b97` shares with this build. That is all of PRs 445 and 447, and parts of
-PRs 450, 451, 453, 454 and 455.
+`f6010b97` shares with this build. That is all of PR 445, most of PR 447, and
+parts of PRs 446, 450, 451, 453, 454 and 455.
 PR 445 refuses a `worktreeRoot` that leads into a checkout of the repository.
 Before it, `git.worktree_remove` with such a root deleted the worktree, its
 uncommitted files and its branch. PR 451 stops the direct `--version` run of
@@ -80,10 +83,15 @@ and Windows VMs. A whole-build check of main `4495db6` against this build then
 ran on all three systems. The frame battery was byte-equal on each, apart from
 the fields that change per run and the D16 frame on Windows. The check
 found no new frame difference that a slice had not taken. Its other differences
-went on issue 429. They are git calls, log texts, and timing and rates with
-equal frames. One more is an older end-state gap that `f6010b97` shares
-(row E13). D20 and D21 are new in this work, and D11 is retired. D2 gained its
-`-install` refusal of a home folder (PR 451).
+went on issue 429. Some of them differ in frames, in older gaps that `f6010b97`
+shares. One is the `git.status` answer in damaged layouts (Linux, macOS and
+Windows). Others are row E07 on create (Linux) and the FIFO wait of
+create (rows C20 and N05 on Linux, row N05 on macOS). The `server.shutdown`
+reply rate differs on Linux, macOS and Windows. The reports map each of these to
+an existing item of issue 429. The rest are git calls, file calls, log texts,
+child environment details, and timing. One more is an older end-state gap that
+`f6010b97` shares (row E13). D20 and D21 are new in this work, and D11 is
+retired. D2 gained its `-install` refusal of a home folder (PR 451).
 
 ### `f6010b978a0b0f4ca0dcb7dadda9cc4271a608a1` — 2026-09-24 (observed)
 

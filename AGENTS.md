@@ -128,7 +128,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A LOCKED worktree is refused, not deleted.
       On Windows a junction at `.claude` or `.claude\worktrees` is refused too,
-      where `f6010b97` answers success and deletes the branch. That is D19.
+      where `f6010b97` and `89cb6289` answer success and delete the branch.
+      That is D19.
       Since `7d193f89`, the containment of the reference refuses a
       home path first: `worktreePath` must be strictly inside `baseRepo`. On the
       default branch `wipesHomeDir` is therefore defense-in-depth. It fires in
