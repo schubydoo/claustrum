@@ -16,41 +16,6 @@ import (
 // The rows are those of the remove probe on Linux and macOS VMs. This file is unix
 // only, because it compares working directories as text.
 
-// regFixture is the base fixture of the probe: a repository T with a worktree S at
-// T/.claude/worktrees/s0 on branch s0, made by plain git, and a second repository X.
-type regFixture struct {
-	root, T, S, X string
-}
-
-func newRegFixture(t *testing.T) regFixture {
-	t.Helper()
-	requireGit(t)
-	root := resolveTestRoot(t, t.TempDir())
-	f := regFixture{root: root, T: filepath.Join(root, "T"), X: filepath.Join(root, "X")}
-	f.S = filepath.Join(f.T, ".claude", "worktrees", "s0")
-	for _, r := range []struct{ dir, branch, msg string }{{f.T, "main", "t0"}, {f.X, "xonly", "x0"}} {
-		runGit(t, root, "init", "-q", "-b", r.branch, r.dir)
-		writeFile(t, filepath.Join(r.dir, r.msg+".txt"), r.msg+"\n", 0o644)
-		runGit(t, r.dir, "add", ".")
-		runGit(t, r.dir, "commit", "-q", "-m", r.msg)
-	}
-	runGit(t, f.T, "worktree", "add", "-q", "-b", "s0", f.S)
-	return f
-}
-
-func (f regFixture) entry(repo, name string) string {
-	return filepath.Join(repo, ".git", "worktrees", name)
-}
-
-// gitDirOf is <repo>/.git.
-func gitDirOf(repo string) string { return filepath.Join(repo, ".git") }
-
-// hasBranch reports whether repo has the branch. It reads the ref file, so the
-// daemon environment of the test does not change the answer.
-func hasBranch(repo, branch string) bool {
-	return exists(filepath.Join(repo, ".git", "refs", "heads", branch))
-}
-
 // removeCallLog puts the logging git stand-in on PATH and returns a function that
 // sends one request and gives its frame and its git calls. Each call is one line:
 //
@@ -172,25 +137,9 @@ func wantRemoveCalls(t *testing.T, what string, got []string, total int, head ..
 	}
 }
 
-func (f regFixture) removeParams() map[string]any {
-	return map[string]any{"baseRepo": f.T, "worktreePath": f.S, "branchName": "s0"}
-}
-
-// daemonGitEnv sets GIT_DIR and GIT_COMMON_DIR of the daemon for this test. An empty
-// value leaves the variable unset.
-func daemonGitEnv(t *testing.T, gitDir, commonDir string) {
-	t.Helper()
-	if gitDir != "" {
-		t.Setenv("GIT_DIR", gitDir)
-	}
-	if commonDir != "" {
-		t.Setenv("GIT_COMMON_DIR", commonDir)
-	}
-}
-
-// E1, probe row 1 (B-pre) and battery row E13: the daemon has GIT_DIR and
-// GIT_COMMON_DIR of X. The folder goes. The entry s0 of T and the branch s0 of T
-// stay. 9 calls.
+// E1, probe row 1 (B-pre) on Linux, macOS and Windows VMs, and battery row E13 on
+// Linux and Windows VMs: the daemon has GIT_DIR and GIT_COMMON_DIR of X. The folder
+// goes. The entry s0 of T and the branch s0 of T stay. Row 1 makes 9 calls.
 func TestWorktreeRemoveDaemonGitDirKeepsEntryOfBaseRepo(t *testing.T) {
 	f := newRegFixture(t)
 	run := removeCallLog(t, f.root)
@@ -205,7 +154,7 @@ func TestWorktreeRemoveDaemonGitDirKeepsEntryOfBaseRepo(t *testing.T) {
 	if !exists(f.entry(f.T, "s0")) {
 		t.Error("the entry s0 of T is gone, want it kept (row 1)")
 	}
-	if !hasBranch(f.T, "s0") {
+	if !hasBranch(t, f.T, "s0") {
 		t.Error("the branch s0 of T is gone")
 	}
 	wantRemoveCalls(t, "row 1", calls, 9, []string{callExcludes + " C=<fx>/X/.git"}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
@@ -223,7 +172,7 @@ func TestWorktreeRemoveDaemonGitDirDropsOwnEntryInOtherRepo(t *testing.T) {
 	if raw, _ := run("git.worktree_create", params); !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("create = %s", raw)
 	}
-	if !exists(f.entry(f.X, "w1")) || !hasBranch(f.X, "w1") {
+	if !exists(f.entry(f.X, "w1")) || !hasBranch(t, f.X, "w1") {
 		t.Fatal("the create did not register w1 in X")
 	}
 	raw, calls := run("git.worktree_remove", params)
@@ -236,7 +185,7 @@ func TestWorktreeRemoveDaemonGitDirDropsOwnEntryInOtherRepo(t *testing.T) {
 	if exists(f.entry(f.X, "w1")) {
 		t.Error("the entry w1 of X stays, want it gone (row 2)")
 	}
-	if hasBranch(f.X, "w1") {
+	if hasBranch(t, f.X, "w1") {
 		t.Error("the branch w1 of X stays")
 	}
 	if !exists(f.entry(f.T, "s0")) {
@@ -278,21 +227,21 @@ func TestWorktreeRemoveDaemonGitDirBranchOfOtherRepo(t *testing.T) {
 	if raw != removeOK {
 		t.Fatalf("frame = %s\nwant %s", raw, removeOK)
 	}
-	if hasBranch(f.X, "s0") {
+	if hasBranch(t, f.X, "s0") {
 		t.Error("the branch s0 of X stays")
 	}
 	if !exists(f.entry(f.T, "s0")) {
 		t.Error("the entry s0 of T is gone, want it kept (row 4)")
 	}
-	if !hasBranch(f.T, "s0") {
+	if !hasBranch(t, f.T, "s0") {
 		t.Error("the branch s0 of T is gone")
 	}
 	wantRemoveCalls(t, "row 4", calls, 11, []string{callExcludes + " C=<fx>/X/.git"}, callsCheck("<fx>/T", pinX), callsCheck("<fx>/T", pinX))
 }
 
 // E5, probe row 5 (B-cd-only): the daemon has GIT_COMMON_DIR of X only. The entry s0
-// of T goes. The branch stays, because its commit is not in X. 7 calls. claustrum
-// answered so before this rule too.
+// of T goes. In this fixture X does not hold the commit of T. The branch then stays,
+// and the request makes 7 calls. claustrum answered so before this rule too.
 func TestWorktreeRemoveDaemonCommonDirOnlyDropsEntryOfBaseRepo(t *testing.T) {
 	f := newRegFixture(t)
 	run := removeCallLog(t, f.root)
@@ -344,7 +293,8 @@ func TestWorktreeRemoveMissingBaseRepoKeepsEntry(t *testing.T) {
 	wantRemoveCalls(t, "row 7c", calls, 1, []string{callExcludes})
 }
 
-// claustrum still refuses a locked entry for the baseRepo of row 7c. Not measured.
+// Row p6d (Linux VM): the baseRepo of row 7c with S locked in T. claustrum refuses,
+// and 89cb6289 deletes S. That is divergence D22.
 func TestWorktreeRemoveMissingBaseRepoLockedStillRefused(t *testing.T) {
 	f := newRegFixture(t)
 	runGit(t, f.T, "worktree", "lock", f.S)
@@ -364,7 +314,6 @@ func TestWorktreeRemoveMissingBaseRepoLockedStillRefused(t *testing.T) {
 // no daemon environment.
 func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
 	check, pair := callsCheck("<fx>/T", pinT), callsPair("<fx>/T/.git", "<fx>/T", pinT)
-	lockedText := "is locked (git worktree lock); unlock it to remove it"
 	goneLockedText := "is gone but its registration is locked (git worktree lock)"
 	for _, c := range []struct {
 		name  string
@@ -488,7 +437,8 @@ func TestWorktreeRemoveExternalUnreadableRootCalls(t *testing.T) {
 
 // Battery rows Q20, Q20b and Y8w (Linux VM): a worktree beneath a worktreeRoot whose
 // `.git` file names a git dir that is not a verified entry of baseRepo. Nothing is
-// deleted. The calls after the first 7 are those of 89cb6289.
+// deleted. The calls after the first 7 are those of 89cb6289. Rows Q20b and Y8w make
+// the pair, and row Q20 does not.
 func TestWorktreeRemoveExternalUnverifiedCalls(t *testing.T) {
 	check := callsCheck("<fx>/T", pinT)
 	for _, c := range []struct {
@@ -711,4 +661,64 @@ func TestWorktreeRemoveExternalMissingBaseRepoFrame(t *testing.T) {
 		t.Error("the leaf was deleted")
 	}
 	wantAllCalls(t, "DG1c-g", calls, callExcludes)
+}
+
+// Rows p1 and p1b (Linux and macOS VMs): no git on PATH, and a baseRepo that does not
+// exist as sent. The answer is the lock-check refusal, nothing is deleted, and no git
+// call starts.
+func TestWorktreeRemoveMissingBaseRepoWithoutGitRefuses(t *testing.T) {
+	for _, c := range []struct{ name, base string }{
+		{"p1 missing", "missing"},
+		{"p1b dangling link", "dl"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newRegFixture(t)
+			if err := os.Symlink("nowhere", filepath.Join(f.T, "dl")); err != nil {
+				t.Fatal(err)
+			}
+			s := newTestServer(t)
+			t.Setenv("PATH", t.TempDir())
+			params := f.removeParams()
+			params["baseRepo"] = f.T + "/" + c.base + "/.."
+			raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_remove", params))
+			want := `"error":"failed to remove worktree: could not check whether ` + f.S +
+				` is locked (its registrations could not be examined); retry"`
+			if !strings.Contains(raw, want) {
+				t.Errorf("frame = %s\nwant %s", raw, want)
+			}
+			if !exists(f.S) || !exists(f.entry(f.T, "s0")) {
+				t.Error("the worktree folder or its entry is gone")
+			}
+		})
+	}
+}
+
+// Row p4 (Linux VM): baseRepo holds an empty `.git` folder and lies in an outer
+// repository O. The worktree folder is gone. The branch s0 of O stays, and the request
+// makes 5 calls, each with GIT_DIR=/dev/null.
+func TestWorktreeRemoveEmptyGitDirKeepsOuterBranch(t *testing.T) {
+	requireGit(t)
+	root := resolveTestRoot(t, t.TempDir())
+	o := filepath.Join(root, "O")
+	runGit(t, root, "init", "-q", "-b", "main", o)
+	runGit(t, o, "commit", "-q", "--allow-empty", "-m", "o0")
+	runGit(t, o, "branch", "s0")
+	sub := filepath.Join(o, "sub")
+	if err := os.MkdirAll(filepath.Join(sub, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := removeCallLog(t, root)
+	raw, calls := run("git.worktree_remove", map[string]any{"baseRepo": sub,
+		"worktreePath": filepath.Join(sub, ".claude", "worktrees", "s0"), "branchName": "s0"})
+	if raw != removeKept {
+		t.Fatalf("frame = %s\nwant %s", raw, removeKept)
+	}
+	if !hasBranch(t, o, "s0") {
+		t.Error("the branch s0 of the outer repository is gone, want it kept (row p4)")
+	}
+	wantAllCalls(t, "p4", calls, callExcludes,
+		"<fx>/O/sub|H|config -z --list"+pinNoRepo,
+		"<fx>/O/sub|H|rev-parse --absolute-git-dir"+pinNoRepo,
+		"<fx>/O/sub|L|config -z --list"+pinNoRepo,
+		"<fx>/O/sub"+callForEachRef+pinNoRepo)
 }

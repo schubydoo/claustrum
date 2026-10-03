@@ -64,8 +64,10 @@ type gitDirTrust struct {
 	// that GIT_DIR. It is empty when the check left the
 	// directory to git with no pin.
 	pinCommonDir string
-	// noRepoEnv is what a git call of git.worktree_remove carries in place of the pin
-	// when verdict is gitDirNoRepo. See noRepoPin. It is nil when no row gives a value.
+	// noRepoEnv is what commonDirPinEnv returns in place of the pin when verdict is
+	// gitDirNoRepo, so every hardened git call in that folder carries it, whatever the
+	// method. The rows that measure it are removals (see noRepoPin). It is nil when no
+	// row gives a value.
 	noRepoEnv []string
 	// noGit is true when verdict is gitDirNoRepo and git.worktree_remove makes no git
 	// call for a worktree folder that is gone. That is a daemon GIT_DIR that names a
@@ -78,7 +80,9 @@ type gitDirTrust struct {
 // finds no repository. The call logs of 89cb6289 show GIT_DIR=<null device> on each
 // call of a removal there, the calls of the branch step included (probe rows 16 and
 // A5, battery rows R18, R18b and N00 on Linux and macOS VMs, rows 16, A5 and N00 on a
-// Windows VM, and rows L13z-g and DG2h-g on a Linux VM with worktreeRoot). Not
+// Windows VM, and rows L13z-g and DG2h-g on a Linux VM with worktreeRoot). An empty
+// `.git` folder inside an outer repository gets it too, so the branch of the outer
+// repository stays (row p4 on a Linux VM). Not
 // measured: a `.git` file that names no git dir. claustrum sets the same value there.
 func noRepoPin() []string {
 	return []string{"GIT_DIR=" + os.DevNull}

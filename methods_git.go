@@ -1373,11 +1373,13 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	_ = leafDir.Close()
 	// namesGitDir is true when the `.git` file names a git dir.
 	namesGitDir := dotGitErr == nil
-	// dropEntry is false for a baseRepo that does not exist, such as <T>/missing/..
-	// with no folder `missing`. 89cb6289 then deletes the worktree folder and keeps its
-	// entry, and its one git call is the read of the user excludes (probe row 7c on
-	// Linux and macOS VMs, battery rows A1, A3 and G3 on a Linux VM). claustrum still
-	// refuses a locked entry there, as before. A lock is not measured for that input.
+	// dropEntry is false for a baseRepo that does not exist as sent. 89cb6289 then
+	// deletes the worktree folder and keeps its entry, and its one git call is the read
+	// of the user excludes. Probe row 7c sends <T>/missing/.. on Linux and macOS VMs.
+	// Battery rows A1, A3 and G3 send <T>/missing/.., <F>/missing/../T and <T>/dl/.. on
+	// a Linux VM. The lock check below still reads <T>/.git/worktrees for that
+	// baseRepo, and a locked worktree is refused. 89cb6289 deletes it (row p6d on a
+	// Linux VM). That refusal is divergence D22.
 	dropEntry := true
 	_, statErr := os.Stat(repo)
 	repoMissing := errors.Is(statErr, fs.ErrNotExist)
@@ -1416,6 +1418,13 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// to N04. With the folder present, claustrum answers the lock-check refusal. Not
 		// measured.
 		if repoMissing {
+			// With no git on PATH the answer is the lock-check refusal, and nothing is
+			// deleted. 89cb6289 answers so for <T>/missing/.. and for <T>/dl/.. with a
+			// dangling link `dl` (rows p1 and p1b on Linux and macOS VMs). No git call
+			// starts.
+			if gitLookupError() != nil {
+				return refuse(lockCheckRefusal(p.WorktreePath))
+			}
 			dropEntry = false
 		} else {
 			c := hostileConfigRefusal(repo, true)
@@ -1444,6 +1453,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		probe = newRegistrationProbe(answered, inRepoWorkTree(repo))
 	}
 	sp := newWorktreePathSet(target.path, p.WorktreePath)
+	// A worktree that is locked in the repository of baseRepo is refused, also when
+	// the entries are read from another git directory (D22, lockedInBaseRepo).
+	if p.WorktreeRoot == "" {
+		named := ""
+		if namesGitDir {
+			named = gitDir
+		}
+		if lockedInBaseRepo(repo, commonDir, named, target.path, sp) {
+			return refuse(lockedWorktreeRefusal(p.WorktreePath))
+		}
+	}
 	entry := ""
 	if dotGitErr == nil {
 		// The answer of the pair gives one more spelling of the worktree: the top
@@ -1675,13 +1695,19 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			}
 		}
 		sp := newWorktreePathSet(path, p.WorktreePath, underBase)
+		goneLocked := "refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
+			"registration is locked (git worktree lock); unlock it to remove the registration and branch"
+		// D22: a locked entry in the repository of baseRepo is refused too. Not
+		// measured on the reference for a folder that is gone.
+		if p.WorktreeRoot == "" && lockedInBaseRepo(repo, commonDir, "", path, sp) {
+			return refuse(goneLocked)
+		}
 		// A worktrees directory that cannot be read does not stop a gone remove. The
 		// reference answers success there (Linux VM, row K13 with worktreeRoot and a
 		// gone target). Without worktreeRoot no row measures it.
 		locked, _, matches := worktreeLockedByPath(commonDir, sp)
 		if locked {
-			return refuse("refusing to remove worktree: " + p.WorktreePath + " is gone but its " +
-				"registration is locked (git worktree lock); unlock it to remove the registration and branch")
+			return refuse(goneLocked)
 		}
 		if matches == 0 {
 			probe.beforeScan(commonDir)
