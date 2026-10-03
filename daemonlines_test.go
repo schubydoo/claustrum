@@ -54,6 +54,20 @@ func spawnLineSleeper(t *testing.T, sock, id string) *testClient {
 	return cl
 }
 
+// signalServingDaemon gives sig to s the way a daemon that serves gets it: through
+// watchSignals, after the attach of the server. It returns when s requested the stop.
+func signalServingDaemon(t *testing.T, s *server, sig os.Signal) {
+	t.Helper()
+	sigc := make(chan os.Signal, 1)
+	watchSignals(sigc, s.keepChildren).attach(s)
+	sigc <- sig
+	select {
+	case <-s.shutdown:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the signal did not request the shutdown within 10 s")
+	}
+}
+
 // wantLinesInOrder asserts that got holds each line of want, in that order.
 func wantLinesInOrder(t *testing.T, got string, want ...string) {
 	t.Helper()
@@ -105,7 +119,7 @@ func TestShutdownBySignalLines(t *testing.T) {
 	spawnLineSleeper(t, sock, "c2")
 	buf := captureLogBuf(t)
 
-	s.shutdownOnSignal(syscall.SIGTERM)
+	signalServingDaemon(t, s, syscall.SIGTERM)
 	s.closeAll(sock)
 
 	wantLinesInOrder(t, buf.String(),
@@ -142,7 +156,7 @@ func TestShutdownCountLeavesOutAnEndedChild(t *testing.T) {
 		t.Fatal("the echo helper did not end within 10 s")
 	}
 	buf := captureLogBuf(t)
-	s.shutdownOnSignal(syscall.SIGTERM)
+	signalServingDaemon(t, s, syscall.SIGTERM)
 	s.closeAll(sock)
 	wantLinesInOrder(t, buf.String(),
 		"[Server] cleanup: closed 2 connection(s), killed 1 child process group(s)")
@@ -188,7 +202,7 @@ func TestShutdownByRPCLines(t *testing.T) {
 func TestShutdownLinesWithNoClient(t *testing.T) {
 	s, sock := bootLineServer(t, false)
 	buf := captureLogBuf(t)
-	s.shutdownOnSignal(syscall.SIGTERM)
+	signalServingDaemon(t, s, syscall.SIGTERM)
 	s.closeAll(sock)
 	wantLinesInOrder(t, buf.String(),
 		"[daemon] received terminated; shutting down (children will be killed)",
@@ -202,7 +216,7 @@ func TestShutdownLinesKeepChildren(t *testing.T) {
 	s, sock := bootLineServer(t, true)
 	spawnLineSleeper(t, sock, "c1")
 	buf := captureLogBuf(t)
-	s.shutdownOnSignal(syscall.SIGTERM)
+	signalServingDaemon(t, s, syscall.SIGTERM)
 	s.closeAll(sock)
 	wantLinesInOrder(t, buf.String(),
 		"[daemon] received terminated; shutting down (children will be kept)",

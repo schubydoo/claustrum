@@ -1189,12 +1189,6 @@ func (s *server) requestShutdown() {
 	s.signalShutdown()
 }
 
-// shutdownOnSignal is the handler of a signal that comes to a daemon that serves: the
-// two lines and the stop.
-func (s *server) shutdownOnSignal(sig os.Signal) {
-	(&signalWatch{keepChildren: s.keepChildren, srv: s}).handle(sig)
-}
-
 // shutdownReplyWait bounds how long the server.shutdown handler waits for the
 // teardown to start dropping connections. The bound is claustrum's own. It keeps a
 // wedged teardown from holding the handler forever. It is a var so a test can
