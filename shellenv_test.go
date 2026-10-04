@@ -31,9 +31,9 @@ func resetLoginPATHForTest() {
 //
 // So this must scan backwards. Reading forwards returns the stale pre-append
 // entry — a value no child ever sees — and the test then fails on any Windows
-// host whose environment block spells the key "Path". CI's windows-latest
-// happens to spell it "PATH", which is why that read passed there while failing
-// on a stock Windows 11 image.
+// host whose environment block spells the key "Path". A runner can spell
+// it "PATH", and then that read passes there while it fails on a stock Windows 11
+// image.
 //
 // The case folding is deliberately NOT unconditional. dedupEnv folds only on
 // Windows, so on Unix "PATH" and "Path" are two independent variables and the

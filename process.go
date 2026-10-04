@@ -1475,7 +1475,11 @@ func buildEnv(env map[string]string) []string {
 	// The login-shell PATH is applied HERE, to the child's environment, rather
 	// than being installed into the daemon's own — see loginPATH in shellenv.go.
 	// Applied before the caller's env so an explicit PATH in the spawn request
-	// still wins.
+	// still wins. On Windows the value is the daemon's own PATH, and the exact name
+	// PATH matters. A daemon entry named Path stays in the slice, and os/exec keeps
+	// the later PATH entry (Windows VM rows R1 and R3 against 89cb6289). With a daemon
+	// entry named Path, a caller key named exactly Path replaces it and still loses to
+	// the later PATH (row R4).
 	if lp := currentLoginPATH(); lp != "" {
 		base = replaceOrAppendEnv(base, "PATH", lp)
 	}

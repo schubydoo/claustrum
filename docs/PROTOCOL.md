@@ -3586,6 +3586,27 @@ as id-less stream notifications, and it buffers them for a later replay.
   - On Windows the capability and the param exist, but spawn runs no login shell
     and adds no `SSH_AUTH_SOCK`. Measured with a Git bash `$SHELL` whose profile
     exports a live socket: neither daemon starts it.
+- On Windows the child gets the daemon's own PATH, when it is not empty, as its `PATH` entry. A Windows VM
+  measured the rows below against `89cb6289`, 3 runs each.
+  - claustrum reads the daemon's PATH once, at the first spawn (from the code). A
+    second spawn got the same entry as the first on `89cb6289` (row R8). No shell
+    runs.
+  - When that value is not empty, the child env gets an entry named exactly `PATH`
+    with that value. An entry named `PATH` is replaced in place, and otherwise
+    `PATH=` is added. Then the caller's `env` comes.
+  - Go's os/exec keeps the last of the entries whose names differ only in case
+    (from the code). So a daemon entry named `Path` with a value does not reach the
+    child.
+  - A daemon with `Path=<value>` gave the child `PATH=<value>` and no `Path` entry
+    (row R1). A daemon with `PATH=<value>` gave `PATH=<value>` (row R6b).
+  - With a daemon `Path` entry, a caller `Path` value was lost, and the child got
+    the daemon value as `PATH` (row R4). A caller `PATH` or `path` value reached the child with its own name
+    (rows R3 and R5).
+  - A daemon with no path entry gave the child none (row R6). A daemon `Path` with
+    an empty value stayed empty, and no `PATH` entry came (row R6c).
+  - The CLI child of `-install` keeps `Path` (row R2). It is no `process.spawn` child.
+  - claustrum is built to these rows. Its Windows unit test checks rows R1 and R4,
+    with rows R3 and R6 as controls.
 - The `launcher` param is `89cb6289` parity: a string array that names a
   managed launcher. The child runs as `<launcher...> <command> <args...>`. The
   launcher is the process, and its stream frames are its own.
@@ -4417,7 +4438,9 @@ measured that against `89cb6289` (rows G1 and G2). No shell ran in 20 s without 
 spawn. The first spawn ran the shell, and the second spawn ran none. A Linux VM
 measured a login shell that sleeps 10 s (row G3). The shell was killed after 4 s.
 The first spawn answered after 8 s, because the SSH agent read ran that shell
-again for 4 s. The second spawn answered at once.
+again for 4 s. The second spawn answered at once. On Windows the first spawn
+reads the daemon's own PATH and runs no shell (claustrum, from the code). See
+`process.spawn`.
 
 When `$SHELL` is an executable file, login-shell PATH extraction on Unix runs
 `$SHELL -l -i -c …`. Otherwise it runs the first usable of `/bin/zsh`,
