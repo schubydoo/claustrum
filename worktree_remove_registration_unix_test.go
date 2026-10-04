@@ -547,8 +547,10 @@ func TestWorktreeRemoveGoneGitFileTargetCalls(t *testing.T) {
 	wantAllCalls(t, "N04 remove", calls, callExcludes, "<fx>/R|H|config -z --list"+pin, "<fx>/R|L|config -z --list"+pin)
 	raw, calls = run("git.worktree_remove", map[string]any{"baseRepo": r, "worktreePath": leaf,
 		"branchName": "w1", "worktreeRoot": filepath.Join(f.root, "ext")})
-	want := "cannot determine the repository's work tree: git finds no repository here: fatal: not a git repository: " + gone
-	if !strings.Contains(raw, want) {
+	// The text after "fatal: " is git's own. git 2.47 names the git dir there, and
+	// git 2.55 prints "(null)".
+	want := "cannot determine the repository's work tree: git finds no repository here: fatal: not a git repository"
+	if !strings.Contains(raw, `"success":false`) || !strings.Contains(raw, want) {
 		t.Fatalf("frame = %s\nwant %s", raw, want)
 	}
 	wantAllCalls(t, "N04 remove with worktreeRoot", calls, "<fx>/R|L|config -z --list"+pin)
