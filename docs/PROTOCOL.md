@@ -3586,10 +3586,10 @@ as id-less stream notifications, and it buffers them for a later replay.
   - On Windows the capability and the param exist, but spawn runs no login shell
     and adds no `SSH_AUTH_SOCK`. Measured with a Git bash `$SHELL` whose profile
     exports a live socket: neither daemon starts it.
-- On Windows the child gets the daemon's own PATH as its `PATH` entry. A Windows VM
+- On Windows the child gets the daemon's own PATH, when it is not empty, as its `PATH` entry. A Windows VM
   measured the rows below against `89cb6289`, 3 runs each.
   - claustrum reads the daemon's PATH once, at the first spawn (from the code). A
-    second spawn got the same entry as the first on both daemons (row R8). No shell
+    second spawn got the same entry as the first on `89cb6289` (row R8). No shell
     runs.
   - When that value is not empty, the child env gets an entry named exactly `PATH`
     with that value. An entry named `PATH` is replaced in place, and otherwise
@@ -3599,8 +3599,8 @@ as id-less stream notifications, and it buffers them for a later replay.
     child.
   - A daemon with `Path=<value>` gave the child `PATH=<value>` and no `Path` entry
     (row R1). A daemon with `PATH=<value>` gave `PATH=<value>` (row R6b).
-  - A caller `Path` value was lost, and the child got the daemon value as `PATH`
-    (row R4). A caller `PATH` or `path` value reached the child with its own name
+  - With a daemon `Path` entry, a caller `Path` value was lost, and the child got
+    the daemon value as `PATH` (row R4). A caller `PATH` or `path` value reached the child with its own name
     (rows R3 and R5).
   - A daemon with no path entry gave the child none (row R6). A daemon `Path` with
     an empty value stayed empty, and no `PATH` entry came (row R6c).

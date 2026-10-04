@@ -12,7 +12,7 @@ import "os"
 // An empty value gives no step.
 //
 // Measured on a Windows VM against 89cb6289. A daemon with Path=SYS gives the child
-// PATH=SYS and no Path entry (R1). A caller Path value is lost (R4). A daemon with
+// PATH=SYS and no Path entry (R1). There a caller Path value is lost (R4). A daemon with
 // PATH=SYS gives PATH=SYS (R6b). A daemon Path with an empty value stays, with no
 // PATH entry (R6c). A second spawn gets the same entry as the first (R8). The CLI
 // child of -install keeps Path (R2), and it does not go through buildEnv.

@@ -518,9 +518,8 @@ traps that matter for telling drift from expected:
       measured.
     - The environment block of a child comes in name order. The Go 1.26 toolchain
       sorts it. `f6010b97` and `89cb6289` keep the order of the daemon, then
-      `CLAUDE_SSH_DAEMON_CHILD=1`, then an added `PATH` entry and new caller keys.
-      Rows WN01a and WN01b show that, and so do the Windows VM rows R1, R3, R5 and
-      R8 against `89cb6289`.
+      `CLAUDE_SSH_DAEMON_CHILD=1` (rows WN01a, WN01b). On `89cb6289` an added `PATH`
+      entry and new caller keys come after it (Windows VM rows R1, R3, R5, R8).
       The stdout frame of `cmd /c set` therefore differs in bytes.
 - A longer `remote-server.log` after a second daemon started on a live socket on
   Windows is not drift. `89cb6289` truncates the file at that start, and claustrum

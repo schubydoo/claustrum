@@ -85,7 +85,7 @@ func spawnChildPathEntries(t *testing.T, id string, caller map[string]string) []
 
 // TestSpawnChildGetsTheDaemonPATHOnWindows holds the Windows rule of the child path
 // entry, measured on a Windows VM against 89cb6289. The daemon holds Path=SYS. The
-// child gets PATH=SYS and no Path entry (R1). A caller Path value is lost (R4). A
+// child gets PATH=SYS and no Path entry (R1). A caller Path value is lost there (R4). A
 // caller PATH value wins (R3). The read runs through the real extractor.
 func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 	sys := `C:\claustrum-daemon-path;` + os.Getenv("PATH")
@@ -120,8 +120,8 @@ func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 }
 
 // TestNoDaemonPATHGivesNoChildPATHOnWindows holds row R6: a daemon with no path
-// entry gives the child no path entry. It checks the empty-value skip of buildEnv,
-// not the Windows read, and it passes with or without the fix.
+// entry gives the child no path entry. Its result does not depend on the
+// Windows read, and it passes with or without the fix.
 func TestNoDaemonPATHGivesNoChildPATHOnWindows(t *testing.T) {
 	origExtractor := loginPATHExtractor
 	t.Cleanup(func() {
