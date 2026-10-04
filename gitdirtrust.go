@@ -64,6 +64,28 @@ type gitDirTrust struct {
 	// that GIT_DIR. It is empty when the check left the
 	// directory to git with no pin.
 	pinCommonDir string
+	// noRepoEnv is what commonDirPinEnv returns in place of the pin when verdict is
+	// gitDirNoRepo, so every hardened git call in that folder carries it, whatever the
+	// method. The rows that measure it are removals (see noRepoPin). It is nil when no
+	// row gives a value.
+	noRepoEnv []string
+	// noGit is true when verdict is gitDirNoRepo and git.worktree_remove makes no git
+	// call for a worktree folder that is gone. That is a daemon GIT_DIR that names a
+	// file. 89cb6289 answers {"success":true,"branchKept":true} there with no git call
+	// (row N05a on Linux and macOS VMs).
+	noGit bool
+}
+
+// noRepoPin is the environment entry of a git call in a folder where the trust check
+// finds no repository. The call logs of 89cb6289 show GIT_DIR=<null device> on each
+// call of a removal there, the calls of the branch step included (probe rows 16 and
+// A5, battery rows R18, R18b and N00 on Linux and macOS VMs, rows 16, A5 and N00 on a
+// Windows VM, and rows L13z-g and DG2h-g on a Linux VM with worktreeRoot). An empty
+// `.git` folder inside an outer repository gets it too, so the branch of the outer
+// repository stays (row p4 on Linux and macOS VMs). Not
+// measured: a `.git` file that names no git dir. claustrum sets the same value there.
+func noRepoPin() []string {
+	return []string{"GIT_DIR=" + os.DevNull}
 }
 
 // quoteOperand cuts s to its first operandMaxRunes runes and quotes it with Go %q. An
@@ -163,8 +185,12 @@ func commonDirPinEnv(dir string) []string {
 	if daemonCommonDirSet() {
 		return nil
 	}
-	if t := gitDirTrustFor(dir); t.verdict == gitDirTrusted && t.pinCommonDir != "" {
+	t := gitDirTrustFor(dir)
+	if t.verdict == gitDirTrusted && t.pinCommonDir != "" {
 		return []string{"GIT_COMMON_DIR=" + t.pinCommonDir}
+	}
+	if t.verdict == gitDirNoRepo {
+		return t.noRepoEnv
 	}
 	return nil
 }
@@ -196,7 +222,7 @@ func gitDirTrustFor(dir string) gitDirTrust {
 	}
 	g, _, ok := findGitDir(start)
 	if !ok {
-		return gitDirTrust{verdict: gitDirNoRepo}
+		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: noRepoPin()}
 	}
 	return judgeGitDir(g, false)
 }
@@ -311,10 +337,13 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 			}
 			return gitDirTrust{pinCommonDir: g}
 		}
-		return gitDirTrust{verdict: gitDirNoRepo}
+		// A `.git` file that names a git dir which is gone. The calls of a removal
+		// carry GIT_COMMON_DIR=<that git dir> on 89cb6289 (row N04 on Linux and macOS
+		// VMs, with and without worktreeRoot).
+		return gitDirTrust{verdict: gitDirNoRepo, noRepoEnv: []string{"GIT_COMMON_DIR=" + g}}
 	}
 	if !fi.IsDir() && nonDirGitDirIsNoRepo {
-		return gitDirTrust{verdict: gitDirNoRepo}
+		return gitDirTrust{verdict: gitDirNoRepo, noGit: fromEnv}
 	}
 	g = resolveGitDirLinks(g)
 	cd := filepath.Join(g, "commondir")

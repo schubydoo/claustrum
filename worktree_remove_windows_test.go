@@ -154,3 +154,21 @@ func TestWorktreeRemoveShortNameKeepsEntry(t *testing.T) {
 		t.Errorf("entry %s is still there (err=%v)", f.entry(), err)
 	}
 }
+
+// E8, battery row J2 (Windows VM, 89cb6289): baseRepo and worktreePath go through a
+// junction to the repository. The folder and its entry are both gone after the
+// removal.
+func TestWorktreeRemoveThroughJunctionDropsEntry(t *testing.T) {
+	f := newRmFixture(t)
+	jt := filepath.Join(filepath.Dir(f.repo), "JT")
+	makeJunction(t, jt, f.repo)
+	wp := filepath.Join(jt, ".claude", "worktrees", filepath.Base(f.wt))
+	raw := removeFrame(t, map[string]any{"baseRepo": jt, "worktreePath": wp})
+	if raw != removeOK {
+		t.Fatalf("reply = %s, want %s", raw, removeOK)
+	}
+	mustBeGone(t, f.wt)
+	if _, err := os.Lstat(f.entry()); !os.IsNotExist(err) {
+		t.Errorf("entry %s is still there (err=%v), want it gone (row J2)", f.entry(), err)
+	}
+}

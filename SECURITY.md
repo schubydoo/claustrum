@@ -94,7 +94,8 @@ privileged as the daemon's user. Three of those paths reach a recursive delete
 - `files.extract_tar` wipes its destination before unpacking.
 - `git.worktree_remove` deletes the worktree path, and then its entry under the
   git directory. Each delete goes through an `os.Root`, so no delete follows a
-  symlink out of the worktree. A locked worktree is refused, not deleted.
+  symlink out of the worktree. A worktree locked in the `.git` folder of `baseRepo`
+  is refused, not deleted.
 - When `git.worktree_create` rolls back a worktree, it deletes the worktree path.
   That rollback happens when the caller `timeoutMs` expires during a successful
   add, the checkout or the copy step. It also happens after the post-checkout

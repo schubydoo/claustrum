@@ -16,9 +16,9 @@ import (
 // delete follows a symbolic link out of the directory that holds it. That is a
 // property of os.Root, not a measurement. The rules below were measured side by side
 // against f6010b97 on VMs: all 107 cases equal on macOS, every remove case equal on
-// Linux, and every Windows row equal except the junction rows of D19. A later row, E13,
-// differs on all three (docs/PROTOCOL.md). The row names are those of those runs. Unit
-// tests pin this code to the rows.
+// Linux, and every Windows row equal except the junction rows of D19. The rows of
+// 89cb6289 on which entry goes are in docs/PROTOCOL.md. The row names are those of
+// those runs. Unit tests pin this code to the rows.
 
 // worktreeRefusal is an error of git.worktree_remove about the worktree itself. The
 // reply puts "refusing to remove worktree: " before its text. Any other error gets
@@ -271,21 +271,177 @@ func entryLockPresent(root *os.Root, name string) bool {
 
 // worktreeLockedByPath looks for a locked entry whose record names the worktree.
 // readable is false when <commonDir>/worktrees exists but cannot be read (row L02).
-func worktreeLockedByPath(commonDir string, sp worktreePathSet) (locked, readable bool) {
+// matches is the count of entries whose record names the worktree. It is not complete
+// when locked is true.
+func worktreeLockedByPath(commonDir string, sp worktreePathSet) (locked, readable bool, matches int) {
 	root, recs, ok := listEntryRecords(commonDir)
 	if !ok {
-		return false, false
+		return false, false, 0
 	}
 	if root == nil {
-		return false, true
+		return false, true, 0
 	}
 	defer func() { _ = root.Close() }()
 	for _, r := range recs {
-		if sp.has(r.path) && entryLockPresent(root, r.name) {
-			return true, true
+		if !sp.has(r.path) {
+			continue
+		}
+		matches++
+		if entryLockPresent(root, r.name) {
+			return true, true, matches
 		}
 	}
-	return false, true
+	return false, true, matches
+}
+
+// registrationGitDir is the git directory whose `worktrees` directory a removal
+// without worktreeRoot reads and deletes from. answered is the answer of the
+// `rev-parse --absolute-git-dir` call of the removal in baseRepo, or "" when that call
+// did not run.
+//
+// When the daemon's own environment sets GIT_COMMON_DIR, it is the directory that the
+// call answered. With GIT_DIR and GIT_COMMON_DIR of another repository X in the daemon's
+// environment, 89cb6289 keeps the entry of baseRepo (probe rows 1 to 4 on Linux, macOS
+// and Windows VMs) and deletes an entry of X (rows 2 and 3). With GIT_DIR of X and
+// GIT_COMMON_DIR of a third repository, the entry that goes is in X too (rows p3, p3b
+// and p3c on Linux and macOS VMs). With GIT_COMMON_DIR alone it deletes the entry of baseRepo
+// (row 5). There git itself answers the git directory of baseRepo: git's behavior, no row
+// logs that answer. The same holds on Linux and macOS VMs for a submodule, a subfolder, a bare
+// repository as baseRepo (rows p2a, p2b and p2c). In every other case it is verifyGitDir, as before.
+//
+// Not measured: an answer that is a linked-worktree entry while the daemon sets
+// GIT_COMMON_DIR. claustrum keeps verifyGitDir there.
+func registrationGitDir(repo, answered string) string {
+	if !daemonCommonDirSet() || answered == "" {
+		return verifyGitDir(repo)
+	}
+	answered = filepath.FromSlash(answered)
+	if isWorktreeEntry(answered) || canonicalPath(answered) == canonicalPath(filepath.Join(repo, ".git")) {
+		return verifyGitDir(repo)
+	}
+	return answered
+}
+
+// lockedInBaseRepo reports whether the repository of baseRepo holds a locked entry of
+// the worktree, when the removal reads its entries from another git directory
+// (commonDir). It looks under <repo>/.git/worktrees: at the entry that the `.git` file
+// of the worktree names, when gitDir is not "", and at each entry whose record names
+// the worktree. It runs no git call. readable is false when <repo>/.git/worktrees
+// exists and cannot be read. The caller then answers the lock-check refusal. 89cb6289
+// answers it with no daemon environment (rows q5 and q5b, Linux VM). A directory that
+// does not exist is not locked. A baseRepo with no `.git` folder is not looked at.
+//
+// This is divergence D22: a worktree locked in the `.git` folder of baseRepo is
+// refused. 89cb6289 answers success for it in these rows, on Linux, macOS and
+// Windows VMs: with GIT_DIR and GIT_COMMON_DIR of another repository in the daemon's
+// environment (row p6, and row p6f with the folder gone), and with GIT_DIR alone (row
+// p6e). With worktreeRoot it deletes nothing (rows q2 to q4 on a Linux VM).
+func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) (locked, readable bool) {
+	base := filepath.Join(repo, ".git")
+	if canonicalPath(base) == canonicalPath(commonDir) {
+		return false, true
+	}
+	// A `.git` that is a file, as in a linked worktree or a submodule, holds no
+	// worktrees directory.
+	if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
+		return false, true
+	}
+	if gitDir != "" {
+		if name, err := verifiedWorktreeEntry(gitDir, base, "", path, sp, nil); err == nil {
+			return verifiedEntryLocked(base, name), true
+		}
+	}
+	locked, readable, _ = worktreeLockedByPath(base, sp)
+	return locked, readable
+}
+
+// baseRepoLockRefusal answers the D22 refusal of lockedInBaseRepo, or "" when the
+// removal goes on. An entry that cannot be read gets the lock-check refusal, and a
+// locked entry gets lockedText.
+func baseRepoLockRefusal(repo, commonDir, gitDir, path, worktreePath string, sp worktreePathSet, lockedText string) string {
+	locked, readable := lockedInBaseRepo(repo, commonDir, gitDir, path, sp)
+	if !readable {
+		return lockCheckRefusal(worktreePath)
+	}
+	if locked {
+		return lockedText
+	}
+	return ""
+}
+
+// registrationProbe runs the pair of gitDirWorkTreeToplevel that 89cb6289 runs in a
+// removal: `--git-dir=<gitDir> config -z --list`, then `--git-dir=<gitDir>
+// --work-tree=<workTree> rev-parse --show-toplevel`, both in gitDir. gitDir is the
+// answer of the `rev-parse --absolute-git-dir` call of the removal. Without
+// worktreeRoot, workTree is baseRepo. Probe rows 3 and 11 to 15b show that on Linux,
+// macOS and Windows VMs, row K1 on Linux, row R17a on Linux and macOS, and row D-subst
+// on Windows. With worktreeRoot it is worktreePath (rows Q20b and Y8w, Linux VM). The
+// zero value runs nothing.
+//
+// When the daemon's environment sets no GIT_COMMON_DIR, both calls carry
+// GIT_COMMON_DIR=<gitDir> (row D-subst).
+type registrationProbe struct {
+	gitDir   string
+	workTree string
+}
+
+// newRegistrationProbe makes the probe for the answer answered, or the zero value
+// when the call gave no answer.
+func newRegistrationProbe(answered, workTree string) registrationProbe {
+	if answered == "" {
+		return registrationProbe{}
+	}
+	return registrationProbe{gitDir: filepath.FromSlash(answered), workTree: workTree}
+}
+
+// run makes the two calls and returns the answer of the second, or "".
+func (r registrationProbe) run() string {
+	if r.gitDir == "" {
+		return ""
+	}
+	var pin []string
+	if !daemonCommonDirSet() {
+		pin = []string{"GIT_COMMON_DIR=" + r.gitDir}
+	}
+	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin)
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
+// pairIfWorktreesDir runs the pair. Its first call comes before claustrum looks at the
+// entries of commonDir by path. If <commonDir>/worktrees exists, the request of 89cb6289 makes the pair (probe
+// rows 3 and 12, row Q20b). If it is missing, it does not (rows 1, 4, 6 and Q20). An
+// empty directory gets the pair too (battery row W01 on a Windows VM). claustrum does
+// not use the answer. Not measured: a worktrees directory that cannot be read.
+// claustrum runs the pair there.
+func (r registrationProbe) pairIfWorktreesDir(commonDir string) {
+	if fi, err := os.Stat(filepath.Join(commonDir, worktreesSubdir)); err == nil && fi.IsDir() {
+		r.run()
+	}
+}
+
+// inRepoWorkTree is the --work-tree value of registrationProbe without worktreeRoot:
+// baseRepo after filepath.EvalSymlinks. That keeps a `subst` drive (row D-subst) and a
+// junction (battery row J2), and it turns an 8.3 short name into the long name (row
+// D-83). All three are from a Windows VM. On Linux and macOS no row tells it from
+// baseRepo as sent.
+func inRepoWorkTree(repo string) string {
+	if resolved, err := filepath.EvalSymlinks(filepath.Clean(repo)); err == nil {
+		return resolved
+	}
+	return repo
+}
+
+// repeatRepositoryCheck runs the heavy listing and `rev-parse --absolute-git-dir` in
+// repo once more. 89cb6289 makes these two calls when the `.git` file of the worktree
+// names a git dir that is not a verified entry (probe rows 1, 3, 4, 6, 12, 13 and 14).
+// claustrum does not use the answer.
+func repeatRepositoryCheck(repo string) {
+	if c := hostileConfigRefusal(repo, true); !c.refused() {
+		noRepositoryAt(repo, c.listing)
+	}
 }
 
 // dropWorktreeEntryByPath deletes the one entry whose record names the worktree. It
@@ -316,7 +472,22 @@ func dropWorktreeEntryByPath(commonDir string, sp worktreePathSet) {
 // the name of its entry under <commonDir>/worktrees. The entry must be a directory
 // there, its `commondir` must lead back to commonDir, and its `gitdir` record must
 // name the worktree. path is the spelling of the worktree in the texts.
-func verifiedWorktreeEntry(gitDir, commonDir, path string, sp worktreePathSet) (string, error) {
+//
+// respell is called when the record names another path than sp holds. It returns one
+// more spelling of the worktree, or "". The entry is verified when the record names
+// that spelling. respell is nil when there is none. In the rows below, the call log
+// of 89cb6289 shows the pair of registrationProbe. Through a `subst` drive or a
+// junction the entry is deleted (Windows VM, probe row D-subst, battery rows J2, Q1
+// and Q2). With a
+// record of another worktree it is not (probe row 13 on Linux, macOS and Windows VMs,
+// row D-83 on Windows). Not measured: a record that cannot be read. claustrum does not
+// call respell there.
+//
+// answered is the answer of the `rev-parse --absolute-git-dir` call of the removal,
+// or "". A `commondir` that leads to that directory passes too. Through a `subst`
+// drive or a junction, git answers the resolved git directory, and the entry names
+// that one (same Windows rows).
+func verifiedWorktreeEntry(gitDir, commonDir, answered, path string, sp worktreePathSet, respell func() string) (string, error) {
 	notOurs := refuseWorktree("%s carries a .git file that does not name this repository's "+
 		"own worktree admin directory", path)
 	g := filepath.Clean(gitDir)
@@ -344,10 +515,16 @@ func verifiedWorktreeEntry(gitDir, commonDir, path string, sp worktreePathSet) (
 	}
 	named = filepath.Clean(named)
 	if !sameCanonicalPath(named, filepath.Clean(commonDir)) &&
-		!sameCanonicalPath(canonicalPathOfGone(named), canonicalPathOfGone(commonDir)) {
+		!sameCanonicalPath(canonicalPathOfGone(named), canonicalPathOfGone(commonDir)) &&
+		(answered == "" || !sameCanonicalPath(named, filepath.FromSlash(answered))) {
 		return "", notOurs
 	}
 	rec, ok := loadEntryRecord(root, dir, name)
+	if ok && !sp.has(rec.path) && respell != nil {
+		if again := respell(); again != "" && newWorktreePathSet(again).has(rec.path) {
+			return name, nil
+		}
+	}
 	if !ok || !sp.has(rec.path) {
 		return "", refuseWorktree("%s carries a .git file naming an admin directory whose "+
 			"own record is of a different worktree", path)
