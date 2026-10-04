@@ -41,9 +41,9 @@ func setDaemonPathSpelledPath(t *testing.T, val string) {
 	}
 }
 
-// spawnChildPathEntries spawns the environ helper through process.spawn and returns
+// childPathEntries spawns the environ helper through process.spawn and returns
 // each entry of the child whose name is PATH in any case.
-func spawnChildPathEntries(t *testing.T, id string, caller map[string]string) []string {
+func childPathEntries(t *testing.T, id string, caller map[string]string) []string {
 	t.Helper()
 	m := newTestProcManager(t)
 	t.Cleanup(m.killAll)
@@ -111,7 +111,7 @@ func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 			setDaemonPathSpelledPath(t, sys)
 			armLoginPATH()
 
-			got := spawnChildPathEntries(t, "path-"+tc.row, tc.caller)
+			got := childPathEntries(t, "path-"+tc.row, tc.caller)
 			if len(got) != 1 || got[0] != tc.want {
 				t.Errorf("row %s: the child path entries are %q, want only %q", tc.row, got, tc.want)
 			}
