@@ -1456,18 +1456,13 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 	// A worktree that is locked in the `.git` folder of baseRepo is refused, also when
 	// the entries are read from another git directory (D22, lockedInBaseRepo). That
 	// holds with worktreeRoot too (rows q2 and q3 on a Linux VM).
-	{
-		named := ""
-		if namesGitDir {
-			named = gitDir
-		}
-		locked, readable := lockedInBaseRepo(repo, commonDir, named, target.path, sp)
-		if !readable {
-			return refuse(lockCheckRefusal(p.WorktreePath))
-		}
-		if locked {
-			return refuse(lockedWorktreeRefusal(p.WorktreePath))
-		}
+	named := ""
+	if namesGitDir {
+		named = gitDir
+	}
+	if msg := baseRepoLockRefusal(repo, commonDir, named, target.path, p.WorktreePath, sp,
+		lockedWorktreeRefusal(p.WorktreePath)); msg != "" {
+		return refuse(msg)
 	}
 	entry := ""
 	if dotGitErr == nil {
@@ -1526,7 +1521,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if gitLookupError() != nil {
 			return refuse(unreadableRepoLockCheckRefusal(p.WorktreePath, repo))
 		}
-		probe.beforeScan(commonDir)
+		probe.pairIfWorktreesDir(commonDir)
 		locked, readable, _ := worktreeLockedByPath(commonDir, sp)
 		if !readable {
 			return refuse(lockCheckRefusal(p.WorktreePath))
@@ -1566,7 +1561,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			return refuse(lockedWorktreeRefusal(p.WorktreePath))
 		}
 	} else if !lockChecked {
-		probe.beforeScan(commonDir)
+		probe.pairIfWorktreesDir(commonDir)
 		locked, readable, n := worktreeLockedByPath(commonDir, sp)
 		if !readable {
 			return refuse(lockCheckRefusal(p.WorktreePath))
@@ -1597,7 +1592,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		}
 	default:
 		if matches == 0 {
-			probe.beforeScan(commonDir)
+			probe.pairIfWorktreesDir(commonDir)
 		}
 		dropWorktreeEntryByPath(commonDir, sp)
 	}
@@ -1636,12 +1631,11 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		}
 		// A daemon GIT_DIR that names a file: no git call, and the branch is kept
 		// (gitDirTrust.noGit). An empty branchName is not measured there.
-		if t.verdict == gitDirNoRepo && t.noGit {
-			if _, bad := daemonCountRefusal(); !bad {
-				return okResult(req.ID, worktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
-			}
+		msg, bad := daemonCountRefusal()
+		if t.verdict == gitDirNoRepo && t.noGit && !bad {
+			return okResult(req.ID, worktreeRemoveResult{Success: true, BranchKept: !skippedBranchName(p.BranchName)})
 		}
-		if msg, bad := daemonCountRefusal(); bad {
+		if bad {
 			return lockCheck(msg)
 		}
 		switch t.verdict {
@@ -1686,7 +1680,7 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		if p.WorktreeRoot == "" {
 			commonDir = registrationGitDir(repo, answered)
 			probe = newRegistrationProbe(answered, inRepoWorkTree(repo))
-			probe.beforeScan(commonDir)
+			probe.pairIfWorktreesDir(commonDir)
 		}
 		// The baseRepo part of the path is also matched in its resolved form, and the
 		// rest as sent. So a baseRepo sent in 8.3 form or through a junction still finds
@@ -1705,10 +1699,8 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		// D22: a locked entry in the `.git` folder of baseRepo is refused too, with and
 		// without worktreeRoot. 89cb6289 answers success there and deletes nothing (row
 		// p6f on Linux, macOS and Windows VMs, row q4 with worktreeRoot on Linux).
-		if locked, readable := lockedInBaseRepo(repo, commonDir, "", path, sp); !readable {
-			return refuse(lockCheckRefusal(p.WorktreePath))
-		} else if locked {
-			return refuse(goneLocked)
+		if msg := baseRepoLockRefusal(repo, commonDir, "", path, p.WorktreePath, sp, goneLocked); msg != "" {
+			return refuse(msg)
 		}
 		// A worktrees directory that cannot be read does not stop a gone remove. The
 		// reference answers success there (Linux VM, row K13 with worktreeRoot and a
@@ -1718,7 +1710,7 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			return refuse(goneLocked)
 		}
 		if matches == 0 {
-			probe.beforeScan(commonDir)
+			probe.pairIfWorktreesDir(commonDir)
 		}
 		dropWorktreeEntryByPath(commonDir, sp)
 	}

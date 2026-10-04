@@ -355,6 +355,20 @@ func lockedInBaseRepo(repo, commonDir, gitDir, path string, sp worktreePathSet) 
 	return locked, readable
 }
 
+// baseRepoLockRefusal answers the D22 refusal of lockedInBaseRepo, or "" when the
+// removal goes on. An entry that cannot be read gets the lock-check refusal, and a
+// locked entry gets lockedText.
+func baseRepoLockRefusal(repo, commonDir, gitDir, path, worktreePath string, sp worktreePathSet, lockedText string) string {
+	locked, readable := lockedInBaseRepo(repo, commonDir, gitDir, path, sp)
+	if !readable {
+		return lockCheckRefusal(worktreePath)
+	}
+	if locked {
+		return lockedText
+	}
+	return ""
+}
+
 // registrationProbe runs the pair of gitDirWorkTreeToplevel that 89cb6289 runs in a
 // removal: `--git-dir=<gitDir> config -z --list`, then `--git-dir=<gitDir>
 // --work-tree=<workTree> rev-parse --show-toplevel`, both in gitDir. gitDir is the
@@ -396,13 +410,13 @@ func (r registrationProbe) run() string {
 	return out
 }
 
-// beforeScan runs the pair before claustrum looks at the entries of commonDir by
-// path. If <commonDir>/worktrees exists, the request of 89cb6289 makes the pair (probe
+// pairIfWorktreesDir runs the pair. Its first call comes before claustrum looks at the
+// entries of commonDir by path. If <commonDir>/worktrees exists, the request of 89cb6289 makes the pair (probe
 // rows 3 and 12, row Q20b). If it is missing, it does not (rows 1, 4, 6 and Q20). An
 // empty directory gets the pair too (battery row W01 on a Windows VM). claustrum does
 // not use the answer. Not measured: a worktrees directory that cannot be read.
 // claustrum runs the pair there.
-func (r registrationProbe) beforeScan(commonDir string) {
+func (r registrationProbe) pairIfWorktreesDir(commonDir string) {
 	if fi, err := os.Stat(filepath.Join(commonDir, worktreesSubdir)); err == nil && fi.IsDir() {
 		r.run()
 	}
