@@ -12,7 +12,8 @@ import (
 
 // setDaemonPathSpelledPath gives the test process one path entry, named exactly Path,
 // with the value val. The cleanup puts back the entry of the runner with its own name.
-// CI runners name the entry PATH, so a plain Setenv("Path") can keep that name.
+// A runner can name the entry PATH, so a plain Setenv("Path") can keep that name.
+// These tests change the process environment, so they stay sequential (no t.Parallel).
 func setDaemonPathSpelledPath(t *testing.T, val string) {
 	t.Helper()
 	var name, old string
@@ -119,7 +120,8 @@ func TestSpawnChildGetsTheDaemonPATHOnWindows(t *testing.T) {
 }
 
 // TestNoDaemonPATHGivesNoChildPATHOnWindows holds row R6: a daemon with no path
-// entry gives the child no path entry. An empty value skips the step.
+// entry gives the child no path entry. It checks the empty-value skip of buildEnv,
+// not the Windows read, and it passes with or without the fix.
 func TestNoDaemonPATHGivesNoChildPATHOnWindows(t *testing.T) {
 	origExtractor := loginPATHExtractor
 	t.Cleanup(func() {

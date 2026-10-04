@@ -517,10 +517,11 @@ traps that matter for telling drift from expected:
       in 2 of 9 runs. claustrum logged `closed 1` in 9 of 9. The rate is not
       measured.
     - The environment block of a child comes in name order. The Go 1.26 toolchain
-      sorts it. `f6010b97` and `89cb6289` keep the order of the daemon and put
-      `CLAUDE_SSH_DAEMON_CHILD=1` last (rows WN01a, WN01b). The stdout frame of
-      `cmd /c set` therefore differs in bytes. The `PATH` rows R3 and R5 show
-      the same order difference (Windows VM, `89cb6289`).
+      sorts it. `f6010b97` and `89cb6289` keep the order of the daemon, then
+      `CLAUDE_SSH_DAEMON_CHILD=1`, then an added `PATH` entry and new caller keys.
+      Rows WN01a and WN01b show that, and so do the Windows VM rows R1, R3, R5 and
+      R8 against `89cb6289`.
+      The stdout frame of `cmd /c set` therefore differs in bytes.
 - A longer `remote-server.log` after a second daemon started on a live socket on
   Windows is not drift. `89cb6289` truncates the file at that start, and claustrum
   appends to it (rows WN04, WJ04). That is [DIVERGENCES.md](DIVERGENCES.md) D21.

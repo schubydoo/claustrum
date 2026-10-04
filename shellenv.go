@@ -16,8 +16,9 @@ import "sync"
 // Every spawn waits for the one read, so no child is built from a PATH from before
 // the read: a spawn that comes while the read runs waits for its end.
 //
-// Windows has no login shell. There the read takes the daemon's own PATH, once, at
-// the first spawn (shellenv_windows.go, Windows VM rows R1 and R8 against 89cb6289).
+// On Windows no login shell runs. There the read takes the daemon's own PATH, once,
+// at the first spawn (from the code, shellenv_windows.go). A second spawn got the same
+// entry as the first on 89cb6289 (Windows VM row R8).
 var (
 	loginPATHMu sync.Mutex
 	// loginPATHOnce is non-nil once the daemon armed the read (armLoginPATH). It runs

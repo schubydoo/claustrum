@@ -1477,7 +1477,9 @@ func buildEnv(env map[string]string) []string {
 	// Applied before the caller's env so an explicit PATH in the spawn request
 	// still wins. On Windows the value is the daemon's own PATH, and the exact name
 	// PATH matters. A daemon entry named Path stays in the slice, and os/exec keeps
-	// the later PATH entry (Windows VM rows R1, R3 and R4 against 89cb6289).
+	// the later PATH entry (Windows VM rows R1 and R3 against 89cb6289). On Windows a
+	// caller key named exactly Path replaces the daemon's Path entry and still loses
+	// to the later PATH (row R4).
 	if lp := currentLoginPATH(); lp != "" {
 		base = replaceOrAppendEnv(base, "PATH", lp)
 	}
