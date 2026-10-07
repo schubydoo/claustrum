@@ -96,7 +96,8 @@ func locateInRepoWorktree(repo, worktreePath string) (removeTarget, error) {
 //
 // A <directory> level that is the file system root has no level above it. The root is
 // then the one open level, and the spelling is "/<name>", as before the level order.
-// No row measures a worktreeRoot that is the file system root.
+// No request reaches that case: its worktreeRoot is the file system root, and
+// worktreeExternalSpellingRefusal refuses that root first.
 func locateExternalWorktree(worktreePath string) (removeTarget, error) {
 	cleanPath := filepath.Clean(worktreePath)
 	dir := filepath.Dir(cleanPath)
