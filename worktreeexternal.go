@@ -43,10 +43,13 @@ import (
 // and a normal user. Nothing changes on disk. The calls place it before `rev-parse
 // --show-toplevel`. Its place among the earlier tests is claustrum's choice. Not
 // measured: its order against the ".." test, the worktreePath test, the baseRepo test
-// and step 3. Not measured either: "//", "/." and each other spelling without ".."
-// that cleans to the root.
-// claustrum refuses them the same way and names the root as sent. A mount point that
-// is not "/" passes this test (not measured).
+// and step 3. A root with a ".." component that cleans to "/" gets the ".." text
+// (from the code, not measured).
+//
+// More cells ran against 89cb6289 on Linux and macOS VMs. A root of "//" or "/." gets
+// the same text, with the root as sent (cells R2 and R3). So does a worktreePath of
+// "/<directory>/<name>" under a root of "/" (cell R6). A mount point that is not "/"
+// passes this test, and the create and the remove succeed (cell R4).
 func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) string {
 	if !filepath.IsAbs(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+

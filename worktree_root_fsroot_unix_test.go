@@ -27,14 +27,14 @@ func fsRootLeaf(t *testing.T) string {
 	return leaf
 }
 
-// The text of both verbs for a root of "/". The two not_measured rows pin claustrum's
-// choice for a spelling that cleans to "/": the same refusal, with the root as sent.
+// The text of both verbs for a root of "/". Rows R2 and R3 are the cells of "//" and
+// "/." on Linux and macOS VMs: the same refusal, with the root as sent.
 func TestWorktreeRootIsFileSystemRootText(t *testing.T) {
 	leaf := fsRootLeaf(t)
 	for _, c := range []struct{ name, root string }{
 		{"R1", "/"},
-		{"not_measured_double_slash", "//"},
-		{"not_measured_slash_dot", "/."},
+		{"R2_double_slash", "//"},
+		{"R3_slash_dot", "/."},
 	} {
 		for _, verb := range []string{"create", "remove"} {
 			t.Run(c.name+"_"+verb, func(t *testing.T) {
