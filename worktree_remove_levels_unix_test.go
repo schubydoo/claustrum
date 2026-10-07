@@ -3,9 +3,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -257,7 +257,7 @@ func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
 // Before, the reply was "openat : empty path". No request reaches this case now: both
 // methods refuse a worktreeRoot of "/" first. The test calls the function directly.
 func TestLocateExternalWorktreeDirectoryIsFileSystemRoot(t *testing.T) {
-	leaf := fmt.Sprintf("claustrum-test-no-such-leaf-%d", os.Getpid())
+	leaf := strings.TrimPrefix(fsRootLeaf(t), "/")
 	tg, err := locateExternalWorktree("/" + leaf)
 	defer tg.close()
 	if err != nil || tg.parent == nil || tg.leaf != leaf || tg.path != "/"+leaf {

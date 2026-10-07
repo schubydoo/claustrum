@@ -35,12 +35,13 @@ import (
 // worktreeExternalSpellingRefusal is steps 1 and 2. Both worktree methods check
 // baseRepo between steps 2 and 3. On git.worktree_create that order is not measured.
 //
-// claustrum also refuses, in step 1, a worktreeRoot that is the file system root. For a root of "/"
-// and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem root" text. The
-// create sends it after 3 git calls, and the remove with no git call. That holds with
-// the folder present or gone, and for a daemon that runs as root (Linux VM, cells R1n,
-// R1u and R1r, and macOS VM, cells R1a and R1b). The macOS cells have the folder gone
-// and a normal user. Nothing changes on disk. The calls place it before `rev-parse
+// claustrum also refuses, in step 1, a worktreeRoot that is the file system root. For
+// a root of "/" and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem
+// root" text. The create sends it after 3 git calls, and the remove with no git call.
+// That holds with the folder present or gone, and for a daemon that runs as root (Linux
+// VM, cells R1n, R1u and R1r). On a macOS VM the create is cell R1a, and the remove is
+// cells R1a and R1b. The macOS cells have the folder gone and a normal user. Nothing
+// changes on disk. The calls place it before `rev-parse
 // --show-toplevel`. Its place among the earlier tests is claustrum's choice. Not
 // measured: its order against the ".." test, the worktreePath test, the baseRepo test
 // and step 3. A root with a ".." component that cleans to "/" gets the ".." text

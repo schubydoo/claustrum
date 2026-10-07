@@ -10,7 +10,8 @@ import (
 )
 
 // These tests cover a worktreeRoot that is the file system root. The cells are R1n,
-// R1u and R1r of a Linux VM and R1a and R1b of a macOS VM, each against 89cb6289.
+// R1u and R1r of a Linux VM, and on a macOS VM R1a (both methods) and R1b (the
+// remove), each against 89cb6289.
 // Every request names a leaf under "/" that does not exist. No test writes under "/",
 // with or without the refusal: before, claustrum refused the create with another text
 // and answered success to the remove of a missing folder. worktreeRoot is unix-only.
@@ -51,7 +52,7 @@ func TestWorktreeRootIsFileSystemRootText(t *testing.T) {
 	}
 }
 
-// The create frame of cells R1n, R1r and R1a, byte for byte. It comes after the repo
+// The create frame of cells R1n, R1u, R1r and R1a, byte for byte. It comes after the repo
 // test, which is 3 git calls with the excludes read, and nothing is created.
 func TestWorktreeCreateRootIsFileSystemRoot(t *testing.T) {
 	leaf := fsRootLeaf(t)
