@@ -17,7 +17,8 @@ import (
 // (worktreeremove.go; a worktree locked in the .git folder of baseRepo is
 // refused, not deleted), and the rollback of git.worktree_create deletes the worktree it created (worktreeverify.go).
 // -install is a fourth caller of this guard: it deletes a folder at the CLI path
-// (install.go, stageAndInstall). The RPC
+// (install.go, stageAndInstall). Its sweep and its prune call the guard for
+// each entry that they remove (cliEntryHoldsHome). The RPC
 // paths are `~`-expanded first — bindParams
 // calls expandPaths on EVERY request (rpc.go), and expandPath returns the home
 // directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` reaches

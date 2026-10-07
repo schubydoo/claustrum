@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -714,10 +715,11 @@ func TestPruneCLI(t *testing.T) {
 	}
 }
 
-// runInstall's prune step is gated on `o.cliKeep > 0` AND on an install having
-// actually succeeded. The reference touches the cli-dir only when it attempts an
-// install: a cache-hit run neither sweeps orphans nor prunes, and a FAILED
-// install sweeps but does not prune (probe-measured at 5db5e4a).
+// runInstall's prune step is gated on an install having actually succeeded.
+// A cache-hit run neither sweeps orphans nor prunes, and a FAILED
+// install sweeps but does not prune (probe-measured at 5db5e4a). A keep of 0
+// prunes every entry (cells K0a and K0b, 89cb6289). A negative keep ends the
+// run with exit code 2 (TestInstallNegativeKeep).
 //
 // This test previously drove runInstall with an already-present CLI and asserted
 // that it pruned — encoding claustrum's divergence. It now exercises the guard on
@@ -755,15 +757,18 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 	// Version-style names (with a dot) so a present CLI is actually runnable on
 	// Windows too — exec there only resolves paths carrying an extension, and an
 	// extensionless name would silently take the not-present branch.
-	t.Run("keep0_does_not_prune", func(t *testing.T) {
+	t.Run("keep0_prunes_everything", func(t *testing.T) {
 		dir := t.TempDir()
 		mk(t, dir, "3.0.0", 30)
 		mk(t, dir, "2.0.0", 20)
 		mk(t, dir, "1.0.0", 10)
-		_ = captureInstallFacts(t, installOpts{
-			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: 0})
-		if n := count(t, dir); n != 4 {
-			t.Errorf("keep=0 left %d files, want 4 (3 existing + the new one; a >=0 guard would wipe versions)", n)
+		f := captureInstallFacts(t, installOpts{
+			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: keepZero})
+		if n := count(t, dir); n != 0 {
+			t.Errorf("keep=0 left %d files, want 0 (cell C-13)", n)
+		}
+		if f.CliError != "" || f.CliPath != installCLIPath(dir, "9.0.0") {
+			t.Errorf("cliError %q, cliPath %q: want the result line of a good install", f.CliError, f.CliPath)
 		}
 	})
 
@@ -776,11 +781,11 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 		_ = captureInstallFacts(t, installOpts{
 			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: 2})
 		if n := count(t, dir); n != 2 {
-			t.Errorf("keep=2 left %d files, want 2 (cliKeep>0 guard regressed, skipping prune)", n)
+			t.Errorf("keep=2 left %d files, want 2: the prune did not run", n)
 		}
 	})
 
-	// The reference leaves a cache-hit run's cli-dir completely alone.
+	// A cache-hit run does not prune. It removes only an old "*.zst.part" entry.
 	t.Run("cache_hit_does_not_prune", func(t *testing.T) {
 		dir := t.TempDir()
 		mk(t, dir, "4.0.0", 40) // newest → the present CLI
@@ -1214,7 +1219,7 @@ func TestDownloadBlobSurvivesHousekeeping(t *testing.T) {
 	}
 
 	// Surviving the sweep is only half of it. pruneCLI skips the sweep's names
-	// and the blob prefix, and counts every other non-directory as a CLI version.
+	// and the blob prefix, and counts every other entry.
 	// A blob it counted sorts to the front as newest, takes a -cli-keep slot and
 	// evicts a real version instead.
 	realVersion := filepath.Join(dir, "1.0.0")
@@ -1288,10 +1293,28 @@ func TestRunInstallFacts(t *testing.T) {
 	}
 }
 
+// keepZero is a -cli-keep of 0 for the two capture helpers. A keep of 0 prunes
+// every entry (cells K0a and K0b). A test that leaves cliKeep unset wants no
+// prune, so testKeep turns the unset value into the largest count, with which
+// the prune removes nothing. A negative value is not an option for that: it
+// ends the run with exit code 2 (cells Kneg).
+const keepZero = math.MinInt
+
+func testKeep(o installOpts) installOpts {
+	switch o.cliKeep {
+	case 0:
+		o.cliKeep = math.MaxInt
+	case keepZero:
+		o.cliKeep = 0
+	}
+	return o
+}
+
 // captureInstallFacts runs runInstall and parses the __INSTALL_RESULT__ JSON it
-// prints to stdout.
+// prints to stdout. See keepZero for an unset cliKeep.
 func captureInstallFacts(t *testing.T, o installOpts) installFacts {
 	t.Helper()
+	o = testKeep(o)
 	old := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -1522,9 +1545,11 @@ func TestEnsureCLIConsumesBlobWhenChmodFails(t *testing.T) {
 	assertNoStagingLeftover(t, filepath.Join(dir, "out.exe"))
 }
 
-// captureInstallOutput runs runInstall and returns its raw stdout.
+// captureInstallOutput runs runInstall and returns its raw stdout. See keepZero
+// for an unset cliKeep.
 func captureInstallOutput(t *testing.T, o installOpts) string {
 	t.Helper()
+	o = testKeep(o)
 	old := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
