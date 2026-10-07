@@ -12,8 +12,9 @@ import (
 )
 
 // git.info on a Windows path that goes through a junction (walkStart). The cells are
-// those of 89cb6289 on a Windows VM: B-01 to B-17k. Each test names the mutation that
-// turns it red.
+// those of 89cb6289 on a Windows VM: B-01, B-03, B-04, B-05p, B-05r, B-06, B-07, B-08,
+// B-13, B-14, B-15, B-16 and B-17k. Cell B-17d is in gitinfo_junction_windows_test.go.
+// Each test names the mutation that turns it red.
 
 // junctionRepos is the fixture of those cells. P is a repository on branch main with
 // the origin p/p. R is a repository on branch rmain with the origin r/r and one more

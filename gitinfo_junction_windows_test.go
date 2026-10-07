@@ -9,8 +9,8 @@ import (
 )
 
 // git.info through real junctions answers the frames of 89cb6289 on a Windows VM
-// (cells B-01, B-03 to B-05, B-07, B-08 and B-15 to B-17k). Mutation: in
-// gitDirTrustFor, call resolveWalkLinks in place of walkStart.
+// (cells B-01, B-03, B-04, B-05p, B-05r, B-07, B-08, B-15, B-16, B-17k and B-17d).
+// Mutation: in gitDirTrustFor, call resolveWalkLinks in place of walkStart.
 func TestInfoThroughJunctionWindows(t *testing.T) {
 	f := newJunctionRepos(t, makeJunction)
 	mixed := infoFrame(t, f.P, "rmain", "p/p", "")
