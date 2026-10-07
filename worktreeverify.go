@@ -451,8 +451,9 @@ func gitDirRegistryDir(gitDir string) string {
 //     and the answer is the "was not populated" text (rows B-E1 and B-E3 and cell
 //     D8e, and row D-8 on the macOS VM only: on the Linux VM the add of row D-8
 //     fails). Folder present, no entry of the name: 89cb6289 answers the "does
-//     not name" text (cell P-p, Linux and macOS VMs). 89cb6289 removed the old
-//     entry there before the add. Cell P-p shows the reference side only.
+//     not name" text (cell P-p, Linux and macOS VMs). On the Linux VM a system
+//     call trace shows that 89cb6289 removed the old entry before the add. On the
+//     macOS VM the entry is gone at the reply. Cell P-p shows the reference side only.
 //     claustrum keeps the old entry in cell P-p, so its own frame there still
 //     differs (open item of issue 429). Not measured: a worktrees folder that
 //     holds entries of other names and none of this name. claustrum answers the
@@ -594,8 +595,8 @@ func readAdminRecord(admin, worktreePath string) adminRecord {
 
 // adminRecordMismatch reports whether the `gitdir` record of the registration admin
 // was read and names another path than <worktreePath>/.git (readAdminRecord). The
-// caller gets admin from createdRegistrationRefusal: it is the folder that gets the
-// index of the new worktree.
+// caller gets admin from createdRegistrationRefusal, or from absoluteAdminDir if
+// rev-parse gave no answer: it is the folder that gets the index of the new worktree.
 // 89cb6289 and f6010b97 refuse such a create on a
 // macOS VM when the request spells the folder in Unicode NFD and git records it in
 // NFC (row I07a). They run no checkout and roll nothing back. The same request in NFC

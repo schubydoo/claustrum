@@ -1100,10 +1100,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// branch stay. The test comes before the deadline test: with a timeoutMs that
 	// expired during the add, 89cb6289 answers this refusal (row D-9, macOS VM).
 	//
-	// The .git file is read once, here, and the commondir file of gitDir is read
-	// once, in the tests. The tests answer the index folder, so it is the entry that
-	// they saw. A .git file or a commondir file that changes later cannot name a
-	// folder that the tests did not see.
+	// The .git file is read once for the tests and the index folder, here. The
+	// commondir file of gitDir is read once for them, in the tests. The tests answer
+	// the index folder, so it is the entry that they saw. A .git file or a commondir
+	// file that changes later cannot move the index to a folder that the tests did
+	// not see. A rollback reads both files again for its own check
+	// (createdWorktreeAdminDir).
 	//
 	// The tests need the git directory that git answered. If rev-parse gave no
 	// answer, gitDir is a guess (repoGitDir), and for a baseRepo that is a subfolder
@@ -1125,7 +1127,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			})
 		}
 	}
-	// indexDir is the registration that gets the index (createdRegistrationRefusal).
+	// indexDir is the registration that gets the index (createdRegistrationRefusal, or
+	// absoluteAdminDir if rev-parse gave no answer).
 	// Its gitdir record names worktreePath after symlink resolution.
 	// If it was read and names anything else, the create is refused, with no checkout
 	// and no rollback (cells P-c and P-k to P-m). Before
