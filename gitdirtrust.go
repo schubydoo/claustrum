@@ -88,6 +88,19 @@ func noRepoPin() []string {
 	return []string{"GIT_DIR=" + os.DevNull}
 }
 
+// noRepoPinned reports whether a git call in the folder of t, a "no repository"
+// verdict, carries the entry of noRepoEnv. It is false when the daemon's own
+// environment sets GIT_COMMON_DIR, because commonDirPinEnv then adds no entry. It is
+// false too when noRepoEnv is nil, which covers noGit. A method reads the answer of
+// the listing in such a folder only when this is true. Without the entry git reads
+// the `.git` file of the folder, and a request with no GIT_CONFIG_* entry gets a
+// refusal that no row of 89cb6289 shows. Not measured: the frames of 89cb6289 in a
+// "no repository" folder with a daemon GIT_COMMON_DIR. claustrum keeps the frames
+// that it had before it read that listing.
+func (t gitDirTrust) noRepoPinned() bool {
+	return t.noRepoEnv != nil && !daemonCommonDirSet()
+}
+
 // quoteOperand cuts s to its first operandMaxRunes runes and quotes it with Go %q. An
 // invalid UTF-8 byte counts as one rune and stays a byte, so %q prints it as \xNN.
 func quoteOperand(s string) string {

@@ -393,7 +393,14 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `branch --show-current` in `git.info` leaves out the `branch` member. A killed
   `defaultBranch` verify there gives `defaultBranch` `""`. On Windows a killed root
   pair of `git.info` falls back to the walk root. A killed first listing of a method
-  runs `git version`, and the method answers by that failure class.
+  runs `git version`, and the method answers by that failure class. Two more cases
+  are from the code and exist only with the deadline on. Their text `signal: killed`
+  is the one of Linux and macOS. A killed listing in a folder that holds no
+  repository refuses with the hooks refusal that ends in `signal: killed`. A listing
+  that cannot start in an existing path runs `git version`. If the deadline kills
+  that call, the method refuses with `git cannot run on this host; git not run:
+  signal: killed`. On `git.worktree_remove` either text is inside the lock-check
+  frame, or inside the work-tree frame with `worktreeRoot`.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
 - **Never read a timeout as "git refused."** On `git.worktree_remove` no D5 kill
