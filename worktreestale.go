@@ -34,7 +34,9 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) {
 		if !e.IsDir() {
 			continue
 		}
-		gitdir, err := os.ReadFile(filepath.Join(base, e.Name(), "gitdir"))
+		// A record that is not a regular file is passed over at once. With a FIFO
+		// there, 89cb6289 goes on to `git worktree add` (row B-G1, Linux and macOS VMs).
+		gitdir, err := readGitPlainFile(filepath.Join(base, e.Name(), "gitdir"))
 		if err != nil {
 			continue
 		}

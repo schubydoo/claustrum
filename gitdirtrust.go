@@ -301,11 +301,16 @@ func findGitDir(start string) (g, holder string, ok bool) {
 // at most gitFileMaxBytes long. The rest is trimmed of white space and, when relative,
 // taken relative to holder, the directory that holds the `.git` file.
 func readGitFile(path, holder string) (string, bool) {
-	f, err := os.Open(path)
+	// Opened without blocking, so a FIFO put there after the walk looked is judged at
+	// once.
+	f, err := os.OpenFile(path, os.O_RDONLY|openNonBlocking, 0)
 	if err != nil {
 		return "", false
 	}
 	defer func() { _ = f.Close() }()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return "", false
+	}
 	b, err := io.ReadAll(io.LimitReader(f, gitFileMaxBytes+1))
 	if err != nil || len(b) > gitFileMaxBytes || !bytes.HasPrefix(b, []byte("gitdir:")) {
 		return "", false
