@@ -649,10 +649,9 @@ func validateCLIVersion(v string) error {
 		return fmt.Errorf("cli version %q must be a single path component", v)
 	}
 	if isDownloadBlobName(v) {
-		// A version with claustrum's own blob prefix installs fine and is then
-		// exempt from pruneCLI's census FOREVER. It is never counted against
-		// -cli-keep, never evicted, and never swept, because neither pass claims
-		// that prefix. This is D18.
+		// A version with claustrum's own blob prefix installs fine and then
+		// stays FOREVER. The prune counts it and never removes it, and the
+		// sweep does not claim that prefix. This is D18.
 		return fmt.Errorf("cli version %q collides with the install download blob", v)
 	}
 	return nil
@@ -1205,12 +1204,14 @@ func sweepFetchTemps(cliDir string, now time.Time) {
 }
 
 // blobTempPrefix names the -cli-url download blob. It must be a prefix that
-// NEITHER cli-dir housekeeping pass acts on — isSweptName must not claim it, and
-// pruneCLI must not count it as a version. Both halves matter and they failed one
-// at a time: ".fetch-" let the sweep delete the blob out from under the
-// errStagingVanished retry, and a name merely absent from isSweptName still let
-// pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
-// slot and evicts a real version instead.
+// NEITHER cli-dir housekeeping pass removes: isSweptName must not claim it, and
+// pruneCLI must not remove it. ".fetch-" let the sweep delete the blob out from
+// under the errStagingVanished retry.
+//
+// pruneCLI counts the name since cell C-12 (Windows VM, 89cb6289), where a
+// planted file with this prefix counts. So the blob of another install that
+// still runs sorts newest and takes a -cli-keep place, and one more old entry
+// goes. claustrum did not count the name before.
 //
 // This is claustrum's problem to state because claustrum is what creates the
 // file. What the reference does mid-download was measured 2026-08-08 and is
@@ -1223,8 +1224,9 @@ func sweepFetchTemps(cliDir string, now time.Time) {
 // walk into with -cli-version.
 const blobTempPrefix = ".blob-"
 
-// isDownloadBlobName reports whether a cli-dir entry is an in-flight download
-// blob, which is neither litter to sweep nor a CLI version to prune.
+// isDownloadBlobName reports whether a cli-dir entry has the name of a download
+// blob. The sweep does not claim it, and the prune counts it and does not
+// remove it.
 func isDownloadBlobName(name string) bool { return strings.HasPrefix(name, blobTempPrefix) }
 
 // isSweptName reports whether the sweep above claims a cli-dir entry.
@@ -1273,6 +1275,11 @@ func isSweptName(name string) bool {
 //     C-18 on a Windows VM: the file "q.zst.part" is 6 days old and older than
 //     every other entry, keep is 3 and five other entries count, and it stays.
 //     The sweep removes such a name by its own age rule (zstPartMinAge).
+//   - A ".blob-" name counts as every other entry. Cell C-12 on a Windows VM:
+//     a planted ".blob-planted" file is 1 h old beside two files that are 4 h
+//     and 3 h old, keep is 2, and both older files go. The name is claustrum's
+//     own, the download blob of -cli-url, so the blob of another install that
+//     still runs takes a place too.
 //   - Keep 0 removes every entry that counts, the new CLI too (cell C-13,
 //     Windows VM only). runInstall calls the prune for a keep of 0 or more.
 //
@@ -1285,6 +1292,8 @@ func isSweptName(name string) bool {
 //     counts it as every other entry. No row puts one among the newest.
 //   - A swept name that the sweep failed to remove, for example an old
 //     ".fetch-d" folder with content. claustrum does not count it.
+//   - A ".blob-" name past the keep value. claustrum does not remove it, so a
+//     later step of the install that owns it can still read it.
 func pruneCLI(cliDir string, keep int) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
@@ -1299,12 +1308,6 @@ func pruneCLI(cliDir string, keep int) {
 		if isSweptName(e.Name()) || isZstPartName(e.Name()) {
 			continue
 		}
-		// A concurrent install's in-flight download blob is not a CLI version.
-		// Counted, it sorts NEWEST, takes a -cli-keep slot and evicts a real
-		// binary.
-		if isDownloadBlobName(e.Name()) {
-			continue
-		}
 		if fi, err := os.Lstat(filepath.Join(cliDir, e.Name())); err == nil {
 			vs = append(vs, ver{e.Name(), fi.ModTime().UnixNano()})
 		}
@@ -1312,6 +1315,10 @@ func pruneCLI(cliDir string, keep int) {
 	// os.ReadDir gives the entries in name order, and the sort is stable.
 	sort.SliceStable(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
 	for i := keep; i < len(vs); i++ {
+		// The download blob of another install that still runs is not removed.
+		if isDownloadBlobName(vs[i].name) {
+			continue
+		}
 		_ = os.Remove(filepath.Join(cliDir, vs[i].name))
 	}
 }
