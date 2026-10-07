@@ -1303,9 +1303,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			return refuse(msg)
 		}
 		target, err = locateExternalWorktree(p.WorktreePath)
-		// The root looked denied above and opens now, so its mode changed during the
-		// request. The skipped symlink refusal runs here, before any delete. Only a race
-		// reaches this, and no row measures it.
+		// The skipped symlink refusal runs here, before any delete. No row measures it.
 		if err == nil && !dirSymlinkChecked {
 			if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
 				target.close()
