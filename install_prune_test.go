@@ -162,10 +162,14 @@ func TestPruneRows(t *testing.T) {
 			{"f1", pruneFile, -1 * pruneHour}, {"f2", pruneFile, -1 * pruneHour},
 			{"f3", pruneFile, -1 * pruneHour},
 		}, want: []string{"f1", "f2", "f3"}},
+		// Cell C-12 is the one row where claustrum differs (D18). 89cb6289
+		// counts the planted ".blob-planted" file, so it removes v1.exe and
+		// v2.exe (Windows VM). claustrum does not count that name, so v2.exe
+		// takes the second place and stays.
 		{id: "W/C-12", keep: 2, before: []pruneEntry{
 			{".blob-planted", pruneFile, 1 * pruneHour},
 			{"v1.exe", pruneFile, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
-		}, want: []string{".blob-planted", pruneCLIName}},
+		}, want: []string{".blob-planted", pruneCLIName, "v2.exe"}},
 		{id: "W/C-13", keep: 0, before: []pruneEntry{
 			{"v1.exe", pruneFile, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
 		}, want: nil},

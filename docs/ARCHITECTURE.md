@@ -67,8 +67,9 @@ file is `<cli-version>.exe`.
   non-zero.
 - Claustrum prunes the directory to the `-cli-keep` newest entries (by mtime,
   default 3). A file, a link and an empty folder count and go. The prune does
-  not count a name the sweep claims or a `*.zst.part` name. It counts a
-  `.blob-*` name and does not remove it.
+  not count a name the sweep claims, a `*.zst.part` name or a `.blob-*` name,
+  and it removes none of them. `89cb6289` counts a planted `.blob-` file
+  ([D18](DIVERGENCES.md#d18)).
 - Claustrum prints one line: `__INSTALL_RESULT__{json}`.
 
 ### 2 · Daemon / process supervisor (`-serve`)

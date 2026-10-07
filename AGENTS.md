@@ -214,9 +214,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       entries are newer, and with `-cli-keep 0` every counted entry goes.
       `89cb6289` does the same (rows C-1, C-2, C-7 and C-11 on Linux and
       macOS VMs, cells C-11dir and C-13 on a Windows VM). The prune does not
-      count the sweep's names or a `*.zst.part` name. It counts a `.blob-`
-      name and does not remove it. Do not turn a remove of the prune into a
-      tree delete.
+      count the sweep's names, a `*.zst.part` name or a `.blob-` name, and it
+      removes none of them. `89cb6289` counts a planted `.blob-` file (cell
+      C-12, Windows VM). That difference is D18. Do not turn a remove of the
+      prune into a tree delete.
       `-install` removes the `-cli-zst` blob, an operator-named path, with one
       plain `os.Remove` once decompression succeeded. The home guard refusal
       is the one exception: it keeps the blob. No guard runs before the remove

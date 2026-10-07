@@ -320,15 +320,16 @@ func TestSweptNameRule(t *testing.T) {
 
 // The download blob prefix is the OTHER housekeeping name rule, and it needs the
 // same sharing. Its failure is the mirror of the sweep's: a version with this
-// prefix is not deleted, it stays forever. The prune counts it and never
-// removes it, and the sweep does not claim the prefix.
+// prefix is not deleted, it is exempted from pruneCLI's census forever — never
+// counted against -cli-keep, never evicted, and not swept either, since neither
+// pass claims the prefix by construction.
 func TestDownloadBlobNameRuleIsShared(t *testing.T) {
 	for _, name := range []string{".blob-x", ".blob-", ".blob-123456"} {
 		if !isDownloadBlobName(name) {
 			t.Errorf("isDownloadBlobName(%q) = false, want true", name)
 		}
 		if err := validateCLIVersion(name); err == nil {
-			t.Errorf("validateCLIVersion(%q) = nil, but pruneCLI would never remove it", name)
+			t.Errorf("validateCLIVersion(%q) = nil, but pruneCLI would never count it", name)
 		}
 		// It must ALSO stay outside the sweep — that is the invariant the blob
 		// itself relies on, and widening isSweptName to cover it would silently

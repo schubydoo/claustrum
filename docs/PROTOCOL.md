@@ -5413,8 +5413,8 @@ Staging and cleanup:
 - A `-cli-url` download lands at `<cli-dir>/.blob-<random>`, because `ensureCLI`
   creates the cli-dir first. If the cli-dir is unwritable, it lands at
   `$TMPDIR/claustrum-fetch-<random>`. The `.blob-` prefix is deliberately
-  different, so that neither the sweep nor the `-cli-keep` prune removes an
-  in-flight blob. The prune counts the name. That is also why claustrum refuses a
+  different, so that the `-cli-keep` prune does not count it and the sweep does
+  not claim an in-flight blob. That is also why claustrum refuses a
   `-cli-version` that starts with `.blob-` (D18). The install removes the blob
   before the `--version` run of a new CLI. An attempt that ends earlier removes
   the blob at its end. Only a SIGKILLed download
@@ -5428,7 +5428,8 @@ Staging and cleanup:
   it. No rule is claimed beyond these rows. The same cell showed `89cb6289`
   removing empty folders in the cli-dir. The C rows of the prune below measure
   that.
-- The `-cli-keep` prune is parity with `89cb6289`. It is measured in the C
+- The `-cli-keep` prune follows `89cb6289`, with one difference: the `.blob-`
+  name below ([D18](DIVERGENCES.md#d18)). It is measured in the C
   rows: rows C-0 to C-15 on a Linux VM and a macOS VM, and cells C-00 to C-18
   on a Windows VM. Each run is one `-install` with `-cli-zst`.
     - Every entry of the cli-dir counts: a file, a folder and a link. With four
@@ -5470,21 +5471,21 @@ Staging and cleanup:
       claustrum's choice. Not measured: that remove after a failed attempt and
       after a stopped run on a cache hit. claustrum removes it wherever the
       sweep runs.
-    - A name with the `.blob-` prefix counts. A planted `.blob-planted` file
-      takes one of two places, so two older files go (cell C-12, Windows VM
-      only). Not measured: such a name past the keep value. claustrum does not
-      remove it there, because it is the download blob of a `-cli-url` install.
+    - A name with the `.blob-` prefix is not counted and not removed by the
+      prune. This is the one difference from `89cb6289`
+      ([D18](DIVERGENCES.md#d18)). In cell C-12 (Windows VM only) a planted
+      `.blob-planted` file is 1 h old beside two files that are 4 h and 3 h
+      old, with `-cli-keep 2`. `89cb6289` counts the planted file and removes
+      both older files. claustrum removes the 4 h file only.
     - A failed install and a cache hit do not prune (rows C-14 and C-15, cells
       C-16 and C-17). A `TMPDIR` that names a folder of the cli-dir changes
       nothing (row C-13).
     - Not measured: whether a folder with content takes a place in the order,
       and a swept name that the sweep did not remove. claustrum counts the
       first and does not count the second. Not measured on Linux and macOS:
-      `-cli-keep 0` and a `.blob-` name. claustrum applies the Windows result
-      there.
+      `-cli-keep 0`. claustrum applies the Windows result there.
     - Before, claustrum counted and removed files and links only. It did not
-      prune for `-cli-keep 0`, it did not count a `.blob-` name, and it counted
-      a `*.zst.part` file as a version.
+      prune for `-cli-keep 0`, and it counted a `*.zst.part` file as a version.
 - claustrum consumes the `-cli-zst` blob once decompression succeeds, and not
   only on a fully successful install. An extracted CLI that fails the runnability
   test still costs the blob. claustrum leaves a blob that is not valid zstd alone.

@@ -169,7 +169,7 @@ rather than repeating them in each entry:
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement of the reference with an `lsof` run that never returns, or an operator reporting a run dir the cleaner will not tidy because `lsof` never returns |
-| [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
+| [D18](#d18) | `-cli-version` must not start with `.blob-`. The `-cli-keep` prune does not count a `.blob-` name, where `89cb6289` counts a planted one (cell C-12, Windows VM) | always-on | always-on | rule 3 clause (b). The prune part: maintainer decision of 2026-10-07 | Desktop passing a `-cli-version` that starts with `.blob-` |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
@@ -832,15 +832,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 ### D18 · `-cli-version` must not start with `.blob-` (always-on) { #d18 }
 
 - **Behavior.** claustrum downloads a `-cli-url` blob to `<cli-dir>/.blob-<random>`.
-  Neither the sweep nor the `-cli-keep` prune removes a name with that prefix, so
-  an in-flight blob is never deleted. The prune counts the name, as `89cb6289`
-  counts a planted file with it (cell C-12, Windows VM). A CLI installed under
-  such a name is never pruned or swept. claustrum therefore answers `cli version "…" collides with the
+  The sweep and the `-cli-keep` prune both skip that prefix, so an in-flight blob
+  is never deleted or counted. A CLI installed under such a name is never pruned
+  or swept either. claustrum therefore answers `cli version "…" collides with the
   install download blob` and installs nothing.
 - **Reference side.** The prefix is claustrum's own name. Whether the reference
-  installs such a version is not measured.
+  installs such a version is not measured. One difference in the prune is
+  measured. `89cb6289` counts a planted `.blob-planted` file (cell C-12, Windows
+  VM). With `-cli-keep 2` and two older files beside it, `89cb6289` removes both
+  older files. claustrum does not count the planted file, so it removes the
+  oldest file only.
 - **Why always-on.** Rule 3 clause (b). The real client passes bare versions
   (`1.0.86`, a commit sha, `latest`). It is on the same evidence as [D6](#d6).
+  The prune difference stays by the maintainer's decision of 2026-10-07, not by
+  a rule 3 clause. The name is claustrum's own temporary name of a download in
+  progress, and a download of a second install must not use a keep place.
 - **Why not part of D6.** D6 guards a destructive path that leaves the cli-dir.
   D18 guards a name that claustrum itself reserves. The reasons and the reopen
   triggers differ. The number D7 is retired and is not reused.
