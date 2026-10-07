@@ -170,7 +170,7 @@ rather than repeating them in each entry:
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement of the reference with an `lsof` run that never returns, or an operator reporting a run dir the cleaner will not tidy because `lsof` never returns |
 | [D18](#d18) | `-cli-version` must not start with `.blob-`. The `-cli-keep` prune does not count or remove a `.blob-` name, where `89cb6289` counts a planted one (cell C-12, Windows VM) and removes it (cells B1, Linux, macOS and Windows VMs) | always-on | always-on | rule 3 clause (b). The prune part: maintainer decision of 2026-10-07 | Desktop passing a `-cli-version` that starts with `.blob-` |
-| [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
+| [D19](#d19) | `git.worktree_remove` refuses a junction at any directory between `baseRepo` and the leaf. At `.claude` or `.claude\worktrees`, `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches. At a level above `.claude`, `89cb6289` answers success with no leaf and no branch there (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decisions of 2026-09-27 and, for the levels above `.claude`, of 2026-10-07 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
@@ -893,13 +893,16 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `-install`, and `install.go`
   (`isDownloadBlobName`, `validateCLIVersion`).
 
-### D19 · Refuse a junction at `.claude` or `.claude\worktrees` on remove (Windows, always-on) { #d19 }
+### D19 · Refuse a junction between `baseRepo` and the leaf on remove (Windows, always-on) { #d19 }
 
-- **Behavior.** On Windows, `git.worktree_remove` refuses a request whose `.claude` or
-  `.claude\worktrees` is a junction. The reply is `{"success":false,"error":"failed
-  to remove worktree: openat .claude\\worktrees: path escapes from parent"}`. That
-  text is claustrum's own, the error of `os.Root`. Nothing is deleted, and the branch
-  stays.
+- **Behavior.** On Windows, `git.worktree_remove` refuses a request with a junction
+  at any directory between `baseRepo` and the leaf. The reply is
+  `{"success":false,"error":"failed to remove worktree: openat <path from
+  baseRepo>: path escapes from parent"}`. `<path from baseRepo>` is the folder that
+  holds the leaf, relative to `baseRepo`. It is `.claude\\worktrees` in the frame
+  for a junction at `.claude` or at `.claude\worktrees`. That text is claustrum's
+  own, the error of `os.Root`. From the code: claustrum opens that folder in one
+  `os.Root` step. Nothing is deleted, and the branch stays.
 - **Reference side, measured.** Measured against `f6010b97` on a Windows VM (rows
   J03, J04 and J05 for `.claude\worktrees`, row JC for `.claude`). The reference answers `{"success":true}` and deletes nothing.
   It still deletes the branch. When the junction leads to a live worktree, that
@@ -908,6 +911,15 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   Neither daemon deleted anything outside the fixture. The whole-build check of
   issue 442 measured `89cb6289` the same (Windows rows JC, J03 to J05, JCR1 and
   JCR2), for a branch that another ref reaches.
+- **Reference side, a level above `.claude`.** Two cells of `89cb6289` on a
+  Windows VM have a `baseRepo` P with no junction and a junction `<P>\J`. The
+  `worktreePath` is `<P>\J\sub\.claude\worktrees\w1` in cell J-b-wt-pj and
+  `<P>\J\.claude\worktrees\w1` in cell J-b-wt-pJ. The leaf did not exist, and no
+  branch existed. `89cb6289` answers `{"success":true}` after 2 git calls.
+  claustrum answers `openat J\\sub\\.claude\\worktrees: path escapes from parent`
+  and `openat J\\.claude\\worktrees: path escapes from parent` in the frame, with
+  no git call. Nothing changes on disk on either side. Not measured: a live
+  worktree behind such a junction, and the branch step there.
 - **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
   and no key.
 - **Why always-on.** Rule 3 clause (b), by the maintainer's decision of 2026-09-27.
@@ -916,19 +928,24 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   Windows VM, rows JCR1 and JCR2). So neither daemon creates a worktree there. Only a
   worktree made outside the daemon sits there. For it, claustrum keeps a branch that
   the reference deletes, which on `89cb6289` is a branch that another ref reaches.
+  The maintainer widened the entry on 2026-10-07 to a junction at any directory
+  between `baseRepo` and the leaf. The create of both daemons refuses there too.
+  Both answer `failed to create parent directory: <P>\J is not a directory` with
+  `mkdir_failed` in cells J-b-wt-pj and J-b-wt-pJ, with equal frames.
 - **Cost.** A Windows client that diffs frames against the reference sees
   `success:false` where the reference sends `success:true`. A branch that the
   reference deletes stays with claustrum. A client that relies on the remove to
   delete the branch there must delete it itself.
 - **Reopen trigger.** The reference refusing the junction with the same text (then
   this becomes parity), or the reference deleting the tree through the junction. Or a Windows
-  client that depends on the success reply for a junctioned `.claude` or
-  `.claude\worktrees`.
+  client that depends on the success reply for a junction between `baseRepo` and
+  the leaf.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`. Also
   `worktreeremove.go` (`openRemoveParent`). Evidence in
   `scratch/i429/remove-val-windows-6bed4ee.md`,
-  `scratch/i429/remove-val-windows-8755717.md` and
-  `scratch/i429/remove-val-windows-8755717-jcr.md`.
+  `scratch/i429/remove-val-windows-8755717.md`,
+  `scratch/i429/remove-val-windows-8755717-jcr.md` and
+  `scratch/i429/s33-windows-junction/raw/table.md`.
 
 ### D20 · Wait for a settle before the group `SIGKILL` of a leader that reads as gone (Linux and macOS) { #d20 }
 

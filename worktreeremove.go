@@ -146,8 +146,10 @@ func levelSearchError(level *os.Root) error {
 }
 
 // openRemoveParent opens the directory that holds the worktree. On Windows a junction
-// at .claude or at .claude\worktrees makes os.Root refuse the open with "path escapes
-// from parent".
+// at a directory between base and the leaf makes os.Root refuse the open with "openat
+// <dirRel>: path escapes from parent". Measured for a junction at .claude and at
+// .claude\worktrees (rows JC and J03 to J05), and for a junction J with the dirRel
+// J\sub\.claude\worktrees and J\.claude\worktrees (cells J-b-wt-pj and J-b-wt-pJ).
 // The request then fails, and nothing is deleted. That refusal is divergence D19.
 //
 // On Linux and macOS it opens base and then each component of dirRel, one level at a
