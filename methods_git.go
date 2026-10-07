@@ -1263,16 +1263,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg != "" {
 			return refuse(msg)
 		}
-		// A root that the daemon cannot open or search answers its own error later, in
-		// locateExternalWorktree, and not this refusal (cell U13b, Linux and macOS VMs).
-		if !externalRootDenied(p.WorktreePath) {
+		// A root that the daemon cannot open or search answers its own error later,
+		// and not this refusal (cell U13b, Linux and macOS VMs).
+		dirSymlinkChecked := !externalRootDenied(p.WorktreePath)
+		if dirSymlinkChecked {
 			if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
 				return refuse(msg)
 			}
 		}
 		// 89cb6289 makes two more git calls here: a light `worktree list --porcelain -z`,
 		// then a heavy `rev-parse --absolute-git-dir`. Each runs in baseRepo with its
-		// listing. The second one does not run for a worktreeRoot that cannot be read:
+		// listing. The second one does not run for a worktreeRoot below a folder of mode 000:
 		// that request answers its lstat error after 7 calls (Linux VM, row T6).
 		// claustrum runs the second call after it located the worktree folder.
 		// f6010b97 made the same two calls (rows WR00,
@@ -1302,6 +1303,15 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			return refuse(msg)
 		}
 		target, err = locateExternalWorktree(p.WorktreePath)
+		// The root looked denied above and opens now, so its mode changed during the
+		// request. The skipped symlink refusal runs here, before any delete. Only a race
+		// reaches this, and no row measures it.
+		if err == nil && !dirSymlinkChecked {
+			if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
+				target.close()
+				return refuse(msg)
+			}
+		}
 	} else {
 		// Empty is failed as a non-directory, not as a relative path (measured against
 		// 7d193f89).

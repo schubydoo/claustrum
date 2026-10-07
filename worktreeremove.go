@@ -140,8 +140,9 @@ func levelSearchError(level *os.Root) error {
 // below. So a level without the read bit answers the error of its own open: "open
 // <base>" or "openat <component>". A level with the read bit and without the search
 // bit answers "statat .". The frames of 89cb6289 show those texts on Linux and macOS
-// VMs (rows B1 to B11 with worktreeRoot, rows B17a to B17d without). With a root of
-// mode 0300 or 0100 nothing is deleted there (rows B3, B4 and B18). With two
+// VMs (rows B1 to B6 and B8 to B11b with worktreeRoot, rows B17a to B17d without).
+// With a root of mode 0300 or 0100 nothing is deleted there (rows B3 and B4, and row
+// B18 on the macOS VM). With two
 // restricted levels, the first one from the top answers (cells U7 to U10). A level
 // that fails the look for another reason answers that error, and nothing is deleted
 // (not measured). On Windows dirRel is opened in one step, as before.

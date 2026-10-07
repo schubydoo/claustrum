@@ -9,8 +9,9 @@ import (
 )
 
 // git.worktree_remove with a folder level that the daemon cannot read or search. The
-// rows are the mode rows of 89cb6289 on Linux and macOS VMs (B1 to B18), and the cells
-// of the round after them (U1 to U19). This file is
+// rows are the mode rows of 89cb6289 on Linux and macOS VMs (B1 to B17d, and B18 on
+// the macOS VM), and cells U1, U13b, U14 and U17a to U19 of the round after them. This
+// file is
 // unix only: chmod denies nothing on Windows, and Windows refuses a worktreeRoot.
 
 // restrictLevel sets the mode of dir for one request. The returned function puts 0755
