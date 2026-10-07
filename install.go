@@ -1286,14 +1286,16 @@ func isSweptName(name string) bool {
 // The mtime comes from os.Lstat, as in the sweep. That choice is from the
 // code, not from a row.
 //
-// Not measured, and claustrum keeps what it did before:
-//   - A negative keep value. claustrum does not prune.
+// Not measured:
+//   - A negative keep value. claustrum does not prune, as before.
 //   - Whether a folder with content takes a place in the order. claustrum
 //     counts it as every other entry. No row puts one among the newest.
 //   - A swept name that the sweep failed to remove, for example an old
-//     ".fetch-d" folder with content. claustrum does not count it.
-//   - A ".blob-" name past the keep value. claustrum does not remove it, so a
-//     later step of the install that owns it can still read it.
+//     ".fetch-d" folder with content. claustrum does not count it, as before.
+//   - A ".blob-" name past the keep value. claustrum does not remove it, as
+//     before, so a later step of the install that owns it can still read it.
+//   - Keep 0 and a ".blob-" name on Linux and macOS. claustrum applies the
+//     Windows result on every system.
 func pruneCLI(cliDir string, keep int) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
