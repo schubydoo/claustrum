@@ -44,11 +44,12 @@ func TestWorktreeCreateExternalWorldWritable(t *testing.T) {
 	}
 }
 
-// The uid-ownership refusal is the first check in the reference's order and needs a
-// root the daemon user does not own — the filesystem root is the one such directory
-// present on every unix host. worktreeRootShareRefusal only stats, so this touches
-// nothing. The ownership is asserted first so a host where "/" is somehow ours skips
-// rather than reporting a false negative.
+// The uid-ownership refusal needs a root the daemon user does not own — the
+// filesystem root is the one such directory present on every unix host.
+// worktreeRootShareRefusal only stats, so this touches nothing. The ownership is
+// asserted first so a host where "/" is somehow ours skips rather than reporting a
+// false negative. No request reaches this case now: both methods refuse a worktreeRoot
+// of "/" first.
 func TestWorktreeRootShareRefusalForeignOwner(t *testing.T) {
 	skipIfRoot(t)
 	root := string(os.PathSeparator)
