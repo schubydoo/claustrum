@@ -1142,6 +1142,21 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 // exact 600 s point is not measured, and claustrum treats it as not old.
 const sweepMinAge = 10 * time.Minute
 
+// zstPartMinAge is how old a "*.zst.part" entry must be before the sweep removes
+// it. Row C-10 of 89cb6289 straddles it on Linux and macOS VMs: an empty folder
+// "p.zst.part" that is 8 days old is gone when the new CLI runs, and
+// "q.zst.part" at 6 days stays. Cell C-18 shows the same for two files on a
+// Windows VM. The exact point between 6 and 8 days is not measured. 7 days is
+// claustrum's choice.
+const zstPartMinAge = 7 * 24 * time.Hour
+
+// isZstPartName reports whether a cli-dir entry has the "*.zst.part" name. The
+// sweep removes such an entry by zstPartMinAge, and the prune does not count
+// it. Not measured: another letter case, and a name that isSweptName claims
+// too, such as ".fetch-a.zst.part". claustrum matches the case and gives such a
+// name the 10 minute rule.
+func isZstPartName(name string) bool { return strings.HasSuffix(name, ".zst.part") }
+
 // sweepFetchTemps removes install litter from the cli-dir: an entry whose name
 // isSweptName claims AND whose mtime is more than sweepMinAge before now. The
 // litter is an interrupted install's ".fetch-<something>" or a stray "*.zst".
@@ -1161,17 +1176,28 @@ const sweepMinAge = 10 * time.Minute
 //
 // A concurrent install's staging file is fresh, so the age gate now keeps it.
 // stageAndInstall's retry still covers a staging file that outlives the gate.
+//
+// The same pass removes a "*.zst.part" entry that is more than zstPartMinAge
+// old, with the same single os.Remove. On 89cb6289 that entry is gone before
+// the run of a new CLI (row C-10, Linux and macOS VMs). Not measured: a failed
+// attempt and a stopped run on a cache hit. claustrum removes it wherever this
+// sweep runs.
 func sweepFetchTemps(cliDir string, now time.Time) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
 		return
 	}
 	for _, e := range ents {
-		if !isSweptName(e.Name()) {
+		minAge := sweepMinAge
+		switch {
+		case isSweptName(e.Name()):
+		case isZstPartName(e.Name()):
+			minAge = zstPartMinAge
+		default:
 			continue
 		}
 		fi, err := os.Lstat(filepath.Join(cliDir, e.Name()))
-		if err != nil || now.Sub(fi.ModTime()) <= sweepMinAge {
+		if err != nil || now.Sub(fi.ModTime()) <= minAge {
 			continue
 		}
 		_ = os.Remove(filepath.Join(cliDir, e.Name()))
@@ -1243,6 +1269,10 @@ func isSweptName(name string) bool {
 //     age. Rows C-9 (a fresh ".fetch-d" and "x.zst" stay and three other
 //     entries stay with keep 3) and C-8 (20 minutes old, the sweep took both
 //     before the new CLI ran).
+//   - A "*.zst.part" name is not counted and not removed here either. Cell
+//     C-18 on a Windows VM: the file "q.zst.part" is 6 days old and older than
+//     every other entry, keep is 3 and five other entries count, and it stays.
+//     The sweep removes such a name by its own age rule (zstPartMinAge).
 //   - Keep 0 removes every entry that counts, the new CLI too (cell C-13,
 //     Windows VM only). runInstall calls the prune for a keep of 0 or more.
 //
@@ -1266,7 +1296,7 @@ func pruneCLI(cliDir string, keep int) {
 	}
 	var vs []ver
 	for _, e := range ents {
-		if isSweptName(e.Name()) {
+		if isSweptName(e.Name()) || isZstPartName(e.Name()) {
 			continue
 		}
 		// A concurrent install's in-flight download blob is not a CLI version.

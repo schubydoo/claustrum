@@ -109,6 +109,9 @@ func TestPruneRows(t *testing.T) {
 			{"e1", pruneEmptyDir, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
 			{"v3", pruneFile, 2 * pruneHour}, {"v4", pruneFile, 1 * pruneHour},
 		}, want: []string{".fetch-d", pruneCLIName, "v3", "v4", "x.zst"}},
+		{id: "LM/C-10", keep: 3, before: []pruneEntry{
+			{"p.zst.part", pruneEmptyDir, 8 * pruneDay}, {"q.zst.part", pruneEmptyDir, 6 * pruneDay},
+		}, want: []string{pruneCLIName, "q.zst.part"}},
 		{id: "LM/C-11", keep: 2, before: []pruneEntry{
 			{"e1", pruneEmptyDir, -1 * pruneHour}, {"e2", pruneEmptyDir, -1 * pruneHour},
 			{"v3", pruneFile, 2 * pruneHour}, {"v4", pruneFile, 1 * pruneHour},
@@ -174,6 +177,13 @@ func TestPruneRows(t *testing.T) {
 		}, want: []string{pruneCLIName, "e4", "ta"}},
 		{id: "W/C-16", keep: 3, before: e4321(pruneEmptyDir), run: pruneFailedInstall, want: []string{"e1", "e2", "e3", "e4"}},
 		{id: "W/C-17", keep: 3, before: e4321(pruneEmptyDir), run: pruneCacheHit, want: []string{pruneCLIName, "e1", "e2", "e3", "e4"}},
+		{id: "W/C-18", keep: 3, before: []pruneEntry{
+			{".fetch-d", pruneEmptyDir, 20 * pruneMin}, {"x.zst", pruneEmptyDir, 20 * pruneMin},
+			{".fetch-e", pruneEmptyDir, 1 * pruneMin}, {"y.zst", pruneEmptyDir, 1 * pruneMin},
+			{"p.zst.part", pruneFile, 8 * pruneDay}, {"q.zst.part", pruneFile, 6 * pruneDay},
+			{"e1", pruneEmptyDir, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
+			{"v3.exe", pruneFile, 2 * pruneHour}, {"v4.exe", pruneFile, 1 * pruneHour},
+		}, want: []string{".fetch-e", pruneCLIName, "q.zst.part", "v3.exe", "v4.exe", "y.zst"}},
 	} {
 		t.Run(row.id, func(t *testing.T) {
 			if row.windows && runtime.GOOS != "windows" {
