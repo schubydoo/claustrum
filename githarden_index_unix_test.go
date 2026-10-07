@@ -648,40 +648,64 @@ func TestRelativeBackPointer(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk of cell
-// Z11a (macOS VM). The git stub runs the real read-tree
+// TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk of cells
+// Z11a, Z11b and Z13 (macOS VM). The git stub runs the real read-tree
 // and then sets the registrations directory to mode 0600. The index cannot be
 // placed, and the rollback cannot delete the registration. The
 // frame carries the openat text and the registration clause, the leaf goes, and
-// the registration and branch w1 stay: no branch step runs. The text in the
-// parentheses is the error of the delete, as in the cell.
+// the registration and the branch stay: no branch step runs. The text in the
+// parentheses is the error of the delete, as in the cells. In cell Z11b a file is
+// at the index first, and it keeps its bytes. Cell Z13 is cell Z11a in attach
+// mode, where the clause names the registration alone.
 func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
-	f, s, tmp := indexInstallFixture(t)
-	t.Cleanup(func() { _ = os.Chmod(f.regDir, 0o755) })
-	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "nosearch")
-	t.Setenv("CLAUSTRUM_GITSTUB_LEAF", f.regDir)
-	slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
+	const both = "the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)"
+	const attach = "the worktree registration remains; remove it by hand before retrying (RemoveAll w1: permission denied)"
+	for _, tc := range []struct {
+		name, existing, undo, branch string
+		indexFile                    bool
+	}{
+		{"Z11a", "", both, "w1", false},
+		{"Z11b", "", both, "w1", true},
+		{"Z13", "ex", attach, "ex", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, s, tmp := indexInstallFixture(t)
+			t.Cleanup(func() { _ = os.Chmod(f.regDir, 0o755) })
+			placed := filepath.Join(f.regDir, "w1", "index")
+			steps := [][]string{{"chmod", f.regDir, "600"}}
+			if tc.indexFile {
+				steps = append([][]string{{"write", placed, "placed\n"}}, steps...)
+			}
+			stubSteps(t, steps...)
+			slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 
-	raw, _ := f.create(t, s, "w1", "", 0)
-	if err := os.Chmod(f.regDir, 0o755); err != nil {
-		t.Fatal(err)
+			raw, _ := f.create(t, s, "w1", tc.existing, 0)
+			if err := os.Chmod(f.regDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			tail := jsonString(t, " openat w1/index: permission denied; and the undo could not finish for "+f.leaf()+": "+tc.undo)
+			tail = tail[1:] + `,"errorCode":"worktree_add_failed"}}`
+			if !strings.HasPrefix(raw, checkoutFailedHead) || !strings.HasSuffix(raw, tail) {
+				t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
+			}
+			if got := f.leafEntries(t); got != nil {
+				t.Errorf("leaf entries = %q, want the leaf removed", got)
+			}
+			if got := f.regs(t); !slices.Equal(got, []string{"w1"}) {
+				t.Errorf("registrations = %q, want w1 kept", got)
+			}
+			if _, err := os.Lstat(filepath.Join(f.regDir, "w1", "gitdir")); err != nil {
+				t.Errorf("the registration lost its gitdir record: %v", err)
+			}
+			if tc.indexFile {
+				wantFileContent(t, placed, "placed\n")
+			}
+			if !f.hasRef(t, tc.branch) {
+				t.Errorf("refs/heads/%s was deleted, want it kept beside a registration that stays", tc.branch)
+			}
+			requireNoIndexTemp(t, tmp)
+		})
 	}
-	tail := jsonString(t, " openat w1/index: permission denied; and the undo could not finish for "+f.leaf()+
-		": the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)")
-	tail = tail[1:] + `,"errorCode":"worktree_add_failed"}}`
-	if !strings.HasPrefix(raw, checkoutFailedHead) || !strings.HasSuffix(raw, tail) {
-		t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
-	}
-	if got := f.leafEntries(t); got != nil {
-		t.Errorf("leaf entries = %q, want the leaf removed", got)
-	}
-	if got := f.regs(t); !slices.Equal(got, []string{"w1"}) {
-		t.Errorf("registrations = %q, want w1 kept", got)
-	}
-	if !f.hasRef(t, "w1") {
-		t.Errorf("refs/heads/w1 was deleted, want it kept beside a registration that stays")
-	}
-	requireNoIndexTemp(t, tmp)
 }
 
 // TestUnreadableBackPointerOutsideRegistry pins that only a registration inside the

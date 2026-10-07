@@ -141,7 +141,7 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 				sentLeaf = filepath.Join(sentRepo, ".claude", "worktrees", "w1")
 			}
 
-			var kept string
+			var kept []string
 			doneWithin(t, "dropStaleWorktreeRegistration", func() { kept = dropStaleWorktreeRegistration(sentRepo, sentLeaf) })
 			_ = os.Chmod(registry, 0o755)
 			_ = os.Chmod(entry, 0o755)
@@ -151,11 +151,11 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 			if got := pathsBelow(t, entry); !slices.Equal(got, want) || (got == nil) != (tc.want == nil) {
 				t.Errorf("the entry holds %q, want %q (nil means the entry is gone)", got, tc.want)
 			}
-			wantKept := ""
+			var wantKept []string
 			if tc.remembered {
-				wantKept = filepath.Join(sentRepo, ".git", "worktrees", name)
+				wantKept = []string{filepath.Join(sentRepo, ".git", "worktrees", name)}
 			}
-			if kept != wantKept {
+			if !slices.Equal(kept, wantKept) {
 				t.Errorf("kept = %q, want %q", kept, wantKept)
 			}
 		})
@@ -171,13 +171,19 @@ func TestStaleRegistrationRefusal(t *testing.T) {
 	mkdirForTest(t, other)
 	const leaf = "/x/leaf"
 	want := "refusing to create worktree: /x/leaf carries a .git file naming an admin entry other than the one just created for it"
-	if got := staleRegistrationRefusal(leaf, reg, reg); got != want {
+	if got := staleRegistrationRefusal(leaf, reg, []string{reg}); got != want {
 		t.Errorf("the entry that stayed: %q, want %q", got, want)
 	}
-	for _, tc := range []struct{ name, registration, kept string }{
-		{"no entry stayed (row D-12, cell P-c)", reg, ""},
-		{"another registration (cells A9 p and A10 p)", other, reg},
-		{"no registration", "", reg},
+	if got := staleRegistrationRefusal(leaf, reg, []string{other, reg}); got != want {
+		t.Errorf("the second of two entries that stayed (not measured): %q, want %q", got, want)
+	}
+	for _, tc := range []struct {
+		name, registration string
+		kept               []string
+	}{
+		{"no entry stayed (row D-12, cell P-c)", reg, nil},
+		{"another registration (cells A9 p and A10 p)", other, []string{reg}},
+		{"no registration", "", []string{reg}},
 	} {
 		if got := staleRegistrationRefusal(leaf, tc.registration, tc.kept); got != "" {
 			t.Errorf("%s: %q, want no refusal", tc.name, got)
@@ -533,6 +539,7 @@ func TestTestedRegistrationGuards(t *testing.T) {
 	src := filepath.Join(root, "new-index")
 	writeFile(t, src, "new\n", 0o644)
 	tested := acceptRegistration(reg)
+	defer tested.release()
 	if tested.path != reg || tested.info == nil {
 		t.Fatalf("acceptRegistration = %+v, want the registration with its identity", tested)
 	}
@@ -568,7 +575,9 @@ func TestTestedRegistrationGuards(t *testing.T) {
 	home := filepath.Join(reg, "home")
 	mkdirForTest(t, home)
 	t.Setenv("HOME", home)
-	if err := removeTestedRegistration(acceptRegistration(reg)); err != nil {
+	second := acceptRegistration(reg)
+	defer second.release()
+	if err := removeTestedRegistration(second); err != nil {
 		t.Errorf("removeTestedRegistration of a folder that holds HOME = %v, want nil", err)
 	}
 	if _, err := os.Stat(home); err != nil {
@@ -577,10 +586,170 @@ func TestTestedRegistrationGuards(t *testing.T) {
 
 	// The control.
 	t.Setenv("HOME", filepath.Join(root, "elsewhere"))
-	if err := removeTestedRegistration(acceptRegistration(reg)); err != nil {
+	if err := removeTestedRegistration(second); err != nil {
 		t.Errorf("removeTestedRegistration: %v", err)
 	}
 	if _, err := os.Lstat(reg); !os.IsNotExist(err) {
 		t.Errorf("the tested registration stays (Lstat err %v), want it deleted", err)
+	}
+}
+
+// TestTestedRegistrationRetargetedRegistry pins that the identity guard (D24) tests
+// the folder that the delete and the placement then act through. The registrations
+// folder is a symlink. Right before each open of it, the test points the link at
+// another folder that holds an entry of the same name. Nothing in that other
+// folder is deleted, and no index goes into it. No cell measured this state.
+func TestTestedRegistrationRetargetedRegistry(t *testing.T) {
+	for _, op := range []string{"delete", "placement"} {
+		t.Run(op, func(t *testing.T) {
+			root := realTempDir(t)
+			link := filepath.Join(root, "worktrees")
+			writeFile(t, filepath.Join(root, "a", "w1", "HEAD"), "accepted\n", 0o644)
+			writeFile(t, filepath.Join(root, "b", "w1", "HEAD"), "other\n", 0o644)
+			if err := os.Symlink(filepath.Join(root, "a"), link); err != nil {
+				t.Fatal(err)
+			}
+			src := filepath.Join(root, "new-index")
+			writeFile(t, src, "new\n", 0o644)
+			tested := acceptRegistration(filepath.Join(link, "w1"))
+			defer tested.release()
+
+			old := openRegistrationsRoot
+			t.Cleanup(func() { openRegistrationsRoot = old })
+			opens := 0
+			openRegistrationsRoot = func(name string) (*os.Root, error) {
+				opens++
+				if err := os.Remove(link); err != nil {
+					return nil, err
+				}
+				if err := os.Symlink(filepath.Join(root, "b"), link); err != nil {
+					return nil, err
+				}
+				return old(name)
+			}
+			var err error
+			if op == "delete" {
+				err = removeTestedRegistration(tested)
+				if err != nil {
+					t.Errorf("removeTestedRegistration = %v, want nil", err)
+				}
+			} else {
+				err = guardedInstallWorktreeIndex(src, tested.path, filepath.Join(root, "leaf"), tested)
+				if want := "the registration " + tested.path + " is not the folder that was tested after the add"; err == nil || err.Error() != want {
+					t.Errorf("placement = %v, want %s", err, want)
+				}
+			}
+			if opens != 1 {
+				t.Fatalf("the registrations folder was opened %d times, want 1: the test did not stage the change", opens)
+			}
+			if got, want := pathsBelow(t, filepath.Join(root, "b", "w1")), []string{"HEAD"}; !slices.Equal(got, want) {
+				t.Errorf("the entry of the other folder holds %q, want %q", got, want)
+			}
+			wantFileContent(t, filepath.Join(root, "a", "w1", "HEAD"), "accepted\n")
+		})
+	}
+}
+
+// TestTestedRegistrationHeldIdentity pins that a folder which is deleted and made
+// again at the path of the accepted registration does not pass for it. The
+// accepted folder is held open, so the new one cannot get its number.
+func TestTestedRegistrationHeldIdentity(t *testing.T) {
+	root := realTempDir(t)
+	reg := filepath.Join(root, "worktrees", "w1")
+	for range 20 {
+		mkdirForTest(t, reg)
+		tested := acceptRegistration(reg)
+		if tested.held == nil {
+			t.Fatal("acceptRegistration holds no handle on the registration")
+		}
+		if err := os.Remove(reg); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(reg, "HEAD"), "another\n", 0o644)
+		err := removeTestedRegistration(tested)
+		tested.release()
+		if err != nil {
+			t.Fatalf("removeTestedRegistration = %v, want nil", err)
+		}
+		if _, err := os.Stat(filepath.Join(reg, "HEAD")); err != nil {
+			t.Fatalf("the new folder was deleted: %v", err)
+		}
+		if err := os.RemoveAll(reg); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestDropStaleWorktreeRegistrationEveryEntry pins the step before the add with two
+// stale entries. No cell of 89cb6289 measured that state. claustrum handles each
+// entry: both go, and with a `locked` file in one, that one stays and is
+// remembered.
+func TestDropStaleWorktreeRegistrationEveryEntry(t *testing.T) {
+	for _, locked := range []bool{false, true} {
+		root := realTempDir(t)
+		repo := filepath.Join(root, "T")
+		registry := filepath.Join(repo, ".git", "worktrees")
+		leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+		for _, name := range []string{"old9", "w1"} {
+			writeFile(t, filepath.Join(registry, name, "gitdir"), leaf+"/.git\n", 0o644)
+		}
+		var want, wantKept []string
+		if locked {
+			writeFile(t, filepath.Join(registry, "w1", "locked"), "", 0o644)
+			want, wantKept = []string{"w1"}, []string{filepath.Join(registry, "w1")}
+		}
+		kept := dropStaleWorktreeRegistration(repo, leaf)
+		ents, err := os.ReadDir(registry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, e := range ents {
+			got = append(got, e.Name())
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("locked %v: the registrations folder holds %q, want %q", locked, got, want)
+		}
+		if !slices.Equal(kept, wantKept) {
+			t.Errorf("locked %v: kept = %q, want %q", locked, kept, wantKept)
+		}
+	}
+}
+
+// TestWorktreeCreateSecondStaleEntry pins a create with two stale entries in
+// baseRepo. No cell of 89cb6289 measured that state. The state is that of cell
+// A9b g, and T also holds a stale entry old9 that can be removed. The directory
+// read gives old9 first. claustrum removes old9, keeps the locked w1 and refuses
+// the create with the text of cell A9b g. The index of w1 keeps its bytes.
+func TestWorktreeCreateSecondStaleEntry(t *testing.T) {
+	T, X, oldReg := stageOldRegistrationOfSameName(t)
+	leaf := filepath.Join(T, ".claude", "worktrees", "w1")
+	realT, err := filepath.EvalSymlinks(T)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(realT, ".claude", "worktrees", "w1", ".git") + "\n"
+	writeFile(t, filepath.Join(oldReg, "gitdir"), record, 0o644)
+	writeFile(t, filepath.Join(oldReg, "locked"), "", 0o644)
+	old9 := filepath.Join(filepath.Dir(oldReg), "old9")
+	writeFile(t, filepath.Join(old9, "gitdir"), record, 0o644)
+	index := filepath.Join(oldReg, "index")
+	oldIndex, err := os.ReadFile(index)
+	if err != nil || len(oldIndex) == 0 {
+		t.Fatalf("the old registration holds no index (err %v): this fixture does not stage the state", err)
+	}
+
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
+	raw := frameWithin(t, "git.worktree_create", createParams(T, leaf, "w1"))
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, "refusing to create worktree: "+leaf+
+		" carries a .git file naming an admin entry other than the one just created for it") + `,"errorCode":"unsafe_path"}}`
+	if raw != want {
+		t.Errorf("reply = %s\nwant %s", raw, want)
+	}
+	if _, err := os.Lstat(old9); !os.IsNotExist(err) {
+		t.Errorf("old9 stays (Lstat err %v), want it removed", err)
+	}
+	if b, err := os.ReadFile(index); err != nil || string(b) != string(oldIndex) {
+		t.Errorf("the index of the locked entry changed (err %v)", err)
 	}
 }

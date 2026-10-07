@@ -317,6 +317,11 @@ func worktreeRegistryDir(repo string) string {
 	return filepath.Join(common, "worktrees")
 }
 
+// openRegistrationsRoot opens the registrations folder for the rollback delete and
+// the index placement of a tested registration. It is os.OpenRoot behind a seam, so
+// a test can change the disk right before the open. Production never reassigns it.
+var openRegistrationsRoot = os.OpenRoot
+
 // testedRegistration is the registration that the tests after the add accepted
 // (createdRegistrationRefusal, Linux and macOS). The zero value means that the tests
 // did not run. The index of the new worktree goes into it, and a rollback removes it.
@@ -326,38 +331,58 @@ type testedRegistration struct {
 	path string
 	// info is the identity of the folder at path when the tests accepted it.
 	info os.FileInfo
+	// held is an open handle on that folder, or nil. See acceptRegistration.
+	held *os.File
 }
 
 // acceptRegistration records the registration that createdRegistrationRefusal
 // answered, with the identity of its folder at this moment. On Windows, and with no
 // registration, it answers the zero value.
+//
+// It holds the folder open until the create answers (release), as the checkpoint
+// holds the leaf. The identity comes from the held handle. While the handle is
+// open, the file system cannot give the number of the folder to a new one, so a
+// folder that is deleted and made again does not pass for the accepted one. A
+// folder that cannot be opened is identified by a stat of the path (not measured).
+// The caller must call release.
 func acceptRegistration(registration string) testedRegistration {
 	if !adminRecordChecked || registration == "" {
 		return testedRegistration{}
 	}
-	info, _ := os.Stat(registration)
-	return testedRegistration{path: registration, info: info}
+	reg := testedRegistration{path: registration}
+	if reg.held = holdWorktreeDir(registration); reg.held != nil {
+		reg.info, _ = reg.held.Stat()
+	} else {
+		reg.info, _ = os.Stat(registration)
+	}
+	return reg
 }
 
-// replaced reports whether a folder is at the path of the registration and is not
-// the folder that the tests accepted. It is claustrum's own guard (D24). The
-// placement of the index and the rollback delete each call it once, and each then
-// leaves the folder as it is. A path whose stat fails is not "replaced": the
-// placement or the delete then runs and fails by itself, with the measured texts
-// (cells Z10, Z11a and Z11b).
+// release closes the handle that the registration holds. The create calls it once,
+// when it answers.
+func (r testedRegistration) release() {
+	if r.held != nil {
+		_ = r.held.Close()
+	}
+}
+
+// replacedIn reports whether a folder is at name in root, the opened registrations
+// folder, and is not the folder that the tests accepted. It is claustrum's own
+// guard (D24). The placement of the index and the rollback delete each call it
+// once, on the root that they then act through. Each leaves a replaced folder as
+// it is. The test is on the opened root, not on a second lookup of the path: a
+// registrations folder that is a symlink can lead elsewhere at a second lookup.
+// A name whose stat fails is not "replaced": the placement or the delete then
+// runs and fails by itself, with the measured texts (cells Z10, Z11a and Z11b).
 //
-// 89cb6289 has no such test in two cells of a Linux VM, 2 runs each. In cell B6 a
-// hook renames the new registration w1 to w1x and makes a new empty folder w1,
-// before a read-tree that fails. 89cb6289 removes the empty w1. In cell B6b the
-// hook renames w1 to w1x and the registration w9 of a live sibling worktree to w1.
-// 89cb6289 removes that folder with the files of the sibling. claustrum removes
-// nothing in both cells, and the frames are equal.
-//
-// The identity is that of os.SameFile. A folder that is deleted and made again can
-// get the number of the old one, and then counts as the same folder (from the
-// code). The content that the tests saw is gone in that state.
-func (r testedRegistration) replaced() bool {
-	now, err := os.Stat(r.path)
+// 89cb6289 removes the folder at that path in two cells of a Linux VM, 2 runs each.
+// In cell B6 a hook renames the new registration w1 to w1x and makes a new empty
+// folder w1, before a read-tree that fails. 89cb6289 removes the empty w1. In cell
+// B6b the hook renames w1 to w1x and the registration w9 of a live sibling
+// worktree to w1. 89cb6289 removes that folder with the files of the sibling.
+// claustrum removes nothing in both cells, and the frames are equal.
+func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
+	now, err := root.Stat(name)
 	return err == nil && (r.info == nil || !os.SameFile(r.info, now))
 }
 
@@ -386,13 +411,15 @@ func (r testedRegistration) replaced() bool {
 // Two guards are claustrum's own. Each answers nil and deletes nothing, so the
 // frame gets no clause and the branch step runs. The home guard refuses an entry
 // path that is home or holds it (D2, no honest input reaches it). The identity
-// guard refuses a folder that is not the one that the tests accepted (replaced,
-// D24). A registrations folder that does not exist has nothing to delete.
+// guard refuses a folder that is not the one that the tests accepted (replacedIn,
+// D24). It runs after the open of the root and on that root, so the delete acts
+// on the folder that the guard saw. A registrations folder that does not exist
+// has nothing to delete.
 func removeTestedRegistration(reg testedRegistration) error {
-	if wipesHomeDir(reg.path) || reg.replaced() {
+	if wipesHomeDir(reg.path) {
 		return nil
 	}
-	root, err := os.OpenRoot(filepath.Dir(reg.path))
+	root, err := openRegistrationsRoot(filepath.Dir(reg.path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -400,33 +427,41 @@ func removeTestedRegistration(reg testedRegistration) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	return root.RemoveAll(filepath.Base(reg.path))
+	name := filepath.Base(reg.path)
+	if reg.replacedIn(root, name) {
+		return nil
+	}
+	return root.RemoveAll(name)
 }
 
 // staleRegistrationRefusal is the answer of git.worktree_create when the
-// registration that the tests after the add accepted is keptStale, a stale entry
-// that the step before the add left in place (dropStaleWorktreeRegistration). It
-// is "" for any other registration and with no such entry. The caller runs it
+// registration that the tests after the add accepted is one of keptStale, the stale
+// entries that the step before the add left in place (dropStaleWorktreeRegistration).
+// It is "" for any other registration and with no such entry. The caller runs it
 // right after createdRegistrationRefusal passed, with no git call between them.
 //
 // 89cb6289 answers this text in three cells of a Linux VM, with the daemon
 // GIT_COMMON_DIR of another repository. The old entry w1 of baseRepo has a record
 // that names the .git of the new leaf. In cells A9 g and A9b g it holds a `locked`
-// file. In cell A10 g it has mode 0500. 89cb6289 makes 9 git calls there, so no
-// checkout runs, and it rolls nothing back. Cell P-c has an old entry whose record
-// names another worktree, and it gets the text of adminRecordRefusal after two
-// more git calls. With no daemon GIT_* variable git names the new registration
-// w11, and the create succeeds (cells A9 p and A10 p).
+// file. In cell A10 g it has mode 0500. The add is the last of 9 git calls of
+// 89cb6289 there, no checkout runs, and nothing is rolled back. Cell P-c has an
+// old entry whose record names another worktree, and it gets the text of
+// adminRecordRefusal after two more git calls. With no daemon GIT_* variable git
+// names the new registration w11, and the create succeeds (cells A9 p and A10 p).
 //
 // "An entry that the step before the add left" is claustrum's own rule for these
-// cells. The two paths are compared with their symlinks resolved (not measured).
-func staleRegistrationRefusal(worktreePath, registration, keptStale string) string {
-	if keptStale == "" || registration == "" ||
-		!sameCanonicalPath(canonicalPath(registration), canonicalPath(keptStale)) {
+// cells. The paths are compared with their symlinks resolved (not measured).
+func staleRegistrationRefusal(worktreePath, registration string, keptStale []string) string {
+	if registration == "" {
 		return ""
 	}
-	return fmt.Sprintf("refusing to create worktree: %s carries a .git file naming an admin entry "+
-		"other than the one just created for it", worktreePath)
+	for _, kept := range keptStale {
+		if sameCanonicalPath(canonicalPath(registration), canonicalPath(kept)) {
+			return fmt.Sprintf("refusing to create worktree: %s carries a .git file naming an admin entry "+
+				"other than the one just created for it", worktreePath)
+		}
+	}
+	return ""
 }
 
 // createdRegistration is the registration that createdWorktreeAdminDir verified. The

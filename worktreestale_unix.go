@@ -17,7 +17,7 @@ import (
 // are those of 89cb6289 on a Linux VM with git 2.43 (cells A1 to A12c, 2 runs
 // each). No macOS VM ran them.
 //
-// The compare is by text:
+// claustrum compares by text. This rule is claustrum's own fit of the cells below:
 //
 //   - The record is read as a plain file. Blanks and newlines at both ends are cut.
 //     A relative record counts from the entry folder. Then the path is cleaned by
@@ -40,25 +40,26 @@ import (
 // entry at mode 0500 only logs/HEAD goes (cell A10). With the registrations folder
 // at mode 0555 the files go and the empty folder stays (cell A10b).
 //
-// kept is the path of a stale entry that is still there after this step, or "".
-// The create refuses later if the registration of the new worktree is that entry
+// kept holds the path of each stale entry that is still there after this step.
+// The create refuses later if the registration of the new worktree is one of them
 // (staleRegistrationRefusal).
 //
 // claustrum's own guards: the remove goes through an os.Root at the registrations
 // folder and names one direct child, so it follows no symlink. An entry that is not
 // a real folder is passed over. The home guard runs on the entry path first (D2).
 //
-// Not measured: more than one stale entry. The first match in the order of the
-// directory read ends the step, removed or kept. Not measured either: a tab or a
+// Not measured: more than one stale entry. claustrum handles every one by the
+// rules above, and remembers every one that stays. If the step ended at the first
+// match, a second stale entry got the index of the new worktree. Not measured either: a tab or a
 // carriage return at an end of the record (cut here), a relative record in a
 // repository that is sent through a symlink (it counts from the resolved entry
 // folder here), and a `locked` entry whose stat fails with another error than "does
 // not exist" (the entry stays).
-func dropStaleWorktreeRegistration(repo, worktreePath string) (kept string) {
+func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 	base := filepath.Join(repo, ".git", worktreesSubdir)
 	ents, err := os.ReadDir(base)
 	if err != nil {
-		return ""
+		return nil
 	}
 	target := filepath.Join(canonicalPathOfGone(worktreePath), ".git")
 	for _, e := range ents {
@@ -76,11 +77,14 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept string) {
 		if !filepath.IsAbs(record) {
 			record = filepath.Join(canonicalPath(entry), record)
 		}
-		if filepath.Clean(record) == target {
-			return removeStaleRegistration(base, e.Name())
+		if filepath.Clean(record) != target {
+			continue
+		}
+		if stays := removeStaleRegistration(base, e.Name()); stays != "" {
+			kept = append(kept, stays)
 		}
 	}
-	return ""
+	return kept
 }
 
 // removeStaleRegistration removes the entry name of the registrations folder base,

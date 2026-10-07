@@ -28,13 +28,13 @@ import (
 //
 // This is the Windows step. Linux and macOS have their own compare and their own
 // delete (worktreestale_unix.go). No Windows row of 89cb6289 measures this step, so
-// Windows keeps the compare and the delete that it had. The result is always "":
+// Windows keeps the compare and the delete that it had. The result is always nil:
 // Windows remembers no entry.
-func dropStaleWorktreeRegistration(repo, worktreePath string) (kept string) {
+func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 	base := filepath.Join(repo, ".git", "worktrees")
 	ents, err := os.ReadDir(base)
 	if err != nil {
-		return ""
+		return nil
 	}
 	target := resolveAsFarAsExists(worktreePath)
 	for _, e := range ents {
@@ -50,8 +50,8 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept string) {
 		// gitdir names the worktree's own ".git" file; its parent is the worktree.
 		if resolveAsFarAsExists(filepath.Dir(strings.TrimSpace(string(gitdir)))) == target {
 			_ = os.RemoveAll(filepath.Join(base, e.Name()))
-			return ""
+			return nil
 		}
 	}
-	return ""
+	return nil
 }

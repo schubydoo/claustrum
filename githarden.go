@@ -432,12 +432,15 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir s
 //
 // With tested set, the tests after the add accepted the registration (Linux and
 // macOS, when git answered `rev-parse --absolute-git-dir`). The index then goes
-// into that registration with no read of its gitdir record, as on 89cb6289. In
+// into that registration with no read of its gitdir record. 89cb6289 places the
+// index too when the record is gone: in
 // cell B4 (Linux VM) the record is removed after the read-tree: 89cb6289 answers
 // success, and the registration holds the index. In cell Z15 (Linux and macOS VMs)
 // the record is removed and the registration gets mode 0500: 89cb6289 answers
 // "openat w1/index: permission denied". One state places nothing: the folder at
-// the path is no longer the folder that the tests accepted (replaced, D24). The
+// the path is no longer the folder that the tests accepted (replacedIn, D24). The
+// placement tests that on the registrations folder that it opened
+// (installTestedWorktreeIndex). The
 // error text is claustrum's own, and the caller answers it as a failed checkout.
 // No cell measured a replaced folder at the placement.
 //
@@ -459,12 +462,10 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir s
 // text of a registration that is gone (cell Z10) or of a registrations directory
 // without the search permission (cells Z11a and Z11b, macOS VM).
 func guardedInstallWorktreeIndex(idx, adminDir, leaf string, tested testedRegistration) error {
-	switch {
-	case tested.path != "":
-		if tested.replaced() {
-			return errors.New("the registration " + tested.path + " is not the folder that was tested after the add")
-		}
-	case adminRecordChecked:
+	if tested.path != "" {
+		return installTestedWorktreeIndex(idx, tested)
+	}
+	if adminRecordChecked {
 		if _, err := os.Stat(adminDir); err == nil && readAdminRecord(adminDir, leaf) != recordNamesLeaf {
 			return errors.New("the registration " + adminDir + " has no gitdir record that names this worktree")
 		}

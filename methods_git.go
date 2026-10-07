@@ -907,8 +907,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// naming it is stale (its session folder was deleted out from under git). Drop
 	// just that registration so the add below recreates cleanly, the way 7d193f89
 	// does — where claustrum otherwise failed "missing but already registered".
-	// staleKept is a stale entry that is still there (Linux and macOS): it is
-	// locked, or the remove failed. It is "" on Windows.
+	// staleKept holds each stale entry that is still there (Linux and macOS): it
+	// is locked, or the remove failed. It is empty on Windows.
 	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
@@ -1131,9 +1131,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			})
 		}
 		tested = acceptRegistration(indexDir)
+		defer tested.release()
 		// A stale entry that the step before the add left is not the registration of
-		// this create. 89cb6289 refuses there with 9 git calls, so before the pair
-		// of the next test (cells A9 g, A9b g and A10 g, Linux VM).
+		// this create. 89cb6289 answers the refusal there after 9 git calls, and the
+		// pair of the next test is not among them (cells A9 g, A9b g and A10 g,
+		// Linux VM).
 		if text := staleRegistrationRefusal(p.WorktreePath, indexDir, staleKept); text != "" {
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
