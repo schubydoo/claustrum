@@ -413,8 +413,9 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //  2. The trust check refuses the git directory of baseRepo. The reason is the
 //     trust refusal text (rows WR01 to WR06, and WR08 with a plain folder).
 //  3. The trust check finds no repository. The reason is "exit status 128" (rows
-//     WR10 to WR13, K03 and K05). A `.git` file with a gone target that is not an
-//     entry goes on to reason 4 (row K16).
+//     WR10 to WR13, K03 and K05). On Linux and macOS a listing that fails there
+//     gives its refusal text as the reason (89cb6289, rows A-N5b and A-N5c). A `.git`
+//     file with a gone target that is not an entry goes on to reason 4 (row K16).
 //  4. The configuration cannot be listed. The reason is the refusal text of
 //     hostileConfigRefusal (rows WR15, K06 and K16). When the listing says git finds
 //     no repository, the reason is "git finds no repository here: " and git's text
@@ -485,9 +486,16 @@ func externalWorkTreeRefusal(repo string) (string, string) {
 			// The call log of 89cb6289 shows a light listing and `rev-parse
 			// --show-toplevel` here, both with GIT_DIR=<null device>. The rev-parse
 			// exits 128 (rows L13z-g and DG2h-g on a Linux VM). claustrum makes the two
-			// calls and does not read their answers. Not measured: a listing that fails
-			// there.
-			if c := hostileConfigRefusal(repo, false); !c.refused() {
+			// calls and does not read the answer of the rev-parse. A listing that fails
+			// gives its refusal text as the reason (rows A-N5b and A-N5c on Linux and
+			// macOS VMs, row A-N5 on a Linux VM). Windows refuses a worktreeRoot before this check. Without the
+			// entry of t.noRepoPinned the reason stays "exit status 128", as before. A
+			// daemon GIT_DIR that names a regular file is such a state. Not measured here.
+			c := hostileConfigRefusal(repo, false)
+			if c.refusal != "" && t.noRepoPinned() {
+				return workTreeUnknownPrefix + c.refusal, ""
+			}
+			if !c.refused() {
 				_, _ = repoTopLevel(repo, &c.listing)
 			}
 			return workTreeUnknownPrefix + "exit status 128", ""

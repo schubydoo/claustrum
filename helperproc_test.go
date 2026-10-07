@@ -217,8 +217,9 @@ func runGitLingering(args []string) int {
 // to the path CLAUSTRUM_GITSTUB_LEAF2: "rm" deletes the file, and "touch" makes an
 // empty one. With CLAUSTRUM_GITSTUB_MODE2 "ignoreterm" it then ignores SIGTERM. It
 // sleeps CLAUSTRUM_GITSTUB_MS2 milliseconds. Then it exits with
-// CLAUSTRUM_GITSTUB_EXIT2 when that is set, or else goes on as a call that the first
-// rule does not match.
+// CLAUSTRUM_GITSTUB_EXIT2 when that is set, after it wrote CLAUSTRUM_GITSTUB_STDERR2
+// to stderr as it is (no escape is expanded there, unlike the first rule), or else
+// goes on as a call that the first rule does not match.
 func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 		appendLine(log, strings.Join(args, "\x1f"))
@@ -257,6 +258,7 @@ func runGitSlow(args []string) int {
 		ms, _ := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_MS2"))
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 		if c, err := strconv.Atoi(os.Getenv("CLAUSTRUM_GITSTUB_EXIT2")); err == nil {
+			_, _ = os.Stderr.WriteString(os.Getenv("CLAUSTRUM_GITSTUB_STDERR2"))
 			return c
 		}
 		return runGitReal(args)
