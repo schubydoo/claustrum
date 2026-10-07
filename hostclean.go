@@ -506,7 +506,7 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 	}
 	held, asked := hcLockHolderRead(path, fi)
 	if !asked {
-		return hcLockUnexamined, rec, true
+		return hcLockUnreadState, rec, true
 	}
 	if held {
 		return hcLockHeld, rec, true
@@ -776,8 +776,8 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 
 // hcOrphanUninspected is the reason for an orphan whose stdio read got no answer. The pass
 // prints it in the line of the reference, measured on a macOS VM against 89cb6289 (row E5):
-// there the lsof command did not start. A run that writes to stderr gives the same line
-// here. That case is not measured for an orphan.
+// there the lsof command did not start. A run that writes to stderr and exits 1 gives the
+// same line on both sides (row F3).
 const hcOrphanUninspected = "its descriptors could not be inspected"
 
 // hcGetppid is os.Getppid behind a seam. The cleaner never retires its own parent.
@@ -1119,12 +1119,14 @@ func (c *hostCleaner) Pass() hcSummary {
 	// Other daemons of ours whose open files cannot be read. The line and the count are the
 	// reference's, measured on a macOS VM against 89cb6289 (rows D1i, D1k, E1, E2 and E5).
 	// There the line came before the orphan line and before every run dir line. Only a
-	// daemon that is old enough and serves an idle run dir gets the line: in row E1 a
-	// daemon of about 33 s on a fresh run dir got none. Which of those two gates decides is not
-	// measured, and claustrum applies both. On linux hcDaemonFilesUnread is a constant false.
+	// daemon that is old enough and serves an idle run dir gets the line. A daemon of about
+	// 33 s on a run dir of 40 days got none (row F1), and a daemon of 5 minutes on a fresh
+	// run dir got none (row F2). The loop does not run past the process limit, where the
+	// tidy does not run either: the line stays inside the state it was measured in. On linux
+	// hcDaemonFilesUnread is a constant false.
 	for _, t := range procs {
 		socket := serveArgv(t.argv, c.roots.daemonBin)
-		if t.pid < 2 || t.pid == c.selfPid || !t.sameUID || !c.roots.isDaemonBinary(t.exe) || socket == "" {
+		if tooMany || t.pid < 2 || t.pid == c.selfPid || !t.sameUID || !c.roots.isDaemonBinary(t.exe) || socket == "" {
 			continue
 		}
 		if !t.haveAge || hcClock().Sub(t.startWall) < hcMinAge {
@@ -1134,6 +1136,7 @@ func (c *hostCleaner) Pass() hcSummary {
 		for _, e := range entries {
 			if c.roots.sameSocketPath(socket, e.socket) && (e.idle >= hcIdleAge || strings.Contains(e.name, hcStagingMarker)) {
 				idle = true
+				break
 			}
 		}
 		if !idle {

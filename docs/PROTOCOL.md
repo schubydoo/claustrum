@@ -441,7 +441,7 @@ values and are not probe-measured.
 
 The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
 is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
-An `lsof` run has four outcomes. A macOS VM measured the first two against
+claustrum tells four outcomes of an `lsof` run apart. A macOS VM measured the first two against
 `89cb6289`, 3 of 3 runs in each row. The row names here and in the tables below
 are rows of the macOS host cleaner round of issue 429. The rows where the command
 does not start ran under a sandbox rule that denies the exec of `lsof`. Rows E3i
@@ -473,8 +473,13 @@ On claustrum the first line goes to a daemon that is a candidate for the retire.
 daemons are over 5 minutes old on run dirs that are 40 days old. Each gets the
 line, and the summary counts `undecided 2`. In row E1 a second daemon is about 33 s old
 on a fresh run dir. It gets no line, and the count stays 1. claustrum asks for
-both: an age of 5 minutes and an idle run dir. Which of the two decides on
-`89cb6289` is not measured.
+both: an age of 5 minutes and an idle run dir. Both hold on `89cb6289` in two more
+rows. In row F1 a daemon about 33 s old is on a run dir that is 40 days old. It
+gets no such line on either side, and both sides print
+`its daemon (pid <pid>) was not retired: it is too young to judge` for the run dir.
+In row F2 a daemon 5 minutes old is on a run dir with a fresh mtime, and no line
+names it on either side. From the code: with more than 4096 processes claustrum
+prints no such line. That state is not measured.
 
 Row E5 adds an orphaned Claude Code group to the state of row D1i. Neither side
 signals the group. Both log this line after the daemon line and before the run
@@ -484,10 +489,9 @@ dir lines, and the summary counts `undecided 2`:
 [hostclean] process group <pgid> left alone this pass: its descriptors could not be inspected
 ```
 
-With a working `lsof` both sides end the group (row E5c). For the stdio read of an
-orphan, claustrum prints the same line after a run that writes to stderr. That
-case is not measured. A run that is given up on spares the orphan with
-claustrum's own line.
+With a working `lsof` both sides end the group (row E5c). After an `lsof` run that
+writes to stderr and exits 1, both sides print the same line and signal nothing
+(row F3). A run that is given up on spares the orphan with claustrum's own line.
 
 The lock read has these measured states (macOS VM against `89cb6289`, 3 of 3 runs
 in each row, and claustrum gives the same answer):
@@ -497,7 +501,7 @@ in each row, and claustrum gives the same answer):
 | C3 | the `lsof` command does not start, and the dir has a `daemon.lock` (empty, or the record of a dead daemon) | the dir stays, with the line `[hostclean] run dir "<dir>" unused for 40 days: kept, its daemon.lock could not be examined` |
 | D2p, D2f | the `lsof` run writes to stderr and exits 1. In rows D2p and D2f a live process holds one of the lock files | the dir stays, with the same line |
 | D4 | the `daemon.lock` has mode 0000 | the dir stays, with the same line |
-| E7a, E7b | the `daemon.lock` is a symlink to a regular file, or a folder | the dir stays, with the same line |
+| E7a, E7b, F4 | the `daemon.lock` is a symlink to a regular file, a folder, or a FIFO | the dir stays, with the same line |
 | C3, D2p, D2f, D4 | the dir has no `daemon.lock` | the dir goes |
 | C2 | another live process holds the lock file open | the dir stays, with the held line |
 | C4 | only the cleaner itself holds the lock file open | the dir goes |
@@ -507,7 +511,9 @@ in each row, and claustrum gives the same answer):
 | D5 | the lock holds the record of a live pid that does not hold the file | the dir goes |
 | C6 | the lock holds the record of a dead pid, and no process holds it | the dir goes |
 
-Not measured: a second pass, and an `lsof` exit code other than 1. Linux is not
+Not measured: a second pass, and an `lsof` run that writes to stderr with another
+exit code or with output on stdout too. claustrum reads each such run as no
+answer, whatever the exit code and the output are. Linux is not
 measured for these states. On Linux, a lock that cannot be opened, a lock that is
 no regular file, and lock content that is no record keep the dir with claustrum's
 own line. On Linux the pass logs no `left alone this pass` line.

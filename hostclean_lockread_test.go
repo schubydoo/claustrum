@@ -100,6 +100,7 @@ var hcDeadRecord = []byte(`{"pid":999999,"role":"daemon"}`)
 func TestTidyKeepsALockWhoseHolderQueryDidNotStart(t *testing.T) {
 	for _, started := range []bool{false, true} {
 		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return false, started })
+		hcLockUnreadState = hcLockUnexamined // the darwin value: it picks the line of the reference
 		z0 := f.dir("z0", nil)
 		z1 := f.dir("z1", []byte{})
 		z2 := f.dir("z2", hcDeadRecord)

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +65,8 @@ func TestPassLeavesADaemonWithUnreadOpenFilesAlone(t *testing.T) {
 		if firstDir < 0 {
 			t.Fatalf("unread=%v: the pass did not reach the tidy; log %q", unread, log)
 		}
-		if len(asked) != 2 || asked[0]+asked[1] != 2*self+3 {
+		sort.Ints(asked)
+		if len(asked) != 2 || asked[0] != self+1 || asked[1] != self+2 {
 			t.Errorf("unread=%v: asked about pids %v, want only the two old idle siblings %d and %d", unread, asked, self+1, self+2)
 		}
 		if len(f.single) != 0 || len(f.group) != 0 {
@@ -115,6 +118,40 @@ func TestPassOrphanLineWithoutAStdioAnswer(t *testing.T) {
 		}
 		if sum.undecided != 1 || sum.orphanSignalled != 0 || len(f.group) != 0 || len(f.single) != 0 {
 			t.Errorf("answered=%v: summary=%+v group=%v single=%v, want undecided 1 and no signal", answered, sum, f.group, f.single)
+		}
+	}
+}
+
+// TestPassPastTheProcessLimitLogsNoDaemonLine: with more than 4096 processes the pass does
+// not tidy, and it does not ask about the open files of a sibling daemon either. No "left
+// alone this pass" line and no count. That state is not measured, so the line stays out of
+// it. The control at 4096 processes logs the line.
+func TestPassPastTheProcessLimitLogsNoDaemonLine(t *testing.T) {
+	for _, n := range []int{hcMaxSnapshot, hcMaxSnapshot + 1} {
+		f := hcNewPassFixture(t)
+		oldUnread := hcDaemonFilesUnread
+		t.Cleanup(func() { hcDaemonFilesUnread = oldUnread })
+		hcDaemonFilesUnread = func(int) bool { return true }
+		sibling := os.Getpid() + 1
+		hcSiblingDaemon(t, f, sibling, "s1", "1", 40*24*time.Hour)
+		// Bare pid folders above the sibling: the snapshot counts them, and inspect reads
+		// each one as gone. The sibling is one of the n processes.
+		for i := 1; i < n; i++ {
+			if err := os.Mkdir(filepath.Join(f.proot, strconv.Itoa(4_000_000+i)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		buf := captureLogBuf(t)
+
+		sum := f.c.Pass()
+
+		over := n > hcMaxSnapshot
+		wantLines, wantCount := 1, 1
+		if over {
+			wantLines, wantCount = 0, 0
+		}
+		if got := strings.Count(buf.String(), "left alone this pass"); got != wantLines || sum.undecided != wantCount {
+			t.Errorf("%d processes: %d daemon lines and undecided %d, want %d and %d", n, got, sum.undecided, wantLines, wantCount)
 		}
 	}
 }
