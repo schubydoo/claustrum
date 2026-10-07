@@ -68,6 +68,11 @@ func hasLinkComponent(p string) bool {
 // 89cb6289 ran the call there. So which of the two it uses is not measured.
 const gitVersionDir = ""
 
+// nonFolderStartRefuses is true on Windows. A configuration listing that cannot start
+// in a path that exists and is not a folder is a refusal there, as on 89cb6289 (Windows
+// VM, cells A-01 to A-04, A-04b2, A-06, A-10, A-14 and Wc). See unenterableDir.
+var nonFolderStartRefuses = true
+
 // walkRootStart is where the walk for the git.info root starts: dir with its symlinks
 // resolved (gitWalkRoot). filepath.EvalSymlinks fails for a path with a junction before
 // its last component, because Go reports a junction as an irregular file, not a directory.
