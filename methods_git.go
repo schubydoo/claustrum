@@ -907,7 +907,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// naming it is stale (its session folder was deleted out from under git). Drop
 	// just that registration so the add below recreates cleanly, the way 7d193f89
 	// does — where claustrum otherwise failed "missing but already registered".
-	dropStaleWorktreeRegistration(repo, p.WorktreePath)
+	// staleKept is a stale entry that is still there (Linux and macOS): it is
+	// locked, or the remove failed. It is "" on Windows.
+	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
@@ -1104,22 +1106,35 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// commondir file of gitDir is read once for them, in the tests. The tests answer
 	// the index folder, so it is the entry that they saw. A .git file or a commondir
 	// file that changes later cannot move the index to a folder that the tests did
-	// not see. A rollback reads both files again for its own check
-	// (createdWorktreeAdminDir).
+	// not see. On Linux and macOS a rollback removes that same entry (tested), and
+	// it reads neither file again.
 	//
 	// The tests need the git directory that git answered. If rev-parse gave no
 	// answer, gitDir is a guess (repoGitDir), and for a baseRepo that is a subfolder
 	// of a repository that folder does not exist. The tests then do not run, and the
-	// index folder is the one that the .git file names. That is claustrum's choice
-	// (not measured).
+	// index folder is the one that the .git file names. A rollback then reads both
+	// files again for its own check (createdWorktreeAdminDir). That is claustrum's
+	// choice (not measured).
 	adminDir := worktreeAdminDir(p.WorktreePath)
 	indexDir := ""
 	if adminDir != "" {
 		indexDir = absoluteAdminDir(p.WorktreePath, adminDir)
 	}
+	var tested testedRegistration
 	if gitAnswered {
 		var text string
 		if indexDir, text = createdRegistrationRefusal(gitDir, p.WorktreePath, adminDir); text != "" {
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     text,
+				ErrorCode: "unsafe_path",
+			})
+		}
+		tested = acceptRegistration(indexDir)
+		// A stale entry that the step before the add left is not the registration of
+		// this create. 89cb6289 refuses there with 9 git calls, so before the pair
+		// of the next test (cells A9 g, A9b g and A10 g, Linux VM).
+		if text := staleRegistrationRefusal(p.WorktreePath, indexDir, staleKept); text != "" {
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
 				Error:     text,
@@ -1151,7 +1166,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// Every rollback below appends an undo text when one of its steps fails.
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs)
-		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 		return okResult(req.ID, worktreeResult{
 			Success:    false,
 			Error:      msg + undo,
@@ -1169,7 +1184,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if indexDir != "" {
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, checkoutRev, commonDirPinEnv(repo))
+			indexDir, tested, checkoutRev, commonDirPinEnv(repo))
 		switch {
 		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and
@@ -1178,7 +1193,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// fails after a drain overrun takes this arm too. That is claustrum's
 			// choice (not measured).
 			msg := "git worktree add failed (checkout): " + indexInstallText(rtStderr, installErr)
-			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
 				Error:      msg + undo,
@@ -1200,7 +1215,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// Measured against f6010b97 and 90fca6e6 on a macOS VM.
 			msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s",
 				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
-			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
 				Error:      msg + undo,
@@ -1218,7 +1233,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// createdBranch is "", so the attached branch is kept, as measured against
 			// f6010b97.
 			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)
-			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
 				Error:      msg + undo,
@@ -1254,7 +1269,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// and 90fca6e6 on a macOS VM.
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs)
-		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 		return okResult(req.ID, worktreeResult{
 			Success:    false,
 			Error:      msg + undo,

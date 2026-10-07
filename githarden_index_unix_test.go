@@ -528,14 +528,15 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 // runs the real read-tree and then deletes the temporary index. The request answers
 // worktree_add_failed "(checkout)" with the stderr of the checkout and the open
 // text, and the whole rollback runs: the leaf, the registration and branch w1 go.
-// The temporary folder in the text has claustrum's own prefix.
+// The temporary folder in the text has the prefix of the cell, claude-ssh-index-,
+// and a decimal number after it.
 func TestWorktreeCreateTempIndexGone(t *testing.T) {
 	f, s, tmp := indexInstallFixture(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "rmindex")
 	slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 
 	raw, _ := f.create(t, s, "w1", "", 0)
-	tail := regexp.MustCompile(regexp.QuoteMeta(strings.Trim(jsonString(t, " open "+tmp+"/"+checkoutIndexTempPrefix), `"`)) +
+	tail := regexp.MustCompile(regexp.QuoteMeta(strings.Trim(jsonString(t, " open "+tmp+"/claude-ssh-index-"), `"`)) +
 		`[0-9]+/index: no such file or directory","errorCode":"worktree_add_failed"\}\}$`)
 	if !strings.HasPrefix(raw, checkoutFailedHead) || !tail.MatchString(raw) {
 		t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
@@ -650,10 +651,10 @@ func TestRelativeBackPointer(t *testing.T) {
 // TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk of cell
 // Z11a (macOS VM). The git stub runs the real read-tree
 // and then sets the registrations directory to mode 0600. The index cannot be
-// placed, and the rollback cannot read the back-pointer of the registration. The
+// placed, and the rollback cannot delete the registration. The
 // frame carries the openat text and the registration clause, the leaf goes, and
-// the registration and branch w1 stay: no branch step runs. claustrum attempts no
-// delete there, and the text in the parentheses has the shape of the cell.
+// the registration and branch w1 stay: no branch step runs. The text in the
+// parentheses is the error of the delete, as in the cell.
 func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 	f, s, tmp := indexInstallFixture(t)
 	t.Cleanup(func() { _ = os.Chmod(f.regDir, 0o755) })

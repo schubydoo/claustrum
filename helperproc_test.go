@@ -185,6 +185,10 @@ func runGitLingering(args []string) int {
 //   - "setfile": the leaf is a file here. Write CLAUSTRUM_GITSTUB_VALUE into it.
 //   - "lockmany": make rN/f in it for N in the order 3 0 5 1 7 2 6 4, and make each
 //     rN read-only. Neither the first nor the last one made is r0.
+//   - "steps": the leaf is not used. CLAUSTRUM_GITSTUB_VALUE holds steps, joined
+//     by a record separator (0x1e). Each step is a verb and its arguments, joined by
+//     a unit separator (0x1f): "write" path content, "rm" path, "mkdir" path,
+//     "rename" old new, and "chmod" path mode (octal). They run in that order.
 //
 // When CLAUSTRUM_GITSTUB_SNAP names a file, the action then writes the leaf's
 // top-level names to it, one per line, in the order that the directory read
@@ -460,6 +464,13 @@ func applyGitStubAction(action, leaf string) error {
 	case "setfile":
 		// leaf is a file here. It gets the bytes of CLAUSTRUM_GITSTUB_VALUE.
 		return os.WriteFile(leaf, []byte(os.Getenv("CLAUSTRUM_GITSTUB_VALUE")), 0o644)
+	case "steps":
+		for _, step := range strings.Split(os.Getenv("CLAUSTRUM_GITSTUB_VALUE"), "\x1e") {
+			if err := applyGitStubStep(strings.Split(step, "\x1f")); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "lockmany":
 		for _, i := range []int{3, 0, 5, 1, 7, 2, 6, 4} {
 			dir := filepath.Join(leaf, "r"+strconv.Itoa(i))
@@ -476,6 +487,27 @@ func applyGitStubAction(action, leaf string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown CLAUSTRUM_GITSTUB_ACTION %q", action)
+}
+
+// applyGitStubStep runs one step of the "steps" action. See runGitSlow.
+func applyGitStubStep(w []string) error {
+	switch {
+	case len(w) == 3 && w[0] == "write":
+		return os.WriteFile(w[1], []byte(w[2]), 0o644)
+	case len(w) == 2 && w[0] == "rm":
+		return os.Remove(w[1])
+	case len(w) == 2 && w[0] == "mkdir":
+		return os.Mkdir(w[1], 0o755)
+	case len(w) == 3 && w[0] == "rename":
+		return os.Rename(w[1], w[2])
+	case len(w) == 3 && w[0] == "chmod":
+		mode, err := strconv.ParseUint(w[2], 8, 32)
+		if err != nil {
+			return err
+		}
+		return os.Chmod(w[1], os.FileMode(mode))
+	}
+	return fmt.Errorf("unknown step %q of CLAUSTRUM_GITSTUB_ACTION steps", w)
 }
 
 // runWrapLauncher implements the "wrap" helper mode. See runHelper.

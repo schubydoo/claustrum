@@ -599,7 +599,8 @@ func stageOldRegistrationOfSameName(t *testing.T) (string, string, string) {
 	return T, X, filepath.Join(T, ".git", "worktrees", "w1")
 }
 
-// TestInstallWorktreeIndexGuard pins the guard of the index placement, one case for
+// TestInstallWorktreeIndexGuard pins the guard of the index placement for a create
+// whose registration tests did not run (no tested registration), one case for
 // each state of the gitdir record. The index is placed only for a record that can
 // be read and names the leaf. In every other state of a registration that is there,
 // the guard answers its own error, and the index that is there keeps its bytes and
@@ -662,7 +663,7 @@ func TestInstallWorktreeIndexGuard(t *testing.T) {
 			tc.record(t, root, reg, leaf)
 
 			var installErr error
-			doneWithin(t, "guardedInstallWorktreeIndex", func() { installErr = guardedInstallWorktreeIndex(src, reg, leaf) })
+			doneWithin(t, "guardedInstallWorktreeIndex", func() { installErr = guardedInstallWorktreeIndex(src, reg, leaf, testedRegistration{}) })
 			if tc.want == "" {
 				if installErr != nil {
 					t.Fatalf("err = %v, want the index placed", installErr)
@@ -879,7 +880,7 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 		_, refusal = createdRegistrationRefusal(gitDir, leaf, worktreeAdminDir(leaf))
 		record = readAdminRecord(reg, leaf)
 		mismatch = adminRecordMismatch(reg, leaf)
-		installErr = guardedInstallWorktreeIndex(src, reg, leaf)
+		installErr = guardedInstallWorktreeIndex(src, reg, leaf, testedRegistration{})
 	})
 	if want := filepath.Join(gitDir, "worktrees"); registry != want {
 		t.Errorf("gitDirRegistryDir(FIFO commondir) = %s, want %s", registry, want)

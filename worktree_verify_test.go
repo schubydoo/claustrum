@@ -193,7 +193,7 @@ func TestUndoFailedCheckout(t *testing.T) {
 		writeFile(t, filepath.Join(wt, "sub", "f.txt"), "f\n", 0o644)
 		cp := checkpointCreatedWorktree(wt)
 		defer cp.release()
-		if got, _ := undoFailedCheckout(repo, wt, "", cp); got != "" {
+		if got, _ := undoFailedCheckout(repo, wt, "", cp, testedRegistration{}); got != "" {
 			t.Errorf("undo text = %q, want none", got)
 		}
 		for _, p := range []string{admin, wt} {
@@ -214,7 +214,7 @@ func TestUndoFailedCheckout(t *testing.T) {
 		if err := os.WriteFile(keep, []byte("must survive"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got, _ := undoFailedCheckout(t.TempDir(), home, "", worktreeCheckpoint{}); got != "" {
+		if got, _ := undoFailedCheckout(t.TempDir(), home, "", worktreeCheckpoint{}, testedRegistration{}); got != "" {
 			t.Errorf("undo text = %q, want none", got)
 		}
 		if _, err := os.Stat(keep); err != nil {
@@ -242,7 +242,7 @@ func TestUndoFailedCheckout(t *testing.T) {
 		if err := os.WriteFile(wt, []byte("not the directory that was created"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got, _ := undoFailedCheckout(base, wt, "", cp); got != "" {
+		if got, _ := undoFailedCheckout(base, wt, "", cp, testedRegistration{}); got != "" {
 			t.Errorf("undo text = %q, want none", got)
 		}
 		if _, err := os.Stat(wt); err != nil {
