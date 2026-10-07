@@ -313,6 +313,22 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 // create is refused with the "different worktree" text. Nothing is rolled back, no
 // checkout runs, and the index of the old registration keeps its bytes.
 func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
+	oldRegistrationOfSameName(t, 0, 0)
+}
+
+// TestWorktreeCreateOldRegistrationBeforeDeadline pins cell P-f (89cb6289, macOS VM
+// with git 2.50 only). The state is that of cell P-c, timeoutMs is 1, and the add
+// takes longer. The answer is the P-c refusal, not the timeout frame, and nothing is
+// rolled back: the leaf with its .git file and branch w1 stay. So the record test
+// comes before the deadline test that follows the add.
+func TestWorktreeCreateOldRegistrationBeforeDeadline(t *testing.T) {
+	oldRegistrationOfSameName(t, 1, 300*time.Millisecond)
+}
+
+// oldRegistrationOfSameName stages cell P-c and sends one create. With a timeoutMs,
+// the request carries it, and the git stub makes the add of the request take addTime.
+func oldRegistrationOfSameName(t *testing.T, timeoutMs int, addTime time.Duration) {
+	t.Helper()
 	requireGit(t)
 	oldTimeout := gitTimeout
 	t.Cleanup(func() { gitTimeout = oldTimeout })
@@ -353,10 +369,20 @@ func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
 	}
 
 	s := newTestServer(t)
-	t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
 	leaf := filepath.Join(T, ".claude", "worktrees", "w1")
-	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
-		map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}))
+	params := map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}
+	if timeoutMs > 0 {
+		// The stub goes on PATH only now, so it slows no add of the fixture.
+		realGit, err := exec.LookPath("git")
+		if err != nil {
+			t.Fatal(err)
+		}
+		installGitSlowStub(t, realGit)
+		slowGit(t, "worktree,add", "post", addTime, "", "")
+		params["timeoutMs"] = timeoutMs
+	}
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create", params))
 	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, "refusing to create worktree: "+leaf+
 		" carries a .git file naming an admin directory whose own record is of a different worktree") + `,"errorCode":"unsafe_path"}}`
 	if raw != want {

@@ -1089,6 +1089,26 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "unsafe_path",
 		})
 	}
+	// indexDir is the registration that gets the index (createdIndexDir). Its gitdir
+	// record names worktreePath after symlink resolution.
+	// If it does not, the create is refused, with no checkout and no rollback. Before
+	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
+	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). claustrum makes the calls and does not use their
+	// answer: what 89cb6289 takes from them is not measured. This test comes before
+	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
+	// answers this refusal and keeps the leaf and the branch (cell P-f, macOS VM).
+	indexDir := ""
+	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
+		indexDir = createdIndexDir(gitDir, p.WorktreePath, adminDir)
+	}
+	if adminRecordMismatch(indexDir, p.WorktreePath) {
+		_, _ = gitDirWorkTreeToplevel(gitDir, repo, commonDirPinEnv(repo))
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     adminRecordRefusal(p.WorktreePath),
+			ErrorCode: "unsafe_path",
+		})
+	}
 	// If the caller's deadline expired during the add, the request
 	// answers timeout "before the checkout started" and rolls back. errorCode
 	// "timeout" is reserved for the caller's own deadline. The reference has no D5.
@@ -1101,25 +1121,6 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			Error:      msg + undo,
 			ErrorCode:  "timeout",
 			BranchKept: kept,
-		})
-	}
-	// indexDir is the registration that gets the index (createdIndexDir). Its gitdir
-	// record names worktreePath after symlink resolution.
-	// If it does not, the create is refused, with no checkout and no rollback. Before
-	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
-	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). claustrum makes the calls and does not use their
-	// answer: what 89cb6289 takes from them is not measured. The place of this test
-	// after the deadline test is claustrum's choice (not measured).
-	indexDir := ""
-	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		indexDir = createdIndexDir(gitDir, p.WorktreePath, adminDir)
-	}
-	if adminRecordMismatch(indexDir, p.WorktreePath) {
-		_, _ = gitDirWorkTreeToplevel(gitDir, repo, commonDirPinEnv(repo))
-		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     adminRecordRefusal(p.WorktreePath),
-			ErrorCode: "unsafe_path",
 		})
 	}
 	// Second half of the two-step: the read-tree fills the working tree from the new

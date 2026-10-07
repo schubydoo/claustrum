@@ -430,7 +430,7 @@ func gitDirRegistryDir(gitDir string) string {
 //  2. The registrations directory of gitDir holds an entry with the last name of
 //     the path. With GIT_COMMON_DIR of another repository in the daemon
 //     environment, git makes the registration in that repository, and baseRepo has
-//     none (rows B-E1, B-E3 and D-8). The answer is then the "was not populated"
+//     none (rows B-E1, B-E3 and D-8, and cell D8e). The answer is then the "was not populated"
 //     text. With GIT_DIR of that repository too, git answers that repository as
 //     the git directory, and the create succeeds (probe row 2).
 //  3. The commondir file of that registration leads back to the common git
@@ -450,10 +450,11 @@ func gitDirRegistryDir(gitDir string) string {
 // answers that text also for /elsewhere/WTREG/w1, a path that does not exist
 // (cell P-d on Linux and macOS VMs, cell Pd2 on a Linux VM). A baseRepo that is a
 // linked worktree creates, with the registration and the index in the main
-// repository (cell P-e, Linux VM). The test is off on Windows
+// repository (cell P-e, Linux and macOS VMs). The test is off on Windows
 // (adminRecordChecked), which is not measured.
 //
-// A fourth test follows the deadline test of the create: adminRecordMismatch.
+// A fourth test follows these three: adminRecordMismatch. All four come before the
+// deadline test of the create (row D-9 and cell P-f, macOS VM).
 func createdRegistrationRefusal(gitDir, worktreePath string) string {
 	if !adminRecordChecked {
 		return ""
@@ -493,7 +494,7 @@ func createdRegistrationRefusal(gitDir, worktreePath string) string {
 // of baseRepo. On Linux and macOS the folder is the registration of gitDir with the
 // last name of that value, not the path that the value names. With a value that
 // names a folder that does not exist, 89cb6289 answers success. The registration
-// that git made then holds the index (row D-12, Linux VM). For a value that git
+// that git made then holds the index (row D-12, Linux and macOS VMs). For a value that git
 // wrote, the two are the same folder.
 //
 // A value that createdRegistrationRefusal does not pass reaches this function only
@@ -527,6 +528,9 @@ func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 // worktree. 89cb6289 refuses with the text of adminRecordRefusal and changes
 // nothing: the index of the old entry keeps its bytes. With no entry in baseRepo,
 // the answer is the "was not populated" text (rows B-E1 and B-E3, and cell D8e).
+// The state of cell P-c with a timeoutMs that expired during the add gets the P-c
+// refusal, and the leaf and the branch stay (cell P-f, macOS VM with git 2.50 only).
+// So the create runs this test before its deadline test.
 //
 // Not measured: the raw bytes of the record (the NFC spelling was read from `git
 // worktree list`), whether the compare is bytewise (inferred from I07a and I07b

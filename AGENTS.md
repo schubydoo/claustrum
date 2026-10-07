@@ -146,9 +146,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
       directory. The second rollback follows a successful add. On Linux and
-      macOS two refusals come before it, and they delete nothing. They answer
+      macOS three refusals come before it, and they delete nothing. Two answer
       a `.git` file of the new worktree that names no registration of the
-      repository.
+      repository. The third answers a registration whose `gitdir` record names
+      another worktree. All three come before the `timeoutMs` test that follows
+      the add (`89cb6289`, row D-9 and cell P-f, macOS VM).
       The second rollback runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
