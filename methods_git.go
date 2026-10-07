@@ -1528,12 +1528,6 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		}
 		entry, dotGitErr = verifiedWorktreeEntry(gitDir, commonDir, inRepoAnswer, target.path, sp, respell)
 	}
-	// A locked entry whose `gitdir` record is not a regular file is refused, and
-	// nothing is deleted (D22, lockedEntryWithoutRecord). The place of this refusal
-	// among the git calls is claustrum's choice.
-	if namesGitDir && entry == "" && lockedEntryWithoutRecord(gitDir, commonDir) {
-		return refuse(lockCheckRefusal(p.WorktreePath))
-	}
 	// A `.git` file that names a git dir which is not a verified entry: 89cb6289 runs
 	// the listing and the rev-parse once more (repeatRepositoryCheck). A `.git` file
 	// that names no git dir, or no `.git` file, gets no such calls (probe rows 11 and

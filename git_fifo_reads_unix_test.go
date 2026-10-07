@@ -20,7 +20,9 @@ import (
 // that waits for a writer therefore fails its test at fifoAnswerLimit and stays
 // parked until the test binary ends.
 
-// fifoAnswerLimit bounds each call that meets a FIFO. 89cb6289 answers in under 2 s.
+// fifoAnswerLimit bounds each call that meets a FIFO. 89cb6289 answers in under 2 s
+// with a FIFO as a `.git` file (rows B-F1, B-F4, B-S2 and B-L1) or a `commondir` file
+// (row B-G3).
 const fifoAnswerLimit = 20 * time.Second
 
 // within runs fn on another goroutine and fails the test when fn is not done at
@@ -75,7 +77,7 @@ func newFifoRepo(t *testing.T, dir string) {
 
 // skipUnlessGitSkipsFifoDotGit skips the test when the git of this host does not
 // walk past a FIFO named `.git` in dir. The rows ran with a git that walks past it.
-// A newer git refuses the FIFO itself, and the daemon then answers the text of git.
+// A newer git refuses the FIFO itself.
 func skipUnlessGitSkipsFifoDotGit(t *testing.T, dir string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), fifoAnswerLimit)
@@ -282,20 +284,19 @@ func TestFifoOwnGitdirRecordRemoveSucceeds(t *testing.T) {
 	}
 }
 
-// Cell N9, divergence D22: as N1, with a LOCKED worktree. claustrum refuses, and
-// nothing is deleted. 89cb6289 answers success and deletes the folder and the branch.
-func TestFifoOwnGitdirRecordOfLockedWorktreeIsRefused(t *testing.T) {
+// Cell N9: as N1, with a LOCKED worktree. The answer is {"success":true}, as on
+// 89cb6289 (Linux VM). The folder and the branch go. The registration and its
+// `locked` file stay.
+func TestFifoOwnGitdirRecordOfLockedWorktreeRemoveSucceeds(t *testing.T) {
 	T, wt, entry := newFifoWorktree(t)
 	runGit(t, T, "worktree", "lock", wt)
 	fifoInPlaceOf(t, filepath.Join(entry, "gitdir"))
-	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")),
-		removeRefused(lockCheckRefusal(wt)))
-	wantFileContent(t, filepath.Join(wt, "t.txt"), "t\n")
-	wantFileContent(t, filepath.Join(wt, ".git"), "gitdir: "+entry+"\n")
+	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")), removeOK)
+	mustBeGone(t, wt)
 	wantFifo(t, filepath.Join(entry, "gitdir"))
 	mustExist(t, filepath.Join(entry, "locked"))
-	if !branchExists(t, T, "w1") {
-		t.Error("branch w1 is gone, want it kept")
+	if branchExists(t, T, "w1") {
+		t.Error("branch w1 stays, want it deleted")
 	}
 }
 

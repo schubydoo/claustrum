@@ -1527,11 +1527,11 @@ Linux and macOS VMs. `90fca6e6` names `.git/config`.
 
 #### A FIFO where the daemon reads a git file
 
-The daemon itself reads three kinds of git file: a `.git` file, the `commondir`
+This section covers three reads of the daemon itself: a `.git` file, the `commondir`
 file of a worktree entry and the `gitdir` record of a worktree entry. On Linux and
 macOS it opens each of them without blocking. It reads a regular file only, and
 it reads that file as before. Anything else there, a FIFO for example, is no usable
-file, and the request goes on. Windows has no FIFO in the file system, and its reads
+file, and the read does not wait. Windows has no FIFO in the file system, and its reads
 are as before. One read is as before on every system. After `git worktree add`,
 `git.worktree_create` reads the `gitdir` record that git wrote for the new entry.
 
@@ -1555,22 +1555,23 @@ repository, and `T/a` is a folder in it.
 | B-G4 | the `commondir` file of the entry of a linked `baseRepo` is a FIFO | create | the trust refusal with `is not a small plain file (commondir is not a regular file)` |
 | B-G1 | the `gitdir` record of another entry is a FIFO | create with `baseRepo` T | no answer in 40 s |
 
-In row B-G3 the entry is not verified, because its `commondir` is not read. The
-git calls of `89cb6289` are those of an entry that is not verified: the listing and
-the rev-parse twice, then the pair. The entry goes by its `gitdir` record, which
-names the worktree.
+From the code: in row B-G3 claustrum does not read the `commondir`, so it does not
+verify the entry. The git calls of `89cb6289` are those of an entry that is not
+verified: the listing and the rev-parse twice, then the pair.
 
 Row B-G3 ran without `worktreeRoot`. Cell N2 is that state with `worktreeRoot`, on
 a Linux VM. `89cb6289` and claustrum give no answer in 40 s there, and nothing is
 deleted. Each waits in its child `git worktree list --porcelain -z`.
 
-A second run on a Linux VM, and in part on a macOS VM, added these cells. In each
-of them the frame and the files on disk are equal to `89cb6289`, except in cell N9.
+The cells below ran side by side against `89cb6289` on a Linux VM, and in part on a
+macOS VM. The Answer column is the frame and the disk state of `89cb6289`. In each
+cell but N9 the frame and the files on disk of claustrum are equal to it. For cell
+N9 a test of this repository pins the same frame and the same disk state.
 
 | Cell | State | Request | Answer |
 |---|---|---|---|
 | N1 | the `gitdir` record of the entry of the worktree is a FIFO | remove of that worktree, without `worktreeRoot` | `{"success":true}`. The folder and the branch go, and the entry stays (Linux and macOS) |
-| N9 | as N1, and the worktree is locked | the same remove | `89cb6289`: `{"success":true}`. The folder and the branch go, and the entry and its `locked` file stay. claustrum: the lock-check refusal, and nothing is deleted. That is divergence D22 (Linux) |
+| N9 | as N1, and the worktree is locked | the same remove | `{"success":true}`. The folder and the branch go, and the entry and its `locked` file stay (Linux) |
 | N10 | the worktree is locked, and the `commondir` file of its entry is a FIFO | the same remove | the locked refusal, and nothing is deleted (Linux) |
 | N12 | a second entry names the same worktree, and its `gitdir` record is a FIFO | the same remove | `{"success":true}`. The folder, the first entry and the branch go, and the second entry stays (Linux) |
 | N3 | the `.git` file of T names its git directory and is padded with newlines to 2 MiB | `git.info`, `git.status` and create in T | `isRepo` false, and `not_a_repo` for the create (Linux and macOS) |
@@ -1580,22 +1581,16 @@ of them the frame and the files on disk are equal to `89cb6289`, except in cell 
 | N6 | `T/a/.git` is a symlink to `/dev/null` | `git.info` and create with `T/a` | as N5 (Linux and macOS) |
 | N6b | `T/.git` is a symlink to `/dev/null`, and no repository lies above T | `git.info` and create with T | as N5b (Linux and macOS) |
 
-The claustrum side of cells N3 and N4 is the build of `main` in that run. From the
-code: this build reads a regular file as that build does. In cell N4 on the Linux
-VM, `89cb6289` makes 12 git calls and that build makes 8.
-
 In row B-G1 `89cb6289` waits in its child `git worktree add`. A plain `git worktree
 add` on that fixture waits too. From the code and a unit test: claustrum passes over
 the FIFO record and starts the same call. claustrum adds no bound of its own there.
 From the code: the `timeoutMs` of the caller does not end that call, and the opt-in
 `git-timeout` (D5) does.
 
-The rows ran with a git that walks past a FIFO named `.git`. From the tests of this
-repository: a newer git refuses that FIFO itself. The daemon then answers the text
-of git in the hooks refusal. That case is not measured on `89cb6289`.
-
 Not measured:
 
+- A git that refuses a FIFO named `.git` itself. The rows ran with a git that walks
+  past it.
 - A FIFO as `HEAD`, `config`, `index` or a ref file in a place that git itself
   reads.
 - A device file or a socket as a `commondir` file or a `gitdir` record. From the
@@ -3296,10 +3291,6 @@ copies end still fails it, as `timeoutMs` above describes:
   there, as the reference does in row p6. A lock on an entry of X that names the
   worktree is refused on both sides (row p6b). So is a lock with no daemon
   environment (row p6c on Linux, macOS and Windows VMs, row p6g on a Linux VM).
-  On Linux and macOS claustrum also refuses a locked entry whose `gitdir` record is
-  not a regular file, with the lock-check refusal. The entry is the one that the
-  `.git` file of the worktree names. With a FIFO there, `89cb6289` answers
-  `{"success":true}` and deletes the folder and the branch (cell N9, Linux VM).
   See [`DIVERGENCES.md`](DIVERGENCES.md) → D22.
 - The delete first removes each entry of `<p>` except `.git`, in the order of the
   directory read. It stops at the first failure. Then it removes the rest, `.git`

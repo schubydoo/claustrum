@@ -342,9 +342,7 @@ repository, with the folder present or gone. Row p6e: a daemon `GIT_DIR` alone.
 Those three ran on Linux, macOS and Windows VMs. Row p6d: a `baseRepo` that does
 not exist as sent (Linux and macOS VMs). With `worktreeRoot`, rows q2 to q4
 (Linux VM) differ in the frame too. That is the maintainer's decision of
-2026-10-03. On Linux and macOS claustrum also refuses a locked entry whose
-`gitdir` record is not a regular file. `89cb6289` answers success there with a
-FIFO as the record and deletes the folder (cell N9, Linux VM). See the entry.
+2026-10-03. See the entry.
 
 D23 is Windows-only. The environment block of a child is in name order, because
 Go 1.26 sorts it at the process start. `89cb6289` keeps the order of its

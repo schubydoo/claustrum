@@ -13,9 +13,9 @@ import (
 // `.git` file, a `commondir` file and a `gitdir` record. The open does not block, so
 // a FIFO with no writer is judged at once. Anything that is not a regular file is an
 // error. Each caller takes the error as "no usable file here". 89cb6289 answers in
-// under 2 s with a FIFO in those places (rows B-F1, B-F4, B-S2, B-G3 and B-L1 on
-// Linux and macOS VMs). A regular file of any size is read whole, as os.ReadFile
-// reads it.
+// under 2 s with a FIFO as a `.git` file (rows B-F1, B-F4, B-S2 and B-L1) or a
+// `commondir` file (row B-G3), on Linux and macOS VMs. A regular file of any size
+// is read whole, as os.ReadFile reads it.
 //
 // Not measured: a device or a socket as a `commondir` file or a `gitdir` record, and
 // a FIFO that a writer opens during the request.
