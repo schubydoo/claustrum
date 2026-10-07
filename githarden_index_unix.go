@@ -48,7 +48,9 @@ import (
 //     does not follow a link there.
 //
 // A failure after the create leaves the file as it is, and the rollback of the
-// caller deletes the registration.
+// caller deletes the registration. That covers a failed set of the mtime, with the
+// text "chtimesat <name>/index: <OS error>" (not measured, and no state that
+// reaches it is known: the daemon owns the file that it just made).
 func installWorktreeIndex(src, adminDir string) error {
 	in, err := os.Open(src)
 	if err != nil {

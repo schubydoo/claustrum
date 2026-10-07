@@ -342,7 +342,9 @@ var worktreeCreateDrainCap = 5 * time.Second
 //     surfaces this as exec.ErrWaitDelay. The caller routes it to the timeoutMs
 //     verdict (success if timeoutMs exceeded the drain, else timeout + rollback with
 //     the "after the checkout finished" message) — NEVER to worktree_add_failed and
-//     NEVER to "during the checkout";
+//     NEVER to "during the checkout". One case is apart: on Linux and macOS, an
+//     index install that fails after a drain overrun answers worktree_add_failed
+//     (runWorktreeCheckout, claustrum's choice, not measured);
 //   - err: the underlying exec error — git's own "signal: killed" *ExitError when the
 //     deadline killed a still-running git, exec.ErrWaitDelay on a drain overrun, or a
 //     non-zero *ExitError otherwise. nil when git exited 0.

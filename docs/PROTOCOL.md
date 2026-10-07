@@ -2499,7 +2499,9 @@ claustrum opens each file without blocking and reads a regular file only.
   when the caller `timeoutMs` expired before the placement failed. An entry that
   appears at the index between the remove and the second create is not measured.
   claustrum then fails the placement with `openat <registration name>/index: file
-  exists`. Windows
+  exists`. A failed set of the mtime, after the index is written, fails the
+  placement with `chtimesat <registration name>/index: <OS error>`. That is not
+  measured, and no state that reaches it is known. Windows
   is not measured. There claustrum moves the temporary file.
   If that move fails, the worktree has no index and the create still succeeds.
 - On Linux and macOS, a placement of the index that fails is a failed checkout. The
@@ -2586,7 +2588,10 @@ claustrum opens each file without blocking and reads a regular file only.
      deletes only a registration that is a direct child of the registrations
      directory, by its resolved path. It also refuses the delete if the
      registrations directory is no longer the one that it checked. A refused
-     registration stays, with claustrum's own text in that place. On Windows claustrum has neither test. It deletes the resolved path, adds no text for a failed delete, and runs the branch step.
+     registration stays, with claustrum's own text in the parentheses:
+     `<registration> is not a direct child of <registrations directory>` or
+     `<registrations directory> is no longer the directory that was checked`. Both
+     texts hold absolute paths. On Windows claustrum has neither test. It deletes the resolved path, adds no text for a failed delete, and runs the branch step.
      Windows is not measured.
   3. Remove the leaf directory, which is now empty. If that fails, append `; and
      the undo could not finish for <leaf>: the worktree directory remains
