@@ -89,7 +89,8 @@ token did not already give. See
 `files.*` and `git.*` read and act on paths the caller supplies. They are as
 privileged as the daemon's user. Three of those paths reach a recursive delete
 (`os.RemoveAll` or `os.Root.RemoveAll`). `git.worktree_remove` uses
-`os.Root.RemoveAll`, and the rollback of `git.worktree_create` uses both:
+`os.Root.RemoveAll`. The rollback of `git.worktree_create` uses it too, and both
+on Windows:
 
 - `files.extract_tar` wipes its destination before unpacking.
 - `git.worktree_remove` deletes the worktree path, and then its entry under the

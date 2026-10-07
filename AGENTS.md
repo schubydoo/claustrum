@@ -115,7 +115,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
 - Four code paths give a caller-supplied or operator-supplied path to a
   recursive delete (`os.RemoveAll` or `os.Root.RemoveAll`).
   `git.worktree_remove` uses `os.Root.RemoveAll`. The rollback of
-  `git.worktree_create` uses both. Three of the four paths are RPC paths. The daemon
+  `git.worktree_create` uses it too, and both on Windows. Three of the four paths are RPC paths. The daemon
   `~`-expands those RPC
   paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
   the maintainer's home directory on 2026-08-02:
@@ -155,9 +155,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       stops at the first failure. Then it deletes the registration, runs the
       branch step on the created branch, and then removes the empty leaf. On
       Linux and macOS a registration that cannot be deleted skips the branch
-      step. A step
-      that fails appends an undo text to the frame.
-      `wipesHomeDir` guards every delete as defense-in-depth behind the
+      step. On Linux and macOS the placement of the index first removes a file
+      at `<registration>/index`. That is one `os.Root.Remove` of the fixed name
+      `index`, never a tree.
+      `wipesHomeDir` guards every delete of the leaf as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint
       identity of the leaf again, so a swap while create runs cannot redirect
       a delete. Create holds the leaf and its parent open until it answers,

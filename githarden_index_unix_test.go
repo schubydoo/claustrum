@@ -176,23 +176,29 @@ func TestPlaceWorktreeIndexErrors(t *testing.T) {
 }
 
 // TestIndexPlacementText pins the text of a failed placement: the stderr of the
-// checkout, one space and the error, cut at 512 bytes as one text.
+// checkout and the error with nothing between them, cut at 512 bytes as one text.
+// The cells are those of 89cb6289 on a Linux VM.
 //
-//   - Rows A14, A14f and A14b: stderr on one line, one space, the error.
-//   - Cell X2: no stderr gives the error alone, with no space before it.
+//   - Rows A14 and A14f: a stderr that ends with one newline gives one space.
+//   - Cell Y2a: no final newline gives no space. Cell Y2b: two give two spaces.
+//   - Cell X2: no stderr gives the error alone.
+//   - Cells Y1b, Y1a and Y1c: a stderr of 478 bytes keeps the whole error, 500
+//     bytes keep 12 bytes of it, and 512 bytes keep none.
 //   - Cell X3: a stderr over 512 bytes gives its first 512 bytes and no error.
-//   - A stderr of 500 bytes with its newline leaves 12 bytes of the error. No cell
-//     measures that: it follows from the cut over the joined text.
 func TestIndexPlacementText(t *testing.T) {
-	err := errors.New("openat w1/index: permission denied")
+	const text = "openat w1/index: permission denied"
+	err := errors.New(text)
 	long := strings.Repeat("s5err-xx\n", 151)
-	near := strings.Repeat("x", 499) + "\n"
+	x := func(n int) string { return strings.Repeat("x", n) }
 	for _, tc := range []struct{ name, stderr, want string }{
-		{"hints", "hint: a\nhint: b\n", "hint: a hint: b openat w1/index: permission denied"},
-		{"no stderr", "", "openat w1/index: permission denied"},
-		{"newline only", "\n", "openat w1/index: permission denied"},
-		{"over the cap", long, strings.ReplaceAll(long[:512], "\n", " ")},
-		{"near the cap", near, near[:499] + " openat w1/in"},
+		{"A14 hints", "hint: a\nhint: b\n", "hint: a hint: b " + text},
+		{"Y2a no final newline", "0035_0040_", "0035_0040_" + text},
+		{"Y2b two final newlines", "0035_0040_\n\n", "0035_0040_  " + text},
+		{"X2 no stderr", "", text},
+		{"Y1b 478 bytes", x(477) + "\n", x(477) + " " + text},
+		{"Y1a 500 bytes", x(499) + "\n", x(499) + " openat w1/in"},
+		{"Y1c 512 bytes", x(511) + "\n", x(511)},
+		{"X3 over the cap", long, strings.ReplaceAll(long[:512], "\n", " ")},
 	} {
 		if got := indexPlacementText(tc.stderr, err); got != tc.want {
 			t.Errorf("%s: indexPlacementText = %q, want %q", tc.name, got, tc.want)
