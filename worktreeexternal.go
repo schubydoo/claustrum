@@ -35,7 +35,7 @@ import (
 // worktreeExternalSpellingRefusal is steps 1 and 2. Both worktree methods check
 // baseRepo between steps 2 and 3. On git.worktree_create that order is not measured.
 //
-// Step 1 also refuses a worktreeRoot that is the file system root. For a root of "/"
+// claustrum also refuses, in step 1, a worktreeRoot that is the file system root. For a root of "/"
 // and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem root" text. The
 // create sends it after 3 git calls, and the remove with no git call. That holds with
 // the folder present or gone, and for a daemon that runs as root (Linux VM, cells R1n,
@@ -49,7 +49,7 @@ import (
 // More cells ran against 89cb6289 on Linux and macOS VMs. A root of "//" or "/." gets
 // the same text, with the root as sent (cells R2 and R3). So does a worktreePath of
 // "/<directory>/<name>" under a root of "/" (cell R6). A mount point that is not "/"
-// passes this test, and the create and the remove succeed (cell R4).
+// is not refused: the create and the remove succeed (cell R4).
 func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) string {
 	if !filepath.IsAbs(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
