@@ -25,9 +25,9 @@ import (
 // (row B-G3).
 const fifoAnswerLimit = 20 * time.Second
 
-// within runs fn on another goroutine and fails the test when fn is not done at
+// doneWithin runs fn on another goroutine and fails the test when fn is not done at
 // fifoAnswerLimit. fn must not touch t.
-func within(t *testing.T, what string, fn func()) {
+func doneWithin(t *testing.T, what string, fn func()) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -48,7 +48,7 @@ func frameWithin(t *testing.T, method string, params map[string]any) string {
 	s := newTestServer(t)
 	line := []byte(rpcLine(t, method, params))
 	var resp *response
-	within(t, method, func() { resp = s.dispatch(nil, line) })
+	doneWithin(t, method, func() { resp = s.dispatch(nil, line) })
 	if resp == nil {
 		t.Fatalf("%s: no reply", method)
 	}
@@ -413,7 +413,7 @@ func TestDropStaleRegistrationGoesPastFifoRecord(t *testing.T) {
 	stale := filepath.Join(T, ".git", "worktrees", "zz")
 	wt := filepath.Join(T, ".claude", "worktrees", "w1")
 	writeFile(t, filepath.Join(stale, "gitdir"), filepath.Join(wt, ".git")+"\n", 0o644)
-	within(t, "dropStaleWorktreeRegistration", func() { dropStaleWorktreeRegistration(T, wt) })
+	doneWithin(t, "dropStaleWorktreeRegistration", func() { dropStaleWorktreeRegistration(T, wt) })
 	wantFifo(t, old)
 	mustBeGone(t, stale)
 }
@@ -435,7 +435,7 @@ func TestGitFileReadsDoNotWaitOnFifo(t *testing.T) {
 	var adminDir, gitDir, registryDir string
 	var belongs bool
 	var belongsErr error
-	within(t, "the path reads", func() {
+	doneWithin(t, "the path reads", func() {
 		adminDir = worktreeAdminDir(wt)
 		gitDir = repoGitDir(wt)
 		belongs, belongsErr = worktreeAdminBelongsTo(admin, linked)
@@ -461,7 +461,7 @@ func TestGitFileReadsDoNotWaitOnFifo(t *testing.T) {
 	defer func() { _ = root.Close() }()
 	var recOK bool
 	var entryErr error
-	within(t, "the reads through a root", func() {
+	doneWithin(t, "the reads through a root", func() {
 		_, recOK = loadEntryRecord(root, registry, "admin")
 		_, entryErr = verifiedWorktreeEntry(admin, base, "", linked,
 			newWorktreePathSet(linked), nil)
@@ -526,7 +526,7 @@ func TestReadGitPlainFileKinds(t *testing.T) {
 	} {
 		var byPath, inRoot []byte
 		var pathErr, rootErr error
-		within(t, "readGitPlainFile("+c.name+")", func() {
+		doneWithin(t, "readGitPlainFile("+c.name+")", func() {
 			byPath, pathErr = readGitPlainFile(filepath.Join(dir, c.name))
 			inRoot, rootErr = readGitPlainFileIn(root, c.name)
 		})

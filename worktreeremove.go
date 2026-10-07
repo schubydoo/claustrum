@@ -576,8 +576,7 @@ func verifiedWorktreeEntry(gitDir, commonDir, answered, path string, sp worktree
 	}
 	// A `commondir` that is not a regular file is not read, so the entry is not
 	// verified. With a FIFO there, 89cb6289 removes the worktree, the entry and the
-	// branch, and its calls are those of an entry that is not verified (row B-G3,
-	// Linux and macOS VMs).
+	// branch (row B-G3, Linux and macOS VMs).
 	b, err := readGitPlainFileIn(root, filepath.Join(name, "commondir"))
 	if err != nil {
 		return "", notOurs
