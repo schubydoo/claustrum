@@ -406,6 +406,9 @@ traps that matter for telling drift from expected:
   reconciled. One carries a deliberate exception. On the host cleaner's macOS busy
   probe, claustrum reads an `lsof` run it gave up on as busy. The reference side is
   not probe-measured. That is [DIVERGENCES.md](DIVERGENCES.md) D17 rather than drift.
+  D17 is the abandoned run only. An `lsof` command that does not start is parity
+  with `89cb6289` (macOS VM rows C3, D1i and D1k). So is the lock read of a run
+  that writes to stderr (rows D2p and D2f).
 - The `90fca6e6` reconciliation shipped four PRs. A full re-check then found a
   seventh change that the first pass had missed. A new value inside an existing
   function shows in no symbol list, so a quiet symbol comparison does not prove

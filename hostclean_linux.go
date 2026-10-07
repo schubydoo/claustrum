@@ -408,6 +408,15 @@ func hcReadIdent(pid int) (pgid int, startTicks string, ok bool) {
 // var only so a test can stage the darwin answer.
 var hcLockNeedsRecord = true
 
+// hcLockOpenFailState is the lock state for a lock file that cannot be opened. On linux it
+// is the earlier answer. It is a var only so a test can stage the darwin answer.
+var hcLockOpenFailState = hcLockUnknown
+
+// hcDaemonFilesUnread reports that the open files of a daemon could not be read, for the
+// "left alone this pass" line of the pass. The reference on linux is not measured for that
+// state, so on linux the pass logs no such line. It is a var so a test can stage the answer.
+var hcDaemonFilesUnread = func(int) bool { return false }
+
 // hcLockHeldAt reports whether the lock file at path (described by fi) is held by a live
 // process. On linux the answer comes from fi alone (via /proc/locks); path is unused. The
 // second result is always true on linux: no command runs, so none can fail to start.

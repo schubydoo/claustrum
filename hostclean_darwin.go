@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"net"
@@ -103,8 +104,7 @@ var (
 	// runLsof runs `/usr/sbin/lsof -nP -w <args...>` with the pinned env and returns stdout;
 	// lsof exits non-zero when it simply finds nothing, so the stdout is used regardless. Like
 	// the linux lock/busy probes (which parse /proc and read an unreadable source as not-held),
-	// the caller keys only on the output. A run that does not start gives no output either.
-	// Only the lock read tells that case apart (runLockLsof, hcLockHeldAt).
+	// the caller keys only on the output and on the two flags below.
 	//
 	// Bounded three ways. An lsof that stalls on an unresponsive
 	// mount would otherwise hold the whole cleaner pass open with nothing to end it, and
@@ -129,45 +129,41 @@ var (
 	// The second result says whether the run COMPLETED. An abandoned run answers false
 	// with no output, which is not the same fact as "lsof looked and found nothing" —
 	// see D17 and hcBusy below.
-	runLsof = func(args ...string) (string, bool) {
-		out, completed, _ := lsofRun(args...)
-		return out, completed
-	}
-	// runLockLsof is the same run for the lock read. Its second result says whether the
-	// command started.
-	runLockLsof = func(args ...string) (string, bool) {
-		out, _, started := lsofRun(args...)
-		return out, started
+	//
+	// The third result says whether the run ANSWERED. It is false when the command did
+	// not start, and when it wrote to stderr. The exit code is no rule: lsof exits 1
+	// with no text when it finds no holder. On a macOS VM, 89cb6289 kept a run dir
+	// with a lock file in both cases (rows C3, D2p and D2f), and it sent no signal to
+	// a daemon when the command did not start (rows D1i and D1k). An abandoned run
+	// answers true here, so its readers keep their earlier answers.
+	runLsof = func(args ...string) (out string, completed, answered bool) {
+		ctx, cancel := context.WithTimeout(context.Background(), hcLsofTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, hcLsofPath, append([]string{"-nP", "-w"}, args...)...)
+		cmd.Env = hcLsofEnv
+		cmd.WaitDelay = hcLsofWaitDelay
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		type result struct {
+			out      string
+			answered bool
+		}
+		done := make(chan result, 1)
+		go func() {
+			_ = cmd.Run()
+			// Process is set only by a good start.
+			done <- result{stdout.String(), cmd.Process != nil && stderr.Len() == 0}
+		}()
+		abandon := time.NewTimer(hcLsofAbandon)
+		defer abandon.Stop()
+		select {
+		case r := <-done:
+			return r.out, true, r.answered
+		case <-abandon.C:
+			return "", false, true // gave up on the run; the caller learns nothing about the pid
+		}
 	}
 )
-
-// lsofRun is the one lsof run behind runLsof and runLockLsof. started is false only when the
-// command did not start. An abandoned run answers started true: whether the lock read keeps
-// or removes a run dir after an abandoned run is not measured, and it stays as it was.
-func lsofRun(args ...string) (out string, completed, started bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), hcLsofTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, hcLsofPath, append([]string{"-nP", "-w"}, args...)...)
-	cmd.Env = hcLsofEnv
-	cmd.WaitDelay = hcLsofWaitDelay
-	type result struct {
-		out     string
-		started bool
-	}
-	done := make(chan result, 1)
-	go func() {
-		out, _ := cmd.Output()
-		done <- result{string(out), cmd.Process != nil} // Process is set only by a good start
-	}()
-	abandon := time.NewTimer(hcLsofAbandon)
-	defer abandon.Stop()
-	select {
-	case r := <-done:
-		return r.out, true, r.started
-	case <-abandon.C:
-		return "", false, true // gave up on the run; the caller learns nothing about the pid
-	}
-}
 
 // sysctlBytes performs the two-call sysctl dance (size probe, then read) for a MIB and returns
 // the buffer, or ok=false on any error or an empty result.
@@ -391,11 +387,25 @@ func parseLsofFtn(out string) []lsofRec {
 // D17: an ABANDONED run answers busy. A run that finished and saw nothing and a run that was
 // given up on both produce no output. claustrum keeps them apart, because only the first is
 // evidence. The reference side is not probe-measured. This arm is reachable only when the
-// read failed outright.
+// read failed outright. A run that did not answer reads as not busy here. hcBusyCheck
+// tells the two apart.
 func hcBusy(pid int) bool {
-	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
-	if !ok {
-		return true
+	busy, _ := hcBusyCheck(pid)
+	return busy
+}
+
+// hcBusyCheck is hcBusy plus whether the answer is a reading at all. An abandoned run is a
+// reading: it answers busy (D17). A run that did not answer is no reading. The retire then
+// refuses the daemon, and no SIGTERM goes out. For a command that did not start, that is
+// what 89cb6289 did on a macOS VM (rows D1i and D1k, 3 of 3 each). For a run that wrote to
+// stderr it is not measured: claustrum reads it the same way, which signals less.
+func hcBusyCheck(pid int) (busy, canRead bool) {
+	out, completed, answered := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	if !completed {
+		return true, true
+	}
+	if !answered {
+		return false, false
 	}
 	unix := 0
 	for _, r := range parseLsofFtn(out) {
@@ -403,26 +413,28 @@ func hcBusy(pid int) bool {
 			continue
 		}
 		if strings.HasPrefix(r.name, "->") {
-			return true
+			return true, true
 		}
 		unix++
 	}
-	return unix > 1
+	return unix > 1, true
 }
 
-// hcBusyCheck is hcBusy plus whether the answer is a reading at all. On darwin it is always
-// a reading: hcBusy already answers busy for an abandoned run (D17), so that arm never reads
-// as "could not be inspected".
-func hcBusyCheck(pid int) (busy, canRead bool) {
-	return hcBusy(pid), true
+// hcDaemonFilesUnread reports that the open files of a daemon could not be read. The pass
+// then logs that it leaves the daemon alone (rows D1i and D1k). It is a var so a test on
+// either OS can stage the answer.
+var hcDaemonFilesUnread = func(pid int) bool {
+	_, canRead := hcBusyCheck(pid)
+	return !canRead
 }
 
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
 // daemon-spawned child. lsof names a pipe's type PIPE. canRead is false when the run was
-// abandoned or returned nothing for the pid. One lsof run answers both.
+// abandoned, did not answer, or returned nothing for the pid. One lsof run answers both.
+// The reference side of the did-not-answer case is not measured for this read.
 func hcStdioArePipes(pid int) (pipes, canRead bool) {
-	out, ok := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
-	if !ok {
+	out, completed, answered := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
+	if !completed || !answered {
 		return false, false
 	}
 	recs := parseLsofFtn(out)
@@ -443,22 +455,28 @@ func hcStdioArePipes(pid int) (pipes, canRead bool) {
 // on darwin it does not. It is a var only so a test can stage the other answer.
 var hcLockNeedsRecord = false
 
+// hcLockOpenFailState is the lock state for a lock file that cannot be opened. On a macOS VM
+// 89cb6289 kept a run dir whose lock had mode 0000 with the "could not be examined" line
+// (row D4, 3 of 3), so on darwin it is that state. It is a var only so a test can stage it.
+var hcLockOpenFailState = hcLockUnexamined
+
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.
 //
-// Two rules come from a macOS VM run against 89cb6289. asked is false when the lsof run did
-// not start: the reference then kept each run dir that had a lock file (row C3, 3 of 3). The
-// pid of this process is no holder: the reference removed a run dir whose lock only the
-// cleaner itself held open (row C4, 3 of 3). A child of the cleaner as the holder is not
-// measured, and it counts as a holder.
+// The rules come from macOS VM runs against 89cb6289. asked is false when the lsof run did
+// not answer. The reference then kept each run dir that had a lock file: for a command that
+// did not start (row C3) and for a run that wrote to stderr (rows D2p and D2f), 3 of 3 each.
+// The pid of this process is no holder: the reference removed a run dir whose lock only the
+// cleaner itself held open (row C4, 3 of 3). A child of the cleaner that holds the lock is
+// a holder (row D3, 3 of 3).
 //
 // Deliberately NOT under D17: an abandoned run reads as not-held here.
 // The same argument would apply — a held lock that reads stale lets the tidy remove a live
 // daemon's run dir — but D17 was scoped to the busy predicate, and widening a divergence
 // without deciding it is how one grows by accident. Raised rather than taken.
 func hcLockHeldAt(path string, _ os.FileInfo) (held, asked bool) {
-	out, started := runLockLsof("-F", "p", path)
-	if !started {
+	out, _, answered := runLsof("-F", "p", path)
+	if !answered {
 		return false, false
 	}
 	self := "p" + strconv.Itoa(os.Getpid())

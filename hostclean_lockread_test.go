@@ -13,9 +13,10 @@ import (
 	"time"
 )
 
-// The lock read of the tidy, as a macOS VM measured it against 89cb6289 (rows C2 to C6).
-// Every test here stages the holder query through hcLockHolderRead and the content rule
-// through hcLockNeedsRecord, so each one runs on linux and on darwin. No real lsof runs, no
+// The lock read of the tidy, as a macOS VM measured it against 89cb6289 (rows C2 to C6, D2p,
+// D2f and D4). Every test here stages the holder query through hcLockHolderRead, the content
+// rule through hcLockNeedsRecord and the open failure through hcLockOpenFailState, so each
+// one runs on linux and on darwin. No real lsof runs, no
 // signal goes out, and every run dir is under t.TempDir.
 
 // hcLockReadFix is a tidy over run dirs that are 40 days old, with no socket.
@@ -33,8 +34,10 @@ func newHcLockReadFix(t *testing.T, needsRecord bool, answer func(path string) (
 	t.Helper()
 	f := &hcLockReadFix{t: t, c: &hostCleaner{selfPid: os.Getpid()}}
 	f.runRoot, f.root = hcRunRoot(t)
-	oldClock, oldDial, oldRead, oldNeeds := hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord
-	t.Cleanup(func() { hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord = oldClock, oldDial, oldRead, oldNeeds })
+	oldClock, oldDial, oldRead, oldNeeds, oldFail := hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord, hcLockOpenFailState
+	t.Cleanup(func() {
+		hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord, hcLockOpenFailState = oldClock, oldDial, oldRead, oldNeeds, oldFail
+	})
 	now := time.Now()
 	hcClock = func() time.Time { return now }
 	hcDial = func(string) (net.Conn, error) { return nil, &net.OpError{Op: "dial", Err: syscall.ENOENT} }
@@ -90,10 +93,10 @@ func hcRemovedLine(dir string) string {
 
 var hcDeadRecord = []byte(`{"pid":999999,"role":"daemon"}`)
 
-// TestTidyKeepsALockWhoseHolderQueryDidNotStart pins row C3. The holder query does not
-// start. A run dir with a lock file stays, with the line of the reference. A run dir with no
-// lock file needs no query, and it goes. The control is row C3c: the query starts and finds
-// no holder, and all three go.
+// TestTidyKeepsALockWhoseHolderQueryDidNotStart pins rows C3, D2p and D2f. The holder query
+// does not answer: it does not start, or it writes to stderr. A run dir with a lock file
+// stays, with the line of the reference. A run dir with no lock file needs no query, and it
+// goes. The control is row C3c: the query answers and finds no holder, and all three go.
 func TestTidyKeepsALockWhoseHolderQueryDidNotStart(t *testing.T) {
 	for _, started := range []bool{false, true} {
 		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return false, started })
@@ -180,4 +183,32 @@ func TestTidyLockReadControls(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestTidyKeepsALockThatCannotBeOpened pins row D4: a lock file of mode 0000. On darwin the
+// dir stays with the "could not be examined" line of the reference, and no holder query
+// runs. The second arm is the linux answer, which keeps its own line.
+func TestTidyKeepsALockThatCannotBeOpened(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root opens a file of mode 0000")
+	}
+	for _, tc := range []struct {
+		state int
+		line  string
+	}{
+		{hcLockUnexamined, "[hostclean] run dir %q unused for 40 days: kept, its daemon.lock could not be examined\n"},
+		{hcLockUnknown, "[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined\n"},
+	} {
+		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return false, true })
+		hcLockOpenFailState = tc.state
+		z1 := f.dir("z1", []byte{})
+		if err := os.Chmod(filepath.Join(z1, runDirLockName), 0); err != nil {
+			t.Fatal(err)
+		}
+		sum, log := f.tidy()
+		want := fmt.Sprintf(tc.line, z1)
+		if !hcDirThere(t, z1) || sum != (hcSummary{}) || len(f.asked) != 0 || !strings.Contains(log, want) || strings.Count(log, "\n") != 1 {
+			t.Errorf("state %d: there=%v summary=%+v queries=%q log=%q, want the dir kept with only %q", tc.state, hcDirThere(t, z1), sum, f.asked, log, want)
+		}
+	}
 }

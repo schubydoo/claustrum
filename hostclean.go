@@ -444,10 +444,10 @@ func probeSocket(addr string) (state, pid int, uid uint32) {
 
 // lock-probe states.
 const (
-	hcLockStale   = 0 // no lock file, or a record or an empty file with no live holder
-	hcLockHeld    = 1 // a record or an empty file, and a live process holds the lock
-	hcLockUnknown = 2 // the lock file could not be opened or stat'd, or (linux) its content does not parse
-	hcLockNoQuery = 3 // the holder query for the lock file did not start (darwin only)
+	hcLockStale      = 0 // no lock file, or a record or an empty file with no live holder
+	hcLockHeld       = 1 // a record or an empty file, and a live process holds the lock
+	hcLockUnknown    = 2 // (linux) the lock file could not be opened, or its content does not parse. Also a lock that is no regular file
+	hcLockUnexamined = 3 // (darwin) the lock file could not be opened, or the holder query did not answer
 )
 
 // hcLockHolderRead is hcLockHeldAt behind a seam, so a test on either OS can stage each
@@ -478,7 +478,7 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return hcLockStale, nil, false
 		}
-		return hcLockUnknown, nil, false
+		return hcLockOpenFailState, nil, false
 	}
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
@@ -502,7 +502,7 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 	}
 	held, asked := hcLockHolderRead(path, fi)
 	if !asked {
-		return hcLockNoQuery, rec, true
+		return hcLockUnexamined, rec, true
 	}
 	if held {
 		return hcLockHeld, rec, true
@@ -990,8 +990,9 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 			// The reference's line, measured on a Linux VM (row HC03).
 			logInfof("[hostclean] run dir %q unused for %s: kept, a live process holds its %s", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
-		case hcLockNoQuery:
-			// The reference's line, measured on a macOS VM against 89cb6289 (row C3).
+		case hcLockUnexamined:
+			// The reference's line, measured on a macOS VM against 89cb6289 (rows C3, D2p,
+			// D2f and D4).
 			logInfof("[hostclean] run dir %q unused for %s: kept, its %s could not be examined", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnknown:
@@ -1101,6 +1102,20 @@ func (c *hostCleaner) Pass() hcSummary {
 	// A dial writes a line to the dialled daemon's log, which would make its dir read fresh.
 	entries, closeAll := c.runDirs()
 	defer closeAll()
+
+	// Other daemons of ours whose open files cannot be read. The line and the count are the
+	// reference's, measured on a macOS VM against 89cb6289 (rows D1i and D1k). There the line
+	// came before every run dir line. The gates before the read are claustrum's own choice
+	// and are not measured. On linux hcDaemonFilesUnread is a constant false.
+	for _, t := range procs {
+		if t.pid < 2 || t.pid == c.selfPid || !t.sameUID || !c.roots.isDaemonBinary(t.exe) || serveArgv(t.argv, c.roots.daemonBin) == "" {
+			continue
+		}
+		if hcDaemonFilesUnread(t.pid) {
+			logInfof("[hostclean] daemon pid %d left alone this pass: its open files could not be inspected", t.pid)
+			sum.undecided++
+		}
+	}
 
 	// Orphaned Claude Code groups: a group leader re-parented to pid 1 that runs one of our
 	// CLI binaries.

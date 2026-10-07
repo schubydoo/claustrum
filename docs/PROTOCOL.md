@@ -439,29 +439,57 @@ run is bounded three ways: a command deadline, a wait for the output pipe, and a
 last bound after which the run is given up on. Those bounds are claustrum's own
 values and are not probe-measured.
 
-An abandoned run reads as busy, not idle. See [DIVERGENCES.md](DIVERGENCES.md)
-D17. A run that gave up and a run that finished and saw nothing both produce no
-output. claustrum treats only the completed empty result as evidence. On a host
-where `lsof` cannot answer, the cleaner therefore does not SIGTERM a daemon that
-is serving a client. The reference side is not probe-measured.
+The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
+is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
+An `lsof` run has four outcomes. A macOS VM measured the first two against
+`89cb6289`, 3 of 3 runs in each row:
 
-On macOS the cleaner also asks `lsof` whether a process holds the `daemon.lock` of
-an idle run dir. A macOS VM measured three states of that read against `89cb6289`,
-3 of 3 runs each. claustrum is built to them:
+| `lsof` outcome | busy read of a daemon | lock read of a run dir |
+|---|---|---|
+| the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
+| the run writes to stderr | the daemon gets no SIGTERM (not measured, claustrum's own) | a dir with a lock file stays (rows D2p and D2f, as `89cb6289`) |
+| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | not held (not measured, claustrum's own) |
+| the run completes with nothing on stderr | the output decides | the output decides |
+
+The exit code is no rule. `lsof` exits 1 with no text when no process holds the
+file, and the dir then goes (rows C1 and C6). On a host where `lsof` does not start,
+the cleaner therefore does not SIGTERM a daemon that is serving a client. In rows
+D1i and D1k the pass of `89cb6289` and of claustrum logs these two lines for the
+daemon, the first one before every run dir line. Its summary counts
+`abandoned daemons retired 0` and `candidates left undecided 1`:
+
+```
+[hostclean] daemon pid <pid> left alone this pass: its open files could not be inspected
+[hostclean] run dir "<dir>" unused for 40 days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
+```
+
+In the two control rows `lsof` starts. Both sides retire the idle daemon (row D1ci)
+and spare the daemon with a client (row D1ck). For the stdio read of an orphan, a
+run with one of the first three outcomes spares the orphan. That is claustrum's
+own answer and is not measured.
+
+The lock read has these measured states (macOS VM against `89cb6289`, 3 of 3 runs
+in each row, and claustrum gives the same answer):
 
 | row | state | `89cb6289` and claustrum |
 |---|---|---|
-| C3 | the `lsof` run does not start, and the dir has a `daemon.lock` (empty, or the record of a dead daemon) | the dir stays, with the line `[hostclean] run dir "<dir>" unused for 40 days: kept, its daemon.lock could not be examined` |
-| C3 | the `lsof` run does not start, and the dir has no `daemon.lock` | the dir goes |
+| C3 | the `lsof` command does not start, and the dir has a `daemon.lock` (empty, or the record of a dead daemon) | the dir stays, with the line `[hostclean] run dir "<dir>" unused for 40 days: kept, its daemon.lock could not be examined` |
+| D2p, D2f | the `lsof` run writes to stderr and exits 1. In row D2p a live process holds one of the lock files | the dir stays, with the same line |
+| D4 | the `daemon.lock` has mode 0000 | the dir stays, with the same line |
+| C3, D2p, D2f, D4 | the dir has no `daemon.lock` | the dir goes |
 | C4 | only the cleaner itself holds the lock file open | the dir goes |
+| D3 | the cleaner and a child of the cleaner hold the lock file open | the dir stays, with the held line |
 | C5 | the lock file holds 7 bytes that are no record, and no process holds it | the dir goes |
+| D7a, D7b | the lock file holds `{}`, or the first half of a record | the dir goes |
+| D5 | the lock holds the record of a live pid that does not hold the file | the dir goes |
 
-In two more rows claustrum already gave the answer of `89cb6289`, 2 of 2 runs each. In row C2
-another live process holds the lock file, and the dir stays. In row C6 the lock
-holds the record of a dead pid with no holder, and the dir goes. Not measured: an
-`lsof` run that starts and then fails, a run that passes its deadline, and a holder
-that is a child of the cleaner. Linux is not measured for these three states. On
-Linux, lock content that is no record keeps the dir. That answer is claustrum's own.
+In two more rows the answer is the same, 2 of 2 runs each. In row C2 another live
+process holds the lock file, and the dir stays. In row C6 the lock holds the record
+of a dead pid with no holder, and the dir goes. Not measured: a second pass, an
+`lsof` exit code other than 1, and more than one sibling daemon. Linux is not
+measured for these states. On Linux, a lock that cannot be opened and lock content
+that is no record keep the dir with claustrum's own line. On Linux the pass logs
+no `left alone this pass` line.
 
 ### Daemon startup (`-serve`)
 

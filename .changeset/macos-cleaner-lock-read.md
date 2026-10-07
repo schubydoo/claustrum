@@ -2,4 +2,4 @@
 default: patch
 ---
 
-On macOS the host cleaner now follows `89cb6289` in three states of an idle run folder's `daemon.lock`. A macOS VM measured rows C3, C4 and C5, 3 of 3 each.
+The macOS host cleaner follows `89cb6289` in the measured `lsof` and `daemon.lock` states. Rows C3 to C5, D1i, D1k, D2p, D2f and D4: 3 of 3 each.
