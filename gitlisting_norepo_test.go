@@ -404,7 +404,7 @@ func TestGitVersionChildGetsNoConfigCountSet(t *testing.T) {
 // The plain-folder rows of phase P11 answer the "cannot run" text of the version call
 // too (rows A-N1 to A-N4 and A-S1 on Linux and macOS VMs). On a Windows VM the cells
 // are P11-infoN, Wa-lbN, Wa-statN and Wa-crN. git.worktree_remove has no Windows cell
-// there.
+// there. Mutation: quote the detail of the listing in the "cannot run" text.
 func TestGitVersionFailsInPlainFolder(t *testing.T) {
 	f := newNoRepoFixture(t)
 	versionFails(t)

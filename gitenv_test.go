@@ -573,7 +573,7 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	gitTimeout = 0
 
 	const pre = "config-defined hooks could not be pinned off; git not run: "
-	errFrame := func(msg string) string {
+	errFrameOf := func(msg string) string {
 		return `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":` + jsonString(t, msg) + `}}`
 	}
 	addFrame := func(msg string) string {
@@ -601,24 +601,24 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 		if start == "" {
 			t.Fatal("git started in a regular file")
 		}
-		q3 = errFrame(pre + "listing the configuration in force: " + start)
+		q3 = errFrameOf(pre + "listing the configuration in force: " + start)
 	}
 	rows := []row{
 		{"Q1 git.info N", "git.info", map[string]any{"path": n},
-			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrame},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrameOf},
 		{"Q2 git.info missing", "git.info", map[string]any{"path": missing},
-			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrame},
-		{"Q3 git.info regular file", "git.info", map[string]any{"path": filepath.Join(n, "n.txt")}, q3, errFrame},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrameOf},
+		{"Q3 git.info regular file", "git.info", map[string]any{"path": filepath.Join(n, "n.txt")}, q3, errFrameOf},
 		{"Q4 list_branches N", "git.list_branches", map[string]any{"path": n},
-			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`, errFrame},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`, errFrameOf},
 		{"Q5 list_branches missing", "git.list_branches", map[string]any{"path": missing},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`, nil},
 		{"Q6 status N base T", "git.status", map[string]any{"path": n, "baseRepo": f.top},
-			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrame},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrameOf},
 		{"Q7 status T base T", "git.status", map[string]any{"path": f.top, "baseRepo": f.top},
-			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrame},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrameOf},
 		{"Q8 status missing base T", "git.status", map[string]any{"path": missing, "baseRepo": f.top},
-			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrame},
+			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"clean":false}}`, errFrameOf},
 		{"Q9 create base N", "git.worktree_create", map[string]any{"baseRepo": n, "worktreePath": nLeaf, "branchName": "w1"},
 			`{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}`, addFrame},
 		{"Q10 create base missing", "git.worktree_create",

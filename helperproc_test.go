@@ -213,7 +213,8 @@ func runGitLingering(args []string) int {
 // empty one. With CLAUSTRUM_GITSTUB_MODE2 "ignoreterm" it then ignores SIGTERM. It
 // sleeps CLAUSTRUM_GITSTUB_MS2 milliseconds. Then it exits with
 // CLAUSTRUM_GITSTUB_EXIT2 when that is set, after it wrote CLAUSTRUM_GITSTUB_STDERR2
-// to stderr, or else goes on as a call that the first rule does not match.
+// to stderr as it is (no escape is expanded there, unlike the first rule), or else
+// goes on as a call that the first rule does not match.
 func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
 		appendLine(log, strings.Join(args, "\x1f"))
