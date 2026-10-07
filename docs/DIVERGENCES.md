@@ -245,7 +245,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   worktree, it deletes `worktreePath`. A rollback follows a caller `timeoutMs`
   that expired during a successful add, the checkout or the copy step. It also
   follows a post-checkout drain that exceeded the caller `timeoutMs`, and a failed
-  read-tree checkout. That rollback deletes the leaf's entries, then the empty
+  read-tree checkout. On Linux and macOS it also follows a failed placement of the
+  index of the new worktree. That rollback deletes the leaf's entries, then the empty
   leaf. After a failed `git worktree add`, create only removes an empty leaf, with
   an rmdir. On every rollback arm the guard is defense-in-depth behind create's
   own containment. `wipesHomeDir` (`homeguard.go`)

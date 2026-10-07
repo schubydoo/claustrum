@@ -148,10 +148,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
       directory. The second rollback follows a successful add. It runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
-      `timeoutMs`, and after a failed read-tree checkout. It deletes the entries
+      `timeoutMs`, and after a failed read-tree checkout. On Linux and macOS it
+      also runs after a failed placement of the index of the new worktree. It
+      deletes the entries
       of the leaf in the order that the directory read returns them, and it
       stops at the first failure. Then it deletes the registration, runs the
-      branch step on the created branch, and then removes the empty leaf. A step
+      branch step on the created branch, and then removes the empty leaf. On
+      Linux and macOS a registration that cannot be deleted skips the branch
+      step. A step
       that fails appends an undo text to the frame.
       `wipesHomeDir` guards every delete as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint

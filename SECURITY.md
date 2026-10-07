@@ -100,6 +100,8 @@ privileged as the daemon's user. Three of those paths reach a recursive delete
   That rollback happens when the caller `timeoutMs` expires during a successful
   add, the checkout or the copy step. It also happens after the post-checkout
   drain exceeds the caller `timeoutMs`, and after a failed read-tree checkout.
+  On Linux and macOS it also happens when the daemon cannot place the index of
+  the new worktree.
   After a failed `git worktree add`, the daemon only removes the worktree path
   if it is an empty directory. That removal cannot delete content.
 
