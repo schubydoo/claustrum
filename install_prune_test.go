@@ -62,6 +62,10 @@ func e4321(kind int) []pruneEntry {
 // to C-18). The rule has no part that depends on the system, so each row runs
 // on every system. The one exception is the read-only folder of cell C-05.
 //
+// The cells of the second round follow them. "LMW" cells ran on Linux, macOS
+// and Windows VMs, "MW" cells on macOS and Windows VMs and "L" cells on a Linux
+// VM. The Windows cells have ".exe" names, which changes no result here.
+//
 // Not covered here, because the fixture needs a second process or a system
 // program: the Windows cells C-06 (a junction), C-08 to C-10 and C-11b (a file
 // that is open or runs). claustrum and 89cb6289 are equal in those cells.
@@ -192,6 +196,50 @@ func TestPruneRows(t *testing.T) {
 			{"e1", pruneEmptyDir, 4 * pruneHour}, {"v2.exe", pruneFile, 3 * pruneHour},
 			{"v3.exe", pruneFile, 2 * pruneHour}, {"v4.exe", pruneFile, 1 * pruneHour},
 		}, want: []string{".fetch-e", pruneCLIName, "q.zst.part", "v3.exe", "v4.exe", "y.zst"}},
+
+		{id: "LMW/K0a", keep: 0, before: []pruneEntry{
+			{"e1", pruneEmptyDir, 2 * pruneHour}, {"e2", pruneEmptyDir, 1 * pruneHour},
+			{"v1", pruneFile, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
+		}, want: nil},
+		{id: "LMW/K0b", keep: 0, before: []pruneEntry{
+			{"f1", pruneFullDir, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
+			{"v3", pruneFile, 2 * pruneHour},
+		}, want: []string{"f1"}},
+		{id: "LMW/F1", keep: 3, before: []pruneEntry{
+			{"f0", pruneFullDir, 5 * pruneHour}, {"v1", pruneFile, 4 * pruneHour},
+			{"v2", pruneFile, 3 * pruneHour}, {"v3", pruneFile, 2 * pruneHour},
+			{"v4", pruneFile, 1 * pruneHour},
+		}, want: []string{pruneCLIName, "f0", "v3", "v4"}},
+		{id: "LMW/Z1", keep: 3, before: []pruneEntry{
+			{"a.zst.part", pruneFile, 6 * pruneDay}, {"b.zst.part", pruneFile, 7*pruneDay - pruneHour},
+			{"c.zst.part", pruneFile, 7*pruneDay + pruneHour}, {"d.zst.part", pruneFile, 8 * pruneDay},
+		}, want: []string{pruneCLIName, "a.zst.part", "b.zst.part"}},
+		{id: "LMW/Z2", keep: 3, before: []pruneEntry{
+			{".fetch-a.zst.part", pruneFile, 20 * pruneMin}, {".fetch-b.zst.part", pruneFile, 1 * pruneMin},
+		}, want: []string{".fetch-a.zst.part", ".fetch-b.zst.part", pruneCLIName}},
+		{id: "LMW/Z3", keep: 3, before: []pruneEntry{
+			{"X.ZST.PART", pruneFile, 9 * pruneDay}, {"x.ZST", pruneFile, 9 * pruneDay},
+		}, want: []string{pruneCLIName, "X.ZST.PART", "x.ZST"}},
+		{id: "L/Z4a", keep: 3, before: []pruneEntry{
+			{"p.zst.part", pruneFile, 8 * pruneDay},
+		}, run: pruneFailedInstall, want: nil},
+		{id: "L/Z4b", keep: 3, before: []pruneEntry{
+			{"p.zst.part", pruneFile, 8 * pruneDay},
+		}, run: pruneCacheHit, want: []string{pruneCLIName}},
+		// Cells B1 are the second row where claustrum differs (D18). 89cb6289
+		// removes the planted ".blob-planted" file too.
+		{id: "LMW/B1", keep: 1, before: []pruneEntry{
+			{".blob-planted", pruneFile, 5 * pruneHour},
+			{"v1", pruneFile, 4 * pruneHour}, {"v2", pruneFile, 3 * pruneHour},
+		}, want: []string{".blob-planted", pruneCLIName}},
+		{id: "LMW/T1", keep: 2, before: []pruneEntry{
+			{"B", pruneFile, 2 * pruneHour}, {"a", pruneFile, 2 * pruneHour},
+			{"c", pruneFile, 2 * pruneHour},
+		}, want: []string{pruneCLIName, "B"}},
+		{id: "MW/T1d", keep: 2, before: []pruneEntry{
+			{"B", pruneEmptyDir, 2 * pruneHour}, {"a", pruneEmptyDir, 2 * pruneHour},
+			{"c", pruneEmptyDir, 2 * pruneHour},
+		}, want: []string{pruneCLIName, "B"}},
 	} {
 		t.Run(row.id, func(t *testing.T) {
 			if row.windows && runtime.GOOS != "windows" {
@@ -521,7 +569,7 @@ func TestHousekeepingSkipsTheHomeFolder(t *testing.T) {
 			want:   []string{"h.zst"}},
 		{id: "sweep, h.zst.part", home: "h.zst.part", homeAge: 8 * pruneDay,
 			others: []pruneEntry{{"p.zst.part", pruneEmptyDir, 8 * pruneDay}},
-			run:    sweepFetchTemps,
+			run:    sweepZstParts,
 			want:   []string{"h.zst.part"}},
 	} {
 		t.Run(c.id, func(t *testing.T) {
