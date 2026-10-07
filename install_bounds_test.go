@@ -790,8 +790,11 @@ func TestInstallLeavesNoCLIAfterANewCLIThatDoesNotRun(t *testing.T) {
 }
 
 // The single-path-component rule of D6 runs before the earlier delete. A
-// -cli-version with a path separator, or "." or "..", is refused before any file
-// is touched: nothing is deleted, nothing is staged and no CLI runs. Each victim
+// -cli-version with a path separator, or "." or "..", is refused before the
+// install writes or removes anything at a path built from the version. No
+// victim is deleted, nothing is staged and no CLI runs. The sweeps of the
+// cli-dir name only the cli-dir and are not behind this rule (cell P5 of
+// 89cb6289, Linux VM). Each victim
 // is a folder with a file, the shape that the clear of the final name removes
 // as a tree. The blob holds a CLI that exits non-zero, so the remove after a
 // failed run is in reach too.
@@ -950,8 +953,9 @@ func TestInstallDefaultCLIDir(t *testing.T) {
 }
 
 // The single-path-component rule of D6 guards the default cli folder too. A
-// version that leaves the folder is refused before any file is touched. Without
-// the guard the install replaces the folder beside the default folder.
+// version that leaves the folder is refused before the install writes or
+// removes anything at a path built from the version. Without the guard the
+// install replaces the folder beside the default folder.
 func TestInstallDefaultCLIDirKeepsTheVersionGuard(t *testing.T) {
 	f := newStubFixture(t)
 	home := filepath.Join(f.root, "home")

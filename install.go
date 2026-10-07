@@ -116,6 +116,11 @@ func runInstall(o installOpts) {
 			installManaged = &installManagedState{res: resolveManagedLauncher(f.CliPath)}
 		}
 
+		// An old "*.zst.part" entry goes before the CLI runs, on every path. On
+		// 89cb6289 it goes on a cache hit too (cells Z4b, Linux, macOS and
+		// Windows VMs).
+		sweepZstParts(o.cliDir, time.Now())
+
 		// "present" requires the file to exist AND be runnable (real binary checks
 		// `<cli> --version`). A freshly downloaded CLI leaves cliWasPresent false.
 		// On Windows only <version>.exe counts. A file with the bare name counts
@@ -137,7 +142,11 @@ func runInstall(o installOpts) {
 		} else if checkErr == nil {
 			// Cache hit with a good run: neither the orphan sweep nor the prune
 			// runs here, as on the reference. A stopped run is the branch above,
-			// and it sweeps.
+			// and it sweeps. The "*.zst.part" sweep ran above.
+			//
+			// Cells Z8 of 89cb6289 (Linux, macOS and Windows VMs): on a cache hit
+			// with a good run, a file "x.zst" and a file ".fetch-d" that are 20
+			// minutes old both stay.
 			//
 			// The citation used to be "a cache-hit run with 4 versions and
 			// -cli-keep 3 left all four in place". That fixture supports the
@@ -173,11 +182,37 @@ func runInstall(o installOpts) {
 			//	install, new CLI does not run  before the run   no
 			//
 			// stageAndInstall sweeps before the run of a new CLI and sets
-			// installSwept. Every other path sweeps here.
+			// installSwept. Every other path sweeps here. The "*.zst.part"
+			// sweep is not in this table: it ran above, on every path.
 			if !installSwept {
 				sweepFetchTemps(o.cliDir, time.Now())
 			}
-			if err == nil && o.cliKeep > 0 {
+			if err == nil {
+				// A negative keep value ends a good install after the new CLI is
+				// in place and before any entry goes (cells Kneg, -cli-keep -1,
+				// Linux, macOS and Windows VMs). On
+				// 89cb6289 the new CLI is in place, the -cli-zst blob is gone
+				// and nothing is pruned. The exit code is 2, stdout has no
+				// result line, and stderr has a Go runtime error. claustrum
+				// matches the exit code and the missing result line. The one
+				// stderr line is claustrum's own (the maintainer's decision of
+				// 2026-10-07). Cells Kn-2 (-cli-keep -2, the same three systems)
+				// give the same exit code and no result line.
+				//
+				// This branch is not reached on a cache hit or after a failed
+				// install. There 89cb6289 prints the result line and exits 0 with
+				// an empty stderr, and so does claustrum (cells Kn-hit and
+				// Kn-fail, -cli-keep -1, Linux, macOS and Windows VMs).
+				//
+				// Not measured: a negative keep after a stopped run. claustrum
+				// prints the result line and exits 0 there.
+				if o.cliKeep < 0 {
+					fmt.Fprintf(os.Stderr, "claustrum: -cli-keep %d is not a valid keep count\n", o.cliKeep)
+					osExit(2)
+					return
+				}
+				// A keep of 0 prunes too (cells K0a and K0b, Linux, macOS and
+				// Windows VMs, 89cb6289).
 				pruneCLI(o.cliDir, o.cliKeep)
 			}
 		}
@@ -216,15 +251,23 @@ var hashBlobFile = sha256File
 // uploaded one (-cli-zst, SFTP fallback) or a download (-cli-url), verified
 // against -cli-checksum, then zstd-decompressed to cliPath.
 func ensureCLI(o installOpts, cliPath string) error {
-	// Validate -cli-version BEFORE anything touches the filesystem. The rules and
-	// their measurements live on validateCLIVersion; both are claustrum-only
-	// hardening.
+	// Validate -cli-version before the install writes or removes anything at a
+	// path built from the version. The rules and their measurements live on
+	// validateCLIVersion. Both are claustrum-only hardening.
 	//
-	// Guarding here rather than at the individual hazards gates every filesystem
-	// effect, not just the destructive one, and reports through the existing
-	// cliError field so the facts frame keeps its shape. Skipped when cliDir is
-	// unset — then cliPath is not derived from a version and there is nothing to
-	// contain.
+	// The two sweeps of the cli-dir are not behind this test. They name only the
+	// cli-dir, never the version. runInstall runs the "*.zst.part" sweep before
+	// this call, and the 10 minute sweep after this call answered the refusal.
+	// Cell P5 (Linux VM, -cli-version ../x): an 8 day old "p.zst.part" file and
+	// a 20 minute old ".fetch-d" file are gone on claustrum and on 89cb6289.
+	// claustrum answers the refusal, writes nothing and keeps the blob.
+	// 89cb6289 has no such rule and installs a file at <cli-dir>/../x.
+	//
+	// Guarding here rather than at the individual hazards gates every write and
+	// remove at such a path, not just the destructive one, and reports through
+	// the existing cliError field so the facts frame keeps its shape. Skipped
+	// when cliDir is unset — then cliPath is not derived from a version and
+	// there is nothing to contain.
 	if o.cliDir != "" {
 		if err := validateCLIVersion(o.cliVersion); err != nil {
 			return err
@@ -1140,9 +1183,52 @@ func fetchToFile(url, dir string) (path, sum string, err error) {
 // exact 600 s point is not measured, and claustrum treats it as not old.
 const sweepMinAge = 10 * time.Minute
 
+// zstPartMinAge is how old a "*.zst.part" entry must be before sweepZstParts
+// removes it. Cells Z1 of 89cb6289 straddle it on Linux, macOS and Windows VMs:
+// a file that is 6 days and 23 h old stays, and a file that is 7 days and 1 h
+// old goes. Two more cells narrow the bracket. Cells Z6: a file that is 7 days
+// and 1 s old goes (Windows VM), and so does a file that is 7 days and a
+// fraction of a second old (Linux and macOS VMs). On the macOS VM the two runs
+// of 89cb6289 are 0.13 to 0.67 s at the start of the process.
+// Cell Z6m (macOS VM): a file that is 7 days minus 5 s old stays. A file that
+// is exactly 7 days old at the instant of the read is not measured, and
+// claustrum treats it as not old.
+const zstPartMinAge = 7 * 24 * time.Hour
+
+// isZstPartName reports whether a cli-dir entry has the "*.zst.part" name.
+// sweepZstParts removes such an entry by zstPartMinAge, and the prune does not
+// count it. The match is case-sensitive: "X.ZST.PART" stays at 9 days (cells
+// Z3, Linux, macOS and Windows VMs, 89cb6289).
+//
+// The name wins over the ".fetch-" prefix. Cells Z2 on the same three systems:
+// the file ".fetch-a.zst.part" is 20 minutes old and stays. Cells Z5 on the
+// same three systems: the file ".fetch-old.zst.part" is 8 days old and goes, as
+// every other "*.zst.part" name.
+func isZstPartName(name string) bool { return strings.HasSuffix(name, ".zst.part") }
+
+// sweepZstParts removes each "*.zst.part" entry of the cli-dir that is more
+// than zstPartMinAge old, with one os.Remove. runInstall calls it once, before
+// the run of the CLI that is present. Cells Z4b of 89cb6289 (Linux, macOS and
+// Windows VMs): on a cache hit an 8 day old "p.zst.part" file is gone after the
+// run. Cells Z4a (the same three systems): it is gone too when the new CLI
+// exits 1. Rows C-10 (Linux and macOS VMs) and cell C-18 (Windows VM): it is
+// gone after a good install. Cell Z7 (Linux VM): with no CLI of the version and
+// no source flag, the answer is the "missing" cliError and the file is gone.
+//
+// Not measured: the run of cell Z7 on macOS and Windows. claustrum sweeps there
+// as in cell Z7.
+//
+// An entry that is the home folder or holds it stays at every age. See
+// cliEntryHoldsHome.
+func sweepZstParts(cliDir string, now time.Time) {
+	sweepOld(cliDir, now, zstPartMinAge, isZstPartName)
+}
+
 // sweepFetchTemps removes install litter from the cli-dir: an entry whose name
 // isSweptName claims AND whose mtime is more than sweepMinAge before now. The
 // litter is an interrupted install's ".fetch-<something>" or a stray "*.zst".
+// A "*.zst.part" name is not litter of this pass, also with the ".fetch-"
+// prefix (see isZstPartName).
 // claustrum's pruneCLI used to count such litter as CLI *versions*, so it
 // consumed the -cli-keep budget and evicted real binaries.
 //
@@ -1159,26 +1245,61 @@ const sweepMinAge = 10 * time.Minute
 //
 // A concurrent install's staging file is fresh, so the age gate now keeps it.
 // stageAndInstall's retry still covers a staging file that outlives the gate.
+//
+// An entry that is the home folder or holds it stays at every age. See
+// cliEntryHoldsHome.
 func sweepFetchTemps(cliDir string, now time.Time) {
+	sweepOld(cliDir, now, sweepMinAge, func(name string) bool {
+		return isSweptName(name) && !isZstPartName(name)
+	})
+}
+
+// sweepOld is the loop of both sweeps. It removes each entry of the cli-dir
+// that claims names and whose own mtime is more than minAge before now, with
+// one os.Remove.
+func sweepOld(cliDir string, now time.Time, minAge time.Duration, claims func(name string) bool) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
 		return
 	}
 	for _, e := range ents {
-		if !isSweptName(e.Name()) {
+		if !claims(e.Name()) {
 			continue
 		}
-		fi, err := os.Lstat(filepath.Join(cliDir, e.Name()))
-		if err != nil || now.Sub(fi.ModTime()) <= sweepMinAge {
+		p := filepath.Join(cliDir, e.Name())
+		fi, err := os.Lstat(p)
+		if err != nil || now.Sub(fi.ModTime()) <= minAge {
 			continue
 		}
-		_ = os.Remove(filepath.Join(cliDir, e.Name()))
+		// The home guard (D2).
+		if cliEntryHoldsHome(p, fi) {
+			continue
+		}
+		_ = os.Remove(p)
 	}
 }
 
+// cliEntryHoldsHome is the home guard of the sweeps and of the prune (D2). p is
+// an entry of the cli-dir and fi is its Lstat answer. A folder gets both tests
+// of cliFolderHoldsHome. Every other kind gets wipesHomeDir alone.
+//
+// Each of those removes is one os.Remove, so a home folder with content cannot
+// go there. A cli-dir that is the parent of the home folder makes the home folder
+// an entry. 89cb6289 removes an empty home folder there: in the prune (cells
+// H1, Linux, macOS and Windows VMs) and as "h.zst" in the sweep (cells H3, the
+// same three systems). claustrum keeps it. A home folder with content stays on
+// both (cells H2, the same three systems). That difference stays by the
+// maintainer's decision of 2026-10-07.
+func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
+	if fi.IsDir() {
+		return cliFolderHoldsHome(p, fi)
+	}
+	return wipesHomeDir(p)
+}
+
 // blobTempPrefix names the -cli-url download blob. It must be a prefix that
-// NEITHER cli-dir housekeeping pass acts on — isSweptName must not claim it, and
-// pruneCLI must not count it as a version. Both halves matter and they failed one
+// NONE of the three cli-dir housekeeping passes acts on — isSweptName and
+// isZstPartName must not claim it, and pruneCLI must not count it as a version. Both halves matter and they failed one
 // at a time: ".fetch-" let the sweep delete the blob out from under the
 // errStagingVanished retry, and a name merely absent from isSweptName still let
 // pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
@@ -1190,7 +1311,7 @@ func sweepFetchTemps(cliDir string, now time.Time) {
 // ".fetch-<random>" whose first bytes are the DECOMPRESSED CLI's, where
 // claustrum's staging file at that moment holds the compressed body. Different
 // artifacts, so the naming rule below is claustrum's own either way. Defined
-// once here so the creator, BOTH housekeeping passes and validateCLIVersion read
+// once here so the creator, the housekeeping passes and validateCLIVersion read
 // the same rule. A rule the validator does not consult is one an operator can
 // walk into with -cli-version.
 const blobTempPrefix = ".blob-"
@@ -1213,6 +1334,83 @@ func isSweptName(name string) bool {
 	return strings.HasPrefix(name, ".fetch-") || strings.HasSuffix(name, ".zst")
 }
 
+// pruneCLI is the -cli-keep prune. It runs after a good install only. The rows
+// are the C rows of 89cb6289: C-0 to C-15 on Linux and macOS VMs, and the cells
+// C-00 to C-18 on a Windows VM. A cell id has two digits.
+//
+//   - Every entry of the cli-dir counts, whatever its kind: a file, a folder
+//     and a link. Rows C-1 (four empty folders, keep 3, the two oldest go) and
+//     C-5 (two files and two newer empty folders, keep 3, both files go). On
+//     Windows the cells C-01 and C-04. A link takes a keep place in cell P2
+//     (Linux VM): a new link to a file, two files that are 2 h and 3 h old and
+//     keep 2. Both files go, and the link and its target stay. The control
+//     cell P2c has a new file in place of the link and gives the same.
+//   - The order is the mtime, newest first. The keep value is how many stay.
+//     Rows C-3 (keep 5 for five entries, all stay) and C-4 (keep 4, the oldest
+//     goes) straddle it.
+//   - Entries with the same mtime stay in name order, so the later name goes.
+//     Rows C-12 and C-12b on Linux (the order of creation does not matter),
+//     C-12 and C-12b on macOS, cell C-15 on Windows.
+//   - The new CLI has no place of its own. It stands where its mtime puts it.
+//     Rows C-11 (two folders with an mtime 1 h in the future, keep 2: the new
+//     CLI goes, and the result line names its path with no cliError) against
+//     C-6 (no future mtime, the new CLI stays). On Windows the cells C-11dir
+//     and C-11file.
+//   - Each remove is one os.Remove of a direct child of the cli-dir. It removes
+//     a file, an EMPTY folder and a link. A folder with content stays, and a
+//     link goes as a link. Rows C-1 against C-2 (the same folders, one file in
+//     each, all stay), C-6 and C-7. On Windows a folder with the read-only
+//     attribute stays (cell C-05) and a read-only file goes (cell C-07).
+//   - A name that the sweep claims is not counted and not removed here, at any
+//     age. Rows C-9 (a fresh ".fetch-d" and "x.zst" stay and three other
+//     entries stay with keep 3) and C-8 (20 minutes old, the sweep took both
+//     before the new CLI ran).
+//   - A "*.zst.part" name is not counted and not removed here either. Cell
+//     C-18 on a Windows VM: the file "q.zst.part" is 6 days old and older than
+//     every other entry, keep is 3 and five other entries count, and it stays.
+//     Cell P1 (Linux VM): two files "a.zst.part" and "b.zst.part" are 1 minute
+//     old, a file "v1" is 4 h old and keep is 2. All three stay beside the new
+//     CLI. The control cell P1c has the names "a.part" and "b.part": "b.part"
+//     and "v1" go.
+//     sweepZstParts removes such a name by its own age rule (zstPartMinAge).
+//   - Keep 0 removes every entry that counts, the new CLI too, and a folder
+//     with content stays. The result line still names the CLI path, with exit
+//     code 0 (cells K0a and K0b, Linux, macOS and Windows VMs, and cell C-13).
+//   - The name order of a tie is the order of the bytes, so "B" comes before
+//     "a". Cells T1 (files) and T1d (folders): "B", "a" and "c" have one mtime,
+//     keep is 2, and "B" stays beside the new CLI. Files ran on Linux, macOS
+//     and Windows VMs, folders on macOS and Windows VMs. Cell T1b (Linux VM):
+//     with keep 3, "c" goes. Cell T1c (Linux VM): the files are made in the
+//     reverse order, and the result is that of cell T1.
+//   - A link to a folder with content outside the cli-dir goes, and the target
+//     stays with its content (cells S1, Linux and macOS VMs). On a Windows VM a
+//     junction (cell S1j) and a directory symlink (cell S1s) go the same way.
+//   - A folder with content takes a place in the order, as every other entry.
+//     Cells F2 (Linux, macOS and Windows VMs): a folder with content is newer
+//     than three files and keep is 2. The new CLI and the folder stay, and all
+//     three files go. Cells F1 do not show it: there the folder is the oldest
+//     entry, and the result is the same with and without a place for it.
+//
+// runInstall does not call the prune for a negative keep value. See there.
+//
+// The mtime comes from os.Lstat, as in the sweep, so a link has its own mtime.
+// Cell P2 (Linux VM) has a link target that is 6 h old, and the new link stays.
+//
+// Not measured: a swept name that the sweep failed to remove, for example an
+// old ".fetch-d" folder with content. claustrum does not count it, as before.
+//
+// One difference from 89cb6289 (D18): a ".blob-" name is not counted and not
+// removed here. Cell C-12 on a Windows VM: a planted ".blob-planted" file is
+// 1 h old beside two files that are 4 h and 3 h old, keep is 2, and 89cb6289
+// removes both older files. claustrum removes the oldest only. Cells B1
+// (Linux, macOS and Windows VMs): the planted file is the oldest entry, keep is
+// 1, and 89cb6289 removes it. claustrum keeps it. The name is
+// claustrum's own temporary name of a download in progress, and a download of
+// a second install must not use a keep place. That is the maintainer's decision
+// of 2026-10-07.
+//
+// An entry that is the home folder or holds it is counted and never removed.
+// See cliEntryHoldsHome.
 func pruneCLI(cliDir string, keep int) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
@@ -1224,31 +1422,31 @@ func pruneCLI(cliDir string, keep int) {
 	}
 	var vs []ver
 	for _, e := range ents {
-		if e.IsDir() {
-			continue
-		}
-		// A name the sweep claims is not counted either, at ANY age. Measured on a
-		// Linux VM against f6010b97: with a fresh ".fetch-o" and "x.zst" beside
-		// three real CLIs and -cli-keep 3, the reference keeps all three real CLIs.
-		// The age gate leaves such fresh litter in place, so counting it evicts
-		// real CLIs. The fixture does not show whether the reference tests the
-		// name or runnability. Both exclude these two empty files.
-		if isSweptName(e.Name()) {
+		if isSweptName(e.Name()) || isZstPartName(e.Name()) {
 			continue
 		}
 		// A concurrent install's in-flight download blob is not a CLI version.
 		// Counted, it sorts NEWEST, takes a -cli-keep slot and evicts a real
-		// binary.
+		// binary. 89cb6289 counts a planted file with this name (cell C-12,
+		// Windows VM). This is D18.
 		if isDownloadBlobName(e.Name()) {
 			continue
 		}
-		if fi, err := e.Info(); err == nil {
+		if fi, err := os.Lstat(filepath.Join(cliDir, e.Name())); err == nil {
 			vs = append(vs, ver{e.Name(), fi.ModTime().UnixNano()})
 		}
 	}
-	sort.Slice(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
+	// os.ReadDir gives the entries in name order, and the sort is stable.
+	sort.SliceStable(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
 	for i := keep; i < len(vs); i++ {
-		_ = os.Remove(filepath.Join(cliDir, vs[i].name))
+		p := filepath.Join(cliDir, vs[i].name)
+		// The home guard (D2). The entry is skipped here and not in the loop
+		// above, so it still takes its place in the order and the other entries
+		// go as without it. That is claustrum's own choice and is not measured.
+		if fi, err := os.Lstat(p); err == nil && cliEntryHoldsHome(p, fi) {
+			continue
+		}
+		_ = os.Remove(p)
 	}
 }
 
