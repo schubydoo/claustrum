@@ -421,16 +421,27 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 }
 
 // indexPlacementText is the text after "git worktree add failed (checkout): " when
-// the placement of the index failed: the stderr of the checkout through
-// worktreeGitText, one space, and the error. 89cb6289 gives that shape on Linux and
-// macOS VMs (rows A14, A14f and A14b), where git printed hint lines. With no stderr
-// text, claustrum gives the error alone. A stderr over stderrHeadCap bytes is cut
-// before the error. Both are claustrum's choice (not measured).
+// the placement of the index failed. It joins the stderr of the checkout, one space
+// and the error, and then applies the rule of worktreeGitText to the joined text.
+// So the stderrHeadCap cut covers the error too:
+//
+//   - 89cb6289 gives the stderr, one space and the error on Linux and macOS VMs
+//     (rows A14, A14f and A14b), where git printed hint lines.
+//   - With no stderr, the text is the error alone, with no space before it (cell
+//     X2, Linux VM).
+//   - With 1509 bytes of stderr, the text is the first 512 bytes of the stderr, and
+//     the error is absent (cell X3, Linux VM).
+//
+// The white space at both ends of the stderr is dropped before the join. The rows
+// fit that, and they do not prove it: each stderr ends with one newline. A stderr
+// a few bytes under 512, which shows where the cut falls in the error, is not
+// measured.
 func indexPlacementText(stderr string, placeErr error) string {
-	if text := worktreeGitText(stderr, nil); text != "" {
-		return text + " " + placeErr.Error()
+	joined := strings.TrimSpace(stderr)
+	if joined != "" {
+		joined += " "
 	}
-	return placeErr.Error()
+	return worktreeGitText(joined+placeErr.Error(), nil)
 }
 
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no

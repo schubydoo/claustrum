@@ -138,9 +138,11 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     for <leaf>: the worktree registration and the branch remain; remove them by
 //     hand before retrying (RemoveAll <registration name>: <OS error>)". 89cb6289
 //     gives it after a failed placement of the index, with the leaf gone (rows A14
-//     and A14f on a Linux VM, A14 and A14b on a macOS VM). The same text in attach
-//     mode, after a timeout, and beside a step C text is claustrum's choice (not
-//     measured). On Windows a registration that cannot be deleted adds no text, and
+//     and A14f on a Linux VM, A14 and A14b on a macOS VM). In attach mode the text
+//     reads "the worktree registration remains; remove it by hand before retrying
+//     (...)" instead (cell X5, Linux and macOS VMs). A step C that fails too adds
+//     no text of its own (cell X11, Linux VM). The same texts after a timeout are
+//     claustrum's choice (not measured). On Windows a registration that cannot be deleted adds no text, and
 //     the branch step runs (removeCreatedRegistration): Windows is not measured.
 //   - Step C removes the leaf directory, which is now empty. If that fails, the text
 //     is "; and the undo could not finish for <leaf>: the worktree directory remains
@@ -196,8 +198,15 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 		}
 	}
 	if regErr != nil {
-		parts = append(parts, fmt.Sprintf("the worktree registration and the branch remain; remove them by hand before retrying (%v)", regErr))
-	} else if t := rollbackBranchText(repo, branch, res, !leafGone); t != "" {
+		// The registration text stands alone, also when the leaf rmdir failed too
+		// (cell X11, Linux VM). In attach mode the call made no branch (cell X5).
+		remain := "the worktree registration and the branch remain; remove them"
+		if branch == "" {
+			remain = "the worktree registration remains; remove it"
+		}
+		return fmt.Sprintf("; and the undo could not finish for %s: %s by hand before retrying (%v)", worktreePath, remain, regErr), false
+	}
+	if t := rollbackBranchText(repo, branch, res, !leafGone); t != "" {
 		parts = append(parts, t)
 	}
 	if len(parts) == 0 {

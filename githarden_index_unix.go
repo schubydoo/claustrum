@@ -24,22 +24,20 @@ import (
 //   - Its mtime is the mtime of the temporary file, rounded up to a whole
 //     microsecond. The atime is not set: no row measures it.
 //
+// A temporary index that is gone is a failed placement. The error reads "open
+// <src>: no such file or directory", the text of cell X1 (Linux and macOS VMs).
+//
 // The file is opened through a root at the parent of adminDir, the registrations
 // directory. A failure of that open then reads "openat <name>/index: <OS error>",
-// the text of rows A14, A14f and A14b. An index that exists already is truncated
-// and keeps its inode and mode. That is claustrum's choice (not measured): git
-// worktree add --no-checkout writes none. A failure after the open leaves the file
-// as it is, and the rollback of the caller deletes the registration.
-//
-// A temporary index that does not exist places nothing and is no failure, as before
-// this file existed. The worktree then has no index, as after `worktree add
-// --no-checkout`. That is claustrum's choice (not measured): a real read-tree that
-// exits 0 has written it.
+// the text of rows A14, A14f and A14b. A file that exists already at the index is
+// removed first, so the index is a new inode with the mode above (cell X8, Linux
+// and macOS VMs). In a registration without its write bit and with no index, that
+// remove finds no file, so the open gives the text of row A14. A remove that fails
+// for another reason fails the placement with its own error. That is claustrum's
+// choice (not measured). A failure after the open leaves the file as it is, and
+// the rollback of the caller deletes the registration.
 func placeWorktreeIndex(src, adminDir string) error {
 	in, err := os.Open(src)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
 	if err != nil {
 		return err
 	}
@@ -55,6 +53,9 @@ func placeWorktreeIndex(src, adminDir string) error {
 	}
 	defer func() { _ = root.Close() }()
 	name := filepath.Base(adminDir) + "/index"
+	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	out, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
 	if err != nil {
 		return err

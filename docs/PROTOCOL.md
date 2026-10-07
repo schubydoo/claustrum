@@ -793,9 +793,9 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `failed to create parent directory: cannot mark <dir> as a worktree location: openat .claude-managed-worktrees: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`, when the marker cannot be created and no entry of that name exists. `<dir>` is the `<directory>` level with the symlinks of the root resolved. The leaf is not made. Measured against `f6010b97` on Linux and macOS VMs, also under a symlinked root |
 | git.worktree_create | `git worktree add failed: <text>` | in `error`, `errorCode:"worktree_add_failed"`. `<text>` is git's stderr, made by the text rule in the method section. On `f6010b97` and on claustrum the text can start with git's graft-file deprecation `hint:` lines, because both set `GIT_GRAFT_FILE`. The 512-byte cap can then cut the rest. The rollback runs no git call and removes the leaf only if it is empty. A pre-existing branch is not deleted (`4534d86`). A failed add answers this frame even when the caller `timeoutMs` expired during the add (measured against `f6010b97` and `90fca6e6` on a macOS VM) |
 | git.worktree_create | `git worktree add failed: <fallback text> (attaching to the existing branch <b> was refused first: <attach text>)` | in `error`, `errorCode:"worktree_add_failed"`, when the attach add for `existingBranch` fails and the fallback `-b <branchName>` add fails too. The text rule makes each text on its own, each with its own 512-byte cap. Measured against `f6010b97` and `90fca6e6` on a macOS VM |
-| git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule. Where git prints graft-file deprecation `hint:` lines, the text starts with them on `f6010b97` and on claustrum. `90fca6e6` prints no hint. Apart from the hint, the frame matches `90fca6e6` byte for byte. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](#the-branch-step)). In attach mode the attached branch is kept (measured against `f6010b97`). On Linux and macOS a failed placement of the index answers this frame too. `<text>` is then the stderr text, one space and the OS error, for example `openat w1/index: permission denied` (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM) |
+| git.worktree_create | `git worktree add failed (checkout): <text>` | in `error`, `errorCode:"worktree_add_failed"`, when the `read-tree` checkout fails. Same text rule. Where git prints graft-file deprecation `hint:` lines, the text starts with them on `f6010b97` and on claustrum. `90fca6e6` prints no hint. Apart from the hint, the frame matches `90fca6e6` byte for byte. The new directory is removed. The branch the call created goes only when another ref reaches its tip (see [The branch step](#the-branch-step)). In attach mode the attached branch is kept (measured against `f6010b97`). On Linux and macOS a failed placement of the index answers this frame too. `<text>` is then the stderr, one space and the OS error, cut at 512 bytes as one text. The OS error is `openat w1/index: permission denied` (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM) or `open <temporary directory>/index: no such file or directory` (cell X1, Linux and macOS VMs) |
 | git.worktree_create | `git worktree add timed out after <n>ms (deadline expired {before the checkout started / during the checkout): <text> / after the checkout finished})` | in `error`, `errorCode:"timeout"`, from the caller-supplied `timeoutMs` (`4534d86`). An absent `timeoutMs`, or 0, arms no deadline. `<text>` comes from the stderr of the killed git, by the same text rule |
-| git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch (row C08b, `f6010b97` and `89cb6289`, Linux VM). On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM) |
+| git.worktree_create | `<frame>; and the undo could not finish for <leaf>: {the worktree directory, its registration, and the branch all remain; remove them by hand before retrying (RemoveAll <entry>: <OS error>) / the worktree directory remains (re-populated while undoing?); remove it by hand before retrying (removeat <leaf base name>: <OS error>)}` | appended to the checkout-failure frame and to each `timeout` frame when a step of the rollback fails. The `errorCode` stays as it was. Measured against `f6010b97` and `90fca6e6` on a Windows VM. In attach mode the first text reads `the worktree directory and its registration both remain` instead, because the call made no branch (row C08b, `f6010b97` and `89cb6289`, Linux VM). On Linux and macOS a registration that cannot be deleted gives `the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll <registration name>: <OS error>)` instead, with the leaf removed (`89cb6289`, rows A14 and A14f on a Linux VM, A14 and A14b on a macOS VM). In attach mode it reads `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)` (cell X5, Linux and macOS VMs). No rmdir text joins either one (cell X11, Linux VM) |
 | git.worktree_create | `<frame>; and the undo could not finish for <leaf>: <branch part>` | appended when the branch step of the rollback keeps the branch that the call made. See [The branch step](#the-branch-step) for each `<branch part>`. After a failed leaf rmdir, the branch part follows the rmdir text after `; ` (row C05). Some cases also add `"branchKept":true` after `errorCode`. The table there gives each case with its rows and VMs |
 | git.worktree_remove | `refusing to remove worktree: <p> {is a relative path / contains a ".." component / has a component Windows reads as a different name (trailing dot or space, or a colon) [Windows] / is not inside the repository <repo>; …}` | in `error`, with no `errorCode`. This is `7d193f89` containment. The spelling refusal is Windows-only and comes before containment. `<repo>` is `baseRepo` as sent. An absent or empty `baseRepo` gives the empty string (`f6010b97`, Linux and macOS VMs). A Windows VM measured an absent one. With `worktreeRoot`, the first two texts also refuse a relative, absent or `..` `baseRepo`, and `<p>` is then `baseRepo` as sent. An empty `worktreePath` gets the first text there (`f6010b97`, Linux and macOS VMs) |
 | git.worktree_remove | `refusing to remove worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, with no `errorCode`, with `worktreeRoot`. The test cleans the root and `baseRepo` and compares whole components. A root that is `baseRepo` or lies beneath it is refused, and `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, so a trailing slash stays. `<repo>` is `baseRepo` as sent, so `<T>/` and `<T>/.` stay too. It comes after the spelling, `baseRepo` and two-level tests, and before any git call. The worktree is not looked at. Nothing is deleted. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
@@ -2478,25 +2478,39 @@ claustrum opens each file without blocking and reads a regular file only.
   - Its mtime is the mtime of the temporary index, rounded up to a whole
     microsecond (every Linux row, and 15 of 15 macOS runs).
 
-  Not measured: the atime, an `index` that exists already, a temporary mtime that
-  is a whole microsecond, and a file system with no group or mode. claustrum
-  leaves the atime alone, truncates an existing file, and keeps a whole
-  microsecond. A temporary index that is gone after git exits 0 is not measured
-  either. claustrum then places nothing, and the create goes on. Windows is not
-  measured. There claustrum moves the temporary file.
+  A file that exists already at the index is replaced. With a file of mode 0600
+  there, the index of `89cb6289` is a new inode of mode 0644 on Linux and macOS
+  VMs (cell X8). claustrum removes that file first and then makes the new one.
+
+  Not measured: the atime, a temporary mtime that is a whole microsecond, and a
+  file system with no group or mode. claustrum leaves the atime alone and keeps a
+  whole microsecond. An existing index that cannot be removed is not measured
+  either. claustrum then fails the placement with the error of the remove. Windows
+  is not measured. There claustrum moves the temporary file.
   If that move fails, the worktree has no index and the create still succeeds.
 - On Linux and macOS, a placement of the index that fails is a failed checkout. The
   frame is `{success:false,error:"git worktree add failed (checkout): <stderr text>
-  <OS error>",errorCode:"worktree_add_failed"}`, and the rollback below runs.
-  `<stderr text>` is the stderr of the checkout, made by the text rule. On Linux
-  and macOS VMs `89cb6289` gives this frame when the registration folder loses its
-  write bit during the checkout (rows A14 and A14f on Linux, A14 and A14b on
-  macOS). There git printed `hint:` lines, and the text after them is ` openat
-  w1/index: permission denied` and then the step 2 undo text below. `w1/index` is
-  the registration name and the file, relative to `<git dir>/worktrees`. After the
-  frame the leaf is gone, and the registration and the branch stay. With no stderr
-  text, claustrum gives the OS error alone. A stderr over 512 bytes is cut before
-  the OS error. Both are claustrum's choice (not measured).
+  <OS error>",errorCode:"worktree_add_failed"}`, and the rollback below runs. Two
+  states are measured against `89cb6289`:
+  - The registration folder loses its write bit during the checkout (rows A14 and
+    A14f on a Linux VM, A14 and A14b on a macOS VM). `<OS error>` is `openat
+    w1/index: permission denied`, and the step 2 undo text below follows.
+    `w1/index` is the registration name and the file, relative to `<git
+    dir>/worktrees`. After the frame the leaf is gone, and the registration and
+    the branch stay.
+  - The temporary index is gone when git exits 0 (cell X1, Linux and macOS VMs).
+    `<OS error>` is `open <temporary directory>/index: no such file or directory`.
+    The whole rollback runs: the leaf, the registration and the branch go. The
+    temporary directory has claustrum's own prefix (see Temporary names above).
+
+  The text joins the stderr of the checkout, one space and the OS error, and the
+  text rule then applies to the joined text. So the 512-byte cut covers the OS
+  error too. With no stderr the text is the OS error alone, with no space before
+  it (cell X2, Linux VM). With 1509 bytes of stderr the text is the first 512 bytes
+  of the stderr, and the OS error is absent (cell X3, Linux VM). claustrum drops
+  the white space at both ends of the stderr before the join. The cells fit that
+  and do not prove it: each measured stderr ends with one newline. A stderr a few
+  bytes under 512, where the cut falls inside the OS error, is not measured.
 - A process that the checkout leaves behind starts in
   the new worktree. On Windows it then blocks the removal of the leaf, and the
   rollback reports it with the undo text below.
@@ -2519,8 +2533,12 @@ claustrum opens each file without blocking and reads a regular file only.
      before retrying (RemoveAll <registration name>: <OS error>)`. `89cb6289` gives
      that text after a failed placement of the index (rows A14 and A14f on a Linux
      VM, A14 and A14b on a macOS VM). On the Linux VM it runs no git call after
-     the checkout there. No other row holds a registration that stays. The same text in attach mode, after a
-     `timeout` frame, and beside a step 3 text is claustrum's choice (not
+     the checkout there. In attach mode the call made no branch, and the text
+     reads `the worktree registration remains; remove it by hand before retrying
+     (RemoveAll <registration name>: <OS error>)` (cell X5, Linux and macOS VMs).
+     If step 3 fails too, the frame carries the registration text alone and no
+     step 3 text (cell X11, Linux VM). Each of these cells is a failed placement of
+     the index. The same texts after a `timeout` frame are claustrum's choice (not
      measured). On Windows claustrum adds no text for it and runs the branch step.
      Windows is not measured.
   3. Remove the leaf directory, which is now empty. If that fails, append `; and
