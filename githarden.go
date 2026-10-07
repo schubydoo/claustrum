@@ -434,7 +434,7 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir s
 // macOS, when git answered `rev-parse --absolute-git-dir`). The index then goes
 // into that registration with no read of its gitdir record. 89cb6289 places the
 // index too when the record is gone: in
-// cell B4 (Linux VM) the record is removed after the read-tree: 89cb6289 answers
+// cell B4 (Linux and macOS VMs) the record is removed after the read-tree: 89cb6289 answers
 // success, and the registration holds the index. In cell Z15 (Linux and macOS VMs)
 // the record is removed and the registration gets mode 0500: 89cb6289 answers
 // "openat w1/index: permission denied". One state places nothing: the folder at

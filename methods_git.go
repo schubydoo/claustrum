@@ -881,7 +881,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
 		// With a worktreeRoot the refusal names the cleaned path: f6010b97 and
 		// 90fca6e6 quote "R/cp/w1" for a worktreePath sent as "R/cp/w1/" (measured
-		// on Linux and macOS VMs). Without a worktreeRoot it names the path as sent.
+		// on Linux and macOS VMs). Without a worktreeRoot it names the path with its
+		// symlinks resolved on Linux and macOS (cell T9, Linux VM).
 		// No probe sent an in-repo path with a slash to this refusal. On Windows the
 		// in-repo path is spelled with the on-disk letter case of each component that
 		// exists (existingPathSpelling, row W15).
@@ -905,10 +906,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	// The target is confirmed missing above, so any worktree registration still
 	// naming it is stale (its session folder was deleted out from under git). Drop
-	// each such registration that is not locked (dropStaleWorktreeRegistration).
-	// Windows keeps its earlier step, which has no `locked` test.
+	// such a registration if it is the only one and is not locked
+	// (dropStaleWorktreeRegistration). Windows keeps its earlier step, which has
+	// neither test.
 	// staleKept holds each stale entry that is still there (Linux and macOS): it
-	// is locked, or the remove failed. It is empty on Windows.
+	// is locked, the remove failed, or it is one of two or more. It is empty on
+	// Windows.
 	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path

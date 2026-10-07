@@ -12,11 +12,12 @@ import (
 )
 
 // dropStaleWorktreeRegistration is the step of git.worktree_create before `git
-// worktree add`, on Linux and macOS. It removes the entry of <repo>/.git/worktrees
-// whose gitdir record names the .git of the new leaf. The caller runs it only after
-// it confirmed that the leaf does not exist, so such an entry is stale. The cells
-// are those of 89cb6289 on a Linux VM with git 2.43 (cells A1 to A12c, 2 runs
-// each). No macOS VM ran them.
+// worktree add`, on Linux and macOS. An entry of <repo>/.git/worktrees is stale for
+// this request if its gitdir record names the .git of the new leaf. The caller runs
+// the step only after it confirmed that the leaf does not exist. The step removes
+// a stale entry only if it is the only stale entry of the folder and holds no
+// `locked` file. The A cells are those of 89cb6289 on Linux and macOS VMs, 2 runs
+// each. The S cells are those of 89cb6289 on a Linux VM, 2 runs each.
 //
 // claustrum compares by text. This rule is claustrum's own fit of the cells below:
 //
@@ -26,15 +27,24 @@ import (
 //   - The leaf is worktreePath with the symlinks of its existing part resolved,
 //     plus "/.git".
 //
-// 89cb6289 removes the entry for these records of the leaf <L>: <L>/.git with or
-// without a newline (cells A3 and A4), <L>/.git/ (cells A1 and A2), <L>/.git//
-// (cell A5), <L>/.git/. (cell A5b), <L>/.git with a blank after it (cell A5c) and
-// the relative path ../../../.claude/worktrees/w1/.git (cell A7). The name of the
-// entry does not count: the entry old9 goes too (cell A8). 89cb6289 keeps the entry
-// for <L> and <L>/, which have no .git part (cells A6 and A6b), and for the record
-// of a live worktree at another path (cell A11). A record that spells the leaf
-// through a symlink stays for a request with the real path (cell A12b). A record
-// with the real path goes for a request through a symlink (cell A12c).
+// With one stale entry, 89cb6289 removes it for these records of the leaf <L>:
+// <L>/.git with or without a newline (cells A3 and A4), <L>/.git/ (cells A1 and
+// A2), <L>/.git// (cell A5), <L>/.git/. (cell A5b), <L>/.git with a blank after it
+// (cell A5c) and the relative path ../../../.claude/worktrees/w1/.git (cell A7).
+// The name of the entry does not count: the entry old9 goes too (cell A8). 89cb6289
+// keeps the entry for <L> and <L>/, which have no .git part (cells A6 and A6b), and
+// for the record of a live worktree at another path (cell A11). A record that
+// spells the leaf through a symlink stays for a request with the real path (cell
+// A12b). A record with the real path goes for a request through a symlink (cell
+// A12c).
+//
+// With two or three stale entries, 89cb6289 removes none of them: old9 and w1
+// (cell A13), old8, old9 and w1 (cell S1), old8 and old9 (cell S2), and two
+// entries whose records differ in their spelling (cell S6). A stale entry with a
+// `locked` file counts as a stale entry (cells A13b and S5). An entry that is not
+// stale does not count: the one stale entry beside it goes (cells S3 and S4). A
+// regular file, a folder with no gitdir record and an empty folder beside the
+// stale entry do not count either (cells S7, S7b and S7c).
 //
 // An entry that holds a file named `locked` stays (cells A9 and A9b). The remove is
 // best effort: it removes what the modes permit, and the request goes on. With the
@@ -52,8 +62,7 @@ import (
 // folder is not read (the rule of os.Root, not measured). An entry that is not
 // a real folder is passed over. The home guard runs on the entry path first (D2).
 //
-// Not measured: more than one stale entry. claustrum handles every one by the
-// rules above, and remembers every one that stays. Not measured either: a tab or a
+// Not measured: a tab or a
 // carriage return at an end of the record (cut here), a relative record in a
 // repository that is sent through a symlink (it counts from the resolved entry
 // folder here), and a `locked` entry whose stat fails with another error than "does
@@ -77,6 +86,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 	// The order of os.ReadDir, which this step had before it used a root.
 	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	target := filepath.Join(canonicalPathOfGone(worktreePath), ".git")
+	var stale []string
 	for _, e := range ents {
 		if !e.IsDir() {
 			continue
@@ -92,10 +102,14 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 		if !filepath.IsAbs(record) {
 			record = filepath.Join(canonicalPath(entry), record)
 		}
-		if filepath.Clean(record) != target {
-			continue
+		if filepath.Clean(record) == target {
+			stale = append(stale, e.Name())
 		}
-		if removeStaleRegistration(root, e.Name(), entry) {
+	}
+	for _, name := range stale {
+		entry := filepath.Join(base, name)
+		// Only the one stale entry of the folder goes (cells A13, S1, S2 and S5).
+		if len(stale) > 1 || removeStaleRegistration(root, name, entry) {
 			kept = append(kept, entry)
 		}
 	}

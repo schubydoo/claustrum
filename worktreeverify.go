@@ -374,7 +374,8 @@ func (r testedRegistration) release() {
 // A name whose stat fails is not "replaced": the placement or the delete then
 // runs and fails by itself, with the measured texts (cells Z10, Z11a and Z11b).
 //
-// 89cb6289 removes the folder at that path in two cells of a Linux VM, 2 runs each.
+// 89cb6289 removes the folder at that path in two cells of Linux and macOS VMs, 2
+// runs each.
 // In cell B6 a hook renames the new registration w1 to w1x and makes a new empty
 // folder w1, before a read-tree that fails. 89cb6289 removes the empty w1. In cell
 // B6b the hook renames w1 to w1x and the registration w9 of a live sibling
@@ -390,15 +391,18 @@ func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 // that entry in each of these states of a rollback, where the .git file of the leaf
 // or the record no longer leads to it:
 //
-//   - Cells Z16 (Linux and macOS VMs) and B0a (Linux VM): the record is rewritten
-//     to /nonexistent/.git. Cell B1 (Linux VM): the record names a live sibling
-//     worktree.
-//   - Cells Z18 (Linux and macOS VMs), Z18r and B0b (Linux VM): the .git file of
-//     the leaf names a folder outside the repository.
-//   - Cells B2 and B3 (Linux VM): the .git file of the leaf names the registration
+//   - Cells Z16 and B0a: the record is rewritten to /nonexistent/.git. Cell B1: the
+//     record names a live sibling worktree.
+//   - Cells Z18, B0b and Z18r: the .git file of the leaf names a folder outside
+//     the repository.
+//   - Cells B2 and B3: the .git file of the leaf names the registration
 //     w9 of a sibling. w1 goes, and w9 stays. In B3 the record of w9 names the leaf.
-//   - Cell B5 (Linux VM): the .git file of the leaf is removed.
-//   - Cells B7a and B7b (Linux VM): cell B0a in attach mode and with a worktreeRoot.
+//   - Cell B5: the .git file of the leaf is removed.
+//   - Cells B7a and B7b: cell B0a in attach mode and with a worktreeRoot.
+//   - Cells B9 and B9b: the daemon has GIT_DIR of another repository X, in B9 with
+//     GIT_COMMON_DIR of X too. The registration that git made in X is gone.
+//
+// Those cells ran on Linux and macOS VMs, apart from Z18r (Linux VM only).
 //
 // The delete is one os.Root.RemoveAll of the entry name, through a root at the
 // registrations folder. It follows no symlink out of that folder. A failed delete
@@ -439,7 +443,7 @@ func removeTestedRegistration(reg testedRegistration) error {
 // It is "" for any other registration and with no such entry. The caller runs it
 // right after createdRegistrationRefusal passed, with no git call between them.
 //
-// 89cb6289 answers this text in three cells of a Linux VM, with the daemon
+// 89cb6289 answers this text in three cells of Linux and macOS VMs, with the daemon
 // GIT_COMMON_DIR of another repository. The old entry w1 of baseRepo has a record
 // that names the .git of the new leaf. In cells A9 g and A9b g it holds a `locked`
 // file. In cell A10 g it has mode 0500. The add is the last of 9 git calls of
@@ -447,6 +451,9 @@ func removeTestedRegistration(reg testedRegistration) error {
 // old entry whose record names another worktree, and it gets the text of
 // adminRecordRefusal after two more git calls. With no daemon GIT_* variable git
 // names the new registration w11, and the create succeeds (cells A9 p and A10 p).
+// With two or more stale entries every one stays, and 89cb6289 answers this text
+// too (cells A13 g and A13b g on Linux and macOS VMs, cells S1 g and S5 g on a
+// Linux VM).
 //
 // "An entry that the step before the add left" is claustrum's own rule for these
 // cells. The paths are compared with their symlinks resolved (not measured).
@@ -457,7 +464,7 @@ func staleRegistrationRefusal(worktreePath, registration string, keptStale []str
 	for _, kept := range keptStale {
 		if sameCanonicalPath(canonicalPath(registration), canonicalPath(kept)) {
 			return fmt.Sprintf("refusing to create worktree: %s carries a .git file naming an admin entry "+
-				"other than the one just created for it", worktreePath)
+				"other than the one just created for it", resolvedLeafSpelling(worktreePath))
 		}
 	}
 	return ""
@@ -679,8 +686,11 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registra
 	if !adminRecordChecked {
 		return absoluteAdminDir(worktreePath, adminDir), ""
 	}
+	// The four texts of the tests after the add name the leaf with its symlinks
+	// resolved (resolvedLeafSpelling).
+	leafText := resolvedLeafSpelling(worktreePath)
 	notOurs := fmt.Sprintf("refusing to create worktree: %s carries a .git file that does not name this "+
-		"repository's own worktree admin directory", worktreePath)
+		"repository's own worktree admin directory", leafText)
 	admin := filepath.Clean(adminDir)
 	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
 		return "", notOurs
@@ -688,7 +698,7 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registra
 	registry := gitDirRegistryDir(gitDir)
 	registration = filepath.Join(registry, filepath.Base(admin))
 	if _, err := os.Stat(registry); errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", worktreePath)
+		return "", fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", leafText)
 	}
 	if _, err := os.Stat(registration); errors.Is(err, fs.ErrNotExist) {
 		return "", notOurs
@@ -798,8 +808,46 @@ func adminRecordMismatch(admin, worktreePath string) bool {
 }
 
 // adminRecordRefusal is the answer of git.worktree_create when adminRecordMismatch
-// reports a mismatch. It names worktreePath as sent (row I07a).
+// reports a mismatch. It names worktreePath with its symlinks resolved
+// (resolvedLeafSpelling, cells T2 and T10 on a Linux VM). A component that is not a
+// symlink keeps its spelling as sent, as in row I07a.
 func adminRecordRefusal(worktreePath string) string {
 	return fmt.Sprintf("refusing to create worktree: %s carries a .git file naming an admin directory "+
-		"whose own record is of a different worktree", worktreePath)
+		"whose own record is of a different worktree", resolvedLeafSpelling(worktreePath))
+}
+
+// resolvedLeafSpelling is the leaf as five refusals of git.worktree_create name
+// it on Linux and macOS: worktreePath with its symlinks resolved. 89cb6289 names
+// the resolved leaf in these texts, for a baseRepo behind a symlink and both
+// request paths through the link:
+//
+//   - "... carries a .git file that does not name this repository's own worktree
+//     admin directory" (cells T1 and T5 on a Linux VM, cell A12c g on Linux and
+//     macOS VMs).
+//   - "... carries a .git file naming an admin directory whose own record is of a
+//     different worktree" (cells T2 and T10, Linux VM).
+//   - "... carries a .git file naming an admin entry other than the one just
+//     created for it" (cell T3, Linux VM).
+//   - "... was not populated by git worktree add" (cell T4, Linux VM).
+//   - "... already exists, and a new worktree is only ever created in a fresh
+//     directory" (cell T9, Linux VM).
+//
+// 89cb6289 names the leaf as sent in the undo clause of a rollback (cells T6 and
+// T7), in the path of a success (cell T8), in the text of git (cell T11b) and in
+// the locked refusal of git.worktree_remove (cell T12b), all on a Linux VM. Those
+// keep the path as sent. Every other refusal of the create keeps its spelling: no
+// cell measured it.
+//
+// On Windows no create reaches this function: the four tests after the add do not
+// run there, and the `already exists` text has its own spelling
+// (existingPathSpelling). Windows is not measured for 89cb6289.
+//
+// The leaf exists in each of the five cells. A leaf that does not resolve is named
+// as sent (not measured). The resolved path is also clean, so a slash at the end
+// of the path as sent is cut (not measured).
+func resolvedLeafSpelling(worktreePath string) string {
+	if resolved, err := evalSymlinks(worktreePath); err == nil {
+		return resolved
+	}
+	return worktreePath
 }

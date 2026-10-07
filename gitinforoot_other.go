@@ -9,9 +9,10 @@ func gitInfoRoot(walkRoot, _ string, _ []string) string {
 }
 
 // existingPathSpelling is the path of the `already exists` refusal of
-// git.worktree_create. Off Windows it is the path as sent.
+// git.worktree_create without worktreeRoot. Off Windows it is the path with its
+// symlinks resolved (resolvedLeafSpelling, cell T9 on a Linux VM).
 func existingPathSpelling(p string) string {
-	return p
+	return resolvedLeafSpelling(p)
 }
 
 // checkoutWorkTree is the --work-tree value of the read-tree checkout of

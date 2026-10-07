@@ -56,8 +56,18 @@ func (f wtFixture) linkRegistrations(t *testing.T, target, link string) {
 	}
 }
 
+// namedLeaf is the leaf as five refusals of git.worktree_create name it: with its
+// symlinks resolved, or as sent when it does not resolve. Call it after the
+// request, when the leaf exists.
+func namedLeaf(leaf string) string {
+	if resolved, err := filepath.EvalSymlinks(leaf); err == nil {
+		return resolved
+	}
+	return leaf
+}
+
 func notOursText(leaf string) string {
-	return "refusing to create worktree: " + leaf +
+	return "refusing to create worktree: " + namedLeaf(leaf) +
 		" carries a .git file that does not name this repository's own worktree admin directory"
 }
 
@@ -288,15 +298,17 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 				t.Fatalf("commit ids differ (%s, %s): this fixture does not stage the row", a, b)
 			}
 			leaf := filepath.Join(T, ".claude", "worktrees", "w1")
-			wantText := "refusing to create worktree: " + leaf + " was not populated by git worktree add"
 			if tc.otherEntry {
 				runGit(t, T, "worktree", "add", "-q", "-b", "other", filepath.Join(root, "other"))
-				wantText = notOursText(leaf)
 			}
 			s := newTestServer(t)
 			t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
 			raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}))
+			wantText := "refusing to create worktree: " + namedLeaf(leaf) + " was not populated by git worktree add"
+			if tc.otherEntry {
+				wantText = notOursText(leaf)
+			}
 			wantError(t, raw, wantText, "unsafe_path")
 			ents, err := os.ReadDir(leaf)
 			if err != nil || len(ents) != 1 || ents[0].Name() != ".git" {
@@ -368,7 +380,7 @@ func TestWorktreeCreateGitDirNotAnswered(t *testing.T) {
 
 // differentWorktreeText is the refusal of adminRecordRefusal.
 func differentWorktreeText(leaf string) string {
-	return "refusing to create worktree: " + leaf +
+	return "refusing to create worktree: " + namedLeaf(leaf) +
 		" carries a .git file naming an admin directory whose own record is of a different worktree"
 }
 
@@ -746,7 +758,7 @@ func TestCreatedRegistrationRefusalStates(t *testing.T) {
 	if got := refusalOf(""); got != "" {
 		t.Errorf("no .git value: refusal %q, want none", got)
 	}
-	if got, want := refusalOf(reg), "refusing to create worktree: "+leaf+" was not populated by git worktree add"; got != want {
+	if got, want := refusalOf(reg), "refusing to create worktree: "+namedLeaf(leaf)+" was not populated by git worktree add"; got != want {
 		t.Errorf("no registrations directory (rows B-E1, B-E3 and D-8, cell D8e): refusal %q, want %q", got, want)
 	}
 	if err := os.Mkdir(registry, 0o755); err != nil {

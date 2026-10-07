@@ -14,7 +14,7 @@ import (
 // These tests pin three parts of git.worktree_create on Linux and macOS: the step
 // that removes a stale registration before the add, the refusal for a stale entry
 // that stayed, and the registration that a rollback removes. Cells A and B are
-// those of 89cb6289 on a Linux VM with git 2.43, 2 runs each. Cells Z15, Z16 and
+// those of 89cb6289 on Linux and macOS VMs, 2 runs each. Cells Z15, Z16 and
 // Z18 are those of 89cb6289 on Linux and macOS VMs. Every fixture is under
 // t.TempDir, and no test gives a path outside it to a delete.
 
@@ -211,7 +211,7 @@ func TestWorktreeCreateStaleEntryOfSameName(t *testing.T) {
 		text   func(leaf string) string
 	}{
 		{"A9 g", func(l string) string { return l + "/.git/" }, true, func(leaf string) string {
-			return "refusing to create worktree: " + leaf + " carries a .git file naming an admin entry other than the one just created for it"
+			return "refusing to create worktree: " + namedLeaf(leaf) + " carries a .git file naming an admin entry other than the one just created for it"
 		}},
 		{"A7 g", func(string) string { return "../../../.claude/worktrees/w1/.git\n" }, false, notOursText},
 	} {
@@ -319,12 +319,12 @@ const forcedFailureFrame = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"e
 // folder. w9 is the registration of a live sibling worktree.
 //
 //   - Z16 (Linux and macOS VMs): the record of w1 is rewritten to /nonexistent/.git.
-//   - B1 (Linux VM): the record of w1 names the .git of the sibling.
+//   - B1 (Linux and macOS VMs): the record of w1 names the .git of the sibling.
 //   - Z18 (Linux and macOS VMs): the .git file of the leaf names a folder outside
 //     the repository, whose record has mode 000. That folder stays.
-//   - B2 (Linux VM): the .git file of the leaf names the registration w9.
-//   - B3 (Linux VM): B2, and the record of w9 names the leaf.
-//   - B5 (Linux VM): the .git file of the leaf is removed.
+//   - B2 (Linux and macOS VMs): the .git file of the leaf names the registration w9.
+//   - B3 (Linux and macOS VMs): B2, and the record of w9 names the leaf.
+//   - B5 (Linux and macOS VMs): the .git file of the leaf is removed.
 func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -401,7 +401,7 @@ func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 	}
 }
 
-// TestWorktreeCreateRecordGoneAfterCheckout pins cells B4 (Linux VM) and Z15
+// TestWorktreeCreateRecordGoneAfterCheckout pins cells B4 and Z15
 // (Linux and macOS VMs) of 89cb6289. The stub runs the real read-tree and then
 // removes the gitdir record of the new registration.
 //
@@ -475,9 +475,9 @@ func TestWorktreeCreateRecordGoneAfterCheckout(t *testing.T) {
 // fails the read-tree. claustrum removes no folder of it. The frame is the plain
 // failed checkout, and the leaf and branch w1 go, as on 89cb6289.
 //
-//   - B6 (Linux VM): the hook renames the new registration w1 to w1x and makes a
+//   - B6 (Linux and macOS VMs): the hook renames the new registration w1 to w1x and makes a
 //     new empty folder w1. 89cb6289 removes the empty w1 and keeps w1x.
-//   - B6b (Linux VM): the hook renames w1 to w1x, and the registration w9 of a live
+//   - B6b (Linux and macOS VMs): the hook renames w1 to w1x, and the registration w9 of a live
 //     sibling worktree to w1. 89cb6289 removes that w1 with the files of the
 //     sibling, and keeps w1x.
 func TestWorktreeCreateRollbackKeepsReplacedRegistration(t *testing.T) {
@@ -685,77 +685,223 @@ func TestTestedRegistrationHeldIdentity(t *testing.T) {
 	}
 }
 
-// TestDropStaleWorktreeRegistrationEveryEntry pins the step before the add with two
-// stale entries. No cell of 89cb6289 measured that state. claustrum handles each
-// entry: both go, and with a `locked` file in one, that one stays and is
-// remembered.
-func TestDropStaleWorktreeRegistrationEveryEntry(t *testing.T) {
-	for _, locked := range []bool{false, true} {
-		root := realTempDir(t)
-		repo := filepath.Join(root, "T")
-		registry := filepath.Join(repo, ".git", "worktrees")
-		leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
-		for _, name := range []string{"old9", "w1"} {
-			writeFile(t, filepath.Join(registry, name, "gitdir"), leaf+"/.git\n", 0o644)
-		}
-		var want, wantKept []string
-		if locked {
-			writeFile(t, filepath.Join(registry, "w1", "locked"), "", 0o644)
-			want, wantKept = []string{"w1"}, []string{filepath.Join(registry, "w1")}
-		}
-		kept := dropStaleWorktreeRegistration(repo, leaf)
-		ents, err := os.ReadDir(registry)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var got []string
-		for _, e := range ents {
-			got = append(got, e.Name())
-		}
-		if !slices.Equal(got, want) {
-			t.Errorf("locked %v: the registrations folder holds %q, want %q", locked, got, want)
-		}
-		if !slices.Equal(kept, wantKept) {
-			t.Errorf("locked %v: kept = %q, want %q", locked, kept, wantKept)
-		}
+// TestDropStaleWorktreeRegistrationCount pins how many stale entries the step
+// before the add removes: one, and only if it is the only stale entry of the
+// folder. Cells A13 and A13b are those of 89cb6289 on Linux and macOS VMs. The S
+// cells are those of 89cb6289 on a Linux VM. "stale" is the record <L>/.git/ of
+// cell A1.
+//
+//   - S1 (old8, old9 and w1 stale), S2 (old8 and old9 stale), A13 (old9 and w1
+//     stale) and S6 (two stale records in two spellings): every entry stays.
+//   - S5 and A13b: one of two stale entries holds a `locked` file. Both stay.
+//   - S3 and S4: one entry is stale, and the other has the record of another
+//     worktree. The stale one goes.
+//   - S7, S7b and S7c: beside the stale old9, w1 is a regular file, a folder with
+//     no gitdir record, or an empty folder. old9 goes.
+func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
+	type entries map[string]string
+	for _, tc := range []struct {
+		name string
+		in   entries
+		want []string // the names that stay
+		kept []string // the names that are remembered
+	}{
+		{"S1", entries{"old8": "stale", "old9": "stale", "w1": "stale"}, []string{"old8", "old9", "w1"}, []string{"old8", "old9", "w1"}},
+		{"S2", entries{"old8": "stale", "old9": "stale"}, []string{"old8", "old9"}, []string{"old8", "old9"}},
+		{"S3", entries{"old9": "stale", "w1": "other"}, []string{"w1"}, nil},
+		{"S4", entries{"w1": "stale", "old9": "other"}, []string{"old9"}, nil},
+		{"S5", entries{"old9": "locked", "w1": "stale"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
+		{"S6", entries{"old9": "stale newline", "w1": "stale"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
+		{"S7", entries{"old9": "stale", "w1": "file"}, []string{"w1"}, nil},
+		{"S7b", entries{"old9": "stale", "w1": "no record"}, []string{"w1"}, nil},
+		{"S7c", entries{"old9": "stale", "w1": "empty"}, []string{"w1"}, nil},
+		{"A13", entries{"old9": "stale", "w1": "stale"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
+		{"A13b", entries{"old9": "stale", "w1": "locked"}, []string{"old9", "w1"}, []string{"old9", "w1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := realTempDir(t)
+			repo := filepath.Join(root, "T")
+			registry := filepath.Join(repo, ".git", "worktrees")
+			leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+			for name, kind := range tc.in {
+				entry := filepath.Join(registry, name)
+				switch kind {
+				case "stale", "locked":
+					writeFile(t, filepath.Join(entry, "gitdir"), leaf+"/.git/", 0o644)
+					if kind == "locked" {
+						writeFile(t, filepath.Join(entry, "locked"), "", 0o644)
+					}
+				case "stale newline":
+					writeFile(t, filepath.Join(entry, "gitdir"), leaf+"/.git\n", 0o644)
+				case "other":
+					writeFile(t, filepath.Join(entry, "gitdir"), filepath.Join(root, "gone", "w1", ".git")+"\n", 0o644)
+				case "file":
+					writeFile(t, entry, "a file\n", 0o644)
+				case "no record":
+					writeFile(t, filepath.Join(entry, "HEAD"), "ref: refs/heads/x\n", 0o644)
+				case "empty":
+					mkdirForTest(t, entry)
+				}
+			}
+			kept := dropStaleWorktreeRegistration(repo, leaf)
+			ents, err := os.ReadDir(registry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, e := range ents {
+				got = append(got, e.Name())
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("the registrations folder holds %q, want %q", got, tc.want)
+			}
+			var wantKept []string
+			for _, name := range tc.kept {
+				wantKept = append(wantKept, filepath.Join(registry, name))
+			}
+			if !slices.Equal(kept, wantKept) {
+				t.Errorf("kept = %q, want %q", kept, wantKept)
+			}
+		})
 	}
 }
 
-// TestWorktreeCreateSecondStaleEntry pins a create with two stale entries in
-// baseRepo. No cell of 89cb6289 measured that state. The state is that of cell
-// A9b g, and T also holds a stale entry old9 that can be removed. The directory
-// read gives old9 first. claustrum removes old9, keeps the locked w1 and refuses
-// the create with the text of cell A9b g. The index of w1 keeps its bytes.
-func TestWorktreeCreateSecondStaleEntry(t *testing.T) {
-	T, X, oldReg := stageOldRegistrationOfSameName(t)
-	leaf := filepath.Join(T, ".claude", "worktrees", "w1")
-	realT, err := filepath.EvalSymlinks(T)
-	if err != nil {
-		t.Fatal(err)
+// TestWorktreeCreateStaleEntryCount pins a create with more than one old entry in
+// baseRepo, with the daemon GIT_COMMON_DIR of repository X (the g cells). The
+// state is that of cell P-c, and w1 holds its own index. Cell A13 is that of
+// 89cb6289 on Linux and macOS VMs, and the S cells on a Linux VM.
+//
+//   - S1 g: old8, old9 and w1 are stale. All stay, and the create is refused with
+//     the "other than the one just created" text.
+//   - A13 g: old9 and w1 are stale. Both stay, and the answer is that text.
+//   - S5 g: old9 is stale and locked, and w1 is stale. Both stay, the same text.
+//   - S3 g: old9 is stale, and w1 has the record of another worktree. old9 goes,
+//     and the answer is the "different worktree" text.
+//
+// In every cell the index of w1 keeps its bytes.
+func TestWorktreeCreateStaleEntryCount(t *testing.T) {
+	textC := func(leaf string) string {
+		return "refusing to create worktree: " + namedLeaf(leaf) + " carries a .git file naming an admin entry other than the one just created for it"
 	}
-	record := filepath.Join(realT, ".claude", "worktrees", "w1", ".git") + "\n"
-	writeFile(t, filepath.Join(oldReg, "gitdir"), record, 0o644)
-	writeFile(t, filepath.Join(oldReg, "locked"), "", 0o644)
-	old9 := filepath.Join(filepath.Dir(oldReg), "old9")
-	writeFile(t, filepath.Join(old9, "gitdir"), record, 0o644)
-	index := filepath.Join(oldReg, "index")
-	oldIndex, err := os.ReadFile(index)
-	if err != nil || len(oldIndex) == 0 {
-		t.Fatalf("the old registration holds no index (err %v): this fixture does not stage the state", err)
-	}
+	for _, tc := range []struct {
+		name    string
+		others  []string // hand-made stale entries beside w1
+		locked  string
+		w1Stale bool
+		stay    []string
+		text    func(leaf string) string
+	}{
+		{"S1 g", []string{"old8", "old9"}, "", true, []string{"old8", "old9", "w1"}, textC},
+		{"A13 g", []string{"old9"}, "", true, []string{"old9", "w1"}, textC},
+		{"S5 g", []string{"old9"}, "old9", true, []string{"old9", "w1"}, textC},
+		{"S3 g", []string{"old9"}, "", false, []string{"w1"}, differentWorktreeText},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			T, X, oldReg := stageOldRegistrationOfSameName(t)
+			leaf := filepath.Join(T, ".claude", "worktrees", "w1")
+			realT, err := filepath.EvalSymlinks(T)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record := filepath.Join(realT, ".claude", "worktrees", "w1", ".git") + "/"
+			registry := filepath.Dir(oldReg)
+			if tc.w1Stale {
+				writeFile(t, filepath.Join(oldReg, "gitdir"), record, 0o644)
+			}
+			for _, name := range tc.others {
+				writeFile(t, filepath.Join(registry, name, "gitdir"), record, 0o644)
+			}
+			if tc.locked != "" {
+				writeFile(t, filepath.Join(registry, tc.locked, "locked"), "", 0o644)
+			}
+			index := filepath.Join(oldReg, "index")
+			oldIndex, err := os.ReadFile(index)
+			if err != nil || len(oldIndex) == 0 {
+				t.Fatalf("the old registration holds no index (err %v): this fixture does not stage the cell", err)
+			}
 
-	t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
-	raw := frameWithin(t, "git.worktree_create", createParams(T, leaf, "w1"))
-	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, "refusing to create worktree: "+leaf+
-		" carries a .git file naming an admin entry other than the one just created for it") + `,"errorCode":"unsafe_path"}}`
-	if raw != want {
-		t.Errorf("reply = %s\nwant %s", raw, want)
+			t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
+			raw := frameWithin(t, "git.worktree_create", createParams(T, leaf, "w1"))
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, tc.text(leaf)) + `,"errorCode":"unsafe_path"}}`
+			if raw != want {
+				t.Errorf("reply = %s\nwant %s", raw, want)
+			}
+			ents, err := os.ReadDir(registry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, e := range ents {
+				got = append(got, e.Name())
+			}
+			if !slices.Equal(got, tc.stay) {
+				t.Errorf("the registrations folder of T holds %q, want %q", got, tc.stay)
+			}
+			if b, err := os.ReadFile(index); err != nil || string(b) != string(oldIndex) {
+				t.Errorf("the index of w1 changed (err %v)", err)
+			}
+		})
 	}
-	if _, err := os.Lstat(old9); !os.IsNotExist(err) {
-		t.Errorf("old9 stays (Lstat err %v), want it removed", err)
-	}
-	if b, err := os.ReadFile(index); err != nil || string(b) != string(oldIndex) {
-		t.Errorf("the index of the locked entry changed (err %v)", err)
+}
+
+// TestWorktreeCreateRefusalNamesResolvedLeaf pins the spelling of the leaf in five
+// refusals. baseRepo is behind a symlink, <F>/Tlink for <F>/T, and both request
+// paths go through the link. 89cb6289 names the leaf with the link resolved,
+// <F>/T/.claude/worktrees/w1. Cell A12c g ran on Linux and macOS VMs, the T cells
+// on a Linux VM.
+//
+//   - T1 and A12c g: the old entry w1 of T is stale and goes. The "does not name"
+//     text.
+//   - T2: the state of cell P-c. The "different worktree" text.
+//   - T3: the old entry is stale and locked. The "other than the one just
+//     created" text.
+//   - T4: T has no worktrees folder. The "was not populated" text.
+//   - T9: the leaf exists before the request. The "already exists" text.
+func TestWorktreeCreateRefusalNamesResolvedLeaf(t *testing.T) {
+	for _, tc := range []struct {
+		name, stage, text string
+	}{
+		{"T1", "stale", " carries a .git file that does not name this repository's own worktree admin directory"},
+		{"T2", "", " carries a .git file naming an admin directory whose own record is of a different worktree"},
+		{"T3", "stale locked", " carries a .git file naming an admin entry other than the one just created for it"},
+		{"T4", "no folder", " was not populated by git worktree add"},
+		{"T9", "leaf exists", " already exists, and a new worktree is only ever created in a fresh directory"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			T, X, oldReg := stageOldRegistrationOfSameName(t)
+			realT, err := filepath.EvalSymlinks(T)
+			if err != nil {
+				t.Fatal(err)
+			}
+			realLeaf := filepath.Join(realT, ".claude", "worktrees", "w1")
+			link := filepath.Join(filepath.Dir(T), "Tlink")
+			if err := os.Symlink(T, link); err != nil {
+				t.Fatal(err)
+			}
+			sentLeaf := filepath.Join(link, ".claude", "worktrees", "w1")
+			switch tc.stage {
+			case "stale", "stale locked":
+				writeFile(t, filepath.Join(oldReg, "gitdir"), realLeaf+"/.git/", 0o644)
+				if tc.stage == "stale locked" {
+					writeFile(t, filepath.Join(oldReg, "locked"), "", 0o644)
+				}
+			case "no folder":
+				if err := os.RemoveAll(filepath.Dir(oldReg)); err != nil {
+					t.Fatal(err)
+				}
+			case "leaf exists":
+				mkdirForTest(t, realLeaf)
+			}
+			if tc.stage != "leaf exists" {
+				t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
+			}
+			raw := frameWithin(t, "git.worktree_create", createParams(link, sentLeaf, "w1"))
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` +
+				jsonString(t, "refusing to create worktree: "+realLeaf+tc.text) + `,"errorCode":"unsafe_path"}}`
+			if raw != want {
+				t.Errorf("reply = %s\nwant %s", raw, want)
+			}
+		})
 	}
 }
 
