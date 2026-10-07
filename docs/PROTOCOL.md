@@ -804,7 +804,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `failed to remove worktree: the worktree location <root> is not reachable (<reason>); nothing was removed — retry once it is available, or remove the worktree by hand` | in `error`, with no `errorCode`, with `worktreeRoot`. If the root passes the three tests above but does not exist or does not resolve, this refusal comes right after them. `<root>` is `worktreeRoot` as sent. For a root that does not exist, `<reason>` is `<root> does not exist`, also with two missing levels (rows Y9, T3, T4, T8 and T9). Row T9 also has a missing `baseRepo`. For a symlink that does not resolve, `<reason>` is the error of resolving it, for example `lstat <target>: no such file or directory` (row T5). claustrum sends other resolve errors the same way (not measured). Another error of the lstat keeps the old answer. For `permission denied` both references and claustrum answer `failed to remove worktree: lstat <root>: permission denied`, and claustrum makes 2 more git calls first (row T6). Nothing is deleted, and the branch stays. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs. Row T6 ran on a Linux VM only |
 | git.worktree_remove | `refusing to remove worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, with no `errorCode`. It keeps the delete off a planted link (`7d193f89`) |
 | git.worktree_remove | `refusing to remove worktree: <t> {is a symbolic link, not a worktree directory / is not a directory}` | in `error`, with no `errorCode`, for a leaf that is a symbolic link or not a directory. `<t>` has the symbolic links of `baseRepo` resolved. With `worktreeRoot`, the links of the root are resolved instead. Nothing is deleted (`f6010b97`, macOS VM) |
-| git.worktree_remove | `refusing to remove worktree: <t> changed while the removal was checking it` | in `error`, with no `errorCode`. claustrum's own text for a leaf that another directory replaced between two looks. Only a race reaches it, and no run has measured the reference there. Nothing is deleted |
+| git.worktree_remove | `refusing to remove worktree: <t> changed while the removal was checking it` | in `error`, with no `errorCode`. claustrum's own text for a leaf that another directory replaced between two looks. Only a race reaches it, and no run has measured the reference there. Nothing is deleted. On Linux and macOS, with `worktreeRoot`, a `<directory>` that turns into a symlink out of the root between two looks answers `failed to remove worktree: openat <directory>: path escapes from parent`. That text is claustrum's own and is not a parity claim |
 | git.worktree_remove | `refusing to remove worktree: <p> is locked (git worktree lock); unlock it to remove it` | in `error`, with no `errorCode`. `7d193f89` refuses a LOCKED worktree (`success:false`) and leaves it in place. The message is fixed whatever the lock reason is. Before `7d193f89` the reference deleted it and answered `success:true`. In four states `89cb6289` deletes the folder or answers success, and claustrum refuses (D22). With `worktreeRoot`, the frames differ in rows q2 to q4 (Linux VM) too. |
 | git.worktree_remove | `refusing to remove worktree: <p> is gone but its registration is locked (git worktree lock); unlock it to remove the registration and branch` | in `error`, with no `errorCode`, for a gone worktree with a locked registration. Nothing is deleted (`f6010b97`, macOS VM) |
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (<reason>); retry` | in `error`, with no `errorCode`, for a gone worktree. Without `worktreeRoot`, `<reason>` is the hooks refusal or the trust refusal text (`f6010b97`, macOS VM). Since `89cb6289` it is also the `git cannot run` text (row L11). claustrum puts a limit refusal of the listing there too. `89cb6289` measured the limits on `git.info` only. `<reason>` is also the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux, macOS and Windows VMs). With `worktreeRoot` and a missing absolute `baseRepo` without a `..` component, `<reason>` is the refusal of the daemon's `GIT_CONFIG_COUNT` (Linux and macOS VMs) |
@@ -813,8 +813,8 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `failed to remove worktree: could not check whether <p> is locked (the repository at <baseRepo> could not be read); retry` | in `error`, with no `errorCode`, with `worktreeRoot`, when the daemon's `GIT_CONFIG_COUNT` is refused, `baseRepo` is missing and the worktree directory exists. This row covers an absolute `baseRepo` without a `..` component. Nothing is deleted (`f6010b97`, Linux and macOS VMs). With no `git` on `PATH`, the same text answers a missing `baseRepo` in three rows (`f6010b97` and `89cb6289`, Linux VM). The worktree directory holds a file (row L13wa), is empty (row L13we), or holds a `.git` file that names its entry (row DG1) |
 | git.worktree_remove | `failed to remove worktree: cannot determine the repository's work tree: <reason>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `<reason>` is a trust refusal text, `exit status 128`, the hooks refusal, or the refusal of the daemon's `GIT_CONFIG_COUNT` (`f6010b97`, Linux VM). Since `89cb6289` it is also `git finds no repository here: <git text>` (row N04). With no `git` on `PATH`, both references answer the exec error alone in nine rows where `baseRepo` exists (Linux VM, see "Git-directory trust check"). claustrum also puts the `git cannot run` text and a limit refusal of the listing there. Neither is measured with `worktreeRoot`. Nothing is deleted. See the method section |
 | git.worktree_remove | `failed to remove worktree: cannot list the repository's worktrees: <exec error>` | in `error`, with no `errorCode`, with `worktreeRoot` only. `git worktree list --porcelain -z` and then `git worktree list --porcelain` both fail in `baseRepo`. Nothing is deleted. `89cb6289` answers `exit status 128` for a repository with a valid `HEAD` whose `.git/commondir` is a dangling relative symlink (row DG2s-g, Linux VM) |
-| git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). Nothing is deleted |
-| git.worktree_remove | `failed to remove worktree: open <root>: permission denied` / `failed to remove worktree: openat <name>: permission denied` / `failed to remove worktree: statat .: permission denied` | in `error`, with no `errorCode`, Linux and macOS, for a folder level above the worktree that the daemon cannot read or search. `<root>` is `worktreeRoot` with its symbolic links resolved. `<name>` is one path component. Nothing is deleted. Measured against `89cb6289` on Linux and macOS VMs (rows B1 to B11, B17a to B17d and B18). Windows is not measured. See the method section |
+| git.worktree_remove | `failed to remove worktree: statat .claude: permission denied` / `failed to remove worktree: open <baseRepo>: <error>` | in `error`, with no `errorCode`, without `worktreeRoot` only. `baseRepo` cannot be searched (mode 0600), or cannot be opened (mode 0000, or a regular file). For a worktree that is a direct child of `baseRepo`, the first text names the worktree on Linux and macOS: `statat <name>` (`89cb6289`, cell U19). Nothing is deleted |
+| git.worktree_remove | `failed to remove worktree: open <root>: permission denied` / `failed to remove worktree: openat <name>: permission denied` / `failed to remove worktree: statat .: permission denied` | in `error`, with no `errorCode`, Linux and macOS, for a folder level above the worktree that the daemon cannot read or search. `<root>` is `worktreeRoot` with its symbolic links resolved. `<name>` is one path component. Nothing is deleted. Measured against `89cb6289` on Linux and macOS VMs (rows B1 to B6, B8 to B11b, B17a to B17d and B18, cells U1 to U11h and U13a to U15b). Windows is not measured. See the method section |
 | git.worktree_remove | `failed to remove worktree: RemoveAll <entry>: <errno text>` | in `error`, when the delete of the worktree fails part-way. If an entry other than `.git` fails, `.git` stays. The entry of the worktree and the branch stay in every case (`f6010b97`, macOS VM) |
 | git.worktree_remove | `removed the worktree but could not drop its registration (RemoveAll <name>: <errno text>)` | in `error`, `success:false`, when the verified entry cannot be deleted after the tree. The branch step still runs. On `f6010b97` the branch is deleted (macOS VM). Since `89cb6289` a kept branch adds `"branchKept":true` after `error` (row R19, Linux VM) |
 | git.worktree_remove | `failed to remove worktree: openat .claude\worktrees: path escapes from parent` | D19, Windows, in `error`, with no `errorCode`, when `.claude` or `.claude\worktrees` is a junction. claustrum's own text. Nothing is deleted, and the branch stays |
@@ -3106,6 +3106,11 @@ copies end still fails it, as `timeoutMs` above describes:
   .claude: permission denied"}`. One that it cannot open at all (mode 0000) answers
   `failed to remove worktree: open <baseRepo>: permission denied`. Nothing is
   deleted in either case. Measured against `f6010b97` on Linux and macOS VMs.
+  For a worktree at `<baseRepo>/wt` and a `baseRepo` of mode 0600, `89cb6289`
+  answers `failed to remove worktree: statat wt: permission denied` on Linux and
+  macOS VMs (cell U19). claustrum names the worktree for a direct child of
+  `baseRepo` on Linux and macOS. A deeper path outside `.claude` with such a
+  `baseRepo` is not measured. claustrum names `.claude` there.
 - On Linux and macOS, a folder level on the way to `<p>` that the daemon cannot
   read or search is refused. Nothing is deleted: the worktree, its entry and the
   branch stay. Each text below follows `failed to remove worktree: `. `89cb6289`
@@ -3127,12 +3132,36 @@ copies end still fails it, as `timeoutMs` above describes:
   `<root>` is `worktreeRoot` with its symbolic links resolved. A request that
   spells `/tmp/…` on macOS gets `/private/tmp/…` in the text (row B18). `<directory>`
   and `<name>` are one path component each. A `worktreeRoot` of mode 0500 does not
-  stop the removal (row B7). If the folder above `worktreeRoot` has mode 0600, the
-  text is `lstat <root>: permission denied` (row B16). Before, claustrum answered
+  stop the removal (row B7), and a `.claude` of mode 0500 does not either (cell
+  U12). If the folder above `worktreeRoot` has mode 0600, the text is `lstat
+  <root>: permission denied` (row B16). With mode 0300 or 0100 on that folder,
+  the removal succeeds (cells U16a and U16b). Before, claustrum answered
   `{"success":true}` for a `worktreeRoot` of mode 0300 or 0100. It deleted the
-  worktree, its entry and the branch there. Two restricted levels in one request
-  are not measured. Windows and a daemon that runs as root are not measured
-  either. On Windows claustrum opens `.claude\worktrees` in one step, as before.
+  worktree, its entry and the branch there.
+
+  A second round measured more states against `89cb6289` on Linux and macOS VMs.
+  Nothing is deleted in any of them.
+  - With two restricted levels, the first one from the top gives the text (cells
+    U7 to U10b).
+  - A worktree folder, a `<directory>` or a `.claude/worktrees` that is gone
+    under a restricted level gets the text of that level. The entry and the
+    branch stay (cells U1 to U6b).
+  - The other modes of `.claude` and `.claude/worktrees` follow the table: 0000,
+    0100 and 0200 give `openat`, and 0400 gives `statat .` (cells U11a to U11h).
+  - A `worktreeRoot` of mode 0300 answers `open <root>` before these refusals: a
+    `<directory>` that is a symlink (cell U13b), a locked worktree (cell U14),
+    and a worktree path that is a symlink or a file (cells U15a and U15b). With
+    mode 0600 and a symlinked `<directory>`, the text is `statat .` (cell U13a).
+  - A worktree at `<baseRepo>/a/wt` or `<baseRepo>/a/b/c/wt` gets the same texts
+    for a restricted `a` or `b`: `openat a`, `openat b` or `statat .` (cells U17a
+    to U18b).
+  - A `worktreeRoot` that another user owns, with mode 0711 or 0751, answers
+    `open <root>` (cells U20a and U20b). On a macOS VM, an ACL on the root that
+    denies `list` to the daemon user does the same (cell U21).
+
+  A daemon that runs as root removes the worktree under a `worktreeRoot` of mode
+  0300, as `89cb6289` does (cell U22, Linux VM only). Windows is not measured. On
+  Windows claustrum opens `.claude\worktrees` in one step, as before.
 - A home-directory `worktreePath` is refused. The `7d193f89` containment now does
   it, as parity. A `~`-expanded home path is not strictly under `baseRepo`, so it is
   refused with the reference's `"…is not inside the repository…"` wording before any

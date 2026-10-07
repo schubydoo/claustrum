@@ -9,7 +9,8 @@ import (
 )
 
 // git.worktree_remove with a folder level that the daemon cannot read or search. The
-// rows are the mode rows of 89cb6289 on Linux and macOS VMs (B1 to B18). This file is
+// rows are the mode rows of 89cb6289 on Linux and macOS VMs (B1 to B18), and the cells
+// of the round after them (U1 to U19). This file is
 // unix only: chmod denies nothing on Windows, and Windows refuses a worktreeRoot.
 
 // restrictLevel sets the mode of dir for one request. The returned function puts 0755
@@ -20,8 +21,10 @@ func restrictLevel(t *testing.T, dir string, mode os.FileMode) (restore func()) 
 	chmodFor(t, dir, mode)
 	return func() {
 		t.Helper()
-		if fi, err := os.Lstat(dir); err != nil || fi.Mode().Perm() != mode {
-			t.Errorf("mode of %s after the request = %v (err=%v), want %v", dir, fi, err, mode)
+		if fi, err := os.Lstat(dir); err != nil {
+			t.Errorf("lstat %s after the request: %v", dir, err)
+		} else if fi.Mode().Perm() != mode {
+			t.Errorf("mode of %s after the request = %v, want %v", dir, fi.Mode().Perm(), mode)
 		}
 		if err := os.Chmod(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -152,6 +155,94 @@ func TestWorktreeRemoveInRepoLevelTexts(t *testing.T) {
 			mustExist(t, f.entry())
 			if !f.hasBranch("wt1") {
 				t.Error("branch wt1 was deleted")
+			}
+		})
+	}
+}
+
+// Cell U13b: with a root of mode 0300, the error of its open comes before the symlink
+// refusal of the <directory> level. Before, the reply was that refusal. With a root
+// that the daemon can read and search, the refusal stays.
+func TestWorktreeRemoveExternalRootOpenBeforeDirSymlink(t *testing.T) {
+	skipIfRoot(t)
+	f := newExtFixture(t)
+	lnk := filepath.Join(f.root, "lnk")
+	if err := os.Symlink(filepath.Dir(f.e0), lnk); err != nil {
+		t.Fatal(err)
+	}
+	wp := filepath.Join(lnk, "e0")
+	wantRemoveError(t, f.remove(t, wp, "e0"), "refusing to remove worktree: "+lnk+
+		" is a symbolic link; the directory under the worktree location must be a real directory")
+	restore := restrictLevel(t, f.root, 0o300)
+	raw := f.remove(t, wp, "e0")
+	restore()
+	wantRemoveError(t, raw, "failed to remove worktree: open "+f.root+": permission denied")
+	f.keptExternal(t)
+}
+
+// Cell U1: the worktree folder is gone and the root has mode 0300. The reply is the
+// error of the open, and the registration and the branch stay. Before, the reply was
+// success, and both were deleted.
+func TestWorktreeRemoveExternalGoneLeafUnderUnreadableRoot(t *testing.T) {
+	skipIfRoot(t)
+	f := newExtFixture(t)
+	if err := os.RemoveAll(f.e0); err != nil {
+		t.Fatal(err)
+	}
+	restore := restrictLevel(t, f.root, 0o300)
+	raw := f.remove(t, f.e0, "e0")
+	restore()
+	wantRemoveError(t, raw, "failed to remove worktree: open "+f.root+": permission denied")
+	mustExist(t, f.e0Entry())
+	if !f.hasBranch("e0") {
+		t.Error("branch e0 was deleted")
+	}
+}
+
+// Cell U14: a worktree locked with `git worktree lock` under a root of mode 0300 gets
+// the error of the open, not the locked refusal.
+func TestWorktreeRemoveExternalLockedUnderUnreadableRoot(t *testing.T) {
+	skipIfRoot(t)
+	f := newExtFixture(t)
+	runGit(t, f.repo, "worktree", "lock", f.e0)
+	restore := restrictLevel(t, f.root, 0o300)
+	raw := f.remove(t, f.e0, "e0")
+	restore()
+	wantRemoveError(t, raw, "failed to remove worktree: open "+f.root+": permission denied")
+	f.keptExternal(t)
+}
+
+// Cells U17a to U19: a worktree in the repository outside .claude. A restricted folder
+// above it answers as the levels of .claude do. For a direct child of a repository of
+// mode 0600, the text names the worktree (cell U19). Before, it named .claude. Nothing
+// is deleted.
+func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
+	skipIfRoot(t)
+	for _, c := range []struct {
+		cell  string
+		rel   string
+		level string
+		mode  os.FileMode
+		want  string
+	}{
+		{"U17a", filepath.Join("a", "wt"), "a", 0o300, "openat a"},
+		{"U17b", filepath.Join("a", "wt"), "a", 0o600, "statat ."},
+		{"U18a", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o300, "openat b"},
+		{"U18b", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o600, "statat ."},
+		{"U19", "wt", ".", 0o600, "statat wt"},
+	} {
+		t.Run(c.cell, func(t *testing.T) {
+			f := newRmFixture(t)
+			wt := filepath.Join(f.repo, c.rel)
+			runGit(t, f.repo, "worktree", "add", "-q", "-b", "wt", wt)
+			restore := restrictLevel(t, filepath.Join(f.repo, c.level), c.mode)
+			raw := removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": wt, "branchName": "wt"})
+			restore()
+			wantRemoveError(t, raw, "failed to remove worktree: "+c.want+": permission denied")
+			mustExist(t, filepath.Join(wt, ".git"))
+			mustExist(t, filepath.Join(f.repo, ".git", "worktrees", "wt"))
+			if !f.hasBranch("wt") {
+				t.Error("branch wt was deleted")
 			}
 		})
 	}

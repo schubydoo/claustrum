@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -1262,8 +1263,12 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg != "" {
 			return refuse(msg)
 		}
-		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
-			return refuse(msg)
+		// A root that the daemon cannot open or search answers its own error later, in
+		// locateExternalWorktree, and not this refusal (cell U13b, Linux and macOS VMs).
+		if !externalRootDenied(p.WorktreePath) {
+			if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
+				return refuse(msg)
+			}
 		}
 		// 89cb6289 makes two more git calls here: a light `worktree list --porcelain -z`,
 		// then a heavy `rev-parse --absolute-git-dir`. Each runs in baseRepo with its
@@ -1323,7 +1328,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// all, answers with the error from its look at .claude, and that error is the
 		// whole reply. Measured side by side against f6010b97 on Linux, and the
 		// reference's answers also on macOS.
-		if err := statInsideDir(repo, ".claude"); err != nil {
+		//
+		// For a worktree that is a direct child of baseRepo, the look is at the worktree
+		// name: 89cb6289 answers "statat wt: permission denied" for <repo>/wt and a
+		// repository of mode 0600 (cell U19, Linux and macOS VMs). A deeper path outside
+		// .claude with such a repository is not measured, and keeps the look at .claude.
+		// Windows is not measured, and keeps it too.
+		first := ".claude"
+		if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.Dir(rel) == "." && runtime.GOOS != "windows" {
+			first = rel
+		}
+		if err := statInsideDir(repo, first); err != nil {
 			return refuse("failed to remove worktree: " + err.Error())
 		}
 		target, err = locateInRepoWorktree(repo, p.WorktreePath)

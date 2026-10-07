@@ -106,6 +106,19 @@ func locateExternalWorktree(worktreePath string) (removeTarget, error) {
 	return openRemoveParent(root, filepath.Base(dir), filepath.Base(cleanPath))
 }
 
+// externalRootDenied reports whether the worktreeRoot of worktreePath cannot be opened
+// or searched. The answer of such a root comes before the symlink refusal of the
+// <directory> level: with a root of mode 0300 and a symlinked <directory>, 89cb6289
+// answers "open <root>: permission denied" (cell U13b on Linux and macOS VMs).
+func externalRootDenied(worktreePath string) bool {
+	root, err := os.OpenRoot(filepath.Dir(filepath.Dir(filepath.Clean(worktreePath))))
+	if err != nil {
+		return true
+	}
+	defer func() { _ = root.Close() }()
+	return levelSearchError(root) != nil
+}
+
 // levelSearchError is the error of a look at "." in an open level, or nil. A level
 // that the daemon opened and cannot search gives "statat .: permission denied". On
 // Windows it answers nil with no look: no row measures a mode there.
@@ -128,10 +141,10 @@ func levelSearchError(level *os.Root) error {
 // <base>" or "openat <component>". A level with the read bit and without the search
 // bit answers "statat .". The frames of 89cb6289 show those texts on Linux and macOS
 // VMs (rows B1 to B11 with worktreeRoot, rows B17a to B17d without). With a root of
-// mode 0300 or 0100 nothing is deleted there (rows B3, B4 and B18). Two restricted
-// levels in one request are not measured. A level that fails the look for another
-// reason answers that error, and nothing is deleted (not measured). On Windows dirRel
-// is opened in one step, as before.
+// mode 0300 or 0100 nothing is deleted there (rows B3, B4 and B18). With two
+// restricted levels, the first one from the top answers (cells U7 to U10). A level
+// that fails the look for another reason answers that error, and nothing is deleted
+// (not measured). On Windows dirRel is opened in one step, as before.
 func openRemoveParent(base, dirRel, leaf string) (removeTarget, error) {
 	parent, err := os.OpenRoot(base)
 	if err != nil {
