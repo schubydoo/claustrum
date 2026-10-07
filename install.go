@@ -209,6 +209,7 @@ func runInstall(o installOpts) {
 				if o.cliKeep < 0 {
 					fmt.Fprintf(os.Stderr, "claustrum: -cli-keep %d is not a valid keep count\n", o.cliKeep)
 					osExit(2)
+					return
 				}
 				// A keep of 0 prunes too (cells K0a and K0b, Linux, macOS and
 				// Windows VMs, 89cb6289).
@@ -1297,8 +1298,8 @@ func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 }
 
 // blobTempPrefix names the -cli-url download blob. It must be a prefix that
-// NEITHER cli-dir housekeeping pass acts on — isSweptName must not claim it, and
-// pruneCLI must not count it as a version. Both halves matter and they failed one
+// NONE of the three cli-dir housekeeping passes acts on — isSweptName and
+// isZstPartName must not claim it, and pruneCLI must not count it as a version. Both halves matter and they failed one
 // at a time: ".fetch-" let the sweep delete the blob out from under the
 // errStagingVanished retry, and a name merely absent from isSweptName still let
 // pruneCLI census it, where an in-flight blob sorts newest, burns a -cli-keep
@@ -1310,7 +1311,7 @@ func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 // ".fetch-<random>" whose first bytes are the DECOMPRESSED CLI's, where
 // claustrum's staging file at that moment holds the compressed body. Different
 // artifacts, so the naming rule below is claustrum's own either way. Defined
-// once here so the creator, BOTH housekeeping passes and validateCLIVersion read
+// once here so the creator, the housekeeping passes and validateCLIVersion read
 // the same rule. A rule the validator does not consult is one an operator can
 // walk into with -cli-version.
 const blobTempPrefix = ".blob-"

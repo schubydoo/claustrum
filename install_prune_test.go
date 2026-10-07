@@ -402,6 +402,9 @@ func makePruneFixture(t *testing.T, dir, outside string, e pruneFixture, start t
 			err = os.WriteFile(filepath.Join(p, "inner.txt"), []byte("keep"), 0o644)
 		}
 	case pruneDirLink, pruneDeadLink, pruneFileLink:
+		if e.age != 0 {
+			t.Fatalf("a link fixture cannot carry an age: %s", e.name)
+		}
 		target := outside
 		switch e.kind {
 		case pruneDeadLink:
