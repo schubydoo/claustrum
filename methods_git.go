@@ -880,9 +880,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
 		// On Linux and macOS the refusal names the cleaned path, with the symlinks
-		// of its parent folder resolved and its last name kept (resolvedLeafSpelling:
+		// of its parent folder resolved and its last name kept (parentResolvedPath:
 		// cells T9, U1a to U1d and U2a to U2c without a worktreeRoot, cell U3a2
-		// with one, Linux VM). f6010b97 and 90fca6e6 quote "R/cp/w1" for a
+		// with one, Linux and macOS VMs). f6010b97 and 90fca6e6 quote "R/cp/w1" for a
 		// worktreePath sent as "R/cp/w1/" with a worktreeRoot (Linux and macOS VMs).
 		// On Windows the path with a worktreeRoot is the cleaned path, and the
 		// in-repo path is spelled with the on-disk letter case of each component that
@@ -1155,8 +1155,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// and no rollback (cells P-c and P-k to P-m). Before
 	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo
 	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). In
-	// cells T2 and T10 (Linux VM) 89cb6289 passes baseRepo with its symlink
-	// resolved, twice. claustrum passes it as sent, once. No frame differs.
+	// cells T2 and T10 (Linux and macOS VMs) the call log of 89cb6289 shows that
+	// pair twice, with baseRepo as the resolved path. The call log of claustrum
+	// shows it once, with baseRepo as sent. No frame differs.
 	// claustrum makes the calls and does not use their
 	// answer: what 89cb6289 takes from them is not measured. This test comes before
 	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289

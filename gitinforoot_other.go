@@ -11,19 +11,19 @@ func gitInfoRoot(walkRoot, _ string, _ []string) string {
 // existingPathSpelling is the path of the `already exists` refusal of
 // git.worktree_create without worktreeRoot. Off Windows it is the cleaned path with
 // the symlinks of its parent folder resolved and its last name kept
-// (resolvedLeafSpelling, cells T9, U1a to U1d and U2a to U2c on a Linux VM).
+// (parentResolvedPath, cells T9, U1a to U1d and U2a to U2c, Linux and macOS VMs).
 func existingPathSpelling(p string) string {
-	return resolvedLeafSpelling(p)
+	return parentResolvedPath(p)
 }
 
 // externalPathSpelling is the path that two refusals of git.worktree_create with a
 // worktreeRoot name: the leaf in the `already exists` text, and the folder that
 // holds the leaf in the "is not marked as a worktree directory" text. Off Windows
-// it is the spelling of resolvedLeafSpelling (cells U3a2 and U3a, Linux VM). For a
+// it is the spelling of parentResolvedPath (cells U3a2 and U3a, Linux and macOS VMs). For a
 // path with no symlink that is the cleaned path, as f6010b97 and 90fca6e6 name it
 // (Linux and macOS VMs).
 func externalPathSpelling(p string) string {
-	return resolvedLeafSpelling(p)
+	return parentResolvedPath(p)
 }
 
 // checkoutWorkTree is the --work-tree value of the read-tree checkout of

@@ -151,8 +151,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       directory. Before the add, on Linux and macOS, create removes one stale
       entry of `<baseRepo>/.git/worktrees`: an entry whose `gitdir` record
       names the `.git` of the new leaf. It removes that entry only if it is the
-      only stale entry of the folder (`89cb6289`, cells A13 and A13b on Linux
-      and macOS VMs, cells S1 to S7c on a Linux VM). The delete is one `os.Root.RemoveAll`
+      only stale entry of the folder (`89cb6289`, cells A13, A13b and S1 to S7c,
+      Linux and macOS VMs). The delete is one `os.Root.RemoveAll`
       of the entry name through a root at that folder, after `wipesHomeDir` on
       the entry path. An entry with a `locked` file stays (`89cb6289`, cells A1
       to A12c, Linux and macOS VMs). On Windows that step is one `os.RemoveAll` of the
@@ -444,7 +444,7 @@ Go 1.26 sorts it at the process start. `89cb6289` keeps the order of its
 launching block and adds its entries after it. Name order stays by the
 maintainer's decision of 2026-10-06, not by a rule 3 clause. See the entry.
 
-D24 is on Linux and macOS, and from the code, the frames are equal in its two cells.
+D24 is on Linux and macOS, and the frames are equal in its two cells (Linux and macOS VMs).
 If git answered `rev-parse --absolute-git-dir`, a rollback of
 `git.worktree_create` deletes the registration only if the
 folder at its path is still the folder that the tests after the add accepted.

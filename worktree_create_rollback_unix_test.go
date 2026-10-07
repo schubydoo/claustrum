@@ -19,7 +19,7 @@ import (
 // t.TempDir, and no test gives a path outside it to a delete.
 
 // staleRegFiles are the files of the old registration of the A cells, in the order
-// that the Linux trace of 89cb6289 removes them.
+// of their removal in the system call trace of cell A1 (89cb6289, Linux VM).
 var staleRegFiles = []string{"gitdir", "index", "logs/HEAD", "ORIG_HEAD", "commondir", "HEAD"}
 
 // pathsBelow lists every path below dir, sorted, or nil when dir is gone.
@@ -687,9 +687,8 @@ func TestTestedRegistrationHeldIdentity(t *testing.T) {
 
 // TestDropStaleWorktreeRegistrationCount pins how many stale entries the step
 // before the add removes: one, and only if it is the only stale entry of the
-// folder. Cells A13 and A13b are those of 89cb6289 on Linux and macOS VMs. The S
-// cells are those of 89cb6289 on a Linux VM. "stale" is the record <L>/.git/ of
-// cell A1.
+// folder. Cells A13 and A13b and the S cells are those of 89cb6289 on Linux and
+// macOS VMs. "stale" is the record <L>/.git/ of cell A1.
 //
 //   - S1 (old8, old9 and w1 stale), S2 (old8 and old9 stale), A13 (old9 and w1
 //     stale) and S6 (two stale records in two spellings): every entry stays.
@@ -769,7 +768,7 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 // TestWorktreeCreateStaleEntryCount pins a create with more than one old entry in
 // baseRepo, with the daemon GIT_COMMON_DIR of repository X (the g cells). The
 // state is that of cell P-c, and w1 holds its own index. Cell A13 is that of
-// 89cb6289 on Linux and macOS VMs, and the S cells on a Linux VM.
+// 89cb6289 on Linux and macOS VMs, and so are the S cells.
 //
 //   - S1 g: old8, old9 and w1 are stale. All stay, and the create is refused with
 //     the "other than the one just created" text.
@@ -847,8 +846,8 @@ func TestWorktreeCreateStaleEntryCount(t *testing.T) {
 // TestWorktreeCreateRefusalNamesResolvedLeaf pins the spelling of the leaf in five
 // refusals. baseRepo is behind a symlink, <F>/Tlink for <F>/T, and both request
 // paths go through the link. 89cb6289 names the leaf with the link resolved,
-// <F>/T/.claude/worktrees/w1. Cell A12c g ran on Linux and macOS VMs, the T cells
-// on a Linux VM.
+// <F>/T/.claude/worktrees/w1. Cell A12c g and the T cells ran on Linux and macOS
+// VMs.
 //
 //   - T1 and A12c g: the old entry w1 of T is stale and goes. The "does not name"
 //     text.
@@ -973,7 +972,7 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 }
 
 // TestWorktreeCreateAlreadyExistsSpelling pins the path in the "already exists"
-// refusal without worktreeRoot (89cb6289, Linux VM). The parent folder of the leaf
+// refusal without worktreeRoot (89cb6289, Linux and macOS VMs). The parent folder of the leaf
 // has its symlinks resolved, the last name stays, and the path is cleaned. "L" is
 // a request through <F>/Tlink, a symlink to <F>/T. "R" is a request with the real
 // path.
@@ -1038,7 +1037,7 @@ func TestWorktreeCreateAlreadyExistsSpelling(t *testing.T) {
 }
 
 // TestWorktreeCreateRootBehindSymlinkSpelling pins the path in two refusals with a
-// worktreeRoot behind a symlink (89cb6289, Linux VM). worktreeRoot is <F>/Rlink, a
+// worktreeRoot behind a symlink (89cb6289, Linux and macOS VMs). worktreeRoot is <F>/Rlink, a
 // symlink to <F>/pr/R, and worktreePath goes through the link. baseRepo is real.
 //
 //   - U3a: <F>/pr/R/cp holds the folder w1 and no marker. The "is not marked as a

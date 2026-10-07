@@ -648,7 +648,8 @@ func baseIsGitDir(repo string) bool {
 // create and name "R/proj" (measured on Linux and macOS VMs).
 //
 // The text names the <directory> through externalPathSpelling. With a worktreeRoot
-// behind a symlink, 89cb6289 names it with the link resolved (cell U3a, Linux VM).
+// behind a symlink, 89cb6289 names it with the link resolved (cell U3a, Linux and
+// macOS VMs).
 func externalWorktreeDirNotEmptyRefusal(worktreePath string) string {
 	dir := filepath.Dir(filepath.Clean(worktreePath))
 	entries, err := os.ReadDir(dir)

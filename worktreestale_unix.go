@@ -17,7 +17,7 @@ import (
 // the step only after it confirmed that the leaf does not exist. The step removes
 // a stale entry only if it is the only stale entry of the folder and holds no
 // `locked` file. The A cells are those of 89cb6289 on Linux and macOS VMs, 2 runs
-// each. The S cells are those of 89cb6289 on a Linux VM, 2 runs each.
+// each. So are the S cells.
 //
 // claustrum compares by text. This rule is claustrum's own fit of the cells below:
 //
@@ -40,11 +40,11 @@ import (
 //
 // With two or three stale entries, 89cb6289 removes none of them: old9 and w1
 // (cell A13), old8, old9 and w1 (cell S1), old8 and old9 (cell S2), and two
-// entries whose records differ in their spelling (cell S6). A stale entry with a
-// `locked` file counts as a stale entry (cells A13b and S5). An entry that is not
-// stale does not count: the one stale entry beside it goes (cells S3 and S4). A
-// regular file, a folder with no gitdir record and an empty folder beside the
-// stale entry do not count either (cells S7, S7b and S7c).
+// entries whose records differ in their spelling (cell S6). With a stale entry and
+// a second stale entry that holds a `locked` file, both stay (cells A13b and S5).
+// With one stale entry beside an entry that is not stale, the stale entry goes
+// (cells S3 and S4). It goes too beside a regular file, a folder with no gitdir
+// record or an empty folder (cells S7, S7b and S7c).
 //
 // An entry that holds a file named `locked` stays (cells A9 and A9b). The remove is
 // best effort: it removes what the modes permit, and the request goes on. With the
