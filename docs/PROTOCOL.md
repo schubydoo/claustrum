@@ -1523,6 +1523,67 @@ names a corrupt config by its absolute path. `f6010b97` does the same in the
 `git.info`, `git.list_branches`, `git.status`, create and remove frames, measured on
 Linux and macOS VMs. `90fca6e6` names `.git/config`.
 
+#### A FIFO where the daemon reads a git file
+
+The daemon itself reads three kinds of git file: a `.git` file, the `commondir`
+file of a worktree entry and the `gitdir` record of a worktree entry. On Linux and
+macOS it opens each of them without blocking. It reads a regular file of at most
+1 MiB only. Anything else there, a FIFO for example, is no usable file, and the
+request goes on. Windows has no FIFO in the file system, and its reads are as
+before. One read is as before on every system. After `git worktree add`,
+`git.worktree_create` reads the `gitdir` record that git wrote for the new entry.
+
+The rows ran side by side against `89cb6289` on Linux and macOS VMs. No row opened
+a FIFO for writing. `89cb6289` answered every row except B-G1 in under 2 s. T is a
+repository, and `T/a` is a folder in it.
+
+| Row | State | Request | Answer |
+|---|---|---|---|
+| B-F1 | `T/a/.git` is a FIFO | create with `baseRepo` `T/a` | success. The entry and the branch are made in T |
+| B-S2 | `T/a/.git` is a symlink to a FIFO | the same create | as B-F1 |
+| B-F4 | T lies inside an outer repository O, and `T/.git` is a FIFO | create with `baseRepo` T | success. The entry and the branch are made in O |
+| B-L1 | as B-F1 | the create of B-F1, then a create in T with another leaf | both succeed |
+| B-F5 | `T/.git` is a FIFO, and no repository lies above T | create with `baseRepo` T | `not_a_repo`, and nothing is made |
+| B-S1 | `T/a/.git` is a regular file of 0 bytes | create with `baseRepo` `T/a` | `not_a_repo`, and nothing is made |
+| B-F2 | as B-F1 | `git.info` and `git.list_branches` with `path` `T/a` | the answers of T |
+| B-F2 | as B-F1 | `git.status` with `path` `T/a` and `baseRepo` T | `{"isRepo":false,"clean":false}` |
+| B-F3 | a worktree of T under `T/a`, then `T/a/.git` becomes a FIFO | remove with `baseRepo` `T/a` | `{"success":true}`. The folder, the entry and the branch go |
+| B-G2 | the `gitdir` record of another entry is a FIFO | remove of a real worktree of T | `{"success":true}`. The other entry stays |
+| B-G3 | the `commondir` file of the entry of the worktree is a FIFO | remove of that worktree | `{"success":true}`. The folder, the entry and the branch go |
+| B-G4 | the `commondir` file of the entry of a linked `baseRepo` is a FIFO | create | the trust refusal with `is not a small plain file (commondir is not a regular file)` |
+| B-G1 | the `gitdir` record of another entry is a FIFO | create with `baseRepo` T | no answer in 40 s |
+
+In row B-G3 the entry is not verified, because its `commondir` is not read. The
+git calls of `89cb6289` are those of an entry that is not verified: the listing and
+the rev-parse twice, then the pair. The entry goes by its `gitdir` record, which
+names the worktree.
+
+In row B-G1 `89cb6289` waits in its child `git worktree add`. A plain `git worktree
+add` on that fixture waits too. From the code and a unit test: claustrum passes over
+the FIFO record and starts the same call. claustrum adds no bound of its own there.
+From the code: the `timeoutMs` of the caller does not end that call, and the opt-in
+`git-timeout` (D5) does.
+
+The rows ran with a git that walks past a FIFO named `.git`. From the tests of this
+repository: a newer git refuses that FIFO itself. The daemon then answers the text
+of git in the hooks refusal. That case is not measured on `89cb6289`.
+
+Not measured:
+
+- A FIFO as `HEAD`, `config`, `index` or a ref file in a place that git itself
+  reads.
+- A device file or a socket in place of the FIFO. From the code: claustrum takes
+  each as no usable file.
+- A FIFO that a writer opens during the request. From the code: claustrum reads
+  nothing from it.
+- A `.git` file, a `commondir` file or a `gitdir` record of more than 1 MiB. From
+  the code: claustrum takes it as no usable file. The bound is claustrum's choice.
+- A FIFO as the `gitdir` record of the entry of the worktree to remove. From the
+  code: the entry is not verified, no record names the worktree, and the entry
+  stays.
+- A FIFO in a read of the rollback of `git.worktree_create`. From the code: the
+  registration is not verified, and the rollback does not delete it.
+
 #### Hardened git calls
 
 The git methods run most git steps as hardened calls. A hardened call carries a fixed
