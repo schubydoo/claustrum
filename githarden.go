@@ -394,7 +394,7 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
-// (guardedInstallWorktreeIndex). The caller gets adminDir from createdIndexDir. The temporary directory is removed afterwards. stderr,
+// (guardedInstallWorktreeIndex). The caller gets adminDir from createdRegistrationRefusal. The temporary directory is removed afterwards. stderr,
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
@@ -430,7 +430,7 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 // the registration tests do not run (createdRegistrationRefusal), and a record that
 // cannot be read reaches the guard with no change. The error text is claustrum's own (not measured). The path in it is
 // adminDir, the registration folder. That is a path of the repository
-// (createdIndexDir), not the worktreePath of the request. The
+// (createdRegistrationRefusal), not the worktreePath of the request. The
 // frame joins the text to the stderr of the checkout under the 512-byte rule
 // (indexInstallText). After a long stderr the frame holds a part of the text, or
 // none of it.

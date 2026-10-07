@@ -1100,9 +1100,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// branch stay. The test comes before the deadline test: with a timeoutMs that
 	// expired during the add, 89cb6289 answers this refusal (row D-9, macOS VM).
 	//
-	// The .git file is read once, here. The tests and the index folder both take
-	// this value, so a .git file that changes later cannot name a folder that the
-	// tests did not see.
+	// The .git file is read once, here, and the commondir file of gitDir is read
+	// once, in the tests. The tests answer the index folder, so it is the entry that
+	// they saw. A .git file or a commondir file that changes later cannot name a
+	// folder that the tests did not see.
 	//
 	// The tests need the git directory that git answered. If rev-parse gave no
 	// answer, gitDir is a guess (repoGitDir), and for a baseRepo that is a subfolder
@@ -1110,8 +1111,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// index folder is the one that the .git file names. That is claustrum's choice
 	// (not measured).
 	adminDir := worktreeAdminDir(p.WorktreePath)
+	indexDir := ""
+	if adminDir != "" {
+		indexDir = absoluteAdminDir(p.WorktreePath, adminDir)
+	}
 	if gitAnswered {
-		if text := createdRegistrationRefusal(gitDir, p.WorktreePath, adminDir); text != "" {
+		var text string
+		if indexDir, text = createdRegistrationRefusal(gitDir, p.WorktreePath, adminDir); text != "" {
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
 				Error:     text,
@@ -1119,8 +1125,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			})
 		}
 	}
-	// indexDir is the registration that gets the index (createdIndexDir). Its gitdir
-	// record names worktreePath after symlink resolution.
+	// indexDir is the registration that gets the index (createdRegistrationRefusal).
+	// Its gitdir record names worktreePath after symlink resolution.
 	// If it was read and names anything else, the create is refused, with no checkout
 	// and no rollback (cells P-c and P-k to P-m). Before
 	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
@@ -1128,13 +1134,6 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// answer: what 89cb6289 takes from them is not measured. This test comes before
 	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
 	// answers this refusal and keeps the leaf and the branch (cell P-f, Linux and macOS VMs).
-	indexDir := ""
-	if adminDir != "" {
-		indexDir = absoluteAdminDir(p.WorktreePath, adminDir)
-		if gitAnswered {
-			indexDir = createdIndexDir(gitDir, p.WorktreePath, adminDir)
-		}
-	}
 	if adminRecordMismatch(indexDir, p.WorktreePath) {
 		_, _ = gitDirWorkTreeToplevel(gitDir, repo, commonDirPinEnv(repo))
 		return okResult(req.ID, worktreeResult{

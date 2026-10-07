@@ -416,12 +416,24 @@ func gitDirRegistryDir(gitDir string) string {
 	return filepath.Join(common, worktreesSubdir)
 }
 
-// createdRegistrationRefusal is the answer of git.worktree_create when the .git
-// file of the new worktree does not name a registration of the repository, or ""
-// when it does. gitDir is the git directory of baseRepo, as git answered it before
-// the add. adminDir is the gitdir value of that .git file (worktreeAdminDir). The
-// caller reads it once and gives the same value to createdIndexDir. This function
-// does not read the .git file. The call runs right after a successful add.
+// createdRegistrationRefusal tests the .git file of the new worktree of
+// git.worktree_create. refusal is the answer when that file does not name a
+// registration of the repository, or "" when it does. gitDir is the git directory
+// of baseRepo, as git answered it before the add. adminDir is the gitdir value of
+// that .git file (worktreeAdminDir). The caller reads it once. This function does
+// not read the .git file. The call runs right after a successful add.
+//
+// registration is the folder that gets the index of the new worktree. It is "" with
+// a refusal and with no adminDir. On Linux and macOS it is the entry of test 2: the
+// registration of gitDir with the last name of adminDir, not the path that adminDir
+// names. With a value that names a folder that does not exist, 89cb6289 answers
+// success. The registration that git made then holds the index (row D-12, Linux and
+// macOS VMs). For a value that git wrote with no daemon GIT_COMMON_DIR, the two are
+// the same folder. The folder comes from the one gitDirRegistryDir call of the
+// tests. So the commondir file of gitDir is read once, and the index folder is the
+// folder that test 3 saw. On Windows no test runs, and registration is the path
+// that adminDir names (absoluteAdminDir, not measured).
+//
 // claustrum runs four tests.
 // They fit the frames and the disk of 89cb6289 in these rows (Linux VM with git
 // 2.43, macOS VM with git 2.50):
@@ -432,17 +444,22 @@ func gitDirRegistryDir(gitDir string) string {
 //     <F>/alt/WORKTREES/w1 do not pass (rows D-1, D-4, D-5 and D-7 on macOS, row
 //     D-11 on Linux). The named path need not exist (row D-12).
 //
-//  2. The registrations directory of gitDir holds an entry with the last name of
-//     the path. With GIT_COMMON_DIR of another repository in the daemon
-//     environment, git makes the registration in that repository, and baseRepo has
-//     none (rows B-E1 and B-E3 and cell D8e, and row D-8 on the macOS VM only: on
-//     the Linux VM the add of row D-8 fails). The answer is then the "was not
-//     populated" text. In each of those rows baseRepo has no worktrees folder at
-//     all. With a worktrees folder that holds no entry of the name, 89cb6289
-//     answers the "does not name" text (cell P-p), and claustrum answers this
-//     text (from the code). With GIT_DIR of that repository too, the create
-//     succeeds (probe row 2 of git.worktree_remove, 89cb6289, Linux and macOS
-//     VMs). From the code: git answers that repository as the git directory.
+//  2. The registrations directory of gitDir exists, and it holds an entry with the
+//     last name of the path. With GIT_COMMON_DIR of another repository in the
+//     daemon environment, git makes the registration in that repository, and
+//     baseRepo has none. Folder absent: baseRepo has no worktrees folder at all,
+//     and the answer is the "was not populated" text (rows B-E1 and B-E3 and cell
+//     D8e, and row D-8 on the macOS VM only: on the Linux VM the add of row D-8
+//     fails). Folder present, no entry of the name: 89cb6289 answers the "does
+//     not name" text (cell P-p, Linux and macOS VMs). 89cb6289 removed the old
+//     entry there before the add. Cell P-p shows the reference side only.
+//     claustrum keeps the old entry in cell P-p, so its own frame there still
+//     differs (open item of issue 429). Not measured: a worktrees folder that
+//     holds entries of other names and none of this name. claustrum answers the
+//     "does not name" text there, from this rule. With GIT_DIR of that
+//     repository too, the create succeeds (probe row 2 of git.worktree_remove,
+//     89cb6289, Linux and macOS VMs). From the code: git answers that repository
+//     as the git directory.
 //
 //  3. The commondir file of that registration leads back to the common git
 //     directory. A file that holds "../../x" does not (row D-13). The path is
@@ -469,11 +486,13 @@ func gitDirRegistryDir(gitDir string) string {
 // fails test 3.
 //
 // Not measured: a path that fails test 1 and test 2 together (claustrum runs test 1
-// first). Not measured either: an entry whose stat fails with another error than
-// "does not exist", for example in a registrations directory with no search
-// permission. Test 2 passes there, the commondir read fails, and claustrum answers
-// the "does not name" text. A leaf with no .git file that can be read is not
-// measured, and claustrum does not refuse it.
+// first). Not measured either: a registrations directory or an entry whose stat
+// fails with another error than "does not exist", for example a registrations
+// directory with no search permission, or a file in its place. Test 2 passes there,
+// the commondir read fails, and claustrum answers the "does not name" text. A
+// registrations directory that is a symlink to nothing counts as absent (from the
+// code, not measured). A leaf with no .git file that can be read is not measured,
+// and claustrum does not refuse it.
 //
 // Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
 // 2.50, 89cb6289 answers the "does not name" text there too, with a registrations
@@ -488,24 +507,30 @@ func gitDirRegistryDir(gitDir string) string {
 // A fifth test follows these four: adminRecordMismatch. All five come before the
 // deadline test of the create (row D-9 on a macOS VM, cell P-f on Linux and macOS
 // VMs).
-func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) string {
-	if !adminRecordChecked || adminDir == "" {
-		return ""
+func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registration, refusal string) {
+	if adminDir == "" {
+		return "", ""
+	}
+	if !adminRecordChecked {
+		return absoluteAdminDir(worktreePath, adminDir), ""
 	}
 	notOurs := fmt.Sprintf("refusing to create worktree: %s carries a .git file that does not name this "+
 		"repository's own worktree admin directory", worktreePath)
 	admin := filepath.Clean(adminDir)
 	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
-		return notOurs
+		return "", notOurs
 	}
 	registry := gitDirRegistryDir(gitDir)
-	registration := filepath.Join(registry, filepath.Base(admin))
+	registration = filepath.Join(registry, filepath.Base(admin))
+	if _, err := os.Stat(registry); errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", worktreePath)
+	}
 	if _, err := os.Stat(registration); errors.Is(err, fs.ErrNotExist) {
-		return fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", worktreePath)
+		return "", notOurs
 	}
 	b, err := readGitPlainFile(filepath.Join(registration, "commondir"))
 	if err != nil {
-		return notOurs
+		return "", notOurs
 	}
 	named := strings.TrimSpace(string(b))
 	if !filepath.IsAbs(named) {
@@ -513,32 +538,12 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) string {
 	}
 	common := filepath.Dir(registry)
 	if named != common && !sameCanonicalPath(canonicalPath(named), canonicalPath(common)) {
-		return notOurs
+		return "", notOurs
 	}
 	if readAdminRecord(registration, worktreePath) == recordUnreadable {
-		return notOurs
+		return "", notOurs
 	}
-	return ""
-}
-
-// createdIndexDir is the folder that gets the index of the new worktree. adminDir is
-// the gitdir value of the .git file of worktreePath, and gitDir is the git directory
-// of baseRepo. On Linux and macOS the folder is the registration of gitDir with the
-// last name of that value, not the path that the value names. With a value that
-// names a folder that does not exist, 89cb6289 answers success. The registration
-// that git made then holds the index (row D-12, Linux and macOS VMs). For a value that git
-// wrote with no daemon GIT_COMMON_DIR, the two are the same folder.
-//
-// The caller gives this function the value that createdRegistrationRefusal tested,
-// from one read of the .git file. So no value that fails test 1 gets here on Linux
-// and macOS. For such a value, and on Windows (not measured), the folder is the path
-// that the value names (absoluteAdminDir).
-func createdIndexDir(gitDir, worktreePath, adminDir string) string {
-	clean := filepath.Clean(adminDir)
-	if !adminRecordChecked || filepath.Base(filepath.Dir(clean)) != worktreesSubdir {
-		return absoluteAdminDir(worktreePath, adminDir)
-	}
-	return filepath.Join(gitDirRegistryDir(gitDir), filepath.Base(clean))
+	return registration, ""
 }
 
 // adminRecord is what the gitdir record of a registration says about a worktree.
@@ -589,8 +594,8 @@ func readAdminRecord(admin, worktreePath string) adminRecord {
 
 // adminRecordMismatch reports whether the `gitdir` record of the registration admin
 // was read and names another path than <worktreePath>/.git (readAdminRecord). The
-// caller gets admin from createdIndexDir: it is the folder that gets the index of
-// the new worktree.
+// caller gets admin from createdRegistrationRefusal: it is the folder that gets the
+// index of the new worktree.
 // 89cb6289 and f6010b97 refuse such a create on a
 // macOS VM when the request spells the folder in Unicode NFD and git records it in
 // NFC (row I07a). They run no checkout and roll nothing back. The same request in NFC
@@ -604,8 +609,8 @@ func readAdminRecord(admin, worktreePath string) adminRecord {
 // and git makes the registration in X. Its record names the new leaf. baseRepo
 // holds an old entry of the same name, and the record of that entry names another
 // worktree. 89cb6289 refuses with the text of adminRecordRefusal and changes
-// nothing: the index of the old entry keeps its bytes. With no entry in baseRepo,
-// the answer is the "was not populated" text (rows B-E1 and B-E3, and cell D8e).
+// nothing: the index of the old entry keeps its bytes. With no worktrees folder in
+// baseRepo, the answer is the "was not populated" text (rows B-E1 and B-E3, and cell D8e).
 // The state of cell P-c with a timeoutMs that expired during the add gets the P-c
 // refusal, and the leaf and the branch stay (cell P-f, Linux and macOS VMs).
 // So the create runs this test before its deadline test.
