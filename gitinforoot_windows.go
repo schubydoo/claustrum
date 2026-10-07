@@ -49,6 +49,13 @@ func sharesFileIdentity(a, b string) bool {
 	return err == nil && os.SameFile(fa, fb)
 }
 
+// externalPathSpelling is the path that two refusals of git.worktree_create with a
+// worktreeRoot name. On Windows it is the cleaned path, as before this helper. The
+// spelling of 89cb6289 for a worktreeRoot behind a link is not measured on Windows.
+func externalPathSpelling(p string) string {
+	return filepath.Clean(p)
+}
+
 // existingPathSpelling is the path of the `already exists` refusal of
 // git.worktree_create without worktreeRoot. Each component that exists is spelled with
 // its on-disk letter case, and the separators stay as sent. f6010b97 and 89cb6289

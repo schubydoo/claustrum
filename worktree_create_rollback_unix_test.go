@@ -175,7 +175,7 @@ func TestStaleRegistrationRefusal(t *testing.T) {
 		t.Errorf("the entry that stayed: %q, want %q", got, want)
 	}
 	if got := staleRegistrationRefusal(leaf, reg, []string{other, reg}); got != want {
-		t.Errorf("the second of two entries that stayed (not measured): %q, want %q", got, want)
+		t.Errorf("the second of two entries that stayed (cell A13 g): %q, want %q", got, want)
 	}
 	for _, tc := range []struct {
 		name, registration string
@@ -192,7 +192,7 @@ func TestStaleRegistrationRefusal(t *testing.T) {
 }
 
 // TestWorktreeCreateStaleEntryOfSameName pins cells A9 g and A7 g (89cb6289, Linux
-// VM). The state is that of cell P-c: the daemon has GIT_COMMON_DIR of repository
+// and macOS VMs). The state is that of cell P-c: the daemon has GIT_COMMON_DIR of repository
 // X, and T holds an old registration w1 with its own index. Here the record of the
 // old registration names the .git of the new leaf.
 //
@@ -970,4 +970,119 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWorktreeCreateAlreadyExistsSpelling pins the path in the "already exists"
+// refusal without worktreeRoot (89cb6289, Linux VM). The parent folder of the leaf
+// has its symlinks resolved, the last name stays, and the path is cleaned. "L" is
+// a request through <F>/Tlink, a symlink to <F>/T. "R" is a request with the real
+// path.
+//
+//   - U1a L and R: the leaf is a symlink to a folder. The text names the leaf,
+//     not the target of the link.
+//   - U1b L: the leaf is a dangling symlink.
+//   - U1d R: the leaf is a symlink to a regular file.
+//   - U2a: the leaf is a folder, and the path ends with a slash.
+func TestWorktreeCreateAlreadyExistsSpelling(t *testing.T) {
+	for _, tc := range []struct {
+		name, leafKind string
+		viaLink        bool
+		suffix         string
+	}{
+		{"U1a L", "link to a folder", true, ""},
+		{"U1a R", "link to a folder", false, ""},
+		{"U1b L", "dangling link", true, ""},
+		{"U1d R", "link to a file", false, ""},
+		{"U2a", "folder", false, "/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			T, _, _ := stageOldRegistrationOfSameName(t)
+			realT, err := filepath.EvalSymlinks(T)
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Dir(realT)
+			realLeaf := filepath.Join(realT, ".claude", "worktrees", "w1")
+			mkdirForTest(t, filepath.Dir(realLeaf))
+			target := filepath.Join(root, "elsewhere", "d")
+			switch tc.leafKind {
+			case "link to a folder":
+				mkdirForTest(t, target)
+			case "link to a file":
+				writeFile(t, target, "a file\n", 0o644)
+			}
+			if tc.leafKind == "folder" {
+				writeFile(t, filepath.Join(realLeaf, "keep.txt"), "keep\n", 0o644)
+			} else if err := os.Symlink(target, realLeaf); err != nil {
+				t.Fatal(err)
+			}
+			base := realT
+			if tc.viaLink {
+				base = filepath.Join(root, "Tlink")
+				if err := os.Symlink(realT, base); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sent := base + "/.claude/worktrees/w1" + tc.suffix
+			raw := frameWithin(t, "git.worktree_create", createParams(base, sent, "w1"))
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, "refusing to create worktree: "+realLeaf+
+				" already exists, and a new worktree is only ever created in a fresh directory") + `,"errorCode":"unsafe_path"}}`
+			if raw != want {
+				t.Errorf("reply = %s\nwant %s", raw, want)
+			}
+			if fi, err := os.Lstat(realLeaf); err != nil || (tc.leafKind != "folder" && fi.Mode()&os.ModeSymlink == 0) {
+				t.Errorf("the leaf changed (err %v)", err)
+			}
+		})
+	}
+}
+
+// TestWorktreeCreateRootBehindSymlinkSpelling pins the path in two refusals with a
+// worktreeRoot behind a symlink (89cb6289, Linux VM). worktreeRoot is <F>/Rlink, a
+// symlink to <F>/pr/R, and worktreePath goes through the link. baseRepo is real.
+//
+//   - U3a: <F>/pr/R/cp holds the folder w1 and no marker. The "is not marked as a
+//     worktree directory" text names <F>/pr/R/cp.
+//   - U3a2: a first create of w0 marks <F>/pr/R/cp. The folder w1 then exists
+//     before its create. The "already exists" text names <F>/pr/R/cp/w1.
+func TestWorktreeCreateRootBehindSymlinkSpelling(t *testing.T) {
+	stage := func(t *testing.T) (repo, realCP, link string) {
+		t.Helper()
+		requireGit(t)
+		base := realTempDir(t)
+		requireTempOutsideCheckout(t, base)
+		repo = filepath.Join(base, "T")
+		mkdirForTest(t, repo)
+		runGit(t, repo, "init", "-q")
+		runGit(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+		realRoot := filepath.Join(base, "pr", "R")
+		mkdirForTest(t, realRoot)
+		link = filepath.Join(base, "Rlink")
+		if err := os.Symlink(realRoot, link); err != nil {
+			t.Fatal(err)
+		}
+		return repo, filepath.Join(realRoot, "cp"), link
+	}
+	create := func(t *testing.T, repo, link, name string) string {
+		t.Helper()
+		return dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", map[string]any{
+			"baseRepo": repo, "branchName": name, "worktreePath": filepath.Join(link, "cp", name), "worktreeRoot": link}))
+	}
+	t.Run("U3a", func(t *testing.T) {
+		repo, realCP, link := stage(t)
+		writeFile(t, filepath.Join(realCP, "w1", "keep.txt"), "keep\n", 0o644)
+		wantError(t, create(t, repo, link, "w1"), "refusing to create worktree: "+realCP+" already exists, is not marked as a "+
+			"worktree directory, and holds other files (for example \"w1\"); the per-repository "+
+			"directory under a worktree location must start out empty — remove it, restore "+
+			"its .claude-managed-worktrees file if you deleted it, or choose another location", "unsafe_path")
+	})
+	t.Run("U3a2", func(t *testing.T) {
+		repo, realCP, link := stage(t)
+		if raw := create(t, repo, link, "w0"); !strings.Contains(raw, `"success":true`) {
+			t.Fatalf("the first create = %s, want success: this fixture does not stage the cell", raw)
+		}
+		writeFile(t, filepath.Join(realCP, "w1", "keep.txt"), "keep\n", 0o644)
+		wantError(t, create(t, repo, link, "w1"), "refusing to create worktree: "+filepath.Join(realCP, "w1")+
+			" already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path")
+	})
 }

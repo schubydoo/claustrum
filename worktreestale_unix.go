@@ -57,7 +57,8 @@ import (
 //
 // claustrum's own guards: the step opens one os.Root at the registrations folder
 // first. It lists the entries, reads each record, tests `locked` and removes
-// through that root, so every step acts in one folder. The remove names one direct
+// through that root, so the list, the reads, the `locked` test and the remove use
+// one folder. The remove names one direct
 // child and follows no symlink. A record that is a symlink out of the registrations
 // folder is not read (the rule of os.Root, not measured). An entry that is not
 // a real folder is passed over. The home guard runs on the entry path first (D2).

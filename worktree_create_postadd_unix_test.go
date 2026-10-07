@@ -56,14 +56,17 @@ func (f wtFixture) linkRegistrations(t *testing.T, target, link string) {
 	}
 }
 
-// namedLeaf is the leaf as five refusals of git.worktree_create name it: with its
-// symlinks resolved, or as sent when it does not resolve. Call it after the
-// request, when the leaf exists.
+// namedLeaf is the leaf as five refusals of git.worktree_create name it: the
+// cleaned path, with the symlinks of its parent folder resolved and its last name
+// kept, or the cleaned path when the parent does not resolve. Call it after the
+// request, when the parent folder exists.
 func namedLeaf(leaf string) string {
-	if resolved, err := filepath.EvalSymlinks(leaf); err == nil {
-		return resolved
+	leaf = filepath.Clean(leaf)
+	parent, err := filepath.EvalSymlinks(filepath.Dir(leaf))
+	if err != nil {
+		return leaf
 	}
-	return leaf
+	return filepath.Join(parent, filepath.Base(leaf))
 }
 
 func notOursText(leaf string) string {

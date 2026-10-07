@@ -879,14 +879,15 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
-		// With a worktreeRoot the refusal names the cleaned path: f6010b97 and
-		// 90fca6e6 quote "R/cp/w1" for a worktreePath sent as "R/cp/w1/" (measured
-		// on Linux and macOS VMs). Without a worktreeRoot it names the path with its
-		// symlinks resolved on Linux and macOS (cell T9, Linux VM).
-		// No probe sent an in-repo path with a slash to this refusal. On Windows the
+		// On Linux and macOS the refusal names the cleaned path, with the symlinks
+		// of its parent folder resolved and its last name kept (resolvedLeafSpelling:
+		// cells T9, U1a to U1d and U2a to U2c without a worktreeRoot, cell U3a2
+		// with one, Linux VM). f6010b97 and 90fca6e6 quote "R/cp/w1" for a
+		// worktreePath sent as "R/cp/w1/" with a worktreeRoot (Linux and macOS VMs).
+		// On Windows the path with a worktreeRoot is the cleaned path, and the
 		// in-repo path is spelled with the on-disk letter case of each component that
 		// exists (existingPathSpelling, row W15).
-		existing := filepath.Clean(p.WorktreePath)
+		existing := externalPathSpelling(p.WorktreePath)
 		if p.WorktreeRoot == "" {
 			existing = existingPathSpelling(p.WorktreePath)
 		}
@@ -1138,7 +1139,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		// A stale entry that the step before the add left is not the registration of
 		// this create. 89cb6289 answers the refusal there after 9 git calls, and the
 		// pair of the next test is not among them (cells A9 g, A9b g and A10 g,
-		// Linux VM).
+		// Linux and macOS VMs).
 		if text := staleRegistrationRefusal(p.WorktreePath, indexDir, staleKept); text != "" {
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
@@ -1152,8 +1153,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// Its gitdir record names worktreePath after symlink resolution.
 	// If it was read and names anything else, the create is refused, with no checkout
 	// and no rollback (cells P-c and P-k to P-m). Before
-	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
-	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). claustrum makes the calls and does not use their
+	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo
+	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). In
+	// cells T2 and T10 (Linux VM) 89cb6289 passes baseRepo with its symlink
+	// resolved, twice. claustrum passes it as sent, once. No frame differs.
+	// claustrum makes the calls and does not use their
 	// answer: what 89cb6289 takes from them is not measured. This test comes before
 	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
 	// answers this refusal and keeps the leaf and the branch (cell P-f, Linux and macOS VMs).

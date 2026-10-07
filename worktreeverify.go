@@ -452,8 +452,8 @@ func removeTestedRegistration(reg testedRegistration) error {
 // adminRecordRefusal after two more git calls. With no daemon GIT_* variable git
 // names the new registration w11, and the create succeeds (cells A9 p and A10 p).
 // With two or more stale entries every one stays, and 89cb6289 answers this text
-// too (cells A13 g and A13b g on Linux and macOS VMs, cells S1 g and S5 g on a
-// Linux VM).
+// too (cells A13 g and A13b g on Linux and macOS VMs, cells S1 g, S5 g and S6 g
+// on a Linux VM).
 //
 // "An entry that the step before the add left" is claustrum's own rule for these
 // cells. The paths are compared with their symlinks resolved (not measured).
@@ -686,8 +686,8 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registra
 	if !adminRecordChecked {
 		return absoluteAdminDir(worktreePath, adminDir), ""
 	}
-	// The four texts of the tests after the add name the leaf with its symlinks
-	// resolved (resolvedLeafSpelling).
+	// The texts of the tests after the add name the leaf in the spelling of
+	// resolvedLeafSpelling.
 	leafText := resolvedLeafSpelling(worktreePath)
 	notOurs := fmt.Sprintf("refusing to create worktree: %s carries a .git file that does not name this "+
 		"repository's own worktree admin directory", leafText)
@@ -808,46 +808,52 @@ func adminRecordMismatch(admin, worktreePath string) bool {
 }
 
 // adminRecordRefusal is the answer of git.worktree_create when adminRecordMismatch
-// reports a mismatch. It names worktreePath with its symlinks resolved
-// (resolvedLeafSpelling, cells T2 and T10 on a Linux VM). A component that is not a
-// symlink keeps its spelling as sent, as in row I07a.
+// reports a mismatch. It names worktreePath in the spelling of resolvedLeafSpelling
+// (cells T2, T10, U2d and U3b on a Linux VM). A component that is not a symlink
+// keeps its spelling as sent, as in row I07a.
 func adminRecordRefusal(worktreePath string) string {
 	return fmt.Sprintf("refusing to create worktree: %s carries a .git file naming an admin directory "+
 		"whose own record is of a different worktree", resolvedLeafSpelling(worktreePath))
 }
 
-// resolvedLeafSpelling is the leaf as five refusals of git.worktree_create name
-// it on Linux and macOS: worktreePath with its symlinks resolved. 89cb6289 names
-// the resolved leaf in these texts, for a baseRepo behind a symlink and both
-// request paths through the link:
+// resolvedLeafSpelling is a path as some refusals of git.worktree_create name it
+// on Linux and macOS. The path is cleaned, the symlinks of its parent folder are
+// resolved, and its last name is kept as it is. The rule fits these cells of
+// 89cb6289 (Linux VM, and cell A12c g on Linux and macOS VMs):
 //
-//   - "... carries a .git file that does not name this repository's own worktree
-//     admin directory" (cells T1 and T5 on a Linux VM, cell A12c g on Linux and
-//     macOS VMs).
-//   - "... carries a .git file naming an admin directory whose own record is of a
-//     different worktree" (cells T2 and T10, Linux VM).
-//   - "... carries a .git file naming an admin entry other than the one just
-//     created for it" (cell T3, Linux VM).
-//   - "... was not populated by git worktree add" (cell T4, Linux VM).
-//   - "... already exists, and a new worktree is only ever created in a fresh
-//     directory" (cell T9, Linux VM).
+//   - A baseRepo behind a symlink, with both request paths through the link. The
+//     link is resolved in the "does not name" text (cells T1, T5 and A12c g), the
+//     "different worktree" text (cells T2 and T10), the "other than the one just
+//     created" text (cell T3), the "was not populated" text (cell T4) and the
+//     "already exists" text (cell T9).
+//   - A leaf that is a symlink to a folder or to a file, or a dangling symlink, in
+//     the "already exists" text. The last name stays, and the target is not named
+//     (cells U1a, U1b and U1d). A leaf that is a regular file: cell U1c.
+//   - A path that is not clean, with a slash at its end, a double slash or a "/./"
+//     part. The cleaned path is named (cells U2a to U2c for "already exists", cells
+//     U2d to U2g for the four other texts).
+//   - A worktreeRoot behind a symlink. The link is resolved in the "already
+//     exists" text (cell U3a2), in the "different worktree" text (cell U3b) and
+//     in the "is not marked as a worktree directory" text, which names the folder
+//     that holds the leaf (cell U3a).
 //
 // 89cb6289 names the leaf as sent in the undo clause of a rollback (cells T6 and
-// T7), in the path of a success (cell T8), in the text of git (cell T11b) and in
-// the locked refusal of git.worktree_remove (cell T12b), all on a Linux VM. Those
-// keep the path as sent. Every other refusal of the create keeps its spelling: no
-// cell measured it.
+// T7), in the path of a success (cells T8, U2h and U3c), in the text of git (cell
+// T11b) and in the locked refusal of git.worktree_remove (cell T12b), all on a
+// Linux VM. Those keep the path as sent. Every other refusal of the create keeps
+// its spelling: no cell measured it.
 //
 // On Windows no create reaches this function: the four tests after the add do not
-// run there, and the `already exists` text has its own spelling
-// (existingPathSpelling). Windows is not measured for 89cb6289.
+// run there, and the other two texts have their own spelling (existingPathSpelling
+// and externalPathSpelling). Windows is not measured for 89cb6289.
 //
-// The leaf exists in each of the five cells. A leaf that does not resolve is named
-// as sent (not measured). The resolved path is also clean, so a slash at the end
-// of the path as sent is cut (not measured).
-func resolvedLeafSpelling(worktreePath string) string {
-	if resolved, err := evalSymlinks(worktreePath); err == nil {
-		return resolved
+// A parent folder that does not resolve gives the cleaned path as sent (not
+// measured).
+func resolvedLeafSpelling(path string) string {
+	path = filepath.Clean(path)
+	parent, err := evalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return path
 	}
-	return worktreePath
+	return filepath.Join(parent, filepath.Base(path))
 }
