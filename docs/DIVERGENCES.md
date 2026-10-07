@@ -168,7 +168,7 @@ rather than repeating them in each entry:
 | [D13](#d13) | Verify checksum before decompressing (`-cli-url`, and `-cli-zst` with a checksum) | always-on | always-on | **UNRESOLVED**: clause (c) written for it, measured not met | any change to how Desktop classifies `cliError` |
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
-| [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference distinguishing the two empty results, or an operator reporting a run dir the cleaner will not tidy because `lsof` keeps failing |
+| [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement of the reference with an `lsof` run that never returns, or an operator reporting a run dir the cleaner will not tidy because `lsof` never returns |
 | [D18](#d18) | `-cli-version` must not start with `.blob-` | always-on | always-on | rule 3 clause (b) | Desktop passing a `-cli-version` that starts with `.blob-` |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
@@ -792,7 +792,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   needs a process `SIGKILL` cannot end.
 - **Why always-on (rule 3 clause (a)).** The harm it refuses is unrecoverable. If an
   abandoned run reads as not busy, `retireAbandoned` takes that as permission to
-  continue. After the identity re-check it SIGTERMs the daemon. On a host where `lsof` cannot answer, that
+  continue. After the identity re-check it SIGTERMs the daemon. On a host where `lsof` never returns, that
   ends a session that is in fact serving a client. The loss is that session's state,
   which extends rule 3's list rather than sitting inside it, the same extension
   [D15](#d15) made and the same reason. The other half: a slow `lsof` completes
@@ -803,16 +803,19 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   open files it cannot inspect, and an orphan whose descriptors it cannot inspect.
   That is an argument for D17 rather than a premise this entry rests on, because the clause-(a) case stands
   on the harm alone.
-- **Cost.** A daemon whose `lsof` keeps failing is never retired by the busy gate, so
+- **Cost.** A daemon whose `lsof` never returns is never retired by the busy gate, so
   its run dir stays until `lsof` works again. That is the conservative direction, and
-  it matches what the cleaner already does for an unreadable lock. It also costs a
-  second wedged run. Reading the first as busy keeps the sampler going. Its
-  two-sample minimum means claustrum abandons twice on such a host. Each abandoned
+  it matches what the cleaner already does for an unreadable lock. It also costs
+  three wedged runs on such a host: one for the pass line and two in the sampler. Each abandoned
   run leaves a process and a goroutine behind. claustrum caps neither.
 - **Not covered: the lock read.** `hcLockHeldAt` still reads an abandoned run as
   not-held, although the same argument applies to it. This
   entry was scoped to the busy predicate deliberately. Widening it is a decision, not
-  an implementation detail.
+  an implementation detail. The reference side is not measured.
+- **Only the abandoned run is this entry.** Two other `lsof` outcomes are parity
+  with `89cb6289` on a macOS VM, 3 of 3 runs each: a command that does not start,
+  and a run that writes to stderr and exits 1. In both, the daemon gets no SIGTERM,
+  and a run dir with a lock file stays.
 - **Linux is outside this entry.** On Linux the busy read comes from `/proc`, not
   `lsof`. If `/proc` cannot read a daemon's descriptors or its `net/unix` table, the
   retire refuses that daemon. The reference's
@@ -820,9 +823,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   cases: "a connection is attached to it right now, or that could not be read". The Linux
   run did not stage an unreadable `/proc`, so neither arm is measured. Neither arm is a numbered divergence, because neither is known to
   differ from the reference.
-- **Reopen trigger.** A measurement that shows the reference distinguishing the two
-  empty results (then this becomes parity). Or an operator reporting a run dir the cleaner will not tidy
-  because `lsof` keeps failing on that host.
+- **Reopen trigger.** A measurement of the reference with an `lsof` run that never
+  returns. Or an operator reporting a run dir the cleaner will not tidy
+  because `lsof` never returns on that host.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → Host cleaner. Also `hostclean_darwin.go`
   (`runLsof`, `hcBusy`), `hostclean.go` (`hcSettledBusy`, `retireAbandoned`).
 
@@ -1347,7 +1350,8 @@ scheduled.
   up on as not-held. The argument behind [D17](#d17) reaches
   it too: a held lock that reads stale lets the tidy remove a live daemon's run dir.
   D17 was scoped to the busy predicate, so this is the same shape one step away.
-  Taking it is a second divergence rather than an implementation detail.
+  Taking it is a second divergence rather than an implementation detail. The
+  reference side is not measured.
 
 ## Explicitly out of scope (would break compatibility)
 

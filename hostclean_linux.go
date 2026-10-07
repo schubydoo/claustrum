@@ -107,18 +107,19 @@ func hcFdTargets(pid int) (map[string]string, bool) {
 
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
 // daemon-spawned child. canRead is false when the descriptor list is unreadable. One read
-// answers both.
-func hcStdioArePipes(pid int) (pipes, canRead bool) {
+// answers both. The third result is always true on linux: no command runs, so none can fail
+// to answer.
+func hcStdioArePipes(pid int) (pipes, canRead, answered bool) {
 	m, ok := hcFdTargets(pid)
 	if !ok {
-		return false, false
+		return false, false, true
 	}
 	for _, fd := range []string{"0", "1", "2"} {
 		if !strings.HasPrefix(m[fd], "pipe:[") {
-			return false, true
+			return false, true, true
 		}
 	}
-	return true, true
+	return true, true, true
 }
 
 // hcHasFileOpen reports whether the process holds path open on any fd.
@@ -404,10 +405,24 @@ func hcReadIdent(pid int) (pgid int, startTicks string, ok bool) {
 	return s.pgid, s.startTicks, s.ok
 }
 
+// hcLockNeedsRecord says that lock content that is no record stops the holder read. It is a
+// var only so a test can stage the darwin answer.
+var hcLockNeedsRecord = true
+
+// hcLockUnreadState is the lock state for a lock that cannot be opened or is no regular
+// file. On linux it is the earlier answer. It is a var only so a test can stage the darwin answer.
+var hcLockUnreadState = hcLockUnknown
+
+// hcDaemonFilesUnread reports that the open files of a daemon could not be read, for the
+// "left alone this pass" line of the pass. The reference on linux is not measured for that
+// state, so on linux the pass logs no such line. It is a var so a test can stage the answer.
+var hcDaemonFilesUnread = func(int) bool { return false }
+
 // hcLockHeldAt reports whether the lock file at path (described by fi) is held by a live
-// process. On linux the answer comes from fi alone (via /proc/locks); path is unused.
-func hcLockHeldAt(path string, fi os.FileInfo) bool {
-	return lockFileHeld(fi)
+// process. On linux the answer comes from fi alone (via /proc/locks); path is unused. The
+// second result is always true on linux: no command runs, so none can fail to start.
+func hcLockHeldAt(path string, fi os.FileInfo) (held, asked bool) {
+	return lockFileHeld(fi), true
 }
 
 // hcSelfExe resolves this process's own executable path, dropping a trailing " (deleted)".

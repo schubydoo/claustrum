@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -214,7 +215,9 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	t.Cleanup(func() { runLsof = old })
 
 	// A bare listener: one unix record, no connected peer -> not busy.
-	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf5\ntPIPE\nn->0xabc\n", true }
+	runLsof = func(...string) (string, bool, bool) {
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf5\ntPIPE\nn->0xabc\n", true, true
+	}
 	if hcBusy(1) {
 		t.Error("bare listener read as busy")
 	}
@@ -223,55 +226,55 @@ func TestParseLsofAndBusyDarwin(t *testing.T) {
 	}
 
 	// Listener plus an accepted connection: two unix records -> busy.
-	runLsof = func(...string) (string, bool) {
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
+	runLsof = func(...string) (string, bool, bool) {
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true, true
 	}
 	if !hcBusy(1) {
 		t.Error("listener with an accepted connection not read as busy")
 	}
 
 	// A connected-peer name ("->") is an immediate yes.
-	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true }
+	runLsof = func(...string) (string, bool, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true, true }
 	if !hcBusy(1) {
 		t.Error("connected unix peer not read as busy")
 	}
 }
 
 // TestStdioPipesAndBusyCheckDarwin covers the two darwin reads the orphan and daemon judges
-// use: pipe stdio from lsof's PIPE type, and hcBusyCheck, which is always a reading on darwin.
+// use: pipe stdio from lsof's PIPE type, and hcBusyCheck. An abandoned run is a reading there.
 func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 	old := runLsof
 	t.Cleanup(func() { runLsof = old })
 
 	// fds 0, 1 and 2 all PIPE: a daemon-spawned child's stdio.
-	runLsof = func(...string) (string, bool) {
-		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true
+	runLsof = func(...string) (string, bool, bool) {
+		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true, true
 	}
-	if pipes, canRead := hcStdioArePipes(1); !pipes || !canRead {
+	if pipes, canRead, _ := hcStdioArePipes(1); !pipes || !canRead {
 		t.Errorf("three PIPE stdio records: pipes=%v canRead=%v, want true true", pipes, canRead)
 	}
 	// One unix record and nothing else: a reading, and not pipe stdio.
-	runLsof = func(...string) (string, bool) { return "p1\nf0\ntunix\nn->0x1\n", true }
-	if pipes, canRead := hcStdioArePipes(1); pipes || !canRead {
+	runLsof = func(...string) (string, bool, bool) { return "p1\nf0\ntunix\nn->0x1\n", true, true }
+	if pipes, canRead, _ := hcStdioArePipes(1); pipes || !canRead {
 		t.Errorf("a unix stdio record: pipes=%v canRead=%v, want false true", pipes, canRead)
 	}
 	// An abandoned run tells nothing: not pipes, and not a reading.
-	runLsof = func(...string) (string, bool) { return "", false }
-	if pipes, canRead := hcStdioArePipes(1); pipes || canRead {
+	runLsof = func(...string) (string, bool, bool) { return "", false, true }
+	if pipes, canRead, _ := hcStdioArePipes(1); pipes || canRead {
 		t.Errorf("an abandoned lsof run: pipes=%v canRead=%v, want false false", pipes, canRead)
 	}
 
 	// hcBusyCheck: a completed run with a connected peer is busy. An abandoned run reads busy
 	// under D17, and both are readings.
-	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true }
+	runLsof = func(...string) (string, bool, bool) { return "p1\nf3\ntunix\nn->/run/other\n", true, true }
 	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
 		t.Errorf("connected peer: busy=%v canRead=%v, want true true", busy, canRead)
 	}
-	runLsof = func(...string) (string, bool) { return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true }
+	runLsof = func(...string) (string, bool, bool) { return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true, true }
 	if busy, canRead := hcBusyCheck(1); busy || !canRead {
 		t.Errorf("bare listener: busy=%v canRead=%v, want false true", busy, canRead)
 	}
-	runLsof = func(...string) (string, bool) { return "", false }
+	runLsof = func(...string) (string, bool, bool) { return "", false, true }
 	if busy, canRead := hcBusyCheck(1); !busy || !canRead {
 		t.Errorf("abandoned run: busy=%v canRead=%v, want true true (D17)", busy, canRead)
 	}
@@ -285,9 +288,9 @@ func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	hcClock = func() time.Time { return now }
 	runs := 0
-	runLsof = func(...string) (string, bool) {
+	runLsof = func(...string) (string, bool, bool) {
 		runs++
-		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true
+		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true, true
 	}
 	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}}
 	orphan := hcTracked{
@@ -303,6 +306,27 @@ func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
 	}
 }
 
+// TestStdioReadAnswersDarwin pins which stdio read is "no answer" (row E5). An abandoned
+// run and a run with no record for the pid answered, and they keep the earlier reason.
+func TestStdioReadAnswersDarwin(t *testing.T) {
+	old := runLsof
+	t.Cleanup(func() { runLsof = old })
+	for _, tc := range []struct {
+		name                string
+		completed, answered bool
+		want                bool
+	}{
+		{"row E5: the run did not answer", true, false, false},
+		{"an abandoned run", false, true, true},
+		{"a run with no record for the pid", true, true, true},
+	} {
+		runLsof = func(...string) (string, bool, bool) { return "", tc.completed, tc.answered }
+		if pipes, canRead, answered := hcStdioArePipes(1); pipes || canRead || answered != tc.want {
+			t.Errorf("%s: pipes=%v canRead=%v answered=%v, want false false %v", tc.name, pipes, canRead, answered, tc.want)
+		}
+	}
+}
+
 // TestHcBusyAbandonedRunReadsBusy pins D17.
 //
 // The two arms differ ONLY in the flag: both return no output. A completed run that
@@ -315,14 +339,14 @@ func TestHcBusyAbandonedRunReadsBusy(t *testing.T) {
 	t.Cleanup(func() { runLsof = old })
 
 	// CONTROL: lsof ran, found nothing. Not busy.
-	runLsof = func(...string) (string, bool) { return "", true }
+	runLsof = func(...string) (string, bool, bool) { return "", true, true }
 	if hcBusy(1) {
 		t.Fatal("a completed run that found nothing read as busy; that is the parity " +
 			"answer and D17 must not change it")
 	}
 
 	// The divergence: the run was abandoned, so nothing is known about the pid.
-	runLsof = func(...string) (string, bool) { return "", false }
+	runLsof = func(...string) (string, bool, bool) { return "", false, true }
 	if !hcBusy(1) {
 		t.Error("an abandoned run read as not busy; a wedged lsof would then let the " +
 			"cleaner SIGTERM a daemon that is still serving a client")
@@ -344,8 +368,8 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	hcSleep = func(d time.Duration) { now = now.Add(d) }
 
 	// Busy in every sample -> settled busy.
-	runLsof = func(...string) (string, bool) {
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
+	runLsof = func(...string) (string, bool, bool) {
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true, true
 	}
 	start := now
 	if !hcSettledBusy(1) {
@@ -358,28 +382,187 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	}
 	// Busy at first, then idle -> not settled busy.
 	n := 0
-	runLsof = func(...string) (string, bool) {
+	runLsof = func(...string) (string, bool, bool) {
 		n++
 		if n >= 3 {
-			return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true // one unix = not busy
+			return "p1\nf3\ntunix\nn/run/x/rpc.sock\n", true, true // one unix = not busy
 		}
-		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true
+		return "p1\nf3\ntunix\nn/run/x/rpc.sock\nf7\ntunix\nn/run/x/rpc.sock\n", true, true
 	}
 	if hcSettledBusy(1) {
 		t.Error("busy-then-idle wrongly settled busy")
 	}
 }
 
+// TestHcLockHeldAtDarwin pins the lock read against the rows of macOS VM runs (89cb6289).
+// The arguments of the run stay as they were.
 func TestHcLockHeldAtDarwin(t *testing.T) {
 	old := runLsof
 	t.Cleanup(func() { runLsof = old })
-	runLsof = func(...string) (string, bool) { return "p1234\n", true }
-	if !hcLockHeldAt("/run/x/daemon.lock", nil) {
-		t.Error("a held lock read as unheld")
+	self := "p" + strconv.Itoa(os.Getpid()) + "\n"
+	for _, tc := range []struct {
+		name                string
+		out                 string
+		completed, answered bool
+		held, asked         bool
+	}{
+		{"row C2: another pid holds the file", "p1234\n", true, true, true, true},
+		{"row C6: no holder", "", true, true, false, true},
+		{"row C3: the run did not start", "", true, false, false, false},
+		{"rows D2p and D2f: the run wrote to stderr", "p1234\n", true, false, false, false},
+		{"row C4: only this process holds the file", self, true, true, false, true},
+		{"this process and another pid hold the file", self + "p1234\n", true, true, true, true},
+		{"an abandoned run reads as not held, as before", "", false, true, false, true},
+	} {
+		var got []string
+		runLsof = func(args ...string) (string, bool, bool) { got = args; return tc.out, tc.completed, tc.answered }
+		held, asked := hcLockHeldAt("/run/x/daemon.lock", nil)
+		if held != tc.held || asked != tc.asked {
+			t.Errorf("%s: held=%v asked=%v, want %v %v", tc.name, held, asked, tc.held, tc.asked)
+		}
+		if strings.Join(got, " ") != "-F p /run/x/daemon.lock" {
+			t.Errorf("%s: lsof arguments = %q", tc.name, got)
+		}
 	}
-	runLsof = func(...string) (string, bool) { return "", true }
-	if hcLockHeldAt("/run/x/daemon.lock", nil) {
-		t.Error("an unheld lock read as held")
+}
+
+// TestLsofRunThatDoesNotAnswerDarwin drives the REAL run. A command that cannot start, and
+// a command that writes to stderr, read as no answer. lockProbe then answers
+// hcLockUnexamined for a dir with a lock file (rows C3, D2p and D2f). A dir with no lock file
+// reads stale with no run. The busy read is then no reading, and the stdio read neither. The
+// control is this test binary as the command: it starts, writes nothing to stderr, and its
+// output is read.
+func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	oldPath, oldEnv := hcLsofPath, hcLsofEnv
+	t.Cleanup(func() { hcLsofPath, hcLsofEnv = oldPath, oldEnv })
+	withHelper := func(mode string) {
+		hcLsofPath = exe
+		hcLsofEnv = append(append([]string{}, oldEnv...), "CLAUSTRUM_TEST_HELPER="+mode, "GORACE="+os.Getenv("GORACE"))
+	}
+	locked, bare := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(locked, runDirLockName), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	noExec := filepath.Join(t.TempDir(), "lsof")
+	if err := os.WriteFile(noExec, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name  string
+		stage func()
+	}{
+		{"a missing command", func() { hcLsofPath, hcLsofEnv = filepath.Join(bare, "missing"), oldEnv }},
+		{"a command that is not executable", func() { hcLsofPath, hcLsofEnv = noExec, oldEnv }},
+		{"a command that writes to stderr", func() { withHelper("stderr-exit5") }},
+	} {
+		tc.stage()
+		if out, completed, answered := runLsof("-F", "p", "/x"); out != "" || !completed || answered {
+			t.Errorf("%s: out=%q completed=%v answered=%v, want empty, completed, no answer", tc.name, out, completed, answered)
+		}
+		if state, _, present := lockProbe(locked); state != hcLockUnexamined || !present {
+			t.Errorf("%s: lockProbe(dir with a lock) = %d present=%v, want hcLockUnexamined", tc.name, state, present)
+		}
+		if state, _, present := lockProbe(bare); state != hcLockStale || present {
+			t.Errorf("%s: lockProbe(dir with no lock) = %d present=%v, want stale", tc.name, state, present)
+		}
+		if busy, canRead := hcBusyCheck(1); busy || canRead {
+			t.Errorf("%s: hcBusyCheck = %v %v, want false false: no reading", tc.name, busy, canRead)
+		}
+		if !hcDaemonFilesUnread(1) {
+			t.Errorf("%s: hcDaemonFilesUnread = false, want true", tc.name)
+		}
+		if pipes, canRead, answered := hcStdioArePipes(1); pipes || canRead || answered {
+			t.Errorf("%s: hcStdioArePipes = %v %v %v, want false false false", tc.name, pipes, canRead, answered)
+		}
+	}
+	// CONTROL: the command starts and writes only to stdout. The helper prints "p1", which
+	// is a holder.
+	withHelper("print-quiet")
+	if out, completed, answered := runLsof("-F", "p", "/x"); out != "p1\n" || !completed || !answered {
+		t.Fatalf("control: out=%q completed=%v answered=%v, want %q, completed, answered", out, completed, answered, "p1\n")
+	}
+	if state, _, _ := lockProbe(locked); state != hcLockHeld {
+		t.Errorf("control: lockProbe = %d, want held", state)
+	}
+	if _, canRead := hcBusyCheck(1); !canRead || hcDaemonFilesUnread(1) {
+		t.Errorf("control: the busy read is no reading")
+	}
+}
+
+// TestLockProbeUnopenableLockDarwin pins row D4: a lock file of mode 0000 reads as
+// hcLockUnexamined, with no lsof run.
+func TestLockProbeUnopenableLockDarwin(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root opens a file of mode 0000")
+	}
+	old := runLsof
+	t.Cleanup(func() { runLsof = old })
+	runs := 0
+	runLsof = func(...string) (string, bool, bool) { runs++; return "", true, true }
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, runDirLockName), nil, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if state, _, _ := lockProbe(dir); state != hcLockUnexamined || runs != 0 {
+		t.Errorf("lockProbe = %d with %d lsof runs, want hcLockUnexamined and no run", state, runs)
+	}
+}
+
+// TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin pins rows D1i and D1k: when the lsof run
+// for the open files of a daemon does not answer, the retire refuses the daemon with the
+// measured reason, and NO signal goes out. The daemon is a fake pid behind the kinfo seams,
+// and the signal goes through the hcHoldPid seam, so nothing real is signalled. The control
+// runs first: a run that answers and shows no client retires the daemon.
+func TestRetireSendsNoSignalWithoutAnLsofAnswerDarwin(t *testing.T) {
+	const pid = 4300
+	const exe = "/opt/claude/srv/a/server"
+	const socket = "/opt/claude/run/s1/rpc.sock"
+	seamUID(t, 501)
+	oldK, oldA, oldRun, oldHold := hcKinfoPID, hcProcArgs2, runLsof, hcHoldPid
+	oldClock, oldSleep, oldPpid := hcClock, hcSleep, hcGetppid
+	t.Cleanup(func() {
+		hcKinfoPID, hcProcArgs2, runLsof, hcHoldPid = oldK, oldA, oldRun, oldHold
+		hcClock, hcSleep, hcGetppid = oldClock, oldSleep, oldPpid
+	})
+	now := time.Unix(1_700_000_000, 0)
+	hcClock = func() time.Time { return now }
+	hcSleep = func(d time.Duration) { now = now.Add(d) }
+	hcGetppid = func() int { return 1 }
+	hcProcArgs2 = func(int) ([]byte, bool) {
+		return hcProcArgsBuf(exe, []string{exe, "-serve", "-socket", socket}, []string{hcDaemonChildMarker}), true
+	}
+	c := &hostCleaner{roots: &hostRoots{roots: []string{"/opt/claude"}, daemonBin: "server"}, selfPid: 999999}
+	e := runDirEntry{name: "s1", dirPath: filepath.Dir(socket), socket: socket, idle: 40 * 24 * time.Hour}
+
+	run := func(answered bool) (retired bool, reason string, signals []syscall.Signal) {
+		gone := false
+		hcKinfoPID = func(int) ([]byte, bool) {
+			if gone {
+				return nil, false
+			}
+			return kinfoBuf(pid, 1, pid, 501, 501, 2, uint64(now.Unix())-3600, 0), true
+		}
+		hcHoldPid = func(int) (func(syscall.Signal) error, func()) {
+			return func(sig syscall.Signal) error { signals = append(signals, sig); gone = true; return nil }, func() {}
+		}
+		runLsof = func(...string) (string, bool, bool) { return "", true, answered }
+		retired, reason = c.retireAbandoned(e, pid, 501)
+		return retired, reason, signals
+	}
+
+	if retired, reason, signals := run(true); !retired || len(signals) != 1 || signals[0] != syscall.SIGTERM {
+		t.Fatalf("control: retired=%v reason=%q signals=%v, want one SIGTERM and a retire", retired, reason, signals)
+	}
+	retired, reason, signals := run(false)
+	if len(signals) != 0 {
+		t.Errorf("signals = %v, want none: the open files of the daemon could not be read", signals)
+	}
+	if retired || reason != hcRetireBusyReason {
+		t.Errorf("retired=%v reason=%q, want a refusal with %q", retired, reason, hcRetireBusyReason)
 	}
 }
 
@@ -511,8 +694,8 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 
 	// the daemon holds its run-dir lock.
 	fi, _ := os.Stat(lock)
-	if !hcLockHeldAt(lock, fi) {
-		t.Errorf("hcLockHeldAt(daemon.lock) = false, want true (the daemon holds it)")
+	if held, asked := hcLockHeldAt(lock, fi); !held || !asked {
+		t.Errorf("hcLockHeldAt(daemon.lock) = %v %v, want true true (the daemon holds it)", held, asked)
 	}
 
 	// hcBusy: idle now, busy with a client connected.
@@ -573,7 +756,7 @@ func TestRunLsofIsBounded(t *testing.T) {
 		// bound a fixture that genuinely hangs.
 		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 5*time.Second, time.Second, 6*time.Second
 		withHelper("print-quiet")
-		got, ok := runLsof("-p", "1")
+		got, ok, _ := runLsof("-p", "1")
 		if got != "p1\n" {
 			t.Fatalf("runLsof of a prompt command = %q, want %q", got, "p1\n")
 		}
@@ -588,7 +771,7 @@ func TestRunLsofIsBounded(t *testing.T) {
 		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = 300*time.Millisecond, time.Second, time.Minute
 		withHelper("stall-quiet")
 		start := time.Now()
-		got, ok := runLsof("-p", "1")
+		got, ok, _ := runLsof("-p", "1")
 		elapsed := time.Since(start)
 		if got != "" {
 			t.Errorf("runLsof of a stalled command = %q, want no output", got)
@@ -613,7 +796,7 @@ func TestRunLsofIsBounded(t *testing.T) {
 		hcLsofTimeout, hcLsofWaitDelay, hcLsofAbandon = time.Minute, time.Minute, 300*time.Millisecond
 		withHelper("stall-quiet")
 		start := time.Now()
-		got, ok := runLsof("-p", "1")
+		got, ok, _ := runLsof("-p", "1")
 		elapsed := time.Since(start)
 		if ok {
 			t.Error("an abandoned run reported itself completed; D17 keys on this flag, " +
