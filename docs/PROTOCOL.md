@@ -2529,7 +2529,7 @@ claustrum opens each file without blocking and reads a regular file only.
   - The registrations directory has mode 0600 after the checkout, with or without
     a file at the index (cells Z11a and Z11b, macOS VM). The OS error is `openat
     w1/index: permission denied`. The step 2 undo text follows, the leaf goes, and
-    the registration and the branch stay. One detail text of claustrum differs
+    the registration and the branch stay. claustrum attempts no delete of the registration
     there: see step 2.
 
   `<text>` is the stderr of the checkout and the OS error, joined with nothing
@@ -2576,11 +2576,11 @@ claustrum opens each file without blocking and reads a regular file only.
      measured). A registration whose `gitdir` record is a relative path, as git
      writes it with `worktree.useRelativePaths`, takes the same path (cell Z9b,
      macOS VM). If claustrum cannot read that record for a permission error, it
-     does not delete the registration. On Linux and macOS it runs no branch step, and the clause
-     holds `open <registration>/gitdir: permission denied` in the parentheses.
-     That detail text is claustrum's own. `89cb6289` has `RemoveAll w1: permission
-     denied` there, with a registrations directory of mode 0600 (cells Z11a and
-     Z11b, macOS VM). The rest of the frame and the disk are equal. If the registrations
+     attempts no delete of the registration. On Linux and macOS it runs no branch step, and the clause
+     is the one above, with `RemoveAll <registration name>: permission denied` in
+     the parentheses. That frame equals the frame of `89cb6289` with a registrations
+     directory of mode 0600 (cells Z11a and Z11b, macOS VM). This holds only for a
+     registration inside the registrations directory. If the registrations
      directory cannot be opened, the text holds `open <path>: <OS error>` in place
      of `RemoveAll <registration name>: <OS error>` (not measured). On Linux and macOS claustrum
      deletes only a registration that is a direct child of the registrations

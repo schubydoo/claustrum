@@ -648,13 +648,12 @@ func TestRelativeBackPointer(t *testing.T) {
 }
 
 // TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk of cell
-// Z11a (macOS VM), apart from one detail text. The git stub runs the real read-tree
+// Z11a (macOS VM). The git stub runs the real read-tree
 // and then sets the registrations directory to mode 0600. The index cannot be
 // placed, and the rollback cannot read the back-pointer of the registration. The
 // frame carries the openat text and the registration clause, the leaf goes, and
-// the registration and branch w1 stay: no branch step runs. The text in the
-// parentheses is claustrum's own, the error of the read. 89cb6289 has "RemoveAll
-// w1: permission denied" there.
+// the registration and branch w1 stay: no branch step runs. claustrum attempts no
+// delete there, and the text in the parentheses has the shape of the cell.
 func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 	f, s, tmp := indexInstallFixture(t)
 	t.Cleanup(func() { _ = os.Chmod(f.regDir, 0o755) })
@@ -666,11 +665,11 @@ func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 	if err := os.Chmod(f.regDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mid := strings.Trim(jsonString(t, " openat w1/index: permission denied; and the undo could not finish for "+f.leaf()+
-		": the worktree registration and the branch remain; remove them by hand before retrying (open "), `"`)
-	tail := `/worktrees/w1/gitdir: permission denied)","errorCode":"worktree_add_failed"}}`
-	if !strings.HasPrefix(raw, checkoutFailedHead) || !strings.Contains(raw, mid) || !strings.HasSuffix(raw, tail) {
-		t.Fatalf("reply = %s\nwant %s … %s … %s", raw, checkoutFailedHead, mid, tail)
+	tail := jsonString(t, " openat w1/index: permission denied; and the undo could not finish for "+f.leaf()+
+		": the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)")
+	tail = tail[1:] + `,"errorCode":"worktree_add_failed"}}`
+	if !strings.HasPrefix(raw, checkoutFailedHead) || !strings.HasSuffix(raw, tail) {
+		t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
 	}
 	if got := f.leafEntries(t); got != nil {
 		t.Errorf("leaf entries = %q, want the leaf removed", got)
@@ -682,4 +681,37 @@ func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
 		t.Errorf("refs/heads/w1 was deleted, want it kept beside a registration that stays")
 	}
 	requireNoIndexTemp(t, tmp)
+}
+
+// TestUnreadableBackPointerOutsideRegistry pins that only a registration inside the
+// registrations directory counts as one that stays. The .git file of the leaf
+// names a folder outside it whose gitdir record cannot be read. The check answers
+// the zero value, as on main: no clause, and the branch step runs.
+func TestUnreadableBackPointerOutsideRegistry(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a mode without the search bit does not stop root")
+	}
+	base := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(base, "repo")
+	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+	mkdirForTest(t, filepath.Join(repo, ".git", "worktrees"))
+	for _, tc := range []struct {
+		name, admin string
+		want        bool
+	}{
+		{"outside", filepath.Join(base, "other", "w1"), false},
+		{"inside", filepath.Join(repo, ".git", "worktrees", "w1"), true},
+	} {
+		writeFile(t, filepath.Join(tc.admin, "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+		chmodForTest(t, filepath.Dir(tc.admin), 0o600)
+		writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+tc.admin+"\n", 0o644)
+		got := createdWorktreeAdminDir(repo, leaf)
+		_ = os.Chmod(filepath.Dir(tc.admin), 0o755)
+		if got.resolved != "" || (got.unreadable != nil) != tc.want {
+			t.Errorf("%s: createdWorktreeAdminDir = %+v, want unreadable set: %v", tc.name, got, tc.want)
+		}
+		if tc.want && got.unreadable.Error() != "RemoveAll w1: permission denied" {
+			t.Errorf("%s: unreadable = %v, want RemoveAll w1: permission denied", tc.name, got.unreadable)
+		}
+	}
 }

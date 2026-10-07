@@ -147,9 +147,8 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     timeout during the checkout give the same clause (cells Z5 and Z6, macOS VM).
 //     The same texts after the two other timeout frames are claustrum's choice (not
 //     measured). A back-pointer that cannot be read for a permission error counts
-//     as a registration that stays, with the error of the read as the detail
-//     (cells Z11a and Z11b, macOS VM: 89cb6289 has "RemoveAll w1: permission
-//     denied" there). On Windows a registration that cannot be deleted adds no text, and
+//     as a registration that stays, and no delete is attempted. The frame equals
+//     that of 89cb6289 (cells Z11a and Z11b, macOS VM). On Windows a registration that cannot be deleted adds no text, and
 //     the branch step runs (removeCreatedRegistration): Windows is not measured.
 //   - Step C removes the leaf directory, which is now empty. If that fails, the text
 //     is "; and the undo could not finish for <leaf>: the worktree directory remains
@@ -310,7 +309,7 @@ type createdRegistration struct {
 	// registryInfo is the identity of registry at the time of the check. On Linux
 	// and macOS the delete compares it with the directory that it opened.
 	registryInfo os.FileInfo
-	// unreadable is the permission error of a back-pointer that the check cannot
+	// unreadable stands for the permission error of a back-pointer that the check cannot
 	// read. No other field is set then. On Linux and macOS the rollback reports it
 	// as a registration that stays, and deletes nothing.
 	unreadable error
@@ -344,15 +343,23 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	}
 	adminDir = absoluteAdminDir(worktreePath, adminDir)
 	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo))}
+	// The identity comes first, so it is that of the directory that the read of the
+	// back-pointer goes through.
+	info, statErr := os.Stat(reg.registry)
 	belongs, readErr := worktreeAdminBelongsTo(reg.resolved, worktreePath)
-	if errors.Is(readErr, fs.ErrPermission) {
-		return createdRegistration{unreadable: readErr}
+	under := pathStrictlyUnder(reg.resolved, reg.registry)
+	if under && errors.Is(readErr, fs.ErrPermission) {
+		// No delete is attempted: the registration is not verified. The error has the
+		// shape of a failed delete, because the frame of 89cb6289 in this state ends
+		// "(RemoveAll w1: permission denied)" (cells Z11a and Z11b, macOS VM).
+		errno := readErr
+		var pe *fs.PathError
+		if errors.As(readErr, &pe) {
+			errno = pe.Err
+		}
+		return createdRegistration{unreadable: &fs.PathError{Op: "RemoveAll", Path: filepath.Base(reg.resolved), Err: errno}}
 	}
-	if !belongs || !pathStrictlyUnder(reg.resolved, reg.registry) {
-		return createdRegistration{}
-	}
-	info, err := os.Stat(reg.registry)
-	if err != nil {
+	if !belongs || !under || statErr != nil {
 		return createdRegistration{}
 	}
 	reg.registryInfo = info

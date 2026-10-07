@@ -116,9 +116,9 @@ func installWorktreeIndex(src, adminDir string) error {
 // A registration whose back-pointer the check cannot read for a permission
 // error is not deleted either, and that error is returned. The rollback then
 // keeps the branch and names the registration in the frame, as 89cb6289 does with
-// a registrations directory of mode 0600 (cells Z11a and Z11b, macOS VM). There the
-// detail text of 89cb6289 is "RemoveAll w1: permission denied". claustrum's is the
-// error of the read: it does not delete what it did not verify.
+// a registrations directory of mode 0600 (cells Z11a and Z11b, macOS VM). The error
+// reads "RemoveAll <name>: permission denied", as in that frame. No delete is
+// attempted: claustrum does not delete what it did not verify.
 func removeCreatedRegistration(reg createdRegistration) error {
 	if reg.unreadable != nil {
 		return reg.unreadable
