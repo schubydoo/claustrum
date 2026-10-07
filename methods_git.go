@@ -1077,7 +1077,19 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "worktree_add_failed",
 		})
 	}
-	// The add succeeded. If the caller's deadline expired during it, the request
+	// The add succeeded. The .git file of the new worktree must name a registration
+	// of this repository (createdRegistrationRefusal). If it does not, the create is
+	// refused, with no checkout and no rollback: the leaf, the registration and the
+	// branch stay. The test comes before the deadline test: with a timeoutMs that
+	// expired during the add, 89cb6289 answers this refusal (row D-9, macOS VM).
+	if text := createdRegistrationRefusal(gitDir, p.WorktreePath); text != "" {
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     text,
+			ErrorCode: "unsafe_path",
+		})
+	}
+	// If the caller's deadline expired during the add, the request
 	// answers timeout "before the checkout started" and rolls back. errorCode
 	// "timeout" is reserved for the caller's own deadline. The reference has no D5.
 	// Every rollback below appends an undo text when one of its steps fails.
@@ -1113,7 +1125,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// last arm of the switch.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
-			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir, adminDir, checkoutRev, commonDirPinEnv(repo))
+			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
+			createdIndexDir(gitDir, p.WorktreePath, adminDir), checkoutRev, commonDirPinEnv(repo))
 		switch {
 		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and

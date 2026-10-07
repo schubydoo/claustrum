@@ -394,7 +394,7 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
-// (installWorktreeIndex). The temporary directory is removed afterwards. stderr,
+// (installWorktreeIndex). The caller gets adminDir from createdIndexDir. The temporary directory is removed afterwards. stderr,
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
@@ -414,7 +414,7 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		installErr = installWorktreeIndex(idx, absoluteAdminDir(leaf, adminDir))
+		installErr = installWorktreeIndex(idx, adminDir)
 	}
 	return stderr, drained, err, installErr
 }

@@ -103,6 +103,9 @@ on Windows:
   drain exceeds the caller `timeoutMs`, and after a failed read-tree checkout.
   On Linux and macOS it also happens when the daemon cannot place the index of
   the new worktree.
+  On Linux and macOS one refusal comes before this rollback.
+  If the `.git` file of the new worktree names no registration of the
+  repository, the daemon refuses the create and deletes nothing.
   After a failed `git worktree add`, the daemon only removes the worktree path
   if it is an empty directory. That removal cannot delete content.
 

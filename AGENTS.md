@@ -145,7 +145,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - When `git.worktree_create` rolls back a worktree, it deletes
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
-      directory. The second rollback follows a successful add. It runs when the
+      directory. The second rollback follows a successful add. On Linux and
+      macOS two refusals come before it, and they delete nothing. They answer
+      a `.git` file of the new worktree that names no registration of the
+      repository.
+      The second rollback runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
       `timeoutMs`, and after a failed read-tree checkout. On Linux and macOS it
@@ -160,7 +164,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       directory, which must still have the identity that the check saw. On Linux and macOS the placement of the index removes a
       file, a link or an empty folder at `<registration>/index`, after a create
       there answered "file exists". That is one
-      `os.Root.Remove` of the fixed name `index`, never a tree. A registration
+      `os.Root.Remove` of the fixed name `index`, never a tree. The
+      registration is the entry of the registrations directory of `baseRepo`
+      with the last name of the `gitdir:` path. It is not the folder that the
+      path names. A registration
       whose back-pointer cannot be read is never deleted.
       `wipesHomeDir` guards every delete of the leaf as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint

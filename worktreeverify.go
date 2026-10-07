@@ -400,6 +400,104 @@ func verifyCreatedWorktree(worktreePath string, cp worktreeCheckpoint) string {
 	return ""
 }
 
+// gitDirRegistryDir is the directory that holds the worktree registrations of the
+// git directory gitDir: <common git dir>/worktrees. The commondir file of gitDir
+// names the common git directory, as for a linked worktree. Without that file,
+// gitDir is its own common directory.
+func gitDirRegistryDir(gitDir string) string {
+	common := gitDir
+	if b, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
+		common = strings.TrimSpace(string(b))
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(gitDir, common)
+		}
+	}
+	return filepath.Join(common, worktreesSubdir)
+}
+
+// createdRegistrationRefusal is the answer of git.worktree_create when the .git
+// file of the new worktree does not name a registration of the repository, or ""
+// when it does. gitDir is the git directory of baseRepo, as git answered it before
+// the add. The call runs right after a successful add. claustrum runs three tests.
+// They fit the frames and the disk of 89cb6289 in these rows (Linux VM with git
+// 2.43, macOS VM with git 2.50):
+//
+//  1. The folder that holds the named path has the name "worktrees". The path
+//     <F>/alt/worktrees/w1 passes (row D-3), and so does a path that starts
+//     elsewhere, /elsewhere/worktrees/w1 (row D-12). <F>/WTREG/w1 and
+//     <F>/alt/WORKTREES/w1 do not pass (rows D-1, D-4, D-5 and D-7 on macOS, row
+//     D-11 on Linux). The named path need not exist (row D-12).
+//  2. The registrations directory of gitDir holds an entry with the last name of
+//     the path. With GIT_COMMON_DIR of another repository in the daemon
+//     environment, git makes the registration in that repository, and baseRepo has
+//     none (rows B-E1, B-E3 and D-8). The answer is then the "was not populated"
+//     text. With GIT_DIR of that repository too, git answers that repository as
+//     the git directory, and the create succeeds (probe row 2).
+//  3. The commondir file of that registration leads back to the common git
+//     directory. A file that holds "../../x" does not (row D-13). The path is
+//     joined as it is spelled. So a registrations directory that is a symlink
+//     passes with "../.." (rows D-1, D-3, D-4 and D-5 on the Linux VM).
+//
+// Tests 1 and 3 answer the "does not name" text. No row holds a path that fails
+// test 1 and test 2 together: claustrum runs test 1 first (not measured). Three more
+// states are not measured, and claustrum does not refuse them. The first is a leaf
+// with no .git file that can be read. The second is an entry whose stat fails with
+// another error than "does not exist". The third is a commondir file that cannot be
+// read. Attach mode and a worktreeRoot are not measured either, and take the same
+// tests. The test is off on Windows (adminRecordChecked), which is not measured.
+func createdRegistrationRefusal(gitDir, worktreePath string) string {
+	if !adminRecordChecked {
+		return ""
+	}
+	admin := worktreeAdminDir(worktreePath)
+	if admin == "" {
+		return ""
+	}
+	notOurs := fmt.Sprintf("refusing to create worktree: %s carries a .git file that does not name this "+
+		"repository's own worktree admin directory", worktreePath)
+	admin = filepath.Clean(admin)
+	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
+		return notOurs
+	}
+	registry := gitDirRegistryDir(gitDir)
+	registration := filepath.Join(registry, filepath.Base(admin))
+	if _, err := os.Stat(registration); errors.Is(err, fs.ErrNotExist) {
+		return fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", worktreePath)
+	}
+	b, err := os.ReadFile(filepath.Join(registration, "commondir"))
+	if err != nil {
+		return ""
+	}
+	named := strings.TrimSpace(string(b))
+	if !filepath.IsAbs(named) {
+		named = filepath.Join(registration, named)
+	}
+	common := filepath.Dir(registry)
+	if named != common && !sameCanonicalPath(canonicalPath(named), canonicalPath(common)) {
+		return notOurs
+	}
+	return ""
+}
+
+// createdIndexDir is the folder that gets the index of the new worktree. adminDir is
+// the gitdir value of the .git file of worktreePath, and gitDir is the git directory
+// of baseRepo. On Linux and macOS the folder is the registration of gitDir with the
+// last name of that value, not the path that the value names. With a value that
+// names a folder that does not exist, 89cb6289 answers success. The registration
+// that git made then holds the index (row D-12, Linux VM). For a value that git
+// wrote, the two are the same folder.
+//
+// A value that createdRegistrationRefusal does not pass reaches this function only
+// if the .git file changed after that test. Then, and on Windows (not measured), the
+// folder is the path that the value names (absoluteAdminDir).
+func createdIndexDir(gitDir, worktreePath, adminDir string) string {
+	clean := filepath.Clean(adminDir)
+	if !adminRecordChecked || filepath.Base(filepath.Dir(clean)) != worktreesSubdir {
+		return absoluteAdminDir(worktreePath, adminDir)
+	}
+	return filepath.Join(gitDirRegistryDir(gitDir), filepath.Base(clean))
+}
+
 // adminRecordMismatch reports whether the admin record that `git worktree add` wrote
 // for the new worktree names another path than worktreePath. It reads
 // <worktreePath>/.git, the admin directory that file names, and that directory's
