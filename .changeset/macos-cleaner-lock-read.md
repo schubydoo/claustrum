@@ -2,4 +2,4 @@
 default: patch
 ---
 
-The macOS host cleaner follows `89cb6289` in the measured `lsof` and `daemon.lock` states. Rows C3 to C5, D1i, D1k, D2p, D2f and D4: 3 of 3 each.
+On macOS the host cleaner no longer sends SIGTERM to a sibling daemon when `lsof` does not start or writes an error, as on `89cb6289`. It now removes an idle run folder whose unheld `daemon.lock` holds no valid record.

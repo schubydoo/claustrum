@@ -1120,7 +1120,7 @@ func (c *hostCleaner) Pass() hcSummary {
 	// reference's, measured on a macOS VM against 89cb6289 (rows D1i, D1k, E1, E2 and E5).
 	// There the line came before the orphan line and before every run dir line. Only a
 	// daemon that is old enough and serves an idle run dir gets the line: in row E1 a
-	// daemon of 33 s on a fresh run dir got none. Which of those two gates decides is not
+	// daemon of about 33 s on a fresh run dir got none. Which of those two gates decides is not
 	// measured, and claustrum applies both. On linux hcDaemonFilesUnread is a constant false.
 	for _, t := range procs {
 		socket := serveArgv(t.argv, c.roots.daemonBin)

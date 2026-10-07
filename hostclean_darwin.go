@@ -122,7 +122,7 @@ var (
 	//
 	// ⚠️ A wedged mount therefore leaks one process and one goroutine per abandoned run,
 	// and nothing caps that. It stays uncapped here: a pass runs
-	// every hcPassEvery (24 h) and reaches at most a couple of runs per candidate, so
+	// every hcPassEvery (24 h) and reaches at most three busy reads per candidate, so
 	// the accumulation is slow, and a host with a permanently wedged mount has a larger
 	// problem than this daemon.
 	//
@@ -133,8 +133,8 @@ var (
 	// The third result says whether the run ANSWERED. It is false when the command did
 	// not start, and when it wrote to stderr. The exit code is no rule: lsof exits 1
 	// with no text when it finds no holder. On a macOS VM, 89cb6289 kept a run dir
-	// with a lock file in both cases (rows C3, D2p and D2f), and it sent no signal to
-	// a daemon when the command did not start (rows D1i and D1k). An abandoned run
+	// with a lock file in both cases (rows C3, D2p and D2f). For the busy read of a
+	// daemon, see hcBusyCheck. An abandoned run
 	// answers true here, so its readers keep their earlier answers.
 	runLsof = func(args ...string) (out string, completed, answered bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), hcLsofTimeout)
