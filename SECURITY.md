@@ -103,13 +103,16 @@ on Windows:
   drain exceeds the caller `timeoutMs`, and after a failed read-tree checkout.
   On Linux and macOS it also happens when the daemon cannot place the index of
   the new worktree.
-  On Linux and macOS two refusals come before this rollback.
-  If the `.git` file of the new worktree names no registration of the
-  repository, the daemon refuses the create and deletes nothing.
-  If the record of that registration cannot be read or names another
-  worktree, the daemon does the same. The index of the new worktree goes into a
-  registration only if its record can be read and names the new worktree. A
-  registration in any other state keeps the index that it has.
+  On Linux and macOS three refusals come before this rollback, and each one
+  deletes nothing.
+  Two answer a `.git` file of the new worktree that names no registration of
+  the repository. A registration whose `commondir` file or record cannot be
+  read as a file gets the first of them.
+  The third answers a registration whose record was read and names another
+  worktree. On Linux and macOS a registration gets the index of the new
+  worktree only if its record can be read and names that worktree. A
+  registration in any other state keeps the index that it has. On Windows no
+  such guard runs.
   After a failed `git worktree add`, the daemon only removes the worktree path
   if it is an empty directory. That removal cannot delete content.
 

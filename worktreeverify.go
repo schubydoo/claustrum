@@ -435,9 +435,14 @@ func gitDirRegistryDir(gitDir string) string {
 //  2. The registrations directory of gitDir holds an entry with the last name of
 //     the path. With GIT_COMMON_DIR of another repository in the daemon
 //     environment, git makes the registration in that repository, and baseRepo has
-//     none (rows B-E1, B-E3 and D-8, and cell D8e). The answer is then the "was not populated"
-//     text. With GIT_DIR of that repository too, git answers that repository as
-//     the git directory, and the create succeeds (probe row 2).
+//     none (rows B-E1 and B-E3 and cell D8e, and row D-8 on the macOS VM only: on
+//     the Linux VM the add of row D-8 fails). The answer is then the "was not
+//     populated" text. In each of those rows baseRepo has no worktrees folder at
+//     all. With a worktrees folder that holds no entry of the name, 89cb6289
+//     answers the "does not name" text (cell P-p), and claustrum answers this
+//     text (from the code). With GIT_DIR of that repository too, the create
+//     succeeds (probe row 2 of git.worktree_remove, 89cb6289, Linux and macOS
+//     VMs). From the code: git answers that repository as the git directory.
 //
 //  3. The commondir file of that registration leads back to the common git
 //     directory. A file that holds "../../x" does not (row D-13). The path is
@@ -451,7 +456,7 @@ func gitDirRegistryDir(gitDir string) string {
 //     the record, and a commondir file that cannot be read fails test 3.
 //
 // Tests 1, 3 and 4 answer the "does not name" text. No read waits on a FIFO
-// (readGitPlainFile): 89cb6289 answers cells P-g and P-h in under 0.4 s. Cells P-g
+// (readGitPlainFile): 89cb6289 answers cells P-g and P-h in under 1 s. Cells P-g
 // to P-j are those of 89cb6289 on a Linux VM with git 2.43 and a macOS VM with git
 // 2.50. In each of them nothing changes after the add.
 //
@@ -522,7 +527,7 @@ func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) string {
 // last name of that value, not the path that the value names. With a value that
 // names a folder that does not exist, 89cb6289 answers success. The registration
 // that git made then holds the index (row D-12, Linux and macOS VMs). For a value that git
-// wrote, the two are the same folder.
+// wrote with no daemon GIT_COMMON_DIR, the two are the same folder.
 //
 // The caller gives this function the value that createdRegistrationRefusal tested,
 // from one read of the .git file. So no value that fails test 1 gets here on Linux
@@ -589,8 +594,8 @@ func readAdminRecord(admin, worktreePath string) adminRecord {
 // 89cb6289 and f6010b97 refuse such a create on a
 // macOS VM when the request spells the folder in Unicode NFD and git records it in
 // NFC (row I07a). They run no checkout and roll nothing back. The same request in NFC
-// for an NFD folder succeeds (row I07b). Linux is not measured for that row, and claustrum checks
-// there too. On a Linux VM every create of rows CSa to CSd succeeded on both
+// for an NFD folder succeeds (row I07b). Row I07a is not measured on Linux. Cells P-c, P-f and
+// P-k to P-m measured this test there. On a Linux VM every create of rows CSa to CSd succeeded on both
 // references and on claustrum.
 //
 // The record is that of the entry in the registrations directory of baseRepo, not

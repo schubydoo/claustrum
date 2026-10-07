@@ -424,9 +424,11 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 // and names leaf (readAdminRecord). In every other state of a registration that
 // can be reached, nothing is placed, and an index that is there keeps its bytes: a
 // record that is missing, a FIFO or a folder, an empty or a relative record of
-// another worktree, and the record of another path. The create refuses those states
-// before the checkout, so only a record that changed during the checkout reaches the
-// guard. The error text is claustrum's own (not measured). The path in it is
+// another worktree, and the record of another path. If git answered `rev-parse
+// --absolute-git-dir`, the create refuses those states before the checkout. Only a
+// record that changed during the checkout then reaches the guard. With no answer
+// the registration tests do not run (createdRegistrationRefusal), and a record that
+// cannot be read reaches the guard with no change. The error text is claustrum's own (not measured). The path in it is
 // adminDir, the registration folder. That is a path of the repository
 // (createdIndexDir), not the worktreePath of the request. The
 // frame joins the text to the stderr of the checkout under the 512-byte rule
@@ -441,8 +443,8 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 // Cell Z15 (Linux and macOS VMs) removes the record after the read-tree and sets
 // the registration to mode 0500. 89cb6289 answers "openat w1/index: permission
 // denied" there, with an undo text, and keeps the branch. claustrum answers the
-// text of the guard and removes the branch. That is an open difference, listed on
-// the issue.
+// text of the guard and removes the branch. That is an open difference of issue
+// 429.
 func guardedInstallWorktreeIndex(idx, adminDir, leaf string) error {
 	if adminRecordChecked {
 		if _, err := os.Stat(adminDir); err == nil && readAdminRecord(adminDir, leaf) != recordNamesLeaf {

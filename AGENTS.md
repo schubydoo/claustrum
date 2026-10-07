@@ -164,19 +164,27 @@ The JSON-RPC surface is identical on every OS. Full internals →
       stops at the first failure. Then it deletes the registration, runs the
       branch step on the created branch, and then removes the empty leaf. On
       Linux and macOS a registration that cannot be deleted skips the branch
-      step. The registration delete acts on the resolved path that its check
+      step. The registration of the rollback is the folder that the `.git` file
+      of the leaf names. If its `gitdir` record does not name the leaf, the
+      rollback does not delete it. If it does not resolve strictly inside the
+      registrations directory of `baseRepo`, the same holds. The registration delete acts on the resolved path that its check
       verified, and on Linux and macOS through a root at the registrations
       directory, which must still have the identity that the check saw. On Linux and macOS the placement of the index removes a
       file, a link or an empty folder at `<registration>/index`, after a create
       there answered "file exists". That is one
       `os.Root.Remove` of the fixed name `index`, never a tree. The
-      registration is the entry of the registrations directory of `baseRepo`
-      with the last name of the `gitdir:` path. It is not the folder that the
-      path names. An entry gets the index only if its `gitdir` record can be
+      registration of the placement is found in another way. If git answered
+      `rev-parse --absolute-git-dir`, it is the entry of the registrations
+      directory of `baseRepo` with the last name of the `gitdir:` path. It is
+      then not the folder that the path names. With no answer it is the folder
+      that the path names. An entry gets the index only if its `gitdir` record can be
       read and names the new worktree. An entry in any other state gets no
       index and loses none: a record of another path, a relative or an empty
-      one, a missing one, a FIFO or a folder. The create is refused before the
-      checkout (`89cb6289`, cells P-c and P-g to P-m, Linux and macOS VMs). The
+      one, a missing one, a FIFO or a folder. If git answered `rev-parse
+      --absolute-git-dir`, the create is refused before the
+      checkout (`89cb6289`, cells P-c and P-g to P-m, Linux and macOS VMs).
+      With no answer the registration tests do not run, and a record that
+      cannot be read reaches the placement. The
       placement tests the record again. An entry folder whose stat fails takes
       the placement itself, which fails there. A registration
       whose back-pointer cannot be read is never deleted.

@@ -299,6 +299,7 @@ traps that matter for telling drift from expected:
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
   back. `89cb6289` answers like claustrum (the Linux timeout set of the whole-build
   check of issue 442). That difference is not drift.
+- `git.worktree_create` has two open differences of issue 429: the guard text of claustrum in cell Z15 and the frame of cell P-p. Neither is drift of a new build (PROTOCOL.md → `git.worktree_create`).
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
   pins. claustrum follows `89cb6289`, the build that `scripts/UPSTREAM_SHA`
   names. Against `f6010b97`, `server.capabilities` differs by the
