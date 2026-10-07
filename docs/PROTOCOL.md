@@ -2486,7 +2486,11 @@ claustrum opens each file without blocking and reads a regular file only.
   Not measured: the atime, a temporary mtime that is a whole microsecond, and a
   file system with no group or mode. claustrum leaves the atime alone and keeps a
   whole microsecond. A placement that fails after a drain overrun is not measured
-  either. claustrum answers it as the failed placement below. Windows
+  either. claustrum answers it as the failed placement below. It does the same
+  when the caller `timeoutMs` expired before the placement failed. A file that
+  appears at the index between the remove and the create is not measured.
+  claustrum then fails the placement with `openat <registration name>/index: file
+  exists`. Windows
   is not measured. There claustrum moves the temporary file.
   If that move fails, the worktree has no index and the create still succeeds.
 - On Linux and macOS, a placement of the index that fails is a failed checkout. The
@@ -2501,7 +2505,8 @@ claustrum opens each file without blocking and reads a regular file only.
   - The temporary index is gone when git exits 0 (cell X1, Linux and macOS VMs).
     The OS error is `open <temporary directory>/index: no such file or directory`.
     In that cell the leaf, the registration and the branch go. The
-    temporary directory has claustrum's own prefix (see Temporary names above).
+    temporary directory has claustrum's own prefix, where the frame of `89cb6289`
+    has its own (see Temporary names above).
     In attach mode the frame is the same (cell Y6, Linux VM). With a registration
     folder without its write bit too, the step 2 undo text follows (cell Y4, Linux
     VM).
@@ -2548,8 +2553,13 @@ claustrum opens each file without blocking and reads a regular file only.
      (RemoveAll <registration name>: <OS error>)` (cell X5, Linux and macOS VMs).
      If step 3 fails too, the frame carries the registration text alone and no
      step 3 text (cell X11, and cell Y5 for attach mode, Linux VM). Each of these cells is a failed placement of
-     the index. The same texts after a `timeout` frame are claustrum's choice (not
-     measured). On Windows claustrum adds no text for it and runs the branch step.
+     the index. The same texts after a `timeout` frame, and after a failed
+     read-tree checkout, are claustrum's choice (not measured). If the registrations
+     directory cannot be opened, the text holds `open <path>: <OS error>` in place
+     of `RemoveAll <registration name>: <OS error>` (not measured). claustrum
+     deletes only a registration that is a direct child of the registrations
+     directory, by its resolved path. Another one stays, with claustrum's own
+     text in that place. On Windows claustrum adds no text for it and runs the branch step.
      Windows is not measured.
   3. Remove the leaf directory, which is now empty. If that fails, append `; and
      the undo could not finish for <leaf>: the worktree directory remains

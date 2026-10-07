@@ -141,8 +141,8 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     and A14f on a Linux VM, A14 and A14b on a macOS VM). In attach mode the text
 //     reads "the worktree registration remains; remove it by hand before retrying
 //     (...)" instead (cell X5, Linux and macOS VMs). A step C that fails too adds
-//     no text of its own (cell X11, Linux VM). The same texts after a timeout are
-//     claustrum's choice (not measured). On Windows a registration that cannot be deleted adds no text, and
+//     no text of its own (cell X11, Linux VM). The same texts after a timeout, and
+//     after a failed read-tree checkout, are claustrum's choice (not measured). On Windows a registration that cannot be deleted adds no text, and
 //     the branch step runs (removeCreatedRegistration): Windows is not measured.
 //   - Step C removes the leaf directory, which is now empty. If that fails, the text
 //     is "; and the undo could not finish for <leaf>: the worktree directory remains
@@ -167,7 +167,7 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 // claustrum's own guard (not measured): no honest input reaches it.
 func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint) (text string, kept bool) {
 	// The admin dir is found through the leaf's .git file, which step A deletes.
-	adminDir := createdWorktreeAdminDir(repo, worktreePath)
+	registration := createdWorktreeAdminDir(repo, worktreePath)
 	leafSafe := func() bool {
 		return worktreePath != "" && !wipesHomeDir(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
 	}
@@ -184,7 +184,7 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 	// A registration that cannot be deleted stays, and then the branch step does not
 	// run: 89cb6289 runs no git call after it (row A14, Linux VM).
 	var res branchStepResult
-	regErr := removeCreatedRegistration(adminDir)
+	regErr := removeCreatedRegistration(registration)
 	if regErr == nil {
 		res = runBranchStep(repo, branch)
 	}
@@ -293,22 +293,37 @@ func worktreeRegistryDir(repo string) string {
 	return filepath.Join(common, "worktrees")
 }
 
+// createdRegistration is the registration that createdWorktreeAdminDir verified. The
+// zero value means that no registration is safe to delete.
+type createdRegistration struct {
+	// resolved is the admin dir, and registry is the registrations directory of the
+	// repo, both with their symlinks resolved. They are the two paths that the check
+	// compared, and the delete acts on them.
+	resolved, registry string
+}
+
 // createdWorktreeAdminDir returns the admin dir (registration) of the worktree that
-// git.worktree_create built at worktreePath, or "" when it is not safe to delete.
-// The admin dir must point back at this worktree and resolve strictly inside the
-// repo's registrations directory. When baseRepo is a linked worktree, that is the main
-// repository's one.
-func createdWorktreeAdminDir(repo, worktreePath string) string {
+// git.worktree_create built at worktreePath, or the zero value when it is not safe
+// to delete. The admin dir must point back at this worktree and resolve strictly
+// inside the repo's registrations directory. When baseRepo is a linked worktree,
+// that is the main repository's one.
+//
+// Every test reads the resolved path, and the delete acts on that same path. The
+// path as the .git file spells it can hold a "link/.." pair. A lexical clean of
+// such a path names another folder than the kernel does.
+func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	adminDir := worktreeAdminDir(worktreePath)
-	if adminDir != "" && !filepath.IsAbs(adminDir) {
+	if adminDir == "" {
+		return createdRegistration{}
+	}
+	if !filepath.IsAbs(adminDir) {
 		adminDir = filepath.Join(worktreePath, adminDir)
 	}
-	if adminDir != "" &&
-		worktreeAdminBelongsTo(adminDir, worktreePath) &&
-		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(worktreeRegistryDir(repo))) {
-		return adminDir
+	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo))}
+	if !worktreeAdminBelongsTo(reg.resolved, worktreePath) || !pathStrictlyUnder(reg.resolved, reg.registry) {
+		return createdRegistration{}
 	}
-	return ""
+	return reg
 }
 
 // verifyCreatedWorktree confirms `git worktree add` populated the very directory

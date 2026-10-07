@@ -197,6 +197,9 @@ func runGitLingering(args []string) int {
 // record separator follows, then every GIT_* entry of its environment as KEY=value,
 // in the order of the environment, joined by 0x1f.
 //
+// When CLAUSTRUM_GITSTUB_IDXMODE names a file, every call that has a GIT_INDEX_FILE
+// appends the mode of that file to it, after the real git ended.
+//
 // When CLAUSTRUM_GITSTUB_ENVLOG names a file, every call appends its working
 // directory, its argv and its whole environment, as one record that ends "\x1d\n".
 // With CLAUSTRUM_GITSTUB_EXPAND=1 the stderr payload expands $NAME from the stub's own
@@ -310,6 +313,11 @@ func runGitSlow(args []string) int {
 			return 127
 		}
 		code = ee.ExitCode()
+	}
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_IDXMODE"); log != "" {
+		if fi, err := os.Stat(os.Getenv("GIT_INDEX_FILE")); err == nil {
+			appendLine(log, fmt.Sprintf("%#o", fi.Mode().Perm()))
+		}
 	}
 	if slow && (mode == "post" || mode == "postfail" || mode == "hold") {
 		if err := gitStubAction(os.Getenv("CLAUSTRUM_GITSTUB_ACTION"), os.Getenv("CLAUSTRUM_GITSTUB_LEAF")); err != nil {

@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -27,8 +28,8 @@ import (
 // A temporary index that is gone is a failed placement. The error reads "open
 // <src>: no such file or directory", the text of cell X1 (Linux and macOS VMs).
 //
-// The file is opened through a root at the parent of adminDir, the registrations
-// directory. A failure of that open then reads "openat <name>/index: <OS error>",
+// The file is opened through a root at the parent of adminDir with its symlinks
+// resolved, the registrations directory. A failure of that open then reads "openat <name>/index: <OS error>",
 // the text of rows A14, A14f and A14b. A file that exists already at the index is
 // removed first, so the index is a new inode with the mode above (cell X8, Linux
 // and macOS VMs). In a registration without its write bit and with no index, that
@@ -36,7 +37,9 @@ import (
 // for another reason fails the placement with its own error, "removeat
 // <name>/index: <OS error>", as on 89cb6289 (cells Y3 and Y7, Linux VM). A failure
 // after the open leaves the file as it is, and the rollback of the caller deletes
-// the registration.
+// the registration. The remove takes a file, a link or an empty folder, never a
+// tree. A file that another process makes between the remove and the open fails the
+// open with "openat <name>/index: file exists" (not measured).
 func installWorktreeIndex(src, adminDir string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -47,7 +50,12 @@ func installWorktreeIndex(src, adminDir string) error {
 	if err != nil {
 		return err
 	}
-	adminDir = filepath.Clean(adminDir)
+	// The resolved path, not a lexical clean of adminDir: a clean drops a "link/.."
+	// pair and can name another folder than the kernel does.
+	adminDir, err = filepath.EvalSymlinks(adminDir)
+	if err != nil {
+		return err
+	}
 	root, err := os.OpenRoot(filepath.Dir(adminDir))
 	if err != nil {
 		return err
@@ -57,7 +65,9 @@ func installWorktreeIndex(src, adminDir string) error {
 	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	out, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	// O_EXCL: a file that exists again after the remove is an error, and the open
+	// does not follow a link that another process put there.
+	out, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	if err != nil {
 		return err
 	}
@@ -71,18 +81,27 @@ func installWorktreeIndex(src, adminDir string) error {
 	return root.Chtimes(name, time.Time{}, roundUpToMicrosecond(st.ModTime()))
 }
 
-// removeCreatedRegistration deletes adminDir, the registration that
-// createdWorktreeAdminDir verified, through a root at its parent. The error then
-// reads "RemoveAll <name>: <OS error>", the wording of row A14, and the delete never
-// follows a symlink out of the registrations directory. An empty adminDir and a
-// parent that does not exist have nothing to delete. It is step B of
-// undoFailedCheckout.
-func removeCreatedRegistration(adminDir string) error {
-	if adminDir == "" {
+// removeCreatedRegistration deletes the registration that createdWorktreeAdminDir
+// verified. It is step B of undoFailedCheckout. The delete acts on the resolved path
+// that the check compared, never on a lexical clean of the raw path: a clean drops a
+// "link/.." pair and can name another folder than the kernel does. The root is the
+// resolved registrations directory, so the root itself is the containment, and the
+// delete never follows a symlink out of it. The error of a failed delete reads
+// "RemoveAll <name>: <OS error>", the wording of row A14.
+//
+// A registration that is not a direct child of the registrations directory is
+// refused, and nothing is deleted. git writes each registration as a direct child.
+// The zero value and a registrations directory that does not exist have nothing to
+// delete.
+func removeCreatedRegistration(reg createdRegistration) error {
+	if reg.resolved == "" {
 		return nil
 	}
-	adminDir = filepath.Clean(adminDir)
-	root, err := os.OpenRoot(filepath.Dir(adminDir))
+	name := filepath.Base(reg.resolved)
+	if reg.resolved != filepath.Join(reg.registry, name) {
+		return fmt.Errorf("%s is not a direct child of %s", reg.resolved, reg.registry)
+	}
+	root, err := os.OpenRoot(reg.registry)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -90,7 +109,7 @@ func removeCreatedRegistration(adminDir string) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	return root.RemoveAll(filepath.Base(adminDir))
+	return root.RemoveAll(name)
 }
 
 // roundUpToMicrosecond returns t when it is a whole microsecond, and the next whole

@@ -150,6 +150,78 @@ func TestInstallWorktreeIndexReplacesFile(t *testing.T) {
 	}
 }
 
+// TestInstallWorktreeIndexResolvedPath pins that the install acts on the path that
+// the kernel resolves, not on a lexical clean of it. L is a symlink to a/b, so
+// worktrees/L/../../w1 is worktrees/w1 for the kernel and w1 beside worktrees after
+// a clean. The index lands in worktrees/w1. claustrum's own rule, not a measured row.
+func TestInstallWorktreeIndexResolvedPath(t *testing.T) {
+	src, _ := indexSource(t)
+	base := resolveTestRoot(t, t.TempDir())
+	reg := filepath.Join(base, "worktrees")
+	mkdirForTest(t, filepath.Join(reg, "a", "b"))
+	mkdirForTest(t, filepath.Join(reg, "w1"))
+	mkdirForTest(t, filepath.Join(base, "w1"))
+	if err := os.Symlink(filepath.Join("a", "b"), filepath.Join(reg, "L")); err != nil {
+		t.Fatal(err)
+	}
+	if err := installWorktreeIndex(src, reg+"/L/../../w1"); err != nil {
+		t.Fatalf("installWorktreeIndex: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(reg, "w1", "index")); err != nil {
+		t.Errorf("the registration that the kernel names holds no index: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "w1", "index")); err == nil {
+		t.Errorf("the index landed in the folder that a lexical clean names")
+	}
+}
+
+// TestRemoveCreatedRegistrationResolvedPath pins that the rollback deletes the
+// registration that its check verified, not the folder that a lexical clean of the
+// raw path names. The .git file of the leaf names worktrees/L/../../objects, and L
+// is a symlink to a/b. For the kernel that is worktrees/objects, a forged folder
+// whose gitdir record names the leaf. After a clean it is the object store beside
+// worktrees, which holds a forged gitdir record too. The object store must stay.
+// Everything is under the test's own folder.
+func TestRemoveCreatedRegistrationResolvedPath(t *testing.T) {
+	base := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(base, "repo")
+	gitDir := filepath.Join(repo, ".git")
+	reg := filepath.Join(gitDir, "worktrees")
+	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+	kept := filepath.Join(gitDir, "objects", "keep")
+	writeFile(t, kept, "object store\n", 0o644)
+	mkdirForTest(t, filepath.Join(reg, "a", "b"))
+	if err := os.Symlink(filepath.Join("a", "b"), filepath.Join(reg, "L")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(reg, "objects", "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+	writeFile(t, filepath.Join(gitDir, "objects", "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+reg+"/L/../../objects\n", 0o644)
+
+	registration := createdWorktreeAdminDir(repo, leaf)
+	if registration.resolved == "" {
+		t.Fatal("the check refused the forged registration, so the test stages nothing")
+	}
+	if err := removeCreatedRegistration(registration); err != nil {
+		t.Errorf("removeCreatedRegistration: %v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("the object store lost its file: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(reg, "objects")); !os.IsNotExist(err) {
+		t.Errorf("the verified registration still exists (Lstat err %v), want it deleted", err)
+	}
+
+	// A registration below a direct child is refused, and nothing is deleted.
+	deep := createdRegistration{resolved: filepath.Join(reg, "a", "b"), registry: reg}
+	if err := removeCreatedRegistration(deep); err == nil {
+		t.Errorf("removeCreatedRegistration of a nested path = nil, want a refusal")
+	}
+	if _, err := os.Stat(filepath.Join(reg, "a", "b")); err != nil {
+		t.Errorf("the nested folder was deleted: %v", err)
+	}
+}
+
 // TestInstallWorktreeIndexErrors pins the errors of a placement. A registration
 // without its write bit names the registration and the file, relative to the
 // registrations directory (rows A14, A14f and A14b). A temporary index that is gone
@@ -210,9 +282,22 @@ func TestIndexInstallText(t *testing.T) {
 // core.sharedRepository group and umask 0022, git writes its temporary index with
 // mode 0664. The index of the new worktree is 0644 all the same. The umask is
 // process-wide, so this test does not run in parallel.
+//
+// The git stub records the mode of the temporary index. If that mode is not 0664,
+// the fixture does not stage row A13, and the test fails with that reason.
 func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 	_, repo := createModesRepo(t)
 	runGit(t, repo, "config", "core.sharedRepository", "group")
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldTimeout := gitTimeout
+	t.Cleanup(func() { gitTimeout = oldTimeout })
+	gitTimeout = 0
+	installGitSlowStub(t, realGit)
+	modeLog := filepath.Join(t.TempDir(), "idxmode.txt")
+	t.Setenv("CLAUSTRUM_GITSTUB_IDXMODE", modeLog)
 	old := syscall.Umask(0o022)
 	t.Cleanup(func() { syscall.Umask(old) })
 	wp := filepath.Join(repo, ".claude", "worktrees", "wt")
@@ -220,6 +305,9 @@ func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 		map[string]any{"baseRepo": repo, "branchName": "s1", "worktreePath": wp}))
 	if !strings.Contains(raw, `"success":true`) {
 		t.Fatalf("create = %s, want success", raw)
+	}
+	if b, _ := os.ReadFile(modeLog); strings.TrimSpace(string(b)) != "0664" {
+		t.Fatalf("git wrote its temporary index with mode %q, want 0664: this fixture does not stage row A13", strings.TrimSpace(string(b)))
 	}
 	if got := permOf(t, filepath.Join(repo, ".git", "worktrees", "wt", "index")); got != 0o644 {
 		t.Errorf("index mode = %#o, want 0644", got)
@@ -247,6 +335,21 @@ func indexInstallFixture(t *testing.T) (wtFixture, *server, string) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	return f, s, tmp
+}
+
+// requireNoIndexTemp fails the test if tmp holds a temporary index folder of the
+// daemon. Other names do not count: a git of the host can leave its own files there.
+func requireNoIndexTemp(t *testing.T, tmp string) {
+	t.Helper()
+	ents, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), checkoutIndexTempPrefix) {
+			t.Errorf("TMPDIR holds %s after the create, want the temporary index folder removed", e.Name())
+		}
+	}
 }
 
 // checkoutFailedHead starts every frame of a failed placement here. The stub prints
@@ -323,9 +426,7 @@ func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 			if !f.hasRef(t, tc.branch) {
 				t.Errorf("refs/heads/%s was deleted, want it kept beside a registration that stays", tc.branch)
 			}
-			if ents, err := os.ReadDir(tmp); err != nil || len(ents) != 0 {
-				t.Errorf("TMPDIR holds %d entries after the create (%v), want the temporary index folder removed", len(ents), err)
-			}
+			requireNoIndexTemp(t, tmp)
 		})
 	}
 }
@@ -347,7 +448,5 @@ func TestWorktreeCreateTempIndexGone(t *testing.T) {
 		t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
 	}
 	f.assertRolledBack(t, nil, false)
-	if ents, err := os.ReadDir(tmp); err != nil || len(ents) != 0 {
-		t.Errorf("TMPDIR holds %d entries after the create (%v), want the temporary index folder removed", len(ents), err)
-	}
+	requireNoIndexTemp(t, tmp)
 }

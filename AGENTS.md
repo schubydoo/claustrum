@@ -155,9 +155,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       stops at the first failure. Then it deletes the registration, runs the
       branch step on the created branch, and then removes the empty leaf. On
       Linux and macOS a registration that cannot be deleted skips the branch
-      step. On Linux and macOS the placement of the index first removes a file
-      at `<registration>/index`. That is one `os.Root.Remove` of the fixed name
-      `index`, never a tree.
+      step. The registration delete acts on the resolved path that its check
+      verified, and on Linux and macOS through a root at the registrations
+      directory. On Linux and macOS the placement of the index first removes a
+      file, a link or an empty folder at `<registration>/index`. That is one
+      `os.Root.Remove` of the fixed name `index`, never a tree.
       `wipesHomeDir` guards every delete of the leaf as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint
       identity of the leaf again, so a swap while create runs cannot redirect
