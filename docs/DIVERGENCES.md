@@ -811,6 +811,15 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   not-held, although the same argument applies to it. This
   entry was scoped to the busy predicate deliberately. Widening it is a decision, not
   an implementation detail.
+- **An `lsof` run that does not start is another case.** It is not an abandoned run.
+  For the lock read it is parity: the run dir stays if it has a lock file. On a
+  macOS VM `89cb6289` kept such a dir with the line
+  `kept, its daemon.lock could not be examined` (row C3, 3 of 3 runs). For the busy
+  read, a run that does not start completes with no output, so it reads as not busy.
+  That busy answer is from the code. The reference side of it is not measured.
+  Three cases stay claustrum's own and are not measured: the abandoned run of the
+  busy read (this entry), the abandoned run of the lock read (not held), and the
+  busy read of a run that does not start.
 - **Linux is outside this entry.** On Linux the busy read comes from `/proc`, not
   `lsof`. If `/proc` cannot read a daemon's descriptors or its `net/unix` table, the
   retire refuses that daemon. The reference's

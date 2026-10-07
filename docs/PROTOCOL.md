@@ -445,6 +445,24 @@ output. claustrum treats only the completed empty result as evidence. On a host
 where `lsof` cannot answer, the cleaner therefore does not SIGTERM a daemon that
 is serving a client. The reference side is not probe-measured.
 
+On macOS the cleaner also asks `lsof` whether a process holds the `daemon.lock` of
+an idle run dir. A macOS VM measured three states of that read against `89cb6289`,
+3 of 3 runs each. claustrum is built to them:
+
+| row | state | `89cb6289` and claustrum |
+|---|---|---|
+| C3 | the `lsof` run does not start, and the dir has a `daemon.lock` (empty, or the record of a dead daemon) | the dir stays, with the line `[hostclean] run dir "<dir>" unused for 40 days: kept, its daemon.lock could not be examined` |
+| C3 | the `lsof` run does not start, and the dir has no `daemon.lock` | the dir goes |
+| C4 | only the cleaner itself holds the lock file open | the dir goes |
+| C5 | the lock file holds 7 bytes that are no record, and no process holds it | the dir goes |
+
+In two more rows claustrum already gave the answer of `89cb6289`, 2 of 2 runs each. In row C2
+another live process holds the lock file, and the dir stays. In row C6 the lock
+holds the record of a dead pid with no holder, and the dir goes. Not measured: an
+`lsof` run that starts and then fails, a run that passes its deadline, and a holder
+that is a child of the cleaner. Linux is not measured for these three states. On
+Linux, lock content that is no record keeps the dir. That answer is claustrum's own.
+
 ### Daemon startup (`-serve`)
 
 If the socket's parent directory is missing, the `-serve` launcher creates it

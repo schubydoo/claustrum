@@ -370,16 +370,79 @@ func TestHcSettledBusyDarwin(t *testing.T) {
 	}
 }
 
+// TestHcLockHeldAtDarwin pins the lock read against the rows of a macOS VM run (89cb6289).
+// The arguments of the run stay as they were.
 func TestHcLockHeldAtDarwin(t *testing.T) {
-	old := runLsof
-	t.Cleanup(func() { runLsof = old })
-	runLsof = func(...string) (string, bool) { return "p1234\n", true }
-	if !hcLockHeldAt("/run/x/daemon.lock", nil) {
-		t.Error("a held lock read as unheld")
+	old := runLockLsof
+	t.Cleanup(func() { runLockLsof = old })
+	self := "p" + strconv.Itoa(os.Getpid()) + "\n"
+	for _, tc := range []struct {
+		name          string
+		out           string
+		started       bool
+		held, examine bool
+	}{
+		{"row C2: another pid holds the file", "p1234\n", true, true, true},
+		{"row C6: no holder", "", true, false, true},
+		{"row C3: the run did not start", "", false, false, false},
+		{"row C4: only this process holds the file", self, true, false, true},
+		{"this process and another pid hold the file", self + "p1234\n", true, true, true},
+	} {
+		var got []string
+		runLockLsof = func(args ...string) (string, bool) { got = args; return tc.out, tc.started }
+		held, asked := hcLockHeldAt("/run/x/daemon.lock", nil)
+		if held != tc.held || asked != tc.examine {
+			t.Errorf("%s: held=%v asked=%v, want %v %v", tc.name, held, asked, tc.held, tc.examine)
+		}
+		if strings.Join(got, " ") != "-F p /run/x/daemon.lock" {
+			t.Errorf("%s: lsof arguments = %q", tc.name, got)
+		}
 	}
-	runLsof = func(...string) (string, bool) { return "", true }
-	if hcLockHeldAt("/run/x/daemon.lock", nil) {
-		t.Error("an unheld lock read as held")
+}
+
+// TestLockLsofStartFailureDarwin drives the REAL run. A command that cannot start reads as
+// not started, and lockProbe then answers hcLockNoQuery for a dir with a lock file (row C3).
+// A dir with no lock file reads stale with no run. The control is this test binary as the
+// command: it starts, and its output is read. The busy read keeps its answer for a run that
+// does not start: a completed run with no output.
+func TestLockLsofStartFailureDarwin(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	oldPath, oldEnv := hcLsofPath, hcLsofEnv
+	t.Cleanup(func() { hcLsofPath, hcLsofEnv = oldPath, oldEnv })
+	locked, bare := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(locked, runDirLockName), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	noExec := filepath.Join(t.TempDir(), "lsof")
+	if err := os.WriteFile(noExec, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Join(t.TempDir(), "missing"), noExec} {
+		hcLsofPath = path
+		if out, started := runLockLsof("-F", "p", "/x"); out != "" || started {
+			t.Errorf("%s: out=%q started=%v, want no output and not started", path, out, started)
+		}
+		if out, completed := runLsof("-p", "1"); out != "" || !completed {
+			t.Errorf("%s: runLsof out=%q completed=%v, want the earlier answer: empty and completed", path, out, completed)
+		}
+		if state, _, present := lockProbe(locked); state != hcLockNoQuery || !present {
+			t.Errorf("%s: lockProbe(dir with a lock) = %d present=%v, want hcLockNoQuery", path, state, present)
+		}
+		if state, _, present := lockProbe(bare); state != hcLockStale || present {
+			t.Errorf("%s: lockProbe(dir with no lock) = %d present=%v, want stale", path, state, present)
+		}
+	}
+	// CONTROL: the command starts. The helper prints "p1", which is a holder.
+	hcLsofPath = exe
+	hcLsofEnv = append(append([]string{}, oldEnv...), "CLAUSTRUM_TEST_HELPER=print-quiet", "GORACE="+os.Getenv("GORACE"))
+	if out, started := runLockLsof("-F", "p", "/x"); out != "p1\n" || !started {
+		t.Fatalf("control: out=%q started=%v, want %q and started", out, started, "p1\n")
+	}
+	if state, _, _ := lockProbe(locked); state != hcLockHeld {
+		t.Errorf("control: lockProbe = %d, want held", state)
 	}
 }
 
@@ -511,8 +574,8 @@ func TestHostcleanLivePrimitivesDarwin(t *testing.T) {
 
 	// the daemon holds its run-dir lock.
 	fi, _ := os.Stat(lock)
-	if !hcLockHeldAt(lock, fi) {
-		t.Errorf("hcLockHeldAt(daemon.lock) = false, want true (the daemon holds it)")
+	if held, asked := hcLockHeldAt(lock, fi); !held || !asked {
+		t.Errorf("hcLockHeldAt(daemon.lock) = %v %v, want true true (the daemon holds it)", held, asked)
 	}
 
 	// hcBusy: idle now, busy with a client connected.

@@ -446,8 +446,13 @@ func probeSocket(addr string) (state, pid int, uid uint32) {
 const (
 	hcLockStale   = 0 // no lock file, or a record or an empty file with no live holder
 	hcLockHeld    = 1 // a record or an empty file, and a live process holds the lock
-	hcLockUnknown = 2 // the lock file could not be opened or stat'd, or its content does not parse
+	hcLockUnknown = 2 // the lock file could not be opened or stat'd, or (linux) its content does not parse
+	hcLockNoQuery = 3 // the holder query for the lock file did not start (darwin only)
 )
+
+// hcLockHolderRead is hcLockHeldAt behind a seam, so a test on either OS can stage each
+// answer of the holder query.
+var hcLockHolderRead = hcLockHeldAt
 
 // readLockRecord reads the first kilobyte of an open daemon.lock and parses it as the owner
 // record. Returns nil when empty or not valid JSON.
@@ -483,16 +488,23 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 	rec = readLockRecord(f)
 	_ = f.Close()
 	// An empty lock file carries no record. A daemon truncates its lock to 0 bytes on a
-	// graceful exit, so an empty file is asked about its holder like any other. Content
-	// that is present but does not parse stays indeterminate. On linux a starting daemon
+	// graceful exit, so an empty file is asked about its holder like any other. On linux,
+	// content that is present but does not parse stays indeterminate. That is claustrum's
+	// own answer, and the reference on linux is not measured for it. On darwin such content
+	// is asked about its holder too: on a macOS VM 89cb6289 removed a run dir whose lock
+	// held 7 bytes of text and had no holder (row C5, 3 of 3). On linux a starting daemon
 	// holds no flock between its open and its flock. So its lock reads stale in that window,
 	// empty or not. The post-rename lock probe in removeRunDir sees a flock taken between
 	// this read and the rename. It does not see one taken after it, and a leftover staging
 	// dir has no such probe.
-	if rec == nil && fi.Size() != 0 {
+	if hcLockNeedsRecord && rec == nil && fi.Size() != 0 {
 		return hcLockUnknown, nil, true
 	}
-	if hcLockHeldAt(path, fi) {
+	held, asked := hcLockHolderRead(path, fi)
+	if !asked {
+		return hcLockNoQuery, rec, true
+	}
+	if held {
 		return hcLockHeld, rec, true
 	}
 	return hcLockStale, rec, true
@@ -977,6 +989,10 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 		case hcLockHeld:
 			// The reference's line, measured on a Linux VM (row HC03).
 			logInfof("[hostclean] run dir %q unused for %s: kept, a live process holds its %s", e.dirPath, hcDays(e.idle), runDirLockName)
+			continue
+		case hcLockNoQuery:
+			// The reference's line, measured on a macOS VM against 89cb6289 (row C3).
+			logInfof("[hostclean] run dir %q unused for %s: kept, its %s could not be examined", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
 		case hcLockUnknown:
 			logInfof("[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined", e.dirPath)

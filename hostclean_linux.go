@@ -404,10 +404,15 @@ func hcReadIdent(pid int) (pgid int, startTicks string, ok bool) {
 	return s.pgid, s.startTicks, s.ok
 }
 
+// hcLockNeedsRecord says that lock content that is no record stops the holder read. It is a
+// var only so a test can stage the darwin answer.
+var hcLockNeedsRecord = true
+
 // hcLockHeldAt reports whether the lock file at path (described by fi) is held by a live
-// process. On linux the answer comes from fi alone (via /proc/locks); path is unused.
-func hcLockHeldAt(path string, fi os.FileInfo) bool {
-	return lockFileHeld(fi)
+// process. On linux the answer comes from fi alone (via /proc/locks); path is unused. The
+// second result is always true on linux: no command runs, so none can fail to start.
+func hcLockHeldAt(path string, fi os.FileInfo) (held, asked bool) {
+	return lockFileHeld(fi), true
 }
 
 // hcSelfExe resolves this process's own executable path, dropping a trailing " (deleted)".

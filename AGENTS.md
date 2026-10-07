@@ -311,7 +311,9 @@ up on as busy. A completed run that found nothing reads as not busy. The
 reference side is not probe-measured. The
 harm it refuses is the cleaner SIGTERMing a daemon that is serving a client on a
 host where `lsof` cannot answer. The sibling lock read is deliberately NOT
-covered. See the entry.
+covered: it reads a run it gave up on as not held. A lock read whose `lsof` run
+does not start is a different case. There the run folder stays, as on `89cb6289`
+(macOS VM, row C3). That case is parity, not D17. See the entry.
 
 D20 is off-wire, on Linux and macOS. Before the group `SIGKILL` of a child-group
 leader that reads as gone, the reap of a `-serve` start waits 50 ms and reads the
