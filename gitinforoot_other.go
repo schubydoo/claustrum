@@ -29,5 +29,6 @@ func checkoutWorkTree(leaf, resolved string) string {
 // adminRecordChecked reports whether git.worktree_create compares the new worktree's
 // admin record with worktreePath after symlink resolution (adminRecordMismatch). It
 // does on Linux and macOS. Both references refuse a mismatch on a macOS VM (row
-// I07a). Linux is not measured, and claustrum checks there too.
+// I07a). Row I07a is not measured on Linux. Cells P-c, P-f and P-k to P-m measured
+// the record test on a Linux VM (adminRecordMismatch).
 const adminRecordChecked = true

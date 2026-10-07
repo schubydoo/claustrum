@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -47,5 +49,33 @@ func TestCheckpointCreatedWorktreeYieldsEmptyCheckpointWhenResolveFails(t *testi
 	// failure is never a new way to fail an honest create.
 	if msg := verifyCreatedWorktree(leaf, cp); msg != "" {
 		t.Errorf("verifyCreatedWorktree on an empty checkpoint = %q, want %q", msg, "")
+	}
+}
+
+// readAdminRecord compares nothing for a worktree path that is relative or that does
+// not resolve. The record itself is readable in both cases, so the answer comes from
+// the path arm and not from the read. The second case goes through the evalSymlinks
+// seam, for the reason that the test above gives.
+func TestReadAdminRecordComparesNoPathItCannotResolve(t *testing.T) {
+	admin := t.TempDir()
+	leaf := t.TempDir()
+	record := filepath.Join(leaf, ".git") + "\n"
+	if err := os.WriteFile(filepath.Join(admin, "gitdir"), []byte(record), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := readAdminRecord(admin, "relative/leaf"); got != recordNotCompared {
+		t.Errorf("readAdminRecord(relative path) = %d, want recordNotCompared", got)
+	}
+
+	old := evalSymlinks
+	evalSymlinks = func(string) (string, error) {
+		// The leaf comes back beside the error. If the arm stopped testing err, the
+		// compare would run and answer recordNamesLeaf.
+		return leaf, errors.New("evalSymlinks refused")
+	}
+	t.Cleanup(func() { evalSymlinks = old })
+	if got := readAdminRecord(admin, leaf); got != recordNotCompared {
+		t.Errorf("readAdminRecord(path that does not resolve) = %d, want recordNotCompared", got)
 	}
 }

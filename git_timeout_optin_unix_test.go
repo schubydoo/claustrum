@@ -167,7 +167,8 @@ func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
 	bin := t.TempDir()
 	// The `worktree add` case writes the worktree's `.git` back-pointer into its
 	// (already-created) leaf dir — the last positional arg — so worktreeAdminDir
-	// returns non-empty and the read-tree runs. read-tree then sleeps past the bound.
+	// returns non-empty and the read-tree runs. It makes the registration in the
+	// repository too, which the create tests. read-tree then sleeps past the bound.
 	script := "#!/bin/sh\n" +
 		"last=\"\"\n" +
 		"for a in \"$@\"; do last=\"$a\"; done\n" +
@@ -175,7 +176,9 @@ func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
 		"*read-tree*) exec sleep 30 ;; " +
 		"*is-inside-work-tree*) echo true; exit 0 ;; " +
 		"*abbrev-ref*) echo main; exit 0 ;; " +
-		"*--no-checkout*) printf 'gitdir: %s/.gitadmin\\n' \"$last\" > \"$last/.git\"; exit 0 ;; " +
+		"*--no-checkout*) reg=\"$PWD/.git/worktrees/wt\"; mkdir -p \"$reg\"; printf '../..\\n' > \"$reg/commondir\"; " +
+		"printf '%s/.git\\n' \"$(cd \"$last\" && pwd -P)\" > \"$reg/gitdir\"; " +
+		"printf 'gitdir: %s\\n' \"$reg\" > \"$last/.git\"; exit 0 ;; " +
 		"*) exit 0 ;; esac\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)

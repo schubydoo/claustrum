@@ -400,49 +400,237 @@ func verifyCreatedWorktree(worktreePath string, cp worktreeCheckpoint) string {
 	return ""
 }
 
-// adminRecordMismatch reports whether the admin record that `git worktree add` wrote
-// for the new worktree names another path than worktreePath. It reads
-// <worktreePath>/.git, the admin directory that file names, and that directory's
-// `gitdir` record, and compares the record with <worktreePath>/.git byte for byte.
-// worktreePath is taken after filepath.EvalSymlinks, which keeps the spelling of every
-// component that is not a symlink. 89cb6289 and f6010b97 refuse such a create on a
+// gitDirRegistryDir is the directory that holds the worktree registrations of the
+// git directory gitDir: <common git dir>/worktrees. The commondir file of gitDir
+// names the common git directory, as for a linked worktree. Without that file,
+// gitDir is its own common directory. A commondir that is not a regular file, a
+// FIFO for example, counts as no file, with no wait (readGitPlainFile, not measured).
+func gitDirRegistryDir(gitDir string) string {
+	common := gitDir
+	if b, err := readGitPlainFile(filepath.Join(gitDir, "commondir")); err == nil {
+		common = strings.TrimSpace(string(b))
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(gitDir, common)
+		}
+	}
+	return filepath.Join(common, worktreesSubdir)
+}
+
+// createdRegistrationRefusal tests the .git file of the new worktree of
+// git.worktree_create. refusal is the answer when that file does not name a
+// registration of the repository, or "" when it does. gitDir is the git directory
+// of baseRepo, as git answered it before the add. adminDir is the gitdir value of
+// that .git file (worktreeAdminDir). The caller reads it once. This function does
+// not read the .git file. The call runs right after a successful add.
+//
+// registration is the folder that gets the index of the new worktree. It is "" with
+// a refusal and with no adminDir. On Linux and macOS it is the entry of test 2: the
+// registration of gitDir with the last name of adminDir, not the path that adminDir
+// names. With a value that names a folder that does not exist, 89cb6289 answers
+// success. The registration that git made then holds the index (row D-12, Linux and
+// macOS VMs). For a value that git wrote with no daemon GIT_COMMON_DIR, the two are
+// the same folder. The folder comes from the one gitDirRegistryDir call of the
+// tests. So the commondir file of gitDir is read once, and the index folder is the
+// folder that test 3 saw. On Windows no test runs, and registration is the path
+// that adminDir names (absoluteAdminDir, not measured).
+//
+// claustrum runs four tests.
+// They fit the frames and the disk of 89cb6289 in these rows (Linux VM with git
+// 2.43, macOS VM with git 2.50):
+//
+//  1. The folder that holds the named path has the name "worktrees". The path
+//     <F>/alt/worktrees/w1 passes (row D-3), and so does a path that starts
+//     elsewhere, /elsewhere/worktrees/w1 (row D-12). <F>/WTREG/w1 and
+//     <F>/alt/WORKTREES/w1 do not pass (rows D-1, D-4, D-5 and D-7 on macOS, row
+//     D-11 on Linux). The named path need not exist (row D-12).
+//
+//  2. The registrations directory of gitDir exists, and it holds an entry with the
+//     last name of the path. With GIT_COMMON_DIR of another repository in the
+//     daemon environment, git makes the registration in that repository, and
+//     baseRepo has none. Folder absent: baseRepo has no worktrees folder at all,
+//     and the answer is the "was not populated" text (rows B-E1 and B-E3 and cell
+//     D8e, and row D-8 on the macOS VM only: on the Linux VM the add of row D-8
+//     fails). Folder present, no entry of the name: 89cb6289 answers the "does
+//     not name" text (cell P-p, Linux and macOS VMs). On the Linux VM a system
+//     call trace shows that 89cb6289 removed the old entry before the add. On the
+//     macOS VM the entry is gone at the reply. Cell P-p shows the reference side only.
+//     claustrum keeps the old entry in cell P-p, so its own frame there still
+//     differs (open item of issue 429). Not measured: a worktrees folder that
+//     holds entries of other names and none of this name. claustrum answers the
+//     "does not name" text there, from this rule. With GIT_DIR of that
+//     repository too, the create succeeds (probe row 2 of git.worktree_remove,
+//     89cb6289, Linux and macOS VMs). From the code: git answers that repository
+//     as the git directory.
+//
+//  3. The commondir file of that registration leads back to the common git
+//     directory. A file that holds "../../x" does not (row D-13). The path is
+//     joined as it is spelled. So a registrations directory that is a symlink
+//     passes with "../.." (rows D-1, D-3, D-4 and D-5 on the Linux VM).
+//
+//  4. The gitdir record of that registration can be read as a file. A FIFO, a
+//     folder or no file in its place cannot (cells P-g, P-i and P-j). Cell P-h has a
+//     FIFO as the commondir file and a record of another worktree, and it gets this
+//     text, where cell P-c gets that of adminRecordRefusal. So test 3 comes before
+//     the record, and a commondir file that cannot be read fails test 3.
+//
+// Tests 1, 3 and 4 answer the "does not name" text. No read waits on a FIFO
+// (readGitPlainFile): 89cb6289 answers cells P-g and P-h in under 1 s. Cells P-g
+// to P-j are those of 89cb6289 on a Linux VM with git 2.43 and a macOS VM with git
+// 2.50. In each of them nothing changes after the add.
+//
+// Three more cells start from the state of cell P-c, and 89cb6289 answers the "does
+// not name" text in each, with nothing changed after the add (Linux VM with git
+// 2.43, macOS VM with git 2.50). In cell P-n the commondir file of the old
+// registration is missing, which fails test 3. In cell P-o its gitdir record has
+// mode 0000, which fails test 4. In cell P-q the folder of the old registration has
+// mode 0000. Its stat still answers, so test 2 passes, and the commondir read
+// fails test 3.
+//
+// Not measured: a path that fails test 1 and test 2 together (claustrum runs test 1
+// first). Not measured either: a registrations directory or an entry whose stat
+// fails with another error than "does not exist", for example a registrations
+// directory with no search permission, or a file in its place. Test 2 passes there,
+// the commondir read fails, and claustrum answers the "does not name" text. A
+// registrations directory that is a symlink to nothing counts as absent (from the
+// code, not measured). A leaf with no .git file that can be read is not measured,
+// and claustrum does not refuse it.
+//
+// Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
+// 2.50, 89cb6289 answers the "does not name" text there too, with a registrations
+// directory that is a symlink to <F>/WTREG (cells P-a and P-b). On a Linux VM with
+// git 2.43 both cells succeed: git writes the path through the link. 89cb6289
+// answers that text also for /elsewhere/WTREG/w1, a path that does not exist
+// (cell P-d on Linux and macOS VMs, cell Pd2 on a Linux VM). A baseRepo that is a
+// linked worktree creates, with the registration and the index in the main
+// repository (cell P-e, Linux and macOS VMs). The test is off on Windows
+// (adminRecordChecked), which is not measured.
+//
+// A fifth test follows these four: adminRecordMismatch. All five come before the
+// deadline test of the create (row D-9 on a macOS VM, cell P-f on Linux and macOS
+// VMs).
+func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registration, refusal string) {
+	if adminDir == "" {
+		return "", ""
+	}
+	if !adminRecordChecked {
+		return absoluteAdminDir(worktreePath, adminDir), ""
+	}
+	notOurs := fmt.Sprintf("refusing to create worktree: %s carries a .git file that does not name this "+
+		"repository's own worktree admin directory", worktreePath)
+	admin := filepath.Clean(adminDir)
+	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
+		return "", notOurs
+	}
+	registry := gitDirRegistryDir(gitDir)
+	registration = filepath.Join(registry, filepath.Base(admin))
+	if _, err := os.Stat(registry); errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", worktreePath)
+	}
+	if _, err := os.Stat(registration); errors.Is(err, fs.ErrNotExist) {
+		return "", notOurs
+	}
+	b, err := readGitPlainFile(filepath.Join(registration, "commondir"))
+	if err != nil {
+		return "", notOurs
+	}
+	named := strings.TrimSpace(string(b))
+	if !filepath.IsAbs(named) {
+		named = filepath.Join(registration, named)
+	}
+	common := filepath.Dir(registry)
+	if named != common && !sameCanonicalPath(canonicalPath(named), canonicalPath(common)) {
+		return "", notOurs
+	}
+	if readAdminRecord(registration, worktreePath) == recordUnreadable {
+		return "", notOurs
+	}
+	return registration, ""
+}
+
+// adminRecord is what the gitdir record of a registration says about a worktree.
+type adminRecord int
+
+const (
+	// recordNotCompared: the worktree path is relative or does not resolve.
+	recordNotCompared adminRecord = iota
+	// recordUnreadable: the record cannot be read as a regular file.
+	recordUnreadable
+	// recordNamesLeaf: the record names <worktree>/.git.
+	recordNamesLeaf
+	// recordOfAnother: the record was read and names anything else.
+	recordOfAnother
+)
+
+// readAdminRecord reads the gitdir record of the registration admin and compares it
+// with <worktreePath>/.git. worktreePath is taken after filepath.EvalSymlinks, which
+// keeps the spelling of every component that is not a symlink. The compare is byte
+// for byte, after the newlines at the end of the record are cut.
+//
+// A relative record counts from admin with its symlinks resolved. git writes one
+// with worktree.useRelativePaths, and 89cb6289 creates with such a record (cell
+// Z9a, macOS VM). A relative record of another worktree is a record of another
+// worktree (cell P-k), and so is an empty file (cell P-l). A record that is not a
+// regular file fails at once (readGitPlainFile).
+func readAdminRecord(admin, worktreePath string) adminRecord {
+	b, err := readGitPlainFile(filepath.Join(admin, "gitdir"))
+	if err != nil {
+		return recordUnreadable
+	}
+	if !filepath.IsAbs(worktreePath) {
+		return recordNotCompared
+	}
+	resolved, err := evalSymlinks(worktreePath)
+	if err != nil {
+		return recordNotCompared
+	}
+	record := strings.TrimRight(string(b), "\n")
+	if !filepath.IsAbs(record) {
+		record = filepath.Join(canonicalPath(admin), record)
+	}
+	if record == filepath.Join(resolved, ".git") {
+		return recordNamesLeaf
+	}
+	return recordOfAnother
+}
+
+// adminRecordMismatch reports whether the `gitdir` record of the registration admin
+// was read and names another path than <worktreePath>/.git (readAdminRecord). The
+// caller gets admin from createdRegistrationRefusal, or from absoluteAdminDir if
+// rev-parse gave no answer: it is the folder that gets the index of the new worktree.
+// 89cb6289 and f6010b97 refuse such a create on a
 // macOS VM when the request spells the folder in Unicode NFD and git records it in
 // NFC (row I07a). They run no checkout and roll nothing back. The same request in NFC
-// for an NFD folder succeeds (row I07b). Linux is not measured, and claustrum checks
-// there too. On a Linux VM every create of rows CSa to CSd succeeded on both
+// for an NFD folder succeeds (row I07b). Row I07a is not measured on Linux. Cells P-c, P-f and
+// P-k to P-m measured this test there. On a Linux VM every create of rows CSa to CSd succeeded on both
 // references and on claustrum.
+//
+// The record is that of the entry in the registrations directory of baseRepo, not
+// that of the folder that the .git file names. Cell P-c shows it (89cb6289, Linux
+// VM with git 2.43 and macOS VM with git 2.50). There the daemon has GIT_COMMON_DIR of another repository X,
+// and git makes the registration in X. Its record names the new leaf. baseRepo
+// holds an old entry of the same name, and the record of that entry names another
+// worktree. 89cb6289 refuses with the text of adminRecordRefusal and changes
+// nothing: the index of the old entry keeps its bytes. With no worktrees folder in
+// baseRepo, the answer is the "was not populated" text (rows B-E1 and B-E3, and cell D8e).
+// The state of cell P-c with a timeoutMs that expired during the add gets the P-c
+// refusal, and the leaf and the branch stay (cell P-f, Linux and macOS VMs).
+// So the create runs this test before its deadline test.
+//
+// Three more cells start from the state of cell P-c and get the same refusal, with
+// nothing changed (89cb6289, Linux and macOS VMs). In cell P-k the old record is the
+// relative path ../../../gone/w1/.git. In cell P-l it is an empty file. In cell P-m
+// the old entry also holds a `locked` file. A record that cannot be read as a file
+// gets the other text first (createdRegistrationRefusal, cells P-g, P-i and P-j).
 //
 // Not measured: the raw bytes of the record (the NFC spelling was read from `git
 // worktree list`), whether the compare is bytewise (inferred from I07a and I07b
 // together), and the resolution of symlinks before the compare. A symlinked path
 // such as /tmp on macOS creates as usual on both references (row I01e), so
-// claustrum resolves them. A relative worktreePath or record, and any read that
-// fails, give no mismatch. The check is off on Windows (adminRecordChecked). That is
+// claustrum resolves them. A worktreePath that is relative or does not resolve
+// gives no mismatch. The check is off on Windows (adminRecordChecked). That is
 // claustrum's choice.
-func adminRecordMismatch(worktreePath string) bool {
-	if !adminRecordChecked || !filepath.IsAbs(worktreePath) {
-		return false
-	}
-	admin := worktreeAdminDir(worktreePath)
-	if admin == "" {
-		return false
-	}
-	if !filepath.IsAbs(admin) {
-		admin = filepath.Join(worktreePath, admin)
-	}
-	b, err := os.ReadFile(filepath.Join(admin, "gitdir"))
-	if err != nil {
-		return false
-	}
-	record := strings.TrimRight(string(b), "\n")
-	if !filepath.IsAbs(record) {
-		return false
-	}
-	resolved, err := evalSymlinks(worktreePath)
-	if err != nil {
-		return false
-	}
-	return record != filepath.Join(resolved, ".git")
+func adminRecordMismatch(admin, worktreePath string) bool {
+	return adminRecordChecked && admin != "" && readAdminRecord(admin, worktreePath) == recordOfAnother
 }
 
 // adminRecordRefusal is the answer of git.worktree_create when adminRecordMismatch

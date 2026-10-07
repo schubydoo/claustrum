@@ -127,11 +127,22 @@ func runGitLingering(args []string) int {
 	case has("worktree") && has("add"):
 		// Write the linked `.git` back-pointer into the (already-created) leaf — the last
 		// positional arg — so worktreeAdminDir resolves and the checkout runs.
-		// The admin directory exists, as after a real add, so the index has a place.
+		// The registration exists in the repository, as after a real add: the create
+		// tests it, and the index has a place. The add runs in the repository.
+		// The record names the leaf with its symlinks resolved, as git writes it: the
+		// create compares it with the resolved path. On macOS t.TempDir() is under
+		// /var, a symlink.
 		last := args[len(args)-1]
-		_ = os.Mkdir(filepath.Join(last, ".gitadmin"), 0o755)
-		_ = os.WriteFile(filepath.Join(last, ".git"),
-			[]byte("gitdir: "+filepath.Join(last, ".gitadmin")+"\n"), 0o644)
+		resolved := last
+		if r, err := filepath.EvalSymlinks(last); err == nil {
+			resolved = r
+		}
+		wd, _ := os.Getwd()
+		reg := filepath.Join(wd, ".git", "worktrees", filepath.Base(last))
+		_ = os.MkdirAll(reg, 0o755)
+		_ = os.WriteFile(filepath.Join(reg, "commondir"), []byte("../..\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(reg, "gitdir"), []byte(filepath.Join(resolved, ".git")+"\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(last, ".git"), []byte("gitdir: "+reg+"\n"), 0o644)
 		return 0
 	case has("is-inside-work-tree"):
 		fmt.Print("true\n")
@@ -171,6 +182,7 @@ func runGitLingering(args []string) int {
 //   - "lockparents": the same for each path of a list in the form of PATH.
 //   - "nosearch": set its mode to 0600, so nothing below it can be reached.
 //   - "rmindex": delete the file that GIT_INDEX_FILE names. The leaf is not used.
+//   - "setfile": the leaf is a file here. Write CLAUSTRUM_GITSTUB_VALUE into it.
 //   - "lockmany": make rN/f in it for N in the order 3 0 5 1 7 2 6 4, and make each
 //     rN read-only. Neither the first nor the last one made is r0.
 //
@@ -445,6 +457,9 @@ func applyGitStubAction(action, leaf string) error {
 		return os.Chmod(leaf, 0o600)
 	case "rmindex":
 		return os.Remove(os.Getenv("GIT_INDEX_FILE"))
+	case "setfile":
+		// leaf is a file here. It gets the bytes of CLAUSTRUM_GITSTUB_VALUE.
+		return os.WriteFile(leaf, []byte(os.Getenv("CLAUSTRUM_GITSTUB_VALUE")), 0o644)
 	case "lockmany":
 		for _, i := range []int{3, 0, 5, 1, 7, 2, 6, 4} {
 			dir := filepath.Join(leaf, "r"+strconv.Itoa(i))

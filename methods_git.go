@@ -1028,10 +1028,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// measured against f6010b97 and 90fca6e6 on a Windows VM. For a linked-worktree
 	// baseRepo that is its own admin dir. The references ask git for it with
 	// rev-parse --absolute-git-dir, on the heavy profile, before the add.
-	gitDir := repoGitDir(repo)
-	if d, ok := hardenedGit(repo, true, "rev-parse", "--absolute-git-dir"); ok && d != "" {
-		gitDir = filepath.Clean(filepath.FromSlash(d))
-	}
+	gitDir, gitAnswered := worktreeBaseGitDir(repo)
 	// A caller-supplied timeoutMs (4534d86) bounds the add, the checkout and the copy
 	// step. At timeoutMs 0 with D5 off, both contexts are the unbounded context that
 	// hardenedGit uses, so the default path is byte-identical.
@@ -1095,7 +1092,60 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "worktree_add_failed",
 		})
 	}
-	// The add succeeded. If the caller's deadline expired during it, the request
+	// The add succeeded. The .git file of the new worktree must name a registration
+	// of this repository, and the commondir file and the gitdir record of that
+	// registration must be files that can be read (createdRegistrationRefusal, cells
+	// P-g to P-j). If not, the create is
+	// refused, with no checkout and no rollback: the leaf, the registration and the
+	// branch stay. The test comes before the deadline test: with a timeoutMs that
+	// expired during the add, 89cb6289 answers this refusal (row D-9, macOS VM).
+	//
+	// The .git file is read once for the tests and the index folder, here. The
+	// commondir file of gitDir is read once for them, in the tests. The tests answer
+	// the index folder, so it is the entry that they saw. A .git file or a commondir
+	// file that changes later cannot move the index to a folder that the tests did
+	// not see. A rollback reads both files again for its own check
+	// (createdWorktreeAdminDir).
+	//
+	// The tests need the git directory that git answered. If rev-parse gave no
+	// answer, gitDir is a guess (repoGitDir), and for a baseRepo that is a subfolder
+	// of a repository that folder does not exist. The tests then do not run, and the
+	// index folder is the one that the .git file names. That is claustrum's choice
+	// (not measured).
+	adminDir := worktreeAdminDir(p.WorktreePath)
+	indexDir := ""
+	if adminDir != "" {
+		indexDir = absoluteAdminDir(p.WorktreePath, adminDir)
+	}
+	if gitAnswered {
+		var text string
+		if indexDir, text = createdRegistrationRefusal(gitDir, p.WorktreePath, adminDir); text != "" {
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     text,
+				ErrorCode: "unsafe_path",
+			})
+		}
+	}
+	// indexDir is the registration that gets the index (createdRegistrationRefusal, or
+	// absoluteAdminDir if rev-parse gave no answer).
+	// Its gitdir record names worktreePath after symlink resolution.
+	// If it was read and names anything else, the create is refused, with no checkout
+	// and no rollback (cells P-c and P-k to P-m). Before
+	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
+	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). claustrum makes the calls and does not use their
+	// answer: what 89cb6289 takes from them is not measured. This test comes before
+	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
+	// answers this refusal and keeps the leaf and the branch (cell P-f, Linux and macOS VMs).
+	if adminRecordMismatch(indexDir, p.WorktreePath) {
+		_, _ = gitDirWorkTreeToplevel(gitDir, repo, commonDirPinEnv(repo))
+		return okResult(req.ID, worktreeResult{
+			Success:   false,
+			Error:     adminRecordRefusal(p.WorktreePath),
+			ErrorCode: "unsafe_path",
+		})
+	}
+	// If the caller's deadline expired during the add, the request
 	// answers timeout "before the checkout started" and rolls back. errorCode
 	// "timeout" is reserved for the caller's own deadline. The reference has no D5.
 	// Every rollback below appends an undo text when one of its steps fails.
@@ -1109,19 +1159,6 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			BranchKept: kept,
 		})
 	}
-	// The admin record of the new worktree names worktreePath after symlink resolution.
-	// If it does not, the create is refused, with no checkout and no rollback. Before
-	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
-	// as the work tree (row I07a, macOS VM). claustrum makes the calls and does not use their
-	// answer: what 89cb6289 takes from them is not measured.
-	if adminRecordMismatch(p.WorktreePath) {
-		_, _ = gitDirWorkTreeToplevel(gitDir, repo, commonDirPinEnv(repo))
-		return okResult(req.ID, worktreeResult{
-			Success:   false,
-			Error:     adminRecordRefusal(p.WorktreePath),
-			ErrorCode: "unsafe_path",
-		})
-	}
 	// Second half of the two-step: the read-tree fills the working tree from the new
 	// branch. It runs in the leaf with --git-dir set to the git dir of baseRepo and its
 	// index in a new temporary directory (GIT_INDEX_FILE). Its --work-tree is the leaf
@@ -1129,9 +1166,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// index becomes the new worktree's own index. Measured against f6010b97 and
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
-	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
+	if indexDir != "" {
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
-			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir, adminDir, checkoutRev, commonDirPinEnv(repo))
+			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
+			indexDir, checkoutRev, commonDirPinEnv(repo))
 		switch {
 		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and
