@@ -148,12 +148,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - When `git.worktree_create` rolls back a worktree, it deletes
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
-      directory. Before the add, on Linux and macOS, create removes each stale
+      directory. Before the add, on Linux and macOS, create removes one stale
       entry of `<baseRepo>/.git/worktrees`: an entry whose `gitdir` record
-      names the `.git` of the new leaf. Each delete is one `os.Root.RemoveAll`
+      names the `.git` of the new leaf. It removes that entry only if it is the
+      only stale entry of the folder (`89cb6289`, cells A13 and A13b on Linux
+      and macOS VMs, cells S1 to S7c on a Linux VM). The delete is one `os.Root.RemoveAll`
       of the entry name through a root at that folder, after `wipesHomeDir` on
       the entry path. An entry with a `locked` file stays (`89cb6289`, cells A1
-      to A12c, Linux VM). On Windows that step is one `os.RemoveAll` of the
+      to A12c, Linux and macOS VMs). On Windows that step is one `os.RemoveAll` of the
       entry path, with no `locked` test (not measured).
       The second rollback follows a successful add. On Linux and
       macOS four refusals come before it, and they delete nothing. Two answer
@@ -163,7 +165,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       P-j, Linux and macOS VMs). The third answers a registration whose `gitdir`
       record was read and names another worktree. The fourth answers a
       registration that is a stale entry which the step before the add left in
-      place (`89cb6289`, cells A9 g, A9b g and A10 g, Linux VM). The first
+      place (`89cb6289`, cells A9 g, A9b g and A10 g, Linux and macOS VMs). The first
       three come before the
       `timeoutMs` test that follows the add (`89cb6289`, row D-9 on a macOS VM
       and cell P-f on Linux and macOS VMs). From the code, the fourth does too
@@ -185,7 +187,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       once after the add. The rollback reads neither the `.git` file of the leaf
       nor the `gitdir` record again. `89cb6289` removes that entry when either
       one is changed (cells Z16 and Z18 on Linux and
-      macOS VMs, cells B1 to B3 and B5 on a Linux VM). The delete is one
+      macOS VMs, cells B1 to B3 and B5 on the same VMs). The delete is one
       `os.Root.RemoveAll` of that name through a root at the registrations
       directory, after `wipesHomeDir` on the entry path. After the open of the
       root, and through it, the entry must still have the identity that the
@@ -209,7 +211,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       be read or names another path (`89cb6289`, cells P-c and P-g to P-m,
       Linux and macOS VMs). The placement then reads no record again: a record
       that goes during the checkout does not stop it. With the record gone,
-      `89cb6289` answers success in cell B4 (Linux VM) and the `openat` text of
+      `89cb6289` answers success in cell B4 (Linux and macOS VMs) and the `openat` text of
       a 0500 folder in cell Z15 (Linux and macOS VMs). The placement has the
       identity test of the rollback, on the root that it opened. It places
       nothing if the folder at the path is not the accepted one at that test
@@ -446,7 +448,7 @@ D24 is on Linux and macOS, and from the code, the frames are equal in its two ce
 If git answered `rev-parse --absolute-git-dir`, a rollback of
 `git.worktree_create` deletes the registration only if the
 folder at its path is still the folder that the tests after the add accepted.
-`89cb6289` deletes the folder at that path in cells B6 and B6b (Linux VM, 2 runs
+`89cb6289` deletes the folder at that path in cells B6 and B6b (Linux and macOS VMs, 2 runs
 each). In cell B6b that folder holds the registration of a live sibling worktree.
 The placement of the index has the same test (not measured). The guard stays by
 the maintainer's decision of 2026-10-07, not by a rule 3 clause. See the entry.

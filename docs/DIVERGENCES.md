@@ -175,7 +175,7 @@ rather than repeating them in each entry:
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [D23](#d23) | The environment block of a child is in name order (Windows). `89cb6289` keeps the order of the launching block and adds its entries after it | always-on (Windows) | always-on | Maintainer decision of 2026-10-06. The response frames are equal in the measured rows. The order of the block differs | a client that depends on the order of the block, or a decision to match the block byte for byte |
-| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux VM), and in B6b it holds the registration of a live sibling worktree | always-on (Linux and macOS) | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (from the code for this build). The disk differs | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
+| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b (Linux and macOS VMs), and in B6b it holds the registration of a live sibling worktree | always-on (Linux and macOS) | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells (from the code for this build). The disk differs | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -1203,7 +1203,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   failed checkout with its own text, `the registration <entry> is not the folder
   that was tested after the add`.
 - **Reference side, measured.** A Linux VM with git 2.43 ran `89cb6289` on
-  2026-10-07, 2 runs per cell. A git wrapper changes the registrations folder of
+  2026-10-07, 2 runs per cell. A macOS VM with git 2.50 ran it too, 2 runs per
+  cell, with the same disk. A git wrapper changes the registrations folder of
   `baseRepo` and then fails the read-tree.
   - Cell B6. The wrapper renames the new registration `w1` to `w1x` and makes a
     new empty folder `w1`. `89cb6289` removes the empty `w1` and keeps `w1x`.
@@ -1230,8 +1231,11 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   cell B6b. No frame differs there. A create reaches the guard only if the
   registrations folder changes between the add and the rollback.
 - **Not measured.** The guard at the placement of the index: no cell has a
-  replaced folder with a read-tree that exits 0. macOS. Not measured: this
-  rollback with a daemon `GIT_DIR` or `GIT_COMMON_DIR`. If git gave no answer
+  replaced folder with a read-tree that exits 0. A replaced folder with a
+  daemon `GIT_DIR` of another repository is not measured either. Cells B9 and
+  B9b have that environment with no replaced folder: the registration that git
+  made in that repository is gone after the rollback on `89cb6289` (Linux and
+  macOS VMs). If git gave no answer
   to `rev-parse --absolute-git-dir`, the guard does not run.
 - **Reopen trigger.** A measurement that shows the reference keeping such a
   folder. Or a decision to match the disk of cells B6 and B6b.
