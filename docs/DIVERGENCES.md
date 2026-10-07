@@ -174,6 +174,7 @@ rather than repeating them in each entry:
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
+| [D23](#d23) | The environment block of a child is in name order (Windows). `89cb6289` keeps the order of the launching block and adds its entries after it | always-on (Windows) | always-on | Maintainer decision of 2026-10-06. The response frames are equal in the measured rows. The order of the block differs | a client that depends on the order of the block, or a decision to match the block byte for byte |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -1048,6 +1049,73 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `scratch/i429/s2-linux/REPORT-rev1.md`, and in `REPORT-val3.md` under
   `scratch/i429/s2-linux`, `s2-macos` and `s2-windows`, and in
   `scratch/i429/s2-linux/REPORT-val4.md`.
+
+### D23 · The environment block of a child is in name order (Windows) { #d23 }
+
+- **Behavior.** On Windows the environment block of a child that claustrum
+  starts is in name order. The compare folds the ASCII letters to upper case.
+  That holds for a `process.spawn` child, for a git child and for the `--version`
+  child of `-install`. From the Go source: since Go 1.26, `os/exec`,
+  `os.StartProcess` and `syscall.StartProcess` sort the Windows environment block
+  by name. claustrum builds with Go 1.26. The daemon builds no frame from the order.
+- **Reference side, measured.** A Windows VM ran `89cb6289` on 2026-10-06. The
+  child printed its raw block in block order.
+  - Rows V1, V3 and V4. The block is the launching block of the daemon in its
+    given order, then `CLAUDE_SSH_DAEMON_CHILD=1`. The launching block of row V4
+    is not in name order. Its first entry `ZZZ_S6_FIRST` is at index 0 in the
+    child, and `CLAUDE_SSH_DAEMON_CHILD` is the last entry, in 4 of 4 runs.
+  - Row V2. The daemon has `Path=<value>` and no `PATH`. The child has no `Path`
+    entry, and `PATH=<value>` is its last entry, after `CLAUDE_SSH_DAEMON_CHILD`.
+  - Row V5. One new caller key is the last entry, in 10 of 10 runs on each of two
+    launching blocks.
+  - Row V6. A caller key that equals a name exactly replaces the value in place.
+  - Row V7. A caller key differs from a name in case only. The old entry is gone,
+    and the caller spelling is the last entry.
+  - Row V9. Three new caller keys in the request order `KB, KA, KC`, 120 runs.
+    The child got `KB, KA, KC` 91 times, `KA, KC, KB` 16 times and `KC, KB, KA`
+    13 times. Each order is a rotation of the request order. 40 of the runs
+    came from 20 daemon starts.
+  - Row V10. Nine new caller keys, 10 runs on each of two launching blocks. Each
+    set of 10 runs gave 10 different orders.
+  - Row V17h, `git.status` with the printing child as `git.exe`. The entries that
+    a git child gets come after `CLAUDE_SSH_DAEMON_CHILD`. Their order was the same
+    in the 2 runs on each of two launching blocks.
+  - Row V17i, `-install`. The `--version` child got the launching block in its
+    given order, with no `CLAUDE_SSH_DAEMON_CHILD`.
+- **claustrum side, measured.** The same rows on the same VM, build `803f5ed`.
+  The whole block was in name order in every run of every row. In row V1
+  `CLAUDE_SSH_DAEMON_CHILD` was the third of 38 entries. On `89cb6289` it was
+  the last of them. In row V9 the child got `KA, KB, KC` in 120 of 120 runs. In
+  row V10 it got name order in 20 of 20 runs.
+- **Equal in those rows.** The set of entries, names and values, was equal on
+  both sides. Row V11c is the one exception, on both sides: a request with
+  `S6_DC` and `s6_dc`. One of the two entries reached the child, and which one
+  varied per run on `89cb6289` and on claustrum. The response frames were equal
+  in 44 of 44 row groups, and the command lines were equal. In row V17i with a
+  launching block in name order, both children got the same order.
+- **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
+  and no key. On Linux and macOS the toolchain does not reorder the block, so the
+  order is the one `buildEnv` passes, and there claustrum builds no order of its
+  own. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+- **Why always-on.** The maintainer's decision of 2026-10-06: name order stays,
+  and no code changes. For two or more new caller keys `89cb6289` gave more than
+  one order (rows V9 and V10), so no fixed order equals it there. The rest of the
+  block had one order on `89cb6289` in every run of a row, and claustrum does not
+  match that order. No clause of rule 3 covers this entry. It stands on that
+  decision, and the reopen trigger below takes it back.
+- **Cost.** A child that reads the position of an entry in its block gets another
+  position. A child that prints its block prints it in another order, so the
+  bytes of its stream frames differ. An earlier Windows VM run showed that for
+  `cmd /c set` (rows WN01a and WN01b). A lookup by name gives the same value on
+  both sides in the measured rows, apart from row V11c.
+- **Not measured.** The child of a managed launcher. One request with `PATH`,
+  `Path` and `path` together.
+- **Reopen trigger.** A client that depends on the order of the block. Or a
+  decision to match the block byte for byte. From the Go source: the sort is
+  inside the standard library and has no switch.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → process.spawn. Evidence in
+  `scratch/i429/s6-envorder-windows/REPORT.md` and in `cmp/table.md`,
+  `cmp/tally.md` and `cmp/detail.md` beside it.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 

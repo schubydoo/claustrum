@@ -336,6 +336,11 @@ not exist as sent (Linux and macOS VMs). With `worktreeRoot`, rows q2 to q4
 (Linux VM) differ in the frame too. That is the maintainer's decision of
 2026-10-03. See the entry.
 
+D23 is Windows-only. The environment block of a child is in name order, because
+Go 1.26 sorts it at the process start. `89cb6289` keeps the order of its
+launching block and adds its entries after it. Name order stays by the
+maintainer's decision of 2026-10-06, not by a rule 3 clause. See the entry.
+
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →
 [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Per-method wire frames →
