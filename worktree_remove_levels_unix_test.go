@@ -10,7 +10,7 @@ import (
 
 // git.worktree_remove with a folder level that the daemon cannot read or search. The
 // rows are the mode rows of 89cb6289 on Linux and macOS VMs (B1 to B17d, and B18 on
-// the macOS VM), and cells U1, U13b, U14 and U17a to U19 of the round after them. This
+// the macOS VM), and cells U1, U13b, U14, U17a to U19, N6a and N6b of the rounds after them. This
 // file is
 // unix only: chmod denies nothing on Windows, and Windows refuses a worktreeRoot.
 
@@ -213,10 +213,10 @@ func TestWorktreeRemoveExternalLockedUnderUnreadableRoot(t *testing.T) {
 	f.keptExternal(t)
 }
 
-// Cells U17a to U19: a worktree in the repository outside .claude. A restricted folder
-// above it answers as the levels of .claude do. For a direct child of a repository of
-// mode 0600, the text names the worktree (cell U19). Before, it named .claude. Nothing
-// is deleted.
+// Cells U17a to U19, N6a and N6b: a worktree in the repository outside .claude. A
+// restricted folder above it answers as the levels of .claude do. For a repository of
+// mode 0600, the text names the first component of the path below it. Before, it named
+// .claude. Nothing is deleted.
 func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
 	skipIfRoot(t)
 	for _, c := range []struct {
@@ -231,6 +231,8 @@ func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
 		{"U18a", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o300, "openat b"},
 		{"U18b", filepath.Join("a", "b", "c", "wt"), filepath.Join("a", "b"), 0o600, "statat ."},
 		{"U19", "wt", ".", 0o600, "statat wt"},
+		{"N6a", filepath.Join("a", "wt"), ".", 0o600, "statat a"},
+		{"N6b", filepath.Join("a", "b", "c", "wt"), ".", 0o600, "statat a"},
 	} {
 		t.Run(c.cell, func(t *testing.T) {
 			f := newRmFixture(t)

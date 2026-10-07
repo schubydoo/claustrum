@@ -109,7 +109,8 @@ func locateExternalWorktree(worktreePath string) (removeTarget, error) {
 // externalRootDenied reports whether the worktreeRoot of worktreePath cannot be opened
 // or searched. The answer of such a root comes before the symlink refusal of the
 // <directory> level: with a root of mode 0300 and a symlinked <directory>, 89cb6289
-// answers "open <root>: permission denied" (cell U13b on Linux and macOS VMs).
+// answers "open <root>: permission denied" (cell U13b on Linux and macOS VMs). Modes
+// 0100, 0000 and 0200 answer the same (cells N1a to N1c on a Linux VM).
 func externalRootDenied(worktreePath string) bool {
 	root, err := os.OpenRoot(filepath.Dir(filepath.Dir(filepath.Clean(worktreePath))))
 	if err != nil {

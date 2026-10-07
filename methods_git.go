@@ -1339,14 +1339,16 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// whole reply. Measured side by side against f6010b97 on Linux, and the
 		// reference's answers also on macOS.
 		//
-		// For a worktree that is a direct child of baseRepo, the look is at the worktree
-		// name: 89cb6289 answers "statat wt: permission denied" for <repo>/wt and a
-		// repository of mode 0600 (cell U19, Linux and macOS VMs). A deeper path outside
-		// .claude with such a repository is not measured, and keeps the look at .claude.
-		// Windows is not measured, and keeps it too.
+		// On Linux and macOS the look is at the first component of worktreePath below
+		// baseRepo. For a repository of mode 0600, 89cb6289 answers "statat wt" for
+		// <repo>/wt (cell U19 on Linux and macOS VMs, cell N4 on a Linux VM), "statat a"
+		// for <repo>/a/wt and <repo>/a/b/c/wt (cells N6a and N6b, Linux VM) and "statat
+		// .claude" for a path under .claude (cell N7a, Linux VM). Mode 0400 answers the
+		// same (cell N5, Linux VM). Windows is not measured, and keeps the look at
+		// .claude.
 		first := ".claude"
-		if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && filepath.Dir(rel) == "." && runtime.GOOS != "windows" {
-			first = rel
+		if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && runtime.GOOS != "windows" {
+			first, _, _ = strings.Cut(rel, string(filepath.Separator))
 		}
 		if err := statInsideDir(repo, first); err != nil {
 			return refuse("failed to remove worktree: " + err.Error())
