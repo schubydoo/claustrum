@@ -15,10 +15,10 @@ import (
 )
 
 // A FIFO where the daemon reads a `.git` file, a `commondir` file or a `gitdir`
-// record. The rows are B-C0 to B-L1, side by side against 89cb6289 on Linux and macOS
-// VMs. No test here opens a FIFO for writing: the rows have no writer either. A read
-// that waits for a writer therefore fails its test at fifoAnswerLimit and stays
-// parked until the test binary ends.
+// record. The rows are B-C0 to B-L1 and the cells are N1, N9, N10 and N12, side by
+// side against 89cb6289 on Linux and macOS VMs. No test here opens a FIFO for
+// writing: the rows have no writer either. A read that waits for a writer therefore
+// fails its test at fifoAnswerLimit and stays parked until the test binary ends.
 
 // fifoAnswerLimit bounds each call that meets a FIFO. 89cb6289 answers in under 2 s
 // with a FIFO as a `.git` file (rows B-F1, B-F4, B-S2 and B-L1) or a `commondir` file
@@ -285,8 +285,8 @@ func TestFifoOwnGitdirRecordRemoveSucceeds(t *testing.T) {
 }
 
 // Cell N9: as N1, with a LOCKED worktree. The answer is {"success":true}, as on
-// 89cb6289 (Linux VM). The folder and the branch go. The registration and its
-// `locked` file stay.
+// 89cb6289 (Linux and macOS VMs). The folder and the branch go. The registration
+// and its `locked` file stay.
 func TestFifoOwnGitdirRecordOfLockedWorktreeRemoveSucceeds(t *testing.T) {
 	T, wt, entry := newFifoWorktree(t)
 	runGit(t, T, "worktree", "lock", wt)

@@ -1556,24 +1556,22 @@ repository, and `T/a` is a folder in it.
 | B-G1 | the `gitdir` record of another entry is a FIFO | create with `baseRepo` T | no answer in 40 s |
 
 From the code: in row B-G3 claustrum does not read the `commondir`, so it does not
-verify the entry. The git calls of `89cb6289` are those of an entry that is not
-verified: the listing and the rev-parse twice, then the pair.
+verify the entry.
 
 Row B-G3 ran without `worktreeRoot`. Cell N2 is that state with `worktreeRoot`, on
-a Linux VM. `89cb6289` and claustrum give no answer in 40 s there, and nothing is
-deleted. Each waits in its child `git worktree list --porcelain -z`.
+Linux and macOS VMs. `89cb6289` and claustrum give no answer in 40 s there, and
+nothing is deleted. Each waits in its child `git worktree list --porcelain -z`.
 
 The cells below ran side by side against `89cb6289` on a Linux VM, and in part on a
 macOS VM. The Answer column is the frame and the disk state of `89cb6289`. In each
-cell but N9 the frame and the files on disk of claustrum are equal to it. For cell
-N9 a test of this repository pins the same frame and the same disk state.
+cell the frame and the files on disk of claustrum are equal to it.
 
 | Cell | State | Request | Answer |
 |---|---|---|---|
 | N1 | the `gitdir` record of the entry of the worktree is a FIFO | remove of that worktree, without `worktreeRoot` | `{"success":true}`. The folder and the branch go, and the entry stays (Linux and macOS) |
-| N9 | as N1, and the worktree is locked | the same remove | `{"success":true}`. The folder and the branch go, and the entry and its `locked` file stay (Linux) |
-| N10 | the worktree is locked, and the `commondir` file of its entry is a FIFO | the same remove | the locked refusal, and nothing is deleted (Linux) |
-| N12 | a second entry names the same worktree, and its `gitdir` record is a FIFO | the same remove | `{"success":true}`. The folder, the first entry and the branch go, and the second entry stays (Linux) |
+| N9 | as N1, and the worktree is locked | the same remove | `{"success":true}`. The folder and the branch go, and the entry and its `locked` file stay (Linux and macOS) |
+| N10 | the worktree is locked, and the `commondir` file of its entry is a FIFO | the same remove | the locked refusal, and nothing is deleted (Linux and macOS) |
+| N12 | a second entry names the same worktree, and its `gitdir` record is a FIFO | the same remove | `{"success":true}`. The folder, the first entry and the branch go, and the second entry stays (Linux and macOS) |
 | N3 | the `.git` file of T names its git directory and is padded with newlines to 2 MiB | `git.info`, `git.status` and create in T | `isRepo` false, and `not_a_repo` for the create (Linux and macOS) |
 | N4 | the `commondir` file of the entry of the worktree is a regular file of 2 MiB | remove of that worktree | `{"success":true}`. The folder, the entry and the branch go (Linux and macOS) |
 | N5 | `T/a/.git` is a socket | `git.info` and create with `T/a` | the answers of T, and the create succeeds (Linux) |
@@ -1584,8 +1582,15 @@ N9 a test of this repository pins the same frame and the same disk state.
 In row B-G1 `89cb6289` waits in its child `git worktree add`. A plain `git worktree
 add` on that fixture waits too. From the code and a unit test: claustrum passes over
 the FIFO record and starts the same call. claustrum adds no bound of its own there.
-From the code: the `timeoutMs` of the caller does not end that call, and the opt-in
-`git-timeout` (D5) does.
+With `timeoutMs` 3000 in the state of row B-G1, `89cb6289` and claustrum give no
+answer in 40 s (cell N7, Linux VM). From the code: the opt-in `git-timeout` (D5)
+ends that call.
+
+The two runs sent 52 requests on the Linux VM and 37 on the macOS VM. In every
+request the frame and the files on disk of claustrum are equal to `89cb6289`. The
+git call count differs in 17 requests on Linux and in 11 on macOS. There claustrum
+runs fewer calls, and no call that `89cb6289` does not run. No client can observe
+the count.
 
 Not measured:
 
