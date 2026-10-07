@@ -1,3 +1,5 @@
+//go:build windows
+
 package main
 
 import (
@@ -7,10 +9,10 @@ import (
 	"testing"
 )
 
-// TestInstallWorktreeIndexCopy pins the copy fallback of installWorktreeIndex. The
-// first rename fails, as across file systems. A full copy lands at dst. A write that
-// fails partway leaves no dst and no temporary file, so git never reads a partial
-// index.
+// TestInstallWorktreeIndexCopy pins the copy fallback of installWorktreeIndex on
+// Windows. The first rename fails, as across file systems. A full copy lands at dst.
+// A write that fails partway leaves no dst and no temporary file, so git never reads
+// a partial index.
 func TestInstallWorktreeIndexCopy(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -37,7 +39,9 @@ func TestInstallWorktreeIndexCopy(t *testing.T) {
 					return errors.New("no space left on device")
 				}
 			}
-			installWorktreeIndex(src, dst)
+			if err := installWorktreeIndex(src, dir); err != nil {
+				t.Errorf("installWorktreeIndex = %v, want nil on Windows", err)
+			}
 			got, err := os.ReadFile(dst)
 			if tc.failCopy {
 				if err == nil {

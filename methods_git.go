@@ -1112,9 +1112,23 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		rtStderr, rtDrained, rtErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
+		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir, adminDir, checkoutRev, commonDirPinEnv(repo))
 		switch {
+		case installErr != nil:
+			// git exited 0, and the index did not reach the registration. On Linux and
+			// macOS VMs 89cb6289 answers that as a failed checkout and rolls back (rows
+			// A14, A14f and A14b, and cell X1). The text is indexInstallText. A placement that
+			// fails after a drain overrun takes this arm too. That is claustrum's
+			// choice (not measured).
+			msg := "git worktree add failed (checkout): " + indexInstallText(rtStderr, installErr)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+			return okResult(req.ID, worktreeResult{
+				Success:    false,
+				Error:      msg + undo,
+				ErrorCode:  "worktree_add_failed",
+				BranchKept: kept,
+			})
 		case rtDrained:
 			// git exited 0, but a checkout descendant held the daemon's output pipe
 			// past the ~5s drain cap. hardenedGitCheckout already killed and reaped
@@ -1820,17 +1834,25 @@ func worktreeAdminDir(worktreePath string) string {
 // `.git/worktrees`, so the containment check alone passes) would let the rollback
 // take that unrelated registration. git.worktree_remove verifies its entry in
 // worktreeremove.go instead.
-func worktreeAdminBelongsTo(adminDir, worktreePath string) bool {
+//
+// A relative record counts from adminDir. git writes one with
+// worktree.useRelativePaths (cell Z9b, macOS VM). readErr is the error of a record
+// that cannot be read, and nil otherwise.
+func worktreeAdminBelongsTo(adminDir, worktreePath string) (belongs bool, readErr error) {
 	b, err := os.ReadFile(filepath.Join(adminDir, "gitdir"))
 	if err != nil {
-		return false
+		return false, err
+	}
+	record := strings.TrimSpace(string(b))
+	if !filepath.IsAbs(record) {
+		record = filepath.Join(adminDir, record)
 	}
 	// sameCanonicalPath, not ==: on Windows git writes this record with forward slashes,
 	// and once the worktree is deleted neither side can be resolved, so the two
 	// spellings differ only in slash direction. Measured against f6010b97 on a
 	// Windows 11 VM, where the reference deletes the entry.
-	return sameCanonicalPath(canonicalPathOfGone(strings.TrimSpace(string(b))),
-		canonicalPathOfGone(filepath.Join(worktreePath, ".git")))
+	return sameCanonicalPath(canonicalPathOfGone(record),
+		canonicalPathOfGone(filepath.Join(worktreePath, ".git"))), nil
 }
 
 // canonicalPathOfGone is canonicalPath for a path that possibly no longer exists. It resolves

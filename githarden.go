@@ -342,7 +342,9 @@ var worktreeCreateDrainCap = 5 * time.Second
 //     surfaces this as exec.ErrWaitDelay. The caller routes it to the timeoutMs
 //     verdict (success if timeoutMs exceeded the drain, else timeout + rollback with
 //     the "after the checkout finished" message) — NEVER to worktree_add_failed and
-//     NEVER to "during the checkout";
+//     NEVER to "during the checkout". One case is apart: on Linux and macOS, an
+//     index install that fails after a drain overrun answers worktree_add_failed
+//     (runWorktreeCheckout, claustrum's choice, not measured);
 //   - err: the underlying exec error — git's own "signal: killed" *ExitError when the
 //     deadline killed a still-running git, exec.ErrWaitDelay on a drain overrun, or a
 //     non-zero *ExitError otherwise. nil when git exited 0.
@@ -391,18 +393,19 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
-// git exits 0, moves that index into adminDir, the new worktree's registration. The
-// temporary directory is removed afterwards. The results are those of
-// hardenedGitCheckout. The -c pins core.splitIndex=false and core.commitGraph=false
-// follow the profile, as in the argv measured against f6010b97. workTree is the
-// --work-tree value (checkoutWorkTree). The working directory stays leaf.
+// git exits 0, places that index in adminDir, the new worktree's registration
+// (installWorktreeIndex). The temporary directory is removed afterwards. stderr,
+// drained and err are those of hardenedGitCheckout. The -c pins
+// core.splitIndex=false and core.commitGraph=false follow the profile, as in the
+// argv measured against f6010b97. workTree is the --work-tree value
+// (checkoutWorkTree). The working directory stays leaf.
 //
-// Moving the index is best-effort: a real read-tree that exits 0 has written it. If
-// the move fails, the worktree has no index, as after `worktree add --no-checkout`.
-func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, rev string, pin []string) (stderr string, drained bool, err error) {
+// installErr is the error of a placement that failed. The caller answers it as a
+// failed checkout. On Windows it is always nil.
+func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, rev string, pin []string) (stderr string, drained bool, err, installErr error) {
 	idxDir, err := os.MkdirTemp("", checkoutIndexTempPrefix)
 	if err != nil {
-		return "", false, err
+		return "", false, err, nil
 	}
 	defer func() { _ = os.RemoveAll(idxDir) }()
 	idx := filepath.Join(idxDir, "index")
@@ -411,47 +414,26 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		if !filepath.IsAbs(adminDir) {
-			adminDir = filepath.Join(leaf, adminDir)
-		}
-		installWorktreeIndex(idx, filepath.Join(adminDir, "index"))
+		installErr = installWorktreeIndex(idx, absoluteAdminDir(leaf, adminDir))
 	}
-	return stderr, drained, err
+	return stderr, drained, err, installErr
 }
 
-// installWorktreeIndex moves the index file src to dst. A rename fails across file
-// systems, so a copy is the fallback. The copy goes to a temporary file beside dst
-// and is renamed into place only after a full write, so a failed copy leaves no
-// index rather than a partial one. Best-effort: see runWorktreeCheckout.
-func installWorktreeIndex(src, dst string) {
-	if indexRename(src, dst) == nil {
-		return
-	}
-	b, err := os.ReadFile(src)
-	if err != nil {
-		return
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(dst), "index.tmp-")
-	if err != nil {
-		return
-	}
-	err = indexWrite(tmp, b)
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = indexRename(tmp.Name(), dst)
-	}
-	if err != nil {
-		_ = os.Remove(tmp.Name())
-	}
+// indexInstallText is the text after "git worktree add failed (checkout): " when
+// the placement of the index failed. The stderr of the checkout and the error are
+// joined with nothing between them, and the rule of worktreeGitText then applies to
+// the joined text. Measured against 89cb6289 on a Linux VM:
+//
+//   - A stderr that ends with one newline gives one space before the error (rows
+//     A14 and A14f). With no final newline there is no space (cell Y2a), and with
+//     two there are two (cell Y2b).
+//   - With no stderr, the text is the error alone (cell X2).
+//   - The stderrHeadCap cut covers the error too. A stderr of 478 bytes keeps the
+//     whole error, 500 bytes keep its first 12 bytes, and 512 or 1509 bytes keep
+//     none of it (cells Y1b, Y1a, Y1c and X3).
+func indexInstallText(stderr string, installErr error) string {
+	return worktreeGitText(stderr+installErr.Error(), nil)
 }
-
-// indexRename and indexWrite are seams for the tests of installWorktreeIndex.
-var (
-	indexRename = os.Rename
-	indexWrite  = func(f *os.File, b []byte) error { _, err := f.Write(b); return err }
-)
 
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no
 // answer: the admin dir that repo's .git file names, or <repo>/.git.
