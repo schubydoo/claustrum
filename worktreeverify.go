@@ -112,7 +112,8 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 }
 
 // undoFailedCheckout rolls back git.worktree_create after the add succeeded: after
-// a failed read-tree checkout, or after the caller's timeoutMs expired during the
+// a failed read-tree checkout, a failed placement of the index (Linux and macOS),
+// or after the caller's timeoutMs expired during the
 // add, the checkout, a checkout drain that overran the drain cap, or the copy step.
 // It returns "" when the undo finished, or the text that the caller appends to the
 // frame's error. The errorCode of the frame does not change. kept is true when the
@@ -132,7 +133,15 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     (runBranchStep) on the branch that the call created. In attach mode branch is
 //     "", so no git call runs. After the attach fallback, the call created
 //     branchName. The caller's expired deadline does not stop the branch step (rows
-//     C04 and B2-10).
+//     C04 and B2-10). If the registration cannot be deleted, the branch step does
+//     not run, step C still runs, and the text is "; and the undo could not finish
+//     for <leaf>: the worktree registration and the branch remain; remove them by
+//     hand before retrying (RemoveAll <registration name>: <OS error>)". 89cb6289
+//     gives it after a failed placement of the index, with the leaf gone (rows A14
+//     and A14f on a Linux VM, A14 and A14b on a macOS VM). The same text in attach
+//     mode, after a timeout, and beside a step C text is claustrum's choice (not
+//     measured). On Windows a registration that cannot be deleted adds no text, and
+//     the branch step runs (removeCreatedRegistration): Windows is not measured.
 //   - Step C removes the leaf directory, which is now empty. If that fails, the text
 //     is "; and the undo could not finish for <leaf>: the worktree directory remains
 //     (re-populated while undoing?); remove it by hand before retrying (removeat
@@ -170,10 +179,13 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 			return fmt.Sprintf("; and the undo could not finish for %s: %s; remove them by hand before retrying (%s)", worktreePath, remain, detail), false
 		}
 	}
-	if adminDir != "" {
-		_ = os.RemoveAll(adminDir)
+	// A registration that cannot be deleted stays, and then the branch step does not
+	// run: 89cb6289 runs no git call after it (row A14, Linux VM).
+	var res branchStepResult
+	regErr := removeCreatedRegistration(adminDir)
+	if regErr == nil {
+		res = runBranchStep(repo, branch)
 	}
-	res := runBranchStep(repo, branch)
 	var parts []string
 	leafGone := false
 	if touchLeaf && leafSafe() {
@@ -183,7 +195,9 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 			leafGone = true
 		}
 	}
-	if t := rollbackBranchText(repo, branch, res, !leafGone); t != "" {
+	if regErr != nil {
+		parts = append(parts, fmt.Sprintf("the worktree registration and the branch remain; remove them by hand before retrying (%v)", regErr))
+	} else if t := rollbackBranchText(repo, branch, res, !leafGone); t != "" {
 		parts = append(parts, t)
 	}
 	if len(parts) == 0 {

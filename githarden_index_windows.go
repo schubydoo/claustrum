@@ -1,0 +1,62 @@
+//go:build windows
+
+package main
+
+import (
+	"os"
+	"path/filepath"
+)
+
+// placeWorktreeIndex moves the index that the checkout wrote at src into adminDir,
+// the registration of the new worktree, as the file "index". A rename fails across
+// file systems, so a copy is the fallback. The copy goes to a temporary file beside
+// the index and is renamed into place only after a full write, so a failed copy
+// leaves no index rather than a partial one.
+//
+// It is best-effort and always returns nil: a real read-tree that exits 0 has
+// written the index. If the move fails, the worktree has no index, as after
+// `worktree add --no-checkout`. The index file of 89cb6289 on Windows is not
+// measured, so Windows keeps this move. Linux and macOS make a new file
+// (githarden_index_unix.go).
+func placeWorktreeIndex(src, adminDir string) error {
+	dst := filepath.Join(adminDir, "index")
+	if indexRename(src, dst) == nil {
+		return nil
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return nil
+	}
+	tmp, err := os.CreateTemp(adminDir, "index.tmp-")
+	if err != nil {
+		return nil
+	}
+	err = indexWrite(tmp, b)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = indexRename(tmp.Name(), dst)
+	}
+	if err != nil {
+		_ = os.Remove(tmp.Name())
+	}
+	return nil
+}
+
+// indexRename and indexWrite are seams for the tests of placeWorktreeIndex.
+var (
+	indexRename = os.Rename
+	indexWrite  = func(f *os.File, b []byte) error { _, err := f.Write(b); return err }
+)
+
+// removeCreatedRegistration deletes adminDir, the registration that
+// createdWorktreeAdminDir verified. It is step B of undoFailedCheckout. On Windows a
+// failed delete is not reported, so it always returns nil: the rollback of 89cb6289
+// with a registration that stays is not measured there.
+func removeCreatedRegistration(adminDir string) error {
+	if adminDir != "" {
+		_ = os.RemoveAll(adminDir)
+	}
+	return nil
+}
