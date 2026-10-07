@@ -65,8 +65,10 @@ file is `<cli-version>.exe`.
   before the rename, and a file there is replaced by it. Claustrum then runs
   `<cli> --version` at the final path, and it removes a new CLI that exits
   non-zero.
-- Claustrum prunes the directory to the `-cli-keep` most-recent CLI versions (by
-  mtime, default 3). The prune skips `.blob-*` and every name the sweep claims.
+- Claustrum prunes the directory to the `-cli-keep` newest entries (by mtime,
+  default 3). A file, a link and an empty folder count and go. The prune does
+  not count a name the sweep claims or a `*.zst.part` name. It counts a
+  `.blob-*` name and does not remove it.
 - Claustrum prints one line: `__INSTALL_RESULT__{json}`.
 
 ### 2 · Daemon / process supervisor (`-serve`)

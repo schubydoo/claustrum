@@ -832,9 +832,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 ### D18 · `-cli-version` must not start with `.blob-` (always-on) { #d18 }
 
 - **Behavior.** claustrum downloads a `-cli-url` blob to `<cli-dir>/.blob-<random>`.
-  The sweep and the `-cli-keep` prune both skip that prefix, so an in-flight blob
-  is never deleted or counted. A CLI installed under such a name is never pruned
-  or swept either. claustrum therefore answers `cli version "…" collides with the
+  Neither the sweep nor the `-cli-keep` prune removes a name with that prefix, so
+  an in-flight blob is never deleted. The prune counts the name, as `89cb6289`
+  counts a planted file with it (cell C-12, Windows VM). A CLI installed under
+  such a name is never pruned or swept. claustrum therefore answers `cli version "…" collides with the
   install download blob` and installs nothing.
 - **Reference side.** The prefix is claustrum's own name. Whether the reference
   installs such a version is not measured.
