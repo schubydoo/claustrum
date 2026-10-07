@@ -34,6 +34,17 @@ import (
 // would clean back to a valid location is still refused — matching 7d193f89.
 // worktreeExternalSpellingRefusal is steps 1 and 2. Both worktree methods check
 // baseRepo between steps 2 and 3. On git.worktree_create that order is not measured.
+//
+// Step 1 also refuses a worktreeRoot that is the file system root. For a root of "/"
+// and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem root" text. The
+// create sends it after 3 git calls, and the remove with no git call. That holds with
+// the folder present or gone, and for a daemon that runs as root (Linux VM, cells R1n,
+// R1u and R1r, and macOS VM, cells R1a and R1b). Nothing changes on disk. Those calls
+// are the calls of the two refusals above, so the test sits with them. Not measured:
+// its order against the ".." test, the worktreePath test, the baseRepo test and step
+// 3. Not measured either: "//", "/." and each other spelling that cleans to the root.
+// claustrum refuses them the same way and names the root as sent. A mount point that
+// is not "/" passes this test (not measured).
 func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) string {
 	if !filepath.IsAbs(worktreeRoot) {
 		return fmt.Sprintf("refusing to %s worktree: %s is a relative path; choose the "+
@@ -44,6 +55,11 @@ func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) st
 		return fmt.Sprintf("refusing to %s worktree: %s contains a %q component; choose the "+
 			"worktree location by its absolute path, without %q, beneath the filesystem root",
 			verb, worktreeRoot, "..", "..")
+	}
+	if isFilesystemRoot(worktreeRoot) {
+		return fmt.Sprintf("refusing to %s worktree: %s is a filesystem root; choose the "+
+			"worktree location by its absolute path, without %q, beneath the filesystem root",
+			verb, worktreeRoot, "..")
 	}
 	return sessionFolderSpellingRefusal(worktreePath, verb)
 }

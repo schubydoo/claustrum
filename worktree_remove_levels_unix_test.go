@@ -254,7 +254,8 @@ func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
 
 // A <directory> level that is the file system root: the located worktree is the one
 // that main located, with the root as the open parent and "/<name>" as the spelling.
-// Before, the reply was "openat : empty path". No row measures a worktreeRoot of "/".
+// Before, the reply was "openat : empty path". No request reaches this case now: both
+// methods refuse a worktreeRoot of "/" first. The test calls the function directly.
 func TestLocateExternalWorktreeDirectoryIsFileSystemRoot(t *testing.T) {
 	leaf := fmt.Sprintf("claustrum-test-no-such-leaf-%d", os.Getpid())
 	tg, err := locateExternalWorktree("/" + leaf)
