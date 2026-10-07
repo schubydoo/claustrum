@@ -81,6 +81,11 @@ func setOrigin(t *testing.T, repo, slug, branch string) {
 // of the links before its last component, and it keeps a link that is the last
 // component. Any other path goes to filepath.EvalSymlinks. It returns the function
 // that makes such a link.
+//
+// The stand-in covers git.info with an absolute path only. A relative path goes to
+// filepath.EvalSymlinks, and so does a path that needs its doubled separators kept.
+// The four other git methods test the resolve through unresolvable, which has no seam
+// and resolves for real here. Do not use this helper for a cell of those methods.
 func junctionsLikeWindows(t *testing.T) func(t *testing.T, link, target string) {
 	t.Helper()
 	var links []string
@@ -88,6 +93,9 @@ func junctionsLikeWindows(t *testing.T) func(t *testing.T, link, target string) 
 	t.Cleanup(func() { resolveWalkLinks, walkStartsAsSpelled = oldResolve, oldSpelled })
 	walkStartsAsSpelled = true
 	resolveWalkLinks = func(p string) (string, error) {
+		if !filepath.IsAbs(p) {
+			return filepath.EvalSymlinks(p)
+		}
 		vol := filepath.VolumeName(p)
 		cur := vol + string(filepath.Separator)
 		parts := strings.FieldsFunc(p[len(vol):], func(r rune) bool { return r == '/' || r == filepath.Separator })
@@ -246,30 +254,35 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 	// The hooks and fsmonitor settings of R are not in the configuration that git
 	// reads, so the frame stays (cell B-16).
 	t.Run("B-16 hooks path in the config of R", func(t *testing.T) {
+		rCfg := filepath.Join(dotGitOf(f.R), "config")
+		before, err := os.ReadFile(rCfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { writeFile(t, rCfg, string(before), 0o644) })
 		runGit(t, f.R, "config", "core.hooksPath", filepath.Join(f.R, ".git", "hk"))
 		runGit(t, f.R, "config", "core.fsmonitor", filepath.Join(f.base, "marker"))
 		wantResult(t, "info", info(t, sub), mixed)
-		runGit(t, f.R, "config", "--unset", "core.hooksPath")
-		runGit(t, f.R, "config", "--unset", "core.fsmonitor")
 	})
 	t.Run("B-08 R has no origin", func(t *testing.T) {
+		t.Cleanup(func() { setOrigin(t, f.R, "r/r", "rmain") })
 		runGit(t, f.R, "remote", "remove", "origin")
 		wantResult(t, "info", info(t, sub), mixed)
-		setOrigin(t, f.R, "r/r", "rmain")
 	})
 	t.Run("B-07 P has no origin", func(t *testing.T) {
+		t.Cleanup(func() { setOrigin(t, f.P, "p/p", "main") })
 		runGit(t, f.P, "remote", "remove", "origin")
 		wantResult(t, "info", info(t, sub), infoFrame(t, f.P, "rmain", "", ""))
-		setOrigin(t, f.P, "p/p", "main")
 	})
 	// The listing reads the config file of P, so a broken line there refuses the
-	// request with the name of that file (cell B-15). This cell comes last.
+	// request with the name of that file (cell B-15).
 	t.Run("B-15 broken config of P", func(t *testing.T) {
 		cfg := filepath.Join(dotGitOf(f.P), "config")
 		b, err := os.ReadFile(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { writeFile(t, cfg, string(b), 0o644) })
 		writeFile(t, cfg, string(b)+"[broken\n", 0o644)
 		r := info(t, sub)
 		const head = "config-defined hooks could not be pinned off; git not run: listing the " +
