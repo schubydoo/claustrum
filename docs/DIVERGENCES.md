@@ -169,7 +169,7 @@ rather than repeating them in each entry:
 | [D15](#d15) | Verify a run-dir lock holder is our serve process before signalling it, in the serve eviction and in `-stop` (macOS) | always-on | always-on | rule 3 clause (a) | the reference adding the same macOS check, or a macOS holder legitimately un-inspectable via `KERN_PROCARGS2` |
 | [D16](#d16) | `git.status` of a linked worktree returns the status on Windows, where the reference errors `exit status 128` (cause: `core.excludesFile=NUL` in its status call, when the user has no global excludes file) | always-on (Windows) | always-on | claustrum-more-correct (D2/D8 pattern). **REACHABLE** | the reference fixing its Windows git.status, a Git for Windows release that accepts `NUL` there, or a decision to reproduce its failure for strict 1:1 |
 | [D17](#d17) | An abandoned `lsof` run reads as busy, not idle (macOS) | always-on (macOS) | always-on | rule 3 clause (a) | a measurement of the reference with an `lsof` run that never returns, or an operator reporting a run dir the cleaner will not tidy because `lsof` never returns |
-| [D18](#d18) | `-cli-version` must not start with `.blob-`. The `-cli-keep` prune does not count a `.blob-` name, where `89cb6289` counts a planted one (cell C-12, Windows VM) | always-on | always-on | rule 3 clause (b). The prune part: maintainer decision of 2026-10-07 | Desktop passing a `-cli-version` that starts with `.blob-` |
+| [D18](#d18) | `-cli-version` must not start with `.blob-`. The `-cli-keep` prune does not count or remove a `.blob-` name, where `89cb6289` counts a planted one (cell C-12, Windows VM) and removes it (cells B1, Linux, macOS and Windows VMs) | always-on | always-on | rule 3 clause (b). The prune part: maintainer decision of 2026-10-07 | Desktop passing a `-cli-version` that starts with `.blob-` |
 | [D19](#d19) | `git.worktree_remove` refuses a junction at `.claude` or `.claude\worktrees`, where `f6010b97` answers success and deletes only the branch, and `89cb6289` does the same for a branch that another ref reaches (Windows) | always-on (Windows) | always-on | rule 3 clause (b): the create of both daemons refuses that junction. Maintainer decision of 2026-09-27 | the reference refusing the junction or deleting through it, or a Windows client that depends on the success reply |
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
@@ -241,8 +241,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   home folder is at risk there. An entry of the cli-dir that is the home folder
   or holds it is not removed. A folder gets the two tests above, and every
   other kind of entry gets the lexical test alone. In the prune that entry
-  still takes its place in the order. That is claustrum's own choice. Not
-  measured on the reference: the home folder as an entry of the cli-dir.
+  still takes its place in the order. That is claustrum's own choice.
+  `89cb6289` removes an empty home folder that is an entry of the cli-dir. In
+  the prune it is the oldest entry, past the keep value (cells H1, Linux, macOS
+  and Windows VMs). In the sweep it has the name `h.zst` and is 20 minutes old
+  (cells H3, Linux and macOS VMs). claustrum keeps it in each of those cells.
+  A home folder with content stays on both (cells H2, the same three systems).
+  The difference stays by the maintainer's decision.
   This guard and `wipesHomeDir` take the home folder from `os.UserHomeDir`. That
   is the `HOME` variable, or `USERPROFILE` on Windows. With that variable unset
   or empty they refuse nothing. This follows from the code and is not measured.
@@ -848,7 +853,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   measured. `89cb6289` counts a planted `.blob-planted` file (cell C-12, Windows
   VM). With `-cli-keep 2` and two older files beside it, `89cb6289` removes both
   older files. claustrum does not count the planted file, so it removes the
-  oldest file only.
+  oldest file only. `89cb6289` also removes the planted file when it is past
+  the keep value (cells B1, Linux, macOS and Windows VMs). There it is older
+  than two other files and `-cli-keep` is 1. claustrum keeps it.
 - **Why always-on.** Rule 3 clause (b). The real client passes bare versions
   (`1.0.86`, a commit sha, `latest`). It is on the same evidence as [D6](#d6).
   The prune difference stays by the maintainer's decision of 2026-10-07, not by
