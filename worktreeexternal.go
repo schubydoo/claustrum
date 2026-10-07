@@ -39,10 +39,12 @@ import (
 // and a worktreePath of "/<name>", 89cb6289 sends the "is a filesystem root" text. The
 // create sends it after 3 git calls, and the remove with no git call. That holds with
 // the folder present or gone, and for a daemon that runs as root (Linux VM, cells R1n,
-// R1u and R1r, and macOS VM, cells R1a and R1b). Nothing changes on disk. Those calls
-// are the calls of the two refusals above, so the test sits with them. Not measured:
-// its order against the ".." test, the worktreePath test, the baseRepo test and step
-// 3. Not measured either: "//", "/." and each other spelling that cleans to the root.
+// R1u and R1r, and macOS VM, cells R1a and R1b). The macOS cells have the folder gone
+// and a normal user. Nothing changes on disk. The calls place it before `rev-parse
+// --show-toplevel`. Its place among the earlier tests is claustrum's choice. Not
+// measured: its order against the ".." test, the worktreePath test, the baseRepo test
+// and step 3. Not measured either: "//", "/." and each other spelling without ".."
+// that cleans to the root.
 // claustrum refuses them the same way and names the root as sent. A mount point that
 // is not "/" passes this test (not measured).
 func worktreeExternalSpellingRefusal(worktreeRoot, worktreePath, verb string) string {
