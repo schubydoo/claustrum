@@ -174,7 +174,7 @@ rather than repeating them in each entry:
 | [D20](#d20) | Wait 50 ms and read again before the group `SIGKILL` of a child-group leader that reads as gone, at the reap of a `-serve` start (Linux and macOS) | always-on (Linux and macOS) | always-on | rule 3 clause (a) | a measurement that shows the reference waiting before that `SIGKILL`, or a report of a child that outlived a restart because it replaced its program |
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
-| [D23](#d23) | The environment block of a child is in name order (Windows). `89cb6289` keeps the order of the launching block and adds its entries after it | always-on (Windows) | always-on | Maintainer decision of 2026-10-06. The set of entries and the response frames are equal in the measured rows. The order of the block differs | a client that depends on the order of the block, or a decision to match the block byte for byte |
+| [D23](#d23) | The environment block of a child is in name order (Windows). `89cb6289` keeps the order of the launching block and adds its entries after it | always-on (Windows) | always-on | Maintainer decision of 2026-10-06. The response frames are equal in the measured rows. The order of the block differs | a client that depends on the order of the block, or a decision to match the block byte for byte |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -1056,8 +1056,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   That holds for a `process.spawn` child, for a git child and for the `--version`
   child of `-install`. From the Go source: since Go 1.26, `os/exec`,
   `os.StartProcess` and `syscall.StartProcess` sort the Windows environment block
-  by name. claustrum builds with Go 1.26. This is off-wire. The daemon builds no
-  frame from the order.
+  by name. claustrum builds with Go 1.26. The daemon builds no frame from the order.
 - **Reference side, measured.** A Windows VM ran `89cb6289` on 2026-10-06. The
   child printed its raw block in block order.
   - Rows V1, V3 and V4. The block is the launching block of the daemon in its
@@ -1096,7 +1095,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
   and no key. On Linux and macOS claustrum builds the order of the block itself.
   See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
-- **Why always-on.** The maintainer's decision of 2026-10-06: the order stays,
+- **Why always-on.** The maintainer's decision of 2026-10-06: name order stays,
   and no code changes. For two or more new caller keys `89cb6289` gave more than
   one order (rows V9 and V10), so no fixed order equals it there. The rest of the
   block had one order on `89cb6289` in every run of a row, and claustrum does not
@@ -1110,10 +1109,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Not measured.** The child of a managed launcher. One request with `PATH`,
   `Path` and `path` together.
 - **Reopen trigger.** A client that depends on the order of the block. Or a
-  decision to match the block byte for byte. The change is then an own process
-  start on Windows at two places: the start of the daemon and the start of a
-  child. From the Go source: the sort is inside the standard library and has no
-  switch.
+  decision to match the block byte for byte. From the Go source: the sort is
+  inside the standard library and has no switch.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → process.spawn. Evidence in
   `scratch/i429/s6-envorder-windows/REPORT.md` and in `cmp/table.md`,
   `cmp/tally.md` and `cmp/detail.md` beside it.

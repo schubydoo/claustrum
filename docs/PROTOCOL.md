@@ -2605,7 +2605,7 @@ copies end still fails it, as `timeoutMs` above describes:
     of the directory read. `worktrees` is left out in any case. This is the list
     of the `.claude/` pass below. So a root `.claude/` that holds only
     `worktrees` adds no pathspec. `f6010b97` does the same on Linux and macOS
-    VMs (C02, C03, C05, D23, I14b, I15d). The Windows VM shows it too
+    VMs (rows C02, C03, C05, D23, I14b and I15d). The Windows VM shows it too
     (`Cl_anydepth`).
   - The candidates go to `git ls-files --exclude-from=<manifest copy>` in batches.
     Files and directories never share a batch. A directory pathspec has no
@@ -3729,7 +3729,7 @@ as id-less stream notifications, and it buffers them for a later replay.
   order of its own. That gave a rotation of the request order in each of the 20
   spawns of a row (Linux rows P9 and N7, macOS row EV20). A request with more keys
   is not measured on Linux and macOS. On Windows the block of a claustrum child
-  is in name order, with any number of keys (D23). The
+  is in name order (divergence D23). The
   trampoline is off-wire and adds no JSON-RPC frame. The start failure above is
   the one frame that it changes. It was verified against
   `19f30c46` on a VM. The marker set and format match, and the values are
