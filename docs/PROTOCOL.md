@@ -5482,9 +5482,9 @@ Staging and cleanup:
       first and does not count the second. Not measured on Linux and macOS:
       `-cli-keep 0` and a `.blob-` name. claustrum applies the Windows result
       there.
-    - Before, claustrum counted and removed files only. It did not prune for
-      `-cli-keep 0`, it did not count a `.blob-` name, and it counted a
-      `*.zst.part` file as a version.
+    - Before, claustrum counted and removed files and links only. It did not
+      prune for `-cli-keep 0`, it did not count a `.blob-` name, and it counted
+      a `*.zst.part` file as a version.
 - claustrum consumes the `-cli-zst` blob once decompression succeeds, and not
   only on a fully successful install. An extracted CLI that fails the runnability
   test still costs the blob. claustrum leaves a blob that is not valid zstd alone.
