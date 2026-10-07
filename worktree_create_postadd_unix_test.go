@@ -577,13 +577,13 @@ func stageOldRegistrationOfSameName(t *testing.T) (string, string, string) {
 	return T, X, filepath.Join(T, ".git", "worktrees", "w1")
 }
 
-// TestPlaceWorktreeIndexGuard pins the guard of the index placement, one case for
+// TestInstallWorktreeIndexGuard pins the guard of the index placement, one case for
 // each state of the gitdir record. The index is placed only for a record that can
 // be read and names the leaf. In every other state of a registration that is there,
 // the guard answers its own error, and the index that is there keeps its bytes and
 // its inode. A registration that is gone takes the placement itself, whose error is
 // that of cell Z10 (macOS VM). No case opens a FIFO for writing.
-func TestPlaceWorktreeIndexGuard(t *testing.T) {
+func TestInstallWorktreeIndexGuard(t *testing.T) {
 	const guardText = "has no gitdir record that names this worktree"
 	for _, tc := range []struct {
 		name   string
@@ -639,17 +639,17 @@ func TestPlaceWorktreeIndexGuard(t *testing.T) {
 			}
 			tc.record(t, root, reg, leaf)
 
-			var placeErr error
-			doneWithin(t, "placeWorktreeIndex", func() { placeErr = placeWorktreeIndex(src, reg, leaf) })
+			var installErr error
+			doneWithin(t, "guardedInstallWorktreeIndex", func() { installErr = guardedInstallWorktreeIndex(src, reg, leaf) })
 			if tc.want == "" {
-				if placeErr != nil {
-					t.Fatalf("err = %v, want the index placed", placeErr)
+				if installErr != nil {
+					t.Fatalf("err = %v, want the index placed", installErr)
 				}
 				wantFileContent(t, index, "new\n")
 				return
 			}
-			if placeErr == nil || !strings.Contains(placeErr.Error(), tc.want) {
-				t.Errorf("err = %v, want %q", placeErr, tc.want)
+			if installErr == nil || !strings.Contains(installErr.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", installErr, tc.want)
 			}
 			if _, err := os.Stat(reg); err != nil {
 				return // the registration is gone, and its index with it
@@ -806,7 +806,7 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 	var registry, refusal string
 	var record adminRecord
 	var mismatch bool
-	var placeErr error
+	var installErr error
 	src := filepath.Join(root, "new-index")
 	writeFile(t, src, "new\n", 0o644)
 	doneWithin(t, "the reads after the add", func() {
@@ -814,7 +814,7 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 		refusal = createdRegistrationRefusal(gitDir, leaf, worktreeAdminDir(leaf))
 		record = readAdminRecord(reg, leaf)
 		mismatch = adminRecordMismatch(reg, leaf)
-		placeErr = placeWorktreeIndex(src, reg, leaf)
+		installErr = guardedInstallWorktreeIndex(src, reg, leaf)
 	})
 	if want := filepath.Join(gitDir, "worktrees"); registry != want {
 		t.Errorf("gitDirRegistryDir(FIFO commondir) = %s, want %s", registry, want)
@@ -828,8 +828,8 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 	if mismatch {
 		t.Error("adminRecordMismatch(FIFO record) = true, want false: cell P-g gets the other text")
 	}
-	if placeErr == nil {
-		t.Error("placeWorktreeIndex(FIFO record) placed the index, want the guard")
+	if installErr == nil {
+		t.Error("guardedInstallWorktreeIndex(FIFO record) placed the index, want the guard")
 	}
 	if _, err := os.Lstat(filepath.Join(reg, "index")); !os.IsNotExist(err) {
 		t.Errorf("the registration holds an index (Lstat err %v), want none", err)

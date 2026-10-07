@@ -394,7 +394,7 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
-// (placeWorktreeIndex). The caller gets adminDir from createdIndexDir. The temporary directory is removed afterwards. stderr,
+// (guardedInstallWorktreeIndex). The caller gets adminDir from createdIndexDir. The temporary directory is removed afterwards. stderr,
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
@@ -414,12 +414,12 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		installErr = placeWorktreeIndex(idx, adminDir, leaf)
+		installErr = guardedInstallWorktreeIndex(idx, adminDir, leaf)
 	}
 	return stderr, drained, err, installErr
 }
 
-// placeWorktreeIndex is installWorktreeIndex behind a guard. On Linux and macOS the
+// guardedInstallWorktreeIndex is installWorktreeIndex behind a guard. On Linux and macOS the
 // index goes into the registration adminDir only if its gitdir record can be read
 // and names leaf (readAdminRecord). In every other state of a registration that
 // can be reached, nothing is placed, and an index that is there keeps its bytes: a
@@ -443,7 +443,7 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 // denied" there, with an undo text, and keeps the branch. claustrum answers the
 // text of the guard and removes the branch. That is an open difference, listed on
 // the issue.
-func placeWorktreeIndex(idx, adminDir, leaf string) error {
+func guardedInstallWorktreeIndex(idx, adminDir, leaf string) error {
 	if adminRecordChecked {
 		if _, err := os.Stat(adminDir); err == nil && readAdminRecord(adminDir, leaf) != recordNamesLeaf {
 			return errors.New("the registration " + adminDir + " has no gitdir record that names this worktree")
