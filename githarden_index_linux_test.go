@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// TestPlaceWorktreeIndexSetgidGroup pins row A8 (Linux VM). The registration has a
+// TestInstallWorktreeIndexSetgidGroup pins row A8 (Linux VM). The registration has a
 // second group of the user and the setgid bit, and the index gets that group. The
 // temporary index keeps the primary group, so a moved file does not pass.
-func TestPlaceWorktreeIndexSetgidGroup(t *testing.T) {
+func TestInstallWorktreeIndexSetgidGroup(t *testing.T) {
 	groups, err := os.Getgroups()
 	if err != nil {
 		t.Fatal(err)
@@ -40,8 +40,8 @@ func TestPlaceWorktreeIndexSetgidGroup(t *testing.T) {
 	if err := os.Chmod(adminDir, 0o755|os.ModeSetgid); err != nil {
 		t.Fatal(err)
 	}
-	if err := placeWorktreeIndex(src, adminDir); err != nil {
-		t.Fatalf("placeWorktreeIndex: %v", err)
+	if err := installWorktreeIndex(src, adminDir); err != nil {
+		t.Fatalf("installWorktreeIndex: %v", err)
 	}
 	fi, err := os.Stat(filepath.Join(adminDir, "index"))
 	if err != nil {

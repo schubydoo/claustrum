@@ -43,12 +43,12 @@ func indexSource(t *testing.T) (string, os.FileInfo) {
 	return src, fi
 }
 
-// TestPlaceWorktreeIndexNewFile pins the file that the placement leaves: a new
+// TestInstallWorktreeIndexNewFile pins the file that the placement leaves: a new
 // inode with the bytes of the temporary index, mode 0666 less the umask (rows A12a,
 // A12b and the 0022 rows), and the mtime of the temporary index rounded up to a
 // whole microsecond. The temporary file stays for its owner to remove. The umask is
 // process-wide, so this test does not run in parallel.
-func TestPlaceWorktreeIndexNewFile(t *testing.T) {
+func TestInstallWorktreeIndexNewFile(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		umask int
@@ -59,10 +59,10 @@ func TestPlaceWorktreeIndexNewFile(t *testing.T) {
 			adminDir := filepath.Join(t.TempDir(), "worktrees", "w1")
 			mkdirForTest(t, adminDir)
 			old := syscall.Umask(tc.umask)
-			err := placeWorktreeIndex(src, adminDir)
+			err := installWorktreeIndex(src, adminDir)
 			syscall.Umask(old)
 			if err != nil {
-				t.Fatalf("placeWorktreeIndex: %v", err)
+				t.Fatalf("installWorktreeIndex: %v", err)
 			}
 			dst := filepath.Join(adminDir, "index")
 			got, err := os.Stat(dst)
@@ -110,11 +110,11 @@ func TestRoundUpToMicrosecond(t *testing.T) {
 	}
 }
 
-// TestPlaceWorktreeIndexReplacesFile pins cell X8 (Linux and macOS VMs). A file of
+// TestInstallWorktreeIndexReplacesFile pins cell X8 (Linux and macOS VMs). A file of
 // mode 0600 exists at the index before the placement. The index is then a new
 // inode, not that file and not the temporary file, with mode 0644 under umask 0022.
 // The umask is process-wide, so this test does not run in parallel.
-func TestPlaceWorktreeIndexReplacesFile(t *testing.T) {
+func TestInstallWorktreeIndexReplacesFile(t *testing.T) {
 	src, srcInfo := indexSource(t)
 	adminDir := filepath.Join(t.TempDir(), "worktrees", "w1")
 	mkdirForTest(t, adminDir)
@@ -130,10 +130,10 @@ func TestPlaceWorktreeIndexReplacesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := syscall.Umask(0o022)
-	err = placeWorktreeIndex(src, adminDir)
+	err = installWorktreeIndex(src, adminDir)
 	syscall.Umask(old)
 	if err != nil {
-		t.Fatalf("placeWorktreeIndex: %v", err)
+		t.Fatalf("installWorktreeIndex: %v", err)
 	}
 	got, err := os.Stat(dst)
 	if err != nil {
@@ -150,11 +150,11 @@ func TestPlaceWorktreeIndexReplacesFile(t *testing.T) {
 	}
 }
 
-// TestPlaceWorktreeIndexErrors pins the errors of a placement. A registration
+// TestInstallWorktreeIndexErrors pins the errors of a placement. A registration
 // without its write bit names the registration and the file, relative to the
 // registrations directory (rows A14, A14f and A14b). A temporary index that is gone
 // names its path (cell X1). A registrations directory that is gone fails too.
-func TestPlaceWorktreeIndexErrors(t *testing.T) {
+func TestInstallWorktreeIndexErrors(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a read-only directory does not stop root")
 	}
@@ -162,20 +162,20 @@ func TestPlaceWorktreeIndexErrors(t *testing.T) {
 	adminDir := filepath.Join(t.TempDir(), "worktrees", "w1")
 	mkdirForTest(t, adminDir)
 	chmodForTest(t, adminDir, 0o500)
-	err := placeWorktreeIndex(src, adminDir)
+	err := installWorktreeIndex(src, adminDir)
 	if err == nil || err.Error() != "openat w1/index: permission denied" {
-		t.Errorf("placeWorktreeIndex = %v, want openat w1/index: permission denied", err)
+		t.Errorf("installWorktreeIndex = %v, want openat w1/index: permission denied", err)
 	}
 	gone := filepath.Join(t.TempDir(), "gone")
-	if err := placeWorktreeIndex(gone, adminDir); err == nil || err.Error() != "open "+gone+": no such file or directory" {
-		t.Errorf("placeWorktreeIndex of a missing temporary index = %v, want open %s: no such file or directory", err, gone)
+	if err := installWorktreeIndex(gone, adminDir); err == nil || err.Error() != "open "+gone+": no such file or directory" {
+		t.Errorf("installWorktreeIndex of a missing temporary index = %v, want open %s: no such file or directory", err, gone)
 	}
-	if err := placeWorktreeIndex(src, filepath.Join(t.TempDir(), "gone", "w1")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("placeWorktreeIndex into a missing registrations directory = %v, want a not-exist error", err)
+	if err := installWorktreeIndex(src, filepath.Join(t.TempDir(), "gone", "w1")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("installWorktreeIndex into a missing registrations directory = %v, want a not-exist error", err)
 	}
 }
 
-// TestIndexPlacementText pins the text of a failed placement: the stderr of the
+// TestIndexInstallText pins the text of a failed placement: the stderr of the
 // checkout and the error with nothing between them, cut at 512 bytes as one text.
 // The cells are those of 89cb6289 on a Linux VM.
 //
@@ -185,7 +185,7 @@ func TestPlaceWorktreeIndexErrors(t *testing.T) {
 //   - Cells Y1b, Y1a and Y1c: a stderr of 478 bytes keeps the whole error, 500
 //     bytes keep 12 bytes of it, and 512 bytes keep none.
 //   - Cell X3: a stderr over 512 bytes gives its first 512 bytes and no error.
-func TestIndexPlacementText(t *testing.T) {
+func TestIndexInstallText(t *testing.T) {
 	const text = "openat w1/index: permission denied"
 	err := errors.New(text)
 	long := strings.Repeat("s5err-xx\n", 151)
@@ -200,8 +200,8 @@ func TestIndexPlacementText(t *testing.T) {
 		{"Y1c 512 bytes", x(511) + "\n", x(511)},
 		{"X3 over the cap", long, strings.ReplaceAll(long[:512], "\n", " ")},
 	} {
-		if got := indexPlacementText(tc.stderr, err); got != tc.want {
-			t.Errorf("%s: indexPlacementText = %q, want %q", tc.name, got, tc.want)
+		if got := indexInstallText(tc.stderr, err); got != tc.want {
+			t.Errorf("%s: indexInstallText = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
@@ -226,9 +226,9 @@ func TestWorktreeCreateIndexIgnoresSharedRepository(t *testing.T) {
 	}
 }
 
-// placementFixture starts the git stub for a create whose index placement fails,
+// indexInstallFixture starts the git stub for a create whose index placement fails,
 // and returns the fixture, the server and the TMPDIR of the daemon. D5 is off.
-func placementFixture(t *testing.T) (wtFixture, *server, string) {
+func indexInstallFixture(t *testing.T) (wtFixture, *server, string) {
 	t.Helper()
 	if os.Geteuid() == 0 {
 		t.Skip("a read-only directory does not stop root")
@@ -254,7 +254,7 @@ func placementFixture(t *testing.T) (wtFixture, *server, string) {
 // pin the frame before and after them only.
 const checkoutFailedHead = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): hint: synthetic`
 
-// TestWorktreeCreateIndexPlacementFails pins the answer to a registration that
+// TestWorktreeCreateIndexInstallFails pins the answer to a registration that
 // loses its write bit during the checkout. The git stub runs the real read-tree and
 // then makes the registration read-only, so the index cannot be placed and the
 // rollback cannot delete the registration. The request answers worktree_add_failed
@@ -268,7 +268,7 @@ const checkoutFailedHead = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"e
 //     registration alone. The attached branch stays.
 //   - Cell X11 (Linux VM): the parent of the leaf is read-only too, so the empty
 //     leaf stays. The frame carries the registration text alone.
-func TestWorktreeCreateIndexPlacementFails(t *testing.T) {
+func TestWorktreeCreateIndexInstallFails(t *testing.T) {
 	const both = "the worktree registration and the branch remain; remove them by hand before retrying (RemoveAll w1: permission denied)"
 	const attach = "the worktree registration remains; remove it by hand before retrying (RemoveAll w1: permission denied)"
 	for _, tc := range []struct {
@@ -280,7 +280,7 @@ func TestWorktreeCreateIndexPlacementFails(t *testing.T) {
 		{"X11 leaf parent locked", "", both, "w1", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, s, tmp := placementFixture(t)
+			f, s, tmp := indexInstallFixture(t)
 			reg := filepath.Join(f.regDir, "w1")
 			t.Cleanup(func() {
 				_ = os.Chmod(reg, 0o755)
@@ -336,7 +336,7 @@ func TestWorktreeCreateIndexPlacementFails(t *testing.T) {
 // text, and the whole rollback runs: the leaf, the registration and branch w1 go.
 // The temporary folder in the text has claustrum's own prefix.
 func TestWorktreeCreateTempIndexGone(t *testing.T) {
-	f, s, tmp := placementFixture(t)
+	f, s, tmp := indexInstallFixture(t)
 	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "rmindex")
 	slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
 

@@ -392,15 +392,15 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
-// (placeWorktreeIndex). The temporary directory is removed afterwards. stderr,
+// (installWorktreeIndex). The temporary directory is removed afterwards. stderr,
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
 // (checkoutWorkTree). The working directory stays leaf.
 //
-// placeErr is the error of a placement that failed. The caller answers it as a
+// installErr is the error of a placement that failed. The caller answers it as a
 // failed checkout. On Windows it is always nil.
-func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, rev string, pin []string) (stderr string, drained bool, err, placeErr error) {
+func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, rev string, pin []string) (stderr string, drained bool, err, installErr error) {
 	idxDir, err := os.MkdirTemp("", checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, err, nil
@@ -415,12 +415,12 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 		if !filepath.IsAbs(adminDir) {
 			adminDir = filepath.Join(leaf, adminDir)
 		}
-		placeErr = placeWorktreeIndex(idx, adminDir)
+		installErr = installWorktreeIndex(idx, adminDir)
 	}
-	return stderr, drained, err, placeErr
+	return stderr, drained, err, installErr
 }
 
-// indexPlacementText is the text after "git worktree add failed (checkout): " when
+// indexInstallText is the text after "git worktree add failed (checkout): " when
 // the placement of the index failed. The stderr of the checkout and the error are
 // joined with nothing between them, and the rule of worktreeGitText then applies to
 // the joined text. Measured against 89cb6289 on a Linux VM:
@@ -432,8 +432,8 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 //   - The stderrHeadCap cut covers the error too. A stderr of 478 bytes keeps the
 //     whole error, 500 bytes keep its first 12 bytes, and 512 or 1509 bytes keep
 //     none of it (cells Y1b, Y1a, Y1c and X3).
-func indexPlacementText(stderr string, placeErr error) string {
-	return worktreeGitText(stderr+placeErr.Error(), nil)
+func indexInstallText(stderr string, installErr error) string {
+	return worktreeGitText(stderr+installErr.Error(), nil)
 }
 
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no

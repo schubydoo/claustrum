@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// placeWorktreeIndex puts the index that the checkout wrote at src into adminDir,
+// installWorktreeIndex puts the index that the checkout wrote at src into adminDir,
 // the registration of the new worktree, as the file "index". It makes a new file
 // there and copies the bytes, so the file equals the one of 89cb6289 in these facts
 // (Linux and macOS VMs, rows A1 to A13):
@@ -37,7 +37,7 @@ import (
 // <name>/index: <OS error>", as on 89cb6289 (cells Y3 and Y7, Linux VM). A failure
 // after the open leaves the file as it is, and the rollback of the caller deletes
 // the registration.
-func placeWorktreeIndex(src, adminDir string) error {
+func installWorktreeIndex(src, adminDir string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err

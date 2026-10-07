@@ -1111,16 +1111,16 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
-		rtStderr, rtDrained, rtErr, placeErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
+		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir, adminDir, checkoutRev, commonDirPinEnv(repo))
 		switch {
-		case placeErr != nil:
+		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and
 			// macOS VMs 89cb6289 answers that as a failed checkout and rolls back (rows
-			// A14, A14f and A14b, and cell X1). The text is indexPlacementText. A placement that
+			// A14, A14f and A14b, and cell X1). The text is indexInstallText. A placement that
 			// fails after a drain overrun takes this arm too. That is claustrum's
 			// choice (not measured).
-			msg := "git worktree add failed (checkout): " + indexPlacementText(rtStderr, placeErr)
+			msg := "git worktree add failed (checkout): " + indexInstallText(rtStderr, installErr)
 			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,

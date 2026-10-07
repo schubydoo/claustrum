@@ -9,11 +9,11 @@ import (
 	"testing"
 )
 
-// TestPlaceWorktreeIndexCopy pins the copy fallback of placeWorktreeIndex on
+// TestInstallWorktreeIndexCopy pins the copy fallback of installWorktreeIndex on
 // Windows. The first rename fails, as across file systems. A full copy lands at dst.
 // A write that fails partway leaves no dst and no temporary file, so git never reads
 // a partial index.
-func TestPlaceWorktreeIndexCopy(t *testing.T) {
+func TestInstallWorktreeIndexCopy(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		failCopy bool
@@ -39,8 +39,8 @@ func TestPlaceWorktreeIndexCopy(t *testing.T) {
 					return errors.New("no space left on device")
 				}
 			}
-			if err := placeWorktreeIndex(src, dir); err != nil {
-				t.Errorf("placeWorktreeIndex = %v, want nil on Windows", err)
+			if err := installWorktreeIndex(src, dir); err != nil {
+				t.Errorf("installWorktreeIndex = %v, want nil on Windows", err)
 			}
 			got, err := os.ReadFile(dst)
 			if tc.failCopy {

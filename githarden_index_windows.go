@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// placeWorktreeIndex moves the index that the checkout wrote at src into adminDir,
+// installWorktreeIndex moves the index that the checkout wrote at src into adminDir,
 // the registration of the new worktree, as the file "index". A rename fails across
 // file systems, so a copy is the fallback. The copy goes to a temporary file beside
 // the index and is renamed into place only after a full write, so a failed copy
@@ -18,7 +18,7 @@ import (
 // `worktree add --no-checkout`. The index file of 89cb6289 on Windows is not
 // measured, so Windows keeps this move. Linux and macOS make a new file
 // (githarden_index_unix.go).
-func placeWorktreeIndex(src, adminDir string) error {
+func installWorktreeIndex(src, adminDir string) error {
 	dst := filepath.Join(adminDir, "index")
 	if indexRename(src, dst) == nil {
 		return nil
@@ -44,7 +44,7 @@ func placeWorktreeIndex(src, adminDir string) error {
 	return nil
 }
 
-// indexRename and indexWrite are seams for the tests of placeWorktreeIndex.
+// indexRename and indexWrite are seams for the tests of installWorktreeIndex.
 var (
 	indexRename = os.Rename
 	indexWrite  = func(f *os.File, b []byte) error { _, err := f.Write(b); return err }
