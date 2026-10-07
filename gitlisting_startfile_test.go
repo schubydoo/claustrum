@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -16,8 +17,7 @@ import (
 
 // gitStartError is the error text of a git call that cannot start in dir. The test
 // starts the git of PATH there itself, so the text names that git. It is "" when the
-// call starts. On Windows the text of a regular file ends with "The directory name is
-// invalid.".
+// call starts.
 func gitStartError(t *testing.T, dir string) string {
 	t.Helper()
 	cmd := exec.Command("git", "version")
@@ -30,10 +30,16 @@ func gitStartError(t *testing.T, dir string) string {
 	if !strings.HasPrefix(err.Error(), "fork/exec ") {
 		t.Fatalf("git version in %s: err = %v, want a fork/exec error", dir, err)
 	}
-	if runtime.GOOS == "windows" && !strings.HasSuffix(err.Error(), ": The directory name is invalid.") {
-		t.Fatalf("git version in %s: err = %v, want the Windows text of the rows", dir, err)
-	}
 	return err.Error()
+}
+
+// wantWindowsStartText fails the test on Windows when start, the start error in a
+// path that is not a folder, does not end with the text of the cells.
+func wantWindowsStartText(t *testing.T, start string) {
+	t.Helper()
+	if runtime.GOOS == "windows" && !strings.HasSuffix(start, ": The directory name is invalid.") {
+		t.Fatalf("start error = %q, want the Windows text of the cells", start)
+	}
 }
 
 // refuseNonFolderStart sets nonFolderStartRefuses for the test. On Windows that is the
@@ -61,6 +67,7 @@ func TestStartErrorInRegularFileRefuses(t *testing.T) {
 	if start == "" {
 		t.Fatalf("git started in the regular file %s", nFile)
 	}
+	wantWindowsStartText(t, start)
 	text := hooksRefusalPrefix + start
 	leaf := filepath.Join(nFile, ".claude", "worktrees", "w1")
 	for _, row := range []struct {
@@ -108,5 +115,28 @@ func TestStartErrorInRegularFileWithFailingVersion(t *testing.T) {
 	versionFails(t)
 	if got, want := f.frame(t, "git.info", map[string]any{"path": nFile}), errFrame(t, versionFailsText); got != want {
 		t.Errorf("A-14 = %s\nwant %s", got, want)
+	}
+}
+
+// Cell A-10 (Windows VM). With nonFolderStartRefuses, a file symlink as path gets the
+// hooks refusal with the start error of the listing, as a regular file does. The test
+// skips when the user cannot make a symlink. Mutation: report a path that is not a
+// folder as unenterable (unenterableDir).
+func TestStartErrorInFileSymlinkRefuses(t *testing.T) {
+	f := newNoRepoFixture(t)
+	refuseNonFolderStart(t)
+	nFile := filepath.Join(f.n, "n.txt")
+	writeFile(t, nFile, "n\n", 0o644)
+	lnk := filepath.Join(f.n, "lnk")
+	if err := os.Symlink(nFile, lnk); err != nil {
+		t.Skipf("no symlink on this host: %v", err)
+	}
+	start := gitStartError(t, lnk)
+	if start == "" {
+		t.Fatalf("git started in the file symlink %s", lnk)
+	}
+	wantWindowsStartText(t, start)
+	if got, want := f.frame(t, "git.info", map[string]any{"path": lnk}), errFrame(t, hooksRefusalPrefix+start); got != want {
+		t.Errorf("A-10 = %s\nwant %s", got, want)
 	}
 }
