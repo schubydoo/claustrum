@@ -182,9 +182,25 @@ func runInstall(o installOpts) {
 			if !installSwept {
 				sweepFetchTemps(o.cliDir, time.Now())
 			}
-			// A keep of 0 prunes too (cells K0a and K0b, Linux, macOS and
-			// Windows VMs, 89cb6289). A negative keep does not prune.
-			if err == nil && o.cliKeep >= 0 {
+			if err == nil {
+				// A negative keep value ends the run where the prune starts
+				// (cells Kneg, -cli-keep -1, Linux, macOS and Windows VMs). On
+				// 89cb6289 the new CLI is in place, the -cli-zst blob is gone
+				// and nothing is pruned. The exit code is 2, stdout has no
+				// result line, and stderr has a Go runtime error. claustrum
+				// matches the exit code and the missing result line. The one
+				// stderr line is claustrum's own (the maintainer's decision of
+				// 2026-10-07).
+				//
+				// Not measured: a negative keep on a cache hit, after a failed
+				// install and after a stopped run. No prune runs there, so
+				// claustrum prints the result line and exits 0, as before.
+				if o.cliKeep < 0 {
+					fmt.Fprintf(os.Stderr, "claustrum: -cli-keep %d is not a valid keep count\n", o.cliKeep)
+					osExit(2)
+				}
+				// A keep of 0 prunes too (cells K0a and K0b, Linux, macOS and
+				// Windows VMs, 89cb6289).
 				pruneCLI(o.cliDir, o.cliKeep)
 			}
 		}

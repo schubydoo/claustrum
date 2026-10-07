@@ -592,3 +592,105 @@ func TestHousekeepingSkipsTheHomeFolder(t *testing.T) {
 		})
 	}
 }
+
+// Cells Kneg of 89cb6289 (Linux, macOS and Windows VMs): -cli-keep -1 with four
+// old files and a -cli-zst blob. The new CLI is installed, the blob is gone and
+// the four files stay. The exit code is 2 and stdout is empty. The one stderr
+// line is claustrum's own.
+//
+// The two other cases are not measured. No prune runs on a cache hit or after a
+// failed install, so claustrum prints the result line and does not exit there.
+func TestInstallNegativeKeep(t *testing.T) {
+	const version = "9.9.9"
+	setup := func(t *testing.T) (dir, blob string) {
+		t.Helper()
+		root := t.TempDir()
+		home := filepath.Join(root, "home")
+		dir = filepath.Join(root, "cli")
+		for _, d := range []string{home, dir} {
+			if err := os.Mkdir(d, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Setenv(homeEnvVar(), home)
+		start := time.Now()
+		for i, name := range []string{"v1", "v2", "v3", "v4"} {
+			makePruneEntry(t, dir, root, pruneEntry{name, pruneFile, time.Duration(4-i) * pruneHour}, start)
+		}
+		stubOsExit(t)
+		return dir, filepath.Join(root, "blob.zst")
+	}
+
+	t.Run("good install", func(t *testing.T) {
+		dir, blob := setup(t)
+		if err := os.WriteFile(blob, zstdOf(t, fakeCLI(t, 0)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		outPath := filepath.Join(t.TempDir(), "stdout")
+		errPath := filepath.Join(t.TempDir(), "stderr")
+		outFile, err := os.Create(outPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		errFile, err := os.Create(errPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldOut, oldErr := os.Stdout, os.Stderr
+		os.Stdout, os.Stderr = outFile, errFile
+		code, exited := catchExit(func() {
+			runInstall(installOpts{cliDir: dir, cliVersion: version, cliZst: blob, cliKeep: -1})
+		})
+		os.Stdout, os.Stderr = oldOut, oldErr
+		_ = outFile.Close()
+		_ = errFile.Close()
+
+		if !exited || code != 2 {
+			t.Errorf("exited = %v with code %d, want exit code 2", exited, code)
+		}
+		if out, _ := os.ReadFile(outPath); len(out) != 0 {
+			t.Errorf("stdout = %q, want no result line", out)
+		}
+		const wantErr = "claustrum: -cli-keep -1 is not a valid keep count\n"
+		if got, _ := os.ReadFile(errPath); string(got) != wantErr {
+			t.Errorf("stderr = %q, want %q", got, wantErr)
+		}
+		want := []string{filepath.Base(installCLIPath(dir, version)), "v1", "v2", "v3", "v4"}
+		if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("the cli-dir holds %q, want %q", got, want)
+		}
+		if _, err := os.Lstat(blob); !os.IsNotExist(err) {
+			t.Errorf("the blob is still there: %v", err)
+		}
+	})
+
+	t.Run("failed install, not measured", func(t *testing.T) {
+		dir, blob := setup(t)
+		if err := os.WriteFile(blob, zstdOf(t, fakeCLI(t, 1)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: version, cliZst: blob, cliKeep: -1})
+		if want := fmt.Sprintf("installed cli at %s is not runnable", installCLIPath(dir, version)); f.CliError != want {
+			t.Errorf("cliError = %q, want %q", f.CliError, want)
+		}
+		if got := pruneNames(t, dir); strings.Join(got, " ") != "v1 v2 v3 v4" {
+			t.Errorf("the cli-dir holds %q", got)
+		}
+	})
+
+	t.Run("cache hit, not measured", func(t *testing.T) {
+		dir, _ := setup(t)
+		cli := installCLIPath(dir, version)
+		if err := os.WriteFile(cli, fakeCLI(t, 0), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f := captureInstallFacts(t, installOpts{cliDir: dir, cliVersion: version, cliKeep: -1})
+		if !f.CliWasPresent {
+			t.Error("cliWasPresent = false, want a cache hit")
+		}
+		want := []string{filepath.Base(cli), "v1", "v2", "v3", "v4"}
+		if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("the cli-dir holds %q, want %q", got, want)
+		}
+	})
+}
