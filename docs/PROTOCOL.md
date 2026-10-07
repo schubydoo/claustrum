@@ -1541,9 +1541,10 @@ below against `f6010b97`. Each point names the VMs that measured it.
 - Variable order. A `GIT_*` variable of the daemon's own environment keeps its
   place, before the variables that the daemon adds. The next section gives the
   exceptions. If the daemon adds a variable that its environment already has, the
-  added value and place win. Linux and macOS VMs. On Windows, the Go runtime of claustrum sorts the
-  environment block by name. `f6010b97` does not sort it (Windows VM). Go's os/exec
-  sorts it, and claustrum does not work around that.
+  added value and place win. Linux and macOS VMs. On Windows the block of a git
+  child of claustrum is in name order. `f6010b97` and `89cb6289` do not sort it
+  (Windows VM, row V17h for `89cb6289`). That is
+  [`DIVERGENCES.md`](DIVERGENCES.md) → D23.
 - Temporary names. The temporary git dir of `git status` starts with
   `claustrum-git-dir-`. The temporary index directory of the checkout starts with
   `claustrum-gitidx-`. Each prefix has the length of the `f6010b97` prefix, 18 and 17
@@ -2605,7 +2606,7 @@ copies end still fails it, as `timeoutMs` above describes:
     of the directory read. `worktrees` is left out in any case. This is the list
     of the `.claude/` pass below. So a root `.claude/` that holds only
     `worktrees` adds no pathspec. `f6010b97` does the same on Linux and macOS
-    VMs (C02, C03, C05, D23, I14b, I15d). The Windows VM shows it too
+    VMs (rows C02, C03, C05, D23, I14b and I15d). The Windows VM shows it too
     (`Cl_anydepth`).
   - The candidates go to `git ls-files --exclude-from=<manifest copy>` in batches.
     Files and directories never share a batch. A directory pathspec has no
@@ -3664,6 +3665,10 @@ as id-less stream notifications, and it buffers them for a later replay.
   - The CLI child of `-install` keeps `Path` (row R2). It is no `process.spawn` child.
   - claustrum is built to these rows. Its Windows unit test checks rows R1 and R4,
     with rows R3 and R6 as controls.
+  - These rows give the set of entries, not their order. On Windows the block of
+    a claustrum child is in name order. `89cb6289` keeps the order of its
+    launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries
+    (Windows VM rows V1 to V10). That is [`DIVERGENCES.md`](DIVERGENCES.md) → D23.
 - The `launcher` param is `89cb6289` parity: a string array that names a
   managed launcher. The child runs as `<launcher...> <command> <args...>`. The
   launcher is the process, and its stream frames are its own.
@@ -3780,7 +3785,8 @@ as id-less stream notifications, and it buffers them for a later replay.
   orders of row N7. claustrum now iterates the decoded map again and builds no
   order of its own. That gave a rotation of the request order in each of the 20
   spawns of a row (Linux rows P9 and N7, macOS row EV20). A request with more keys
-  is not measured. The
+  is not measured on Linux and macOS. On Windows the block of a claustrum child
+  is in name order (divergence D23). The
   trampoline is off-wire and adds no JSON-RPC frame. The start failure above is
   the one frame that it changes. It was verified against
   `19f30c46` on a VM. The marker set and format match, and the values are

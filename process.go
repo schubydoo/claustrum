@@ -1495,8 +1495,9 @@ func buildEnv(env map[string]string) []string {
 	//
 	// claustrum iterates the decoded map and builds no order of its own. That gave a
 	// rotation of the request order in each of the 20 spawns of a row (Linux P9, N7, macOS
-	// row EV20). TestNewCallerKeysComeInARotation holds that. A request with more keys
-	// is not measured.
+	// row EV20). TestNewCallerKeysComeInARotation holds that. A request with more keys is
+	// not measured on Linux and macOS. On Windows Go sorts the whole block by name, so no
+	// order built here is observable there (DIVERGENCES.md D23).
 	for k, v := range env {
 		base = replaceOrAppendEnv(base, k, v)
 	}
