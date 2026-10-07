@@ -374,9 +374,29 @@ func TestGitFileReadsDoNotWaitOnFifo(t *testing.T) {
 	}
 }
 
-// readGitPlainFile reads a regular file of at most gitFileMaxBytes bytes, also
-// through a symlink. A FIFO, a symlink to a FIFO, a folder and a larger file are
-// errors, at once.
+// A regular file of 1 MiB + 1 bytes reads whole through the helper, by path and in a
+// root. The reads had no size bound before the helper, and they have none now.
+func TestReadGitPlainFileHasNoSizeBound(t *testing.T) {
+	dir := realTempDir(t)
+	want := strings.Repeat("x", 1<<20) + "y"
+	writeFile(t, filepath.Join(dir, "big"), want, 0o644)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	byPath, pathErr := readGitPlainFile(filepath.Join(dir, "big"))
+	if pathErr != nil || string(byPath) != want {
+		t.Errorf("by path = (%d bytes, %v), want the %d bytes of the file", len(byPath), pathErr, len(want))
+	}
+	inRoot, rootErr := readGitPlainFileIn(root, "big")
+	if rootErr != nil || string(inRoot) != want {
+		t.Errorf("in a root = (%d bytes, %v), want the %d bytes of the file", len(inRoot), rootErr, len(want))
+	}
+}
+
+// readGitPlainFile reads a regular file, also through a symlink. A FIFO, a symlink
+// to a FIFO and a folder are errors, at once.
 func TestReadGitPlainFileKinds(t *testing.T) {
 	dir := realTempDir(t)
 	writeFile(t, filepath.Join(dir, "plain"), "gitdir: x\n", 0o644)
@@ -386,8 +406,6 @@ func TestReadGitPlainFileKinds(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "folder"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(dir, "max"), strings.Repeat("x", gitFileMaxBytes), 0o644)
-	writeFile(t, filepath.Join(dir, "over"), strings.Repeat("x", gitFileMaxBytes+1), 0o644)
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -401,8 +419,6 @@ func TestReadGitPlainFileKinds(t *testing.T) {
 	}{
 		{"plain", len("gitdir: x\n"), false, false},
 		{"link", len("gitdir: x\n"), false, false},
-		{"max", gitFileMaxBytes, false, false},
-		{"over", 0, false, true},
 		{"fifo", 0, true, true},
 		{"fifolink", 0, true, true},
 		{"folder", 0, true, true},

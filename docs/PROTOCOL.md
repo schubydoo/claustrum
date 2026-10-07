@@ -1529,10 +1529,10 @@ Linux and macOS VMs. `90fca6e6` names `.git/config`.
 
 The daemon itself reads three kinds of git file: a `.git` file, the `commondir`
 file of a worktree entry and the `gitdir` record of a worktree entry. On Linux and
-macOS it opens each of them without blocking. It reads a regular file of at most
-1 MiB only. Anything else there, a FIFO for example, is no usable file, and the
-request goes on. Windows has no FIFO in the file system, and its reads are as
-before. One read is as before on every system. After `git worktree add`,
+macOS it opens each of them without blocking. It reads a regular file only, and
+it reads that file as before. Anything else there, a FIFO for example, is no usable
+file, and the request goes on. Windows has no FIFO in the file system, and its reads
+are as before. One read is as before on every system. After `git worktree add`,
 `git.worktree_create` reads the `gitdir` record that git wrote for the new entry.
 
 The rows ran side by side against `89cb6289` on Linux and macOS VMs. No row opened
@@ -1551,7 +1551,7 @@ repository, and `T/a` is a folder in it.
 | B-F2 | as B-F1 | `git.status` with `path` `T/a` and `baseRepo` T | `{"isRepo":false,"clean":false}` |
 | B-F3 | a worktree of T under `T/a`, then `T/a/.git` becomes a FIFO | remove with `baseRepo` `T/a` | `{"success":true}`. The folder, the entry and the branch go |
 | B-G2 | the `gitdir` record of another entry is a FIFO | remove of a real worktree of T | `{"success":true}`. The other entry stays |
-| B-G3 | the `commondir` file of the entry of the worktree is a FIFO | remove of that worktree | `{"success":true}`. The folder, the entry and the branch go |
+| B-G3 | the `commondir` file of the entry of the worktree is a FIFO | remove of that worktree, without `worktreeRoot` | `{"success":true}`. The folder, the entry and the branch go |
 | B-G4 | the `commondir` file of the entry of a linked `baseRepo` is a FIFO | create | the trust refusal with `is not a small plain file (commondir is not a regular file)` |
 | B-G1 | the `gitdir` record of another entry is a FIFO | create with `baseRepo` T | no answer in 40 s |
 
@@ -1559,6 +1559,12 @@ In row B-G3 the entry is not verified, because its `commondir` is not read. The
 git calls of `89cb6289` are those of an entry that is not verified: the listing and
 the rev-parse twice, then the pair. The entry goes by its `gitdir` record, which
 names the worktree.
+
+Row B-G3 ran without `worktreeRoot`. With `worktreeRoot` that state is not measured.
+From a run of this code on a Linux host with git 2.47.3: the request waits in its
+child `git worktree list --porcelain -z`, and nothing is deleted. From the code:
+when that call ends with no error, the request answers a refusal with `is not a
+worktree of`, and it deletes nothing.
 
 In row B-G1 `89cb6289` waits in its child `git worktree add`. A plain `git worktree
 add` on that fixture waits too. From the code and a unit test: claustrum passes over
@@ -1578,8 +1584,6 @@ Not measured:
   each as no usable file.
 - A FIFO that a writer opens during the request. From the code: claustrum reads
   nothing from it.
-- A `.git` file, a `commondir` file or a `gitdir` record of more than 1 MiB. From
-  the code: claustrum takes it as no usable file. The bound is claustrum's choice.
 - A FIFO as the `gitdir` record of the entry of the worktree to remove. From the
   code: the entry is not verified, no record names the worktree, and the entry
   stays.

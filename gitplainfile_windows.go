@@ -14,3 +14,8 @@ func readGitPlainFile(path string) ([]byte, error) {
 func readGitPlainFileIn(root *os.Root, name string) ([]byte, error) {
 	return root.ReadFile(name)
 }
+
+// openGitPlainFile opens the file at path for a read: the plain open, as before.
+func openGitPlainFile(path string) (*os.File, error) {
+	return os.Open(path)
+}
