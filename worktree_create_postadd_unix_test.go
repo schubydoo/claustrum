@@ -19,20 +19,18 @@ import (
 // and git 2.50 writes the resolved path. The git stub writes that file after the
 // real add, so both shapes are staged on any git of the host.
 
-// postAddFixture starts the git stub and returns the fixture and the server. D5 is
-// off.
+// postAddFixture makes the fixture, then starts the git stub, and returns the
+// fixture and the server. The fixture comes first, so its realGit is the git of the
+// host and not the stub. D5 is off.
 func postAddFixture(t *testing.T) (wtFixture, *server) {
 	t.Helper()
 	requireGit(t)
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
 	oldTimeout := gitTimeout
 	t.Cleanup(func() { gitTimeout = oldTimeout })
 	gitTimeout = 0
-	installGitSlowStub(t, realGit)
-	return newWTFixture(t, false), newTestServer(t)
+	f := newWTFixture(t, false)
+	installGitSlowStub(t, f.realGit)
+	return f, newTestServer(t)
 }
 
 // afterAdd makes the stub write content to file after the real add, and then
@@ -45,8 +43,9 @@ func afterAdd(t *testing.T, file, content string, d time.Duration) {
 	slowGit(t, "worktree,add", "post", d, "", "")
 }
 
-// linkRegistrations makes <git dir>/worktrees of the fixture a symlink to target,
-// a new empty folder.
+// linkRegistrations makes target, a new empty folder, and makes <git dir>/worktrees
+// of the fixture a symlink whose value is link. The caller gives a link that leads
+// to target: target itself, or a relative path such as ../../WTREG (row D-5).
 func (f wtFixture) linkRegistrations(t *testing.T, target, link string) {
 	t.Helper()
 	if err := os.MkdirAll(target, 0o755); err != nil {
