@@ -244,6 +244,100 @@ func TestFifoGitdirRecordOfOtherEntryRemoveSucceeds(t *testing.T) {
 	}
 }
 
+// newFifoWorktree makes repository T with the worktree w1 under .claude/worktrees.
+// It returns T, the worktree and its entry.
+func newFifoWorktree(t *testing.T) (T, wt, entry string) {
+	t.Helper()
+	T = filepath.Join(realTempDir(t), "T")
+	newFifoRepo(t, T)
+	wt = filepath.Join(T, ".claude", "worktrees", "w1")
+	runGit(t, T, "worktree", "add", "-q", "-b", "w1", wt)
+	return T, wt, filepath.Join(T, ".git", "worktrees", "w1")
+}
+
+// fifoInPlaceOf replaces the file at p by a FIFO.
+func fifoInPlaceOf(t *testing.T, p string) {
+	t.Helper()
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	mkfifo(t, p)
+}
+
+func removeRefused(text string) string {
+	return `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"` + text + `"}}`
+}
+
+// Cell N1: the `gitdir` record of the registration to remove is a FIFO, and the
+// worktree is not locked. The remove succeeds. The folder and the branch go, and the
+// registration stays.
+func TestFifoOwnGitdirRecordRemoveSucceeds(t *testing.T) {
+	T, wt, entry := newFifoWorktree(t)
+	fifoInPlaceOf(t, filepath.Join(entry, "gitdir"))
+	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")), removeOK)
+	mustBeGone(t, wt)
+	wantFifo(t, filepath.Join(entry, "gitdir"))
+	if branchExists(t, T, "w1") {
+		t.Error("branch w1 stays, want it deleted")
+	}
+}
+
+// Cell N9, divergence D22: as N1, with a LOCKED worktree. claustrum refuses, and
+// nothing is deleted. 89cb6289 answers success and deletes the folder and the branch.
+func TestFifoOwnGitdirRecordOfLockedWorktreeIsRefused(t *testing.T) {
+	T, wt, entry := newFifoWorktree(t)
+	runGit(t, T, "worktree", "lock", wt)
+	fifoInPlaceOf(t, filepath.Join(entry, "gitdir"))
+	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")),
+		removeRefused(lockCheckRefusal(wt)))
+	wantFileContent(t, filepath.Join(wt, "t.txt"), "t\n")
+	wantFileContent(t, filepath.Join(wt, ".git"), "gitdir: "+entry+"\n")
+	wantFifo(t, filepath.Join(entry, "gitdir"))
+	mustExist(t, filepath.Join(entry, "locked"))
+	if !branchExists(t, T, "w1") {
+		t.Error("branch w1 is gone, want it kept")
+	}
+}
+
+// Cell N10: a LOCKED worktree whose `commondir` file is a FIFO. The answer is the
+// locked refusal, and nothing is deleted.
+func TestFifoCommondirOfLockedWorktreeIsLockedRefusal(t *testing.T) {
+	T, wt, entry := newFifoWorktree(t)
+	runGit(t, T, "worktree", "lock", wt)
+	fifoInPlaceOf(t, filepath.Join(entry, "commondir"))
+	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")),
+		removeRefused(lockedWorktreeRefusal(wt)))
+	wantFileContent(t, filepath.Join(wt, "t.txt"), "t\n")
+	wantFifo(t, filepath.Join(entry, "commondir"))
+	mustExist(t, filepath.Join(entry, "locked"))
+	if !branchExists(t, T, "w1") {
+		t.Error("branch w1 is gone, want it kept")
+	}
+}
+
+// Cell N12: a second entry w1b names the same worktree, and its `gitdir` record is a
+// FIFO. The remove succeeds. The folder, the entry w1 and the branch go, and w1b
+// stays.
+func TestFifoGitdirRecordOfTwinEntryRemoveSucceeds(t *testing.T) {
+	T, wt, entry := newFifoWorktree(t)
+	twin := filepath.Join(T, ".git", "worktrees", "w1b")
+	for _, name := range []string{"HEAD", "commondir"} {
+		b, err := os.ReadFile(filepath.Join(entry, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(twin, name), string(b), 0o644)
+	}
+	mkfifo(t, filepath.Join(twin, "gitdir"))
+	wantFifoFrame(t, "remove(w1)", frameWithin(t, "git.worktree_remove", createParams(T, wt, "w1")), removeOK)
+	mustBeGone(t, wt)
+	mustBeGone(t, entry)
+	wantFifo(t, filepath.Join(twin, "gitdir"))
+	if branchExists(t, T, "w1") {
+		t.Error("branch w1 stays, want it deleted")
+	}
+}
+
 // Row B-F3: the worktree is made first, then <baseRepo>/.git becomes a FIFO. The
 // remove succeeds.
 func TestFifoDotGitRemoveSucceeds(t *testing.T) {

@@ -1560,11 +1560,29 @@ git calls of `89cb6289` are those of an entry that is not verified: the listing 
 the rev-parse twice, then the pair. The entry goes by its `gitdir` record, which
 names the worktree.
 
-Row B-G3 ran without `worktreeRoot`. With `worktreeRoot` that state is not measured.
-From a run of this code on a Linux host with git 2.47.3: the request waits in its
-child `git worktree list --porcelain -z`, and nothing is deleted. From the code:
-when that call ends with no error, the request answers a refusal with `is not a
-worktree of`, and it deletes nothing.
+Row B-G3 ran without `worktreeRoot`. Cell N2 is that state with `worktreeRoot`, on
+a Linux VM. `89cb6289` and claustrum give no answer in 40 s there, and nothing is
+deleted. Each waits in its child `git worktree list --porcelain -z`.
+
+A second run on a Linux VM, and in part on a macOS VM, added these cells. In each
+of them the frame and the files on disk are equal to `89cb6289`, except in cell N9.
+
+| Cell | State | Request | Answer |
+|---|---|---|---|
+| N1 | the `gitdir` record of the entry of the worktree is a FIFO | remove of that worktree, without `worktreeRoot` | `{"success":true}`. The folder and the branch go, and the entry stays (Linux and macOS) |
+| N9 | as N1, and the worktree is locked | the same remove | `89cb6289`: `{"success":true}`. The folder and the branch go, and the entry and its `locked` file stay. claustrum: the lock-check refusal, and nothing is deleted. That is divergence D22 (Linux) |
+| N10 | the worktree is locked, and the `commondir` file of its entry is a FIFO | the same remove | the locked refusal, and nothing is deleted (Linux) |
+| N12 | a second entry names the same worktree, and its `gitdir` record is a FIFO | the same remove | `{"success":true}`. The folder, the first entry and the branch go, and the second entry stays (Linux) |
+| N3 | the `.git` file of T names its git directory and is padded with newlines to 2 MiB | `git.info`, `git.status` and create in T | `isRepo` false, and `not_a_repo` for the create (Linux and macOS) |
+| N4 | the `commondir` file of the entry of the worktree is a regular file of 2 MiB | remove of that worktree | `{"success":true}`. The folder, the entry and the branch go (Linux and macOS) |
+| N5 | `T/a/.git` is a socket | `git.info` and create with `T/a` | the answers of T, and the create succeeds (Linux) |
+| N5b | `T/.git` is a socket, and no repository lies above T | `git.info` and create with T | `isRepo` false, and `not_a_repo` (Linux) |
+| N6 | `T/a/.git` is a symlink to `/dev/null` | `git.info` and create with `T/a` | as N5 (Linux and macOS) |
+| N6b | `T/.git` is a symlink to `/dev/null`, and no repository lies above T | `git.info` and create with T | as N5b (Linux and macOS) |
+
+The claustrum side of cells N3 and N4 is the build of `main` in that run. From the
+code: this build reads a regular file as that build does. In cell N4 on the Linux
+VM, `89cb6289` makes 12 git calls and that build makes 8.
 
 In row B-G1 `89cb6289` waits in its child `git worktree add`. A plain `git worktree
 add` on that fixture waits too. From the code and a unit test: claustrum passes over
@@ -1580,13 +1598,10 @@ Not measured:
 
 - A FIFO as `HEAD`, `config`, `index` or a ref file in a place that git itself
   reads.
-- A device file or a socket in place of the FIFO. From the code: claustrum takes
-  each as no usable file.
+- A device file or a socket as a `commondir` file or a `gitdir` record. From the
+  code: claustrum takes each as no usable file.
 - A FIFO that a writer opens during the request. From the code: claustrum reads
   nothing from it.
-- A FIFO as the `gitdir` record of the entry of the worktree to remove. From the
-  code: the entry is not verified, no record names the worktree, and the entry
-  stays.
 - A FIFO in a read of the rollback of `git.worktree_create`. From the code: the
   registration is not verified, and the rollback does not delete it.
 
@@ -3281,6 +3296,10 @@ copies end still fails it, as `timeoutMs` above describes:
   there, as the reference does in row p6. A lock on an entry of X that names the
   worktree is refused on both sides (row p6b). So is a lock with no daemon
   environment (row p6c on Linux, macOS and Windows VMs, row p6g on a Linux VM).
+  On Linux and macOS claustrum also refuses a locked entry whose `gitdir` record is
+  not a regular file, with the lock-check refusal. The entry is the one that the
+  `.git` file of the worktree names. With a FIFO there, `89cb6289` answers
+  `{"success":true}` and deletes the folder and the branch (cell N9, Linux VM).
   See [`DIVERGENCES.md`](DIVERGENCES.md) → D22.
 - The delete first removes each entry of `<p>` except `.git`, in the order of the
   directory read. It stops at the first failure. Then it removes the rest, `.git`

@@ -17,8 +17,8 @@ import (
 // Linux and macOS VMs). A regular file of any size is read whole, as os.ReadFile
 // reads it.
 //
-// Not measured: a device or a socket in place of the FIFO, and a FIFO that a writer
-// opens during the request.
+// Not measured: a device or a socket as a `commondir` file or a `gitdir` record, and
+// a FIFO that a writer opens during the request.
 func readGitPlainFile(path string) ([]byte, error) {
 	f, err := openGitPlainFile(path)
 	if err != nil {

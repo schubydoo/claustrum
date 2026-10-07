@@ -620,6 +620,36 @@ func verifiedEntryLocked(commonDir, name string) bool {
 	return entryLockPresent(root, name)
 }
 
+// lockedEntryWithoutRecord reports whether the entry that gitDir names under
+// <commonDir>/worktrees carries a `locked` marker and has a `gitdir` record that is
+// not a regular file. gitDir is the git dir that the `.git` file of the worktree
+// names. Such an entry cannot be verified, and no look by path finds it. The removal
+// then answers the lock-check refusal and deletes nothing. That is part of divergence
+// D22: 89cb6289 answers success there with a FIFO as the record, and it deletes the
+// folder and the branch of the locked worktree (cell N9, Linux VM). Without the
+// marker the removal goes on, as on 89cb6289 (cell N1, Linux and macOS VMs).
+//
+// Not measured: a record that is a folder, a socket or a device. On Windows the read
+// of the record is the plain one, so this never reports true there.
+func lockedEntryWithoutRecord(gitDir, commonDir string) bool {
+	g := filepath.Clean(gitDir)
+	name := filepath.Base(g)
+	if filepath.Base(filepath.Dir(g)) != worktreesSubdir || !filepath.IsLocal(name) ||
+		!sameCanonicalPath(filepath.Dir(filepath.Dir(g)), filepath.Clean(commonDir)) {
+		return false
+	}
+	root, err := os.OpenRoot(filepath.Join(commonDir, worktreesSubdir))
+	if err != nil {
+		return false
+	}
+	defer func() { _ = root.Close() }()
+	if !entryLockPresent(root, name) {
+		return false
+	}
+	_, err = readGitPlainFileIn(root, filepath.Join(name, "gitdir"))
+	return errors.Is(err, errNotRegularFile)
+}
+
 // dropWorktreeEntry deletes the verified entry name. The worktrees directory itself
 // stays, also when it is then empty (rows K01 and X01).
 func dropWorktreeEntry(commonDir, name string) error {
