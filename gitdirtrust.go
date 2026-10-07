@@ -301,7 +301,10 @@ func findGitDir(start string) (g, holder string, ok bool) {
 // at most gitFileMaxBytes long. The rest is trimmed of white space and, when relative,
 // taken relative to holder, the directory that holds the `.git` file.
 func readGitFile(path, holder string) (string, bool) {
-	f, err := os.Open(path)
+	// On Linux and macOS the open does not block and takes a regular file only, so a
+	// FIFO put there after the walk looked is judged at once. On Windows it is the
+	// plain open (openGitPlainFile).
+	f, err := openGitPlainFile(path)
 	if err != nil {
 		return "", false
 	}

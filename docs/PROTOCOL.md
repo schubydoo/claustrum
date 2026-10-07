@@ -1525,6 +1525,86 @@ names a corrupt config by its absolute path. `f6010b97` does the same in the
 `git.info`, `git.list_branches`, `git.status`, create and remove frames, measured on
 Linux and macOS VMs. `90fca6e6` names `.git/config`.
 
+#### A FIFO where the daemon reads a git file
+
+This section covers three reads of the daemon itself: a `.git` file, the `commondir`
+file of a worktree entry and the `gitdir` record of a worktree entry. On Linux and
+macOS it opens each of them without blocking. It reads a regular file only, and
+it reads that file as before. Anything else there, a FIFO for example, is no usable
+file, and the read does not wait. Windows has no FIFO in the file system, and its reads
+are as before. One read is as before on every system. After `git worktree add`,
+`git.worktree_create` reads the `gitdir` record that git wrote for the new entry.
+
+The rows ran side by side against `89cb6289` on Linux and macOS VMs. No row opened
+a FIFO for writing. `89cb6289` answered every row except B-G1 in under 2 s. T is a
+repository, and `T/a` is a folder in it.
+
+| Row | State | Request | Answer |
+|---|---|---|---|
+| B-F1 | `T/a/.git` is a FIFO | create with `baseRepo` `T/a` | success. The entry and the branch are made in T |
+| B-S2 | `T/a/.git` is a symlink to a FIFO | the same create | as B-F1 |
+| B-F4 | T lies inside an outer repository O, and `T/.git` is a FIFO | create with `baseRepo` T | success. The entry and the branch are made in O |
+| B-L1 | as B-F1 | the create of B-F1, then a create in T with another leaf | both succeed |
+| B-F5 | `T/.git` is a FIFO, and no repository lies above T | create with `baseRepo` T | `not_a_repo`, and nothing is made |
+| B-S1 | `T/a/.git` is a regular file of 0 bytes | create with `baseRepo` `T/a` | `not_a_repo`, and nothing is made |
+| B-F2 | as B-F1 | `git.info` and `git.list_branches` with `path` `T/a` | the answers of T |
+| B-F2 | as B-F1 | `git.status` with `path` `T/a` and `baseRepo` T | `{"isRepo":false,"clean":false}` |
+| B-F3 | a worktree of T under `T/a`, then `T/a/.git` becomes a FIFO | remove with `baseRepo` `T/a` | `{"success":true}`. The folder, the entry and the branch go |
+| B-G2 | the `gitdir` record of another entry is a FIFO | remove of a real worktree of T | `{"success":true}`. The other entry stays |
+| B-G3 | the `commondir` file of the entry of the worktree is a FIFO | remove of that worktree, without `worktreeRoot` | `{"success":true}`. The folder, the entry and the branch go |
+| B-G4 | the `commondir` file of the entry of a linked `baseRepo` is a FIFO | create | the trust refusal with `is not a small plain file (commondir is not a regular file)` |
+| B-G1 | the `gitdir` record of another entry is a FIFO | create with `baseRepo` T | no answer in 40 s |
+
+From the code: in row B-G3 claustrum does not read the `commondir`, so it does not
+verify the entry.
+
+Row B-G3 ran without `worktreeRoot`. Cell N2 is that state with `worktreeRoot`, on
+Linux and macOS VMs. `89cb6289` and claustrum give no answer in 40 s there, and
+nothing is deleted. Each waits in its child `git worktree list --porcelain -z`.
+
+The cells below ran side by side against `89cb6289` on a Linux VM, and in part on a
+macOS VM. The Answer column is the frame and the disk state of `89cb6289`. In each
+cell the frame and the files on disk of claustrum are equal to it.
+
+| Cell | State | Request | Answer |
+|---|---|---|---|
+| N1 | the `gitdir` record of the entry of the worktree is a FIFO | remove of that worktree, without `worktreeRoot` | `{"success":true}`. The folder and the branch go, and the entry stays (Linux and macOS) |
+| N9 | as N1, and the worktree is locked | the same remove | `{"success":true}`. The folder and the branch go, and the entry and its `locked` file stay (Linux and macOS) |
+| N10 | the worktree is locked, and the `commondir` file of its entry is a FIFO | the same remove | the locked refusal, and nothing is deleted (Linux and macOS) |
+| N12 | a second entry names the same worktree, and its `gitdir` record is a FIFO | the same remove | `{"success":true}`. The folder, the first entry and the branch go, and the second entry stays (Linux and macOS) |
+| N3 | the `.git` file of T names its git directory and is padded with newlines to 2 MiB | `git.info`, `git.status` and create in T | `isRepo` false, and `not_a_repo` for the create (Linux and macOS) |
+| N4 | the `commondir` file of the entry of the worktree is a regular file of 2 MiB | remove of that worktree | `{"success":true}`. The folder, the entry and the branch go (Linux and macOS) |
+| N5 | `T/a/.git` is a socket | `git.info` and create with `T/a` | the answers of T, and the create succeeds (Linux) |
+| N5b | `T/.git` is a socket, and no repository lies above T | `git.info` and create with T | `isRepo` false, and `not_a_repo` (Linux) |
+| N6 | `T/a/.git` is a symlink to `/dev/null` | `git.info` and create with `T/a` | as N5 (Linux and macOS) |
+| N6b | `T/.git` is a symlink to `/dev/null`, and no repository lies above T | `git.info` and create with T | as N5b (Linux and macOS) |
+
+In row B-G1 `89cb6289` waits in its child `git worktree add`. A plain `git worktree
+add` on that fixture waits too. From the code and a unit test: claustrum passes over
+the FIFO record and starts the same call. claustrum adds no bound of its own there.
+With `timeoutMs` 3000 in the state of row B-G1, `89cb6289` and claustrum give no
+answer in 40 s (cell N7, Linux VM). From the code: the opt-in `git-timeout` (D5)
+ends that call.
+
+The two runs sent 52 requests on the Linux VM and 37 on the macOS VM. In every
+request the frame and the files on disk of claustrum are equal to `89cb6289`. The
+git call count differs in 17 requests on Linux and in 11 on macOS. There claustrum
+runs fewer calls, and no call that `89cb6289` does not run. No client can observe
+the count.
+
+Not measured:
+
+- A git that refuses a FIFO named `.git` itself. The rows ran with a git that walks
+  past it.
+- A FIFO as `HEAD`, `config`, `index` or a ref file in a place that git itself
+  reads.
+- A device file or a socket as a `commondir` file or a `gitdir` record. From the
+  code: claustrum takes each as no usable file.
+- A FIFO that a writer opens during the request. From the code: claustrum reads
+  nothing from it.
+- A FIFO in a read of the rollback of `git.worktree_create`. From the code: the
+  registration is not verified, and the rollback does not delete it.
+
 #### Hardened git calls
 
 The git methods run most git steps as hardened calls. A hardened call carries a fixed
