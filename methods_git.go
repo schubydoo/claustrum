@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -1262,12 +1263,17 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		if msg != "" {
 			return refuse(msg)
 		}
-		if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
-			return refuse(msg)
+		// A root that the daemon cannot open or search answers its own error later,
+		// and not this refusal (cell U13b, Linux and macOS VMs).
+		dirSymlinkChecked := !externalRootDenied(p.WorktreePath)
+		if dirSymlinkChecked {
+			if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
+				return refuse(msg)
+			}
 		}
 		// 89cb6289 makes two more git calls here: a light `worktree list --porcelain -z`,
 		// then a heavy `rev-parse --absolute-git-dir`. Each runs in baseRepo with its
-		// listing. The second one does not run for a worktreeRoot that cannot be read:
+		// listing. The second one does not run for a worktreeRoot below a folder of mode 000:
 		// that request answers its lstat error after 7 calls (Linux VM, row T6).
 		// claustrum runs the second call after it located the worktree folder.
 		// f6010b97 made the same two calls (rows WR00,
@@ -1297,6 +1303,13 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			return refuse(msg)
 		}
 		target, err = locateExternalWorktree(p.WorktreePath)
+		// The skipped symlink refusal runs here, before any delete. No row measures it.
+		if err == nil && !dirSymlinkChecked {
+			if msg := worktreeExternalDirSymlinkRefusal(p.WorktreePath, "remove"); msg != "" {
+				target.close()
+				return refuse(msg)
+			}
+		}
 	} else {
 		// Empty is failed as a non-directory, not as a relative path (measured against
 		// 7d193f89).
@@ -1323,7 +1336,21 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// all, answers with the error from its look at .claude, and that error is the
 		// whole reply. Measured side by side against f6010b97 on Linux, and the
 		// reference's answers also on macOS.
-		if err := statInsideDir(repo, ".claude"); err != nil {
+		//
+		// On Linux and macOS the look is at the first component of worktreePath below
+		// baseRepo. For a repository of mode 0600, 89cb6289 answers "statat wt" for
+		// <repo>/wt (cell U19 on Linux and macOS VMs, cell N4 on a Linux VM), "statat a"
+		// for <repo>/a/wt and <repo>/a/b/c/wt (cells N6a and N6b, Linux VM) and "statat
+		// .claude" for a path under .claude (cell N7a, Linux VM). Mode 0400 answers the
+		// same (cell N5, Linux VM). Windows is not measured, and keeps the look at
+		// .claude.
+		first := ".claude"
+		if runtime.GOOS != "windows" {
+			if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil {
+				first, _, _ = strings.Cut(rel, string(filepath.Separator))
+			}
+		}
+		if err := statInsideDir(repo, first); err != nil {
 			return refuse("failed to remove worktree: " + err.Error())
 		}
 		target, err = locateInRepoWorktree(repo, p.WorktreePath)
