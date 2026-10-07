@@ -419,16 +419,28 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 	return stderr, drained, err, installErr
 }
 
-// placeWorktreeIndex is installWorktreeIndex behind a guard: the index never goes
-// into a registration whose gitdir record names another worktree than leaf
-// (adminRecordMismatch). The create refuses that state before the checkout, so only
-// a record that changed during the checkout reaches the guard. The error text is
-// claustrum's own (not measured). A record that cannot be read does not stop the
-// placement: the measured texts of a registration that is gone or closed come from
-// the placement itself (cells Z10, Z11a and Z11b, macOS VM).
+// placeWorktreeIndex is installWorktreeIndex behind a guard. On Linux and macOS the
+// index goes into the registration adminDir only if its gitdir record can be read
+// and names leaf (readAdminRecord). In every other state of a registration that
+// can be reached, nothing is placed, and an index that is there keeps its bytes: a
+// record that is missing, a FIFO or a folder, an empty or a relative record of
+// another worktree, and the record of another path. The create refuses those states
+// before the checkout, so only a record that changed during the checkout reaches the
+// guard. The error text is claustrum's own (not measured).
+//
+// One state is apart: a registration folder whose stat fails. No index of it can be
+// reached then, and the placement runs and fails by itself. Its error is the measured
+// text of a registration that is gone (cell Z10) or of a registrations directory
+// without the search permission (cells Z11a and Z11b, macOS VM).
+//
+// Cell Z15 (macOS VM) removes the record after the read-tree and sets the
+// registration to mode 0500. 89cb6289 answers "openat w1/index: permission denied"
+// there. claustrum answers the text of the guard: that is a known difference.
 func placeWorktreeIndex(idx, adminDir, leaf string) error {
-	if adminRecordMismatch(adminDir, leaf) {
-		return errors.New("the registration " + adminDir + " is of another worktree")
+	if adminRecordChecked {
+		if _, err := os.Stat(adminDir); err == nil && readAdminRecord(adminDir, leaf) != recordNamesLeaf {
+			return errors.New("the registration " + adminDir + " has no gitdir record that names this worktree")
+		}
 	}
 	return installWorktreeIndex(idx, adminDir)
 }

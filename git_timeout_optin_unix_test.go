@@ -177,6 +177,7 @@ func TestWorktreeCreateTimeoutMsFiresDuringCheckout(t *testing.T) {
 		"*is-inside-work-tree*) echo true; exit 0 ;; " +
 		"*abbrev-ref*) echo main; exit 0 ;; " +
 		"*--no-checkout*) reg=\"$PWD/.git/worktrees/wt\"; mkdir -p \"$reg\"; printf '../..\\n' > \"$reg/commondir\"; " +
+		"printf '%s/.git\\n' \"$(cd \"$last\" && pwd -P)\" > \"$reg/gitdir\"; " +
 		"printf 'gitdir: %s\\n' \"$reg\" > \"$last/.git\"; exit 0 ;; " +
 		"*) exit 0 ;; esac\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {

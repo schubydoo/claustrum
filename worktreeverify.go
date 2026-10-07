@@ -428,23 +428,38 @@ func gitDirRegistryDir(gitDir string) string {
 //     elsewhere, /elsewhere/worktrees/w1 (row D-12). <F>/WTREG/w1 and
 //     <F>/alt/WORKTREES/w1 do not pass (rows D-1, D-4, D-5 and D-7 on macOS, row
 //     D-11 on Linux). The named path need not exist (row D-12).
+//
 //  2. The registrations directory of gitDir holds an entry with the last name of
 //     the path. With GIT_COMMON_DIR of another repository in the daemon
 //     environment, git makes the registration in that repository, and baseRepo has
 //     none (rows B-E1, B-E3 and D-8, and cell D8e). The answer is then the "was not populated"
 //     text. With GIT_DIR of that repository too, git answers that repository as
 //     the git directory, and the create succeeds (probe row 2).
+//
 //  3. The commondir file of that registration leads back to the common git
 //     directory. A file that holds "../../x" does not (row D-13). The path is
 //     joined as it is spelled. So a registrations directory that is a symlink
 //     passes with "../.." (rows D-1, D-3, D-4 and D-5 on the Linux VM).
 //
-// Tests 1 and 3 answer the "does not name" text. No row holds a path that fails
-// test 1 and test 2 together: claustrum runs test 1 first (not measured). Three more
-// states are not measured, and claustrum does not refuse them. The first is a leaf
-// with no .git file that can be read. The second is an entry whose stat fails with
-// another error than "does not exist". The third is a commondir file that cannot be
-// read. A FIFO there is such a file, with no wait (readGitPlainFile). Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
+//  4. The gitdir record of that registration can be read as a file. A FIFO, a
+//     folder or no file in its place cannot (cells P-g, P-i and P-j). Cell P-h has a
+//     FIFO as the commondir file and a record of another worktree, and it gets this
+//     text, where cell P-c gets that of adminRecordRefusal. So test 3 comes before
+//     the record, and a commondir file that cannot be read fails test 3.
+//
+// Tests 1, 3 and 4 answer the "does not name" text. No read waits on a FIFO
+// (readGitPlainFile): 89cb6289 answers cells P-g and P-h in under 0.4 s. Cells P-g
+// to P-j are those of 89cb6289 on a Linux VM with git 2.43 and a macOS VM with git
+// 2.50. In each of them nothing changes after the add.
+//
+// Not measured: a path that fails test 1 and test 2 together (claustrum runs test 1
+// first), and a commondir file or a record that is missing for another reason than
+// in the cells, for example a file with no read permission. claustrum answers the
+// same text there. Two more states are not measured, and claustrum does not refuse
+// them. The first is a leaf with no .git file that can be read. The second is an
+// entry whose stat fails with another error than "does not exist".
+//
+// Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
 // 2.50, 89cb6289 answers the "does not name" text there too, with a registrations
 // directory that is a symlink to <F>/WTREG (cells P-a and P-b). On a Linux VM with
 // git 2.43 both cells succeed: git writes the path through the link. 89cb6289
@@ -454,8 +469,9 @@ func gitDirRegistryDir(gitDir string) string {
 // repository (cell P-e, Linux and macOS VMs). The test is off on Windows
 // (adminRecordChecked), which is not measured.
 //
-// A fourth test follows these three: adminRecordMismatch. All four come before the
-// deadline test of the create (row D-9 and cell P-f, macOS VM).
+// A fifth test follows these four: adminRecordMismatch. All five come before the
+// deadline test of the create (row D-9 on a macOS VM, cell P-f on Linux and macOS
+// VMs).
 func createdRegistrationRefusal(gitDir, worktreePath string) string {
 	if !adminRecordChecked {
 		return ""
@@ -477,7 +493,7 @@ func createdRegistrationRefusal(gitDir, worktreePath string) string {
 	}
 	b, err := readGitPlainFile(filepath.Join(registration, "commondir"))
 	if err != nil {
-		return ""
+		return notOurs
 	}
 	named := strings.TrimSpace(string(b))
 	if !filepath.IsAbs(named) {
@@ -485,6 +501,9 @@ func createdRegistrationRefusal(gitDir, worktreePath string) string {
 	}
 	common := filepath.Dir(registry)
 	if named != common && !sameCanonicalPath(canonicalPath(named), canonicalPath(common)) {
+		return notOurs
+	}
+	if readAdminRecord(registration, worktreePath) == recordUnreadable {
 		return notOurs
 	}
 	return ""
@@ -509,15 +528,60 @@ func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 	return filepath.Join(gitDirRegistryDir(gitDir), filepath.Base(clean))
 }
 
+// adminRecord is what the gitdir record of a registration says about a worktree.
+type adminRecord int
+
+const (
+	// recordNotCompared: the worktree path is relative or does not resolve.
+	recordNotCompared adminRecord = iota
+	// recordUnreadable: the record cannot be read as a regular file.
+	recordUnreadable
+	// recordNamesLeaf: the record names <worktree>/.git.
+	recordNamesLeaf
+	// recordOfAnother: the record was read and names anything else.
+	recordOfAnother
+)
+
+// readAdminRecord reads the gitdir record of the registration admin and compares it
+// with <worktreePath>/.git. worktreePath is taken after filepath.EvalSymlinks, which
+// keeps the spelling of every component that is not a symlink. The compare is byte
+// for byte, after the newlines at the end of the record are cut.
+//
+// A relative record counts from admin with its symlinks resolved. git writes one
+// with worktree.useRelativePaths, and 89cb6289 creates with such a record (cell
+// Z9a, macOS VM). A relative record of another worktree is a record of another
+// worktree (cell P-k), and so is an empty file (cell P-l). A record that is not a
+// regular file fails at once (readGitPlainFile).
+func readAdminRecord(admin, worktreePath string) adminRecord {
+	b, err := readGitPlainFile(filepath.Join(admin, "gitdir"))
+	if err != nil {
+		return recordUnreadable
+	}
+	if !filepath.IsAbs(worktreePath) {
+		return recordNotCompared
+	}
+	resolved, err := evalSymlinks(worktreePath)
+	if err != nil {
+		return recordNotCompared
+	}
+	record := strings.TrimRight(string(b), "\n")
+	if !filepath.IsAbs(record) {
+		record = filepath.Join(canonicalPath(admin), record)
+	}
+	if record == filepath.Join(resolved, ".git") {
+		return recordNamesLeaf
+	}
+	return recordOfAnother
+}
+
 // adminRecordMismatch reports whether the `gitdir` record of the registration admin
-// names another path than <worktreePath>/.git. The caller gets admin from
-// createdIndexDir: it is the folder that gets the index of the new worktree. The
-// compare is byte for byte.
-// worktreePath is taken after filepath.EvalSymlinks, which keeps the spelling of every
-// component that is not a symlink. 89cb6289 and f6010b97 refuse such a create on a
+// was read and names another path than <worktreePath>/.git (readAdminRecord). The
+// caller gets admin from createdIndexDir: it is the folder that gets the index of
+// the new worktree.
+// 89cb6289 and f6010b97 refuse such a create on a
 // macOS VM when the request spells the folder in Unicode NFD and git records it in
 // NFC (row I07a). They run no checkout and roll nothing back. The same request in NFC
-// for an NFD folder succeeds (row I07b). Linux is not measured, and claustrum checks
+// for an NFD folder succeeds (row I07b). Linux is not measured for that row, and claustrum checks
 // there too. On a Linux VM every create of rows CSa to CSd succeeded on both
 // references and on claustrum.
 //
@@ -530,34 +594,24 @@ func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 // nothing: the index of the old entry keeps its bytes. With no entry in baseRepo,
 // the answer is the "was not populated" text (rows B-E1 and B-E3, and cell D8e).
 // The state of cell P-c with a timeoutMs that expired during the add gets the P-c
-// refusal, and the leaf and the branch stay (cell P-f, macOS VM with git 2.50 only).
+// refusal, and the leaf and the branch stay (cell P-f, Linux and macOS VMs).
 // So the create runs this test before its deadline test.
+//
+// Three more cells start from the state of cell P-c and get the same refusal, with
+// nothing changed (89cb6289, Linux and macOS VMs). In cell P-k the old record is the
+// relative path ../../../gone/w1/.git. In cell P-l it is an empty file. In cell P-m
+// the old entry also holds a `locked` file. A record that cannot be read as a file
+// gets the other text first (createdRegistrationRefusal, cells P-g, P-i and P-j).
 //
 // Not measured: the raw bytes of the record (the NFC spelling was read from `git
 // worktree list`), whether the compare is bytewise (inferred from I07a and I07b
 // together), and the resolution of symlinks before the compare. A symlinked path
 // such as /tmp on macOS creates as usual on both references (row I01e), so
-// claustrum resolves them. A relative worktreePath or record, and any read that
-// fails, give no mismatch. A record that is not a regular file, a FIFO for example,
-// fails at once (readGitPlainFile). The check is off on Windows (adminRecordChecked). That is
+// claustrum resolves them. A worktreePath that is relative or does not resolve
+// gives no mismatch. The check is off on Windows (adminRecordChecked). That is
 // claustrum's choice.
 func adminRecordMismatch(admin, worktreePath string) bool {
-	if !adminRecordChecked || admin == "" || !filepath.IsAbs(worktreePath) {
-		return false
-	}
-	b, err := readGitPlainFile(filepath.Join(admin, "gitdir"))
-	if err != nil {
-		return false
-	}
-	record := strings.TrimRight(string(b), "\n")
-	if !filepath.IsAbs(record) {
-		return false
-	}
-	resolved, err := evalSymlinks(worktreePath)
-	if err != nil {
-		return false
-	}
-	return record != filepath.Join(resolved, ".git")
+	return adminRecordChecked && admin != "" && readAdminRecord(admin, worktreePath) == recordOfAnother
 }
 
 // adminRecordRefusal is the answer of git.worktree_create when adminRecordMismatch

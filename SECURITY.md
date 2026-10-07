@@ -106,8 +106,10 @@ on Windows:
   On Linux and macOS two refusals come before this rollback.
   If the `.git` file of the new worktree names no registration of the
   repository, the daemon refuses the create and deletes nothing.
-  If the record of that registration names another worktree, the daemon does
-  the same.
+  If the record of that registration cannot be read or names another
+  worktree, the daemon does the same. The index of the new worktree goes into a
+  registration only if its record can be read and names the new worktree. A
+  registration in any other state keeps the index that it has.
   After a failed `git worktree add`, the daemon only removes the worktree path
   if it is an empty directory. That removal cannot delete content.
 

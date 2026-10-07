@@ -1078,7 +1078,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		})
 	}
 	// The add succeeded. The .git file of the new worktree must name a registration
-	// of this repository (createdRegistrationRefusal). If it does not, the create is
+	// of this repository, and the commondir file and the gitdir record of that
+	// registration must be files that can be read (createdRegistrationRefusal, cells
+	// P-g to P-j). If not, the create is
 	// refused, with no checkout and no rollback: the leaf, the registration and the
 	// branch stay. The test comes before the deadline test: with a timeoutMs that
 	// expired during the add, 89cb6289 answers this refusal (row D-9, macOS VM).
@@ -1091,12 +1093,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	// indexDir is the registration that gets the index (createdIndexDir). Its gitdir
 	// record names worktreePath after symlink resolution.
-	// If it does not, the create is refused, with no checkout and no rollback. Before
+	// If it was read and names anything else, the create is refused, with no checkout
+	// and no rollback (cells P-c and P-k to P-m). Before
 	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
 	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). claustrum makes the calls and does not use their
 	// answer: what 89cb6289 takes from them is not measured. This test comes before
 	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
-	// answers this refusal and keeps the leaf and the branch (cell P-f, macOS VM).
+	// answers this refusal and keeps the leaf and the branch (cell P-f, Linux and macOS VMs).
 	indexDir := ""
 	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
 		indexDir = createdIndexDir(gitDir, p.WorktreePath, adminDir)
