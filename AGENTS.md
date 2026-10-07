@@ -310,8 +310,11 @@ D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
 up on as busy. A completed run that found nothing reads as not busy. The
 reference side is not probe-measured. The
 harm it refuses is the cleaner SIGTERMing a daemon that is serving a client on a
-host where `lsof` cannot answer. The sibling lock read is deliberately NOT
-covered. See the entry.
+host where `lsof` never returns. The sibling lock read is deliberately NOT
+covered: it reads a run it gave up on as not held. An `lsof` command that does
+not start is parity, not D17. The daemon then gets no SIGTERM, and a run folder
+with a lock file stays, as on `89cb6289` (macOS VM, 3 of 3 runs). So is a run
+that writes to stderr and exits 1. See the entry.
 
 D20 is off-wire, on Linux and macOS. Before the group `SIGKILL` of a child-group
 leader that reads as gone, the reap of a `-serve` start waits 50 ms and reads the

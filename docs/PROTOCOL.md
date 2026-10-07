@@ -439,11 +439,84 @@ run is bounded three ways: a command deadline, a wait for the output pipe, and a
 last bound after which the run is given up on. Those bounds are claustrum's own
 values and are not probe-measured.
 
-An abandoned run reads as busy, not idle. See [DIVERGENCES.md](DIVERGENCES.md)
-D17. A run that gave up and a run that finished and saw nothing both produce no
-output. claustrum treats only the completed empty result as evidence. On a host
-where `lsof` cannot answer, the cleaner therefore does not SIGTERM a daemon that
-is serving a client. The reference side is not probe-measured.
+The cleaner asks `lsof` two more things on macOS: whether the stdio of an orphan
+is three pipes, and whether a process holds the `daemon.lock` of an idle run dir.
+claustrum tells four outcomes of an `lsof` run apart. A macOS VM measured the first two against
+`89cb6289`, 3 of 3 runs in each row. The row names here and in the tables below
+are rows of the macOS host cleaner round of issue 429. The rows where the command
+does not start ran under a sandbox rule that denies the exec of `lsof`. Rows E3i
+and E4 hold an idle daemon, and rows D1k and E3k hold a daemon with one client:
+
+| `lsof` outcome | busy read of a daemon | lock read of a run dir |
+|---|---|---|
+| the command does not start | the daemon gets no SIGTERM (rows D1i and D1k, as `89cb6289`) | a dir with a lock file stays (row C3, as `89cb6289`) |
+| the run writes to stderr and exits 1 | the daemon gets no SIGTERM (rows E3i, E3k and E4, as `89cb6289`) | a dir with a lock file stays (rows D2p, D2f and E4, as `89cb6289`) |
+| the run is given up on | busy, so no SIGTERM ([DIVERGENCES.md](DIVERGENCES.md) D17, not measured) | not held (not measured, claustrum's own) |
+| the run completes with nothing on stderr | the output decides | the output decides |
+
+The exit code is no rule. `lsof` exits 1 with no text when no process holds the
+file, and the dir then goes (rows C1 and C6). On a host where `lsof` does not start,
+the cleaner therefore does not SIGTERM a daemon that is serving a client. In rows
+D1i, D1k, E3i and E3k the pass of `89cb6289` and of claustrum logs these two lines
+for the daemon, the first one before every run dir line. Its summary counts
+`abandoned daemons retired 0` and `candidates left undecided 1`:
+
+```
+[hostclean] daemon pid <pid> left alone this pass: its open files could not be inspected
+[hostclean] run dir "<dir>" unused for 40 days: its daemon (pid <pid>) was not retired: a connection is attached to it right now, or that could not be read: in use after all
+```
+
+In the two control rows `lsof` starts. Both sides retire the idle daemon (row D1ci)
+and spare the daemon with a client (row D1ck).
+
+On claustrum the first line goes to a daemon that is a candidate for the retire. In row E2 two
+daemons are over 5 minutes old on run dirs that are 40 days old. Each gets the
+line, and the summary counts `undecided 2`. In row E1 a second daemon is about 33 s old
+on a fresh run dir. It gets no line, and the count stays 1. claustrum asks for
+both: an age of 5 minutes and an idle run dir. Both hold on `89cb6289` in two more
+rows. In row F1 a daemon about 33 s old is on a run dir that is 40 days old. It
+gets no such line on either side, and both sides print
+`its daemon (pid <pid>) was not retired: it is too young to judge` for the run dir.
+In row F2 a daemon 5 minutes old is on a run dir with a fresh mtime, and no line
+names it on either side. From the code: with more than 4096 processes claustrum
+prints no such line. That state is not measured.
+
+Row E5 adds an orphaned Claude Code group to the state of row D1i. Neither side
+signals the group. Both log this line after the daemon line and before the run
+dir lines, and the summary counts `undecided 2`:
+
+```
+[hostclean] process group <pgid> left alone this pass: its descriptors could not be inspected
+```
+
+With a working `lsof` both sides end the group (row E5c). After an `lsof` run that
+writes to stderr and exits 1, both sides print the same line and signal nothing
+(row F3). A run that is given up on spares the orphan with claustrum's own line.
+
+The lock read has these measured states (macOS VM against `89cb6289`, 3 of 3 runs
+in each row, and claustrum gives the same answer):
+
+| row | state | `89cb6289` and claustrum |
+|---|---|---|
+| C3 | the `lsof` command does not start, and the dir has a `daemon.lock` (empty, or the record of a dead daemon) | the dir stays, with the line `[hostclean] run dir "<dir>" unused for 40 days: kept, its daemon.lock could not be examined` |
+| D2p, D2f | the `lsof` run writes to stderr and exits 1. In rows D2p and D2f a live process holds one of the lock files | the dir stays, with the same line |
+| D4 | the `daemon.lock` has mode 0000 | the dir stays, with the same line |
+| E7a, E7b, F4 | the `daemon.lock` is a symlink to a regular file, a folder, or a FIFO | the dir stays, with the same line |
+| C3, D2p, D2f, D4 | the dir has no `daemon.lock` | the dir goes |
+| C2 | another live process holds the lock file open | the dir stays, with the held line |
+| C4 | only the cleaner itself holds the lock file open | the dir goes |
+| D3 | the cleaner and a child of the cleaner hold the lock file open | the dir stays, with the held line |
+| C5 | the lock file holds 7 bytes that are no record, and no process holds it | the dir goes |
+| D7a, D7b | the lock file holds `{}`, or the first half of a record | the dir goes |
+| D5 | the lock holds the record of a live pid that does not hold the file | the dir goes |
+| C6 | the lock holds the record of a dead pid, and no process holds it | the dir goes |
+
+Not measured: a second pass, and an `lsof` run that writes to stderr with another
+exit code or with output on stdout too. claustrum reads each such run as no
+answer, whatever the exit code and the output are. Linux is not
+measured for these states. On Linux, a lock that cannot be opened, a lock that is
+no regular file, and lock content that is no record keep the dir with claustrum's
+own line. On Linux the pass logs no `left alone this pass` line.
 
 ### Daemon startup (`-serve`)
 

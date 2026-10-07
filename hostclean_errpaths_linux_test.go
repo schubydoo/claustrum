@@ -281,7 +281,7 @@ func TestHcPrimitivesOnAVanishedProcess(t *testing.T) {
 	_, mk, link := fakeProc(t)
 	const gone = 68
 
-	if pipes, canRead := hcStdioArePipes(gone); pipes || canRead {
+	if pipes, canRead, _ := hcStdioArePipes(gone); pipes || canRead {
 		t.Errorf("hcStdioArePipes for a pid with no fd directory: pipes=%v canRead=%v, want false false", pipes, canRead)
 	}
 	if hcHasFileOpen(gone, "/opt/claude/run/x/rpc.sock") {

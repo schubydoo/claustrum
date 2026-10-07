@@ -183,7 +183,10 @@ children it spawns.
   not probe-measured.
   A pass also retires stale run dirs. A stale run dir is idle past 30
   days, or its name carries `.removing-` from an earlier removal. Its socket is unanswered, and no live process holds its lock. An empty lock file is
-  not indeterminate: the cleaner asks whether a live process holds it. The list skips the
+  not indeterminate: the cleaner asks whether a live process holds it. On macOS the pid of
+  the cleaner itself is no holder, and lock content that is no record is asked about its
+  holder too. A dir with a lock file stays if the `lsof` command does not start or writes
+  to stderr and exits 1 ([PROTOCOL.md](PROTOCOL.md) → Host cleaner). The list skips the
   cleaner's own run dir and any entry that is not a plain directory, a symlink included.
   The tidy reads the idle age again before it probes a dir, and it keeps a dir that came
   back into use, unless the dir has a staging name. It renames a stale dir to

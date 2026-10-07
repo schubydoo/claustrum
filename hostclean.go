@@ -444,10 +444,19 @@ func probeSocket(addr string) (state, pid int, uid uint32) {
 
 // lock-probe states.
 const (
-	hcLockStale   = 0 // no lock file, or a record or an empty file with no live holder
-	hcLockHeld    = 1 // a record or an empty file, and a live process holds the lock
-	hcLockUnknown = 2 // the lock file could not be opened or stat'd, or its content does not parse
+	hcLockStale      = 0 // no lock file, or a record or an empty file with no live holder
+	hcLockHeld       = 1 // a record or an empty file, and a live process holds the lock
+	hcLockUnknown    = 2 // (linux) the lock could not be opened, is no regular file, or its content does not parse
+	hcLockUnexamined = 3 // (darwin) the lock could not be opened, is no regular file, or the holder query did not answer
 )
+
+// hcLockHolderRead is hcLockHeldAt behind a seam, so a test on either OS can stage each
+// answer of the holder query.
+var hcLockHolderRead = hcLockHeldAt
+
+// hcStdioRead is hcStdioArePipes behind a seam, so a test on either OS can stage each answer
+// of the stdio read of an orphan.
+var hcStdioRead = hcStdioArePipes
 
 // readLockRecord reads the first kilobyte of an open daemon.lock and parses it as the owner
 // record. Returns nil when empty or not valid JSON.
@@ -473,26 +482,33 @@ func lockProbe(dir string) (state int, rec *ownerRecord, present bool) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return hcLockStale, nil, false
 		}
-		return hcLockUnknown, nil, false
+		return hcLockUnreadState, nil, false
 	}
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
 		_ = f.Close()
-		return hcLockUnknown, nil, true
+		return hcLockUnreadState, nil, true
 	}
 	rec = readLockRecord(f)
 	_ = f.Close()
 	// An empty lock file carries no record. A daemon truncates its lock to 0 bytes on a
-	// graceful exit, so an empty file is asked about its holder like any other. Content
-	// that is present but does not parse stays indeterminate. On linux a starting daemon
+	// graceful exit, so an empty file is asked about its holder like any other. On linux,
+	// content that is present but does not parse stays indeterminate. That is claustrum's
+	// own answer, and the reference on linux is not measured for it. On darwin such content
+	// is asked about its holder too: on a macOS VM 89cb6289 removed a run dir whose lock
+	// held 7 bytes of text and had no holder (row C5, 3 of 3). On linux a starting daemon
 	// holds no flock between its open and its flock. So its lock reads stale in that window,
 	// empty or not. The post-rename lock probe in removeRunDir sees a flock taken between
 	// this read and the rename. It does not see one taken after it, and a leftover staging
 	// dir has no such probe.
-	if rec == nil && fi.Size() != 0 {
+	if hcLockNeedsRecord && rec == nil && fi.Size() != 0 {
 		return hcLockUnknown, nil, true
 	}
-	if hcLockHeldAt(path, fi) {
+	held, asked := hcLockHolderRead(path, fi)
+	if !asked {
+		return hcLockUnreadState, rec, true
+	}
+	if held {
 		return hcLockHeld, rec, true
 	}
 	return hcLockStale, rec, true
@@ -745,7 +761,10 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 	if !hcHasEnv(t.env, hcDaemonChildMarker) {
 		return false, "" // not a daemon child
 	}
-	pipes, canRead := hcStdioArePipes(t.pid)
+	pipes, canRead, answered := hcStdioRead(t.pid)
+	if !answered {
+		return false, hcOrphanUninspected
+	}
 	if !canRead {
 		return false, "its open descriptors were unreadable" // cannot confirm it, so spare it
 	}
@@ -754,6 +773,12 @@ func (c *hostCleaner) judgeOrphan(t hcTracked) (reap bool, reason string) {
 	}
 	return true, ""
 }
+
+// hcOrphanUninspected is the reason for an orphan whose stdio read got no answer. The pass
+// prints it in the line of the reference, measured on a macOS VM against 89cb6289 (row E5):
+// there the lsof command did not start. A run that writes to stderr and exits 1 gives the
+// same line on both sides (row F3).
+const hcOrphanUninspected = "its descriptors could not be inspected"
 
 // hcGetppid is os.Getppid behind a seam. The cleaner never retires its own parent.
 var hcGetppid = os.Getppid
@@ -978,6 +1003,11 @@ func (c *hostCleaner) tidyRunDirs(entries []runDirEntry, sum *hcSummary) {
 			// The reference's line, measured on a Linux VM (row HC03).
 			logInfof("[hostclean] run dir %q unused for %s: kept, a live process holds its %s", e.dirPath, hcDays(e.idle), runDirLockName)
 			continue
+		case hcLockUnexamined:
+			// The reference's line, measured on a macOS VM against 89cb6289 (rows C3, D2p,
+			// D2f, D4, E7a and E7b).
+			logInfof("[hostclean] run dir %q unused for %s: kept, its %s could not be examined", e.dirPath, hcDays(e.idle), runDirLockName)
+			continue
 		case hcLockUnknown:
 			logInfof("[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined", e.dirPath)
 			continue
@@ -1086,6 +1116,38 @@ func (c *hostCleaner) Pass() hcSummary {
 	entries, closeAll := c.runDirs()
 	defer closeAll()
 
+	// Other daemons of ours whose open files cannot be read. The line and the count are the
+	// reference's, measured on a macOS VM against 89cb6289 (rows D1i, D1k, E1, E2 and E5).
+	// There the line came before the orphan line and before every run dir line. Only a
+	// daemon that is old enough and serves an idle run dir gets the line. A daemon of about
+	// 33 s on a run dir of 40 days got none (row F1), and a daemon of 5 minutes on a fresh
+	// run dir got none (row F2). The loop does not run past the process limit, where the
+	// tidy does not run either: the line stays inside the state it was measured in. On linux
+	// hcDaemonFilesUnread is a constant false.
+	for _, t := range procs {
+		socket := serveArgv(t.argv, c.roots.daemonBin)
+		if tooMany || t.pid < 2 || t.pid == c.selfPid || !t.sameUID || !c.roots.isDaemonBinary(t.exe) || socket == "" {
+			continue
+		}
+		if !t.haveAge || hcClock().Sub(t.startWall) < hcMinAge {
+			continue
+		}
+		idle := false
+		for _, e := range entries {
+			if c.roots.sameSocketPath(socket, e.socket) && (e.idle >= hcIdleAge || strings.Contains(e.name, hcStagingMarker)) {
+				idle = true
+				break
+			}
+		}
+		if !idle {
+			continue
+		}
+		if hcDaemonFilesUnread(t.pid) {
+			logInfof("[hostclean] daemon pid %d left alone this pass: its open files could not be inspected", t.pid)
+			sum.undecided++
+		}
+	}
+
 	// Orphaned Claude Code groups: a group leader re-parented to pid 1 that runs one of our
 	// CLI binaries.
 	var orphanGroups []tracked
@@ -1094,7 +1156,10 @@ func (c *hostCleaner) Pass() hcSummary {
 			continue
 		}
 		reap, reason := c.judgeOrphan(t)
-		if reason != "" {
+		if reason == hcOrphanUninspected {
+			logInfof("[hostclean] process group %d left alone this pass: %s", t.pid, reason)
+			sum.undecided++
+		} else if reason != "" {
 			logInfof("[hostclean] spared process group %d this sweep: %s", t.pid, reason)
 			sum.undecided++
 		}

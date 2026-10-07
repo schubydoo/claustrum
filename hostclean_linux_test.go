@@ -93,7 +93,7 @@ func TestHcFdPredicates(t *testing.T) {
 	link(42, "fd/2", "pipe:[113]")
 	link(42, "fd/3", "/opt/claude/run/x/rpc.sock")
 	link(42, "fd/4", "socket:[555]")
-	if pipes, canRead := hcStdioArePipes(42); !pipes || !canRead {
+	if pipes, canRead, _ := hcStdioArePipes(42); !pipes || !canRead {
 		t.Errorf("stdio pipes: pipes=%v canRead=%v, want true true", pipes, canRead)
 	}
 	if !hcHasFileOpen(42, "/opt/claude/run/x/rpc.sock") {
@@ -105,7 +105,7 @@ func TestHcFdPredicates(t *testing.T) {
 	// A process whose stdout is not a pipe.
 	link(43, "fd/0", "pipe:[1]")
 	link(43, "fd/1", "/dev/null")
-	if pipes, canRead := hcStdioArePipes(43); pipes || !canRead {
+	if pipes, canRead, _ := hcStdioArePipes(43); pipes || !canRead {
 		t.Errorf("non-pipe stdout: pipes=%v canRead=%v, want false true", pipes, canRead)
 	}
 }
