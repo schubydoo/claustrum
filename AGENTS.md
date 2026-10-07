@@ -148,15 +148,26 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - When `git.worktree_create` rolls back a worktree, it deletes
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
-      directory. The second rollback follows a successful add. On Linux and
-      macOS three refusals come before it, and they delete nothing. Two answer
+      directory. Before the add, on Linux and macOS, create removes one stale
+      entry of `<baseRepo>/.git/worktrees`: the entry whose `gitdir` record
+      names the `.git` of the new leaf. That delete is one `os.Root.RemoveAll`
+      of the entry name through a root at that folder, after `wipesHomeDir` on
+      the entry path. An entry with a `locked` file stays (`89cb6289`, cells A1
+      to A12c, Linux VM). On Windows that step is one `os.RemoveAll` of the
+      entry path, with no `locked` test (not measured).
+      The second rollback follows a successful add. On Linux and
+      macOS four refusals come before it, and they delete nothing. Two answer
       a `.git` file of the new worktree that names no registration of the
       repository. A registration whose `commondir` file or `gitdir` record
       cannot be read as a file gets the first of them (`89cb6289`, cells P-g to
       P-j, Linux and macOS VMs). The third answers a registration whose `gitdir`
-      record was read and names another worktree. All three come before the
+      record was read and names another worktree. The fourth answers a
+      registration that is a stale entry which the step before the add left in
+      place (`89cb6289`, cells A9 g, A9b g and A10 g, Linux VM). The first
+      three come before the
       `timeoutMs` test that follows the add (`89cb6289`, row D-9 on a macOS VM
-      and cell P-f on Linux and macOS VMs).
+      and cell P-f on Linux and macOS VMs). From the code, the fourth does too
+      (not measured).
       The second rollback runs when the
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
@@ -167,30 +178,39 @@ The JSON-RPC surface is identical on every OS. Full internals →
       stops at the first failure. Then it deletes the registration, runs the
       branch step on the created branch, and then removes the empty leaf. On
       Linux and macOS a registration that cannot be deleted skips the branch
-      step. The registration of the rollback is the folder that the `.git` file
-      of the leaf names. If its `gitdir` record does not name the leaf, the
+      step. On Linux and macOS, if git answered `rev-parse
+      --absolute-git-dir`, the registration of the rollback is the entry that
+      the tests after the add accepted. That is the entry of the registrations
+      directory of `baseRepo` with the last name of the `gitdir:` path, read
+      once after the add. The rollback reads neither the `.git` file of the leaf
+      nor the `gitdir` record again (`89cb6289`, cells Z16 and Z18 on Linux and
+      macOS VMs, cells B1 to B3 and B5 on a Linux VM). The delete is one
+      `os.Root.RemoveAll` of that name through a root at the registrations
+      directory, after `wipesHomeDir` on the entry path. The folder at that path
+      must still have the identity that the tests saw. If it is another folder,
+      the rollback deletes nothing of it (D24). With no answer of git, and on
+      Windows, the registration of the rollback is the folder that the `.git`
+      file of the leaf names. If its `gitdir` record does not name the leaf, the
       rollback does not delete it. If it does not resolve strictly inside the
-      registrations directory of `baseRepo`, the same holds. The registration delete acts on the resolved path that its check
+      registrations directory of `baseRepo`, the same holds. That delete acts on the resolved path that its check
       verified, and on Linux and macOS through a root at the registrations
       directory, which must still have the identity that the check saw. On Linux and macOS the placement of the index removes a
       file, a link or an empty folder at `<registration>/index`, after a create
       there answered "file exists". That is one
       `os.Root.Remove` of the fixed name `index`, never a tree. The
-      registration of the placement is found in another way. If git answered
-      `rev-parse --absolute-git-dir`, it is the entry of the registrations
-      directory of `baseRepo` with the last name of the `gitdir:` path. It is
-      then not the folder that the path names. With no answer it is the folder
-      that the path names. An entry gets the index only if its `gitdir` record can be
-      read and names the new worktree. An entry in any other state gets no
-      index and loses none: a record of another path, a relative or an empty
-      one, a missing one, a FIFO or a folder. If git answered `rev-parse
-      --absolute-git-dir`, the create is refused before the
-      checkout (`89cb6289`, cells P-c and P-g to P-m, Linux and macOS VMs).
-      With no answer the registration tests do not run, and a record that
-      cannot be read reaches the placement. The
-      placement tests the record again. An entry folder whose stat fails takes
-      the placement itself, which fails there. A registration
-      whose back-pointer cannot be read is never deleted.
+      registration of the placement is that same entry. With no answer of git
+      it is the folder that the `gitdir:` path names. If git answered, the
+      create refuses before the checkout an entry whose `gitdir` record cannot
+      be read or names another path (`89cb6289`, cells P-c and P-g to P-m,
+      Linux and macOS VMs). The placement then reads no record again: a record
+      that goes during the checkout does not stop it (`89cb6289`, cell B4 on a
+      Linux VM, cell Z15 on Linux and macOS VMs). It places nothing in a folder
+      that is not the accepted one (D24, not measured). With no answer the
+      registration tests do not run. An entry then gets the index only if its
+      `gitdir` record can be read and names the new worktree. An entry folder
+      whose stat fails takes the placement itself, which fails there. With no
+      answer of git, a registration whose back-pointer cannot be read is never
+      deleted.
       `wipesHomeDir` guards every delete of the leaf as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint
       identity of the leaf again, so a swap while create runs cannot redirect
@@ -413,6 +433,14 @@ D23 is Windows-only. The environment block of a child is in name order, because
 Go 1.26 sorts it at the process start. `89cb6289` keeps the order of its
 launching block and adds its entries after it. Name order stays by the
 maintainer's decision of 2026-10-06, not by a rule 3 clause. See the entry.
+
+D24 is on Linux and macOS, and the frames are equal in its measured cells. In a
+rollback of `git.worktree_create`, claustrum deletes the registration only if the
+folder at its path is still the folder that the tests after the add accepted.
+`89cb6289` deletes the folder at that path in cells B6 and B6b (Linux VM, 2 runs
+each). In cell B6b that folder holds the registration of a live sibling worktree.
+The placement of the index has the same test (not measured). The guard stays by
+the maintainer's decision of 2026-10-07, not by a rule 3 clause. See the entry.
 
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →

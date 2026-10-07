@@ -202,6 +202,7 @@ opt-in?
 | D21 | Always-on, Windows only | No. Off the wire. It is the content of `remote-server.log`, not a frame | a second daemon on a live socket appends to `remote-server.log`. `89cb6289` truncates the file at that start. The earlier lines of its first daemon are lost. The later lines of that daemon sit behind a block of NUL bytes (rows WN04, WJ04). Keeping the lines is a maintainer decision of 2026-10-02. The longer log of claustrum is not drift |
 | D22 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `git.worktree_remove` refuses a worktree that is locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four states. Rows p6 and p6f have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present and gone. Row p6e has a daemon `GIT_DIR` alone. Row p6d has `baseRepo` = `<T>/missing/..`. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too, and nothing is deleted on either side. Rows p6, p6e and p6f ran on Linux, macOS and Windows VMs, row p6d on Linux and macOS. A maintainer decision of 2026-10-03. The refusal is not drift |
 | D23 | Always-on, Windows only | Maybe. A Windows probe whose child prints its environment block shows it in the stream frames (expected) | the environment block of a child is in name order. `89cb6289` keeps the order of its launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries (Windows VM rows V1 to V10). The set of entries and the response frames are equal in those rows. A maintainer decision of 2026-10-06. The other order is not drift |
+| D24 | Always-on, Linux and macOS | No in the measured cells: the frames are equal and the disk differs. A probe that lists the registrations folder shows it | the rollback of `git.worktree_create` deletes the registration only if the folder at its path is still the folder that the tests after the add accepted. `89cb6289` removes the folder at that path in cells B6 and B6b (Linux VM, 2 runs each). In B6b that folder holds the registration of a live sibling worktree. The placement of the index has the same test (not measured). A maintainer decision of 2026-10-07. The kept folder is not drift |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
@@ -299,7 +300,11 @@ traps that matter for telling drift from expected:
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
   back. `89cb6289` answers like claustrum (the Linux timeout set of the whole-build
   check of issue 442). That difference is not drift.
-- `git.worktree_create` has open differences of issue 429. Cells Z15 and P-p differ in the frame and on the disk. Cells Z16, Z18 and Z18r differ on the disk only: `89cb6289` removes the registration in the rollback, and claustrum keeps it. None is drift of a new build (PROTOCOL.md → `git.worktree_create`).
+- In two cells of `git.worktree_create` a folder stays on claustrum that
+  `89cb6289` removes. In cell B6 it is an empty folder at the path of the new
+  registration. In cell B6b it is the registration of a live sibling worktree
+  that a wrapper moved to that path (Linux VM). The frames are equal. A kept
+  folder there is D24, not drift (PROTOCOL.md → `git.worktree_create`).
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
   pins. claustrum follows `89cb6289`, the build that `scripts/UPSTREAM_SHA`
   names. Against `f6010b97`, `server.capabilities` differs by the

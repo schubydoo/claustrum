@@ -175,6 +175,7 @@ rather than repeating them in each entry:
 | [D21](#d21) | A second daemon on a live socket appends to `remote-server.log`, where `89cb6289` truncates it and loses the earlier lines of the first daemon (Windows) | always-on (Windows) | always-on | Maintainer decision of 2026-10-02. No frame, reply or exit status differs. A reader of the log file sees the kept lines | a measurement that shows the reference keeping those lines, or a reader of the log that needs the file to start with the lines of the second daemon |
 | [D22](#d22) | `git.worktree_remove` refuses a worktree locked in the `.git` folder of `baseRepo`, in four states where `89cb6289` answers success. Two have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present or gone. One has a daemon `GIT_DIR` alone. One has a `baseRepo` that does not exist as sent. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too | always-on | always-on | Maintainer decision of 2026-10-03. The frame differs from `89cb6289` in those four states and in rows q2 to q4 | a caller that needs the removal of a locked worktree there, or a measurement that shows the reference refusing there |
 | [D23](#d23) | The environment block of a child is in name order (Windows). `89cb6289` keeps the order of the launching block and adds its entries after it | always-on (Windows) | always-on | Maintainer decision of 2026-10-06. The response frames are equal in the measured rows. The order of the block differs | a client that depends on the order of the block, or a decision to match the block byte for byte |
+| [D24](#d24) | The rollback of `git.worktree_create` keeps a folder that replaced the new registration. `89cb6289` removes it in cells B6 and B6b, and in B6b it holds the registration of a live sibling worktree (Linux and macOS) | always-on (Linux and macOS) | always-on | Maintainer decision of 2026-10-07. The frames are equal in the measured cells. The disk differs | a measurement that shows the reference keeping such a folder, or a decision to match the disk of cells B6 and B6b |
 | [CT-1](#ct-1) | Opt-in `wantPid` → `pid` + `startTime` on spawn/reattach | off (fields omitted) | caller sends `"wantPid":true` | sanctioned optional-param extension | — (additive, degrades both ways) |
 | [CT-2](#ct-2) | `-keep-children` leaves the child tree running on shutdown | off | `-keep-children` / `keep-children` key | off-wire opt-in extension | — |
 | [CT-3](#ct-3) | `claustrum.conf` config file | absent ⇒ stock | create the file | the opt-in mechanism itself | — |
@@ -1182,6 +1183,54 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → process.spawn. Evidence in
   `scratch/i429/s6-envorder-windows/REPORT.md` and in `cmp/table.md`,
   `cmp/tally.md` and `cmp/detail.md` beside it.
+
+### D24 · Keep a folder that replaced the new registration in the create rollback (Linux and macOS) { #d24 }
+
+- **Behavior.** On Linux and macOS `git.worktree_create` tests the registration
+  of the new worktree right after the add. When the tests accept it, claustrum
+  takes the identity of the registration folder. A rollback deletes the folder at
+  that path only if it still has that identity. If another folder is at the
+  path, the rollback deletes nothing of it. It adds no text to the frame, and the
+  branch step runs. The placement of the index has the same test. claustrum
+  places no index in a folder that is not the accepted one. It then answers a
+  failed checkout with its own text, `the registration <entry> is not the folder
+  that was tested after the add`.
+- **Reference side, measured.** A Linux VM with git 2.43 ran `89cb6289` on
+  2026-10-07, 2 runs per cell. A git wrapper changes the registrations folder of
+  `baseRepo` and then fails the read-tree.
+  - Cell B6. The wrapper renames the new registration `w1` to `w1x` and makes a
+    new empty folder `w1`. `89cb6289` removes the empty `w1` and keeps `w1x`.
+  - Cell B6b. The wrapper renames `w1` to `w1x`, and the registration `w9` of a
+    live sibling worktree to `w1`. `89cb6289` removes that `w1` with the files
+    of the sibling, and keeps `w1x`.
+- **claustrum side.** From the code: this build removes no folder of the
+  registrations directory in both cells. This build did not run on a VM. The
+  same VM round ran main `8af9c03`, an earlier build without this guard. It kept
+  both folders in both cells too, because its rollback then verified the
+  registration through the `.git` file of the leaf.
+- **Equal in those cells.** The frame is the plain failed checkout on both
+  sides. The leaf and branch `w1` are gone on both sides. In cell B6b the folder
+  of the sibling worktree and its branch stay on both sides.
+- **Default.** Always-on, Linux and macOS. **Activate:** always-on. There is no
+  flag and no key. On Windows no registration test runs after the add, so this
+  guard does not run there. Windows is not measured.
+- **Why always-on.** The maintainer's decision of 2026-10-07: the guard stays.
+  The harm that it refuses is the loss of the registration of another worktree,
+  as in cell B6b. No clause of rule 3 covers this entry. It stands on that
+  decision, and the reopen trigger below takes it back.
+- **Cost.** In the measured cells a folder stays that `89cb6289` removes: the
+  empty `w1` of cell B6, and the files of the sibling under the name `w1` in
+  cell B6b. No frame differs there. A create reaches the guard only if the
+  registrations folder changes between the add and the rollback.
+- **Not measured.** The guard at the placement of the index: no cell has a
+  replaced folder with a read-tree that exits 0. macOS. A folder that is deleted
+  and made again with the same file identity. From the code: the guard takes
+  such a folder for the accepted one.
+- **Reopen trigger.** A measurement that shows the reference keeping such a
+  folder. Or a decision to match the disk of cells B6 and B6b.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → git.worktree_create. Evidence in
+  `scratch/i429/s37-linux-rollback-probe/REPORT.md` and in `raw/cells/B6.md` and
+  `raw/cells/B6b.md` beside it.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
