@@ -1811,9 +1811,10 @@ func unreadableRepoLockCheckRefusal(worktreePath, repo string) string {
 // worktreeAdminDir reads a linked worktree's `.git` pointer file
 // ("gitdir: <mainGitDir>/worktrees/<name>") and returns that admin directory, or
 // "" when worktreePath is not a linked worktree. The rollback of git.worktree_create
-// uses it to find the entry of the worktree it created.
+// uses it to find the entry of the worktree it created. A `.git` that is not a
+// regular file, a FIFO for example, gives "" at once (readGitPlainFile).
 func worktreeAdminDir(worktreePath string) string {
-	b, err := os.ReadFile(filepath.Join(worktreePath, ".git"))
+	b, err := readGitPlainFile(filepath.Join(worktreePath, ".git"))
 	if err != nil {
 		return ""
 	}
@@ -1839,7 +1840,7 @@ func worktreeAdminDir(worktreePath string) string {
 // worktree.useRelativePaths (cell Z9b, macOS VM). readErr is the error of a record
 // that cannot be read, and nil otherwise.
 func worktreeAdminBelongsTo(adminDir, worktreePath string) (belongs bool, readErr error) {
-	b, err := os.ReadFile(filepath.Join(adminDir, "gitdir"))
+	b, err := readGitPlainFile(filepath.Join(adminDir, "gitdir"))
 	if err != nil {
 		return false, err
 	}
