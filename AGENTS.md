@@ -167,7 +167,10 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `os.Root.Remove` of the fixed name `index`, never a tree. The
       registration is the entry of the registrations directory of `baseRepo`
       with the last name of the `gitdir:` path. It is not the folder that the
-      path names. A registration
+      path names. An entry whose `gitdir` record names another worktree gets
+      no index and loses none. The create is refused before the checkout
+      (`89cb6289`, cell P-c, Linux and macOS VMs). The placement tests the record
+      again. A registration
       whose back-pointer cannot be read is never deleted.
       `wipesHomeDir` guards every delete of the leaf as defense-in-depth behind the
       containment that create applies itself. Create also tests the checkpoint

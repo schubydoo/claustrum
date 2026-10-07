@@ -1103,12 +1103,18 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			BranchKept: kept,
 		})
 	}
-	// The admin record of the new worktree names worktreePath after symlink resolution.
+	// indexDir is the registration that gets the index (createdIndexDir). Its gitdir
+	// record names worktreePath after symlink resolution.
 	// If it does not, the create is refused, with no checkout and no rollback. Before
 	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
-	// as the work tree (row I07a, macOS VM). claustrum makes the calls and does not use their
-	// answer: what 89cb6289 takes from them is not measured.
-	if adminRecordMismatch(p.WorktreePath) {
+	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). claustrum makes the calls and does not use their
+	// answer: what 89cb6289 takes from them is not measured. The place of this test
+	// after the deadline test is claustrum's choice (not measured).
+	indexDir := ""
+	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
+		indexDir = createdIndexDir(gitDir, p.WorktreePath, adminDir)
+	}
+	if adminRecordMismatch(indexDir, p.WorktreePath) {
 		_, _ = gitDirWorkTreeToplevel(gitDir, repo, commonDirPinEnv(repo))
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
@@ -1123,10 +1129,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// index becomes the new worktree's own index. Measured against f6010b97 and
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
-	if adminDir := worktreeAdminDir(p.WorktreePath); adminDir != "" {
+	if indexDir != "" {
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			createdIndexDir(gitDir, p.WorktreePath, adminDir), checkoutRev, commonDirPinEnv(repo))
+			indexDir, checkoutRev, commonDirPinEnv(repo))
 		switch {
 		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and

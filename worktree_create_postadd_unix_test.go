@@ -307,6 +307,139 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 	}
 }
 
+// TestWorktreeCreateOldRegistrationOfSameName pins cell P-c (89cb6289, Linux VM
+// with git 2.43 and macOS VM with git 2.50). The state is that of row B-E1, and T holds an old registration w1
+// of another worktree, with its own index. git makes the new registration in X. The
+// create is refused with the "different worktree" text. Nothing is rolled back, no
+// checkout runs, and the index of the old registration keeps its bytes.
+func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
+	requireGit(t)
+	oldTimeout := gitTimeout
+	t.Cleanup(func() { gitTimeout = oldTimeout })
+	gitTimeout = 0
+	// Equal dates give equal commit ids in T and X.
+	t.Setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
+	root := t.TempDir()
+	T, X := filepath.Join(root, "T"), filepath.Join(root, "X")
+	for _, r := range []string{T, X} {
+		if err := os.MkdirAll(r, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, r, "init", "-q", "-b", "main")
+		writeFile(t, filepath.Join(r, "t.txt"), "t\n", 0o644)
+		runGit(t, r, "add", ".")
+		runGit(t, r, "commit", "-q", "-m", "c0")
+	}
+	runGit(t, X, "branch", "-m", "main", "xonly")
+	// The old registration: a worktree on branch old1 whose folder is gone.
+	gone := filepath.Join(root, "gone")
+	runGit(t, T, "worktree", "add", "-q", "-b", "old1", filepath.Join(gone, "w1"))
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	oldReg := filepath.Join(T, ".git", "worktrees", "w1")
+	oldIndex, err := os.ReadFile(filepath.Join(oldReg, "index"))
+	if err != nil || len(oldIndex) == 0 {
+		t.Fatalf("the old registration holds no index (err %v): this fixture does not stage the cell", err)
+	}
+	oldInfo, err := os.Stat(filepath.Join(oldReg, "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRecord, err := os.ReadFile(filepath.Join(oldReg, "gitdir"))
+	if err != nil || !strings.HasSuffix(string(oldRecord), filepath.Join("gone", "w1", ".git")+"\n") {
+		t.Fatalf("the old record = %q (err %v), want the worktree that is gone", oldRecord, err)
+	}
+
+	s := newTestServer(t)
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
+	leaf := filepath.Join(T, ".claude", "worktrees", "w1")
+	raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
+		map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}))
+	want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, "refusing to create worktree: "+leaf+
+		" carries a .git file naming an admin directory whose own record is of a different worktree") + `,"errorCode":"unsafe_path"}}`
+	if raw != want {
+		t.Errorf("reply = %s\nwant %s", raw, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(oldReg, "index")); err != nil || string(b) != string(oldIndex) {
+		t.Errorf("the index of the old registration changed (err %v)", err)
+	}
+	if fi, err := os.Stat(filepath.Join(oldReg, "index")); err != nil || !os.SameFile(oldInfo, fi) {
+		t.Errorf("the index of the old registration is another file now (err %v)", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(oldReg, "gitdir")); string(b) != string(oldRecord) {
+		t.Errorf("the old record = %q, want %q", b, oldRecord)
+	}
+	ents, err := os.ReadDir(leaf)
+	if err != nil || len(ents) != 1 || ents[0].Name() != ".git" {
+		t.Errorf("leaf entries = %v (err %v), want only .git", ents, err)
+	}
+	newReg := filepath.Join(X, ".git", "worktrees", "w1")
+	if b, _ := os.ReadFile(filepath.Join(leaf, ".git")); !strings.HasSuffix(strings.TrimSpace(string(b)), filepath.Join("X", ".git", "worktrees", "w1")) {
+		t.Errorf("leaf .git = %q, want the registration in X", b)
+	}
+	if _, err := os.Stat(filepath.Join(newReg, "HEAD")); err != nil {
+		t.Errorf("the registration in X is gone: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(newReg, "index")); !os.IsNotExist(err) {
+		t.Errorf("the registration in X holds an index (Lstat err %v), want none", err)
+	}
+	if _, err := os.Stat(filepath.Join(T, ".git", "refs", "heads", "w1")); err != nil {
+		t.Errorf("refs/heads/w1 of T is gone: %v", err)
+	}
+}
+
+// TestPlaceWorktreeIndexGuard pins the guard of the index placement. A
+// registration whose gitdir record names another worktree keeps its index. A record
+// that names the leaf gets the new index. A registration with no record gets it
+// too: that is claustrum's choice (not measured).
+func TestPlaceWorktreeIndexGuard(t *testing.T) {
+	root := t.TempDir()
+	leaf := filepath.Join(root, "leaf")
+	reg := filepath.Join(root, ".git", "worktrees", "w1")
+	for _, d := range []string{leaf, reg} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := filepath.Join(root, "new-index")
+	writeFile(t, src, "new\n", 0o644)
+	index := filepath.Join(reg, "index")
+	indexIs := func(want string) {
+		t.Helper()
+		if b, err := os.ReadFile(index); err != nil || string(b) != want {
+			t.Errorf("index = %q (err %v), want %q", b, err, want)
+		}
+	}
+
+	writeFile(t, index, "old\n", 0o644)
+	writeFile(t, filepath.Join(reg, "gitdir"), filepath.Join(root, "gone", "w1", ".git")+"\n", 0o644)
+	if err := placeWorktreeIndex(src, reg, leaf); err == nil || !strings.Contains(err.Error(), "is of another worktree") {
+		t.Errorf("record of another worktree: err = %v, want the guard", err)
+	}
+	indexIs("old\n")
+
+	resolved, err := filepath.EvalSymlinks(leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(reg, "gitdir"), filepath.Join(resolved, ".git")+"\n", 0o644)
+	if err := placeWorktreeIndex(src, reg, leaf); err != nil {
+		t.Errorf("record of the leaf: err = %v, want none", err)
+	}
+	indexIs("new\n")
+
+	writeFile(t, index, "old\n", 0o644)
+	if err := os.Remove(filepath.Join(reg, "gitdir")); err != nil {
+		t.Fatal(err)
+	}
+	if err := placeWorktreeIndex(src, reg, leaf); err != nil {
+		t.Errorf("no record: err = %v, want none", err)
+	}
+	indexIs("new\n")
+}
+
 // TestCreatedIndexDir pins the folder of the index. For a .git value in a folder
 // named worktrees, it is the registration of the git directory with the last name
 // of the value (row D-12). Any other value names the folder itself: only a .git

@@ -394,7 +394,7 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // runWorktreeCheckout is the read-tree checkout of git.worktree_create. It reads rev
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
-// (installWorktreeIndex). The caller gets adminDir from createdIndexDir. The temporary directory is removed afterwards. stderr,
+// (placeWorktreeIndex). The caller gets adminDir from createdIndexDir. The temporary directory is removed afterwards. stderr,
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
@@ -414,9 +414,23 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		installErr = installWorktreeIndex(idx, adminDir)
+		installErr = placeWorktreeIndex(idx, adminDir, leaf)
 	}
 	return stderr, drained, err, installErr
+}
+
+// placeWorktreeIndex is installWorktreeIndex behind a guard: the index never goes
+// into a registration whose gitdir record names another worktree than leaf
+// (adminRecordMismatch). The create refuses that state before the checkout, so only
+// a record that changed during the checkout reaches the guard. The error text is
+// claustrum's own (not measured). A record that cannot be read does not stop the
+// placement: the measured texts of a registration that is gone or closed come from
+// the placement itself (cells Z10, Z11a and Z11b, macOS VM).
+func placeWorktreeIndex(idx, adminDir, leaf string) error {
+	if adminRecordMismatch(adminDir, leaf) {
+		return errors.New("the registration " + adminDir + " is of another worktree")
+	}
+	return installWorktreeIndex(idx, adminDir)
 }
 
 // indexInstallText is the text after "git worktree add failed (checkout): " when

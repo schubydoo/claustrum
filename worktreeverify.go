@@ -443,8 +443,17 @@ func gitDirRegistryDir(gitDir string) string {
 // states are not measured, and claustrum does not refuse them. The first is a leaf
 // with no .git file that can be read. The second is an entry whose stat fails with
 // another error than "does not exist". The third is a commondir file that cannot be
-// read. Attach mode and a worktreeRoot are not measured either, and take the same
-// tests. The test is off on Windows (adminRecordChecked), which is not measured.
+// read. Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
+// 2.50, 89cb6289 answers the "does not name" text there too, with a registrations
+// directory that is a symlink to <F>/WTREG (cells P-a and P-b). On a Linux VM with
+// git 2.43 both cells succeed: git writes the path through the link. 89cb6289
+// answers that text also for /elsewhere/WTREG/w1, a path that does not exist
+// (cell P-d on Linux and macOS VMs, cell Pd2 on a Linux VM). A baseRepo that is a
+// linked worktree creates, with the registration and the index in the main
+// repository (cell P-e, Linux VM). The test is off on Windows
+// (adminRecordChecked), which is not measured.
+//
+// A fourth test follows the deadline test of the create: adminRecordMismatch.
 func createdRegistrationRefusal(gitDir, worktreePath string) string {
 	if !adminRecordChecked {
 		return ""
@@ -498,10 +507,10 @@ func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 	return filepath.Join(gitDirRegistryDir(gitDir), filepath.Base(clean))
 }
 
-// adminRecordMismatch reports whether the admin record that `git worktree add` wrote
-// for the new worktree names another path than worktreePath. It reads
-// <worktreePath>/.git, the admin directory that file names, and that directory's
-// `gitdir` record, and compares the record with <worktreePath>/.git byte for byte.
+// adminRecordMismatch reports whether the `gitdir` record of the registration admin
+// names another path than <worktreePath>/.git. The caller gets admin from
+// createdIndexDir: it is the folder that gets the index of the new worktree. The
+// compare is byte for byte.
 // worktreePath is taken after filepath.EvalSymlinks, which keeps the spelling of every
 // component that is not a symlink. 89cb6289 and f6010b97 refuse such a create on a
 // macOS VM when the request spells the folder in Unicode NFD and git records it in
@@ -510,6 +519,15 @@ func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 // there too. On a Linux VM every create of rows CSa to CSd succeeded on both
 // references and on claustrum.
 //
+// The record is that of the entry in the registrations directory of baseRepo, not
+// that of the folder that the .git file names. Cell P-c shows it (89cb6289, Linux
+// VM with git 2.43 and macOS VM with git 2.50). There the daemon has GIT_COMMON_DIR of another repository X,
+// and git makes the registration in X. Its record names the new leaf. baseRepo
+// holds an old entry of the same name, and the record of that entry names another
+// worktree. 89cb6289 refuses with the text of adminRecordRefusal and changes
+// nothing: the index of the old entry keeps its bytes. With no entry in baseRepo,
+// the answer is the "was not populated" text (rows B-E1 and B-E3, and cell D8e).
+//
 // Not measured: the raw bytes of the record (the NFC spelling was read from `git
 // worktree list`), whether the compare is bytewise (inferred from I07a and I07b
 // together), and the resolution of symlinks before the compare. A symlinked path
@@ -517,16 +535,9 @@ func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 // claustrum resolves them. A relative worktreePath or record, and any read that
 // fails, give no mismatch. The check is off on Windows (adminRecordChecked). That is
 // claustrum's choice.
-func adminRecordMismatch(worktreePath string) bool {
-	if !adminRecordChecked || !filepath.IsAbs(worktreePath) {
+func adminRecordMismatch(admin, worktreePath string) bool {
+	if !adminRecordChecked || admin == "" || !filepath.IsAbs(worktreePath) {
 		return false
-	}
-	admin := worktreeAdminDir(worktreePath)
-	if admin == "" {
-		return false
-	}
-	if !filepath.IsAbs(admin) {
-		admin = filepath.Join(worktreePath, admin)
 	}
 	b, err := os.ReadFile(filepath.Join(admin, "gitdir"))
 	if err != nil {
