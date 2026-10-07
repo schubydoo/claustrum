@@ -329,37 +329,42 @@ func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		sibling bool
-		steps   func(f wtFixture, reg, w9, live, outside string) [][]string
+		// realLeaf and live have their symlinks resolved, as git records a path.
+		steps func(f wtFixture, reg, w9, live, outside, realLeaf string) [][]string
 	}{
-		{"Z16", false, func(_ wtFixture, reg, _, _, _ string) [][]string {
+		{"Z16", false, func(_ wtFixture, reg, _, _, _, _ string) [][]string {
 			return [][]string{{"write", filepath.Join(reg, "gitdir"), "/nonexistent/.git\n"}}
 		}},
-		{"B1", true, func(_ wtFixture, reg, _, live, _ string) [][]string {
+		{"B1", true, func(_ wtFixture, reg, _, live, _, _ string) [][]string {
 			return [][]string{{"write", filepath.Join(reg, "gitdir"), filepath.Join(live, ".git") + "\n"}}
 		}},
-		{"Z18", false, func(f wtFixture, _, _, _, outside string) [][]string {
+		{"Z18", false, func(f wtFixture, _, _, _, outside, _ string) [][]string {
 			return [][]string{{"write", filepath.Join(f.leaf(), ".git"), "gitdir: " + outside + "\n"}}
 		}},
-		{"B2", true, func(f wtFixture, _, w9, _, _ string) [][]string {
+		{"B2", true, func(f wtFixture, _, w9, _, _, _ string) [][]string {
 			return [][]string{{"write", filepath.Join(f.leaf(), ".git"), "gitdir: " + w9 + "\n"}}
 		}},
-		{"B3", true, func(f wtFixture, _, w9, _, _ string) [][]string {
+		{"B3", true, func(f wtFixture, _, w9, _, _, realLeaf string) [][]string {
 			return [][]string{
 				{"write", filepath.Join(f.leaf(), ".git"), "gitdir: " + w9 + "\n"},
-				{"write", filepath.Join(w9, "gitdir"), filepath.Join(f.leaf(), ".git") + "\n"},
+				{"write", filepath.Join(w9, "gitdir"), filepath.Join(realLeaf, ".git") + "\n"},
 			}
 		}},
-		{"B5", false, func(f wtFixture, _, _, _, _ string) [][]string {
+		{"B5", false, func(f wtFixture, _, _, _, _, _ string) [][]string {
 			return [][]string{{"rm", filepath.Join(f.leaf(), ".git")}}
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, s := postAddFixture(t)
-			root := filepath.Dir(f.top)
+			root, err := filepath.EvalSymlinks(filepath.Dir(f.top))
+			if err != nil {
+				t.Fatal(err)
+			}
+			realLeaf := filepath.Join(root, "T", ".claude", "worktrees", "w1")
 			reg, w9 := filepath.Join(f.regDir, "w1"), filepath.Join(f.regDir, "w9")
 			live := filepath.Join(root, "live", "w9")
 			outside := filepath.Join(root, "outside", "reg")
-			writeFile(t, filepath.Join(outside, "gitdir"), filepath.Join(f.leaf(), ".git")+"\n", 0o644)
+			writeFile(t, filepath.Join(outside, "gitdir"), filepath.Join(realLeaf, ".git")+"\n", 0o644)
 			chmodForTest(t, filepath.Join(outside, "gitdir"), 0)
 			t.Cleanup(func() { _ = os.Chmod(filepath.Join(outside, "gitdir"), 0o644) })
 			wantRegs := []string(nil)
@@ -367,7 +372,7 @@ func TestWorktreeCreateRollbackRemovesTestedRegistration(t *testing.T) {
 				runGit(t, f.top, "worktree", "add", "-q", "-b", "w9", live)
 				wantRegs = []string{"w9"}
 			}
-			stubSteps(t, tc.steps(f, reg, w9, live, outside)...)
+			stubSteps(t, tc.steps(f, reg, w9, live, outside, realLeaf)...)
 			slowGit(t, "read-tree", "fail", 0, `fatal: forced read-tree failure\n`, "")
 
 			raw, _ := f.create(t, s, "w1", "", 0)
@@ -751,5 +756,72 @@ func TestWorktreeCreateSecondStaleEntry(t *testing.T) {
 	}
 	if b, err := os.ReadFile(index); err != nil || string(b) != string(oldIndex) {
 		t.Errorf("the index of the locked entry changed (err %v)", err)
+	}
+}
+
+// TestDropStaleWorktreeRegistrationRetargetedRegistry pins that the step before the
+// add lists, reads and removes in one opened registrations folder. That folder is
+// a symlink, and the test points the link at another folder around the open. One
+// entry w1 has a record that names the leaf, and the other names another worktree.
+// No cell measured this state.
+//
+//   - The link changes right before the open, to the folder with the other record.
+//     Nothing goes in either folder.
+//   - The link changes right after the open, to the folder with the stale record.
+//     The opened folder holds the other record, so nothing goes in either folder.
+func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
+	for _, when := range []string{"before the open", "after the open"} {
+		t.Run(when, func(t *testing.T) {
+			root := realTempDir(t)
+			repo := filepath.Join(root, "T")
+			leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+			link := filepath.Join(repo, ".git", "worktrees")
+			stale, other := filepath.Join(root, "stale"), filepath.Join(root, "other")
+			writeFile(t, filepath.Join(stale, "w1", "gitdir"), leaf+"/.git\n", 0o644)
+			writeFile(t, filepath.Join(other, "w1", "gitdir"), filepath.Join(root, "live", "w1", ".git")+"\n", 0o644)
+			first, second := stale, other
+			if when == "after the open" {
+				first, second = other, stale
+			}
+			mkdirForTest(t, filepath.Dir(link))
+			if err := os.Symlink(first, link); err != nil {
+				t.Fatal(err)
+			}
+			retarget := func() error {
+				if err := os.Remove(link); err != nil {
+					return err
+				}
+				return os.Symlink(second, link)
+			}
+			old := openRegistrationsRoot
+			t.Cleanup(func() { openRegistrationsRoot = old })
+			opens := 0
+			openRegistrationsRoot = func(name string) (*os.Root, error) {
+				opens++
+				if when == "before the open" {
+					if err := retarget(); err != nil {
+						return nil, err
+					}
+					return old(name)
+				}
+				r, err := old(name)
+				if err == nil {
+					err = retarget()
+				}
+				return r, err
+			}
+			kept := dropStaleWorktreeRegistration(repo, leaf)
+			if opens != 1 {
+				t.Fatalf("the registrations folder was opened %d times, want 1: the test did not stage the change", opens)
+			}
+			if len(kept) != 0 {
+				t.Errorf("kept = %q, want none", kept)
+			}
+			for _, dir := range []string{stale, other} {
+				if got, want := pathsBelow(t, dir), []string{"w1", "w1/gitdir"}; !slices.Equal(got, want) {
+					t.Errorf("%s holds %q, want %q", filepath.Base(dir), got, want)
+				}
+			}
+		})
 	}
 }

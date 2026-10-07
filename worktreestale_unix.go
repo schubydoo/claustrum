@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -44,23 +45,37 @@ import (
 // The create refuses later if the registration of the new worktree is one of them
 // (staleRegistrationRefusal).
 //
-// claustrum's own guards: the remove goes through an os.Root at the registrations
-// folder and names one direct child, so it follows no symlink. An entry that is not
+// claustrum's own guards: the step opens one os.Root at the registrations folder
+// first. It lists the entries, reads each record, tests `locked` and removes
+// through that root, so every step acts in one folder. The remove names one direct
+// child and follows no symlink. A record that is a symlink out of the registrations
+// folder is not read (the rule of os.Root, not measured). An entry that is not
 // a real folder is passed over. The home guard runs on the entry path first (D2).
 //
 // Not measured: more than one stale entry. claustrum handles every one by the
-// rules above, and remembers every one that stays. If the step ended at the first
-// match, a second stale entry got the index of the new worktree. Not measured either: a tab or a
+// rules above, and remembers every one that stays. Not measured either: a tab or a
 // carriage return at an end of the record (cut here), a relative record in a
 // repository that is sent through a symlink (it counts from the resolved entry
 // folder here), and a `locked` entry whose stat fails with another error than "does
 // not exist" (the entry stays).
 func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 	base := filepath.Join(repo, ".git", worktreesSubdir)
-	ents, err := os.ReadDir(base)
+	root, err := openRegistrationsRoot(base)
 	if err != nil {
 		return nil
 	}
+	defer func() { _ = root.Close() }()
+	dir, err := root.Open(".")
+	if err != nil {
+		return nil
+	}
+	ents, err := dir.ReadDir(-1)
+	_ = dir.Close()
+	if err != nil {
+		return nil
+	}
+	// The order of os.ReadDir, which this step had before it used a root.
+	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	target := filepath.Join(canonicalPathOfGone(worktreePath), ".git")
 	for _, e := range ents {
 		if !e.IsDir() {
@@ -69,7 +84,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 		entry := filepath.Join(base, e.Name())
 		// A record that is not a regular file is passed over at once. With a FIFO
 		// there, 89cb6289 goes on to `git worktree add` (row B-G1, Linux and macOS VMs).
-		b, err := readGitPlainFile(filepath.Join(entry, "gitdir"))
+		b, err := readGitPlainFileIn(root, e.Name()+"/gitdir")
 		if err != nil {
 			continue
 		}
@@ -80,28 +95,20 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 		if filepath.Clean(record) != target {
 			continue
 		}
-		if stays := removeStaleRegistration(base, e.Name()); stays != "" {
-			kept = append(kept, stays)
+		if removeStaleRegistration(root, e.Name(), entry) {
+			kept = append(kept, entry)
 		}
 	}
 	return kept
 }
 
-// removeStaleRegistration removes the entry name of the registrations folder base,
-// unless it holds a `locked` file. It returns the path of the entry if the entry is
-// still there afterwards, or "".
-func removeStaleRegistration(base, name string) (kept string) {
-	entry := filepath.Join(base, name)
-	root, err := os.OpenRoot(base)
-	if err != nil {
-		return entry
-	}
-	defer func() { _ = root.Close() }()
+// removeStaleRegistration removes the entry name of root, the opened registrations
+// folder, unless it holds a `locked` file. entry is the path of the entry, for the
+// home guard. It reports whether the entry is still there afterwards.
+func removeStaleRegistration(root *os.Root, name, entry string) (stays bool) {
 	if _, err := root.Lstat(name + "/locked"); errors.Is(err, fs.ErrNotExist) && !wipesHomeDir(entry) {
 		_ = root.RemoveAll(name)
 	}
-	if _, err := root.Lstat(name); errors.Is(err, fs.ErrNotExist) {
-		return ""
-	}
-	return entry
+	_, err := root.Lstat(name)
+	return !errors.Is(err, fs.ErrNotExist)
 }

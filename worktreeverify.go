@@ -340,10 +340,9 @@ type testedRegistration struct {
 // registration, it answers the zero value.
 //
 // It holds the folder open until the create answers (release), as the checkpoint
-// holds the leaf. The identity comes from the held handle. While the handle is
-// open, the file system cannot give the number of the folder to a new one, so a
-// folder that is deleted and made again does not pass for the accepted one. A
-// folder that cannot be opened is identified by a stat of the path (not measured).
+// holds the leaf. The identity comes from the held handle. While that handle is
+// open, a new folder does not get that identity. If the open fails, the identity
+// comes from a stat of the path (not measured).
 // The caller must call release.
 func acceptRegistration(registration string) testedRegistration {
 	if !adminRecordChecked || registration == "" {
@@ -380,7 +379,7 @@ func (r testedRegistration) release() {
 // folder w1, before a read-tree that fails. 89cb6289 removes the empty w1. In cell
 // B6b the hook renames w1 to w1x and the registration w9 of a live sibling
 // worktree to w1. 89cb6289 removes that folder with the files of the sibling.
-// claustrum removes nothing in both cells, and the frames are equal.
+// From the code: claustrum removes nothing in both cells, and the frames are equal.
 func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 	now, err := root.Stat(name)
 	return err == nil && (r.info == nil || !os.SameFile(r.info, now))
@@ -412,8 +411,8 @@ func (r testedRegistration) replacedIn(root *os.Root, name string) bool {
 // frame gets no clause and the branch step runs. The home guard refuses an entry
 // path that is home or holds it (D2, no honest input reaches it). The identity
 // guard refuses a folder that is not the one that the tests accepted (replacedIn,
-// D24). It runs after the open of the root and on that root, so the delete acts
-// on the folder that the guard saw. A registrations folder that does not exist
+// D24). It runs after the open of the root and on that root, so the guard and the
+// delete use one registrations folder. A registrations folder that does not exist
 // has nothing to delete.
 func removeTestedRegistration(reg testedRegistration) error {
 	if wipesHomeDir(reg.path) {
@@ -670,9 +669,9 @@ func gitDirRegistryDir(gitDir string) string {
 // (adminRecordChecked), which is not measured.
 //
 // Two tests follow these four: staleRegistrationRefusal, then
-// adminRecordMismatch. All of them come before the
+// adminRecordMismatch. The four tests and adminRecordMismatch come before the
 // deadline test of the create (row D-9 on a macOS VM, cell P-f on Linux and macOS
-// VMs).
+// VMs). From the code, staleRegistrationRefusal does too (not measured).
 func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) (registration, refusal string) {
 	if adminDir == "" {
 		return "", ""

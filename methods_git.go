@@ -905,8 +905,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	// The target is confirmed missing above, so any worktree registration still
 	// naming it is stale (its session folder was deleted out from under git). Drop
-	// just that registration so the add below recreates cleanly, the way 7d193f89
-	// does — where claustrum otherwise failed "missing but already registered".
+	// each such registration that is not locked (dropStaleWorktreeRegistration).
+	// Windows keeps its earlier step, which has no `locked` test.
 	// staleKept holds each stale entry that is still there (Linux and macOS): it
 	// is locked, or the remove failed. It is empty on Windows.
 	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath)

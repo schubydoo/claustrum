@@ -12,18 +12,17 @@ import (
 // worktreePath when that path is registered but missing on disk — a "prunable"
 // registration left when a session folder is deleted out from under git. Without
 // this, `git worktree add` at the same path fails "missing but already registered"
-// where 7d193f89 prunes the stale record and recreates cleanly.
+// where 7d193f89 prunes the stale record and recreates cleanly (not a Windows
+// measurement).
 //
 // Only the registration for THIS path is dropped; other prunable registrations are
-// left in place (measured against 7d193f89 — a global `git worktree prune` would
+// left in place (measured against 7d193f89, not a Windows measurement — a global `git worktree prune` would
 // clear those too and diverge). The caller invokes this only after confirming the
 // target does not exist, so a matching registration is necessarily stale.
 //
 // A registration lives at <repo>/.git/worktrees/<name>/gitdir and points at
-// "<worktree>/.git". Both paths are compared through resolveAsFarAsExists so a
-// symlinked ancestor matches: on macOS git records the RESOLVED worktree path
-// (/private/var/…) in gitdir while the caller passes the unresolved one (/var/…),
-// and a plain filepath.Clean would never match. Best-effort: any failure leaves git
+// "<worktree>/.git". Both paths are compared through resolveAsFarAsExists, so a
+// symlinked ancestor matches. Best-effort: any failure leaves git
 // to report its own error.
 //
 // This is the Windows step. Linux and macOS have their own compare and their own
