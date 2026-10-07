@@ -263,9 +263,12 @@ func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
 // failed for any reason other than "no repository" (rows L10 to L12, L14c and L15). It
-// has no -c option. Its working directory is gitVersionDir. Its environment is the one
-// of the failed listing without the GIT_COMMON_DIR pin and without LC_ALL=C and
-// LANGUAGE=C. The daemon's own LC_ALL and LANGUAGE do not come back: whether they do
+// has no -c option. Its working directory is gitVersionDir. In claustrum its
+// environment is the one of the failed listing without the GIT_COMMON_DIR pin and
+// without LC_ALL=C and LANGUAGE=C. With a daemon GIT_DIR that names a regular file,
+// the call of 89cb6289 has no GIT_DIR entry, and the call of claustrum has the
+// daemon's (cells Wd, Windows VM). The frame and the disk are equal there. The
+// daemon's own LC_ALL and LANGUAGE do not come back: whether they do
 // is not measured. heavy is the profile of the failed listing. After the listing of
 // unenterableBaseListing, this call gets the light environment, as on 89cb6289 (rows
 // L16a and L16b on a Linux VM). In the symlink-chain rows LNKb-g and LNKr-g, 89cb6289

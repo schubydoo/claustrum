@@ -840,8 +840,8 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG_COUNT "<value>" is not a count` | in the frame of each method, when the daemon's own `GIT_CONFIG_COUNT` does not parse. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: inherited GIT_CONFIG pair <n> is incomplete` | in the frame of each method, when a pair below the daemon's `GIT_CONFIG_COUNT` is not set. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. A folder that holds no repository gets it too. `89cb6289` answers so in rows A-N1 to A-N6, A-N5b, A-S1 and A-X2 on Linux and macOS VMs, except row A-N5 on macOS. On a Windows VM the cells are P3-infoN, P3-infoX, P3-lbN, P3-statN, P3-crN, P3-rmN and Wf-P3-crNroot. See "The daemon's own git environment" |
-| git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it. That is a regular file, a file symlink or a folder with a path of 296 characters. `89cb6289` answers so in cells A-01 to A-04, A-04b2, A-06, A-10 and A-13 on a Windows VM. The path `NUL` and a file name with one more dot at its end get it too (cells Wc). See "Git-directory trust check" |
-| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Row A-T1 and cells C-d and C-g show that on Linux and macOS VMs, and cell C-h on a Linux VM. Cells P11-infoN, P11-infoT, A-14 and Wa show it on a Windows VM. See "Git-directory trust check" (`89cb6289`) |
+| git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it. That is a regular file, a file symlink (measured for `git.info` only) or a folder with a path of 296 characters (measured for `git.info` only). `89cb6289` answers so on a Windows VM: in cells A-01 to A-04, A-04b2 and A-06 for a regular file, in cell A-10 for the symlink and in cell A-13 for the folder. The path `NUL` and a file name with one more dot at its end get it too (measured for `git.info` only, cells Wc). See "Git-directory trust check" |
+| git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Row A-T1 and cells C-d and C-g show that on Linux and macOS VMs, and cell C-h on a Linux VM. Cells P11-infoN, P11-infoT, A-14, Wa-infoF, Wa-lbN, Wa-statN and Wa-crN show it on a Windows VM. See "Git-directory trust check" (`89cb6289`) |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a configuration key over 1048576 bytes. `89cb6289` measured `git.info`. See "Hardened git calls" |
 | git.* | `config-defined hooks could not be pinned off; git not run: too many configured hooks to pin` / `config-defined hooks could not be pinned off; git not run: configured hook names exceed the aggregate pin byte bound` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`). It answers more than 1024 hook names, or names over 65536 bytes in sum. `89cb6289` measured `git.info`. See "Hardened git calls" |
 | git.* | `the repository's git directory could not be trusted; git not run: commondir not as git writes it: <S1, S2 or S3>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a stray `commondir`. "Git-directory trust check" gives the three texts (`89cb6289`) |
@@ -1460,15 +1460,17 @@ on `PATH`, the exec error replaces both texts of the table in the measured rows
 (class 1 below).
 
 Where the trust check finds no repository, the daemon still runs the configuration
-listing. The folder is its working directory, and it carries `GIT_DIR=<null>`. The
+listing. The next two paragraphs name the states where a method runs no listing, or
+does not read its answer. The folder is the working directory of the listing. In a
+plain folder the listing carries `GIT_DIR=<null>`. The
 call log of `89cb6289` shows that listing with no `GIT_CONFIG_*` entry too, and the
 frames are those of the "no repository" column there. From the code: `git.info`,
 `git.list_branches` and `git.worktree_create` answer after that listing, with no
 second call. A listing that fails by class 3 below gives the "refused" column.
 `89cb6289` answers so for a plain folder and for a folder with an empty `.git`
 folder. Rows A-N1 to A-N6, A-N5b, A-S1 and A-X2 show that on Linux and macOS VMs.
-Row A-N5 shows it on the Linux VM only. On macOS its request stops at an earlier
-test of `worktreePath`.
+Row A-N5 shows it on the Linux VM only. On macOS that request answers the
+`worktreePath` shape refusal with no git call, on `89cb6289` and on claustrum.
 Cells P3-infoN, P3-infoX, P3-lbN, P3-statN, P3-crN and P3-rmN show it on a Windows
 VM. See "The daemon's own git environment".
 
@@ -1484,12 +1486,17 @@ their frames. A `.git` file that names a git dir that is gone keeps the "no
 repository" frame of `git.info` too. Cells CbP0 and CbP3 show that on Linux and
 macOS VMs.
 
-Two more states are not measured. The first is a daemon `GIT_COMMON_DIR`, where the
+Two more states are not measured. The first is a daemon `GIT_COMMON_DIR`, where a
 listing gets no `GIT_DIR=<null>`. The second is a `.git` file that names a regular
-file. From the code: `git.worktree_create` and `git.worktree_remove` do not read
-the answer of the listing there, and they keep the "no repository" column. With a
-daemon `GIT_COMMON_DIR`, the listing of `git.status` still carries `GIT_DIR=<null>`.
-A listing that fails there is the refusal of `git.status`, as in a plain folder.
+file, on Linux and macOS. The rest of this paragraph is from the code. In both
+states `git.worktree_create` runs no listing in a folder where the trust check
+finds no repository. `git.worktree_remove` runs the listing there and does not read
+its answer. Both keep the "no repository" column. In the second state `git.info`
+and `git.list_branches` run no listing either, and they keep that column. With a
+daemon `GIT_COMMON_DIR` those two methods skip the trust check, and the listing
+classes below answer. In both states the listing of `git.status` still carries
+`GIT_DIR=<null>`. A listing that fails there is the refusal of `git.status`, as in
+a plain folder.
 
 When the configuration listing fails, `89cb6289` sorts the failure into a class.
 The classes come in this order (Linux, macOS and Windows VMs):
@@ -1526,8 +1533,11 @@ The classes come in this order (Linux, macOS and Windows VMs):
    text>` (row N04). Exit 1 with that text is not this class (row L14c).
 3. Any other failure, a failed start included. The daemon runs `git version` with no
    `-c` option. It runs in `/` on Linux and macOS, and in the daemon's working
-   directory on Windows. Its environment is the one of the failed listing without
-   the `GIT_COMMON_DIR` pin and without `LC_ALL=C` and `LANGUAGE=C`. It also gets
+   directory on Windows. In claustrum its environment is the one of the failed
+   listing without the `GIT_COMMON_DIR` pin and without `LC_ALL=C` and `LANGUAGE=C`.
+   With a daemon `GIT_DIR` that names a regular file, the call of `89cb6289` has no
+   `GIT_DIR` entry, and the call of claustrum has the daemon's (cells Wd, Windows
+   VM). The frame and the disk are equal there. The call also gets
    no `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` or `GIT_CONFIG_VALUE_<n>` of the
    daemon. The call logs of the A rows show that on Linux and macOS VMs. Those of
    the P3 and P11 cells show it on a Windows VM. It gets no `GIT_CONFIG_GLOBAL` of
@@ -1890,7 +1900,7 @@ line 2. The `git version` of `89cb6289` gets no `GIT_CONFIG_GLOBAL`
 there and exits 0.
 
 Nothing changes on disk in these rows. Some frames stay as they are with nothing
-set. A path that does not exist keeps its frames (rows A-M1 to A-M5, and cell
+set. A path that does not exist keeps its frames (rows A-M1 and A-M3 to A-M5, and cell
 P3-infoM for `git.info` on a Windows VM). So does a plain folder of mode 0000, where
 git cannot start (row A-X1). `GIT_CONFIG_COUNT=0`, an empty value and
 `GIT_CONFIG_PARAMETERS='x` change no frame (Linux, macOS and Windows VMs). On
@@ -1898,8 +1908,13 @@ Windows, `git.worktree_create` with `worktreeRoot` answers as in row A-N6 (cell
 Wf-P3-crNroot). With nothing set it answers `not_a_repo` (cell Wf-P0-crNroot).
 `git.worktree_remove` with `worktreeRoot` is not measured on Windows for this
 check. From the code: claustrum refuses a `worktreeRoot` there before the check.
-Not measured: a worktree directory that exists in row A-N4. claustrum answers
-the lock-check refusal there and deletes nothing.
+Take row A-N4 with a worktree directory that exists and holds a file. `89cb6289`
+and claustrum answer `could not check whether <worktreePath> is locked (its
+registrations could not be examined); retry`, with nothing set and with an empty
+key. The folder and the file stay. Cells CaP0 and CaP3 show that on Linux and macOS
+VMs. Cells CabP0 and CabP3 show it with a `branchName` on the Linux VM. That state
+is not measured on Windows. From the code: claustrum answers the lock-check refusal
+there and deletes nothing.
 
 No row measures a listing over a limit of "Hook pins" in a folder that holds no
 repository. That is a listing that passes and holds too many hook names, or a key
@@ -3341,8 +3356,9 @@ copies end still fails it, as `timeoutMs` above describes:
     step too. Rows 16, A5, R18, R18b and N00 show that on Linux and macOS VMs, and
     rows 16, A5 and N00 on a Windows VM. With the folder gone, a listing that fails
     refuses: `could not check whether <worktreePath> is locked (<text>); retry`.
-    `89cb6289` then makes the listing and `git version` only (row A-N4 on Linux and
-    macOS VMs, cell P3-rmN on a Windows VM).
+    `89cb6289` then makes the listing and `git version` (row A-N4 on Linux and
+    macOS VMs). In cell P3-rmN on a Windows VM the excludes read comes before the
+    two. That request is the first of its daemon.
   - A `baseRepo` whose `.git` file names a git dir that is gone, with the folder
     gone: the request makes two listings, and each fails. Both carry
     `GIT_COMMON_DIR=<that git dir>` (row N04 on Linux and macOS VMs).
