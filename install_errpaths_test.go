@@ -393,8 +393,8 @@ func TestHTTPGetTruncatedBody(t *testing.T) {
 	}
 }
 
-// pruneCLI is best-effort: an unlistable cliDir is a silent no-op, and
-// subdirectories inside cliDir are never candidates for pruning.
+// pruneCLI is best-effort: an unlistable cliDir is a silent no-op, and a
+// subdirectory with content stays, also past the keep value.
 func TestPruneCLIEdges(t *testing.T) {
 	pruneCLI(filepath.Join(t.TempDir(), "absent"), 1) // must not panic
 
@@ -403,9 +403,15 @@ func TestPruneCLIEdges(t *testing.T) {
 	if err := os.Mkdir(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(sub, "inner"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	// Pruning is newest-mtime-first; pin distinct mtimes so the order can't
 	// collapse on a coarse-resolution filesystem.
 	now := time.Now()
+	if err := os.Chtimes(sub, now.Add(-2*time.Hour), now.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	for i, name := range []string{"1.0.0", "1.0.1"} {
 		p := filepath.Join(dir, name)
 		if err := os.WriteFile(p, []byte("cli"), 0o755); err != nil {
@@ -417,8 +423,8 @@ func TestPruneCLIEdges(t *testing.T) {
 		}
 	}
 	pruneCLI(dir, 1)
-	if _, err := os.Stat(sub); err != nil {
-		t.Errorf("pruneCLI removed the subdirectory: %v", err)
+	if !isRegularFile(filepath.Join(sub, "inner")) {
+		t.Error("pruneCLI removed a subdirectory with content")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "1.0.1")); err != nil {
 		t.Errorf("pruneCLI removed the newest version: %v", err)

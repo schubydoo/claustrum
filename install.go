@@ -177,7 +177,9 @@ func runInstall(o installOpts) {
 			if !installSwept {
 				sweepFetchTemps(o.cliDir, time.Now())
 			}
-			if err == nil && o.cliKeep > 0 {
+			// A keep of 0 prunes too (cell C-13, Windows VM, 89cb6289). A
+			// negative keep is not measured, and claustrum does not prune.
+			if err == nil && o.cliKeep >= 0 {
 				pruneCLI(o.cliDir, o.cliKeep)
 			}
 		}
@@ -1213,6 +1215,46 @@ func isSweptName(name string) bool {
 	return strings.HasPrefix(name, ".fetch-") || strings.HasSuffix(name, ".zst")
 }
 
+// pruneCLI is the -cli-keep prune. It runs after a good install only. The rows
+// are the C rows of 89cb6289: C-0 to C-15 on Linux and macOS VMs, and the cells
+// C-00 to C-18 on a Windows VM. A cell id has two digits.
+//
+//   - Every entry of the cli-dir counts, whatever its kind: a file, a folder
+//     and a link. Rows C-1 (four empty folders, keep 3, the two oldest go) and
+//     C-5 (two files and two newer empty folders, keep 3, both files go). On
+//     Windows the cells C-01 and C-04.
+//   - The order is the mtime, newest first. The keep value is how many stay.
+//     Rows C-3 (keep 5 for five entries, all stay) and C-4 (keep 4, the oldest
+//     goes) straddle it.
+//   - Entries with the same mtime stay in name order, so the later name goes.
+//     Rows C-12 and C-12b on Linux (the order of creation does not matter),
+//     C-12 and C-12b on macOS, cell C-15 on Windows.
+//   - The new CLI has no place of its own. It stands where its mtime puts it.
+//     Rows C-11 (two folders with an mtime 1 h in the future, keep 2: the new
+//     CLI goes, and the result line names its path with no cliError) against
+//     C-6 (no future mtime, the new CLI stays). On Windows the cells C-11dir
+//     and C-11file.
+//   - Each remove is one os.Remove of a direct child of the cli-dir. It removes
+//     a file, an EMPTY folder and a link. A folder with content stays, and a
+//     link goes as a link. Rows C-1 against C-2 (the same folders, one file in
+//     each, all stay), C-6 and C-7. On Windows a folder with the read-only
+//     attribute stays (cell C-05) and a read-only file goes (cell C-07).
+//   - A name that the sweep claims is not counted and not removed here, at any
+//     age. Rows C-9 (a fresh ".fetch-d" and "x.zst" stay and three other
+//     entries stay with keep 3) and C-8 (20 minutes old, the sweep took both
+//     before the new CLI ran).
+//   - Keep 0 removes every entry that counts, the new CLI too (cell C-13,
+//     Windows VM only). runInstall calls the prune for a keep of 0 or more.
+//
+// The mtime comes from os.Lstat, as in the sweep. That choice is from the
+// code, not from a row.
+//
+// Not measured, and claustrum keeps what it did before:
+//   - A negative keep value. claustrum does not prune.
+//   - Whether a folder with content takes a place in the order. claustrum
+//     counts it as every other entry. No row puts one among the newest.
+//   - A swept name that the sweep failed to remove, for example an old
+//     ".fetch-d" folder with content. claustrum does not count it.
 func pruneCLI(cliDir string, keep int) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
@@ -1224,15 +1266,6 @@ func pruneCLI(cliDir string, keep int) {
 	}
 	var vs []ver
 	for _, e := range ents {
-		if e.IsDir() {
-			continue
-		}
-		// A name the sweep claims is not counted either, at ANY age. Measured on a
-		// Linux VM against f6010b97: with a fresh ".fetch-o" and "x.zst" beside
-		// three real CLIs and -cli-keep 3, the reference keeps all three real CLIs.
-		// The age gate leaves such fresh litter in place, so counting it evicts
-		// real CLIs. The fixture does not show whether the reference tests the
-		// name or runnability. Both exclude these two empty files.
 		if isSweptName(e.Name()) {
 			continue
 		}
@@ -1242,11 +1275,12 @@ func pruneCLI(cliDir string, keep int) {
 		if isDownloadBlobName(e.Name()) {
 			continue
 		}
-		if fi, err := e.Info(); err == nil {
+		if fi, err := os.Lstat(filepath.Join(cliDir, e.Name())); err == nil {
 			vs = append(vs, ver{e.Name(), fi.ModTime().UnixNano()})
 		}
 	}
-	sort.Slice(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
+	// os.ReadDir gives the entries in name order, and the sort is stable.
+	sort.SliceStable(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
 	for i := keep; i < len(vs); i++ {
 		_ = os.Remove(filepath.Join(cliDir, vs[i].name))
 	}
