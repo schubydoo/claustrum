@@ -860,7 +860,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <root> is inside a git checkout (<dir> has a .git entry); a worktree location must be outside every checkout, so that no session working in one can reach it — choose a directory that is not part of any repository` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a directory from `/` down to the root holds a `.git` entry of any kind. A missing directory is skipped. The ancestor test answers first (rows G18, G40a and G40b). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs, with a `.git` entry up to five levels above the root. `<root>` is `worktreeRoot` as sent, with a trailing slash or `//` kept. `<dir>` is that directory, resolved and cleaned. Linux and macOS VMs measured these spellings. When several directories hold a `.git` entry, the highest one is named. Linux and macOS VMs measured that too |
 | git.worktree_create | `refusing to create worktree: <dir> is itself a git checkout (it has a .git entry); a worktree location must be outside every checkout` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when the `<directory>` level holds a `.git` entry. Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Under a symlinked root, `<dir>` has the root resolved. Linux and macOS VMs measured that spelling |
 | git.worktree_create | `refusing to create worktree: <root> passes through too many symbolic links (a loop?)` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`, when a symlink loop is in the path of the root. A failing directory above the loop gets the ancestor text first (claustrum's choice, not measured). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. `<root>` is `worktreeRoot` without a trailing slash. claustrum also drops a `//` here, and it sends this refusal for a finite chain of more than 255 links (neither measured) |
-| git.worktree_create | `refusing to create worktree: <p> carries a .git file that does not name this repository's own worktree admin directory` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. The `gitdir:` path in the `.git` file of the new worktree lies in a folder that is not named `worktrees`. Or the `commondir` file of the registration does not lead back to the git directory. Or the `commondir` file or the `gitdir` record of the registration cannot be read as a file (cells P-g to P-j, Linux VM with git 2.43 and macOS VM with git 2.50). No checkout runs and nothing is rolled back. Measured against `89cb6289` on a macOS VM with git 2.50: rows D-1, D-2, D-4, D-5, D-7 and D-9. Row D-11 on a Linux VM and row D-13 on both VMs show it too. The macOS VM shows it also in attach mode (cell P-a) and with a `worktreeRoot` (cell P-b). Cells P-d and Pd2 show it for a path that does not exist, on Linux and macOS VMs (Pd2 on Linux only). See the method section |
+| git.worktree_create | `refusing to create worktree: <p> carries a .git file that does not name this repository's own worktree admin directory` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. The `gitdir:` path in the `.git` file of the new worktree lies in a folder that is not named `worktrees`. Or the `commondir` file of the registration does not lead back to the git directory. Or the `commondir` file or the `gitdir` record of the registration cannot be read as a file (cells P-g to P-j, P-n, P-o and P-q, Linux VM with git 2.43 and macOS VM with git 2.50). No checkout runs and nothing is rolled back. Measured against `89cb6289` on a macOS VM with git 2.50: rows D-1, D-2, D-4, D-5, D-7 and D-9. Row D-11 on a Linux VM and row D-13 on both VMs show it too. The macOS VM shows it also in attach mode (cell P-a) and with a `worktreeRoot` (cell P-b). Cells P-d and Pd2 show it for a path that does not exist, on Linux and macOS VMs (Pd2 on Linux only). See the method section |
 | git.worktree_create | `refusing to create worktree: <p> was not populated by git worktree add` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add, when the git directory of `baseRepo` holds no registration for the new worktree. No checkout runs and nothing is rolled back. Measured against `89cb6289` with `GIT_COMMON_DIR` of another repository in the daemon environment. Rows B-E1 and B-E3 and cell D8e ran on Linux and macOS VMs, and row D-8 on a macOS VM. See the method section |
 | git.worktree_create | `refusing to create worktree: <p> carries a .git file naming an admin directory whose own record is of a different worktree` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, after a successful add. The `gitdir` record of the registration in the git directory of `baseRepo` was read and does not name `<p>/.git`. No checkout runs and nothing is rolled back. If `timeoutMs` expired during the add, the answer is the same (cell P-f). Measured against `89cb6289`: row I07a on a macOS VM, and cells P-c, P-f and P-k to P-m on a Linux VM with git 2.43 and a macOS VM with git 2.50. See the method section |
 | git.worktree_create | `failed to create parent directory: lstat <path>: <errno text>` | in `error`, `errorCode:"mkdir_failed"`, Linux and macOS, with `worktreeRoot`. There are two cases. First, a root symlink names a missing target, and `<path>` is that target. Second, a directory from `/` down to the root cannot be searched. Then `<path>` is `<dir>/.git` for the highest such directory. When that directory is above the root and fails the ancestor test itself, it gets the ancestor text instead (row G36a). Nothing is created. Measured against `f6010b97` on Linux and macOS VMs. Other errors from resolving the root are sent as Go prints them (not measured) |
@@ -2901,6 +2901,11 @@ claustrum opens each file without blocking and reads a regular file only.
     add: no read-tree runs, and the old `index` keeps its inode, its mtime and its
     bytes. The two FIFO cells answered in under 0.4 s on both VMs, so no read
     waits on a FIFO. Linux VM with git 2.43 and macOS VM with git 2.50.
+  - Three more cells start from the state of cell P-c (Linux VM with git 2.43 and
+    macOS VM with git 2.50). In cell P-n the `commondir` file of the old entry is
+    removed. In cell P-o its `gitdir` record has mode 0000. In cell P-q the folder
+    of the old entry has mode 0000. `89cb6289` answers the text of test 1 in each.
+    No read-tree runs, and the old `index` does not change.
   - A git wrapper writes `gitdir: /elsewhere/worktrees/w1` into the `.git` file
     after the add. That path does not exist. `89cb6289` answers success and keeps
     the `.git` file as it is (row D-12, Linux and macOS VMs). On both VMs the
@@ -2928,19 +2933,24 @@ claustrum opens each file without blocking and reads a regular file only.
   From the code: with `GIT_DIR` of X in the daemon environment too, git answers X
   as the git directory. The entry is found there, and the create succeeds.
 
+  From the code: the four tests need the git directory that git answered. If
+  `rev-parse --absolute-git-dir` gave no answer before the add, claustrum runs
+  none of the four tests and puts the index into `<path>`. That is claustrum's
+  choice (not measured). With a `baseRepo` that is a subfolder of a repository,
+  the read-tree then fails, and the create answers the failed checkout below.
+
   Not measured: Windows. There claustrum runs none of the four tests and puts
   the index into `<path>`. A `<path>` that fails test 1 and has no entry is not
   measured, and claustrum answers test 1. Attach mode and a `worktreeRoot` are
   measured in cells P-a and P-b only. claustrum runs the same
   tests there in every layout. A relative `<path>` in these
   layouts is not measured. Neither is a link target named `worktrees` in another
-  letter case on a case-blind volume, beyond row D-4. claustrum does not refuse
-  two more states that no row holds. The first is a leaf with no `.git` file
-  that it can read. The second is an entry whose stat fails with another error
-  than "does not exist". A `commondir` file or a `gitdir` record that is unreadable
-  in another way than in cells P-g to P-j is not measured, for example a file with
-  no read permission or a missing `commondir` file. claustrum answers the text of
-  test 1 there.
+  letter case on a case-blind volume, beyond row D-4. A leaf with no `.git` file
+  that claustrum can read is not measured, and claustrum does not refuse it. An
+  entry whose stat fails with another error than "does not exist" is not
+  measured, for example in a registrations directory with no search permission.
+  From the code: the `commondir` read fails there too, and claustrum answers the
+  text of test 1. In cell P-q the stat of the entry folder still answers.
 - After those four tests, and before the deadline test that follows the add, the
   daemon reads the `gitdir` record of the registration of
   the new worktree. On Linux and macOS that is the entry of test 2 above, not the
@@ -2983,6 +2993,19 @@ claustrum opens each file without blocking and reads a regular file only.
   against P-k and P-l show the split. A record that cannot be read as a file gets
   the text of test 1. A record that was read and names anything else gets this
   text.
+  Cell P-p is an open difference, listed on the issue (Linux VM with git 2.43 and
+  macOS VM with git 2.50). The old record of cell P-c holds `<worktreePath>/.git/`,
+  with a slash at its end and no newline. `89cb6289` removes the old entry before
+  the add and then answers the text of test 1. A system call trace on the Linux VM
+  shows that the daemon removes the entry, not git. claustrum keeps the old entry
+  and its `index` and answers this refusal. The difference is in the step that
+  drops a stale registration before the add. From the code: if the folder that
+  holds the path in a record is `worktreePath`, claustrum drops that entry there.
+  It drops no other entry. With the slash at the end, that folder is
+  `<worktreePath>/.git`.
+  Not measured: a relative record beyond cells Z9a and P-k. Cell R1, a create
+  with `worktree.useRelativePaths`, is not measured on Linux: git 2.43 on the
+  Linux VM cannot write relative records.
   The order of the refusals after the add is thus: test 1, test 2, test 3, test
   4, this record test, then the deadline test. Not measured: a state that fails
   test 1 and a later test. Cell P-h holds a state that fails test 3 and this
@@ -2996,11 +3019,20 @@ claustrum opens each file without blocking and reads a regular file only.
   another path, relative or not. The create refuses each of them before the
   checkout, so only a record that changed during the checkout gets there. One
   state is apart: an entry folder whose stat fails. The placement then runs and
-  fails by itself, with the texts of cells Z10, Z11a and Z11b below. In cell Z15
-  (macOS VM) a wrapper removes the record after the read-tree and sets the entry
-  to mode 0500. `89cb6289` answers `openat w1/index: permission denied` there.
-  claustrum answers the text of its guard. That is a known difference of that
-  cell.
+  fails by itself, with the texts of cells Z10, Z11a and Z11b below.
+  The guard has this text:
+  `the registration <entry> has no gitdir record that names this worktree`.
+  `<entry>` is the path of the entry folder, not `worktreePath`. The 512-byte text rule above covers the git stderr and this text
+  together, so a long stderr cuts the text or drops it.
+  Cell Z15 is an open difference, listed on the issue (Linux and macOS VMs). A
+  wrapper removes the record during the checkout and sets the entry to mode 0500.
+  `89cb6289` answers `git worktree add failed (checkout): <git text> openat
+  w1/index: permission denied`. The undo text for a registration and a branch
+  that remain follows, with `(RemoveAll w1: permission denied)`. The entry and the
+  branch stay.
+  claustrum answers `git worktree add failed (checkout): <git text> the
+  registration <entry> has no gitdir record that names this worktree`, with no
+  undo text. The entry stays, and the branch is removed.
   After git exits 0, the daemon puts that index in the registration of the new
   worktree, as the file `index`, and removes the temporary directory. On Linux and
   macOS the registration is the entry of test 2 above (row D-12). On Linux and macOS claustrum makes a new
