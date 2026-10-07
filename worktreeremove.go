@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 )
@@ -89,44 +90,111 @@ func locateInRepoWorktree(repo, worktreePath string) (removeTarget, error) {
 }
 
 // locateExternalWorktree is locateInRepoWorktree for a worktree beneath a worktreeRoot.
-// The spelling in the texts is the resolved <directory> level joined with the name
-// (rows S03_tmp and S04_tmp).
+// The caller has confirmed that worktreePath is <worktreeRoot>/<directory>/<name>. The
+// spelling in the texts is the resolved root joined with the directory and the name
+// (rows S03_tmp and S04_tmp, and row B18 of the mode rows on a macOS VM).
+//
+// A <directory> level that is the file system root has no level above it. The root is
+// then the one open level, and the spelling is "/<name>", as before the level order.
+// No row measures a worktreeRoot that is the file system root.
 func locateExternalWorktree(worktreePath string) (removeTarget, error) {
 	cleanPath := filepath.Clean(worktreePath)
-	dir, err := filepath.EvalSymlinks(filepath.Dir(cleanPath))
+	dir := filepath.Dir(cleanPath)
+	above, name := filepath.Dir(dir), filepath.Base(dir)
+	if above == dir {
+		name = "."
+	}
+	root, err := filepath.EvalSymlinks(above)
 	if err != nil {
 		if isGoneErr(err) {
 			return removeTarget{}, nil
 		}
 		return removeTarget{}, err
 	}
-	return openRemoveParent(dir, ".", filepath.Base(cleanPath))
+	return openRemoveParent(root, name, filepath.Base(cleanPath))
+}
+
+// externalRootDenied reports whether the worktreeRoot of worktreePath cannot be opened
+// or searched. The answer of such a root comes before the symlink refusal of the
+// <directory> level: with a root of mode 0300 and a symlinked <directory>, 89cb6289
+// answers "open <root>: permission denied" (cell U13b on Linux and macOS VMs). Modes
+// 0100, 0000 and 0200 answer the same (cells N1a to N1c on a Linux VM). With mode 0600
+// the answer is "statat .: permission denied" (cell U13a on Linux and macOS VMs).
+//
+// Any error of the open reads as true, also for a root that is absent or is not a
+// directory. That changes no answer: the lstat of the <directory> level fails for such
+// a root, so the symlink refusal answers nothing there in either case.
+func externalRootDenied(worktreePath string) bool {
+	root, err := os.OpenRoot(filepath.Dir(filepath.Dir(filepath.Clean(worktreePath))))
+	if err != nil {
+		return true
+	}
+	defer func() { _ = root.Close() }()
+	return levelSearchError(root) != nil
+}
+
+// levelSearchError is the error of a look at "." in an open level, or nil. A level
+// that the daemon opened and cannot search gives "statat .: permission denied". On
+// Windows it answers nil with no look: no row measures a mode there.
+func levelSearchError(level *os.Root) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	_, err := level.Stat(".")
+	return err
 }
 
 // openRemoveParent opens the directory that holds the worktree. On Windows a junction
 // at .claude or at .claude\worktrees makes os.Root refuse the open with "path escapes
 // from parent".
 // The request then fails, and nothing is deleted. That refusal is divergence D19.
+//
+// On Linux and macOS it opens base and then each component of dirRel, one level at a
+// time. After each open it looks at "." in that level, before any look at the level
+// below. So a level without the read bit answers the error of its own open: "open
+// <base>" or "openat <component>". A level with the read bit and without the search
+// bit answers "statat .". The frames of 89cb6289 show those texts on Linux and macOS
+// VMs (rows B1 to B6 and B8 to B11b with worktreeRoot, rows B17a to B17d without).
+// With a root of mode 0300 or 0100 nothing is deleted there (rows B3 and B4, and row
+// B18 on the macOS VM). With two
+// restricted levels, the first one from the top answers (cells U7 to U10). A level
+// that fails the look for another reason answers that error, and nothing is deleted
+// (not measured). On Windows dirRel is opened in one step, as before.
 func openRemoveParent(base, dirRel, leaf string) (removeTarget, error) {
-	root, err := os.OpenRoot(base)
+	parent, err := os.OpenRoot(base)
 	if err != nil {
 		if isGoneErr(err) || notADir(os.Stat(base)) {
 			return removeTarget{}, nil
 		}
 		return removeTarget{}, err
 	}
-	parent := root
-	if dirRel != "." {
-		parent, err = root.OpenRoot(dirRel)
-		if err != nil {
-			gone := isGoneErr(err) || notADir(root.Stat(dirRel))
-			_ = root.Close()
-			if gone {
-				return removeTarget{}, nil
-			}
+	var levels []string
+	switch {
+	case dirRel == ".":
+	case runtime.GOOS == "windows":
+		levels = []string{dirRel}
+	default:
+		levels = strings.Split(dirRel, string(filepath.Separator))
+	}
+	for _, name := range levels {
+		if err := levelSearchError(parent); err != nil {
+			_ = parent.Close()
 			return removeTarget{}, err
 		}
-		_ = root.Close()
+		next, err := parent.OpenRoot(name)
+		gone := err != nil && (isGoneErr(err) || notADir(parent.Stat(name)))
+		_ = parent.Close()
+		if gone {
+			return removeTarget{}, nil
+		}
+		if err != nil {
+			return removeTarget{}, err
+		}
+		parent = next
+	}
+	if err := levelSearchError(parent); err != nil {
+		_ = parent.Close()
+		return removeTarget{}, err
 	}
 	return removeTarget{parent: parent, leaf: leaf, path: filepath.Join(base, dirRel, leaf)}, nil
 }

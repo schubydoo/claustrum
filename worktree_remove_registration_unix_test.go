@@ -410,8 +410,8 @@ func TestWorktreeRemoveRegistrationCallLogs(t *testing.T) {
 	}
 }
 
-// Battery row T6 (Linux VM): with a worktreeRoot that cannot be read, the answer
-// comes after 7 calls. The second `rev-parse --absolute-git-dir` does not run.
+// Battery row T6 (Linux VM): with a worktreeRoot below a folder of mode 000, the
+// answer comes after 7 calls. The second `rev-parse --absolute-git-dir` does not run.
 func TestWorktreeRemoveExternalUnreadableRootCalls(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads a directory of mode 000")

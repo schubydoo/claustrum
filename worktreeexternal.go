@@ -299,7 +299,7 @@ func worktreeRootInLinkedWorktreeRefusal(worktreeRoot, baseRepo string, listed [
 //
 // claustrum sends other resolve errors the same way (not measured). Any other error
 // of the lstat keeps the old answer. For "permission denied" that answer has the
-// frame of the references, after 2 more git calls (Linux row T6).
+// frame of the references (Linux row T6).
 func worktreeRootMissingRefusal(worktreeRoot string) string {
 	reason := worktreeRoot + " does not exist"
 	_, err := os.Lstat(worktreeRoot)

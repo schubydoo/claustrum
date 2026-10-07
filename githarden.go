@@ -812,7 +812,7 @@ func repositoryGitDir(dir string, pre *configListing) (string, error) {
 // following a symlink at name. It reports nil when dir does not exist, and when
 // name does not exist: those inputs keep their own answers. Any other failure is
 // returned as is. A directory that can be opened but not searched (mode 0600)
-// gives "statat .claude: permission denied". One that cannot be opened at all
+// gives "statat <name>: permission denied". One that cannot be opened at all
 // (mode 0000) gives "open <dir>: permission denied". A .claude that is a symlink,
 // even to a place outside dir, passes.
 func statInsideDir(dir, name string) error {
