@@ -69,7 +69,8 @@ file is `<cli-version>.exe`.
   default 3). A file, a link and an empty folder count and go. The prune does
   not count a name the sweep claims, a `*.zst.part` name or a `.blob-*` name,
   and it removes none of them. `89cb6289` counts a planted `.blob-` file
-  ([D18](DIVERGENCES.md#d18)).
+  ([D18](DIVERGENCES.md#d18)). The prune and the sweep skip an entry that is
+  the home folder or holds it ([D2](DIVERGENCES.md#d2)).
 - Claustrum prints one line: `__INSTALL_RESULT__{json}`.
 
 ### 2 · Daemon / process supervisor (`-serve`)

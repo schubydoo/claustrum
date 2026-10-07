@@ -5364,6 +5364,16 @@ Staging and cleanup:
   with each parent folder of it, by file identity. It does that for the home
   path as given and for its resolved path. The home guard of the RPC paths
   stays lexical.
+- The sweep and the `-cli-keep` prune never remove the home folder. Each skips
+  an entry of the cli-dir that is the home folder or holds it
+  ([D2](DIVERGENCES.md#d2)). With a cli-dir that is the parent of the home
+  folder, the home folder is such an entry. Each of the two removes with one
+  plain remove, so only an empty home folder is at risk there. A folder gets
+  the two tests of the guard above. Every other kind of entry gets the lexical
+  test alone. In the prune the skipped entry still takes its place in the
+  order, so the other entries go as without the guard. That is claustrum's own
+  choice. Not measured on the reference: the home folder as an entry of the
+  cli-dir.
 - The volume of the macOS VM ignores letter case. There a `-cli-version` in
   another letter case names the folder on disk. With `-cli-version ALICE` and a
   folder `alice` that is not the home folder, both binaries replace the folder.
@@ -5473,9 +5483,9 @@ Staging and cleanup:
       sweep runs.
     - A name with the `.blob-` prefix is not counted and not removed by the
       prune. This is the one difference from `89cb6289`
-      ([D18](DIVERGENCES.md#d18)). In cell C-12 (Windows VM only) a planted
-      `.blob-planted` file is 1 h old beside two files that are 4 h and 3 h
-      old, with `-cli-keep 2`. `89cb6289` counts the planted file and removes
+      ([D18](DIVERGENCES.md#d18)). Cell C-12 (Windows VM only) has `-cli-keep 2`
+      and a planted `.blob-planted` file that is 1 h old. Two files beside it
+      are 4 h and 3 h old. `89cb6289` counts the planted file and removes
       both older files. claustrum removes the 4 h file only.
     - A failed install and a cache hit do not prune (rows C-14 and C-15, cells
       C-16 and C-17). A `TMPDIR` that names a folder of the cli-dir changes

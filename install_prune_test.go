@@ -484,3 +484,63 @@ func TestPruneDoesNotRunAfterTheHomeGuardRefusal(t *testing.T) {
 		t.Error("the blob was consumed")
 	}
 }
+
+// The prune and the sweep skip an entry that is the home folder (D2). The
+// cli-dir is the parent of the home folder, so the home folder is an entry of
+// it. The home folder is empty, so one plain remove takes it without the guard.
+// In each case a second entry goes, which shows that the pass ran.
+//
+// The case "prune, home newest" shows the place of a skipped entry. The home
+// folder is counted, so with keep 1 it takes the one place and the file goes.
+//
+// SAFETY: every path is under t.TempDir, and the home variable names an EMPTY
+// fixture folder there. Without the guard the test removes only that folder.
+func TestHousekeepingSkipsTheHomeFolder(t *testing.T) {
+	for _, c := range []struct {
+		id      string
+		home    string
+		homeAge time.Duration
+		others  []pruneEntry
+		run     func(dir string, now time.Time)
+		want    []string
+	}{
+		{id: "prune, home oldest", home: "alice", homeAge: 5 * pruneHour,
+			others: []pruneEntry{
+				{"v0", pruneFile, 4 * pruneHour}, {"v1", pruneFile, 2 * pruneHour},
+				{"v2", pruneFile, 1 * pruneHour},
+			},
+			run:  func(dir string, _ time.Time) { pruneCLI(dir, 2) },
+			want: []string{"alice", "v1", "v2"}},
+		{id: "prune, home newest", home: "alice", homeAge: 1 * pruneHour,
+			others: []pruneEntry{{"v1", pruneFile, 2 * pruneHour}},
+			run:    func(dir string, _ time.Time) { pruneCLI(dir, 1) },
+			want:   []string{"alice"}},
+		{id: "sweep, h.zst", home: "h.zst", homeAge: 20 * pruneMin,
+			others: []pruneEntry{{"x.zst", pruneEmptyDir, 20 * pruneMin}},
+			run:    sweepFetchTemps,
+			want:   []string{"h.zst"}},
+		{id: "sweep, h.zst.part", home: "h.zst.part", homeAge: 8 * pruneDay,
+			others: []pruneEntry{{"p.zst.part", pruneEmptyDir, 8 * pruneDay}},
+			run:    sweepFetchTemps,
+			want:   []string{"h.zst.part"}},
+	} {
+		t.Run(c.id, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "users")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(homeEnvVar(), filepath.Join(dir, c.home))
+			now := time.Now()
+			for _, e := range append(c.others, pruneEntry{c.home, pruneEmptyDir, c.homeAge}) {
+				makePruneEntry(t, dir, root, e, now)
+			}
+
+			c.run(dir, now)
+
+			if got := pruneNames(t, dir); strings.Join(got, " ") != strings.Join(c.want, " ") {
+				t.Errorf("the cli-dir holds %q, want %q", got, c.want)
+			}
+		})
+	}
+}

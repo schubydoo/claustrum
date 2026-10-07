@@ -194,7 +194,7 @@ opt-in?
 | D5 | Off (`0` = no deadline) | No. Off the default path | git-invocation deadline |
 | D10 | Off (`0` = unlimited) | No. Install path | `-install` CLI size cap |
 | D12 | Off (`0` = no bound) | No. Install path | `-install` download bound |
-| D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift |
+| D2 | Always-on | Maybe. A probe that reaches the path shows it (expected) | destructive-path home-dir refusal. On `-install` it is the `cli path must not be or contain the home directory` text. That refusal is this guard, not drift. A home folder that stays in the cli-dir after the sweep or the prune of `-install` is this guard too |
 | D6 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` single path component |
 | D18 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `-cli-version` must not start with `.blob-`. The `-cli-keep` prune does not count a `.blob-` name, so one more old entry stays than on `89cb6289` (cell C-12, Windows VM). That is this entry, not drift |
 | D19 | Always-on, Windows only | Maybe. A Windows probe with a junction at `.claude` or `.claude\worktrees` shows it (expected) | `git.worktree_remove` refuses that junction, where `f6010b97` answers success and deletes the branch, and `89cb6289` does the same for a branch that another ref reaches |

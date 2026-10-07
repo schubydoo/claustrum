@@ -1182,6 +1182,9 @@ func isZstPartName(name string) bool { return strings.HasSuffix(name, ".zst.part
 // the run of a new CLI (row C-10, Linux and macOS VMs). Not measured: a failed
 // attempt and a stopped run on a cache hit. claustrum removes it wherever this
 // sweep runs.
+//
+// An entry that is the home folder or holds it stays at every age. See
+// cliEntryHoldsHome.
 func sweepFetchTemps(cliDir string, now time.Time) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
@@ -1196,12 +1199,31 @@ func sweepFetchTemps(cliDir string, now time.Time) {
 		default:
 			continue
 		}
-		fi, err := os.Lstat(filepath.Join(cliDir, e.Name()))
+		p := filepath.Join(cliDir, e.Name())
+		fi, err := os.Lstat(p)
 		if err != nil || now.Sub(fi.ModTime()) <= minAge {
 			continue
 		}
-		_ = os.Remove(filepath.Join(cliDir, e.Name()))
+		// The home guard (D2). No row has the home folder in the cli-dir.
+		if cliEntryHoldsHome(p, fi) {
+			continue
+		}
+		_ = os.Remove(p)
 	}
+}
+
+// cliEntryHoldsHome is the home guard of the sweep and of the prune (D2). p is
+// an entry of the cli-dir and fi is its Lstat answer. A folder gets both tests
+// of cliFolderHoldsHome. Every other kind gets wipesHomeDir alone.
+//
+// Each of those removes is one os.Remove, so only an EMPTY home folder can go
+// there. A cli-dir that is the parent of the home folder makes the home folder
+// an entry. This guard is claustrum's own and is not measured on the reference.
+func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
+	if fi.IsDir() {
+		return cliFolderHoldsHome(p, fi)
+	}
+	return wipesHomeDir(p)
 }
 
 // blobTempPrefix names the -cli-url download blob. It must be a prefix that
@@ -1295,6 +1317,9 @@ func isSweptName(name string) bool {
 // claustrum's own temporary name of a download in progress, and a download of
 // a second install must not use a keep place. That is the maintainer's decision
 // of 2026-10-07.
+//
+// An entry that is the home folder or holds it is counted and never removed.
+// See cliEntryHoldsHome.
 func pruneCLI(cliDir string, keep int) {
 	ents, err := os.ReadDir(cliDir)
 	if err != nil {
@@ -1323,7 +1348,14 @@ func pruneCLI(cliDir string, keep int) {
 	// os.ReadDir gives the entries in name order, and the sort is stable.
 	sort.SliceStable(vs, func(i, j int) bool { return vs[i].mod > vs[j].mod })
 	for i := keep; i < len(vs); i++ {
-		_ = os.Remove(filepath.Join(cliDir, vs[i].name))
+		p := filepath.Join(cliDir, vs[i].name)
+		// The home guard (D2). The entry is skipped here and not in the loop
+		// above, so it still takes its place in the order and the other entries
+		// go as without it. That is claustrum's own choice and is not measured.
+		if fi, err := os.Lstat(p); err == nil && cliEntryHoldsHome(p, fi) {
+			continue
+		}
+		_ = os.Remove(p)
 	}
 }
 

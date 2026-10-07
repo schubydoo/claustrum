@@ -236,6 +236,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   home folder that does not exist, a hard link, or Unicode normalization forms.
   No cell covers a case-sensitive volume on macOS or a UNC path. Not measured:
   `-cli-url`.
+  The sweep and the `-cli-keep` prune of `-install` have the same guard
+  (`cliEntryHoldsHome`). Each removes with one plain remove, so only an empty
+  home folder is at risk there. An entry of the cli-dir that is the home folder
+  or holds it is not removed. A folder gets the two tests above, and every
+  other kind of entry gets the lexical test alone. In the prune that entry
+  still takes its place in the order. That is claustrum's own choice. Not
+  measured on the reference: the home folder as an entry of the cli-dir.
   This guard and `wipesHomeDir` take the home folder from `os.UserHomeDir`. That
   is the `HOME` variable, or `USERPROFILE` on Windows. With that variable unset
   or empty they refuse nothing. This follows from the code and is not measured.
@@ -301,8 +308,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   that *is or contains* a home directory.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `files.extract_tar` and `git.worktree_remove` (the `git.worktree_create` guard emits no frame). Also `homeguard.go` and
   `homeguard_test.go` (`wipeDestDir` seams the destructive call, so the suite is
-  safe against an unfixed tree). For `-install`: `stageAndInstall` in
-  `install.go`, and [PROTOCOL.md](PROTOCOL.md) → `-install` → Staging and
+  safe against an unfixed tree). For `-install`: `stageAndInstall` and
+  `cliEntryHoldsHome` in `install.go`, and [PROTOCOL.md](PROTOCOL.md) → `-install` → Staging and
   cleanup. Measurement: forensics.
 
 ### D3 · Make the `files.extract_tar` size cap opt-in { #d3 }

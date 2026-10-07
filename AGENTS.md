@@ -218,6 +218,12 @@ The JSON-RPC surface is identical on every OS. Full internals →
       removes none of them. `89cb6289` counts a planted `.blob-` file (cell
       C-12, Windows VM). That difference is D18. Do not turn a remove of the
       prune into a tree delete.
+      The prune and the sweep never remove the home folder. Each skips an
+      entry of the cli-dir that is the home folder or holds it
+      (`cliEntryHoldsHome`). A folder gets the tests of `cliFolderHoldsHome`,
+      and every other kind gets `wipesHomeDir`. In the prune the skipped entry
+      still takes its place in the order. That guard is claustrum's own (D2).
+      No row measures the reference with the home folder in the cli-dir.
       `-install` removes the `-cli-zst` blob, an operator-named path, with one
       plain `os.Remove` once decompression succeeded. The home guard refusal
       is the one exception: it keeps the blob. No guard runs before the remove
