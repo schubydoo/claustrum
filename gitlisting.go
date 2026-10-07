@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"unicode"
 )
@@ -227,7 +228,35 @@ func listingEnvBase() []string {
 	return out
 }
 
-// gitVersionFails runs the plain `git version` that 89cb6289 runs after a listing that
+// noRepoListingRefuses is true on Linux and macOS. Two rules of 89cb6289 hold there
+// (Linux and macOS VMs). The first: a failed listing refuses the method also in a
+// folder in which the trust check finds no repository (rows A-N1 to A-N6, A-N5b, A-S1
+// and A-X2). The second: `git version` gets no GIT_CONFIG_COUNT set, and the "cannot
+// run" text carries its detail (row A-T1 with a `git version` that fails). Windows is
+// not measured for 89cb6289, and claustrum keeps its answers there.
+const noRepoListingRefuses = runtime.GOOS != "windows"
+
+// noRepoListingRefusal runs the configuration listing in dir, a folder in which the
+// trust check finds no repository, and returns the refusal text of a listing that
+// refuses, or "". heavy is the profile of the listing. With a broken GIT_CONFIG_KEY_<n>
+// in the daemon's environment git fails that listing, and 89cb6289 then refuses
+// git.info, git.list_branches and git.worktree_create (rows A-N1, A-N2, A-N3, A-N6 and
+// A-X2 on Linux and macOS VMs). The call log of 89cb6289 shows the listing with the
+// folder as its working directory, also with no GIT_CONFIG_* entry. A folder that git
+// cannot start in keeps its answer (row A-X1, mode 0000). On Windows it runs nothing
+// and returns "".
+//
+// Not measured: a listing that passes and exceeds a limit of parseConfigListing, a
+// `.git` file that names a git dir that is gone, and a daemon GIT_DIR that names a
+// file. claustrum answers them by hostileConfigRefusal.
+func noRepoListingRefusal(dir string, heavy bool) string {
+	if !noRepoListingRefuses {
+		return ""
+	}
+	return hostileConfigRefusal(dir, heavy).refusal
+}
+
+// gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
 // failed for any reason other than "no repository" (rows L10 to L12, L14c and L15). It
 // has no -c option. Its working directory is gitVersionDir. Its environment is the one
 // of the failed listing without the GIT_COMMON_DIR pin and without LC_ALL=C and
@@ -236,23 +265,50 @@ func listingEnvBase() []string {
 // unenterableBaseListing, this call gets the light environment, as on 89cb6289 (rows
 // L16a and L16b on a Linux VM). In the symlink-chain rows LNKb-g and LNKr-g, 89cb6289
 // runs no `git version` (Linux VM), and claustrum runs none there.
-func gitVersionFails(heavy bool) bool {
+//
+// On Linux and macOS the call gets no GIT_CONFIG_COUNT and no GIT_CONFIG_KEY_<digits>
+// or GIT_CONFIG_VALUE_<digits>. The call log of 89cb6289 shows none of the three
+// entries of the daemon on it (Linux and macOS VMs, each row with an empty
+// GIT_CONFIG_KEY_0). A leading-zero name such as GIT_CONFIG_KEY_01 is not measured
+// there. On Windows the entries stay (not measured).
+func gitVersionRun(heavy bool) listingRun {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "version")
 	cmd.Dir = gitVersionDir
-	cmd.Env = append(listingEnvBase(), profileEnv(heavy)...)
-	return cmd.Run() != nil
+	env := listingEnvBase()
+	if noRepoListingRefuses {
+		env = withoutConfigCountSet(env)
+	}
+	cmd.Env = append(env, profileEnv(heavy)...)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	return listingRun{stderr: errBuf.String(), err: err}
+}
+
+// gitVersionFails reports whether gitVersionRun fails.
+func gitVersionFails(heavy bool) bool {
+	return gitVersionRun(heavy).err != nil
 }
 
 // failedListingText is the refusal text of a listing that failed for any reason other
 // than "no repository". When `git version` also fails, git cannot run on this host
 // (rows L11, L12 and L15). Else the text is the listing refusal, as before (rows L10
-// and L14c). Both texts carry the listing's detail. In rows L11, L12 and L15 that
-// detail equals the one of the version call, so which of the two 89cb6289 quotes is not
-// measured.
+// and L14c), with the listing's detail.
+//
+// On Linux and macOS the "cannot run" text carries the detail of the version call:
+// its exec error, then ": " and its stderr through worktreeGitText. 89cb6289 answers
+// `git cannot run on this host; git not run: exit status 1: <stderr of git version>`
+// after a listing that exits 128 (row A-T1 with a `git version` that fails, Linux and
+// macOS VMs). One stderr line was measured, so the text rule is claustrum's choice.
+// On Windows the text carries the listing's detail. In rows L11, L12 and L15 the two
+// details are equal, so Windows is not measured.
 func failedListingText(r listingRun, heavy bool) string {
-	if gitVersionFails(heavy) {
+	if v := gitVersionRun(heavy); v.err != nil {
+		if noRepoListingRefuses {
+			return gitCannotRunPrefix + v.detail()
+		}
 		return gitCannotRunPrefix + r.detail()
 	}
 	return hooksRefusalPrefix + r.detail()

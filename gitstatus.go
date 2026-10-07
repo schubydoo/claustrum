@@ -118,16 +118,27 @@ func statusBaseInManagedTree(baseRepo string) bool {
 // trust check finds no repository: the listing, then the heavy `rev-parse
 // --absolute-git-dir`. Both carry GIT_DIR=<null device> in place of the GIT_COMMON_DIR
 // pin, so git finds no repository either, and the answer is isRepo:false (row n10b2 on
-// Linux, macOS and Windows VMs). claustrum does not read their answers.
-func statusNoRepoCalls(baseRepo string) {
+// Linux, macOS and Windows VMs). claustrum does not read the answer of the rev-parse.
+//
+// It returns the refusal text of a listing that fails, by the classes of
+// failedListingCheck, or "". 89cb6289 refuses there with a broken GIT_CONFIG_KEY_<n>
+// in the daemon's environment, and its call log shows no rev-parse (row A-S1 on Linux
+// and macOS VMs). On Windows it returns "" (not measured).
+func statusNoRepoCalls(baseRepo string) string {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	pin := []string{"GIT_DIR=" + os.DevNull}
-	hooks := runListing(ctx, baseRepo, "", precursorEnv(true, pin)).hooks()
+	r := runListing(ctx, baseRepo, "", precursorEnv(true, pin))
+	if r.err != nil && noRepoListingRefuses {
+		if c := failedListingCheck(r, baseRepo, true); c.refusal != "" {
+			return c.refusal
+		}
+	}
 	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true, "rev-parse", "--absolute-git-dir")...)
 	cmd.Dir = baseRepo
-	cmd.Env = hardenedGitEnv(true, pin, hooks)
+	cmd.Env = hardenedGitEnv(true, pin, r.hooks())
 	_ = cmd.Run()
+	return ""
 }
 
 // statusPath is what the gate takes from `path`.

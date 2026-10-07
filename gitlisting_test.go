@@ -533,14 +533,15 @@ func versionDir(t *testing.T) string {
 }
 
 // When every command exits 1 with "boom", `git version` fails too, so all
-// five methods answer that git cannot run, with the listing's detail (row L11a). The
-// version call runs in the root directory (Windows: the daemon's working directory).
-// Mutation: skip the probe.
+// five methods answer that git cannot run (row L11a). The listing and the version
+// call give the same detail here. The version call runs in the root directory
+// (Windows: the daemon's working directory). Mutation: skip the probe.
 func TestListingGitCannotRun(t *testing.T) {
 	f := newListingFixture(t)
 	stubListing(t, 1, "boom")
 	t.Setenv("CLAUSTRUM_GITSTUB_MATCH2", "version")
 	t.Setenv("CLAUSTRUM_GITSTUB_EXIT2", "1")
+	t.Setenv("CLAUSTRUM_GITSTUB_STDERR2", "boom")
 	msg := gitCannotRunPrefix + "exit status 1: boom"
 	got := f.fiveMethods(t)
 	create, _ := json.Marshal(worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})

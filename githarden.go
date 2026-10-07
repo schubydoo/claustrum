@@ -659,6 +659,12 @@ func hostileConfigRefusal(dir string, heavy bool) configCheck {
 			return configCheck{refusal: hooksPinPrefix + reason}
 		}
 	}
+	return failedListingCheck(r, dir, heavy)
+}
+
+// failedListingCheck sorts the failed listing r of dir into its class: outcomes 1 to
+// 3 of hostileConfigRefusal. heavy is the profile of the listing.
+func failedListingCheck(r listingRun, dir string, heavy bool) configCheck {
 	if r.gitNotOnPath() {
 		return configCheck{noRepo: true}
 	}

@@ -292,6 +292,10 @@ func gitInfo(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
+		// A listing that fails here refuses (rows A-N1 and A-X2, Linux and macOS VMs).
+		if msg := noRepoListingRefusal(p.Path, false); msg != "" {
+			return errResult(req.ID, codeInternal, msg)
+		}
 		return okResult(req.ID, notRepoResult{})
 	}
 	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
@@ -546,7 +550,9 @@ func gitStatus(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
-		statusNoRepoCalls(p.BaseRepo)
+		if msg := statusNoRepoCalls(p.BaseRepo); msg != "" {
+			return errResult(req.ID, codeInternal, msg)
+		}
 		return notRepo
 	}
 	// A baseRepo that resolves and cannot be opened answers here, with no further git
@@ -640,6 +646,10 @@ func gitListBranches(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
+		// A listing that fails here refuses (row A-N2, Linux and macOS VMs).
+		if msg := noRepoListingRefusal(p.Path, false); msg != "" {
+			return errResult(req.ID, codeInternal, msg)
+		}
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
@@ -734,6 +744,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	if t.verdict == gitDirNoRepo {
+		// A listing that fails here refuses, with and without worktreeRoot, and nothing
+		// is created (rows A-N3, A-N6 and A-N6b, Linux and macOS VMs).
+		if msg := noRepoListingRefusal(repo, false); msg != "" {
+			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
+		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
@@ -1683,8 +1698,15 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		case gitDirNoRepo:
 			// 89cb6289 runs the listing and the rev-parse here too, and the rev-parse
 			// fails (probe row 16 on Linux, macOS and Windows VMs). claustrum does not
-			// use the answer.
-			repeatRepositoryCheck(repo)
+			// use the answer of the rev-parse. A listing that fails refuses, and nothing
+			// is deleted (row A-N4, Linux and macOS VMs). Windows keeps its answer.
+			c := hostileConfigRefusal(repo, true)
+			if c.refusal != "" && noRepoListingRefuses {
+				return lockCheck(c.refusal)
+			}
+			if !c.refused() {
+				noRepositoryAt(repo, c.listing)
+			}
 			checkRegistration = false
 		default:
 			// A listing that answers "no repository" skips the registration. The branch
