@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -248,5 +249,17 @@ func TestWorktreeRemoveInRepoOtherLevelTexts(t *testing.T) {
 				t.Error("branch wt was deleted")
 			}
 		})
+	}
+}
+
+// A <directory> level that is the file system root: the located worktree is the one
+// that main located, with the root as the open parent and "/<name>" as the spelling.
+// Before, the reply was "openat : empty path". No row measures a worktreeRoot of "/".
+func TestLocateExternalWorktreeDirectoryIsFileSystemRoot(t *testing.T) {
+	leaf := fmt.Sprintf("claustrum-test-no-such-leaf-%d", os.Getpid())
+	tg, err := locateExternalWorktree("/" + leaf)
+	defer tg.close()
+	if err != nil || tg.parent == nil || tg.leaf != leaf || tg.path != "/"+leaf {
+		t.Fatalf("locateExternalWorktree(/%s) = (%+v, %v), want the root as parent and the path /%s", leaf, tg, err, leaf)
 	}
 }

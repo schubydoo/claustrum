@@ -93,24 +93,37 @@ func locateInRepoWorktree(repo, worktreePath string) (removeTarget, error) {
 // The caller has confirmed that worktreePath is <worktreeRoot>/<directory>/<name>. The
 // spelling in the texts is the resolved root joined with the directory and the name
 // (rows S03_tmp and S04_tmp, and row B18 of the mode rows on a macOS VM).
+//
+// A <directory> level that is the file system root has no level above it. The root is
+// then the one open level, and the spelling is "/<name>", as before the level order.
+// No row measures a worktreeRoot that is the file system root.
 func locateExternalWorktree(worktreePath string) (removeTarget, error) {
 	cleanPath := filepath.Clean(worktreePath)
 	dir := filepath.Dir(cleanPath)
-	root, err := filepath.EvalSymlinks(filepath.Dir(dir))
+	above, name := filepath.Dir(dir), filepath.Base(dir)
+	if above == dir {
+		name = "."
+	}
+	root, err := filepath.EvalSymlinks(above)
 	if err != nil {
 		if isGoneErr(err) {
 			return removeTarget{}, nil
 		}
 		return removeTarget{}, err
 	}
-	return openRemoveParent(root, filepath.Base(dir), filepath.Base(cleanPath))
+	return openRemoveParent(root, name, filepath.Base(cleanPath))
 }
 
 // externalRootDenied reports whether the worktreeRoot of worktreePath cannot be opened
 // or searched. The answer of such a root comes before the symlink refusal of the
 // <directory> level: with a root of mode 0300 and a symlinked <directory>, 89cb6289
 // answers "open <root>: permission denied" (cell U13b on Linux and macOS VMs). Modes
-// 0100, 0000 and 0200 answer the same (cells N1a to N1c on a Linux VM).
+// 0100, 0000 and 0200 answer the same (cells N1a to N1c on a Linux VM). With mode 0600
+// the answer is "statat .: permission denied" (cell U13a on Linux and macOS VMs).
+//
+// Any error of the open reads as true, also for a root that is absent or is not a
+// directory. That changes no answer: the lstat of the <directory> level fails for such
+// a root, so the symlink refusal answers nothing there in either case.
 func externalRootDenied(worktreePath string) bool {
 	root, err := os.OpenRoot(filepath.Dir(filepath.Dir(filepath.Clean(worktreePath))))
 	if err != nil {

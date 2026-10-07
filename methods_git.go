@@ -1345,8 +1345,10 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// same (cell N5, Linux VM). Windows is not measured, and keeps the look at
 		// .claude.
 		first := ".claude"
-		if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil && runtime.GOOS != "windows" {
-			first, _, _ = strings.Cut(rel, string(filepath.Separator))
+		if runtime.GOOS != "windows" {
+			if rel, err := filepath.Rel(repo, filepath.Clean(p.WorktreePath)); err == nil {
+				first, _, _ = strings.Cut(rel, string(filepath.Separator))
+			}
 		}
 		if err := statInsideDir(repo, first); err != nil {
 			return refuse("failed to remove worktree: " + err.Error())

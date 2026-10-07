@@ -3166,7 +3166,8 @@ copies end still fails it, as `timeoutMs` above describes:
 
   A daemon that runs as root removes the worktree under a `worktreeRoot` of mode
   0300, as `89cb6289` does (cell U22, Linux VM only). Windows is not measured. On
-  Windows claustrum opens `.claude\worktrees` in one step, as before.
+  Windows claustrum opens `.claude\worktrees` in one step, as before. A
+  `worktreeRoot` that is the file system root is not measured.
 - A home-directory `worktreePath` is refused. The `7d193f89` containment now does
   it, as parity. A `~`-expanded home path is not strictly under `baseRepo`, so it is
   refused with the reference's `"…is not inside the repository…"` wording before any
