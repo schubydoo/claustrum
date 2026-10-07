@@ -125,7 +125,9 @@ func statusBaseInManagedTree(baseRepo string) bool {
 // in the daemon's environment, and its call log shows no rev-parse (row A-S1 on Linux
 // and macOS VMs, cell P3-statN on a Windows VM). With noGit, a daemon GIT_DIR that
 // names a regular file, it reads no answer and returns "", as before. git.status is
-// not measured in that state.
+// not measured in that state. A listing that passes and exceeds a limit of
+// parseConfigListing is no refusal here: the answer stays isRepo:false. No row
+// measures that limit in such a folder.
 func statusNoRepoCalls(baseRepo string, noGit bool) string {
 	ctx, cancel := gitCtx()
 	defer cancel()

@@ -284,6 +284,60 @@ func TestPlainFolderFramesWithoutBrokenPair(t *testing.T) {
 	}
 }
 
+// A daemon GIT_COMMON_DIR, and a baseRepo whose `.git` is an empty file. No row of
+// 89cb6289 measures that state. The trust check finds no repository, and the listing
+// gets no GIT_DIR entry there, so git reads the `.git` file and fails with `invalid
+// gitfile format`. No GIT_CONFIG_* entry is set. The three requests keep the frames
+// that they had before the daemon read that listing. The worktreeRoot row does not
+// run on Windows, as in the rows above.
+// Mutations: read the answer of the listing without noRepoPinned in
+// noRepoListingRefusal (create), in removeGoneWorktree (remove) and in
+// externalWorkTreeRefusal (remove with worktreeRoot).
+func TestDaemonCommonDirKeepsNoRepoFrames(t *testing.T) {
+	f := newNoRepoFixture(t)
+	root := filepath.Dir(f.n)
+	e := filepath.Join(root, "E")
+	writeFile(t, filepath.Join(e, ".git"), "", 0o644)
+	keep := filepath.Join(f.external(), "keep.txt")
+	writeFile(t, keep, "k\n", 0o644)
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(root, "no-common-dir"))
+	// The control: the real listing in E fails, and not with "not a git repository".
+	cmd := exec.Command(f.realGit, "config", "-z", "--list")
+	cmd.Dir = e
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANGUAGE=C")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil || !strings.Contains(stderr.String(), "invalid gitfile format") {
+		t.Fatalf("real listing in %s: err = %v, stderr = %q, want git's gitfile failure", e, err, stderr.String())
+	}
+	leaf := filepath.Join(e, ".claude", "worktrees", "w1")
+	for _, row := range []struct {
+		name, method string
+		params       map[string]any
+		want         string
+		skipWindows  bool
+	}{
+		{"create", "git.worktree_create", map[string]any{"baseRepo": e, "branchName": "w1", "worktreePath": leaf}, notRepoCreate, false},
+		{"remove", "git.worktree_remove", map[string]any{"baseRepo": e, "branchName": "w1", "worktreePath": leaf},
+			`{"success":true,"branchKept":true}`, false},
+		{"remove with worktreeRoot", "git.worktree_remove", map[string]any{"baseRepo": e, "worktreePath": f.external(), "worktreeRoot": f.r},
+			`{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: exit status 128"}`, true},
+	} {
+		if row.skipWindows && runtime.GOOS == "windows" {
+			continue
+		}
+		if got, want := f.frame(t, row.method, row.params), resultOf(row.want); got != want {
+			t.Errorf("%s = %s\nwant %s", row.name, got, want)
+		}
+	}
+	if got := dirNames(t, e); !slices.Equal(got, []string{".git"}) {
+		t.Errorf("the folder holds %q, want .git only", got)
+	}
+	if !exists(keep) {
+		t.Errorf("%s is gone", keep)
+	}
+}
+
 // versionFails makes every `git version` exit 1 with the stderr of the Linux rows. On
 // a Windows VM the stderr of the stub was "boom".
 func versionFails(t *testing.T) {

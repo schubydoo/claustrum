@@ -686,8 +686,11 @@ func failedListingCheck(r listingRun, dir string, heavy bool) configCheck {
 	// When that `git version` fails for a dir that exists, the method refuses with the
 	// "cannot run" text and the detail of the version call. 89cb6289 answers so for
 	// git.info on a regular file and on a folder of mode 0000 (rows A-M2 and A-X1 in
-	// phase P11, Linux and macOS VMs). The other methods are not measured there. A dir
-	// that does not exist keeps its answer then (rows A-M1 and A-M3 to A-M5 in P11).
+	// phase P11, Linux and macOS VMs). It answers so for git.list_branches, git.status
+	// and git.worktree_create too: on a regular file (cell C-g, Linux and macOS VMs)
+	// and on a folder of mode 0000 (cell C-h in P11, Linux VM). git.worktree_remove
+	// is not measured on a regular file there. A dir that does not exist keeps its
+	// answer then (rows A-M1 and A-M3 to A-M5 in P11).
 	// Not measured: a path under a regular file with a failing `git version`. claustrum
 	// keeps its answer. A path that does not exist is measured on
 	// git.worktree_remove with worktreeRoot only for its calls. 89cb6289 runs no `git
@@ -715,8 +718,9 @@ func failedListingCheck(r listingRun, dir string, heavy bool) configCheck {
 // reports false, so the start error of the listing is a refusal. 89cb6289 answers so
 // on a Windows VM for a regular file and a file symlink: the hooks refusal that ends
 // with `fork/exec <git.exe path>: The directory name is invalid.` (cells A-01 to A-04,
-// A-04b2, A-06 and A-10). When `git version` fails too, it answers the "cannot run"
-// text (cell A-14). A path that does not exist, a path under a file and a junction
+// A-04b2, A-06 and A-10). The path NUL and the name of a file with one more dot at
+// its end get the same refusal (cells Wc). When `git version` fails too, it answers
+// the "cannot run" text (cells A-14 and Wa-infoF). A path that does not exist, a path under a file and a junction
 // whose target is gone keep their answer there (cells A-07m, A-07s and A-11). A folder
 // with a path of 296 characters gets the same refusal (cell A-13). From the code: that
 // folder passes os.Stat here, and the stat of "<dir>/." below passes too.

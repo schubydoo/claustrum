@@ -119,7 +119,7 @@ func TestGitVersionChildGetsNoGlobalConfig(t *testing.T) {
 	}
 }
 
-// Cells CfP0 and CfP3 (Linux VM). The daemon's GIT_DIR names a regular file. git.info
+// Cells CfP0 and CfP3 (Linux and macOS VMs). The daemon's GIT_DIR names a regular file. git.info
 // answers the "no repository" frame on a plain folder and on a repository, with and
 // without an empty GIT_CONFIG_KEY_0, and no listing runs. Mutation: run the listing
 // in that state (noRepoListingRefusal).
@@ -150,7 +150,7 @@ func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 	}
 }
 
-// Cells CbP0 and CbP3 (Linux VM). A `.git` file names a git dir that does not exist.
+// Cells CbP0 and CbP3 (Linux and macOS VMs). A `.git` file names a git dir that does not exist.
 // git.info answers the "no repository" frame, with and without an empty
 // GIT_CONFIG_KEY_0.
 func TestGitFileToNowhereKeepsFrame(t *testing.T) {

@@ -240,17 +240,22 @@ func listingEnvBase() []string {
 // answer (row A-X1, mode 0000). On Windows a folder that git cannot start in refuses
 // (cell A-13, see unenterableDir).
 //
-// With a daemon GIT_DIR that names a regular file (t.noGit), no listing runs and the
-// answer is "". 89cb6289 answers the "no repository" frame of git.info there, on a
-// plain folder and on a repository, and its call log shows no listing. That holds
-// with and without a broken GIT_CONFIG_KEY_0 (cells CfP0 and CfP3, Linux VM). A `.git`
-// file that names a git dir that is gone gets the listing, and git answers "not a git
-// repository" there, so the frame stays (cells CbP0 and CbP3, Linux VM).
+// Without the entry of t.noRepoPinned, no listing runs and the answer is "". One such
+// state is a daemon GIT_DIR that names a regular file on Linux and macOS (t.noGit).
+// 89cb6289 answers the "no repository" frame of git.info there, on a plain folder and
+// on a repository, and its call log shows no listing. That holds with and without a
+// broken GIT_CONFIG_KEY_0 (cells CfP0 and CfP3, Linux and macOS VMs). On Windows that
+// GIT_DIR does not come here: the trust check pins it, and the listing of the method
+// fails with git's `invalid gitfile format` text (cells Wd, Windows VM). The other
+// states are a daemon GIT_COMMON_DIR and a `.git` file that names a regular file. Both
+// are not measured. A `.git` file that names a git dir that is gone gets the listing,
+// and git answers "not a git repository" there, so the frame stays (cells CbP0 and
+// CbP3, Linux and macOS VMs).
 //
 // Not measured: a listing that passes and exceeds a limit of parseConfigListing, and
 // a `.git` file with no gitdir line. claustrum answers them by hostileConfigRefusal.
 func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
-	if t.noGit {
+	if !t.noRepoPinned() {
 		return ""
 	}
 	return hostileConfigRefusal(dir, heavy).refusal
@@ -274,9 +279,13 @@ func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
 // The call gets no GIT_CONFIG_GLOBAL either. With a GIT_CONFIG_GLOBAL that names a
 // file git cannot parse, the `git version` of 89cb6289 has no such entry and exits 0,
 // and the answer is the hooks refusal of the listing (cell C-c on Linux and macOS VMs:
-// git.info on a plain folder and on a repository, and git.worktree_create). Windows
-// is not measured for GIT_CONFIG_GLOBAL. No log shows a GIT_CONFIG_SYSTEM or a
+// git.info on a plain folder and on a repository, and git.worktree_create). Cells Wb
+// show the same on a Windows VM. No log shows a GIT_CONFIG_SYSTEM or a
 // GIT_CONFIG_NOSYSTEM of the daemon, so both stay (not measured).
+//
+// The names match by exact letter case, also on Windows, where the names of the
+// environment have no case. So a lower-case git_config_count or git_config_global
+// of the daemon stays on the call there. Not measured.
 func gitVersionRun(heavy bool) listingRun {
 	ctx, cancel := gitCtx()
 	defer cancel()
@@ -302,6 +311,10 @@ func gitVersionRun(heavy bool) listingRun {
 // that exits 128. Row A-T1 with a `git version` that fails shows that on Linux and
 // macOS VMs, and cells P11-infoN and P11-infoT on a Windows VM. One stderr line was
 // measured, so the text rule is claustrum's choice.
+//
+// Every caller of this function gets that text. Three callers have no row with a
+// `git version` that fails: the two later listings of git.status (statusWorkTreeProbe
+// and statusRun.git) and unenterableBaseListing.
 func failedListingText(r listingRun, heavy bool) string {
 	if v := gitVersionRun(heavy); v.err != nil {
 		return gitCannotRunPrefix + v.detail()

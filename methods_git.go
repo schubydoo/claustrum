@@ -747,8 +747,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses, with and without worktreeRoot, and nothing
-		// is created (rows A-N3, A-N6 and A-N6b on Linux and macOS VMs, cell P3-crN
-		// without worktreeRoot on a Windows VM).
+		// is created (rows A-N3, A-N6 and A-N6b on Linux and macOS VMs, cells P3-crN
+		// and Wf-P3-crNroot on a Windows VM).
 		if msg := noRepoListingRefusal(t, repo, false); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
@@ -1703,8 +1703,9 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			// fails (probe row 16 on Linux, macOS and Windows VMs). claustrum does not
 			// use the answer of the rev-parse. A listing that fails refuses, and nothing
 			// is deleted (row A-N4 on Linux and macOS VMs, cell P3-rmN on a Windows VM).
+			// Without the entry of noRepoPinned the answer of the listing is not read.
 			c := hostileConfigRefusal(repo, true)
-			if c.refusal != "" {
+			if c.refusal != "" && t.noRepoPinned() {
 				return lockCheck(c.refusal)
 			}
 			if !c.refused() {
