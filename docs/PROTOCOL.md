@@ -3057,9 +3057,7 @@ claustrum opens each file without blocking and reads a regular file only.
   branch stay.
   claustrum answers `git worktree add failed (checkout): <git text> the
   registration <entry> has no gitdir record that names this worktree`, with no
-  undo text. The entry stays, and the branch is removed. This change gave
-  claustrum another text in cell Z15. Before it, claustrum answered the `openat
-  w1/index: permission denied` part with no undo text.
+  undo text. The entry stays, and the branch is removed.
   Cells Z16 and Z18 (Linux and macOS VMs) and cell Z18r (Linux VM) are open
   differences of issue 429 too. The frames are equal. `89cb6289` removes the
   registration in the rollback, and claustrum keeps it.
