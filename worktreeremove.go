@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 )
@@ -89,44 +90,83 @@ func locateInRepoWorktree(repo, worktreePath string) (removeTarget, error) {
 }
 
 // locateExternalWorktree is locateInRepoWorktree for a worktree beneath a worktreeRoot.
-// The spelling in the texts is the resolved <directory> level joined with the name
-// (rows S03_tmp and S04_tmp).
+// The caller has confirmed that worktreePath is <worktreeRoot>/<directory>/<name>. The
+// spelling in the texts is the resolved root joined with the directory and the name
+// (rows S03_tmp and S04_tmp, and row B18 of the mode rows on a macOS VM).
 func locateExternalWorktree(worktreePath string) (removeTarget, error) {
 	cleanPath := filepath.Clean(worktreePath)
-	dir, err := filepath.EvalSymlinks(filepath.Dir(cleanPath))
+	dir := filepath.Dir(cleanPath)
+	root, err := filepath.EvalSymlinks(filepath.Dir(dir))
 	if err != nil {
 		if isGoneErr(err) {
 			return removeTarget{}, nil
 		}
 		return removeTarget{}, err
 	}
-	return openRemoveParent(dir, ".", filepath.Base(cleanPath))
+	return openRemoveParent(root, filepath.Base(dir), filepath.Base(cleanPath))
+}
+
+// levelSearchError is the error of a look at "." in an open level, or nil. A level
+// that the daemon opened and cannot search gives "statat .: permission denied". On
+// Windows it answers nil with no look: no row measures a mode there.
+func levelSearchError(level *os.Root) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	_, err := level.Stat(".")
+	return err
 }
 
 // openRemoveParent opens the directory that holds the worktree. On Windows a junction
 // at .claude or at .claude\worktrees makes os.Root refuse the open with "path escapes
 // from parent".
 // The request then fails, and nothing is deleted. That refusal is divergence D19.
+//
+// On Linux and macOS it opens base and then each component of dirRel, one level at a
+// time. After each open it looks at "." in that level, before any look at the level
+// below. So a level without the read bit answers the error of its own open: "open
+// <base>" or "openat <component>". A level with the read bit and without the search
+// bit answers "statat .". The frames of 89cb6289 show those texts on Linux and macOS
+// VMs (rows B1 to B11 with worktreeRoot, rows B17a to B17d without). With a root of
+// mode 0300 or 0100 nothing is deleted there (rows B3, B4 and B18). Two restricted
+// levels in one request are not measured. A level that fails the look for another
+// reason answers that error, and nothing is deleted (not measured). On Windows dirRel
+// is opened in one step, as before.
 func openRemoveParent(base, dirRel, leaf string) (removeTarget, error) {
-	root, err := os.OpenRoot(base)
+	parent, err := os.OpenRoot(base)
 	if err != nil {
 		if isGoneErr(err) || notADir(os.Stat(base)) {
 			return removeTarget{}, nil
 		}
 		return removeTarget{}, err
 	}
-	parent := root
-	if dirRel != "." {
-		parent, err = root.OpenRoot(dirRel)
-		if err != nil {
-			gone := isGoneErr(err) || notADir(root.Stat(dirRel))
-			_ = root.Close()
-			if gone {
-				return removeTarget{}, nil
-			}
+	var levels []string
+	switch {
+	case dirRel == ".":
+	case runtime.GOOS == "windows":
+		levels = []string{dirRel}
+	default:
+		levels = strings.Split(dirRel, string(filepath.Separator))
+	}
+	for _, name := range levels {
+		if err := levelSearchError(parent); err != nil {
+			_ = parent.Close()
 			return removeTarget{}, err
 		}
-		_ = root.Close()
+		next, err := parent.OpenRoot(name)
+		gone := err != nil && (isGoneErr(err) || notADir(parent.Stat(name)))
+		_ = parent.Close()
+		if gone {
+			return removeTarget{}, nil
+		}
+		if err != nil {
+			return removeTarget{}, err
+		}
+		parent = next
+	}
+	if err := levelSearchError(parent); err != nil {
+		_ = parent.Close()
+		return removeTarget{}, err
 	}
 	return removeTarget{parent: parent, leaf: leaf, path: filepath.Join(base, dirRel, leaf)}, nil
 }
