@@ -325,9 +325,10 @@ func TestWorktreeCreateOldRegistrationBeforeDeadline(t *testing.T) {
 	oldRegistrationOfSameName(t, 1, 300*time.Millisecond)
 }
 
-// oldRegistrationOfSameName stages cell P-c and sends one create. With a timeoutMs,
-// the request carries it, and the git stub makes the add of the request take addTime.
-func oldRegistrationOfSameName(t *testing.T, timeoutMs int, addTime time.Duration) {
+// stageOldRegistrationOfSameName builds the disk state of cell P-c with D5 off: the
+// repositories T and X with equal commit ids, and in T the registration w1 of a
+// worktree on branch old1 whose folder is gone. It returns T, X and that registration.
+func stageOldRegistrationOfSameName(t *testing.T) (string, string, string) {
 	t.Helper()
 	requireGit(t)
 	oldTimeout := gitTimeout
@@ -354,7 +355,14 @@ func oldRegistrationOfSameName(t *testing.T, timeoutMs int, addTime time.Duratio
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
-	oldReg := filepath.Join(T, ".git", "worktrees", "w1")
+	return T, X, filepath.Join(T, ".git", "worktrees", "w1")
+}
+
+// oldRegistrationOfSameName stages cell P-c and sends one create. With a timeoutMs,
+// the request carries it, and the git stub makes the add of the request take addTime.
+func oldRegistrationOfSameName(t *testing.T, timeoutMs int, addTime time.Duration) {
+	t.Helper()
+	T, X, oldReg := stageOldRegistrationOfSameName(t)
 	oldIndex, err := os.ReadFile(filepath.Join(oldReg, "index"))
 	if err != nil || len(oldIndex) == 0 {
 		t.Fatalf("the old registration holds no index (err %v): this fixture does not stage the cell", err)
@@ -519,4 +527,101 @@ func TestGitDirRegistryDir(t *testing.T) {
 	if got, want := gitDirRegistryDir(admin), filepath.Join(root, "other", "worktrees"); got != want {
 		t.Errorf("absolute commondir: %s, want %s", got, want)
 	}
+}
+
+// The tests below put a FIFO where git.worktree_create reads a file of its own
+// after `git worktree add`. No row measures these states. No test opens a FIFO for
+// writing, so a read that waits fails its test at fifoAnswerLimit.
+
+// TestWorktreeCreateOldRegistrationWithFifoCommondir is the state of cell P-c with
+// a FIFO as the commondir file of the old registration in T. git makes the new
+// registration in X and does not read that file. From the code: test 3 of
+// createdRegistrationRefusal takes the FIFO as a commondir file that cannot be read,
+// and the record test then answers the refusal of cell P-c. Nothing is rolled back.
+func TestWorktreeCreateOldRegistrationWithFifoCommondir(t *testing.T) {
+	T, X, oldReg := stageOldRegistrationOfSameName(t)
+	fifoInPlaceOf(t, filepath.Join(oldReg, "commondir"))
+	oldIndex, err := os.Stat(filepath.Join(oldReg, "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
+	leaf := filepath.Join(T, ".claude", "worktrees", "w1")
+	raw := frameWithin(t, "git.worktree_create", createParams(T, leaf, "w1"))
+	wantError(t, raw, adminRecordRefusal(leaf), "unsafe_path")
+	wantFifo(t, filepath.Join(oldReg, "commondir"))
+	if fi, err := os.Stat(filepath.Join(oldReg, "index")); err != nil || !os.SameFile(oldIndex, fi) {
+		t.Errorf("the index of the old registration is another file now (err %v)", err)
+	}
+	if ents, err := os.ReadDir(leaf); err != nil || len(ents) != 1 || ents[0].Name() != ".git" {
+		t.Errorf("leaf entries = %v (err %v), want only .git", ents, err)
+	}
+	if _, err := os.Stat(filepath.Join(T, ".git", "refs", "heads", "w1")); err != nil {
+		t.Errorf("refs/heads/w1 of T is gone: %v", err)
+	}
+}
+
+// TestWorktreeCreateOldRegistrationWithFifoRecord is the state of cell P-c with a
+// FIFO as the gitdir record of the old registration in T. From the code: a record
+// that is not a regular file gives no mismatch, as any record that cannot be read.
+// The create then succeeds, and the old registration gets the index of the new
+// worktree. That is claustrum's own answer (not measured).
+func TestWorktreeCreateOldRegistrationWithFifoRecord(t *testing.T) {
+	T, X, oldReg := stageOldRegistrationOfSameName(t)
+	fifoInPlaceOf(t, filepath.Join(oldReg, "gitdir"))
+	oldIndex, err := os.Stat(filepath.Join(oldReg, "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
+	leaf := filepath.Join(T, ".claude", "worktrees", "w1")
+	raw := frameWithin(t, "git.worktree_create", createParams(T, leaf, "w1"))
+	wantFifoFrame(t, "create(T)", raw, createOK(leaf, "w1"))
+	wantFifo(t, filepath.Join(oldReg, "gitdir"))
+	wantFileContent(t, filepath.Join(leaf, "t.txt"), "t\n")
+	if fi, err := os.Stat(filepath.Join(oldReg, "index")); err != nil || os.SameFile(oldIndex, fi) {
+		t.Errorf("the old registration keeps its index file (err %v), want the new index there", err)
+	}
+	if _, err := os.Lstat(filepath.Join(X, ".git", "worktrees", "w1", "index")); !os.IsNotExist(err) {
+		t.Errorf("the registration in X holds an index (Lstat err %v), want none", err)
+	}
+}
+
+// TestPostAddReadsDoNotWaitOnFifo calls the three reads with a FIFO at the path.
+// Each answers at once, with the answer of a file that cannot be read. A FIFO as the
+// commondir file of a git directory makes git itself wait (git 2.47, Linux host),
+// so no request reaches gitDirRegistryDir in that state.
+func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
+	root := realTempDir(t)
+	gitDir, leaf := filepath.Join(root, ".git"), filepath.Join(root, "leaf")
+	reg := filepath.Join(gitDir, "worktrees", "w1")
+	mkfifo(t, filepath.Join(gitDir, "commondir"))
+	mkfifo(t, filepath.Join(reg, "commondir"))
+	mkfifo(t, filepath.Join(reg, "gitdir"))
+	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+reg+"\n", 0o644)
+
+	var registry, refusal string
+	var mismatch bool
+	var placeErr error
+	src := filepath.Join(root, "new-index")
+	writeFile(t, src, "new\n", 0o644)
+	doneWithin(t, "the reads after the add", func() {
+		registry = gitDirRegistryDir(gitDir)
+		refusal = createdRegistrationRefusal(gitDir, leaf)
+		mismatch = adminRecordMismatch(reg, leaf)
+		placeErr = placeWorktreeIndex(src, reg, leaf)
+	})
+	if want := filepath.Join(gitDir, "worktrees"); registry != want {
+		t.Errorf("gitDirRegistryDir(FIFO commondir) = %s, want %s", registry, want)
+	}
+	if refusal != "" {
+		t.Errorf("createdRegistrationRefusal(FIFO commondir) = %q, want none", refusal)
+	}
+	if mismatch {
+		t.Error("adminRecordMismatch(FIFO record) = true, want false")
+	}
+	if placeErr != nil {
+		t.Errorf("placeWorktreeIndex(FIFO record) = %v, want the index placed", placeErr)
+	}
+	wantFileContent(t, filepath.Join(reg, "index"), "new\n")
 }

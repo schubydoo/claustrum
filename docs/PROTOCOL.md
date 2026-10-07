@@ -1535,8 +1535,7 @@ file of a worktree entry and the `gitdir` record of a worktree entry. On Linux a
 macOS it opens each of them without blocking. It reads a regular file only, and
 it reads that file as before. Anything else there, a FIFO for example, is no usable
 file, and the read does not wait. Windows has no FIFO in the file system, and its reads
-are as before. One read is as before on every system. After `git worktree add`,
-`git.worktree_create` reads the `gitdir` record that git wrote for the new entry.
+are as before.
 
 The rows ran side by side against `89cb6289` on Linux and macOS VMs. No row opened
 a FIFO for writing. `89cb6289` answered every row except B-G1 in under 2 s. T is a
@@ -1607,6 +1606,20 @@ Not measured:
   nothing from it.
 - A FIFO in a read of the rollback of `git.worktree_create`. From the code: the
   registration is not verified, and the rollback does not delete it.
+- A FIFO in a read of `git.worktree_create` after `git worktree add`. Three reads
+  run there. The states below are those of cell P-c, with a FIFO in the old entry
+  `w1` of `baseRepo`. The first two answers are from a test of this repository,
+  run on a Linux host.
+  - The `commondir` file of that entry is a FIFO. claustrum takes it as a file
+    that it cannot read, so test 3 does not refuse. The record test then answers
+    the refusal of cell P-c, and nothing is rolled back.
+  - The `gitdir` record of that entry is a FIFO. claustrum takes it as a record
+    that it cannot read, so the record test finds no mismatch. The create answers
+    success, and the old entry gets the `index` of the new worktree.
+  - The `commondir` file of the git directory of `baseRepo` is a FIFO. From the
+    code: claustrum takes that git directory as its own common directory. No
+    request was built for this state. A git 2.47 gives no answer in 5 s to
+    `rev-parse --git-dir` there (Linux host, not a VM).
 
 #### Hardened git calls
 

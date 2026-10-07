@@ -403,10 +403,11 @@ func verifyCreatedWorktree(worktreePath string, cp worktreeCheckpoint) string {
 // gitDirRegistryDir is the directory that holds the worktree registrations of the
 // git directory gitDir: <common git dir>/worktrees. The commondir file of gitDir
 // names the common git directory, as for a linked worktree. Without that file,
-// gitDir is its own common directory.
+// gitDir is its own common directory. A commondir that is not a regular file, a
+// FIFO for example, counts as no file, with no wait (readGitPlainFile, not measured).
 func gitDirRegistryDir(gitDir string) string {
 	common := gitDir
-	if b, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
+	if b, err := readGitPlainFile(filepath.Join(gitDir, "commondir")); err == nil {
 		common = strings.TrimSpace(string(b))
 		if !filepath.IsAbs(common) {
 			common = filepath.Join(gitDir, common)
@@ -443,7 +444,7 @@ func gitDirRegistryDir(gitDir string) string {
 // states are not measured, and claustrum does not refuse them. The first is a leaf
 // with no .git file that can be read. The second is an entry whose stat fails with
 // another error than "does not exist". The third is a commondir file that cannot be
-// read. Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
+// read. A FIFO there is such a file, with no wait (readGitPlainFile). Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
 // 2.50, 89cb6289 answers the "does not name" text there too, with a registrations
 // directory that is a symlink to <F>/WTREG (cells P-a and P-b). On a Linux VM with
 // git 2.43 both cells succeed: git writes the path through the link. 89cb6289
@@ -474,7 +475,7 @@ func createdRegistrationRefusal(gitDir, worktreePath string) string {
 	if _, err := os.Stat(registration); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Sprintf("refusing to create worktree: %s was not populated by git worktree add", worktreePath)
 	}
-	b, err := os.ReadFile(filepath.Join(registration, "commondir"))
+	b, err := readGitPlainFile(filepath.Join(registration, "commondir"))
 	if err != nil {
 		return ""
 	}
@@ -537,13 +538,14 @@ func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 // together), and the resolution of symlinks before the compare. A symlinked path
 // such as /tmp on macOS creates as usual on both references (row I01e), so
 // claustrum resolves them. A relative worktreePath or record, and any read that
-// fails, give no mismatch. The check is off on Windows (adminRecordChecked). That is
+// fails, give no mismatch. A record that is not a regular file, a FIFO for example,
+// fails at once (readGitPlainFile). The check is off on Windows (adminRecordChecked). That is
 // claustrum's choice.
 func adminRecordMismatch(admin, worktreePath string) bool {
 	if !adminRecordChecked || admin == "" || !filepath.IsAbs(worktreePath) {
 		return false
 	}
-	b, err := os.ReadFile(filepath.Join(admin, "gitdir"))
+	b, err := readGitPlainFile(filepath.Join(admin, "gitdir"))
 	if err != nil {
 		return false
 	}
