@@ -1201,7 +1201,8 @@ func TestCreateNestedBaseBeforeCountRefusal(t *testing.T) {
 			` contains a ".." component; choose the session folder by its absolute path, without ".."`, "unsafe_path"), counted},
 		{"val2 Y3b", f.top, outside, frame("refusing to create worktree: "+outside+" is not inside the repository "+f.top+
 			"; session worktrees are only created and removed under <repository>/.claude/worktrees", "unsafe_path"), counted},
-		// The text names the leaf with its symlinks resolved on Linux and macOS, and
+		// The text names the leaf with the symlinks of its parent folder resolved, its last
+		// name kept and the path cleaned on Linux and macOS, and
 		// with the on-disk letter case on Windows (existingPathSpelling).
 		{"val2 Y3c", f.top, f.leaf(), frame("refusing to create worktree: "+existingPathSpelling(f.leaf())+
 			" already exists, and a new worktree is only ever created in a fresh directory", "unsafe_path"), counted},

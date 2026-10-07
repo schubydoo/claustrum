@@ -840,7 +840,8 @@ func adminRecordRefusal(worktreePath string) string {
 // 89cb6289 names the leaf as sent in the undo clause of a rollback (cells T6 and
 // T7), in the path of a success (cells T8, U2h and U3c), in the text of git (cell
 // T11b) and in the locked refusal of git.worktree_remove (cell T12b), on Linux
-// and macOS VMs. Those keep the path as sent. Every other refusal of the create keeps
+// and macOS VMs. Those keep the path as sent. The "is not inside the repository"
+// text names the path as sent too (cell A12). Every other refusal of the create keeps
 // its spelling: no cell measured it.
 //
 // On Windows no create reaches this function: the four tests after the add do not
