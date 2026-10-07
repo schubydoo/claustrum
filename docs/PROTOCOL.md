@@ -1300,7 +1300,7 @@ neither `GIT_DIR` nor `GIT_COMMON_DIR`:
   outside any repository gives "no repository" and `GIT_DIR=NUL` on each call (cell
   B-03). A junction that is the last component gives the pin of P too (cell B-04).
   A folder symlink in the place of the junction resolves, and the pin is
-  `<R>\.git` (cell B-06). the claustrum build of this change is equal to `89cb6289` in
+  `<R>\.git` (cell B-06). The claustrum build of this change is equal to `89cb6289` in
   frame, disk and every git call in these cells, except B-03 (Windows VM). In cell
   B-03 `89cb6289` runs 3 git calls and claustrum runs 2. The third call is a
   `rev-parse --git-dir` that exits 128. Both sides carry `GIT_DIR=NUL` on each call
@@ -2146,9 +2146,9 @@ check (Windows VM).
   refs/remotes/origin/HEAD` prints `refs/remotes/origin/rmain`, and the `rev-parse
   --verify` of that ref exits 1 (cell B-01). In cell B-15 the config file of P has
   a broken line. The listing in `<P>\J\sub` exits 128, and `89cb6289` answers
-  `-32603` with the listing refusal that ends `fatal: bad config line 15 in file
-  <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
-  repository, and the answer is the non-repo body. the claustrum build of this change
+  `-32603` with the listing refusal that ends
+  `fatal: bad config line 15 in file <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
+  repository, and the answer is the non-repo body. The claustrum build of this change
   answers the same frame in each of these cells (Windows VM). Its calls carry the
   same entries in these cells, except B-14. In cell B-03 it runs one call less
   (see the trust check). The claustrum test on real junctions runs on Windows
@@ -2156,7 +2156,7 @@ check (Windows VM).
   B-17k and B-17d. A test with simulated links runs on Linux and macOS. In cell
   B-14 calls 4 and 5 differ. They are the root pair. `89cb6289` runs them with
   `--git-dir=<P>\.git`, in the folder `<P>\.git`, with `GIT_COMMON_DIR=<P>\.git`.
-  the claustrum build of this change runs them with `--git-dir=<R>\.git`, in the folder
+  The claustrum build of this change runs them with `--git-dir=<R>\.git`, in the folder
   `<R>\.git`, with `GIT_COMMON_DIR=<R>\.git`. The frames are equal. Cell J-f-info
   repeats cell B-14 with the same result. Not measured: a junction to another
   drive, and a junction to a bare repository. Three more states have no cell of
@@ -3560,7 +3560,7 @@ copies end still fails it, as `timeoutMs` above describes:
   not measured there. Two cells have a junction `<P>\J` above `.claude`, with the
   `worktreePath` `<P>\J\sub\.claude\worktrees\w1` and `<P>\J\.claude\worktrees\w1`.
   `89cb6289` answers `{"success":true}` there after 2 git calls, a listing and
-  `rev-parse --absolute-git-dir`. the claustrum build of this change answers the text with
+  `rev-parse --absolute-git-dir`. The claustrum build of this change answers the text with
   `J\\sub\\.claude\\worktrees` and with `J\\.claude\\worktrees`, and runs no git
   call. In both cells the leaf did not exist and no branch existed. Nothing
   changed on disk on either side (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). Not
