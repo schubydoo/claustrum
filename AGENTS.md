@@ -200,27 +200,30 @@ The JSON-RPC surface is identical on every OS. Full internals →
       cli-dir.
       `-install` also sweeps the cli-dir. The sweep is one plain `os.Remove`
       for each entry named `.fetch-*` or `*.zst` that is more than 10 minutes
-      old, never as a tree. It runs before the run of a new CLI, after a
-      failed attempt and after a stopped run on a cache hit. That last sweep
-      runs outside `ensureCLI`, so no D6 test comes before it. It names only
+      old, never as a tree. It runs before the run of a new CLI and after a
+      failed attempt. On a cache hit it runs only after a `--version` run that
+      its bound stopped. A cache hit with a good run does not sweep (cells Z8
+      of `89cb6289`, Linux, macOS and Windows VMs). The sweep after a stopped
+      run is outside `ensureCLI`, so no D6 test comes before it. It names only
       the cli-dir, never the version. A second sweep removes an entry named
       `*.zst.part` that is more than 7 days old, with the same plain
       `os.Remove`. It runs once, before any CLI runs, also on a cache hit
-      (cells Z1 on Linux, macOS and Windows VMs, cell Z4b on a Linux VM). So
+      (cells Z1 and Z4b on Linux, macOS and Windows VMs). So
       no D6 test comes before it either, and it names only the cli-dir. A
       name that ends in `.zst.part` follows this rule alone, also with the
-      `.fetch-` prefix (cells Z2, the same three systems).
+      `.fetch-` prefix (cells Z2 and Z5, the same three systems).
       The `-cli-keep` prune runs after a good install only, so after D6. It
       is one plain `os.Remove` for each entry of the cli-dir past the keep
       count, in the order of the mtime, never as a tree. A file, a link and
-      an empty folder go. A folder with content stays, and a link goes as a
+      an empty folder go. A folder with content stays and takes its place in
+      the order, and a link goes as a
       link. The new CLI has no protection in the prune. It goes when enough
       entries are newer, and with `-cli-keep 0` every counted entry goes.
       `89cb6289` does the same (rows C-1, C-2, C-7 and C-11 on Linux and
-      macOS VMs, cell C-11dir on a Windows VM, cells K0a and K0b on all
+      macOS VMs, cell C-11dir on a Windows VM, cells K0a, K0b and F2 on all
       three). With a negative `-cli-keep` no prune runs. A good install then
-      prints no result line and exits 2, as on `89cb6289` (cells Kneg, all
-      three systems). The prune does not
+      prints no result line and exits 2, as on `89cb6289` (cells Kneg and
+      Kn-2, all three systems). The prune does not
       count the sweep's names, a `*.zst.part` name or a `.blob-` name, and it
       removes none of them. `89cb6289` counts a planted `.blob-` file (cell
       C-12, Windows VM) and removes it (cells B1, all three systems). That
@@ -231,8 +234,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       (`cliEntryHoldsHome`). A folder gets the tests of `cliFolderHoldsHome`,
       and every other kind gets `wipesHomeDir`. In the prune the skipped entry
       still takes its place in the order. That guard is claustrum's own (D2).
-      `89cb6289` removes an empty home folder there (cells H1 on Linux, macOS
-      and Windows VMs, cells H3 on Linux and macOS VMs).
+      `89cb6289` removes an empty home folder there (cells H1 and H3 on Linux,
+      macOS and Windows VMs).
       `-install` removes the `-cli-zst` blob, an operator-named path, with one
       plain `os.Remove` once decompression succeeded. The home guard refusal
       is the one exception: it keeps the blob. No guard runs before the remove

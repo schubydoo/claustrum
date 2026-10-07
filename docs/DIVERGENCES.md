@@ -245,7 +245,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   `89cb6289` removes an empty home folder that is an entry of the cli-dir. In
   the prune it is the oldest entry, past the keep value (cells H1, Linux, macOS
   and Windows VMs). In the sweep it has the name `h.zst` and is 20 minutes old
-  (cells H3, Linux and macOS VMs). claustrum keeps it in each of those cells.
+  (cells H3, the same three systems). claustrum keeps it in each of those cells.
   A home folder with content stays on both (cells H2, the same three systems).
   The difference stays by the maintainer's decision.
   This guard and `wipesHomeDir` take the home folder from `os.UserHomeDir`. That

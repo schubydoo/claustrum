@@ -116,8 +116,9 @@ func runInstall(o installOpts) {
 			installManaged = &installManagedState{res: resolveManagedLauncher(f.CliPath)}
 		}
 
-		// An old "*.zst.part" entry goes before the CLI runs, on every path, also
-		// on a cache hit (cell Z4b, Linux VM, 89cb6289).
+		// An old "*.zst.part" entry goes before the CLI runs, on every path. On
+		// 89cb6289 it goes on a cache hit too (cells Z4b, Linux, macOS and
+		// Windows VMs).
 		sweepZstParts(o.cliDir, time.Now())
 
 		// "present" requires the file to exist AND be runnable (real binary checks
@@ -142,6 +143,10 @@ func runInstall(o installOpts) {
 			// Cache hit with a good run: neither the orphan sweep nor the prune
 			// runs here, as on the reference. A stopped run is the branch above,
 			// and it sweeps. The "*.zst.part" sweep ran above.
+			//
+			// Cells Z8 of 89cb6289 (Linux, macOS and Windows VMs): on a cache hit
+			// with a good run, a file "x.zst" and a file ".fetch-d" that are 20
+			// minutes old both stay.
 			//
 			// The citation used to be "a cache-hit run with 4 versions and
 			// -cli-keep 3 left all four in place". That fixture supports the
@@ -190,11 +195,16 @@ func runInstall(o installOpts) {
 				// result line, and stderr has a Go runtime error. claustrum
 				// matches the exit code and the missing result line. The one
 				// stderr line is claustrum's own (the maintainer's decision of
-				// 2026-10-07).
+				// 2026-10-07). Cells Kn-2 (-cli-keep -2, the same three systems)
+				// give the same exit code and no result line.
 				//
-				// Not measured: a negative keep on a cache hit, after a failed
-				// install and after a stopped run. No prune runs there, so
-				// claustrum prints the result line and exits 0, as before.
+				// This branch is not reached on a cache hit or after a failed
+				// install. There 89cb6289 prints the result line and exits 0 with
+				// an empty stderr, and so does claustrum (cells Kn-hit and
+				// Kn-fail, -cli-keep -1, Linux, macOS and Windows VMs).
+				//
+				// Not measured: a negative keep after a stopped run. claustrum
+				// prints the result line and exits 0 there.
 				if o.cliKeep < 0 {
 					fmt.Fprintf(os.Stderr, "claustrum: -cli-keep %d is not a valid keep count\n", o.cliKeep)
 					osExit(2)
@@ -1166,8 +1176,12 @@ const sweepMinAge = 10 * time.Minute
 // zstPartMinAge is how old a "*.zst.part" entry must be before sweepZstParts
 // removes it. Cells Z1 of 89cb6289 straddle it on Linux, macOS and Windows VMs:
 // a file that is 6 days and 23 h old stays, and a file that is 7 days and 1 h
-// old goes. The exact 7 day point is not measured, and claustrum treats it as
-// not old.
+// old goes. Two more cells narrow the bracket. Cells Z6: a file that is 7 days
+// and 1 s old goes (Windows VM), and so does a file that is 7 days and a
+// fraction of a second old (Linux and macOS VMs, 0.13 to 0.76 s on macOS).
+// Cell Z6m (macOS VM): a file that is 7 days minus 5 s old stays. A file that
+// is exactly 7 days old at the instant of the read is not measured, and
+// claustrum treats it as not old.
 const zstPartMinAge = 7 * 24 * time.Hour
 
 // isZstPartName reports whether a cli-dir entry has the "*.zst.part" name.
@@ -1176,20 +1190,22 @@ const zstPartMinAge = 7 * 24 * time.Hour
 // Z3, Linux, macOS and Windows VMs, 89cb6289).
 //
 // The name wins over the ".fetch-" prefix. Cells Z2 on the same three systems:
-// the file ".fetch-a.zst.part" is 20 minutes old and stays. Not measured: such a
-// name that is more than 7 days old. claustrum removes it as every other
-// "*.zst.part" name.
+// the file ".fetch-a.zst.part" is 20 minutes old and stays. Cells Z5 on the
+// same three systems: the file ".fetch-old.zst.part" is 8 days old and goes, as
+// every other "*.zst.part" name.
 func isZstPartName(name string) bool { return strings.HasSuffix(name, ".zst.part") }
 
 // sweepZstParts removes each "*.zst.part" entry of the cli-dir that is more
 // than zstPartMinAge old, with one os.Remove. runInstall calls it once, before
-// the run of the CLI that is present. Cell Z4b of 89cb6289 (Linux VM): on a
-// cache hit an 8 day old "p.zst.part" file is gone when that CLI runs. Cell Z4a
-// (Linux VM): it is gone too when the new CLI exits 1. Rows C-10 (Linux and
-// macOS VMs) and cell C-18 (Windows VM): it is gone when a new CLI runs.
+// the run of the CLI that is present. Cells Z4b of 89cb6289 (Linux, macOS and
+// Windows VMs): on a cache hit an 8 day old "p.zst.part" file is gone after the
+// run. Cells Z4a (the same three systems): it is gone too when the new CLI
+// exits 1. Rows C-10 (Linux and macOS VMs) and cell C-18 (Windows VM): it is
+// gone after a good install. Cell Z7 (Linux VM): with no CLI of the version and
+// no source flag, the answer is the "missing" cliError and the file is gone.
 //
-// Not measured: a cache hit on macOS and Windows, and a run with no CLI of the
-// version and no source. claustrum sweeps there as in cell Z4b.
+// Not measured: the run of cell Z7 on macOS and Windows. claustrum sweeps there
+// as in cell Z7.
 //
 // An entry that is the home folder or holds it stays at every age. See
 // cliEntryHoldsHome.
@@ -1259,8 +1275,9 @@ func sweepOld(cliDir string, now time.Time, minAge time.Duration, claims func(na
 // Each of those removes is one os.Remove, so only an EMPTY home folder can go
 // there. A cli-dir that is the parent of the home folder makes the home folder
 // an entry. 89cb6289 removes an empty home folder there: in the prune (cells
-// H1, Linux, macOS and Windows VMs) and as "h.zst" in the sweep (cells H3,
-// Linux and macOS VMs). claustrum keeps it. That difference stays by the
+// H1, Linux, macOS and Windows VMs) and as "h.zst" in the sweep (cells H3, the
+// same three systems). claustrum keeps it. A home folder with content stays on
+// both (cells H2, the same three systems). That difference stays by the
 // maintainer's decision.
 func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 	if fi.IsDir() {
@@ -1344,22 +1361,25 @@ func isSweptName(name string) bool {
 //   - The name order of a tie is the order of the bytes, so "B" comes before
 //     "a". Cells T1 (files) and T1d (folders): "B", "a" and "c" have one mtime,
 //     keep is 2, and "B" stays beside the new CLI. Files ran on Linux, macOS
-//     and Windows VMs, folders on macOS and Windows VMs.
+//     and Windows VMs, folders on macOS and Windows VMs. Cell T1b (Linux VM):
+//     with keep 3, "c" goes. Cell T1c (Linux VM): the files are made in the
+//     reverse order, and the result is that of cell T1.
 //   - A link to a folder with content outside the cli-dir goes, and the target
-//     stays (cells S1, Linux and macOS VMs).
+//     stays with its content (cells S1, Linux and macOS VMs). On a Windows VM a
+//     junction (cell S1j) and a directory symlink (cell S1s) go the same way.
+//   - A folder with content takes a place in the order, as every other entry.
+//     Cells F2 (Linux, macOS and Windows VMs): a folder with content is newer
+//     than three files and keep is 2. The new CLI and the folder stay, and all
+//     three files go. Cells F1 do not show it: there the folder is the oldest
+//     entry, and the result is the same with and without a place for it.
 //
 // runInstall does not call the prune for a negative keep value. See there.
 //
 // The mtime comes from os.Lstat, as in the sweep. That choice is from the
 // code, not from a row.
 //
-// Not measured:
-//   - Whether a folder with content takes a place in the order. claustrum
-//     counts it as every other entry. Cells F1 (a folder with content that is
-//     older than every other entry, keep 3: the two oldest files go and the
-//     folder stays) give the same result both ways.
-//   - A swept name that the sweep failed to remove, for example an old
-//     ".fetch-d" folder with content. claustrum does not count it, as before.
+// Not measured: a swept name that the sweep failed to remove, for example an
+// old ".fetch-d" folder with content. claustrum does not count it, as before.
 //
 // One difference from 89cb6289 (D18): a ".blob-" name is not counted and not
 // removed here. Cell C-12 on a Windows VM: a planted ".blob-planted" file is

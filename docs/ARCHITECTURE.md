@@ -66,7 +66,9 @@ file is `<cli-version>.exe`.
   `<cli> --version` at the final path, and it removes a new CLI that exits
   non-zero.
 - Claustrum prunes the directory to the `-cli-keep` newest entries (by mtime,
-  default 3). A file, a link and an empty folder count and go. The prune does
+  default 3). A file, a link and an empty folder count and go. A folder with
+  content counts and stays (cells F2 of `89cb6289`, Linux, macOS and Windows
+  VMs). The prune does
   not count a name the sweep claims, a `*.zst.part` name or a `.blob-*` name,
   and it removes none of them. `89cb6289` counts a planted `.blob-` file
   ([D18](DIVERGENCES.md#d18)). The prune and the sweeps skip an entry that is
