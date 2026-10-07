@@ -1213,10 +1213,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
     of the sibling, and keeps `w1x`.
 - **claustrum side.** From the code: this build removes no folder of the
   registrations directory in both cells. This build did not run on a VM. The
-  same VM round ran main `8af9c03`, an earlier build without this guard. It kept
+  Linux VM round also ran main `8af9c03`, an earlier build without this guard. It kept
   both folders in both cells too, because its rollback then verified the
   registration through the `.git` file of the leaf.
-- **Equal in those cells (`89cb6289` and main `8af9c03`, measured. This build: from the code).** The frame is the plain failed checkout on both
+- **Equal in those cells (`89cb6289` and main `8af9c03` on the Linux VM, measured. This build: from the code).** The frame is the plain failed checkout on both
   sides. The leaf and branch `w1` are gone on both sides. In cell B6b the folder
   of the sibling worktree and its branch stay on both sides.
 - **Default.** Always-on, Linux and macOS. **Activate:** always-on. There is no
@@ -1241,7 +1241,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   folder. Or a decision to match the disk of cells B6 and B6b.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → git.worktree_create. Evidence in
   `scratch/i429/s37-linux-rollback-probe/REPORT.md` and in `raw/cells/B6.md` and
-  `raw/cells/B6b.md` beside it.
+  `raw/cells/B6b.md` beside it. The macOS round is in
+  `scratch/i429/s40-macos-rollback-val/REPORT.md`.
 
 ### CT-1 · Opt-in `wantPid` (pid + startTime) on spawn/reattach { #ct-1 }
 
