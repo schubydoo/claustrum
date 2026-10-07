@@ -157,7 +157,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       Linux and macOS a registration that cannot be deleted skips the branch
       step. The registration delete acts on the resolved path that its check
       verified, and on Linux and macOS through a root at the registrations
-      directory. On Linux and macOS the placement of the index first removes a
+      directory, which must still have the identity that the check saw. On Linux and macOS the placement of the index first removes a
       file, a link or an empty folder at `<registration>/index`. That is one
       `os.Root.Remove` of the fixed name `index`, never a tree.
       `wipesHomeDir` guards every delete of the leaf as defense-in-depth behind the

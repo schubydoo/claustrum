@@ -300,6 +300,21 @@ type createdRegistration struct {
 	// repo, both with their symlinks resolved. They are the two paths that the check
 	// compared, and the delete acts on them.
 	resolved, registry string
+	// registryInfo is the identity of registry at the time of the check. On Linux
+	// and macOS the delete compares it with the directory that it opened.
+	registryInfo os.FileInfo
+}
+
+// absoluteAdminDir makes admin, the gitdir value of the .git file of worktreePath,
+// an absolute path. A relative value (git writes one with
+// worktree.useRelativePaths) counts from the leaf with its symlinks resolved, as
+// the kernel reads it. The leaf as sent can reach its folder through a symlink at
+// another depth, and the ".." parts then lead to another folder.
+func absoluteAdminDir(worktreePath, admin string) string {
+	if filepath.IsAbs(admin) {
+		return admin
+	}
+	return filepath.Join(canonicalPath(worktreePath), admin)
 }
 
 // createdWorktreeAdminDir returns the admin dir (registration) of the worktree that
@@ -309,20 +324,23 @@ type createdRegistration struct {
 // that is the main repository's one.
 //
 // Every test reads the resolved path, and the delete acts on that same path. The
-// path as the .git file spells it can hold a "link/.." pair. A lexical clean of
-// such a path names another folder than the kernel does.
+// path as the .git file spells it can hold a "link/.." pair. On Linux and macOS a
+// lexical clean of such a path names another folder than the kernel does.
 func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	adminDir := worktreeAdminDir(worktreePath)
 	if adminDir == "" {
 		return createdRegistration{}
 	}
-	if !filepath.IsAbs(adminDir) {
-		adminDir = filepath.Join(worktreePath, adminDir)
-	}
+	adminDir = absoluteAdminDir(worktreePath, adminDir)
 	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo))}
 	if !worktreeAdminBelongsTo(reg.resolved, worktreePath) || !pathStrictlyUnder(reg.resolved, reg.registry) {
 		return createdRegistration{}
 	}
+	info, err := os.Stat(reg.registry)
+	if err != nil {
+		return createdRegistration{}
+	}
+	reg.registryInfo = info
 	return reg
 }
 

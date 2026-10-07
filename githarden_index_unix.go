@@ -50,11 +50,14 @@ func installWorktreeIndex(src, adminDir string) error {
 	if err != nil {
 		return err
 	}
-	// The resolved path, not a lexical clean of adminDir: a clean drops a "link/.."
-	// pair and can name another folder than the kernel does.
-	adminDir, err = filepath.EvalSymlinks(adminDir)
-	if err != nil {
-		return err
+	// git writes a clean path, and that one is used as it is. A path that is not
+	// clean is resolved first: a lexical clean drops a "link/.." pair and can name
+	// another folder than the kernel does.
+	if adminDir != filepath.Clean(adminDir) {
+		adminDir, err = filepath.EvalSymlinks(adminDir)
+		if err != nil {
+			return err
+		}
 	}
 	root, err := os.OpenRoot(filepath.Dir(adminDir))
 	if err != nil {
@@ -85,9 +88,12 @@ func installWorktreeIndex(src, adminDir string) error {
 // verified. It is step B of undoFailedCheckout. The delete acts on the resolved path
 // that the check compared, never on a lexical clean of the raw path: a clean drops a
 // "link/.." pair and can name another folder than the kernel does. The root is the
-// resolved registrations directory, so the root itself is the containment, and the
-// delete never follows a symlink out of it. The error of a failed delete reads
-// "RemoveAll <name>: <OS error>", the wording of row A14.
+// resolved registrations directory, so the root is the containment from the open
+// on, and the delete never follows a symlink out of it. The open itself follows a
+// symlink that replaced the directory after the check. So the opened directory
+// must have the identity that the check recorded (os.SameFile). If it differs,
+// the delete is refused. The error of a failed delete reads "RemoveAll <name>: <OS
+// error>", the wording of row A14.
 //
 // A registration that is not a direct child of the registrations directory is
 // refused, and nothing is deleted. git writes each registration as a direct child.
@@ -109,6 +115,9 @@ func removeCreatedRegistration(reg createdRegistration) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
+	if now, err := root.Stat("."); err != nil || !os.SameFile(reg.registryInfo, now) {
+		return fmt.Errorf("%s is no longer the directory that was checked", reg.registry)
+	}
 	return root.RemoveAll(name)
 }
 

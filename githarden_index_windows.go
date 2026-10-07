@@ -53,7 +53,8 @@ var (
 // removeCreatedRegistration deletes the registration that createdWorktreeAdminDir
 // verified, by its resolved path. It is step B of undoFailedCheckout. On Windows a failed
 // delete is not reported, so it always returns nil: the rollback of 89cb6289 with a
-// registration that stays is not measured there.
+// registration that stays is not measured there. The delete uses no root, so it
+// has neither the direct child test nor the identity test of Linux and macOS.
 func removeCreatedRegistration(reg createdRegistration) error {
 	if reg.resolved != "" {
 		_ = os.RemoveAll(reg.resolved)

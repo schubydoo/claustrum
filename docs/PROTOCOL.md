@@ -2556,10 +2556,11 @@ claustrum opens each file without blocking and reads a regular file only.
      the index. The same texts after a `timeout` frame, and after a failed
      read-tree checkout, are claustrum's choice (not measured). If the registrations
      directory cannot be opened, the text holds `open <path>: <OS error>` in place
-     of `RemoveAll <registration name>: <OS error>` (not measured). claustrum
+     of `RemoveAll <registration name>: <OS error>` (not measured). On Linux and macOS claustrum
      deletes only a registration that is a direct child of the registrations
-     directory, by its resolved path. Another one stays, with claustrum's own
-     text in that place. On Windows claustrum adds no text for it and runs the branch step.
+     directory, by its resolved path. It also refuses the delete if the
+     registrations directory is no longer the one that it checked. A refused
+     registration stays, with claustrum's own text in that place. On Windows claustrum adds no text for it and runs the branch step.
      Windows is not measured.
   3. Remove the leaf directory, which is now empty. If that fails, append `; and
      the undo could not finish for <leaf>: the worktree directory remains

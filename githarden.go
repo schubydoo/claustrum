@@ -412,10 +412,7 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		if !filepath.IsAbs(adminDir) {
-			adminDir = filepath.Join(leaf, adminDir)
-		}
-		installErr = installWorktreeIndex(idx, adminDir)
+		installErr = installWorktreeIndex(idx, absoluteAdminDir(leaf, adminDir))
 	}
 	return stderr, drained, err, installErr
 }

@@ -213,12 +213,105 @@ func TestRemoveCreatedRegistrationResolvedPath(t *testing.T) {
 	}
 
 	// A registration below a direct child is refused, and nothing is deleted.
-	deep := createdRegistration{resolved: filepath.Join(reg, "a", "b"), registry: reg}
+	regInfo, err := os.Stat(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deep := createdRegistration{resolved: filepath.Join(reg, "a", "b"), registry: reg, registryInfo: regInfo}
 	if err := removeCreatedRegistration(deep); err == nil {
 		t.Errorf("removeCreatedRegistration of a nested path = nil, want a refusal")
 	}
 	if _, err := os.Stat(filepath.Join(reg, "a", "b")); err != nil {
 		t.Errorf("the nested folder was deleted: %v", err)
+	}
+
+	// A registrations directory with another identity than at the check is refused,
+	// and nothing is deleted. That is the state after a swap of the directory.
+	otherInfo, err := os.Stat(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swapped := createdRegistration{resolved: filepath.Join(reg, "a"), registry: reg, registryInfo: otherInfo}
+	if err := removeCreatedRegistration(swapped); err == nil {
+		t.Errorf("removeCreatedRegistration with another directory identity = nil, want a refusal")
+	}
+	if _, err := os.Stat(filepath.Join(reg, "a")); err != nil {
+		t.Errorf("the registration was deleted in a directory that was not checked: %v", err)
+	}
+	// The control: with the identity of the check, the same registration goes.
+	swapped.registryInfo = regInfo
+	if err := removeCreatedRegistration(swapped); err != nil {
+		t.Errorf("removeCreatedRegistration with the checked identity: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(reg, "a")); !os.IsNotExist(err) {
+		t.Errorf("the registration stays with the checked identity (Stat err %v)", err)
+	}
+}
+
+// TestRelativeAdminDirThroughSymlink pins that a relative gitdir value counts from
+// the resolved leaf. git writes such a value with worktree.useRelativePaths. The
+// leaf is sent through a symlink that sits deeper than its target, so the ".."
+// parts of the value lead nowhere from the path as sent. The index lands in the
+// real registration, and the rollback check finds it. claustrum's own rule.
+func TestRelativeAdminDirThroughSymlink(t *testing.T) {
+	src, _ := indexSource(t)
+	base := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(base, "repo")
+	reg := filepath.Join(repo, ".git", "worktrees", "w1")
+	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+	writeFile(t, filepath.Join(reg, "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: ../../../.git/worktrees/w1\n", 0o644)
+	deep := filepath.Join(base, "x", "y", "z")
+	mkdirForTest(t, deep)
+	if err := os.Symlink(filepath.Dir(leaf), filepath.Join(deep, "link")); err != nil {
+		t.Fatal(err)
+	}
+	sent := filepath.Join(deep, "link", "w1")
+
+	if err := installWorktreeIndex(src, absoluteAdminDir(sent, worktreeAdminDir(sent))); err != nil {
+		t.Fatalf("installWorktreeIndex: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(reg, "index")); err != nil {
+		t.Errorf("the real registration holds no index: %v", err)
+	}
+	if got := createdWorktreeAdminDir(repo, sent); got.resolved != reg {
+		t.Errorf("createdWorktreeAdminDir = %q, want the real registration %s", got.resolved, reg)
+	}
+}
+
+// TestInstallWorktreeIndexCleanPathTexts pins that a clean admin dir, as git writes
+// it, is not resolved first. The errors then name the registration and the file,
+// relative to the registrations directory, as every measured text does. These
+// three states are not measured.
+func TestInstallWorktreeIndexCleanPathTexts(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a mode without the search bit does not stop root")
+	}
+	src, _ := indexSource(t)
+	for _, tc := range []struct {
+		name, lock string
+		make       bool
+		want       string
+	}{
+		{"registration gone", "", false, "openat w1/index: no such file or directory"},
+		{"registrations directory without search", "repo/.git/worktrees", true, "removeat w1/index: permission denied"},
+		{"git dir without search", "repo/.git", true, "open <registrations>: permission denied"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := resolveTestRoot(t, t.TempDir())
+			adminDir := filepath.Join(base, "repo", ".git", "worktrees", "w1")
+			mkdirForTest(t, filepath.Dir(adminDir))
+			if tc.make {
+				mkdirForTest(t, adminDir)
+			}
+			if tc.lock != "" {
+				chmodForTest(t, filepath.Join(base, tc.lock), 0o600)
+			}
+			want := strings.Replace(tc.want, "<registrations>", filepath.Dir(adminDir), 1)
+			if err := installWorktreeIndex(src, adminDir); err == nil || err.Error() != want {
+				t.Errorf("installWorktreeIndex = %v, want %s", err, want)
+			}
+		})
 	}
 }
 
