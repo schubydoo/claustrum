@@ -131,10 +131,13 @@ The JSON-RPC surface is identical on every OS. Full internals →
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A worktree LOCKED in the `.git` folder of
       `baseRepo` is refused, not deleted, also where `89cb6289` answers success (D22).
-      On Windows a junction at `.claude` or `.claude\worktrees` is refused too,
-      where `f6010b97` and `89cb6289` answer success and delete the branch. For
-      `89cb6289` that is measured for a branch that another ref reaches.
-      That is D19.
+      On Windows a junction at any directory between `baseRepo` and the leaf is
+      refused too. At `.claude` or `.claude\worktrees`, `f6010b97` and `89cb6289`
+      answer success and delete the branch. For `89cb6289` that is measured for a
+      branch that another ref reaches. At a junction above `.claude`, `89cb6289`
+      answers success with no leaf and no branch there (Windows VM, cells J-b-wt-pj
+      and J-b-wt-pJ). That is D19, widened by the maintainer's decision of
+      2026-10-07.
       Since `7d193f89`, the containment of the reference refuses a
       home path first: `worktreePath` must be strictly inside `baseRepo`. On the
       default branch `wipesHomeDir` is therefore defense-in-depth. It fires in

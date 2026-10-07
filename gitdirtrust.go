@@ -214,7 +214,7 @@ func gitDirTrustFor(dir string) gitDirTrust {
 	if dir == "" {
 		dir = "."
 	}
-	start, err := filepath.EvalSymlinks(dir)
+	start, err := walkStart(dir)
 	if err != nil {
 		return gitDirTrust{}
 	}
@@ -240,9 +240,43 @@ func gitDirTrustFor(dir string) gitDirTrust {
 	return judgeGitDir(g, false)
 }
 
+// resolveWalkLinks is filepath.EvalSymlinks behind a seam, so a test on any system can
+// give walkStart the answer that Windows gives for a junction.
+var resolveWalkLinks = filepath.EvalSymlinks
+
+// walkStart is where the walk of the trust check and the walk for the git.info root
+// start: dir with its symlinks resolved. On Linux and macOS a dir that does not
+// resolve has no start.
+//
+// On Windows (walkStartsAsSpelled) a dir that does not resolve and is a directory
+// starts the walk as it is spelled, cleaned. filepath.EvalSymlinks fails there for a
+// path with a junction before its last component, because Go reports a junction as an
+// irregular file, not a directory. So the walk resolves no junction, and it takes `..`
+// after one by text. 89cb6289 answers and pins so on a Windows VM. With a junction <P>\J into
+// another repository R, each git call of git.info on <P>\J\sub after the excludes
+// read carries GIT_COMMON_DIR=<P>\.git, and the root is P (cells B-01, B-02, B-07 to
+// B-09 and B-16). Two junctions in the path give the pin <KP>\.git, spelled through
+// the first one (cell B-17k), and <P>\J\..\J\sub gives the pin of P (cell B-17d). A
+// junction outside any repository gives GIT_DIR=NUL on each call (cell B-03).
+// <T>\lnk\.. with a junction lnk gives the root T (row D03-junction). A repository
+// below a junction gives git's own spelling of the root (row W09). A missing name
+// before `..` is another failure of the resolve for a directory that exists. The paths
+// <P>\missing\.. and <P>\missing\..\J\sub are equal to 89cb6289 in frame, disk and
+// every git call (cells J-a1 and J-a2).
+func walkStart(dir string) (string, error) {
+	start, err := resolveWalkLinks(dir)
+	if err == nil || !walkStartsAsSpelled {
+		return start, err
+	}
+	if fi, statErr := os.Stat(dir); statErr != nil || !fi.IsDir() {
+		return "", err
+	}
+	return filepath.Clean(dir), nil
+}
+
 // gitWalkRoot is the root of git.info on Linux and macOS. It is the folder where a walk
 // like that of the trust check finds the repository. That folder holds the `.git`
-// directory or `.git` file. It is spelled as the walk has it: dir after walkRootStart
+// directory or `.git` file. It is spelled as the walk has it: dir after walkStart
 // (filepath.EvalSymlinks there) and filepath.Abs, then walked up. EvalSymlinks keeps the
 // spelling of every component that is not a symlink, so letter case and Unicode form
 // stay as sent (rows I07a, I07b and I08 on a macOS VM). The daemon's GIT_DIR and
@@ -257,7 +291,7 @@ func gitWalkRoot(dir string) (root, gitDir string) {
 	if dir == "" {
 		dir = "."
 	}
-	start, err := walkRootStart(dir)
+	start, err := walkStart(dir)
 	if err != nil {
 		return "", ""
 	}
