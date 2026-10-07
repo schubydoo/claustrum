@@ -578,6 +578,14 @@ form. Until a drift check (Steps 2–3) shows that the reference moved, holding 
 1.26.x is the parity-preserving position. This is a temporary hold, not a
 divergence, and it carries no D-number.
 
+### The sort of the Windows environment block
+
+Since Go 1.26, `createEnvBlock` in `syscall` sorts the environment block of a
+child by name on Windows (`envSorted`, `src/syscall/exec_windows.go`). That sort
+is the cause of divergence [D23](DIVERGENCES.md#d23). If a Go release changes or
+removes the sort, the order of the block changes with it. Read the D23 entry
+again after each Go bump.
+
 ### The symlink-loop text of `filepath.EvalSymlinks`
 
 `git.worktree_create` with a `worktreeRoot` detects a symlink loop by the error

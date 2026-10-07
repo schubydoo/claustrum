@@ -100,8 +100,8 @@ var (
 )
 
 // sameShapeEnv compares a call's env with the wanted one. On Windows Go's os/exec
-// sorts the environment block, so there the two are compared as sets. The order is
-// checked on Linux and macOS.
+// sorts the environment block (DIVERGENCES.md D23), so there the two are compared as
+// sets. The order is checked on Linux and macOS.
 func sameShapeEnv(got, want []string) bool {
 	if runtime.GOOS == "windows" {
 		got, want = slices.Clone(got), slices.Clone(want)
@@ -615,7 +615,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 	// A GIT_* variable of the daemon's own environment keeps its place, before the
 	// variables that the daemon adds, as on f6010b97 (Linux and macOS VMs).
 	// docs/PROTOCOL.md gives the exceptions. On Windows Go's os/exec sorts the
-	// environment block, and claustrum does not work around that.
+	// environment block, and claustrum does not work around that (DIVERGENCES.md D23).
 	t.Run("daemon env first", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("Go sorts the environment block on Windows")

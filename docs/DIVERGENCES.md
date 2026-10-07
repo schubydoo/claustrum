@@ -1093,8 +1093,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   in 44 of 44 row groups, and the command lines were equal. In row V17i with a
   launching block in name order, both children got the same order.
 - **Default.** Always-on, Windows only. **Activate:** always-on. There is no flag
-  and no key. On Linux and macOS claustrum builds the order of the block itself.
-  See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
+  and no key. On Linux and macOS the toolchain does not reorder the block, so the
+  order is the one `buildEnv` passes, and there claustrum builds no order of its
+  own. See [PROTOCOL.md](PROTOCOL.md) → process.spawn.
 - **Why always-on.** The maintainer's decision of 2026-10-06: name order stays,
   and no code changes. For two or more new caller keys `89cb6289` gave more than
   one order (rows V9 and V10), so no fixed order equals it there. The rest of the

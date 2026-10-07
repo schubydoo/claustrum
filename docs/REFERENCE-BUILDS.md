@@ -84,7 +84,7 @@ ran on all three systems. The frame battery was byte-equal on each, apart from
 the fields that change per run and the D16 frame on Windows. The D19 junction
 rows are not part of the battery. The check
 found no new frame difference that a slice had not taken. Issue 429 lists its
-other differences. D20 and D21 are new in this work, and D11 is
+other differences. D20, D21, D22 and D23 are new in this work, and D11 is
 retired. D2 gained its `-install` refusal of a home folder (PR 451).
 
 ### `f6010b978a0b0f4ca0dcb7dadda9cc4271a608a1` — 2026-09-24 (observed)
