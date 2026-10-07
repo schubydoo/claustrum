@@ -615,7 +615,10 @@ Other code resolves `baseRepo` through `EvalSymlinks` too, so other Windows junc
 rows can move as well. A `go` line below 1.23 in `go.mod` has the same effect. The
 `git.info` root for a path with a junction before its last component rests on the
 same failure (rows D03-junction and W09). With the walk following the junction, those
-roots can move too. This
+roots can move too. The `GIT_COMMON_DIR` pin of the trust check for such a path
+rests on it as well (`walkStart`, `gitdirtrust.go`, Windows VM cells B-01 to B-17k).
+With the walk following the junction, the pin names the repository behind the
+junction, and the `git.info` frames of those cells change. This
 entry is derived from the Go source (`os/types_windows.go` and
 `path/filepath/symlink.go`), not measured. Check those rows after each Go bump that
 changes `winsymlink`.

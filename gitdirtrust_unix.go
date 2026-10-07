@@ -41,8 +41,7 @@ const gitVersionDir = "/"
 // on (unenterableDir). It is a variable so that a test on Linux can set it.
 var nonFolderStartRefuses = false
 
-// walkRootStart is where the walk for the git.info root starts: dir with its symlinks
-// resolved (gitWalkRoot).
-func walkRootStart(dir string) (string, error) {
-	return filepath.EvalSymlinks(dir)
-}
+// walkStartsAsSpelled is false on Linux and macOS. A dir that filepath.EvalSymlinks
+// cannot resolve starts no walk there (walkStart). It is a variable so that a test on
+// Linux can set it.
+var walkStartsAsSpelled = false

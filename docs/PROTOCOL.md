@@ -1288,6 +1288,20 @@ neither `GIT_DIR` nor `GIT_COMMON_DIR`:
 
 - The walk starts at the request directory with symlinks resolved, and goes up. A
   refusal names the resolved path, never the alias.
+- On Windows the walk resolves no junction that comes before the last component of
+  the path. It starts at the path as it is spelled, and it takes a `..` by text.
+  The fixture is a repository P, a repository R and a junction `<P>\J` to
+  `<R>\inner`. For `<P>\J\sub` the walk finds the `.git` of P. On `89cb6289` each
+  git call of `git.info` after the excludes read then carries
+  `GIT_COMMON_DIR=<P>\.git` (Windows VM, cells B-01, B-02, B-07 to B-09 and B-16). The path
+  `<P>\J\..\J\sub` gives the same entry (cell B-17d). With a second junction `<KP>`
+  to P, `<KP>\J\sub` gives `GIT_COMMON_DIR=<KP>\.git` (cell B-17k). A junction
+  outside any repository gives "no repository" and `GIT_DIR=NUL` on each call (cell
+  B-03). A junction that is the last component gives the pin of P too (cell B-04).
+  A folder symlink in the place of the junction resolves, and the pin is
+  `<R>\.git` (cell B-06). From the code: claustrum starts at the spelled path when
+  Go's `filepath.EvalSymlinks` fails for a path that is a directory. Not measured:
+  another cause of that failure, such as `<T>\missing\..`.
 - A `.git` directory that passes the git-directory test is the git directory.
 - A `.git` directory that fails the test ends the walk. If it holds a `commondir`
   entry of any type, it is the git directory, and the stray-commondir rules below
@@ -1349,7 +1363,9 @@ The daemon then judges the git directory G:
   gets S1 for the content `../..`, which names the short path. `f6010b97` refused it
   on a Windows 11 VM. The S1 text follows from the rules and is not measured on
   `89cb6289`. When a component of G is a symlink or a junction, the daemon resolves
-  G. Else it keeps G as spelled.
+  G. Else it keeps G as spelled. From the code: a G with a junction before its last
+  component does not resolve, and it stays as spelled. The pin of `89cb6289` is
+  `<KP>\.git` for a junction `<KP>` to a repository (Windows VM, cell B-17k).
 
 A stray `commondir` is one in a git directory G that is not an entry. G is a main
 `.git`, a bare repository or a submodule's git directory. `89cb6289` judges it in
@@ -2081,12 +2097,43 @@ check (Windows VM).
   Some points are not measured. claustrum tests the same directory by file identity
   (`os.SameFile`). That is derived from rows W08 and W09. claustrum takes no
   relative answer. The spelling of the walk root is not measured. With no pin,
-  claustrum runs the pair on the git directory of the walk. A path with a junction
-  before its last component gets no pin on claustrum. `89cb6289` sets one there (rows
-  D03-junction and W09, equal frames). One measured frame differs for
-  that reason. In row W09b-in the junction is inside repository P and points into a
-  subfolder of repository R. Both sides answer the `root` and `repo` of P and the
-  `branch` of R. `89cb6289` answers the `repoSlug` of P, and claustrum that of R.
+  claustrum runs the pair on the git directory of the walk.
+- On Windows a path through a junction can name two repositories. The fixture is
+  that of the trust check: a junction `<P>\J` to `<R>\inner`, P on branch `main`
+  with the origin `p/p`, and R on branch `rmain` with the origin `r/r`. The walk
+  finds P, so each call after the excludes read carries `GIT_COMMON_DIR=<P>\.git`.
+  The calls of the method run in `<P>\J\sub`, and `rev-parse --git-dir` prints
+  `<R>/.git` there. `89cb6289` answers these fields on a Windows VM:
+
+    | Cell | State | `root`, `repo` | `branch` | `repoSlug` | `defaultBranch` |
+    |---|---|---|---|---|---|
+    | B-01, B-02 | `path` is `<P>\J\sub` | P | `rmain` | `p/p` | `""` |
+    | B-04 | `path` is `<P>\J` | P | `rmain` | `p/p` | `""` |
+    | B-07 | P has no origin | P | `rmain` | `""` | `""` |
+    | B-08 | R has no origin | P | `rmain` | `p/p` | `""` |
+    | B-09 | R is on a detached HEAD | P | `detached:<short sha of R>` | `p/p` | `""` |
+    | B-16 | the config of R sets `core.hooksPath` and `core.fsmonitor` | P | `rmain` | `p/p` | `""` |
+    | B-17k | `path` is `<KP>\J\sub`, `<KP>` a junction to P | P | `rmain` | `p/p` | `""` |
+    | B-17d | `path` is `<P>\J\..\J\sub` | P | `rmain` | `p/p` | `""` |
+    | B-05p | `path` is P, no junction | P | `main` | `p/p` | `main` |
+    | B-05r | `path` is `<R>\inner\sub`, no junction | R | `rmain` | `r/r` | `rmain` |
+    | B-06 | a folder symlink in the place of the junction | R | `rmain` | `r/r` | `rmain` |
+    | B-13 | daemon `GIT_COMMON_DIR` of R | P | `rmain` | `r/r` | `rmain` |
+    | B-14 | daemon `GIT_DIR` of R | P | `rmain` | `r/r` | `rmain` |
+
+  In the mixed cells the listing prints `remote.origin.url` of P, `symbolic-ref
+  refs/remotes/origin/HEAD` prints `refs/remotes/origin/rmain`, and the `rev-parse
+  --verify` of that ref exits 1 (cell B-01). In cell B-15 the config file of P has
+  a broken line. The listing in `<P>\J\sub` exits 128, and `89cb6289` answers
+  `-32603` with the listing refusal that ends `fatal: bad config line 15 in file
+  <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
+  repository, and the answer is the non-repo body. From the code: claustrum takes
+  the same walk start, so its calls carry the same entry. Its test of these cells
+  runs on Windows only. In cell B-14 the calls of the root pair differ. `89cb6289` runs the pair
+  with `--git-dir=<P>\.git` and `GIT_COMMON_DIR=<P>\.git`. From the code: claustrum
+  runs it with `--git-dir=<R>\.git` and `GIT_COMMON_DIR=<R>\.git`. The frames are
+  equal. Not measured: a junction to another drive, and a junction to a bare
+  repository.
 - The excludes read runs before the trust check, so it also runs before a trust
   refusal, as on both references.
 - `7c2f88d` added `repoSlug` and `defaultBranch`. Both are always present,

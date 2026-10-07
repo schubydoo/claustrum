@@ -73,21 +73,7 @@ const gitVersionDir = ""
 // VM, cells A-01 to A-04, A-04b2, A-06, A-10, A-14 and Wc). See unenterableDir.
 var nonFolderStartRefuses = true
 
-// walkRootStart is where the walk for the git.info root starts: dir with its symlinks
-// resolved (gitWalkRoot). filepath.EvalSymlinks fails for a path with a junction before
-// its last component, because Go reports a junction as an irregular file, not a directory.
-// The walk then starts at dir itself, cleaned, when dir is a directory. So a junction
-// is not resolved, and `..` after it is taken by text. 89cb6289 answers so on a Windows
-// VM. <T>\lnk\.. with a junction lnk gives the root T (row D03-junction). A repository
-// below a junction gives git's own spelling of the root (row W09). Not measured:
-// another failure of the resolve for a directory that exists.
-func walkRootStart(dir string) (string, error) {
-	start, err := filepath.EvalSymlinks(dir)
-	if err == nil {
-		return start, nil
-	}
-	if fi, statErr := os.Stat(dir); statErr != nil || !fi.IsDir() {
-		return "", err
-	}
-	return filepath.Clean(dir), nil
-}
+// walkStartsAsSpelled is true on Windows. A directory that filepath.EvalSymlinks cannot
+// resolve starts the walk of the trust check and of the git.info root as it is spelled
+// (walkStart). It is a variable so that a test can set it.
+var walkStartsAsSpelled = true
