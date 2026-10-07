@@ -284,8 +284,8 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 
 // With the walk of Windows and a symlink in the place of each junction, git.info
 // answers the frames of the cells: the root, the repo and the repoSlug of P and the
-// branch of R. git reads its configuration from the pinned directory of P and HEAD from
-// R. No reference build ran in this state off Windows. Mutation: in gitDirTrustFor,
+// branch of R. The listing prints the origin of P, and the branch is that of R (cell
+// B-01). No reference build ran in this state off Windows. Mutation: in gitDirTrustFor,
 // call resolveWalkLinks in place of walkStart.
 func TestInfoThroughSimulatedJunction(t *testing.T) {
 	if runtime.GOOS == "windows" {
