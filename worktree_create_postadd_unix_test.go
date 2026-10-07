@@ -307,13 +307,50 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 	}
 }
 
+// TestWorktreeCreateGitDirNotAnswered pins a create whose `rev-parse
+// --absolute-git-dir` gives no answer. baseRepo is a subfolder of the repository,
+// so the git directory that claustrum then assumes, <baseRepo>/.git, does not
+// exist. The registration tests need the answer of git and do not run. The
+// read-tree runs with that git directory and fails, and the create answers the
+// failed checkout and rolls back. That is claustrum's choice (not measured). The
+// frame and the disk are those of claustrum before it had the registration tests.
+// The text of git after "(checkout): " is not pinned.
+func TestWorktreeCreateGitDirNotAnswered(t *testing.T) {
+	f, s := postAddFixture(t)
+	f.base = filepath.Join(f.top, "sub")
+	if err := os.Mkdir(f.base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(t.TempDir(), "calls.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
+	stubRule2(t, "rev-parse,--absolute-git-dir", "", 0, "1", "", "")
+
+	raw, _ := f.create(t, s, "w1", "", 0)
+	const head = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"git worktree add failed (checkout): `
+	if !strings.HasPrefix(raw, head) || !strings.HasSuffix(raw, `","errorCode":"worktree_add_failed"}}`) {
+		t.Errorf("reply = %s\nwant the failed checkout frame", raw)
+	}
+	calls, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range []string{"rev-parse\x1f--absolute-git-dir", "worktree\x1fadd", "read-tree"} {
+		if !strings.Contains(string(calls), call) {
+			t.Errorf("the call log holds no %q\n%q", call, calls)
+		}
+	}
+	// The rollback removes the leaf and the branch. It finds no registration under
+	// <baseRepo>/.git, so the registration that git made stays.
+	f.assertRolledBack(t, []string{"w1"}, false)
+}
+
 // differentWorktreeText is the refusal of adminRecordRefusal.
 func differentWorktreeText(leaf string) string {
 	return "refusing to create worktree: " + leaf +
 		" carries a .git file naming an admin directory whose own record is of a different worktree"
 }
 
-// TestWorktreeCreateOldRegistrationOfSameName pins cells P-c and P-f to P-m
+// TestWorktreeCreateOldRegistrationOfSameName pins cells P-c, P-f to P-o and P-q
 // (89cb6289, Linux VM with git 2.43 and macOS VM with git 2.50). The state is that
 // of row B-E1, and T holds an old registration w1 of another worktree, with its own
 // index. git makes the new registration in X. Each cell changes one file of the old
@@ -332,6 +369,9 @@ func differentWorktreeText(leaf string) string {
 //   - P-k: the record is the relative path of the worktree that is gone. P-l: the
 //     record is an empty file. P-m: P-c with a `locked` file. The "different
 //     worktree" text.
+//   - P-n: the commondir file is missing. P-o: the gitdir record has mode 0000.
+//     P-q: the folder of the old registration has mode 0000. The "does not name"
+//     text. P-o and P-q need a user that is not root.
 //
 // No test opens a FIFO for writing, so a read that waits fails at fifoAnswerLimit.
 func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
@@ -364,6 +404,7 @@ func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
 		change    func(t *testing.T, reg string)
 		text      func(leaf string) string
 		fifo      string
+		noPerm    string // an entry of the old registration that has mode 0000 during the request
 		timeoutMs int
 		addTime   time.Duration
 	}{
@@ -376,8 +417,14 @@ func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
 		{name: "P-k", change: write("gitdir", "../../../gone/w1/.git\n"), text: differentWorktreeText},
 		{name: "P-l", change: write("gitdir", ""), text: differentWorktreeText},
 		{name: "P-m", change: write("locked", "locked by cell P-m\n"), text: differentWorktreeText},
+		{name: "P-n", change: replace("commondir", nil), text: notOursText},
+		{name: "P-o", text: notOursText, noPerm: "gitdir"},
+		{name: "P-q", text: notOursText, noPerm: "."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.noPerm != "" && os.Geteuid() == 0 {
+				t.Skip("root reads a file of mode 0000")
+			}
 			T, X, oldReg := stageOldRegistrationOfSameName(t)
 			index := filepath.Join(oldReg, "index")
 			oldIndex, err := os.ReadFile(index)
@@ -395,6 +442,19 @@ func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
 				tc.change(t, oldReg)
 			}
 			regBefore := regFiles(t, oldReg)
+			restoreMode := func() {}
+			if tc.noPerm != "" {
+				p := filepath.Join(oldReg, tc.noPerm)
+				fi, err := os.Stat(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(p, 0); err != nil {
+					t.Fatal(err)
+				}
+				restoreMode = func() { _ = os.Chmod(p, fi.Mode().Perm()) }
+				t.Cleanup(restoreMode)
+			}
 
 			// The stub goes on PATH only now, so it slows and logs no add of the fixture.
 			realGit, err := exec.LookPath("git")
@@ -412,6 +472,7 @@ func TestWorktreeCreateOldRegistrationOfSameName(t *testing.T) {
 			}
 			t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
 			raw := frameWithin(t, "git.worktree_create", params)
+			restoreMode()
 			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":` + jsonString(t, tc.text(leaf)) + `,"errorCode":"unsafe_path"}}`
 			if raw != want {
 				t.Errorf("reply = %s\nwant %s", raw, want)
@@ -603,8 +664,8 @@ func TestPlaceWorktreeIndexGuard(t *testing.T) {
 
 // TestCreatedIndexDir pins the folder of the index. For a .git value in a folder
 // named worktrees, it is the registration of the git directory with the last name
-// of the value (row D-12). Any other value names the folder itself: only a .git
-// file that changed after the test of the create reaches that arm.
+// of the value (row D-12). Any other value names the folder itself. The create
+// refuses such a value before it gets there.
 func TestCreatedIndexDir(t *testing.T) {
 	gitDir := filepath.Join(t.TempDir(), ".git")
 	if got, want := createdIndexDir(gitDir, "/leaf", "/elsewhere/worktrees/w1"), filepath.Join(gitDir, "worktrees", "w1"); got != want {
@@ -616,35 +677,97 @@ func TestCreatedIndexDir(t *testing.T) {
 }
 
 // TestCreatedRegistrationRefusalStates pins the tests of createdRegistrationRefusal
-// on a registration that is there. A leaf with no .git file is not refused (not
-// measured). A registration with no commondir file is refused (not measured: cell
-// P-h has a FIFO there). With a commondir file and no gitdir record, it is refused
-// (cell P-j). A commondir file that holds the absolute git directory passes, with a
-// record that can be read.
+// on a registration that is there. A leaf with no .git value is not refused (not
+// measured). A registration with no commondir file is refused (cell P-n). With a
+// commondir file and no gitdir record, it is refused (cell P-j). A commondir file
+// that holds the absolute git directory passes, with a record that can be read.
+//
+// Three more states need a user that is not root. A record of mode 0000 is refused
+// (cell P-o). So is a registration folder of mode 0000 (cell P-q): its stat
+// answers, and the commondir read fails. In a registrations directory of mode 0000
+// the stat of the entry fails with "permission denied". That state is not measured.
+// It gets the "does not name" text, not the "was not populated" text.
 func TestCreatedRegistrationRefusalStates(t *testing.T) {
 	root := t.TempDir()
 	gitDir, leaf := filepath.Join(root, ".git"), filepath.Join(root, "leaf")
-	reg := filepath.Join(gitDir, "worktrees", "w1")
-	if err := os.MkdirAll(reg, 0o755); err != nil {
-		t.Fatal(err)
+	registry := filepath.Join(gitDir, "worktrees")
+	reg := filepath.Join(registry, "w1")
+	for _, d := range []string{reg, leaf} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if got := createdRegistrationRefusal(gitDir, leaf); got != "" {
-		t.Errorf("no .git file: refusal %q, want none", got)
+	record := filepath.Join(reg, "gitdir")
+	if got := createdRegistrationRefusal(gitDir, leaf, ""); got != "" {
+		t.Errorf("no .git value: refusal %q, want none", got)
 	}
-	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+reg+"\n", 0o644)
-	writeFile(t, filepath.Join(reg, "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
-	if got := createdRegistrationRefusal(gitDir, leaf); got != notOursText(leaf) {
-		t.Errorf("no commondir file: refusal %q, want the text", got)
+	writeFile(t, record, filepath.Join(leaf, ".git")+"\n", 0o644)
+	if got := createdRegistrationRefusal(gitDir, leaf, reg); got != notOursText(leaf) {
+		t.Errorf("no commondir file (cell P-n): refusal %q, want the text", got)
 	}
 	writeFile(t, filepath.Join(reg, "commondir"), gitDir+"\n", 0o644)
-	if got := createdRegistrationRefusal(gitDir, leaf); got != "" {
+	if got := createdRegistrationRefusal(gitDir, leaf, reg); got != "" {
 		t.Errorf("absolute commondir: refusal %q, want none", got)
 	}
-	if err := os.Remove(filepath.Join(reg, "gitdir")); err != nil {
+	if os.Geteuid() != 0 {
+		for _, tc := range []struct{ name, path string }{
+			{"a record of mode 0000 (cell P-o)", record},
+			{"a registration folder of mode 0000 (cell P-q)", reg},
+			{"a registrations directory of mode 0000 (not measured)", registry},
+		} {
+			fi, err := os.Stat(tc.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(tc.path, 0); err != nil {
+				t.Fatal(err)
+			}
+			got := createdRegistrationRefusal(gitDir, leaf, reg)
+			if err := os.Chmod(tc.path, fi.Mode().Perm()); err != nil {
+				t.Fatal(err)
+			}
+			if got != notOursText(leaf) {
+				t.Errorf("%s: refusal %q, want the text", tc.name, got)
+			}
+		}
+		if got := createdRegistrationRefusal(gitDir, leaf, reg); got != "" {
+			t.Errorf("after the modes are back: refusal %q, want none", got)
+		}
+	}
+	if err := os.Remove(record); err != nil {
 		t.Fatal(err)
 	}
-	if got := createdRegistrationRefusal(gitDir, leaf); got != notOursText(leaf) {
+	if got := createdRegistrationRefusal(gitDir, leaf, reg); got != notOursText(leaf) {
 		t.Errorf("no gitdir record: refusal %q, want the text", got)
+	}
+}
+
+// TestCreatedRegistrationTakesOneValue pins that the tests and the index folder use
+// the .git value that the caller read, and that neither reads the .git file of the
+// leaf again. The file on disk names another folder than the value in each case, as
+// after a change between two reads.
+func TestCreatedRegistrationTakesOneValue(t *testing.T) {
+	root := t.TempDir()
+	gitDir, leaf := filepath.Join(root, ".git"), filepath.Join(root, "leaf")
+	reg := filepath.Join(gitDir, "worktrees", "w1")
+	writeFile(t, filepath.Join(reg, "gitdir"), filepath.Join(leaf, ".git")+"\n", 0o644)
+	writeFile(t, filepath.Join(reg, "commondir"), "../..\n", 0o644)
+	const other = "/elsewhere/WTREG/w2"
+
+	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+other+"\n", 0o644)
+	if got := createdRegistrationRefusal(gitDir, leaf, reg); got != "" {
+		t.Errorf("value %s, file names %s: refusal %q, want none", reg, other, got)
+	}
+	if got := createdIndexDir(gitDir, leaf, reg); got != reg {
+		t.Errorf("value %s, file names %s: createdIndexDir = %s, want %s", reg, other, got, reg)
+	}
+
+	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: "+reg+"\n", 0o644)
+	if got := createdRegistrationRefusal(gitDir, leaf, other); got != notOursText(leaf) {
+		t.Errorf("value %s, file names %s: refusal %q, want the text", other, reg, got)
+	}
+	if got := createdIndexDir(gitDir, leaf, other); got != other {
+		t.Errorf("value %s, file names %s: createdIndexDir = %s, want %s", other, reg, got, other)
 	}
 }
 
@@ -688,7 +811,7 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 	writeFile(t, src, "new\n", 0o644)
 	doneWithin(t, "the reads after the add", func() {
 		registry = gitDirRegistryDir(gitDir)
-		refusal = createdRegistrationRefusal(gitDir, leaf)
+		refusal = createdRegistrationRefusal(gitDir, leaf, worktreeAdminDir(leaf))
 		record = readAdminRecord(reg, leaf)
 		mismatch = adminRecordMismatch(reg, leaf)
 		placeErr = placeWorktreeIndex(src, reg, leaf)

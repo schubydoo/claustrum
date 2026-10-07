@@ -419,7 +419,10 @@ func gitDirRegistryDir(gitDir string) string {
 // createdRegistrationRefusal is the answer of git.worktree_create when the .git
 // file of the new worktree does not name a registration of the repository, or ""
 // when it does. gitDir is the git directory of baseRepo, as git answered it before
-// the add. The call runs right after a successful add. claustrum runs three tests.
+// the add. adminDir is the gitdir value of that .git file (worktreeAdminDir). The
+// caller reads it once and gives the same value to createdIndexDir. This function
+// does not read the .git file. The call runs right after a successful add.
+// claustrum runs four tests.
 // They fit the frames and the disk of 89cb6289 in these rows (Linux VM with git
 // 2.43, macOS VM with git 2.50):
 //
@@ -452,12 +455,20 @@ func gitDirRegistryDir(gitDir string) string {
 // to P-j are those of 89cb6289 on a Linux VM with git 2.43 and a macOS VM with git
 // 2.50. In each of them nothing changes after the add.
 //
+// Three more cells start from the state of cell P-c, and 89cb6289 answers the "does
+// not name" text in each, with nothing changed after the add (Linux VM with git
+// 2.43, macOS VM with git 2.50). In cell P-n the commondir file of the old
+// registration is missing, which fails test 3. In cell P-o its gitdir record has
+// mode 0000, which fails test 4. In cell P-q the folder of the old registration has
+// mode 0000. Its stat still answers, so test 2 passes, and the commondir read
+// fails test 3.
+//
 // Not measured: a path that fails test 1 and test 2 together (claustrum runs test 1
-// first), and a commondir file or a record that is missing for another reason than
-// in the cells, for example a file with no read permission. claustrum answers the
-// same text there. Two more states are not measured, and claustrum does not refuse
-// them. The first is a leaf with no .git file that can be read. The second is an
-// entry whose stat fails with another error than "does not exist".
+// first). Not measured either: an entry whose stat fails with another error than
+// "does not exist", for example in a registrations directory with no search
+// permission. Test 2 passes there, the commondir read fails, and claustrum answers
+// the "does not name" text. A leaf with no .git file that can be read is not
+// measured, and claustrum does not refuse it.
 //
 // Attach mode and a worktreeRoot take the same tests. On a macOS VM with git
 // 2.50, 89cb6289 answers the "does not name" text there too, with a registrations
@@ -472,17 +483,13 @@ func gitDirRegistryDir(gitDir string) string {
 // A fifth test follows these four: adminRecordMismatch. All five come before the
 // deadline test of the create (row D-9 on a macOS VM, cell P-f on Linux and macOS
 // VMs).
-func createdRegistrationRefusal(gitDir, worktreePath string) string {
-	if !adminRecordChecked {
-		return ""
-	}
-	admin := worktreeAdminDir(worktreePath)
-	if admin == "" {
+func createdRegistrationRefusal(gitDir, worktreePath, adminDir string) string {
+	if !adminRecordChecked || adminDir == "" {
 		return ""
 	}
 	notOurs := fmt.Sprintf("refusing to create worktree: %s carries a .git file that does not name this "+
 		"repository's own worktree admin directory", worktreePath)
-	admin = filepath.Clean(admin)
+	admin := filepath.Clean(adminDir)
 	if filepath.Base(filepath.Dir(admin)) != worktreesSubdir {
 		return notOurs
 	}
@@ -517,9 +524,10 @@ func createdRegistrationRefusal(gitDir, worktreePath string) string {
 // that git made then holds the index (row D-12, Linux and macOS VMs). For a value that git
 // wrote, the two are the same folder.
 //
-// A value that createdRegistrationRefusal does not pass reaches this function only
-// if the .git file changed after that test. Then, and on Windows (not measured), the
-// folder is the path that the value names (absoluteAdminDir).
+// The caller gives this function the value that createdRegistrationRefusal tested,
+// from one read of the .git file. So no value that fails test 1 gets here on Linux
+// and macOS. For such a value, and on Windows (not measured), the folder is the path
+// that the value names (absoluteAdminDir).
 func createdIndexDir(gitDir, worktreePath, adminDir string) string {
 	clean := filepath.Clean(adminDir)
 	if !adminRecordChecked || filepath.Base(filepath.Dir(clean)) != worktreesSubdir {

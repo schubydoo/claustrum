@@ -426,16 +426,23 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 // record that is missing, a FIFO or a folder, an empty or a relative record of
 // another worktree, and the record of another path. The create refuses those states
 // before the checkout, so only a record that changed during the checkout reaches the
-// guard. The error text is claustrum's own (not measured).
+// guard. The error text is claustrum's own (not measured). The path in it is
+// adminDir, the registration folder. That is a path of the repository
+// (createdIndexDir), not the worktreePath of the request. The
+// frame joins the text to the stderr of the checkout under the 512-byte rule
+// (indexInstallText). After a long stderr the frame holds a part of the text, or
+// none of it.
 //
 // One state is apart: a registration folder whose stat fails. No index of it can be
 // reached then, and the placement runs and fails by itself. Its error is the measured
 // text of a registration that is gone (cell Z10) or of a registrations directory
 // without the search permission (cells Z11a and Z11b, macOS VM).
 //
-// Cell Z15 (macOS VM) removes the record after the read-tree and sets the
-// registration to mode 0500. 89cb6289 answers "openat w1/index: permission denied"
-// there. claustrum answers the text of the guard: that is a known difference.
+// Cell Z15 (Linux and macOS VMs) removes the record after the read-tree and sets
+// the registration to mode 0500. 89cb6289 answers "openat w1/index: permission
+// denied" there, with an undo text, and keeps the branch. claustrum answers the
+// text of the guard and removes the branch. That is an open difference, listed on
+// the issue.
 func placeWorktreeIndex(idx, adminDir, leaf string) error {
 	if adminRecordChecked {
 		if _, err := os.Stat(adminDir); err == nil && readAdminRecord(adminDir, leaf) != recordNamesLeaf {
@@ -459,6 +466,17 @@ func placeWorktreeIndex(idx, adminDir, leaf string) error {
 //     none of it (cells Y1b, Y1a, Y1c and X3).
 func indexInstallText(stderr string, installErr error) string {
 	return worktreeGitText(stderr+installErr.Error(), nil)
+}
+
+// worktreeBaseGitDir is the git directory of repo for git.worktree_create. answered
+// reports that `rev-parse --absolute-git-dir` gave it. If git gave no answer, the
+// directory is that of repoGitDir, which need not exist: a subfolder of a
+// repository has no .git entry.
+func worktreeBaseGitDir(repo string) (gitDir string, answered bool) {
+	if d, ok := hardenedGit(repo, true, "rev-parse", "--absolute-git-dir"); ok && d != "" {
+		return filepath.Clean(filepath.FromSlash(d)), true
+	}
+	return repoGitDir(repo), false
 }
 
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no
