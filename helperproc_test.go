@@ -129,12 +129,19 @@ func runGitLingering(args []string) int {
 		// positional arg — so worktreeAdminDir resolves and the checkout runs.
 		// The registration exists in the repository, as after a real add: the create
 		// tests it, and the index has a place. The add runs in the repository.
+		// The record names the leaf with its symlinks resolved, as git writes it: the
+		// create compares it with the resolved path. On macOS t.TempDir() is under
+		// /var, a symlink.
 		last := args[len(args)-1]
+		resolved := last
+		if r, err := filepath.EvalSymlinks(last); err == nil {
+			resolved = r
+		}
 		wd, _ := os.Getwd()
 		reg := filepath.Join(wd, ".git", "worktrees", filepath.Base(last))
 		_ = os.MkdirAll(reg, 0o755)
 		_ = os.WriteFile(filepath.Join(reg, "commondir"), []byte("../..\n"), 0o644)
-		_ = os.WriteFile(filepath.Join(reg, "gitdir"), []byte(filepath.Join(last, ".git")+"\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(reg, "gitdir"), []byte(filepath.Join(resolved, ".git")+"\n"), 0o644)
 		_ = os.WriteFile(filepath.Join(last, ".git"), []byte("gitdir: "+reg+"\n"), 0o644)
 		return 0
 	case has("is-inside-work-tree"):
