@@ -123,13 +123,15 @@ func statusBaseInManagedTree(baseRepo string) bool {
 // It returns the refusal text of a listing that fails, by the classes of
 // failedListingCheck, or "". 89cb6289 refuses there with a broken GIT_CONFIG_KEY_<n>
 // in the daemon's environment, and its call log shows no rev-parse (row A-S1 on Linux
-// and macOS VMs). On Windows it returns "" (not measured).
-func statusNoRepoCalls(baseRepo string) string {
+// and macOS VMs, cell P3-statN on a Windows VM). With noGit, a daemon GIT_DIR that
+// names a regular file, it reads no answer and returns "", as before. git.status is
+// not measured in that state.
+func statusNoRepoCalls(baseRepo string, noGit bool) string {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	pin := []string{"GIT_DIR=" + os.DevNull}
 	r := runListing(ctx, baseRepo, "", precursorEnv(true, pin))
-	if r.err != nil && noRepoListingRefuses {
+	if r.err != nil && !noGit {
 		if c := failedListingCheck(r, baseRepo, true); c.refusal != "" {
 			return c.refusal
 		}

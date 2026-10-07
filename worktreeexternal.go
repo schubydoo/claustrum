@@ -488,9 +488,11 @@ func externalWorkTreeRefusal(repo string) (string, string) {
 			// exits 128 (rows L13z-g and DG2h-g on a Linux VM). claustrum makes the two
 			// calls and does not read the answer of the rev-parse. A listing that fails
 			// gives its refusal text as the reason (rows A-N5, A-N5b and A-N5c, Linux and
-			// macOS VMs). Windows keeps "exit status 128".
+			// macOS VMs). Windows refuses a worktreeRoot before this check. With a daemon
+			// GIT_DIR that names a regular file (t.noGit) the reason stays "exit status
+			// 128", as before. That state is not measured here.
 			c := hostileConfigRefusal(repo, false)
-			if c.refusal != "" && noRepoListingRefuses {
+			if c.refusal != "" && !t.noGit {
 				return workTreeUnknownPrefix + c.refusal, ""
 			}
 			if !c.refused() {

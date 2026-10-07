@@ -570,8 +570,9 @@ func TestListingGitCannotRun(t *testing.T) {
 
 // When only the listing fails, `git version` works and the
 // answer stays the listing refusal (row L10). The version call carries the env of the
-// failed listing without the GIT_COMMON_DIR pin and the two C entries. Mutations:
-// answer "cannot run" whenever the listing fails, keep the pin.
+// failed listing without the GIT_COMMON_DIR pin, the two C entries and the
+// GIT_CONFIG_GLOBAL of the fixture (cell C-c, Linux and macOS VMs). Mutations: answer "cannot
+// run" whenever the listing fails, keep the pin.
 func TestListingFailsVersionWorks(t *testing.T) {
 	f := newListingFixture(t)
 	stubListing(t, 1, "boom")
@@ -585,12 +586,13 @@ func TestListingFailsVersionWorks(t *testing.T) {
 	}
 	var want []string
 	for _, kv := range calls[i-1].env {
-		if !strings.HasPrefix(kv, "GIT_COMMON_DIR=") && kv != "LC_ALL=C" && kv != "LANGUAGE=C" {
+		if !strings.HasPrefix(kv, "GIT_COMMON_DIR=") && kv != "LC_ALL=C" && kv != "LANGUAGE=C" &&
+			envName(kv) != "GIT_CONFIG_GLOBAL" {
 			want = append(want, kv)
 		}
 	}
-	if len(want) != len(calls[i-1].env)-3 {
-		t.Fatalf("listing env = %q, want the pin and the two C entries in it", calls[i-1].env)
+	if len(want) != len(calls[i-1].env)-4 {
+		t.Fatalf("listing env = %q, want the pin, the two C entries and GIT_CONFIG_GLOBAL in it", calls[i-1].env)
 	}
 	if !sameShapeEnv(calls[i].env, want) {
 		t.Errorf("version env = %q\nwant %q", calls[i].env, want)

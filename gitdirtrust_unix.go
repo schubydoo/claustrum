@@ -36,6 +36,11 @@ func resolveGitDirLinks(g string) string {
 // VMs (rows L10 and L11).
 const gitVersionDir = "/"
 
+// nonFolderStartRefuses is false on Linux and macOS. A configuration listing that
+// cannot start in a path that is not a folder is no refusal there, and the method goes
+// on (unenterableDir). It is a variable so that a test on Linux can set it.
+var nonFolderStartRefuses = false
+
 // walkRootStart is where the walk for the git.info root starts: dir with its symlinks
 // resolved (gitWalkRoot).
 func walkRootStart(dir string) (string, error) {

@@ -292,8 +292,9 @@ func gitInfo(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
-		// A listing that fails here refuses (rows A-N1 and A-X2, Linux and macOS VMs).
-		if msg := noRepoListingRefusal(p.Path, false); msg != "" {
+		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
+		// cells P3-infoN and P3-infoX on a Windows VM).
+		if msg := noRepoListingRefusal(t, p.Path, false); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, notRepoResult{})
@@ -550,7 +551,7 @@ func gitStatus(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
-		if msg := statusNoRepoCalls(p.BaseRepo); msg != "" {
+		if msg := statusNoRepoCalls(p.BaseRepo, t.noGit); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return notRepo
@@ -646,8 +647,9 @@ func gitListBranches(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	if t.verdict == gitDirNoRepo {
-		// A listing that fails here refuses (row A-N2, Linux and macOS VMs).
-		if msg := noRepoListingRefusal(p.Path, false); msg != "" {
+		// A listing that fails here refuses (row A-N2 on Linux and macOS VMs, cell
+		// P3-lbN on a Windows VM).
+		if msg := noRepoListingRefusal(t, p.Path, false); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, branchesResult{Branches: []string{}})
@@ -745,8 +747,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses, with and without worktreeRoot, and nothing
-		// is created (rows A-N3, A-N6 and A-N6b, Linux and macOS VMs).
-		if msg := noRepoListingRefusal(repo, false); msg != "" {
+		// is created (rows A-N3, A-N6 and A-N6b on Linux and macOS VMs, cell P3-crN
+		// without worktreeRoot on a Windows VM).
+		if msg := noRepoListingRefusal(t, repo, false); msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
@@ -1699,9 +1702,9 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			// 89cb6289 runs the listing and the rev-parse here too, and the rev-parse
 			// fails (probe row 16 on Linux, macOS and Windows VMs). claustrum does not
 			// use the answer of the rev-parse. A listing that fails refuses, and nothing
-			// is deleted (row A-N4, Linux and macOS VMs). Windows keeps its answer.
+			// is deleted (row A-N4 on Linux and macOS VMs, cell P3-rmN on a Windows VM).
 			c := hostileConfigRefusal(repo, true)
-			if c.refusal != "" && noRepoListingRefuses {
+			if c.refusal != "" {
 				return lockCheck(c.refusal)
 			}
 			if !c.refused() {

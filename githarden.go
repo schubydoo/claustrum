@@ -636,7 +636,7 @@ func (c configCheck) refused() bool {
 //
 // The check of the daemon's own GIT_CONFIG_COUNT (daemonCountRefusal) comes
 // first. When it refuses, no listing runs, and a directory is refused with its text.
-// A dir that does not exist, or is not a directory, is not refused, as below. See
+// A dir that does not exist, or is not a directory, is not refused by that check. See
 // docs/PROTOCOL.md, "The daemon's own git environment".
 func hostileConfigRefusal(dir string, heavy bool) configCheck {
 	if msg, bad := daemonCountRefusal(); bad {
@@ -683,13 +683,25 @@ func failedListingCheck(r listingRun, dir string, heavy bool) configCheck {
 	//
 	// 89cb6289 still runs `git version` after such a start failure, and its frames
 	// stay the same (rows L16a, L16b, L16d and L16f: a file and a folder of mode 0600).
-	// claustrum runs the call and does not use its answer. A git that also fails `git
-	// version` there is not measured. A path that does not exist is measured on
-	// git.worktree_remove with worktreeRoot only. 89cb6289 runs no `git version` there
-	// (rows L13wa-g and L13wb-g), and that request does not come here
+	// When that `git version` fails for a dir that exists, the method refuses with the
+	// "cannot run" text and the detail of the version call. 89cb6289 answers so for
+	// git.info on a regular file and on a folder of mode 0000 (rows A-M2 and A-X1 in
+	// phase P11, Linux and macOS VMs). The other methods are not measured there. A dir
+	// that does not exist keeps its answer then (rows A-M1 and A-M3 to A-M5 in P11).
+	// Not measured: a path under a regular file with a failing `git version`. claustrum
+	// keeps its answer. A path that does not exist is measured on
+	// git.worktree_remove with worktreeRoot only for its calls. 89cb6289 runs no `git
+	// version` there (rows L13wa-g and L13wb-g), and that request does not come here
 	// (externalWorkTreeRefusal).
+	//
+	// On Windows a dir that exists and is not a folder is not such an input: the start
+	// error of the listing is a refusal there (see unenterableDir).
 	if unenterableDir(dir, r.err) {
-		gitVersionFails(heavy)
+		if v := gitVersionRun(heavy); v.err != nil {
+			if _, err := os.Stat(dir); err == nil {
+				return configCheck{refusal: gitCannotRunPrefix + v.detail()}
+			}
+		}
 		return configCheck{}
 	}
 	return configCheck{refusal: failedListingText(r, heavy)}
@@ -698,9 +710,23 @@ func failedListingCheck(r listingRun, dir string, heavy bool) configCheck {
 // unenterableDir reports whether the listing failed because git cannot start in dir:
 // dir does not exist, is not a directory, or cannot be searched. err is the listing's
 // exec error.
+//
+// With nonFolderStartRefuses (Windows), a dir that exists and is not a directory
+// reports false, so the start error of the listing is a refusal. 89cb6289 answers so
+// on a Windows VM for a regular file and a file symlink: the hooks refusal that ends
+// with `fork/exec <git.exe path>: The directory name is invalid.` (cells A-01 to A-04,
+// A-04b2, A-06 and A-10). When `git version` fails too, it answers the "cannot run"
+// text (cell A-14). A path that does not exist, a path under a file and a junction
+// whose target is gone keep their answer there (cells A-07m, A-07s and A-11). A folder
+// with a path of 296 characters gets the same refusal (cell A-13). From the code: that
+// folder passes os.Stat here, and the stat of "<dir>/." below passes too.
 func unenterableDir(dir string, err error) bool {
-	if fi, statErr := os.Stat(dir); statErr != nil || !fi.IsDir() {
+	fi, statErr := os.Stat(dir)
+	if statErr != nil {
 		return true
+	}
+	if !fi.IsDir() {
+		return !nonFolderStartRefuses
 	}
 	// Residual fallback for the one chdir failure os.Stat cannot see: dir exists and is
 	// a directory, but git cannot start in it (dir itself lacks +x). The start then

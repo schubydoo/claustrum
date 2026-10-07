@@ -592,15 +592,23 @@ func TestInheritedCountRefusalPlacement(t *testing.T) {
 	nLeaf := filepath.Join(n, ".claude", "worktrees", "w1")
 	missLeaf := filepath.Join(missing, ".claude", "worktrees", "w1")
 	nope := filepath.Join(f.top, ".claude", "worktrees", "nope")
+	// With nothing planted, 89cb6289 on Windows answers Q3 with the start error of its
+	// listing (Windows VM, cell A-01), and so does claustrum. On Linux and macOS
+	// claustrum answers the normal frame.
+	q3 := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`
+	if runtime.GOOS == "windows" {
+		start := gitStartError(t, filepath.Join(n, "n.txt"))
+		if start == "" {
+			t.Fatal("git started in a regular file")
+		}
+		q3 = errFrame(pre + "listing the configuration in force: " + start)
+	}
 	rows := []row{
 		{"Q1 git.info N", "git.info", map[string]any{"path": n},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrame},
 		{"Q2 git.info missing", "git.info", map[string]any{"path": missing},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrame},
-		// With nothing planted, f6010b97 on Windows answers Q3 with the start error of
-		// its listing (Windows VM). This row checks claustrum's frame there.
-		{"Q3 git.info regular file", "git.info", map[string]any{"path": filepath.Join(n, "n.txt")},
-			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`, errFrame},
+		{"Q3 git.info regular file", "git.info", map[string]any{"path": filepath.Join(n, "n.txt")}, q3, errFrame},
 		{"Q4 list_branches N", "git.list_branches", map[string]any{"path": n},
 			`{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"branches":[]}}`, errFrame},
 		{"Q5 list_branches missing", "git.list_branches", map[string]any{"path": missing},
