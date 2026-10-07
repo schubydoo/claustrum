@@ -201,6 +201,7 @@ opt-in?
 | D20 | Always-on, Linux and macOS | No. Off the wire. It is a signal time at a daemon start, not a frame | 50 ms settle before the group `SIGKILL` of a leader that reads as gone. In row RP05a that `SIGKILL` comes about 50 ms later than on `89cb6289`. In row PG05a claustrum ends the child in no run, where `89cb6289` ends it in some Linux runs. In rows where the child ends on `SIGTERM`, `89cb6289` also sends a group `SIGKILL` right after it in some Linux runs, and claustrum sends none. None of these is drift |
 | D21 | Always-on, Windows only | No. Off the wire. It is the content of `remote-server.log`, not a frame | a second daemon on a live socket appends to `remote-server.log`. `89cb6289` truncates the file at that start. The earlier lines of its first daemon are lost. The later lines of that daemon sit behind a block of NUL bytes (rows WN04, WJ04). Keeping the lines is a maintainer decision of 2026-10-02. The longer log of claustrum is not drift |
 | D22 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `git.worktree_remove` refuses a worktree that is locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four states. Rows p6 and p6f have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present and gone. Row p6e has a daemon `GIT_DIR` alone. Row p6d has `baseRepo` = `<T>/missing/..`. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too, and nothing is deleted on either side. Rows p6, p6e and p6f ran on Linux, macOS and Windows VMs, row p6d on Linux and macOS. A maintainer decision of 2026-10-03. The refusal is not drift |
+| D23 | Always-on, Windows only | Maybe. A Windows probe whose child prints its environment block shows it in the stream frames (expected) | the environment block of a child is in name order. `89cb6289` keeps the order of its launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries (Windows VM rows V1 to V10). The set of entries and the response frames are equal in those rows. A maintainer decision of 2026-10-06. The other order is not drift |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
@@ -476,6 +477,7 @@ traps that matter for telling drift from expected:
 - The order of two or more new caller keys in a child environment is not drift.
   `89cb6289` gave three rotations of the request order in 20 spawns (Linux rows
   P9 and N7). claustrum iterates the decoded map and builds no order of its own.
+  On Windows see D23.
 - A record or a marker with two blanks in its macOS start text is not accepted.
   An older claustrum build wrote that form. `89cb6289` and claustrum
   drop such a record and send no signal (macOS rows TBr and TBe). A child of such
@@ -512,15 +514,16 @@ traps that matter for telling drift from expected:
       `[frameSink] write failed, detaching: write unix <socket>->@: use of closed network connection`.
       claustrum logs `[frameSink] write failed, detaching: use of closed network connection`
       (Linux row N2c).
-- Two differences on Windows are known and open. They are not drift.
+- One difference on Windows is known and open. It is not drift.
     - At a stop with one connection, `89cb6289` logged `closed 0 connection(s)`
       in 2 of 9 runs. claustrum logged `closed 1` in 9 of 9. The rate is not
       measured.
-    - The environment block of a child comes in name order. The Go 1.26 toolchain
-      sorts it. `f6010b97` and `89cb6289` keep the order of the daemon, then
-      `CLAUDE_SSH_DAEMON_CHILD=1` (rows WN01a, WN01b). On `89cb6289` an added `PATH`
-      entry and new caller keys come after it (Windows VM rows R1, R3, R5, R8).
-      The stdout frame of `cmd /c set` therefore differs in bytes.
+- A child environment block in name order on Windows is not drift. `f6010b97`
+  and `89cb6289` keep the order of the daemon, then `CLAUDE_SSH_DAEMON_CHILD=1`
+  (rows WN01a, WN01b). On `89cb6289` an added `PATH` entry and new caller keys
+  come after it (Windows VM rows V2, V5, V9 and V10). The stdout frame of
+  `cmd /c set` therefore differs in bytes. That is
+  [DIVERGENCES.md](DIVERGENCES.md) D23.
 - A longer `remote-server.log` after a second daemon started on a live socket on
   Windows is not drift. `89cb6289` truncates the file at that start, and claustrum
   appends to it (rows WN04, WJ04). That is [DIVERGENCES.md](DIVERGENCES.md) D21.
@@ -574,6 +577,14 @@ Drop the toolchain hold, and flip the two guard-test expectations to the literal
 form. Until a drift check (Steps 2–3) shows that the reference moved, holding at
 1.26.x is the parity-preserving position. This is a temporary hold, not a
 divergence, and it carries no D-number.
+
+### The sort of the Windows environment block
+
+Since Go 1.26, `createEnvBlock` in `syscall` sorts the environment block of a
+child by name on Windows (`envSorted`, `src/syscall/exec_windows.go`). That sort
+is the cause of divergence [D23](DIVERGENCES.md#d23). If a Go release changes or
+removes the sort, the order of the block changes with it. Read the D23 entry
+again after each Go bump.
 
 ### The symlink-loop text of `filepath.EvalSymlinks`
 
