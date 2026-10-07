@@ -781,7 +781,7 @@ func TestRunInstallHonorsCliKeepGuard(t *testing.T) {
 		_ = captureInstallFacts(t, installOpts{
 			cliDir: dir, cliVersion: "9.0.0", cliZst: blob(t), cliKeep: 2})
 		if n := count(t, dir); n != 2 {
-			t.Errorf("keep=2 left %d files, want 2 (cliKeep>0 guard regressed, skipping prune)", n)
+			t.Errorf("keep=2 left %d files, want 2: the prune did not run", n)
 		}
 	})
 
