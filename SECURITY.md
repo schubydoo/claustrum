@@ -110,7 +110,8 @@ on Windows:
   read as a file gets the first of them.
   The third answers a registration whose record was read and names another
   worktree. The fourth answers a registration that is a stale entry of an
-  earlier worktree at the same path. On Linux and macOS the index of the new
+  earlier worktree at the same path. If git answered `rev-parse
+  --absolute-git-dir`, on Linux and macOS the index of the new
   worktree goes into the registration that passed those refusals. The rollback
   deletes that registration, through an `os.Root` at the registrations
   directory. Both act only while the folder at that path is still the folder

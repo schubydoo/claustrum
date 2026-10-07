@@ -189,9 +189,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `os.Root.RemoveAll` of that name through a root at the registrations
       directory, after `wipesHomeDir` on the entry path. After the open of the
       root, and through it, the entry must still have the identity that the
-      tests saw. Create holds the accepted folder open until it answers, so a
-      new folder cannot reuse that identity. If the entry is another folder,
-      the rollback deletes nothing of it (D24). With no answer of git, and on
+      tests saw. Create holds the accepted folder open until it answers.
+      While that handle is open, a new folder does not get that identity. If
+      the open fails, the identity comes from a stat of the path (not
+      measured). The rollback deletes nothing if the folder at the path is not
+      the accepted one at that test (D24). With no answer of git, and on
       Windows, the registration of the rollback is the folder that the `.git`
       file of the leaf names. If its `gitdir` record does not name the leaf, the
       rollback does not delete it. If it does not resolve strictly inside the
@@ -210,7 +212,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `89cb6289` answers success in cell B4 (Linux VM) and the `openat` text of
       a 0500 folder in cell Z15 (Linux and macOS VMs). The placement has the
       identity test of the rollback, on the root that it opened. It places
-      nothing in a folder that is not the accepted one (D24, not measured). With no answer the
+      nothing if the folder at the path is not the accepted one at that test
+      (D24, not measured). With no answer the
       registration tests do not run. An entry then gets the index only if its
       `gitdir` record can be read and names the new worktree. An entry folder
       whose stat fails takes the placement itself, which fails there. With no
@@ -439,8 +442,9 @@ Go 1.26 sorts it at the process start. `89cb6289` keeps the order of its
 launching block and adds its entries after it. Name order stays by the
 maintainer's decision of 2026-10-06, not by a rule 3 clause. See the entry.
 
-D24 is on Linux and macOS, and the frames are equal in its measured cells. In a
-rollback of `git.worktree_create`, claustrum deletes the registration only if the
+D24 is on Linux and macOS, and from the code, the frames are equal in its two cells.
+If git answered `rev-parse --absolute-git-dir`, a rollback of
+`git.worktree_create` deletes the registration only if the
 folder at its path is still the folder that the tests after the add accepted.
 `89cb6289` deletes the folder at that path in cells B6 and B6b (Linux VM, 2 runs
 each). In cell B6b that folder holds the registration of a live sibling worktree.

@@ -2968,7 +2968,8 @@ claustrum opens each file without blocking and reads a regular file only.
     A9 p and A10 p), or the add fails with the text of git (cells A6 p, A9b p
     and A10b p).
   - Three guards are claustrum's own. The remove is one `os.Root.RemoveAll` of
-    the entry name, through a root at the `worktrees` folder. An entry that is
+    the entry name, through a root at the `worktrees` folder. The step lists
+    the entries and reads each record through that same root. An entry that is
     not a real folder is passed over. The home guard (D2) runs on the entry path
     first.
   - Not measured: more than one stale entry. claustrum handles each one by
@@ -3351,6 +3352,7 @@ claustrum opens each file without blocking and reads a regular file only.
      registration `w9` of a sibling: `w1` goes and `w9` stays (cell B2, Linux
      VM). The same holds when the record of `w9` names the leaf (cell B3, Linux
      VM). The `.git` file of the leaf is removed (cell B5, Linux VM).
+     Not measured: this rollback with a daemon `GIT_DIR` or `GIT_COMMON_DIR`.
      The frame is the plain failed checkout in each cell. From the code:
      claustrum removes the same entry. This build did not run these cells on a
      VM. The delete is one `os.Root.RemoveAll` of the entry name, through a root
@@ -3362,14 +3364,17 @@ claustrum opens each file without blocking and reads a regular file only.
      that is the home folder or holds it. The identity guard refuses a folder
      that is not the folder that the tests accepted. It runs after the open of
      the registrations directory, on the entry in that opened directory.
-     claustrum holds the accepted folder open until the create answers, so a
-     new folder cannot get its identity. That is divergence D24, and
+     claustrum holds the accepted folder open until the create answers.
+     While that handle is open, a new folder does not get that identity. If the
+     open fails, the identity comes from a stat of the path (not measured).
+     That is divergence D24, and
      two cells of a Linux VM show it, 2 runs each. In cell B6 a wrapper renames
      `w1` to `w1x` and makes a new empty folder `w1`. `89cb6289` removes the
      empty `w1`. In cell B6b the wrapper renames `w1` to `w1x`, and the
      registration `w9` of a live sibling worktree to `w1`. `89cb6289` removes
-     that folder with the files of the sibling. claustrum removes no folder in
-     both cells. The frames are equal. See
+     that folder with the files of the sibling. From the code: claustrum removes
+     no folder in both cells, and the frames are equal. This build did not run
+     them on a VM. See
      [`DIVERGENCES.md`](DIVERGENCES.md) → D24.
      If git gave no answer to `rev-parse --absolute-git-dir`, the tests did not
      run (not measured). claustrum then takes the folder that the `.git` file of
