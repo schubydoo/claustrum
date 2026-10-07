@@ -252,15 +252,17 @@ var resolveWalkLinks = filepath.EvalSymlinks
 // starts the walk as it is spelled, cleaned. filepath.EvalSymlinks fails there for a
 // path with a junction before its last component, because Go reports a junction as an
 // irregular file, not a directory. So the walk resolves no junction, and it takes `..`
-// after one by text. 89cb6289 walks so on a Windows VM. With a junction <P>\J into
+// after one by text. 89cb6289 answers and pins so on a Windows VM. With a junction <P>\J into
 // another repository R, each git call of git.info on <P>\J\sub after the excludes
 // read carries GIT_COMMON_DIR=<P>\.git, and the root is P (cells B-01, B-02, B-07 to
 // B-09 and B-16). Two junctions in the path give the pin <KP>\.git, spelled through
 // the first one (cell B-17k), and <P>\J\..\J\sub gives the pin of P (cell B-17d). A
 // junction outside any repository gives GIT_DIR=NUL on each call (cell B-03).
 // <T>\lnk\.. with a junction lnk gives the root T (row D03-junction). A repository
-// below a junction gives git's own spelling of the root (row W09). Not measured:
-// another failure of the resolve for a directory that exists, such as <T>\missing\...
+// below a junction gives git's own spelling of the root (row W09). A missing name
+// before `..` is another failure of the resolve for a directory that exists. The paths
+// <P>\missing\.. and <P>\missing\..\J\sub are equal to 89cb6289 in frame, disk and
+// every git call (cells J-a1 and J-a2).
 func walkStart(dir string) (string, error) {
 	start, err := resolveWalkLinks(dir)
 	if err == nil || !walkStartsAsSpelled {

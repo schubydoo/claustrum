@@ -852,7 +852,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_create | `refusing to create worktree: <root> is a filesystem root; choose the worktree location by its absolute path, without "..", beneath the filesystem root` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. A `worktreeRoot` of `/` is refused. `89cb6289` sends this frame for a `worktreePath` of `/<name>`, after the excludes read and the repo test, 3 git calls. The frame is the same with the folder present or gone, and for a daemon that runs as root. Nothing is created (Linux VM, cells R1n, R1u and R1r, and macOS VM, cell R1a). The macOS cell has the folder gone and a normal user. Before, claustrum sent the owner text of the root after 9 git calls. As root it sent the non-empty text. A root of `//` or `/.` gets the same text, and `<root>` is `worktreeRoot` as sent (cells R2 and R3). A `worktreePath` of `/<directory>/<name>` under a root of `/` gets it too (cell R6). A `worktreeRoot` that is a mount point other than `/` passes: the create and the remove succeed (cell R4). With a root of `/tmp`, a `worktreePath` of `/x1/x2` gets the two-level text (cell R5). `89cb6289` and claustrum sent the same frames in cells R2 to R6 on Linux and macOS VMs. Not measured: the order of this test against the other spelling tests, the `baseRepo` test and the two-level test. claustrum tests it after the `..` test of the root and before the `worktreePath` test. So a root with a `..` component that cleans to `/` gets the `..` text (from the code, not measured). Windows refuses every `worktreeRoot` first, so a drive root such as `C:\` is not measured |
 | git.worktree_create | `refusing to create worktree: <c> is a symbolic link; a symlinked .claude or .claude/worktrees …` | in `error`, `errorCode:"symlinked_component"`, for a symlinked ancestor component under the repo (`7d193f89`) |
 | git.worktree_create | `failed to create parent directory: "" does not name a directory` | in `error`, `errorCode:"mkdir_failed"` (empty `worktreePath`, without `worktreeRoot`) |
-| git.worktree_create | `failed to create parent directory: <repo>\<component> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Windows, when `.claude` or `.claude\worktrees` is a junction. claustrum also refuses another directory level, or a non-symlink reparse point, the same way (not measured). Nothing is created: no directory, no entry, no branch (`f6010b97`, Windows VM, rows JCR1 and JCR2) |
+| git.worktree_create | `failed to create parent directory: <repo>\<component> is not a directory` | in `error`, `errorCode:"mkdir_failed"`, Windows, when a directory between `baseRepo` and the leaf is a junction. `<repo>\<component>` is the path of the first junction. Nothing is created: no directory, no entry, no branch. Measured for `.claude` and `.claude\worktrees` (`f6010b97`, Windows VM, rows JCR1 and JCR2). Measured for a junction `<P>\J` above them, with the paths `<P>\J\sub\.claude\worktrees\w1` and `<P>\J\.claude\worktrees\w1`: `89cb6289` and claustrum build `59e8321` answer equal frames (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). claustrum also refuses a non-symlink reparse point that is not a junction the same way (not measured) |
 | git.worktree_create | `refusing to create worktree: <root> is the repository <repo> or inside it; a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. A root that is `baseRepo` or lies beneath it by whole components is refused. `<B>/Tx` beside `<B>/T` passes. `<root>` is `worktreeRoot` as sent, and `<repo>` is `baseRepo` as sent. claustrum cleans both paths first, as on remove. No create row measured that cleaning. It comes after the repo test and before the root-chain tests. claustrum runs it after the two-level test, as on remove. That order is not measured on create. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
 | git.worktree_create | `refusing to create worktree: <root> passes through <dir>, which is writable by <who> without the sticky bit (mode <mode>), so they could replace what is beneath it; choose a location under directories only you (or the system) control, or remove the extra write permission (chmod go-w)` / `refusing to create worktree: <root> passes through <dir>, which is owned by uid <uid>, neither you nor the system; choose a location you reach through your own directories` | in `error`, `errorCode:"unsafe_path"`, Linux and macOS, with `worktreeRoot`. This is the ancestor test. It judges each directory above the root, top first. The root itself is not judged. The daemon resolves the symlinks of each level, then judges each directory from `/` down to that resolved level. Last it resolves the root and judges each directory above the resolved root. So when the root is a symlink, the chain above its target is judged. `<root>` stays the symlink as sent (row G42, Linux and macOS VMs, `89cb6289` only). A missing level or a failed resolve ends the walk with no refusal. The first failing directory reached is named. When the failing directories lie on one chain, that is the highest one. The kind of failure plays no part. `<dir>` is that directory with its symlinks resolved, and `<root>` is `worktreeRoot` as sent. The owner test comes first. uid 0 and the daemon's user pass. Any other owner gives the second text, even with the sticky bit set. `<uid>` prints unsigned, for example 4294967294 on macOS. Then the sticky bit clears the write tests. The group-write bit refuses unless the group is the private group of the daemon's user. The four tests of the private group are those of the root's own write test (see the `worktreeRoot` paragraph of `git.worktree_create`). The other-write bit always refuses. An owner of uid 0 gets no exemption from the write tests. `<who>` is "its group", "every user on this host" or "its group and every user on this host", as for the root. `<mode>` is the permission bits as four octal digits, so a mode of 2775 prints `0775`. Only the chain of the root is walked, not the chain of `baseRepo`. A create without `worktreeRoot` and `git.worktree_remove` run no ancestor test. It comes after the test above and the 9 git calls (see "Hardened git calls"). It comes before the checkout tests below, the root-chain tests and the tests of the root itself. The root-chain rows below therefore apply only when the ancestor test passes. So a failing directory above the root gets this text even when its owner has no search access to it (row G36a). The `lstat` text does not apply there. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs (rows K1, G1 to G41b, Y11d, T7 and T7c). In macOS rows G28 and Y11d the root is a firmlink spelling, and `<dir>` is `/System/Volumes/Data`. Only Linux VMs measured rows G1, G32, G33a, G33c, G34b and G36b. A macOS VM measured the other round 2 rows and G42 against `89cb6289` only. Not measured, with claustrum's choice: Two failing directories on different branches of the resolution: the first one reached is named. A failing directory above a symlink loop, a dangling link or a regular file: it refuses. A regular file above the root: its mode is judged. An unsearchable directory with more levels below it: the walk ends, and no directory below it is judged. The target of a symlinked root: it is not judged itself, as the root is not. Whether `/` is judged: it is, and it passes on every host measured. A failed stat of a path that the walk just resolved: the walk returns "". Whether "you" is the real or the effective uid: claustrum uses the effective uid |
 | git.worktree_create | `refusing to create worktree: <root> leads into the repository <repo> (at <at>); a worktree location must be outside the repository` | in `error`, `errorCode:"unsafe_path"`, with `worktreeRoot`. The root passes the in-repo test and the ancestor test above but leads into the git top level of `baseRepo`, or into the main checkout. The remove row below gives the test and the spelling of `<at>`. claustrum compares file identity as on remove (not measured on create). The ancestor test in the row above comes first. In macOS row Y11d and Linux row T7 the root also leads into the repository, and both references send the ancestor text. `<repo>` is `baseRepo` as sent. It comes after 9 git calls (see "Hardened git calls") and before the root-chain tests. Nothing is created. Measured against `f6010b97` and `89cb6289` on Linux and macOS VMs |
@@ -894,7 +894,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.worktree_remove | `failed to remove worktree: open <root>: permission denied` / `failed to remove worktree: openat <name>: permission denied` / `failed to remove worktree: statat .: permission denied` | in `error`, with no `errorCode`, Linux and macOS, for a folder that the daemon cannot read or search. With `worktreeRoot`, that is a folder from the root down to the worktree folder. Without it, that is a folder between `baseRepo` and the worktree folder. `<root>` is `worktreeRoot` with its symbolic links resolved. `<name>` is one path component. Nothing is deleted. Measured against `89cb6289` on Linux and macOS VMs (rows B1 to B6, B8 to B11b, B13a to B14c and B17a to B17d, row B18 on the macOS VM only, cells U1 to U11h and U13a to U15b). Windows is not measured. See the method section |
 | git.worktree_remove | `failed to remove worktree: RemoveAll <entry>: <errno text>` | in `error`, when the delete of the worktree fails part-way. If an entry other than `.git` fails, `.git` stays. The entry of the worktree and the branch stay in every case (`f6010b97`, macOS VM) |
 | git.worktree_remove | `removed the worktree but could not drop its registration (RemoveAll <name>: <errno text>)` | in `error`, `success:false`, when the verified entry cannot be deleted after the tree. The branch step still runs. On `f6010b97` the branch is deleted (macOS VM). Since `89cb6289` a kept branch adds `"branchKept":true` after `error` (row R19, Linux VM) |
-| git.worktree_remove | `failed to remove worktree: openat .claude\worktrees: path escapes from parent` | D19, Windows, in `error`, with no `errorCode`, when `.claude` or `.claude\worktrees` is a junction. claustrum's own text. Nothing is deleted, and the branch stays |
+| git.worktree_remove | `failed to remove worktree: openat <path from baseRepo>: path escapes from parent` | D19, Windows, in `error`, with no `errorCode`, when a directory between `baseRepo` and the leaf is a junction. `<path from baseRepo>` is the folder that holds the leaf, relative to `baseRepo`. It is `.claude\worktrees` in the default layout, and `J\sub\.claude\worktrees` and `J\.claude\worktrees` in cells J-b-wt-pj and J-b-wt-pJ (Windows VM). claustrum's own text. Nothing is deleted, and the branch stays |
 | git.worktree_remove | `worktreePath must not be or contain the home directory: …` | D2, in `error`. It sits behind `7d193f89` containment on the default branch, where it fires only if a repo is an ancestor of home. It is the active home guard on the `external_root` branch |
 | process.spawn | `Process ID is required` / `Command is required` | |
 | process.spawn | `command must be an absolute path when a launcher is given` | with a `launcher` param |
@@ -1299,9 +1299,24 @@ neither `GIT_DIR` nor `GIT_COMMON_DIR`:
   outside any repository gives "no repository" and `GIT_DIR=NUL` on each call (cell
   B-03). A junction that is the last component gives the pin of P too (cell B-04).
   A folder symlink in the place of the junction resolves, and the pin is
-  `<R>\.git` (cell B-06). From the code: claustrum starts at the spelled path when
-  Go's `filepath.EvalSymlinks` fails for a path that is a directory. Not measured:
-  another cause of that failure, such as `<T>\missing\..`.
+  `<R>\.git` (cell B-06). claustrum build `59e8321` is equal to `89cb6289` in
+  frame, disk and every git call in these cells, except B-03 (Windows VM). In cell
+  B-03 `89cb6289` runs 3 git calls and claustrum runs 2. The third call is a
+  `rev-parse --git-dir` that exits 128. Both sides carry `GIT_DIR=NUL` on each call
+  there, and the frames are equal. From the code: claustrum starts at the spelled
+  path when Go's `filepath.EvalSymlinks` fails for a path that is a directory. A
+  missing name before `..` is another cause of that failure. The paths
+  `<P>\missing\..` and `<P>\missing\..\J\sub` are equal in frame, disk and every
+  git call (cells J-a1 and J-a2).
+- From the code: only `git.info` reaches the spelled start. `git.list_branches`
+  tests a `path` that is not empty with `filepath.EvalSymlinks` before its trust
+  check, and `git.status` tests `baseRepo` so. `git.worktree_create` and
+  `git.worktree_remove` test a `baseRepo` that exists so. If the resolve fails,
+  each of the four answers there. `process.spawn` does not use the walk. On
+  `git.info` an error frame depends on the spelled start too, not only `repoSlug`
+  and `defaultBranch`. In cell B-15 the build before the spelled start answered
+  the fields of R, and build `59e8321` answers the listing refusal of `89cb6289`
+  (Windows VM).
 - A `.git` directory that passes the git-directory test is the git directory.
 - A `.git` directory that fails the test ends the walk. If it holds a `commondir`
   entry of any type, it is the git directory, and the stray-commondir rules below
@@ -1362,10 +1377,10 @@ The daemon then judges the git directory G:
   an entry, because its parent is not named `worktrees`. Its `commondir` therefore
   gets S1 for the content `../..`, which names the short path. `f6010b97` refused it
   on a Windows 11 VM. The S1 text follows from the rules and is not measured on
-  `89cb6289`. When a component of G is a symlink or a junction, the daemon resolves
-  G. Else it keeps G as spelled. From the code: a G with a junction before its last
-  component does not resolve, and it stays as spelled. The pin of `89cb6289` is
-  `<KP>\.git` for a junction `<KP>` to a repository (Windows VM, cell B-17k).
+  `89cb6289`. When a component of G is a symlink, the daemon resolves
+  G. Else it keeps G as spelled. A G with a junction before its last component
+  stays as spelled. For a junction `<KP>` to a repository, the pin of `89cb6289`
+  and of claustrum build `59e8321` is `<KP>\.git` (Windows VM, cell B-17k).
 
 A stray `commondir` is one in a git directory G that is not an entry. G is a main
 `.git`, a bare repository or a submodule's git directory. `89cb6289` judges it in
@@ -2097,13 +2112,18 @@ check (Windows VM).
   Some points are not measured. claustrum tests the same directory by file identity
   (`os.SameFile`). That is derived from rows W08 and W09. claustrum takes no
   relative answer. The spelling of the walk root is not measured. With no pin,
-  claustrum runs the pair on the git directory of the walk.
+  claustrum runs the pair on the git directory of the walk. One state with no pin
+  is measured. With a daemon `GIT_COMMON_DIR`, the pair and the root are equal on
+  `89cb6289` and claustrum build `59e8321` in every call (Windows VM, cell B-13).
+  The other states with no pin are not measured.
 - On Windows a path through a junction can name two repositories. The fixture is
   that of the trust check: a junction `<P>\J` to `<R>\inner`, P on branch `main`
-  with the origin `p/p`, and R on branch `rmain` with the origin `r/r`. The walk
-  finds P, so each call after the excludes read carries `GIT_COMMON_DIR=<P>\.git`.
-  The calls of the method run in `<P>\J\sub`, and `rev-parse --git-dir` prints
-  `<R>/.git` there. `89cb6289` answers these fields on a Windows VM:
+  with the origin `p/p`, and R on branch `rmain` with the origin `r/r`. For the
+  path `<P>\J\sub` with no daemon `GIT_DIR` or `GIT_COMMON_DIR`, the walk finds P.
+  Each call after the excludes read then carries `GIT_COMMON_DIR=<P>\.git` (cells
+  B-01, B-02, B-07 to B-09 and B-16). The other rows of the table have other
+  entries. The calls of the method run in `<P>\J\sub`, and `rev-parse --git-dir`
+  prints `<R>/.git` there. `89cb6289` answers these fields on a Windows VM:
 
     | Cell | State | `root`, `repo` | `branch` | `repoSlug` | `defaultBranch` |
     |---|---|---|---|---|---|
@@ -2127,13 +2147,28 @@ check (Windows VM).
   a broken line. The listing in `<P>\J\sub` exits 128, and `89cb6289` answers
   `-32603` with the listing refusal that ends `fatal: bad config line 15 in file
   <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
-  repository, and the answer is the non-repo body. From the code: claustrum takes
-  the same walk start, so its calls carry the same entry. Its test of these cells
-  runs on Windows only. In cell B-14 the calls of the root pair differ. `89cb6289` runs the pair
-  with `--git-dir=<P>\.git` and `GIT_COMMON_DIR=<P>\.git`. From the code: claustrum
-  runs it with `--git-dir=<R>\.git` and `GIT_COMMON_DIR=<R>\.git`. The frames are
-  equal. Not measured: a junction to another drive, and a junction to a bare
-  repository.
+  repository, and the answer is the non-repo body. claustrum build `59e8321`
+  answers the same frame in each of these cells (Windows VM). Its calls carry the
+  same entries in these cells, except B-14. In cell B-03 it runs one call less
+  (see the trust check). The claustrum test on real junctions runs on Windows
+  only. It has 11 cells: B-01, B-03, B-04, B-05p, B-05r, B-07, B-08, B-15, B-16,
+  B-17k and B-17d. A test with simulated links runs on Linux and macOS. In cell
+  B-14 calls 4 and 5 differ. They are the root pair. `89cb6289` runs them with
+  `--git-dir=<P>\.git`, in the folder `<P>\.git`, with `GIT_COMMON_DIR=<P>\.git`.
+  claustrum build `59e8321` runs them with `--git-dir=<R>\.git`, in the folder
+  `<R>\.git`, with `GIT_COMMON_DIR=<R>\.git`. The frames are equal. Cell J-f-info
+  repeats cell B-14 with the same result. Not measured: a junction to another
+  drive, and a junction to a bare repository. Three more states have no cell of
+  `89cb6289`. The answers of claustrum there are from the code:
+    - The `path` goes through the junction, and `<P>\.git\commondir` is a stray
+      file. claustrum judges `<P>\.git` by the stray-commondir rules, and a refusal
+      names P. The build before the spelled start ran no trust check there.
+    - A junction outside any repository leads into a repository whose config file
+      has a broken line. claustrum answers the non-repo body. The build before the
+      spelled start answered the listing refusal for the config file of that
+      repository.
+    - The `path` is `<P>\missing\..`, and `<P>\.git\commondir` is a stray file.
+      The answer is that of the first state.
 - The excludes read runs before the trust check, so it also runs before a trust
   refusal, as on both references.
 - `7c2f88d` added `repoSlug` and `defaultBranch`. Both are always present,
@@ -2519,10 +2554,13 @@ claustrum opens each file without blocking and reads a regular file only.
   its cwd repo.
 - A refused daemon `GIT_CONFIG_COUNT` changes the answers of this method (see "The
   daemon's own git environment").
-- On Windows a junction at `.claude` or `.claude\worktrees` fails the parent step:
-  `{"success":false,"error":"failed to create parent directory: <repo>\\.claude is not
-  a directory","errorCode":"mkdir_failed"}`. Nothing
-  is created. Measured against `f6010b97` on a Windows VM (rows JCR1 and JCR2). See
+- On Windows a junction at a directory between `baseRepo` and the leaf fails the
+  parent step: `{"success":false,"error":"failed to create parent directory: <path
+  of the junction> is not a directory","errorCode":"mkdir_failed"}`. Nothing
+  is created. Measured against `f6010b97` on a Windows VM for `.claude` and
+  `.claude\worktrees` (rows JCR1 and JCR2). For a junction `<P>\J` above them,
+  `89cb6289` and claustrum build `59e8321` answer equal frames after 3 git calls
+  (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D19.
 - Missing `branchName` → `-32602 branchName is required`. It is required even when
   `existingBranch` is given.
@@ -3507,13 +3545,25 @@ copies end still fails it, as `timeoutMs` above describes:
   file that names no verified entry, the calls follow the rules above (rows Q20,
   Q20b and Y8w on a Linux VM). The pair carries `--work-tree=<worktreePath>` there
   (rows Q20b and Y8w). Nothing is deleted in those rows.
-- On Windows, a junction at `.claude` or at `.claude\worktrees` is refused. Nothing
-  is deleted, and the branch stays. The reply is `{"success":false,"error":"failed to remove
-  worktree: openat .claude\\worktrees: path escapes from parent"}`. That text is
-  claustrum's own. `f6010b97` answers `{"success":true}` there, deletes nothing,
-  and deletes the branch. The whole-build check of issue 442 measured `89cb6289`
-  the same (Windows rows JC, J03 to J05, JCR1 and JCR2), for a branch that another
-  ref reaches. A branch tip that no other ref reaches is not measured there. See
+- On Windows, a junction at a directory between `baseRepo` and the leaf is refused.
+  Nothing is deleted, and the branch stays. The reply is
+  `{"success":false,"error":"failed to remove worktree: openat <path from
+  baseRepo>: path escapes from parent"}`. `<path from baseRepo>` is the folder that
+  holds the leaf, relative to `baseRepo`. That text is claustrum's own. From the
+  code: claustrum opens that folder in one `os.Root` step, and the text is the
+  error of that open. For a junction at `.claude` or at `.claude\worktrees` the
+  path is `.claude\\worktrees` in the frame. `f6010b97` answers `{"success":true}`
+  there, deletes nothing, and deletes the branch. The whole-build check of issue
+  442 measured `89cb6289` the same (Windows rows JC, J03 to J05, JCR1 and JCR2),
+  for a branch that another ref reaches. A branch tip that no other ref reaches is
+  not measured there. Two cells have a junction `<P>\J` above `.claude`, with the
+  `worktreePath` `<P>\J\sub\.claude\worktrees\w1` and `<P>\J\.claude\worktrees\w1`.
+  `89cb6289` answers `{"success":true}` there after 2 git calls, a listing and
+  `rev-parse --absolute-git-dir`. claustrum build `59e8321` answers the text with
+  `J\\sub\\.claude\\worktrees` and with `J\\.claude\\worktrees`, and runs no git
+  call. In both cells the leaf did not exist and no branch existed. Nothing
+  changed on disk on either side (Windows VM, cells J-b-wt-pj and J-b-wt-pJ). Not
+  measured: a live worktree behind such a junction, and the branch step there. See
   [`DIVERGENCES.md`](DIVERGENCES.md) → D19.
 - The last component of `<p>` is checked first. In the repository no git runs before
   this check. A symbolic link answers `{"success":false,"error":"refusing to remove

@@ -16,8 +16,11 @@ import (
 // with forward slashes. Else it is the walk root with forward slashes. Measured on a
 // Windows VM (rows W01 to W16 and D03).
 //
-// Not measured: the pair and the root with no pin (claustrum uses the git directory
-// the walk found), the spelling of the fallback walk root (W14 and W16 sent the
+// With no pin claustrum uses the git directory the walk found. One such state is
+// measured: with a daemon GIT_COMMON_DIR the pair and the root are equal to 89cb6289
+// in every call (cell B-13). The other states with no pin are not measured.
+//
+// Not measured either: the spelling of the fallback walk root (W14 and W16 sent the
 // on-disk case), and how a relative answer is resolved (W16 only shows it is not
 // taken, so claustrum takes no relative answer). claustrum compares by file identity
 // (os.SameFile). Rows W08 (a subst drive) and W09 (a junction) answer git's spelling
