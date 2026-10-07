@@ -144,15 +144,15 @@ var (
 		cmd.WaitDelay = hcLsofWaitDelay
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		type result struct {
+		type lsofOutcome struct {
 			out      string
 			answered bool
 		}
-		done := make(chan result, 1)
+		done := make(chan lsofOutcome, 1)
 		go func() {
 			_ = cmd.Run()
 			// Process is set only by a good start.
-			done <- result{stdout.String(), cmd.Process != nil && stderr.Len() == 0}
+			done <- lsofOutcome{stdout.String(), cmd.Process != nil && stderr.Len() == 0}
 		}()
 		abandon := time.NewTimer(hcLsofAbandon)
 		defer abandon.Stop()
@@ -396,9 +396,9 @@ func hcBusy(pid int) bool {
 
 // hcBusyCheck is hcBusy plus whether the answer is a reading at all. An abandoned run is a
 // reading: it answers busy (D17). A run that did not answer is no reading. The retire then
-// refuses the daemon, and no SIGTERM goes out. For a command that did not start, that is
-// what 89cb6289 did on a macOS VM (rows D1i and D1k, 3 of 3 each). For a run that wrote to
-// stderr it is not measured: claustrum reads it the same way, which signals less.
+// refuses the daemon, and no SIGTERM goes out. That is
+// what 89cb6289 did on a macOS VM, for a command that did not start (rows D1i and D1k) and
+// for a run that wrote to stderr (rows E3i and E3k), 3 of 3 each.
 func hcBusyCheck(pid int) (busy, canRead bool) {
 	out, completed, answered := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
 	if !completed {
@@ -431,15 +431,19 @@ var hcDaemonFilesUnread = func(pid int) bool {
 // hcStdioArePipes reports whether fds 0, 1 and 2 are all pipes, the stdio signature of a
 // daemon-spawned child. lsof names a pipe's type PIPE. canRead is false when the run was
 // abandoned, did not answer, or returned nothing for the pid. One lsof run answers both.
-// The reference side of the did-not-answer case is not measured for this read.
-func hcStdioArePipes(pid int) (pipes, canRead bool) {
+// The third result is false for a run that did not answer. The pass then prints the line of
+// the reference (row E5: the command did not start).
+func hcStdioArePipes(pid int) (pipes, canRead, answered bool) {
 	out, completed, answered := runLsof("-p", strconv.Itoa(pid), "-F", "ftn")
-	if !completed || !answered {
-		return false, false
+	if !completed {
+		return false, false, true
+	}
+	if !answered {
+		return false, false, false
 	}
 	recs := parseLsofFtn(out)
 	if len(recs) == 0 {
-		return false, false // lsof returned nothing for the pid
+		return false, false, true // lsof returned nothing for the pid
 	}
 	n := 0
 	for _, r := range recs {
@@ -447,7 +451,7 @@ func hcStdioArePipes(pid int) (pipes, canRead bool) {
 			n++
 		}
 	}
-	return n == 3, true
+	return n == 3, true, true
 }
 
 // hcLockNeedsRecord says that lock content that is no record stops the holder read. On a
@@ -455,10 +459,11 @@ func hcStdioArePipes(pid int) (pipes, canRead bool) {
 // on darwin it does not. It is a var only so a test can stage the other answer.
 var hcLockNeedsRecord = false
 
-// hcLockOpenFailState is the lock state for a lock file that cannot be opened. On a macOS VM
-// 89cb6289 kept a run dir whose lock had mode 0000 with the "could not be examined" line
-// (row D4, 3 of 3), so on darwin it is that state. It is a var only so a test can stage it.
-var hcLockOpenFailState = hcLockUnexamined
+// hcLockUnreadState is the lock state for a lock that cannot be opened or is no regular file.
+// On a macOS VM 89cb6289 kept such a run dir with the "could not be examined" line: a lock
+// of mode 0000 (row D4), a symlink (row E7a) and a folder (row E7b), 3 of 3 each. So on
+// darwin it is that state. It is a var only so a test can stage it.
+var hcLockUnreadState = hcLockUnexamined
 
 // hcLockHeldAt reports whether a live process holds path open (its run-dir lock). darwin has no
 // /proc/locks, so it asks lsof whether any process has the path open. fi is unused on darwin.

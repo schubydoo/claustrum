@@ -250,17 +250,17 @@ func TestStdioPipesAndBusyCheckDarwin(t *testing.T) {
 	runLsof = func(...string) (string, bool, bool) {
 		return "p1\nf0\ntPIPE\nn->0x1\nf1\ntPIPE\nn->0x2\nf2\ntPIPE\nn->0x3\n", true, true
 	}
-	if pipes, canRead := hcStdioArePipes(1); !pipes || !canRead {
+	if pipes, canRead, _ := hcStdioArePipes(1); !pipes || !canRead {
 		t.Errorf("three PIPE stdio records: pipes=%v canRead=%v, want true true", pipes, canRead)
 	}
 	// One unix record and nothing else: a reading, and not pipe stdio.
 	runLsof = func(...string) (string, bool, bool) { return "p1\nf0\ntunix\nn->0x1\n", true, true }
-	if pipes, canRead := hcStdioArePipes(1); pipes || !canRead {
+	if pipes, canRead, _ := hcStdioArePipes(1); pipes || !canRead {
 		t.Errorf("a unix stdio record: pipes=%v canRead=%v, want false true", pipes, canRead)
 	}
 	// An abandoned run tells nothing: not pipes, and not a reading.
 	runLsof = func(...string) (string, bool, bool) { return "", false, true }
-	if pipes, canRead := hcStdioArePipes(1); pipes || canRead {
+	if pipes, canRead, _ := hcStdioArePipes(1); pipes || canRead {
 		t.Errorf("an abandoned lsof run: pipes=%v canRead=%v, want false false", pipes, canRead)
 	}
 
@@ -303,6 +303,27 @@ func TestJudgeOrphanReadsDescriptorsOnceDarwin(t *testing.T) {
 	}
 	if runs != 1 {
 		t.Errorf("lsof ran %d times for one orphan, want 1", runs)
+	}
+}
+
+// TestStdioReadAnswersDarwin pins which stdio read is "no answer" (row E5). An abandoned
+// run and a run with no record for the pid answered, and they keep the earlier reason.
+func TestStdioReadAnswersDarwin(t *testing.T) {
+	old := runLsof
+	t.Cleanup(func() { runLsof = old })
+	for _, tc := range []struct {
+		name                string
+		completed, answered bool
+		want                bool
+	}{
+		{"row E5: the run did not answer", true, false, false},
+		{"an abandoned run", false, true, true},
+		{"a run with no record for the pid", true, true, true},
+	} {
+		runLsof = func(...string) (string, bool, bool) { return "", tc.completed, tc.answered }
+		if pipes, canRead, answered := hcStdioArePipes(1); pipes || canRead || answered != tc.want {
+			t.Errorf("%s: pipes=%v canRead=%v answered=%v, want false false %v", tc.name, pipes, canRead, answered, tc.want)
+		}
 	}
 }
 
@@ -454,8 +475,8 @@ func TestLsofRunThatDoesNotAnswerDarwin(t *testing.T) {
 		if !hcDaemonFilesUnread(1) {
 			t.Errorf("%s: hcDaemonFilesUnread = false, want true", tc.name)
 		}
-		if pipes, canRead := hcStdioArePipes(1); pipes || canRead {
-			t.Errorf("%s: hcStdioArePipes = %v %v, want false false", tc.name, pipes, canRead)
+		if pipes, canRead, answered := hcStdioArePipes(1); pipes || canRead || answered {
+			t.Errorf("%s: hcStdioArePipes = %v %v %v, want false false false", tc.name, pipes, canRead, answered)
 		}
 	}
 	// CONTROL: the command starts and writes only to stdout. The helper prints "p1", which

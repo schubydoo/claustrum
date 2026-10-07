@@ -15,7 +15,7 @@ import (
 
 // The lock read of the tidy, as a macOS VM measured it against 89cb6289 (rows C2 to C6, D2p,
 // D2f and D4). Every test here stages the holder query through hcLockHolderRead, the content
-// rule through hcLockNeedsRecord and the open failure through hcLockOpenFailState, so each
+// rule through hcLockNeedsRecord and the open failure through hcLockUnreadState, so each
 // one runs on linux and on darwin. No real lsof runs, no
 // signal goes out, and every run dir is under t.TempDir.
 
@@ -34,9 +34,9 @@ func newHcLockReadFix(t *testing.T, needsRecord bool, answer func(path string) (
 	t.Helper()
 	f := &hcLockReadFix{t: t, c: &hostCleaner{selfPid: os.Getpid()}}
 	f.runRoot, f.root = hcRunRoot(t)
-	oldClock, oldDial, oldRead, oldNeeds, oldFail := hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord, hcLockOpenFailState
+	oldClock, oldDial, oldRead, oldNeeds, oldFail := hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord, hcLockUnreadState
 	t.Cleanup(func() {
-		hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord, hcLockOpenFailState = oldClock, oldDial, oldRead, oldNeeds, oldFail
+		hcClock, hcDial, hcLockHolderRead, hcLockNeedsRecord, hcLockUnreadState = oldClock, oldDial, oldRead, oldNeeds, oldFail
 	})
 	now := time.Now()
 	hcClock = func() time.Time { return now }
@@ -185,30 +185,47 @@ func TestTidyLockReadControls(t *testing.T) {
 	})
 }
 
-// TestTidyKeepsALockThatCannotBeOpened pins row D4: a lock file of mode 0000. On darwin the
-// dir stays with the "could not be examined" line of the reference, and no holder query
-// runs. The second arm is the linux answer, which keeps its own line.
-func TestTidyKeepsALockThatCannotBeOpened(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("root opens a file of mode 0000")
-	}
+// TestTidyKeepsALockThatCannotBeRead pins rows D4 and E7b: a lock file of mode 0000, and a
+// lock that is a folder. On darwin the dir stays with the "could not be examined" line of
+// the reference, and no holder query runs. On linux each one keeps claustrum's own line.
+func TestTidyKeepsALockThatCannotBeRead(t *testing.T) {
+	const examined = "[hostclean] run dir %q unused for 40 days: kept, its daemon.lock could not be examined\n"
+	const determined = "[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined\n"
 	for _, tc := range []struct {
+		name  string
 		state int
 		line  string
 	}{
-		{hcLockUnexamined, "[hostclean] run dir %q unused for 40 days: kept, its daemon.lock could not be examined\n"},
-		{hcLockUnknown, "[hostclean] run dir %q kept: whether a process holds its run-dir lock could not be determined\n"},
+		{"mode 0000", hcLockUnexamined, examined},
+		{"mode 0000", hcLockUnknown, determined},
+		{"a folder", hcLockUnexamined, examined},
+		{"a folder", hcLockUnknown, determined},
 	} {
+		if tc.name == "mode 0000" && os.Getuid() == 0 {
+			continue // root opens a file of mode 0000
+		}
 		f := newHcLockReadFix(t, false, func(string) (bool, bool) { return false, true })
-		hcLockOpenFailState = tc.state
-		z1 := f.dir("z1", []byte{})
-		if err := os.Chmod(filepath.Join(z1, runDirLockName), 0); err != nil {
-			t.Fatal(err)
+		hcLockUnreadState = tc.state
+		var z1 string
+		if tc.name == "a folder" {
+			z1 = f.dir("z1", nil)
+			if err := os.Mkdir(filepath.Join(z1, runDirLockName), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			at := hcClock().Add(-40 * 24 * time.Hour)
+			if err := os.Chtimes(z1, at, at); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			z1 = f.dir("z1", []byte{})
+			if err := os.Chmod(filepath.Join(z1, runDirLockName), 0); err != nil {
+				t.Fatal(err)
+			}
 		}
 		sum, log := f.tidy()
 		want := fmt.Sprintf(tc.line, z1)
 		if !hcDirThere(t, z1) || sum != (hcSummary{}) || len(f.asked) != 0 || !strings.Contains(log, want) || strings.Count(log, "\n") != 1 {
-			t.Errorf("state %d: there=%v summary=%+v queries=%q log=%q, want the dir kept with only %q", tc.state, hcDirThere(t, z1), sum, f.asked, log, want)
+			t.Errorf("%s, state %d: there=%v summary=%+v queries=%q log=%q, want the dir kept with only %q", tc.name, tc.state, hcDirThere(t, z1), sum, f.asked, log, want)
 		}
 	}
 }

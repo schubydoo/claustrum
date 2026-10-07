@@ -815,9 +815,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Only the abandoned run is this entry.** Two other `lsof` outcomes are parity
   with `89cb6289` on a macOS VM, 3 of 3 runs in each row. A command that does not
   start: the daemon gets no SIGTERM (rows D1i and D1k), and a run dir with a lock
-  file stays (row C3). A run that writes to stderr: a run dir with a lock file
-  stays (rows D2p and D2f). claustrum reads a run that writes to stderr the same
-  way in the busy read, so the daemon gets no SIGTERM. That one is not measured.
+  file stays (row C3). A run that writes to stderr: the daemon gets no SIGTERM
+  (rows E3i and E3k), and a run dir with a lock file stays (rows D2p and D2f).
 - **Linux is outside this entry.** On Linux the busy read comes from `/proc`, not
   `lsof`. If `/proc` cannot read a daemon's descriptors or its `net/unix` table, the
   retire refuses that daemon. The reference's
