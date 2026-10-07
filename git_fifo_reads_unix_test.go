@@ -86,6 +86,9 @@ func skipUnlessGitSkipsFifoDotGit(t *testing.T, dir string) {
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	cmd.Env = append(cmd.Env, gitNoAutoMaintenance...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			t.Fatalf("git rev-parse gave no answer in %v with a FIFO named .git: %v", fifoAnswerLimit, err)
+		}
 		t.Skipf("this git does not walk past a FIFO named .git: %v: %s", err, out)
 	}
 }
@@ -379,7 +382,9 @@ func TestFifoDotGitReadMethods(t *testing.T) {
 // of 0 bytes. Both answer not_a_repo, and nothing is made.
 func TestFifoDotGitWithoutRepositoryIsNotARepo(t *testing.T) {
 	t.Run("B-F5 FIFO and no outer repository", func(t *testing.T) {
-		T := filepath.Join(realTempDir(t), "P5", "T")
+		tmp := realTempDir(t)
+		requireTempOutsideCheckout(t, tmp)
+		T := filepath.Join(tmp, "P5", "T")
 		mkfifo(t, filepath.Join(T, ".git"))
 		wt := filepath.Join(T, ".claude", "worktrees", "w1")
 		wantFifoFrame(t, "create(T)", frameWithin(t, "git.worktree_create", createParams(T, wt, "w1")), createNotARepo)
