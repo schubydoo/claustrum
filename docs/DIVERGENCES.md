@@ -1189,7 +1189,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Behavior.** On Linux and macOS `git.worktree_create` tests the registration
   of the new worktree right after the add. When the tests accept it, claustrum
   takes the identity of the registration folder. A rollback deletes the folder at
-  that path only if it still has that identity. If another folder is at the
+  that path only if it still has that identity. The test runs on the
+  registrations directory that the delete opened, so both act on one folder.
+  claustrum holds the accepted folder open until the create answers, so a new
+  folder cannot get its identity. If another folder is at the
   path, the rollback deletes nothing of it. It adds no text to the frame, and the
   branch step runs. The placement of the index has the same test. claustrum
   places no index in a folder that is not the accepted one. It then answers a
@@ -1223,9 +1226,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   cell B6b. No frame differs there. A create reaches the guard only if the
   registrations folder changes between the add and the rollback.
 - **Not measured.** The guard at the placement of the index: no cell has a
-  replaced folder with a read-tree that exits 0. macOS. A folder that is deleted
-  and made again with the same file identity. From the code: the guard takes
-  such a folder for the accepted one.
+  replaced folder with a read-tree that exits 0. macOS.
 - **Reopen trigger.** A measurement that shows the reference keeping such a
   folder. Or a decision to match the disk of cells B6 and B6b.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → git.worktree_create. Evidence in

@@ -148,9 +148,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
     - When `git.worktree_create` rolls back a worktree, it deletes
       `worktreePath`. There are two rollbacks. After a failed `git worktree add`,
       it runs no git call and removes the leaf only if the leaf is an empty
-      directory. Before the add, on Linux and macOS, create removes one stale
-      entry of `<baseRepo>/.git/worktrees`: the entry whose `gitdir` record
-      names the `.git` of the new leaf. That delete is one `os.Root.RemoveAll`
+      directory. Before the add, on Linux and macOS, create removes each stale
+      entry of `<baseRepo>/.git/worktrees`: an entry whose `gitdir` record
+      names the `.git` of the new leaf. Each delete is one `os.Root.RemoveAll`
       of the entry name through a root at that folder, after `wipesHomeDir` on
       the entry path. An entry with a `locked` file stays (`89cb6289`, cells A1
       to A12c, Linux VM). On Windows that step is one `os.RemoveAll` of the
@@ -183,11 +183,14 @@ The JSON-RPC surface is identical on every OS. Full internals →
       the tests after the add accepted. That is the entry of the registrations
       directory of `baseRepo` with the last name of the `gitdir:` path, read
       once after the add. The rollback reads neither the `.git` file of the leaf
-      nor the `gitdir` record again (`89cb6289`, cells Z16 and Z18 on Linux and
+      nor the `gitdir` record again. `89cb6289` removes that entry when either
+      one is changed (cells Z16 and Z18 on Linux and
       macOS VMs, cells B1 to B3 and B5 on a Linux VM). The delete is one
       `os.Root.RemoveAll` of that name through a root at the registrations
-      directory, after `wipesHomeDir` on the entry path. The folder at that path
-      must still have the identity that the tests saw. If it is another folder,
+      directory, after `wipesHomeDir` on the entry path. After the open of the
+      root, and through it, the entry must still have the identity that the
+      tests saw. Create holds the accepted folder open until it answers, so a
+      new folder cannot reuse that identity. If the entry is another folder,
       the rollback deletes nothing of it (D24). With no answer of git, and on
       Windows, the registration of the rollback is the folder that the `.git`
       file of the leaf names. If its `gitdir` record does not name the leaf, the
@@ -203,9 +206,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       create refuses before the checkout an entry whose `gitdir` record cannot
       be read or names another path (`89cb6289`, cells P-c and P-g to P-m,
       Linux and macOS VMs). The placement then reads no record again: a record
-      that goes during the checkout does not stop it (`89cb6289`, cell B4 on a
-      Linux VM, cell Z15 on Linux and macOS VMs). It places nothing in a folder
-      that is not the accepted one (D24, not measured). With no answer the
+      that goes during the checkout does not stop it. With the record gone,
+      `89cb6289` answers success in cell B4 (Linux VM) and the `openat` text of
+      a 0500 folder in cell Z15 (Linux and macOS VMs). The placement has the
+      identity test of the rollback, on the root that it opened. It places
+      nothing in a folder that is not the accepted one (D24, not measured). With no answer the
       registration tests do not run. An entry then gets the index only if its
       `gitdir` record can be read and names the new worktree. An entry folder
       whose stat fails takes the placement itself, which fails there. With no

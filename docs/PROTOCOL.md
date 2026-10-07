@@ -2937,12 +2937,13 @@ claustrum opens each file without blocking and reads a regular file only.
   rows are creates without `worktreeRoot`. A symlinked `worktreeRoot` is not
   measured. On Windows claustrum passes the path as sent. The resolved form is not
   measured there.
-- Before the add, on Linux and macOS, the daemon removes one stale entry of
+- Before the add, on Linux and macOS, the daemon removes each stale entry of
   `<baseRepo>/.git/worktrees`. The step runs after the test that `worktreePath`
   does not exist. An entry is stale if its `gitdir` record names the `.git` of
   the new worktree. The cells are those of `89cb6289` on a Linux VM with git
   2.43, 2 runs each. Below, `<L>` is the real path of `worktreePath`.
-  - The compare is by text. The record loses blanks and newlines at both ends.
+  - claustrum compares by text. This rule is claustrum's own fit of the cells
+    below. The record loses blanks and newlines at both ends.
     A relative record counts from the entry folder. The path is then cleaned,
     and no symlink of it is resolved. The other side is `worktreePath` with the
     symlinks of its existing part resolved, plus `/.git`.
@@ -2970,8 +2971,9 @@ claustrum opens each file without blocking and reads a regular file only.
     the entry name, through a root at the `worktrees` folder. An entry that is
     not a real folder is passed over. The home guard (D2) runs on the entry path
     first.
-  - Not measured: more than one stale entry. claustrum ends the step at the
-    first match. Not measured: a tab or a carriage return at an end of the
+  - Not measured: more than one stale entry. claustrum handles each one by
+    these rules, and it remembers each one that stays, for the stale entry test
+    below. Not measured: a tab or a carriage return at an end of the
     record. claustrum cuts them. Not measured: a relative record with a
     `baseRepo` that is sent through a symlink. claustrum counts from the
     resolved entry folder. macOS is not measured apart from cell P-p.
@@ -3108,8 +3110,8 @@ claustrum opens each file without blocking and reads a regular file only.
   nothing counts as absent (not measured). In cell P-q the stat of the entry
   folder still answers.
 - After those four tests, on Linux and macOS, the daemon tests the entry of test
-  2 against the step before the add. If that step left a stale entry in place and
-  the entry of test 2 is that entry, the create answers
+  2 against the step before the add. If that step left stale entries in place and
+  the entry of test 2 is one of them, the create answers
   `{"success":false,"error":"refusing to create worktree: <worktreePath> carries
   a .git file naming an admin entry other than the one just created for
   it","errorCode":"unsafe_path"}`. It runs no checkout and rolls nothing back.
@@ -3117,8 +3119,8 @@ claustrum opens each file without blocking and reads a regular file only.
   each. In each the daemon has `GIT_COMMON_DIR` of another repository, and the
   old entry `w1` of `baseRepo` has a record that names the `.git` of the new
   worktree. In cells A9 g and A9b g the entry holds a `locked` file. In cell A10 g
-  it has mode 0500. `89cb6289` makes 9 git calls there, and the add is the last
-  one. So this test comes before the pair of the record test below. Cell P-c has
+  it has mode 0500. The add is the last of 9 git calls of `89cb6289` there. So
+  claustrum runs this test before the pair of the record test below. Cell P-c has
   an old entry with the record of another worktree, and it gets the text of the
   record test. The rule "an entry that the step before the add left" is
   claustrum's own fit of these cells. Not measured: macOS, and the place of this
@@ -3190,7 +3192,8 @@ claustrum opens each file without blocking and reads a regular file only.
   and the record test before the deadline test (row D-9, cell P-f). Not
   measured: a state that fails test 1 and a later test.
   On Linux and macOS the index goes into the entry of test 2 with no second read
-  of the record. Two cells of `89cb6289` show it. In cell B4 (Linux VM) a wrapper
+  of the record. Two cells of `89cb6289` show the same result with the record
+  gone. In cell B4 (Linux VM) a wrapper
   removes the record after the read-tree. `89cb6289` answers success, the entry
   holds the index, and the branch stays. In cell Z15 (Linux and macOS VMs) a
   wrapper removes the record after the read-tree and sets the entry to mode 0500.
@@ -3201,7 +3204,8 @@ claustrum opens each file without blocking and reads a regular file only.
   `logs` stay. From the code: claustrum takes the same path in both cells. This
   build did not run them on a VM.
   One state places nothing: the folder at the path of the entry is not the folder
-  that the tests accepted. The create then answers the failed placement below
+  that the tests accepted. claustrum tests that through the registrations
+  directory that the placement opened. The create then answers the failed placement below
   with claustrum's own text, `the registration <entry> is not the folder that was
   tested after the add`. That is divergence D24. No cell measured it at the
   placement.
@@ -3356,7 +3360,10 @@ claustrum opens each file without blocking and reads a regular file only.
      Two guards of that delete are claustrum's own. Each deletes nothing, adds no
      text and lets the branch step run. The home guard (D2) refuses an entry path
      that is the home folder or holds it. The identity guard refuses a folder
-     that is not the folder that the tests accepted. That is divergence D24, and
+     that is not the folder that the tests accepted. It runs after the open of
+     the registrations directory, on the entry in that opened directory.
+     claustrum holds the accepted folder open until the create answers, so a
+     new folder cannot get its identity. That is divergence D24, and
      two cells of a Linux VM show it, 2 runs each. In cell B6 a wrapper renames
      `w1` to `w1x` and makes a new empty folder `w1`. `89cb6289` removes the
      empty `w1`. In cell B6b the wrapper renames `w1` to `w1x`, and the

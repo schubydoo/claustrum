@@ -115,7 +115,7 @@ on Windows:
   deletes that registration, through an `os.Root` at the registrations
   directory. Both act only while the folder at that path is still the folder
   that the refusals saw (D24). On Windows no such guard runs.
-  Before the add, on Linux and macOS, the daemon removes a stale registration
+  Before the add, on Linux and macOS, the daemon removes each stale registration
   whose record names the new worktree. That delete goes through an `os.Root` at
   the registrations directory too, after the home guard. A registration that
   holds a `locked` file stays.
