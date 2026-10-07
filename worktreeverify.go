@@ -290,7 +290,7 @@ func worktreeRegistryDir(repo string) string {
 		admin = filepath.Join(repo, admin)
 	}
 	common := admin
-	if b, err := os.ReadFile(filepath.Join(admin, "commondir")); err == nil {
+	if b, err := readGitPlainFile(filepath.Join(admin, "commondir")); err == nil {
 		common = strings.TrimSpace(string(b))
 		if !filepath.IsAbs(common) {
 			common = filepath.Join(admin, common)

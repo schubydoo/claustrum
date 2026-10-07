@@ -191,6 +191,9 @@ component_management:
         - gitdirtrust.go
         - gitdirtrust_unix.go
         - gitdirtrust_windows.go
+        # the daemon's own read of a .git file, a commondir file and a gitdir record.
+        - gitplainfile_unix.go
+        - gitplainfile_windows.go
         - homeguard.go
         # cross-platform fs primitives for the git/files methods: path canon (git
         # frame spelling) and the O_DIRECTORY guard used by files.list.
