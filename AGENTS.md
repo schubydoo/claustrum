@@ -178,7 +178,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       file there is replaced by the new CLI. A new CLI that does not run goes
       with a plain remove, so nothing is left at that path.
       Two guards run before that tree delete. The single-path-component rule
-      of D6 runs first: `ensureCLI` runs it before it touches any file. D6
+      of D6 runs first: `ensureCLI` runs it before it writes or removes
+      anything at a path built from the version. D6
       makes the version one path component, so the CLI path is a direct child
       of the cli-dir. D6 does not test which folder that child is. With a
       cli-dir that is the parent of the home folder and a version that is its
@@ -204,12 +205,18 @@ The JSON-RPC surface is identical on every OS. Full internals →
       failed attempt. On a cache hit it runs only after a `--version` run that
       its bound stopped. A cache hit with a good run does not sweep (cells Z8
       of `89cb6289`, Linux, macOS and Windows VMs). The sweep after a stopped
-      run is outside `ensureCLI`, so no D6 test comes before it. It names only
+      run is outside `ensureCLI`, so no D6 test comes before it. Cell P6
+      (Linux VM) shows that sweep. The sweep also runs after a D6 refusal. In cell P5 (Linux VM,
+      `-cli-version ../x`) a `.fetch-d` file that is 20 minutes old goes on
+      claustrum and on `89cb6289`. The sweep names only
       the cli-dir, never the version. A second sweep removes an entry named
       `*.zst.part` that is more than 7 days old, with the same plain
       `os.Remove`. It runs once, before any CLI runs, also on a cache hit
       (cells Z1 and Z4b on Linux, macOS and Windows VMs). So
-      no D6 test comes before it either, and it names only the cli-dir. A
+      no D6 test comes before it either, and it names only the cli-dir. In
+      cell P5 an 8 day old `p.zst.part` file goes too. A CLI file whose name
+      ends in `.zst.part` goes in that sweep at more than 7 days, and the run
+      installs the version again (cells P4 and P4c, Linux VM). A
       name that ends in `.zst.part` follows this rule alone, also with the
       `.fetch-` prefix (cells Z2 and Z5, the same three systems).
       The `-cli-keep` prune runs after a good install only, so after D6. It
@@ -223,7 +230,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       macOS VMs, cell C-11dir on a Windows VM, cells K0a, K0b and F2 on all
       three). With a negative `-cli-keep` no prune runs. A good install then
       prints no result line and exits 2, as on `89cb6289` (cells Kneg and
-      Kn-2, all three systems). The prune does not
+      Kn-2, all three systems). The stderr text there is claustrum's own
+      line, by the maintainer's decision of 2026-10-07. The prune does not
       count the sweep's names, a `*.zst.part` name or a `.blob-` name, and it
       removes none of them. `89cb6289` counts a planted `.blob-` file (cell
       C-12, Windows VM) and removes it (cells B1, all three systems). That

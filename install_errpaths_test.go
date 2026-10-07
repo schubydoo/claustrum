@@ -110,10 +110,12 @@ func TestEnsureCLIClearsOccupiedPath(t *testing.T) {
 	}
 }
 
-// A -cli-version that resolves outside -cli-dir must be refused BEFORE any
-// filesystem effect. cliPath is filepath.Join(cliDir, cliVersion) and Join
-// cleans, so "../victim" lands beside cliDir — where ensureCLI's os.RemoveAll
-// would delete it recursively and install the CLI in its place.
+// A -cli-version that resolves outside -cli-dir must be refused before the
+// install writes or removes anything at a path built from it. The sweeps of
+// the cli-dir are not behind this rule. cliPath is
+// filepath.Join(cliDir, cliVersion) and Join cleans, so "../victim" lands
+// beside cliDir — where ensureCLI's os.RemoveAll would delete it recursively
+// and install the CLI in its place.
 //
 // Measured without the guard: the victim directory and its file were destroyed
 // and replaced by the CLI binary. The reference at 5db5e4a does exactly the

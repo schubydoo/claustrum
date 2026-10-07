@@ -5317,7 +5317,15 @@ mean unbounded memory. See [`DIVERGENCES.md`](DIVERGENCES.md) → D10.
   that escapes the cli-dir
   therefore deletes unrelated data. Measured, the reference destroys the target on
   `../victim`. `link/1.0.0` through an intermediate symlink also escapes. claustrum answers
-  `cli version "…" must be a single path component` and touches nothing. That rule runs on the install path. A regular file that
+  `cli version "…" must be a single path component`. It answers before
+  the install writes or removes anything at a path built from the version. The
+  two sweeps of the cli-dir name only the cli-dir, and they are not behind this
+  rule. From the code: the `*.zst.part` sweep runs before the rule answers, and
+  the 10 minute sweep runs after the refusal. Cell P5 (Linux VM) has `-cli-version ../x`, a
+  `p.zst.part` file that is 8 days old and a `.fetch-d` file that is 20 minutes
+  old. claustrum and `89cb6289` both remove the two files and exit `0`.
+  claustrum answers the refusal, writes nothing and keeps the blob. `89cb6289`
+  installs a file at `<parent>/x`. That rule runs on the install path. A regular file that
   is already at the joined path is first run with `--version`, as the cache-hit
   check. A run that passes answers `"cliWasPresent":true` with that path, as
   on the reference. That is measured with `-cli-version ../x` on Linux against
@@ -5369,7 +5377,7 @@ Staging and cleanup:
   an entry of the cli-dir that is the home folder or holds it
   ([D2](DIVERGENCES.md#d2)). With a cli-dir that is the parent of the home
   folder, the home folder is such an entry. Each of the two removes with one
-  plain remove, so only an empty home folder is at risk there. A folder gets
+  plain remove, so a home folder with content cannot go there. A folder gets
   the two tests of the guard above. Every other kind of entry gets the lexical
   test alone. In the prune the skipped entry still takes its place in the
   order, so the other entries go as without the guard. That is claustrum's own
@@ -5379,7 +5387,7 @@ Staging and cleanup:
   three systems). claustrum keeps it in each of those cells, and every other
   entry goes as on `89cb6289`. A home folder with content stays on both (cells
   H2, the same three systems). The difference stays by the maintainer's
-  decision.
+  decision of 2026-10-07.
 - The volume of the macOS VM ignores letter case. There a `-cli-version` in
   another letter case names the folder on disk. With `-cli-version ALICE` and a
   folder `alice` that is not the home folder, both binaries replace the folder.
@@ -5455,7 +5463,11 @@ Staging and cleanup:
     - Every entry of the cli-dir counts: a file, a folder and a link. With four
       empty folders and `-cli-keep 3`, the two oldest go (row C-1, cell C-01).
       With two files and two newer empty folders, both files go (row C-5, cell
-      C-04).
+      C-04). A link takes a keep place at its own mtime (cell P2, Linux VM).
+      The cell has a new link to a file that is 6 h old, two files that are 2 h
+      and 3 h old and `-cli-keep 2`. Both files go, and the link and its target
+      stay. The control cell P2c has a new file in place of the link and gives
+      the same.
     - The order is the mtime, newest first. The keep value is how many entries
       stay. With five entries, `-cli-keep 5` removes nothing and `-cli-keep 4`
       removes the oldest (rows C-3 and C-4, cells C-03k5 and C-03k4).
@@ -5471,13 +5483,15 @@ Staging and cleanup:
     - The new CLI counts as every other entry. With two folders whose mtime is
       1 h in the future and `-cli-keep 2`, the new CLI is removed. The result
       line still carries its `cliPath` and no `cliError`, and the exit code is
-      `0` (row C-11 on Linux and macOS, cells C-11dir and C-11file on Windows).
+      `0` (row C-11 on Linux and macOS). On Windows three folders (cell
+      C-11dir) or three files (cell C-11file) with `-cli-keep 3` give the same.
       On Windows a new CLI that a process still runs stays (cell C-11b).
     - `-cli-keep 0` removes every entry that counts, the new CLI too. A folder
       with content stays. The result line still names the CLI path, with no
       `cliError`, and the exit code is `0` (cells K0a and K0b on Linux, macOS
       and Windows VMs, and cell C-13).
-    - A negative keep value ends the run where the prune starts. Cells Kneg
+    - A negative keep value ends a good install after the new CLI is in place
+      and before any entry goes. Cells Kneg
       (`-cli-keep -1`, Linux, macOS and Windows VMs): `89cb6289` installs the
       new CLI and removes the `-cli-zst` blob. Then it exits `2` with an empty
       stdout, so with no result line, and with a Go runtime error on stderr.
@@ -5506,15 +5520,23 @@ Staging and cleanup:
       prune. A fresh one stays and takes no place: `.fetch-d` and `x.zst` in
       row C-9, `.fetch-e` and `y.zst` in cell C-18. At 20 minutes the sweep
       removes both before the new CLI runs (row C-8). A row on `f6010b97`
-      showed the same for two files on a Linux VM.
+      showed the same for two files on a Linux VM. Cell P3 (Linux VM) shows it
+      for files on `89cb6289`: `.fetch-x` and `y.zst` are 1 minute old, two
+      other files are 4 h and 3 h old and `-cli-keep` is 2. The older of the
+      two other files goes, and `.fetch-x` and `y.zst` stay.
     - A `*.zst.part` name is not counted either: a file `q.zst.part` that is
-      6 days old and older than every other entry stays (cell C-18). A sweep
+      6 days old and older than every other entry stays (cell C-18). Cell P1
+      (Linux VM) has two files `a.zst.part` and `b.zst.part` that are 1 minute
+      old, a file `v1` that is 4 h old and `-cli-keep 2`. All three stay beside
+      the new CLI. The control cell P1c has the names `a.part` and `b.part`,
+      and there `b.part` and `v1` go. A sweep
       of its own removes such a name when it is more than 7 days old. A file
       that is 6 days and 23 h old stays, and one that is 7 days and 1 h old
       goes (cells Z1, Linux, macOS and Windows VMs). Cells Z6 narrow that
       bracket. A file that is 7 days and 1 s old goes (Windows VM). A file
       that is 7 days and a fraction of a second old goes (Linux and macOS
-      VMs, 0.13 to 0.76 s on macOS). A file that is 7 days minus 5 s old stays
+      VMs). On the macOS VM the two runs of `89cb6289` are 0.13 to 0.67 s at
+      the start of the process. A file that is 7 days minus 5 s old stays
       (cell Z6m, macOS VM). A file that is exactly 7 days old at the instant
       of the read is not measured, and claustrum keeps it. Row C-10 shows the
       rule for empty folders at 6 and 8 days.
@@ -5535,9 +5557,23 @@ Staging and cleanup:
       with exit code `0`, and the file is gone. Not measured: the run of cell
       Z7 on macOS and Windows. claustrum sweeps there too. Before, claustrum
       kept the file on a cache hit.
+    - That sweep takes a CLI file too. Cell P4 (Linux VM) has
+      `-cli-version 1.0.zst.part`, a blob and a CLI file of that name that is
+      8 days old. It is not a cache hit. claustrum and `89cb6289` both install
+      the version again from the blob, answer `"cliWasPresent":false` and
+      consume the blob. In the control cell P4c the file is 6 days old, and
+      both answer a cache hit.
+    - The sweep names only the cli-dir, so a `-cli-version` that claustrum
+      refuses does not stop it. In cell P5 (Linux VM, `-cli-version ../x`) a
+      `p.zst.part` file that is 8 days old is gone on claustrum and on
+      `89cb6289`. The D6 text above has the rest of that cell.
     - A cache hit with a good run does not run the 10 minute sweep. A file
       `x.zst` and a file `.fetch-d` that are 20 minutes old both stay (cells
-      Z8, Linux, macOS and Windows VMs).
+      Z8, Linux, macOS and Windows VMs). A cache hit whose `--version` run is
+      stopped at the 30 s bound runs it. Cell P6 (Linux VM): claustrum and
+      `89cb6289` both exit `0` with the `cli unresponsive` result line. The
+      files `x.zst` and `.fetch-d`, 20 minutes old, are gone after the run. A
+      `p.zst.part` file that is 8 days old was gone before the CLI started.
     - A name with the `.blob-` prefix is not counted and not removed by the
       prune. `89cb6289` counts it and removes it
       ([D18](DIVERGENCES.md#d18)). Cell C-12 (Windows VM only) has `-cli-keep 2`
@@ -5585,7 +5621,7 @@ Staging and cleanup:
   non-empty `.fetch-dir/` at every age. Unrelated files survive. Measured on a
   Linux VM. The sweep runs once whenever an
   install was attempted, and on a cache hit whose `--version` run was stopped
-  at its bound. A cache hit with a good run does not sweep (cells Z8 of
+  at its bound (cell P6 of `89cb6289`, Linux VM). A cache hit with a good run does not sweep (cells Z8 of
   `89cb6289`, Linux, macOS and Windows VMs). The `-cli-keep`
   prune runs only on success. claustrum
   stages its extract in this same `.fetch-*` namespace, until the rename. A concurrent

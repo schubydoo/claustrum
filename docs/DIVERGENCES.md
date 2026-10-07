@@ -156,7 +156,7 @@ rather than repeating them in each entry:
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a) | an honest caller legitimately targeting a path that is/contains home |
+| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The sweep and prune part: maintainer decision of 2026-10-07 | an honest caller legitimately targeting a path that is/contains home |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D4](#d4) | `files.read` refuses non-regular files | off | `-files-read-regular-only` / key | rule 4 | opt-in refuses a legit read, or default parks/OOMs the daemon in normal use |
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
@@ -237,8 +237,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   No cell covers a case-sensitive volume on macOS or a UNC path. Not measured:
   `-cli-url`.
   The sweep and the `-cli-keep` prune of `-install` have the same guard
-  (`cliEntryHoldsHome`). Each removes with one plain remove, so only an empty
-  home folder is at risk there. An entry of the cli-dir that is the home folder
+  (`cliEntryHoldsHome`). Each removes with one plain remove, so a home folder
+  with content cannot go there. An entry of the cli-dir that is the home folder
   or holds it is not removed. A folder gets the two tests above, and every
   other kind of entry gets the lexical test alone. In the prune that entry
   still takes its place in the order. That is claustrum's own choice.
@@ -247,7 +247,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   and Windows VMs). In the sweep it has the name `h.zst` and is 20 minutes old
   (cells H3, the same three systems). claustrum keeps it in each of those cells.
   A home folder with content stays on both (cells H2, the same three systems).
-  The difference stays by the maintainer's decision.
+  The difference stays by the maintainer's decision of 2026-10-07.
   This guard and `wipesHomeDir` take the home folder from `os.UserHomeDir`. That
   is the `HOME` variable, or `USERPROFILE` on Windows. With that variable unset
   or empty they refuse nothing. This follows from the code and is not measured.
@@ -303,7 +303,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   caller has a legitimate *use* for deleting home. A caller can still reach that path
   by accident, which is the point. The same holds for `-install`: no honest
   install replaces the home folder with the CLI file, and the delete is not
-  recoverable.
+  recoverable. The sweep and prune part of `-install` is not under that clause.
+  From the code: without the guard its plain remove takes at most an empty home
+  folder or a link at the home path. That part stays by the maintainer's
+  decision of 2026-10-07.
 - **Not a security boundary.** The socket + token already grant `process.spawn`
   ([SECURITY.md](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)).
   This guard stops the accidental, generated, or mistyped path. On the RPC
@@ -464,7 +467,15 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Behavior.** The install's clearing step is an `os.RemoveAll` of the CLI
   path, `<cli-dir>/<version>` (`<version>.exe` on Windows), so a version that
   reaches outside the cli-dir deletes unrelated data. claustrum answers `cli version "…"
-  must be a single path component` and touches nothing. That rule runs on the install path. A regular file that
+  must be a single path component`. It answers before
+  the install writes or removes anything at a path built from the version. The
+  two sweeps of the cli-dir name only the cli-dir, and they are not behind this
+  rule. From the code: the `*.zst.part` sweep runs before the rule answers, and
+  the 10 minute sweep runs after the refusal. Cell P5 (Linux VM) has `-cli-version ../x`, a
+  `p.zst.part` file that is 8 days old and a `.fetch-d` file that is 20 minutes
+  old. claustrum and `89cb6289` both remove the two files and exit `0`.
+  claustrum answers the refusal, writes nothing and keeps the blob. `89cb6289`
+  installs a file at `<parent>/x`. That rule runs on the install path. A regular file that
   is already at the joined path is first run with `--version`, as the cache-hit
   check. A run that passes answers `"cliWasPresent":true` with that path, as
   on the reference. That is measured with `-cli-version ../x` on Linux against
@@ -861,6 +872,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   The prune difference stays by the maintainer's decision of 2026-10-07, not by
   a rule 3 clause. The name is claustrum's own temporary name of a download in
   progress, and a download of a second install must not use a keep place.
+- **Remark: the stderr text of a negative `-cli-keep`.** This remark is not
+  part of D18, and the text has no entry of its own. A good install with a
+  negative `-cli-keep` exits `2` with no result line on `89cb6289` and on
+  claustrum (cells Kneg and Kn-2, Linux, macOS and Windows VMs). `89cb6289`
+  writes a Go runtime error to stderr there. claustrum writes one line of its
+  own: `claustrum: -cli-keep -1 is not a valid keep count`. That is the
+  maintainer's decision of 2026-10-07.
 - **Why not part of D6.** D6 guards a destructive path that leaves the cli-dir.
   D18 guards a name that claustrum itself reserves. The reasons and the reopen
   triggers differ. The number D7 is retired and is not reused.
