@@ -89,7 +89,8 @@ token did not already give. See
 `files.*` and `git.*` read and act on paths the caller supplies. They are as
 privileged as the daemon's user. Three of those paths reach a recursive delete
 (`os.RemoveAll` or `os.Root.RemoveAll`). `git.worktree_remove` uses
-`os.Root.RemoveAll`, and the rollback of `git.worktree_create` uses both:
+`os.Root.RemoveAll`. The rollback of `git.worktree_create` uses it too, and both
+on Windows:
 
 - `files.extract_tar` wipes its destination before unpacking.
 - `git.worktree_remove` deletes the worktree path, and then its entry under the
@@ -100,6 +101,8 @@ privileged as the daemon's user. Three of those paths reach a recursive delete
   That rollback happens when the caller `timeoutMs` expires during a successful
   add, the checkout or the copy step. It also happens after the post-checkout
   drain exceeds the caller `timeoutMs`, and after a failed read-tree checkout.
+  On Linux and macOS it also happens when the daemon cannot place the index of
+  the new worktree.
   After a failed `git worktree add`, the daemon only removes the worktree path
   if it is an empty directory. That removal cannot delete content.
 

@@ -175,6 +175,9 @@ component_management:
         # sourceBranch start-commit choice for git.worktree_create.
         - worktreesource.go
         - githarden.go
+        # the index file of a new worktree and the registration step of the create rollback (89cb6289).
+        - githarden_index_unix.go
+        - githarden_index_windows.go
         # the configuration listing before each hardened call and its hook pins (89cb6289).
         - gitlisting.go
         # the gate and the answer of git.status (89cb6289).

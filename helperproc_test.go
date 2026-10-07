@@ -90,6 +90,11 @@ func runGitLingering(args []string) int {
 	has := func(s string) bool { return strings.Contains(joined, s) }
 	switch {
 	case has("read-tree"):
+		// A real read-tree writes its index before it exits. The daemon fails the
+		// create when that file is gone, so the stub writes one.
+		if idx := os.Getenv("GIT_INDEX_FILE"); idx != "" {
+			_ = os.WriteFile(idx, []byte("stub index\n"), 0o644)
+		}
 		orphan := os.Getenv("CLAUSTRUM_GITSTUB_ORPHAN")
 		if orphan == "" {
 			orphan = "8"
@@ -122,7 +127,9 @@ func runGitLingering(args []string) int {
 	case has("worktree") && has("add"):
 		// Write the linked `.git` back-pointer into the (already-created) leaf — the last
 		// positional arg — so worktreeAdminDir resolves and the checkout runs.
+		// The admin directory exists, as after a real add, so the index has a place.
 		last := args[len(args)-1]
+		_ = os.Mkdir(filepath.Join(last, ".gitadmin"), 0o755)
 		_ = os.WriteFile(filepath.Join(last, ".git"),
 			[]byte("gitdir: "+filepath.Join(last, ".gitadmin")+"\n"), 0o644)
 		return 0
@@ -161,6 +168,9 @@ func runGitLingering(args []string) int {
 //   - "lock": make hsub/f and zz.txt in it, then make hsub read-only, so a
 //     delete of hsub fails for a user that is not root.
 //   - "lockparent": make its parent read-only, so the leaf cannot be removed.
+//   - "lockparents": the same for each path of a list in the form of PATH.
+//   - "nosearch": set its mode to 0600, so nothing below it can be reached.
+//   - "rmindex": delete the file that GIT_INDEX_FILE names. The leaf is not used.
 //   - "lockmany": make rN/f in it for N in the order 3 0 5 1 7 2 6 4, and make each
 //     rN read-only. Neither the first nor the last one made is r0.
 //
@@ -187,6 +197,9 @@ func runGitLingering(args []string) int {
 // GIT_COMMON_DIR, GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE, joined by 0x1f. A last
 // record separator follows, then every GIT_* entry of its environment as KEY=value,
 // in the order of the environment, joined by 0x1f.
+//
+// When CLAUSTRUM_GITSTUB_IDXMODE names a file, every call that has a GIT_INDEX_FILE
+// appends the mode of that file to it, after the real git ended.
 //
 // When CLAUSTRUM_GITSTUB_ENVLOG names a file, every call appends its working
 // directory, its argv and its whole environment, as one record that ends "\x1d\n".
@@ -302,6 +315,11 @@ func runGitSlow(args []string) int {
 		}
 		code = ee.ExitCode()
 	}
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_IDXMODE"); log != "" {
+		if fi, err := os.Stat(os.Getenv("GIT_INDEX_FILE")); err == nil {
+			appendLine(log, fmt.Sprintf("%#o", fi.Mode().Perm()))
+		}
+	}
 	if slow && (mode == "post" || mode == "postfail" || mode == "hold") {
 		if err := gitStubAction(os.Getenv("CLAUSTRUM_GITSTUB_ACTION"), os.Getenv("CLAUSTRUM_GITSTUB_LEAF")); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -414,6 +432,17 @@ func applyGitStubAction(action, leaf string) error {
 		return os.Chmod(filepath.Join(leaf, "hsub"), 0o555)
 	case "lockparent":
 		return os.Chmod(filepath.Dir(leaf), 0o555)
+	case "lockparents":
+		for _, p := range filepath.SplitList(leaf) {
+			if err := os.Chmod(filepath.Dir(p), 0o555); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "nosearch":
+		return os.Chmod(leaf, 0o600)
+	case "rmindex":
+		return os.Remove(os.Getenv("GIT_INDEX_FILE"))
 	case "lockmany":
 		for _, i := range []int{3, 0, 5, 1, 7, 2, 6, 4} {
 			dir := filepath.Join(leaf, "r"+strconv.Itoa(i))

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,7 +114,8 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 }
 
 // undoFailedCheckout rolls back git.worktree_create after the add succeeded: after
-// a failed read-tree checkout, or after the caller's timeoutMs expired during the
+// a failed read-tree checkout, a failed placement of the index (Linux and macOS),
+// or after the caller's timeoutMs expired during the
 // add, the checkout, a checkout drain that overran the drain cap, or the copy step.
 // It returns "" when the undo finished, or the text that the caller appends to the
 // frame's error. The errorCode of the frame does not change. kept is true when the
@@ -132,7 +135,21 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     (runBranchStep) on the branch that the call created. In attach mode branch is
 //     "", so no git call runs. After the attach fallback, the call created
 //     branchName. The caller's expired deadline does not stop the branch step (rows
-//     C04 and B2-10).
+//     C04 and B2-10). If the registration cannot be deleted, the branch step does
+//     not run, step C still runs, and the text is "; and the undo could not finish
+//     for <leaf>: the worktree registration and the branch remain; remove them by
+//     hand before retrying (RemoveAll <registration name>: <OS error>)". 89cb6289
+//     gives it after a failed placement of the index, with the leaf gone (rows A14
+//     and A14f on a Linux VM, A14 and A14b on a macOS VM). In attach mode the text
+//     reads "the worktree registration remains; remove it by hand before retrying
+//     (...)" instead (cell X5, Linux and macOS VMs). A step C that fails too adds
+//     no text of its own (cell X11, Linux VM). A failed read-tree checkout and a
+//     timeout during the checkout give the same clause (cells Z5 and Z6, macOS VM).
+//     The same texts after the two other timeout frames are claustrum's choice (not
+//     measured). A back-pointer that cannot be read for a permission error counts
+//     as a registration that stays, and no delete is attempted. The frame equals
+//     that of 89cb6289 (cells Z11a and Z11b, macOS VM). On Windows a registration that cannot be deleted adds no text, and
+//     the branch step runs (removeCreatedRegistration): Windows is not measured.
 //   - Step C removes the leaf directory, which is now empty. If that fails, the text
 //     is "; and the undo could not finish for <leaf>: the worktree directory remains
 //     (re-populated while undoing?); remove it by hand before retrying (removeat
@@ -156,7 +173,7 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 // claustrum's own guard (not measured): no honest input reaches it.
 func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint) (text string, kept bool) {
 	// The admin dir is found through the leaf's .git file, which step A deletes.
-	adminDir := createdWorktreeAdminDir(repo, worktreePath)
+	registration := createdWorktreeAdminDir(repo, worktreePath)
 	leafSafe := func() bool {
 		return worktreePath != "" && !wipesHomeDir(worktreePath) && verifyCreatedWorktree(worktreePath, cp) == ""
 	}
@@ -170,10 +187,13 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 			return fmt.Sprintf("; and the undo could not finish for %s: %s; remove them by hand before retrying (%s)", worktreePath, remain, detail), false
 		}
 	}
-	if adminDir != "" {
-		_ = os.RemoveAll(adminDir)
+	// A registration that cannot be deleted stays, and then the branch step does not
+	// run: 89cb6289 runs no git call after it (row A14, Linux VM).
+	var res branchStepResult
+	regErr := removeCreatedRegistration(registration)
+	if regErr == nil {
+		res = runBranchStep(repo, branch)
 	}
-	res := runBranchStep(repo, branch)
 	var parts []string
 	leafGone := false
 	if touchLeaf && leafSafe() {
@@ -182,6 +202,15 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 		} else {
 			leafGone = true
 		}
+	}
+	if regErr != nil {
+		// The registration text stands alone, also when the leaf rmdir failed too
+		// (cell X11, Linux VM). In attach mode the call made no branch (cell X5).
+		remain := "the worktree registration and the branch remain; remove them"
+		if branch == "" {
+			remain = "the worktree registration remains; remove it"
+		}
+		return fmt.Sprintf("; and the undo could not finish for %s: %s by hand before retrying (%v)", worktreePath, remain, regErr), false
 	}
 	if t := rollbackBranchText(repo, branch, res, !leafGone); t != "" {
 		parts = append(parts, t)
@@ -270,22 +299,71 @@ func worktreeRegistryDir(repo string) string {
 	return filepath.Join(common, "worktrees")
 }
 
+// createdRegistration is the registration that createdWorktreeAdminDir verified. The
+// zero value means that no registration is safe to delete.
+type createdRegistration struct {
+	// resolved is the admin dir, and registry is the registrations directory of the
+	// repo, both with their symlinks resolved. They are the two paths that the check
+	// compared, and the delete acts on them.
+	resolved, registry string
+	// registryInfo is the identity of registry at the time of the check. On Linux
+	// and macOS the delete compares it with the directory that it opened.
+	registryInfo os.FileInfo
+	// unreadable stands for the permission error of a back-pointer that the check cannot
+	// read. No other field is set then. On Linux and macOS the rollback reports it
+	// as a registration that stays, and deletes nothing.
+	unreadable error
+}
+
+// absoluteAdminDir makes admin, the gitdir value of the .git file of worktreePath,
+// an absolute path. A relative value (git writes one with
+// worktree.useRelativePaths) counts from the leaf with its symlinks resolved, as
+// the kernel reads it. The leaf as sent can reach its folder through a symlink at
+// another depth, and the ".." parts then lead to another folder.
+func absoluteAdminDir(worktreePath, admin string) string {
+	if filepath.IsAbs(admin) {
+		return admin
+	}
+	return filepath.Join(canonicalPath(worktreePath), admin)
+}
+
 // createdWorktreeAdminDir returns the admin dir (registration) of the worktree that
-// git.worktree_create built at worktreePath, or "" when it is not safe to delete.
-// The admin dir must point back at this worktree and resolve strictly inside the
-// repo's registrations directory. When baseRepo is a linked worktree, that is the main
-// repository's one.
-func createdWorktreeAdminDir(repo, worktreePath string) string {
+// git.worktree_create built at worktreePath, or the zero value when it is not safe
+// to delete. The admin dir must point back at this worktree and resolve strictly
+// inside the repo's registrations directory. When baseRepo is a linked worktree,
+// that is the main repository's one.
+//
+// Every test reads the resolved path, and the delete acts on that same path. The
+// path as the .git file spells it can hold a "link/.." pair. On Linux and macOS a
+// lexical clean of such a path names another folder than the kernel does.
+func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	adminDir := worktreeAdminDir(worktreePath)
-	if adminDir != "" && !filepath.IsAbs(adminDir) {
-		adminDir = filepath.Join(worktreePath, adminDir)
+	if adminDir == "" {
+		return createdRegistration{}
 	}
-	if adminDir != "" &&
-		worktreeAdminBelongsTo(adminDir, worktreePath) &&
-		pathStrictlyUnder(canonicalPath(adminDir), canonicalPath(worktreeRegistryDir(repo))) {
-		return adminDir
+	adminDir = absoluteAdminDir(worktreePath, adminDir)
+	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo))}
+	// The identity comes first, so it is that of the directory that the read of the
+	// back-pointer goes through.
+	info, statErr := os.Stat(reg.registry)
+	belongs, readErr := worktreeAdminBelongsTo(reg.resolved, worktreePath)
+	under := pathStrictlyUnder(reg.resolved, reg.registry)
+	if under && errors.Is(readErr, fs.ErrPermission) {
+		// No delete is attempted: the registration is not verified. The error has the
+		// shape of a failed delete, because the frame of 89cb6289 in this state ends
+		// "(RemoveAll w1: permission denied)" (cells Z11a and Z11b, macOS VM).
+		errno := readErr
+		var pe *fs.PathError
+		if errors.As(readErr, &pe) {
+			errno = pe.Err
+		}
+		return createdRegistration{unreadable: &fs.PathError{Op: "RemoveAll", Path: filepath.Base(reg.resolved), Err: errno}}
 	}
-	return ""
+	if !belongs || !under || statErr != nil {
+		return createdRegistration{}
+	}
+	reg.registryInfo = info
+	return reg
 }
 
 // verifyCreatedWorktree confirms `git worktree add` populated the very directory
