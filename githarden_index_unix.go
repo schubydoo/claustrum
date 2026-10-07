@@ -28,18 +28,27 @@ import (
 // A temporary index that is gone is a failed placement. The error reads "open
 // <src>: no such file or directory", the text of cell X1 (Linux and macOS VMs).
 //
-// The file is opened through a root at the parent of adminDir with its symlinks
-// resolved, the registrations directory. A failure of that open then reads "openat <name>/index: <OS error>",
-// the text of rows A14, A14f and A14b. A file that exists already at the index is
-// removed first, so the index is a new inode with the mode above (cell X8, Linux
-// and macOS VMs). In a registration without its write bit and with no index, that
-// remove finds no file, so the open gives the text of row A14. A remove that fails
-// for another reason fails the placement with its own error, "removeat
-// <name>/index: <OS error>", as on 89cb6289 (cells Y3 and Y7, Linux VM). A failure
-// after the open leaves the file as it is, and the rollback of the caller deletes
-// the registration. The remove takes a file, a link or an empty folder, never a
-// tree. A file that another process makes between the remove and the open fails the
-// open with "openat <name>/index: file exists" (not measured).
+// The file is made through a root at the parent of adminDir, the registrations
+// directory, so each error names "<name>/index". The order is claustrum's own, and
+// it fits every measured row of 89cb6289:
+//
+//  1. Create the file, exclusively. Any error but "file exists" is the answer:
+//     "openat <name>/index: permission denied" for a registration of mode 0500
+//     (rows A14, A14f and A14b) and for a registrations directory of mode 0600,
+//     with or without a file at the index (cells Z11a and Z11b, macOS VM), and
+//     "openat <name>/index: no such file or directory" for a registration that is
+//     gone (cell Z10, macOS VM).
+//  2. On "file exists", remove the entry with one plain remove, never a tree. A
+//     file, a symlink and an empty folder go (cells X8, Z7b and Z7a). The target of
+//     the symlink stays. A failed remove is the answer: "removeat <name>/index:
+//     permission denied" in a registration of mode 0500 (cell Y3), and "removeat
+//     <name>/index: directory not empty" for a folder that holds a file (cell Y7).
+//  3. Create the file again, exclusively. An entry that another process made in
+//     between gives "openat <name>/index: file exists" (not measured). The open
+//     does not follow a link there.
+//
+// A failure after the create leaves the file as it is, and the rollback of the
+// caller deletes the registration.
 func installWorktreeIndex(src, adminDir string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -65,12 +74,16 @@ func installWorktreeIndex(src, adminDir string) error {
 	}
 	defer func() { _ = root.Close() }()
 	name := filepath.Base(adminDir) + "/index"
-	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	create := func() (*os.File, error) {
+		return root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	}
-	// O_EXCL: a file that exists again after the remove is an error, and the open
-	// does not follow a link that another process put there.
-	out, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+	out, err := create()
+	if errors.Is(err, fs.ErrExist) {
+		if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		out, err = create()
+	}
 	if err != nil {
 		return err
 	}
@@ -99,7 +112,17 @@ func installWorktreeIndex(src, adminDir string) error {
 // refused, and nothing is deleted. git writes each registration as a direct child.
 // The zero value and a registrations directory that does not exist have nothing to
 // delete.
+//
+// A registration whose back-pointer the check cannot read for a permission
+// error is not deleted either, and that error is returned. The rollback then
+// keeps the branch and names the registration in the frame, as 89cb6289 does with
+// a registrations directory of mode 0600 (cells Z11a and Z11b, macOS VM). There the
+// detail text of 89cb6289 is "RemoveAll w1: permission denied". claustrum's is the
+// error of the read: it does not delete what it did not verify.
 func removeCreatedRegistration(reg createdRegistration) error {
+	if reg.unreadable != nil {
+		return reg.unreadable
+	}
 	if reg.resolved == "" {
 		return nil
 	}

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,8 +143,13 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 //     and A14f on a Linux VM, A14 and A14b on a macOS VM). In attach mode the text
 //     reads "the worktree registration remains; remove it by hand before retrying
 //     (...)" instead (cell X5, Linux and macOS VMs). A step C that fails too adds
-//     no text of its own (cell X11, Linux VM). The same texts after a timeout, and
-//     after a failed read-tree checkout, are claustrum's choice (not measured). On Windows a registration that cannot be deleted adds no text, and
+//     no text of its own (cell X11, Linux VM). A failed read-tree checkout and a
+//     timeout during the checkout give the same clause (cells Z5 and Z6, macOS VM).
+//     The same texts after the two other timeout frames are claustrum's choice (not
+//     measured). A back-pointer that cannot be read for a permission error counts
+//     as a registration that stays, with the error of the read as the detail
+//     (cells Z11a and Z11b, macOS VM: 89cb6289 has "RemoveAll w1: permission
+//     denied" there). On Windows a registration that cannot be deleted adds no text, and
 //     the branch step runs (removeCreatedRegistration): Windows is not measured.
 //   - Step C removes the leaf directory, which is now empty. If that fails, the text
 //     is "; and the undo could not finish for <leaf>: the worktree directory remains
@@ -303,6 +310,10 @@ type createdRegistration struct {
 	// registryInfo is the identity of registry at the time of the check. On Linux
 	// and macOS the delete compares it with the directory that it opened.
 	registryInfo os.FileInfo
+	// unreadable is the permission error of a back-pointer that the check cannot
+	// read. No other field is set then. On Linux and macOS the rollback reports it
+	// as a registration that stays, and deletes nothing.
+	unreadable error
 }
 
 // absoluteAdminDir makes admin, the gitdir value of the .git file of worktreePath,
@@ -333,7 +344,11 @@ func createdWorktreeAdminDir(repo, worktreePath string) createdRegistration {
 	}
 	adminDir = absoluteAdminDir(worktreePath, adminDir)
 	reg := createdRegistration{resolved: canonicalPath(adminDir), registry: canonicalPath(worktreeRegistryDir(repo))}
-	if !worktreeAdminBelongsTo(reg.resolved, worktreePath) || !pathStrictlyUnder(reg.resolved, reg.registry) {
+	belongs, readErr := worktreeAdminBelongsTo(reg.resolved, worktreePath)
+	if errors.Is(readErr, fs.ErrPermission) {
+		return createdRegistration{unreadable: readErr}
+	}
+	if !belongs || !pathStrictlyUnder(reg.resolved, reg.registry) {
 		return createdRegistration{}
 	}
 	info, err := os.Stat(reg.registry)

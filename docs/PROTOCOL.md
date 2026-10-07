@@ -2479,16 +2479,24 @@ claustrum opens each file without blocking and reads a regular file only.
   - Its mtime is the mtime of the temporary index, rounded up to a whole
     microsecond (every Linux row, and 15 of 15 macOS runs).
 
-  A file that exists already at the index is replaced. With a file of mode 0600
+  An entry that exists already at the index is replaced. With a file of mode 0600
   there, the index of `89cb6289` is a new inode of mode 0644 on Linux and macOS
-  VMs (cell X8). claustrum removes that file first and then makes the new one.
+  VMs (cell X8). An empty folder there is replaced by the index (cell Z7a, macOS
+  VM). A symlink there goes, its target stays, and the index is a new file (cell
+  Z7b, macOS VM).
+
+  claustrum takes this order: it creates the file exclusively, and any error but
+  "file exists" is the answer. On "file exists" it removes the entry with one
+  plain remove, and creates the file exclusively again. The order is claustrum's
+  own. It fits these eight rows of `89cb6289`: A14, Y3, Y7 and X8, and the cells
+  Z7a, Z7b, Z11a and Z11b of the macOS VM. The failed states are in the next item.
 
   Not measured: the atime, a temporary mtime that is a whole microsecond, and a
   file system with no group or mode. claustrum leaves the atime alone and keeps a
   whole microsecond. A placement that fails after a drain overrun is not measured
   either. claustrum answers it as the failed placement below. It does the same
-  when the caller `timeoutMs` expired before the placement failed. A file that
-  appears at the index between the remove and the create is not measured.
+  when the caller `timeoutMs` expired before the placement failed. An entry that
+  appears at the index between the remove and the second create is not measured.
   claustrum then fails the placement with `openat <registration name>/index: file
   exists`. Windows
   is not measured. There claustrum moves the temporary file.
@@ -2515,6 +2523,13 @@ claustrum opens each file without blocking and reads a regular file only.
     step 2 undo text follows.
   - A folder that holds one file exists at the index (cell Y7, Linux VM). The OS
     error is `removeat w1/index: directory not empty`, and the rollback runs.
+  - The registration is gone at the install (cell Z10, macOS VM). The OS error is
+    `openat w1/index: no such file or directory`, and the whole rollback runs.
+  - The registrations directory has mode 0600 after the checkout, with or without
+    a file at the index (cells Z11a and Z11b, macOS VM). The OS error is `openat
+    w1/index: permission denied`. The step 2 undo text follows, the leaf goes, and
+    the registration and the branch stay. One detail text of claustrum differs
+    there: see step 2.
 
   `<text>` is the stderr of the checkout and the OS error, joined with nothing
   between them. The text rule then applies to the joined text, so the 512-byte cut
@@ -2553,8 +2568,18 @@ claustrum opens each file without blocking and reads a regular file only.
      (RemoveAll <registration name>: <OS error>)` (cell X5, Linux and macOS VMs).
      If step 3 fails too, the frame carries the registration text alone and no
      step 3 text (cell X11, and cell Y5 for attach mode, Linux VM). Each of these cells is a failed placement of
-     the index. The same texts after a `timeout` frame, and after a failed
-     read-tree checkout, are claustrum's choice (not measured). If the registrations
+     the index. A failed read-tree checkout with a registration of mode 0500 gives
+     the same clause, and the branch stays (cell Z5, macOS VM). So does a `timeout`
+     frame of a deadline that expired during the checkout (cell Z6, macOS VM). The
+     same texts after the two other `timeout` frames are claustrum's choice (not
+     measured). A registration whose `gitdir` record is a relative path, as git
+     writes it with `worktree.useRelativePaths`, takes the same path (cell Z9b,
+     macOS VM). If claustrum cannot read that record for a permission error, it
+     does not delete the registration. It runs no branch step, and the clause
+     holds `open <registration>/gitdir: permission denied` in the parentheses.
+     That detail text is claustrum's own. `89cb6289` has `RemoveAll w1: permission
+     denied` there, with a registrations directory of mode 0600 (cells Z11a and
+     Z11b, macOS VM). The rest of the frame and the disk are equal. If the registrations
      directory cannot be opened, the text holds `open <path>: <OS error>` in place
      of `RemoveAll <registration name>: <OS error>` (not measured). On Linux and macOS claustrum
      deletes only a registration that is a direct child of the registrations

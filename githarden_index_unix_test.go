@@ -281,8 +281,8 @@ func TestRelativeAdminDirThroughSymlink(t *testing.T) {
 
 // TestInstallWorktreeIndexCleanPathTexts pins that a clean admin dir, as git writes
 // it, is not resolved first. The errors then name the registration and the file,
-// relative to the registrations directory, as every measured text does. These
-// three states are not measured.
+// relative to the registrations directory. 89cb6289 gives the first text in cell
+// Z10 and the second in cell Z11a (macOS VM). The third state is not measured.
 func TestInstallWorktreeIndexCleanPathTexts(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a mode without the search bit does not stop root")
@@ -293,8 +293,8 @@ func TestInstallWorktreeIndexCleanPathTexts(t *testing.T) {
 		make       bool
 		want       string
 	}{
-		{"registration gone", "", false, "openat w1/index: no such file or directory"},
-		{"registrations directory without search", "repo/.git/worktrees", true, "removeat w1/index: permission denied"},
+		{"Z10 registration gone", "", false, "openat w1/index: no such file or directory"},
+		{"Z11a registrations directory without search", "repo/.git/worktrees", true, "openat w1/index: permission denied"},
 		{"git dir without search", "repo/.git", true, "open <registrations>: permission denied"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -541,5 +541,145 @@ func TestWorktreeCreateTempIndexGone(t *testing.T) {
 		t.Fatalf("reply = %s\nwant %s … %s", raw, checkoutFailedHead, tail)
 	}
 	f.assertRolledBack(t, nil, false)
+	requireNoIndexTemp(t, tmp)
+}
+
+// TestInstallWorktreeIndexOrder pins the order of the install against the rows of
+// 89cb6289 that hold an entry at the index: the exclusive create first, then one
+// plain remove on "file exists", then the create again.
+//
+//   - Cell Y3 (Linux VM): a file, registration 0500: the remove fails.
+//   - Cell Y7 (Linux VM): a folder that holds a file: the remove fails.
+//   - Cell Z11b (macOS VM): a file, registrations directory 0600: the create fails
+//     first, so the text is the openat one.
+//   - Cell Z7a (macOS VM): an empty folder is replaced by the index.
+//   - Cell Z7b (macOS VM): a symlink goes, its target stays, and the index is a file.
+//
+// Rows A14, X8, Z10 and Z11a have their own tests above.
+func TestInstallWorktreeIndexOrder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a mode without the write or search bit does not stop root")
+	}
+	for _, tc := range []struct {
+		name, entry, lock, want string
+	}{
+		{"Y3", "file", "w1", "removeat w1/index: permission denied"},
+		{"Y7", "full folder", "", "removeat w1/index: directory not empty"},
+		{"Z11b", "file", "registrations", "openat w1/index: permission denied"},
+		{"Z7a", "empty folder", "", ""},
+		{"Z7b", "symlink", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src, _ := indexSource(t)
+			base := resolveTestRoot(t, t.TempDir())
+			reg := filepath.Join(base, "worktrees")
+			adminDir := filepath.Join(reg, "w1")
+			dst := filepath.Join(adminDir, "index")
+			target := filepath.Join(base, "target")
+			writeFile(t, target, "target\n", 0o644)
+			switch tc.entry {
+			case "file":
+				writeFile(t, dst, "OTHER-CONTENT\n", 0o600)
+			case "full folder":
+				writeFile(t, filepath.Join(dst, "f"), "f\n", 0o644)
+			case "empty folder":
+				mkdirForTest(t, dst)
+			case "symlink":
+				mkdirForTest(t, adminDir)
+				if err := os.Symlink(target, dst); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch tc.lock {
+			case "w1":
+				chmodForTest(t, adminDir, 0o500)
+			case "registrations":
+				chmodForTest(t, reg, 0o600)
+			}
+			err := installWorktreeIndex(src, adminDir)
+			if tc.want != "" {
+				if err == nil || err.Error() != tc.want {
+					t.Errorf("installWorktreeIndex = %v, want %s", err, tc.want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("installWorktreeIndex: %v", err)
+			}
+			fi, err := os.Lstat(dst)
+			if err != nil || !fi.Mode().IsRegular() {
+				t.Fatalf("the index is not a regular file: %v, %v", fi, err)
+			}
+			if b, _ := os.ReadFile(dst); string(b) != "0123456789" {
+				t.Errorf("index = %q, want the bytes of the temporary index", b)
+			}
+			if b, _ := os.ReadFile(target); string(b) != "target\n" {
+				t.Errorf("the target of the symlink = %q, want it untouched", b)
+			}
+		})
+	}
+}
+
+// TestRelativeBackPointer pins cell Z9b (macOS VM). git wrote both records as
+// relative paths, and the worktree root is a symlink three levels deeper than its
+// target. The rollback check must find the registration, so that the rollback
+// takes the same path as in row A14. The two values are those of the cell.
+func TestRelativeBackPointer(t *testing.T) {
+	base := resolveTestRoot(t, t.TempDir())
+	repo := filepath.Join(base, "T")
+	reg := filepath.Join(repo, ".git", "worktrees", "w1")
+	leaf := filepath.Join(base, "real", "cp", "w1")
+	writeFile(t, filepath.Join(reg, "gitdir"), "../../../../real/cp/w1/.git\n", 0o644)
+	writeFile(t, filepath.Join(leaf, ".git"), "gitdir: ../../../T/.git/worktrees/w1\n", 0o644)
+	deep := filepath.Join(base, "a", "b", "c")
+	mkdirForTest(t, deep)
+	if err := os.Symlink(filepath.Join(base, "real"), filepath.Join(deep, "R")); err != nil {
+		t.Fatal(err)
+	}
+	sent := filepath.Join(deep, "R", "cp", "w1")
+	if got := createdWorktreeAdminDir(repo, sent); got.resolved != reg || got.unreadable != nil {
+		t.Errorf("createdWorktreeAdminDir = %+v, want the registration %s", got, reg)
+	}
+	// A record that names another worktree is still refused.
+	writeFile(t, filepath.Join(reg, "gitdir"), "../../../../real/cp/w2/.git\n", 0o644)
+	if got := createdWorktreeAdminDir(repo, sent); got.resolved != "" || got.unreadable != nil {
+		t.Errorf("createdWorktreeAdminDir = %+v for the record of another worktree, want the zero value", got)
+	}
+}
+
+// TestWorktreeCreateRegistrationsUnreadable pins the frame and the disk of cell
+// Z11a (macOS VM), apart from one detail text. The git stub runs the real read-tree
+// and then sets the registrations directory to mode 0600. The index cannot be
+// placed, and the rollback cannot read the back-pointer of the registration. The
+// frame carries the openat text and the registration clause, the leaf goes, and
+// the registration and branch w1 stay: no branch step runs. The text in the
+// parentheses is claustrum's own, the error of the read. 89cb6289 has "RemoveAll
+// w1: permission denied" there.
+func TestWorktreeCreateRegistrationsUnreadable(t *testing.T) {
+	f, s, tmp := indexInstallFixture(t)
+	t.Cleanup(func() { _ = os.Chmod(f.regDir, 0o755) })
+	t.Setenv("CLAUSTRUM_GITSTUB_ACTION", "nosearch")
+	t.Setenv("CLAUSTRUM_GITSTUB_LEAF", f.regDir)
+	slowGit(t, "read-tree", "post", 0, `hint: synthetic\n`, "")
+
+	raw, _ := f.create(t, s, "w1", "", 0)
+	if err := os.Chmod(f.regDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mid := strings.Trim(jsonString(t, " openat w1/index: permission denied; and the undo could not finish for "+f.leaf()+
+		": the worktree registration and the branch remain; remove them by hand before retrying (open "), `"`)
+	tail := `/worktrees/w1/gitdir: permission denied)","errorCode":"worktree_add_failed"}}`
+	if !strings.HasPrefix(raw, checkoutFailedHead) || !strings.Contains(raw, mid) || !strings.HasSuffix(raw, tail) {
+		t.Fatalf("reply = %s\nwant %s … %s … %s", raw, checkoutFailedHead, mid, tail)
+	}
+	if got := f.leafEntries(t); got != nil {
+		t.Errorf("leaf entries = %q, want the leaf removed", got)
+	}
+	if got := f.regs(t); !slices.Equal(got, []string{"w1"}) {
+		t.Errorf("registrations = %q, want w1 kept", got)
+	}
+	if !f.hasRef(t, "w1") {
+		t.Errorf("refs/heads/w1 was deleted, want it kept beside a registration that stays")
+	}
 	requireNoIndexTemp(t, tmp)
 }

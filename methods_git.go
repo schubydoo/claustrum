@@ -1807,17 +1807,25 @@ func worktreeAdminDir(worktreePath string) string {
 // `.git/worktrees`, so the containment check alone passes) would let the rollback
 // take that unrelated registration. git.worktree_remove verifies its entry in
 // worktreeremove.go instead.
-func worktreeAdminBelongsTo(adminDir, worktreePath string) bool {
+//
+// A relative record counts from adminDir. git writes one with
+// worktree.useRelativePaths (cell Z9b, macOS VM). readErr is the error of a record
+// that cannot be read, and nil otherwise.
+func worktreeAdminBelongsTo(adminDir, worktreePath string) (belongs bool, readErr error) {
 	b, err := os.ReadFile(filepath.Join(adminDir, "gitdir"))
 	if err != nil {
-		return false
+		return false, err
+	}
+	record := strings.TrimSpace(string(b))
+	if !filepath.IsAbs(record) {
+		record = filepath.Join(adminDir, record)
 	}
 	// sameCanonicalPath, not ==: on Windows git writes this record with forward slashes,
 	// and once the worktree is deleted neither side can be resolved, so the two
 	// spellings differ only in slash direction. Measured against f6010b97 on a
 	// Windows 11 VM, where the reference deletes the entry.
-	return sameCanonicalPath(canonicalPathOfGone(strings.TrimSpace(string(b))),
-		canonicalPathOfGone(filepath.Join(worktreePath, ".git")))
+	return sameCanonicalPath(canonicalPathOfGone(record),
+		canonicalPathOfGone(filepath.Join(worktreePath, ".git"))), nil
 }
 
 // canonicalPathOfGone is canonicalPath for a path that possibly no longer exists. It resolves

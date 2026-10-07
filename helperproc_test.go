@@ -169,6 +169,7 @@ func runGitLingering(args []string) int {
 //     delete of hsub fails for a user that is not root.
 //   - "lockparent": make its parent read-only, so the leaf cannot be removed.
 //   - "lockparents": the same for each path of a list in the form of PATH.
+//   - "nosearch": set its mode to 0600, so nothing below it can be reached.
 //   - "rmindex": delete the file that GIT_INDEX_FILE names. The leaf is not used.
 //   - "lockmany": make rN/f in it for N in the order 3 0 5 1 7 2 6 4, and make each
 //     rN read-only. Neither the first nor the last one made is r0.
@@ -438,6 +439,8 @@ func applyGitStubAction(action, leaf string) error {
 			}
 		}
 		return nil
+	case "nosearch":
+		return os.Chmod(leaf, 0o600)
 	case "rmindex":
 		return os.Remove(os.Getenv("GIT_INDEX_FILE"))
 	case "lockmany":
