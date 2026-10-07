@@ -63,8 +63,8 @@ func e4321(kind int) []pruneEntry {
 // on every system. The one exception is the read-only folder of cell C-05.
 //
 // The cells of the second round follow them. "LMW" cells ran on Linux, macOS
-// and Windows VMs, "MW" cells on macOS and Windows VMs and "L" cells on a Linux
-// VM. The Windows cells have ".exe" names, which changes no result here.
+// and Windows VMs, and "MW" cells on macOS and Windows VMs. The Windows cells
+// have ".exe" names, which changes no result here.
 //
 // Not covered here, because the fixture needs a second process or a system
 // program: the Windows cells C-06 (a junction), C-08 to C-10 and C-11b (a file
@@ -210,6 +210,14 @@ func TestPruneRows(t *testing.T) {
 			{"v2", pruneFile, 3 * pruneHour}, {"v3", pruneFile, 2 * pruneHour},
 			{"v4", pruneFile, 1 * pruneHour},
 		}, want: []string{pruneCLIName, "f0", "v3", "v4"}},
+		// Cells F2 show that a folder with content takes a keep place. The
+		// folder is newer than the three files, so with keep 2 the new CLI and
+		// the folder hold both places and all three files go. Without a place
+		// for the folder, v3 stays.
+		{id: "LMW/F2", keep: 2, before: []pruneEntry{
+			{"fd", pruneFullDir, 30 * pruneMin}, {"v1", pruneFile, 4 * pruneHour},
+			{"v2", pruneFile, 3 * pruneHour}, {"v3", pruneFile, 2 * pruneHour},
+		}, want: []string{pruneCLIName, "fd"}},
 		{id: "LMW/Z1", keep: 3, before: []pruneEntry{
 			{"a.zst.part", pruneFile, 6 * pruneDay}, {"b.zst.part", pruneFile, 7*pruneDay - pruneHour},
 			{"c.zst.part", pruneFile, 7*pruneDay + pruneHour}, {"d.zst.part", pruneFile, 8 * pruneDay},
@@ -220,10 +228,10 @@ func TestPruneRows(t *testing.T) {
 		{id: "LMW/Z3", keep: 3, before: []pruneEntry{
 			{"X.ZST.PART", pruneFile, 9 * pruneDay}, {"x.ZST", pruneFile, 9 * pruneDay},
 		}, want: []string{pruneCLIName, "X.ZST.PART", "x.ZST"}},
-		{id: "L/Z4a", keep: 3, before: []pruneEntry{
+		{id: "LMW/Z4a", keep: 3, before: []pruneEntry{
 			{"p.zst.part", pruneFile, 8 * pruneDay},
 		}, run: pruneFailedInstall, want: nil},
-		{id: "L/Z4b", keep: 3, before: []pruneEntry{
+		{id: "LMW/Z4b", keep: 3, before: []pruneEntry{
 			{"p.zst.part", pruneFile, 8 * pruneDay},
 		}, run: pruneCacheHit, want: []string{pruneCLIName}},
 		// Cells B1 are the second row where claustrum differs (D18). 89cb6289
@@ -598,8 +606,9 @@ func TestHousekeepingSkipsTheHomeFolder(t *testing.T) {
 // the four files stay. The exit code is 2 and stdout is empty. The one stderr
 // line is claustrum's own.
 //
-// The two other cases are not measured. No prune runs on a cache hit or after a
-// failed install, so claustrum prints the result line and does not exit there.
+// Cells Kn-fail and Kn-hit (the same three systems): after a failed install and
+// on a cache hit, 89cb6289 prints the result line and exits 0, and the four
+// files stay. No prune runs there, so claustrum does the same.
 func TestInstallNegativeKeep(t *testing.T) {
 	const version = "9.9.9"
 	setup := func(t *testing.T) (dir, blob string) {
@@ -664,7 +673,7 @@ func TestInstallNegativeKeep(t *testing.T) {
 		}
 	})
 
-	t.Run("failed install, not measured", func(t *testing.T) {
+	t.Run("failed install, cells Kn-fail", func(t *testing.T) {
 		dir, blob := setup(t)
 		if err := os.WriteFile(blob, zstdOf(t, fakeCLI(t, 1)), 0o600); err != nil {
 			t.Fatal(err)
@@ -678,7 +687,7 @@ func TestInstallNegativeKeep(t *testing.T) {
 		}
 	})
 
-	t.Run("cache hit, not measured", func(t *testing.T) {
+	t.Run("cache hit, cells Kn-hit", func(t *testing.T) {
 		dir, _ := setup(t)
 		cli := installCLIPath(dir, version)
 		if err := os.WriteFile(cli, fakeCLI(t, 0), 0o755); err != nil {
