@@ -15,7 +15,7 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 | `baseRepo` | yes | The repository. |
 | `branchName` | yes | The branch to create. It is required with `existingBranch` too. An attach that succeeds does not use it. |
 | `worktreePath` | yes | The directory of the new worktree. It must not exist. |
-| `sourceBranch` | no | The branch that the new branch starts from. The default is the current branch. An attach to `existingBranch` does not use it. A name that matches no branch is not an error: see [Response](#response). |
+| `sourceBranch` | no | The name that the new branch starts from. The daemon reads it as a local branch and as `origin/<name>`. The default is the current branch. An attach to `existingBranch` does not use it. A name that matches no branch is not an error: see [Response](#response). |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Linux and macOS only. |
 | `timeoutMs` | no | A deadline over the add, the checkout and the copy step. The checks before the add are not under it. With no value or `0` there is no deadline. |
@@ -35,7 +35,9 @@ Success:
 
 `path` is `worktreePath` as sent. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`.
 
-If the daemon created a branch, `sourceBranch` is the branch that the new branch started from. If the value as sent named neither a local branch nor a branch of `origin`, that is not an error. The new branch then starts at HEAD, and the response holds the current branch, not the value as sent. Compare the value that you sent with the value in the response. On a detached HEAD, the response then has no `sourceBranch`. That applies to a request with a `sourceBranch` and to a request without one.
+If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, the daemon selects one of them. It selects `origin/<name>` in most states. For example, a local branch that is behind `origin/<name>` or equal to it gives `origin/<name>`. The response holds the name as sent in each case. So the response does not say which of the two refs the new branch started from. The [measurement record](../record/git-worktree-create.md) has the rules.
+
+If the value as sent named neither a local branch nor a branch of `origin`, that is not an error. The new branch then starts at HEAD, and the response holds the current branch, not the value as sent. Compare the value that you sent with the value in the response. On a detached HEAD, the response then has no `sourceBranch`. That applies to a request with a `sourceBranch` and to a request without one.
 
 If the daemon attached to `existingBranch`, it did not use `sourceBranch`. The worktree is on the attached branch. The response can still have a `sourceBranch`, and it then says nothing about the worktree.
 
