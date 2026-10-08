@@ -492,3 +492,95 @@ func TestDocsCapabilityFeatures(t *testing.T) {
 		t.Errorf("the features array of docs/PROTOCOL.md differs from capabilityFeatures in methods_server.go: make the array in the server.capabilities row read\n%s\nit reads\n%s", strings.Join(want, ", "), strings.Join(doc, ", "))
 	}
 }
+
+var (
+	docErrorCodeRE    = regexp.MustCompile(`ErrorCode:\s+"([a-z_]+)"`)
+	docCodeReturnRE   = regexp.MustCompile(`(?m)^\s*return .*,\s*"([a-z_]+)"$|^\s+[^/\n]*\),\s*"([a-z_]+)"$`)
+	docCodeResultSigs = regexp.MustCompile(`\bcode string\)`)
+	// A span may give the code as errorCode:"x", as the error catalog does.
+	docErrorCodeSpanRE = regexp.MustCompile(`errorCode"?\s*:\s*"([a-z_]+)"`)
+)
+
+// sendableErrorCodes returns each errorCode that the non-test files can put in a
+// response, with the file that names it first. It sees two forms: the literal in
+// "ErrorCode: "x"", and the last string of a return line in a file whose functions
+// return a "code string" result (worktreeexternal_unix.go), which feeds the field.
+func sendableErrorCodes(t *testing.T) map[string]string {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no .go files found in the package directory: %v", err)
+	}
+	codes := map[string]string{}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		text := docRead(t, file)
+		for _, m := range docErrorCodeRE.FindAllStringSubmatch(text, -1) {
+			if _, ok := codes[m[1]]; !ok {
+				codes[m[1]] = file
+			}
+		}
+		if docCodeResultSigs.MatchString(text) {
+			for _, m := range docCodeReturnRE.FindAllStringSubmatch(text, -1) {
+				c := m[1] + m[2]
+				if _, ok := codes[c]; !ok {
+					codes[c] = file
+				}
+			}
+		}
+	}
+	return codes
+}
+
+// TestDocsEveryErrorCodeIsDocumented: each errorCode that the code can send is a
+// code span in docs/PROTOCOL.md or in a page of docs/protocol/. In the other
+// direction, a table with the header "| `errorCode` | Meaning |" on a method page
+// lists only codes that the code can send.
+func TestDocsEveryErrorCodeIsDocumented(t *testing.T) {
+	codes := sendableErrorCodes(t)
+	if len(codes) == 0 {
+		t.Fatal("found no errorCode in the non-test .go files: the way the code sets the field changed, update docs_consistency_test.go")
+	}
+	pages, err := filepath.Glob(filepath.Join("docs", "protocol", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := map[string]bool{}
+	texts := []string{docRead(t, "docs", "PROTOCOL.md")}
+	for _, p := range pages {
+		texts = append(texts, docRead(t, p))
+	}
+	for _, text := range texts {
+		for _, sp := range docSpans(text) {
+			named[strings.Trim(sp, `"`)] = true
+			for _, m := range docErrorCodeSpanRE.FindAllStringSubmatch(sp, -1) {
+				named[m[1]] = true
+			}
+		}
+	}
+	for c, file := range codes {
+		if !named[c] {
+			t.Errorf("the code can send errorCode %q (%s), but no document names it: add it to the error table of its method page under docs/protocol/, or to the error catalog of docs/PROTOCOL.md", c, file)
+		}
+	}
+	for i, p := range pages {
+		inTable := false
+		for _, line := range strings.Split(texts[i+1], "\n") {
+			switch {
+			case strings.HasPrefix(line, "| `errorCode` | Meaning |"):
+				inTable = true
+			case inTable && strings.HasPrefix(line, "|---"), inTable && strings.HasPrefix(line, "| ---"):
+			case inTable && strings.HasPrefix(line, "|"):
+				cells := strings.Split(line, "|")
+				code := strings.Trim(strings.TrimSpace(cells[1]), "`")
+				if _, ok := codes[code]; !ok {
+					t.Errorf("%s lists errorCode %q, which the code cannot send: delete the row, or fix the code", filepath.ToSlash(p), code)
+				}
+			default:
+				inTable = false
+			}
+		}
+	}
+}
