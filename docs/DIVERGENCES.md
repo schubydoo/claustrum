@@ -1239,7 +1239,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   to `rev-parse --absolute-git-dir`, the guard does not run.
 - **Reopen trigger.** A measurement that shows the reference keeping such a
   folder. Or a decision to match the disk of cells B6 and B6b.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → git.worktree_create. Evidence in
+- **Pointers.** The [measurement record of git.worktree_create](record/git-worktree-create.md). Evidence in
   `scratch/i429/s37-linux-rollback-probe/REPORT.md` and in `raw/cells/B6.md` and
   `raw/cells/B6b.md` beside it. The macOS round is in
   `scratch/i429/s40-macos-rollback-val/REPORT.md`. The rounds of the final build are in

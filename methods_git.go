@@ -733,7 +733,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// branch. When the daemon's own environment carries GIT_COMMON_DIR, the refusal
 	// text is wrapped as a failed add. The check of the daemon's own GIT_CONFIG_COUNT
 	// comes after a trust refusal and before the "no repository" answer
-	// (docs/PROTOCOL.md).
+	// (docs/record/git-worktree-create.md).
 	t := requestGitDirTrust(repo, false)
 	if t.verdict == gitDirRefused {
 		msg := t.refusal
@@ -838,7 +838,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 		// The root-chain step comes before the owner and write refusals of the root.
 		// The <directory> symlink refusal comes after them, then the <directory> step.
-		// docs/PROTOCOL.md gives the measured order.
+		// docs/record/git-worktree-create.md gives the measured order.
 		dir, msg, code := externalChainCheck(p.WorktreeRoot, p.WorktreePath)
 		if msg != "" {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: code})

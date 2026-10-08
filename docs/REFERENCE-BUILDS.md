@@ -210,7 +210,7 @@ change was reconciled later, under issue 408.
    than create one. The result gains a `branch` field, and `server.capabilities`
    gains the matching feature. An absent or empty value keeps the create-a-branch
    behavior, which is parity.
-   [PROTOCOL.md → git.worktree_create](PROTOCOL.md) holds the frames.
+   The [measurement record of git.worktree_create](record/git-worktree-create.md) holds the frames.
 
 **Off-wire.** These source changes move no client-visible frame. Four are subsystems.
 One is a CLI mode. One raises the inherited file limit. A closing note covers windows.

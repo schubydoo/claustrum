@@ -18,12 +18,12 @@ If a step fails after git made the worktree, the daemon removes what it made.
 | `sourceBranch` | no | The branch that the new branch starts from. The default is the current branch. |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName`. |
 | `worktreeRoot` | no | A location outside the repository. Linux and macOS only. |
-| `timeoutMs` | no | A deadline for the whole request. With no value or `0` there is no deadline. |
+| `timeoutMs` | no | A deadline over the add, the checkout and the copy step. The checks before the add are not under it. With no value or `0` there is no deadline. |
 
 Where the worktree can go:
 
 - Without `worktreeRoot`, `worktreePath` must be an absolute path inside `baseRepo`. The usual place is `<baseRepo>/.claude/worktrees/<name>`.
-- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. The root must belong to the user of the daemon. Its group and other users must have no write access to it.
+- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. The root must belong to the user of the daemon, and other users must have no write access to it. If the group of the root is the private group of that user, the group can have write access. The daemon judges the directories above the root too, and none of them can be inside a git checkout. The [measurement record](../record/git-worktree-create.md) has the exact rules.
 
 ## Response
 
@@ -46,11 +46,14 @@ Decide by `errorCode`, not by the text.
 | `errorCode` | Meaning |
 |---|---|
 | `unsafe_path` | The daemon refuses a path. For example, `worktreePath` is relative, has a `..` component, is outside `baseRepo`, or exists. A `worktreeRoot` that is not safe gives this code too. So does a worktree that git registered in an unexpected place. |
+| `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link, for example a symlinked `.claude` or `.claude/worktrees`. |
 | `not_a_repo` | `baseRepo` is not a git repository. |
-| `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees. |
+| `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
 | `mkdir_failed` | The daemon cannot create the parent directory of `worktreePath`. |
-| `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git. |
+| `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git. If the daemon did not let git start, the text holds the refusal of the daemon. |
 | `timeout` | The deadline of `timeoutMs` expired. |
+
+These seven are all the codes of this method.
 
 A request with no `branchName` gets the JSON-RPC error `-32602`.
 
@@ -58,7 +61,18 @@ The exact texts are in the [error-string catalog](../PROTOCOL.md#error-string-ca
 
 ## After a failure
 
-If the failure comes after `git worktree add`, the daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. Two cases differ:
+What stays on disk depends on where the request failed.
+
+| Failure | What the daemon leaves |
+|---|---|
+| A refusal before `git worktree add` | Nothing. The daemon made no worktree, no registration and no branch. |
+| `git worktree add` fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
+| A test of the new registration fails after the add (`unsafe_path`, Linux and macOS) | Everything. The daemon rolls nothing back. The worktree directory, the registration and the branch stay. |
+| The checkout fails, or the deadline expires (`worktree_add_failed`, `timeout`) | Nothing, in the usual case. The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
+
+If the worktree directory stays, a second request with the same `worktreePath` gets `unsafe_path`, because the path exists.
+
+Two more cases apply to a rollback:
 
 - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
 - If the daemon cannot remove something, the error text ends with a clause that says what remains.
