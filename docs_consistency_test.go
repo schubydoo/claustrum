@@ -122,7 +122,7 @@ var docNotMethods = map[string]string{
 	"git.exe":        "the Windows git program, inside an error text",
 }
 
-// TestDocsNoPhantomMethod: a span like `git.foo` in the documents is a method, an
+// TestDocsNoPhantomMethod: a span like `git.<name>` in the documents is a method, an
 // advertised feature, a wildcard like `git.*`, or an entry of docNotMethods.
 func TestDocsNoPhantomMethod(t *testing.T) {
 	known := map[string]bool{}
@@ -159,22 +159,54 @@ func TestDocsNoPhantomMethod(t *testing.T) {
 	}
 }
 
-// TestDocsNoPhantomMethodInWirelogComment: the comments of wirelog.go name only
-// real methods. Only this file is scanned, because other comments name files.
-func TestDocsNoPhantomMethodInWirelogComment(t *testing.T) {
-	known := map[string]bool{}
+// docGoNameRE finds <namespace>.<name> words in Go comments and flag usage strings.
+var docGoNameRE = regexp.MustCompile(`\b(?:server|files|git|launcher|process|plugins)\.[a-z][A-Za-z_]*(?:\.[A-Za-z_]+)*\b\*?`)
+
+// docGoNotMethods lists the words of Go text that look like a method and are not.
+// A word that ends in ".go", ".exe" or "*", or holds ".log", is a file name or a
+// glob and needs no entry.
+var docGoNotMethods = map[string]string{
+	"git.list_branch":                "a deliberate typo that a comment of shutdown_auth_test.go gives as an example",
+	"server.capabilities.instanceId": "the instanceId member of the server.capabilities result, named in a comment of pipetransport.go",
+	"server.run":                     "the run method of the server type, named in a comment of pipetransport_other.go",
+}
+
+// TestDocsNoPhantomMethodInGoText: the `//` comments of every .go file of the
+// package, and the usage strings of the flag definitions in the non-test files,
+// name only real methods or advertised features. String literals of test files
+// are not scanned, because a test frame may use any method name.
+func TestDocsNoPhantomMethodInGoText(t *testing.T) {
+	known := map[string]bool{"git.worktree.external_root": true}
 	for _, m := range capabilityMethods {
 		known[m] = true
 	}
-	re := regexp.MustCompile(`\b(?:server|files|git|launcher|process|plugins)\.[a-z][A-Za-z_]*\b`)
-	for i, line := range strings.Split(docRead(t, "wirelog.go"), "\n") {
-		idx := strings.Index(line, "//")
-		if idx < 0 {
-			continue
+	for _, f := range capabilityFeatures {
+		known[f] = true
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no .go files found in the package directory: %v", err)
+	}
+	flagDefRE := regexp.MustCompile(`flag\.[A-Za-z0-9]+\(`)
+	check := func(file string, n int, text string) {
+		for _, name := range docGoNameRE.FindAllString(text, -1) {
+			if known[name] || strings.HasSuffix(name, ".go") || strings.HasSuffix(name, ".exe") || strings.Contains(name, ".log") || strings.HasSuffix(name, "*") {
+				continue
+			}
+			if _, ok := docGoNotMethods[name]; ok {
+				continue
+			}
+			t.Errorf("%s line %d names `%s`, which is no method and no advertised feature: name a real method", file, n, name)
 		}
-		for _, name := range re.FindAllString(line[idx:], -1) {
-			if !known[name] && !strings.HasSuffix(name, ".go") {
-				t.Errorf("wirelog.go line %d names the method %q, which does not exist: name a real method", i+1, name)
+	}
+	for _, file := range files {
+		isTest := strings.HasSuffix(file, "_test.go")
+		for i, line := range strings.Split(docRead(t, file), "\n") {
+			if idx := strings.Index(line, "//"); idx >= 0 {
+				check(file, i+1, line[idx:])
+			}
+			if !isTest && flagDefRE.MatchString(line) {
+				check(file, i+1, line)
 			}
 		}
 	}
@@ -325,7 +357,7 @@ func TestDocsSiteListsEveryDocument(t *testing.T) {
 	index := docRead(t, "docs", "index.md")
 	for _, f := range docFiles(t) {
 		rel, ok := strings.CutPrefix(f, "docs/")
-		if !ok || rel == "index.md" || strings.HasSuffix(f, "requirements.txt") {
+		if !ok || rel == "index.md" {
 			continue
 		}
 		if !nav[rel] {
@@ -349,7 +381,13 @@ func TestDocsSiteListsEveryDocument(t *testing.T) {
 	}
 }
 
-var docFlagDefRE = regexp.MustCompile(`flag\.[A-Za-z0-9]+\(\s*"([a-z0-9-]+)"`)
+// docFlagDefRE finds a flag name in both forms: flag.String("name", ...) and
+// flag.StringVar(&x, "name", ...).
+var docFlagDefRE = regexp.MustCompile(`flag\.[A-Za-z0-9]+\((?:[^,"]*,\s*)?"([a-z0-9-]+)"`)
+
+// docExpectedFlagCount is the number of flags that main.go defines today. Update
+// it when a flag is added or removed, and document the new flag in PROTOCOL.md.
+const docExpectedFlagCount = 27
 
 // docUndocumentedFlags lists flags that the documents deliberately leave out.
 var docUndocumentedFlags = map[string]string{}
@@ -359,8 +397,8 @@ var docUndocumentedFlags = map[string]string{}
 // as `-wire-log <path>`.
 func TestDocsEveryFlagIsDocumented(t *testing.T) {
 	defs := docFlagDefRE.FindAllStringSubmatch(docRead(t, "main.go"), -1)
-	if len(defs) < 10 {
-		t.Fatalf("main.go: found only %d flag definitions: the way flags are defined changed, update docFlagDefRE in docs_consistency_test.go", len(defs))
+	if len(defs) != docExpectedFlagCount {
+		t.Fatalf("main.go defines %d flags by the pattern docFlagDefRE, but the test expects %d: update docExpectedFlagCount in docs_consistency_test.go (a flag was added or removed, or its definition no longer matches the pattern)", len(defs), docExpectedFlagCount)
 	}
 	var spans []string
 	for _, f := range []string{"docs/PROTOCOL.md", "README.md"} {
@@ -395,6 +433,7 @@ type docPinSentence struct {
 var docPinSentences = []docPinSentence{
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("claustrum follows `([0-9a-f]+)`, the build that `scripts/UPSTREAM_SHA` names")},
 	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("The build pinned today, `([0-9a-f]+)`")},
+	{"docs/UPSTREAM-TRACKING.md", regexp.MustCompile("the current baseline, `([0-9a-f]+)`")},
 	{"docs/REFERENCE-BUILDS.md", regexp.MustCompile("\\| Reference SHA \\| Built \\(UTC\\) \\| Wire changes \\| Reconciled in \\| \\|---\\|---\\|---\\|---\\| \\| `([0-9a-f]+)…`")},
 }
 
@@ -415,5 +454,41 @@ func TestDocsPinnedBuild(t *testing.T) {
 		if len(m[1]) < 8 || !strings.HasPrefix(pin, m[1]) {
 			t.Errorf("%s names the pinned build %s, but scripts/UPSTREAM_SHA holds %s: change the hash to %s", s.file, m[1], pin, pin[:8])
 		}
+	}
+}
+
+// TestDocsCapabilityFeatures: the features array in the server.capabilities row of
+// docs/PROTOCOL.md equals capabilityFeatures, name for name and in order. The
+// document shows the unix list. On Windows externalRootCapabilityFeatures is empty,
+// so the test puts git.worktree.external_root back where methods_server.go appends
+// it (from the code: after the fixed names, before server.instance_id).
+func TestDocsCapabilityFeatures(t *testing.T) {
+	const ext = "git.worktree.external_root"
+	var row string
+	for _, line := range strings.Split(docRead(t, "docs", "PROTOCOL.md"), "\n") {
+		if strings.HasPrefix(line, "| `server.capabilities` |") {
+			row = line
+			break
+		}
+	}
+	m := regexp.MustCompile(`"features":\[([^\]]*)\]`).FindStringSubmatch(row)
+	if m == nil {
+		t.Fatal("docs/PROTOCOL.md has no \"| `server.capabilities` |\" row with a \"features\":[…] array: restore the row, or update docs_consistency_test.go")
+	}
+	var doc []string
+	for _, q := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(m[1], -1) {
+		doc = append(doc, q[1])
+	}
+	want := append([]string(nil), capabilityFeatures...)
+	hasExt := false
+	for _, f := range want {
+		hasExt = hasExt || f == ext
+	}
+	if !hasExt {
+		last := len(want) - 1
+		want = append(want[:last:last], ext, want[last])
+	}
+	if strings.Join(doc, " ") != strings.Join(want, " ") {
+		t.Errorf("the features array of docs/PROTOCOL.md differs from capabilityFeatures in methods_server.go: make the array in the server.capabilities row read\n%s\nit reads\n%s", strings.Join(want, ", "), strings.Join(doc, ", "))
 	}
 }
