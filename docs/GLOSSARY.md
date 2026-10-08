@@ -64,7 +64,7 @@ damage. If the input is dangerous, the guard refuses it. For example,
 
 ## identity
 
-Noun. This term has two uses:
+Noun. This term has three uses:
 
 - The identity of a file or a directory is the value by which the OS
   identifies it. Two paths with the same identity lead to the same object.
