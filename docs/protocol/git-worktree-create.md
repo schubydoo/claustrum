@@ -15,7 +15,7 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 | `baseRepo` | yes | The repository. |
 | `branchName` | yes | The branch to create. It is required with `existingBranch` too. |
 | `worktreePath` | yes | The directory of the new worktree. It must not exist. |
-| `sourceBranch` | no | The branch that the new branch starts from. The default is the current branch. |
+| `sourceBranch` | no | The branch that the new branch starts from. The default is the current branch. A name that matches no branch is not an error: see [Response](#response). |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName`. |
 | `worktreeRoot` | no | A location outside the repository. Linux and macOS only. |
 | `timeoutMs` | no | A deadline over the add, the checkout and the copy step. The checks before the add are not under it. With no value or `0` there is no deadline. |
@@ -33,7 +33,9 @@ Success:
 {"success": true, "path": "/repo/.claude/worktrees/w1", "sourceBranch": "main", "branch": "feature"}
 ```
 
-`path` is `worktreePath` as sent. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`. On a detached HEAD with no `sourceBranch`, the response has no `sourceBranch`.
+`path` is `worktreePath` as sent. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`.
+
+`sourceBranch` is the branch that the new branch started from. It holds the value as sent only if that value named a local branch or a branch of `origin`. If the value named neither, that is not an error. The new branch then starts at HEAD, and the response holds the current branch. Compare the value that you sent with the value in the response. On a detached HEAD, the response then has no `sourceBranch`. That applies to a request with a `sourceBranch` and to a request without one.
 
 Failure:
 
