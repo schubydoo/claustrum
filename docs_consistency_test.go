@@ -168,13 +168,14 @@ var docGoNameRE = regexp.MustCompile(`\b(?:server|files|git|launcher|process|plu
 var docGoNotMethods = map[string]string{
 	"git.list_branch":                "a deliberate typo that a comment of shutdown_auth_test.go gives as an example",
 	"server.capabilities.instanceId": "the instanceId member of the server.capabilities result, named in a comment of pipetransport.go",
-	"server.run":                     "the run method of the server type, named in a comment of pipetransport_other.go",
+	"server.run":                     "the run method of the server type, named in comments of pipetransport_other.go and pipetransport_windows.go",
 }
 
 // TestDocsNoPhantomMethodInGoText: the `//` comments of every .go file of the
 // package, and the usage strings of the flag definitions in the non-test files,
-// name only real methods or advertised features. String literals of test files
-// are not scanned, because a test frame may use any method name.
+// name only real methods or advertised features. The test reads each line from
+// its first `//` to the end. It reads no other text of a test file, because a
+// test frame may use any method name.
 func TestDocsNoPhantomMethodInGoText(t *testing.T) {
 	known := map[string]bool{"git.worktree.external_root": true}
 	for _, m := range capabilityMethods {
@@ -437,8 +438,9 @@ var docPinSentences = []docPinSentence{
 	{"docs/REFERENCE-BUILDS.md", regexp.MustCompile("\\| Reference SHA \\| Built \\(UTC\\) \\| Wire changes \\| Reconciled in \\| \\|---\\|---\\|---\\|---\\| \\| `([0-9a-f]+)…`")},
 }
 
-// TestDocsPinnedBuild: each place that names the current pinned reference build
-// names the build that scripts/UPSTREAM_SHA holds. A ledger hash is the short form
+// TestDocsPinnedBuild: each sentence of docPinSentences names the build that
+// scripts/UPSTREAM_SHA holds. Other sentences that name the pin are not tested.
+// A ledger hash is the short form
 // of the pin, so the pin has to start with it.
 func TestDocsPinnedBuild(t *testing.T) {
 	pin := strings.TrimSpace(docRead(t, "scripts", "UPSTREAM_SHA"))

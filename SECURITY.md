@@ -151,7 +151,9 @@ Details for the three surfaces that need more than a row:
   payloads are arguments, file contents, and the `process.spawn` environment.
   Redaction is by key, on the `auth` member and on token-like env keys. It
   therefore withholds those keys, but it cannot find a credential embedded in a
-  free-form payload string. Anyone who reads the file gains what the client sent.
+  free-form payload string. Anyone who reads the file gains what the client
+  sent and what the daemon sent back, such as file contents and the output of
+  each child.
   Keep the flag off unless you need it. Store a capture with the same care as the
   socket token.
 - `-listen-pipe`: the pipe carries an owner-only DACL, in SDDL
