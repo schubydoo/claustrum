@@ -2566,21 +2566,7 @@ claustrum opens each file without blocking and reads a regular file only.
 #### git.worktree_create
 `{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}`
 
-The method makes a linked git worktree for a new or an existing branch, and then copies the ignored files that the repository lists.
-It runs on Linux, macOS and Windows.
-A failure after the add rolls the worktree back, and a failure frame can end with `"branchKept":true`.
-
-| Parameter | Required | Meaning |
-|---|---|---|
-| `baseRepo` | listed as required | The repository. When it is absent, the daemon uses its cwd repo. |
-| `branchName` | required | The branch to create. It is required even with `existingBranch`. |
-| `worktreePath` | required | Where to put the worktree. |
-| `sourceBranch` | optional | Picks the start commit of the new branch. |
-| `existingBranch` | optional | Attaches the worktree to an existing local branch. |
-| `worktreeRoot` | optional | Places the worktree outside the repository. Windows refuses it. |
-| `timeoutMs` | optional | A per-request deadline over the add, the checkout and the copy step. |
-
-The contract is on the page [git.worktree_create](protocol/git-worktree-create.md): the response, every refusal text, the order of the steps and the differences from the reference. That page links to the rules of each step and to the evidence.
+Makes a linked git worktree for a session, on a new branch or on a branch that exists. The page [git.worktree_create](protocol/git-worktree-create.md) has the parameters, the response and the error codes.
 
 #### git.worktree_remove
 `{baseRepo,worktreePath[,branchName][,worktreeRoot]}` → `{"success":true}` (lenient), or `{"success":true,"branchKept":true}` when the branch step keeps the branch
