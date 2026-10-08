@@ -63,14 +63,24 @@ The exact texts are in the [error-string catalog](../PROTOCOL.md#error-string-ca
 
 What stays on disk depends on where the request failed.
 
-| Failure | What the daemon leaves |
+A request can create three things outside the worktree, and no failure removes them:
+
+- directories above the worktree
+- the registrations directory `<git dir>/worktrees`
+- with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
+
+On Linux and macOS, a request can also remove a stale registration of this worktree path before the add.
+
+The table says what stays of the worktree itself: its directory, its registration and its branch.
+
+| Failure | What stays of the worktree |
 |---|---|
 | A refusal of the request or of a path (`not_a_repo`, `nested_base_repo`, `symlinked_component`, and `unsafe_path` for a path) | Nothing. The daemon changed nothing on disk. |
 | The daemon refuses before it runs `git worktree add` (`worktree_add_failed`) | Nothing. The daemon changed nothing on disk. |
-| The daemon cannot create a directory (`mkdir_failed`) | No worktree and no branch. A directory that the daemon made above the worktree stays. With `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level stays too. On Linux and macOS, a stale registration of this worktree path in `<baseRepo>/.git/worktrees` can be gone. |
+| The daemon cannot create a directory (`mkdir_failed`) | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
 | A test of the new worktree fails after the add. On Linux and macOS a test of its registration gives `unsafe_path`. If something replaced the worktree directory during the request, the code is `worktree_add_failed`. | Everything. The daemon rolls nothing back. The worktree directory, the registration and the branch stay. |
-| The checkout fails, or the deadline expires (`worktree_add_failed`, `timeout`) | Nothing, in the usual case. The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
+| The checkout fails, or the deadline expires (`worktree_add_failed`, `timeout`) | Nothing, apart from the two cases below the table. The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
 
 `worktree_add_failed` and `unsafe_path` each have more than one row. The code alone does not say which row applies. The error text does, and so does the disk.
 
