@@ -73,8 +73,8 @@ type wireLogOptions struct {
 var chmodWireLog = (*os.File).Chmod
 
 // newWireLog opens path for append and forces it to 0600: a capture contains
-// whatever the client sent, which for files.write or process.stdin is arbitrary
-// user data. Append rather than truncate so a daemon restart during a capture
+// the frames of both directions, which for a files.read reply or process.stdin
+// is arbitrary user data. Append rather than truncate so a daemon restart during a capture
 // session does not silently discard the earlier half — which is exactly why each
 // record carries pid; see the field's comment.
 //

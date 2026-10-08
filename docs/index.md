@@ -89,6 +89,8 @@ divergence.
   project keeps compatibility with the reference daemon in lock-step.
 - :material-source-branch: **[Divergences](DIVERGENCES.md)**. Every deliberate
   departure from the reference, its default, and how to activate it.
+- :material-history: **[Reference builds](REFERENCE-BUILDS.md)**. The ledger of
+  reference builds, what each one changed on the wire, and how to bump the pin.
 - :material-format-list-checks: **[Shipped ledger](IMPROVEMENTS.md)**.
   The completed hardening work, one line per item.
 
