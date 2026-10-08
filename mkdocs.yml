@@ -86,7 +86,10 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Protocol reference: PROTOCOL.md
   - Methods:
-      - git.worktree_create: protocol/git-worktree-create.md
+      - git.worktree_create:
+          - Contract: protocol/git-worktree-create.md
+          - Rules of each step: protocol/git-worktree-create-steps.md
+          - Evidence: protocol/git-worktree-create-evidence.md
   - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md
   - Upstream tracking: UPSTREAM-TRACKING.md

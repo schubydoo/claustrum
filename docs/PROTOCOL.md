@@ -2580,7 +2580,7 @@ A failure after the add rolls the worktree back, and a failure frame can end wit
 | `worktreeRoot` | optional | Places the worktree outside the repository. Windows refuses it. |
 | `timeoutMs` | optional | A per-request deadline over the add, the checkout and the copy step. |
 
-The full contract, the order of the steps, the rollback, the differences from the reference and the evidence are on the page [git.worktree_create](protocol/git-worktree-create.md).
+The contract is on the page [git.worktree_create](protocol/git-worktree-create.md): the response, every refusal text, the order of the steps and the differences from the reference. That page links to the rules of each step and to the evidence.
 
 #### git.worktree_remove
 `{baseRepo,worktreePath[,branchName][,worktreeRoot]}` → `{"success":true}` (lenient), or `{"success":true,"branchKept":true}` when the branch step keeps the branch
