@@ -134,43 +134,44 @@ The texts that the steps append, the cases of step 2 and the list of what stays 
 
 The reference build is `89cb6289` unless a row names another build.
 
-| D-number | claustrum | `89cb6289` | Link |
+| D-number or label | claustrum | `89cb6289` | Link |
 |---|---|---|---|
 | D24 | In the rollback, a directory that replaced the new registration is kept. No directory is removed. | Removes the empty `w1` (cell B6) or the directory with the files of a sibling (cell B6b). | [D24](../DIVERGENCES.md#d24) |
 | D2 | The home guard refuses an entry path that is the home directory or holds it, in the stale entry step and in the rollback. | This section does not state it. | [D2](../DIVERGENCES.md#d2) |
 | D5 | With `-git-timeout` opted in, a killed copy call loses what that call gives the pass. The response stays `{"success":true}`. | This section does not state it. | [D5](../DIVERGENCES.md#d5) |
 | D19 | On Windows, a junction at `.claude` or `.claude\worktrees` fails the parent step with `mkdir_failed`. | For a junction `<P>\J` above them, equal frames after 3 git calls (cells J-b-wt-pj, J-b-wt-pJ). | [D19](../DIVERGENCES.md#d19) |
-| open | `branchKept` comes after `sourceBranch` and `branch`. | No measured frame with `branchKept` has `sourceBranch` or `branch`. | [DIVERGENCES.md](../DIVERGENCES.md) |
-| open | The `rev-parse --show-toplevel` pair runs once with `baseRepo` as sent, before the record test refusal. | The pair runs twice with `baseRepo` as the resolved path (cells T2, T10). No frame differs. | [DIVERGENCES.md](../DIVERGENCES.md) |
-| open | Two texts of a failed placement are claustrum's own: `the registration <entry> is not the folder that was tested after the add` and `the registration <entry> has no gitdir record that names this worktree`. | No cell measured the placement for these states. | [DIVERGENCES.md](../DIVERGENCES.md) |
-| open | When an intermediate component of its destination is a symlink, a copy is dropped. | Whether the reference refuses the same is unmeasured. | [DIVERGENCES.md](../DIVERGENCES.md) |
-| open | The batch budget of the copy step counts the `-c` options as zero. The values 131 072, 24 576, 130 985 and 24 489 are a fit to measured batch counts. | Whether `f6010b97` counts the `-c` options was not measured. | [DIVERGENCES.md](../DIVERGENCES.md) |
-| open | claustrum compares the record of a stale entry by text. | The cells equal in the frame and on the disk. A tab or a CR at an end of the record, and a relative record with a `baseRepo` sent through a symlink, are not measured. | [DIVERGENCES.md](../DIVERGENCES.md) |
-| open | If `rev-parse --absolute-git-dir` gave no answer, claustrum runs none of the four tests. | Not measured. | [DIVERGENCES.md](../DIVERGENCES.md) |
-| open | On Windows, claustrum runs no registration test and moves the temporary index. | Not measured on Windows. | [DIVERGENCES.md](../DIVERGENCES.md) |
+| claustrum's choice (not measured) | `branchKept` comes after `sourceBranch` and `branch`. | No measured frame with `branchKept` has `sourceBranch` or `branch`. | |
+| | The `rev-parse --show-toplevel` pair runs once with `baseRepo` as sent, before the record test refusal. | The pair runs twice with `baseRepo` as the resolved path (cells T2, T10). No frame differs. | |
+| D24 | The text of a failed placement is claustrum's own: `the registration <entry> is not the folder that was tested after the add`. | No cell measured the placement. | [D24](../DIVERGENCES.md#d24) |
+| claustrum's own | The text of a failed placement is claustrum's own: `the registration <entry> has no gitdir record that names this worktree`. | Not stated. | |
+| claustrum's own | When an intermediate component of its destination is a symlink, a copy is dropped. | Whether the reference refuses the same is unmeasured. | |
+| not measured | The batch budget of the copy step counts the `-c` options as zero. The values 131 072, 24 576, 130 985 and 24 489 are a fit to measured batch counts. | Whether `f6010b97` counts the `-c` options was not measured. | |
+| claustrum's own | claustrum compares the record of a stale entry by text. | The cells equal in the frame and on the disk. A tab or a CR at an end of the record, and a relative record with a `baseRepo` sent through a symlink, are not measured. | |
+| not measured | If `rev-parse --absolute-git-dir` gave no answer, claustrum runs none of the four tests. | Not measured. | |
+| not measured | On Windows, claustrum runs no registration test and moves the temporary index. | Not measured on Windows. | |
 
 ## Platform differences
 
 | Behavior | Linux | macOS | Windows |
 |---|---|---|---|
 | `worktreeRoot` | Supported. | Supported. | Refused before any location test. |
-| Spelling refusal (trailing dot or space, colon) | No. | No. | Yes, before containment. |
-| `<p>` of "already exists" | Parent directory symlinks resolved, last name kept, cleaned. | Same as Linux. | On-disk letter case of each existing component. Volume name and 8.3 short name as sent. |
+| Spelling refusal (trailing dot or space, colon) | Not stated. | Not stated. | Windows only. It comes before containment. |
+| `<p>` of "already exists" | Parent directory symlinks resolved, last name kept, cleaned. | Same as Linux. | On-disk letter case of each existing component. Volume name and 8.3 short name as sent (not measured). |
 | Modes of created directories (0755 above the leaf, 0777 leaf, umask applies) | Yes. | Yes. | Not stated. |
-| Mode 0700 for directories above the leaf with `worktreeRoot` | Yes. | Yes. | Not applicable, `worktreeRoot` is refused. |
-| Junction in the path | Not applicable. | Not applicable. | Fails the parent step with `mkdir_failed`. |
-| Ancestor test, root-chain tests, root owner and write tests | Yes. | Yes. | Not applicable. |
-| Group-write test | `/etc/passwd` and `/etc/group`. A user known only to an NSS source such as LDAP counts as shared. | The same flat files. The directory service does not count. A stock user has no `/etc/passwd` line, so every group-writable root is refused. | Not applicable. |
-| Passwd name with a leading space | Does not match the user. | Not stated. | Not applicable. |
+| Mode 0700 for directories above the leaf with `worktreeRoot` | Yes. | Yes. | Not stated. `worktreeRoot` is refused. |
+| Junction in the path | Not stated. | Not stated. | Fails the parent step with `mkdir_failed`. |
+| Ancestor test, root-chain tests, root owner and write tests | Yes. | Yes. | Not stated. `worktreeRoot` is refused. |
+| Group-write test | `/etc/passwd` and `/etc/group`. A user known only to an NSS source such as LDAP counts as shared. | The same flat files. The directory service does not count. A stock user has no `/etc/passwd` line, so every group-writable root is refused. | Not stated. |
+| Passwd name with a leading space | Does not match the user. | Not stated. | Not stated. |
 | Stale entry step | Runs with `locked` test and root. | Same. | Earlier step. It compares the directory that holds the record path with `worktreePath`. No `locked` test. No root. |
-| Four registration tests, stale entry test, record test | Run. | Run. | Not run. |
+| Four registration tests, stale entry test, record test | Run. | Run. | The four tests do not run. The record test is off. The stale entry test: not stated. |
 | Case of loose and packed refs for `sourceBranch` | Not stated. | A loose ref matches in any case, also under `Origin`. A packed ref does not. | A loose ref matches in any case. A packed ref does not. |
 | `--work-tree` | New worktree, symlinks resolved. | Same as Linux. | Path as sent. |
 | Index placement | New file made exclusively. | Same as Linux. | The temporary file is moved. If the move fails, there is no index and the create succeeds. |
 | Group of the new index file | Group of a setgid directory, else the primary group. | Group of the registration directory. | Not stated. |
-| Exec error for a killed checkout with empty stderr | `signal: killed`. | `signal: killed`. | `exit status 1`. |
+| Exec error for a killed checkout with empty stderr | `signal: killed` (the text gives it as the general case). | `signal: killed` (the text gives it as the general case). | `exit status 1`. |
 | Delete of the registration in the rollback | Through a root. Direct-child and identity tests. Failed delete skips the branch step. | Same as Linux. | Deletes the resolved path. No tests. No text. The branch step runs. |
-| Cause of a failed delete in the rollback | Go OS error text, for example `permission denied`. | Same as Linux. | Open handle, working directory in the leaf, running executable, ACL, trailing dot. |
+| Cause of a failed delete in the rollback | Go OS error text, for example `permission denied`. | Same as Linux. | Measured causes: an open handle, a working directory in the leaf, a running executable. An ACL that denies the delete and a trailing dot were causes too. |
 | Batch budget of the copy step | 131 072 bytes. | 131 072 bytes. | 24 576 bytes. |
 | Batches of the `.claude/` pass | 130 985 bytes. | 130 985 bytes. | 24 489 bytes. |
 | Handles of the leaf and its parent | Held open until the answer. | Held open until the answer. | Held open until the answer, with delete sharing. |

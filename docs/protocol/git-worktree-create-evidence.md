@@ -112,7 +112,7 @@ All rows were measured side by side against `f6010b97`.
 | (no cell) | `existingBranch` that resolves, empty, or unknown | `19f30c46`: attach with no `-b`, or the new-branch path. A miss falls back silently. | Same rule | Not given | Not given |
 | (no cell) | The attach add fails, and the fallback add succeeds or fails | `f6010b97` and `90fca6e6`: the success frame or the fallback frame of the error table. `90fca6e6` passes the ref name as the start point and `f6010b97` the full id. The new branch lands on the same commit. | claustrum passes the full id | macOS | Not given |
 | (no cell) | A failed attach add deleted the leaf or put a new directory in its place | `f6010b97` and `90fca6e6`: no fallback, the reply is `git worktree add failed: <attach text>`, and the rollback of a failed add runs. | Same rule | macOS, Windows | Not given |
-| (no cell) | A replacement leaf, ext4 | Both references held the leaf and its parent open. The replacement leaf got a new inode. | claustrum holds both open until it answers, so a replacement cannot reuse the inode of the leaf. | Linux, Windows | 12 of 12 |
+| (no cell) | A replacement leaf, ext4 | Both references held the leaf and its parent open. The replacement leaf got a new inode. | claustrum holds both open until it answers, so a replacement cannot reuse the inode of the leaf. | Linux, Windows | 12 of 12 runs on ext4 (Linux) |
 | (no cell) | Rename under the handles of `f6010b97` | The leaf can be renamed. A rename of the parent fails with "Access is denied." while the leaf is inside it. | Both handles share delete. The identity of the leaf comes from its handle. | Windows | Not given |
 | (no cell) | A stub git that fails after it wrote into the leaf | `f6010b97` and `90fca6e6`: the files, the registration and the branch stay. A retry answers `unsafe_path` "already exists". | Same rule | macOS, Windows | Not given |
 | (no cell) | A failed attach add replaced the parent and made a new empty leaf | Both references kept the new leaf. | Same rule | Linux, macOS | 20 of 20 |
@@ -154,7 +154,9 @@ Git 2.43 runs on the Linux VM and git 2.50 on the macOS VM.
 | P-o | As P-c, with the `gitdir` record at mode 0000 | The text of test 1. No read-tree runs. | Not given | Linux, macOS | Not given |
 | P-q | As P-c, with the directory of the old entry at mode 0000 | The text of test 1. No read-tree runs. The stat of the entry directory still answers. | Not given | Linux, macOS | Not given |
 | D-12 | A wrapper writes `gitdir: /elsewhere/worktrees/w1` into the `.git` file after the add | Success. The `.git` file stays. The registration that git made holds the `index`. | Puts the index into the entry of test 2 | Linux, macOS | Not given |
-| P-d, Pd2 | A wrapper writes `gitdir: /elsewhere/WTREG/w1` after the add. `<git dir>/worktrees` is a symlink in P-d and a plain directory in Pd2. | The text of test 1. | Not given | Linux, macOS | Not given |
+| P-d | A wrapper writes `gitdir: /elsewhere/WTREG/w1` after the add | The text of test 1. | Not given | Linux, macOS | Not given |
+| P-d | The same state, with `<git dir>/worktrees` as a symlink | The text of test 1. | Not given | Linux | Not given |
+| Pd2 | The same wrapper, with `<git dir>/worktrees` as a plain directory | The text of test 1. | Not given | Linux | Not given |
 | P-a, P-b | The layout of D-1 with attach mode (P-a) and with a `worktreeRoot` (P-b) | The text of test 1. | Not given | macOS | Not given |
 | P-a, P-b | The same states | Both succeed and the `index` is in the link target. | Not given | Linux | Not given |
 | P-e | `baseRepo` is a linked worktree of a repository T | The worktree is created. Its registration and its `index` are in T. | Not given | Linux, macOS | Not given |
@@ -163,7 +165,7 @@ Git 2.43 runs on the Linux VM and git 2.50 on the macOS VM.
 | S-c | A repository with a separate git directory | The worktree is created. | Equal | Linux, macOS | Not given |
 | S-d | A daemon `GIT_DIR` alone | The worktree is created. | Equal | Linux, macOS | Not given |
 | Se0, S-e | Attach, and an attach that falls back to a new branch, in a plain layout | The worktree is created. | Not given | Linux | Not given |
-| B-E2, B-E4 | `GIT_COMMON_DIR` of X in the environment, different commit ids | The add fails. Both sides answer the add-failure frame. | Equal | Linux, macOS | Not given |
+| B-E2, B-E4 | `GIT_COMMON_DIR` of X in the environment, different commit ids | The add fails. Both sides answer the add-failure frame. | Equal | Not given | Not given |
 | (no cell) | `GIT_DIR` of X too in the environment | The create succeeds. Git makes the registration in X. It is probe row 2 of `git.worktree_remove`. | Finds the entry in X (from the code) | Linux, macOS | Not given |
 | D-9 | `timeoutMs` 1 and an add that takes 3 s | The refusal of test 1. The leaf, the registration and the branch stay. | Not given | macOS | Not given |
 | D-2 | A read-tree that fails | The refusal of test 1. No read-tree runs. | Not given | macOS | Not given |
@@ -190,10 +192,12 @@ Git 2.43 runs on the Linux VM and git 2.50 on the macOS VM.
 | P-m | The old record is as in P-c, and the old entry holds a `locked` file | The record refusal. | Not given | Linux, macOS | Not given |
 | P-g, P-i, P-j against P-k, P-l | Which record counts | A record that cannot be read as a file gets the text of test 1. A record that was read and names anything else gets the record text. | Not given | Linux, macOS | Not given |
 | P-p | The old record of P-c holds `<worktreePath>/.git/` with a slash at its end and no newline | The old entry is gone before the add. A system call trace shows that the daemon removes it, not git. The text of test 1. | Removes the entry in the step before the add and answers the text of test 1. | Linux, macOS (trace: Linux) | Not given |
-| B-E1 | The same state with no `worktrees` directory in `baseRepo` | The "was not populated" text. | Equal | Linux, macOS | Not given |
+| B-E1 | The same state with no `worktrees` directory in `baseRepo` | The "was not populated" text. | Not given | Not given | Not given |
 | B4 | A wrapper removes the record after the read-tree | Success. The entry holds the index. The branch stays. | Equal | Linux, macOS | Not given |
 | Z15 | A wrapper removes the record after the read-tree and sets the entry to mode 0500 | `git worktree add failed (checkout): <git text> openat w1/index: permission denied`, then the undo text with `(RemoveAll w1: permission denied)`. The entry and the branch stay. `logs/HEAD` is gone. `HEAD`, `commondir` and `logs` stay. | Equal | Linux, macOS | Not given |
-| P-a, P-b, S-e, Se0 | Where the tests ran in attach mode and with `worktreeRoot` | See the table of the registration tests. | Same tests in every layout | Linux | Not given |
+| P-b | The only cell that measures a `worktreeRoot` | See the table of the registration tests. | Same tests in every layout | Linux, macOS | Not given |
+| P-a | The cell that measures attach mode | See the table of the registration tests. | Same tests in every layout | Linux, macOS | Not given |
+| S-e, Se0 | Attach mode in a plain layout | See the table of the registration tests. | Same tests in every layout | Linux | Not given |
 
 ### Evidence: spelling of paths { #ev-spelling }
 
@@ -291,7 +295,8 @@ The source text gives no claustrum result for these rows, so the table has no su
 | (no cell) | The order of the entries in step 1 | Not sorted. Measured against both references. | Same rule | Linux ext4, macOS APFS | Not given |
 | (no cell) | Steps 1 to 3 and their texts | `f6010b97` and `90fca6e6`. | Same wordings | Windows | Not given |
 | (no cell) | Step 4 | It follows `89cb6289`. | Same rule | Not given | Not given |
-| (no cell) | The causes of a failed delete on Windows | Open handle. Process with its working directory in the leaf. Running executable. ACL that denies the delete. File name with a trailing dot. | Not given | Windows | Not given |
+| (no cell) | The measured causes of a failed delete on Windows | An open handle, a process with its working directory in the leaf, and a running executable. | Not given | Windows | Not given |
+| (no cell) | More causes of a failed delete on Windows | An ACL that denies the delete and a file name with a trailing dot were causes too. | Not given | Windows | Not given |
 | (no cell) | The OS error text on Linux and macOS | Both references gave the same text, for example `permission denied`. | Same text | Linux, macOS | Not given |
 | A14, A14f, A14b | A failed placement of the index | The registration text. | Not given | Linux (A14, A14f), macOS (A14, A14b) | Not given |
 | X5 | A failed placement, attach mode | `the worktree registration remains; remove it by hand before retrying (RemoveAll <registration name>: <OS error>)` | Equal | Linux, macOS | Not given |
@@ -334,7 +339,7 @@ The source text gives no claustrum result for these rows, so the table has no su
 | I15c, I15d | Runtime-state paths in the full scan | `f6010b97` drops them. | Same rule | Linux, macOS | Not given |
 | D16 | The nested-repository rule in the full scan, old scan forced, git 2.25.1 | `f6010b97`: the rule holds. | Same rule | Linux | Not given |
 | A03 to A05, A14, A16 to A18 | Directory paths that the file batches also print | `f6010b97` sends the same paths. | Same rule | Linux, macOS | Not given |
-| D16 | A nested repository, which ends in `/` | `f6010b97` sends the same paths. | Same rule | Linux, macOS | Not given |
+| D16 | A nested repository, which ends in `/` | `f6010b97` sends the same paths. The text names a Linux VM for D16. | Same rule | Linux (D16) | Not given |
 | C02 to C05, I15c | A Claude runtime-state path | `f6010b97` sends the same paths. | Same rule | Linux, macOS | Not given |
 | C02, C03, C05, D23, I14b, I15d | A root `.claude/` that holds only `worktrees` | `f6010b97`: no pathspec. | Same rule | Linux, macOS | Not given |
 | Cl_anydepth | The same | `f6010b97`: no pathspec. | Same rule | Windows | Not given |
@@ -405,7 +410,7 @@ Each line is a statement that the source text labels "not measured" or "from the
 - If the open of the accepted directory fails, the identity comes from a stat of the path (not measured).
 - If git gave no answer to `rev-parse --absolute-git-dir`, the rollback takes the directory that the `.git` file names (not measured).
 - Windows is not measured for the delete of the registration in the rollback.
-- That `unicode.IsPrint` fits every measured payload is an inference, not a proof.
+- claustrum uses Go's `unicode.IsPrint`, which fits every measured payload. That is an inference, not a proof.
 - A symlinked `worktreeRoot` is not measured for `--work-tree`. On Windows the resolved form is not measured.
 - A full scan in which every path is dropped, so that no check-ignore call runs, is not measured.
 - Whether `f6010b97` counts the `-c` options in the batch budget was not measured.
@@ -425,4 +430,4 @@ Each line is a statement that the source text labels "not measured" or "from the
 - `90fca6e6` skips the Claude runtime state in both passes of the copy step. `19f30c46` copies eight of the nine names. It drops `worktrees` as well.
 - `90fca6e6` passes the ref name as the start point of the fallback add. `f6010b97` passes the full id.
 - `90fca6e6` prints no graft-file deprecation hint. `f6010b97` and claustrum can print it.
-- An earlier version of the protocol reference said the opposite of the copy rule for a filename that `git ls-files` C-quotes. It called this a reference limitation reproduced for parity. It was neither.
+- An earlier version of the protocol reference said the opposite and called it a reference limitation reproduced for parity. It was neither.

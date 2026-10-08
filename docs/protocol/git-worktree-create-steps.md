@@ -630,7 +630,7 @@ That covers the add failure, each part of the attach-fallback frame, the checkou
 1. Take stderr only. stdout is not quoted.
 2. Keep the first 512 bytes.
 3. Drop every byte that is not valid UTF-8, anywhere in the text. The cap comes first, so the bytes of a rune that the cap cut go too.
-4. Replace each rune that is not printable with one space, with no collapsing. So `\r\n` gives two spaces. The set includes `\t`, NUL, `\x7f`, U+0085, U+00A0, U+200B and U+2028. claustrum uses Go's `unicode.IsPrint`.
+4. Replace each rune that is not printable with one space, with no collapsing. So `\r\n` gives two spaces. The set includes `\t`, NUL, `\x7f`, U+0085, U+00A0, U+200B and U+2028. claustrum uses Go's `unicode.IsPrint`, which fits every measured payload. That is an inference, not a proof.
 5. Trim the spaces at both ends.
 6. If the result is empty, use the exec error. That is `exit status 128` for a git that failed with that status, and `signal: killed` for a killed checkout. On Windows the killed checkout gives the error of the kill itself, `exit status 1`.
 
@@ -668,7 +668,7 @@ Rules for all four steps:
 - The `errorCode` does not change.
 - With a trailing slash on `worktreePath`, the `removeat` part still names the base name, such as `w1`.
 - The three wordings of steps 1 and 3 are fixed. Only `<OS error>` varies.
-- On Windows the causes of a failed delete are an open handle, a running executable and an ACL that denies the delete. Two more causes are a process with its working directory in the leaf and a file name with a trailing dot.
+- On Windows the measured causes of a failed delete were these. An open handle. A process with its working directory in the leaf. A running executable. An ACL that denies the delete and a file name with a trailing dot were causes too.
 - On Linux and macOS claustrum gives the same wordings with the OS error text of Go, for example `permission denied`.
 - A process that the checkout leaves behind starts in the new worktree. On Windows it blocks the removal of the leaf, and the rollback reports it with the undo text.
 - In attach mode the call made no branch. Step 1 then reads `the worktree directory and its registration both remain`.
