@@ -90,6 +90,7 @@ nav:
   - Upstream tracking: UPSTREAM-TRACKING.md
   - Reference builds: REFERENCE-BUILDS.md
   - Shipped ledger: IMPROVEMENTS.md
+  - Glossary: GLOSSARY.md
   - Project:
       - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
       - Security policy: https://github.com/schubydoo/claustrum/blob/main/SECURITY.md
