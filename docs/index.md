@@ -70,8 +70,9 @@ Thus no extra changes the frames that a client sees. For details, see the
 
 claustrum has one opt-in addition to the response frames. `wantPid` is
 claustrum's own parameter. If a client passes `"wantPid":true` to
-`process.spawn` or `process.reattach`, the response has `pid` and `startTime`.
-These two fields let the client detect PID reuse (CT-1).
+`process.spawn`, the response has `pid` and `startTime`. With
+`process.reattach`, if the daemon found the process, the response has the two
+fields too. These two fields let the client detect PID reuse (CT-1).
 
 Without `wantPid`, the two responses have no `pid` and no `startTime`. The
 [divergence catalog](DIVERGENCES.md) records the addition as CT-1.
