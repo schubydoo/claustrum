@@ -2,7 +2,7 @@
 
 `git.worktree_create` makes a linked git worktree for a session. It creates a new branch for the worktree, or it attaches the worktree to a branch that exists. Then it checks out the tracked files and copies some ignored files into the new worktree.
 
-If a step fails after git made the worktree, the daemon removes what it made.
+A failed request can leave files on disk. The section [After a failure](#after-a-failure) says what stays.
 
 ## Request
 
@@ -88,7 +88,7 @@ After the checkout, the daemon copies two sets of files from `baseRepo` into the
 - The ignored files that the file `.worktreeinclude` at the root of the repository names. That file uses the syntax of `.gitignore`.
 - The ignored files under `.claude/`, apart from `.claude/worktrees`.
 
-A failed copy does not fail the request.
+A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`.
 
 ## Differences by system
 
