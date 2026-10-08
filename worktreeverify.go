@@ -373,6 +373,8 @@ func (r testedRegistration) release() {
 // registrations folder that is a symlink can lead elsewhere at a second lookup.
 // A name whose stat fails is not "replaced": the placement or the delete then
 // runs and fails by itself, with the measured texts (cells Z10, Z11a and Z11b).
+// With no accepted identity, because the open and the stat of acceptRegistration
+// both failed, every folder at the name counts as replaced (not measured).
 //
 // 89cb6289 removes the folder at that path in two cells of Linux and macOS VMs, 2
 // runs each.

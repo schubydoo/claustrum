@@ -154,8 +154,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
       only stale entry of the folder (`89cb6289`, cells A13, A13b and S1 to S7c,
       Linux and macOS VMs). The delete is one `os.Root.RemoveAll`
       of the entry name through a root at that folder, after `wipesHomeDir` on
-      the entry path. An entry with a `locked` file stays (`89cb6289`, cells A1
-      to A12c, Linux and macOS VMs). On Windows that step is one `os.RemoveAll` of the
+      the entry path. An entry with a `locked` file stays (`89cb6289`, cells A9
+      and A9b, Linux and macOS VMs). On Windows that step is one `os.RemoveAll` of the
       entry path, with no `locked` test (not measured).
       The second rollback follows a successful add. On Linux and
       macOS four refusals come before it, and they delete nothing. Two answer

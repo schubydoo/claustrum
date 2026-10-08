@@ -107,10 +107,16 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 			stale = append(stale, e.Name())
 		}
 	}
+	if len(stale) > 1 {
+		// Two or more stale entries: every one stays (cells A13, S1, S2 and S5).
+		for _, name := range stale {
+			kept = append(kept, filepath.Join(base, name))
+		}
+		return kept
+	}
 	for _, name := range stale {
 		entry := filepath.Join(base, name)
-		// Only the one stale entry of the folder goes (cells A13, S1, S2 and S5).
-		if len(stale) > 1 || removeStaleRegistration(root, name, entry) {
+		if removeStaleRegistration(root, name, entry) {
 			kept = append(kept, entry)
 		}
 	}

@@ -685,6 +685,78 @@ func TestTestedRegistrationHeldIdentity(t *testing.T) {
 	}
 }
 
+// TestTestedRegistrationErrorArms pins what the registration guard does where a
+// folder does not open. An accepted folder that does not open still gets an identity,
+// from a stat of the path. A registrations folder that does not exist has nothing to
+// delete. A registrations folder that does not open for another reason gives its
+// error, so the rollback reports it. These states have no cell of 89cb6289.
+func TestTestedRegistrationErrorArms(t *testing.T) {
+	root := realTempDir(t)
+
+	t.Run("an accepted folder that does not open", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root opens a folder of mode 0")
+		}
+		reg := filepath.Join(root, "noread", "w1")
+		mkdirForTest(t, reg)
+		if err := os.Chmod(reg, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(reg, 0o755) })
+		tested := acceptRegistration(reg)
+		defer tested.release()
+		if tested.held != nil {
+			t.Fatal("the folder of mode 0 opened")
+		}
+		if tested.info == nil {
+			t.Error("acceptRegistration took no identity from a stat of the path")
+		}
+	})
+
+	t.Run("no registrations folder", func(t *testing.T) {
+		reg := testedRegistration{path: filepath.Join(root, "missing", "w1")}
+		if err := removeTestedRegistration(reg); err != nil {
+			t.Errorf("removeTestedRegistration = %v, want nil", err)
+		}
+	})
+
+	t.Run("a file in the place of the registrations folder", func(t *testing.T) {
+		file := filepath.Join(root, "afile")
+		writeFile(t, file, "x\n", 0o644)
+		reg := testedRegistration{path: filepath.Join(file, "w1")}
+		if err := removeTestedRegistration(reg); err == nil {
+			t.Error("removeTestedRegistration = nil, want the error of the open")
+		}
+		if _, err := os.Stat(file); err != nil {
+			t.Errorf("the file went: %v", err)
+		}
+	})
+}
+
+// TestDropStaleWorktreeRegistrationFolderGone pins the step before the add where the
+// registrations folder goes right after its open: the step ends with nothing
+// remembered and removes nothing. The state has no cell of 89cb6289.
+func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
+	repo := realTempDir(t)
+	base := filepath.Join(repo, ".git", "worktrees")
+	mkdirForTest(t, base)
+	old := openRegistrationsRoot
+	t.Cleanup(func() { openRegistrationsRoot = old })
+	openRegistrationsRoot = func(name string) (*os.Root, error) {
+		r, err := old(name)
+		if err == nil {
+			if rmErr := os.Remove(base); rmErr != nil {
+				t.Errorf("remove of the opened folder: %v", rmErr)
+			}
+		}
+		return r, err
+	}
+	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
+	if kept := dropStaleWorktreeRegistration(repo, leaf); len(kept) != 0 {
+		t.Errorf("kept = %v, want none", kept)
+	}
+}
+
 // TestDropStaleWorktreeRegistrationCount pins how many stale entries the step
 // before the add removes: one, and only if it is the only stale entry of the
 // folder. Cells A13 and A13b and the S cells are those of 89cb6289 on Linux and
