@@ -26,20 +26,11 @@ The daemon is one binary. A flag selects the mode:
 - `-bridge` is a simple relay between stdio and the socket. An SSH session
   attaches to this mode.
 - `-install` is the installer. It downloads the CLI, makes sure that the
-  SHA-256 matches, and extracts the zstd archive. Then it keeps the newest
-  `-cli-keep` entries of the CLI directory and removes the others. If the caller
-  supplies a checksum, it makes sure that a local `-cli-zst` blob matches it.
-  Without a checksum it does not compare that blob.
-- `-probe-cli` runs the bounded `<cli> --version` probe on one CLI binary, and
-  it exits 0. If the CLI runs, it prints nothing. If the 30 s deadline killed
-  the CLI, it prints `__CLI_HUNG__`. If the CLI is missing or does not run, it
-  prints `__CLI_BAD__`.
-
-    With `CLAUDE_SSH_MANAGED_LAUNCHER=1` it runs the CLI through the managed
-    launcher of the host, and that run stops at 33 s with `__CLI_HUNG__`. It
-    prints `__CLI_LAUNCHER__` for an unusable launcher, unreadable settings or
-    a failed launcher run. With no launcher, and on Windows, it runs the CLI
-    directly.
+  SHA-256 matches, and extracts the zstd archive. See
+  [`-install`](PROTOCOL.md#-install-ensure-the-agent-cli).
+- `-probe-cli` runs `<cli> --version` on one CLI binary with a deadline. If
+  the CLI hangs or does not run, it prints a marker. See
+  [`-probe-cli`](PROTOCOL.md#-probe-cli-classify-a-cli-binary).
 - `-stop` sends `server.shutdown`. `-version` reports the build.
 
 The daemon supplies 20 methods across the `server.*`, `files.*`, `git.*`,
