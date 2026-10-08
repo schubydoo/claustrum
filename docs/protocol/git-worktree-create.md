@@ -101,6 +101,8 @@ After the checkout, the daemon copies two sets of files from `baseRepo` into the
 
 Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`. A new worktree does not inherit the session state of the repository. The [measurement record](../record/git-worktree-create.md) lists each name.
 
+A copy does not keep the mode of its source. The daemon creates each file with mode `0666` less its umask. So an executable file arrives without its execute bit, and a `0400` file gets a wider mode. The daemon also skips symbolic links. Name configuration files in `.worktreeinclude`, not secrets or scripts.
+
 A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`.
 
 ## Differences by system
