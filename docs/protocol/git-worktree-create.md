@@ -80,23 +80,26 @@ The table says what stays of the worktree itself: its directory, its registratio
 | The daemon cannot create a directory (`mkdir_failed`) | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
 | A test of the new worktree fails after the add. On Linux and macOS a test of its registration gives `unsafe_path`. If something replaced the worktree directory during the request, the code is `worktree_add_failed`. | Everything. The daemon rolls nothing back. The worktree directory, the registration and the branch stay. |
-| The checkout fails, or the deadline expires (`worktree_add_failed`, `timeout`) | Nothing, apart from the two cases below the table. The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. |
+| The checkout fails, or the deadline expires (`worktree_add_failed`, `timeout`) | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
 
 `worktree_add_failed` and `unsafe_path` each have more than one row. The code alone does not say which row applies. The error text does, and so does the disk.
 
 If the worktree directory stays, a second request with the same `worktreePath` gets `unsafe_path`, because the path exists.
 
-Two more cases apply to a rollback:
+A rollback leaves something in these cases:
 
 - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
 - If the daemon cannot remove something, the error text ends with a clause that says what remains.
+- If something replaced a directory of the worktree during the request, the daemon does not remove the replacement. See [D24](../DIVERGENCES.md#d24).
 
 ## The copy of ignored files
 
 After the checkout, the daemon copies two sets of files from `baseRepo` into the new worktree:
 
 - The ignored files that the file `.worktreeinclude` at the root of the repository names. That file uses the syntax of `.gitignore`.
-- The ignored files under `.claude/`, apart from `.claude/worktrees`.
+- The ignored files under `.claude/`.
+
+Neither set includes `.claude/worktrees` or the session state of Claude under `.claude/`, for example `checkpoints`, `mailbox` and `scheduled_tasks.json`. A new worktree does not inherit the session state of the repository. The [measurement record](../record/git-worktree-create.md) lists each name.
 
 A copy that fails does not fail the request. If the deadline of `timeoutMs` expires during the copy, the request fails with `timeout`.
 
