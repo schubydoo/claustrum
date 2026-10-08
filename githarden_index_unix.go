@@ -52,6 +52,22 @@ import (
 // text "chtimesat <name>/index: <OS error>" (not measured, and no state that
 // reaches it is known: the daemon owns the file that it just made).
 func installWorktreeIndex(src, adminDir string) error {
+	return installIndexInto(src, adminDir, testedRegistration{})
+}
+
+// installTestedWorktreeIndex is installWorktreeIndex into the registration that the
+// tests after the add accepted. After it opened the registrations folder, and
+// before it makes the file, it tests through that root that the entry is still
+// the accepted folder (replacedIn, D24). If it is another folder, nothing is
+// placed, and the error is claustrum's own text. An entry whose stat fails takes
+// the placement itself, with the measured texts (cells Z10, Z11a and Z11b).
+func installTestedWorktreeIndex(src string, tested testedRegistration) error {
+	return installIndexInto(src, tested.path, tested)
+}
+
+// installIndexInto is the body of installWorktreeIndex. tested is the zero value,
+// or the accepted registration at adminDir.
+func installIndexInto(src, adminDir string, tested testedRegistration) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -70,11 +86,14 @@ func installWorktreeIndex(src, adminDir string) error {
 			return err
 		}
 	}
-	root, err := os.OpenRoot(filepath.Dir(adminDir))
+	root, err := openRegistrationsRoot(filepath.Dir(adminDir))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = root.Close() }()
+	if tested.path != "" && tested.replacedIn(root, filepath.Base(adminDir)) {
+		return errors.New("the registration " + adminDir + " is not the folder that was tested after the add")
+	}
 	name := filepath.Base(adminDir) + "/index"
 	create := func() (*os.File, error) {
 		return root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)

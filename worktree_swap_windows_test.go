@@ -107,7 +107,7 @@ func TestCheckpointCatchesReplacedLeaf(t *testing.T) {
 		if len(cp.held) != 2 {
 			t.Fatalf("checkpoint holds %d handles, want 2", len(cp.held))
 		}
-		if got, _ := undoFailedCheckout(repo, leaf, "", cp); got != "" {
+		if got, _ := undoFailedCheckout(repo, leaf, "", cp, testedRegistration{}); got != "" {
 			t.Errorf("undo text = %q, want none", got)
 		}
 		for _, p := range []string{admin, leaf} {

@@ -164,6 +164,8 @@ component_management:
         - worktreemkdir_unix.go
         - worktreemkdir_windows.go
         - worktreestale.go
+        - worktreestale_unix.go
+        - worktreestale_windows.go
         - worktreeverify.go
         # git.worktree_remove's own delete of the worktree and its entry.
         - worktreeremove.go

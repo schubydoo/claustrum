@@ -44,6 +44,13 @@ func installWorktreeIndex(src, adminDir string) error {
 	return nil
 }
 
+// installTestedWorktreeIndex is installWorktreeIndex into tested.path. No create
+// reaches it on Windows: the registration tests do not run there, so no
+// registration is accepted (acceptRegistration).
+func installTestedWorktreeIndex(src string, tested testedRegistration) error {
+	return installWorktreeIndex(src, tested.path)
+}
+
 // indexRename and indexWrite are seams for the tests of installWorktreeIndex.
 var (
 	indexRename = os.Rename

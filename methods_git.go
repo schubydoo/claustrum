@@ -879,13 +879,15 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		}
 	}
 	if _, err := os.Lstat(p.WorktreePath); err == nil {
-		// With a worktreeRoot the refusal names the cleaned path: f6010b97 and
-		// 90fca6e6 quote "R/cp/w1" for a worktreePath sent as "R/cp/w1/" (measured
-		// on Linux and macOS VMs). Without a worktreeRoot it names the path as sent.
-		// No probe sent an in-repo path with a slash to this refusal. On Windows the
+		// On Linux and macOS the refusal names the cleaned path, with the symlinks
+		// of its parent folder resolved and its last name kept (parentResolvedPath:
+		// cells T9, U1a to U1d and U2a to U2c without a worktreeRoot, cell U3a2
+		// with one, Linux and macOS VMs). f6010b97 and 90fca6e6 quote "R/cp/w1" for a
+		// worktreePath sent as "R/cp/w1/" with a worktreeRoot (Linux and macOS VMs).
+		// On Windows the path with a worktreeRoot is the cleaned path, and the
 		// in-repo path is spelled with the on-disk letter case of each component that
 		// exists (existingPathSpelling, row W15).
-		existing := filepath.Clean(p.WorktreePath)
+		existing := externalPathSpelling(p.WorktreePath)
 		if p.WorktreeRoot == "" {
 			existing = existingPathSpelling(p.WorktreePath)
 		}
@@ -905,9 +907,13 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	// The target is confirmed missing above, so any worktree registration still
 	// naming it is stale (its session folder was deleted out from under git). Drop
-	// just that registration so the add below recreates cleanly, the way 7d193f89
-	// does — where claustrum otherwise failed "missing but already registered".
-	dropStaleWorktreeRegistration(repo, p.WorktreePath)
+	// such a registration if it is the only one and is not locked
+	// (dropStaleWorktreeRegistration). Windows keeps its earlier step, which has
+	// neither test.
+	// staleKept holds each stale entry that is still there (Linux and macOS): it
+	// is locked, the remove failed, or it is one of two or more. It is empty on
+	// Windows.
+	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath)
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
@@ -1104,22 +1110,37 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// commondir file of gitDir is read once for them, in the tests. The tests answer
 	// the index folder, so it is the entry that they saw. A .git file or a commondir
 	// file that changes later cannot move the index to a folder that the tests did
-	// not see. A rollback reads both files again for its own check
-	// (createdWorktreeAdminDir).
+	// not see. On Linux and macOS a rollback removes that same entry (tested), and
+	// it reads neither file again.
 	//
 	// The tests need the git directory that git answered. If rev-parse gave no
 	// answer, gitDir is a guess (repoGitDir), and for a baseRepo that is a subfolder
 	// of a repository that folder does not exist. The tests then do not run, and the
-	// index folder is the one that the .git file names. That is claustrum's choice
-	// (not measured).
+	// index folder is the one that the .git file names. A rollback then reads both
+	// files again for its own check (createdWorktreeAdminDir). That is claustrum's
+	// choice (not measured).
 	adminDir := worktreeAdminDir(p.WorktreePath)
 	indexDir := ""
 	if adminDir != "" {
 		indexDir = absoluteAdminDir(p.WorktreePath, adminDir)
 	}
+	var tested testedRegistration
 	if gitAnswered {
 		var text string
 		if indexDir, text = createdRegistrationRefusal(gitDir, p.WorktreePath, adminDir); text != "" {
+			return okResult(req.ID, worktreeResult{
+				Success:   false,
+				Error:     text,
+				ErrorCode: "unsafe_path",
+			})
+		}
+		tested = acceptRegistration(indexDir)
+		defer tested.release()
+		// A stale entry that the step before the add left is not the registration of
+		// this create. 89cb6289 answers the refusal there after 9 git calls, and the
+		// pair of the next test is not among them (cells A9 g, A9b g and A10 g,
+		// Linux and macOS VMs).
+		if text := staleRegistrationRefusal(p.WorktreePath, indexDir, staleKept); text != "" {
 			return okResult(req.ID, worktreeResult{
 				Success:   false,
 				Error:     text,
@@ -1132,8 +1153,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// Its gitdir record names worktreePath after symlink resolution.
 	// If it was read and names anything else, the create is refused, with no checkout
 	// and no rollback (cells P-c and P-k to P-m). Before
-	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo as sent
-	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). claustrum makes the calls and does not use their
+	// the answer, 89cb6289 runs the pair of gitDirWorkTreeToplevel with baseRepo
+	// as the work tree (row I07a, macOS VM, and cell P-c, Linux and macOS VMs). In
+	// cells T2 and T10 (Linux and macOS VMs) the call log of 89cb6289 shows that
+	// pair twice, with baseRepo as the resolved path. The call log of claustrum
+	// shows it once, with baseRepo as sent. No frame differs.
+	// claustrum makes the calls and does not use their
 	// answer: what 89cb6289 takes from them is not measured. This test comes before
 	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
 	// answers this refusal and keeps the leaf and the branch (cell P-f, Linux and macOS VMs).
@@ -1151,7 +1176,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// Every rollback below appends an undo text when one of its steps fails.
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired before the checkout started)", p.TimeoutMs)
-		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 		return okResult(req.ID, worktreeResult{
 			Success:    false,
 			Error:      msg + undo,
@@ -1169,7 +1194,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	if indexDir != "" {
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, checkoutRev, commonDirPinEnv(repo))
+			indexDir, tested, checkoutRev, commonDirPinEnv(repo))
 		switch {
 		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and
@@ -1178,7 +1203,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// fails after a drain overrun takes this arm too. That is claustrum's
 			// choice (not measured).
 			msg := "git worktree add failed (checkout): " + indexInstallText(rtStderr, installErr)
-			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
 				Error:      msg + undo,
@@ -1200,7 +1225,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// Measured against f6010b97 and 90fca6e6 on a macOS VM.
 			msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired during the checkout): %s",
 				p.TimeoutMs, worktreeGitText(rtStderr, rtErr))
-			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
 				Error:      msg + undo,
@@ -1218,7 +1243,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// createdBranch is "", so the attached branch is kept, as measured against
 			// f6010b97.
 			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)
-			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 			return okResult(req.ID, worktreeResult{
 				Success:    false,
 				Error:      msg + undo,
@@ -1254,7 +1279,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// and 90fca6e6 on a macOS VM.
 	if p.TimeoutMs > 0 && callerTimeoutFired(callerCtx) {
 		msg := fmt.Sprintf("git worktree add timed out after %dms (deadline expired after the checkout finished)", p.TimeoutMs)
-		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint)
+		undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
 		return okResult(req.ID, worktreeResult{
 			Success:    false,
 			Error:      msg + undo,

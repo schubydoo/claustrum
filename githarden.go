@@ -300,9 +300,15 @@ func hardenedGit(dir string, heavy bool, args ...string) (string, bool) {
 // git.worktree_create checkout. Each has the length of the prefix in the f6010b97
 // argv and env, measured on Linux, macOS and Windows VMs: 18 and 17 bytes.
 // os.MkdirTemp adds a random decimal suffix, as f6010b97 does.
+//
+// The index prefix is the one of 89cb6289 on Linux and macOS VMs. Cell X1 shows
+// it in a frame: "open <tmp>/claude-ssh-index-<n>/index: no such file or
+// directory". It is also in the GIT_INDEX_FILE of each read-tree there. The
+// constant is the same on Windows, where the name of 89cb6289 is not measured.
+// The prefix of git.status keeps claustrum's own name.
 const (
 	statusGitDirTempPrefix  = "claustrum-git-dir-"
-	checkoutIndexTempPrefix = "claustrum-gitidx-"
+	checkoutIndexTempPrefix = "claude-ssh-index-"
 )
 
 // worktreeCreateDrainCap bounds the post-exit pipe drain of git.worktree_create's
@@ -395,7 +401,8 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // into a new index in a fresh temporary directory, fills leaf from it, and, when
 // git exits 0, places that index in adminDir, the new worktree's registration
 // (guardedInstallWorktreeIndex). The caller gets adminDir from createdRegistrationRefusal,
-// or from absoluteAdminDir if rev-parse gave no answer. The temporary directory is removed afterwards. stderr,
+// or from absoluteAdminDir if rev-parse gave no answer. tested is the registration
+// that the tests after the add accepted, or the zero value. The temporary directory is removed afterwards. stderr,
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
@@ -403,7 +410,7 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 //
 // installErr is the error of a placement that failed. The caller answers it as a
 // failed checkout. On Windows it is always nil.
-func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, rev string, pin []string) (stderr string, drained bool, err, installErr error) {
+func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string) (stderr string, drained bool, err, installErr error) {
 	idxDir, err := os.MkdirTemp("", checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, err, nil
@@ -415,38 +422,49 @@ func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir, 
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)
 	if err == nil || drained {
-		installErr = guardedInstallWorktreeIndex(idx, adminDir, leaf)
+		installErr = guardedInstallWorktreeIndex(idx, adminDir, leaf, tested)
 	}
 	return stderr, drained, err, installErr
 }
 
-// guardedInstallWorktreeIndex is installWorktreeIndex behind a guard. On Linux and macOS the
-// index goes into the registration adminDir only if its gitdir record can be read
+// guardedInstallWorktreeIndex is installWorktreeIndex behind a guard. The guard has
+// two forms.
+//
+// With tested set, the tests after the add accepted the registration (Linux and
+// macOS, when git answered `rev-parse --absolute-git-dir`). The index then goes
+// into that registration with no read of its gitdir record. 89cb6289 places the
+// index too when the record is gone: in
+// cell B4 (Linux and macOS VMs) the record is removed after the read-tree: 89cb6289 answers
+// success, and the registration holds the index. In cell Z15 (Linux and macOS VMs)
+// the record is removed and the registration gets mode 0500: 89cb6289 answers
+// "openat w1/index: permission denied". One state places nothing: the folder at
+// the path is no longer the folder that the tests accepted (replacedIn, D24). The
+// placement tests that on the registrations folder that it opened
+// (installTestedWorktreeIndex). The
+// error text is claustrum's own, and the caller answers it as a failed checkout.
+// No cell measured a replaced folder at the placement.
+//
+// With tested not set, the tests did not run. On Linux and macOS the
+// index then goes into the registration adminDir only if its gitdir record can be read
 // and names leaf (readAdminRecord). In every other state of a registration that
 // can be reached, nothing is placed, and an index that is there keeps its bytes: a
 // record that is missing, a FIFO or a folder, an empty or a relative record of
-// another worktree, and the record of another path. If git answered `rev-parse
-// --absolute-git-dir`, the create refuses those states before the checkout. Only a
-// record that changed during the checkout then reaches the guard. With no answer
-// the registration tests do not run (createdRegistrationRefusal), and a record that
-// cannot be read reaches the guard with no change. The error text is claustrum's own (not measured). The path in it is
-// adminDir, the registration folder. That is a path of the repository
-// (createdRegistrationRefusal), not the worktreePath of the request. The
-// frame joins the text to the stderr of the checkout under the 512-byte rule
+// another worktree, and the record of another path. The error text is claustrum's own (not measured). The path in it is
+// adminDir, the registration folder. That is the path that the .git file of the
+// leaf names, not the worktreePath of the request. On Windows no guard runs.
+//
+// The frame joins each text to the stderr of the checkout under the 512-byte rule
 // (indexInstallText). After a long stderr the frame holds a part of the text, or
 // none of it.
 //
-// One state is apart: a registration folder whose stat fails. No index of it can be
+// One state is apart in both forms: a registration folder whose stat fails. No index of it can be
 // reached then, and the placement runs and fails by itself. Its error is the measured
 // text of a registration that is gone (cell Z10) or of a registrations directory
 // without the search permission (cells Z11a and Z11b, macOS VM).
-//
-// Cell Z15 (Linux and macOS VMs) removes the record after the read-tree and sets
-// the registration to mode 0500. 89cb6289 answers "openat w1/index: permission
-// denied" there, with an undo text, and keeps the branch. claustrum answers the
-// text of the guard and removes the branch. That is an open difference of issue
-// 429.
-func guardedInstallWorktreeIndex(idx, adminDir, leaf string) error {
+func guardedInstallWorktreeIndex(idx, adminDir, leaf string, tested testedRegistration) error {
+	if tested.path != "" {
+		return installTestedWorktreeIndex(idx, tested)
+	}
 	if adminRecordChecked {
 		if _, err := os.Stat(adminDir); err == nil && readAdminRecord(adminDir, leaf) != recordNamesLeaf {
 			return errors.New("the registration " + adminDir + " has no gitdir record that names this worktree")

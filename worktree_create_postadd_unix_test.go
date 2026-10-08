@@ -56,8 +56,21 @@ func (f wtFixture) linkRegistrations(t *testing.T, target, link string) {
 	}
 }
 
+// namedLeaf is the leaf as five refusals of git.worktree_create name it: the
+// cleaned path, with the symlinks of its parent folder resolved and its last name
+// kept, or the cleaned path when the parent does not resolve. Call it after the
+// request, when the parent folder exists.
+func namedLeaf(leaf string) string {
+	leaf = filepath.Clean(leaf)
+	parent, err := filepath.EvalSymlinks(filepath.Dir(leaf))
+	if err != nil {
+		return leaf
+	}
+	return filepath.Join(parent, filepath.Base(leaf))
+}
+
 func notOursText(leaf string) string {
-	return "refusing to create worktree: " + leaf +
+	return "refusing to create worktree: " + namedLeaf(leaf) +
 		" carries a .git file that does not name this repository's own worktree admin directory"
 }
 
@@ -288,15 +301,17 @@ func TestWorktreeCreateRegistrationInOtherRepository(t *testing.T) {
 				t.Fatalf("commit ids differ (%s, %s): this fixture does not stage the row", a, b)
 			}
 			leaf := filepath.Join(T, ".claude", "worktrees", "w1")
-			wantText := "refusing to create worktree: " + leaf + " was not populated by git worktree add"
 			if tc.otherEntry {
 				runGit(t, T, "worktree", "add", "-q", "-b", "other", filepath.Join(root, "other"))
-				wantText = notOursText(leaf)
 			}
 			s := newTestServer(t)
 			t.Setenv("GIT_COMMON_DIR", filepath.Join(X, ".git"))
 			raw := dispatchRaw(t, s, rpcLine(t, "git.worktree_create",
 				map[string]any{"baseRepo": T, "branchName": "w1", "worktreePath": leaf}))
+			wantText := "refusing to create worktree: " + namedLeaf(leaf) + " was not populated by git worktree add"
+			if tc.otherEntry {
+				wantText = notOursText(leaf)
+			}
 			wantError(t, raw, wantText, "unsafe_path")
 			ents, err := os.ReadDir(leaf)
 			if err != nil || len(ents) != 1 || ents[0].Name() != ".git" {
@@ -368,7 +383,7 @@ func TestWorktreeCreateGitDirNotAnswered(t *testing.T) {
 
 // differentWorktreeText is the refusal of adminRecordRefusal.
 func differentWorktreeText(leaf string) string {
-	return "refusing to create worktree: " + leaf +
+	return "refusing to create worktree: " + namedLeaf(leaf) +
 		" carries a .git file naming an admin directory whose own record is of a different worktree"
 }
 
@@ -599,7 +614,8 @@ func stageOldRegistrationOfSameName(t *testing.T) (string, string, string) {
 	return T, X, filepath.Join(T, ".git", "worktrees", "w1")
 }
 
-// TestInstallWorktreeIndexGuard pins the guard of the index placement, one case for
+// TestInstallWorktreeIndexGuard pins the guard of the index placement for a create
+// whose registration tests did not run (no tested registration), one case for
 // each state of the gitdir record. The index is placed only for a record that can
 // be read and names the leaf. In every other state of a registration that is there,
 // the guard answers its own error, and the index that is there keeps its bytes and
@@ -662,7 +678,7 @@ func TestInstallWorktreeIndexGuard(t *testing.T) {
 			tc.record(t, root, reg, leaf)
 
 			var installErr error
-			doneWithin(t, "guardedInstallWorktreeIndex", func() { installErr = guardedInstallWorktreeIndex(src, reg, leaf) })
+			doneWithin(t, "guardedInstallWorktreeIndex", func() { installErr = guardedInstallWorktreeIndex(src, reg, leaf, testedRegistration{}) })
 			if tc.want == "" {
 				if installErr != nil {
 					t.Fatalf("err = %v, want the index placed", installErr)
@@ -745,7 +761,7 @@ func TestCreatedRegistrationRefusalStates(t *testing.T) {
 	if got := refusalOf(""); got != "" {
 		t.Errorf("no .git value: refusal %q, want none", got)
 	}
-	if got, want := refusalOf(reg), "refusing to create worktree: "+leaf+" was not populated by git worktree add"; got != want {
+	if got, want := refusalOf(reg), "refusing to create worktree: "+namedLeaf(leaf)+" was not populated by git worktree add"; got != want {
 		t.Errorf("no registrations directory (rows B-E1, B-E3 and D-8, cell D8e): refusal %q, want %q", got, want)
 	}
 	if err := os.Mkdir(registry, 0o755); err != nil {
@@ -879,7 +895,7 @@ func TestPostAddReadsDoNotWaitOnFifo(t *testing.T) {
 		_, refusal = createdRegistrationRefusal(gitDir, leaf, worktreeAdminDir(leaf))
 		record = readAdminRecord(reg, leaf)
 		mismatch = adminRecordMismatch(reg, leaf)
-		installErr = guardedInstallWorktreeIndex(src, reg, leaf)
+		installErr = guardedInstallWorktreeIndex(src, reg, leaf, testedRegistration{})
 	})
 	if want := filepath.Join(gitDir, "worktrees"); registry != want {
 		t.Errorf("gitDirRegistryDir(FIFO commondir) = %s, want %s", registry, want)

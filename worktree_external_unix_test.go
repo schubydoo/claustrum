@@ -108,7 +108,9 @@ func TestWorktreeRemoveExternalDirSymlink(t *testing.T) {
 // others named the wrong directory.
 func TestWorktreeExternalTrailingSlash(t *testing.T) {
 	requireGit(t)
-	base := t.TempDir()
+	// The paths are resolved: two of the refusals name the path with the symlinks
+	// of its parent folder resolved (cells U3a and U3a2).
+	base := realTempDir(t)
 	requireTempOutsideCheckout(t, base)
 	repo := filepath.Join(base, "T")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
