@@ -92,6 +92,7 @@ nav:
   - Upstream tracking: UPSTREAM-TRACKING.md
   - Reference builds: REFERENCE-BUILDS.md
   - Shipped ledger: IMPROVEMENTS.md
+  - Glossary: GLOSSARY.md
   - Measurement records:
       - git.worktree_create: record/git-worktree-create.md
   - Project:
