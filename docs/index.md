@@ -18,14 +18,16 @@ decompiler output into the implementation (see
 
 The daemon is one binary. A flag selects the mode:
 
-- `-serve` is the daemon. It opens an `AF_UNIX` listener with mode `0600` and
-  runs one read loop for each connection. It dispatches requests concurrently,
-  daemonizes itself, and shuts down gracefully.
+- `-serve` is the daemon. It opens an `AF_UNIX` listener and runs one read loop
+  for each connection. On Linux and macOS it sets the socket file to mode
+  `0600`. It dispatches requests concurrently, daemonizes itself, and shuts
+  down gracefully.
 - `-bridge` is a simple relay between stdio and the socket. An SSH session
   attaches to this mode.
 - `-install` is the installer. It downloads the CLI, verifies the SHA-256,
-  extracts the zstd archive, and prunes old CLI versions. It verifies a local
-  `-cli-zst` blob only with a caller-supplied checksum, as the reference does.
+  extracts the zstd archive, and removes the cli-dir entries past the
+  `-cli-keep` count. It verifies a local `-cli-zst` blob only with a
+  caller-supplied checksum.
 - `-probe-cli` runs the bounded `<cli> --version` probe on one CLI binary, and it
   exits 0. If the CLI runs, it prints nothing. If the 30 s deadline killed the
   CLI, it prints `__CLI_HUNG__`. If the CLI is missing or does not run, it prints
@@ -38,7 +40,8 @@ The daemon is one binary. A flag selects the mode:
 The daemon supplies 20 methods across the `server.*`, `files.*`, `git.*`,
 `launcher.*`, `process.*`, and `plugins.*` namespaces. Auth is in-band per request. Spawned processes
 stream base64 stdout and stderr frames. A client that connects late, or that
-connects again, can replay those frames with `reattach`.
+connects again, can replay the retained frames with `reattach`. The replay
+buffer has a bound of 16 MiB for each process.
 
 ## Operational extras
 
@@ -59,21 +62,21 @@ Thus no extra changes the frames that a client sees. For details, see the
 - Token handoff: `-token-fd` supplies the token on a file descriptor, so
   you write no token file. The daemon still persists `daemon.token` beside the
   socket. See [PROTOCOL.md](PROTOCOL.md).
-- `-keep-children` (CT-2) keeps spawned processes
-  alive across a graceful shutdown, so the processes survive a daemon restart.
-  The flag is off by default, and the default shutdown kills the processes.
+- `-keep-children` (CT-2) leaves spawned processes running at a graceful
+  shutdown. They lose their stdio. The flag is off by default. The default
+  shutdown kills the whole tree on Linux and macOS, and the direct child on
+  Windows.
 
 ## Protocol extension
 
-claustrum has one opt-in protocol extension that clients can see. It is a
-deliberate addition, not a reference behavior. A client that passes
+claustrum has one opt-in addition to the result frames. `wantPid` is
+claustrum's own parameter. A client that passes
 `"wantPid":true` to `process.spawn` or `process.reattach` gets `pid` and
 `startTime` in the result. These two fields let the client detect PID reuse
 (CT-1).
 
-A client that does not opt in sees byte-identical frames. The
-[divergence catalog](DIVERGENCES.md) records this extension as a deliberate
-divergence.
+Without `wantPid`, the two results have no `pid` and no `startTime`. The
+[divergence catalog](DIVERGENCES.md) records the addition as CT-1.
 
 ## Where to go next
 
@@ -87,6 +90,8 @@ divergence.
   the socket.
 - :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)**. How the
   project keeps compatibility with the reference daemon in lock-step.
+- :material-history: **[Reference builds](REFERENCE-BUILDS.md)**. The history
+  of the reference builds, and what each build changed on the wire.
 - :material-source-branch: **[Divergences](DIVERGENCES.md)**. Every deliberate
   departure from the reference, its default, and how to activate it.
 - :material-format-list-checks: **[Shipped ledger](IMPROVEMENTS.md)**.
