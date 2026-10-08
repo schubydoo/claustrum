@@ -1,113 +1,108 @@
 # claustrum
 
-claustrum is a very small Go daemon that has a small number of dependencies.
-It is a clean-room reimplementation of the small daemon that operates a remote
-Claude Code session through SSH. One binary contains three parts: a local
-manager of CLI versions, a process supervisor, and a JSON-RPC multiplexer. The
-multiplexer has a replay buffer, and it uses an `AF_UNIX` socket.
+A tiny, dependency-light Go daemon. It is a clean-room reimplementation of
+the small daemon that hosts a remote Claude Code session over SSH. One binary
+holds three parts: a local CLI-version manager, a process supervisor, and a
+JSON-RPC multiplexer with a replay buffer over an `AF_UNIX` socket.
 
-[Probes](GLOSSARY.md#probe) of the [reference](GLOSSARY.md#reference) binary on
-the [wire](GLOSSARY.md#wire) recorded a behavior contract, and the daemon
-obeys this contract. This project copied no code. It also wrote no decompiler
-output into the implementation (refer to
+Wire-level [probes](GLOSSARY.md#probe) of the [reference](GLOSSARY.md#reference)
+binary captured a behavioral contract, and the daemon implements it. This
+project copied no code. It also transcribed no decompiler output into the
+implementation (see
 [`NOTICE`](https://github.com/schubydoo/claustrum/blob/main/NOTICE)).
 
-!!! note "The one mandatory rule"
-    Keep the JSON-RPC frames the same as the frames of the reference daemon,
-    byte for byte. The wire surface is the product of this project.
+!!! note "The one hard rule"
+    Stay byte-identical to the JSON-RPC frames of the reference daemon. The
+    [wire](GLOSSARY.md#wire) surface *is* the product.
 
-## Functions of the daemon
+## What it does
 
 The daemon is one binary. A flag selects the mode:
 
-- `-serve` is the daemon. It starts an `AF_UNIX` listener and one read loop
-  for each connection. On Linux and macOS, it sets the mode of the socket file
-  to `0600`. It can do the work for two or more requests at the same time. It
-  daemonizes, and it stops with a graceful shutdown.
-- `-bridge` is a relay between stdio and the socket. An SSH session connects
-  to this mode.
-- `-install` is the installer. It downloads the CLI, does a check of the
-  SHA-256, and extracts the zstd archive. Then it keeps the newest
+- `-serve` is the daemon. It opens an `AF_UNIX` listener and runs one read loop
+  for each connection. On Linux and macOS it sets the socket file to mode
+  `0600`. It dispatches requests concurrently, daemonizes itself, and shuts
+  down gracefully.
+- `-bridge` is a simple relay between stdio and the socket. An SSH session
+  attaches to this mode.
+- `-install` is the installer. It downloads the CLI, makes sure that the
+  SHA-256 matches, and extracts the zstd archive. Then it keeps the newest
   `-cli-keep` entries of the CLI directory and removes the others. If the caller
-  supplies a checksum, it does a check of a local `-cli-zst` blob. If not, it
-  does no check of that blob.
-- `-probe-cli` does the `<cli> --version` probe on one CLI binary, and its
-  exit code is 0. The probe has a time limit. If the CLI operates, it prints
-  no text. If the 30 s deadline killed the CLI, it prints `__CLI_HUNG__`. If
-  the CLI is not there or does not operate, it prints `__CLI_BAD__`.
+  supplies a checksum, it makes sure that a local `-cli-zst` blob matches it.
+  Without a checksum it does not compare that blob.
+- `-probe-cli` runs the bounded `<cli> --version` probe on one CLI binary, and
+  it exits 0. If the CLI runs, it prints nothing. If the 30 s deadline killed
+  the CLI, it prints `__CLI_HUNG__`. If the CLI is missing or does not run, it
+  prints `__CLI_BAD__`.
 
-    With `CLAUDE_SSH_MANAGED_LAUNCHER=1`, it starts the CLI through the managed
+    With `CLAUDE_SSH_MANAGED_LAUNCHER=1` it runs the CLI through the managed
     launcher of the host, and that run stops at 33 s with `__CLI_HUNG__`. It
-    prints `__CLI_LAUNCHER__` for a launcher that it cannot use, for managed
-    settings that it cannot read, or for a failure of the launcher run. With
-    no launcher, and on Windows, it starts the CLI directly.
-- `-stop` sends `server.shutdown`. `-version` gives the build.
+    prints `__CLI_LAUNCHER__` for an unusable launcher, unreadable settings or
+    a failed launcher run. With no launcher, and on Windows, it runs the CLI
+    directly.
+- `-stop` sends `server.shutdown`. `-version` reports the build.
 
-The daemon supplies 20 methods in the namespaces `server.*`, `files.*`,
-`git.*`, `launcher.*`, `process.*`, and `plugins.*`. The authentication is in
-each request. A spawned process sends its stdout and its stderr as base64
-frames. A client that connects after the daemon sent frames, or that connects
-again, can get the kept frames with `reattach`. The replay buffer has a limit
-of 16 MiB for each process.
+The daemon supplies 20 methods across the `server.*`, `files.*`, `git.*`,
+`launcher.*`, `process.*`, and `plugins.*` namespaces. Each request carries its
+own authentication in the `auth` member. Spawned processes stream base64 stdout
+and stderr frames. A client that connects late, or that connects again, can
+replay the retained frames with `reattach`. The replay buffer has a bound of
+16 MiB for each process.
 
-## Functions for operation
+## Operational extras
 
-claustrum has some functions for operation that the wire contract does not
-include. These functions are only in claustrum. Each function is off by
-default, or clients cannot find it in the frames. Thus no function changes
-the frames that a client gets. For the full data, refer to the
+claustrum carries a few claustrum-only operational extras that the wire contract
+does not cover. Each extra is either off by default or invisible to clients.
+Thus no extra changes the frames that a client sees. For details, see the
 [protocol reference](PROTOCOL.md).
 
-- Logging: The daemon writes log lines with a level to stderr. This function
-  is always on. By default, the daemon writes all the lines.
-  `CLAUSTRUM_LOG_LEVEL` only increases the threshold, and then the daemon
-  writes a smaller number of lines. No value of it stops all logging.
-- Metrics: `-metrics-addr` supplies a Prometheus `/metrics` endpoint. It is
-  off by default. Unless you set the flag, there is no listener.
-- Wire log: `-wire-log <path>` appends each JSON-RPC frame to a JSONL file for
-  diagnostics. It is off by default, and it has no effect on the wire. It
-  records the payloads of the frames, and it redacts credentials by key only.
-  Thus a capture is secret data. Refer to [PROTOCOL.md](PROTOCOL.md).
-- Token supply: `-token-fd` supplies the token on a file descriptor. Thus
-  you write no token file. The daemon also writes
-  `daemon.token` in the directory of the socket, with each token flag. Refer to
-  [PROTOCOL.md](PROTOCOL.md).
-- `-keep-children` (CT-2): With this flag, a graceful shutdown does not kill
-  the spawned processes. They have no stdio after the shutdown. The flag is
-  off by default. The default shutdown kills the full process tree on Linux
-  and macOS, and the direct child on Windows.
+- Logging: leveled stderr logging, always on. It emits everything by
+  default. `CLAUSTRUM_LOG_LEVEL` only *raises* the threshold and makes the
+  daemon quieter. It never turns logging off entirely.
+- Metrics: a Prometheus `/metrics` endpoint that `-metrics-addr` supplies.
+  It is off by default. If you do not set the flag, no listener exists.
+- Wire log: `-wire-log <path>` appends every JSON-RPC frame to a JSONL file
+  for diagnostics. It is off by default, and it has no effect on the wire. It
+  captures frame payloads and redacts credentials by key only, so a capture is
+  sensitive. See [PROTOCOL.md](PROTOCOL.md).
+- Token handoff: `-token-fd` supplies the token on a file descriptor, so
+  you write no token file. The daemon also writes `daemon.token` beside the
+  socket with each token flag. See [PROTOCOL.md](PROTOCOL.md).
+- `-keep-children` (CT-2) leaves spawned processes running at a graceful
+  shutdown. They lose their stdio. The flag is off by default. The default
+  shutdown kills the whole tree on Linux and macOS, and the direct child on
+  Windows.
 
-## The `wantPid` parameter
+## Protocol extension
 
-claustrum has one optional function that adds data to the response frames. It
-is off by default. `wantPid` is a parameter of claustrum. If a client sends
-`"wantPid":true` to `process.spawn` or `process.reattach`, the response
-contains `pid` and `startTime`. With these two fields, the client can
-detect that a different process has the same PID (CT-1).
+claustrum has one opt-in addition to the response frames. `wantPid` is
+claustrum's own parameter. If a client passes `"wantPid":true` to
+`process.spawn` or `process.reattach`, the response has `pid` and `startTime`.
+These two fields let the client detect PID reuse (CT-1).
 
 Without `wantPid`, the two responses have no `pid` and no `startTime`. The
-[divergence catalog](DIVERGENCES.md) records this function as CT-1.
+[divergence catalog](DIVERGENCES.md) records the addition as CT-1.
 
-## Related documents
+## Where to go next
 
 <div class="grid cards" markdown>
 
 - :material-sitemap: **[Architecture](ARCHITECTURE.md)**. The three runtime
-  roles, the concurrency model, the replay model, and how a
-  [driver](GLOSSARY.md#driver) uses the daemon.
-- :material-protocol: **[Protocol reference](PROTOCOL.md)**. Each method, with
-  its parameters, the format of its response, and its error codes.
-- :material-console: **[Examples](EXAMPLES.md)**. Full examples of client
-  sessions through the socket.
+  roles, the concurrency and replay model, and how a
+  [driver](GLOSSARY.md#driver) uses it.
+- :material-protocol: **[Protocol reference](PROTOCOL.md)**. Every method, its
+  parameters, response shape, and error codes.
+- :material-console: **[Examples](EXAMPLES.md)**. Worked client sessions over
+  the socket.
 - :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)**. How the
-  project stays compatible with each new build of the reference daemon.
+  project keeps compatibility with the reference daemon in lock-step.
 - :material-history: **[Reference builds](REFERENCE-BUILDS.md)**. The history
-  of the reference builds, and the changes that each build made on the wire.
-- :material-source-branch: **[Divergences](DIVERGENCES.md)**. Each
-  [divergence](GLOSSARY.md#divergence) from the reference, with its default
-  and how to activate it.
+  of the reference builds, and what each build changed on the wire.
+- :material-source-branch: **[Divergences](DIVERGENCES.md)**. Every deliberate
+  [divergence](GLOSSARY.md#divergence) from the reference, its default, and how
+  to activate it.
 - :material-format-list-checks: **[Shipped ledger](IMPROVEMENTS.md)**.
-  The completed hardening work, with one line for each item.
+  The completed hardening work, one line per item.
 - :material-book-alphabet: **[Glossary](GLOSSARY.md)**. The project terms and
   their definitions.
 
@@ -115,9 +110,7 @@ Without `wantPid`, the two responses have no `pid` and no `startTime`. The
 
 ## Safety model
 
-`process.spawn` starts the commands that the caller selects, as the user of
-the daemon. The project made this decision. The socket and the token give
-shell access. Keep them as safe as a shell. The
+`process.spawn` runs arbitrary commands as the user of the daemon by design.
+Treat the socket and the token as equivalent to shell access. The
 [security policy](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)
-contains the full threat model. claustrum has no telemetry, and the project
-will not add telemetry.
+holds the full threat model. There is no telemetry, ever.
