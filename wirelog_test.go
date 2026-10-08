@@ -290,8 +290,8 @@ func TestWireLogClosedWhenBootFailsAfterOpen(t *testing.T) {
 	}
 }
 
-// The capture is created 0600: it contains whatever the client sent, which for
-// files.write or process.stdin is arbitrary user data.
+// The capture is created 0600: it contains the frames of both directions, which
+// for a files.read reply or process.stdin is arbitrary user data.
 func TestWireLogFileIsOwnerOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX mode bits are not an owner-only DACL on Windows")

@@ -5577,9 +5577,10 @@ Claustrum-only extras follow. They are off the wire, and the canonical detail is
   needed to reconstruct a session from stream frames. Credentials are redacted by
   key, which covers the `auth` member and token-like env keys. A secret a client
   embeds inside a payload string is not caught, so redaction is best-effort, not a
-  guarantee. A capture holds whatever the client sent, such as `files.write`,
-  `process.stdin` and the spawn env. It is therefore forced to `0600` on every
-  open, appends included, and it belongs somewhere private. Each record carries the
+  guarantee. A capture holds the frames of both directions, such as the `content`
+  of a `files.read` reply, `process.stdin` and the spawn env. It is therefore
+  forced to `0600` on every open, appends included, and it belongs somewhere
+  private. Each record carries the
   frame as a decoded `body`, which is structured and truncated per value. That is a
   normalized view, so field order is not significant there. At
   `-wire-log-max-string=0` the record carries the frame as `raw` instead, verbatim,
