@@ -72,7 +72,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `results.go` must keep the validation battery green. An intentional
   divergence owes three things. Give it an entry with its decision rules in
   [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Give it its wire frames in
-  [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Call it out in the PR.
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md), or in the page of its method under
+  `docs/protocol/`. The measured cells go into the record of that method under
+  `docs/record/`. Call it out in the PR.
 - Do not add a new dependency without discussion. The permitted set is
   stdlib + zstd (`klauspost/compress`) + `golang.org/x/sys` and
   `github.com/Microsoft/go-winio` (both Windows-only), with `CGO_ENABLED=0`.

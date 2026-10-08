@@ -7,6 +7,9 @@ detect a new build. It also tells you how to find out whether that build changed
 anything claustrum must match. For the running history of which builds changed
 what, see the [reference build ledger](REFERENCE-BUILDS.md).
 
+The measured cells of a method are in its record under `docs/record/`, for
+example the [record of git.worktree_create](record/git-worktree-create.md).
+
 ## How the reference is distributed
 
 - Per-version manifest:
@@ -305,7 +308,7 @@ traps that matter for telling drift from expected:
   registration. In cell B6b it is the registration of a live sibling worktree
   that a wrapper moved to that path (Linux and macOS VMs). The frames are
   equal. A kept
-  folder there is D24, not drift (PROTOCOL.md → `git.worktree_create`).
+  folder there is D24, not drift (the [measurement record](record/git-worktree-create.md) of `git.worktree_create`).
 - The branch step of `git.worktree_remove` and of the create rollbacks splits the
   pins. claustrum follows `89cb6289`, the build that `scripts/UPSTREAM_SHA`
   names. Against `f6010b97`, `server.capabilities` differs by the

@@ -182,7 +182,7 @@ func safeOverlayDest(worktree, rel string) string {
 // or 0400.
 //
 // Two consequences worth knowing, both inherited deliberately rather than
-// "fixed" (see docs/PROTOCOL.md):
+// "fixed" (see docs/protocol/git-worktree-create.md):
 //   - an executable listed in the manifest arrives NON-executable
 //   - a source file deliberately kept private (say 0400) is widened to whatever
 //     the umask allows
