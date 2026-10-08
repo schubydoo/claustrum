@@ -11,9 +11,10 @@ reference build. The script then compares the frames of the two daemons. See
 
 ## busy
 
-Adjective. A daemon with a client connection is busy. On macOS the host cleaner
-learns this from an `lsof` run. If the host cleaner gives up on that run before
-a result comes, the daemon is also busy. The host cleaner sends no `SIGTERM` to
+Adjective. A daemon with a client connection is busy. On Linux the host cleaner
+reads this from `/proc/net/unix`. On macOS it learns this from an `lsof` run. If
+the host cleaner gives up on that run before a result comes, the daemon is also
+busy. The host cleaner sends no `SIGTERM` to
 a busy daemon. See
 [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos) and
 [D17](DIVERGENCES.md#d17).
@@ -23,7 +24,8 @@ a busy daemon. See
 Noun. The cleaner, or host cleaner, is a part of the daemon on Linux and macOS.
 At intervals it stops orphan Claude Code process groups and daemons that are
 not in use, and it removes stale run directories. It works for only one layout
-of the socket path. See
+of the socket path, and only for a daemon binary that is deployed under that
+layout. See
 [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos).
 
 ## containment
@@ -53,7 +55,8 @@ is a driver. See
 ## eviction
 
 Noun. Eviction is the step in which a new daemon stops the daemon that holds
-the same socket. The new daemon does this before it binds the socket. See
+the same socket. The new daemon does this before it binds the socket. It runs on Linux
+and macOS only. See
 [`daemon.lock`](PROTOCOL.md#run-dir-lock-daemonlock).
 
 ## guard

@@ -20,9 +20,10 @@ implementation (see
 The daemon is one binary. A flag selects the mode:
 
 - `-serve` is the daemon. It opens an `AF_UNIX` listener and runs one read loop
-  for each connection. On Linux and macOS it sets the socket file to mode
-  `0600`. It dispatches requests concurrently, daemonizes itself, and shuts
-  down gracefully.
+  for each connection. It sets the socket file to mode `0600`. That mode is
+  owner-only on Linux and macOS, and it is not an owner-only ACL on Windows. It
+  dispatches requests concurrently, daemonizes itself, and shuts down
+  gracefully.
 - `-bridge` is a simple relay between stdio and the socket. An SSH session
   attaches to this mode.
 - `-install` is the installer. It downloads the CLI, makes sure that the
@@ -35,8 +36,9 @@ The daemon is one binary. A flag selects the mode:
 
 The daemon supplies 20 methods across the `server.*`, `files.*`, `git.*`,
 `launcher.*`, `process.*`, and `plugins.*` namespaces. Each request carries its
-own authentication in the `auth` member. Spawned processes stream base64 stdout
-and stderr frames. A client that connects late, or that connects again, can
+own authentication in the `auth` member. `server.shutdown` is the one method
+that is not authenticated. Spawned processes stream base64 stdout and stderr
+frames. A client that connects late, or that connects again, can
 replay the retained frames with `reattach`. The replay buffer has a bound of
 16 MiB for each process.
 
