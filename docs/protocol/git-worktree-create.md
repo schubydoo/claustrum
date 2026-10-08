@@ -50,7 +50,7 @@ Decide by `errorCode`, not by the text.
 | `not_a_repo` | `baseRepo` is not a git repository. |
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
 | `mkdir_failed` | The daemon cannot create the parent directory of `worktreePath`. |
-| `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git. If the daemon did not let git start, the text holds the refusal of the daemon. |
+| `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git, or a refusal of the daemon that came before the add. |
 | `timeout` | The deadline of `timeoutMs` expired. |
 
 These seven are all the codes of this method.
@@ -66,7 +66,7 @@ What stays on disk depends on where the request failed.
 | Failure | What the daemon leaves |
 |---|---|
 | A refusal of the request or of a path (`not_a_repo`, `nested_base_repo`, `symlinked_component`, and `unsafe_path` for a path) | Nothing. The daemon changed nothing on disk. |
-| The daemon refuses before git runs (`worktree_add_failed`) | Nothing. The daemon changed nothing on disk, and no git call ran. The text holds the refusal of the daemon, not a message of git. |
+| The daemon refuses before it runs `git worktree add` (`worktree_add_failed`) | Nothing. The daemon changed nothing on disk. |
 | The daemon cannot create a directory (`mkdir_failed`) | No worktree and no branch. A directory that the daemon made above the worktree stays. With `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level stays too. On Linux and macOS, a stale registration of this worktree path in `<baseRepo>/.git/worktrees` can be gone. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
 | A test of the new worktree fails after the add. On Linux and macOS a test of its registration gives `unsafe_path`. If something replaced the worktree directory during the request, the code is `worktree_add_failed`. | Everything. The daemon rolls nothing back. The worktree directory, the registration and the branch stay. |
