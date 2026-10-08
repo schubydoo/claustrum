@@ -18,12 +18,12 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 | `sourceBranch` | no | The name that the new branch starts from. The daemon reads it as a local branch and as `origin/<name>`. The default is the current branch. An attach to `existingBranch` does not use it. A name that matches no branch is not an error: see [Response](#response). |
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Linux and macOS only. |
-| `timeoutMs` | no | A deadline over the add, the checkout and the copy step. The checks before the add are not under it. With no value or `0` there is no deadline. |
+| `timeoutMs` | no | A deadline that starts at the add. It stops only the checkout. The daemon tests it again after the add and after the copy step. With no value or `0` there is no deadline. |
 
 Where the worktree can go:
 
 - Without `worktreeRoot`, `worktreePath` must be an absolute path inside `baseRepo`. The usual place is `<baseRepo>/.claude/worktrees/<name>`.
-- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. The root must belong to the user of the daemon, and other users must have no write access to it. If the group of the root is the private group of that user, the group can have write access. The daemon judges the directories above the root too, and none of them can be inside a git checkout. The [measurement record](../record/git-worktree-create.md) has the exact rules.
+- With `worktreeRoot`, `worktreePath` must be `<worktreeRoot>/<directory>/<name>`. A root that exists must belong to the user of the daemon. Its mode must have no write bit for the group or for others. If the group of the root is the private group of that user, the group can have the write bit. The daemon judges the directories above the root by a looser rule. Neither the root nor a directory above it can hold a `.git` entry. The [measurement record](../record/git-worktree-create.md) has the exact rules.
 
 ## Response
 
@@ -33,7 +33,7 @@ Success:
 {"success": true, "path": "/repo/.claude/worktrees/w1", "sourceBranch": "main", "branch": "feature"}
 ```
 
-`path` is `worktreePath` as sent. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`.
+`path` is `worktreePath` as sent, after the `~` expansion. `branch` is the branch of the worktree. If the daemon attached to `existingBranch`, it is that branch. If not, it is `branchName`.
 
 If the daemon created a branch, `sourceBranch` is the name that the start commit came from. The daemon reads that name as two refs: the local branch `<name>` and the remote-tracking ref `origin/<name>`. It fetches nothing. If both exist, the daemon selects one of them. It selects `origin/<name>` in most states. For example, a local branch that is behind `origin/<name>` or equal to it gives `origin/<name>`. The response holds the name as sent in each case. So the response does not say which of the two refs the new branch started from. The [measurement record](../record/git-worktree-create.md) has the rules.
 
@@ -47,7 +47,7 @@ Failure:
 {"success": false, "error": "<text>", "errorCode": "<code>"}
 ```
 
-Decide by `errorCode`, not by the text.
+Decide by `errorCode` first.
 
 | `errorCode` | Meaning |
 |---|---|
@@ -55,7 +55,7 @@ Decide by `errorCode`, not by the text.
 | `symlinked_component` | A directory between `baseRepo` and the worktree is a symbolic link, for example a symlinked `.claude` or `.claude/worktrees`. |
 | `not_a_repo` | `baseRepo` is not a git repository. |
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
-| `mkdir_failed` | The daemon cannot create the parent directory of `worktreePath`. |
+| `mkdir_failed` | The daemon cannot create a directory for the worktree. |
 | `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git, or a refusal of the daemon that came before the add. |
 | `timeout` | The deadline of `timeoutMs` expired. |
 
@@ -75,7 +75,7 @@ A request can create three things outside the worktree, and no failure removes t
 - the registrations directory `<git dir>/worktrees`
 - with `worktreeRoot`, the marker file `.claude-managed-worktrees` at the `<directory>` level
 
-On Linux and macOS, a request can also remove a stale registration of this worktree path before the add.
+A request can also remove a stale registration of this worktree path before the add.
 
 The table says what stays of the worktree itself: its directory, its registration and its branch.
 
@@ -95,8 +95,8 @@ If the worktree directory stays, a second request with the same `worktreePath` g
 A rollback leaves something in these cases:
 
 - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
-- If the daemon cannot remove something, the error text ends with a clause that says what remains.
-- If something replaced a directory of the worktree during the request, the daemon does not remove the replacement. See [D24](../DIVERGENCES.md#d24).
+- If a delete fails, the error text ends with a clause that says what remains. On Windows a registration that stays adds no clause.
+- If something replaced the worktree directory, the rollback keeps the replacement and adds no clause. On Linux and macOS it also keeps a replaced registration directory ([D24](../DIVERGENCES.md#d24)).
 
 ## The copy of ignored files
 
@@ -118,14 +118,15 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 | `worktreeRoot` | Supported. | Refused with `unsafe_path`. |
 | A junction between `baseRepo` and the worktree | Does not apply. | Refused with `mkdir_failed`. |
 | Tests of the new registration after `git worktree add` | They run. A failure gives `unsafe_path`. | They do not run. |
+| A stale registration of the worktree path before the add | If it is the one stale entry and is not locked, the daemon removes it. | The daemon removes it, with no such test. |
 
 ## Differences from the reference
 
 claustrum is built to answer as the reference daemon does. These entries of the divergence catalog apply to this method:
 
-- [D2](../DIVERGENCES.md#d2): claustrum never removes the home directory of the user.
-- [D5](../DIVERGENCES.md#d5): an optional deadline for each git call. It is off by default.
-- [D24](../DIVERGENCES.md#d24): a rollback keeps a registration directory that something replaced during the request.
+- [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it.
+- [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
+- [D24](../DIVERGENCES.md#d24): on Linux and macOS, a rollback keeps a registration directory that something replaced after the add.
 
 ## More detail
 
