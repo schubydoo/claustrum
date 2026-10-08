@@ -14,7 +14,7 @@ output into the implementation (refer to
 
 !!! note "The one mandatory rule"
     Keep the JSON-RPC frames the same as the frames of the reference daemon,
-    byte for byte. The wire surface is the output of this project.
+    byte for byte. The wire surface is the product of this project.
 
 ## Functions of the daemon
 
@@ -27,8 +27,8 @@ The daemon is one binary. A flag selects the mode:
 - `-bridge` is a relay between stdio and the socket. An SSH session connects
   to this mode.
 - `-install` is the installer. It downloads the CLI, does a check of the
-  SHA-256, and extracts the zstd archive. Then it removes the entries of the
-  CLI directory that are more than the `-cli-keep` number. If the caller
+  SHA-256, and extracts the zstd archive. Then it keeps the newest
+  `-cli-keep` entries of the CLI directory and removes the others. If the caller
   supplies a checksum, it does a check of a local `-cli-zst` blob. If not, it
   does no check of that blob.
 - `-probe-cli` does the `<cli> --version` probe on one CLI binary, and its
@@ -67,10 +67,10 @@ the frames that a client gets. For the full data, refer to the
 - Wire log: `-wire-log <path>` appends each JSON-RPC frame to a JSONL file for
   diagnostics. It is off by default, and it has no effect on the wire. It
   records the payloads of the frames, and it redacts credentials by key only.
-  Thus a capture can contain secret data. Refer to [PROTOCOL.md](PROTOCOL.md).
+  Thus a capture is secret data. Refer to [PROTOCOL.md](PROTOCOL.md).
 - Token supply: `-token-fd` supplies the token on a file descriptor. Thus
-  you write no token file. Also with this flag, the daemon writes
-  `daemon.token` in the directory of the socket. Refer to
+  you write no token file. The daemon also writes
+  `daemon.token` in the directory of the socket, with each token flag. Refer to
   [PROTOCOL.md](PROTOCOL.md).
 - `-keep-children` (CT-2): With this flag, a graceful shutdown does not kill
   the spawned processes. They have no stdio after the shutdown. The flag is
@@ -100,7 +100,7 @@ Without `wantPid`, the two responses have no `pid` and no `startTime`. The
 - :material-console: **[Examples](EXAMPLES.md)**. Full examples of client
   sessions through the socket.
 - :material-sync: **[Upstream tracking](UPSTREAM-TRACKING.md)**. How the
-  project stays compatible with the reference daemon.
+  project stays compatible with each new build of the reference daemon.
 - :material-history: **[Reference builds](REFERENCE-BUILDS.md)**. The history
   of the reference builds, and the changes that each build made on the wire.
 - :material-source-branch: **[Divergences](DIVERGENCES.md)**. Each
@@ -116,8 +116,8 @@ Without `wantPid`, the two responses have no `pid` and no `startTime`. The
 ## Safety model
 
 `process.spawn` starts the commands that the caller selects, as the user of
-the daemon. The project made this decision. Make the same security decisions
-for the socket and the token as for shell access. The
+the daemon. The project made this decision. The socket and the token give
+shell access. Keep them as safe as a shell. The
 [security policy](https://github.com/schubydoo/claustrum/blob/main/SECURITY.md)
 contains the full threat model. claustrum has no telemetry, and the project
 will not add telemetry.

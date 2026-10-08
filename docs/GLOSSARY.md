@@ -12,9 +12,9 @@ to [Upstream tracking](UPSTREAM-TRACKING.md#step-3-authoritative-byte-for-byte-r
 
 ## busy
 
-Adjective. When the host cleaner examines a daemon that has a client
-connection, that daemon is busy. The host cleaner sends no `SIGTERM` to a busy
-daemon.
+Adjective. If a daemon has a client connection, it is busy. On macOS the
+host cleaner gets that data from an `lsof` operation. If the host cleaner
+stops that operation before the result comes, the daemon is also busy. The host cleaner sends no `SIGTERM` to a busy daemon.
 Refer to [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos) and
 to [D17](DIVERGENCES.md#d17).
 
@@ -22,7 +22,8 @@ to [D17](DIVERGENCES.md#d17).
 
 Noun. The cleaner, or host cleaner, is a part of the daemon on Linux and macOS.
 At intervals, it stops orphan Claude Code process groups and daemons that
-are not in use, and it removes stale run directories. Refer to
+are not in use, and it removes stale run directories. It operates only for one layout of the
+socket path. Refer to
 [Host cleaner](PROTOCOL.md#host-cleaner-off-wire-linux-and-macos).
 
 ## containment
@@ -67,7 +68,10 @@ Noun. This term has two uses:
 
 - The identity of a file or a directory is the value with which the OS
   identifies it. Two paths that have the same identity go to the same object.
-- The identity of a process is its PID together with its start time.
+- The identity of a process is the set of values with which the daemon knows
+  that process, for example its PID together with its start time.
+- The identity of a machine is the set of values with which the daemon knows
+  the host and its PID namespace.
 
 Refer to [`daemon.lock`](PROTOCOL.md#run-dir-lock-daemonlock).
 
@@ -75,7 +79,7 @@ Refer to [`daemon.lock`](PROTOCOL.md#run-dir-lock-daemonlock).
 
 Noun. Parity is the condition in which claustrum has the same behavior as the
 reference. A behavior that has parity is not a divergence. Refer to
-[Divergences](DIVERGENCES.md#the-one-hard-rule).
+[Divergences](DIVERGENCES.md#how-we-decide-the-rules).
 
 ## pass
 
@@ -122,8 +126,8 @@ reference", the word is part of the name of a document. Refer to
 
 ## refusal
 
-Noun. A refusal is a result in which claustrum does not do an operation
-because a rule or a guard rejects the input. The response or the output gives
+Noun. A refusal is a result in which an operation does not occur because a
+rule, a guard, the OS or the other program rejects it. The response or the output gives
 the cause. Refer to
 [catalog of error texts](PROTOCOL.md#error-string-catalogue).
 
