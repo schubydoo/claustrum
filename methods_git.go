@@ -81,7 +81,7 @@ func (p *gitParams) repoDir() string {
 // a large repo on a loaded host or a cold network filesystem trips it too. The
 // fallback here IS observable. On git.status and
 // git.list_branches the killed process surfaces as -32603 carrying
-// "signal: killed" (docs/PROTOCOL.md -> git.list_branches; docs/DIVERGENCES.md D5).
+// "signal: killed" (docs/protocol/git-list-branches.md; docs/DIVERGENCES.md D5).
 // Normal git ops finish well under any sane bound, but "well under" is a statement
 // about typical hosts, not a property of the predicate, and an honest 61 s git has
 // never been measured on either binary. This is D5.
@@ -608,7 +608,7 @@ func gitStatus(req *request) response {
 
 // unresolvable reports whether filepath.EvalSymlinks fails on p, for any reason.
 // git.status treats such a baseRepo as missing, and git.list_branches such a path
-// (docs/PROTOCOL.md).
+// (docs/PROTOCOL.md, docs/record/git-list-branches.md).
 func unresolvable(p string) bool {
 	_, err := filepath.EvalSymlinks(p)
 	return err != nil
@@ -630,8 +630,9 @@ func gitListBranches(req *request) response {
 	}
 	// A path inside a managed worktrees tree, and a non-empty path that does not
 	// resolve, answer the bare isRepo:false shape (branches:[]) before any git call
-	// and before the check of the daemon's own GIT_CONFIG_COUNT (docs/PROTOCOL.md).
-	// The managed-worktrees test also runs on baseRepo.
+	// and before the check of the daemon's own GIT_CONFIG_COUNT
+	// (docs/record/git-list-branches.md). The managed-worktrees test also runs on
+	// baseRepo.
 	if baseRepoUnderManagedWorktrees(p.Path) || baseRepoUnderManagedWorktrees(p.repoDir()) ||
 		(p.Path != "" && unresolvable(p.Path)) {
 		return okResult(req.ID, branchesResult{Branches: []string{}})

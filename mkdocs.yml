@@ -90,6 +90,7 @@ nav:
       - files.validate: protocol/files-validate.md
       - files.stat: protocol/files-stat.md
       - files.read: protocol/files-read.md
+      - git.list_branches: protocol/git-list-branches.md
       - git.worktree_create: protocol/git-worktree-create.md
   - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md
@@ -99,6 +100,7 @@ nav:
   - Glossary: GLOSSARY.md
   - Measurement records:
       - files.read: record/files-read.md
+      - git.list_branches: record/git-list-branches.md
       - git.worktree_create: record/git-worktree-create.md
   - Project:
       - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md

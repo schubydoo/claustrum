@@ -2038,7 +2038,7 @@ remove of a gone worktree.
 |---|---|
 | `git.info` | `{"error":{"code":-32603,"message":<text>}}`, also for a plain dir, a missing dir and a file. Linux, macOS and Windows VMs |
 | `git.list_branches` | the same, also for a plain dir, a file, and an empty or absent `path`. For an empty or absent `path`, the daemon's working directory was a repository or a plain dir. Linux, macOS and Windows VMs |
-| `git.list_branches`, `path` not empty and does not resolve, or inside a managed worktrees directory | `{"isRepo":false,"branches":[]}`, before the check and with no git call. See the method section |
+| `git.list_branches`, `path` not empty and does not resolve, or inside a managed worktrees directory | `{"isRepo":false,"branches":[]}`, before the check and with no git call. See the [record of the method](record/git-list-branches.md) |
 | `git.status` | the same, also for a `path` that is a plain dir, the repository, missing or a file, and for a plain-dir `baseRepo`. Linux, macOS and Windows VMs |
 | `git.status`, `baseRepo` does not resolve | `{"isRepo":false,"clean":false}`, before the check and with no git call. See the method section. From the code: a `baseRepo` in a managed worktrees tree answers the same way. That case is not measured with a refused count |
 | `git.worktree_create` | `{"success":false,"error":<text>,"errorCode":"worktree_add_failed"}`, also for a plain-dir or missing `baseRepo` and a relative `worktreePath`. Also for a `worktreePath` with a `..` component, outside the repository or that exists. A missing `branchName` gets its `-32602` frame first. A `baseRepo` inside a managed worktrees directory gets its `nested_base_repo` frame first. Linux, macOS and Windows VMs. On Windows the check comes before the `worktreeRoot` refusal (Windows VM). A `baseRepo` that fails claustrum's own trust-root test gets that frame first too. Only the Windows VM measured that order (round 1 row C1 P1) |
@@ -2501,29 +2501,8 @@ claustrum opens each file without blocking and reads a regular file only.
 
 #### git.list_branches
 `{path}` → `{"isRepo":true,"branches":[…sorted…]}`
-- Non-repo → `{"isRepo":false,"branches":[]}`.
-- A refused daemon `GIT_CONFIG_COUNT` changes the answers of this method (see "The
-  daemon's own git environment").
-- A `path` inside a managed worktrees directory answers
-  `{"isRepo":false,"branches":[]}` before any git call. That is a path beneath
-  `.claude/worktrees`, or beneath a directory that holds a
-  `.claude-managed-worktrees` marker. Linux, macOS and Windows VMs. claustrum also
-  runs this test on `baseRepo` (not measured).
-- A `path` that is not empty and does not resolve answers
-  `{"isRepo":false,"branches":[]}` before any git call. The rule is the one that
-  `git.status` applies to `baseRepo`. Examples are a missing `path` (Linux, macOS
-  and Windows VMs) and `<dir>\missing\..` (Windows VM). On Windows a `path` with a
-  junction before its last component, such as `<dir>\<junction>\T`, does not
-  resolve (Windows VM).
-- Since `f6010b97` the git-directory trust check runs on `path`. A refused git
-  directory answers `-32603` with the refusal text. "No repository" answers
-  `{"isRepo":false,"branches":[]}`. A `GIT_COMMON_DIR` in the daemon's environment
-  turns the check off for this method. See
-  [Git-directory trust check](#git-directory-trust-check).
-- The daemon reads stdout only. A broken-ref `for-each-ref` warning must not become
-  a branch.
-- A failing `for-each-ref` → `-32603 exit status 128`. With opt-in D5 it can carry
-  `signal: killed` (see D5 below).
+
+Lists the local branches of a git repository. The page [git.list_branches](protocol/git-list-branches.md) has the parameters, the response and the errors.
 
 #### git.worktree_create
 `{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}`
