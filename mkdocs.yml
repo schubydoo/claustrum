@@ -90,6 +90,7 @@ nav:
       - files.validate: protocol/files-validate.md
       - files.stat: protocol/files-stat.md
       - files.read: protocol/files-read.md
+      - files.extract_tar: protocol/files-extract-tar.md
       - git.worktree_create: protocol/git-worktree-create.md
   - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md

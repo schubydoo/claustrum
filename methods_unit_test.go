@@ -357,6 +357,68 @@ func TestFilesExtractTarSideEffects(t *testing.T) {
 	}
 }
 
+// What a failed files.extract_tar leaves on disk depends on where it failed:
+// before the archive opens, between the open and the wipe of destDir, or after
+// the wipe. These are the first rows of the "After a failure" table in
+// docs/protocol/files-extract-tar.md, and no frame shows them.
+func TestFilesExtractTarAfterFailure(t *testing.T) {
+	gzipOf := func(payload string) []byte {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		if _, err := gz.Write([]byte(payload)); err != nil {
+			t.Fatal(err)
+		}
+		if err := gz.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	for _, tc := range []struct {
+		name        string
+		archive     []byte // nil: no file at archivePath
+		wantSub     string
+		archiveStay bool
+		oldStay     bool
+	}{
+		{"no archive", nil, "open archive: ", false, true},
+		{"bad gzip header", []byte("plain text, not gzip"), "gzip: ", false, true},
+		{"gzip data that is not a tar", gzipOf("not a tar archive"), "gzip: ", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestServer(t)
+			root := t.TempDir()
+			dest := filepath.Join(root, "dest")
+			if err := os.MkdirAll(dest, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, old := range []string{"stale.txt", ".synced"} {
+				if err := os.WriteFile(filepath.Join(dest, old), []byte("old"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			archive := filepath.Join(root, "a.tar.gz")
+			if tc.archive != nil {
+				if err := os.WriteFile(archive, tc.archive, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+			if !strings.Contains(got, `"success":false`) || !strings.Contains(got, `"error":"`+tc.wantSub) {
+				t.Fatalf("extract = %s, want success:false and an error that starts with %q", got, tc.wantSub)
+			}
+			if _, err := os.Stat(archive); (err == nil) != tc.archiveStay {
+				t.Errorf("archive present = %v, want %v", err == nil, tc.archiveStay)
+			}
+			for _, old := range []string{"stale.txt", ".synced"} {
+				if _, err := os.Stat(filepath.Join(dest, old)); (err == nil) != tc.oldStay {
+					t.Errorf("old %s present = %v, want %v", old, err == nil, tc.oldStay)
+				}
+			}
+		})
+	}
+}
+
 // extract_tar supports only regular files and directories: any other entry
 // type (symlink, hardlink, device) aborts the whole extraction with fileCount 0
 // and the reference's "unsupported tar entry type <c>: <name>" error, writing no

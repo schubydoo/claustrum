@@ -250,8 +250,9 @@ var wipeDestDir = os.RemoveAll
 //
 // Whether the reference refuses a root destDir is NOT measured — an earlier
 // version of this comment asserted "the reference has no such guard", which is
-// an absence claim with no probe behind it, and docs/PROTOCOL.md files the
-// refusal as neither parity nor divergence. What is certain is the consequence
+// an absence claim with no probe behind it, and
+// docs/protocol/files-extract-tar.md files the refusal as neither parity nor
+// divergence. What is certain is the consequence
 // here: this guard is the only thing between a root destDir and a recursive
 // delete, so it must not have a platform-shaped hole whatever the reference
 // does.

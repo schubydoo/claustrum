@@ -824,7 +824,8 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.extract_tar | `archivePath and destDir are required` | |
 | files.extract_tar | `destDir must be an absolute, non-root path: …` | in `error` field |
 | files.extract_tar | `destDir must not be or contain the home directory: …` | D2, in `error` field |
-| files.extract_tar | `gzip: …` | in `error` field (bad gzip) |
+| files.extract_tar | `open archive: …` | in `error` field (the archive cannot be opened) |
+| files.extract_tar | `gzip: …` | in `error` field (a bad gzip header, or an entry that cannot be read) |
 | files.extract_tar | `unsafe path in archive: <entry>` | in `error` field (zip slip) |
 | files.extract_tar | `unsupported tar entry type <c>: <entry>` | in `error` field |
 | files.extract_tar | `extraction size limit exceeded` | D3 opt-in, in `error` field |
@@ -1186,53 +1187,7 @@ Says whether a path exists and whether it is a directory. The page [files.valida
 #### files.extract_tar
 `{archivePath,destDir}` → extracts a gzip tar → `{"success":true,"fileCount":<n>}`
 
-The method has four deliberate side effects. None of them is visible in the frame:
-1. The daemon wipes `destDir` with `os.RemoveAll` and then recreates it before it
-   unpacks. Extraction is idempotent and destructive.
-2. Entries get owner-only fixed modes: `0600` for files, `0700` for directories.
-   An executable `0755` entry still lands `0600`.
-3. On success the daemon writes an empty `.synced` marker at the `destDir` root.
-   It does not count that marker in `fileCount`.
-4. The daemon consumes `archivePath`. Once it opens the archive, it removes the
-   file on *every* outcome: success, bad gzip, or unsafe path.
-
-Errors. Unless a line says otherwise, each error goes in the `error` field with
-`fileCount:0`, which has no `omitempty`:
-- Missing params → `-32602 archivePath and destDir are required`.
-- A `destDir` that is not absolute, or that is a root →
-  `destDir must be an absolute, non-root path: …`. The daemon rejects this before
-  it opens the archive, so it does not consume the archive. "Root" is the
-  platform's own notion. It is `/` on Unix, and a drive root `C:\` or a UNC share
-  root `\\server\share\` on Windows. The root test and the `filepath.IsAbs` test
-  share one branch and one message. Whether the reference refuses a root `destDir`
-  at all is not measured. Our own consequence justifies the guard: a recursive
-  delete of the volume. It is not a claim about the reference, so it is neither
-  parity nor a divergence entry.
-- A `destDir` that is, or contains, the home directory →
-  `destDir must not be or contain the home directory: …`. This is intentional
-  divergence D2, because the reference wipes `$HOME` on `"destDir":"~"`. The test
-  is *containment*. The daemon refuses home and any ancestor of home. It accepts
-  anything under home, such as `~/.claude/…`. See
-  [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
-- Bad gzip → `gzip: …`.
-- Zip slip → `unsafe path in archive: <entry>`. The daemon allows a `../` that
-  resolves back inside `destDir`.
-- An entry that is neither regular nor a directory, such as a symlink, a hardlink,
-  a device or a fifo → `unsupported tar entry type <c>: <entry>`. `<c>` is the tar
-  typeflag char, `2` for a symlink and `1` for a hardlink.
-- Total uncompressed bytes over the opt-in cap → `extraction size limit exceeded`.
-  This is not reachable by default, because the cap is `0`, which means off, and
-  that matches the reference. This is intentional divergence D3. See the flags
-  table under `-serve` and [`DIVERGENCES.md`](DIVERGENCES.md) → D3.
-- A failure to clean, to mkdir, or to write the marker → `clean destDir: …` /
-  `mkdir destDir: …` / `write .synced: …`.
-- Target is an existing directory → `create <entry>: open <target>: is a
-  directory`.
-- The daemon cannot create the parent → `mkdir parent <entry>: <os error>`. One
-  way to reach this is an earlier entry that wrote a file where this entry needs a
-  directory. Only the `mkdir parent <entry>: ` prefix is contract. The tail is the
-  OS's. Both `create <entry>: ` and `mkdir parent <entry>: ` name the archive
-  entry, not the resolved target.
+Unpacks a gzip tar archive into a directory. It deletes the old content of the directory and the archive. The page [files.extract_tar](protocol/files-extract-tar.md) has the parameters, the response and what stays after a failure.
 
 ### git.* (param: `path` = repo dir; worktree ops use `baseRepo`)
 
@@ -4479,9 +4434,10 @@ Claustrum-only extras follow. They are off the wire, and the canonical detail is
 
 The opt-in divergences on this mode are `-max-extract-bytes` (D3),
 `-git-timeout` (D5) and `-files-read-regular-only` (D4). Off is parity. Their wire
-frames appear in the method sections above, under `files.extract_tar`, `git.status`,
-`git.list_branches` and `git.worktree_remove`. The frame of D4 is in the page
-[files.read](protocol/files-read.md). See the flags table and
+frames appear in the method sections above, under `git.status`,
+`git.list_branches` and `git.worktree_remove`. The frame of D3 is in the page
+[files.extract_tar](protocol/files-extract-tar.md), and the frame of D4 is in the
+page [files.read](protocol/files-read.md). See the flags table and
 [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ### -bridge — stdio↔socket relay

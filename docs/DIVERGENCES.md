@@ -315,7 +315,7 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   identity.
 - **Reopen trigger.** An honest caller legitimately naming a destructive target
   that *is or contains* a home directory.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `files.extract_tar` and `git.worktree_remove` (the `git.worktree_create` guard emits no frame). Also `homeguard.go` and
+- **Pointers.** The page [files.extract_tar](protocol/files-extract-tar.md), and [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove` (the `git.worktree_create` guard emits no frame). Also `homeguard.go` and
   `homeguard_test.go` (`wipeDestDir` seams the destructive call, so the suite is
   safe against an unfixed tree). For `-install`: `stageAndInstall` and
   `cliEntryHoldsHome` in `install.go`, and [PROTOCOL.md](PROTOCOL.md) → `-install` → Staging and
@@ -334,8 +334,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   extraction the reference completes, and Desktop owns the argv (rule 4).
 - **Reopen trigger.** An operator's cap refusing a legitimate extraction, or the
   default letting a size bomb through in normal use.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) and `methods_files.go`. Measurement:
-  forensics.
+- **Pointers.** The page [files.extract_tar](protocol/files-extract-tar.md) and
+  `methods_files.go`. Measurement: forensics.
 
 ### D4 · Make the `files.read` regular-file guard opt-in { #d4 }
 
