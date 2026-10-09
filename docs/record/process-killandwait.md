@@ -1,6 +1,6 @@
 # process.killAndWait: measurement record
 
-This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-09. Only its cross-references changed in the move. It holds the detailed rules of `process.killAndWait` and the measurements behind them, and it names the reference build of a measurement where the old text did. A new measurement of the method goes into this page.
+This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-09. Only its cross-references changed in the move. It holds the detailed rules of `process.killAndWait` and the measurements behind them, and it names the reference build of a measurement where the old text did. A new measurement of the method goes into this page. One sentence of the text is too wide: "No signal is delivered either" holds for the first signal only. The escalation at the end of the grace still sends its `SIGKILL`.
 
 To use the method, read [process.killAndWait](../protocol/process-killandwait.md).
 
