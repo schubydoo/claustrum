@@ -51,7 +51,8 @@ in-progress commit, run `git commit --no-verify`.
   Make sure that the frames stay byte-identical. A change that diverges on
   purpose must say so in the PR. It must add an entry to the divergence catalog
   in [docs/DIVERGENCES.md](docs/DIVERGENCES.md). It must record its wire frames
-  in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+  in [docs/PROTOCOL.md](docs/PROTOCOL.md), or in the page of its method under
+  `docs/protocol/`.
 - Docs. Update `docs/` for any user-visible behavior change. The site is
   built with mkdocs-material and published to GitHub Pages. CI runs
   `mkdocs build --strict` on every docs change. A broken link or a bad nav entry

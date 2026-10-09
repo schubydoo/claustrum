@@ -83,6 +83,15 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `*_windows.go`. `make all` must cross-compile cleanly for all six targets.
 - Keep host-specific / reverse-engineering working notes out of the repo.
   `scratch/` is gitignored on purpose.
+- Each fact of the documentation has one home. A rule that a reader acts on
+  gets one or two sentences on the page of its method under `docs/protocol/`.
+  A measurement goes into the record of that method under `docs/record/`, or
+  into a test. The history of completed work goes into
+  [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md). The history of a reference
+  build goes into [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md).
+  Another document links to
+  that home and does not copy the text. A method that has no page yet keeps
+  its text in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 ## Always do
 
@@ -465,6 +474,8 @@ the argv", `cliError` classification, libc selection) →
 ## Where detail lives
 
 - Protocol / frames → [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
+- One short page for each method → `docs/protocol/`
+- The measurements behind a method page → `docs/record/`
 - Divergence catalog + rules → [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md)
 - Internals + driver-claim provenance → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Worked client examples → [`docs/EXAMPLES.md`](docs/EXAMPLES.md)

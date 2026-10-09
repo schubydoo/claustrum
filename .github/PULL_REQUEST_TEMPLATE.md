@@ -17,7 +17,8 @@ internal-only PRs apply the `no-changelog` label instead. See CONTRIBUTING.md.
 - [ ] No wire-surface change. It does not touch `rpc.go`, `methods_*.go`,
       `process.go`, or `results.go`.
 - [ ] Intentional protocol change. It is documented in
-      [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) and described below.
+      [`docs/PROTOCOL.md`](../docs/PROTOCOL.md), or in the page of its method
+      under `docs/protocol/`, and described below.
 
 ## Checklist
 
