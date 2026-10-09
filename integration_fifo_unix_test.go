@@ -84,9 +84,8 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //	       the second is the one that proves the cap is INERT rather than merely
 //	       unhit, since it exceeds a pipe buffer and forces the reader to drain
 //	       while the writer streams. ⚠️ Only the 40-byte size is committed
-//	       anywhere. The 300000-byte measurement is one-off: it is recorded in
-//	       the maxBytes paragraph BELOW docs/PROTOCOL.md's D4 table, not in the
-//	       table itself, which calls this shape "measured but not tabled". The
+//	       anywhere. The 300000-byte measurement is one-off, and no committed
+//	       document holds it. The
 //	       battery has no FIFO case at all — its one D4 case is /dev/null
 //	       (battery.js id 70). So CI locks the 40-byte case for want of a
 //	       committed home for the larger one, NOT because a larger payload would

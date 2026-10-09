@@ -26,7 +26,7 @@ The daemon follows a symbolic link at `path`.
 | Member | Meaning |
 |---|---|
 | `name` | The name of the entry. |
-| `path` | `path` of the request, joined with the name. The daemon cleans the result: it removes a doubled or trailing separator and resolves `.` and `..` as text. On Windows the separators of the result are `\`. |
+| `path` | `path` of the request after the `~` expansion, joined with the name. The daemon cleans the result: it removes a doubled or trailing separator and resolves `.` and `..` as text. On Windows the separators of the result are `\`. |
 | `isDir` | If the entry is a directory or a symbolic link to a directory, `true`. |
 
 The rules of the list:

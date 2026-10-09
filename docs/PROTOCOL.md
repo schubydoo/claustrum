@@ -4480,7 +4480,8 @@ Claustrum-only extras follow. They are off the wire, and the canonical detail is
 The opt-in divergences on this mode are `-max-extract-bytes` (D3),
 `-git-timeout` (D5) and `-files-read-regular-only` (D4). Off is parity. Their wire
 frames appear in the method sections above, under `files.extract_tar`, `git.status`,
-`git.list_branches`, `git.worktree_remove` and `files.read`. See the flags table and
+`git.list_branches` and `git.worktree_remove`. The frame of D4 is in the page
+[files.read](protocol/files-read.md). See the flags table and
 [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ### -bridge — stdio↔socket relay
