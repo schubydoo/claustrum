@@ -14,7 +14,7 @@
 | `data` | no | The bytes, in base64. Without `data`, the request sends no bytes. |
 | `offset` | no | The position of the first byte of `data` in the stream of all bytes sent to this process, counted from 0. Without `offset`, the daemon appends `data`. |
 
-One request line has a limit of 1 MiB: see [Transport](../PROTOCOL.md#transport). Send a large input in several requests.
+One request line has a limit of 1 MiB: see [Transport](../PROTOCOL.md#transport). `data` is base64, so it costs a third more than the bytes that it carries. Send a large input in several requests, each well below that limit.
 
 ## Response
 
@@ -28,7 +28,7 @@ One request line has a limit of 1 MiB: see [Transport](../PROTOCOL.md#transport)
 | `applied` | The number of bytes that the daemon accepted for this process, over all requests. It counts the bytes after the base64 decode. Each result has it. A count of `0` is in the result too. |
 | `duplicate` | If `offset` is below `applied` and `data` ends at or before `applied`, `true`. The daemon then accepted no new byte. Each other result has no `duplicate` member. |
 
-`applied` says that the daemon accepted the bytes. It does not say that the child read them. The daemon writes the bytes to the child from a queue, after the response. If the child exits or closes its input first, the daemon drops the bytes that are still in the queue, and no response says so. After the child closes its input, the daemon still answers success for later requests and raises `applied`, and it drops their bytes. No frame reports that.
+`applied` says that the daemon accepted the bytes. It does not say that the child read them. The daemon writes the bytes to the child from a queue, and it does not wait for that write before it answers. If the child exits or closes its input first, the daemon drops the bytes that are still in the queue, and no response says so. After the child closes its input, the daemon still answers success for later requests and raises `applied`, and it drops their bytes. No frame reports that.
 
 ## How `offset` works
 
