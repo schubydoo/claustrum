@@ -382,8 +382,9 @@ func (m *procManager) liveArgv() [][]string {
 // process.stdin to isLive below, so neither reads this any more. One client-visible
 // field still does: killAndWaitProc answers alreadyExited from it, so inside the
 // drain a killAndWait answers alreadyExited:false and waits, rather than reporting
-// an already-exited process. It delivers no signal either — signalIfLive's reaped
-// guard suppresses that — so the drain costs the caller a wait, not a stray signal.
+// an already-exited process. It delivers no FIRST signal either: signalIfLive's
+// reaped guard suppresses that. With escalate true and the drain still pending at
+// the end of the grace, killGroupAfterExit still sends the group SIGKILL.
 // Leaving killAndWait on this side of the narrowing is claustrum's choice. The
 // reference answer for a kill inside the drain is NOT probe-measured.
 // The other callers are internal (the session supersede, the shutdown log line).
