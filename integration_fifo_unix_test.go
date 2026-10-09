@@ -27,12 +27,12 @@ import (
 // the reference replies normally the instant a writer opens. The "never replies"
 // reading came from a probe that wrapped the read in `timeout 8` and never
 // opened one — a harness deadline shorter than the subject's own blocking
-// behaviour records "no reply" by construction. See docs/PROTOCOL.md.
+// behaviour records "no reply" by construction. See docs/record/files-read.md.
 //
 // /dev/null is the cost of that guard rather than a separate decision: the check
 // is Mode().IsRegular(), so it also rejects character devices the reference reads
 // happily ({"content":"","exists":true}). Both rows are asserted so neither can
-// drift unnoticed — see docs/PROTOCOL.md → files.read.
+// drift unnoticed — see docs/record/files-read.md.
 //
 // The file is unix-tagged rather than runtime-skipped: syscall.Mkfifo does not
 // exist on Windows, so a GOOS check inside the test would still fail to compile
@@ -84,12 +84,11 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //	       the second is the one that proves the cap is INERT rather than merely
 //	       unhit, since it exceeds a pipe buffer and forces the reader to drain
 //	       while the writer streams. ⚠️ Only the 40-byte size is committed
-//	       anywhere. The 300000-byte measurement is one-off: it is recorded in
-//	       the maxBytes paragraph BELOW docs/PROTOCOL.md's D4 table, not in the
-//	       table itself, which calls this shape "measured but not tabled". The
+//	       anywhere. The 300000-byte measurement is one-off, and no committed
+//	       document holds it yet. Its place is docs/record/files-read.md. The
 //	       battery has no FIFO case at all — its one D4 case is /dev/null
-//	       (battery.js id 70). So CI locks the 40-byte case for want of a
-//	       committed home for the larger one, NOT because a larger payload would
+//	       (battery.js id 70). So CI locks the 40-byte case because the
+//	       larger one is recorded nowhere, NOT because a larger payload would
 //	       deadlock here: the writers are goroutines and the in-process daemon
 //	       drains concurrently, so 300000 bytes completes fine.
 //
@@ -113,7 +112,7 @@ func TestSocketFilesReadNonRegularOptedIn(t *testing.T) {
 //     identical on the reference, but the frame depends on the daemon's uid, and
 //     a root runner does not merely get a different error: /dev/console blocks on
 //     the tty (this test would hang) and a block device streams the disk into
-//     memory. They live in docs/PROTOCOL.md's table rather than in a golden.
+//     memory. They live in the table of docs/record/files-read.md rather than in a golden.
 //
 // ⚠️ The FIFO rows need a writer and the opted-in ones do not — that asymmetry IS
 // the divergence, not test scaffolding. With the guard off, the read waits for a

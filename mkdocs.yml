@@ -86,6 +86,10 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Protocol reference: PROTOCOL.md
   - Methods:
+      - files.list: protocol/files-list.md
+      - files.validate: protocol/files-validate.md
+      - files.stat: protocol/files-stat.md
+      - files.read: protocol/files-read.md
       - git.worktree_create: protocol/git-worktree-create.md
   - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md
@@ -94,6 +98,7 @@ nav:
   - Shipped ledger: IMPROVEMENTS.md
   - Glossary: GLOSSARY.md
   - Measurement records:
+      - files.read: record/files-read.md
       - git.worktree_create: record/git-worktree-create.md
   - Project:
       - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
