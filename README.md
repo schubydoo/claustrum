@@ -156,7 +156,7 @@ These knobs belong to claustrum only, and they stay off the wire:
 - `-keep-children` (CT-2) leaves spawned children running across a graceful
   shutdown. [docs/DIVERGENCES.md](docs/DIVERGENCES.md) CT-2 names its limits.
 - `-listen-pipe` (CT-5, Windows only) also serves the same JSON-RPC over a named pipe.
-- `-wire-log` (CT-3) appends every JSON-RPC frame to a file for diagnostics. It redacts
+- `-wire-log` appends every JSON-RPC frame to a file for diagnostics. It redacts
   credentials by key only.
 
 All of them are off by default.
