@@ -35,7 +35,7 @@ If the daemon finds no repository, the response is not an error:
 
 - `path` is not inside a git repository.
 - `path` does not resolve. For example, it does not exist. That is not an error.
-- `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file `.claude-managed-worktrees`. So the worktree of a session gives `"isRepo": false`. Send the path of the base repository to list its branches. A `baseRepo` member inside such a directory gives the same response.
+- `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file `.claude-managed-worktrees`. So the worktree of a session gives `"isRepo": false`. Send the path of the base repository to list its branches. A `baseRepo` member inside such a directory gives the same response. With no `baseRepo`, the daemon makes that test on its own working directory too.
 - The daemon cannot find git on its `PATH`.
 - Only with `-git-timeout`: the deadline stopped the git call that tests for a repository.
 
