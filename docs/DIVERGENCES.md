@@ -1264,8 +1264,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - The extension is tolerant in both directions: an older daemon ignores the param,
   and an older client never sees the fields. A client can therefore send `wantPid`
   unconditionally. The sibling clauster client pins the contract.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) (`process.spawn` + `process.reattach`),
-  and `results.go`.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) (`process.spawn`), the page
+  [process.reattach](protocol/process-reattach.md), and `results.go`.
 
 ### CT-2 · Opt-in `-keep-children` serve flag { #ct-2 }
 
