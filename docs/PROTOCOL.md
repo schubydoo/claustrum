@@ -1166,61 +1166,23 @@ Windows VMs saw it at that place.
 
 #### files.stat
 `{path}` → `{"exists","isDir","size","mode":"-rw-r--r--"}`
-- Missing path → `{exists:false,isDir:false,size:0,mode:""}`.
+
+Says whether a path exists, and gives its kind, size and mode. The page [files.stat](protocol/files-stat.md) has the parameters, the response and the errors.
 
 #### files.list
 `{path}` → `{"entries":[{"name","path","isDir"},…]}` (name-sorted)
-- The daemon omits hidden entries. It skips any name that begins with `.`, such as
-  `.git` and `.env`. This matches the reference.
-- The daemon resolves `isDir` with `Stat`, so it follows symlinks. A symlink to a
-  directory is `isDir:true`, and a dangling symlink is `isDir:false`.
-- Missing dir → `-32603 open …: no such file or directory`.
+
+Lists the entries of one directory, without the hidden entries. The page [files.list](protocol/files-list.md) has the parameters, the response and the errors.
 
 #### files.read
 `{path[,maxBytes]}` → `{"content":"<raw text>","exists":true}`
-- `content` is raw text, not base64.
-- Missing file → `{content:"",exists:false}`, which is not an error.
-- A directory → `-32602 files.read: path is a directory`.
-- Size > `maxBytes` → `-32602 files.read: file exceeds maxBytes`.
-- An absent, `0`, or negative `maxBytes` sets the cap to `262144` (256 KiB). The
-  cap is not "unlimited". A file of 262144 bytes reads, and a file of 262145 bytes
-  errors. The daemon honors a positive `maxBytes` verbatim, above or below the
-  default. The cap uses the stat size. On linux that size is `0` for every
-  non-regular kind, so the cap never bounds a FIFO, socket or device on either
-  binary.
-- Non-regular files have an opt-in guard, D4. It is off by default, which is
-  parity. The reference reads `/dev/null` as `{"content":"","exists":true}` and
-  blocks on a writerless FIFO, and it refuses neither. Set
-  `-files-read-regular-only`, or the `files-read-regular-only` configuration key.
-  Every non-regular path then answers `-32602 files.read: not a regular file`,
-  which is a frame the reference never produces. The predicate is
-  `Mode().IsRegular()`. It is whole and not narrowable, because `/dev/null` and
-  `/dev/zero` are indistinguishable by mode. The full measurement and the reason
-  are in [`DIVERGENCES.md`](DIVERGENCES.md) → D4.
 
-  | path | reference and claustrum at the default | with `-files-read-regular-only` |
-  |---|---|---|
-  | **CONTROL** a regular file | `{"content":"…","exists":true}` | *(unchanged, the guard does not apply)* |
-  | **CONTROL** a regular file over `maxBytes` | `-32602 files.read: file exceeds maxBytes` | *(unchanged)* |
-  | a FIFO, writer paired | `{"content":"<bytes written>","exists":true}` | `-32602 files.read: not a regular file` |
-  | a FIFO, no writer | no frame until a writer opens | `-32602 files.read: not a regular file` |
-  | `/dev/null` | `{"content":"","exists":true}` | `-32602 files.read: not a regular file` |
-  | a bound `AF_UNIX` socket | `-32603 open <p>: no such device or address` on linux. *darwin/amd64 says `operation not supported on socket`, a per-OS stdlib difference that is identical between binaries on each OS* | `-32602 files.read: not a regular file` |
-  | an unreadable character device (`/dev/console`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
-  | an unreadable block device (`/dev/nvme0n1`) | `-32603 open <p>: permission denied` | `-32602 files.read: not a regular file` |
-
-  The two device rows assume a non-root daemon, because they are permission
-  failures. The opted-in column is measured for the FIFO and `/dev/null` rows.
-  For the socket row and the two device rows it is entailed by a false
-  `Mode().IsRegular()`, and was not run separately.
-  The default gives up two things. A writerless FIFO parks a request goroutine and
-  a descriptor until a writer arrives. An unbounded device read (`/dev/zero`) grows
-  the daemon until the kernel OOM-kills it. Both are the reference's own behaviour,
-  and both are measured. The forensics are condensed out of the committed docs.
+Returns the content of one file as text, up to a size limit. The page [files.read](protocol/files-read.md) has the parameters, the response and the errors.
 
 #### files.validate
 `{path}` → `{"valid":bool,"isDir":bool[,"error"]}`
-- Missing path → `{valid:false,isDir:false,error:"Path does not exist"}`.
+
+Says whether a path exists and whether it is a directory. The page [files.validate](protocol/files-validate.md) has the parameters, the response and the errors.
 
 #### files.extract_tar
 `{archivePath,destDir}` → extracts a gzip tar → `{"success":true,"fileCount":<n>}`
@@ -4473,8 +4435,9 @@ Claustrum-only extras follow. They are off the wire, and the canonical detail is
 The opt-in divergences on this mode are `-max-extract-bytes` (D3),
 `-git-timeout` (D5) and `-files-read-regular-only` (D4). Off is parity. Their wire
 frames appear in the method sections above, under `git.status`,
-`git.list_branches`, `git.worktree_remove` and `files.read`. The frame of D3 is in
-the page [files.extract_tar](protocol/files-extract-tar.md). See the flags table and
+`git.list_branches` and `git.worktree_remove`. The frame of D3 is in the page
+[files.extract_tar](protocol/files-extract-tar.md), and the frame of D4 is in the
+page [files.read](protocol/files-read.md). See the flags table and
 [`DIVERGENCES.md`](DIVERGENCES.md).
 
 ### -bridge — stdio↔socket relay

@@ -363,7 +363,8 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Reopen trigger.** An operator with the flag set reporting a legitimate read
   refused. The opposite direction says the default is wrong: a report of the
   daemon parked or OOMed by a non-regular read in normal use.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `files.read` → Non-regular files.
+- **Pointers.** The page [files.read](protocol/files-read.md), and its
+  [measurement record](record/files-read.md) for the table of each kind of file.
   Full table, OOM/fd reasoning, unmeasured shapes: forensics.
 
 ### D5 · Make the `gitTimeout` deadline opt-in { #d5 }
