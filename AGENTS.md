@@ -91,7 +91,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
   build goes into [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md).
   Another document links to
   that home and does not copy the text. A method that has no page yet keeps
-  its text in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+  its text in [`docs/PROTOCOL.md`](docs/PROTOCOL.md). That document also
+  keeps the sections that more than one method uses, for example the error
+  texts and the branch step. The rule is for the documents under `docs/`.
+  `AGENTS.md` keeps the safety rules of Part A, because an agent must hold
+  them before it touches code.
 
 ## Always do
 
@@ -480,6 +484,8 @@ the argv", `cliError` classification, libc selection) →
 - Internals + driver-claim provenance → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Worked client examples → [`docs/EXAMPLES.md`](docs/EXAMPLES.md)
 - Keeping compatibility in sync → [`docs/UPSTREAM-TRACKING.md`](docs/UPSTREAM-TRACKING.md)
+- History of the reference builds → [`docs/REFERENCE-BUILDS.md`](docs/REFERENCE-BUILDS.md)
+- Terms → [`docs/GLOSSARY.md`](docs/GLOSSARY.md)
 - Shipped ledger (completed work) → [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
 - Host-local agent guardrails + agent-tool routing → `CLAUDE.local.md` (gitignored)
 - CI · security · releases → [`.github/workflows/`](.github/workflows/) (the

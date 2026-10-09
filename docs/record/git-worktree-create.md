@@ -1,6 +1,6 @@
 # git.worktree_create: measurement record
 
-This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-08, unchanged. Its measurements are against the reference build `89cb6289` and the earlier builds that it names. It holds the detailed rules of `git.worktree_create` and the measurements behind them. A new measurement of the method goes into this page. The tests of the repository pin these cases.
+This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-08. Only its cross-references changed in the move. Its measurements are against the reference build `89cb6289` and the earlier builds that it names. It holds the detailed rules of `git.worktree_create` and the measurements behind them. A new measurement of the method goes into this page. The tests of the repository pin these cases.
 
 To use the method, read [git.worktree_create](../protocol/git-worktree-create.md).
 

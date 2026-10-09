@@ -18,7 +18,8 @@ internal-only PRs apply the `no-changelog` label instead. See CONTRIBUTING.md.
       `process.go`, or `results.go`.
 - [ ] Intentional protocol change. It is documented in
       [`docs/PROTOCOL.md`](../docs/PROTOCOL.md), or in the page of its method
-      under `docs/protocol/`, and described below.
+      under `docs/protocol/`. Its measured cells are in the record of that
+      method under `docs/record/`. It is described below.
 
 ## Checklist
 
