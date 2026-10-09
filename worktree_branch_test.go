@@ -81,6 +81,9 @@ func numbered(prefix string, n int) []string {
 const (
 	stubNever      = 30 * time.Second
 	stoppedCeiling = 15 * time.Second
+	// d5StoppedCeiling is the ceiling of the case with a 10 s D5 deadline. It is
+	// under stubNever, so a call that no deadline stopped still fails the case.
+	d5StoppedCeiling = 25 * time.Second
 )
 
 // shortBounds shrinks the three bounds of the branch step for one test.
@@ -364,15 +367,20 @@ func TestWorktreeRemoveBranchStepFailures(t *testing.T) {
 		// R23a: update-ref is stopped at updateRefStop, so git never deletes wt1.
 		// The update-ref stop counts from the start of update-ref, after its config
 		// listing (row B2-09e: SIGTERM 5 s after update-ref started). A slow listing
-		// therefore does not use up the stop, and the delete goes through.
-		{name: "the stop counts from the start of update-ref", deleteBounds: 200 * time.Millisecond, arm: func(t *testing.T) {
-			stubRule2(t, "config,-z,--list", "", 500*time.Millisecond, "", "", "")
+		// therefore does not use up the stop, and the delete goes through. The stop
+		// is 1 s, because update-ref itself must finish inside it: at 200 ms a
+		// Windows host stopped a real update-ref in some runs (issue 463).
+		{name: "the stop counts from the start of update-ref", deleteBounds: time.Second, arm: func(t *testing.T) {
+			stubRule2(t, "config,-z,--list", "", 1500*time.Millisecond, "", "", "")
 		}},
 		// With -git-timeout (D5) opted in, a call of the branch step gets the D5
-		// deadline too, and a stopped call keeps the branch. Not measured.
-		{name: "D5 stops for-each-ref", d5: 3 * time.Second, arm: func(t *testing.T) {
+		// deadline too, and a stopped call keeps the branch. Not measured. Each git
+		// call of the request gets this deadline, so it must be longer than the
+		// slowest call before the branch step: at 3 s a Windows CI runner stopped an
+		// earlier call (issue 463).
+		{name: "D5 stops for-each-ref", d5: 10 * time.Second, arm: func(t *testing.T) {
 			stubRule2(t, "for-each-ref", "", stubNever, "", "", "")
-		}, kept: true, maxElapsed: stoppedCeiling},
+		}, kept: true, maxElapsed: d5StoppedCeiling},
 		{name: "R23a update-ref stopped", deleteBounds: 300 * time.Millisecond, arm: func(t *testing.T) {
 			stubRule2(t, "update-ref", "", stubNever, "", "", "")
 		}, kept: true, maxElapsed: stoppedCeiling},
