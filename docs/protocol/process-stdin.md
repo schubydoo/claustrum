@@ -55,7 +55,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error. The daemon
 | `-32602` | `Invalid base64 data` | `data` is not valid base64. This test comes before the test of `id`. |
 | `-32602` | `Process not found` | The daemon has no process with this `id`. |
 | `-32003` | `stdin offset gap: offset ahead of applied bytes` | `offset` is above `applied`. |
-| `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes gets this error too. The answer can come before the `exit` frame of the process. |
+| `-32602` | `Process not running` | The process exited, and the request is not a gap and not a duplicate. A request with no bytes, and with no `offset` or with `offset` equal to `applied`, gets this error too. The answer can come before the `exit` frame of the process. |
 | `-32002` | `stdin backpressure: queue full` | The queue of the process holds bytes that the child did not read yet. This request does not fit in the limit of 16 MiB. The daemon accepts nothing, and `applied` does not change. Send the request again later. |
 
 The tests for `offset` come before the test for a process that exited. So for a process that exited, a request with a gap still gets `-32003`. A request with only old bytes still gets `"duplicate": true`. That holds until the daemon forgets the process. Then each request gets `Process not found`.
@@ -64,7 +64,7 @@ The daemon never holds a request back because the queue is full. It answers `-32
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. Three rules of this page are from the code of claustrum, and no measurement against the reference covers them: the refusal of a negative `offset`, the `Process not running` answer for a request with no bytes, and the behavior after the child closes its input.
+claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. Two rules of this page are from the code of claustrum, and no measurement against the reference covers them: the `Process not running` answer for a request with no bytes, and the behavior after the child closes its input.
 
 ## More detail
 
