@@ -204,7 +204,7 @@ change was reconciled later, under issue 408.
 1. `plugins.prune` added. The method count goes from 18 to 19. This is a new
    method in a new `plugins` namespace. It prunes cached CLI plugin directories
    under the plugin root and reports what it removed. `server.capabilities` lists it
-   in `methods`. [PROTOCOL.md → plugins.prune](PROTOCOL.md) holds the frames.
+   in `methods`. The page [plugins.prune](protocol/plugins-prune.md) holds the frames.
 2. `git.worktree_create` gains `existingBranch`. A caller passes
    `existingBranch:"<branch>"`, naming an existing local branch, to reuse it rather
    than create one. The result gains a `branch` field, and `server.capabilities`
