@@ -29,6 +29,8 @@
 | `stdinApplied` | The number of input bytes that the daemon accepted for the process. Send further input from this position: see [process.stdin](process-stdin.md). |
 | `pid`, `startTime` | Only with `"wantPid": true` and a found process. They hold the values that `process.spawn` gives with `wantPid`, so a client can make sure that it has the same process. |
 
+With `wantPid`, the result of a found process ends with `"pid": <integer>, "startTime": <number>`, after `stdinApplied`.
+
 Each result has the first five members. If the daemon has no such process, the result is not an error:
 
 ```json
@@ -46,7 +48,7 @@ Each result has the first five members. If the daemon has no such process, the r
 
 New frames of the process go to this connection from step 1 on. No frame above `lastSeq` reaches an old connection. An old connection can still get a frame at or below `lastSeq` that the daemon was already writing.
 
-From the code, and not measured: a new frame with a `seq` above `lastSeq` can arrive on this connection before the stored frames end, or before the result. Order the frames by `seq`.
+From the code, and not measured: a new frame with a `seq` above `lastSeq` can arrive on this connection before the stored frames end, or before the result. Order the frames by `seq`. On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice. Drop a frame whose `seq` you already have.
 
 ## Frames that the daemon no longer has
 
