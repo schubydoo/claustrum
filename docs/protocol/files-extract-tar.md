@@ -57,7 +57,7 @@ Read `success`. A failure has no `errorCode` member, so the `error` text is the 
 | `destDir must be an absolute, non-root path:` | `destDir` is relative, or it is a file system root. |
 | `destDir must not be or contain the home directory:` | `destDir` is the home directory, or a directory that holds it. |
 | `open archive:` | The daemon cannot open the archive. For example, it does not exist. |
-| `gzip:` | The gzip header is bad, or the daemon cannot read the next entry. Gzip data that is not a tar archive gives this text at the first entry. |
+| `gzip:` | The gzip header is bad, or the daemon cannot read the next entry. Gzip data that is not a tar archive gives this text at the first entry. Gzip data with no content is an archive with no entries: the request succeeds with `fileCount` `0`, and `destDir` is then empty but for the marker. |
 | `clean destDir:` | The daemon cannot delete the old `destDir`. |
 | `mkdir destDir:` | The daemon cannot create `destDir`. |
 | `unsafe path in archive: <entry>` | The entry resolves to a place outside `destDir`. |
@@ -69,7 +69,7 @@ Read `success`. A failure has no `errorCode` member, so the `error` text is the 
 
 The table is not complete. Two failures give a text with no prefix: the daemon cannot create the directory of a directory entry, or it cannot write the content of a file. The text is then that of the operating system or of the tar reader. For example, a cut archive can give `unexpected EOF`.
 
-The two `destDir must` texts end with the path in quotes. The text after each other prefix comes from the operating system or from a library. The examples are those of Linux and macOS.
+`<entry>` is the name of the entry as the archive has it, not the path on disk. `unsafe path in archive:` and `unsupported tar entry type` end with that name. The two `destDir must` texts end with the path in quotes. The text after `open archive:`, `gzip:`, `clean destDir:`, `mkdir destDir:`, `mkdir parent <entry>:`, `create <entry>:` and `write .synced:` comes from the operating system or from a library. The examples are those of Linux and macOS.
 
 The method has two JSON-RPC errors:
 
@@ -111,6 +111,7 @@ By default there is no limit on the size of the extracted files. An operator can
 | The modes `0600` and `0700` | Applied, less the umask. | They do not limit access to the owner. |
 | An absolute `destDir` | Starts with `/`. | Has a drive or a share. `\dir` and `C:dir` are relative. |
 | `\` in the name of an entry | A character of the name. | A separator. |
+| The home test | Letter case counts. | Letter case does not count. |
 
 ## Differences from the reference
 
