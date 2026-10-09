@@ -86,6 +86,7 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Protocol reference: PROTOCOL.md
   - Methods:
+      - files.extract_tar: protocol/files-extract-tar.md
       - git.worktree_create: protocol/git-worktree-create.md
   - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md
