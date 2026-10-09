@@ -467,9 +467,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   caller observing the difference (rule 4).
 - **Reopen trigger.** An operator with `-git-timeout` set reporting an honest slow
   git killed by it. The `-32603` arm makes a single report enough.
-- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove` and
-  `git.list_branches`. Also `methods_git.go`, `worktreecopy.go` and
-  `worktreeclaude.go`.
+- **Pointers.** [PROTOCOL.md](PROTOCOL.md) → `git.worktree_remove`, and the page
+  [git.list_branches](protocol/git-list-branches.md). Also `methods_git.go`,
+  `worktreecopy.go` and `worktreeclaude.go`.
 
 ### D6 · `-cli-version` must name a single path component (always-on) { #d6 }
 
