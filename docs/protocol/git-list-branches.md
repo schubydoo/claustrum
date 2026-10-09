@@ -46,15 +46,15 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | Code | Text | Cause |
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member of it has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
-| `-32603` | A refusal text | The daemon refuses to run git for `path`. Three examples: it does not trust the git directory or the git configuration, it refuses its own git environment, or git cannot run on the host. The texts are in [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check), [Hardened git calls](../PROTOCOL.md#hardened-git-calls) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
+| `-32603` | A refusal text | The daemon refuses to run git for `path`. Three examples: it does not trust the git directory or the git configuration, it refuses its own git environment, or git is on the `PATH` and `git version` fails. The texts are in [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check), [Hardened git calls](../PROTOCOL.md#hardened-git-calls) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
 | `-32603` | The Go error of the git call, for example `exit status 128` | git cannot list the branches. For example, the file `packed-refs` is corrupt. |
-| `-32603` | `signal: killed` | Only with `-git-timeout`: the deadline stopped the git call that lists the branches. This is the text of Linux and macOS. |
+| `-32603` | `signal: killed` | Only with `-git-timeout`: the deadline stopped the git call that lists the branches. This is the text of Linux and macOS. If the deadline stops the first git call of the method, the text is a refusal text that ends in `signal: killed`. |
 
 A warning of git does not become a branch name. If git warns about a broken ref and still lists the other branches, the response holds those branches.
 
 ## Differences by system
 
-On Windows, a `path` with a junction before its last component does not resolve, so the response is `"isRepo": false`. On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal.
+On Windows, a `path` with a junction before its last component does not resolve, so the response is `"isRepo": false`. On Windows, a `path` that exists and in which git cannot start, for example a regular file, gets a `-32603` refusal. On Linux and macOS that path gives `"isRepo": false`.
 
 ## Differences from the reference
 
