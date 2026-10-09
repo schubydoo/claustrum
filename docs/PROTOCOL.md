@@ -4214,8 +4214,8 @@ never "a huge limit".
 |---|---|---|---|---|
 | `-token-file <p>` | none | none | token source (read once, unlinked) | -serve |
 | `-token-fd <n>` | none | `-1` | token from an open fd (claustrum-only) | -serve |
-| `-metrics-addr <a>` | `metrics-addr` | `""` | Prometheus `/metrics` (claustrum-only, CT-3) | -serve |
-| `-wire-log <p>` | `wire-log` | `""` | append every JSON-RPC frame to `<p>` as JSONL (claustrum-only, CT-3) | -serve |
+| `-metrics-addr <a>` | `metrics-addr` | `""` | Prometheus `/metrics` (claustrum-only) | -serve |
+| `-wire-log <p>` | `wire-log` | `""` | append every JSON-RPC frame to `<p>` as JSONL (claustrum-only) | -serve |
 | `-wire-log-max-string <n>` | `wire-log-max-string` | `512` | bytes kept per string value. `0` keeps whole payloads | -serve |
 | `-keep-children` | `keep-children` | off | survive restart (CT-2) | -serve |
 | `-listen-pipe` | `listen-pipe` | off | named-pipe transport, Windows-only (CT-5) | -serve |
@@ -4322,14 +4322,15 @@ the daemon's environ, so that variable propagates into `process.spawn` children.
 `TestSpawnInheritsDaemonChildMarker` pins that. claustrum unsets the internal
 marker before it spawns.
 
-Claustrum-only extras follow. They are off the wire, and the canonical detail is in
-[`DIVERGENCES.md`](DIVERGENCES.md):
-- `-metrics-addr <a>` is CT-3. It serves Prometheus counters at
+Claustrum-only extras follow. They are off the wire. `-keep-children` and
+`-listen-pipe` have an entry in [`DIVERGENCES.md`](DIVERGENCES.md). `-metrics-addr`
+and `-wire-log` have none, and this section holds their detail:
+- `-metrics-addr <a>` serves Prometheus counters at
   `http://<a>/metrics`, covering connections, spawns and exits, reattaches, and
   stream and stdin bytes. It is off by default, with no listener. It counts only,
   and it has no auth, so bind it to loopback. The daemon logs a bind failure
   (`[Server] metrics: …`), which is non-fatal.
-- `-wire-log <p>` is CT-3. It appends every JSON-RPC frame, in both directions, to
+- `-wire-log <p>` appends every JSON-RPC frame, in both directions, to
   `<p>` as JSONL. It is a diagnostic side channel that observes already-marshaled
   bytes, so a daemon that logs emits frames byte-identical to one that does not. It
   is off by default, with no file and no work. `-wire-log-max-string <n>` bounds
