@@ -3355,7 +3355,7 @@ as id-less stream notifications, and it buffers them for a later replay.
   runs each):
     - The old process exits on `SIGTERM`: the reply follows at once (row B1). Its
       group gets no `SIGKILL` (Linux row X2a, see
-      [process.killAndWait](#processkillandwait)).
+      the [record of process.killAndWait](record/process-killandwait.md)).
     - The old process ignores `SIGTERM`: the daemon sends `SIGKILL` to its group
       after 3 s, and the reply follows (row B2).
     - The old process exits, and a process in another group holds its pipes: the

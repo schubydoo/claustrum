@@ -490,8 +490,9 @@ byte-for-byte (values and timing) against the reference:
    `process.reattach`. The method blocks until the process is gone. It then
    reports the outcome as a result. Its params are `timeoutMs` (grace) and
    `escalate`. Its result is `{found,died[,alreadyExited][,escalated]}`.
-   [PROTOCOL.md → process.killAndWait](PROTOCOL.md#processkillandwait) is
-   canonical for the defaults, the grace clamp and the escalation timing.
+   The page [process.killAndWait](protocol/process-killandwait.md) is
+   canonical for the defaults and the grace clamp, and its
+   [record](record/process-killandwait.md) for the escalation timing.
 2. The `process.stdin.offset` contract is new. A `process.stdin` reply now always
    carries `applied`, the cumulative count of decoded bytes. An `offset` param
    makes stdin idempotent across reconnects. A duplicate becomes a

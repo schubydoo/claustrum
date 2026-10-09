@@ -145,7 +145,7 @@ Noun. This term has two uses:
 ## sleeper
 
 Noun. A sleeper is a test process that only waits. See
-[`process.killAndWait`](PROTOCOL.md#processkillandwait).
+the [record of `process.killAndWait`](record/process-killandwait.md).
 
 ## spelling
 
