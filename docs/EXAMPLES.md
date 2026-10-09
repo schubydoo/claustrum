@@ -84,7 +84,7 @@ run "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"process.spawn\",\"params\":{\"i
 starts. The `offset` makes replay across reconnects idempotent. If you send only
 bytes that the daemon applied before, the daemon does nothing and flags the reply
 `"duplicate":true`. If the `offset` is past the applied count, the daemon returns
-a `-32003 stdin offset gap` error. See [PROTOCOL.md](PROTOCOL.md).
+a `-32003 stdin offset gap` error. See [process.stdin](protocol/process-stdin.md).
 
 ## Reattach / catch up via the replay buffer
 
