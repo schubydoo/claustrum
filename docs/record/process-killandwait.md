@@ -1,6 +1,6 @@
 # process.killAndWait: measurement record
 
-This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-09. Only its cross-references changed in the move. It holds the detailed rules of `process.killAndWait` and the measurements behind them, and it names the reference build of a measurement where the old text did. A new measurement of the method goes into this page. One sentence of the text is too wide: "No signal is delivered either" holds for the first signal only. The escalation at the end of the grace still sends its `SIGKILL`.
+This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-09. Only its cross-references changed in the move, and one parenthesis is new. It holds the detailed rules of `process.killAndWait` and the measurements behind them, and it names the reference build of a measurement where the old text did. A new measurement of the method goes into this page. One sentence of the text is too wide: "No signal is delivered either" holds for the first signal only. The escalation at the end of the grace still sends its `SIGKILL`.
 
 To use the method, read [process.killAndWait](../protocol/process-killandwait.md).
 
@@ -18,7 +18,7 @@ reports the outcome as a *result*. An unknown id is not an error:
   there. In claustrum, `killAndWait` still reads the flag that flips with the
   exit frame. A call inside the drain therefore answers `alreadyExited:false` and
   waits for the frame rather than reporting an already-exited process. No signal
-  is delivered either, because the daemon refuses to signal a reaped process.
+  is delivered either (the first signal only: see the note at the top), because the daemon refuses to signal a reaped process.
   Keeping this method unchanged is claustrum's choice. The reference answer inside
   the drain is not probe-measured.
 - Live process → the daemon sends the graceful `signal`, `SIGTERM` by default, and
