@@ -44,8 +44,8 @@ The daemon always goes through the root of this install. If a daemon of another 
 | `prunedLegacy` | The hashes that the daemon deleted in the shared root, sorted. |
 | `staleArchives` | Always `0`. |
 | `kept` | Always `0`. |
-| `live` | The number of live directories, in each root that the daemon went through. |
-| `young` | The number of young directories that are not live, in each root that the daemon went through. |
+| `live` | The number of live directories. It is one count over the roots that the daemon went through. |
+| `young` | The number of young directories that are not live. It is one count over the roots that the daemon went through. |
 | `legacy` | What the daemon did with the shared root: see the table below. |
 | `skipped` | The reason, in a response of a daemon that has no plugin roots. Each other response has no `skipped` member. |
 | `errors` | One text in the form `<path>: <error>` for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success. |
@@ -60,7 +60,7 @@ The values of `legacy`:
 | `skipped: another install's daemon is running (<detail>); its sessions may use the shared legacy dirs` | The daemon found a daemon of another install, or it cannot exclude one. It left the shared root alone. This test comes first, so the text does not say that the shared root exists. |
 | `skipped: <reason>` with a `skipped` member | The daemon has no plugin roots. |
 
-`<detail>` says what stopped the test. It names the first socket of another install, in the order of the names under `<X>/run`, or the run directory itself. `<rel>` is `run/<clientId>/rpc.sock`:
+`<detail>` says what stopped the test. The daemon goes through the names under `<X>/run` in order and passes over each install that it can prove is gone. `<detail>` names the first install that it cannot rule out, or the run directory itself. `<rel>` is `run/<clientId>/rpc.sock`:
 
 | `<detail>` | Meaning |
 |---|---|
@@ -83,7 +83,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 
 ## Differences by system
 
-The paths and the `<error>` texts in `legacy` and `errors` are those of the operating system. `<rel>` has `/` separators on each system.
+The paths and the `<error>` texts in `legacy` and `errors` are those of the operating system. `<rel>` has `/` separators on each system. On Windows, the named-pipe transport of `-listen-pipe` does not change the roots: the daemon still has its socket, and the roots come from that path.
 
 ## Differences from the reference
 
