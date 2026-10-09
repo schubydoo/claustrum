@@ -48,7 +48,7 @@ Each result has the first five members. If the daemon has no such process, the r
 
 New frames of the process go to this connection from step 1 on. No frame above `lastSeq` reaches an old connection. An old connection can still get a frame at or below `lastSeq` that the daemon was already writing.
 
-From the code, and not measured: a new frame with a `seq` above `lastSeq` can arrive on this connection before the stored frames end, or before the result. Order the frames by `seq`. On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice. Drop a frame whose `seq` you already have.
+From the code, and not measured: a new frame with a `seq` above `lastSeq` can arrive on this connection before the stored frames end, or before the result. Order the frames by `seq`. On a reattach from the connection that already receives the frames, a frame at or below `lastSeq` can arrive twice. Drop a frame whose `seq` you already have, from either connection.
 
 ## Frames that the daemon no longer has
 
@@ -58,7 +58,7 @@ Compare `firstSeq` with the last `seq` that you have. If `firstSeq` is more than
 
 ## What `stdinApplied` does not say
 
-`stdinApplied` is an acknowledgment, not a delivery receipt. The daemon counts a byte at the moment that it accepts the byte. The child reads the byte later. Bytes that the daemon accepted just before the exit of the process are in the count although the child never got them. A client that must know that its input arrived needs an answer from the child itself.
+`stdinApplied` is an acknowledgement, not a delivery receipt. The daemon counts a byte at the moment that it accepts the byte. The child reads the byte later. Bytes that the daemon accepted just before the exit of the process are in the count although the child never got them. A client that must know that its input arrived needs an answer from the child itself.
 
 ## Errors
 
@@ -75,7 +75,7 @@ claustrum is built to answer as the reference daemon does. One entry of the dive
 
 - [CT-1](../DIVERGENCES.md#ct-1): the optional `wantPid` parameter with the members `pid` and `startTime`. A request without `wantPid` gets no such member.
 
-The exact time that the reference keeps a process that exited is not known. The measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum are its own choice inside that range.
+The exact time that the reference keeps a process that exited is not known. The measurements bracket it to more than 45 seconds and at most 960 seconds. The 15 minutes of claustrum are its own choice inside that range, and so is the extra time of up to about one minute.
 
 ## More detail
 
