@@ -276,14 +276,18 @@ func killedSuffix() string {
 	return "signal: killed"
 }
 
-// calibrate returns the slowest of two full creates through the stub, with
-// nothing slowed. A deadline placed at twice this, plus a margin, falls after the
-// add and the checkout on the same host under the same load.
+// calibrate returns the slowest of four full creates through the stub, with
+// nothing slowed: two in a plain repository and two in a linked one. A deadline
+// placed at twice this, plus a margin, falls after the add and the checkout on the
+// same host under the same load. Four samples over both layouts, because the time
+// of one create varies from run to run: on a macOS VM it went from 284 ms to
+// 1180 ms across 40 runs. A deadline from two plain creates fired before the
+// checkout of a linked case one time on a macOS CI runner (issue 463).
 func calibrate(t *testing.T, realGit string) time.Duration {
 	t.Helper()
 	var worst time.Duration
-	for i := 0; i < 2; i++ {
-		f := newWTFixture(t, false)
+	for i := 0; i < 4; i++ {
+		f := newWTFixture(t, i%2 == 1)
 		s := newTestServer(t)
 		raw, d := f.create(t, s, "w1", "", 0)
 		if !strings.Contains(raw, `"success":true`) {
