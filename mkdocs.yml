@@ -94,6 +94,7 @@ nav:
       - git.list_branches: protocol/git-list-branches.md
       - git.worktree_create: protocol/git-worktree-create.md
       - plugins.prune: protocol/plugins-prune.md
+      - process.stdin: protocol/process-stdin.md
   - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md
   - Upstream tracking: UPSTREAM-TRACKING.md
@@ -105,6 +106,7 @@ nav:
       - git.list_branches: record/git-list-branches.md
       - git.worktree_create: record/git-worktree-create.md
       - plugins.prune: record/plugins-prune.md
+      - process.stdin: record/process-stdin.md
   - Project:
       - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
       - Security policy: https://github.com/schubydoo/claustrum/blob/main/SECURITY.md
