@@ -1,6 +1,6 @@
 # files.read: measurement record
 
-This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-09. Only one cross-reference changed in the move. It holds the rules of `files.read` and the measurements behind them. A new measurement of the method goes into this page. Tests of the repository pin the FIFO row with a writer and the `/dev/null` row in both columns. They also pin the FIFO row with no writer in the column of the flag, and the socket row at the default on Linux.
+This page is a record, not reading material. Its text moved here from the protocol reference on 2026-10-09. Only one cross-reference changed in the move. It holds the rules of `files.read` and the measurements behind them. A new measurement of the method goes into this page. The code comments name the reference build `5db5e4a` for the `maxBytes` measurements and the FIFO measurements. The tests in `integration_fifo_unix_test.go` pin some cells of the table, and that file says which.
 
 To use the method, read [files.read](../protocol/files-read.md).
 

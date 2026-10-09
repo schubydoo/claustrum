@@ -48,7 +48,7 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | `-32603` | `open <path>: not a directory` | The path is not a directory. |
 | `-32603` | `open <path>: permission denied` | The daemon has no permission for the directory, or for a directory above it. |
 
-The `-32603` texts come from the operating system, and the table gives those of Linux. On Windows the texts are different. The text holds `path` after the `~` expansion. A request without `path` gets a `-32603` error too, because the empty path does not exist.
+The `-32603` texts come from the operating system, and the table gives those of Linux and macOS. On Windows the texts are different. The text holds `path` after the `~` expansion. A request without `path` gets a `-32603` error too, because the empty path does not exist.
 
 ## Differences from the reference
 
