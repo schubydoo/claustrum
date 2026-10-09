@@ -26,7 +26,7 @@ In a root, the daemon looks only at directories whose name is 16 lowercase hexad
 
 The daemon keeps a directory in two cases, and deletes it with all its content in each other case:
 
-- The directory is live. A child that this daemon started with `process.spawn` has the hash in its arguments. The daemon has not yet reported the exit of that child. A run of exactly 16 lowercase hexadecimal characters anywhere in an argument counts. For example, the agent CLI runs with `--plugin-dir <root>/<hash>`.
+- The directory is live. A child that this daemon started with `process.spawn` has the hash in its command or its arguments. The daemon has not yet reported the exit of that child. A run of exactly 16 lowercase hexadecimal characters anywhere in the command or in an argument counts. For example, the agent CLI runs with `--plugin-dir <root>/<hash>`.
 - The directory is young. Its last use is inside the last `minAgeDays` days. The last use is the newer of two times: the modification time of the directory, and that of its `.synced` file. The time of `manifest.json` does not count. If the daemon cannot read either time, the directory is not young.
 
 The daemon always goes through the root of this install. If a daemon of another install runs, the daemon leaves the shared root alone, because the sessions of that daemon can use the shared directories. The member `legacy` says what it did.
@@ -45,10 +45,10 @@ The daemon always goes through the root of this install. If a daemon of another 
 | `staleArchives` | Always `0`. |
 | `kept` | Always `0`. |
 | `live` | The number of live directories, in each root that the daemon went through. |
-| `young` | The number of young directories, in each root that the daemon went through. |
+| `young` | The number of young directories that are not live, in each root that the daemon went through. |
 | `legacy` | What the daemon did with the shared root: see the table below. |
 | `skipped` | The reason, in a response of a daemon that has no plugin roots. Each other response has no `skipped` member. |
-| `errors` | One text in the form `<path>: <error>` for each directory that the daemon cannot delete, and for a root that it cannot list. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success. |
+| `errors` | One text in the form `<path>: <error>` for each directory that the daemon cannot delete, and for a root that it cannot list. A root that does not exist is not a failure. A directory in `errors` can be deleted in part. A response with no such failure has no `errors` member. A response with `errors` is still a success. |
 | `minAgeDays` | The value that the daemon used, after the limits. |
 
 The values of `legacy`:
@@ -87,7 +87,7 @@ The paths and the `<error>` texts in `legacy` and `errors` are those of the oper
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement against the reference build `19f30c46` made either one differ from `0`.
+claustrum is built to answer as the reference daemon does, and no entry of the divergence catalog applies to this method. `kept` and `staleArchives` are in the response because the reference has them. No measurement against the reference build `19f30c46` made either one differ from `0`. The `errors` member and the request with no `params` are from the code of claustrum. No measurement against the reference covers them.
 
 ## More detail
 
