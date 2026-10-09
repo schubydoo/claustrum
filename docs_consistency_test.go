@@ -38,7 +38,7 @@ func docFlat(s string) string {
 func docFiles(t *testing.T) []string {
 	t.Helper()
 	files := []string{"README.md", "AGENTS.md", "SECURITY.md", "CONTRIBUTING.md"}
-	for _, pat := range []string{"docs/*.md", "docs/protocol/*.md"} {
+	for _, pat := range []string{"docs/*.md", "docs/protocol/*.md", "docs/record/*.md"} {
 		m, err := filepath.Glob(filepath.FromSlash(pat))
 		if err != nil {
 			t.Fatal(err)
