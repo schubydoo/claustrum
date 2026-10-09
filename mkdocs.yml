@@ -93,6 +93,7 @@ nav:
       - files.extract_tar: protocol/files-extract-tar.md
       - git.list_branches: protocol/git-list-branches.md
       - git.worktree_create: protocol/git-worktree-create.md
+      - plugins.prune: protocol/plugins-prune.md
   - Divergences: DIVERGENCES.md
   - Examples: EXAMPLES.md
   - Upstream tracking: UPSTREAM-TRACKING.md
@@ -103,6 +104,7 @@ nav:
       - files.read: record/files-read.md
       - git.list_branches: record/git-list-branches.md
       - git.worktree_create: record/git-worktree-create.md
+      - plugins.prune: record/plugins-prune.md
   - Project:
       - Contributing: https://github.com/schubydoo/claustrum/blob/main/CONTRIBUTING.md
       - Security policy: https://github.com/schubydoo/claustrum/blob/main/SECURITY.md
