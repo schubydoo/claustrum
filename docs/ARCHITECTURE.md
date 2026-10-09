@@ -22,7 +22,7 @@ Claustrum is one Go binary. A flag selects the mode. The build is static
 | `install.go` | `-install`: download/verify/extract/prune + `__INSTALL_RESULT__` facts |
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`). The level tag precedes the byte-intact `[Component]` prefixes |
 | `metrics.go` | opt-in Prometheus counters at `/metrics` (`-metrics-addr`, with no listener by default) |
-| `wirelog.go` | opt-in `-wire-log` frame capture (CT-3). A pure side channel over already-marshaled bytes, off by default, with by-key credential redaction |
+| `wirelog.go` | opt-in `-wire-log` frame capture. A pure side channel over already-marshaled bytes, off by default, with by-key credential redaction |
 | `sysproc_unix.go` / `sysproc_windows.go` | the kill of a child: the process group on Unix (setpgid + negative-pid signal), the direct child only on Windows (no Job Object, as on the reference). A Windows VM measured that against `89cb6289`: no child is in a job of the daemon |
 | `pipetransport.go` | `-listen-pipe` shared helpers: `rpc.pipe` name-file lifecycle (atomic write / remove), owner-only SDDL builder, pipe-name + instance-id generation (all platform-neutral) |
 | `pipetransport_windows.go` / `pipetransport_other.go` | the optional Windows named-pipe listener (`startPipeTransport` via go-winio, owner-only DACL) vs the non-Windows no-op stub + `honorListenPipe` warning |

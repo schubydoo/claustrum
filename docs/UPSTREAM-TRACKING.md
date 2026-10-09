@@ -225,7 +225,9 @@ Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
 numbers several more claustrum-only behaviors, and they are just as real. They are
 item 16 (`-metrics-addr`) and item 18 (`-token-fd`). Item 21 is another: claustrum skips the
 kill signal for a child that already exited. Check both the divergence catalog and
-the shipped ledger before you conclude that something is drift.
+the shipped ledger before you conclude that something is drift. `-wire-log` is
+claustrum-only too, and it is in neither index: its detail is in
+[PROTOCOL.md → Flags and config keys](PROTOCOL.md#flags-and-config-keys).
 
 ### Drift, or an activated opt-in? — the parse-behaviour table
 
