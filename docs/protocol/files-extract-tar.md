@@ -86,16 +86,16 @@ No failure restores the old content of `destDir`. The table says what stays of t
 |---|---|---|
 | A JSON-RPC error, or a refusal of `destDir` (`destDir must ...`) | Stays. | Not changed. |
 | `open archive:` | Not changed. | Not changed. |
-| `gzip:` for a bad gzip header | Deleted. | Not changed. |
+| A `gzip:` failure before the first entry | Deleted. | Not changed. |
 | `clean destDir:` | Deleted. | The old content can be partly deleted. |
 | `mkdir destDir:` | Deleted. | The old content is deleted. |
 | Each later failure | Deleted. | The old content is deleted. The entries written before the failure stay. A file that the daemon wrote in part can stay too. The daemon writes no marker. |
 
 `gzip:` has two rows. A `gzip:` failure at an entry, also at the first entry, is in the last row. The text alone does not say which row applies. The disk does.
 
-Do not read a `.synced` file as the result of the last request. After `open archive:` and after a bad gzip header, an old marker stays with the old content. An archive can also hold a file entry with that name, and that file stays after a later failure.
+Do not read a `.synced` file as the result of the last request. After `open archive:` and after a `gzip:` failure before the first entry, an old marker stays with the old content. An archive can also hold a file entry with that name, and that file stays after a later failure.
 
-The daemon ignores a failure of the delete of the archive. So an archive that it cannot delete stays. If `archivePath` is an empty directory, the daemon on Linux deletes that directory and answers `gzip:`.
+The daemon ignores a failure of the delete of the archive. So an archive that it cannot delete stays. If `archivePath` is an empty directory, the daemon on Linux deletes that directory and answers `gzip:`. The home test does not apply to `archivePath`. So if `archivePath` is the home directory and that directory is empty, the daemon deletes it.
 
 With `-max-extract-bytes`, the daemon deletes the file that went over the limit. The files written before it stay.
 
