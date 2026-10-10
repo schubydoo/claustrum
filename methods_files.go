@@ -411,7 +411,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	defer destRoot.Close()
 	opened, err := destRoot.Stat(".")
 	if err != nil {
-		return 0, fmt.Errorf("open destDir: %q could not be examined (%v)", filepath.Base(destDir), err)
+		return 0, fmt.Errorf("open destDir: %q could not be examined (%v)", filepath.Base(cleanedDest), err)
 	}
 	// The parent is opened by path, and wipesHomeDir judged destDir as text.
 	// Another process can put a link or a junction at destDir between the wipe
@@ -422,8 +422,11 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	// directory, and it must be the folder of the handle. If not, the request
 	// fails here, before any entry is written and before any remove. This test
 	// and its text are claustrum's own, and no reference build is measured there.
-	if judged, err := os.Lstat(destDir); err != nil || !judged.IsDir() || !os.SameFile(judged, opened) {
-		return 0, fmt.Errorf("open destDir: %q changed while it was opened", filepath.Base(destDir))
+	//
+	// The lstat takes the cleaned path. With a separator after the last name,
+	// an lstat follows a link at that name and the test passes behind it.
+	if judged, err := os.Lstat(cleanedDest); err != nil || !judged.IsDir() || !os.SameFile(judged, opened) {
+		return 0, fmt.Errorf("open destDir: %q changed while it was opened", filepath.Base(cleanedDest))
 	}
 	tr := tar.NewReader(gz)
 	count := 0

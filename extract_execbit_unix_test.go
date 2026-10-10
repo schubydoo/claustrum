@@ -337,11 +337,15 @@ func TestSyncedMarkerWriteGoesThroughTheHandle(t *testing.T) {
 func TestFilesExtractTarRefusesSwappedDestDir(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		inside   bool // the other folder is in the parent of destDir
+		inside   bool   // the other folder is in the parent of destDir
+		suffix   string // goes after destDir in the request
 		wantText string
 	}{
-		{"link that leaves the parent", false, "open destDir: openat dest: path escapes from parent"},
-		{"link that stays in the parent", true, `open destDir: "dest" changed while it was opened`},
+		{"link that leaves the parent", false, "", "open destDir: openat dest: path escapes from parent"},
+		{"link that stays in the parent", true, "", `open destDir: "dest" changed while it was opened`},
+		// With a separator after the last name, an lstat of the request path
+		// follows the link. The test of the handle must use the cleaned path.
+		{"link that stays, destDir with a trailing separator", true, string(os.PathSeparator), `open destDir: "dest" changed while it was opened`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parent := t.TempDir()
@@ -375,7 +379,7 @@ func TestFilesExtractTarRefusesSwappedDestDir(t *testing.T) {
 				return os.OpenRoot(name)
 			}
 
-			n, err := extractTarGz(archive, dest)
+			n, err := extractTarGz(archive, dest+tc.suffix)
 			if err == nil || err.Error() != tc.wantText {
 				t.Errorf("extractTarGz = %v, want %s", err, tc.wantText)
 			}
