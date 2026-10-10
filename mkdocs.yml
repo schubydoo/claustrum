@@ -105,6 +105,7 @@ nav:
   - Glossary: GLOSSARY.md
   - Measurement records:
       - files.read: record/files-read.md
+      - files.extract_tar: record/files-extract-tar.md
       - git.list_branches: record/git-list-branches.md
       - git.worktree_create: record/git-worktree-create.md
       - process.stdin: record/process-stdin.md

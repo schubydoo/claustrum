@@ -853,8 +853,10 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.extract_tar | `unsupported tar entry type <c>: <entry>` | in `error` field |
 | files.extract_tar | `extraction size limit exceeded` | D3 opt-in, in `error` field |
 | files.extract_tar | `clean destDir: …` / `mkdir destDir: …` / `write .synced: …` | in `error` field |
-| files.extract_tar | `create <entry>: open <target>: is a directory` | in `error` field |
-| files.extract_tar | `mkdir parent <entry>: <os error>` | in `error` field (prefix is contract) |
+| files.extract_tar | `open destDir: "<name>" could not be examined (statat .: permission denied)` | in `error` field. The daemon cannot search the new `destDir`. See [files.extract_tar](protocol/files-extract-tar.md) |
+| files.extract_tar | `create <entry>: openat <place>: file exists` | in `error` field. A directory is at the place of a file entry. On Windows the text ends with `is a directory`. `<place>` is relative to `destDir` |
+| files.extract_tar | `mkdir parent <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of the directory of a file entry (prefix is contract) |
+| files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |
 | git.status | `baseRepo is required` | -32602. `baseRepo` is now required, since `7d193f89` |
 | git.status / git.list_branches | `<go error>`, for example `exit status 128` | -32603 (git failed, stdout parse) |
 | git.status / git.list_branches | `signal: killed` | -32603, D5 opt-in only |
@@ -1102,7 +1104,7 @@ Windows VMs saw it at that place.
 | method | params | result |
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
-| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.worktree.external_root","server.instance_id"],"peerCheck":"off"}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `server.peer_check`, `instanceId`, `startedAt` and `peerCheck` are present on every OS |
+| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","files.extract_tar.execBit","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.worktree.external_root","server.instance_id"],"peerCheck":"off"}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `files.extract_tar.execBit`, `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `server.peer_check`, `instanceId`, `startedAt` and `peerCheck` are present on every OS |
 | `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler waits until the teardown starts to close connections, and then returns the reply. The frame arrives only when its write wins the race with the close. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
@@ -1144,8 +1146,10 @@ Windows VMs saw it at that place.
   three OSes saw it at that place. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not
   change the capabilities frame (measured on macOS). `5fd08069` inserted
   `server.peer_check` after `launcher.managed`, for the `peerCheck` member. The
-  Linux, macOS and Windows VMs saw it at that place. On those VMs `5fd08069` also
-  lists two features that claustrum does not list.
+  Linux, macOS and Windows VMs saw it at that place. `5fd08069` also inserted
+  `files.extract_tar.execBit` after `process.stdin.offset`. The Linux, macOS and
+  Windows VMs saw it at that place. On those VMs `5fd08069` also lists one
+  feature that claustrum does not list.
 - In claustrum's answer `peerCheck` is the last member, directly after
   `features`. It is in every answer. claustrum answers one of two values:
   `"off"` or `"unavailable"`. The daemon reads the variable

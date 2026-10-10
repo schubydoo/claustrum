@@ -231,6 +231,11 @@ type extractTarParams struct {
 // Production never reassigns it.
 var wipeDestDir = os.RemoveAll
 
+// openDestRoot opens the handle of the new destDir, behind a seam. A test swaps
+// destDir for a link between the mkdir and this open, to show that the test
+// after the open refuses the swapped folder. Production never reassigns it.
+var openDestRoot = os.OpenRoot
+
 // isFilesystemRoot reports whether p names a filesystem root, on any platform.
 //
 // The gate this backs matters because filesExtractTar WIPES destDir before
@@ -366,6 +371,40 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return 0, fmt.Errorf("mkdir destDir: %v", err)
 	}
+	// claustrum creates the parent folders and the files of the archive through
+	// a handle of destDir. Its texts for the two entry collisions below are then
+	// those of 5fd08069, with a name relative to destDir in place of the whole
+	// path.
+	//
+	// A destDir that cannot be searched gets the answer of 5fd08069 here, before
+	// the first entry. Cell 2a1-modes-u0100 (Linux VM) and cell 2a-modes-u100
+	// (macOS VM) run the daemon with umask 0100, so destDir gets mode 0600.
+	// 5fd08069 answers there:
+	//
+	//	open destDir: "dest" could not be examined (statat .: permission denied)
+	//
+	// For a handle that cannot be opened claustrum keeps its own text, with the
+	// whole path. 5fd08069 answers `open destDir: openat dest: permission denied`
+	// there (daemon umask 0400, Linux and macOS VMs).
+	destRoot, err := openDestRoot(destDir)
+	if err != nil {
+		return 0, fmt.Errorf("open destDir: %v", err)
+	}
+	defer destRoot.Close()
+	opened, err := destRoot.Stat(".")
+	if err != nil {
+		return 0, fmt.Errorf("open destDir: %q could not be examined (%v)", filepath.Base(destDir), err)
+	}
+	// The open is by path, and wipesHomeDir judged that path as text. Another
+	// process can put a link or a junction at destDir between the wipe and the
+	// open. The handle then names a folder that the guard did not judge, and the
+	// entries and the marker remove act on it. So destDir must still be a real
+	// directory, and it must be the folder of the handle. If not, the request
+	// fails here, before any entry is written and before any remove. This test
+	// and its text are claustrum's own, and no reference build is measured there.
+	if judged, err := os.Lstat(destDir); err != nil || !judged.IsDir() || !os.SameFile(judged, opened) {
+		return 0, fmt.Errorf("open destDir: %q changed while it was opened", filepath.Base(destDir))
+	}
 	tr := tar.NewReader(gz)
 	count := 0
 	var totalWritten int64
@@ -406,9 +445,9 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		// Reject entries that would escape destDir ("zip slip"). filepath.Join
 		// cleans, so target is already normalized; an entry then lands inside
 		// destDir exactly when target IS destDir or sits under it with a
-		// separator. An in-bounds "../" (and the destDir itself, e.g. a "."
-		// entry) resolves inside and is allowed, matching the reference. The
-		// reference rejects an escaping archive with this exact error and
+		// separator. A name that passes this test can still be unsafe: the
+		// second test below refuses a name that leaves destDir and comes back.
+		// The reference rejects an escaping archive with this exact error and
 		// fileCount 0 — even when earlier safe entries were already written.
 		//
 		// THE TRAILING SEPARATOR IS THE WHOLE GUARD. Comparing against cleanDest
@@ -430,56 +469,96 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		if target != cleanDest && !strings.HasPrefix(target, destPrefix) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
-		// The reference ignores the archive's mode bits and forces owner-only
-		// fixed modes: every extracted directory is 0700 and every file 0600
-		// (an executable 0755 entry still lands 0600 — probe-verified).
+		// A name that leaves destDir and comes back is unsafe too, although it
+		// resolves inside. 5fd08069 answers the same text for `../dest/x.txt`,
+		// `sub/../../dest/y.txt`, the directory entry `../dest/dd/` and
+		// `sub/../../dest` (Linux, macOS and Windows VMs).
+		// 89cb6289 extracts the three first names. On a Windows VM both builds
+		// refuse the names `NUL` and `a:b` with this text.
+		//
+		// The rule is lexical: the name without its leading separators must be a
+		// local path (filepath.IsLocal). `a/../b.txt`, `./c.txt`, `.` and an
+		// absolute name pass, as on 5fd08069. A name of separators alone passes
+		// as the name `.` does. A directory entry `/` succeeds on 5fd08069 (Linux
+		// VM). A file entry `/` gets its `create /: openat .:` text there (Linux
+		// and Windows VMs).
+		if !entryNameStaysInside(hdr.Name) {
+			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
+		}
+		// The modes are owner-only and fixed. A directory is 0700. A file is
+		// 0700 if its archive mode has the execute bit of the owner, and 0600 if
+		// it does not. 5fd08069 gives those modes for the archive modes 0644,
+		// 0600, 0444, 0755, 0700, 0111, 04755, 02755 and 01777 (Linux and macOS
+		// VMs). The modes 0010, 0001, 0011, 0654, 0645, 0610, 0601 and 0674 give
+		// 0600 there, and 0100 and 0744 give 0700 (Linux and macOS VMs). No
+		// setuid, setgid or sticky bit arrives. 89cb6289 gives each file 0600.
+		//
+		// inDest is the place of the entry below destDir. The zip-slip test above
+		// passed, so inDest is a clean relative path with no ".." part.
+		inDest := "."
+		if target != cleanDest {
+			inDest = strings.TrimPrefix(target, destPrefix)
+		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o700); err != nil {
-				return count, err
+			if inDest != "." {
+				if err := destRoot.MkdirAll(inDest, 0o700); err != nil {
+					// "mkdir <entry>: <text>" with fileCount 0, also when an earlier
+					// entry is on disk. A file entry `a` and then a directory entry
+					// give on 5fd08069:
+					//
+					//	mkdir a/: mkdirat a: file exists           (Linux, macOS and Windows VMs)
+					//	mkdir a/b/: openat a: not a directory      (Linux and macOS VMs)
+					//
+					// 89cb6289 has the prefix and the fileCount 0 too.
+					return 0, fmt.Errorf("mkdir %s: %v", hdr.Name, err)
+				}
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				// "mkdir parent <entry>: " — a DIFFERENT prefix from the create
-				// path below, and fileCount 0 rather than the partial count.
-				// Measured against 5db5e4a with an archive whose FIRST entry
-				// writes a regular file "p" and whose second needs "p" as a
-				// directory:
-				//
-				//	reference : mkdir parent p/child.txt: mkdir <dest>/p: not a directory
-				//	            fileCount 0
-				//	claustrum : mkdir <dest>/p: not a directory
-				//	            fileCount 1
-				//
-				// fileCount 0 despite one entry already being on disk is the same
-				// shape the zip-slip rejection has: the reference reports nothing
-				// extracted even when earlier entries were written.
-				//
-				// An earlier version of this comment said the mkdir path was "not
-				// provokable" because extract_tar wipes destDir before extracting.
-				// That was wrong — the wipe cannot remove a blocker the ARCHIVE
-				// ITSELF creates on an earlier entry, which is how this was
-				// measured. Raised in review.
-				return 0, fmt.Errorf("mkdir parent %s: %v", hdr.Name, err)
+			if parent := filepath.Dir(inDest); parent != "." {
+				if err := destRoot.MkdirAll(parent, 0o700); err != nil {
+					// "mkdir parent <entry>: <text>" with fileCount 0, also when an
+					// earlier entry is on disk. A file entry `a` and then an entry
+					// `a/b` give on 5fd08069 (Linux, macOS and Windows VMs):
+					//
+					//	mkdir parent a/b: mkdirat a: file exists
+					//
+					// The blocker comes from the archive itself, so the wipe of
+					// destDir cannot remove it.
+					return 0, fmt.Errorf("mkdir parent %s: %v", hdr.Name, err)
+				}
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+			perm := os.FileMode(0o600)
+			if hdr.Mode&0o100 != 0 {
+				perm = 0o700
+			}
+			// "create <entry>: <text>" with fileCount 0. The prefix names the
+			// archive entry. A directory entry `d` and then a file entry `d` give
+			// on 5fd08069:
+			//
+			//	create d: openat d: file exists      (Linux and macOS VMs)
+			//	create d: openat d: is a directory   (Windows VM)
+			//
+			// The exclusive create of claustrum through the handle gives both texts.
+			out, err := destRoot.OpenFile(inDest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+			if errors.Is(err, fs.ErrExist) {
+				// A second file entry with the name of an earlier one replaces the
+				// file. The new file has the mode of this entry: on 5fd08069 the
+				// modes 0644 and then 0755 give 0700, and 0755 and then 0644 give
+				// 0600 (Linux and macOS VMs). It has the name of this entry too:
+				// `a.txt` and then `A.TXT` leave `A.TXT` on 5fd08069 (Windows VM).
+				//
+				// The remove is a plain remove of one name through the handle of
+				// destDir, never a tree. It takes a regular file inside destDir
+				// and nothing else. A directory, a link or a FIFO at the name
+				// keeps the "file exists" answer.
+				if fi, statErr := destRoot.Lstat(inDest); statErr == nil && fi.Mode().IsRegular() {
+					if err = destRoot.Remove(inDest); err == nil {
+						out, err = destRoot.OpenFile(inDest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+					}
+				}
+			}
 			if err != nil {
-				// "create <entry>: " prefix, naming the ARCHIVE ENTRY rather than
-				// the resolved target. Measured against 5db5e4a with an entry that
-				// lands on an existing directory:
-				//
-				//	reference : create ../sub: open <dest>: is a directory
-				//	claustrum : open <dest>: is a directory
-				//
-				// This lands in the extract_tar error field on the wire.
-				//
-				// The MkdirAll above carries a DIFFERENT prefix ("mkdir parent
-				// <entry>: ") and is handled there — measured, after an earlier
-				// version of this comment wrongly called it unprovokable.
-				// fileCount 0, not the partial count — measured with an archive
-				// whose first entry succeeds and whose second hits this branch:
-				// the reference answers fileCount 0 while claustrum answered 1.
-				// Same shape as the mkdir-parent and zip-slip arms.
 				return 0, fmt.Errorf("create %s: %v", hdr.Name, err)
 			}
 			n, err := cappedCopy(out, tr, totalWritten)
@@ -500,8 +579,8 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// fileCount 0, not the partial count — grouping this with the four
 				// arms that reject the archive outright (create, mkdir-parent,
 				// zip-slip, unsupported type), all of which answer 0. It is NOT
-				// every arm: TypeDir mkdir and write .synced still return the
-				// partial count, and the cap arm was simply in the wrong group.
+				// every arm: a failed write of .synced still returns the partial
+				// count, and the cap arm was simply in the wrong group.
 				return 0, fmt.Errorf("extraction size limit exceeded")
 			}
 			count++
@@ -513,12 +592,45 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			return 0, fmt.Errorf("unsupported tar entry type %c: %s", hdr.Typeflag, hdr.Name)
 		}
 	}
-	// On success the reference drops an empty ".synced" marker at destDir root
-	// (not counted in fileCount); a write failure surfaces as this error.
-	if err := os.WriteFile(filepath.Join(destDir, ".synced"), nil, 0o600); err != nil {
+	if err := writeSyncedMarker(destRoot); err != nil {
+		// A marker that cannot be written is not measured on a reference build,
+		// and neither is an entry at .synced that cannot be removed.
 		return count, fmt.Errorf("write .synced: %v", err)
 	}
 	return count, nil
+}
+
+// entryNameStaysInside reports whether the name of an archive entry stays inside
+// destDir at each step. The test is lexical. It cuts the leading separators, so an
+// absolute name passes and lands under destDir.
+func entryNameStaysInside(name string) bool {
+	local := strings.TrimLeftFunc(name, func(r rune) bool { return r == '/' || r == filepath.Separator })
+	return local == "" || filepath.IsLocal(local)
+}
+
+// writeSyncedMarker puts the empty marker file .synced at the top of destDir. It
+// is not counted in fileCount.
+//
+// Whatever sits at that name goes first, as a tree. After the entries of the
+// archive, 89cb6289 and 5fd08069 leave an empty file there (Linux, macOS and
+// Windows VMs). That holds for a directory entry `.synced/` with files and
+// folders below it, and for a file entry with content. The file has mode 0600
+// (Linux and macOS VMs).
+//
+// The remove is a recursive delete of the fixed name .synced, and the write is an
+// exclusive create of that name. Both go through the handle of destDir, so neither
+// follows a link out of destDir. extractTarGz tested that handle against the
+// folder that wipesHomeDir judged. In a normal run the remove takes the entry of
+// this archive. Do not build the name from a parameter or from the archive.
+func writeSyncedMarker(destRoot *os.Root) error {
+	if err := destRoot.RemoveAll(".synced"); err != nil {
+		return err
+	}
+	marker, err := destRoot.OpenFile(".synced", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return marker.Close()
 }
 
 // gzipErr reproduces the real binary's "gzip: " prefix on a gzip header that

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -567,45 +568,80 @@ func TestFilesExtractTarZipSlipShapes(t *testing.T) {
 	}
 }
 
-// Two behaviours of the up-then-back-in shape, both MEASURED against 5db5e4a on
-// 2026-08-03 rather than assumed. They were an assumption until then, and the
-// assumption was load-bearing: PR #224 rewrote the guard in a way that rejected
-// the first row, and nothing in the suite noticed.
-//
-//	entry "../sub/inside.txt"	reference ACCEPTS, writes sub/inside.txt
-//	entry "../sub"          	reference errors "create ../sub: open <dest>: is a
-//	                        	directory" — note the "create <entry>: " prefix,
-//	                        	which claustrum omitted
-//
-// The entry must name destDir's OWN basename to leave and re-enter it, which is
-// why a differential over randomly chosen names cannot find this shape.
+// A name that leaves destDir and comes back is unsafe, although it resolves
+// inside. The rows are those of 5fd08069 on Linux, macOS and Windows VMs.
+// 89cb6289 extracts the three other names. For `sub/../../dest` it answers a
+// `create …: is a directory` text. The entry must name the last part of destDir to come back, so destDir is
+// "dest" here as in the cells. The names that stay inside are the controls of the
+// same rounds.
 func TestFilesExtractTarUpThenBackIn(t *testing.T) {
-	s := newTestServer(t)
-	root := t.TempDir()
-	dest := filepath.Join(root, "sub")
-
-	// Climbs out of destDir and back in: normalises inside, so it is accepted
-	// and the file lands in destDir.
-	archive := tarGzPath(t, map[string]string{"../sub/inside.txt": "payload"})
-	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
-		map[string]any{"archivePath": archive, "destDir": dest}))
-	if !strings.Contains(got, `"success":true`) || !strings.Contains(got, `"fileCount":1`) {
-		t.Fatalf("up-then-back-in extract = %s, want success + fileCount:1 (the reference accepts it)", got)
+	file := func(name string) tgzEntry { return tgzEntry{name: name, body: "x\n"} }
+	dir := func(name string) tgzEntry { return tgzEntry{name: name, dir: true} }
+	type row struct {
+		name     string
+		entries  []tgzEntry
+		unsafe   string   // the name in the refusal, or "" for a success
+		count    int      // fileCount of a success
+		wantLeft []string // the entries of destDir after the request, without .synced
 	}
-	if b, err := os.ReadFile(filepath.Join(dest, "inside.txt")); err != nil || string(b) != "payload" {
-		t.Errorf("inside.txt = %q (err %v), want payload inside destDir", b, err)
+	rows := []row{
+		{"file ../dest/x.txt", []tgzEntry{file("../dest/x.txt"), file("c.txt")}, "../dest/x.txt", 0, nil},
+		{"file sub/../../dest", []tgzEntry{dir("sub/"), file("sub/../../dest"), file("c.txt")}, "sub/../../dest", 0, []string{"sub"}},
+		{"file sub/../../dest/y.txt", []tgzEntry{dir("sub/"), file("sub/../../dest/y.txt"), file("c.txt")}, "sub/../../dest/y.txt", 0, []string{"sub"}},
+		{"directory ../dest/dd/", []tgzEntry{dir("../dest/dd/"), file("c.txt")}, "../dest/dd/", 0, nil},
+		// An entry before the unsafe one stays on disk. No cell has this exact
+		// archive. The cells with `sub/` before the unsafe entry show that an
+		// earlier entry stays.
+		{"file after a good file", []tgzEntry{file("a.txt"), file("../dest/x.txt")}, "../dest/x.txt", 0, []string{"a.txt"}},
+		{"control a/../b.txt", []tgzEntry{file("a/../b.txt"), file("c.txt")}, "", 2, []string{"b.txt", "c.txt"}},
+		{"control ./c.txt", []tgzEntry{file("./c.txt")}, "", 1, []string{"c.txt"}},
+		{"control directory .", []tgzEntry{dir("."), file("c.txt")}, "", 1, []string{"c.txt"}},
+		{"control directory ./", []tgzEntry{dir("./"), file("c.txt")}, "", 1, []string{"c.txt"}},
+		{"control absolute name", []tgzEntry{file("/abs/f.txt")}, "", 1, []string{"abs"}},
+		// Rows of 89cb6289 and 5fd08069 on a Linux VM.
+		{"absolute name that leaves", []tgzEntry{file("/abs/../../x.txt"), file("c.txt")}, "/abs/../../x.txt", 0, nil},
+		{"absolute name /../y.txt", []tgzEntry{file("/../y.txt"), file("c.txt")}, "/../y.txt", 0, nil},
+		{"control directory /", []tgzEntry{dir("/"), file("c.txt")}, "", 1, []string{"c.txt"}},
+		{"control a/./b/../c.txt", []tgzEntry{file("a/./b/../c.txt")}, "", 1, []string{"a"}},
 	}
+	if runtime.GOOS == "windows" {
+		// 89cb6289 and 5fd08069 answer these rows the same way (Windows VM).
+		rows = append(rows,
+			row{"Windows NUL", []tgzEntry{file("ok.txt"), file("NUL"), file("z.txt")}, "NUL", 0, []string{"ok.txt"}},
+			row{"Windows a:b", []tgzEntry{file("ok.txt"), file("a:b"), file("z.txt")}, "a:b", 0, []string{"ok.txt"}},
+			row{"Windows backslash up", []tgzEntry{file("ok.txt"), file(`..\evil2`), file("z.txt")}, `..\\evil2`, 0, []string{"ok.txt"}},
+			row{"Windows control x\\y.txt", []tgzEntry{file(`x\y.txt`)}, "", 1, []string{"x"}},
+		)
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestServer(t)
+			archive := filepath.Join(t.TempDir(), "a.tgz")
+			writeTgz(t, archive, tc.entries, 0)
+			dest := filepath.Join(t.TempDir(), "dest")
 
-	// The bare form resolves onto destDir itself, which is a directory, so the
-	// create fails — and the reference names the ENTRY in the prefix.
-	dest2 := filepath.Join(root, "sub2")
-	archive2 := tarGzPath(t, map[string]string{"../sub2": "payload"})
-	got = dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
-		map[string]any{"archivePath": archive2, "destDir": dest2}))
-	for _, want := range []string{`"success":false`, `"fileCount":0`, "create ../sub2: ", "is a directory"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("bare up-then-back-in = %s, missing %q", got, want)
-		}
+			got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+			want := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{"success":true,"fileCount":%d}}`, tc.count)
+			if tc.unsafe != "" {
+				want = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"fileCount":0,"error":"unsafe path in archive: ` + tc.unsafe + `"}}`
+			}
+			if got != want {
+				t.Errorf("frame = %s\nwant    %s", got, want)
+			}
+			var left []string
+			entries, err := os.ReadDir(dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range entries {
+				if e.Name() != ".synced" {
+					left = append(left, e.Name())
+				}
+			}
+			if strings.Join(left, ",") != strings.Join(tc.wantLeft, ",") {
+				t.Errorf("destDir holds %v, want %v", left, tc.wantLeft)
+			}
+		})
 	}
 }
 
@@ -645,24 +681,26 @@ func TestFilesExtractTarMkdirParentPrefix(t *testing.T) {
 }
 
 // fileCount is 0 on a create failure even when an EARLIER entry was already
-// written — the partial count is not reported. Measured against 5db5e4a with
-// an archive whose first entry succeeds ("!ok.txt" sorts before "../sub",
-// 0x21 < 0x2E, so makeTarGz's sort puts it first) and whose second lands on
-// destDir itself:
-//
-//	reference : create ../sub: open <dest>: is a directory, fileCount 0
-//	claustrum : (before this change)                        fileCount 1
+// written — the partial count is not reported. The archive has a first entry
+// that succeeds ("!ok.txt" sorts before ".", 0x21 < 0x2E, so makeTarGz's sort
+// puts it first) and a second file entry that names destDir itself. 5fd08069
+// answers `create .: openat .: file exists` for a file entry `.` on Linux and
+// macOS VMs, and `create .: openat .: is a directory` on a Windows VM.
 //
 // The single-entry fixture above cannot see this: with nothing written first,
 // the partial count IS 0 and both spellings agree.
 func TestFilesExtractTarCreateFailureReportsZeroCount(t *testing.T) {
 	s := newTestServer(t)
 	dest := filepath.Join(t.TempDir(), "sub")
-	archive := tarGzPath(t, map[string]string{"!ok.txt": "payload", "../sub": "x"})
+	archive := tarGzPath(t, map[string]string{"!ok.txt": "payload", ".": "x"})
 
 	got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar",
 		map[string]any{"archivePath": archive, "destDir": dest}))
-	for _, want := range []string{`"success":false`, `"fileCount":0`, "create ../sub: "} {
+	createText := "create .: openat .: file exists"
+	if runtime.GOOS == "windows" {
+		createText = "create .: openat .: is a directory"
+	}
+	for _, want := range []string{`"success":false`, `"fileCount":0`, createText} {
 		if !strings.Contains(got, want) {
 			t.Errorf("create failure after a successful entry = %s, missing %q", got, want)
 		}

@@ -337,8 +337,24 @@ The JSON-RPC surface is identical on every OS. Full internals →
   the socket layout of the daemon itself, not from an RPC or operator path. The
   leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
   caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
-  The four paths above remain the only caller-supplied or operator-supplied
-  recursive deletes.
+- The marker step of `files.extract_tar` is a further recursive delete, and it
+  is safe by construction. After the entries it removes the fixed name `.synced`
+  at the top of `destDir` as a tree (`writeSyncedMarker`). Then it creates the
+  empty marker file. The remove is one `os.Root.RemoveAll`, and the create is
+  exclusive. Both go through a handle of `destDir`, so neither follows a link
+  out of `destDir`. After the open of that handle, `extractTarGz` tests it
+  against the folder that `wipesHomeDir` judged: `destDir` must be a real
+  directory and the folder of the handle. If not, the request fails before any
+  entry and before the remove. The remove takes whatever sits at `.synced` in
+  that folder at that moment. In a normal run that is the entry of the archive.
+  `89cb6289` and `5fd08069` leave an empty file there after a directory entry
+  `.synced/` with content (Linux, macOS and Windows VMs). The file has mode
+  `0600` (Linux and macOS VMs). That is the maintainer's decision of
+  2026-10-10. Do not build that name from a parameter or from the archive.
+  A second file entry with the name of an earlier one removes that one regular
+  file through the same handle. That is a plain `os.Root.Remove`, not a tree.
+  The four paths above remain the only recursive deletes whose target a caller
+  or an operator names. The marker remove acts inside the first of them.
 - Auth is in-band per request (`"auth":"<token>"`). The token of the daemon
   comes from `-token-file` or from `-token-fd`. With `-token-file` the daemon
   reads the file once and then unlinks it, so the token never lands in

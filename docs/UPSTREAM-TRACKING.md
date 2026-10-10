@@ -361,7 +361,7 @@ traps that matter for telling drift from expected:
   env strip, and the gated launcher runs of `-install` and `-probe-cli`.
   `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
 - The `peerCheck` member splits the builds, not drift. `scripts/UPSTREAM_SHA` names
-  `89cb6289`, and claustrum follows `5fd08069` in two places of the frame.
+  `89cb6289`, and for this member claustrum follows `5fd08069` in two places of the frame.
   `server.capabilities` carries the `peerCheck` member and the
   `server.peer_check` feature. The frames of `89cb6289` have no
   such member and no such feature (Linux, macOS and Windows VMs). The daemon
@@ -376,10 +376,37 @@ traps that matter for telling drift from expected:
     is [D25](DIVERGENCES.md#d25).
   - The log line of that start has claustrum's own text on Linux, and a level
     tag on every system. See [PROTOCOL.md](PROTOCOL.md) → Daemon log.
-  - `5fd08069` lists two features that claustrum does not list (Linux, macOS and
+  - `5fd08069` lists one feature that claustrum does not list (Linux, macOS and
     Windows VMs).
 
   See [PROTOCOL.md](PROTOCOL.md) → server.*.
+- `files.extract_tar` splits the builds too, not drift. `scripts/UPSTREAM_SHA`
+  names `89cb6289`, and claustrum follows `5fd08069` in these places. Against
+  `89cb6289` each of them differs in the measured rows:
+  - `server.capabilities` lists `files.extract_tar.execBit` directly after
+    `process.stdin.offset` (Linux, macOS and Windows VMs).
+  - On Linux and macOS a file whose archive mode has the execute bit of the
+    owner arrives with mode `0700`, not `0600`. The frame is equal.
+  - A name that leaves `destDir` and comes back answers `unsafe path in
+    archive: <name>`. `89cb6289` extracts `../dest/x.txt`, and it answers a
+    `create` text for `sub/../../dest`.
+  - A file that the archive names two times has the mode of the last entry
+    (Linux and macOS VMs). On a volume that ignores letter case it has the name
+    of the last entry (Windows and macOS VMs).
+  - The texts after `mkdir parent <entry>:`, `mkdir <entry>:` and
+    `create <entry>:` name the place below `destDir`, not the whole path.
+  - A `destDir` that the daemon cannot search or open fails with
+    `open destDir:`. `89cb6289` fails later, or it extracts.
+
+  Against `5fd08069` these texts differ, not drift:
+  - `open destDir: open <path>: …`, where `5fd08069` has `openat dest`.
+  - A `clean destDir:` text with the whole path, where `5fd08069` has
+    `RemoveAll dest`.
+  - `mkdir destDir: mkdir <path>: …`, where `5fd08069` has `mkdirat dest`.
+  - No `open parent:` text. In one measured case claustrum leaves an empty
+    `destDir` there, and `5fd08069` leaves none.
+
+  See the record of [files.extract_tar](record/files-extract-tar.md).
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,

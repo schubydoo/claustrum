@@ -39,10 +39,14 @@ var capabilityMethods = []string{
 // git.info runs no `rev-parse --show-toplevel` on Linux and macOS (row L01). Linux,
 // macOS and Windows VMs show the feature at that place. 5fd08069 inserted
 // server.peer_check after launcher.managed (the peerCheck member of this result).
-// Linux, macOS and Windows VMs show it there. On those VMs 5fd08069 lists two more
-// features, which claustrum does not list. The array is always emitted.
+// Linux, macOS and Windows VMs show it there. 5fd08069 also inserted
+// files.extract_tar.execBit after process.stdin.offset (files.extract_tar keeps the
+// execute bit of the owner as mode 0700). The same three VMs show it at that place. On those VMs
+// 5fd08069 lists one more feature, which claustrum does not list. The array is
+// always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
+	"files.extract_tar.execBit",
 	"git.status.baseRepo",
 	"git.info.discovered_root",
 	"git.worktree_create.timeoutMs",
