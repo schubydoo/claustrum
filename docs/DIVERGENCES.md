@@ -72,7 +72,8 @@ The test is this question:
 If the honest input is reachable, and the caller cannot turn the guard off, then
 always-on is not justified. This holds no matter how the reference behaves on the
 hostile path. This test flipped every timeout and size cap from always-on to
-opt-in (D3, D5, D10, D12, and the retired D11 and D14). D4 is the non-threshold sibling.
+opt-in (D3, D5, D10, D12, and the retired D11 and D14). The retired D4 was the
+non-threshold sibling.
 
 *Canonical example:* D2 satisfies both halves. The reference's home-wipe is
 unrecoverable data loss, and no honest caller has a legitimate *use* for deleting
@@ -109,7 +110,7 @@ candidate.
 Every opt-in tag rests on one claim about the driver: Claude Desktop owns the
 daemon's argv on both `-serve` and `-install`. Therefore an operator cannot reach
 a flag-only knob, and the `claustrum.conf` key (read beside the executable) is the
-reachable one. This claim is the premise under D3, D4, D5, D10, D12 and
+reachable one. This claim is the premise under D3, D5, D10, D12 and
 under the "(opt-in)" tag itself.
 
 So much rests on the claim that it gets one canonical record. Its provenance, its
@@ -158,7 +159,6 @@ rather than repeating them in each entry:
 |----|--------------|---------|-----------------|---------------------|----------------|
 | [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The sweep and prune part: maintainer decision of 2026-10-07 | an honest caller legitimately targeting a path that is/contains home |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
-| [D4](#d4) | `files.read` refuses non-regular files | off | `-files-read-regular-only` / key | rule 4 | opt-in refuses a legit read, or default parks/OOMs the daemon in normal use |
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
 | [D8](#d8) | Never follow or write a foreign or symlinked `remote-server.log`. Both halves hold on Linux and macOS only | always-on | always-on | rule 3 clause (b): unreachable on the deployed path | a shared socket dir that also needs the log file, or the reference adding the same refuse-to-follow |
@@ -337,36 +337,6 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   default letting a size bomb through in normal use.
 - **Pointers.** The page [files.extract_tar](protocol/files-extract-tar.md) and
   `methods_files.go`. Measurement: forensics.
-
-### D4 · Make the `files.read` regular-file guard opt-in { #d4 }
-
-- **Behavior.** With the guard on, `files.read` refuses any non-regular path with
-  `-32602 files.read: not a regular file`. The reference refuses none. With the
-  guard off, the flag short-circuits the predicate
-  (`filesReadRegularOnly && !fi.Mode().IsRegular()`), so the mode check never
-  runs.
-- **Default.** Off (byte-identical). **Activate:** `-files-read-regular-only` or
-  the key.
-- **Why a flag and not a narrower predicate.** `/dev/null` and `/dev/zero` are
-  indistinguishable by mode, so any predicate that admits the first also admits the
-  second.
-- **The default has two measured costs** (both are the reference's own behaviour
-  too). First, a writerless FIFO parks a request goroutine *and* a descriptor:
-  linux reserves the fd number before it blocks, which draws down `RLIMIT_NOFILE`,
-  and `accept()` shares that limit. Second, an unbounded device read (`/dev/zero`)
-  never reaches EOF. Under a 2 GiB cgroup cap the kernel OOM-killed both binaries.
-  `maxBytes` cannot prevent either cost: it keys off the stat size, which is `0`
-  for every non-regular kind on linux.
-- **Why opt-in.** Across seven non-regular shapes (nine in all, with two
-  regular-file controls), claustrum with the guard off matches the reference
-  byte-for-byte. The always-on guard cost an honest `/dev/null` read a `-32602`
-  that the reference never produces (rule 4).
-- **Reopen trigger.** An operator with the flag set reporting a legitimate read
-  refused. The opposite direction says the default is wrong: a report of the
-  daemon parked or OOMed by a non-regular read in normal use.
-- **Pointers.** The page [files.read](protocol/files-read.md), and its
-  [measurement record](record/files-read.md) for the table of each kind of file.
-  Full table, OOM/fd reasoning, unmeasured shapes: forensics.
 
 ### D5 · Make the `gitTimeout` deadline opt-in { #d5 }
 
@@ -1356,9 +1326,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - Keys mirror the flags: `version-override`, `keep-children`, `metrics-addr`,
   `wire-log`, `wire-log-max-string`, `listen-pipe`, `max-extract-bytes` (D3), `max-cli-bytes` (D10),
   `cli-download-timeout` (D12), `git-timeout`
-  (D5), `files-read-regular-only` (D4). Two more keys are deprecated and set
-  nothing: `cli-probe-timeout` (retired D11) and `libc-probe-timeout` (retired
-  D14). Durations use `time.ParseDuration`, which
+  (D5). Three more keys are deprecated and set
+  nothing: `files-read-regular-only` (retired D4), `cli-probe-timeout` (retired
+  D11) and `libc-probe-timeout` (retired D14). Durations use `time.ParseDuration`, which
   rejects a bare number, except zero. Zero parses in unboundedly many spellings and
   always means disabled. No accepted oddity can switch a divergence *on*.
 - `version-override` makes claustrum a permanent drop-in. The desktop client
@@ -1440,6 +1410,28 @@ link points here.
 - Desktop's one captured `-cli-zst` call (2026-08-10) supplied no
   `-cli-checksum`, so no check ran on that path. It is one instance of one
   failure shape.
+
+### D4 · `files.read` refuses a file that is not regular (retired) { #d4 }
+
+- D4 made the refusal of a path that is not a regular file opt-in and off by
+  default. Its premise was that the reference reads such a path. That held up to
+  `89cb6289`.
+- `5fd08069` refuses such a path with `-32602 files.read: not a regular file`.
+  It opens the path first and tests the kind of the open file after that. On
+  Linux and macOS it reads the null device itself as empty content. Measured on
+  Linux, macOS and Windows VMs. The
+  [measurement record](record/files-read.md) holds the kinds and the rows.
+- claustrum now does the same, with no switch. The FIFO rows and the null
+  device rows are tested on Linux and macOS. `NUL` and a named pipe are tested
+  on Windows.
+- The two costs of the old default are gone for the measured kinds. A FIFO with
+  no writer gets the refusal at once. `/dev/zero` gets the refusal, so the
+  daemon does not grow.
+- The `-files-read-regular-only` flag and its `claustrum.conf` key are
+  deprecated. Both are still accepted, both set nothing, and either one logs
+  one warning on `-serve`.
+- No knob stays to read such a path. A read of one is a new divergence, and
+  rule 2 puts the burden of proof on it.
 
 ### D7 · `-cli-version` must not collide with the install temp sweep (retired) { #d7 }
 
