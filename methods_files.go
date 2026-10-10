@@ -46,10 +46,10 @@ type pathParams struct {
 // 262144-byte file reads, 262145 fails with "file exceeds maxBytes".
 const defaultReadMaxBytes = 262144
 
-// statForRequest wraps os.Stat with the reference's error policy: a genuine
-// ENOENT is the "does not exist" answer each caller reports in its own shape,
-// while any OTHER stat failure is surfaced verbatim rather than being flattened
-// into "does not exist".
+// statForRequest wraps os.Stat with the reference's error policy for files.stat
+// and files.validate (files.read opens the path instead). A genuine ENOENT is the
+// "does not exist" answer of each caller. Any OTHER stat failure is surfaced
+// verbatim rather than being flattened into "does not exist".
 //
 // Probe-measured against the reference at 5db5e4a on 2026-07-30 — three triggers,
 // all reachable:
@@ -139,8 +139,8 @@ func filesList(req *request) response {
 
 // filesRead opens the path first and tests the kind of the open file after it.
 // 5fd08069 does the same (Linux, macOS and Windows VMs): a path that cannot be
-// opened keeps its `open <path>: ...` text, and a FIFO writer that waits in its
-// open returns at the request. A file that is not regular and not a directory
+// opened keeps its `open <path>: ...` text. A FIFO writer that waits in its
+// open returns at the request (Linux and macOS VMs). A file that is not regular and not a directory
 // gets -32602 "files.read: not a regular file". On Linux and macOS the null
 // device itself reads as empty content (isNullDevice). The open does not wait
 // for a FIFO writer (readOpenFlag).
