@@ -29,15 +29,14 @@ func TestFilesExtractTarRefusesJunctionSwappedDestDir(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "a.tgz")
 	writeTgz(t, archive, []tgzEntry{{name: "a.txt", body: "x\n"}}, 0)
 
-	t.Cleanup(func() { openDestParent = os.OpenRoot })
-	openDestParent = func(name string) (*os.Root, error) {
+	t.Cleanup(func() { afterDestDirMkdir = func() {} })
+	afterDestDirMkdir = func() {
 		// The swap: the new empty destDir goes, and a junction to the other
 		// folder takes its place.
 		if err := os.Remove(dest); err != nil {
 			t.Fatal(err)
 		}
 		makeJunction(t, dest, other)
-		return os.OpenRoot(name)
 	}
 	// The junction goes before the temp folders are cleaned, as a link.
 	t.Cleanup(func() { _ = os.Remove(dest) })

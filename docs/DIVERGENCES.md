@@ -157,7 +157,7 @@ rather than repeating them in each entry:
 
 | ID | What it does | Default | How to activate | Why (rule / clause) | Reopen trigger |
 |----|--------------|---------|-----------------|---------------------|----------------|
-| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The sweep and prune part: maintainer decision of 2026-10-07 | an honest caller legitimately targeting a path that is/contains home |
+| [D2](#d2) | Refuse a destructive path that is or contains `$HOME`, on three methods and on `-install` | always-on | always-on | rule 3 clause (a). The sweep and prune part: maintainer decision of 2026-10-07. The `files.extract_tar` wipe through the parent handle and its two tests: maintainer decision of 2026-10-10 | an honest caller legitimately targeting a path that is/contains home, or a Windows `destDir` with the `\\?\` prefix and a dot or a space after its last name |
 | [D3](#d3) | Cap `files.extract_tar` output size | off (`0` = unlimited) | `-max-extract-bytes` / `max-extract-bytes` | rule 4 (who-pays) | operator's cap refuses a legit extraction, or default lets a bomb through |
 | [D5](#d5) | Deadline on every `git` invocation | off (`0`) | `-git-timeout` / key | rule 4 | opt-in kills an honest slow git |
 | [D6](#d6) | `-cli-version` must be a single path component | always-on | always-on | rule 3 clause (b) | Desktop passing a multi-component `-cli-version` |
@@ -195,8 +195,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **`files.extract_tar` tests the folder that it opened.** `wipesHomeDir` judges
   the `destDir` path as text. The entries and the remove of the `.synced` entry
-  act through a handle of `destDir`, which claustrum opens after the wipe. Another
-  process can replace `destDir` with a link or a junction in that time. So
+  act through a handle of `destDir`, which claustrum opens after the wipe and
+  the mkdir of the new folder. Another process can replace `destDir` with a link
+  or a junction in that time. So
   claustrum tests after the open that `destDir` is still a real folder and is the
   folder of the handle. If not, it answers
   `open destDir: "<name>" changed while it was opened`. It writes no entry and
@@ -204,10 +205,44 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   folder. A link that leaves the parent folder fails that open first, with
   `open destDir: openat <name>: path escapes from parent`. This test is part of this entry: it keeps the delete on the
   folder that the guard judged. A request alone cannot stage the swap, and no
-  measurement says what the reference does there. In the measured cells the
-  frames and the disk are equal with `5fd08069` (Linux, macOS and Windows VMs).
+  measurement says what the reference does there.
   A `destDir` that is a link or a junction before the request is not refused:
-  the wipe removes the link first, as on the reference.
+  the wipe removes the link first, as on the reference. The wipe removes the
+  last name of `destDir` through a handle of the parent folder, so it follows
+  no link and no junction. The maintainer approved this delete path on
+  2026-10-10.
+- **`files.extract_tar` tests the entry that the wipe acts on.** Before the wipe
+  claustrum reads the last name of `destDir` inside the handle of the parent
+  folder. Two tests follow, and they run again after the mkdir of the new
+  folder. If the views differ there, the entry at that name goes with a plain
+  remove, never as a tree.
+  First, a folder at the last name that is the home folder, or a parent folder
+  of it, gets the home refusal by identity. That refusal comes after the archive
+  open, so the archive is gone. On Linux and macOS that covers a path through a
+  link above the last name. On Windows the text compare refuses a dot or a
+  space after home or after a folder above it, because the path is resolved
+  first. It lets a path with the `\\?\` prefix and the short 8.3 name of home
+  pass, and the test by identity refuses those. These Windows rows are runs of
+  the test binary on a Windows VM, with a temp home and a stubbed wipe. No
+  daemon cell measured them. A link or a
+  junction at the name itself is not followed: the wipe removes the link, and
+  its target stays. Second, the path as the system
+  resolves it and the name inside the handle must name one entry. If not,
+  claustrum answers
+  `clean destDir: "<name>" is not the entry that the path names`, or the same
+  text after `mkdir destDir:`, and deletes nothing. On Windows the two views
+  differ for a path with the `\\?\` prefix and a dot or a space after its last
+  name. Six cells are measured: each of the two names with `dest` alone, with a
+  folder of the exact name too, and with neither. `89cb6289` extracts into the
+  folder with the exact name, which it makes if there is none. `5fd08069`
+  extracts into the folder with no dot or space, which it makes if there is
+  none (Windows VM). A seventh cell is the last name `...` behind the prefix.
+  `89cb6289` makes a folder with that exact name and extracts there.
+  `5fd08069` answers `clean destDir: RemoveAll ...: invalid argument`.
+  claustrum answers the text of the two views, and the tree is equal with
+  `5fd08069` (Windows VM). claustrum refuses, because the home guard compares
+  the text of the path. These tests are for
+  this method. They do not cover the other callers of `wipesHomeDir`.
 - **`-install` is guarded too.** The install removes a folder at the CLI path,
   `<cli-dir>/<version>`, as a tree before the new CLI runs. With a cli-dir that
   is the parent of the home folder and a version that is its leaf name, that

@@ -174,7 +174,7 @@ func TestWipesHomeDirCaseFolding(t *testing.T) {
 // directory, BEFORE any filesystem effect.
 //
 // Safe to run against the unfixed tree, twice over: the wipe is stubbed, so the
-// os.RemoveAll cannot fire, and the home the rows name is a t.TempDir() rather
+// recursive delete cannot fire, and the home the rows name is a t.TempDir() rather
 // than the developer's real one. That is this repo's rule for guard tests — a
 // test whose failure mode is destroying the machine is not a test — and it is
 // also how the incident this guards against would have been caught: the fuzzer
@@ -195,7 +195,7 @@ func TestFilesExtractTarRefusesHomeDir(t *testing.T) {
 
 	wiped := ""
 	oldWipe := wipeDestDir
-	wipeDestDir = func(path string) error { wiped = path; return nil }
+	wipeDestDir = func(_ *os.Root, name string) error { wiped = name; return nil }
 	t.Cleanup(func() { wipeDestDir = oldWipe })
 
 	s := newTestServer(t)

@@ -397,17 +397,35 @@ traps that matter for telling drift from expected:
     `create <entry>:` name the place below `destDir`, not the whole path.
   - A `destDir` that the daemon cannot search or open fails with
     `open destDir:`. `89cb6289` fails later, or it extracts.
+  - The texts of the `destDir` steps name the last name of `destDir`, or the
+    parent folder: `clean destDir: RemoveAll <name>: …` (Linux, macOS and
+    Windows VMs), `open parent: open <path>: …` and `mkdir destDir: mkdirat
+    <name>: …` (Linux and macOS VMs). `89cb6289` has a `clean destDir:` or
+    `mkdir destDir:` text with the whole path in the rows where it fails.
+  - With a parent folder of mode `0300` and no `destDir`, the answer is the
+    `open parent:` text and no `destDir` is made. `89cb6289` extracts (Linux
+    and macOS VMs).
+  - A parent folder of mode `0400` or `0600` answers the `open parent:` text
+    too, where `89cb6289` answers `clean destDir: openfdat <path>: …` (Linux
+    and macOS VMs. The answer of claustrum is from a Linux VM).
+  - On Windows, with no `\\?\` prefix, a `destDir` whose last name ends in a
+    dot or a space is wiped and filled. `89cb6289` keeps the old file, or it
+    fails (Windows VM).
+  - On Windows the last names `NUL`, `a:b`, `CON`, `COM1`, `dest?` and `dest*`
+    answer `clean destDir: RemoveAll <name>: …`. `89cb6289` answers another
+    text, or it makes a folder (Windows VM).
 
-  Against `5fd08069` these differences are not drift:
-  - A `clean destDir:` text with the whole path, where `5fd08069` has
-    `RemoveAll dest`.
-  - `mkdir destDir: mkdir <path>: …`, where `5fd08069` has `mkdirat dest`.
-  - A `clean destDir:` text for a parent folder of mode `0300` over an old
-    `destDir`, where `5fd08069` has `open parent:`. claustrum fails earlier
-    there, in its wipe.
-  - With a daemon umask of 0400 and new folders above `destDir`, the
-    `open parent:` text is equal. claustrum leaves an empty `destDir` there,
-    and `5fd08069` leaves none.
+  A folder above `destDir` that cannot be made answers `mkdir parent: mkdir
+  <path>: …` on `89cb6289` and on `5fd08069` (Linux, macOS and Windows VMs). That is
+  no difference against the pin.
+
+  Against both builds these answers are not drift. On Windows a `destDir` with the
+  `\\?\` prefix and a dot or a space after its last name answers
+  `clean destDir: "<name>" is not the entry that the path names`, or the same
+  text after `mkdir destDir:`, and nothing is deleted. `89cb6289` extracts into
+  a folder with the exact name, and `5fd08069` into the folder with no dot or
+  space (Windows VM). A `destDir` whose last name is the home folder by
+  identity gets the home refusal. See [D2](DIVERGENCES.md#d2).
 
   See the record of [files.extract_tar](record/files-extract-tar.md).
 - The reap of a child record with a `program` key splits the pins too, off the

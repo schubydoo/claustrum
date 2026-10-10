@@ -11,7 +11,7 @@ import (
 
 // The home guard of the tree delete at the final name, with a link in one of
 // the two paths (D2). The lexical test of wipesHomeDir sees two different
-// spellings there. cliFolderHoldsHome compares the folder at the final name
+// spellings there. folderHoldsHome compares the folder at the final name
 // with the home folder and with each parent folder of it, by identity.
 //
 // SAFETY: every path is under t.TempDir, and the home variable names a fixture

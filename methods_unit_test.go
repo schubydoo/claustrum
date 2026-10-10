@@ -170,8 +170,7 @@ func TestFilesExtractTarSuccess(t *testing.T) {
 
 // isFilesystemRoot must recognise the platform's OWN root, not just "/".
 //
-// The gate it backs guards an os.RemoveAll of destDir, so a root that slips
-// through recursively deletes the volume. The previous spelling compared
+// The gate it backs guards the wipe of destDir, a recursive delete. The previous spelling compared
 // against the literal "/", which a Windows volume root never equals — `C:\`
 // cleans to itself and passes filepath.IsAbs, so it reached the wipe.
 //
@@ -188,7 +187,7 @@ func TestIsFilesystemRoot(t *testing.T) {
 	}
 	for _, r := range roots {
 		if !isFilesystemRoot(r) {
-			t.Errorf("isFilesystemRoot(%q) = false, want true — a root destDir reaches os.RemoveAll", r)
+			t.Errorf("isFilesystemRoot(%q) = false, want true — a root destDir reaches the wipe", r)
 		}
 	}
 	for _, n := range nonRoots {
@@ -240,7 +239,7 @@ func TestFilesExtractTarErrors(t *testing.T) {
 	// refuse BEFORE any filesystem effect, which is what wiped records.
 	wiped := ""
 	oldWipe := wipeDestDir
-	wipeDestDir = func(path string) error { wiped = path; return nil }
+	wipeDestDir = func(_ *os.Root, name string) error { wiped = name; return nil }
 	t.Cleanup(func() { wipeDestDir = oldWipe })
 
 	for _, tc := range cases {
