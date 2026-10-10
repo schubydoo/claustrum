@@ -1473,6 +1473,12 @@ func buildEnv(env map[string]string) []string {
 	// armed (a test server).
 	awaitLoginPATH()
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
+	// The child gets no CLAUDE_SSH_PEER_CHECK of the daemon, with any value. On
+	// 5fd08069 a child had no such entry for the daemon values 1 and 0, and a marker
+	// variable of the daemon arrived (Linux, macOS and Windows VMs). The daemon's own
+	// environment keeps the variable. A spawn env param that names the variable is
+	// not measured: it passes, as a CLAUDE_RPC_TOKEN of the param does.
+	base = removeEnvKey(base, peerCheckEnv)
 	// The login-shell PATH is applied HERE, to the child's environment, rather
 	// than being installed into the daemon's own — see loginPATH in shellenv.go.
 	// Applied before the caller's env so an explicit PATH in the spawn request

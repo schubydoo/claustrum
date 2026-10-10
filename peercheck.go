@@ -17,9 +17,10 @@ const (
 )
 
 // peerCheckAsked tells if the environment asks for the peer check. The exact text
-// "1" asks for it. On 5fd08069 each of these gave "off". Linux VM: the empty text,
-// "true", "yes", "on", "2", "01" and " 1". macOS VM: no variable, "0", "off", the
-// empty text and "true". Windows VM: no variable, "0" and "off".
+// "1" asks for it. On 5fd08069 each of these gave "off". Linux VM: no variable,
+// "0", the empty text, "true", "yes", "on", "2", "01" and " 1". macOS VM: no
+// variable, "0", "off", the empty text and "true". Windows VM: no variable, "0"
+// and "off".
 func peerCheckAsked() bool {
 	return os.Getenv(peerCheckEnv) == "1"
 }

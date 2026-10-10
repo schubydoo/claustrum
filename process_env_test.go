@@ -141,3 +141,32 @@ func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 		t.Errorf("child saw %q, want %q — CLAUDE_RPC_TOKEN must not propagate to spawned children", got, "CLAUDE_RPC_TOKEN=")
 	}
 }
+
+// TestSpawnDoesNotInheritPeerCheck: a spawned child gets no CLAUDE_SSH_PEER_CHECK of
+// the daemon, for the values 1 and 0, as on 5fd08069 (Linux, macOS and Windows VMs).
+// A marker variable of the daemon is the control: it arrives. The daemon's own
+// environment keeps the variable. The child is the helper of this test binary.
+func TestSpawnDoesNotInheritPeerCheck(t *testing.T) {
+	const marker = "CLAUSTRUM_TEST_PEER_MARK"
+	for _, value := range []string{"1", "0"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(peerCheckEnv, value)
+			t.Setenv(marker, "1")
+			m := newTestProcManager(t)
+			t.Cleanup(m.killAll)
+			for id, want := range map[string]string{peerCheckEnv: peerCheckEnv + "=", marker: marker + "=1"} {
+				c, frames := pipeConn(t)
+				printenv, env := helperCommand(t, "printenv")
+				if _, err := m.spawn(c, id, printenv, []string{id}, "", env, false); err != nil {
+					t.Fatalf("spawn: %v", err)
+				}
+				if got := firstStdout(t, frames); got != want {
+					t.Errorf("child saw %q, want %q", got, want)
+				}
+			}
+			if got := os.Getenv(peerCheckEnv); got != value {
+				t.Errorf("the daemon's own %s = %q after the spawns, want %q", peerCheckEnv, got, value)
+			}
+		})
+	}
+}

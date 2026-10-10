@@ -1148,8 +1148,8 @@ Windows VMs saw it at that place.
   answers `"unavailable"` on Linux, macOS and Windows, and it serves every caller.
   With each other value, and with no variable, it answers `"off"`.
   On `5fd08069` each of these gave `"off"`:
-    - Linux VM: the empty value, `true`, `yes`, `on`, `2`, `01` and ` 1` (a
-      space before the digit).
+    - Linux VM: no variable, `0`, the empty value, `true`, `yes`, `on`, `2`,
+      `01` and ` 1` (a space before the digit).
     - macOS VM: no variable, `0`, `off`, the empty value and `true`.
     - Windows VM: no variable, `0` and `off`.
 
@@ -3558,6 +3558,12 @@ as id-less stream notifications, and it buffers them for a later replay.
   child without one keeps it. The strip covers the
   daemon env and the spawn `env` param. claustrum strips on Windows too. That is
   claustrum's choice (not measured).
+- Every spawned child loses the `CLAUDE_SSH_PEER_CHECK` of the daemon env, with
+  any value. On `5fd08069` a child had no such entry for the daemon values `1` and
+  `0`, and a marker variable of the daemon arrived (Linux, macOS and Windows VMs).
+  The environment of the daemon process keeps the variable, as on `5fd08069`
+  (Linux and macOS VMs). A spawn `env` param that names the variable is not
+  measured. claustrum hands that value to the child.
 - `wantPid` is a claustrum-only opt-in, CT-1. With `"wantPid":true` the reply gains
   two fields after `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
   `pid` is the child's OS pid. `startTime` is the daemon's wall clock in epoch

@@ -340,6 +340,20 @@ traps that matter for telling drift from expected:
   `89cb6289`: `launcher.resolve`, the `process.spawn` `launcher` param, the child
   env strip, and the gated launcher runs of `-install` and `-probe-cli`.
   `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
+- The peer check splits the builds, not drift. `scripts/UPSTREAM_SHA` names
+  `89cb6289`, and claustrum follows `5fd08069` in three places.
+  `server.capabilities` carries the `peerCheck` member and the
+  `server.peer_check` feature. A spawned child loses the
+  `CLAUDE_SSH_PEER_CHECK` of the daemon env. The frames of `89cb6289` have no
+  such member and no such feature (Linux, macOS and Windows VMs). Against
+  `5fd08069` two differences are not drift:
+  - With `CLAUDE_SSH_PEER_CHECK=1` on Linux, `5fd08069` answers
+    `"peerCheck":"on"` with a `peerCheckBy` member (Linux VM). claustrum answers
+    `"peerCheck":"unavailable"`, has no peer check and serves every caller.
+  - `5fd08069` lists two features that claustrum does not list (Linux, macOS and
+    Windows VMs).
+
+  See [PROTOCOL.md](PROTOCOL.md) → server.*.
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,
