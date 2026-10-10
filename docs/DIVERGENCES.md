@@ -1414,8 +1414,8 @@ link points here.
 ### D4 · `files.read` refuses a file that is not regular (retired) { #d4 }
 
 - D4 made the refusal of a path that is not a regular file opt-in and off by
-  default. Its premise was that the reference reads such a path. That held up to
-  `89cb6289`.
+  default. Its premise was that the reference does not refuse such a path.
+  `89cb6289` does not refuse one.
 - `5fd08069` refuses such a path with `-32602 files.read: not a regular file`.
   It opens the path first and tests the kind of the open file after that. On
   Linux and macOS it reads the null device itself as empty content. Measured on

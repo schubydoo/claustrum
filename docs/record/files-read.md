@@ -32,7 +32,8 @@ ABSENT is `{"jsonrpc":"2.0","id":1,"result":{"content":"","exists":false}}`.
 ### Linux and macOS
 
 The row numbers are those of the second round. "first round" names the round
-before it. On both VMs fd 0 of the daemon was `/dev/null`. On the Linux VM the
+before it. "validation round" names the round that ran claustrum beside
+`5fd08069`. "open round" names the last round, with its cell numbers. On both VMs fd 0 of the daemon was `/dev/null`. On the Linux VM the
 daemon had no terminal.
 
 | path | `5fd08069` | Linux VM row | macOS VM row | `89cb6289` |
@@ -59,7 +60,7 @@ daemon had no terminal.
 | a second device node with the numbers of `/dev/zero`, mb16 | NRF | 12 | 10b | as `/dev/zero` |
 | `/dev/ptmx` | NRF | 8 | 7 | no reply in 5 s on Linux and in 8 s on macOS. The daemon lived |
 | a FIFO with no writer | NRF in under 3 ms | first round | first round | no reply in 5 s. EMPTY after a writer opened and closed |
-| a FIFO, a writer waits in its open | NRF. The open of the writer returned at the request | first round | first round, 4 runs | `{"content":"hi","exists":true}` |
+| a FIFO, a writer waits in its open | NRF. The open of the writer returned at the request | first round, 1 run, and validation round, 11 runs | first round and validation round, 4 runs each | `{"content":"hi","exists":true}` |
 | a symlink to a FIFO with no writer | NRF | 11 | 9b | no reply in 5 s |
 | a block device that the daemon user can read, mb16 and no `maxBytes` | NRF | 14 (a loop device) | 12a, 12b, 13a (a RAM disk) | the whole 1048576 bytes, also with mb16 |
 | the raw node of that RAM disk, mb16 and no `maxBytes` | NRF | no such node | 12c, 12d, 13b | `-32603 read /dev/rdisk5: invalid argument` |
@@ -72,6 +73,14 @@ daemon had no terminal.
 | an `AF_UNIX` socket, bound or listening | `-32603 open <path>: no such device or address` on Linux, `-32603 open <path>: operation not supported on socket` on macOS | 19 and first round | 16 and first round | same |
 | a symlink loop | `-32603 open <path>: too many levels of symbolic links` | 17 | 14c | `-32603 stat <path>: too many levels of symbolic links` |
 | a regular file with a `/` after its name | `-32603 open <path>/: not a directory` | 21 | 17b | `-32603 stat <path>/: not a directory` |
+| a directory of mode 0000, and one of mode 0333 | `-32603 open <path>: permission denied` | open round 1, 2 | open round 1, 2 | `-32602 files.read: path is a directory` |
+| a directory in a parent of mode 0000 | `-32603 open <path>: permission denied` | open round 3 | open round 3 | `-32603 stat <path>: permission denied` |
+| a regular file of mode 0000, 4 bytes, `maxBytes` 1 | `-32603 open <path>: permission denied` | open round 4 | open round 4a | `-32602 files.read: file exceeds maxBytes` |
+| a regular file of mode 0000, 262145 bytes, no `maxBytes` | `-32603 open <path>: permission denied` | open round 5 | open round 5 | `-32602 files.read: file exceeds maxBytes` |
+| `a.txt/../a.txt`, where `a.txt` is a regular file | `-32603 open <path>: not a directory` | open round 6 | open round 6a | `-32603 stat <path>: not a directory` |
+| a last name of 300 characters | `-32603 open <path>: file name too long` | open round 6 | open round 6b | `-32603 stat <path>: file name too long` |
+| a NUL byte in the path | `-32603 open <path>: invalid argument` | open round 6 | open round 6c | `-32603 stat <path>: invalid argument` |
+| `a.txt/b`, where `a.txt` is a regular file | `-32603 open <path>: not a directory` | open round 7 | open round 7 | `-32603 stat <path>: not a directory` |
 | `/proc/self/status` | the content, 61 lines | 20 | no such file | same |
 | `/proc/self/mem` | `-32603 read /proc/self/mem: input/output error` | 20 | no such file | same |
 | a file under `/sys` | the content | 20 | no such file | same |
@@ -114,6 +123,12 @@ The daemons ran with an administrator token at the high integrity level. Two pas
 | a regular file with a `\` after its name | `-32603 open <path>\: The directory name is invalid.` | 10b | `-32603 CreateFile <path>\: The directory name is invalid.` |
 | a file that another process holds with share mode 0 and read access | the content | 11a | same |
 | the same file, the holder has read and write access | `-32603 open <path>: The process cannot access the file because it is being used by another process.` | 11b | same |
+| a file of 4 bytes that another process holds with no sharing, `maxBytes` 1 | `-32603 open <path>: The process cannot access the file because it is being used by another process.` | open round 1a | `-32602 files.read: file exceeds maxBytes` |
+| the same for a file of 262145 bytes, no `maxBytes` | the same `open` text | open round 2a | `-32602 files.read: file exceeds maxBytes` |
+| a NUL byte in the path | `-32603 open <path>: invalid argument` | open round 5a | `-32603 Stat <path>: invalid argument` |
+| a last name of 300 characters | `-32603 open <path>: The filename, directory name, or volume label syntax is incorrect.` | open round 5b | `-32603 CreateFile <path>: …` with the same reason |
+| `reg.txt\b`, where `reg.txt` is a regular file | ABSENT | open round 6 | same |
+| `reg.txt` with a space or a dot after its name | the content of `reg.txt` | open round 7a, 7b | same |
 | the stream `reg.txt:s` | the content of the stream | 12a | same |
 | `reg.txt::$DATA` | the content of the file | 12b | same |
 
@@ -129,13 +144,15 @@ The tests of claustrum pin these rows:
   file with a `/` after its name.
 - Linux and macOS: the null device test is the identity of the file. The test
   uses two FIFOs and a seam, because a device node needs root.
+- Linux and macOS: a directory of mode 0000, and a file of mode 0000 over
+  `maxBytes`.
 - Linux: a bound `AF_UNIX` socket.
 - Windows: `NUL` in the six spellings of the table, and a named pipe.
 
 A build of claustrum with this rule ran beside `5fd08069` on Linux, macOS and
-Windows VMs. Each `files.read` reply line was byte-equal, except the content of
-`/proc/self/status`. That content holds the pid and the memory numbers of the
-daemon.
+Windows VMs, in the validation round and in the open round. Each `files.read`
+reply line was byte-equal, except the content of `/proc/self/status`. That
+content holds the pid and the memory numbers of the daemon.
 
 ### Not measured
 
@@ -145,6 +162,10 @@ daemon.
 - `/dev/stdin` with an fd 0 that is not `/dev/null`.
 - How `5fd08069` keeps its open from a wait for a FIFO writer. claustrum opens
   with `O_NONBLOCK` on Linux and macOS (from the code).
-- On `5fd08069`: a path with a regular file as a middle part, a name that is
-  too long, and a NUL byte in the path. `5db5e4a` answered `stat <path>: …` for
-  the three. claustrum now answers `open <path>: …` there, from the code.
+- A regular file under a lease. With `O_NONBLOCK` the open of claustrum gets an
+  error there, where a plain open waits (from the code).
+- A second node of the null device inside the file system of `/dev`. Both
+  measured second nodes were on another file system.
+- On Windows, a folder or a file whose access list denies read data. The cells
+  ran, but the deny entry did not stop the daemons with their administrator
+  token.

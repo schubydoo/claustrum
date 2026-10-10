@@ -1071,9 +1071,8 @@ other two stat it:
   `files.validate` keeps its result shape and puts that text in its `error` field
   instead. Reachable reasons include `not a directory` (a path component is a
   regular file), `file name too long`, and `invalid argument` (a NUL byte in the
-  path). For `files.read` these three are from the code, not measured on
-  `5fd08069`. Measured there are a regular file with a slash after its name and
-  a symlink loop.
+  path). For `files.read`, `5fd08069` gives these three with `open` on Linux and
+  macOS VMs.
 
 ## Methods (20)
 

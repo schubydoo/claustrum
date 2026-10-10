@@ -48,11 +48,11 @@ The daemon opens the path first. Then it tests the kind of the open file. It fol
 
 - A file that is not a regular file and not a directory gets `-32602 files.read: not a regular file`. Examples are a FIFO, a device such as `/dev/zero`, and on Windows `NUL` and a named pipe.
 - On Linux and macOS the null device itself reads as empty content, through each path that names that file. A second device node with the same device numbers gets the refusal.
-- A path that the daemon cannot open keeps the error of the open. A socket is an example.
+- A path that the daemon cannot open keeps the error of the open. A socket is an example. The open comes before the directory test and before the size test. So a directory or a large file that the daemon cannot open gets the error of the open too.
 
 The open does not wait for the writer of a FIFO, so the refusal comes at once. The open is visible to a writer that waits in its own open of the FIFO: that open returns.
 
-The reference build `5fd08069` gives these answers on Linux, macOS and Windows VMs. Up to `89cb6289` the reference read such a file. The flag `-files-read-regular-only` and its key in `claustrum.conf` are deprecated. They set nothing and log one warning.
+The reference build `5fd08069` gives these answers on Linux, macOS and Windows VMs. `89cb6289` does not refuse such a file. The flag `-files-read-regular-only` and its key in `claustrum.conf` are deprecated. They set nothing and log one warning.
 
 ## Errors
 

@@ -271,10 +271,21 @@ its value. It is a bool, not a duration. Its flag forms parse like this:
 A `-32602 files.read: not a regular file` on a stock claustrum is not drift. It
 is the rule of `5fd08069`. Against `89cb6289` the same request differs: that
 build reads the path, waits, or answers another error. An `open <path>: …` text
-of `files.read` is not drift either. `89cb6289` answers `stat <path>: …` there,
-and `CreateFile <path>: …` on Windows. The battery row for `files.read` of
-`~/a.txt/` shows it. The
-[measurement record](record/files-read.md) holds the rows.
+of `files.read` is not drift in these measured cases, where `89cb6289` has
+another text:
+
+- Linux and macOS, `stat <path>: …` on `89cb6289`: a symlink loop, a `/` or a
+  further component after a regular file, a name that is too long, a NUL byte,
+  and a folder that the daemon cannot search. The battery row for `files.read`
+  of `~/a.txt/` shows it.
+- Windows, `CreateFile <path>: …` on `89cb6289`: `CON`, `CONIN$`, `CONOUT$`, a
+  `\` after a regular file, and a name that is too long. A NUL byte gets
+  `Stat <path>: …` there.
+- Each system, where the open fails: `89cb6289` answers `files.read: path is a
+  directory` for a directory and `files.read: file exceeds maxBytes` for a file
+  over the limit.
+
+The [measurement record](record/files-read.md) holds the rows.
 
 ### Triage gotchas — when a probe result is misleading
 
