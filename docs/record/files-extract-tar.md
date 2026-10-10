@@ -254,44 +254,182 @@ One more row of the Linux and macOS VMs is equal on both builds. The old
 file `lnk/f.txt`. The request succeeds. `lnk` is then a real folder with
 `f.txt`, and the folder outside is not changed.
 
-## A destDir that the daemon cannot open
+## The preparation of destDir
 
-With a daemon umask of 0400 the new `destDir` has mode `0300`. `89cb6289`
-extracts the archive there, and claustrum before this change did the same (from
-the code). `5fd08069` fails, and claustrum fails with the same text.
+After the gzip header the daemon prepares `destDir`. `5fd08069` was measured
+beside `89cb6289` on Linux, macOS and Windows VMs. The answers of `5fd08069` on
+the Linux and macOS VMs give this order: the missing folders above `destDir`,
+the open of the parent folder, the wipe of the old `destDir`, the new
+`destDir`, and its open. claustrum does the steps in that order (from the
+code).
 
-| case | system | `5fd08069` | `89cb6289` | claustrum |
+In no Linux or macOS cell of these rounds did a file or a folder outside
+`destDir` lose content, on either build. The same holds for the Windows cells
+of the parent, of the wipe, of the old content and of what `destDir` is before.
+The Windows spelling rows are apart: see "Spellings of destDir". The new
+folders above `destDir` are the one kind of new entry outside it.
+
+### The parent folder of destDir
+
+`<parent>` is the whole path of the parent. Linux and macOS VMs:
+
+| mode of the parent | `destDir` before | `5fd08069` | `89cb6289` | disk afterwards |
 |---|---|---|---|---|
-| `destDir` does not exist | Linux and macOS VMs | `open destDir: openat dest: permission denied`. `destDir` is empty afterwards | success. Each new file has mode `0200` | the text of `5fd08069`. `destDir` is empty afterwards |
-| two folders above `destDir` do not exist either | Linux and macOS VMs | `open parent: open <parent>: permission denied`. No `destDir` afterwards | success | the text of `5fd08069`. An empty `destDir` afterwards |
+| `0700` | present, or absent | success | same | the new content |
+| `0500` | present, with old content | `clean destDir: RemoveAll dest: permission denied` | `clean destDir: unlinkat <destDir>: permission denied` | both: `destDir` stays and is empty |
+| `0500` | absent | `mkdir destDir: mkdirat dest: permission denied` | `mkdir destDir: mkdir <destDir>: permission denied` | both: no `destDir` |
+| `0300` | present | `open parent: open <parent>: permission denied` | `clean destDir: open <parent>: permission denied` | both: the old content stays |
+| `0300` | absent | `open parent: open <parent>: permission denied` | success | `5fd08069`: no `destDir`. `89cb6289`: the new content |
+| `0100` | present | `open parent: open <parent>: permission denied` | `clean destDir: open <parent>: permission denied` | both: the old content stays |
+| `0100` | absent | `open parent: open <parent>: permission denied` | `mkdir destDir: mkdir <destDir>: permission denied` | both: no `destDir` |
+| `0000` | present | `open parent: open <parent>: permission denied` | `clean destDir: open <parent>: permission denied` | both: the old content stays |
+| `0000` | absent | `open parent: open <parent>: permission denied` | `clean destDir: open <parent>: permission denied` | both: no `destDir` |
 
-The claustrum column is from Linux and macOS VMs. In the second
-row the text is equal and the disk is not: claustrum creates `destDir` before
-it opens the parent, and `5fd08069` leaves no `destDir`. On the VMs an earlier
-build of this change opened `destDir` by its whole path. It answered
-`open destDir: open <destDir>: permission denied` in both rows.
+The mode of the parent is the same after each request.
 
-## Texts that claustrum keeps
+A parent that the daemon can read and cannot search (Linux and macOS VMs). The
+rows are a parent of mode `0400` with `destDir` present and absent, and a
+parent of mode `0600` with `destDir` present. Nothing changes on disk in the
+three rows:
 
-In these rows `5fd08069` has a text that claustrum does not have. claustrum
-answers as `89cb6289` does, byte for byte. Each row is from the VMs that the
-system column names, for the two builds and for claustrum.
+| build | text |
+|---|---|
+| `5fd08069` | `open parent: open <parent>: permission denied` |
+| `89cb6289` | `clean destDir: openfdat <destDir>: permission denied` |
 
-| case | system | `5fd08069` | `89cb6289` and claustrum |
+claustrum answers the text of `5fd08069` in the three rows (Linux VM). On the
+macOS VM the rows ran on a build of claustrum before the fix of this text. It
+answered `clean destDir: RemoveAll dest: permission denied` there.
+
+Two more rows of the Linux VM. With a parent of mode `0500` and `destDir`
+present, `5fd08069` and claustrum answer `clean destDir: RemoveAll dest:
+permission denied`, and `destDir` stays and is empty. For a last name of 256
+bytes they answer `clean destDir: RemoveAll <name>: file name too long`, and
+nothing is made. `89cb6289` answers `clean destDir: unlinkat <path>: …` with
+the same reasons in the two rows.
+
+With a daemon umask of 0400 each new folder has mode `0300` (Linux and macOS
+VMs):
+
+| case | `5fd08069` | `89cb6289` |
+|---|---|---|
+| `destDir` does not exist | `open destDir: openat dest: permission denied`. `destDir` is empty afterwards | success. Each new file has mode `0200` |
+| two folders above `destDir` do not exist either | `open parent: open <parent>: permission denied`. The two folders exist afterwards, and no `destDir` | success |
+
+Missing folders above `destDir` appear with mode `0700` on both builds, for
+one, two and three missing folders (Linux and macOS VMs). The Windows VM shows
+the same folders.
+
+A folder above `destDir` that cannot be made answers `mkdir parent: mkdir
+<path>: <reason>` on both builds, with the whole path of the folder that fails
+(Linux VM). Nothing changes on disk, and an old `destDir` keeps its content:
+
+| case | `destDir` below a folder `<x>` | text after `mkdir parent: ` |
+|---|---|---|
+| the parent is a regular file | `f.txt/dest` | `mkdir <x>/f.txt: not a directory` |
+| a missing chain below a file | `f.txt/m1/dest` | `mkdir <x>/f.txt: not a directory` |
+| `<x>/g` has mode `0600`, with `destDir` present and absent | `g/p/dest` | `mkdir <x>/g/p: permission denied` |
+| `<x>/ro` has mode `0500`, and the parent does not exist | `ro/m1/dest` | `mkdir <x>/ro/m1: permission denied` |
+| the parent is a dangling symbolic link | `dlink/dest` | `mkdir <x>/dlink: file exists` |
+
+A build of this change before the `mkdir parent:` prefix answered these rows
+too, with the prefix `mkdir destDir:` (Linux VM).
+
+On the Linux and macOS VMs both builds and claustrum answer the same prefix in
+three rows.
+A parent that is a regular file, and a missing chain below a file, answer
+`mkdir parent: mkdir <path of the file>: not a directory`. A missing folder
+below a folder of mode `0500` answers `mkdir parent: mkdir <path>: permission
+denied`. Nothing changes on disk.
+
+On the Windows VM a parent that is a file, and a missing chain below a file,
+answer `mkdir parent: mkdir <path of the file>: The system cannot find the path
+specified.` on both builds.
+
+### A wipe that fails
+
+`5fd08069` answers `clean destDir: RemoveAll dest: <reason>`. `89cb6289` names
+the entry that stopped it, with the whole path. The disk is equal on both
+builds in each row: the entries that can go are gone, and `destDir` is the
+folder that it was.
+
+| old content of `destDir` | system | reason | text of `89cb6289` after `clean destDir: ` | what stays |
+|---|---|---|---|---|
+| a subfolder of mode `0000` with a file | Linux and macOS VMs | `permission denied` | `openfdat <destDir>/<sub>: permission denied` | the subfolder and its file. The other old entries are gone |
+| a subfolder of mode `0500` with a file | Linux and macOS VMs | `permission denied` | `unlinkat <destDir>/<sub>/in.txt: permission denied` | the subfolder and its file |
+| `destDir` itself has mode `0000`, with content | Linux and macOS VMs | `permission denied` | `openfdat <destDir>: permission denied` | all of the old content |
+| `destDir` itself has mode `0300` or `0500`, with content | Linux and macOS VMs | `permission denied` | `openfdat <destDir>: …`, and `unlinkat <destDir>/old.txt: …` | all of the old content |
+| a file with the `uchg` flag, and a folder with that flag and a file | macOS VM | `operation not permitted` | `unlinkat <path>: operation not permitted` | the flagged entry, and the file in the flagged folder |
+| a file that another process holds open with no sharing | Windows VM | `The process cannot access the file because it is being used by another process.` | `unlinkat <destDir>\a.txt:` and the same reason | the held file |
+| a folder that another process holds open, and one that is its working directory | Windows VM | the same reason | `unlinkat <destDir>\<folder>:` and the same reason | the folder, empty |
+| the archive itself is a file in `destDir` | Windows VM | the same reason | `unlinkat <destDir>\in.tgz:` and the same reason | `destDir`, empty |
+
+On the Linux and macOS VMs the request with the archive inside `destDir`
+succeeds on both builds.
+
+### Old content that goes
+
+Each row is a success on both builds, and the old content is gone:
+
+- Linux and macOS VMs: three levels of folders with files, a file of mode
+  `0000`, a dangling symbolic link, a FIFO, and a file that another process
+  holds open.
+- Linux VM: a symbolic link loop, a bound socket, 2000 files, and a subfolder
+  that is the working directory of a process. That process lives on.
+- Linux and macOS VMs: a symbolic link to a folder outside, a symbolic link to
+  a file outside, and a hard link to a file outside. The folder and the files
+  outside keep their content. The hard-linked file has one link less.
+- Windows VM: three levels of folders, a file that is read-only, hidden and
+  system, a read-only folder with content, a dangling junction, a file with a
+  second stream, a file held with share delete, and a path of 302 characters.
+- Windows VM: a junction, a directory link and a file link to a place outside.
+  That place keeps its content.
+
+### What destDir is before the request
+
+Each row is a success on both builds, and `destDir` is a real folder
+afterwards:
+
+- Linux and macOS VMs: a regular file, a symbolic link to a folder outside, a
+  dangling symbolic link, and a FIFO. The folder outside keeps its content.
+- Linux VM: a symbolic link to a file outside, and an empty folder of mode
+  `0000`.
+- Windows VM: a regular file, a junction to a folder outside, a dangling
+  junction, a directory link, and a read-only empty folder. The folder outside
+  keeps its content.
+
+### The new folder
+
+After a good wipe `destDir` is a new folder on both builds, not the old one
+emptied. On the Linux VM a handle that the driver held on the old folder has
+no link afterwards. On the macOS VM the inode is new. On the Windows VM the
+file id and the creation time are new.
+
+The new folder has mode `0700` on both builds (Linux VM):
+
+| daemon umask | mode of the old `destDir` | mode of the new `destDir` |
+|---|---|---|
+| 077 | `0755`, `0777` | `0700` |
+| 000 | `0755`, `0777` | `0700` |
+| 022 | `0755` | `0700` |
+
+The folder takes the spelling of the request. A request for `DEST` over a
+folder `dest` leaves a folder named `DEST` on both builds (macOS and Windows
+VMs).
+
+After a wipe that failed, and after a failure before the wipe, `destDir` is the
+same folder as before.
+
+### The order of the steps
+
+Equal on both builds:
+
+| case | system | reply | old content |
 |---|---|---|---|
-| the parent of `destDir` has mode `0300`, and `destDir` has old content | Linux and macOS VMs | `open parent: open <parent>: permission denied` | `clean destDir: open <parent>: permission denied` |
-| an old `destDir` of mode `0300` | Linux and macOS VMs | `clean destDir: RemoveAll dest: permission denied` | `clean destDir: openfdat <destDir>: permission denied` |
-| an old `destDir` of mode `0500` with content | Linux and macOS VMs | `clean destDir: RemoveAll dest: permission denied` | `clean destDir: unlinkat <destDir>/old.txt: permission denied` |
-| another process holds a file of the old `destDir` open | Windows VM | `clean destDir: RemoveAll dest: The process cannot access the file because it is being used by another process.` | `clean destDir: unlinkat <destDir>\a.txt:` and the same reason |
-| the parent of `destDir` has mode `0500`, and `destDir` does not exist | Linux and macOS VMs | `mkdir destDir: mkdirat dest: permission denied` | `mkdir destDir: mkdir <destDir>: permission denied` |
-
-The old content stays in each `clean destDir:` row of the Linux and macOS VMs.
-In the Windows row the held file stays and the other old entries are gone. The
-disk is equal on the two builds and on claustrum in each row.
-
-With a parent folder of mode `0500` and an old `destDir` with content, the old
-content is gone on `5fd08069` and on claustrum, and both answer a
-`clean destDir:` failure (Linux VM). `89cb6289` is not measured there.
+| the archive does not exist | Linux, macOS and Windows VMs | `open archive: …` | stays |
+| the archive is not gzip | Linux, macOS and Windows VMs | `gzip: gzip: invalid header` | stays |
+| gzip data that is not a tar | Linux VM | `tar read: archive/tar: invalid tar header` | gone. `destDir` is a new empty folder |
+| a relative `destDir` | Linux VM | `destDir must be an absolute, non-root path: …` | stays, and the archive stays |
 
 ## Spellings of destDir
 
@@ -301,8 +439,13 @@ Each row is a success on the builds that the last column names:
 |---|---|---|
 | a separator after the last name | Windows VM | `89cb6289` and `5fd08069` |
 | a separator after the last name, `/./` inside the path, a parent folder that is a symbolic link | Linux VM | `5fd08069` |
+| a `..` inside the path, a doubled separator | Linux VM | `5fd08069` |
+| a parent folder that is a symbolic link to a folder | Linux VM | `89cb6289` and `5fd08069` |
+| a `..` part after a part that is a symbolic link | Linux VM | `89cb6289` and `5fd08069` |
 | a path through the `/tmp` link | macOS VM | `89cb6289` and `5fd08069` |
 | forward slashes, another letter case, a short name, and the `\\?\` prefix | Windows VM | `89cb6289` and `5fd08069` |
+| `dest\.` and `dest\..\dest` | Windows VM | `89cb6289` and `5fd08069` |
+| a `..` inside the path, and a `destDir` two new folders deep | Windows VM | `5fd08069` |
 | `destDir` is a symbolic link to a folder | Linux, macOS and Windows VMs | `89cb6289` and `5fd08069` |
 | `destDir` is a junction to a folder | Windows VM | `89cb6289` and `5fd08069` |
 
@@ -314,18 +457,98 @@ Old content that is read-only is replaced on both builds (Windows VM): a
 read-only file at the name of an entry, a read-only folder, and a read-only
 folder at the name of a file entry.
 
-More spellings are a success on `5fd08069` and on claustrum, with the files in
-the same place: a `..` inside the path and a doubled separator (Linux VM), and
-a `..` inside the path and a `destDir` two new folders deep (Windows VM). A
-`destDir` with the last name `.synced` gets the marker file inside it (Linux
-and Windows VMs).
+For `<x>/a/link/../dest` with `link` to `<x>/t/sub` both builds act on
+`<x>/a/dest`,
+and `<x>/t/dest` is not changed (Linux VM).
 
-One spelling differs on disk. On the Windows VM a `destDir` whose last name
-ends in a dot or a space (`dest.`, `dest `) names the folder `dest`. `5fd08069`
-removes the old content of that folder. claustrum keeps the old file beside the
-new ones, and the reply is a success on both. `89cb6289` is not measured there.
-The step that removes the old content is the same as before this change (from
-the code).
+A `destDir` that ends in `/.` or in `/..` is a success on both builds and on
+claustrum (Linux and macOS VMs). They wipe the folder that the cleaned path names and
+extract there: `<x>/dest` for `<x>/dest/.`, and `<x>/a` for `<x>/a/b/..`.
+
+A `destDir` that is a symbolic link to a folder outside, with a separator after
+its name, is a success on both builds and on claustrum (Linux VM). `destDir` is
+a real folder afterwards, and the folder outside keeps its file.
+
+A `destDir` with the last name `.synced` gets the marker file inside it on
+`5fd08069` (Linux and Windows VMs).
+
+On the Windows VM four last names mean the folder `dest`: `dest.`, `dest` with
+a space after it, `dest..` and `dest. .`. The folder on disk keeps the name
+`dest` on both builds.
+
+| last name | `5fd08069` | `89cb6289` |
+|---|---|---|
+| `dest.` | success. The old content is gone, and the folder is new | success. The old file stays beside the new one, in the old folder |
+| the three other names | success, as for `dest.` | `create ok.txt: open <destDir>\ok.txt: The system cannot find the path specified.` Nothing is wiped |
+
+claustrum before this change answered success in these four rows and kept the
+old file beside the new one. For `dest\.` it failed with `clean destDir: RemoveAll <destDir>: invalid argument`
+and wiped nothing, where both builds extract (Windows VM).
+
+### Windows paths with the `\\?\` prefix
+
+With this prefix Windows does not drop a dot or a space after a name. The rows
+are from a Windows VM. `dest` holds old content before each request.
+
+| `destDir` after the prefix | `5fd08069` | `89cb6289` |
+|---|---|---|
+| `dest.`, `dest` with a space after it, `dest..`, with no entry of that exact name | success. `dest` is wiped and filled | success. A new folder with the exact name gets the files, and `dest` keeps its content |
+| `dest.` or `dest` with a space, and an entry of that exact name exists too | success. `dest` is wiped and filled, and the entry with the exact name keeps its content | success. The entry with the exact name is wiped and filled, and `dest` keeps its content |
+| `dest\.`, `DEST`, a short name | success. The folder that the name means is wiped and filled | same |
+
+A `destDir` of the forms `\\.\C:\…\dest` and `\\localhost\C$\…\dest` is a
+success on both builds, with `dest` wiped and filled.
+
+With no prefix, and with both `dest` and an entry named `dest.` on disk, a
+`destDir` of `dest.` wipes and fills `dest` on `5fd08069`. On `89cb6289` the
+entry `dest.` goes, and `dest` keeps its old file and gets the new one.
+
+A third state ran for `dest.` and for `dest` with a space: no `dest` and no
+entry of the exact name. `89cb6289` makes a folder with the exact name and
+extracts there. `5fd08069` makes `dest` and extracts there (Windows VM).
+
+claustrum refuses the rows of the first two table lines. It answers
+`clean destDir: "<name>" is not the entry that the path names`, and it deletes
+nothing and makes no `destDir` (Windows VM, for `dest.` and for `dest` with a
+space). In the third state it answers the same text
+after `mkdir destDir:`, and no folder stays (Windows VM). The name `dest..` did
+not run on claustrum: its answer is from the code.
+
+The row with no prefix is
+equal on claustrum and on `5fd08069` (Windows VM, on a build before the test of
+the two views).
+
+A build of claustrum before the test of the two views emptied `dest` in the
+rows of the first two table lines and then failed with
+`open destDir: "<name>" changed while it was opened` (Windows VM).
+
+### Last names that get a `RemoveAll <name>` refusal
+
+On the Windows VM `5fd08069` answers `clean destDir: RemoveAll <name>: path
+escapes from parent` for the last names `NUL`, `a:b`,
+`dest::$INDEX_ALLOCATION`, `CON` and `COM1`. For `dest?` and `dest*` it answers
+`clean destDir: RemoveAll <name>: The filename, directory name, or volume label
+syntax is incorrect.` Nothing changes on disk in these rows. `89cb6289` answers
+another failure text for `NUL`, `a:b`, `dest?` and `dest*`. It extracts for
+`dest::$INDEX_ALLOCATION`, and it makes a folder for `CON` and for `COM1`.
+claustrum answers as `5fd08069` in the seven rows (Windows VM).
+
+A last name of dots and spaces alone (Windows VM, two passes). The parent
+folder `p` holds content before each request:
+
+| last name | `5fd08069` and claustrum | `89cb6289` |
+|---|---|---|
+| `...`, one space, `. .`, `....`, and `...` with a space after it | `clean destDir: RemoveAll <name>: invalid argument`. `p` keeps its content | `create ok.txt: open <destDir>\ok.txt: The system cannot find the path specified.` `p` keeps its content |
+| `...` behind the `\\?\` prefix | `5fd08069`: `clean destDir: RemoveAll ...: invalid argument`. claustrum: `clean destDir: "..." is not the entry that the path names`. `p` keeps its content on both | success. A folder with the exact name `...` is made in `p` and gets the files. The old content of `p` stays |
+
+Two more rows of that round act on the cleaned path, which is the path that
+the home guard judged. They are equal on both builds and on claustrum (Windows
+VM). For `<p>\.` each wipes `p` and extracts there. For `<p>\..` each empties
+the folder above `p` and then fails, because the archive in that folder is
+open. `5fd08069` and claustrum answer `clean destDir: RemoveAll <name>: The
+process cannot access the file because it is being used by another process.`
+`89cb6289` answers `clean destDir: unlinkat <path of the archive>:` and the
+same reason.
 
 ## Rows where the two builds are equal
 
@@ -368,7 +591,30 @@ The tests of claustrum pin these rows:
 - Linux and macOS: a link named `.synced` that leads out of `destDir` goes as a
   link, and its target stays (`TestSyncedMarkerRemoveStaysInDestDir`).
 
-Three tests hold rules of claustrum that no reference row covers:
+- Linux and macOS: the two rows of the umask 0400 table, with the disk of the
+  second row (`TestFilesExtractTarDestDirNotReadable`).
+- Linux and macOS: the rows of the parent modes `0300`, `0100` and `0000`
+  (`TestFilesExtractTarParentCannotBeOpened`).
+- Linux and macOS: the rows of a folder above `destDir` that cannot be made
+  (`TestFilesExtractTarParentCannotBeMade`). The prefix of the two rows with a
+  file at the parent is held on each system (`TestFilesExtractTarParentIsAFile`).
+- Linux and macOS: three rows of a wipe that fails, with what stays
+  (`TestFilesExtractTarWipeFailure`), and the row of a parent of mode `0500`
+  with no `destDir` (`TestFilesExtractTarMkdirFailure`).
+- Linux and macOS: the three rows of a parent that cannot be searched
+  (`TestFilesExtractTarParentCannotBeSearched`).
+- Linux and macOS: the row of a last name of 256 bytes
+  (`TestFilesExtractTarLastNameTooLong`). The row is from a Linux VM. On macOS
+  the test holds the answer of claustrum, not a measured row.
+- Linux and macOS: the mode `0700` of a new `destDir` and of the new folders
+  above it (`TestFilesExtractTarNewFoldersHaveMode0700`).
+- Linux and macOS: links in the old content and a `destDir` that is a link
+  leave the folder outside as it is (`TestFilesExtractTarWipeStaysInDestDir`).
+- Windows: the last names `dest.`, `dest` with a space and `dest\.`
+  (`TestFilesExtractTarWindowsSpellingsOfDestDir`), and a junction in the old
+  content (`TestFilesExtractTarWipeLeavesJunctionTarget`).
+
+These tests hold rules of claustrum that are its own:
 
 - Linux and macOS: a `destDir` that another process replaces with a link
   between the mkdir and the open fails the request. For a link that leaves the
@@ -377,42 +623,102 @@ Three tests hold rules of claustrum that no reference row covers:
   `open destDir: "<name>" changed while it was opened`. Nothing is written or
   removed behind the link (`TestFilesExtractTarRefusesSwappedDestDir`).
 - Windows: the same with a junction, which gets the first of the two texts
-  (`TestFilesExtractTarRefusesJunctionSwappedDestDir`). No VM has run this
-  test.
-- Linux and macOS: the two rows of the umask 0400 section
-  (`TestFilesExtractTarDestDirNotReadable`).
+  (`TestFilesExtractTarRefusesJunctionSwappedDestDir`).
 - Linux and macOS: a marker that the daemon cannot create answers a text with
   the name `.synced` and no whole path
   (`TestSyncedMarkerWriteGoesThroughTheHandle`).
+- The test of the two views, and the home guard by identity: see below.
 
-From the code: claustrum creates the directories and the files of the entries
+From the code: claustrum opens the parent folder of `destDir` as a handle. It
+removes the last name of `destDir` through that handle as a tree, makes the new
+folder there, and opens it there. The texts `RemoveAll dest` and `mkdirat dest`
+are those of the Go library for such a handle. The wipe cannot take the parent
+folder by the names `.` and `..`, because the handle refuses them
+(`TestWipeDestDirCannotTakeTheParent`). On Windows the handle refuses a last
+name of dots and spaces alone too
+(`TestFilesExtractTarLastNameOfDotsAndSpaces`, with the rows of the section
+"Last names that get a `RemoveAll <name>` refusal"). A `destDir` that the home guard refuses
+reaches none of these steps
+(`TestFilesExtractTarRefusedHomeCreatesAndDeletesNothing`).
+
+Before the wipe claustrum compares the path of `destDir` as the system resolves
+it with its last name inside the handle. If the two do not name one entry, it
+answers `clean destDir: "<name>" is not the entry that the path names`, and it
+deletes nothing and makes no `destDir`. The folders above `destDir` from the
+first step stay. The same test follows the mkdir, with the prefix
+`mkdir destDir:`, and the entry at that name goes with a plain remove
+(`TestFilesExtractTarWipeNeedsOneEntryInBothViews`, with a seam). On Windows a
+path with the `\\?\` prefix and a dot or a space after its last name gives these
+answers (`TestFilesExtractTarWipeLeavesSiblingOfPrefixedName`). This rule is
+claustrum's own. A name that the handle refuses gets the text of a remove
+through the handle, and no remove runs. Those are the Windows last names of
+the section above.
+
+The entry at the last name also gets the home guard by identity, before the
+wipe and before the plain remove. A real folder there that is the home folder,
+or a parent folder of it, gets the home refusal of the method. The archive is
+gone then, because the refusal comes after its open. On Linux and macOS that
+covers a path through a link above the last name
+(`TestFilesExtractTarRefusesHomeByIdentity`).
+
+On Windows seven spellings of a temp home folder get the home refusal with
+`fileCount` 0 (`TestFilesExtractTarRefusesWindowsSpellingsOfHome`, Windows VM):
+
+| spelling | the guard that answers | the archive |
+|---|---|---|
+| a dot after home, a space after home, a dot after the folder above home | the text compare | stays |
+| `\\?\` before home, the same with a dot or a space after home, the short 8.3 name of home | the test by identity | gone |
+
+The text compare refuses a dot or a space after home because the path is
+resolved first. It answers true for `<home>.` and for `<home>` with a space,
+and false for `\\?\<home>` and for `\\?\<home>.`
+(`TestWipesHomeDirWindowsSpellings`, Windows VM). These rows are runs of the
+test binary with a temp home and a stubbed wipe. No daemon cell measured them,
+and no reference build is measured with these spellings of the home folder.
+
+claustrum creates the directories and the files of the entries
 through a handle of `destDir`, and it creates each file exclusively. The texts
 `mkdirat a`, `openat d` and `statat .` are those of the Go library for such a
 handle. For a second file entry with one name it removes the first file and
 creates a new one. Before the marker it removes the name `.synced` as a tree,
 and it creates the marker exclusively. Both steps go through that handle.
 
-This change ran beside `5fd08069` on Linux, macOS and Windows VMs. Each cell
-that ran with this change was equal in the reply and on disk, apart from the
-cells below:
-
-- Linux VM: 105 cells. The 5 rows of "Texts that claustrum keeps" and of the
-  second row of "A destDir that the daemon cannot open" differ as those
-  sections say. 3 more cells differ in the text alone: the parent of `destDir`
-  has mode `0100` or `0500`. `5fd08069` answers `open parent: …` or
-  `clean destDir: RemoveAll dest: …` there, and claustrum answers its
-  `mkdir destDir:` or `clean destDir:` text. The disk is equal.
-- macOS VM: 62 cells, with the same 5 rows as the only differences.
-- Windows VM: 96 cells. One differs in the text: the row of the held file. Two
-  differ on disk: the `destDir` names that end in a dot or a space, in
-  "Spellings of destDir".
+A build with the steps of "The preparation of destDir" ran beside `5fd08069`
+on Linux, macOS and Windows VMs, without the test of the two views. Each cell
+was equal in the reply and on disk: 153 cells on Linux, 111 on macOS and 138 on
+Windows. A build with the test of the two views ran on a Windows VM. Its
+answers for the `\\?\` rows and for the last names that the handle refuses are
+in the sections above. This change with the home guard by identity and the
+`open parent:` text for a parent that cannot be searched ran beside `5fd08069`
+on a Linux VM in 34 cells. Each cell was equal in the reply and on disk.
 
 The Linux cells with umask 077 and 000 of the first mode table did not run with
 this change.
 
-The tests of the method ran 20 times each with no failure, 660 runs on a macOS
-VM and 1840 runs on a Windows VM. `TestSyncedMarkerRemoveStaysInDestDir` is for
-Linux and macOS, and it did not run on Windows.
+The tests of the method ran on VMs with no failure. On the build without the
+test of the two views they ran 20 times each: 45 tests and 900 runs on a macOS
+VM, 36 tests and 720 runs on a Windows VM. On a build with the home guard by
+identity, a macOS VM ran 36 tests of the method in 180 runs, and 65 tests of a
+wider pattern in 195 runs. A Windows VM ran 24 tests in 120 runs and 35 tests
+in 105 runs on that build (410 and 306 with subtests), without the tests with
+`Home` in the name. A Windows VM ran those apart, two times with 8 tests in 40
+runs each (190 with subtests) and no failure:
+`TestFilesExtractTarRefusedHomeCreatesAndDeletesNothing`,
+`TestFilesExtractTarRefusesWindowsSpellingsOfHome` under its earlier name, with
+the four rows that it had then,
+`TestFilesExtractTarRefusesHomeDir`, the four `TestWipesHomeDir` tests and
+`TestWorktreeRemoveRefusesHomeDir`. `TestFilesExtractTarRefusesHomeByIdentity`
+and `TestSyncedMarkerRemoveStaysInDestDir` are for Linux and macOS, and they
+did not run on Windows. On the change with the `open parent:` text for a parent
+that cannot be searched, a Linux VM ran 36 tests of the method in 180 runs,
+with no failure. On a later build of this change a Windows VM ran 45 tests of
+the wider pattern in 135 runs (447 with subtests), with no failure. Those
+include `TestFilesExtractTarLastNameOfDotsAndSpaces`,
+`TestWipesHomeDirWindowsSpellings` and the seven rows of
+`TestFilesExtractTarRefusesWindowsSpellingsOfHome`, each 3 of 3. That run was
+before the test held the archive state and the four answers. The daemon of that
+build equals the build before it in 25 Windows cells. No VM has run
+`TestFilesExtractTarLastNameTooLong`.
 
 ## Not measured
 
@@ -427,6 +733,24 @@ Linux and macOS, and it did not run on Windows.
 - A Windows version before Windows 11, for a reserved name with an extension
   such as `CON.txt`.
 - A `destDir` that the daemon cannot open, on Windows.
+- A last name of more than 255 bytes on macOS and Windows, and a whole path
+  over the path limit.
+- `89cb6289` with a `destDir` that is a link and has a separator after its
+  name, on macOS.
+- The home refusals of the test by identity, on a running daemon. No VM cell
+  has a home folder as the target. The tests of claustrum hold these refusals.
+- The texts `open parent:` and `mkdir destDir: mkdirat` on Windows. For a
+  permission error at the lstat of the last name, claustrum answers
+  `clean destDir: RemoveAll <name>: <reason>` on Windows (from the code).
+- The code after the `open parent:` fix, on macOS and Windows. The rows of
+  claustrum there are from builds before it.
+- A `destDir` that names the home folder by a spelling that the text compare
+  does not see, on a reference build.
+- A Windows access list that denies the delete of an old entry. The daemons ran
+  with an administrator token, and the deny entry did not hold for it.
+- A folder above `destDir` that cannot be made by a permission, on Windows.
+- On macOS and Windows, the two builds with a parent of each mode other than in
+  the table. The parent mode rows are from Linux and macOS VMs.
 - The modes on Windows for an archive mode that the Windows table does not
   name.
 - The umask rows on Windows. Windows has no umask.

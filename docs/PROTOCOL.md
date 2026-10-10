@@ -852,7 +852,11 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.extract_tar | `unsafe path in archive: <entry>` | in `error` field (zip slip) |
 | files.extract_tar | `unsupported tar entry type <c>: <entry>` | in `error` field |
 | files.extract_tar | `extraction size limit exceeded` | D3 opt-in, in `error` field |
-| files.extract_tar | `clean destDir: …` / `mkdir destDir: …` / `write .synced: …` | in `error` field |
+| files.extract_tar | `clean destDir: RemoveAll <name>: …` | in `error` field. The daemon cannot delete the old `destDir` or an entry in it. `<name>` is the last name of `destDir` |
+| files.extract_tar | `mkdir parent: mkdir <path>: …` | in `error` field. The daemon cannot create a folder above `destDir`. `<path>` is the whole path of that folder. The text `mkdir parent <entry>: …` below is for an archive entry |
+| files.extract_tar | `mkdir destDir: mkdirat <name>: …` | in `error` field. The daemon cannot create `destDir` |
+| files.extract_tar | `clean destDir: "<name>" is not the entry that the path names` / `mkdir destDir: "<name>" is not …` | in `error` field. claustrum's own text: the path of `destDir` and its last name in the parent folder do not name one entry. See [D2](DIVERGENCES.md#d2) |
+| files.extract_tar | `write .synced: …` | in `error` field |
 | files.extract_tar | `open parent: open <parent>: …` | in `error` field. The daemon cannot open the folder that holds `destDir` |
 | files.extract_tar | `open destDir: openat <name>: …` | in `error` field. The daemon cannot open the new `destDir` |
 | files.extract_tar | `open destDir: "<name>" could not be examined (statat .: permission denied)` | in `error` field. The daemon cannot search the new `destDir`. See [files.extract_tar](protocol/files-extract-tar.md) |

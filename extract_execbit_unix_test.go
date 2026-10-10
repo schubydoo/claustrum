@@ -366,8 +366,8 @@ func TestFilesExtractTarRefusesSwappedDestDir(t *testing.T) {
 			archive := filepath.Join(t.TempDir(), "a.tgz")
 			writeTgz(t, archive, []tgzEntry{{name: "a.txt", body: "x\n"}}, 0)
 
-			t.Cleanup(func() { openDestParent = os.OpenRoot })
-			openDestParent = func(name string) (*os.Root, error) {
+			t.Cleanup(func() { afterDestDirMkdir = func() {} })
+			afterDestDirMkdir = func() {
 				// The swap: the new empty destDir goes, and a link to the other
 				// folder takes its place.
 				if err := os.Remove(dest); err != nil {
@@ -376,7 +376,6 @@ func TestFilesExtractTarRefusesSwappedDestDir(t *testing.T) {
 				if err := os.Symlink(linkTarget, dest); err != nil {
 					t.Fatal(err)
 				}
-				return os.OpenRoot(name)
 			}
 
 			n, err := extractTarGz(archive, dest+tc.suffix)
@@ -402,7 +401,7 @@ func TestFilesExtractTarRefusesSwappedDestDir(t *testing.T) {
 
 // TestFilesExtractTarDestDirNotReadable holds the two answers for a daemon umask
 // of 0400. Each new folder then has mode 0300, so the daemon cannot open it for
-// a read. The frames are those of 5fd08069 on Linux and macOS VMs. In the first
+// a read. The frames and the disk are those of 5fd08069 on Linux and macOS VMs. In the first
 // row destDir alone is new. In the second row two folders above it are new too,
 // and the parent of destDir is the folder that cannot be opened.
 func TestFilesExtractTarDestDirNotReadable(t *testing.T) {
@@ -444,6 +443,18 @@ func TestFilesExtractTarDestDirNotReadable(t *testing.T) {
 			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"fileCount":0,"error":"` + tc.text(dest) + `"}}`
 			if got != want {
 				t.Errorf("frame = %s\nwant    %s", got, want)
+			}
+			if tc.rel != "dest" {
+				// 5fd08069 leaves the two new folders and no destDir there.
+				parent := filepath.Dir(dest)
+				for _, p := range []string{filepath.Dir(parent), parent} {
+					if err := os.Chmod(p, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if got := namesIn(t, parent); got != "" {
+					t.Errorf("the parent holds %q, want no destDir", got)
+				}
 			}
 		})
 	}

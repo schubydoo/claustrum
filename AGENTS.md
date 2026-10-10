@@ -134,7 +134,31 @@ The JSON-RPC surface is identical on every OS. Full internals →
   `~`-expands those RPC
   paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
   the maintainer's home directory on 2026-08-02:
-    - `files.extract_tar` wipes `destDir`. `wipesHomeDir` (`homeguard.go`) guards it.
+    - `files.extract_tar` wipes `destDir`. `wipesHomeDir` (`homeguard.go`) guards it,
+      before any step of the request. The wipe then removes one name as a tree:
+      the last name of the cleaned `destDir`. It goes through a handle of the
+      parent folder of `destDir` (`wipeDestDir`). The handle follows no link and no
+      junction, and it refuses the names `.` and `..`, so the wipe cannot take
+      the parent folder by those names. On Windows the handle refuses a last
+      name of dots and spaces alone too, such as `...`. `5fd08069` answers the
+      same text there (Windows VM). Before the wipe, a folder at the
+      last name that is the home folder, or a parent folder of it, gets the
+      home refusal by identity (`destEntryHoldsHome`, which uses
+      `folderHoldsHome`). On Linux and macOS that covers a path through a link
+      above the last name. On Windows the text compare refuses a dot or a
+      space after home or after a folder above it, because the path is
+      resolved first. It lets a path with the `\\?\` prefix and the short 8.3
+      name of home pass, and the test by identity refuses those (Windows VM,
+      the test binary with a temp home and a stubbed wipe). Then the name in the handle and the cleaned path must name
+      one entry (`checkDestViews`), or nothing is deleted. On Windows the
+      handle and a path with the `\\?\` prefix read a name with a dot or a
+      space after it in two ways. In those six cells `89cb6289` extracts into
+      a folder with the exact name, and `5fd08069` into the folder with no dot
+      or space (Windows VM). Both tests follow the mkdir again. If the two
+      views differ there, the entry at that name goes with a plain
+      `os.Root.Remove`, never as a tree. No remove runs after a home refusal.
+      The maintainer approved this
+      delete path on 2026-10-10.
     - `git.worktree_remove` deletes `worktreePath` itself. It runs no `git
       worktree remove`. It deletes the entries of the leaf except `.git` in the
       order that the directory read returns them, and it stops at the first
@@ -257,7 +281,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       makes the version one path component, so the CLI path is a direct child
       of the cli-dir. D6 does not test which folder that child is. With a
       cli-dir that is the parent of the home folder and a version that is its
-      leaf name, the CLI path is the home folder. So `cliFolderHoldsHome`
+      leaf name, the CLI path is the home folder. So `folderHoldsHome`
       runs right before the tree delete and refuses a CLI path that is home or
       contains it. It runs `wipesHomeDir` first. Then it compares the folder at
       the CLI path with home and with each parent folder of home by identity
@@ -313,7 +337,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
       prune into a tree delete.
       The prune and the sweeps never remove the home folder. Each skips an
       entry of the cli-dir that is the home folder or holds it
-      (`cliEntryHoldsHome`). A folder gets the tests of `cliFolderHoldsHome`,
+      (`cliEntryHoldsHome`). A folder gets the tests of `folderHoldsHome`,
       and every other kind gets `wipesHomeDir`. In the prune the skipped entry
       still takes its place in the order. That guard is claustrum's own (D2).
       `89cb6289` removes an empty home folder there (cells H1 and H3 on Linux,

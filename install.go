@@ -527,7 +527,7 @@ var errStagingVanished = errors.New("staging file vanished")
 // an os.Remove of the file that this call put there. ensureCLI runs
 // validateCLIVersion (D6) before it calls this function, so cliPath is a direct
 // child of the cli folder. D6 does not say which folder that child is, so
-// cliFolderHoldsHome runs right before the delete of step 1. That guard is a
+// folderHoldsHome runs right before the delete of step 1. That guard is a
 // divergence (D2): the reference removes a home folder there.
 //
 // Not measured: how the reference writes the final file, and the order of its
@@ -576,9 +576,9 @@ func stageAndInstall(blobPath, cliPath string, blobIsTemp bool) (consumeBlob boo
 		// The home guard (D2). A folder at cliPath that is the home folder, or
 		// that contains it, is not removed. The reference removes it as a tree
 		// (measured on Linux, macOS and Windows, see docs/DIVERGENCES.md D2). See
-		// cliFolderHoldsHome. The folder is not removed here, and the blob is not
+		// folderHoldsHome. The folder is not removed here, and the blob is not
 		// consumed: the answer is false, so ensureCLI keeps the -cli-zst blob.
-		if cliFolderHoldsHome(cliPath, fi) {
+		if folderHoldsHome(cliPath, fi) {
 			_ = os.Remove(tmp)
 			return false, fmt.Errorf("cli path must not be or contain the home directory: %q", cliPath)
 		}
@@ -610,7 +610,7 @@ func stageAndInstall(blobPath, cliPath string, blobIsTemp bool) (consumeBlob boo
 	return true, fmt.Errorf("installed cli at %s is not runnable", cliPath)
 }
 
-// cliFolderHoldsHome is the home guard of the tree delete in stageAndInstall.
+// folderHoldsHome is the home guard of the tree delete in stageAndInstall.
 // fi is the Lstat answer of the folder at cliPath. Two tests run, and one yes
 // refuses the delete:
 //
@@ -624,7 +624,7 @@ func stageAndInstall(blobPath, cliPath string, blobIsTemp bool) (consumeBlob boo
 //
 // wipesHomeDir stays lexical because a destination that does not exist is legal
 // on the RPC paths. Here the folder exists: its Lstat just succeeded.
-func cliFolderHoldsHome(cliPath string, fi os.FileInfo) bool {
+func folderHoldsHome(cliPath string, fi os.FileInfo) bool {
 	if wipesHomeDir(cliPath) {
 		return true
 	}
@@ -1281,7 +1281,7 @@ func sweepOld(cliDir string, now time.Time, minAge time.Duration, claims func(na
 
 // cliEntryHoldsHome is the home guard of the sweeps and of the prune (D2). p is
 // an entry of the cli-dir and fi is its Lstat answer. A folder gets both tests
-// of cliFolderHoldsHome. Every other kind gets wipesHomeDir alone.
+// of folderHoldsHome. Every other kind gets wipesHomeDir alone.
 //
 // Each of those removes is one os.Remove, so a home folder with content cannot
 // go there. A cli-dir that is the parent of the home folder makes the home folder
@@ -1292,7 +1292,7 @@ func sweepOld(cliDir string, now time.Time, minAge time.Duration, claims func(na
 // maintainer's decision of 2026-10-07.
 func cliEntryHoldsHome(p string, fi os.FileInfo) bool {
 	if fi.IsDir() {
-		return cliFolderHoldsHome(p, fi)
+		return folderHoldsHome(p, fi)
 	}
 	return wipesHomeDir(p)
 }
