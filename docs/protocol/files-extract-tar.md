@@ -53,7 +53,7 @@ Failure:
 {"success": false, "fileCount": 0, "error": "<text>"}
 ```
 
-Read `success`. A failure has no `errorCode` member, so the `error` text is the one description of the cause. A failure answers `fileCount` `0`, also after the daemon wrote files, with one exception. The exception is a marker file that the daemon cannot write. The answer then holds the number of files written before. No measurement of the reference covers that case.
+Read `success`. A failure has no `errorCode` member, so the `error` text is the one description of the cause. A failure answers `fileCount` `0`, also after the daemon wrote files, with one exception. The exception is the marker step: the daemon cannot remove the entry at `.synced`, or it cannot write the marker file. The answer then holds the number of files written before. No measurement of the reference covers that case.
 
 | `error` starts with | Cause |
 |---|---|
@@ -64,7 +64,8 @@ Read `success`. A failure has no `errorCode` member, so the `error` text is the 
 | `tar read:` | The daemon cannot read the next entry. Gzip data that is not a tar archive gives this text at the first entry. Gzip data with no content is an archive with no entries: the request succeeds with `fileCount` `0`, and `destDir` is then empty but for the marker. |
 | `clean destDir:` | The daemon cannot delete the old `destDir`. |
 | `mkdir destDir:` | The daemon cannot create `destDir`. |
-| `open destDir:` | The daemon cannot open the new `destDir`, or cannot search it. On Linux and macOS a daemon umask of `0100` gives `open destDir: "<name>" could not be examined (statat .: permission denied)`. `<name>` is the last part of `destDir`. If another process replaced `destDir` after the daemon created it, the text is `open destDir: "<name>" changed while it was opened`. |
+| `open parent:` | The daemon cannot open the folder that holds `destDir`. |
+| `open destDir:` | The daemon cannot open the new `destDir`, or cannot search it. A daemon umask of `0400` gives `open destDir: openat <name>: permission denied` on Linux and macOS. On Linux and macOS a daemon umask of `0100` gives `open destDir: "<name>" could not be examined (statat .: permission denied)`. `<name>` is the last part of `destDir`. If another process replaced `destDir` after the daemon created it, the text is `open destDir: "<name>" changed while it was opened`, or `open destDir: openat <name>: path escapes from parent`. |
 | `unsafe path in archive: <entry>` | The name of the entry leaves `destDir`. On Windows a device name such as `NUL` and a name with `:` give this text too. |
 | `unsupported tar entry type <c>: <entry>` | The entry is not a regular file or a directory. `<c>` is the type character of tar, for example `2` for a symbolic link and `1` for a hard link. |
 | `mkdir parent <entry>:` | The daemon cannot create the directory for a file. A file entry `a` and then an entry `a/b` give `mkdir parent a/b: mkdirat a: file exists`. |
@@ -94,7 +95,7 @@ No failure restores the old content of `destDir`. The table says what stays of t
 | `gzip:` | Deleted. | Not changed. |
 | `clean destDir:` | Deleted. | The old content can be partly deleted. |
 | `mkdir destDir:` | Deleted. | The old content is deleted. |
-| `open destDir:` | Deleted. | The old content is deleted. `destDir` is empty. |
+| `open parent:` or `open destDir:` | Deleted. | The old content is deleted. `destDir` is empty. |
 | Each later failure | Deleted. | The old content is deleted. The entries written before the failure stay. A file that the daemon wrote in part can stay too. The daemon writes no marker. |
 
 Do not read a `.synced` file as the result of the last request. After `open archive:` and after `gzip:`, an old marker stays with the old content. An archive can also hold an entry with that name, and that entry stays after a later failure.
@@ -126,7 +127,7 @@ claustrum is built to answer as the reference daemon does. These entries of the 
 
 The reference pin is `89cb6289`. This method follows `5fd08069`. The examples in the table of the `error` texts are from `5fd08069` too. The [record](../record/files-extract-tar.md) has the rows of both builds.
 
-In the failures of the `destDir` steps claustrum keeps its own text. In one of them the disk differs too. The record lists them under [Texts that claustrum keeps](../record/files-extract-tar.md#texts-that-claustrum-keeps) and in the section before it.
+In the failures of the delete and of the create of `destDir` claustrum keeps its own text. The record lists them under [Texts that claustrum keeps](../record/files-extract-tar.md#texts-that-claustrum-keeps). In one failure of the open the text is equal and the disk differs: see the section before it.
 
 The test for a replaced `destDir` is claustrum's own, and it is part of [D2](../DIVERGENCES.md#d2). No measurement says what the reference does there.
 

@@ -853,7 +853,10 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.extract_tar | `unsupported tar entry type <c>: <entry>` | in `error` field |
 | files.extract_tar | `extraction size limit exceeded` | D3 opt-in, in `error` field |
 | files.extract_tar | `clean destDir: …` / `mkdir destDir: …` / `write .synced: …` | in `error` field |
+| files.extract_tar | `open parent: open <parent>: …` | in `error` field. The daemon cannot open the folder that holds `destDir` |
+| files.extract_tar | `open destDir: openat <name>: …` | in `error` field. The daemon cannot open the new `destDir` |
 | files.extract_tar | `open destDir: "<name>" could not be examined (statat .: permission denied)` | in `error` field. The daemon cannot search the new `destDir`. See [files.extract_tar](protocol/files-extract-tar.md) |
+| files.extract_tar | `open destDir: "<name>" changed while it was opened` | in `error` field. claustrum's own text: another process replaced `destDir`. See [D2](DIVERGENCES.md#d2) |
 | files.extract_tar | `create <entry>: openat <place>: file exists` | in `error` field. A directory is at the place of a file entry. On Windows the text ends with `is a directory`. `<place>` is relative to `destDir` |
 | files.extract_tar | `mkdir parent <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of the directory of a file entry (prefix is contract) |
 | files.extract_tar | `mkdir <entry>: mkdirat <place>: file exists` | in `error` field. A file is at the place of a directory entry |

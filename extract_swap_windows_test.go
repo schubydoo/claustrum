@@ -12,8 +12,10 @@ import (
 // TestFilesExtractTarRefusesSwappedDestDir. Another process puts a junction at
 // destDir between the mkdir and the open. The request then fails before an entry
 // is written and before the marker remove, so the folder behind the junction
-// keeps its content. Both folders are temp folders of this test, so a missing
-// guard can reach nothing else. No reference build is measured there.
+// keeps its content. The target of a junction is a whole path, so the open
+// through the handle of the parent refuses it. Both folders are temp folders of
+// this test, so a missing guard can reach nothing else. No reference build is
+// measured there.
 func TestFilesExtractTarRefusesJunctionSwappedDestDir(t *testing.T) {
 	other := filepath.Join(t.TempDir(), "other")
 	if err := os.MkdirAll(filepath.Join(other, ".synced"), 0o700); err != nil {
@@ -27,21 +29,21 @@ func TestFilesExtractTarRefusesJunctionSwappedDestDir(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "a.tgz")
 	writeTgz(t, archive, []tgzEntry{{name: "a.txt", body: "x\n"}}, 0)
 
-	t.Cleanup(func() { openDestRoot = os.OpenRoot })
-	openDestRoot = func(name string) (*os.Root, error) {
+	t.Cleanup(func() { openDestParent = os.OpenRoot })
+	openDestParent = func(name string) (*os.Root, error) {
 		// The swap: the new empty destDir goes, and a junction to the other
 		// folder takes its place.
-		if err := os.Remove(name); err != nil {
+		if err := os.Remove(dest); err != nil {
 			t.Fatal(err)
 		}
-		makeJunction(t, name, other)
+		makeJunction(t, dest, other)
 		return os.OpenRoot(name)
 	}
 	// The junction goes before the temp folders are cleaned, as a link.
 	t.Cleanup(func() { _ = os.Remove(dest) })
 
 	n, err := extractTarGz(archive, dest)
-	if want := `open destDir: "dest" changed while it was opened`; err == nil || err.Error() != want {
+	if want := "open destDir: openat dest: path escapes from parent"; err == nil || err.Error() != want {
 		t.Errorf("extractTarGz = %v, want %s", err, want)
 	}
 	if n != 0 {

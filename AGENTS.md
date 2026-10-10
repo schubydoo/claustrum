@@ -342,7 +342,8 @@ The JSON-RPC surface is identical on every OS. Full internals →
   at the top of `destDir` as a tree (`writeSyncedMarker`). Then it creates the
   empty marker file. The remove is one `os.Root.RemoveAll`, and the create is
   exclusive. Both go through a handle of `destDir`, so neither follows a link
-  out of `destDir`. After the open of that handle, `extractTarGz` tests it
+  out of `destDir`. That handle is opened through a handle of the parent
+  folder. After the open, `extractTarGz` tests it
   against the folder that `wipesHomeDir` judged: `destDir` must be a real
   directory and the folder of the handle. If not, the request fails before any
   entry and before the remove. The remove takes whatever sits at `.synced` in

@@ -398,13 +398,16 @@ traps that matter for telling drift from expected:
   - A `destDir` that the daemon cannot search or open fails with
     `open destDir:`. `89cb6289` fails later, or it extracts.
 
-  Against `5fd08069` these texts differ, not drift:
-  - `open destDir: open <path>: …`, where `5fd08069` has `openat dest`.
+  Against `5fd08069` these differences are not drift:
   - A `clean destDir:` text with the whole path, where `5fd08069` has
     `RemoveAll dest`.
   - `mkdir destDir: mkdir <path>: …`, where `5fd08069` has `mkdirat dest`.
-  - No `open parent:` text. In one measured case claustrum leaves an empty
-    `destDir` there, and `5fd08069` leaves none.
+  - A `clean destDir:` text for a parent folder of mode `0300` over an old
+    `destDir`, where `5fd08069` has `open parent:`. claustrum fails earlier
+    there, in its wipe.
+  - With a daemon umask of 0400 and new folders above `destDir`, the
+    `open parent:` text is equal. claustrum leaves an empty `destDir` there,
+    and `5fd08069` leaves none.
 
   See the record of [files.extract_tar](record/files-extract-tar.md).
 - The reap of a child record with a `program` key splits the pins too, off the

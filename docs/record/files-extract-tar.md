@@ -258,12 +258,18 @@ file `lnk/f.txt`. The request succeeds. `lnk` is then a real folder with
 
 With a daemon umask of 0400 the new `destDir` has mode `0300`. `89cb6289`
 extracts the archive there, and claustrum before this change did the same (from
-the code). `5fd08069` fails, and claustrum now fails too, with its own text.
+the code). `5fd08069` fails, and claustrum fails with the same text.
 
 | case | system | `5fd08069` | `89cb6289` | claustrum |
 |---|---|---|---|---|
-| `destDir` does not exist | Linux and macOS VMs | `open destDir: openat dest: permission denied`. `destDir` is empty afterwards | success. Each new file has mode `0200` | `open destDir: open <destDir>: permission denied`. `destDir` is empty afterwards |
-| two folders above `destDir` do not exist either | Linux and macOS VMs | `open parent: open <parent>: permission denied`. No `destDir` afterwards | success | `open destDir: open <destDir>: permission denied`. An empty `destDir` afterwards |
+| `destDir` does not exist | Linux and macOS VMs | `open destDir: openat dest: permission denied`. `destDir` is empty afterwards | success. Each new file has mode `0200` | the text of `5fd08069`. `destDir` is empty afterwards |
+| two folders above `destDir` do not exist either | Linux and macOS VMs | `open parent: open <parent>: permission denied`. No `destDir` afterwards | success | the text of `5fd08069`. An empty `destDir` afterwards |
+
+The claustrum column is from a test run on Linux, not from a VM. In the second
+row the text is equal and the disk is not: claustrum creates `destDir` before
+it opens the parent, and `5fd08069` leaves no `destDir`. On the VMs an earlier
+build of this change opened `destDir` by its whole path. It answered
+`open destDir: open <destDir>: permission denied` in both rows.
 
 ## Texts that claustrum keeps
 
@@ -348,12 +354,16 @@ The tests of claustrum pin these rows:
 Three tests hold rules of claustrum that no reference row covers:
 
 - Linux and macOS: a `destDir` that another process replaces with a link
-  between the mkdir and the open fails the request. The text is
+  between the mkdir and the open fails the request. For a link that leaves the
+  parent folder the text is `open destDir: openat dest: path escapes from
+  parent`. For a link that stays in the parent folder it is
   `open destDir: "<name>" changed while it was opened`. Nothing is written or
   removed behind the link (`TestFilesExtractTarRefusesSwappedDestDir`).
-- Windows: the same with a junction
+- Windows: the same with a junction, which gets the first of the two texts
   (`TestFilesExtractTarRefusesJunctionSwappedDestDir`). No VM has run this
   test.
+- Linux and macOS: the two rows of the umask 0400 section
+  (`TestFilesExtractTarDestDirNotReadable`).
 - Linux and macOS: a marker that the daemon cannot create answers a text with
   the name `.synced` and no whole path
   (`TestSyncedMarkerWriteGoesThroughTheHandle`).
@@ -367,7 +377,8 @@ and it creates the marker exclusively. Both steps go through that handle.
 
 This change ran beside `5fd08069` on Linux, macOS and Windows VMs. Each cell
 that ran with this change was equal in the reply and on disk, apart from the
-rows of the two sections on the `destDir` steps:
+rows of the two sections on the `destDir` steps. The build of those rounds
+opened `destDir` by its whole path:
 
 - Linux VM: 97 cells, 91 equal. The 6 others are the Linux rows of those two
   sections.

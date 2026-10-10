@@ -231,10 +231,11 @@ type extractTarParams struct {
 // Production never reassigns it.
 var wipeDestDir = os.RemoveAll
 
-// openDestRoot opens the handle of the new destDir, behind a seam. A test swaps
-// destDir for a link between the mkdir and this open, to show that the test
-// after the open refuses the swapped folder. Production never reassigns it.
-var openDestRoot = os.OpenRoot
+// openDestParent opens the handle of the parent folder of destDir, behind a
+// seam. A test swaps destDir for a link between the mkdir and the open of destDir
+// through this handle, to show that the swapped folder is refused. Production
+// never reassigns it.
+var openDestParent = os.OpenRoot
 
 // isFilesystemRoot reports whether p names a filesystem root, on any platform.
 //
@@ -383,10 +384,27 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	//
 	//	open destDir: "dest" could not be examined (statat .: permission denied)
 	//
-	// For a handle that cannot be opened claustrum keeps its own text, with the
-	// whole path. 5fd08069 answers `open destDir: openat dest: permission denied`
-	// there (daemon umask 0400, Linux and macOS VMs).
-	destRoot, err := openDestRoot(destDir)
+	// The handle of destDir is opened through a handle of its parent folder, by
+	// the last name of destDir. The two failure texts are then those of 5fd08069.
+	// With a daemon umask of 0400 the new destDir has mode 0300, and 5fd08069
+	// answers (Linux and macOS VMs):
+	//
+	//	open destDir: openat dest: permission denied
+	//
+	// If the two folders above destDir are new too, the parent has mode 0300, and
+	// 5fd08069 answers there (Linux and macOS VMs):
+	//
+	//	open parent: open <parent>: permission denied
+	//
+	// filesExtractTar refused a file system root, so the cleaned destDir has a
+	// parent and a last name.
+	cleanedDest := filepath.Clean(destDir)
+	parentRoot, err := openDestParent(filepath.Dir(cleanedDest))
+	if err != nil {
+		return 0, fmt.Errorf("open parent: %v", err)
+	}
+	destRoot, err := parentRoot.OpenRoot(filepath.Base(cleanedDest))
+	parentRoot.Close()
 	if err != nil {
 		return 0, fmt.Errorf("open destDir: %v", err)
 	}
@@ -395,10 +413,12 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("open destDir: %q could not be examined (%v)", filepath.Base(destDir), err)
 	}
-	// The open is by path, and wipesHomeDir judged that path as text. Another
-	// process can put a link or a junction at destDir between the wipe and the
-	// open. The handle then names a folder that the guard did not judge, and the
-	// entries and the marker remove act on it. So destDir must still be a real
+	// The parent is opened by path, and wipesHomeDir judged destDir as text.
+	// Another process can put a link or a junction at destDir between the wipe
+	// and the open. The open through the parent refuses a link that leaves the
+	// parent, and it follows one that stays inside. The handle then names a
+	// folder that the guard did not judge, and the entries and the marker remove
+	// act on it. So destDir must still be a real
 	// directory, and it must be the folder of the handle. If not, the request
 	// fails here, before any entry is written and before any remove. This test
 	// and its text are claustrum's own, and no reference build is measured there.
@@ -575,12 +595,14 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// The entry that tripped the cap was written truncated (the
 				// LimitReader stops at cap+1), so remove it rather than leaving a
 				// corrupt file behind that looks like a partial success.
-				_ = os.Remove(target)
-				// fileCount 0, not the partial count — grouping this with the four
+				// The remove is a plain remove of one name through the handle of
+				// destDir, never a tree.
+				_ = destRoot.Remove(inDest)
+				// fileCount 0, not the partial count — grouping this with the
 				// arms that reject the archive outright (create, mkdir-parent,
-				// zip-slip, unsupported type), all of which answer 0. It is NOT
-				// every arm: a failed write of .synced still returns the partial
-				// count, and the cap arm was simply in the wrong group.
+				// mkdir, write, zip-slip, unsupported type), all of which answer
+				// 0. It is NOT every arm: a failed write of .synced still returns
+				// the partial count, and the cap arm was simply in the wrong group.
 				return 0, fmt.Errorf("extraction size limit exceeded")
 			}
 			count++

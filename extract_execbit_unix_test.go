@@ -329,49 +329,118 @@ func TestSyncedMarkerWriteGoesThroughTheHandle(t *testing.T) {
 // TestFilesExtractTarRefusesSwappedDestDir is the guard test of the handle of
 // destDir. Another process puts a link at destDir between the mkdir and the open.
 // The request then fails before an entry is written and before the marker
-// remove, so the folder behind the link keeps its content. Both folders are temp
-// folders of this test, so a missing guard can reach nothing else.
+// remove, so the folder behind the link keeps its content. A link that leaves the
+// parent of destDir is refused by the open through the parent handle. A link that
+// stays inside the parent is refused by the identity test after the open. Each
+// folder is in a temp folder of this test, so a missing guard can reach nothing
+// else. No reference build is measured there.
 func TestFilesExtractTarRefusesSwappedDestDir(t *testing.T) {
-	other := t.TempDir()
-	if err := os.Mkdir(filepath.Join(other, ".synced"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	keep := filepath.Join(other, ".synced", "keep.txt")
-	if err := os.WriteFile(keep, []byte("keep\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	dest := filepath.Join(t.TempDir(), "dest")
-	archive := filepath.Join(t.TempDir(), "a.tgz")
-	writeTgz(t, archive, []tgzEntry{{name: "a.txt", body: "x\n"}}, 0)
+	for _, tc := range []struct {
+		name     string
+		inside   bool // the other folder is in the parent of destDir
+		wantText string
+	}{
+		{"link that leaves the parent", false, "open destDir: openat dest: path escapes from parent"},
+		{"link that stays in the parent", true, `open destDir: "dest" changed while it was opened`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := t.TempDir()
+			dest := filepath.Join(parent, "dest")
+			other := filepath.Join(t.TempDir(), "other")
+			linkTarget := other
+			if tc.inside {
+				other = filepath.Join(parent, "other")
+				linkTarget = "other"
+			}
+			if err := os.MkdirAll(filepath.Join(other, ".synced"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			keep := filepath.Join(other, ".synced", "keep.txt")
+			if err := os.WriteFile(keep, []byte("keep\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			archive := filepath.Join(t.TempDir(), "a.tgz")
+			writeTgz(t, archive, []tgzEntry{{name: "a.txt", body: "x\n"}}, 0)
 
-	t.Cleanup(func() { openDestRoot = os.OpenRoot })
-	openDestRoot = func(name string) (*os.Root, error) {
-		// The swap: the new empty destDir goes, and a link to the other folder
-		// takes its place.
-		if err := os.Remove(name); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(other, name); err != nil {
-			t.Fatal(err)
-		}
-		return os.OpenRoot(name)
-	}
+			t.Cleanup(func() { openDestParent = os.OpenRoot })
+			openDestParent = func(name string) (*os.Root, error) {
+				// The swap: the new empty destDir goes, and a link to the other
+				// folder takes its place.
+				if err := os.Remove(dest); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(linkTarget, dest); err != nil {
+					t.Fatal(err)
+				}
+				return os.OpenRoot(name)
+			}
 
-	n, err := extractTarGz(archive, dest)
-	if want := `open destDir: "dest" changed while it was opened`; err == nil || err.Error() != want {
-		t.Errorf("extractTarGz = %v, want %s", err, want)
+			n, err := extractTarGz(archive, dest)
+			if err == nil || err.Error() != tc.wantText {
+				t.Errorf("extractTarGz = %v, want %s", err, tc.wantText)
+			}
+			if n != 0 {
+				t.Errorf("fileCount = %d, want 0", n)
+			}
+			if b, err := os.ReadFile(keep); err != nil || string(b) != "keep\n" {
+				t.Errorf("the file in the other folder = %q (err %v), want it unchanged", b, err)
+			}
+			left, err := os.ReadDir(other)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(left) != 1 || left[0].Name() != ".synced" || !left[0].IsDir() {
+				t.Errorf("the other folder holds %v, want only its .synced folder", left)
+			}
+		})
 	}
-	if n != 0 {
-		t.Errorf("fileCount = %d, want 0", n)
-	}
-	if b, err := os.ReadFile(keep); err != nil || string(b) != "keep\n" {
-		t.Errorf("the file in the other folder = %q (err %v), want it unchanged", b, err)
-	}
-	left, err := os.ReadDir(other)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(left) != 1 || left[0].Name() != ".synced" || !left[0].IsDir() {
-		t.Errorf("the other folder holds %v, want only its .synced folder", left)
+}
+
+// TestFilesExtractTarDestDirNotReadable holds the two answers for a daemon umask
+// of 0400. Each new folder then has mode 0300, so the daemon cannot open it for
+// a read. The frames are those of 5fd08069 on Linux and macOS VMs. In the first
+// row destDir alone is new. In the second row two folders above it are new too,
+// and the parent of destDir is the folder that cannot be opened.
+func TestFilesExtractTarDestDirNotReadable(t *testing.T) {
+	skipIfRoot(t)
+	for _, tc := range []struct {
+		name string
+		rel  string
+		text func(dest string) string
+	}{
+		{"destDir is new", "dest", func(string) string {
+			return "open destDir: openat dest: permission denied"
+		}},
+		{"two folders above destDir are new", filepath.Join("n1", "n2", "dest"), func(dest string) string {
+			return "open parent: open " + filepath.Dir(dest) + ": permission denied"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestServer(t)
+			archive := filepath.Join(t.TempDir(), "a.tgz")
+			writeTgz(t, archive, []tgzEntry{{name: "a.txt", body: "x\n"}}, 0)
+			base := t.TempDir()
+			dest := filepath.Join(base, tc.rel)
+			// The new folders have no read bit. The cleanup gives it back, so
+			// that the temp folder can go.
+			t.Cleanup(func() {
+				for p := dest; p != base; p = filepath.Dir(p) {
+					defer func() { _ = os.Chmod(p, 0o700) }()
+				}
+			})
+
+			// The umask is process-wide, so this test must not run in parallel
+			// with another test. It changes back right after the request.
+			old := syscall.Umask(0o400)
+			restore := func() { syscall.Umask(old) }
+			t.Cleanup(restore)
+			got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
+			restore()
+
+			want := `{"jsonrpc":"2.0","id":1,"result":{"success":false,"fileCount":0,"error":"` + tc.text(dest) + `"}}`
+			if got != want {
+				t.Errorf("frame = %s\nwant    %s", got, want)
+			}
+		})
 	}
 }

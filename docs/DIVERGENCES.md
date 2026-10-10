@@ -200,7 +200,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   claustrum tests after the open that `destDir` is still a real folder and is the
   folder of the handle. If not, it answers
   `open destDir: "<name>" changed while it was opened`. It writes no entry and
-  removes nothing. This test is part of this entry: it keeps the delete on the
+  removes nothing. claustrum opens that handle through a handle of the parent
+  folder. A link that leaves the parent folder fails that open first, with
+  `open destDir: openat <name>: path escapes from parent`. This test is part of this entry: it keeps the delete on the
   folder that the guard judged. A request alone cannot stage the swap, and no
   measurement says what the reference does there. In the measured cells the
   frames and the disk are equal with `5fd08069` (Linux, macOS and Windows VMs).
