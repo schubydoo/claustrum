@@ -28,6 +28,9 @@ type capabilitiesResult struct {
 	// list, its order and its per-OS history live with capabilityFeatures. The array
 	// field itself is always present (never omitempty), on every OS.
 	Features []string `json:"features"`
+	// PeerCheck is the last member, directly after features, in every answer
+	// (5fd08069 on Linux, macOS and Windows VMs). The values live in peercheck.go.
+	PeerCheck string `json:"peerCheck"`
 }
 
 type statResult struct {

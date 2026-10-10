@@ -670,6 +670,24 @@ measured this, with the value 65536. On the Windows VM the reference log has no
 such line, and claustrum writes none there. A failed raise was not measured.
 Claustrum writes no line then.
 
+A start with `CLAUDE_SSH_PEER_CHECK=1` writes one more line before the banner,
+at WARN level. On macOS and Windows the text is:
+
+```
+[Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all
+```
+
+`5fd08069` writes that text there, with no level tag, as the last line before its
+banner (macOS and Windows VMs). On Linux the text is claustrum's own:
+
+```
+[Server] CLAUDE_SSH_PEER_CHECK is set: this build has no peer check on Linux, serving all callers
+```
+
+On the Linux VM `5fd08069` writes a different line at that place, for the peer
+check that it runs. The place of the line beside the lines of a reap is not
+measured. The `peerCheck` member of `server.capabilities` tells the same state.
+
 The banner ends with the pid of the daemon and its instance. The instance is the
 `instanceId` of `server.capabilities`. `f6010b97` and `89cb6289` print the same
 suffix (Linux, macOS and Windows VMs). The name `Claustrum` is claustrum's own.
@@ -1078,7 +1096,7 @@ Windows VMs saw it at that place.
 | method | params | result |
 |---|---|---|
 | `server.ping` | none | `{"pong":true}` |
-| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","git.worktree.external_root","server.instance_id"]}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `instanceId` and `startedAt` are present on every OS |
+| `server.capabilities` | none | `{"version":"<id>","methods":[…20…],"instanceId":"<32-hex>","startedAt":<unix-ms>,"features":["process.stdin.offset","git.status.baseRepo","git.info.discovered_root","git.worktree_create.timeoutMs","git.worktree_create.existingBranch","git.worktree_remove.unpushedGuard","process.spawn.shellAgentSocket","launcher.managed","server.peer_check","git.worktree.external_root","server.instance_id"],"peerCheck":"off"}`. `plugins.prune` is the last method on every OS. `git.worktree.external_root` is omitted on Windows. `git.worktree_create.timeoutMs`, `git.worktree_create.existingBranch`, `git.worktree_remove.unpushedGuard`, `process.spawn.shellAgentSocket`, `launcher.managed`, `server.peer_check`, `instanceId`, `startedAt` and `peerCheck` are present on every OS |
 | `server.shutdown` | none | `{"ok":true}`, when the reply gets out. The handler waits until the teardown starts to close connections, and then returns the reply. The frame arrives only when its write wins the race with the close. See below |
 
 - `server.version` was removed in `7d193f89`. It now answers
@@ -1118,7 +1136,31 @@ Windows VMs saw it at that place.
   `launcher.resolve` and the `process.spawn` `launcher` param. Windows lists it
   too, although a Windows spawn refuses every managed launcher. The VMs of all
   three OSes saw it at that place. The `CLAUDE_SSH_MANAGED_LAUNCHER` gate does not
-  change the capabilities frame (measured on macOS).
+  change the capabilities frame (measured on macOS). `5fd08069` inserted
+  `server.peer_check` after `launcher.managed`, for the `peerCheck` member. The
+  Linux, macOS and Windows VMs saw it at that place. On those VMs `5fd08069` also
+  lists two features that claustrum does not list.
+- `peerCheck` is the last member, directly after `features`. It is in every
+  answer. It has three values: `"off"`, `"unavailable"` and `"on"`. claustrum
+  answers `"off"` or `"unavailable"`. The daemon reads the variable
+  `CLAUDE_SSH_PEER_CHECK` of its own environment one time, at its start. The exact
+  value `1` asks for the peer check. claustrum has no peer check. With `1` it
+  answers `"unavailable"` on Linux, macOS and Windows, and it serves every caller.
+  With each other value, and with no variable, it answers `"off"`.
+  On `5fd08069` each of these gave `"off"`:
+    - Linux VM: the empty value, `true`, `yes`, `on`, `2`, `01` and ` 1` (a
+      space before the digit).
+    - macOS VM: no variable, `0`, `off`, the empty value and `true`.
+    - Windows VM: no variable, `0` and `off`.
+
+  With `1`, `5fd08069` answers `"unavailable"` on the macOS VM and on the Windows
+  VM. A `server.ping` after it got its answer (macOS VM). For this member,
+  `5fd08069` and claustrum differ in one measured cell: the value `1` on
+  Linux. On the Linux VM `5fd08069` answers
+  `"peerCheck":"on","peerCheckBy":["network","pidfd"]`. claustrum answers
+  `"peerCheck":"unavailable"` there, with no `peerCheckBy` member, and it serves
+  all callers. The log line of that start is in
+  [Daemon log](#daemon-log-remote-serverlog).
 - `server.shutdown` is not authenticated. See [Authentication](#authentication).
 - On the reference, `server.shutdown` usually closes the connection with no
   reply. Its `{"ok":true}` frame arrived in 24 of 800 single-connection runs

@@ -60,8 +60,10 @@
         "git.worktree_remove.unpushedGuard",
         "process.spawn.shellAgentSocket",
         "launcher.managed",
+        "server.peer_check",
         "server.instance_id"
-      ]
+      ],
+      "peerCheck": "off"
     }
   },
   {
