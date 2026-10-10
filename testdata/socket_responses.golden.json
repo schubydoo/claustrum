@@ -53,6 +53,7 @@
       "startedAt": "<T>",
       "features": [
         "process.stdin.offset",
+        "files.extract_tar.execBit",
         "git.status.baseRepo",
         "git.info.discovered_root",
         "git.worktree_create.timeoutMs",

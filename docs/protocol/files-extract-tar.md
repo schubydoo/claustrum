@@ -4,6 +4,8 @@
 
 A failed request can leave the directory empty or partly filled. The section [After a failure](#after-a-failure) says what stays.
 
+The measurements behind the modes and the texts of `5fd08069` are in the [record](../record/files-extract-tar.md).
+
 ## Request
 
 ```json
@@ -24,15 +26,16 @@ The daemon does these steps in this order:
 1. It opens the archive and reads the gzip header.
 2. It deletes `destDir` with all its content, and creates it again as an empty directory. If `destDir` is a file or a symbolic link, the daemon deletes that file or link. It does not delete the target of the link. Directories above `destDir` that do not exist are created.
 3. It writes each entry of the archive into `destDir`.
-4. It writes an empty file `.synced` at the top of `destDir`.
+4. It deletes what the archive put at `.synced` at the top of `destDir`. Then it writes an empty file `.synced` there.
 5. It deletes the archive. It does that after a failure too, once the archive was open.
 
 The rules for the entries:
 
 - The daemon writes regular files and directories only. Each other kind of entry fails the request, for example a symbolic link, a hard link or a device.
-- A file gets the mode `0600` and a directory gets `0700`. On Linux and macOS the umask of the daemon applies to them. The modes in the archive do not apply. So an executable file arrives without its execute bit.
-- An entry cannot leave `destDir`. A name with `..` that resolves to a place outside fails the request. A `..` that resolves to a place inside is accepted. A name that starts with `/` lands inside `destDir`.
-- A file entry with the name `.synced` at the top is replaced by the empty marker file, and `fileCount` counts it. A directory entry with that name fails the request with `write .synced:`.
+- A directory gets the mode `0700`. A file gets `0700` if its mode in the archive has the execute bit of the owner, and `0600` if it does not. No other mode bit of the archive applies, so no setuid, setgid or sticky bit arrives. On Linux and macOS the umask of the daemon applies to these modes.
+- A second file entry with the name of an earlier one replaces that file. The new file has the mode of the last entry (Linux and macOS). On a volume that ignores letter case it has the name of the last entry too (Windows and macOS). `fileCount` counts each entry.
+- An entry cannot leave `destDir`. A name that leaves `destDir` at a step fails the request, also when it comes back. `../evil` and `../dest/x.txt` are examples. A `..` that stays inside is accepted, for example `a/../b.txt`. A name that starts with `/` lands inside `destDir`.
+- The marker replaces what the archive put at `.synced` at the top. A file entry with that name ends empty with mode `0600`. A directory entry with that name goes with all its content. `fileCount` still counts the files of the archive there. A `.synced` below another directory is a normal entry.
 
 ## Response
 
@@ -50,7 +53,7 @@ Failure:
 {"success": false, "fileCount": 0, "error": "<text>"}
 ```
 
-Read `success`. A failure has no `errorCode` member, so the `error` text is the one description of the cause. A failure answers `fileCount` `0`, also after the daemon wrote files, with two exceptions. The exceptions are a directory entry whose directory the daemon cannot create, and a marker file that it cannot write. The answer then holds the number of files written before. No measurement of the reference covers those two cases.
+Read `success`. A failure has no `errorCode` member, so the `error` text is the one description of the cause. A failure answers `fileCount` `0`, also after the daemon wrote files, with one exception. The exception is the marker step: the daemon cannot remove the entry at `.synced`, or it cannot write the marker file. The answer then holds the number of files written before. No measurement of the reference covers that case.
 
 | `error` starts with | Cause |
 |---|---|
@@ -61,17 +64,18 @@ Read `success`. A failure has no `errorCode` member, so the `error` text is the 
 | `tar read:` | The daemon cannot read the next entry. Gzip data that is not a tar archive gives this text at the first entry. Gzip data with no content is an archive with no entries: the request succeeds with `fileCount` `0`, and `destDir` is then empty but for the marker. |
 | `clean destDir:` | The daemon cannot delete the old `destDir`. |
 | `mkdir destDir:` | The daemon cannot create `destDir`. |
-| `unsafe path in archive: <entry>` | The entry resolves to a place outside `destDir`. |
+| `open parent:` | The daemon cannot open the folder that holds `destDir`. |
+| `open destDir:` | The daemon cannot open the new `destDir`, or cannot search it. A daemon umask of `0400` gives `open destDir: openat <name>: permission denied` on Linux and macOS. On Linux and macOS a daemon umask of `0100` gives `open destDir: "<name>" could not be examined (statat .: permission denied)`. `<name>` is the last part of `destDir`. If another process replaced `destDir` after the daemon created it, the text is `open destDir: "<name>" changed while it was opened`, or `open destDir: openat <name>: path escapes from parent`. |
+| `unsafe path in archive: <entry>` | The name of the entry leaves `destDir`. On Windows a device name such as `NUL` and a name with `:` give this text too. |
 | `unsupported tar entry type <c>: <entry>` | The entry is not a regular file or a directory. `<c>` is the type character of tar, for example `2` for a symbolic link and `1` for a hard link. |
-| `mkdir parent <entry>:` | The daemon cannot create the directory for a file. For example, an earlier entry wrote a file at that place. |
-| `create <entry>:` | The daemon cannot create the file. For example, a directory is at that place. |
+| `mkdir parent <entry>:` | The daemon cannot create the directory for a file. A file entry `a` and then an entry `a/b` give `mkdir parent a/b: mkdirat a: file exists`. |
+| `mkdir <entry>:` | The daemon cannot create the directory of a directory entry. A file entry `a` and then a directory entry `a/` give `mkdir a/: mkdirat a: file exists`. |
+| `create <entry>:` | The daemon cannot create the file. A directory entry `d` and then a file entry `d` give `create d: openat d: file exists` on Linux and macOS, and `create d: openat d: is a directory` on Windows. |
 | `write <entry>:` | The daemon cannot copy the content of a file. For example, the archive is cut inside the file, or its compressed data is damaged. |
 | `extraction size limit exceeded` | Only with `-max-extract-bytes`: the files written are larger than the limit. |
-| `write .synced:` | The daemon cannot write the marker file. |
+| `write .synced:` | The daemon cannot remove the entry at `.synced`, or it cannot write the marker file. |
 
-The table is not complete. One failure gives a text with no prefix: the daemon cannot create the directory of a directory entry. The text is then that of the operating system.
-
-`<entry>` is the name of the entry as the archive has it, not the path on disk. `unsafe path in archive:` and `unsupported tar entry type` end with that name. The two `destDir must` texts end with the path in quotes. The text after each other prefix comes from the operating system or from a library. The examples are those of Linux and macOS.
+`<entry>` is the name of the entry as the archive has it, not the path on disk. `unsafe path in archive:` and `unsupported tar entry type` end with that name. The two `destDir must` texts end with the path in quotes. The text after each other prefix comes from the operating system or from a library. The examples are those of Linux and macOS. After `mkdir parent <entry>:`, `mkdir <entry>:` and `create <entry>:` that text names the place below `destDir`, not the whole path.
 
 The method has two JSON-RPC errors:
 
@@ -91,9 +95,10 @@ No failure restores the old content of `destDir`. The table says what stays of t
 | `gzip:` | Deleted. | Not changed. |
 | `clean destDir:` | Deleted. | The old content can be partly deleted. |
 | `mkdir destDir:` | Deleted. | The old content is deleted. |
+| `open parent:` or `open destDir:` | Deleted. | The old content is deleted. `destDir` is empty. |
 | Each later failure | Deleted. | The old content is deleted. The entries written before the failure stay. A file that the daemon wrote in part can stay too. The daemon writes no marker. |
 
-Do not read a `.synced` file as the result of the last request. After `open archive:` and after `gzip:`, an old marker stays with the old content. An archive can also hold a file entry with that name, and that file stays after a later failure.
+Do not read a `.synced` file as the result of the last request. After `open archive:` and after `gzip:`, an old marker stays with the old content. An archive can also hold an entry with that name, and that entry stays after a later failure.
 
 The daemon ignores a failure of the delete of the archive. So an archive that it cannot delete stays. If `archivePath` is an empty directory, the daemon on Linux deletes that directory and answers `gzip:`. The home test does not apply to `archivePath`. So if `archivePath` is the home directory and that directory is empty, the daemon deletes it.
 
@@ -119,5 +124,11 @@ claustrum is built to answer as the reference daemon does. These entries of the 
 
 - [D2](../DIVERGENCES.md#d2): claustrum refuses a `destDir` that is the home directory or holds it. The reference deletes the home directory for `"destDir": "~"`.
 - [D3](../DIVERGENCES.md#d3): the optional size limit. It is off by default.
+
+The reference pin is `89cb6289`. This method follows `5fd08069`. The examples in the table of the `error` texts are from `5fd08069` too. The [record](../record/files-extract-tar.md) has the rows of both builds.
+
+In the failures of the delete and of the create of `destDir` claustrum keeps its own text. The record lists them under [Texts that claustrum keeps](../record/files-extract-tar.md#texts-that-claustrum-keeps). In one failure of the open the text is equal and the disk differs: see the section before it.
+
+The test for a replaced `destDir` is claustrum's own, and it is part of [D2](../DIVERGENCES.md#d2). No measurement says what the reference does there.
 
 The refusal of a file system root is not in the catalog. claustrum refuses a root because step 2 deletes `destDir` with all its content. No measurement says what the reference does with a root, so the refusal is neither parity nor a divergence.

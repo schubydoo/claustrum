@@ -268,9 +268,8 @@ func TestExtractTarGzMemberErrors(t *testing.T) {
 		count   int
 	}{
 		// a directory member whose path runs through an already-extracted
-		// regular file -> TypeDir MkdirAll fails with ENOTDIR. This arm
-		// answers the count of files written before it.
-		{"dir through file", []tgzEntry{{name: "f", body: "x"}, {name: "f/sub", dir: true}}, 1},
+		// regular file -> TypeDir MkdirAll fails. This arm answers fileCount 0.
+		{"dir through file", []tgzEntry{{name: "f", body: "x"}, {name: "f/sub", dir: true}}, 0},
 		// a file member nested under an already-extracted regular file ->
 		// parent MkdirAll fails
 		{"file under file", []tgzEntry{{name: "f", body: "x"}, {name: "f/sub/x", body: "y"}}, 0},
@@ -303,21 +302,6 @@ func TestExtractTarGzTruncatedMember(t *testing.T) {
 	_, err := extractTarGz(archive, filepath.Join(t.TempDir(), "out"))
 	if err == nil || !strings.HasPrefix(err.Error(), "write f: ") {
 		t.Errorf("extractTarGz on truncated archive = %v, want a \"write f: \" error", err)
-	}
-}
-
-// An archive that ships a ".synced" *directory* leaves the success-marker
-// WriteFile nowhere to go — the extraction must report that failure.
-func TestExtractTarGzSyncedMarkerBlocked(t *testing.T) {
-	archive := filepath.Join(t.TempDir(), "synced.tar.gz")
-	writeTgz(t, archive, []tgzEntry{{name: "a", body: "x"}, {name: ".synced", dir: true}}, 0)
-	n, err := extractTarGz(archive, filepath.Join(t.TempDir(), "out"))
-	if err == nil || !strings.Contains(err.Error(), ".synced") {
-		t.Errorf("extractTarGz = %v, want .synced write error", err)
-	}
-	// This arm answers the count of files written before it.
-	if n != 1 {
-		t.Errorf("fileCount = %d, want 1", n)
 	}
 }
 

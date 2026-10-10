@@ -193,6 +193,21 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 ### D2 · Refuse a home directory as a destructive path target (always-on) { #d2 }
 
+- **`files.extract_tar` tests the folder that it opened.** `wipesHomeDir` judges
+  the `destDir` path as text. The entries and the remove of the `.synced` entry
+  act through a handle of `destDir`, which claustrum opens after the wipe. Another
+  process can replace `destDir` with a link or a junction in that time. So
+  claustrum tests after the open that `destDir` is still a real folder and is the
+  folder of the handle. If not, it answers
+  `open destDir: "<name>" changed while it was opened`. It writes no entry and
+  removes nothing. claustrum opens that handle through a handle of the parent
+  folder. A link that leaves the parent folder fails that open first, with
+  `open destDir: openat <name>: path escapes from parent`. This test is part of this entry: it keeps the delete on the
+  folder that the guard judged. A request alone cannot stage the swap, and no
+  measurement says what the reference does there. In the measured cells the
+  frames and the disk are equal with `5fd08069` (Linux, macOS and Windows VMs).
+  A `destDir` that is a link or a junction before the request is not refused:
+  the wipe removes the link first, as on the reference.
 - **`-install` is guarded too.** The install removes a folder at the CLI path,
   `<cli-dir>/<version>`, as a tree before the new CLI runs. With a cli-dir that
   is the parent of the home folder and a version that is its leaf name, that
