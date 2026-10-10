@@ -637,7 +637,8 @@ func spawnReqArgsCwd(t *testing.T, id int, procID, mode, cwd string) string {
 //	a 300-character name   ENAMETOOLONG   "stat <p>: file name too long"
 //	a NUL byte in the path EINVAL         "stat <p>: invalid argument"
 //
-// files.stat and files.read report these as -32603; files.validate keeps its own
+// files.stat reports these as -32603, and files.read with `open` in place of
+// `stat`; files.validate keeps its own
 // result shape and puts the stat text in the error field instead of "Path does
 // not exist". The genuine-ENOENT rows are pinned alongside, because the change
 // must NOT disturb them.
