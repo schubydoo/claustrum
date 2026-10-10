@@ -1282,9 +1282,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 - **Cost.** A client that reads `"unavailable"` on Linux learns that no check
   runs. An operator who sets the variable on Linux gets a daemon that serves
   every caller, where `5fd08069` answers `"on"`.
-- **Not measured.** A caller that `5fd08069` refuses. No cell has a caller of
-  another user or of another namespace. Which client sets the variable is not
-  measured either.
+- **Not measured.** Whether `5fd08069` serves each caller on Linux with the
+  value `1`. Each measured caller ran as the same user on the same VM. Which
+  client sets the variable is not measured either.
 - **Reopen trigger.** A client that needs the `"on"` answer on Linux. Or a
   decision to answer as `5fd08069` does there.
 - **Pointers.** [PROTOCOL.md](PROTOCOL.md) → server.* and Daemon log.
