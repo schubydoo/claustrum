@@ -408,7 +408,11 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			break
 		}
 		if err != nil {
-			return count, gzipErr{err}
+			// 89cb6289 answers "tar read: <text>" with fileCount 0 when the tar reader
+			// cannot read the next entry. For gzip data that is not a tar that is
+			// measured on Linux, macOS and Windows VMs. For a later entry, also after
+			// files were written, it is measured on a Linux VM.
+			return 0, fmt.Errorf("tar read: %v", err)
 		}
 		// Reject entries that would escape destDir ("zip slip"). filepath.Join
 		// cleans, so target is already normalized; an entry then lands inside
@@ -483,12 +487,6 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// The MkdirAll above carries a DIFFERENT prefix ("mkdir parent
 				// <entry>: ") and is handled there — measured, after an earlier
 				// version of this comment wrongly called it unprovokable.
-				//
-				// The io.Copy failure below is still unmeasured: it needs a short
-				// read the harness cannot stage, so it is left bare rather than
-				// wrapped on the strength of the two arms that WERE measured.
-				// Assuming a third prefix from two observations is how a parity
-				// claim outruns its evidence.
 				// fileCount 0, not the partial count — measured with an archive
 				// whose first entry succeeds and whose second hits this branch:
 				// the reference answers fileCount 0 while claustrum answered 1.
@@ -499,7 +497,11 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			totalWritten += n
 			out.Close()
 			if err != nil {
-				return count, err
+				// 89cb6289 answers "write <entry>: <text>" with fileCount 0 when the
+				// content of a file cannot be copied, for example from an archive
+				// that is cut inside the file (Linux VM). A failed write of the
+				// extracted file takes this arm too, and that case is not measured.
+				return 0, fmt.Errorf("write %s: %v", hdr.Name, err)
 			}
 			if maxExtractBytes > 0 && totalWritten > maxExtractBytes {
 				// The entry that tripped the cap was written truncated (the
@@ -509,9 +511,8 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 				// fileCount 0, not the partial count — grouping this with the four
 				// arms that reject the archive outright (create, mkdir-parent,
 				// zip-slip, unsupported type), all of which answer 0. It is NOT
-				// every arm: mid-stream tr.Next, TypeDir mkdir, io.Copy and
-				// write .synced all still return the partial count, and the cap
-				// arm was simply in the wrong group.
+				// every arm: TypeDir mkdir and write .synced still return the
+				// partial count, and the cap arm was simply in the wrong group.
 				return 0, fmt.Errorf("extraction size limit exceeded")
 			}
 			count++
@@ -531,7 +532,8 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	return count, nil
 }
 
-// gzipErr reproduces the real binary's "gzip: " prefix on archive errors.
+// gzipErr reproduces the real binary's "gzip: " prefix on a gzip header that
+// cannot be read.
 type gzipErr struct{ inner error }
 
 func (e gzipErr) Error() string { return "gzip: " + e.inner.Error() }
