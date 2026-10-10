@@ -833,10 +833,11 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | protocol | `Invalid params` | -32602 (absent/mistyped `params`) |
 | protocol | `Unauthorized: invalid or missing auth token` | -32001 |
 | protocol | `recovered panic: <v>` | -32603 (claustrum-only, see below) |
-| files.stat / files.read | `stat <path>: <reason>` | -32603 (any stat failure other than ENOENT) |
+| files.stat | `stat <path>: <reason>` | -32603 (any stat failure other than ENOENT) |
+| files.read | `open <path>: <reason>` | -32603 (any open failure other than ENOENT) |
 | files.read | `files.read: path is a directory` | |
 | files.read | `files.read: file exceeds maxBytes` | |
-| files.read | `files.read: not a regular file` | D4 opt-in only |
+| files.read | `files.read: not a regular file` | -32602. The path opens and is not a regular file. See [files.read](protocol/files-read.md) |
 | files.list | `open …: no such file or directory` | -32603 (missing dir) |
 | files.list | `open <p>: not a directory` | -32603. The path is not a directory. Since `7d193f89` the open itself fails. Before `7d193f89` the message was `readdirent …` |
 | files.list | `open <p>: permission denied` | -32603 (an unreadable directory) |
@@ -1058,17 +1059,20 @@ trailing-separator spelling the difference is a change of *verdict*. POSIX
 ### Stat failures other than "does not exist"
 
 `files.stat`, `files.read` and `files.validate` distinguish a path that is absent
-from a path the daemon cannot examine:
+from a path the daemon cannot examine. `files.read` opens the path where the
+other two stat it:
 
 - A genuine `ENOENT` is the "does not exist" answer in each method's own shape.
   The three shapes are `exists:false`, `content:"" exists:false`, and
   `valid:false` with `error:"Path does not exist"`.
-- The daemon reports any other stat failure with the underlying message.
-  `files.stat` and `files.read` return `-32603 stat <path>: <reason>`.
+- The daemon reports any other failure with the underlying message.
+  `files.stat` returns `-32603 stat <path>: <reason>`. `files.read` returns
+  `-32603 open <path>: <reason>`.
   `files.validate` keeps its result shape and puts that text in its `error` field
   instead. Reachable reasons include `not a directory` (a path component is a
   regular file), `file name too long`, and `invalid argument` (a NUL byte in the
-  path).
+  path). For `files.read`, `5fd08069` gives these three with `open` on Linux and
+  macOS VMs.
 
 ## Methods (20)
 
@@ -4146,7 +4150,7 @@ never "a huge limit".
 | `-listen-pipe` | `listen-pipe` | off | named-pipe transport, Windows-only (CT-5) | -serve |
 | `-max-extract-bytes <n>` | `max-extract-bytes` | `0` | cap `files.extract_tar` bytes (D3) | -serve |
 | `-git-timeout <dur>` | `git-timeout` | `0` | deadline on git invocations (D5) | -serve |
-| `-files-read-regular-only` | `files-read-regular-only` | off | refuse non-regular `files.read` (D4) | -serve |
+| `-files-read-regular-only` | `files-read-regular-only` | none | deprecated. It sets nothing and logs one warning. `files.read` refuses a file that is not regular with or without it (retired D4) | -serve |
 | `-max-cli-bytes <n>` | `max-cli-bytes` | `0` | cap CLI decompress + download (D10) | -install |
 | `-cli-probe-timeout <dur>` | `cli-probe-timeout` | none | deprecated. It sets nothing and logs one warning. The direct `<cli> --version` run always has its 30 s and 120 s bounds (retired D11) | -install |
 | `-cli-download-timeout <dur>` | `cli-download-timeout` | `0` | download deadline (D12) | -install |
@@ -4164,7 +4168,7 @@ flag value, or the default, stands.
 ```text
 claustrum -serve -socket <p> {-token-file <p> | -token-fd <n>} [-metrics-addr <a>] \
           [-keep-children] [-listen-pipe] [-wire-log <p> [-wire-log-max-string <n>]] \
-          [-max-extract-bytes <n>] [-git-timeout <dur>] [-files-read-regular-only]
+          [-max-extract-bytes <n>] [-git-timeout <dur>]
 ```
 
 The binary self-daemonizes, which means it reparents to init and detaches. It then
@@ -4292,12 +4296,11 @@ and `-wire-log` have none, and this section holds their detail:
   transport](#named-pipe-transport-windows-opt-in). The daemon logs a setup failure
   (`[Server] named-pipe transport: …`), which is non-fatal. The socket still serves.
 
-The opt-in divergences on this mode are `-max-extract-bytes` (D3),
-`-git-timeout` (D5) and `-files-read-regular-only` (D4). Off is parity. Their wire
+The opt-in divergences on this mode are `-max-extract-bytes` (D3) and
+`-git-timeout` (D5). Off is parity. Their wire
 frames appear in the method sections above, under `git.status` and
-`git.worktree_remove`, and in three pages. The frame of D3 is in
-[files.extract_tar](protocol/files-extract-tar.md). The frame of D4 is in
-[files.read](protocol/files-read.md). The frame of D5 on `git.list_branches` is in
+`git.worktree_remove`, and in two pages. The frame of D3 is in
+[files.extract_tar](protocol/files-extract-tar.md). The frame of D5 on `git.list_branches` is in
 [git.list_branches](protocol/git-list-branches.md). See the flags table and
 [`DIVERGENCES.md`](DIVERGENCES.md).
 

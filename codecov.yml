@@ -207,6 +207,8 @@ component_management:
         - pathcanon_windows.go
         - odirectory_unix.go
         - odirectory_windows.go
+        - filesread_unix.go
+        - filesread_windows.go
     - component_id: process
       name: process supervisor
       paths:

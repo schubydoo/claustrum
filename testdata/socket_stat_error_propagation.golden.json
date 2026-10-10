@@ -38,7 +38,7 @@
     "id": 5,
     "error": {
       "code": -32603,
-      "message": "stat <DIR>/a.txt/../a.txt: not a directory"
+      "message": "open <DIR>/a.txt/../a.txt: not a directory"
     }
   },
   {
@@ -46,7 +46,7 @@
     "id": 6,
     "error": {
       "code": -32603,
-      "message": "stat <DIR>/<LONG>: file name too long"
+      "message": "open <DIR>/<LONG>: file name too long"
     }
   },
   {
@@ -54,7 +54,7 @@
     "id": 7,
     "error": {
       "code": -32603,
-      "message": "stat <DIR>/a\u0000b: invalid argument"
+      "message": "open <DIR>/a\u0000b: invalid argument"
     }
   },
   {

@@ -193,7 +193,6 @@ opt-in?
 | ID | Default | Battery-visible? | What it is |
 |----|---------|------------------|------------|
 | D3 | Off (`0` = unlimited) | No. Off the default path | `files.extract_tar` size cap |
-| D4 | Off | Yes. `battery.js` id 70 reads `/dev/null`. No diff at the default (guard off), and it turns red once armed | `files.read` regular-file guard |
 | D5 | Off (`0` = no deadline) | No. Off the default path | git-invocation deadline |
 | D10 | Off (`0` = unlimited) | No. Install path | `-install` CLI size cap |
 | D12 | Off (`0` = no bound) | No. Install path | `-install` download bound |
@@ -219,7 +218,10 @@ opt-in?
 
 D1, D7, D11 and D14 are retired. The reference changed on the path, or a later
 measurement corrected the premise, and claustrum now matches it. A difference on those paths is drift, not a divergence, unless
-an entry in the table above covers it (for example D6, D10, D13, D18). See
+an entry in the table above covers it (for example D6, D10, D13, D18).
+D4 is retired too. Its paths follow `5fd08069`, so a difference against
+`89cb6289` there is expected. The paragraph on `files-read-regular-only` below
+names the differences. See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries).
 
 Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
@@ -257,30 +259,47 @@ facts line then carries `"cliUnresponsive":true`. That is parity. Discriminate o
 exit. Exit 2 with `parse error` on stderr is the bad flag. Exit 2 with
 `cannot resolve home directory` on stderr is a missing home folder.
 
-D4 is the one exception. It is a bool, not a duration (`files-read-regular-only`).
-The forms parse like this:
+The deprecated `files-read-regular-only` (retired D4) sets nothing, whatever
+its value. It is a bool, not a duration. Its flag forms parse like this:
 
-- Configuration value unrecognized (`= maybe`): the parser drops it silently and
-  leaves the key unset, so the flag value stands (off, unless a flag was also
-  passed).
 - Flag `=value` form unrecognized (`-files-read-regular-only=maybe`): `flag.Bool`
   rejects it with usage + exit 2.
-- Flag space form (`-files-read-regular-only maybe`): arms the guard, because a
-  bool never consumes the next arg. `maybe` becomes a positional and parsing
-  stops. That silently drops every later flag. The guard is therefore armed only
-  for an argv where the parser read `-serve` and the socket and token flags
-  *before* the typo.
-- Inert-but-accepted spelling: `false` (both forms). It contains the name a
-  triager greps for, but it arms nothing.
+- Flag space form (`-files-read-regular-only maybe`): a bool does not consume
+  the next arg. `maybe` becomes a positional and parsing stops. That silently
+  drops every later flag.
+
+A `-32602 files.read: not a regular file` on a stock claustrum is not drift. It
+is the rule of `5fd08069`. Against `89cb6289` the same request differs: that
+build reads the path, waits, or answers another error. An `open <path>: …` text
+of `files.read` is not drift in these measured cases, where `89cb6289` has
+another text:
+
+- Linux and macOS, `stat <path>: …` on `89cb6289`: a symlink loop, a `/` or a
+  further component after a regular file, a name that is too long, a NUL byte,
+  and a folder that the daemon cannot search. The battery row for `files.read`
+  of `~/a.txt/` shows it.
+- Windows, `CreateFile <path>: …` on `89cb6289`: `CON`, `CONIN$`, `CONOUT$`, a
+  `\` after a regular file, and a name that is too long. A NUL byte gets
+  `Stat <path>: …` there.
+- Each system, where the open fails: `89cb6289` answers `files.read: path is a
+  directory` for a directory and `files.read: file exceeds maxBytes` for a file
+  over the limit.
+
+An `open <path>: resource temporarily unavailable` of `files.read` on a regular
+file that another process holds under a lease is not drift either. From the
+code, it comes from the `O_NONBLOCK` open of claustrum. No VM row has that
+case.
+
+The [measurement record](record/files-read.md) holds the rows.
 
 ### Triage gotchas — when a probe result is misleading
 
 [docs/DIVERGENCES.md](DIVERGENCES.md) holds the full measurements. These are the
 traps that matter for telling drift from expected:
 
-- D4 and D5 (writerless FIFO, surviving-child git): a probe run that records "no
+- D5 (surviving-child git): a probe run that records "no
   reply from both binaries" does not discriminate. The off state blocks too.
-  `/dev/null` is D4's discriminating input. A surviving child makes the general D5
+  A surviving child makes the general D5
   git sites soft (`CombinedOutput` waits on the output pipe, not on git's exit). The
   one exception is `git.worktree_create`'s read-tree checkout. It caps the
   post-exit drain at ~5 s and SIGKILLs the process group, which is parity with

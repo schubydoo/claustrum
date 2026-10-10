@@ -637,10 +637,14 @@ func spawnReqArgsCwd(t *testing.T, id int, procID, mode, cwd string) string {
 //	a 300-character name   ENAMETOOLONG   "stat <p>: file name too long"
 //	a NUL byte in the path EINVAL         "stat <p>: invalid argument"
 //
-// files.stat and files.read report these as -32603; files.validate keeps its own
+// files.stat reports these as -32603, and files.read with `open` in place of
+// `stat`; files.validate keeps its own
 // result shape and puts the stat text in the error field instead of "Path does
 // not exist". The genuine-ENOENT rows are pinned alongside, because the change
 // must NOT disturb them.
+//
+// files.read opens the path first, so its three texts start with "open".
+// 5fd08069 answers the same for the three triggers (Linux and macOS VMs).
 func TestSocketStatErrorPropagation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// "not a directory" / "file name too long" / "invalid argument" are the

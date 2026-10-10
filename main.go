@@ -156,7 +156,7 @@ func main() {
 
 		_ = flag.Duration("cli-probe-timeout", 0, "Deprecated and ignored. The direct <cli> --version run of -install always uses the bounds of the reference: 30s for a CLI that is present, 120s for a CLI that this run installed. Passing this flag, or setting the cli-probe-timeout key in claustrum.conf, logs one warning on -install and changes nothing.")
 
-		readRegularOnly = flag.Bool("files-read-regular-only", false, "Make files.read refuse anything that is not a regular file (FIFO, socket, character/block device) with -32602 \"files.read: not a regular file\". Off by default, which is what the reference does — it reads /dev/null happily and blocks on a writerless FIFO; on is an opt-in divergence. -serve only. Claude Desktop owns the argv, so the files-read-regular-only key in claustrum.conf is usually the reachable way to set this.")
+		_ = flag.Bool("files-read-regular-only", false, "Deprecated and ignored. files.read refuses a file that is not regular with -32602 \"files.read: not a regular file\", with or without this flag, as 5fd08069 does. On Linux and macOS the null device still reads. Passing this flag, or setting the files-read-regular-only key in claustrum.conf, logs one warning on -serve and changes nothing.")
 
 		gitTimeoutFlag = flag.Duration("git-timeout", 0, "Bound every git invocation with this wall-clock `duration` (e.g. 60s). 0 (the default) means no deadline, which is what the reference does; a non-zero value is an opt-in divergence that kills any git slower than it, honest or not, and is wire-visible (e.g. -32603 \"signal: killed\"). -serve only. Claude Desktop owns the argv, so the git-timeout key in claustrum.conf is usually the reachable way to set this.")
 
@@ -258,9 +258,9 @@ func main() {
 		// read the package var directly rather than taking it through the server
 		// struct, and only -serve reaches them.
 		gitTimeout = cfg.effectiveGitTimeout(*gitTimeoutFlag, cliSet["git-timeout"])
-		// Same reasoning for the files.read regular-file guard: filesRead reads the
-		// package var directly, and only -serve dispatches the method.
-		filesReadRegularOnly = cfg.effectiveFilesReadRegularOnly(*readRegularOnly, cliSet["files-read-regular-only"])
+		// -files-read-regular-only and its config key are deprecated no-ops. They
+		// set nothing: files.read has one rule, with or without them.
+		warnDeprecatedReadRegularOnly(cliSet["files-read-regular-only"], cfg.filesReadRegularOnlySeen)
 		runServe(resolveSocket(), *tokenFile, *tokenFd,
 			cfg.effectiveMetricsAddr(*metricsAddr, cliSet["metrics-addr"]),
 			wireLogOptions{
@@ -289,6 +289,15 @@ func main() {
 func warnDeprecatedLibcProbe(flagSet, keySeen bool) {
 	if flagSet || keySeen {
 		logWarnf("[Install] -libc-probe-timeout is deprecated and ignored. The ldd probe always uses its 5s bound")
+	}
+}
+
+// warnDeprecatedReadRegularOnly logs one warning when the deprecated
+// -files-read-regular-only flag or its claustrum.conf key is present. It sets
+// nothing: the rule of files.read is the rule of 5fd08069, so D4 is retired.
+func warnDeprecatedReadRegularOnly(flagSet, keySeen bool) {
+	if flagSet || keySeen {
+		logWarnf("[Server] -files-read-regular-only is deprecated and ignored. files.read refuses a file that is not regular with or without it")
 	}
 }
 

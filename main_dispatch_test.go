@@ -47,16 +47,10 @@ func runMain(t *testing.T, args ...string) (code int, exited bool) {
 	// test — and the tests that assert the shipped default is 0 would fail under
 	// -shuffle depending on the seed, exactly as the cli-probe-timeout leak did.
 	oldGitTimeout := gitTimeout
-	// filesReadRegularOnly joined for the same reason with D4's flip, and its leak
-	// would be the loudest of the set: TestFilesReadRegularOnlyDefaultIsOff and both
-	// socket goldens read the package var, so a -serve case leaking `true` turns
-	// three unrelated tests into seed-dependent failures under -shuffle.
-	oldRegularOnly := filesReadRegularOnly
 	t.Cleanup(func() {
 		cliDownloadTimeout = oldDownload
 		maxCLIBytes, maxExtractBytes = oldMaxCLI, oldMaxExtract
 		gitTimeout = oldGitTimeout
-		filesReadRegularOnly = oldRegularOnly
 	})
 	oldStdout := os.Stdout
 	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -134,8 +128,9 @@ func TestInstallArmWiresEachFlagToItsOwnGlobal(t *testing.T) {
 // at all when neither is present.
 func TestWarnDeprecatedProbeFlags(t *testing.T) {
 	for name, warn := range map[string]func(bool, bool){
-		"-libc-probe-timeout": warnDeprecatedLibcProbe,
-		"-cli-probe-timeout":  warnDeprecatedCLIProbe,
+		"-libc-probe-timeout":      warnDeprecatedLibcProbe,
+		"-cli-probe-timeout":       warnDeprecatedCLIProbe,
+		"-files-read-regular-only": warnDeprecatedReadRegularOnly,
 	} {
 		for _, tc := range []struct {
 			flagSet, keySeen bool
@@ -171,6 +166,32 @@ func TestInstallWarnsForTheDeprecatedCLIProbeConfigKey(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "-libc-probe-timeout is deprecated") {
 		t.Errorf("the cli-probe-timeout key logged the -libc-probe-timeout warning:\n%s", buf.String())
+	}
+}
+
+// The claustrum.conf key reaches the same warning as the flag. With
+// `files-read-regular-only = true` in the file and no flag, -serve logs the
+// warning once. A plain -serve logs none.
+func TestServeWarnsForTheDeprecatedReadRegularOnlyConfigKey(t *testing.T) {
+	for _, tc := range []struct {
+		name, conf string
+		want       int
+	}{{"key", "files-read-regular-only = true\n", 1}, {"no key", "git-timeout = 0s\n", 0}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(daemonChildEnv, "1")
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, configFileName), []byte(tc.conf), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			stubOsExecutable(t, filepath.Join(dir, "claustrum"), nil)
+			buf := captureLogBuf(t)
+			if _, exited := runMain(t, "-serve", "-socket", filepath.Join(t.TempDir(), "s.sock")); !exited {
+				t.Fatal("-serve with no token source should exit, not return")
+			}
+			if n := strings.Count(buf.String(), "-files-read-regular-only is deprecated and ignored"); n != tc.want {
+				t.Errorf("deprecation warnings = %d, want %d; log:\n%s", n, tc.want, buf.String())
+			}
+		})
 	}
 }
 
@@ -220,33 +241,29 @@ func TestRunMainRestoresInstallGlobals(t *testing.T) {
 }
 
 // The -serve half of the same contract, and it needs its own test rather than two
-// more rows above: the -install arm never writes gitTimeout or filesReadRegularOnly,
-// so seeding them there and asserting they survive passes even with runMain's
-// restore lines deleted. Only an inner run that actually WRITES them can detect a
-// missing restore. gitTimeout arrived with D5's flip and filesReadRegularOnly with
-// D4's; both were added to runMain's save/restore without an assertion, and this is
-// that assertion.
+// more rows above: the -install arm never writes gitTimeout, so seeding it there
+// and asserting it survives passes even with runMain's restore lines deleted. Only
+// an inner run that actually WRITES it can detect a missing restore.
 //
-// A leak here is not cosmetic: TestGitTimeoutDefaultIsOff and
-// TestFilesReadRegularOnlyDefaultIsOff both read the package vars, so a -serve case
-// leaking its values turns them into seed-dependent failures under -shuffle.
+// A leak here is not cosmetic: TestGitTimeoutDefaultIsOff reads the package var,
+// so a -serve case leaking its value turns it into a seed-dependent failure under
+// -shuffle.
 func TestRunMainRestoresServeGlobals(t *testing.T) {
 	t.Setenv(daemonChildEnv, "1")
-	// Capture on entry rather than restoring the literals 0/0/false: writing the
+	// Capture on entry rather than restoring the literals 0/0: writing the
 	// shipped defaults back by hand couples this cleanup to what those defaults
-	// happen to be, which is precisely the thing three other tests exist to pin.
-	oldGit, oldExtract, oldRegular := gitTimeout, maxExtractBytes, filesReadRegularOnly
-	gitTimeout, maxExtractBytes, filesReadRegularOnly = 5*time.Second, 33, true
+	// happen to be, which is precisely the thing other tests exist to pin.
+	oldGit, oldExtract := gitTimeout, maxExtractBytes
+	gitTimeout, maxExtractBytes = 5*time.Second, 33
 	t.Cleanup(func() {
-		gitTimeout, maxExtractBytes, filesReadRegularOnly = oldGit, oldExtract, oldRegular
+		gitTimeout, maxExtractBytes = oldGit, oldExtract
 	})
 	t.Run("inner", func(t *testing.T) {
 		// Distinct from the seeds above on purpose: equal values would pass whether
 		// or not the restore ran.
 		if _, exited := runMain(t, "-serve",
 			"-socket", filepath.Join(t.TempDir(), "s.sock"),
-			"-git-timeout", "44s", "-max-extract-bytes", "77",
-			"-files-read-regular-only=false"); !exited {
+			"-git-timeout", "44s", "-max-extract-bytes", "77"); !exited {
 			t.Fatal("-serve with no token source should exit, not return")
 		}
 	})
@@ -257,7 +274,6 @@ func TestRunMainRestoresServeGlobals(t *testing.T) {
 	}{
 		{"gitTimeout", gitTimeout, 5 * time.Second},
 		{"maxExtractBytes", maxExtractBytes, int64(33)},
-		{"filesReadRegularOnly", filesReadRegularOnly, true},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v after runMain, want %v restored", c.name, c.got, c.want)
@@ -341,6 +357,7 @@ func TestStopYieldsToBridgeAndServe(t *testing.T) {
 // Distinct values on purpose: equal ones would pass under a swap.
 func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 	t.Setenv(daemonChildEnv, "1")
+	buf := captureLogBuf(t)
 	if _, exited := runMain(t, "-serve",
 		"-socket", filepath.Join(t.TempDir(), "s.sock"),
 		"-git-timeout", "37s", "-max-extract-bytes", "4096",
@@ -351,10 +368,12 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 		t.Errorf("gitTimeout = %s, want 37s — -git-timeout must reach the runtime var", gitTimeout)
 	}
 	if maxExtractBytes != 4096 {
-		t.Errorf("maxExtractBytes = %d, want 4096 — the three -serve knobs must not be crossed", maxExtractBytes)
+		t.Errorf("maxExtractBytes = %d, want 4096 — the two -serve knobs must not be crossed", maxExtractBytes)
 	}
-	if !filesReadRegularOnly {
-		t.Error("filesReadRegularOnly = false, want true — -files-read-regular-only must reach the runtime var")
+	// -files-read-regular-only is a deprecated no-op (D4, retired). It logs its
+	// warning once.
+	if n := strings.Count(buf.String(), "-files-read-regular-only is deprecated and ignored"); n != 1 {
+		t.Errorf("-files-read-regular-only deprecation warnings = %d, want exactly 1; log:\n%s", n, buf.String())
 	}
 	// The DECLARED default, not the package var and not the resolver — the same
 	// assertion -cli-download-timeout carries. Moving a
@@ -369,15 +388,8 @@ func TestServeArmWiresGitTimeoutAndExtractCap(t *testing.T) {
 	if f.DefValue != "0s" {
 		t.Fatalf("-git-timeout declared default = %q, want \"0s\" (no deadline = reference parity)", f.DefValue)
 	}
-	// Same assertion for D4's flag, and it is the one most easily undone: flipping
-	// flag.Bool's default argument to true is a one-character edit that every
-	// explicit-assignment test in the suite survives.
-	f = lastMainFlagSet.Lookup("files-read-regular-only")
-	if f == nil {
-		t.Fatal("main() did not register -files-read-regular-only")
-	}
-	if f.DefValue != "false" {
-		t.Fatalf("-files-read-regular-only declared default = %q, want \"false\" (guard off = reference parity)", f.DefValue)
+	if lastMainFlagSet.Lookup("files-read-regular-only") == nil {
+		t.Fatal("main() did not register the deprecated -files-read-regular-only")
 	}
 }
 
