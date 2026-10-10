@@ -270,11 +270,16 @@ func destEntryHoldsHome(cleanedDest string, entry os.FileInfo) bool {
 // whose handle gives a permission error for the name. Its text is the text of an
 // open of the parent that fails, on Linux and macOS. On Windows this answer is
 // not used: no row is measured there, and the lstat error keeps the text of a
-// remove through the handle.
-type parentNotSearchableError struct{ dir string }
+// remove through the handle. The reason is the one that the lstat gave: the
+// measured rows have "permission denied", and errors.Is(fs.ErrPermission) is
+// also true for "operation not permitted".
+type parentNotSearchableError struct {
+	dir    string
+	reason error
+}
 
 func (e parentNotSearchableError) Error() string {
-	return "open " + e.dir + ": permission denied"
+	return "open " + e.dir + ": " + e.reason.Error()
 }
 
 // destViewFailure gives the failure of checkDestViews its prefix: step for the
@@ -312,14 +317,14 @@ var errDestViewsDiffer = errors.New("is not the entry that the path names")
 // has none or cannot read it.
 func checkDestViews(parent *os.Root, cleanedDest, destName string) (os.FileInfo, error) {
 	byHandle, handleErr := parent.Lstat(destName)
+	var handlePathErr *os.PathError
+	if errors.As(handleErr, &handlePathErr) {
+		handleErr = handlePathErr.Err
+	}
 	if runtime.GOOS != "windows" && errors.Is(handleErr, fs.ErrPermission) {
-		return nil, parentNotSearchableError{dir: parent.Name()}
+		return nil, parentNotSearchableError{dir: parent.Name(), reason: handleErr}
 	}
 	if handleErr != nil && !errors.Is(handleErr, fs.ErrNotExist) {
-		var pathErr *os.PathError
-		if errors.As(handleErr, &pathErr) {
-			handleErr = pathErr.Err
-		}
 		return nil, &os.PathError{Op: "RemoveAll", Path: destName, Err: handleErr}
 	}
 	if handleErr != nil {
