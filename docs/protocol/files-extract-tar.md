@@ -128,6 +128,6 @@ The reference pin is `89cb6289`. This method follows `5fd08069`. The examples in
 
 In the failures of the `destDir` steps claustrum keeps its own text. In one of them the disk differs too. The record lists them under [Texts that claustrum keeps](../record/files-extract-tar.md#texts-that-claustrum-keeps) and in the section before it.
 
-The test for a replaced `destDir` is claustrum's own. No measurement says what the reference does there.
+The test for a replaced `destDir` is claustrum's own, and it is part of [D2](../DIVERGENCES.md#d2). No measurement says what the reference does there.
 
 The refusal of a file system root is not in the catalog. claustrum refuses a root because step 2 deletes `destDir` with all its content. No measurement says what the reference does with a root, so the refusal is neither parity nor a divergence.
