@@ -50,26 +50,28 @@ Failure:
 {"success": false, "fileCount": 0, "error": "<text>"}
 ```
 
-Read `success`. A failure has no `errorCode` member, so the `error` text is the one description of the cause. On a failure, do not rely on `fileCount`. Some failures give `0`, and others give the number of files written before the failure.
+Read `success`. A failure has no `errorCode` member, so the `error` text is the one description of the cause. A failure answers `fileCount` `0`, also after the daemon wrote files, with two exceptions. The exceptions are a directory entry whose directory the daemon cannot create, and a marker file that it cannot write. The answer then holds the number of files written before. No measurement of the reference covers those two cases.
 
 | `error` starts with | Cause |
 |---|---|
 | `destDir must be an absolute, non-root path:` | `destDir` is relative, or it is a file system root. |
 | `destDir must not be or contain the home directory:` | `destDir` is the home directory, or a directory that holds it. |
 | `open archive:` | The daemon cannot open the archive. For example, it does not exist. |
-| `gzip:` | The gzip header is bad, or the daemon cannot read the next entry. Gzip data that is not a tar archive gives this text at the first entry. Gzip data with no content is an archive with no entries: the request succeeds with `fileCount` `0`, and `destDir` is then empty but for the marker. |
+| `gzip:` | The daemon cannot read a gzip header. |
+| `tar read:` | The daemon cannot read the next entry. Gzip data that is not a tar archive gives this text at the first entry. Gzip data with no content is an archive with no entries: the request succeeds with `fileCount` `0`, and `destDir` is then empty but for the marker. |
 | `clean destDir:` | The daemon cannot delete the old `destDir`. |
 | `mkdir destDir:` | The daemon cannot create `destDir`. |
 | `unsafe path in archive: <entry>` | The entry resolves to a place outside `destDir`. |
 | `unsupported tar entry type <c>: <entry>` | The entry is not a regular file or a directory. `<c>` is the type character of tar, for example `2` for a symbolic link and `1` for a hard link. |
 | `mkdir parent <entry>:` | The daemon cannot create the directory for a file. For example, an earlier entry wrote a file at that place. |
 | `create <entry>:` | The daemon cannot create the file. For example, a directory is at that place. |
+| `write <entry>:` | The daemon cannot copy the content of a file. For example, the archive is cut inside the file, or its compressed data is damaged. |
 | `extraction size limit exceeded` | Only with `-max-extract-bytes`: the files written are larger than the limit. |
 | `write .synced:` | The daemon cannot write the marker file. |
 
-The table is not complete. Two failures give a text with no prefix: the daemon cannot create the directory of a directory entry, or it cannot write the content of a file. The text is then that of the operating system or of the tar reader. For example, a cut archive can give `unexpected EOF`.
+The table is not complete. One failure gives a text with no prefix: the daemon cannot create the directory of a directory entry. The text is then that of the operating system.
 
-`<entry>` is the name of the entry as the archive has it, not the path on disk. `unsafe path in archive:` and `unsupported tar entry type` end with that name. The two `destDir must` texts end with the path in quotes. The text after `open archive:`, `gzip:`, `clean destDir:`, `mkdir destDir:`, `mkdir parent <entry>:`, `create <entry>:` and `write .synced:` comes from the operating system or from a library. The examples are those of Linux and macOS.
+`<entry>` is the name of the entry as the archive has it, not the path on disk. `unsafe path in archive:` and `unsupported tar entry type` end with that name. The two `destDir must` texts end with the path in quotes. The text after each other prefix comes from the operating system or from a library. The examples are those of Linux and macOS.
 
 The method has two JSON-RPC errors:
 
@@ -86,14 +88,12 @@ No failure restores the old content of `destDir`. The table says what stays of t
 |---|---|---|
 | A JSON-RPC error, or a refusal of `destDir` (`destDir must ...`) | Stays. | Not changed. |
 | `open archive:` | Not changed. | Not changed. |
-| A `gzip:` failure before the first entry | Deleted. | Not changed. |
+| `gzip:` | Deleted. | Not changed. |
 | `clean destDir:` | Deleted. | The old content can be partly deleted. |
 | `mkdir destDir:` | Deleted. | The old content is deleted. |
 | Each later failure | Deleted. | The old content is deleted. The entries written before the failure stay. A file that the daemon wrote in part can stay too. The daemon writes no marker. |
 
-`gzip:` has two rows. A `gzip:` failure at an entry, also at the first entry, is in the last row. The text alone does not say which row applies. The disk does.
-
-Do not read a `.synced` file as the result of the last request. After `open archive:` and after a `gzip:` failure before the first entry, an old marker stays with the old content. An archive can also hold a file entry with that name, and that file stays after a later failure.
+Do not read a `.synced` file as the result of the last request. After `open archive:` and after `gzip:`, an old marker stays with the old content. An archive can also hold a file entry with that name, and that file stays after a later failure.
 
 The daemon ignores a failure of the delete of the archive. So an archive that it cannot delete stays. If `archivePath` is an empty directory, the daemon on Linux deletes that directory and answers `gzip:`. The home test does not apply to `archivePath`. So if `archivePath` is the home directory and that directory is empty, the daemon deletes it.
 

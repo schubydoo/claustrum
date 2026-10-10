@@ -825,7 +825,9 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | files.extract_tar | `destDir must be an absolute, non-root path: …` | in `error` field |
 | files.extract_tar | `destDir must not be or contain the home directory: …` | D2, in `error` field |
 | files.extract_tar | `open archive: …` | in `error` field (the archive cannot be opened) |
-| files.extract_tar | `gzip: …` | in `error` field (a bad gzip header, or an entry that cannot be read) |
+| files.extract_tar | `gzip: …` | in `error` field (a bad gzip header) |
+| files.extract_tar | `tar read: …` | in `error` field (an entry that the tar reader cannot read) |
+| files.extract_tar | `write <entry>: …` | in `error` field (the content of a file cannot be copied) |
 | files.extract_tar | `unsafe path in archive: <entry>` | in `error` field (zip slip) |
 | files.extract_tar | `unsupported tar entry type <c>: <entry>` | in `error` field |
 | files.extract_tar | `extraction size limit exceeded` | D3 opt-in, in `error` field |

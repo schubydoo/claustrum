@@ -362,6 +362,25 @@ func TestFilesExtractTarSideEffects(t *testing.T) {
 // the wipe. These are the first rows of the "After a failure" table in
 // docs/protocol/files-extract-tar.md, and no frame shows them.
 func TestFilesExtractTarAfterFailure(t *testing.T) {
+	// tarOf gives the tar bytes of one file with no end blocks. keep cuts the
+	// padded body to that many bytes, and 0 keeps all of it.
+	tarOf := func(name, body string, keep int) string {
+		var buf bytes.Buffer
+		tw := tar.NewWriter(&buf)
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+		if err := tw.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		if keep == 0 {
+			return buf.String()
+		}
+		return buf.String()[:512+keep]
+	}
 	gzipOf := func(payload string) []byte {
 		var buf bytes.Buffer
 		gz := gzip.NewWriter(&buf)
@@ -382,7 +401,9 @@ func TestFilesExtractTarAfterFailure(t *testing.T) {
 	}{
 		{"no archive", nil, "open archive: ", false, true},
 		{"bad gzip header", []byte("plain text, not gzip"), "gzip: ", false, true},
-		{"gzip data that is not a tar", gzipOf("not a tar archive"), "gzip: ", false, false},
+		{"gzip data that is not a tar", gzipOf("not a tar archive"), "tar read: ", false, false},
+		{"a good file, then no tar header", gzipOf(tarOf("a", "aa", 0) + strings.Repeat("x", 1024)), "tar read: ", false, false},
+		{"a tar cut inside the second file", gzipOf(tarOf("a", "aa", 0) + tarOf("b", strings.Repeat("b", 600), 300)), "write b: ", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestServer(t)
@@ -406,6 +427,11 @@ func TestFilesExtractTarAfterFailure(t *testing.T) {
 			got := dispatchRaw(t, s, rpcLine(t, "files.extract_tar", map[string]any{"archivePath": archive, "destDir": dest}))
 			if !strings.Contains(got, `"success":false`) || !strings.Contains(got, `"error":"`+tc.wantSub) {
 				t.Fatalf("extract = %s, want success:false and an error that starts with %q", got, tc.wantSub)
+			}
+			// 89cb6289 answers fileCount 0 in each of these failures, also after it
+			// wrote a file.
+			if !strings.Contains(got, `"fileCount":0`) {
+				t.Errorf("extract = %s, want fileCount 0", got)
 			}
 			if _, err := os.Stat(archive); (err == nil) != tc.archiveStay {
 				t.Errorf("archive present = %v, want %v", err == nil, tc.archiveStay)
@@ -1255,7 +1281,7 @@ func TestExtractTarGzMissingArchive(t *testing.T) {
 }
 
 // extractTarGz: valid gzip wrapping non-tar content causes tr.Next() to return
-// a non-EOF error, which is wrapped with the "gzip: " prefix.
+// a non-EOF error, which gets the "tar read: " prefix of 89cb6289.
 func TestExtractTarGzCorruptTar(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "bad.tar.gz")
 	var buf bytes.Buffer
@@ -1268,8 +1294,8 @@ func TestExtractTarGzCorruptTar(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := extractTarGz(archive, t.TempDir())
-	if err == nil || !strings.HasPrefix(err.Error(), "gzip: ") {
-		t.Fatalf("extractTarGz corrupt tar = %v, want gzip-prefixed error", err)
+	if err == nil || !strings.HasPrefix(err.Error(), "tar read: ") {
+		t.Fatalf("extractTarGz corrupt tar = %v, want an error that starts with \"tar read: \"", err)
 	}
 }
 
