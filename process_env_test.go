@@ -141,3 +141,41 @@ func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 		t.Errorf("child saw %q, want %q — CLAUDE_RPC_TOKEN must not propagate to spawned children", got, "CLAUDE_RPC_TOKEN=")
 	}
 }
+
+// TestSpawnDoesNotInheritPeerCheck: after the start of the daemon, a spawned child
+// gets no CLAUDE_SSH_PEER_CHECK of the daemon, for the values 1 and 0, as on
+// 5fd08069 (Linux, macOS and Windows VMs). A marker variable of the daemon is the
+// control: it arrives. A caller env param of that name arrives too, as on 5fd08069
+// (Linux, macOS and Windows VMs). The child is the helper of this test binary, and its
+// lookupenv mode tells an absent variable from an empty one.
+func TestSpawnDoesNotInheritPeerCheck(t *testing.T) {
+	const marker = "CLAUSTRUM_TEST_PEER_MARK"
+	for _, value := range []string{"1", "0"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(peerCheckEnv, value)
+			t.Setenv(marker, "1")
+			captureLogBuf(t)
+			startPeerCheck()
+			m := newTestProcManager(t)
+			t.Cleanup(m.killAll)
+			cases := []struct{ id, name, param, want string }{
+				{"peer", peerCheckEnv, "", peerCheckEnv + " absent"},
+				{"mark", marker, "", marker + " set 1"},
+				{"param", peerCheckEnv, "x", peerCheckEnv + " set x"},
+			}
+			for _, tc := range cases {
+				c, frames := pipeConn(t)
+				exe, env := helperCommand(t, "lookupenv")
+				if tc.param != "" {
+					env[tc.name] = tc.param
+				}
+				if _, err := m.spawn(c, tc.id, exe, []string{tc.name}, "", env, false); err != nil {
+					t.Fatalf("spawn: %v", err)
+				}
+				if got := firstStdout(t, frames); got != tc.want {
+					t.Errorf("child %s saw %q, want %q", tc.id, got, tc.want)
+				}
+			}
+		})
+	}
+}

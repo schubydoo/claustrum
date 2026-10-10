@@ -60,9 +60,11 @@
         "git.worktree_remove.unpushedGuard",
         "process.spawn.shellAgentSocket",
         "launcher.managed",
+        "server.peer_check",
         "git.worktree.external_root",
         "server.instance_id"
-      ]
+      ],
+      "peerCheck": "off"
     }
   },
   {

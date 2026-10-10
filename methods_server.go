@@ -37,7 +37,10 @@ var capabilityMethods = []string{
 // Windows lists it too, although a Windows spawn refuses every launcher. 89cb6289
 // also inserted git.info.discovered_root after git.status.baseRepo. In that build
 // git.info runs no `rev-parse --show-toplevel` on Linux and macOS (row L01). Linux,
-// macOS and Windows VMs show the feature at that place. The array is always emitted.
+// macOS and Windows VMs show the feature at that place. 5fd08069 inserted
+// server.peer_check after launcher.managed (the peerCheck member of this result).
+// Linux, macOS and Windows VMs show it there. On those VMs 5fd08069 lists two more
+// features, which claustrum does not list. The array is always emitted.
 var capabilityFeatures = append(append([]string{
 	"process.stdin.offset",
 	"git.status.baseRepo",
@@ -47,6 +50,7 @@ var capabilityFeatures = append(append([]string{
 	"git.worktree_remove.unpushedGuard",
 	"process.spawn.shellAgentSocket",
 	"launcher.managed",
+	"server.peer_check",
 }, externalRootCapabilityFeatures...), "server.instance_id")
 
 func (s *server) handleServer(c *conn, req *request) *response {
@@ -60,6 +64,7 @@ func (s *server) handleServer(c *conn, req *request) *response {
 			InstanceID: s.instanceID,
 			StartedAt:  s.startedAt,
 			Features:   capabilityFeatures,
+			PeerCheck:  s.peerCheckAnswer(),
 		}))
 	case methodShutdown:
 		// The reply is {"ok":true}, but it reaches the client only when its write

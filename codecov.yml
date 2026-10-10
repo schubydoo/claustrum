@@ -130,6 +130,10 @@ component_management:
         # OS-split server.capabilities feature: external_root advertised on unix only.
         - capfeatures_other.go
         - capfeatures_windows.go
+        # The peerCheck member of server.capabilities, with its OS-split log line.
+        - peercheck.go
+        - peercheck_linux.go
+        - peercheck_other.go
         - methods_files.go
         - methods_git.go
         - methods_process.go

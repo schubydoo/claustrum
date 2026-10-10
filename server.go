@@ -105,6 +105,10 @@ type server struct {
 	// A no-op on Windows (which has no run-dir lock) and when the lock was not
 	// taken this boot. See daemon_runlock_unix.go.
 	releaseRunDir func()
+
+	// peerCheckAsked is true when the daemon started with CLAUDE_SSH_PEER_CHECK=1.
+	// It sets the peerCheck member of server.capabilities (see peercheck.go).
+	peerCheckAsked bool
 }
 
 // conn is one connected client. The write mutex serializes the interleaving of
@@ -547,6 +551,10 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 	listenPipe = honorListenPipe(listenPipe)
 
 	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for removeSocketIfOwned)
+	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
+	// listening line. The daemon also removes the variable from its own environment
+	// here, before it serves a request (see startPeerCheck).
+	peerAsked := startPeerCheck()
 	s := &server{
 		token:         token,
 		ln:            ln,
@@ -561,6 +569,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		releaseRunDir: claim.release,
 		instanceID:    instanceID,
 		startedAt:     startedAt,
+
+		peerCheckAsked: peerAsked,
 	}
 	// Optional Prometheus metrics endpoint (opt-in via -metrics-addr). A bind
 	// failure is non-fatal — the daemon's job is the socket, not the metrics.
