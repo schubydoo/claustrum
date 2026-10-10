@@ -22,5 +22,37 @@
       "code": -32602,
       "message": "files.read: not a regular file"
     }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "content": "",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "content": "",
+      "exists": true
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 6,
+    "error": {
+      "code": -32603,
+      "message": "open <DIR>/loop_a: too many levels of symbolic links"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 7,
+    "error": {
+      "code": -32603,
+      "message": "open <DIR>/regular.txt/: not a directory"
+    }
   }
 ]

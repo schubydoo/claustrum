@@ -137,49 +137,34 @@ func filesList(req *request) response {
 	return okResult(req.ID, listResult{Entries: out})
 }
 
-// filesReadRegularOnly makes filesRead refuse anything that is not a regular
-// file. It bounds two real hazards: a read of a FIFO with no writer blocks in
-// open — holding a request goroutine AND a descriptor, since linux reserves the
-// fd number before blocking — and os.ReadFile on /dev/zero or /dev/urandom never
-// reaches EOF, so the daemon grows until the kernel OOM-kills it.
-//
-// FALSE (the default) DISABLES IT, which is what the reference does. Measured: it
-// reads /dev/null and answers {"content":"","exists":true} where a guarded
-// claustrum answers -32602, and it replies normally the instant a FIFO's writer
-// opens rather than refusing the read. The guard shipped on by default in PR 56
-// and Claude Desktop owns the -serve argv, so a caller reading a character device
-// had no way through. It is now opt-in: divergence D4, set via
-// -files-read-regular-only or the files-read-regular-only key in claustrum.conf.
-// Also set directly by tests.
-//
-// ⚠️ The two hazards are the COST of turning it off, and they are the reference's
-// behavior, not a claustrum regression — the same trade the other five flips make.
-// Do not "improve" the off path by narrowing the predicate to permit only some
-// character devices: /dev/null would pass and so would /dev/zero and /dev/random,
-// which is the unbounded read. On or off, whole — that is why this is a flag and
-// not a smarter check.
-var filesReadRegularOnly bool
-
+// filesRead opens the path first and tests the kind of the open file after it.
+// 5fd08069 does the same (Linux, macOS and Windows VMs): a path that cannot be
+// opened keeps its `open <path>: ...` text, and a FIFO writer that waits in its
+// open returns at the request. A file that is not regular and not a directory
+// gets -32602 "files.read: not a regular file". On Linux and macOS the null
+// device itself reads as empty content (isNullDevice). The open does not wait
+// for a FIFO writer (readOpenFlag).
 func filesRead(req *request) response {
 	var p pathParams
 	if bad := bindParams(req, &p); bad != nil {
 		return *bad
 	}
-	fi, err, absent := statForRequest(p.Path)
+	f, err := os.OpenFile(p.Path, os.O_RDONLY|readOpenFlag, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return okResult(req.ID, readResult{})
+	}
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
-	if absent {
-		return okResult(req.ID, readResult{})
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return errResult(req.ID, codeInternal, err.Error())
 	}
 	if fi.IsDir() {
 		return errResult(req.ID, codeInvalidParam, "files.read: path is a directory")
 	}
-	// D4 FLIP: opted in only. Off (the default), the flag short-circuits the
-	// predicate — the mode check never runs — and the read proceeds exactly as
-	// the reference's does, including the blocking and unbounded cases
-	// documented on the var above.
-	if filesReadRegularOnly && !fi.Mode().IsRegular() {
+	if !fi.Mode().IsRegular() && !isNullDevice(fi) {
 		return errResult(req.ID, codeInvalidParam, "files.read: not a regular file")
 	}
 	// An absent, zero, or negative maxBytes is NOT "no limit" — the reference
@@ -194,7 +179,7 @@ func filesRead(req *request) response {
 	if fi.Size() > maxBytes {
 		return errResult(req.ID, codeInvalidParam, "files.read: file exceeds maxBytes")
 	}
-	b, err := os.ReadFile(p.Path)
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
