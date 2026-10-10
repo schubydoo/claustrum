@@ -1142,11 +1142,12 @@ Windows VMs saw it at that place.
   `server.peer_check` after `launcher.managed`, for the `peerCheck` member. The
   Linux, macOS and Windows VMs saw it at that place. On those VMs `5fd08069` also
   lists two features that claustrum does not list.
-- `peerCheck` is the last member, directly after `features`. It is in every
-  answer. claustrum answers one of two values: `"off"` or `"unavailable"`. The
-  daemon reads the variable
-  `CLAUDE_SSH_PEER_CHECK` of its own environment one time, at its start. The exact
-  value `1` asks for the peer check. claustrum has no peer check. With `1` it
+- In claustrum's answer `peerCheck` is the last member, directly after
+  `features`. It is in every answer. claustrum answers one of two values:
+  `"off"` or `"unavailable"`. The daemon reads the variable
+  `CLAUDE_SSH_PEER_CHECK` of its own environment one time, at its start. Then it
+  removes the variable from that environment. Only the exact value `1` changes
+  the member. claustrum has no peer check. With `1` it
   answers `"unavailable"` on Linux, macOS and Windows, and it serves every caller.
   With each other value, and with no variable, it answers `"off"`.
   On `5fd08069` each of these gave `"off"`:
@@ -1157,7 +1158,7 @@ Windows VMs saw it at that place.
 
   With `1`, `5fd08069` answers `"unavailable"` on the macOS VM and on the Windows
   VM. A `server.ping` after it got its answer (macOS VM). For this member,
-  `5fd08069` and claustrum differ in one cell: the value `1` on
+  `5fd08069` and claustrum differ in one of the listed values: `1` on
   Linux. On the Linux VM `5fd08069` answers
   `"peerCheck":"on","peerCheckBy":["network","pidfd"]`. claustrum answers
   `"peerCheck":"unavailable"` there, with no `peerCheckBy` member, and it serves
@@ -3560,17 +3561,25 @@ as id-less stream notifications, and it buffers them for a later replay.
   child without one keeps it. The strip covers the
   daemon env and the spawn `env` param. claustrum strips on Windows too. That is
   claustrum's choice (not measured).
-- Every spawned child loses the `CLAUDE_SSH_PEER_CHECK` of the daemon env, under
-  that exact name and with any value. On `5fd08069` a child had no such entry for
-  the daemon values `1` and `0`, and a marker variable of the daemon arrived
-  (Linux, macOS and Windows VMs). The start environment of the `5fd08069` daemon
-  process still held the variable (`/proc/<pid>/environ` on a Linux VM, `ps eww`
-  on a macOS VM). claustrum removes the variable from `process.spawn` children
-  only, and it does not unset it in the daemon. From the code: its git children
-  and the launcher runs of `-install` and `-probe-cli` still get the variable.
-  Those children of `5fd08069` are not measured. A spawn `env` param that names
-  the variable is not measured. claustrum hands that value to the child. On
-  Windows a daemon entry in another letter case is not measured.
+- No child of the daemon inherits `CLAUDE_SSH_PEER_CHECK`. The daemon removes
+  the variable from its own environment after the read at its start, with any
+  value. That covers a `process.spawn` child, a git call, a launcher run and the
+  login-shell read. Measured on `5fd08069`:
+    - A `process.spawn` child had no such entry for the daemon values `1` and
+      `0` (Linux, macOS and Windows VMs).
+    - The git calls of one `git.info` had none for the value `0` (Linux VM).
+    - A marker variable of the daemon arrived in each of those children.
+    - With the lower-case name `claude_ssh_peer_check=1` in the daemon
+      environment, the child had no entry of that name in any letter case
+      (Windows VM).
+    - The start environment of the daemon process still showed the variable
+      (`/proc/<pid>/environ` on a Linux VM, `ps eww` on a macOS VM).
+
+  The launcher runs and the login-shell read of `5fd08069` are not measured.
+  From the Go source: on Windows the removal is one `SetEnvironmentVariable`
+  call. No test ran the lower-case name against this removal on Windows. A spawn
+  `env` param that names the variable reaches the child, as on `5fd08069`
+  (Linux, macOS and Windows VMs).
 - `wantPid` is a claustrum-only opt-in, CT-1. With `"wantPid":true` the reply gains
   two fields after `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
   `pid` is the child's OS pid. `startTime` is the daemon's wall clock in epoch

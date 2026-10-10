@@ -552,7 +552,8 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 
 	sockFI, _ := os.Stat(socket) // identity of the inode we just bound (for removeSocketIfOwned)
 	// The one line of a start with CLAUDE_SSH_PEER_CHECK=1 comes here, before the
-	// listening line (see startPeerCheck).
+	// listening line. The daemon also removes the variable from its own environment
+	// here, before it serves a request (see startPeerCheck).
 	peerAsked := startPeerCheck()
 	s := &server{
 		token:         token,

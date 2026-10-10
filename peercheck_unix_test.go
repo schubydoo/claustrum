@@ -94,3 +94,43 @@ func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 		t.Errorf("the peer check line appears %d times, want 1. Log:\n%s", n, b)
 	}
 }
+
+// TestGitChildDoesNotInheritPeerCheck: after the start of the daemon, the git calls
+// of a served git.info get no CLAUDE_SSH_PEER_CHECK. On 5fd08069 no git call of one
+// git.info had it for the daemon value 0 (Linux VM). A marker variable of the
+// daemon is the control: it arrives in every call. The stand-in git is this test
+// binary behind a PATH link named git. It records its environment and fails.
+func TestGitChildDoesNotInheritPeerCheck(t *testing.T) {
+	const marker = "CLAUSTRUM_TEST_PEER_MARK"
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(exe, filepath.Join(bin, "git")); err != nil {
+		t.Fatalf("symlink git: %v", err)
+	}
+	envLog := filepath.Join(t.TempDir(), "env.log")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CLAUSTRUM_TEST_HELPER", "git-envlog")
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVLOG", envLog)
+	t.Setenv("CLAUSTRUM_GITSTUB_ENVNAMES", peerCheckEnv+" "+marker)
+	t.Setenv(marker, "1")
+	t.Setenv(peerCheckEnv, "0")
+
+	s := newTestServer(t)
+	s.peerCheckAsked = startPeerCheck()
+	dispatchRaw(t, s, rpcLine(t, "git.info", map[string]any{"path": t.TempDir()}))
+
+	b, err := os.ReadFile(envLog)
+	if err != nil {
+		t.Fatalf("the stand-in git recorded no call: %v", err)
+	}
+	want := peerCheckEnv + " absent;" + marker + " set 1;"
+	lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+	for i, line := range lines {
+		if line != want {
+			t.Errorf("git call %d of %d saw %q, want %q", i+1, len(lines), line, want)
+		}
+	}
+}

@@ -676,6 +676,20 @@ func runHelper(mode string, args []string) int {
 		fmt.Print(wd + "\n")
 	case "printenv": // print <name>=<value> for args[0] ("" when absent)
 		fmt.Print(args[0] + "=" + os.Getenv(args[0]) + "\n")
+	case "git-envlog":
+		// Stand-in `git` that records two variables of its environment and fails.
+		// Reached through a PATH symlink named `git`. Each call appends one line
+		// to the file that CLAUSTRUM_GITSTUB_ENVLOG names.
+		line := ""
+		for _, name := range strings.Fields(os.Getenv("CLAUSTRUM_GITSTUB_ENVNAMES")) {
+			if v, ok := os.LookupEnv(name); ok {
+				line += name + " set " + v + ";"
+			} else {
+				line += name + " absent;"
+			}
+		}
+		appendLine(os.Getenv("CLAUSTRUM_GITSTUB_ENVLOG"), line)
+		return 1
 	case "lookupenv": // print "<name> set <value>" or "<name> absent" for args[0]
 		if v, ok := os.LookupEnv(args[0]); ok {
 			fmt.Print(args[0] + " set " + v + "\n")
