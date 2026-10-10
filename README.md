@@ -177,7 +177,7 @@ measurements.
 
 `-libc-probe-timeout` is deprecated. It sets nothing and logs one warning. The `ldd` libc probe always has the reference's 5 s bound.
 
-`-files-read-regular-only` is deprecated. It sets nothing and logs one warning. `files.read` refuses a file that is not regular, as `5fd08069` does.
+`-files-read-regular-only` is deprecated. It sets nothing and logs one warning. `files.read` refuses a file that is not regular, as `5fd08069` does. The null device still reads on Linux and macOS.
 
 `-cli-probe-timeout` is deprecated too. It sets nothing and logs one warning. The direct `<cli> --version` run of `-install` always has the reference's bounds. They are 30 s for a present CLI and 120 s for a CLI that the same run installed. A managed launcher run has 33 s and 123 s.
 

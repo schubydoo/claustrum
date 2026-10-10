@@ -218,7 +218,10 @@ opt-in?
 
 D1, D7, D11 and D14 are retired. The reference changed on the path, or a later
 measurement corrected the premise, and claustrum now matches it. A difference on those paths is drift, not a divergence, unless
-an entry in the table above covers it (for example D6, D10, D13, D18). See
+an entry in the table above covers it (for example D6, D10, D13, D18).
+D4 is retired too. Its paths follow `5fd08069`, so a difference against
+`89cb6289` there is expected. The paragraph on `files-read-regular-only` below
+names the differences. See
 [DIVERGENCES.md → Retired entries](DIVERGENCES.md#retired-entries).
 
 Check both indexes. The shipped ledger ([docs/IMPROVEMENTS.md](IMPROVEMENTS.md))
@@ -267,7 +270,10 @@ its value. It is a bool, not a duration. Its flag forms parse like this:
 
 A `-32602 files.read: not a regular file` on a stock claustrum is not drift. It
 is the rule of `5fd08069`. Against `89cb6289` the same request differs: that
-build reads the path. The
+build reads the path, waits, or answers another error. An `open <path>: …` text
+of `files.read` is not drift either. `89cb6289` answers `stat <path>: …` there,
+and `CreateFile <path>: …` on Windows. The battery row for `files.read` of
+`~/a.txt/` shows it. The
 [measurement record](record/files-read.md) holds the rows.
 
 ### Triage gotchas — when a probe result is misleading

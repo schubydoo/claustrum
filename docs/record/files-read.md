@@ -1,6 +1,6 @@
 # files.read: measurement record
 
-This page is a record, not reading material. It holds the rules of `files.read` and the measurements behind them. A new measurement of the method goes into this page. The code comments name the reference build `5db5e4a` for the `maxBytes` measurements. The tests in `integration_fifo_unix_test.go` and `filesread_windows_test.go` pin some rows of the tables, and each file says which.
+This page is a record, not reading material. It holds the measurements behind the rules of `files.read`. A new measurement of the method goes into this page. The code comments name the reference build `5db5e4a` for the `maxBytes` measurements. The tests in `integration_fifo_unix_test.go` and `filesread_windows_test.go` pin some rows of the tables, and each file says which.
 
 To use the method, read [files.read](../protocol/files-read.md).
 
@@ -84,9 +84,10 @@ More facts of these rows:
 - After the refusal of a FIFO with no writer, a writer open without a wait
   failed with "no such device or address" (Linux VM). So `5fd08069` held the
   FIFO open no more.
-- In the row with a waiting writer, the write of that writer failed with
-  "broken pipe" in 7 of 8 runs on the macOS VM. In 1 run it wrote 2 bytes. The
-  reply was NRF in 8 of 8.
+- In the row with a waiting writer, the reply of `5fd08069` was NRF in each run.
+  On the macOS VM the write of that writer failed with "broken pipe" in 7 of 8
+  runs and wrote 2 bytes in 1. On the Linux VM it failed in 10 of 12 runs and
+  wrote 2 bytes in 2.
 - The null device rows and the second node row show that the test is the file
   itself. The device numbers of the two nodes are equal.
 
@@ -121,8 +122,7 @@ In rows 7a and 7b the pipe saw 1 client of `5fd08069` and 2 clients of
 
 ### claustrum
 
-claustrum opens the path once and tests the kind of the open file. Its tests
-pin these rows:
+The tests of claustrum pin these rows:
 
 - Linux and macOS: a FIFO with no writer, a FIFO with a waiting writer, a symlink
   to a FIFO, `/dev/null`, a symlink to `/dev/null`, a symlink loop and a regular
@@ -132,8 +132,10 @@ pin these rows:
 - Linux: a bound `AF_UNIX` socket.
 - Windows: `NUL` in the six spellings of the table, and a named pipe.
 
-The other rows of the tables are from the code of claustrum. No run of this
-build of claustrum on a VM covers them yet.
+A build of claustrum with this rule ran beside `5fd08069` on Linux, macOS and
+Windows VMs. Each `files.read` reply line was byte-equal, except the content of
+`/proc/self/status`. That content holds the pid and the memory numbers of the
+daemon.
 
 ### Not measured
 

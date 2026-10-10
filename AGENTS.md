@@ -407,7 +407,7 @@ Four divergences are opt-in flags:
 - D12 (`cli-download-timeout`)
 
 All four default OFF. That is the parity position.
-The reference applies no such cap, deadline, or refusal at any input that the
+The reference applies no such cap or deadline at any input that the
 probe can reach. A non-off default therefore fails an operation that the
 reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
 `claustrum.conf` key is the reachable knob, not the flag. Each disabled state
@@ -422,7 +422,8 @@ Opting D5 in is wire-visible.
 
 D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is
 always-on, but it is unresolved, not justified. D1, D4, D7, D11 and D14 are retired,
-because claustrum now matches the reference on those paths.
+because claustrum now matches the reference on those paths. For D4 that reference
+is `5fd08069`. The pin `89cb6289` still reads such a path.
 
 D17 is off-wire and macOS-only. The host cleaner reads an `lsof` run it gave
 up on as busy. A completed run that found nothing reads as not busy. The
