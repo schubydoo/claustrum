@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -216,7 +217,10 @@ type extractTarParams struct {
 }
 
 // wipeDestDir is the recursive delete extract_tar performs before unpacking,
-// behind a seam.
+// behind a seam. It removes ONE name inside the handle of the parent folder of
+// destDir: the last name of the cleaned destDir. The handle follows no link and
+// no junction, so a link at that name or below it goes as a link. The handle
+// refuses the names "." and "..", so the wipe cannot take the parent itself.
 //
 // The seam exists so that a test proving a destDir gate is actually WIRED INTO
 // filesExtractTar can send the very input the gate exists to refuse. For
@@ -229,28 +233,128 @@ type extractTarParams struct {
 // let it run.
 //
 // Production never reassigns it.
-var wipeDestDir = os.RemoveAll
+var wipeDestDir = func(parent *os.Root, name string) error { return parent.RemoveAll(name) }
 
-// openDestParent opens the handle of the parent folder of destDir, behind a
-// seam. A test swaps destDir for a link between the mkdir and the open of destDir
-// through this handle, to show that the swapped folder is refused. Production
-// never reassigns it.
-var openDestParent = os.OpenRoot
+// afterDestDirMkdir runs between the mkdir of destDir and its open, behind a
+// seam. A test swaps destDir for a link there, to show that the swapped folder is
+// refused. Production never reassigns it, and it does nothing.
+var afterDestDirMkdir = func() {}
+
+// lstatDestByPath reads the entry at the cleaned destDir as the system resolves
+// the path, behind a seam. A test makes this view differ from the view of the
+// parent handle. Production never reassigns it.
+var lstatDestByPath = os.Lstat
+
+// errDestDirHoldsHome is the home refusal of files.extract_tar. The text has the
+// destDir of the request as it was sent.
+func errDestDirHoldsHome(destDir string) error {
+	return fmt.Errorf("destDir must not be or contain the home directory: %q", destDir)
+}
+
+// destEntryHoldsHome is the home guard of the entry that the wipe acts on. entry
+// is the lstat answer for the last name of destDir in the handle of its parent
+// folder, or nil for no entry. A real folder there is compared with the home
+// folder and with each parent folder of home by identity (folderHoldsHome), so
+// the spelling of the path does not matter. On Linux and macOS that covers a
+// path through a link above the last name. On Windows it covers a path with
+// the `\\?\` prefix and the short 8.3 name of home, which the text compare of
+// wipesHomeDir lets pass (Windows VM, the test binary).
+//
+// A link or a junction at the name is not followed: the wipe removes the link
+// itself, and its target stays.
+func destEntryHoldsHome(cleanedDest string, entry os.FileInfo) bool {
+	return entry != nil && entry.IsDir() && folderHoldsHome(cleanedDest, entry)
+}
+
+// parentNotSearchableError is the answer of checkDestViews for a parent folder
+// whose handle gives a permission error for the name. Its text is the text of an
+// open of the parent that fails, on Linux and macOS. On Windows this answer is
+// not used: no row is measured there, and the lstat error keeps the text of a
+// remove through the handle. The reason is the one that the lstat gave: the
+// measured rows have "permission denied", and errors.Is(fs.ErrPermission) is
+// also true for "operation not permitted".
+type parentNotSearchableError struct {
+	dir    string
+	reason error
+}
+
+func (e parentNotSearchableError) Error() string {
+	return "open " + e.dir + ": " + e.reason.Error()
+}
+
+// destViewFailure gives the failure of checkDestViews its prefix: step for the
+// step that it guards, or "open parent" for a parent that cannot be searched.
+func destViewFailure(step string, err error) error {
+	if errors.As(err, &parentNotSearchableError{}) {
+		step = "open parent"
+	}
+	return fmt.Errorf("%s: %v", step, err)
+}
+
+// errDestViewsDiffer is the answer of checkDestViews for two views that do not
+// name one entry. The text is claustrum's own.
+var errDestViewsDiffer = errors.New("is not the entry that the path names")
+
+// checkDestViews tests that the cleaned path of destDir and the name in the
+// handle of its parent folder name one entry. They agree if neither view has an
+// entry, or if both have the same one. An lstat sees a link or a junction
+// itself, in both views. A path view that cannot be read counts as no agreement.
+//
+// A name that the handle cannot read gets the text of a remove of that name
+// through the handle, and no remove runs. On a Windows VM 5fd08069 answers
+// "clean destDir: RemoveAll NUL: path escapes from parent" for the last name
+// NUL, and "RemoveAll dest?: The filename, directory name, or volume label
+// syntax is incorrect." for dest?. For a last name of dots and spaces alone,
+// such as "...", it answers "RemoveAll ...: invalid argument". Nothing changes
+// on disk there.
+//
+// A parent folder that the daemon opened and cannot search gives a permission
+// error at that lstat. The answer is then the text of a parent that cannot be
+// opened. 5fd08069 answers "open parent: open <parent>: permission denied" for
+// a parent of mode 0400 or 0600, and changes nothing (Linux and macOS VMs).
+//
+// The first result is the entry at the name in the handle, or nil if the handle
+// has none or cannot read it.
+func checkDestViews(parent *os.Root, cleanedDest, destName string) (os.FileInfo, error) {
+	byHandle, handleErr := parent.Lstat(destName)
+	var handlePathErr *os.PathError
+	if errors.As(handleErr, &handlePathErr) {
+		handleErr = handlePathErr.Err
+	}
+	if runtime.GOOS != "windows" && errors.Is(handleErr, fs.ErrPermission) {
+		return nil, parentNotSearchableError{dir: parent.Name(), reason: handleErr}
+	}
+	if handleErr != nil && !errors.Is(handleErr, fs.ErrNotExist) {
+		return nil, &os.PathError{Op: "RemoveAll", Path: destName, Err: handleErr}
+	}
+	if handleErr != nil {
+		byHandle = nil
+	}
+	byPath, pathErr := lstatDestByPath(cleanedDest)
+	switch {
+	case pathErr != nil && !errors.Is(pathErr, fs.ErrNotExist):
+	case (pathErr == nil) != (handleErr == nil):
+	case pathErr == nil && !os.SameFile(byPath, byHandle):
+	default:
+		return byHandle, nil
+	}
+	return byHandle, fmt.Errorf("%q %w", destName, errDestViewsDiffer)
+}
 
 // isFilesystemRoot reports whether p names a filesystem root, on any platform.
 //
 // The gate this backs matters because filesExtractTar WIPES destDir before
-// extracting (os.RemoveAll), so a root destDir would recursively delete the
-// volume.
+// extracting. The wipe removes the last name of destDir as a tree, through a
+// handle of the parent folder. A root has no parent and no last name.
 //
 // Whether the reference refuses a root destDir is NOT measured — an earlier
 // version of this comment asserted "the reference has no such guard", which is
 // an absence claim with no probe behind it, and
 // docs/protocol/files-extract-tar.md files the refusal as neither parity nor
 // divergence. What is certain is the consequence
-// here: this guard is the only thing between a root destDir and a recursive
-// delete, so it must not have a platform-shaped hole whatever the reference
-// does.
+// here: the steps after this guard take a parent folder and a last name from
+// destDir, so the guard must not have a platform-shaped hole whatever the
+// reference does.
 //
 // It used to compare `filepath.Clean(destDir) == "/"`. That is a Unix-only
 // notion of root: a Windows volume root cleans to `C:\`, never the string "/",
@@ -285,7 +389,7 @@ func filesExtractTar(req *request) response {
 	// open, so the archive is not consumed either. See homeguard.go for why
 	// containment is the test and why ~/... stays allowed.
 	if wipesHomeDir(p.DestDir) {
-		return okResult(req.ID, extractResult{Error: fmt.Sprintf("destDir must not be or contain the home directory: %q", p.DestDir)})
+		return okResult(req.ID, extractResult{Error: errDestDirHoldsHome(p.DestDir).Error()})
 	}
 	count, err := extractTarGz(p.ArchivePath, p.DestDir)
 	if err != nil {
@@ -361,17 +465,88 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		return 0, gzipErr{err}
 	}
 	defer gz.Close()
-	// The reference daemon makes extraction idempotent: it wipes destDir and
-	// recreates it before unpacking. Both steps run only AFTER the gzip header
-	// validates above, so a corrupt archive leaves an existing destDir intact
-	// (probe-verified). destDir is created owner-only (0700), matching the
-	// reference.
-	if err := wipeDestDir(destDir); err != nil {
+	// The preparation of destDir answers as 5fd08069 does in each measured row.
+	// The order of its failure texts rests on Linux and macOS VM rows. The
+	// steps below are claustrum's. Each step runs
+	// only AFTER the gzip header validates above, so a missing archive or a file
+	// that is not gzip leaves an old destDir as it is (89cb6289 and 5fd08069,
+	// Linux, macOS and Windows VMs). filesExtractTar ran the root test and
+	// wipesHomeDir on destDir before this function, so no step runs for a
+	// destDir that they refuse.
+	//
+	//  1. The missing folders above destDir are made, each with mode 0700 less
+	//     the umask. A failure answers "mkdir parent: mkdir <path>: <reason>",
+	//     with the whole path of the folder that fails, and nothing changes on
+	//     disk (89cb6289 and 5fd08069, Linux and macOS VMs). The older text "mkdir parent
+	//     <entry>: " in the entry loop has the name of an archive entry.
+	//  2. The parent folder of destDir is opened as a handle. A failure answers
+	//     "open parent: open <parent>: <reason>", and destDir stays as it is
+	//     (parent modes 0300, 0100 and 0000, Linux and macOS VMs).
+	//  3. The wipe removes the last name of destDir through that handle, as a
+	//     tree. A failure answers "clean destDir: RemoveAll <name>: <reason>"
+	//     (Linux, macOS and Windows VMs). The entries that can go are gone then.
+	//  4. A new folder with that name is made through the handle, with mode 0700.
+	//     A failure answers "mkdir destDir: mkdirat <name>: <reason>" (parent
+	//     mode 0500, Linux and macOS VMs).
+	//  5. destDir is opened through the handle and tested (below).
+	//
+	// filesExtractTar refused a file system root, so the cleaned destDir has a
+	// parent and a last name. filepath.Clean leaves no "." and no ".." as the
+	// last name of an absolute path, and the handle refuses both names.
+	//
+	// Each step below takes this one cleaned form of destDir: the parent path,
+	// the last name, the lstat of the identity test and the texts. No call that
+	// resolves a path gets the raw path of the request.
+	cleanedDest := filepath.Clean(destDir)
+	parentDir, destName := filepath.Dir(cleanedDest), filepath.Base(cleanedDest)
+	if err := os.MkdirAll(parentDir, 0o700); err != nil {
+		return 0, fmt.Errorf("mkdir parent: %v", err)
+	}
+	parentRoot, err := os.OpenRoot(parentDir)
+	if err != nil {
+		return 0, fmt.Errorf("open parent: %v", err)
+	}
+	defer parentRoot.Close()
+	// The wipe may remove only the entry that the cleaned path of the request
+	// names by itself. The handle and the system can read one name in two ways.
+	// On Windows the handle drops a dot or a space after a name, and a path with
+	// the `\\?\` prefix keeps it. The name in the handle is then a sibling that
+	// the path does not name, and wipesHomeDir judged the path. So the two views
+	// are compared before the wipe. If they differ, nothing is deleted, and no
+	// destDir is made. The folders above destDir from the first step stay. This
+	// test and its text are claustrum's own. Both reference builds extract
+	// there (Windows VM).
+	//
+	// The entry at the name gets the home guard by identity first. A folder that
+	// is the home folder, or a parent folder of it, gets the home refusal of
+	// this method. The archive is gone then, because it was opened.
+	entry, viewErr := checkDestViews(parentRoot, cleanedDest, destName)
+	if destEntryHoldsHome(cleanedDest, entry) {
+		return 0, errDestDirHoldsHome(destDir)
+	}
+	if viewErr != nil {
+		return 0, destViewFailure("clean destDir", viewErr)
+	}
+	if err := wipeDestDir(parentRoot, destName); err != nil {
 		return 0, fmt.Errorf("clean destDir: %v", err)
 	}
-	if err := os.MkdirAll(destDir, 0o700); err != nil {
+	if err := parentRoot.Mkdir(destName, 0o700); err != nil {
 		return 0, fmt.Errorf("mkdir destDir: %v", err)
 	}
+	// The same test for the new folder. With no entry in either view before the
+	// wipe, the mkdir through the handle can still make a folder that the path
+	// does not name. If the two views differ there, the entry at that name goes
+	// with a plain remove through the handle, never as a tree. The home guard by
+	// identity comes before that remove, and no remove runs after it.
+	entry, viewErr = checkDestViews(parentRoot, cleanedDest, destName)
+	if destEntryHoldsHome(cleanedDest, entry) {
+		return 0, errDestDirHoldsHome(destDir)
+	}
+	if viewErr != nil {
+		_ = parentRoot.Remove(destName)
+		return 0, destViewFailure("mkdir destDir", viewErr)
+	}
+	afterDestDirMkdir()
 	// claustrum creates the parent folders and the files of the archive through
 	// a handle of destDir. Its texts for the two entry collisions below are then
 	// those of 5fd08069, with a name relative to destDir in place of the whole
@@ -384,34 +559,18 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	//
 	//	open destDir: "dest" could not be examined (statat .: permission denied)
 	//
-	// The handle of destDir is opened through a handle of its parent folder, by
-	// the last name of destDir. The two failure texts are then those of 5fd08069.
 	// With a daemon umask of 0400 the new destDir has mode 0300, and 5fd08069
 	// answers (Linux and macOS VMs):
 	//
 	//	open destDir: openat dest: permission denied
-	//
-	// If the two folders above destDir are new too, the parent has mode 0300, and
-	// 5fd08069 answers there (Linux and macOS VMs):
-	//
-	//	open parent: open <parent>: permission denied
-	//
-	// filesExtractTar refused a file system root, so the cleaned destDir has a
-	// parent and a last name.
-	cleanedDest := filepath.Clean(destDir)
-	parentRoot, err := openDestParent(filepath.Dir(cleanedDest))
-	if err != nil {
-		return 0, fmt.Errorf("open parent: %v", err)
-	}
-	destRoot, err := parentRoot.OpenRoot(filepath.Base(cleanedDest))
-	parentRoot.Close()
+	destRoot, err := parentRoot.OpenRoot(destName)
 	if err != nil {
 		return 0, fmt.Errorf("open destDir: %v", err)
 	}
 	defer destRoot.Close()
 	opened, err := destRoot.Stat(".")
 	if err != nil {
-		return 0, fmt.Errorf("open destDir: %q could not be examined (%v)", filepath.Base(cleanedDest), err)
+		return 0, fmt.Errorf("open destDir: %q could not be examined (%v)", destName, err)
 	}
 	// The parent is opened by path, and wipesHomeDir judged destDir as text.
 	// Another process can put a link or a junction at destDir between the wipe
@@ -426,7 +585,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	// The lstat takes the cleaned path. With a separator after the last name,
 	// an lstat follows a link at that name and the test passes behind it.
 	if judged, err := os.Lstat(cleanedDest); err != nil || !judged.IsDir() || !os.SameFile(judged, opened) {
-		return 0, fmt.Errorf("open destDir: %q changed while it was opened", filepath.Base(cleanedDest))
+		return 0, fmt.Errorf("open destDir: %q changed while it was opened", destName)
 	}
 	tr := tar.NewReader(gz)
 	count := 0
@@ -435,7 +594,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	// Zip-slip guard operands, hoisted: both are loop-invariant, and computing
 	// them per entry invited the reading that they depend on hdr.Name.
 	//
-	// destPrefix appends the separator UNLESS cleanDest already ends in one,
+	// destPrefix appends the separator UNLESS cleanedDest already ends in one,
 	// which happens only for a root destDir ("/", or a Windows volume root).
 	// Concatenating unconditionally yields "//" there, and no target has that
 	// prefix, so every entry would be rejected — a differential against the old
@@ -447,8 +606,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 	// runs, so a relative destDir never gets here. Named because it is the one
 	// input on which the two forms genuinely disagree — if that gate is ever
 	// relaxed, this guard has to be revisited with it.
-	cleanDest := filepath.Clean(destDir)
-	destPrefix := cleanDest
+	destPrefix := cleanedDest
 	if !strings.HasSuffix(destPrefix, string(os.PathSeparator)) {
 		destPrefix += string(os.PathSeparator)
 	}
@@ -473,7 +631,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		// The reference rejects an escaping archive with this exact error and
 		// fileCount 0 — even when earlier safe entries were already written.
 		//
-		// THE TRAILING SEPARATOR IS THE WHOLE GUARD. Comparing against cleanDest
+		// THE TRAILING SEPARATOR IS THE WHOLE GUARD. Comparing against cleanedDest
 		// alone would admit a sibling whose name merely starts with destDir's —
 		// "../sub-sibling.txt" out of a "…/sub" destDir — which is the classic
 		// way this check is written wrong. TestFilesExtractTarZipSlipShapes has a
@@ -487,9 +645,9 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		// change. This form is the one its query models. Behaviour is unchanged,
 		// which the shapes table is there to prove rather than assert.
 		//
-		// cleanDest/destPrefix are computed once above the loop.
-		target := filepath.Join(cleanDest, hdr.Name)
-		if target != cleanDest && !strings.HasPrefix(target, destPrefix) {
+		// cleanedDest/destPrefix are computed once above the loop.
+		target := filepath.Join(cleanedDest, hdr.Name)
+		if target != cleanedDest && !strings.HasPrefix(target, destPrefix) {
 			return 0, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
 		// A name that leaves destDir and comes back is unsafe too, although it
@@ -519,7 +677,7 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 		// inDest is the place of the entry below destDir. The zip-slip test above
 		// passed, so inDest is a clean relative path with no ".." part.
 		inDest := "."
-		if target != cleanDest {
+		if target != cleanedDest {
 			inDest = strings.TrimPrefix(target, destPrefix)
 		}
 		switch hdr.Typeflag {

@@ -21,8 +21,8 @@ import (
 // each entry that they remove (cliEntryHoldsHome). The RPC
 // paths are `~`-expanded first — bindParams
 // calls expandPaths on EVERY request (rpc.go), and expandPath returns the home
-// directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` reaches
-// os.RemoveAll($HOME).
+// directory verbatim for a bare "~" (expandpath.go). So `"destDir":"~"` names
+// the home folder as the target of the recursive delete.
 //
 // That is not hypothetical. On 2026-08-02 an in-repo fuzzer sent "~" as destDir
 // against a live daemon and destroyed the maintainer's home directory.
@@ -36,8 +36,8 @@ import (
 //
 // The question that matters is not "is this path special?" but "does deleting
 // this path delete something the caller cannot have meant?", and containment
-// answers it directly: RemoveAll(p) destroys everything under p, so if home is
-// at or under p, home dies.
+// answers it directly: a recursive delete of p destroys everything under p, so
+// if home is at or under p, home dies.
 //
 // DESCENDANTS OF HOME STAY ALLOWED, and that is load-bearing rather than a
 // concession: extracting into ~/.claude/... is the daemon's primary real use.
@@ -50,14 +50,19 @@ import (
 // here is to stop an accidental, generated, or fat-fingered path — which is the
 // shape the incident actually had — so lexical containment is the right depth.
 //
-// ACKNOWLEDGED LIMITATIONS — this list is meant to be exhaustive, so that a
-// reader can trust it. There are three:
+// ACKNOWLEDGED LIMITATIONS. The list is not complete. The compare is on text,
+// so each other spelling that the system resolves to the home folder passes it
+// too. On Windows a path with the `\\?\` prefix and the short 8.3 name of home
+// pass it (Windows VM, the test binary). Two callers add a compare by identity for the folder that they delete:
+// -install (folderHoldsHome) and the wipe of files.extract_tar
+// (destEntryHoldsHome, for the folder at the last name of destDir). The other
+// callers have the text compare alone.
 //
 //  1. Symlinks are not resolved. A path that reaches home through a symlink is
 //     accepted. Closing it would mean an EvalSymlinks on every request, whose
 //     failure modes (a non-existent destDir is legal here) cost more.
 //  2. A path is resolved against the daemon's working directory, not the
-//     caller's. That is the root os.RemoveAll uses, but a client cannot predict
+//     caller's. A client cannot predict
 //     the verdict on a relative path without knowing where the daemon started.
 //  3. Home is what os.UserHomeDir gives: HOME, or USERPROFILE on Windows. With
 //     that variable unset or empty the guard refuses nothing.
@@ -82,7 +87,10 @@ func wipesHomeDir(p string) bool {
 	//
 	// filepath.Abs resolves against os.Getwd(), which is exactly the root
 	// os.RemoveAll will use, so the guard judges the path the delete actually
-	// hits. It is a no-op for files.extract_tar, where IsAbs has already run.
+	// hits. files.extract_tar sends an absolute path here. On Windows
+	// filepath.Abs still resolves such a path: a dot or a space after a name
+	// goes, so home with a dot after it is refused here (Windows VM, the test
+	// binary). A path with the `\\?\` prefix stays as it is.
 	// If Getwd fails the path stays relative and the guard fails open, matching
 	// the unresolvable-home branch above.
 	if abs, err := filepath.Abs(p); err == nil {
