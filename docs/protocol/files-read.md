@@ -62,10 +62,11 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 |---|---|---|
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member of it has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | `open <path>: <reason>`, for example `open <path>: permission denied` | The daemon cannot open the path, and the reason is not a missing file. See [Stat failures](../PROTOCOL.md#stat-failures-other-than-does-not-exist). |
+| `-32603` | The text of the operating system | The daemon cannot get the kind of the open file. The [measurement record](../record/files-read.md) has two such paths on Windows. |
 | `-32602` | `files.read: path is a directory` | The path is a directory. |
 | `-32602` | `files.read: not a regular file` | The path is not a regular file, not a directory and, on Linux and macOS, not the null device. |
 | `-32602` | `files.read: file exceeds maxBytes` | The file is larger than the limit. |
-| `-32603` | The text of the operating system, for example `read <path>: input/output error` | The daemon cannot read the open file, or it cannot get the kind of the open file. The [measurement record](../record/files-read.md) has two such paths on Windows. |
+| `-32603` | The text of the operating system, for example `read <path>: input/output error` | The daemon cannot read the open file. |
 
 The daemon makes the tests in the order of the table. A text with `<path>` holds `path` after the `~` expansion. The texts with `<path>` are those of Linux and macOS. On Windows the operating system gives other texts.
 

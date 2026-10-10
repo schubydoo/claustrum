@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -180,11 +181,13 @@ func filesRead(req *request) response {
 	if fi.Size() > maxBytes {
 		return errResult(req.ID, codeInvalidParam, "files.read: file exceeds maxBytes")
 	}
-	b, err := io.ReadAll(f)
-	if err != nil {
+	// The buffer starts at the size of the stat. The read still goes to the end
+	// of the file, because a file under /proc reports the size 0.
+	buf := bytes.NewBuffer(make([]byte, 0, fi.Size()+1))
+	if _, err := buf.ReadFrom(f); err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	}
-	return okResult(req.ID, readResult{Content: string(b), Exists: true})
+	return okResult(req.ID, readResult{Content: buf.String(), Exists: true})
 }
 
 func filesValidate(req *request) response {

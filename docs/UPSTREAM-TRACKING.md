@@ -285,6 +285,11 @@ another text:
   directory` for a directory and `files.read: file exceeds maxBytes` for a file
   over the limit.
 
+An `open <path>: resource temporarily unavailable` of `files.read` on a regular
+file that another process holds under a lease is not drift either. From the
+code, it comes from the `O_NONBLOCK` open of claustrum. No VM row has that
+case.
+
 The [measurement record](record/files-read.md) holds the rows.
 
 ### Triage gotchas — when a probe result is misleading
