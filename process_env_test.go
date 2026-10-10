@@ -146,7 +146,7 @@ func TestSpawnDoesNotInheritRPCToken(t *testing.T) {
 // gets no CLAUDE_SSH_PEER_CHECK of the daemon, for the values 1 and 0, as on
 // 5fd08069 (Linux, macOS and Windows VMs). A marker variable of the daemon is the
 // control: it arrives. A caller env param of that name arrives too, as on 5fd08069
-// (Linux and macOS VMs). The child is the helper of this test binary, and its
+// (Linux, macOS and Windows VMs). The child is the helper of this test binary, and its
 // lookupenv mode tells an absent variable from an empty one.
 func TestSpawnDoesNotInheritPeerCheck(t *testing.T) {
 	const marker = "CLAUSTRUM_TEST_PEER_MARK"

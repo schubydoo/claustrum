@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"strings"
@@ -109,5 +110,23 @@ func TestPeerCheckStartServesEveryCaller(t *testing.T) {
 	}
 	if pong := string(cl.call(authed(`{"jsonrpc":"2.0","id":2,"method":"server.ping"}`))); pong != `{"jsonrpc":"2.0","id":2,"result":{"pong":true}}` {
 		t.Errorf("server.ping = %s, want the pong frame", pong)
+	}
+}
+
+// TestPeerCheckFailedRemovalLogsOneLine: a removal that fails does not stop the
+// start. The daemon logs one WARN line that names the variable, and the answer
+// stays the one of the value that it read.
+func TestPeerCheckFailedRemovalLogsOneLine(t *testing.T) {
+	t.Setenv(peerCheckEnv, "0")
+	old := unsetenv
+	t.Cleanup(func() { unsetenv = old })
+	unsetenv = func(string) error { return errors.New("no removal") }
+	logs := captureLogBuf(t)
+	if startPeerCheck() {
+		t.Error("startPeerCheck() = true for the value 0")
+	}
+	want := "WARN  [Server] cannot remove CLAUDE_SSH_PEER_CHECK from the daemon environment (no removal): child processes inherit it"
+	if n := strings.Count(logs.String(), want); n != 1 {
+		t.Errorf("log holds the line %d times, want 1:\n%s", n, logs.String())
 	}
 }

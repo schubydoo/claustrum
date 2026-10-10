@@ -3577,7 +3577,8 @@ as id-less stream notifications, and it buffers them for a later replay.
 
   The launcher runs and the login-shell read of `5fd08069` are not measured.
   A build of claustrum with this removal gave the same child rows on those VMs,
-  the lower-case row on the Windows VM included. A spawn
+  the lower-case row on the Windows VM included. A removal that fails gets one
+  WARN line of claustrum's own, and the children then inherit the variable. A spawn
   `env` param that names the variable reaches the child, as on `5fd08069`
   (Linux, macOS and Windows VMs).
 - `wantPid` is a claustrum-only opt-in, CT-1. With `"wantPid":true` the reply gains

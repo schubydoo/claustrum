@@ -25,6 +25,9 @@ func peerCheckAsked() bool {
 	return os.Getenv(peerCheckEnv) == "1"
 }
 
+// unsetenv is os.Unsetenv. A test replaces it to see the line of a failed removal.
+var unsetenv = os.Unsetenv
+
 // startPeerCheck reads the variable once, at the start of the daemon, and then
 // removes it from the daemon's own environment, with any value. So no child of
 // the daemon inherits it: no process.spawn child, no git call, no launcher run and
@@ -37,7 +40,10 @@ func peerCheckAsked() bool {
 // start environment of that daemon process still showed the variable (Linux and
 // macOS VMs). The launcher runs and the login-shell read of 5fd08069 are not
 // measured. A spawn env param that names the variable reaches the child, as on
-// 5fd08069 (Linux and macOS VMs).
+// 5fd08069 (Linux, macOS and Windows VMs).
+//
+// A removal that fails gets one WARN line, claustrum's own. The children of the
+// daemon then inherit the variable.
 //
 // The launcher never calls this, so it hands the variable to the daemonized child.
 //
@@ -47,7 +53,9 @@ func peerCheckAsked() bool {
 // among the lines of a reap or of a failed token write was not measured.
 func startPeerCheck() bool {
 	asked := peerCheckAsked()
-	_ = os.Unsetenv(peerCheckEnv)
+	if err := unsetenv(peerCheckEnv); err != nil {
+		logWarnf("[Server] cannot remove %s from the daemon environment (%v): child processes inherit it", peerCheckEnv, err)
+	}
 	if !asked {
 		return false
 	}
