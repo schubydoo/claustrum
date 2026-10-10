@@ -1473,11 +1473,14 @@ func buildEnv(env map[string]string) []string {
 	// armed (a test server).
 	awaitLoginPATH()
 	base := removeEnvKey(os.Environ(), "CLAUDE_RPC_TOKEN")
-	// The child gets no CLAUDE_SSH_PEER_CHECK of the daemon, with any value. On
-	// 5fd08069 a child had no such entry for the daemon values 1 and 0, and a marker
-	// variable of the daemon arrived (Linux, macOS and Windows VMs). The daemon's own
-	// environment keeps the variable. A spawn env param that names the variable is
-	// not measured: it passes, as a CLAUDE_RPC_TOKEN of the param does.
+	// The child gets no CLAUDE_SSH_PEER_CHECK of the daemon, under that exact name
+	// and with any value. On 5fd08069 a child had no such entry for the daemon
+	// values 1 and 0, and a marker variable of the daemon arrived (Linux, macOS and
+	// Windows VMs). Its start environment still held the variable (Linux and macOS
+	// VMs). claustrum does not unset the variable, so its git children still get
+	// it. Those children of 5fd08069 are not measured. A spawn env param that names
+	// the variable is not measured: it passes, as a CLAUDE_RPC_TOKEN of the param
+	// does. On Windows a daemon entry in another letter case is not measured.
 	base = removeEnvKey(base, peerCheckEnv)
 	// The login-shell PATH is applied HERE, to the child's environment, rather
 	// than being installed into the daemon's own — see loginPATH in shellenv.go.

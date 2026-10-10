@@ -468,6 +468,12 @@ each). In cell B6b that folder holds the registration of a live sibling worktree
 The placement of the index has the same test (not measured). The guard stays by
 the maintainer's decision of 2026-10-07, not by a rule 3 clause. See the entry.
 
+D25 is on-wire, Linux only, and only with `CLAUDE_SSH_PEER_CHECK=1` in the daemon
+environment. claustrum has no peer check. It answers `"peerCheck":"unavailable"`
+in `server.capabilities` and serves every caller. `5fd08069` answers
+`"peerCheck":"on"` with a `peerCheckBy` member there (Linux VM). That is the
+maintainer's decision of 2026-10-10, not a rule 3 clause. See the entry.
+
 The flag/key table, the governing rules (rule 1–4 + clauses (a)/(b)/(c)), each
 divergence's default / activation / cost / reopen trigger →
 [`docs/DIVERGENCES.md`](docs/DIVERGENCES.md). Per-method wire frames →

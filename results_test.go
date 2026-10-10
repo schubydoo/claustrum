@@ -21,7 +21,7 @@ func TestResultMarshalingIsByteExact(t *testing.T) {
 		// 4534d86: instanceId + startedAt sit between methods and features.
 		{"capabilities full", capabilitiesResult{Version: "v1", Methods: []string{"server.ping"}, InstanceID: "0123456789abcdef0123456789abcdef", StartedAt: 1700000000000, Features: []string{"process.stdin.offset", "server.instance_id"}, PeerCheck: "unavailable"},
 			`{"version":"v1","methods":["server.ping"],"instanceId":"0123456789abcdef0123456789abcdef","startedAt":1700000000000,"features":["process.stdin.offset","server.instance_id"],"peerCheck":"unavailable"}`},
-		// 5fd08069: peerCheck is the last member and has no omitempty.
+		// peerCheck is the last member of claustrum's answer, and a zero value stays.
 		{"capabilities zero peerCheck", capabilitiesResult{Version: "v1", Methods: []string{"server.ping"}, Features: []string{}},
 			`{"version":"v1","methods":["server.ping"],"features":[],"peerCheck":""}`},
 

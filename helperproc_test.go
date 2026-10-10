@@ -676,6 +676,12 @@ func runHelper(mode string, args []string) int {
 		fmt.Print(wd + "\n")
 	case "printenv": // print <name>=<value> for args[0] ("" when absent)
 		fmt.Print(args[0] + "=" + os.Getenv(args[0]) + "\n")
+	case "lookupenv": // print "<name> set <value>" or "<name> absent" for args[0]
+		if v, ok := os.LookupEnv(args[0]); ok {
+			fmt.Print(args[0] + " set " + v + "\n")
+		} else {
+			fmt.Print(args[0] + " absent\n")
+		}
 	case "sigpipe":
 		// Behavior fixture for TestIgnoreSigpipeSurvivesClosedStdout: ignore SIGPIPE,
 		// wait for the parent's go-ahead (sent only after it has closed the stdout read

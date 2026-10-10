@@ -671,7 +671,8 @@ such line, and claustrum writes none there. A failed raise was not measured.
 Claustrum writes no line then.
 
 A start with `CLAUDE_SSH_PEER_CHECK=1` writes one more line before the banner,
-at WARN level. On macOS and Windows the text is:
+at WARN level. `CLAUSTRUM_LOG_LEVEL=error` drops it. On macOS and Windows the
+text is:
 
 ```
 [Server] this system names no namespaces: cannot tell callers in a sandbox from others, serving all
@@ -684,9 +685,10 @@ banner (macOS and Windows VMs). On Linux the text is claustrum's own:
 [Server] CLAUDE_SSH_PEER_CHECK is set: this build has no peer check on Linux, serving all callers
 ```
 
-On the Linux VM `5fd08069` writes a different line at that place, for the peer
-check that it runs. The place of the line beside the lines of a reap is not
-measured. The `peerCheck` member of `server.capabilities` tells the same state.
+On the Linux VM `5fd08069` writes a different line at that place
+([D25](DIVERGENCES.md#d25)). The place of the line beside the lines of a reap is
+not measured. The `peerCheck` member of `server.capabilities` tells the same
+state.
 
 The banner ends with the pid of the daemon and its instance. The instance is the
 `instanceId` of `server.capabilities`. `f6010b97` and `89cb6289` print the same
@@ -1141,26 +1143,26 @@ Windows VMs saw it at that place.
   Linux, macOS and Windows VMs saw it at that place. On those VMs `5fd08069` also
   lists two features that claustrum does not list.
 - `peerCheck` is the last member, directly after `features`. It is in every
-  answer. It has three values: `"off"`, `"unavailable"` and `"on"`. claustrum
-  answers `"off"` or `"unavailable"`. The daemon reads the variable
+  answer. claustrum answers one of two values: `"off"` or `"unavailable"`. The
+  daemon reads the variable
   `CLAUDE_SSH_PEER_CHECK` of its own environment one time, at its start. The exact
   value `1` asks for the peer check. claustrum has no peer check. With `1` it
   answers `"unavailable"` on Linux, macOS and Windows, and it serves every caller.
   With each other value, and with no variable, it answers `"off"`.
   On `5fd08069` each of these gave `"off"`:
-    - Linux VM: no variable, `0`, the empty value, `true`, `yes`, `on`, `2`,
-      `01` and ` 1` (a space before the digit).
+    - Linux VM: no variable, `0`, `off`, the empty value, `true`, `yes`, `on`,
+      `2`, `01` and ` 1` (a space before the digit).
     - macOS VM: no variable, `0`, `off`, the empty value and `true`.
     - Windows VM: no variable, `0` and `off`.
 
   With `1`, `5fd08069` answers `"unavailable"` on the macOS VM and on the Windows
   VM. A `server.ping` after it got its answer (macOS VM). For this member,
-  `5fd08069` and claustrum differ in one measured cell: the value `1` on
+  `5fd08069` and claustrum differ in one cell: the value `1` on
   Linux. On the Linux VM `5fd08069` answers
   `"peerCheck":"on","peerCheckBy":["network","pidfd"]`. claustrum answers
   `"peerCheck":"unavailable"` there, with no `peerCheckBy` member, and it serves
-  all callers. The log line of that start is in
-  [Daemon log](#daemon-log-remote-serverlog).
+  all callers. That is [D25](DIVERGENCES.md#d25). The log line of that start is
+  in [Daemon log](#daemon-log-remote-serverlog).
 - `server.shutdown` is not authenticated. See [Authentication](#authentication).
 - On the reference, `server.shutdown` usually closes the connection with no
   reply. Its `{"ok":true}` frame arrived in 24 of 800 single-connection runs
@@ -3558,12 +3560,17 @@ as id-less stream notifications, and it buffers them for a later replay.
   child without one keeps it. The strip covers the
   daemon env and the spawn `env` param. claustrum strips on Windows too. That is
   claustrum's choice (not measured).
-- Every spawned child loses the `CLAUDE_SSH_PEER_CHECK` of the daemon env, with
-  any value. On `5fd08069` a child had no such entry for the daemon values `1` and
-  `0`, and a marker variable of the daemon arrived (Linux, macOS and Windows VMs).
-  The environment of the daemon process keeps the variable, as on `5fd08069`
-  (Linux and macOS VMs). A spawn `env` param that names the variable is not
-  measured. claustrum hands that value to the child.
+- Every spawned child loses the `CLAUDE_SSH_PEER_CHECK` of the daemon env, under
+  that exact name and with any value. On `5fd08069` a child had no such entry for
+  the daemon values `1` and `0`, and a marker variable of the daemon arrived
+  (Linux, macOS and Windows VMs). The start environment of the `5fd08069` daemon
+  process still held the variable (`/proc/<pid>/environ` on a Linux VM, `ps eww`
+  on a macOS VM). claustrum removes the variable from `process.spawn` children
+  only, and it does not unset it in the daemon. From the code: its git children
+  and the launcher runs of `-install` and `-probe-cli` still get the variable.
+  Those children of `5fd08069` are not measured. A spawn `env` param that names
+  the variable is not measured. claustrum hands that value to the child. On
+  Windows a daemon entry in another letter case is not measured.
 - `wantPid` is a claustrum-only opt-in, CT-1. With `"wantPid":true` the reply gains
   two fields after `success`: `{"success":true,"pid":<int>,"startTime":<number>}`.
   `pid` is the child's OS pid. `startTime` is the daemon's wall clock in epoch

@@ -51,7 +51,19 @@ func TestPeerCheckReachesTheDaemonizedChild(t *testing.T) {
 		}
 		t.Error("the daemon did not remove its socket within 10 s of server.shutdown")
 	})
-	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+	// The launcher gets a file for its output, not a pipe, in the form of
+	// TestServeDaemonizeWithAmbientChildMarker.
+	outPath := filepath.Join(dir, "launcher.out")
+	outFile, err := os.Create(outPath)
+	if err != nil {
+		t.Fatalf("create launcher output: %v", err)
+	}
+	cmd.Stdout = outFile
+	cmd.Stderr = outFile
+	runErr := cmd.Run()
+	_ = outFile.Close()
+	if runErr != nil {
+		out, _ := os.ReadFile(outPath)
 		t.Fatalf("launcher failed: %v\n%s", runErr, out)
 	}
 	nc := dialWithRetry(t, sock, 10*time.Second)

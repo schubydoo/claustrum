@@ -206,6 +206,7 @@ opt-in?
 | D22 | Always-on | Maybe. A probe that reaches the path shows it (expected) | `git.worktree_remove` refuses a worktree that is locked in the `.git` folder of `baseRepo`. `89cb6289` answers success in four states. Rows p6 and p6f have a daemon `GIT_DIR` and `GIT_COMMON_DIR` of another repository, with the folder present and gone. Row p6e has a daemon `GIT_DIR` alone. Row p6d has `baseRepo` = `<T>/missing/..`. With `worktreeRoot`, rows q2 to q4 (Linux VM) differ in the frame too, and nothing is deleted on either side. Rows p6, p6e and p6f ran on Linux, macOS and Windows VMs, row p6d on Linux and macOS. A maintainer decision of 2026-10-03. The refusal is not drift |
 | D23 | Always-on, Windows only | Maybe. A Windows probe whose child prints its environment block shows it in the stream frames (expected) | the environment block of a child is in name order. `89cb6289` keeps the order of its launching block, then `CLAUDE_SSH_DAEMON_CHILD=1`, then the added entries (Windows VM rows V1 to V10). The set of entries and the response frames are equal in those rows. A maintainer decision of 2026-10-06. The other order is not drift |
 | D24 | Always-on, Linux and macOS | No in the measured cells: the frames are equal and the disk differs (Linux and macOS VMs). A probe that lists the registrations folder shows it. At the placement the frame holds claustrum's own text `is not the folder that was tested after the add` (not measured) | If git answered `rev-parse --absolute-git-dir`, the rollback of `git.worktree_create` deletes the registration only if the folder at its path is still the folder that the tests after the add accepted. `89cb6289` removes the folder at that path in cells B6 and B6b (Linux and macOS VMs, 2 runs each). In B6b that folder holds the registration of a live sibling worktree. The placement of the index has the same test (not measured). A maintainer decision of 2026-10-07. The kept folder is not drift |
+| D25 | Always-on, Linux only | Yes on a Linux run with `CLAUDE_SSH_PEER_CHECK=1` in the daemon environment. With no variable the frames are equal in that member | `server.capabilities` answers `"peerCheck":"unavailable"`, where `5fd08069` answers `"peerCheck":"on","peerCheckBy":["network","pidfd"]` (Linux VM). claustrum has no peer check and serves every caller. Its log line there is its own text. A maintainer decision of 2026-10-10. The other answer is not drift |
 | D8 | Always-on | No. It falls back to inherited stdio, not a frame | foreign/symlinked `remote-server.log` not followed (`.old` rotation matched, refuse-to-follow kept). Linux and macOS. On Windows see D21 |
 | D9 | Always-on | Maybe. A type-mismatched namespace field is rejected | namespace-param binding vs. the reference's ignore |
 | D13 | Always-on (unresolved in DIVERGENCES.md) | No. Install path | verify-before-decompress ordering, on `-cli-url` and on `-cli-zst` with a checksum |
@@ -341,15 +342,19 @@ traps that matter for telling drift from expected:
   env strip, and the gated launcher runs of `-install` and `-probe-cli`.
   `f6010b97` has none of these. See [PROTOCOL.md](PROTOCOL.md) → launcher.*.
 - The peer check splits the builds, not drift. `scripts/UPSTREAM_SHA` names
-  `89cb6289`, and claustrum follows `5fd08069` in three places.
+  `89cb6289`, and claustrum follows `5fd08069` in two places of the frame.
   `server.capabilities` carries the `peerCheck` member and the
-  `server.peer_check` feature. A spawned child loses the
-  `CLAUDE_SSH_PEER_CHECK` of the daemon env. The frames of `89cb6289` have no
-  such member and no such feature (Linux, macOS and Windows VMs). Against
-  `5fd08069` two differences are not drift:
+  `server.peer_check` feature. The frames of `89cb6289` have no
+  such member and no such feature (Linux, macOS and Windows VMs). A spawned
+  child of claustrum loses the `CLAUDE_SSH_PEER_CHECK` of the daemon env, as a
+  child of `5fd08069` does for the values `1` and `0`. A child of `89cb6289` is
+  not measured. Against `5fd08069` these differences are not drift:
   - With `CLAUDE_SSH_PEER_CHECK=1` on Linux, `5fd08069` answers
     `"peerCheck":"on"` with a `peerCheckBy` member (Linux VM). claustrum answers
-    `"peerCheck":"unavailable"`, has no peer check and serves every caller.
+    `"peerCheck":"unavailable"`, has no peer check and serves every caller. That
+    is [D25](DIVERGENCES.md#d25).
+  - The log line of that start has claustrum's own text on Linux, and a level
+    tag on every system. See [PROTOCOL.md](PROTOCOL.md) → Daemon log.
   - `5fd08069` lists two features that claustrum does not list (Linux, macOS and
     Windows VMs).
 
