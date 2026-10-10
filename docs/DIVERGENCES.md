@@ -1417,8 +1417,9 @@ link points here.
   default. Its premise was that the reference does not refuse such a path.
   `89cb6289` does not refuse one.
 - `5fd08069` refuses such a path with `-32602 files.read: not a regular file`.
-  It opens the path first and tests the kind of the open file after that. On
-  Linux and macOS it reads the null device itself as empty content. Measured on
+  Its answers put the open before the kind test: a directory that it cannot
+  open gets the `open` text, and a writer that waits in its open of a FIFO
+  returns at the request. On Linux and macOS it reads the null device itself as empty content. Measured on
   Linux, macOS and Windows VMs. The
   [measurement record](record/files-read.md) holds the kinds and the rows.
 - claustrum now does the same, with no switch. The FIFO rows and the null

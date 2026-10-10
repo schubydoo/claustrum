@@ -138,7 +138,8 @@ func filesList(req *request) response {
 }
 
 // filesRead opens the path first and tests the kind of the open file after it.
-// 5fd08069 does the same (Linux, macOS and Windows VMs): a path that cannot be
+// 5fd08069 gives the same answers in the same order (Linux, macOS and Windows
+// VMs): a path that cannot be
 // opened keeps its `open <path>: ...` text. A FIFO writer that waits in its
 // open returns at the request (Linux and macOS VMs). A file that is not regular and not a directory
 // gets -32602 "files.read: not a regular file". On Linux and macOS the null

@@ -31,7 +31,7 @@ func readWithLimit(t *testing.T, s *server, path string) string {
 // TestFilesReadRefusesNulOnWindows pins the NUL device in each spelling that
 // 5fd08069 refuses (Windows VM, rows 2, 3, 5a, 5c, 5d and 5e). The last row is
 // NUL inside a folder. Windows 11 IoT LTSC 26100 maps that name to the device:
-// the VM row is C:\o\w\f\NUL. No other Windows version is measured.
+// the VM row is NUL inside an existing folder. No other Windows version is measured.
 func TestFilesReadRefusesNulOnWindows(t *testing.T) {
 	s := newTestServer(t)
 	for _, path := range []string{
