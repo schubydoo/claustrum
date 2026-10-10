@@ -265,7 +265,7 @@ the code). `5fd08069` fails, and claustrum fails with the same text.
 | `destDir` does not exist | Linux and macOS VMs | `open destDir: openat dest: permission denied`. `destDir` is empty afterwards | success. Each new file has mode `0200` | the text of `5fd08069`. `destDir` is empty afterwards |
 | two folders above `destDir` do not exist either | Linux and macOS VMs | `open parent: open <parent>: permission denied`. No `destDir` afterwards | success | the text of `5fd08069`. An empty `destDir` afterwards |
 
-The claustrum column is from a test run on Linux, not from a VM. In the second
+The claustrum column is from Linux and macOS VMs. In the second
 row the text is equal and the disk is not: claustrum creates `destDir` before
 it opens the parent, and `5fd08069` leaves no `destDir`. On the VMs an earlier
 build of this change opened `destDir` by its whole path. It answered
@@ -289,6 +289,10 @@ The old content stays in each `clean destDir:` row of the Linux and macOS VMs.
 In the Windows row the held file stays and the other old entries are gone. The
 disk is equal on the two builds and on claustrum in each row.
 
+With a parent folder of mode `0500` and an old `destDir` with content, the old
+content is gone on `5fd08069` and on claustrum, and both answer a
+`clean destDir:` failure (Linux VM). `89cb6289` is not measured there.
+
 ## Spellings of destDir
 
 Each row is a success on the builds that the last column names:
@@ -309,6 +313,19 @@ folder has the name as the request spelled it (Windows VM).
 Old content that is read-only is replaced on both builds (Windows VM): a
 read-only file at the name of an entry, a read-only folder, and a read-only
 folder at the name of a file entry.
+
+More spellings are a success on `5fd08069` and on claustrum, with the files in
+the same place: a `..` inside the path and a doubled separator (Linux VM), and
+a `..` inside the path and a `destDir` two new folders deep (Windows VM). A
+`destDir` with the last name `.synced` gets the marker file inside it (Linux
+and Windows VMs).
+
+One spelling differs on disk. On the Windows VM a `destDir` whose last name
+ends in a dot or a space (`dest.`, `dest `) names the folder `dest`. `5fd08069`
+removes the old content of that folder. claustrum keeps the old file beside the
+new ones, and the reply is a success on both. `89cb6289` is not measured there.
+The step that removes the old content is the same as before this change (from
+the code).
 
 ## Rows where the two builds are equal
 
@@ -377,21 +394,24 @@ and it creates the marker exclusively. Both steps go through that handle.
 
 This change ran beside `5fd08069` on Linux, macOS and Windows VMs. Each cell
 that ran with this change was equal in the reply and on disk, apart from the
-rows of the two sections on the `destDir` steps. The build of those rounds
-opened `destDir` by its whole path:
+cells below:
 
-- Linux VM: 97 cells, 91 equal. The 6 others are the Linux rows of those two
-  sections.
-- macOS VM: 57 cells, 51 equal, with the same 6 others. The 5 cells for letter
-  case were equal too.
-- Windows VM: 68 cells in two passes, 67 equal. The other is the row of the
-  held file. The 21 cells for odd names were equal too.
+- Linux VM: 105 cells. The 5 rows of "Texts that claustrum keeps" and of the
+  second row of "A destDir that the daemon cannot open" differ as those
+  sections say. 3 more cells differ in the text alone: the parent of `destDir`
+  has mode `0100` or `0500`. `5fd08069` answers `open parent: …` or
+  `clean destDir: RemoveAll dest: …` there, and claustrum answers its
+  `mkdir destDir:` or `clean destDir:` text. The disk is equal.
+- macOS VM: 62 cells, with the same 5 rows as the only differences.
+- Windows VM: 96 cells. One differs in the text: the row of the held file. Two
+  differ on disk: the `destDir` names that end in a dot or a space, in
+  "Spellings of destDir".
 
 The Linux cells with umask 077 and 000 of the first mode table did not run with
 this change.
 
-The tests of the method ran 20 times each with no failure, 640 runs on a macOS
-VM and 1820 runs on a Windows VM. `TestSyncedMarkerRemoveStaysInDestDir` is for
+The tests of the method ran 20 times each with no failure, 660 runs on a macOS
+VM and 1840 runs on a Windows VM. `TestSyncedMarkerRemoveStaysInDestDir` is for
 Linux and macOS, and it did not run on Windows.
 
 ## Not measured
