@@ -499,7 +499,8 @@ func extractTarGz(archivePath, destDir string) (int, error) {
 			if err != nil {
 				// 89cb6289 answers "write <entry>: <text>" with fileCount 0 when the
 				// content of a file cannot be copied, for example from an archive
-				// that is cut inside the file (Linux VM).
+				// that is cut inside the file (Linux VM). A failed write of the
+				// extracted file takes this arm too, and that case is not measured.
 				return 0, fmt.Errorf("write %s: %v", hdr.Name, err)
 			}
 			if maxExtractBytes > 0 && totalWritten > maxExtractBytes {
