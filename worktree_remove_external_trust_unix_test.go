@@ -242,22 +242,22 @@ func TestWorktreeRemoveExternalNoRepositoryBase(t *testing.T) {
 }
 
 // Row WR15: a configuration that cannot be listed answers the prefix and the hooks
-// refusal text. Nothing is deleted.
+// refusal text. Nothing is deleted. The row had a syntax error in the config. The
+// daemon's own read answers that state first now (gitrepoconfig.go), so the config
+// of the test has an `include.path` with no value: the read gives no refusal for it,
+// and the listing of git fails (breakListing).
 func TestWorktreeRemoveExternalHooksRefusal(t *testing.T) {
 	f := newWRFixture(t)
 	cfg := filepath.Join(f.T, ".git", "config")
+	breakListing(t, filepath.Join(f.T, ".git"))
 	b, err := os.ReadFile(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(b) + "[core\n"
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	line := strings.Count(body, "\n")
+	line := strings.Count(string(b), "\n")
 	want := refusalFrame(t, wtUnknown+"config-defined hooks could not be pinned off; git not run: "+
-		"listing the configuration in force: exit status 128: fatal: bad config line "+
-		strconv.Itoa(line)+" in file "+cfg)
+		"listing the configuration in force: exit status 128: error: missing value for 'include.path' "+
+		"fatal: bad config line "+strconv.Itoa(line)+" in file "+cfg)
 	if got := f.remove(t, f.T, f.e0, "e0"); got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}

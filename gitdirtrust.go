@@ -69,6 +69,11 @@ type gitDirTrust struct {
 	// method. The rows that measure it are removals (see noRepoPin). It is nil when no
 	// row gives a value.
 	noRepoEnv []string
+	// worktreeEntry is the git directory of a trusted linked worktree: the entry
+	// under <repository git directory>/worktrees. It is empty for every other git
+	// directory. The config read tests the config.worktree file there
+	// (gitrepoconfig.go).
+	worktreeEntry string
 	// noGit is true when verdict is gitDirNoRepo and git.worktree_remove makes no git
 	// call for a worktree folder that is gone. That is a daemon GIT_DIR that names a
 	// file. 89cb6289 answers {"success":true,"branchKept":true} there with no git call
@@ -426,7 +431,7 @@ func judgeGitDir(g string, fromEnv bool) gitDirTrust {
 	if !sameGitDirPath(named, repo) {
 		return refuseForeignCommondir(cd, repo)
 	}
-	return gitDirTrust{pinCommonDir: repo}
+	return gitDirTrust{pinCommonDir: repo, worktreeEntry: g}
 }
 
 // isWorktreeEntry reports whether g is a linked-worktree entry: its parent is named

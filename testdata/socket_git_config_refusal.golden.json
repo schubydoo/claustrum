@@ -1,0 +1,43 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+      "code": -32603,
+      "message": "this repository's git config cannot be used: the repository uses format version \"2\", which this version of Claude does not support"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "error": {
+      "code": -32603,
+      "message": "this repository's git config cannot be used: the repository uses format version \"2\", which this version of Claude does not support"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "error": {
+      "code": -32603,
+      "message": "this repository's git config cannot be used: the repository uses format version \"2\", which this version of Claude does not support"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+      "success": false,
+      "error": "this repository's git config cannot be used: the repository uses format version \"2\", which this version of Claude does not support",
+      "errorCode": "worktree_add_failed"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+      "success": false,
+      "error": "failed to remove worktree: could not check whether <DIR> is locked: this repository's git config cannot be used: the repository uses format version \"2\", which this version of Claude does not support"
+    }
+  }
+]

@@ -393,8 +393,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
 
 - **Behavior.** With the deadline on, claustrum bounds every git invocation (shared
   `gitCtx` across `git` / `gitStdoutErr` and the hardened helpers). That method runs
-  no `git worktree remove`. On `git.worktree_remove` no D5 kill leads to a
-  delete. A kill only refuses or skips a step. If the worktree directory exists, a
+  no `git worktree remove`. On `git.worktree_remove` the deadline starts no
+  delete. A kill refuses or skips a step. One skipped step is the daemon's own read
+  of the repository config. After a kill of that call the remove goes on as it did
+  before that read. If the worktree directory exists, a
   hit on the config or repository check answers the lock-check refusal. For a gone
   worktree, the hit gives the lock-check text with the hooks refusal, or skips the
   registration step. With `worktreeRoot` a hit answers the work-tree refusal (`cannot
@@ -427,8 +429,10 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   frame, or inside the work-tree frame with `worktreeRoot`.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
-- **Never read a timeout as "git refused."** On `git.worktree_remove` no D5 kill
-  leads to a delete. `git.worktree_create` does: its rollback deletes after a failed or
+- **Never read a timeout as "git refused."** On `git.worktree_remove` a kill
+  refuses or skips a step. One skipped step is the daemon's own read of the
+  repository config. After a kill of that call the remove goes on as it did before
+  that read. On `git.worktree_create` a kill leads to a delete: its rollback deletes after a failed or
   killed read-tree checkout, and it removes an empty leaf after a failed add. A caller
   that deletes on a git failure must tell the deadline apart from the verdict of git
   first. The cap is also softer than it reads on the

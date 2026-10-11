@@ -453,9 +453,20 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // it first when os.Stat reads baseRepo), other commondir contents, and the other
 // shapes of reason 3.
 //
+// After reason 3 and before the listing of reason 4 comes the daemon's own read of
+// the repository's config (repoConfigGateRefusal). Its refusal text is the reason.
+// 5fd08069 answers so with format version `2` and with a config of 20 MiB, and
+// removes nothing (cells N14, Linux and macOS VMs). Each state ran for a worktree
+// that exists and for a folder that is missing. An info/exclude of 20 MiB and a
+// syntax error in the config get the same frame (cells P4, macOS VM). The place
+// of the read among the reasons is not measured: those cells have a repository
+// that passes reasons 1 to 3. off is the `shadowDirOff` member of the request.
+// With it and a config of 20 MiB, 5fd08069 removes the worktree (cell P4, macOS
+// VM).
+//
 // Its second answer is the git top level of baseRepo when the removal goes on, or ""
 // when git cannot give it. worktreeRootCheckoutRefusal uses it.
-func externalWorkTreeRefusal(repo string) (string, string) {
+func externalWorkTreeRefusal(repo string, off jsonTrueSwitch) (string, string) {
 	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
 	// baseRepo behind a symlink chain that the kernel does not follow still resolves in
 	// the trust check. If the reasons are skipped for it, the removal deletes its
@@ -478,7 +489,8 @@ func externalWorkTreeRefusal(repo string) (string, string) {
 	if msg := unenterableBaseListing(repo); msg != "" {
 		return workTreeUnknownPrefix + msg, ""
 	}
-	switch t := requestGitDirTrust(repo, false); t.verdict {
+	t := requestGitDirTrust(repo, false)
+	switch t.verdict {
 	case gitDirRefused:
 		return workTreeUnknownPrefix + t.refusal, ""
 	case gitDirNoRepo:
@@ -500,6 +512,13 @@ func externalWorkTreeRefusal(repo string) (string, string) {
 			}
 			return workTreeUnknownPrefix + "exit status 128", ""
 		}
+	}
+	// The daemon's own read of the repository's config (cells N14, Linux and macOS
+	// VMs). The
+	// call that it makes to git on a refusal is the light `rev-parse
+	// --show-toplevel` that follows the listing below.
+	if msg := repoConfigGateRefusal(t, off, repo, false, "--show-toplevel"); msg != "" {
+		return workTreeUnknownPrefix + msg, ""
 	}
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
 	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).

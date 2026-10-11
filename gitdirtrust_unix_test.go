@@ -339,11 +339,14 @@ func TestGitDirTrustRemoveThroughSymlinkedRootPrunesEntry(t *testing.T) {
 
 // The hooks refusal reports git's error with a tab turned into a space, as 90fca6e6
 // did for C10 (measured on a Linux VM). The fixture makes git fail on an included
-// config file whose name holds a tab, which Windows cannot hold.
+// config file whose name holds a tab, which Windows cannot hold. That file has an
+// include.path with no value: git ends its listing there, and the daemon's own
+// read of the config gives no refusal for it. A syntax error there gets the text
+// of the read (TestRepoConfigSyntaxError).
 func TestHostileConfigRefusalSpacesOutTabs(t *testing.T) {
 	r := newTrustRepo(t)
 	bad := filepath.Join(r.base, "x\ty.cfg")
-	writeFile(t, bad, "[bad\n", 0o644)
+	writeFile(t, bad, "[include]\n\tpath\n", 0o644)
 	f, err := os.OpenFile(filepath.Join(r.T, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)

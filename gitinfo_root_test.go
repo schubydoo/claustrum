@@ -38,7 +38,8 @@ func infoFields(t *testing.T, r rpcReply) map[string]any {
 // On Linux and macOS git.info runs no `rev-parse --show-toplevel`. On a
 // plain repository it makes 9 calls: the excludes read, and four listings each
 // before rev-parse --git-dir, remote get-url, symbolic-ref and branch --show-current
-// (row L01). Mutation: keep the show-toplevel call.
+// (row L01). The daemon's own read of the config is one call more
+// (gitrepoconfig.go). Mutation: keep the show-toplevel call.
 func TestInfoRunsNoShowToplevel(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("on Windows git confirms the root (TestInfoRootWindows)")
@@ -57,8 +58,8 @@ func TestInfoRunsNoShowToplevel(t *testing.T) {
 			t.Errorf("call %q asks git for the top level", c.argv)
 		}
 	}
-	if len(calls) != 9 {
-		t.Errorf("calls = %q, want 9", argv)
+	if len(calls) != 10 {
+		t.Errorf("calls = %q, want 10", argv)
 	}
 }
 

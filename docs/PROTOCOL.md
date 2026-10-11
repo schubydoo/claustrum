@@ -875,6 +875,8 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: <git text>` | in the frame of each method, for a `GIT_CONFIG_KEY_<n>` of the daemon that git cannot read. A folder that holds no repository gets it too. `89cb6289` answers so in rows A-N1 to A-N6, A-N5b, A-S1 and A-X2 on Linux and macOS VMs, except row A-N5 on macOS. On a Windows VM the cells are P3-infoN, P3-infoX, P3-lbN, P3-statN, P3-crN, P3-rmN and Wf-P3-crNroot. See "The daemon's own git environment" |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: fork/exec <git.exe path>: The directory name is invalid.` | Windows only. In the frame of `git.info`, `git.list_branches`, `git.status` and `git.worktree_create`. The `path` of the first two, or the `baseRepo` of the last two, exists and git cannot start in it. That is a regular file, a file symlink (measured for `git.info` only) or a folder with a path of 296 characters (measured for `git.info` only). `89cb6289` answers so on a Windows VM: in cells A-01 to A-04, A-04b2 and A-06 for a regular file, in cell A-10 for the symlink and in cell A-13 for the folder. The path `NUL` and a file name with one more dot at its end get it too (measured for `git.info` only, cells Wc). See "Git-directory trust check" |
 | git.* | `git cannot run on this host; git not run: <exec error>: <git text>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), when the configuration listing fails and `git version` fails too. The exec error and the text are those of `git version`. Row A-T1 and cells C-d and C-g show that on Linux and macOS VMs, and cell C-h on a Linux VM. Cells P11-infoN, P11-infoT, A-14, Wa-infoF, Wa-lbN, Wa-statN and Wa-crN show it on a Windows VM. See "Git-directory trust check" (`89cb6289`) |
+| git.* | `this repository's git config cannot be used: <detail>` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. The details are in [Repository config refusals](#repository-config-refusals) |
+| git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a configuration key over 1048576 bytes. `89cb6289` measured `git.info`. See "Hardened git calls" |
 | git.* | `config-defined hooks could not be pinned off; git not run: too many configured hooks to pin` / `config-defined hooks could not be pinned off; git not run: configured hook names exceed the aggregate pin byte bound` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`). It answers more than 1024 hook names, or names over 65536 bytes in sum. `89cb6289` measured `git.info`. See "Hardened git calls" |
 | git.* | `the repository's git directory could not be trusted; git not run: commondir not as git writes it: <S1, S2 or S3>` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a stray `commondir`. "Git-directory trust check" gives the three texts (`89cb6289`) |
@@ -1306,7 +1308,10 @@ neither `GIT_DIR` nor `GIT_COMMON_DIR`:
   `git.info` an error frame depends on the spelled start too, not only `repoSlug`
   and `defaultBranch`. In cell B-15 the build before the spelled start answered
   the fields of R, and the build of this change answers the listing refusal of `89cb6289`
-  (Windows VM).
+  (Windows VM). Since the read of the repository config, claustrum answers the
+  class 1 text in the state of cell B-15 (from the code). The listing refusal stays
+  for a config that git refuses and the read accepts, for example an `include.path`
+  with no value.
 - A `.git` directory that passes the git-directory test is the git directory.
 - A `.git` directory that fails the test ends the walk. If it holds a `commondir`
   entry of any type, it is the git directory, and the stray-commondir rules below
@@ -1682,7 +1687,9 @@ comes before the trim. The leading white space counts toward the 512 bytes. A ta
 becomes one space on `90fca6e6` too (Linux VM). With the `GIT_COMMON_DIR` pin, git
 names a corrupt config by its absolute path. `f6010b97` does the same in the
 `git.info`, `git.list_branches`, `git.status`, create and remove frames, measured on
-Linux and macOS VMs. `90fca6e6` names `.git/config`.
+Linux and macOS VMs. `90fca6e6` names `.git/config`. On claustrum a syntax error in
+a config file of the repository now gets the class 1 text first: see
+[Repository config refusals](#repository-config-refusals).
 
 #### A FIFO where the daemon reads a git file
 
@@ -1754,8 +1761,8 @@ Not measured:
 
 - A git that refuses a FIFO named `.git` itself. The rows ran with a git that walks
   past it.
-- A FIFO as `HEAD`, `config`, `index` or a ref file in a place that git itself
-  reads.
+- A FIFO as `HEAD`, `index` or a ref file in a place that git itself reads. A FIFO
+  as the config is in [Repository config refusals](#repository-config-refusals).
 - A device file or a socket as a `commondir` file or a `gitdir` record. From the
   code: claustrum takes each as no usable file.
 - A FIFO that a writer opens during the request. From the code: claustrum reads
@@ -1775,6 +1782,370 @@ git 2.50). With a FIFO as the `gitdir` record (cell P-g) or as the `commondir`
 file (cell P-h), `89cb6289` answers the "does not name" refusal of
 `git.worktree_create` in under 1 s, and nothing changes after the add. See the
 method section.
+
+#### Repository config refusals
+
+Since `5fd08069` the daemon reads the config of a repository itself. If it does not
+accept the config, or one of three files of the git directory, the request gets a
+refusal. claustrum follows that build here, and it makes the read before its first
+git call in the repository. The cells are in the
+[record](record/git-config-refusals.md). The rules below ran on a Linux VM. The
+record names the cells that also ran on a macOS VM and on a Windows VM. A rule for
+one system names that system. The record also names the cells that a claustrum
+build ran.
+
+The five methods are `git.info`, `git.status`, `git.list_branches`,
+`git.worktree_create` and `git.worktree_remove`. `<text>` is `<class>: <detail>`.
+
+| Method | Answer |
+|---|---|
+| `git.info`, `git.status`, `git.list_branches` | `{"jsonrpc":"2.0","id":N,"error":{"code":-32603,"message":"<text>"}}` |
+| `git.worktree_create` | `{"result":{"success":false,"error":"<text>","errorCode":"worktree_add_failed"}}`. Nothing is made |
+| `git.worktree_remove` | `{"result":{"success":false,"error":"failed to remove worktree: could not check whether <worktreePath> is locked: <text>"}}`. The worktree stays, and no branch is deleted |
+| `git.worktree_remove` with `worktreeRoot` | `{"result":{"success":false,"error":"failed to remove worktree: cannot determine the repository's work tree: <text>"}}`. Nothing is removed |
+
+Four states ran on all five methods (cells W7, X1 and V9). They are format version
+`2`, a config of 20 MiB, an `info/exclude` of 20 MiB and a `shallow` file with a
+text line. Most other cells ran `git.info` and `git.status`.
+
+On `git.worktree_remove` the refusal comes for a worktree folder that does not
+exist too, and the branch `branchName` stays. `5fd08069` answers so on a Windows
+VM (cells F1a, F1b, F2a, F2b, G1a to G1c, W6, W6x and X12). It answers so on
+Linux and macOS VMs too (cells N1). The N1 states are format version `2`, a config
+of 20 MiB and an `info/exclude` of 20 MiB. Linux and Windows VMs ran them in a
+bare repository too. With the two files of 20 MiB, `89cb6289` answers success
+there and deletes that branch.
+
+With `worktreeRoot`, `5fd08069` answers the text of the last table row (cells N14,
+Linux and macOS VMs). The states were format version `2` and a config of 20 MiB.
+Each ran with a worktree that exists and with a folder that is missing. With the
+config of 20 MiB, `89cb6289` removes the worktree folder and its registration
+there. In cells P4 (macOS VM) the worktree exists. An `info/exclude` of 20 MiB gets
+that frame with its class 2 text. A syntax error in the config gets it with the
+class 1 text of the syntax error. Nothing is removed in the two cells.
+
+A path in quotes is the path of the file with the separators of the system, quoted
+as Go's `%q` quotes it. A path of more than 300 characters is cut to its first 300
+characters. The text has no mark of the cut (cells X12 and V12, also with
+characters of two bytes). On Windows each backslash is doubled inside the quotes,
+and the JSON encoding doubles it again. The path of the `open <file>:` text is not
+in quotes, and it is not cut (cell V12, a path of 400 bytes). The `<worktreePath>`
+of the remove text is as sent, and it is not cut.
+
+On Linux and macOS VMs the path of the config is the resolved path. A request
+through a symbolic link gets the real path in the text (cells V11). On a Windows VM
+a request through a junction keeps the spelling of the junction. A request in
+another letter case gets the real spelling (cells V11).
+
+**The switch.** `"shadowDirOff": true` in the request turns the read off for that
+request, on the five methods (cells X1 and V2). The request then gets the answer
+that it had before this rule. A FIFO as the config then gets no answer in 10 s. The
+member name matches without regard to letter case: `"SHADOWDIROFF": true` is the
+switch too. The values `"true"`, `1`, `null` and `false` are as no member. Cells V3
+measured both facts on `git.info` and `git.status`, with format version `2`. Cells
+V2 and V3 ran on Linux, macOS and Windows VMs, and the FIFO on Linux and macOS VMs.
+With `worktreeRoot`, the switch and a config of 20 MiB, `5fd08069` removes the
+worktree (cell P4, macOS VM).
+
+**The read.** claustrum gives each config file to git on standard input, with one
+call for each file: `git config --no-includes --file - --list -z`. The call log of
+`5fd08069` shows that call. git follows no include in it. claustrum follows each
+`include.path` setting itself. If the request names a linked worktree, claustrum
+reads the config of the repository of that worktree.
+
+From the code: claustrum runs that call in the root directory on Linux and macOS,
+and in the working directory of the daemon on Windows. The environment of the call
+is that of the daemon without `GIT_CONFIG`, `GIT_CONFIG_PARAMETERS`, `LC_ALL` and
+`LANGUAGE`. Then come `GIT_DIR=<null device>`, `LC_ALL=C` and `LANGUAGE=C`. The
+record has the values of `5fd08069`. On Linux and macOS claustrum opens each file
+of the read with the flag that gives the daemon no controlling terminal. In cell
+V17 the config is a link to a pty slave. If the pty master closes, `89cb6289` and
+`5fd08069` stay up (Linux VM).
+
+**The kept verdict.** On `5fd08069` a second `git.info` on a repository with an
+accepted config makes no such call (cells B4 and V19). A request after a change of
+the config makes one (cell B4). With a refused format version, a later request of
+`5fd08069` makes the read again (cells N10 and P5, Linux, macOS and Windows VMs).
+claustrum keeps the verdict of a read, for 256 git directories and linked
+worktrees at most. A later request starts
+no such call if each file that the read used is unchanged. A file is unchanged if
+its size, its modification time and its mode are the same, and its identity where
+the system gives one. A file that was missing must still be missing. This rule and
+the number 256 are claustrum's own. Cell B4 ran one repeat and one changed config.
+
+From the code: the identity test is Go's `os.SameFile`. On Linux and macOS that is
+the device and the inode of the file. This page claims no identity test on Windows.
+These tests do not see these changes:
+
+- A change that keeps the size, the time, the mode and the identity. One example
+  is a rewrite in place with the same size inside one step of the file time.
+- A change during the read, after the daemon recorded the state of that file.
+- A change of a file whose path the daemon cannot examine. Such a path has the
+  state of a missing file.
+
+claustrum does not keep a verdict if an open or a read of the daemon ended with an
+error in that read. So a refusal with an `open <file>:` text is read again at the
+next request. An error of the daemon itself, such as too many open files, then
+answers one request only. That rule is claustrum's own.
+
+**Class 1** is `this repository's git config cannot be used: <detail>`. The format
+version and the extensions of an included file are not tested (cells X7 and X9).
+
+| Detail | When |
+|---|---|
+| `the repository uses format version "<v>", which this version of Claude does not support` | The last value of `core.repositoryformatversion`, as git lists it, is not exactly the text `0` or `1`. A config with no such key is not refused. `<v>` is cut to its first 20 characters, with no mark. A value of 20 characters is whole, and one of 21 shows 20 (cells P1, Linux, macOS and Windows VMs) |
+| `the repository uses git extension "<name>", or a value of it, that this version of Claude does not support` | The format version is `1`, and an `extensions.<name>` setting is refused. `<name>` is in lower case. It is cut to its first 60 characters, with no mark. A name of 60 characters is whole, and one of 61 shows 60 (cells P1, Linux, macOS and Windows VMs). Under version `0` none of the settings that ran is refused |
+| `"<file>" includes "<value>", and Claude expands neither ~user nor %(prefix), nor ~ where no home directory is set; write that path out in full` | An include value of the form `~user/…` or `%(prefix)/…`, in an `include` section or in an `includeIf` section. The condition of the `includeIf` section does not have to match (cells N12, Linux VM). `<file>` is the file that holds the setting. `<value>` is cut to its first 100 characters (cells V12, Linux and macOS VMs) |
+| `its includes go past what Claude follows (16 files, nested 3 deep)` | More than 16 included files, or an include chain of more than 3 levels below the config. A missing file counts, and so does the file of an `includeIf` section, also a missing one (cells V8 and N7). A file that includes itself gets this text too |
+| `"<file>" is not a regular file` | The config or an included file is a FIFO or a directory. A config that is a symbolic link to the null device gets it. So does an included file that is a symbolic link to a FIFO. `include.path = ~` gets it with the path of the home folder (cell N13, Linux VM). The daemon does not wait on a FIFO |
+| `"<file>" is larger than 8 MiB` | The config or an included file has more than 8388608 bytes (cells X6 and V7) |
+| `"<file>" has a setting in section "<section>" whose name is longer than 1024 bytes` | The full name of a setting, with its section and subsection, has more than 1024 bytes. The pair 1024 and 1025 is measured in `core`, `remote`, `lfs`, `url`, `filter`, `extensions`, `include` and `includeif`. Cells N6 measured it in `index`, `feature` and `checkout` too (Linux, macOS and Windows VMs). `<section>` is in lower case, without the subsection. The bound holds in an included file, with the path of that file. Cells V7 measured that one level below the config, and cells N8 two and three levels below it |
+| `"<file>" has more settings than Claude reads (8 MiB); remove repeated ones` | See "The count of settings" below |
+| `open <file>: <reason>` | The daemon cannot open the config or an included file. A file of mode 000 gives `permission denied`. A socket gives `no such device or address` on a Linux VM. As the config, a socket gives `operation not supported on socket` on a macOS VM |
+| `fatal: bad config line <n> in "<file>"` | The config or an included file has a syntax error. The text is that of git, with the path in quotes |
+| `"<included file>" is outside "<repo>", and on Windows Claude reads a repository's settings only from inside it; if the line that includes it is yours and you trust the file, put that line into ~/.gitconfig on the remote machine instead` | Windows: a relative include that leaves the repository. For a bare repository `<repo>` is its git directory (cell W6) |
+| `"<file>" includes "<value>", and on Windows Claude follows an include only if its path is relative and stays inside the repository; if that line is yours and you trust the file, put the line into ~/.gitconfig on the remote machine instead` | Windows: an absolute include value, also to a missing file, `~/x` and `~root/x`. An absolute value and `~/x` get it in an `includeIf` section whose condition does not match too (cells N12w). `<value>` is cut to its first 300 characters. A value of 300 characters is whole, and one of 301 shows 300 (cells P7w, Windows VM) |
+| `"<file>": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to` | Windows: the config is a file link |
+
+The path of an included file is the folder of the file that holds the setting, one
+separator, and the value as written. On a Windows VM `path = <dir>/inc.cfg` gives
+`<git dir>\<dir>/inc.cfg` in a text (cells V12c and V12d). The folder of the
+holding file stays as written too. With `include.path = a/../b/inc.cfg`, a
+`path = x.cfg` in that file names `<git dir>/a/../b/x.cfg` (cell N13-b, Linux and
+macOS VMs).
+
+These extension settings are refused under format version `1`:
+
+- A name outside the list below, with a value or with none. Four such names ran:
+  `foo`, `bar`, `noop2`, and `x.noop` for `[extensions "x"] noop`.
+- `objectFormat = md5`, `compatObjectFormat = md5` and `refStorage = banana`.
+- `preciousObjects = maybe`, `relativeWorktrees = maybe`,
+  `submodulePathConfig = maybe` and `noop-v1 = maybe`.
+- `partialClone` with no value, and with an empty value.
+
+The list has ten names: `objectFormat`, `compatObjectFormat`, `refStorage`,
+`worktreeConfig`, `relativeWorktrees`, `submodulePathConfig`, `noop-v1`, `noop`,
+`preciousObjects` and `partialClone`. Cells V6 measured these settings as not
+refused: `worktreeConfig = maybe`, `objectFormat = SHA256`, `refStorage = FILES`,
+`preciousObjects = yes` and `preciousObjects = 1`. An extension in a config with no
+format version key is not refused either. Cells V6 ran on Linux, macOS and Windows
+VMs. This rule does not refuse a sha256 repository or a reftable repository.
+
+No refusal comes from these states of the config: a missing file, an empty file
+and a dangling symbolic link. A symbolic link to a regular file and a NUL byte in a
+value are no refusal either. The same holds for an empty `include.path` and one
+with no value. On Linux the daemon follows a relative include, also one that
+leaves the git directory, an absolute include and `~/x` with a home folder.
+
+Two kinds of file get the kind test and the size test, with their own path in the
+text. A format version `2` in such a file is not refused. No other content of it
+ran, and claustrum does not read it.
+
+- The file of an `includeIf` section, whatever its condition is. The conditions
+  that ran are `gitdir:` that matches, `gitdir:` that does not match, `gitdir/i:`,
+  `onbranch:` and `hasconfig:`. They ran on Linux, macOS and Windows VMs (cells X9
+  and V8).
+- The `config.worktree` file of a linked worktree. The config sets
+  `extensions.worktreeConfig` to `true`, `yes`, `1` or `TRUE`, or has that key with
+  no value (cells X2 and V14). `on` and `ON` start the test too, and `false`, `no`
+  and `0` do not (cells N4, Linux, macOS and Windows VMs). `Yes`, `On` and `tRuE`
+  start it too (cells P2, the same three systems). From the code: claustrum takes
+  a true word of git in each letter case. The trust check of the request finds that linked
+  worktree. On `git.status` that is the worktree that `baseRepo` names. Cells V14
+  ran `git.info`, `git.status`, `git.list_branches` and `git.worktree_create`
+  (Linux, macOS and Windows VMs). On the macOS VM the values other than `true` ran
+  `git.info`. Cell W14 ran `git.worktree_remove` on a Linux VM.
+
+**The count of settings.** Each setting of a counted section costs the bytes of its
+full name, the bytes of its value, and 96. The config has its own sum, and the
+included files have one sum between them. The file in which a sum passes 8388608
+is refused. Cells X5 found five counted sections: `core`,
+`remote`, `extensions`, `include` and `branch`. Cells V5 found seven more: `lfs`,
+`index`, `url`, `filter`, `feature`, `checkout` and `includeif`. The sections `x` and `user` do not count. This
+arithmetic is fitted to the measured bounds of the record. `5fd08069` states no
+such rule. The exact pairs are in `core` and `remote`. For each other counted
+section one cell of 200000 lines was refused (cells X5 and V5). An included file
+of 200000 `core.filemode = true` lines is refused with its own path (cells V7).
+Cells N5 ran files of 40000 `core.filemode = true` lines on Linux, macOS and
+Windows VMs. One such included file passes. Two are refused, and the text names
+the second one. The config with 40000 such lines and one such included file
+passes. Cells P3 ran files of 30000 such lines on the same three systems. Two
+included files pass, and three are refused. A file that includes a second one
+passes. A chain of three, one below the other, is refused. In the two refused
+cells the text names the third file.
+
+**Class 2** is `a file in this repository's .git directory cannot be used: <detail>`.
+The files are `shallow`, `info/attributes` and `info/exclude`.
+
+| Detail | When |
+|---|---|
+| `"<file>" is not a regular file` | `info/attributes` or `info/exclude` is a FIFO or a directory. A symbolic link there passes, also one to the null device. `shallow` is a FIFO, a directory or a symbolic link to the null device. The daemon does not wait on a FIFO |
+| `"<file>": it is larger than 4 MiB` | `info/attributes` or `info/exclude` has more than 4194304 bytes |
+| `"<file>" is larger than 4 MiB` | `shallow` has more than 4194304 bytes |
+| `open <file>: <reason>` | `shallow` has mode 000 (`permission denied`) or is a socket (`no such device or address`, cell V10, Linux VM). The path is not in quotes. An `info/attributes` or `info/exclude` of mode 000 is not refused |
+| `"<file>" holds something other than object ids` | A line of `shallow` is not 40 or 64 hex characters in lower case. That rule is fitted to the cells. Refused are a text line, an id in upper case, and a blank line before or after an id. So are a line of 39, 41 or 63 hex characters and an id with a space after it. A file that holds one line end is refused too (cells V10). A line end of CRLF and a last line with no newline pass. An empty file passes |
+
+**Two refused files.** A refused config comes before a refused file of the git
+directory. In class 2, `shallow` comes before `info/attributes` (cells V16, Linux,
+macOS and Windows VMs). `info/attributes` comes before `info/exclude`. Cells P6
+ran that pair four ways on a Linux VM: a file of 20 MiB with a FIFO, two files of
+20 MiB, two FIFOs, and a FIFO with a directory. Two more P6 cells have a refused
+`shallow` with a FIFO as one of the two other files, and the text names `shallow`.
+
+**No refusal.** A folder with no repository keeps its answers. `5fd08069` keeps
+the "not a repository" answers for a `HEAD` that is no ref and no object id, also
+with format version `2` (cells X3). It keeps them for a repository of another
+owner with no `safe.directory` too. Cells V1 ran that owner on Linux, macOS and
+Windows VMs. The refused states were format version `2`, a config of 20 MiB and an
+`info/exclude` of 20 MiB. A FIFO as the config ran on Linux and macOS VMs. Which call of that build
+decides is not measured.
+
+In the first state claustrum finds no repository, so it reads nothing. If the read
+has a refusal, claustrum asks git for the second state. It runs the
+`rev-parse` call that the method runs next. If that call fails and its stderr holds
+`detected dubious ownership in repository`, the method gives
+no refusal and goes on as before. Plain git prints that text in cells V1,
+before it reads the config. git waits in its own open of a FIFO. So claustrum ends
+that call after 1 second for a file that is not a regular file. git can also meet
+a FIFO that the read did not reach. One case is an include of a config that is
+refused for its size. So claustrum ends the call after 5 seconds for each other
+refusal.
+If a bound ends the call, the refusal stays. After git ends, claustrum waits at
+most 1 more second for the error output of that call. The three bounds are from
+the code and from the tests.
+
+claustrum keeps an answer of git that names no problem for 5 seconds, with the
+kept verdict. In that time a request with that refusal starts no such call. An
+answer that names a problem is not kept. So a new `safe.directory` line counts at
+the next request, as on `5fd08069` (cell N15-a, Linux and macOS VMs). The result
+of a call that a bound ended is not kept, and that of a git that did not start is
+not kept either. The 5 seconds are fitted to cells P7 and P5 (Linux VM), which
+put the value of `5fd08069` between 4 and 5 seconds. This paragraph is from the
+code and from the tests.
+
+**Where claustrum differs from `5fd08069`.** The claustrum lines of this list ran
+on VMs. Most ran on a build of this change that had no kept owner answer. That
+build is in no release. The lines on the kept owner answer ran on a Linux VM, on a
+later build of this change. A line with "from the code" ran on no VM.
+
+- On git 2.11.4 and 2.12.5, `5fd08069` gives no refusal in the four fixtures of
+  cells V18 (Linux VM). The fixtures are format version `2`, a config of 20 MiB, a
+  FIFO as the config and an `info/exclude` of 20 MiB. claustrum refuses on those
+  gits as on git 2.43.0. Git 2.13.7 is the oldest git that ran with the refusal.
+- On a Windows VM, a config of 20 MiB at a config path of 262 characters and more
+  gets another answer (cells P6w, P6x, X12 and V12a). `5fd08069` answers the size
+  text up to 261 characters. From 262 to 266 characters it answers "not a
+  repository". From 268 characters on it answers `git could not check this
+  repository on the remote machine: at "<path>": <text>`. `<text>` is the error
+  text of git, or of its start: `fork/exec <git.exe path>: The directory name is
+  invalid.` claustrum answers the size text at each length that ran, also in the
+  remove frame. Plain git answers "not a git repository" from 259 to 266
+  characters. The lengths 267 and 269 did not run.
+- In some states git itself refuses a value of the config, and `5fd08069` gives
+  the answer of a repository. claustrum answers as `89cb6289` there, mostly with
+  the hooks refusal. The cells are C2c, X5b, X9-03, X9-04 and the X8 rows of
+  version `0`. Cell C2c has `extensions.objectformat = md5` under version `0`.
+  Cells X9-03 and X9-04 have an `include.path` with an empty value or with none.
+  Two V6 cells under version `1` are `worktreeConfig = maybe` and
+  `objectFormat = SHA256`. A third, `refStorage = FILES`, differs on macOS and
+  Windows VMs. A fourth has no version key and `objectFormat = md5` (Linux VM).
+  For `objectFormat = SHA256` the `git.status` of `5fd08069` answers
+  `exit status 128`.
+- With a refused format version, `5fd08069` reads the config again on each later
+  request (cells N10 and P5, Linux, macOS and Windows VMs). claustrum keeps the
+  verdict and makes no read call there.
+- The owner call. A refused request of claustrum makes the `rev-parse` call that
+  asks git about the owner, unless an answer of the last 5 seconds is kept. In
+  ten requests 1 s apart it makes that call at the first request and at the
+  seventh (cell P5, Linux VM). The build before the kept answer made that call on
+  each refused request (cells N10 and P5, Linux, macOS and Windows VMs). `5fd08069` has a
+  `rev-parse --git-dir` call at its first request. With a config of 20 MiB, its
+  nine later requests of cell P5 make no git call on macOS and Windows VMs. On a
+  Linux VM the eighth request, about 6 s after the first, makes that call again.
+- The reply time of a request that makes the owner call. With a config, an
+  included file or a `config.worktree` file of 20 MiB such a request takes 0.6 to
+  1.1 s on claustrum (cells P5, N10, V7, V14 and P2, Linux, macOS and Windows
+  VMs). `5fd08069` takes 0.17 to 0.73 s for its first request there
+  and 5 to 37 ms for a later one. With a FIFO as the config or as an included
+  file, or a link to a terminal as the config, the call of claustrum ends at the
+  bound of 1 second. Its result is not
+  kept, so each such request takes about 1 s. Cells N10 and V17 show that on a
+  Linux VM, and cells N2 and N13-b on a macOS VM. The first such request of
+  `5fd08069` takes 0.15 to 0.36 s, and a later one under 2 ms. Those times are
+  from cells N2, N3 and N17 (Linux and macOS VMs). The reply lines are equal.
+  With another refusal, a call that does not end takes 5 seconds on each request
+  (from the code, not measured).
+- The time of the change after a change of the owner is equal in two measured
+  sequences. In cell P7 (Linux VM, 3 runs each) a repository with format version
+  `2` gets another owner. `5fd08069` and claustrum answer the refusal 0, 1, 2, 3
+  and 4 s after the change, and "not a repository" 5, 6 and 8 s after it. If the
+  last request is 4 s old at the change, the two answer the refusal 0 and 1 s
+  after it and "not a repository" from 2 s on. Other sequences are not measured.
+- A repository of another owner whose config is not a regular file, on a host
+  where the `rev-parse` call takes more than 1 second. claustrum answers the
+  refusal. `5fd08069` answers "not a repository" in cells V1 and N2 (from the
+  code, not measured). The same holds for another refusal and a call of more
+  than 5 seconds.
+- A config whose listing by git has more than 64 MiB. If the first 64 MiB show
+  neither a name over its bound nor too many settings, claustrum gives no
+  refusal (from the code, not measured on `5fd08069`).
+- In cell X1c (Linux VM) the config is a FIFO. Requests 3 and 4 have
+  `"shadowDirOff":true` and get no answer. After them, `5fd08069` gives no answer
+  to request 5, a `git.list_branches`, and to request 7, a `git.worktree_create`.
+  claustrum answers both with the "not a regular file" text.
+
+**claustrum's own choices** (from the code, not measured on `5fd08069`):
+
+- If the name of an extension is one of the ten, a value that no cell ran is not
+  refused.
+- `extensions.worktreeConfig` starts the `config.worktree` test in a letter case
+  that no cell ran, such as `oN`. The last such setting of the config counts.
+- The cuts of the format version value and of the extension name count
+  characters. The cells have ASCII text.
+- The `config.worktree` file of the main worktree is not tested.
+- The name bound and the count of settings are tested on a whole file before an
+  include of that file is followed. That order is fitted to two cells of 200000
+  include lines of a missing file, which get the "more settings" text.
+- The two include limits come before the open of an included file.
+- The file of an `includeIf` section is not read. An open error there, and at a
+  `config.worktree` file, gives no refusal.
+- An open error other than the measured ones gets the same `open <file>: <reason>`
+  form.
+- A `~/x` include is joined to the home folder and cleaned.
+- On Windows a `%(prefix)/…` value gets the "expands neither" text, with the cut
+  at 100 characters.
+- The read runs after the trust check accepted the git directory, and after the
+  test of the daemon's own `GIT_CONFIG_COUNT`.
+- `~/x` with no home folder gets the "expands neither" refusal. No daemon starts
+  with no home folder.
+- On `git.worktree_remove` with `worktreeRoot`, the read comes after the trust
+  check and before the configuration listing. Cells N14 and P4 have a repository
+  that passes the checks before it.
+- The question to git about the owner: its one text, the bound of 1 second for
+  a refusal of a file that is not a regular file, the bound of 5 seconds for
+  each other refusal, and the wait of 1 second for its error output. The
+  `git-timeout` ends the call too if it is shorter.
+- The listing that the read takes from git for one config file has a bound of
+  64 MiB. A file with a long subsection name and many keys lists as far more
+  bytes than it has. The read tests the name bound and the count of settings
+  on the first 64 MiB of such a listing. If neither refuses, the read has no
+  verdict, and the request gets no refusal.
+- The kept owner answer: the 5 seconds count from the start of the call. One kept
+  answer serves the five methods on one git directory or linked worktree.
+- If the read gives no verdict, the method goes on as before. A read gives none
+  if its git call fails with anything other than a syntax error text. Two cases
+  are a git that does not start and a call that the `git-timeout` ends. A config
+  file that the daemon opens and cannot read gives none too.
+- A verdict of a read with an open error or a read error is not kept.
+- With a daemon `GIT_COMMON_DIR`, `git.info` and `git.list_branches` read
+  nothing: the trust check pins no git directory there.
+- A bare repository whose config the daemon refuses, on a host where git refuses
+  bare repositories (`safe.bareRepository = explicit`), gets the refusal.
+- An `includeIf` line in a file three levels below the config gets the "includes
+  go past" text.
+- On Windows claustrum refuses a link at a config file and at an included file, and
+  it tests no folder above the file. It also refuses an include value that starts
+  with a slash or a drive.
 
 #### Hardened git calls
 
@@ -1835,7 +2206,9 @@ below against `f6010b97`. Each point names the VMs that measured it.
   right before it. That choice is not measured: only configurations that stay the
   same during a request were run. Three limits refuse the method after the first listing, before
   any hardened call. A key over 1048576 bytes gets the hooks refusal with `a
-  configuration key is longer than the listing reads` (row L08c). More than 1024
+  configuration key is longer than the listing reads` (row L08c). Row L08c had the
+  key in the section `x`. In some sections a key over 1024 bytes is refused before
+  the listing (see [Repository config refusals](#repository-config-refusals)). More than 1024
   names get `config-defined hooks could not be pinned off; git not run: too many
   configured hooks to pin` (row L06b). Names whose bytes add up to more than 65536
   get `…git not run: configured hook names exceed the aggregate pin byte bound` (row
@@ -2091,6 +2464,8 @@ check (Windows VM).
   git directory answers `-32603` with the refusal text. "No repository" answers the
   non-repo body. A `GIT_COMMON_DIR` in the daemon's environment turns the check off
   for this method. See [Git-directory trust check](#git-directory-trust-check).
+- A repository config that the daemon does not accept answers `-32603` with a
+  refusal text. See [Repository config refusals](#repository-config-refusals).
 - The daemon reads `branch` with `branch --show-current`, so it works on an unborn
   HEAD. An empty repo gives the init branch name, for example `master`. A detached
   HEAD gives `branch:"detached:<short-sha>"`.
@@ -2156,7 +2531,10 @@ check (Windows VM).
   `-32603` with the listing refusal that ends
   `fatal: bad config line 15 in file <P>\.git/config`, after 3 git calls. In cell B-03 the junction is outside any
   repository, and the answer is the non-repo body. The claustrum build of this change
-  answers the same frame in each of these cells (Windows VM). Its calls carry the
+  answers the same frame in each of these cells (Windows VM). Since the read of the
+  repository config, claustrum answers the class 1 text in the state of cell B-15
+  (from the code). The listing refusal stays for a config that git refuses and the
+  read accepts, for example an `include.path` with no value. Its calls carry the
   same entries in these cells, except B-14. In cell B-03 it runs one call less
   (see the trust check). The claustrum test on real junctions runs on Windows
   only. It has 11 cells: B-01, B-03, B-04, B-05p, B-05r, B-07, B-08, B-15, B-16,
@@ -2233,6 +2611,8 @@ check (Windows VM).
   `{"isRepo":false,"clean":false}`. A `GIT_COMMON_DIR` in the daemon's environment
   does not turn the check off here. See
   [Git-directory trust check](#git-directory-trust-check).
+- A config of `baseRepo` that the daemon does not accept answers `-32603` with a
+  refusal text. See [Repository config refusals](#repository-config-refusals).
 - Status honours replace objects (`refs/replace`), as the reference does. A
   replaced `HEAD` commit therefore shows in `changes`.
 
@@ -2268,7 +2648,9 @@ the read of the user's excludes.
    - `baseRepo` can be a symlink to the repository, `T/` or `T/sub/..` (rows n11b,
      n11c2 and n11c3). It can be a bare repository, a submodule checkout or a
      subfolder of a repository (rows A03, B08, A04, A05b and N05a).
-   - A listing that fails is the hooks refusal (row o22b, Linux VM).
+   - A listing that fails is the hooks refusal (row o22b, Linux VM). A syntax
+     error in the config file of `baseRepo` itself gets the class 1 text first:
+     see [Repository config refusals](#repository-config-refusals).
    - A `rev-parse` that fails answers `isRepo:false` (row n17b).
    - Where the trust check finds no repository, both calls carry `GIT_DIR=<null>` in
      place of the `GIT_COMMON_DIR` pin, and the answer is `isRepo:false` (row n10b2).
@@ -2546,6 +2928,11 @@ Makes a linked git worktree for a session, on a new branch or on a branch that e
   its branch all stay. A `GIT_COMMON_DIR` in the daemon's environment does not turn
   the check off here. Damage to the entry of the worktree being removed does not
   stop the removal. See [Git-directory trust check](#git-directory-trust-check).
+- A config of `baseRepo` that the daemon does not accept refuses the removal, and
+  nothing is deleted. Without `worktreeRoot` the text ends with `is locked:
+  <text>`, with no `; retry`. With `worktreeRoot` the text is the work-tree
+  refusal below with `<text>` as the reason. See
+  [Repository config refusals](#repository-config-refusals).
 - With `worktreeRoot`, the daemon determines the repository's work tree after the
   containment checks and before the dir-symlink check. A failure answers
   `{"success":false,"error":"failed to remove worktree: cannot determine the
@@ -2578,6 +2965,9 @@ Makes a linked git worktree for a session, on a new branch or on a branch that e
      text of its failure class as `<reason>`. `89cb6289` answers so with an empty
      `GIT_CONFIG_KEY_0` of the daemon (rows A-N5b and A-N5c on Linux and macOS VMs,
      row A-N5 on a Linux VM).
+
+     On claustrum the read of the repository config comes here. Its refusal text
+     is `<reason>` (`5fd08069`, cells N14, Linux and macOS VMs).
   4. Git cannot list the configuration. `<reason>` is the refusal text of the
      failure class. When the listing says git finds no repository, `<reason>` is `git
      finds no repository here: <git text>`. The `.git` file with a gone target gets
@@ -3043,8 +3433,10 @@ Makes a linked git worktree for a session, on a new branch or on a branch that e
   [`DIVERGENCES.md`](DIVERGENCES.md) → D2.
 - A relative `worktreePath` is refused upfront (`"…is a relative path…"`). Send an
   absolute path under the repository.
-- `gitTimeout` (D5) is off by default. On this method no D5 kill leads to a delete.
-  A kill only refuses or skips a step. When a hit stops the config or repository
+- `gitTimeout` (D5) is off by default. On this method the deadline starts no delete.
+  A kill refuses or skips a step. One skipped step is the daemon's own read of the
+  repository config. After a kill of that call the remove goes on as it did before
+  that read. When a hit stops the config or repository
   check, the request refuses, or it skips the registration of a gone worktree. With
   `worktreeRoot` that hit answers the work-tree refusal, and so does a hit on
   `rev-parse --show-toplevel` or the first `worktree list` call. A hit on the second

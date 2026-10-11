@@ -170,6 +170,9 @@ The JSON-RPC surface is identical on every OS. Full internals →
       follows a symlink out of the leaf or its parent. A leaf that is a symlink
       or not a directory is refused. A worktree LOCKED in the `.git` folder of
       `baseRepo` is refused, not deleted, also where `89cb6289` answers success (D22).
+      A repository config, or one of three files of the git directory, that the
+      daemon does not accept refuses the remove before any delete, as on
+      `5fd08069`. `"shadowDirOff":true` in the request turns that refusal off.
       On Windows a junction at any directory between `baseRepo` and the leaf is
       refused too. At `.claude` or `.claude\worktrees`, `f6010b97` and `89cb6289`
       answer success and delete the branch. For `89cb6289` that is measured for a
@@ -459,9 +462,10 @@ reference completes. Claude Desktop owns the `-serve` / `-install` argv, so the
 `claustrum.conf` key is the reachable knob, not the flag. Each disabled state
 bypasses its limiter entirely. That is the "never simplify" rule of Part A.
 
-On `git.worktree_remove` the deadline of D5 gates no delete. That method runs no
-`git worktree remove`, and no D5 kill leads to a delete there. A kill only refuses
-or skips a step. `git.worktree_create` is the exception. Its
+On `git.worktree_remove` the deadline of D5 starts no delete. That method runs no
+`git worktree remove`. A kill refuses or skips a step. One skipped step is the
+daemon's own read of the repository config. After a kill of that call the remove
+goes on as it did before that read. `git.worktree_create` is the exception. Its
 rollback deletes after a failed or killed read-tree checkout, and it removes an
 empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
 Opting D5 in is wire-visible.

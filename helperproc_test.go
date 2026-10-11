@@ -256,8 +256,13 @@ func runGitSlow(args []string) int {
 	// and "full" is the plain one with --git-dir. Each name fails its listing with
 	// exit code 128. "noscope" refuses --show-scope with exit code 129, as a git
 	// before 2.26 does. "hold-<name>" waits on that listing, so that a deadline of
-	// the caller expires during it.
-	if which := strings.Split(os.Getenv("CLAUSTRUM_GITSTUB_FAIL_LISTING"), ","); which[0] != "" && slices.Contains(args, "--list") {
+	// the caller expires during it. With CLAUSTRUM_GITSTUB_LOG set, a held listing
+	// appends the line "held" and its name, joined by a unit separator.
+	//
+	// A call with --file is the read of one config file (listConfigText). It has
+	// GIT_DIR at the null device too, and it is no listing of the filter rule.
+	if which := strings.Split(os.Getenv("CLAUSTRUM_GITSTUB_FAIL_LISTING"), ","); which[0] != "" && slices.Contains(args, "--list") &&
+		!slices.Contains(args, "--file") {
 		kind := "other"
 		switch {
 		case slices.Contains(args, "--show-scope"):
@@ -268,6 +273,9 @@ func runGitSlow(args []string) int {
 			kind = "full"
 		}
 		if slices.Contains(which, "hold-"+kind) {
+			if log := os.Getenv("CLAUSTRUM_GITSTUB_LOG"); log != "" {
+				appendLine(log, "held\x1f"+kind)
+			}
 			time.Sleep(60 * time.Second)
 		}
 		if kind == "scoped" && slices.Contains(which, "noscope") {
@@ -856,6 +864,24 @@ func runHelper(mode string, args []string) int {
 		// Stand-in `git` for the git.worktree_create caller-timeout tests. It passes
 		// every call through to the real git and slows one chosen call. See runGitSlow.
 		return runGitSlow(args)
+	case "open-repo-file":
+		// Opens args[0] as the config read does (openRepoFile). Then it prints
+		// "terminal" if this process has a controlling terminal, and "no terminal"
+		// if it has none: an open of /dev/tty answers that. The test starts it in
+		// a new session, so it has none before the open.
+		f, err := openRepoFile(args[0])
+		if err != nil || f == nil {
+			fmt.Fprintln(os.Stderr, "open:", err)
+			return 2
+		}
+		defer func() { _ = f.Close() }()
+		if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+			_ = tty.Close()
+			fmt.Println("terminal")
+		} else {
+			fmt.Println("no terminal")
+		}
+		return 0
 	case "wrap":
 		// A managed-launcher stand-in, the shape of the VM rows' W: it writes
 		// "WRAP:<args>" to stderr, then runs args[0] with args[1:] and exits with

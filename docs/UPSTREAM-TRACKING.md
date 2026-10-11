@@ -455,9 +455,8 @@ traps that matter for telling drift from expected:
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
     environment, `5fd08069` answers the filter refusal. claustrum answers
     `not_a_repo`, as `89cb6289` does (Linux VM).
-  - A syntax error in `.git/config` (Linux and Windows VMs) and a
-    `~/.gitconfig` that is a directory (Linux VM) have another text on
-    `5fd08069`. claustrum has the text of `89cb6289`.
+  - A `~/.gitconfig` that is a directory has another text on `5fd08069`.
+    claustrum has the text of `89cb6289` (Linux VM).
   - With a temporary directory that cannot be used, `5fd08069` answers the
     filter refusal. claustrum fails as `89cb6289` does (Linux and Windows
     VMs).
@@ -481,6 +480,47 @@ traps that matter for telling drift from expected:
   macOS is not measured on any build.
 
   See the record of [git.worktree_create](record/git-worktree-create.md#git-filters-of-the-checkout).
+- The refusals of a repository config split the builds too, not drift.
+  `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
+  Against `89cb6289` a config that the daemon does not accept gets a text that
+  starts with `this repository's git config cannot be used: `. A refused file of
+  the git directory gets a text that starts with `a file in this repository's
+  .git directory cannot be used: `. `89cb6289` gives a normal answer, `isRepo`
+  false, the hooks refusal, another refusal of that build such as `exit status
+  128`, or no answer there. The call log has one more call
+  for each config file of a first read. Each state but the three Windows texts
+  ran on a Linux VM, and part of them on macOS and Windows VMs. Most cells ran
+  `git.info` and `git.status`.
+  With `"shadowDirOff":true` in the request, the read does not run. A
+  `git.worktree_remove` of a worktree folder that does not exist is refused
+  too. With a config of 20 MiB, `89cb6289` deletes the branch there (Linux,
+  macOS and Windows VMs). With `worktreeRoot` the refused remove has the text
+  `cannot determine the repository's work tree: ` before the refusal (Linux
+  and macOS VMs).
+
+  Against `5fd08069` these differences are not drift. On git 2.11.4 and 2.12.5,
+  `5fd08069` gives no refusal in four refused states, and claustrum refuses
+  (Linux VM). On Windows a config path of 262 characters and more with a config
+  of 20 MiB gets another answer (Windows VM). In some states git itself refuses
+  a value of the config. `5fd08069` gives the answer of a repository there, and
+  claustrum answers as `89cb6289`. The call logs of a refused request differ:
+  `5fd08069` reads a config with a refused format version again, and claustrum
+  asks git about the owner. A request with that owner call takes about 1 s with
+  a config of 20 MiB, or with a FIFO as the config. After a change of the owner
+  of a refused repository, the two keep the refusal for 4 s and answer "not a
+  repository" from 5 s on (cell P7, Linux VM). On a host where that owner call takes more
+  than 1 second, a repository of another owner whose config is not a regular
+  file gets the refusal on claustrum and "not a repository" on `5fd08069`
+  (from the code). With another refusal the same holds for an owner call of
+  more than 5 seconds (from the code). A config whose listing by git passes
+  64 MiB can get no refusal on claustrum (from the code, not measured on
+  `5fd08069`). On a FIFO config, two
+  `shadowDirOff` requests get no answer. `5fd08069` then gives no answer to two
+  later requests, and claustrum answers them (Linux VM).
+
+  The states, the bounds and the cells are in
+  [PROTOCOL.md](PROTOCOL.md#repository-config-refusals) and the
+  [record](record/git-config-refusals.md).
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,

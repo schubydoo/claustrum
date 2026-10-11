@@ -754,7 +754,7 @@ func failedListingCheck(r listingRun, dir string, heavy bool) configCheck {
 	// not-a-repo shape (measured against 7d193f89: a nonexistent path/baseRepo answers
 	// isRepo:false on the read methods, not_a_repo on worktree_create, and success on
 	// worktree_remove — NOT this refusal). Only a config git CAN reach but cannot parse
-	// (a corrupt .git/config) is refused here.
+	// (for example an `include.path` with no value) is refused here.
 	//
 	// 89cb6289 still runs `git version` after such a start failure, and its frames
 	// stay the same (rows L16a, L16b, L16d and L16f: a file and a folder of mode 0600).

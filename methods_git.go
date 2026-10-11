@@ -59,9 +59,11 @@ type gitParams struct {
 	TimeoutMs int `json:"timeoutMs,omitempty"`
 	// ShadowDirOff turns off the filter rule of the git.worktree_create checkout
 	// (gitfilter.go) for this request. With it, 5fd08069 passes no filter pairs, runs
-	// the repository's filter and succeeds (cell E1, Linux VM). Only
-	// git.worktree_create reads it. Any other effect of the member on 5fd08069 is
-	// not built here. Only the JSON value true sets it (jsonTrueSwitch).
+	// the repository's filter and succeeds (cell E1, Linux VM). It also turns off
+	// the daemon's own read of the repository's config on the five git methods
+	// (repoConfigGateRefusal). Cells X1 measured that on git.info and git.status, and
+	// cells V2 on the three other methods. Any other effect of the member on
+	// 5fd08069 is not built here. Only the JSON value true sets it (jsonTrueSwitch).
 	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
@@ -93,8 +95,10 @@ func (p *gitParams) repoDir() string {
 // never been measured on either binary. This is D5.
 //
 // ⚠️ A TIMEOUT IS NOT "the same as any other git failure" for a caller that acts on
-// the failure. git.worktree_remove runs no `git worktree remove`. On that method no
-// D5 kill leads to a delete. A kill only refuses or skips a step.
+// the failure. git.worktree_remove runs no `git worktree remove`. On that method the
+// deadline starts no delete. A kill refuses or skips a step. One skipped step is the
+// daemon's own read of the repository config. After a kill of that call the remove
+// goes on as it did before that read.
 // git.worktree_create is the exception: its rollback deletes after a failed or killed
 // read-tree checkout, and it removes an empty leaf after a failed add. Its checkout
 // tests run without the answer of a killed show-toplevel or `worktree list`. The
@@ -305,7 +309,12 @@ func gitInfo(req *request) response {
 		}
 		return okResult(req.ID, notRepoResult{})
 	}
-	// If the repo's config cannot be enumerated (e.g. a corrupt .git/config), the
+	// The daemon's own read of the repository's config comes before the listing
+	// (repoConfigGateRefusal). Its place after the count check is not measured.
+	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, false, "--git-dir"); msg != "" {
+		return errResult(req.ID, codeInternal, msg)
+	}
+	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603
 	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
 	c := hostileConfigRefusal(p.Path, false)
@@ -567,6 +576,11 @@ func gitStatus(req *request) response {
 	if _, err := os.Stat(p.BaseRepo); err != nil {
 		return notRepo
 	}
+	// The daemon's own read of the repository's config comes before the listing
+	// (repoConfigGateRefusal).
+	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.BaseRepo, true, "--absolute-git-dir"); msg != "" {
+		return errResult(req.ID, codeInternal, msg)
+	}
 	// A repo whose config cannot be enumerated is refused with -32603 (row o22b). The
 	// listing runs in baseRepo as sent and carries the heavy profile (K1 call 2).
 	c := hostileConfigRefusal(p.BaseRepo, true)
@@ -660,6 +674,11 @@ func gitListBranches(req *request) response {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, branchesResult{Branches: []string{}})
+	}
+	// The daemon's own read of the repository's config comes before the listing
+	// (repoConfigGateRefusal). The answer has the error object of git.info (cell X1).
+	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, false, "--git-dir"); msg != "" {
+		return errResult(req.ID, codeInternal, msg)
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
 	// measured on an ephemeral VM.
@@ -760,6 +779,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 		}
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+	}
+	// The daemon's own read of the repository's config comes before the listing
+	// (repoConfigGateRefusal). Nothing is created (cells W7 and E1, Linux VM).
+	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, repo, false, "--is-inside-work-tree"); msg != "" {
+		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
@@ -1405,7 +1429,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// refuses gets the work-tree refusal even when the directory level is a symlink.
 		// Measured side by side against f6010b97 on a Linux VM (rows K10, K11, K14 and
 		// K16 with a symlinked directory level).
-		msg, topLevel := externalWorkTreeRefusal(repo)
+		msg, topLevel := externalWorkTreeRefusal(repo, p.ShadowDirOff)
 		if msg != "" {
 			return refuse(msg)
 		}
@@ -1563,7 +1587,8 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// Linux, macOS and Windows VMs (rows G08, T03 and T04 on macOS). For a baseRepo
 		// that holds no repository, 89cb6289 runs the listing and the rev-parse twice
 		// before that answer (row A5 on Linux, macOS and Windows VMs).
-		verdict := requestGitDirTrust(repo, false).verdict
+		t := requestGitDirTrust(repo, false)
+		verdict := t.verdict
 		if verdict == gitDirRefused {
 			// The one git call of 89cb6289 is the read of the user excludes (row DG2i-g
 			// on a Linux VM).
@@ -1576,6 +1601,14 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// macOS VMs).
 		if _, bad := daemonCountRefusal(); bad {
 			return refuse(lockCheckRefusal(p.WorktreePath))
+		}
+		// The daemon's own read of the repository's config comes before the listing
+		// (repoConfigGateRefusal). The worktree stays (cells W7 and X1, Linux VM). The
+		// path is worktreePath as sent, and it is not cut (cells X12). A worktree
+		// folder that is gone gets the same refusal (removeGoneWorktree). With
+		// worktreeRoot the read is in externalWorkTreeRefusal, with its own text.
+		if msg := repoConfigGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
+			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		}
 		// The listing carries the heavy profile of the rev-parse that follows it, as on
 		// f6010b97 (Linux, macOS and Windows VMs). When the check fails, f6010b97 runs it
@@ -1810,6 +1843,19 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		}
 		if bad {
 			return lockCheck(msg)
+		}
+		// The daemon's own read of the repository's config refuses here too
+		// (repoConfigGateRefusal), with the text of a worktree folder that exists. No
+		// registration and no branch is deleted. 5fd08069 answers so on a Windows VM
+		// (cells F1a, F1b, F2a, F2b, G1a to G1c, W6, W6x and X12), where 89cb6289
+		// answers success. It deletes the branch with the files of 20 MiB and with
+		// the absolute include (cells G1a to G1c), and keeps it with format version
+		// `2`. Linux and macOS VMs measured the
+		// same refusal in cells N1. Their states are format version `2`, a config of
+		// 20 MiB and an info/exclude of 20 MiB. With worktreeRoot the read came
+		// before this function (externalWorkTreeRefusal, cells N14).
+		if msg := repoConfigGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
+			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		}
 		switch t.verdict {
 		case gitDirNoRepo:

@@ -21,17 +21,21 @@ import (
 // of <T>, made by plain git. worktreeRoot is unix-only.
 
 const (
-	r0cListing    = "config -z --list"
+	r0cListing = "config -z --list"
+	// r0cRead is the daemon's own read of the config of baseRepo (gitrepoconfig.go).
+	// It is not a call of 89cb6289: 5fd08069 makes it.
+	r0cRead       = "config --no-includes --file - --list -z"
 	r0cLinkedTail = "; a worktree location must be outside the repository's checkouts"
 )
 
 // r0cRemoveCalls are the git calls of a remove that is refused after `worktree list`,
 // and r0cCreateCalls those of a refused create. The once-cached excludes read is left
-// out. With it, that is 7 calls and 9 calls, as on f6010b97 and 89cb6289.
+// out. With it and without r0cRead, that is 7 calls and 9 calls, as on f6010b97 and
+// 89cb6289.
 var (
-	r0cRemoveCalls = []string{r0cListing, "rev-parse --show-toplevel", r0cListing,
+	r0cRemoveCalls = []string{r0cRead, r0cListing, "rev-parse --show-toplevel", r0cListing,
 		"rev-parse --absolute-git-dir", r0cListing, "worktree list --porcelain -z"}
-	r0cCreateCalls = []string{r0cListing, "rev-parse --is-inside-work-tree", r0cListing,
+	r0cCreateCalls = []string{r0cRead, r0cListing, "rev-parse --is-inside-work-tree", r0cListing,
 		"rev-parse --show-toplevel", r0cListing, "rev-parse --absolute-git-dir", r0cListing,
 		"worktree list --porcelain -z"}
 )
@@ -378,7 +382,7 @@ func TestWorktreeRemoveTopLevelKilledRefuses(t *testing.T) {
 		after: func(t *testing.T, f *r0Fixture) {
 			stubGitCall(t, "rev-parse --show-toplevel", "exec sleep 30", 2*time.Second)
 		},
-		calls: []string{r0cListing, "rev-parse --show-toplevel"},
+		calls: []string{r0cRead, r0cListing, "rev-parse --show-toplevel"},
 		want:  "failed to remove worktree: cannot determine the repository's work tree: signal: killed"}
 	r.remove(t)
 }

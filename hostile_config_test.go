@@ -1,14 +1,14 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 // 7d193f89 refuses every git method when the repo's config cannot be enumerated (so
-// its config-defined hooks cannot be pinned off) — e.g. a corrupt .git/config. The
+// its config-defined hooks cannot be pinned off), for example an include.path with no
+// value. The
 // frame is method-specific: -32603 for the read methods, a worktreeResult under
 // errorCode worktree_add_failed for create, and a "could not check whether … is
 // locked" message for remove. Measured byte-for-byte against 7d193f89 on a VM.
@@ -20,13 +20,10 @@ func TestHostileConfigRefusal(t *testing.T) {
 	wt := filepath.Join(repo, ".claude", "worktrees", "w")
 	runGit(t, repo, "worktree", "add", "-q", wt, "-b", "w")
 
-	// Corrupt the main config so `git config --list` fails.
-	f, err := os.OpenFile(filepath.Join(repo, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = f.WriteString("\n[bad section\nnotakey\n")
-	_ = f.Close()
+	// The config has an include.path with no value, so `git config --list` fails.
+	// A corrupt line in a config file gets the text of the daemon's own read
+	// (TestRepoConfigSyntaxError).
+	breakListing(t, filepath.Join(repo, ".git"))
 
 	s := newTestServer(t)
 	const hostile = "config-defined hooks could not be pinned off; git not run: listing the configuration in force:"

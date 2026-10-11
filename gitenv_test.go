@@ -489,6 +489,20 @@ func TestDaemonGitEnvPerCallKind(t *testing.T) {
 			if proto != "ssh:https:git" {
 				t.Errorf("unhardened call %d %q GIT_ALLOW_PROTOCOL = %q, want the daemon's (round1 C4)", i, c.argv, proto)
 			}
+		case slices.Contains(c.argv, "--no-includes"):
+			// The daemon's own read of the config (gitrepoconfig.go). It drops the
+			// first two as a listing does, and it carries no profile. This row is from
+			// the code, not from round 1.
+			kinds["config read"]++
+			if !slices.Equal(got, listingSet) {
+				t.Errorf("config read %d %q = %q\nwant %q", i, c.argv, got, listingSet)
+			}
+			if proto != "ssh:https:git" {
+				t.Errorf("config read %d GIT_ALLOW_PROTOCOL = %q, want the daemon's", i, proto)
+			}
+			if dir, _ := c.value("GIT_DIR"); dir != os.DevNull {
+				t.Errorf("config read %d GIT_DIR = %q, want %q", i, dir, os.DevNull)
+			}
 		case slices.Contains(c.argv, "config") && slices.Contains(c.argv, "--list"):
 			kinds["listing"]++
 			if !slices.Equal(got, listingSet) {
