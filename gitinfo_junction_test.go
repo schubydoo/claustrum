@@ -274,8 +274,11 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 		runGit(t, f.P, "remote", "remove", "origin")
 		wantResult(t, "info", info(t, sub), infoFrame(t, f.P, "rmain", "", ""))
 	})
-	// The listing reads the config file of P, so a broken line there refuses the
-	// request with the name of that file (cell B-15).
+	// The listing reads the config of P, so a broken line there refuses the request
+	// (cell B-15). Cell B-15 had a syntax error in the config file. The daemon's
+	// own read now answers that state first (TestRepoConfigSyntaxError), so the
+	// line here is an include.path with no value, which the listing of git
+	// refuses and the read does not.
 	t.Run("B-15 broken config of P", func(t *testing.T) {
 		cfg := filepath.Join(dotGitOf(f.P), "config")
 		b, err := os.ReadFile(cfg)
@@ -283,10 +286,10 @@ func checkJunctionInfoCells(t *testing.T, f junctionRepos) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { writeFile(t, cfg, string(b), 0o644) })
-		writeFile(t, cfg, string(b)+"[broken\n", 0o644)
+		breakListing(t, dotGitOf(f.P))
 		r := info(t, sub)
 		const head = "config-defined hooks could not be pinned off; git not run: listing the " +
-			"configuration in force: exit status 128: fatal: bad config line "
+			"configuration in force: exit status 128: error: missing value for 'include.path' fatal: bad config line "
 		tail := " in file " + dotGitOf(f.P) + "/config"
 		if r.Error == nil || r.Error.Code != -32603 || !strings.HasPrefix(r.Error.Message, head) ||
 			!strings.HasSuffix(r.Error.Message, tail) {

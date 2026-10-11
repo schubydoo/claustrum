@@ -108,6 +108,7 @@ nav:
       - files.extract_tar: record/files-extract-tar.md
       - git.list_branches: record/git-list-branches.md
       - git.worktree_create: record/git-worktree-create.md
+      - Repository config refusals: record/git-config-refusals.md
       - process.stdin: record/process-stdin.md
       - process.killAndWait: record/process-killandwait.md
       - process.reattach: record/process-reattach.md

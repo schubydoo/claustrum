@@ -24,6 +24,9 @@ To use the method, read [git.list_branches](../protocol/git-list-branches.md).
   `{"isRepo":false,"branches":[]}`. A `GIT_COMMON_DIR` in the daemon's environment
   turns the check off for this method. See
   [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check).
+- A repository config that the daemon does not accept answers `-32603`. See
+  [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and the
+  [record of the refusals](git-config-refusals.md).
 - The daemon reads stdout only. A broken-ref `for-each-ref` warning must not become
   a branch.
 - A failing `for-each-ref` → `-32603 exit status 128`. With opt-in D5 it can carry

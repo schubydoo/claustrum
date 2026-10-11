@@ -62,7 +62,7 @@ func TestWorktreeCreateRootIsFileSystemRoot(t *testing.T) {
 	got := dispatchRaw(t, newTestServer(t), rpcLine(t, "git.worktree_create", map[string]any{
 		"baseRepo": f.T, "branchName": "w1", "worktreePath": leaf, "worktreeRoot": "/"}))
 	wantFrame(t, got, `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"refusing to create worktree: / is a filesystem root; choose the worktree location by its absolute path, without \"..\", beneath the filesystem root","errorCode":"unsafe_path"}}`)
-	if got, want := r0cCalls(calls()), r0cCreateCalls[:2]; strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got, want := r0cCalls(calls()), r0cCreateCalls[:3]; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("git calls = %q, want %q", got, want)
 	}
 	if _, err := os.Lstat(leaf); err == nil {

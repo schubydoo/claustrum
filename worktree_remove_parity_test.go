@@ -205,12 +205,7 @@ func TestWorktreeRemoveGoneWithoutRepository(t *testing.T) {
 func TestWorktreeRemoveGoneHostileRepository(t *testing.T) {
 	t.Run("bad config", func(t *testing.T) {
 		f := newRmFixture(t)
-		cfg := filepath.Join(f.repo, ".git", "config")
-		b, err := os.ReadFile(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeFile(t, cfg, string(b)+"[[[broken\n", 0o644)
+		breakListing(t, filepath.Join(f.repo, ".git"))
 		wp := filepath.Join(filepath.Dir(f.wt), "gone")
 		got := removeErrorField(t, removeFrame(t, map[string]any{"baseRepo": f.repo, "worktreePath": wp}))
 		prefix := "failed to remove worktree: could not check whether " + wp + " is locked (" + hooksRefusalPrefix + "exit status 128: "

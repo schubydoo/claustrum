@@ -490,9 +490,7 @@ func statusEntryConfig(root *os.Root) (present, ok bool) {
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "--no-includes", "--file", "-", "--list", "-z")
-	cmd.Stdin = bytes.NewReader(b)
-	out, err := cmd.Output()
+	out, err := listConfigText(ctx, b, "", nil)
 	if err != nil {
 		return true, false
 	}

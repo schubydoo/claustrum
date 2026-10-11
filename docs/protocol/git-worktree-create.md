@@ -19,7 +19,7 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Linux and macOS only. |
 | `timeoutMs` | no | A deadline that starts at the add. It stops only the checkout. The daemon tests it again after the add and after the copy step. With no value or `0` there is no deadline. |
-| `shadowDirOff` | no | `true` turns off the filter rule of the checkout for this request. Any other value does nothing and is no error. See [Git filters](#git-filters). |
+| `shadowDirOff` | no | `true` turns off the filter rule of the checkout for this request, and the daemon's own read of the git config of the repository. Any other value does nothing and is no error. See [Git filters](#git-filters) and [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
 
 Where the worktree can go:
 
@@ -62,6 +62,8 @@ Decide by `errorCode` first.
 | `timeout` | The deadline of `timeoutMs` expired. |
 
 These eight are all the codes of this method.
+
+If the daemon does not accept the git config of the repository, the code is `worktree_add_failed` and nothing is made. For example, the format version of the repository is not `0` or `1`. The texts are in [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
 
 A request with no `branchName` gets the JSON-RPC error `-32602`.
 
@@ -140,7 +142,7 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with the differences that the record lists: see [Git filters](#git-filters). These entries of the divergence catalog apply to this method:
+claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with the differences that the record lists: see [Git filters](#git-filters). claustrum also follows `5fd08069` in the refusal of a repository config: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals). These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it.
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.

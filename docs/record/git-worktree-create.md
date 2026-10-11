@@ -7,6 +7,10 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
 `{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs][,shadowDirOff]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}`
 - The checkout has a filter rule that follows `5fd08069`. See
   [Git filters of the checkout](#git-filters-of-the-checkout).
+- A repository config that the daemon does not accept answers `errorCode`
+  `worktree_add_failed`, and nothing is made. See
+  [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and the
+  [record of the refusals](git-config-refusals.md).
 - A failure frame ends with `"branchKept":true` after `errorCode` when the rollback
   check finds commits that no other ref reaches. Rows C02, C04, C05, C09, C10 and
   B2-10 of `89cb6289` show it. A check that does not finish, and a skipped name, add
@@ -1371,7 +1375,7 @@ What claustrum does:
 - A name over 200 bytes with a value that does not pass is refused before the read-tree call, with the frame of cell D5. A name with `=` is refused there too, with the frame of cell Q3.
 - A filter that only the repository defines, with a name that is not valid UTF-8, is refused before the read-tree call on every system. The text is claustrum's own: `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it`, with `worktree_add_failed`. For the bytes `FF 78` the name in the text is `"\xffx"` (cells S3 and X1).
 - The rollback of each refusal is the rollback of a failed checkout.
-- With `"shadowDirOff":true` the scoped listing does not run and the read-tree call has no pair (cells E1 and L8). The member has no other effect in claustrum.
+- With `"shadowDirOff":true` the scoped listing does not run and the read-tree call has no pair (cells E1 and L8). Its one other effect in claustrum is on the read of the repository config: see [Repository config refusals](../PROTOCOL.md#repository-config-refusals).
 - Only the JSON value `true` is the switch. Any other value of the member is no error, on each git method, and changes no frame of claustrum.
 
 Where claustrum differs from `5fd08069`. Each of these stays:
@@ -1381,7 +1385,7 @@ Where claustrum differs from `5fd08069`. Each of these stays:
 - Cells Q2, Q15 and V13 (Linux VM). git itself fails in the read-tree call. The text of claustrum has git's hint about `info/grafts` before the text of `5fd08069`. The markers and the disk are equal.
 - Cell Q12 (Linux VM). A `git.info` of claustrum has no `settingsControl` member, as on `89cb6289`.
 - Cell R2 (Linux VM). `5fd08069` answers the filter refusal. claustrum answers `not_a_repo` after 2 git calls, as `89cb6289` does.
-- Cells R4a and R4c (Linux VM) and W2 (Windows VM). A config that git cannot read gets another text on `5fd08069`. claustrum has the text of `89cb6289`. The code is `worktree_add_failed` on each build.
+- Cell R4c (Linux VM). A `~/.gitconfig` that is a directory gets another text on `5fd08069`. claustrum has the text of `89cb6289`. Cells R4a (Linux VM) and W2 (Windows VM) have a syntax error in the config of the repository. claustrum answers the text of `5fd08069` in that state (from the code). The code is `worktree_add_failed` on each build.
 - Cells R5a and R5b (Linux VM) and W4 (Windows VM). With a temporary directory that cannot be used, `5fd08069` answers the filter refusal. claustrum fails as `89cb6289` does. Its line equals the line of `89cb6289` byte for byte in cells R5a and W4. In cell R5b only the random number of the folder name differs.
 - Cell S1 (Linux VM). With a git that refuses `--show-scope`, claustrum refuses the filter of a conditional include of the user config. `5fd08069` and `89cb6289` run it. That is the accepted edge of an old git.
 - Four of the cells S2 (Linux VM). The two builds make other listings, so a wait on a listing that only one of them makes gives "timeout" on that one alone. The table of cells S2 has each row.
@@ -1413,7 +1417,7 @@ Test runs on the Windows VM, with the tests of `gitfilter_test.go`:
 - A filter name with `=` and a value that passes, and such a name with a definition outside the repository.
 - A `required` or a `process` key with no value.
 - A filter name with a byte that the text changes, other than those of cells D6, Q11 and S3.
-- A `shadowDirOff` value other than `true` on `git.status` and `git.list_branches` of `5fd08069`. Each other effect of that member there. The member name in another letter case, such as `"SHADOWDIROFF":true`: claustrum reads that as the switch.
+- A `shadowDirOff` value other than `true` on `git.list_branches` of `5fd08069`. Cells V3 of the [record of the refusals](git-config-refusals.md) ran such values on `git.info` and `git.status`. Each other effect of that member there. That record has one effect, on the read of the repository config (cells X1 and V2). It also has the member name in upper case, which is the switch on `5fd08069` and on claustrum (cells V3).
 - How `5fd08069` tells the config of the repository from the other sources. Its two listings before the read-tree call are plain `config -z --list` calls.
 - A listing of the filter rule that fails for a reason other than a deadline, on `5fd08069`.
 - A git older than 2.43.0, on any build. Cells Q14 and S1 have git 2.43.0 behind a stub.

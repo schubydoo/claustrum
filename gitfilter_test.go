@@ -432,6 +432,10 @@ func TestWorktreeCreateFilterListingFails(t *testing.T) {
 // call answers the timeout frame, as before the filter rule. The repository has
 // no filter. The frame is the one of main at 81c8893 for a wait on the listing
 // of the checkout, and the one of cells S2 (Linux VM).
+//
+// The stub holds the listing that the seam names and no other call: its log has
+// one "held" line with that name. The read of the config file is not held, so
+// the create answers at its deadline. The stub sleeps 60 s in a held call.
 func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	requireGit(t)
 	realGit, err := exec.LookPath("git")
@@ -446,11 +450,21 @@ func TestWorktreeCreateDeadlineDuringFilterListing(t *testing.T) {
 	for _, seam := range []string{"hold-scoped", "noscope,hold-outside", "noscope,hold-full", "hold-full"} {
 		t.Run(seam, func(t *testing.T) {
 			f := newWTFixture(t, false)
+			log := filepath.Join(t.TempDir(), "argv.log")
+			t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
 			t.Setenv("CLAUSTRUM_GITSTUB_FAIL_LISTING", seam)
-			raw, _ := f.create(t, newTestServer(t), "w1", "", lateMs)
+			raw, took := f.create(t, newTestServer(t), "w1", "", lateMs)
 			wantError(t, raw, "git worktree add timed out after "+strconv.Itoa(lateMs)+
 				"ms (deadline expired during the checkout): context deadline exceeded", "timeout")
 			f.assertRolledBack(t, []string{}, false)
+			kind := seam[strings.LastIndex(seam, "hold-")+len("hold-"):]
+			if held := gitCalls(t, log, "held"); len(held) != 1 || held[0][1] != kind {
+				t.Errorf("held calls = %q, want one of the %s listing", held, kind)
+			}
+			// A held call that the deadline does not end keeps the reply for 60 s.
+			if took > 45*time.Second {
+				t.Errorf("the create answered after %s, want an answer at its deadline of %d ms", took, lateMs)
+			}
 		})
 	}
 }

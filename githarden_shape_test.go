@@ -242,13 +242,40 @@ func TestHardenedGitCallShape(t *testing.T) {
 
 	ctxlog := filepath.Join(t.TempDir(), "ctx.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_CTXLOG", ctxlog)
+	// configReads counts the daemon's own reads of a config file in the last
+	// request (gitrepoconfig.go). That call is not one of f6010b97: 5fd08069 makes
+	// it. run checks its shape and leaves it out of the calls that it returns, so
+	// the lists below stay those of f6010b97. On a Linux VM the call of 5fd08069
+	// runs in the root directory with GIT_DIR=<null device>.
+	configReads := 0
 	run := func(method string, params map[string]any) (string, []shapeCall) {
 		t.Helper()
 		if err := os.WriteFile(ctxlog, nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		raw := dispatchRaw(t, s, rpcLine(t, method, params))
-		return raw, readShapeCalls(t, ctxlog)
+		configReads = 0
+		var calls []shapeCall
+		for _, c := range readShapeCalls(t, ctxlog) {
+			if !c.has("--no-includes") {
+				calls = append(calls, c)
+				continue
+			}
+			configReads++
+			if !slices.Equal(c.argv, []string{"config", "--no-includes", "--file", "-", "--list", "-z"}) {
+				t.Errorf("config read argv = %q", c.argv)
+			}
+			if !slices.Equal(c.env, []string{"GIT_DIR=" + shapeNull}) {
+				t.Errorf("config read env = %q, want only GIT_DIR=%s", c.env, shapeNull)
+			}
+			if runtime.GOOS != "windows" && c.cwd != "/" {
+				t.Errorf("config read runs in %s, want /", c.cwd)
+			}
+			if len(calls) > 0 && !slices.Contains(calls[len(calls)-1].argv, "--includes") {
+				t.Errorf("config read comes after %q, want it before every call on the repository", calls[len(calls)-1].argv)
+			}
+		}
+		return raw, calls
 	}
 	inTop := func(shapeCall) string { return f.top }
 	// On Windows git.info runs its root pair in the pinned git directory. Both calls
@@ -274,6 +301,9 @@ func TestHardenedGitCallShape(t *testing.T) {
 		}
 		if !slices.Equal(x.env, []string{"GIT_DIR=" + shapeNull}) {
 			t.Errorf("excludes read env = %q, want only GIT_DIR=%s", x.env, shapeNull)
+		}
+		if configReads != 1 {
+			t.Errorf("config reads = %d, want 1", configReads)
 		}
 		calls = calls[1:]
 		if len(calls) < 2 || !calls[0].listing() || !calls[1].has("rev-parse", "--git-dir") {
@@ -602,12 +632,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 	}
 	t.Run("worktree_remove refused twice, bad config", func(t *testing.T) {
 		g := newWTFixture(t, false)
-		cfg := filepath.Join(g.top, ".git", "config")
-		b, err := os.ReadFile(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeFile(t, cfg, string(b)+"[broken\n", 0o644)
+		breakListing(t, filepath.Join(g.top, ".git"))
 		checkTwice(t, g, false)
 	})
 	t.Run("worktree_remove refused twice, no usable git dir", func(t *testing.T) {

@@ -50,6 +50,9 @@ func (c envCall) listing() bool { return argvEndsWith(c.argv, []string{"config",
 
 func (c envCall) excludesRead() bool { return slices.Contains(c.argv, "--includes") }
 
+// configRead reports the daemon's own read of a config file (gitrepoconfig.go).
+func (c envCall) configRead() bool { return slices.Contains(c.argv, "--no-includes") }
+
 func (c envCall) version() bool { return slices.Equal(c.argv, []string{"version"}) }
 
 func (c envCall) hardened() bool { return slices.Contains(c.argv, "core.hooksPath=/dev/null") }
@@ -169,7 +172,7 @@ func (f listingFixture) fiveMethods(t *testing.T) map[string]string {
 
 // Every listing of git.info ends with `config -z --list` and has no --name-only. On
 // Windows the listing of the root pair starts with --git-dir=<pin>. Mutation: put
-// --name-only back.
+// --name-only back. The daemon's own read of the config is no listing.
 func TestListingArgv(t *testing.T) {
 	f := newListingFixture(t)
 	raw, calls := f.call(t, "git.info", map[string]any{"path": f.top})
@@ -178,7 +181,7 @@ func TestListingArgv(t *testing.T) {
 	}
 	n := 0
 	for _, c := range calls {
-		if slices.Contains(c.argv, "config") && !c.excludesRead() {
+		if slices.Contains(c.argv, "config") && !c.excludesRead() && !c.configRead() {
 			n++
 			if !c.listing() || slices.Contains(c.argv, "--name-only") {
 				t.Errorf("listing argv = %q, want it to end with config -z --list", c.argv)
@@ -383,7 +386,8 @@ func TestParseConfigListingLimits(t *testing.T) {
 
 // Through git.info, a key of 1048576 bytes and a value of 2 MiB
 // answer normally. A key of 1048577 bytes refuses with the listing text, and no
-// hardened call runs (row L08c).
+// hardened call runs (row L08c). The key is in the section x, which has no name
+// bound in the daemon's own read of the config (TestRepoConfigKeyName).
 func TestListingKeyCapThroughInfo(t *testing.T) {
 	sub := func(n int) string { return strings.Repeat("s", n-4) }
 	for _, tc := range []struct {
@@ -491,7 +495,8 @@ func TestListingNotARepositoryNeedsExit128(t *testing.T) {
 // git.worktree_remove on that listing runs two listings in baseRepo, the
 // first with the heavy profile and the second with the light one of the branch step,
 // and no other git call. Then it answers branchKept. Mutations: one listing, or run
-// for-each-ref after the second.
+// for-each-ref after the second. The daemon's own read of the config comes before
+// the first listing, and it is not counted here.
 func TestListingNotARepositoryRemoveTrace(t *testing.T) {
 	f := newListingFixture(t)
 	stubListing(t, 128, "fatal: not a git repository (stub)")
@@ -501,7 +506,7 @@ func TestListingNotARepositoryRemoveTrace(t *testing.T) {
 	}
 	var rest []envCall
 	for _, c := range calls {
-		if !c.excludesRead() {
+		if !c.excludesRead() && !c.configRead() {
 			rest = append(rest, c)
 		}
 	}
