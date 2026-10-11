@@ -57,6 +57,10 @@ type request struct {
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
 	Auth    string          `json:"auth"`
+
+	// shadow is the settings control of the daemon that serves the request
+	// (gitshadow.go). handleGit sets it. It is nil for a server with no run folder.
+	shadow *shadowHost
 }
 
 type response struct {

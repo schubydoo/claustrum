@@ -1,0 +1,693 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// The settings control of the git methods, as 5fd08069 has it. That build keeps
+// its own copy of the git settings of a repository in a folder beside its socket,
+// and it runs git against that copy. Before the first use it tests once whether
+// the git of the host works on such a copy. The result is the state of the daemon,
+// and git.info reports it in the member settingsControl.
+//
+// This file holds the state, the folder of one daemon and the start test. The git
+// calls of the methods do not use the folder yet.
+
+// The values of the member settingsControl of a git.info result. 5fd08069 sends
+// these three (s3-linux cells A1 and B1, s3p2-oldgit cell O1, Linux VM).
+const (
+	controlShadow   = "shadow"
+	controlFallback = "fallback-git"
+	controlOff      = "off-switch"
+)
+
+// The two log lines of the state. 5fd08069 writes one at the first decision of
+// the state and one more at a change (s3p2-linux cell B3a, s3p2b-edges-linux2
+// cells 28 and 29, Linux VM). It writes none for a repeat test with the same
+// result, and none for a failed test (cell 32 of that round).
+const (
+	shadowStateLine   = "[GitHandler] this host's git works on Claude's own copy of a repository's settings (a shadow directory): a repository's own git config and hooks are not read"
+	fallbackStateLine = "[GitHandler] this host's git does not work on Claude's own copy of a repository's settings (fallback-git; older than about 2.13?): a repository's own git config is read, and only the -c overrides limit it"
+)
+
+// shadowRootName is the folder of all daemons below the folder of the socket.
+// shadowLockName is the file in the folder of one daemon that the daemon holds.
+const (
+	shadowRootName = "git-shadow"
+	shadowLockName = "lock"
+)
+
+// The times of the start test. Each is a variable, so that a test can lower it.
+var (
+	// shadowFailureKeep is how long a failed test is kept, from the end of that
+	// test. In that time a request gets the kept text with no git call. On
+	// 5fd08069 a request 9.90 s after the reply made no call, and one 10.00 s
+	// after it ran the test again (s3p2b-edges-linux2 cell 26, Linux VM. 9.904
+	// and 10.007 s on a macOS VM, 9.910 and 10.006 s on a Windows VM).
+	shadowFailureKeep = 10 * time.Second
+	// shadowRetestAfter is the age of the last test after which a daemon in the
+	// state fallback-git tests again. On 5fd08069 a request at 599.8 s ran no
+	// test and one at 605.5 s ran it (s3p2-oldgit cell O5 and s3p2b-edges-linux2
+	// cell 28, Linux VM). The time between those two rows is not measured.
+	shadowRetestAfter = 10 * time.Minute
+	// shadowCallBound ends one call of the test. shadowCallDrain is the wait for
+	// its output pipes after that. On 5fd08069 a call that its wrapper held for
+	// 29 s passed. A call held for 32 s or 40 s got the error reply 31.0 s after
+	// its start. A child of the wrapper still held the pipes then
+	// (s3p2b-edges-linux2 cell 31, Linux VM). The split of those 31.0 s into
+	// the two times is fitted: no row has a held call without such a child.
+	shadowCallBound = 30 * time.Second
+	shadowCallDrain = time.Second
+	// shadowClock is the clock of the two kept times.
+	shadowClock = time.Now
+)
+
+// shadowHost is the settings control of one daemon. A nil host, or one with no
+// run folder, has no state: no test runs, no folder is made and git.info sends no
+// settingsControl member. The -serve daemon always has a run folder, the folder
+// of its socket.
+type shadowHost struct {
+	// runDir is the folder of the socket.
+	runDir string
+
+	// testMu makes the requests wait for a test that runs. mu guards the fields
+	// below. A shutdown takes mu only, so a held test call does not hold it.
+	testMu sync.Mutex
+	mu     sync.Mutex
+	// state is "" until the first test passed, then controlShadow or
+	// controlFallback.
+	state string
+	// tested is the end of the last test that gave a state.
+	tested time.Time
+	// failure is the kept text of a failed test, and failed is the end of that
+	// test.
+	failure string
+	failed  time.Time
+	// dir is the folder of this daemon, <runDir>/git-shadow/<name>, or "" while
+	// there is none. lock is the open lock file in it.
+	dir  string
+	lock *os.File
+	// closed is true after the shutdown removed the folder.
+	closed bool
+}
+
+// newShadowHost returns the settings control of a daemon whose socket is in
+// runDir.
+func newShadowHost(runDir string) *shadowHost {
+	return &shadowHost{runDir: runDir}
+}
+
+func (h *shadowHost) active() bool {
+	return h != nil && h.runDir != ""
+}
+
+// control is the settingsControl value of a request, or "" for no member. It is
+// the one place that answers which state a request has. off is the shadowDirOff
+// member of the request.
+//
+// A request with the member gets off-switch, also as the first request of a
+// daemon, in the "no repository" reply and while a failure is kept (s3-linux
+// cells A1 and B1, s3p2a-edges cell X1 and s3p2b-edges-linux2 cell 32, Linux VM).
+// A request without it gets the state of the daemon, and no member before the
+// first test passed (s3-linux cell A1, Linux VM).
+func (h *shadowHost) control(off bool) string {
+	if !h.active() {
+		return ""
+	}
+	if off {
+		return controlOff
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.state
+}
+
+// readsRepoConfig reports whether a request makes the daemon's own read of the
+// repository config. In the state fallback-git 5fd08069 makes no such read and
+// gives no config refusal: format version 2 gets the "no repository" answer
+// (s3p2-oldgit cell O4, Linux VM).
+func (h *shadowHost) readsRepoConfig() bool {
+	return h.control(false) != controlFallback
+}
+
+// gate runs before the first git call of a method in a repository that the trust
+// check accepted. It returns the text of a failed start test, or "".
+//
+// A request with the member runs no test and makes no folder (s3-linux cell B1,
+// Linux VM). Without it, the first such request of a daemon runs the test. A
+// failure is kept for shadowFailureKeep. In the state shadow no second test runs
+// (s3p2b-edges-linux2 cell 28: none at 590 s, 610 s and 720 s). In the state
+// fallback-git the test runs again after shadowRetestAfter.
+//
+// Each method reads the user's excludes file before it comes here. With a run
+// folder that cannot take the folder, each of the five methods makes that one
+// git call on 5fd08069 (s3p2b-edges-linux2 cell 30, Linux VM).
+func (h *shadowHost) gate(off bool) string {
+	if !h.active() || off {
+		return ""
+	}
+	h.testMu.Lock()
+	defer h.testMu.Unlock()
+
+	if kept, done := h.decided(); done {
+		return kept
+	}
+	state, cause := h.startTest()
+	end := shadowClock()
+
+	if state == "" && cause == "" {
+		// The shutdown came first: no test ran.
+		return ""
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cause != "" {
+		// The frame of every cause (s3p2b-edges-linux2 cells 26 and 30 to 32, Linux
+		// VM. Cell 33 of that round on macOS and Windows VMs).
+		h.failure = "Claude could not test git on the remote machine (" + cause + "). Check free disk space and quota there, then try again."
+		h.failed = end
+		return h.failure
+	}
+	h.tested = end
+	if state != h.state {
+		h.state = state
+		if state == controlShadow {
+			logInfof(shadowStateLine)
+		} else {
+			logInfof(fallbackStateLine)
+		}
+	}
+	return ""
+}
+
+// decided reports whether a request needs no test now. kept is then the text of
+// a kept failure, or "". A daemon in its shutdown runs no test.
+func (h *shadowHost) decided() (kept string, done bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return "", true
+	}
+	now := shadowClock()
+	if h.failure != "" {
+		if now.Sub(h.failed) < shadowFailureKeep {
+			return h.failure, true
+		}
+		h.failure = ""
+	}
+	if h.state == controlShadow || (h.state == controlFallback && now.Sub(h.tested) <= shadowRetestAfter) {
+		h.remakeFolder()
+		return "", true
+	}
+	return "", false
+}
+
+// hostForm is the host name with each "-" written as "_". On 5fd08069 a host
+// name of the form aa-bb gives aa_bb, and a "." stays (s3-linux cell C6, Linux
+// VM, and the macOS and Windows rounds). A host name that the system does not
+// give is not measured: the form is then empty.
+func hostForm() string {
+	name, _ := shadowHostname()
+	return strings.ReplaceAll(name, "-", "_")
+}
+
+// shadowHostname is os.Hostname. A variable, so that a test can name the host.
+var shadowHostname = os.Hostname
+
+// makeFolder makes the folder of this daemon and takes its lock. The caller holds
+// mu. The steps and their order are those of 5fd08069. First comes the folder of
+// all daemons (0700), then the folder of this daemon (0700), then the lock file
+// (0600, 0 bytes). The rows are s3p2-oldgit section 5 and the tmpfs rows of
+// s3p2b-edges-linux2 cell 32 (Linux VM). The name is <host form>-<pid>-<16 hex>,
+// and the hex part is new each time (s3-linux cells C6 and B6).
+//
+// The error of each step is the error of the system call with its path. 5fd08069
+// answers `mkdir <run>/git-shadow: permission denied`, `mkdir <S>: no space left
+// on device` and `open <S>/lock: no space left on device` (cells 30 and 32). On
+// a Windows VM a file named git-shadow gives `mkdir <path>: The system cannot
+// find the path specified.` (s3p2-windows cell C1), which is the text of
+// os.MkdirAll for a path that is no folder.
+//
+// After a lock file that cannot be made, 5fd08069 leaves no folder of the daemon
+// (the tmpfs row with 2 inodes). So the folder that this call made goes again
+// here.
+func (h *shadowHost) makeFolder() error {
+	root := filepath.Join(h.runDir, shadowRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	var salt [8]byte
+	if _, err := rand.Read(salt[:]); err != nil {
+		return err
+	}
+	name := hostForm() + "-" + strconv.Itoa(os.Getpid()) + "-" + hex.EncodeToString(salt[:])
+	dir := filepath.Join(root, name)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return err
+	}
+	lock, err := openShadowLock(filepath.Join(dir, shadowLockName))
+	if err != nil {
+		_ = h.removeEntry(name)
+		return err
+	}
+	h.dir, h.lock = dir, lock
+	return nil
+}
+
+// openShadowLock makes the lock file of the daemon and takes the lock on it. A
+// lock that the system refuses is not measured: its text is claustrum's own. A
+// variable, so that a test can fail the step.
+var openShadowLock = func(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := holdShadowLock(f); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// remakeFolder makes the folder of this daemon again when it is gone. The caller
+// holds mu, and the state is decided. After the driver removed the folder,
+// 5fd08069 answered the next request normally and made the folder again, with
+// the same pid and another hex part (s3-linux cell B6, Linux VM, and s3-macos
+// cell B6). No test ran then. A folder that cannot be made again is not
+// measured: the request goes on.
+func (h *shadowHost) remakeFolder() {
+	if h.dir != "" {
+		if _, err := os.Lstat(h.dir); err == nil {
+			return
+		}
+	}
+	h.dropLock()
+	h.dir = ""
+	_ = h.makeFolder()
+}
+
+func (h *shadowHost) dropLock() {
+	if h.lock != nil {
+		_ = h.lock.Close()
+		h.lock = nil
+	}
+}
+
+// removeEntry deletes rel, a path below the folder of all daemons. rel is always
+// a name that this daemon made: the folder of the daemon, or an entry in it. It
+// never comes from a request. The delete goes through a root at the folder of
+// all daemons, so it follows no link out of it. wipesHomeDir on the full path is
+// defense in depth.
+func (h *shadowHost) removeEntry(rel string) error {
+	base := filepath.Join(h.runDir, shadowRootName)
+	if wipesHomeDir(filepath.Join(base, rel)) {
+		return errors.New("refusing to delete a path that holds the home folder")
+	}
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return root.RemoveAll(rel)
+}
+
+// close removes the folder of this daemon at a shutdown. 5fd08069 removes it at
+// -stop and at server.shutdown, and the empty folder of all daemons stays
+// (s3p2-linux section 1, Linux VM, and the macOS and Windows rounds). It removes
+// the folder also while a git call of a request runs (s3p2-linux2 cell F3, Linux
+// VM, and cell 48 of s3p2b-edges on macOS and Windows VMs). The folder of
+// another daemon stays (s3p2b-edges-linux2 cell 44, Linux VM).
+//
+// The lock file is closed first: on Windows an open file cannot be removed.
+func (h *shadowHost) close() {
+	if !h.active() {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closed = true
+	h.dropLock()
+	if h.dir != "" {
+		_ = h.removeEntry(filepath.Base(h.dir))
+		h.dir = ""
+	}
+}
+
+// shadowRun is the result of one call of the start test.
+type shadowRun struct {
+	out    string
+	stderr string
+	err    error
+	// ended is true when shadowCallBound ended the call.
+	ended bool
+}
+
+// detail is the text of a failed call in the cause of a failed test. It is the
+// last line that git wrote to its error output, or the exec error when git
+// wrote none. 5fd08069 answers `fatal: forced failure by the test wrapper`, the
+// one line of the wrapper. For a call that it ended it answers `signal: killed`
+// (s3p2b-edges-linux2 cells 26 and 31, Linux VM). A call with more than one
+// error line is not measured. A call that exits 0 with another answer than the
+// test wants is not measured either: its text is claustrum's own.
+func (r shadowRun) detail() string {
+	lines := strings.Split(strings.TrimRight(r.stderr, "\r\n"), "\n")
+	if last := strings.TrimRight(lines[len(lines)-1], "\r"); last != "" {
+		return last
+	}
+	if r.err != nil {
+		return r.err.Error()
+	}
+	return "unexpected answer"
+}
+
+// shadowTestPrefix is the option list of every call of the test. On a Windows
+// VM the first item is core.hooksPath=NUL (s3p2-linux and s3p2-windows cells
+// B3a).
+func shadowTestPrefix() []string {
+	return []string{
+		"-c", "core.hooksPath=" + os.DevNull,
+		"-c", "gc.auto=0",
+		"-c", "maintenance.auto=false",
+		"-c", "commit.gpgsign=false",
+	}
+}
+
+// shadowTestNames are the variables that the test sets. The daemon's own
+// entries of these names do not go to a test call.
+var shadowTestNames = []string{
+	"GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "LC_ALL", "LANGUAGE", "GIT_TERMINAL_PROMPT",
+	"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+}
+
+// shadowDaemonEnv is the daemon's own environment as a test call gets it. Which
+// entries of the daemon 5fd08069 passes is not measured. claustrum drops the
+// entries that it drops for its other own calls (gitVersionRun), and the names
+// that the test sets, so that the test stays in its own folder.
+func shadowDaemonEnv() []string {
+	env := withoutConfigCountSet(listingEnvBase())
+	return slices.DeleteFunc(env, func(kv string) bool {
+		return slices.Contains(shadowTestNames, envName(kv))
+	})
+}
+
+// shadowTestEnv is the environment of a test call with no folder variable: the
+// nine variables of the test, then the daemon's own. The call log of 5fd08069
+// has this order on a Linux VM (s3p2-linux cell B3a). GIT_CONFIG_GLOBAL is
+// /dev/null on a Windows VM too (s3p2-windows cell B3a).
+func shadowTestEnv() []string {
+	return append([]string{
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"LC_ALL=C",
+		"LANGUAGE=C",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_AUTHOR_NAME=c",
+		"GIT_AUTHOR_EMAIL=c@c",
+		"GIT_COMMITTER_NAME=c",
+		"GIT_COMMITTER_EMAIL=c@c",
+	}, shadowDaemonEnv()...)
+}
+
+// shadowGit runs one git call of the test in dir with env and the full argv.
+func shadowGit(dir string, env []string, argv ...string) shadowRun {
+	base, cancelBase := gitCtx()
+	defer cancelBase()
+	ctx, cancel := context.WithTimeout(base, shadowCallBound)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", argv...)
+	cmd.Dir = dir
+	cmd.Env = env
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	cmd.WaitDelay = shadowCallDrain
+	err := cmd.Run()
+	return shadowRun{
+		out:    strings.TrimRight(out.String(), "\r\n"),
+		stderr: errOut.String(),
+		err:    err,
+		ended:  err != nil && ctx.Err() != nil,
+	}
+}
+
+// startTest makes the folder of the daemon when there is none, runs the test in
+// a new folder .check-<n> in it and removes that folder. It returns the state,
+// or the cause of a failed test.
+//
+// The name .check-<n> has a decimal number that differs per attempt. The folder
+// is gone at the reply, also after a failed test (s3p2-oldgit section 5 and
+// s3p2b-edges-linux2 cells 29 and 31, Linux VM). A folder that cannot be made
+// gives `mkdir <S>/.check-<n>: no space left on device` (cell 32).
+func (h *shadowHost) startTest() (state, cause string) {
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return "", ""
+	}
+	if h.dir != "" {
+		if _, err := os.Lstat(h.dir); err != nil {
+			h.dropLock()
+			h.dir = ""
+		}
+	}
+	if h.dir == "" {
+		if err := h.makeFolder(); err != nil {
+			h.mu.Unlock()
+			return "", err.Error()
+		}
+	}
+	dir := h.dir
+	h.mu.Unlock()
+
+	check, err := os.MkdirTemp(dir, ".check-")
+	if err != nil {
+		return "", err.Error()
+	}
+	defer func() {
+		_ = h.removeEntry(filepath.Join(filepath.Base(dir), filepath.Base(check)))
+	}()
+	return shadowTestCalls(dir, check)
+}
+
+// shadowTestCalls runs the calls of the test. dir is the folder of the daemon and
+// check is the folder of this attempt. The argv, the working directory and the
+// variables of each call are those of the call log of 5fd08069 (s3p2-linux cell
+// B3a, Linux VM. s3p2-windows cell B3a, Windows VM. Cell 33 of s3p2b-edges lists
+// the same ten calls on a macOS VM).
+//
+// The folder `shadow` has the form of the copy that the daemon keeps for a
+// repository. One poll on a Linux VM saw HEAD, a config that ends with the
+// helper.check line and the link `worktrees` in it (obs-work row 2). Its full
+// content is not measured. From a local run of git 2.47.3: git needs the folder
+// `refs` there, and the test `worktree add` needs the target of the link. The
+// content of `shadow` beyond the poll, and the daemon as the maker of
+// `real/.git/worktrees`, are therefore claustrum's choice.
+func shadowTestCalls(dir, check string) (state, cause string) {
+	realDir := filepath.Join(check, "real")
+	gitDir := filepath.Join(realDir, ".git")
+	shadowDir := filepath.Join(check, "shadow")
+	plainEnv := shadowTestEnv()
+	realEnv := append(slices.Clone(plainEnv), "GIT_DIR="+gitDir, "GIT_WORK_TREE="+realDir)
+	shadowEnv := append(slices.Clone(realEnv),
+		"GIT_COMMON_DIR="+shadowDir, "GIT_OBJECT_DIRECTORY="+filepath.Join(gitDir, "objects"))
+	run := func(env []string, args ...string) shadowRun {
+		return shadowGit(check, env, append(shadowTestPrefix(), args...)...)
+	}
+	failed := func(verb string, r shadowRun) (string, string) {
+		return "", fmt.Sprintf("git %s failed under %q: %s", verb, dir, r.detail())
+	}
+
+	// Calls 1 to 5 make the repository `real` with one empty commit.
+	if r := run(plainEnv, "init", "-q", "--template=", realDir); r.err != nil {
+		_, cause := failed("init", r)
+		if r.ended {
+			cause += shadowVersionNote(check, plainEnv)
+		}
+		return "", cause
+	}
+	if r := run(realEnv, "config", "helper.check", "real"); r.err != nil {
+		return failed("config", r)
+	}
+	if r := run(realEnv, "mktree"); r.err != nil {
+		return failed("mktree", r)
+	}
+	commit := run(realEnv, "commit-tree", "-m", "c", gitEmptyTree)
+	if commit.err != nil {
+		return failed("commit-tree", commit)
+	}
+	id := commit.out
+	if r := run(realEnv, "update-ref", "HEAD", id); r.err != nil {
+		return failed("update-ref", r)
+	}
+
+	if err := makeShadowTestCopy(gitDir, shadowDir); err != nil {
+		return "", err.Error()
+	}
+
+	// Calls 6 to 8. Both `config --get` calls print `shadow` on a git that reads
+	// the config of the copy. Between them the daemon lists the config of `real`
+	// from standard input, as it does for a repository.
+	reads := func() (string, string, bool) {
+		r := run(shadowEnv, "config", "--get", "helper.check")
+		if r.err != nil || r.out != "shadow" {
+			_, cause := failed("config", r)
+			return "", cause, false
+		}
+		return "", "", true
+	}
+	if _, cause, ok := reads(); !ok {
+		return "", cause
+	}
+	text, err := os.ReadFile(filepath.Join(gitDir, "config"))
+	if err != nil {
+		return "", err.Error()
+	}
+	base, cancelBase := gitCtx()
+	ctx, cancel := context.WithTimeout(base, shadowCallBound)
+	_, err = listConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	ended := ctx.Err() != nil
+	cancel()
+	cancelBase()
+	if err != nil {
+		return failed("config", shadowRun{err: err, ended: ended})
+	}
+	if _, cause, ok := reads(); !ok {
+		return "", cause
+	}
+
+	// Call 9. On git 2.11.4 and 2.12.5 it exits 1 with no output, and the same
+	// call without the two variables of the copy exits 0: the state is
+	// fallback-git, and no `worktree add` runs (s3p2-oldgit section 4 and
+	// s3p2b-edges-linux2 cell 28, Linux VM). After a call 9 that 5fd08069 ended,
+	// the second call starts too, and the reply names the ended call (cell 31).
+	// Every other failure of call 9 is not measured: it fails the test.
+	verify := []string{"rev-parse", "--verify", "-q", "HEAD^{commit}"}
+	if r := run(shadowEnv, verify...); r.err != nil || r.out != id {
+		second := run(realEnv, verify...)
+		var exit *exec.ExitError
+		quiet := errors.As(r.err, &exit) && exit.ExitCode() == 1 && !r.ended && r.out == "" && r.stderr == ""
+		if quiet && second.err == nil {
+			return controlFallback, ""
+		}
+		if quiet {
+			return failed("rev-parse", second)
+		}
+		return failed("rev-parse", r)
+	}
+
+	// Call 10. After a failed add 5fd08069 adds `wt2` without the two variables
+	// of the copy. If that works the state is fallback-git. If it fails too, the
+	// test failed (s3p2b-edges-linux2 cells 29 and 26, Linux VM). Both adds print
+	// the same line in those cells: the text here is the one of the second.
+	add := func(env []string, name string) shadowRun {
+		return run(env, "worktree", "add", "--no-checkout", "--detach", filepath.Join(check, name), id)
+	}
+	if r := add(shadowEnv, "wt"); r.err != nil {
+		if second := add(realEnv, "wt2"); second.err != nil {
+			return failed("worktree", second)
+		}
+		return controlFallback, ""
+	}
+	return controlShadow, ""
+}
+
+// shadowVersionNote is the end of the cause after an `init` that the bound
+// ended: the answer of `git version` in brackets. 5fd08069 then runs `git
+// version` two times before the reply. Its cause ends with ` (git version
+// 2.43.0)` (s3p2b-edges-linux2 cell 31, Linux VM). The first call has no option
+// list, the root folder as its working directory and no added variable. The
+// second has the option list, the folder and the variables of a test call.
+// Which of the two gives the text is not measured, and an `init` that fails
+// another way is not measured: it gets no such end.
+func shadowVersionNote(check string, env []string) string {
+	first := shadowGit(gitVersionDir, shadowDaemonEnv(), "version")
+	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)
+	text := second.out
+	if text == "" {
+		text = first.out
+	}
+	if text == "" {
+		return ""
+	}
+	return " (" + text + ")"
+}
+
+// makeShadowTestCopy makes the folder `shadow` of the test for the repository
+// at gitDir: HEAD, a config whose helper.check is `shadow`, the three empty
+// folders and, where the system links (shadowLinksWorktrees), the link
+// `worktrees` with its target.
+func makeShadowTestCopy(gitDir, shadowDir string) error {
+	if err := os.Mkdir(shadowDir, 0o700); err != nil {
+		return err
+	}
+	head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(shadowDir, "HEAD"), head, 0o600); err != nil {
+		return err
+	}
+	config, err := os.ReadFile(filepath.Join(gitDir, "config"))
+	if err != nil {
+		return err
+	}
+	text := strings.TrimSuffix(string(config), "[helper]\n\tcheck = real\n") + "[helper]\n\tcheck = shadow\n"
+	if err := os.WriteFile(filepath.Join(shadowDir, "config"), []byte(text), 0o600); err != nil {
+		return err
+	}
+	for _, name := range []string{"info", "objects", "refs"} {
+		if err := os.Mkdir(filepath.Join(shadowDir, name), 0o700); err != nil {
+			return err
+		}
+	}
+	if !shadowLinksWorktrees {
+		return nil
+	}
+	target := filepath.Join(gitDir, worktreesSubdir)
+	if err := os.Mkdir(target, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	return os.Symlink(target, filepath.Join(shadowDir, worktreesSubdir))
+}
+
+// settingsGateRefusal is the refusal text of a git method before its first git
+// call in the repository of the trust verdict t, or "". The start test comes
+// first, then the daemon's own read of the repository config
+// (repoConfigGateRefusal). On 5fd08069 the first request of a daemon runs the
+// test calls before that read (s3p2-linux cell B3a, Linux VM).
+//
+// The test runs for a trusted git directory only. A folder in which the daemon
+// finds no usable git folder starts no test and makes no folder (s3p2-linux
+// cell E5 and s3-linux cell A1, Linux VM). Each method gives the text of a
+// failed test the shape that it gives a refused config: the error object on
+// git.info, git.status and git.list_branches, and the result object on
+// git.worktree_create and git.worktree_remove (s3p2b-edges-linux2 cell 30, Linux
+// VM). With worktreeRoot a remove reaches no gate: its shape is not measured.
+//
+// In the state fallback-git the read of the config does not run
+// (readsRepoConfig).
+func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) string {
+	if t.verdict == gitDirTrusted {
+		if msg := req.shadow.gate(bool(off)); msg != "" {
+			return msg
+		}
+	}
+	if !req.shadow.readsRepoConfig() {
+		return ""
+	}
+	return repoConfigGateRefusal(t, off, dir, heavy, probe)
+}

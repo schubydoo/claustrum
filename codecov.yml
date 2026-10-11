@@ -192,6 +192,10 @@ component_management:
         - gitrepoconfig.go
         - gitrepoconfig_unix.go
         - gitrepoconfig_windows.go
+        # the settings control: the state of git.info, the folder of one daemon and the start test (5fd08069).
+        - gitshadow.go
+        - gitshadow_unix.go
+        - gitshadow_windows.go
         # the gate and the answer of git.status (89cb6289).
         - gitstatus.go
         # the git.info root per OS (89cb6289).

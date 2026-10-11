@@ -32,6 +32,7 @@ func (s *server) handleGit(req *request) response {
 	if bad := needParams(req); bad != nil {
 		return *bad
 	}
+	req.shadow = s.gitShadow
 	return fn(req)
 }
 
@@ -291,6 +292,13 @@ func gitInfo(req *request) response {
 	// probed here and discarded. The read comes first, so it also runs before a trust
 	// refusal, as on f6010b97 and 89cb6289 (every trust refusal row).
 	userExcludesFile()
+	// notRepo is the "no repository" answer. It carries the settingsControl member
+	// that the request has at that moment (shadowHost.control): none in a daemon
+	// that has not passed its start test, as for a HEAD that is no ref as the first
+	// request (s3p2-linux cell E5, Linux VM).
+	notRepo := func() response {
+		return okResult(req.ID, notRepoResult{SettingsControl: req.shadow.control(bool(p.ShadowDirOff))})
+	}
 	// The git-directory trust check runs on path (gitdirtrust.go). The check of the
 	// daemon's own GIT_CONFIG_COUNT comes after a trust refusal and before the "no
 	// repository" answer (docs/PROTOCOL.md).
@@ -307,11 +315,12 @@ func gitInfo(req *request) response {
 		if msg := noRepoListingRefusal(t, p.Path, true); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
-		return okResult(req.ID, notRepoResult{})
+		return notRepo()
 	}
-	// The daemon's own read of the repository's config comes before the listing
-	// (repoConfigGateRefusal). Its place after the count check is not measured.
-	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
+	// The start test and the daemon's own read of the repository's config come
+	// before the listing (settingsGateRefusal). Their place after the count check is
+	// not measured.
+	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
@@ -322,10 +331,10 @@ func gitInfo(req *request) response {
 		return errResult(req.ID, codeInternal, c.refusal)
 	}
 	if c.noRepo {
-		return okResult(req.ID, notRepoResult{})
+		return notRepo()
 	}
 	if _, ok := hardenedGitFirst(p.Path, true, c.listing, "rev-parse", "--git-dir"); !ok {
-		return okResult(req.ID, notRepoResult{})
+		return notRepo()
 	}
 	// The root is the folder where the walk of the trust check found the repository
 	// (gitWalkRoot). 89cb6289 runs no `rev-parse --show-toplevel` here on Linux and
@@ -334,7 +343,7 @@ func gitInfo(req *request) response {
 	// I05b and T11a). On Windows git is asked to confirm the root (gitInfoRoot).
 	walkRoot, walkGitDir := gitWalkRoot(p.Path)
 	if walkRoot == "" {
-		return okResult(req.ID, notRepoResult{})
+		return notRepo()
 	}
 	top := gitInfoRoot(walkRoot, walkGitDir, commonDirPinEnv(p.Path))
 	// slug and defaultBranch come before the branch, matching the reference order.
@@ -362,6 +371,8 @@ func gitInfo(req *request) response {
 		Root:          top,
 		RepoSlug:      slug,
 		DefaultBranch: defBranch,
+
+		SettingsControl: req.shadow.control(bool(p.ShadowDirOff)),
 	})
 }
 
@@ -580,7 +591,7 @@ func gitStatus(req *request) response {
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal).
-	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.BaseRepo, true, "--absolute-git-dir"); msg != "" {
+	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo, true, "--absolute-git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (row o22b). The
@@ -679,7 +690,7 @@ func gitListBranches(req *request) response {
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal). The answer has the error object of git.info (cell X1).
-	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
+	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
@@ -784,7 +795,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal). Nothing is created (cells W7 and E1, Linux VM).
-	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, repo, false, "--is-inside-work-tree"); msg != "" {
+	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, repo, false, "--is-inside-work-tree"); msg != "" {
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
@@ -1431,7 +1442,9 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// refuses gets the work-tree refusal even when the directory level is a symlink.
 		// Measured side by side against f6010b97 on a Linux VM (rows K10, K11, K14 and
 		// K16 with a symlinked directory level).
-		msg, topLevel := externalWorkTreeRefusal(repo, p.ShadowDirOff)
+		// In the state fallback-git the daemon's own read of the config does not run
+		// (shadowHost.readsRepoConfig).
+		msg, topLevel := externalWorkTreeRefusal(repo, p.ShadowDirOff || jsonTrueSwitch(!req.shadow.readsRepoConfig()))
 		if msg != "" {
 			return refuse(msg)
 		}
@@ -1609,7 +1622,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// path is worktreePath as sent, and it is not cut (cells X12). A worktree
 		// folder that is gone gets the same refusal (removeGoneWorktree). With
 		// worktreeRoot the read is in externalWorkTreeRefusal, with its own text.
-		if msg := repoConfigGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
+		if msg := req.settingsGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		}
 		// The listing carries the heavy profile of the rev-parse that follows it, as on
@@ -1856,7 +1869,7 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 		// same refusal in cells N1. Their states are format version `2`, a config of
 		// 20 MiB and an info/exclude of 20 MiB. With worktreeRoot the read came
 		// before this function (externalWorkTreeRefusal, cells N14).
-		if msg := repoConfigGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
+		if msg := req.settingsGateRefusal(t, p.ShadowDirOff, repo, true, "--absolute-git-dir"); msg != "" {
 			return refuse("failed to remove worktree: could not check whether " + p.WorktreePath + " is locked: " + msg)
 		}
 		switch t.verdict {

@@ -8,7 +8,8 @@
       "branch": "master",
       "root": "<DIR>/work",
       "repoSlug": "",
-      "defaultBranch": ""
+      "defaultBranch": "",
+      "settingsControl": "shadow"
     }
   },
   {
@@ -17,7 +18,8 @@
     "result": {
       "isRepo": false,
       "repoSlug": "",
-      "defaultBranch": ""
+      "defaultBranch": "",
+      "settingsControl": "shadow"
     }
   },
   {
@@ -26,7 +28,8 @@
     "result": {
       "isRepo": false,
       "repoSlug": "",
-      "defaultBranch": ""
+      "defaultBranch": "",
+      "settingsControl": "shadow"
     }
   },
   {
@@ -35,7 +38,8 @@
     "result": {
       "isRepo": false,
       "repoSlug": "",
-      "defaultBranch": ""
+      "defaultBranch": "",
+      "settingsControl": "shadow"
     }
   },
   {
