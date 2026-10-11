@@ -547,6 +547,12 @@ func listConfigFile(ctx context.Context, path string) (settings []repoSetting, o
 	if err != nil {
 		return nil, false
 	}
+	return listedSettings(out), true
+}
+
+// listedSettings are the settings of out, the output of one `config --list -z`
+// call, in its order.
+func listedSettings(out []byte) (settings []repoSetting) {
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
 		if len(rec) == 0 {
 			continue
@@ -554,7 +560,7 @@ func listConfigFile(ctx context.Context, path string) (settings []repoSetting, o
 		key, value, hasValue := strings.Cut(string(rec), "\n")
 		settings = append(settings, repoSetting{key: key, value: value, hasValue: hasValue})
 	}
-	return settings, true
+	return settings
 }
 
 // countInclude counts one more included file, depth levels below the config. It

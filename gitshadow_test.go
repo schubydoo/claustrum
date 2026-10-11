@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -610,5 +611,60 @@ func TestShadowDeleteRefusesHome(t *testing.T) {
 	}
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
 		t.Errorf("the folder after the control delete: %v, want it gone", err)
+	}
+}
+
+// TestShadowTestCopyTexts pins the two texts of HEAD and of the config in the
+// folder `shadow` of the start test, and the step of each. 5fd08069 writes
+// `ref: refs/heads/.invalid` and a config of 61 bytes first. Later it writes the
+// HEAD of `real` and the text of the copied settings with the helper.check
+// block (val-s3p2b2-1-linux section 1.3, val-s3p2b2-1-macos rows D1 and D2,
+// val-s3p2b2-1-windows row D3). The first texts are there at call 6. claustrum
+// has the second texts from call 8 on: the records fix only that they come
+// before the end of call 9. The folder `worktrees` of `real` is there before
+// call 10 on every system (the same rows).
+func TestShadowTestCopyTexts(t *testing.T) {
+	f := newShadowFixture(t)
+	copyLog := filepath.Join(t.TempDir(), "copy.log")
+	t.Setenv("CLAUSTRUM_GITSTUB_COPYLOG", copyLog)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	b, err := os.ReadFile(copyLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type seen struct{ argv, head, config, worktrees string }
+	var calls []seen
+	for _, rec := range strings.Split(string(b), "\x1d\n") {
+		if p := strings.Split(rec, "\x1e"); len(p) == 4 && strings.Contains(p[0], "commit.gpgsign=false") {
+			calls = append(calls, seen{strings.ReplaceAll(p[0], "\x1f", " "), p[1], p[2], p[3]})
+		}
+	}
+	if len(calls) != 4 {
+		t.Fatalf("%d test calls with the folder of the copy, want calls 6, 8, 9 and 10", len(calls))
+	}
+	const helper = "[helper]\n\tcheck = shadow\n"
+	first := seen{head: "ref: refs/heads/.invalid\n", config: "[core]\n\trepositoryformatversion = 0\n" + helper}
+	if len(first.config) != 61 || len(first.head) != 25 {
+		t.Fatalf("the first texts have %d and %d bytes, want 61 and 25", len(first.config), len(first.head))
+	}
+	if calls[0].head != first.head || calls[0].config != first.config {
+		t.Errorf("call 6 sees HEAD %q and config %q\nwant %q and %q", calls[0].head, calls[0].config, first.head, first.config)
+	}
+	for i, c := range calls[1:] {
+		if !strings.HasPrefix(c.head, "ref: refs/heads/") || c.head == first.head {
+			t.Errorf("call %d sees HEAD %q, want the HEAD of the repository of the test", i+8, c.head)
+		}
+		if !strings.HasPrefix(c.config, "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"") ||
+			!strings.HasSuffix(c.config, "[lfs]\n\trepositoryformatversion = 0\n"+helper) {
+			t.Errorf("call %d sees config %q\nwant the copied settings, the lfs block and the helper.check block", i+8, c.config)
+		}
+		if runtime.GOOS == "linux" && len(c.config) != 181 {
+			t.Errorf("call %d sees a config of %d bytes, want 181 on Linux", i+8, len(c.config))
+		}
+	}
+	if last := calls[3]; !strings.Contains(last.argv, "worktree add") || last.worktrees != "worktrees folder" {
+		t.Errorf("call 10 = %q with %q, want the add with the worktrees folder of the repository in place", last.argv, last.worktrees)
 	}
 }

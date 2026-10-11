@@ -277,20 +277,10 @@ func (h *shadowHost) makeFolder() error {
 	return nil
 }
 
-// openShadowLock makes the lock file of the daemon and takes the lock on it. A
-// lock that the system refuses is not measured: its text is claustrum's own. A
-// variable, so that a test can fail the step.
-var openShadowLock = func(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if err := holdShadowLock(f); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	return f, nil
-}
+// openShadowLock makes the lock file of the daemon and takes the hold on it
+// (openShadowLockFile, one per system). A variable, so that a test can fail the
+// step.
+var openShadowLock = openShadowLockFile
 
 // remakeFolder makes the folder of this daemon again when it is gone. The caller
 // holds mu, and the state is decided. After the driver removed the folder,
@@ -499,12 +489,8 @@ func (h *shadowHost) startTest() (state, cause string) {
 // the same ten calls on a macOS VM).
 //
 // The folder `shadow` has the form of the copy that the daemon keeps for a
-// repository. One poll on a Linux VM saw HEAD, a config that ends with the
-// helper.check line and the link `worktrees` in it (obs-work row 2). Its full
-// content is not measured. From a local run of git 2.47.3: git needs the folder
-// `refs` there, and the test `worktree add` needs the target of the link. The
-// content of `shadow` beyond the poll, and the daemon as the maker of
-// `real/.git/worktrees`, are therefore claustrum's choice.
+// repository. 5fd08069 writes its HEAD and its config two times
+// (makeShadowTestCopy and fillShadowTestCopy).
 func shadowTestCalls(dir, check string) (state, cause string) {
 	realDir := filepath.Join(check, "real")
 	gitDir := filepath.Join(realDir, ".git")
@@ -567,12 +553,15 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	}
 	base, cancelBase := gitCtx()
 	ctx, cancel := context.WithTimeout(base, shadowCallBound)
-	_, err = listConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	listing, err := listConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
 	ended := ctx.Err() != nil
 	cancel()
 	cancelBase()
 	if err != nil {
 		return failed("config", shadowRun{err: err, ended: ended})
+	}
+	if err := fillShadowTestCopy(gitDir, shadowDir, listing); err != nil {
+		return "", err.Error()
 	}
 	if _, cause, ok := reads(); !ok {
 		return "", cause
@@ -602,11 +591,24 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	// of the copy. If that works the state is fallback-git. If it fails too, the
 	// test failed (s3p2b-edges-linux2 cells 29 and 26, Linux VM). Both adds print
 	// the same line in those cells: the text here is the one of the second.
+	//
+	// A first add that the bound ended never gives the state fallback-git. The
+	// second add runs, and the test failed with the text of the ended call, also
+	// when the second add works. On a Windows VM 5fd08069 answers so in 4 of 4
+	// runs, with the cause `git worktree failed under "<S>": exit status 1`, and
+	// it tests again after the kept time (val-s3p2b2-1-windows cell
+	// Q-S4h-hold32-worktree-add). On a macOS VM both adds were ended, and the
+	// cause ends with `signal: killed` (val-s3p2b2-1-macos section S4). Linux
+	// has no row with an ended add: it gets the same rule.
 	add := func(env []string, name string) shadowRun {
 		return run(env, "worktree", "add", "--no-checkout", "--detach", filepath.Join(check, name), id)
 	}
 	if r := add(shadowEnv, "wt"); r.err != nil {
-		if second := add(realEnv, "wt2"); second.err != nil {
+		second := add(realEnv, "wt2")
+		if r.ended {
+			return failed("worktree", r)
+		}
+		if second.err != nil {
 			return failed("worktree", second)
 		}
 		return controlFallback, ""
@@ -635,27 +637,36 @@ func shadowVersionNote(check string, env []string) string {
 	return " (" + text + ")"
 }
 
+// The first texts of the folder `shadow` of the test, and the end of its config
+// in both texts. 5fd08069 writes these bytes on Linux, macOS and Windows VMs
+// (val-s3p2b2-1-linux section 1.3, val-s3p2b2-1-macos rows D1 and D2,
+// val-s3p2b2-1-windows row D3).
+const (
+	shadowTestFirstHead   = "ref: refs/heads/.invalid\n"
+	shadowTestFirstConfig = "[core]\n\trepositoryformatversion = 0\n" + shadowTestHelper
+	shadowTestHelper      = "[helper]\n\tcheck = shadow\n"
+)
+
 // makeShadowTestCopy makes the folder `shadow` of the test for the repository
-// at gitDir: HEAD, a config whose helper.check is `shadow`, the three empty
-// folders and, where the system links (shadowLinksWorktrees), the link
-// `worktrees` with its target.
+// at gitDir, before call 6: HEAD and config with their first texts, the three
+// empty folders, the folder `worktrees` of the repository and, where the system
+// links (shadowLinksWorktrees), the link `worktrees` to it.
+//
+// A poll of 2 ms on a Linux VM saw all of these at one time, before call 6, on
+// 5fd08069: HEAD with 25 bytes, config with 61 bytes, `info`, `objects`, `refs`
+// (0700), the link, and `real/.git/worktrees` with mode 0700
+// (val-s3p2b2-1-linux, cells s3-first-* and s6-*). The macOS VM shows the same
+// entries and modes. On a Windows VM `real\.git\worktrees` is there as an empty
+// folder before call 10, and the copy has no link (val-s3p2b2-1-windows row
+// D3).
 func makeShadowTestCopy(gitDir, shadowDir string) error {
 	if err := os.Mkdir(shadowDir, 0o700); err != nil {
 		return err
 	}
-	head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(shadowDir, "HEAD"), []byte(shadowTestFirstHead), 0o600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(shadowDir, "HEAD"), head, 0o600); err != nil {
-		return err
-	}
-	config, err := os.ReadFile(filepath.Join(gitDir, "config"))
-	if err != nil {
-		return err
-	}
-	text := strings.TrimSuffix(string(config), "[helper]\n\tcheck = real\n") + "[helper]\n\tcheck = shadow\n"
-	if err := os.WriteFile(filepath.Join(shadowDir, "config"), []byte(text), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(shadowDir, "config"), []byte(shadowTestFirstConfig), 0o600); err != nil {
 		return err
 	}
 	for _, name := range []string{"info", "objects", "refs"} {
@@ -663,14 +674,40 @@ func makeShadowTestCopy(gitDir, shadowDir string) error {
 			return err
 		}
 	}
-	if !shadowLinksWorktrees {
-		return nil
-	}
 	target := filepath.Join(gitDir, worktreesSubdir)
 	if err := os.Mkdir(target, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
+	if !shadowLinksWorktrees {
+		return nil
+	}
 	return os.Symlink(target, filepath.Join(shadowDir, worktreesSubdir))
+}
+
+// fillShadowTestCopy writes the second texts of the folder `shadow` of the
+// test. HEAD gets the text of the HEAD of the repository at gitDir. The config
+// gets the text of the copied settings for listing, the listing of the config
+// of that repository (shadowConfigText), and then the helper.check block. On
+// 5fd08069 the second config has 181 bytes on a Linux VM and 237 on a Windows
+// VM, and the second HEAD is `ref: refs/heads/master` and a newline (the rows
+// of makeShadowTestCopy).
+//
+// The step of this write is not fixed by a record. On gits 2.11.4 and 2.12.5
+// the test ends at call 9, and the poll saw both texts there
+// (val-s3p2b2-1-linux cells s6-*). So the write comes before the end of call
+// 9. claustrum writes right after call 7, whose listing the text needs, and
+// before call 8. 5fd08069 writes through a file `.tmp-<digits>` in the folder
+// (macOS and Windows VMs). claustrum writes the two files in place.
+func fillShadowTestCopy(gitDir, shadowDir string, listing []byte) error {
+	head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(shadowDir, "HEAD"), head, 0o600); err != nil {
+		return err
+	}
+	text := shadowConfigText(listedSettings(listing), nil) + shadowTestHelper
+	return os.WriteFile(filepath.Join(shadowDir, "config"), []byte(text), 0o600)
 }
 
 // settingsGateRefusal is the refusal text of a git method before its first git

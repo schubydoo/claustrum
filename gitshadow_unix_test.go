@@ -231,6 +231,45 @@ func TestShadowCallBound(t *testing.T) {
 	})
 }
 
+// TestShadowEndedAddNeverGivesFallback pins the rule of a first test `worktree
+// add` that the bound ended: the second add runs, and the test failed with the
+// text of the ended call, also when the second add works. The state is not
+// fallback-git, no state line is logged, and a request after the kept time
+// tests again. On a Windows VM 5fd08069 answers so in 4 of 4 runs, with `exit
+// status 1` as the text of the ended call (val-s3p2b2-1-windows cell
+// Q-S4h-hold32-worktree-add). On a macOS VM the cause ends with `signal:
+// killed` (val-s3p2b2-1-macos section S4), as here.
+func TestShadowEndedAddNeverGivesFallback(t *testing.T) {
+	f := newShadowFixture(t)
+	now := useShadowClock(t)
+	logs := captureLogBuf(t)
+	lowerShadowBound(t, 3*time.Second, 100*time.Millisecond)
+	slowGit(t, "worktree,add", "pre", 60*time.Second, "", "")
+	t.Setenv("CLAUSTRUM_GITSTUB_ARGEND", "/wt")
+	raw, calls := f.info(t, f.repo, nil)
+	want := jsonQuoted(t, failedTestText("git worktree failed under "+strconv.Quote(daemonFolder(t, f.run))+": signal: killed"))
+	if !strings.Contains(raw, `"message":`+want) {
+		t.Fatalf("git.info = %s\nwant the message %s", raw, want)
+	}
+	last := calls[len(calls)-1]
+	if _, shadow := lookupExact(last.env, "GIT_COMMON_DIR"); shadow || !strings.HasSuffix(last.argv[len(last.argv)-2], "/wt2") {
+		t.Errorf("the last call = %v, want the add of wt2 without GIT_COMMON_DIR", last.argv)
+	}
+	if n := stateLines(logs.String()); n != 0 {
+		t.Errorf("%d state lines after the ended add, want none", n)
+	}
+	if again, calls := f.info(t, f.repo, nil); again != raw || len(calls) != 0 {
+		t.Errorf("the next request = %s with %d calls, want the kept text and no call", again, len(calls))
+	}
+	// After the kept time the test runs again, and it passes with no held call.
+	t.Setenv("CLAUSTRUM_GITSTUB_MATCH", "")
+	*now = now.Add(shadowFailureKeep)
+	raw, calls = f.info(t, f.repo, nil)
+	if !strings.Contains(raw, `"settingsControl":"shadow"`) || len(testCalls(calls)) != 9 {
+		t.Errorf("after the kept time: %s with %d test calls, want the state shadow after a new test", raw, len(testCalls(calls)))
+	}
+}
+
 // TestShadowFolderFailures pins the cause where a folder or a file of the test
 // cannot be made: the error of the system call with its path, and no quotes.
 // 5fd08069 answers `mkdir <run>/git-shadow: permission denied` for a run folder
