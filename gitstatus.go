@@ -264,8 +264,9 @@ func linkBelow(base, p string) bool {
 }
 
 // statusWorkTreeProbe runs the two calls in the common directory: `--git-dir=<common>
-// config -z --list`, then the light `--git-dir=<common> --work-tree=<workTree>
-// rev-parse --show-toplevel` (K1 calls 4 and 5). Both carry pin.
+// config -z --list`, then the heavy `--git-dir=<common> --work-tree=<workTree>
+// rev-parse --show-toplevel` (K1 calls 4 and 5). Both carry pin. 5fd08069 sends the
+// heavy profile on both (s3-linux cell B1, Linux VM). 89cb6289 sends the light one.
 //
 // A listing that fails is a refusal: its text is the hooks refusal, and `git version`
 // runs after it (row o22, Linux VM). A `rev-parse` that fails answers isRepo:false
@@ -274,14 +275,14 @@ func linkBelow(base, p string) bool {
 func statusWorkTreeProbe(common, workTree string, pin []string) (ok bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	l := runListing(ctx, common, common, precursorEnv(false, pin))
+	l := runListing(ctx, common, common, precursorEnv(true, pin))
 	if l.err != nil {
-		return false, statusRefusal(failedListingText(l, false))
+		return false, statusRefusal(failedListingText(l, true))
 	}
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false,
+	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true,
 		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel")...)
 	cmd.Dir = common
-	cmd.Env = hardenedGitEnv(false, pin, l.hooks())
+	cmd.Env = hardenedGitEnv(true, pin, l.hooks())
 	return cmd.Run() == nil, nil
 }
 

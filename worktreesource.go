@@ -59,9 +59,9 @@ func pickSourceCommit(repo, source string) string {
 
 // resolveCommit resolves ref^{commit} to a full commit id, or "" when it does not
 // name a commit. It reads stdout only, and so does the merge-base step. git writes
-// hints and warnings to stderr, for example the graft-file deprecation hints that
-// appear when the environment sets GIT_GRAFT_FILE. With combined
-// output, such a hint becomes part of the id.
+// hints and warnings to stderr. With combined output, such a text becomes part of
+// the id. The graft-file deprecation hint was one such text, until the light list
+// turned it off with advice.graftFileDeprecated=false.
 //
 // Each step of the start-commit choice passes -c core.commitGraph=false, and the
 // diff also passes -c diff.relative=false, after the hardened profile. That is the

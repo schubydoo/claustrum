@@ -317,9 +317,13 @@ traps that matter for telling drift from expected:
 - The failure frames of `git.worktree_create` differ between pins. In
   `f6010b97` the git text can start with git's graft-file deprecation `hint:` lines.
   In the add-failure frame the 512-byte cap can then cut the rest of the text.
-  `90fca6e6` prints no hint. claustrum sets `GIT_GRAFT_FILE` as `f6010b97`
-  does, so its frames carry the same hint. A hint-only difference from
-  `90fca6e6` is therefore not drift.
+  `90fca6e6` prints no hint. claustrum sets `GIT_GRAFT_FILE` too, and its light
+  calls turn the hint off with `-c advice.graftFileDeprecated=false`. Its heavy
+  calls print the hint on stderr, and no reply holds it. A hint in a frame
+  of `f6010b97` and none in the frame of claustrum is therefore not drift. The
+  texts of `5fd08069` have no hint either, and those of `89cb6289` have it (cell
+  B2 of round `val-s3p2b1`, Linux, macOS and Windows VMs). See the
+  [record](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk).
 - In a repo with no `.claude/`, a `timeoutMs` that expires during the copy step
   splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
@@ -449,8 +453,6 @@ traps that matter for telling drift from expected:
   - With a `smudge` key that has no value, `5fd08069` answers the filter
     refusal. claustrum answers `worktree_add_failed` with git's own text
     (Linux VM).
-  - Where git itself fails in the checkout, claustrum's text has git's hint
-    about `info/grafts` in front (Linux VM).
   - `git.info` of claustrum has no `settingsControl` member (Linux VM).
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
     environment, `5fd08069` answers the filter refusal. claustrum answers
@@ -521,6 +523,21 @@ traps that matter for telling drift from expected:
   The states, the bounds and the cells are in
   [PROTOCOL.md](PROTOCOL.md#repository-config-refusals) and the
   [record](record/git-config-refusals.md).
+- The option lists of the git calls split the builds too, not drift.
+  `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
+  So claustrum differs from `89cb6289` in four states: `git.status` with replace
+  objects, the `hint:` lines in a failure text of `git.worktree_create`, a long
+  tree path on Windows, and the paths of a new worktree with
+  `worktree.useRelativePaths`. The call logs differ in the `-c` lists and in two
+  variables. The cells and the systems are in
+  [the record](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk)
+  and in [Hardened git calls](PROTOCOL.md#hardened-git-calls).
+
+  Against `5fd08069` the reply lines are equal, with the `settingsControl`
+  member of `git.info` aside. The call logs differ in `git.worktree_create`,
+  and in more calls without the `shadowDirOff` member. Those differences are not
+  drift. See "Not equal to `5fd08069`" in
+  [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,

@@ -87,17 +87,82 @@ func (c shapeCall) keysAndValues() []string {
 	return out
 }
 
-// The profile variables, written out here, not taken from profileEnv. The null
-// device is NUL on Windows, as f6010b97 passes it on a Windows VM.
+// The profile variables and the two -c lists, written out here, not taken from
+// profileEnv, gitHardenLight and gitHardenHeavy. They are those of 5fd08069: s3-linux
+// cells B0 and B1 on a Linux VM, and cell 50 of s3p2b-edges on macOS and Windows VMs.
+// The null device is NUL on Windows, as 5fd08069 passes it on a Windows VM.
 var (
 	shapeNull  = map[bool]string{false: "/dev/null", true: "NUL"}[runtime.GOOS == "windows"]
 	shapeLight = []string{"GIT_ALLOW_PROTOCOL=https:ssh", "GIT_TERMINAL_PROMPT=0",
 		"GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + shapeNull}
-	shapeHeavy = []string{"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
-		"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}
+	shapeHeavy = []string{"GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + shapeNull,
+		"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}
 	shapePins = []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=hook.enabled",
 		"GIT_CONFIG_VALUE_0=false", "GIT_CONFIG_KEY_1=hook.event", "GIT_CONFIG_VALUE_1="}
+	// shapeList20 and shapeList28 hold "%s" where the excludes file goes.
+	shapeList20 = []string{"core.hooksPath=/dev/null", "core.fsmonitor=false", "branch.autoSetupMerge=false",
+		"fetch.bundleURI=", "http.saveCookies=false", "core.alternateRefsCommand=", "alias.remote-https=",
+		"alias.remote-http=", "alias.remote-ssh=", "alias.remote-denied_by_claude_ssh.command=",
+		"help.autocorrect=0", "core.excludesFile=%s", "submodule.recurse=false", "fetch.recurseSubmodules=false",
+		"push.recurseSubmodules=false", "gc.auto=0", "maintenance.auto=false", "advice.graftFileDeprecated=false",
+		"worktree.useRelativePaths=false", "core.longpaths=true"}
+	shapeList28 = []string{"core.fsmonitor=false", "core.hooksPath=/dev/null", "core.attributesFile=/dev/null",
+		"core.excludesFile=%s", "core.longpaths=true", "protocol.allow=never", "protocol.ext.allow=never",
+		"protocol.fd.allow=never", "protocol.file.allow=never", "protocol.git.allow=never",
+		"protocol.ssh.allow=never", "protocol.http.allow=never", "protocol.https.allow=never",
+		"credential.helper=", "core.askPass=", "fetch.bundleURI=", "core.alternateRefsCommand=",
+		"alias.remote-https=", "alias.remote-http=", "alias.remote-ssh=",
+		"alias.remote-denied_by_claude_ssh.command=", "help.autocorrect=0", "submodule.recurse=false",
+		"fetch.recurseSubmodules=false", "push.recurseSubmodules=false", "gc.auto=0", "maintenance.auto=false",
+		"core.commitGraph=false"}
 )
+
+// shapeListArgs is list as `-c <item>` pairs, with excludes as the excludes file.
+func shapeListArgs(list []string, excludes string) []string {
+	out := make([]string, 0, 2*len(list))
+	for _, item := range list {
+		out = append(out, "-c", strings.Replace(item, "%s", excludes, 1))
+	}
+	return out
+}
+
+// profileItems returns the `-c` items of c that come before its first word that
+// is no option: the profile list, and the items that a call adds around it.
+func (c shapeCall) profileItems() []string {
+	var out []string
+	for i := 0; i < len(c.argv); i++ {
+		switch {
+		case c.argv[i] == "-c" && i+1 < len(c.argv):
+			out = append(out, "-c", c.argv[i+1])
+			i++
+		case strings.HasPrefix(c.argv[i], "--attr-source="):
+		default:
+			return out
+		}
+	}
+	return out
+}
+
+// lightVerb reports whether c is a call that claustrum makes with the list of 20
+// items. For the first seven verbs 5fd08069 does the same.
+//
+// The three other calls of this function are the `ls-files --others` of the copy
+// step, and the `rev-parse --show-toplevel` with no --git-dir and the `worktree
+// list` of a removal with worktreeRoot. With "shadowDirOff":true, 5fd08069 sends
+// the list of 20 items on the three. val-s3p2b1 cell A3 shows the `ls-files` calls
+// (Linux, macOS and Windows VMs). Cell A4 shows the two others (Linux and macOS
+// VMs). The calls of sourceBranch and show-ref are light too (cell A3, the same
+// VMs), and this test does not make them. A check-ignore call is light on
+// claustrum and has no row on 5fd08069 (not measured).
+func (c shapeCall) lightVerb() bool {
+	if c.has("rev-parse", "--is-inside-work-tree") || c.has("rev-parse", "--abbrev-ref") ||
+		c.has("worktree", "add") || c.has("read-tree") || c.has("for-each-ref", "--count=10001") ||
+		c.has("rev-list") || c.has("update-ref") {
+		return true
+	}
+	gitDir := slices.ContainsFunc(c.argv, func(a string) bool { return strings.HasPrefix(a, "--git-dir=") })
+	return c.has("ls-files", "--others") || c.has("worktree", "list") || (c.has("rev-parse", "--show-toplevel") && !gitDir)
+}
 
 // sameShapeEnv compares a call's env with the wanted one. On Windows Go's os/exec
 // sorts the environment block (DIVERGENCES.md D23), so there the two are compared as
@@ -180,15 +245,30 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 		if got, want := c.keysAndValues(), wantShapeEnv(c.heavy(), true, extra...); !sameShapeEnv(got, want) {
 			t.Errorf("%s call %d %q env = %q\nwant %q", what, i, c.argv, got, want)
 		}
-		if !slices.Contains(c.argv, "core.excludesFile="+excludes) {
-			t.Errorf("%s call %d %q, want -c core.excludesFile=%s", what, i, c.argv, excludes)
+		// Each call kind has its own list, with nothing before it. The read-tree and
+		// the rev-list add their own items after it.
+		want, name := shapeListArgs(shapeList28, excludes), "28"
+		if c.lightVerb() {
+			want, name = shapeListArgs(shapeList20, excludes), "20"
+		}
+		switch {
+		case c.has("read-tree"):
+			want = append(want, "-c", "core.splitIndex=false", "-c", "core.commitGraph=false")
+		case c.has("rev-list"):
+			want = append(want, "-c", "core.commitGraph=false")
+		}
+		if got := c.profileItems(); !slices.Equal(got, want) {
+			t.Errorf("%s call %d %q\nhas the -c items %q\nwant the list of %s items %q", what, i, c.argv, got, want, name)
+		}
+		if c.heavy() == c.lightVerb() {
+			t.Errorf("%s call %d %q: heavy = %v, want %v", what, i, c.argv, c.heavy(), !c.lightVerb())
 		}
 	}
 }
 
 // TestHardenedGitCallShape pins the cwd, the argv and the env of the git calls that
 // the hardened helpers make, and their order, as f6010b97 makes them on Linux, macOS
-// and Windows VMs:
+// and Windows VMs, with the lists and variables of 5fd08069:
 //
 //   - Every hardened call and every config listing runs in the repository directory
 //     and passes no -C.
@@ -196,9 +276,13 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 //     git.list_branches, git.worktree_create and git.worktree_remove, the hooks
 //     refusal check is the listing of the first call, not an extra one.
 //   - A listing carries the profile variables of the call after it, and no hook pins.
-//   - The light profile sets GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE=<null
-//     device>. The heavy profile, used by `rev-parse --absolute-git-dir` too, does not.
-//     GIT_OPTIONAL_LOCKS=0 is on the status call only.
+//   - Both profiles set GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE=<null device>, as
+//     5fd08069 does (s3-linux cell B1, Linux VM). The heavy profile is on every call
+//     of git.info, git.list_branches and git.status, and on `rev-parse
+//     --absolute-git-dir`. GIT_OPTIONAL_LOCKS=0 is on the status, ls-files and
+//     diff-index calls of git.status only.
+//   - Each hardened call has the -c list of its kind: 28 items on the heavy profile
+//     and 20 on the light one (checkHardenedEnv).
 //   - The excludes read runs first, in the temporary directory, with GIT_DIR=<null
 //     device> as its only variable. The --attr-source probe adds no variable.
 //   - The status call starts with --attr-source and runs in the worktree.
@@ -461,7 +545,9 @@ func TestHardenedGitCallShape(t *testing.T) {
 
 	// The branch step of 89cb6289 (row R01 on Linux, macOS and Windows VMs, and rows
 	// R11 and B2-09d for a missing branch). Each call follows a light listing, runs
-	// in baseRepo, carries the light -c set, and has its own env: the light profile
+	// in baseRepo, carries the list of 20 items, and has its own env. 5fd08069 sends
+	// that list and that env with "shadowDirOff":true (s3p2-linux2 cell L8, Linux VM).
+	// The env is: the light profile
 	// without GIT_ALLOW_PROTOCOL, the pin, the hook pins, then the three heavy
 	// variables. rev-list adds -c core.commitGraph=false. update-ref sends the old
 	// value.
@@ -472,11 +558,7 @@ func TestHardenedGitCallShape(t *testing.T) {
 			t.Fatalf("create reply = %s", raw)
 		}
 		tip := f.out(t, f.top, "rev-parse", "HEAD")
-		c2 := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
-			"-c", "branch.autoSetupMerge=false", "-c", "fetch.bundleURI=", "-c", "http.saveCookies=false",
-			"-c", "core.alternateRefsCommand=", "-c", "alias.remote-https=", "-c", "alias.remote-http=",
-			"-c", "alias.remote-ssh=", "-c", "core.excludesFile=" + shapeNull, "-c", "submodule.recurse=false",
-			"-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=false"}
+		c2 := shapeListArgs(shapeList20, shapeNull)
 		wantEnv := []string{"GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + shapeNull,
 			"GIT_COMMON_DIR"}
 		wantEnv = append(append(wantEnv, shapePins...),

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -73,9 +74,11 @@ func statusCallLog(t *testing.T, root string) func(path, base string) (string, [
 		var lines []string
 		for _, c := range readShapeCalls(t, ctxlog) {
 			var argv []string
+			items := 0
 			for i := 0; i < len(c.argv); i++ {
 				if c.argv[i] == "-c" {
 					i++
+					items++
 					continue
 				}
 				argv = append(argv, c.argv[i])
@@ -92,6 +95,10 @@ func statusCallLog(t *testing.T, root string) func(path, base string) (string, [
 				cwd = "<temp>"
 			}
 			line := cwd + "|" + env + "|" + strings.Join(argv, " ")
+			// A heavy call has the list of 28 items. Any other count shows in the line.
+			if env == "A" && items != 0 && items != 28 {
+				line += " items=" + strconv.Itoa(items)
+			}
 			if slices.Contains(c.env, "GIT_OPTIONAL_LOCKS=0") {
 				line += " +locks"
 			}
@@ -144,8 +151,8 @@ func statusGateCalls(probeTree string) []string {
 		callRepoConfig,
 		"<fx>/T|A|config -z --list",
 		"<fx>/T|A|rev-parse --absolute-git-dir",
-		"<fx>/T/.git|B|--git-dir=<fx>/T/.git config -z --list",
-		"<fx>/T/.git|B|--git-dir=<fx>/T/.git --work-tree=" + probeTree + " rev-parse --show-toplevel",
+		"<fx>/T/.git|A|--git-dir=<fx>/T/.git config -z --list",
+		"<fx>/T/.git|A|--git-dir=<fx>/T/.git --work-tree=" + probeTree + " rev-parse --show-toplevel",
 	}
 }
 

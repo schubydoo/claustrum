@@ -64,9 +64,11 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 		var lines []string
 		for _, c := range readShapeCalls(t, ctxlog) {
 			var argv []string
+			items := 0
 			for i := 0; i < len(c.argv); i++ {
 				if c.argv[i] == "-c" {
 					i++
+					items++
 					continue
 				}
 				argv = append(argv, c.argv[i])
@@ -75,16 +77,23 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 			switch {
 			case slices.Contains(c.env, "GIT_ALLOW_PROTOCOL=https:ssh"):
 				env = "L"
+			// The heavy profile has GIT_NO_LAZY_FETCH before GIT_TERMINAL_PROMPT. The
+			// branch step has it after its hook pins.
+			case slices.Index(c.env, "GIT_NO_LAZY_FETCH=1") >= 0 &&
+				slices.Index(c.env, "GIT_NO_LAZY_FETCH=1") < slices.Index(c.env, "GIT_TERMINAL_PROMPT=0"):
+				env = "H"
 			case slices.Contains(c.env, "GIT_GRAFT_FILE="+os.DevNull):
 				env = "R"
-			case slices.Contains(c.env, "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh"):
-				env = "H"
 			}
 			cwd := c.cwd
 			if slices.Contains(c.argv, "core.excludesFile") {
 				cwd = "<temp>"
 			}
 			line := cwd + "|" + env + "|" + strings.Join(argv, " ")
+			// A heavy call has the list of 28 items. Any other count shows in the line.
+			if env == "H" && items != 0 && items != 28 {
+				line += " items=" + strconv.Itoa(items)
+			}
 			for _, k := range []string{"GIT_DIR", "GIT_COMMON_DIR"} {
 				for _, kv := range c.all {
 					if v, ok := strings.CutPrefix(kv, k+"="); ok {
@@ -124,11 +133,13 @@ func callsCheck(cwd, pin string) []string {
 	return []string{cwd + "|H|config -z --list" + pin, cwd + "|H|rev-parse --absolute-git-dir" + pin}
 }
 
-// callsPair is the pair of registrationProbe.
+// callsPair is the pair of registrationProbe. 5fd08069 sends the heavy profile on
+// this pair in git.worktree_remove, with "shadowDirOff":true (val-s3p2b1 cell A6,
+// Linux, macOS and Windows VMs).
 func callsPair(gitDir, workTree, pin string) []string {
 	return []string{
-		gitDir + "|L|--git-dir=" + gitDir + " config -z --list" + pin,
-		gitDir + "|L|--git-dir=" + gitDir + " --work-tree=" + workTree + " rev-parse --show-toplevel" + pin,
+		gitDir + "|H|--git-dir=" + gitDir + " config -z --list" + pin,
+		gitDir + "|H|--git-dir=" + gitDir + " --work-tree=" + workTree + " rev-parse --show-toplevel" + pin,
 	}
 }
 
