@@ -223,8 +223,9 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   space after home or after a folder above it, because the path is resolved
   first. It lets a path with the `\\?\` prefix and the short 8.3 name of home
   pass, and the test by identity refuses those. These Windows rows are runs of
-  the test binary on a Windows VM, with a temp home and a stubbed wipe. No
-  daemon cell measured them. A link or a
+  the test binary on a Windows VM, with a temp home and a stubbed wipe. A
+  Windows VM also ran them on a daemon, one run each: see the
+  [record](record/files-extract-tar.md). A link or a
   junction at the name itself is not followed: the wipe removes the link, and
   its target stays. Second, the path as the system
   resolves it and the name inside the handle must name one entry. If not,
