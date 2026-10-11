@@ -525,28 +525,18 @@ traps that matter for telling drift from expected:
   [record](record/git-config-refusals.md).
 - The option lists of the git calls split the builds too, not drift.
   `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
-  Round `val-s3p2b1` measured these against `89cb6289`:
-  - `git.status` on a `HEAD` commit with a replacement answers against the real
-    commit. `89cb6289` answers against the replacement. For a replace ref that
-    names a missing object, `89cb6289` answers `exit status 128` (cell B1, Linux,
-    macOS and Windows VMs).
-  - A failure text of `git.worktree_create` has no `hint:` lines about
-    `info/grafts`. The text of `89cb6289` starts with 8 of them (cell B2, Linux,
-    macOS and Windows VMs, and cell B9, Linux VM).
-  - On Windows a create with a tree path of 270 characters succeeds with no
-    `core.longpaths` in a config. `89cb6289` fails in the checkout (cell B4,
-    Windows VM).
-  - With `worktree.useRelativePaths = true` in the user config, a create writes
-    absolute paths and leaves the config of the repository unchanged. `89cb6289`
-    writes relative paths and changes that config. The reply lines are equal
-    (cell B6, macOS and Windows VMs).
-  - The call log differs: the `-c` lists have 28 and 20 items, against 23 and
-    13 on `89cb6289`, and the heavy calls carry two more variables.
+  So claustrum differs from `89cb6289` in four states: `git.status` with replace
+  objects, the `hint:` lines in a failure text of `git.worktree_create`, a long
+  tree path on Windows, and the paths of a new worktree with
+  `worktree.useRelativePaths`. The call logs differ in the `-c` lists and in two
+  variables. The cells and the systems are in
+  [the record](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk)
+  and in [Hardened git calls](PROTOCOL.md#hardened-git-calls).
 
-  Against `5fd08069` the reply lines of that round are equal, with the
-  `settingsControl` member of `git.info` aside (Linux, macOS and Windows VMs).
-  The call logs differ in `git.worktree_create`, and in more calls without the
-  member. Those differences are not drift. See "Not equal to `5fd08069`" in
+  Against `5fd08069` the reply lines are equal, with the `settingsControl`
+  member of `git.info` aside. The call logs differ in `git.worktree_create`,
+  and in more calls without the `shadowDirOff` member. Those differences are not
+  drift. See "Not equal to `5fd08069`" in
   [PROTOCOL.md](PROTOCOL.md#hardened-git-calls).
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
