@@ -304,6 +304,19 @@ func TestHardenedGitCallShape(t *testing.T) {
 		if len(calls) < 2 || !calls[0].listing() || !calls[1].has("rev-parse", "--is-inside-work-tree") {
 			t.Fatalf("calls = %q, want one listing, then rev-parse --is-inside-work-tree", calls)
 		}
+		// The filter rule runs one scoped listing, right before the listing of the
+		// read-tree call. It runs in the new worktree with the environment of that
+		// listing, and no hardened call follows it.
+		at := slices.IndexFunc(calls, func(c shapeCall) bool { return c.has("--show-scope") })
+		if at < 0 || at+2 >= len(calls) || !calls[at+1].listing() || !calls[at+2].has("read-tree") {
+			t.Fatalf("worktree_create: no scoped listing right before the listing of the read-tree call")
+		}
+		if sc, next := calls[at], calls[at+1]; !slices.Equal(sc.argv, append(slices.Clone(next.argv), "--show-scope")) ||
+			sc.cwd != next.cwd || !slices.Equal(sc.env, next.env) {
+			t.Errorf("scoped listing = %q in %s with %q\nwant the next listing %q in %s with %q, plus --show-scope",
+				sc.argv, sc.cwd, sc.env, next.argv, next.cwd, next.env)
+		}
+		calls = slices.Delete(calls, at, at+1)
 		checkAlternation(t, "worktree_create", calls, func(c shapeCall) string {
 			if c.has("read-tree") || (c.listing() && strings.HasPrefix(c.argv[0], "--git-dir=")) {
 				return f.leaf()

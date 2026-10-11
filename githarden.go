@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -339,7 +340,10 @@ var worktreeCreateDrainCap = 5 * time.Second
 // with the leaf as its working directory, and the light precursorEnv.
 // pin is the GIT_COMMON_DIR pin of baseRepo (commonDirPinEnv), or nil. Both calls
 // carry it. args carries the -c pins and options after the hardening profile, and
-// the read-tree subcommand itself.
+// the read-tree subcommand itself. filters is the plan of the filter rule
+// (gitfilter.go). Its -c pairs come before the profile, as on 5fd08069 (Linux
+// and Windows VMs). If the rule ran the config precursor, this call uses that
+// listing and runs none.
 //
 // It returns:
 //   - stderr: stderr only, untrimmed. The failure frames quote it (worktreeGitText).
@@ -357,9 +361,14 @@ var worktreeCreateDrainCap = 5 * time.Second
 //
 // With no deadline armed (D5 off and timeoutMs off) WaitDelay is left unset, so the
 // drain is unbounded and byte-identical to the reference default, which applies no cap.
-func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pin []string, args ...string) (stderr string, drained bool, err error) {
-	hooks := runListing(ctx, leaf, gitDir, precursorEnv(false, pin)).hooks()
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false, args...)...)
+func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pin []string, filters filterPlan, args ...string) (stderr string, drained bool, err error) {
+	pre := filters.listing
+	if pre == nil {
+		r := runListing(ctx, leaf, gitDir, precursorEnv(false, pin))
+		pre = &r
+	}
+	hooks := pre.hooks()
+	cmd := exec.CommandContext(ctx, "git", append(slices.Clone(filters.args), hardenedProfileArgs(false, args...)...)...)
 	cmd.Dir = leaf
 	cmd.Env = append(hardenedGitEnv(false, pin, hooks), "GIT_INDEX_FILE="+indexFile)
 	// Own process group so the teardown below can SIGKILL the whole group and reap a
@@ -406,18 +415,19 @@ func hardenedGitCheckout(ctx context.Context, leaf, gitDir, indexFile string, pi
 // drained and err are those of hardenedGitCheckout. The -c pins
 // core.splitIndex=false and core.commitGraph=false follow the profile, as in the
 // argv measured against f6010b97. workTree is the --work-tree value
-// (checkoutWorkTree). The working directory stays leaf.
+// (checkoutWorkTree). The working directory stays leaf. filters is the plan of
+// the filter rule (listFilterPlan), or the zero value.
 //
 // installErr is the error of a placement that failed. The caller answers it as a
 // failed checkout. On Windows it is always nil.
-func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string) (stderr string, drained bool, err, installErr error) {
+func runWorktreeCheckout(ctx context.Context, leaf, workTree, gitDir, adminDir string, tested testedRegistration, rev string, pin []string, filters filterPlan) (stderr string, drained bool, err, installErr error) {
 	idxDir, err := os.MkdirTemp("", checkoutIndexTempPrefix)
 	if err != nil {
 		return "", false, err, nil
 	}
 	defer func() { _ = os.RemoveAll(idxDir) }()
 	idx := filepath.Join(idxDir, "index")
-	stderr, drained, err = hardenedGitCheckout(ctx, leaf, gitDir, idx, pin,
+	stderr, drained, err = hardenedGitCheckout(ctx, leaf, gitDir, idx, pin, filters,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",
 		"--git-dir="+gitDir, "--work-tree="+workTree,
 		"read-tree", "-u", "--reset", "--no-recurse-submodules", rev)

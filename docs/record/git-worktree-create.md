@@ -4,7 +4,9 @@ This page is a record, not reading material. Its text moved here from the protoc
 
 To use the method, read [git.worktree_create](../protocol/git-worktree-create.md).
 
-`{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}`
+`{baseRepo,branchName,worktreePath[,sourceBranch][,existingBranch][,worktreeRoot][,timeoutMs][,shadowDirOff]}` → `{"success":true,"path":"<worktreePath>","sourceBranch":"<b>","branch":"<b>"}`
+- The checkout has a filter rule that follows `5fd08069`. See
+  [Git filters of the checkout](#git-filters-of-the-checkout).
 - A failure frame ends with `"branchKept":true` after `errorCode` when the rollback
   check finds commits that no other ref reaches. Rows C02, C04, C05, C09, C10 and
   B2-10 of `89cb6289` show it. A check that does not finish, and a skipped name, add
@@ -1098,3 +1100,343 @@ copies end still fails it, as `timeoutMs` above describes:
   succeed while `.claude/` files are lost, or the other way round. The `.claude/` pass has no manifest
   precondition. It runs git on every create where `.claude/` holds a child other
   than `worktrees`. This is off by default.
+
+## Git filters of the checkout
+
+The rules of this section follow `5fd08069`. The pinned build `89cb6289` has none of them: it runs every filter. A Linux VM with git 2.43.0 ran three daemons side by side in each cell. They are `89cb6289`, `5fd08069`, and a claustrum build of `main` before this change. That claustrum build equals `89cb6289` in every cell, in the reply, the markers and the disk. The tables are from that Linux VM. A Windows VM ran 23 of the cells: see [Windows](#windows). The part [claustrum and the filter rule](#claustrum-and-the-filter-rule) says what claustrum does now. The tests in `gitfilter_test.go` pin the rules.
+
+In each cell the request creates the branch `w1` at `<repo>/.claude/worktrees/w1`. A filter is a marker script, unless the row gives its value. A marker that fired proves that the filter program ran. Without a daemon, plain `git worktree add` fires the marker in every row whose `89cb6289` column says "fired". `git-lfs` is not installed on the Linux VM.
+
+- "ok" is `{"success":true,"path":"<repo>/.claude/worktrees/w1","sourceBranch":"main","branch":"w1"}`, with the worktree folder, the registration and the branch on disk.
+- "refused" is the frame below with the filter name `m`, with no worktree folder, no registration and no branch on disk. No marker fired in a refused row.
+
+`{"success":false,"error":"Claude doesn't run the \"m\" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter \"m\"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.","errorCode":"repository_only_filter"}`
+
+### Which keys make a definition
+
+The filter is `m`, and `.gitattributes` holds `a.txt filter=m`.
+
+| Cell | Config | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| A1 | `smudge` in `.git/config` | ok, fired | refused |
+| A2 | `process` in `.git/config` | `worktree_add_failed` with the text of git, fired, nothing left | refused |
+| A3 | `clean` in `.git/config` | ok | ok |
+| A4 | `required = true` in `.git/config` | ok | ok |
+| A5 | `smudge` with an empty value in `.git/config` | ok | ok |
+| A7 | `clean` in `.git/config`, `smudge` in `~/.gitconfig` | ok, the marker of `~/.gitconfig` fired | ok, the marker of `~/.gitconfig` fired |
+| A8 | `smudge` in `.git/config`, `clean` in `~/.gitconfig` | ok, fired | refused |
+| O4 | `smudge` in `.git/config`, `required = true` in `~/.gitconfig` | ok, fired | refused |
+| O5 | `smudge` in `.git/config`, an empty `smudge` in `~/.gitconfig` | ok, fired | refused |
+| O6 | `smudge` in `.git/config` and in the system config | ok, the marker of the repository fired | ok, the marker of the system config fired |
+
+### Where the definition is
+
+| Cell | The `smudge` key is in | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| B1 | a file that `.git/config` includes | ok, fired | refused |
+| B2 | `config.worktree`, with `extensions.worktreeConfig` | ok, fired | refused |
+| B3 | the system config (`GIT_CONFIG_SYSTEM`) | ok, fired | ok, fired |
+| B4 | a file that `~/.gitconfig` includes | ok, fired | ok, fired |
+| B5 | `$XDG_CONFIG_HOME/git/config` | ok, fired | ok, fired |
+| B6 | `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0` and `GIT_CONFIG_VALUE_0` of the daemon | ok, fired | ok, fired |
+
+### Which paths count
+
+The `smudge` key is in `.git/config`.
+
+| Cell | State | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| C1 | no `.gitattributes` file | ok | ok |
+| C2 | the attribute names a filter `other` that no config defines | ok | ok |
+| C3 | the attribute is in `sub/.gitattributes` | ok, fired | refused |
+| C4 | the attribute is only in `.git/info/attributes` | ok, fired | refused |
+| C5 | the attribute is only in the `core.attributesFile` of the user | ok, fired | refused |
+| C6 | a macro attribute | ok, fired | refused |
+| C7 | `filter=m`, then `-filter` | ok | ok |
+| C8 | the `.gitattributes` file is not committed | ok | ok |
+| C9 | the attribute is committed on another branch | ok | ok |
+| O1 | only `sub/b.txt` uses the filter | ok, fired | refused |
+| O2 | the file that uses the filter is empty | ok, fired | refused |
+| O3 | only a symlink path uses the filter | ok | ok |
+
+In cells C1 to C9, `5fd08069` refuses exactly the cells where plain git fires the marker.
+
+### Values
+
+The value is the `smudge` value in `.git/config`, unless the row names another key. No value of cells V1 to V9, V13 and V14 holds a marker.
+
+| Cell | Filter name | Value | `89cb6289` | `5fd08069` |
+|---|---|---|---|---|
+| V1 | `m` | `cat` | ok | ok |
+| V2 | `m` | `cat` and one space | ok | refused |
+| V3 | `m` | `/bin/cat` | ok | refused |
+| V4 | `m` | `cat -` | ok | refused |
+| V5 | `m` | `cat %f` | ok | refused |
+| V6 | `m` | `true` | ok | refused |
+| V7 | `lfs` | `git-lfs smudge -- %f` | ok | ok |
+| V8 | `m` | `git-lfs smudge -- %f` | ok | refused |
+| V9 | `lfs` | `git lfs smudge -- %f` | ok | the refusal that names `lfs` |
+| V10 | `lfs` | a marker script | ok, fired | the refusal that names `lfs` |
+| V11 | `m` | `smudge = cat` and `process` with a marker script | `worktree_add_failed` with the text of git, fired, nothing left | refused |
+| V12 | `m` | a marker script, with `clean = cat` and `required = true` | ok, fired | refused |
+| V13 | `lfs` | `process = git-lfs filter-process` | `worktree_add_failed` | `worktree_add_failed`, nothing left |
+| V14 | `m` | `cat` under the key spelled `Smudge` | ok | ok |
+
+In cell V13 the text of `5fd08069` is `git worktree add failed (checkout): git-lfs filter-process: 1: git-lfs: not found fatal: the remote end hung up unexpectedly`. The text of `89cb6289` has `hint:` lines of git before that text.
+
+### Names
+
+| Cell | State | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| D1 | filters `m` and `b`, attribute lines for `m` then `b` | ok, both fired | refused |
+| D2 | the same, attribute lines for `b` then `m` | ok, both fired | refused |
+| D3 | `[filter "M"]` with `filter=m`, and the reverse | ok | ok |
+| D4 | the name `a.b` | ok, fired | the refusal that names `a.b` |
+| D5 | a name of 300 bytes | ok, fired | the frame below, nothing left |
+| D6 | the name `q"t` | ok, fired | the refusal with `\"q\\\"t\"` at both places of the name |
+| D6 | the name `s p`, attribute line `a.txt filter=s p` | ok | ok |
+| N1 | `a.txt filter=b`, `z.txt filter=m` | ok, both fired | the refusal that names `b` |
+| N2 | `a.txt filter=m`, `z.txt filter=b` | ok, both fired | refused |
+| N3 | `1.txt filter=c`, `2.txt filter=a`, `3.txt filter=b` | ok, all three fired | the refusal that names `c` |
+| N4 | `a.txt filter=b`, and `m` is defined and not used | ok, the marker of `b` fired | the refusal that names `b` |
+
+Cell D5 on `5fd08069`:
+
+`{"success":false,"error":"git worktree add failed (checkout): this repository's git config cannot be used: a filter defined only there has a name longer than 200 bytes (it starts \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"); define it in ~/.gitconfig on the remote machine, or rename it","errorCode":"worktree_add_failed"}`
+
+With the name `s p`, git reads the attribute line as `filter=s` and an attribute `p`. So no path uses the filter `s p`.
+
+### The read-tree call of 5fd08069
+
+A logging wrapper recorded each git call of cells A1, V1 to V14, N1 to N4 and O1 to O6.
+
+- `89cb6289` has no `-c` pair with a `filter.` key on its read-tree call, in any cell.
+- In each refused cell, `5fd08069` passes three pairs for each filter of `.git/config`: `filter.<name>.process=`, `filter.<name>.required=true` and `filter.<name>.smudge=false`.
+- The pairs are in sorted order of the filter names. A filter that no path uses has them too (cell N4, pairs for `b` and `m`). In cell N3 the order is `a`, `b`, `c`.
+- In cell O3 the call has the three pairs for `m`, exits 0, and the reply is ok.
+- In cells V1, V14 and O6 the call has no such pair.
+- In cell V7 the one pair is `filter.lfs.smudge=git-lfs smudge -- %f`. The call exits 0, and its stderr says that `git-lfs` was not found.
+- In cell V13 the one pair is `filter.lfs.process=git-lfs filter-process`. The call exits 128.
+- In each refused cell the call exits 128, and its stderr is one line: `fatal: <path>: smudge filter <name> failed`. The reply names that filter. The path is `a.txt` in cells N1, N2 and N4, and `1.txt` in cell N3.
+
+### The order of the steps
+
+| Cell | State | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| F1 | cell A1, with a poll of the disk each 3 ms | ok, fired | refused |
+| F2 | the worktree folder exists | the `unsafe_path` refusal of a path that exists | equal. The empty folder stays, and nothing else is made |
+| F3 | `baseRepo` is a plain folder | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}` | equal |
+
+In cell F1, `5fd08069` makes 19 git calls. Call 9 is `worktree add --no-track --no-checkout -b w1 <path>`. Calls 10 and 11 are `--git-dir=<repo>/.git config -z --list` in the new worktree. Call 12 is the read-tree call. Calls 13 to 19 follow, and the last one is `update-ref --no-deref -d refs/heads/w1 <sha>`. There is no `git worktree remove` call. The poll saw the worktree folder, its `.git` file, the registration and the branch, and each was gone after the reply. It saw no `a.txt` in the new worktree. The empty `<repo>/.claude/worktrees` folder stays.
+
+### The switch and the other methods
+
+| Cell | Request | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| E1 | cell A1 with `"shadowDirOff":true` | ok, fired | ok, fired, with 10 git calls as on `89cb6289` |
+| E2 | `git.status` in a worktree with a changed `a.txt`, and a `clean` marker in `.git/config` | `{"isRepo":true,"clean":false,"changes":[" M a.txt"]}`, no marker | equal |
+| E2 | the same with `"shadowDirOff":true` | the same reply, no marker | equal |
+| E3 | `git.worktree_remove` in the repository of cell A1 | `{"success":true}`, the folder and the registration are gone, the branch stays | equal |
+| E4 | `git.status` with a `diff.x.textconv` marker in `.git/config` | `{"isRepo":true,"clean":false,"changes":[" M a.txt"]}`, no marker | equal |
+
+Plain `git status` runs no textconv program either. So cell E4 shows nothing about textconv.
+
+### Later cells
+
+The builds of this change that ran on the VMs have the names A to D, in the order of their rounds. A later round on the Linux VM ran 27 more cells on `89cb6289`, `5fd08069` and build A of this change. The table has the two reference builds. The part [claustrum and the filter rule](#claustrum-and-the-filter-rule) has claustrum.
+
+| Cell | State | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| Q1 | `smudge` in `~/.gitconfig`, `process` in `.git/config` | `worktree_add_failed` with the text of git, the marker of the repository fired | ok, the marker of `~/.gitconfig` fired, no `filter.` pair |
+| Q2 | `process` in `~/.gitconfig`, `smudge` in `.git/config` | `worktree_add_failed`, the marker of `~/.gitconfig` fired | `git worktree add failed (checkout): fatal: the remote end hung up unexpectedly`, the same marker, no `filter.` pair |
+| Q3 | the name `a=b` | ok, fired | the frame below, nothing left |
+| Q4 | a name of 200 bytes | ok, fired | the refusal that names it |
+| Q4 | a name of 201 bytes | ok, fired | the frame of cell D5 |
+| Q5 | a name of 300 bytes, `smudge = cat` | ok | ok |
+| Q6 | a name of 300 bytes, also in `~/.gitconfig` | ok, the marker of the repository fired | ok, the marker of `~/.gitconfig` fired |
+| Q7 | `smudge = cat`, with a wrapper named `cat` first on PATH | ok, the wrapper fired | ok, the wrapper did not fire |
+| Q8 | two `smudge` values, `cat` and then a marker | ok, fired | refused |
+| Q8 | two `smudge` values, a marker and then `cat` | ok | ok, no marker, no `filter.` pair |
+| Q9 | an empty `process` and a marker `smudge` | ok, no marker | refused |
+| Q10 | a `smudge` key with no value | `worktree_add_failed` with git's `missing value for 'filter.m.smudge'` text | refused, with the three pairs |
+| Q11 | the name `a\b` | ok, fired | the refusal with `\"a\\\\b\"` at both places of the name |
+| Q11 | the name `ä` | ok, fired | the refusal with `\"ä\"` |
+| Q11 | a name with a tab | ok | ok |
+| Q12 | `shadowDirOff` as `"true"`, `1`, `null`, `false` or `{}` | ok, fired | refused, in all five |
+| Q12 | `shadowDirOff` as `true` | ok, fired | ok, fired |
+| Q13 | cell A1 with `"timeoutMs":1` | `git worktree add timed out after 1ms (deadline expired before the checkout started)`, `timeout`, nothing left | equal |
+| Q13 | cell A1 with `"timeoutMs":1000`, and a read-tree call that waits 3 s | `git worktree add timed out after 1000ms (deadline expired during the checkout): signal: killed`, `timeout`, nothing left, no marker | equal |
+| Q14 | cell A1, with a git that answers exit 129 to `--show-scope` | ok, fired | refused |
+| Q15 | the filter `lfs` with `clean`, `smudge`, `process` and `required`, and a stub `git-lfs` | `worktree_add_failed`, the `filter-process` marker fired | `git worktree add failed (checkout): fatal: the remote end hung up unexpectedly`, the same marker |
+
+Cell Q3 on `5fd08069`:
+
+`{"success":false,"error":"git worktree add failed (checkout): this repository's git config cannot be used: the filter \"a=b\" is defined only there, and Claude cannot handle \"=\" in a filter's name; define it in ~/.gitconfig on the remote machine, or rename it","errorCode":"worktree_add_failed"}`
+
+- With the tab, git reads the attribute line as `filter=a` and an attribute `b`. So no path uses that filter.
+- In cells Q13 the deadline expires before git answers, and the answer is the timeout frame.
+- In cell Q15 the read-tree call of `5fd08069` has four pairs: `filter.lfs.clean=git-lfs clean -- %f`, `filter.lfs.process=git-lfs filter-process`, `filter.lfs.required=true` and `filter.lfs.smudge=git-lfs smudge -- %f`. The stub exits 1 for `filter-process`.
+- In cell Q12, a `git.info` with `shadowDirOff` as `false` or as `{}` has `"settingsControl":"shadow"` on `5fd08069`. `89cb6289` has no such member.
+
+### Cells of the third round
+
+A third round on the Linux VM ran 10 more cells on `89cb6289`, `5fd08069` and build B of this change. Each cell has the filter of cell A1, unless the row says otherwise. `<home>` is the home folder of the cell. Nothing is left on disk in a failing cell, on each build.
+
+| Cell | State | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| R1 | the filter is in a file that `includeIf "gitdir:<repo>/"` of `~/.gitconfig` names | ok, fired | ok, fired, no `filter.` pair |
+| R2 | `GIT_DIR` and `GIT_WORK_TREE` of the daemon name another repository | `{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}`, 2 git calls | refused, 17 git calls |
+| R3 | `TMPDIR` is inside a third repository that defines the filter too | ok, the marker of the repository fired | refused |
+| R4a | a syntax error in `.git/config` | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: exit status 128: fatal: bad config line 8 in file <repo>/.git/config`, `worktree_add_failed` | `this repository's git config cannot be used: fatal: bad config line 8 in "<repo>/.git/config"`, `worktree_add_failed` |
+| R4b | a syntax error in `~/.gitconfig` | `git cannot run on this host; git not run: exit status 128: fatal: bad config line 1 in file <home>/.gitconfig`, `worktree_add_failed` | equal |
+| R4c | `~/.gitconfig` is a directory | the `config-defined hooks could not be pinned off` text with git's `unable to access '<home>/.gitconfig': Is a directory` warnings | `git could not check this repository on the remote machine: at "<repo>": ` and then git's warnings and `fatal: unknown error occurred while reading the configuration files`, `worktree_add_failed` |
+| R4d | `~/.gitconfig` has mode 0000 | ok, fired | refused |
+| R5a | `TMPDIR` names a folder that does not exist | `git worktree add failed (checkout): stat <home>/no-such-tmp: no such file or directory`, `worktree_add_failed` | refused |
+| R5b | `TMPDIR` names a folder of mode 0500 | `git worktree add failed (checkout): mkdir <home>/tmp500/claude-ssh-index-<n>: permission denied`, `worktree_add_failed` | refused |
+| R6 | no filter at all | ok | ok |
+
+### Cells of the fourth round
+
+A fourth round on the Linux VM ran 9 more cells on `89cb6289`, `5fd08069` and build C of this change.
+
+| Cell | State | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| S1 | cell R1, with a git that answers exit 129 to `--show-scope` | ok, fired | ok, fired |
+| S3 | a filter name of the two bytes `FF 78`, in `.git/config` and in `.gitattributes` | ok, fired | `git worktree add failed (checkout): fatal: a.txt: smudge filter x failed`, `worktree_add_failed`, no marker, nothing left |
+| S5 | 60 filters of `.git/config` with names of 190 bytes, and one path that uses one of them | ok, fired, no `filter.` pair | the refusal that names the used filter, 180 `filter.` pairs |
+
+- `89cb6289` and `5fd08069` make no `--show-scope` call. So for them cell S1 is cell R1 again, and cell Q14 is cell A1 again.
+- In cell S3, the read-tree call of `5fd08069` has the three pairs for the name and exits 128. The byte `FF` that git wrote in its stderr is not in the reply. No reply of a build holds a byte that is not valid UTF-8.
+- A translated git did not run: the VM has no translation of git.
+
+Cells S2 have `"timeoutMs":1000` and a wrapper that waits 3 s on one listing after `worktree add`. Each cell ran one time, with the fixture of cell A1 and with no filter at all. "timeout" is `{"success":false,"error":"git worktree add timed out after 1000ms (deadline expired during the checkout): context deadline exceeded","errorCode":"timeout"}`, with nothing on disk and no marker.
+
+| Cell S2: fixture, and the listing that waits | `89cb6289` | `5fd08069` | build C |
+|---|---|---|---|
+| A1, the `--show-scope` listing | ok, fired, 0.18 s | refused, 0.50 s | timeout, 3.2 s |
+| A1, the first `--git-dir=… config -z --list` | timeout, 3.2 s | timeout, 3.4 s | timeout, 3.2 s |
+| A1, the second such listing | ok, fired, 0.16 s | timeout, 3.5 s | refused, 0.24 s |
+| no filter, the `--show-scope` listing | ok, 0.17 s | ok, 0.16 s | timeout, 3.4 s |
+| no filter, the first such listing | timeout, 3.2 s | timeout, 3.5 s | timeout, 3.3 s |
+| no filter, the second such listing | ok, 0.13 s | timeout, 3.4 s | ok, 0.19 s |
+
+- A build answers "timeout" exactly where it makes the call that waits. Between `worktree add` and the read-tree call, `89cb6289` makes one `--git-dir=<repo>/.git config -z --list` call and `5fd08069` makes two. The build C makes the `--show-scope` listing and one such call.
+- On the two reference builds the wait of the wrapper ran to its end. On build C the wrapper logged no end of its wait.
+
+### Cells of the git-lfs round
+
+A Windows VM with a working `git-lfs` 3.7.1 ran 8 cells on `89cb6289`, `5fd08069` and build D of this change, in two equal passes. `p.bin` is a committed git-lfs pointer under `p.bin filter=lfs`. Its object is not in the local store, unless the row says so. The agent is a marker program. "the two keys" are `lfs.standalonetransferagent = x` and `lfs.customtransfer.x.path` with the agent. The filter `lfs` is in the system config, apart from cell L1.
+
+| Cell | State | Plain git | `89cb6289` | `5fd08069` | build D |
+|---|---|---|---|---|---|
+| L1 | cell X4: the filter `lfs` and the two keys only in `.git\config` | fails, agent ran | fails, agent ran | fails, no agent | T1, no agent |
+| L2 | the two keys in `.git\config` | fails, agent ran | fails, agent ran | fails, no agent | T2, no agent |
+| L3 | only the `lfs.customtransfer.x` section in `.git\config`, no remote | fails, no agent | fails, no agent | fails, no agent | T2, no agent |
+| L4 | `lfs.<url>.standalonetransferagent = x` for the remote, and the `lfs.customtransfer.x` section, in `.git\config` | fails, agent ran | fails, agent ran | fails, no agent | T2, no agent |
+| L5 | the two keys in the user config only | fails, agent ran | fails, agent ran | fails, agent ran | fails, agent ran |
+| L6 | no such key, the object is in the local store | ok | ok | ok | ok |
+| L7 | the two keys in `.git\config`, no `p.bin` and no `.gitattributes` | ok | ok | ok | ok |
+| L8 | cell L2 with `"shadowDirOff":true` | fails, agent ran | fails, agent ran | fails, agent ran | fails, agent ran |
+
+- Each failing daemon cell answers `worktree_add_failed`, apart from T1. No worktree folder, no registration and no branch is left.
+- T1 is the filter refusal that names `lfs`, with `repository_only_filter`.
+- T2 is `git worktree add failed (checkout): this repository's git config cannot be used: it names a transfer program for git-lfs ("lfs.customtransfer.x.path"); remove that setting, or put it into ~/.gitconfig on the remote machine`. In cell L4 it names that key too, not the key of the remote. After build D the words are "a program for git-lfs".
+- In cells L1 to L4 the read-tree call of build D has `filter.lfs.process=`, `filter.lfs.required=true` and `filter.lfs.smudge=false`, and git-lfs prints nothing. In cell L7 it has them too and exits 0. In cells L5, L6 and L8 it has no `filter.` pair.
+- The texts of `5fd08069` in cells L1 to L5 end with this sentence: `Claude doesn't use ssh, credential, or proxy settings from this repository's own git config. If the download needs one and you trust that setting, copy it into ~/.gitconfig on the remote machine, then try again.` In cell L8 the text has no such sentence.
+- In cell L4 the text of `5fd08069` holds `dial tcp: lookup example.invalid: no such host`: git-lfs tried a DNS lookup of the remote host there. The texts of the other two builds hold no such words.
+- In cell L6 `p.bin` in the new worktree is the object, on plain git and on each build. Each build leaves `dev\null\post-checkout`, `post-commit`, `post-merge` and `pre-push` in the new worktree. Plain git does not.
+- In cell L3 plain git starts no agent. So "no agent" proves nothing in that cell.
+- In cells L5 and L8 the reply of build D equals the reply of `89cb6289` byte for byte.
+- The other 36 cells of the Windows VM ran again with build D. The reply, the markers and the disk equal `5fd08069` in 34 of them. Cells W2 and W4 differ in the reply.
+
+The help text of that git-lfs gives a program or a command to these settings: `core.askpass`, `lfs.customtransfer.<name>.path`, `lfs.customtransfer.<name>.args`, and `clean` and `smudge` of `lfs.extension.<name>`. `lfs.standalonetransferagent` selects a custom transfer agent by its name. The text has no line for the form `lfs.<url>.standalonetransferagent`.
+
+### claustrum and the filter rule
+
+Four builds of this change ran beside `5fd08069`: build A, build B and build C on the Linux VM and on the Windows VM, and build D on the Windows VM. With the last build on each VM, the reply, the markers and the disk were equal in every cell of this section. The exceptions are in the list of differences below. After build D the code changed in one place: a key that starts with `lfs.extension.` counts as a program key of git-lfs, and the text of that rule says "a program for git-lfs". No VM ran that change.
+
+What claustrum does:
+
+- Before the read-tree call, claustrum runs `git --git-dir=<git dir> config -z --list --show-scope` in the new worktree. The scopes `local` and `worktree` are the config of the repository. Each other scope is outside it. A file that an `includeIf` section of the user config names is outside it, as in cell R1. The listing of the read-tree call follows as before.
+- A git that refuses that option with exit code 129 gets two plain `config -z --list` calls in its place, both in the new worktree. The first has `GIT_DIR` set to the null device, and it has no `GIT_COMMON_DIR` and no `GIT_WORK_TREE` of the daemon. So git lists the config outside the repository. The second is the listing of the read-tree call. A git before 2.26 refuses the option so. Cell Q14 has a stub that does, and claustrum refuses the filter there (Linux VM).
+- If the listings define a filter and the outside part does not, only the repository defines it. The last value of a key counts.
+- If a listing fails for another reason, the request answers `git worktree add failed (checkout): <text of git>` and rolls back. No read-tree call runs.
+- If the `timeoutMs` of the caller expires during one of these listings, the answer is the timeout frame of cells S2 (Linux VM).
+- A filter that only the repository defines gets the three pairs of `5fd08069`, with the same order and place. The refusal needs one stderr line of the failed read-tree call, for a name that has the pairs. The line starts with `fatal:` and ends with `filter <name> failed`. With no such line, `filter <name> failed` anywhere in stderr counts. Any other failure answers `git worktree add failed (checkout): <text>`, as before.
+- `smudge = cat` gets three pairs that turn the filter off: `filter.<name>.process=`, `filter.<name>.required=false` and `filter.<name>.smudge=`. A `cat` first on PATH then does not run (cell Q7, Linux VM). `5fd08069` passes no pair there.
+- If only the repository defines the filter `lfs`, the two values of cells V7 and V13 get the pair of `5fd08069`.
+- The filter `lfs` does not run if the config of the repository itself holds a program key of git-lfs. Such a key starts with `lfs.customtransfer.` or with `lfs.extension.`, or it starts with `lfs.` and ends with `.standalonetransferagent`. The filter `lfs` then gets the three pairs, wherever it is defined. The same keys in the user config or the system config do not count. This rule is claustrum's own. Cells L1 to L8 measured it (Windows VM). Each refused cell there has a `lfs.customtransfer.` key. Cells L1, L2 and L4 have a standalone key of one of the two forms beside it. The `lfs.extension.` keys are from the help text of git-lfs 3.7.1, and no VM ran them.
+- With such a key, a path under an `lfs` filter that only the repository defines gets the refusal that names `lfs` (cell L1). If the user config or the system config defines the filter too, the answer is `git worktree add failed (checkout): this repository's git config cannot be used: it names a program for git-lfs ("<key>"); remove that setting, or put it into ~/.gitconfig on the remote machine`, with `worktree_add_failed`. Cells L2 to L4 have that answer with the words of build D. `<key>` is the first such key in sorted order. With no path under the filter the request succeeds (cell L7).
+- A filter can have a definition outside the repository and other values of the three keys in the repository. claustrum then passes pairs with the outside values of `required` and `smudge`. An outside `process` value gets a pair too. So the outside filter runs, as in cells A7, O6 and Q6. `5fd08069` passes no pair there.
+- A name over 200 bytes with a value that does not pass is refused before the read-tree call, with the frame of cell D5. A name with `=` is refused there too, with the frame of cell Q3.
+- A filter that only the repository defines, with a name that is not valid UTF-8, is refused before the read-tree call on every system. The text is claustrum's own: `git worktree add failed (checkout): this repository's git config cannot be used: the filter "<name>" is defined only there, and its name is not valid UTF-8; define it in ~/.gitconfig on the remote machine, or rename it`, with `worktree_add_failed`. For the bytes `FF 78` the name in the text is `"\xffx"` (cells S3 and X1).
+- The rollback of each refusal is the rollback of a failed checkout.
+- With `"shadowDirOff":true` the scoped listing does not run and the read-tree call has no pair (cells E1 and L8). The member has no other effect in claustrum.
+- Only the JSON value `true` is the switch. Any other value of the member is no error, on each git method, and changes no frame of claustrum.
+
+Where claustrum differs from `5fd08069`. Each of these stays:
+
+- Cell Q1 (Linux VM). `5fd08069` runs the outside `smudge` filter and answers ok. claustrum answers `git worktree add failed (checkout): the git filter "m" has values in this repository's git config that no option of git can replace for the checkout`, with `worktree_add_failed`. No filter runs and nothing is left. A `-c` pair cannot remove the `process` key of the repository, and an empty `process` value stops the outside `smudge` filter too.
+- Cell Q10 (Linux VM). `5fd08069` answers the filter refusal. claustrum passes no pair and answers `worktree_add_failed` with git's `missing value for 'filter.m.smudge'` text. Nothing is left on both.
+- Cells Q2, Q15 and V13 (Linux VM). git itself fails in the read-tree call. The text of claustrum has git's hint about `info/grafts` before the text of `5fd08069`. The markers and the disk are equal.
+- Cell Q12 (Linux VM). A `git.info` of claustrum has no `settingsControl` member, as on `89cb6289`.
+- Cell R2 (Linux VM). `5fd08069` answers the filter refusal. claustrum answers `not_a_repo` after 2 git calls, as `89cb6289` does.
+- Cells R4a and R4c (Linux VM) and W2 (Windows VM). A config that git cannot read gets another text on `5fd08069`. claustrum has the text of `89cb6289`. The code is `worktree_add_failed` on each build.
+- Cells R5a and R5b (Linux VM) and W4 (Windows VM). With a temporary directory that cannot be used, `5fd08069` answers the filter refusal. claustrum fails as `89cb6289` does. Its line equals the line of `89cb6289` byte for byte in cells R5a and W4. In cell R5b only the random number of the folder name differs.
+- Cell S1 (Linux VM). With a git that refuses `--show-scope`, claustrum refuses the filter of a conditional include of the user config. `5fd08069` and `89cb6289` run it. That is the accepted edge of an old git.
+- Four of the cells S2 (Linux VM). The two builds make other listings, so a wait on a listing that only one of them makes gives "timeout" on that one alone. The table of cells S2 has each row.
+- Cells S3 (Linux VM) and X1 (Windows VM): a filter name that is not valid UTF-8. claustrum refuses with its own text and makes no read-tree call, on both systems. On Linux `5fd08069` answers the text of cell S3. On Windows `5fd08069` answers ok and makes the worktree, and no filter runs: its read-tree call gets the name with the code point U+FFFD in place of the byte.
+- Cells L1 to L4 (Windows VM): a program key of git-lfs in the config of the repository. `5fd08069` lets git-lfs run, the agent does not run, and the request fails with the text of git-lfs. claustrum answers T1 or T2 and starts no program. Each build leaves nothing on disk.
+- The call log. The listings before the read-tree call differ, as the table of cells S2 shows. In some cells the `filter.` pairs of the two differ. The stderr of a refused read-tree call of claustrum has git's hint before the `fatal:` line (Windows VM). No frame differs by that.
+
+Test runs on the Windows VM, with the tests of `gitfilter_test.go`:
+
+- Build build A: 15 tests in 45 runs with no failure, and 126 runs with the subtests.
+- Build build B, with `TestHardenedGitCallShape` too: 21 tests in 63 runs with no failure. With the subtests that is 174 runs: 165 passed and 9 were skipped.
+- Build build C, with `TestHardenedGitCallShape` too: 27 tests in 81 runs with no failure. With the subtests that is 213 runs: 204 passed and 9 were skipped.
+- Build build D: 23 tests in 69 runs with no failure, and 207 runs with the subtests. None was skipped.
+- The 9 skipped runs are 3 subtests of `TestHardenedGitCallShape` in each of the two rounds, with these reasons: `a worktreeRoot is refused on Windows before any git call`, `git on Windows accepts a .git/objects file (row H20)` and `Go sorts the environment block on Windows`.
+
+### Not measured
+
+- macOS. No cell of this section ran there, on any build.
+- On Windows, the cells that [Windows](#windows) and the git-lfs round do not list. On Linux, the cells of the git-lfs round.
+- The code after build D, on any VM.
+- A key that starts with `lfs.extension.`, on any build.
+- Cell L3 has no control that fires: plain git starts no agent there.
+- The settings that git-lfs reads for a download. When the filter `lfs` runs, git-lfs downloads with the repository in view. In cells L1 to L5 the failure text of `5fd08069` says that it does not use ssh, credential or proxy settings of that config. claustrum does not hide those settings from git-lfs. No cell measured a program start through them.
+- A working `git-lfs` with a filter `lfs` that only the repository defines and no program key.
+- A translated git. The refusal reads an English line of git, and the read-tree call keeps the language settings of the daemon. Under a translated git, claustrum answers the plain checkout failure with `worktree_add_failed`, and no filter runs. The Linux VM has no translation of git, so the state did not run on any build.
+- A deadline that expires after git reported a filter failure. Cells Q13 and S2 have a deadline that expires before git answers. The order of the timeout answer and the filter refusal after a filter failure is not measured.
+- A key spelled `Smudge` with a marker value. Cell V14 shows only that the value `cat` under that spelling is not refused.
+- A listing that waits and holds no child process. In cells S2 the reply came after 3.2 to 3.5 s on each build.
+- A filter name with `=` and a value that passes, and such a name with a definition outside the repository.
+- A `required` or a `process` key with no value.
+- A filter name with a byte that the text changes, other than those of cells D6, Q11 and S3.
+- A `shadowDirOff` value other than `true` on `git.status` and `git.list_branches` of `5fd08069`. Each other effect of that member there. The member name in another letter case, such as `"SHADOWDIROFF":true`: claustrum reads that as the switch.
+- How `5fd08069` tells the config of the repository from the other sources. Its two listings before the read-tree call are plain `config -z --list` calls.
+- A listing of the filter rule that fails for a reason other than a deadline, on `5fd08069`.
+- A git older than 2.43.0, on any build. Cells Q14 and S1 have git 2.43.0 behind a stub.
+
+### Windows
+
+A Windows VM with Git for Windows and `git-lfs` 3.7.1 ran 23 cells in two passes, on the same three daemons. Both passes are equal. A later round there ran cells Q4, Q12 and Q13. The claustrum build of `main` before this change equals `89cb6289` in every cell. The system git config of that VM defines `filter.lfs.clean`, `filter.lfs.smudge`, `filter.lfs.process` and `filter.lfs.required`.
+
+- These cells equal their Linux rows on both builds, in the reply, the markers and what stays. They are A1, A3, A5, A7, A8, B1, B3, B6, C1, C4, C7, D3, D5, E1, F2, N1, N2 and V1. The report of that round names cell V1 as A6.
+- Cell A2: `89cb6289` answers ok and the marker fired. `5fd08069` refuses.
+- Cell V8: `89cb6289` answers ok, and `5fd08069` refuses, as on Linux. On `89cb6289` the new worktree holds the `dev\null` files of the last bullet.
+- Cell V3 has the value `C:/o/w/prog.sh`, a marker script. `89cb6289` answers ok and the marker fired. `5fd08069` refuses.
+- In cell A1, the read-tree call of `5fd08069` has the three pairs first, before 23 more `-c` pairs. In each refused cell the call exits 128 with the one stderr line `fatal: <path>: smudge filter <name> failed`. Cells N1 and N2 have the pairs for `b` and then for `m`.
+- A filter that no path uses has the pairs too, and the call exits 0: cells C1 and C7 for `m`, and cell D3 for `M`, as the config spells it.
+- Three more cells equal their Linux rows on both builds. They are Q4 (200 and 201 bytes), Q12 (`"true"`, `1`, `null`, `false` and `true`) and Q13 (`"timeoutMs":1`).
+- Cells W1: `smudge = cat` with a stand-in `cat.exe` or `cat.cmd` first on PATH. The reply is ok on each build, and the stand-in fired on none, also not with plain git. The shell of Git for Windows has `/usr/bin` before the PATH of the caller.
+- Cell W2: a syntax error in `.git\config`. `89cb6289` answers the `config-defined hooks could not be pinned off` text with `fatal: bad config line 10 in file C:\o\w\repo\.git/config`. `5fd08069` answers `this repository's git config cannot be used: fatal: bad config line 10 in "C:\\o\\w\\repo\\.git\\config"`. Both have `worktree_add_failed`.
+- Cell W3: a syntax error in the user config. Each build answers `git cannot run on this host; git not run: exit status 128: fatal: bad config line 3 in file C:/o/w/home/.gitconfig`, with `worktree_add_failed`.
+- Cell W4: `TEMP` and `TMP` name a folder that does not exist. `89cb6289` answers `git worktree add failed (checkout): GetFileAttributesEx C:\o\w\notemp: The system cannot find the file specified.`, with `worktree_add_failed`. `5fd08069` refuses the filter.
+- In cells W2, W3 and W4 nothing is left on disk, on each build.
+- Cell X2: the name `ä`. `89cb6289` answers ok and the marker fired. `5fd08069` answers the refusal with `\"ä\"`.
+- Cell X3: 60 filters of `.git\config` with names of 190 bytes. `89cb6289` answers ok and the marker fired. `5fd08069` answers `git worktree add failed (checkout): fork/exec <git>: The filename or extension is too long.`, with `worktree_add_failed`. No read-tree call runs there, and nothing is left. claustrum equals `5fd08069` in cells X2 and X3, and in cell S5 of the Linux VM.
+- In cell D5, `5fd08069` makes no read-tree call. It makes 18 git calls there, and 19 in a refused cell.
+- `5fd08069` makes 12 git calls where it answers ok, 10 in cell E1, and 2 in cell F2. `89cb6289` makes 10 in every cell, and 2 in cell F2.
+- Cells V7 and V13 are ok on all three daemons. The filter `lfs` has a definition in the system config there. The read-tree call of `5fd08069` has the pair `filter.lfs.smudge=git-lfs smudge -- %f` in cell V7 and `filter.lfs.process=git-lfs filter-process` in cell V13.
+- After cells V7 and V13 on all three daemons, the new worktree holds `dev\null\post-checkout`, `post-commit`, `post-merge` and `pre-push`. After cell V8 it holds them on `89cb6289`. Plain git leaves no `dev` folder. The cause is not measured.
