@@ -148,10 +148,12 @@ func (c shapeCall) profileItems() []string {
 //
 // The three other calls of this function are the `ls-files --others` of the copy
 // step, and the `rev-parse --show-toplevel` with no --git-dir and the `worktree
-// list` of a removal with worktreeRoot. No row shows them on 5fd08069 (not
-// measured). They keep the light profile that 89cb6289 gives them. The calls of
-// sourceBranch, show-ref and check-ignore are light too, and this test does not
-// make them.
+// list` of a removal with worktreeRoot. With "shadowDirOff":true, 5fd08069 sends
+// the list of 20 items on the three. val-s3p2b1 cell A3 shows the `ls-files` calls
+// (Linux, macOS and Windows VMs). Cell A4 shows the two others (Linux and macOS
+// VMs). The calls of sourceBranch and show-ref are light too (cell A3, the same
+// VMs), and this test does not make them. A check-ignore call is light on
+// claustrum and has no row on 5fd08069 (not measured).
 func (c shapeCall) lightVerb() bool {
 	if c.has("rev-parse", "--is-inside-work-tree") || c.has("rev-parse", "--abbrev-ref") ||
 		c.has("worktree", "add") || c.has("read-tree") || c.has("for-each-ref", "--count=10001") ||

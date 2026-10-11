@@ -133,9 +133,9 @@ func callsCheck(cwd, pin string) []string {
 	return []string{cwd + "|H|config -z --list" + pin, cwd + "|H|rev-parse --absolute-git-dir" + pin}
 }
 
-// callsPair is the pair of registrationProbe. No row shows this pair in
-// git.worktree_remove on 5fd08069 (not measured). The heavy profile is from the
-// code: it is the profile of the same pair in git.status and git.worktree_create.
+// callsPair is the pair of registrationProbe. 5fd08069 sends the heavy profile on
+// this pair in git.worktree_remove, with "shadowDirOff":true (val-s3p2b1 cell A6,
+// Linux, macOS and Windows VMs).
 func callsPair(gitDir, workTree, pin string) []string {
 	return []string{
 		gitDir + "|H|--git-dir=" + gitDir + " config -z --list" + pin,

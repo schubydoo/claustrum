@@ -888,8 +888,10 @@ func TestQuoteOperandInvalidUTF8(t *testing.T) {
 
 // worktree_create runs git with replace objects and grafts off, so its
 // checkout carries the real blob. git.status runs with them off too, since its calls
-// carry GIT_NO_REPLACE_OBJECTS=1 as on 5fd08069 (s3-linux cell B1, Linux VM). The
-// status frame of 5fd08069 for a replaced commit is not measured.
+// carry GIT_NO_REPLACE_OBJECTS=1 as on 5fd08069 (s3-linux cell B1, Linux VM). For a
+// replaced HEAD commit 5fd08069 answers against the real commit, and 89cb6289
+// against the replacement. That is val-s3p2b1 cell B1 on Linux, macOS and Windows
+// VMs, with and without "shadowDirOff":true.
 func TestGitDirTrustCreateIgnoresReplaceObjects(t *testing.T) {
 	r := newTrustRepo(t)
 	writeFile(t, filepath.Join(r.T, "v.txt"), "real\n", 0o644)

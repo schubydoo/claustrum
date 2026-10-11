@@ -511,7 +511,8 @@ func validSlugRepo(s string) bool {
 // with its listing. Exit 0 keeps the name, and any failure gives "". f6010b97 and
 // 89cb6289 do so on Linux and macOS VMs (rows I10a to I10c: a dangling origin/HEAD,
 // one that names a blob, and origin/-x). The call has the heavy profile, as on
-// 5fd08069 (s3p2-linux cell B3d, Linux VM, with no "shadowDirOff" member). Not
+// 5fd08069 (s3p2-linux cell B3d, Linux VM, with no "shadowDirOff" member, and
+// val-s3p2b1 cell A2 with it, Linux, macOS and Windows VMs). Not
 // measured: other invalid names, and a symbolic-ref answer that does not start with
 // refs/remotes/origin/. claustrum verifies that answer the same way.
 func gitDefaultBranch(dir string) string {
