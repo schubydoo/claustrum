@@ -1190,7 +1190,7 @@ func TestRepoVerdictIsKept(t *testing.T) {
 		t.Helper()
 		got := ""
 		if v := repoReadVerdict(trust); v != nil {
-			got = v.refusal
+			got = v.refusal + v.filesRefusal
 		}
 		if !strings.Contains(got, refusal) || (refusal == "" && got != "") {
 			t.Errorf("%s: verdict = %q, want %q", name, got, refusal)
@@ -1539,7 +1539,7 @@ func TestRepoVerdictNotKeptAfterAnOpenError(t *testing.T) {
 		if v == nil {
 			t.Fatal("the read gave no verdict")
 		}
-		return v.refusal
+		return v.refusal + v.filesRefusal
 	}
 	config, shallow, large := filepath.Join(gitDir, "config"), filepath.Join(gitDir, "shallow"), filepath.Join(gitDir, "im.cfg")
 	writeFile(t, shallow, strings.Repeat("a", 40)+"\n", 0o644)

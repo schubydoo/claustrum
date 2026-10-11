@@ -361,6 +361,12 @@ type repoConfigRead struct {
 	// repoListingMaxBytes, and the read has no text for that. The read then gives
 	// no verdict, and the listing of the method answers as before.
 	unlisted bool
+	// settings are the settings of the config and of its included files, each
+	// included file at the place of its include line. worktree are those of the
+	// `config.worktree` file of the git directory. The copy of the settings is
+	// written from both (shadowConfigText).
+	settings []repoSetting
+	worktree []repoSetting
 }
 
 // file reads the config file at path, depth levels below the config, and returns
@@ -404,8 +410,11 @@ type repoConfigRead struct {
 // and Windows VMs). The value tests of includeTarget run too: `~root/x` gets the
 // "expands neither" text in a matching section (cell V8) and in one that does
 // not match (cells N12, Linux VM). A missing file of such a section counts
-// toward the 16 (cells N7, Linux, macOS and Windows VMs). claustrum does not
-// read such a file: its content is not measured.
+// toward the 16 (cells N7, Linux, macOS and Windows VMs). 5fd08069 lists such a
+// file with one more git call, with or without a match, and carries no setting
+// of it (cells 11a to 11f of s3p2b-edges-linux, Linux VM, and cell 11 of that
+// round on a macOS VM). claustrum makes that call and does not use its answer:
+// a file there that git cannot list is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
 	r.log.note(path)
 	if d := configLinkDetail(path); d != "" {
@@ -483,7 +492,11 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		return ""
 	}
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
-		key, value, _ := strings.Cut(string(rec), "\n")
+		if len(rec) == 0 {
+			continue
+		}
+		key, value, hasValue := strings.Cut(string(rec), "\n")
+		r.settings = append(r.settings, repoSetting{key: key, value: value, hasValue: hasValue, included: depth > 0})
 		if value == "" {
 			continue
 		}
@@ -507,9 +520,41 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			if d := configFileTests(target, r.log); d != "" {
 				return d
 			}
+			listConfigFile(r.ctx, target)
 		}
 	}
 	return ""
+}
+
+// listConfigFile lists the config file at path with one git call, as the read
+// lists the config. ok is false, with no call, for a file that is missing, that
+// is not a regular file or that is over repoConfigMaxBytes. It is false too
+// when git did not list the file. The open does not wait (openRepoFile).
+func listConfigFile(ctx context.Context, path string) (settings []repoSetting, ok bool) {
+	f, err := openRepoFile(path)
+	if err != nil || f == nil {
+		return nil, false
+	}
+	defer func() { _ = f.Close() }()
+	if repoFileKindDetail(f, path, repoConfigMaxBytes, configLarge) != "" {
+		return nil, false
+	}
+	text, _, ok := readRepoFile(f, path, repoConfigMaxBytes, configLarge)
+	if !ok {
+		return nil, false
+	}
+	out, _, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
+	if err != nil {
+		return nil, false
+	}
+	for rec := range bytes.SplitSeq(out, []byte{0}) {
+		if len(rec) == 0 {
+			continue
+		}
+		key, value, hasValue := strings.Cut(string(rec), "\n")
+		settings = append(settings, repoSetting{key: key, value: value, hasValue: hasValue})
+	}
+	return settings, true
 }
 
 // countInclude counts one more included file, depth levels below the config. It
@@ -648,29 +693,63 @@ const (
 // 61 shows 60 (cells P1, Linux, macOS and Windows VMs). The cells have ASCII
 // text. claustrum counts characters, as for a path.
 func repoConfigDetail(ctx context.Context, gitDir, entry string, log *repoReadLog) string {
-	r := repoConfigRead{ctx: ctx, gitDir: gitDir, log: log}
+	r, d := readRepoConfig(ctx, gitDir, log)
+	if d != "" || r.unlisted {
+		return d
+	}
+	return entryConfigDetail(r.worktreeConfig, entry, log)
+}
+
+// entryConfigDetail tests the `config.worktree` file of entry, the git
+// directory of a linked worktree, when the repository has the worktreeConfig
+// switch. entry is "" for every other git directory.
+func entryConfigDetail(worktreeConfig bool, entry string, log *repoReadLog) string {
+	if worktreeConfig && entry != "" {
+		return configFileTests(filepath.Join(entry, "config.worktree"), log)
+	}
+	return ""
+}
+
+// readRepoConfig is the read of the config of gitDir with its included files.
+// It returns the read and the detail of a refusal, or "".
+//
+// With the worktreeConfig switch and a `config.worktree` file in gitDir,
+// 5fd08069 lists that file two times, right after the config and its included
+// files. It does not list it when the switch is off or the file is missing
+// (cells 1a to 1e, 9a and 9k of s3p2b-edges2-linux, Linux VM). claustrum lists
+// it two times and takes the settings of the first listing. A file there that
+// is not a regular file, that is over the size bound of a config or that git
+// cannot list is not measured: its settings are not used and nothing is
+// refused.
+func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repoConfigRead, string) {
+	r := &repoConfigRead{ctx: ctx, gitDir: gitDir, log: log}
 	if d := r.file(filepath.Join(gitDir, "config"), 0); d != "" || r.unlisted {
 		if log != nil {
 			log.noVerdict = r.unlisted
 		}
-		return d
+		return r, d
 	}
 	if r.hasVersion && r.version != "0" && r.version != "1" {
-		return "the repository uses format version " + quoteCut(r.version, versionValueMaxRunes) +
+		return r, "the repository uses format version " + quoteCut(r.version, versionValueMaxRunes) +
 			", which this version of Claude does not support"
 	}
 	if r.version == "1" {
 		for _, e := range r.extensions {
 			if e.refused() {
-				return "the repository uses git extension " + quoteCut(e.name, extensionNameMaxRunes) +
+				return r, "the repository uses git extension " + quoteCut(e.name, extensionNameMaxRunes) +
 					", or a value of it, that this version of Claude does not support"
 			}
 		}
 	}
-	if r.worktreeConfig && entry != "" {
-		return configFileTests(filepath.Join(entry, "config.worktree"), log)
+	if r.worktreeConfig {
+		path := filepath.Join(gitDir, "config.worktree")
+		log.note(path)
+		if settings, ok := listConfigFile(ctx, path); ok {
+			r.worktree = settings
+			listConfigFile(ctx, path)
+		}
 	}
-	return ""
+	return r, ""
 }
 
 // gitDirFilesDetail tests shallow, info/attributes and info/exclude of the git
@@ -770,10 +849,12 @@ func holdsObjectIDs(b []byte) bool {
 	return true
 }
 
-// repoVerdictKey names one read: the pinned git directory, the entry of a linked
-// worktree or "", and the home folder of the daemon, which a `~/` include uses.
+// repoVerdictKey names one read: the pinned git directory and the home folder of
+// the daemon, which a `~/` include uses. A request on a linked worktree uses the
+// read of its repository: on 5fd08069 such a request lists the config of the
+// repository no second time (cell 1c of s3p2b-edges2-linux, Linux VM).
 type repoVerdictKey struct {
-	gitDir, entry, home string
+	gitDir, home string
 }
 
 // repoVerdict is the outcome of one read, with the state of each file that the
@@ -781,8 +862,17 @@ type repoVerdictKey struct {
 // of the last call in which git named no problem with the owner, or the zero
 // time (repoOwnerAnswerKeep).
 type repoVerdict struct {
-	refusal string
-	states  []repoFileState
+	// refusal is the refusal of the config, with its prefix, or "". filesRefusal
+	// is that of another file of the git directory. The test of the
+	// `config.worktree` file of a linked worktree comes between them, in each
+	// request (repoConfigGate).
+	refusal      string
+	filesRefusal string
+	// worktreeConfig is true when the config has the worktreeConfig switch.
+	worktreeConfig bool
+	// shadowText is the text of the copy of the settings (shadowConfigText).
+	shadowText string
+	states     []repoFileState
 
 	ownerMu     sync.Mutex
 	ownerGoodAt time.Time
@@ -883,22 +973,28 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // own.
 func repoReadVerdict(t gitDirTrust) *repoVerdict {
 	home, _ := os.UserHomeDir()
-	k := repoVerdictKey{gitDir: t.pinCommonDir, entry: t.worktreeEntry, home: home}
+	k := repoVerdictKey{gitDir: t.pinCommonDir, home: home}
 	if v, ok := keptRepoVerdict(k); ok {
 		return v
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
 	var log repoReadLog
-	refusal := ""
-	if d := repoConfigDetail(ctx, t.pinCommonDir, t.worktreeEntry, &log); d != "" {
-		refusal = repoConfigPrefix + d
-	} else if log.noVerdict {
+	v := &repoVerdict{}
+	r, d := readRepoConfig(ctx, t.pinCommonDir, &log)
+	switch {
+	case d != "":
+		v.refusal = repoConfigPrefix + d
+	case log.noVerdict:
 		return nil
-	} else if d := gitDirFilesDetail(t.pinCommonDir, &log); d != "" {
-		refusal = repoFilePrefix + d
+	default:
+		v.worktreeConfig = r.worktreeConfig
+		v.shadowText = shadowConfigText(r.settings, r.worktree)
+		if d := gitDirFilesDetail(t.pinCommonDir, &log); d != "" {
+			v.filesRefusal = repoFilePrefix + d
+		}
 	}
-	v := &repoVerdict{refusal: refusal, states: log.states}
+	v.states = log.states
 	if !log.failed {
 		keepRepoVerdict(k, v)
 	}
@@ -1017,27 +1113,46 @@ func gitNamesOwnerProblem(dir string, heavy bool, probe string, bound time.Durat
 // VM, 3 runs). With a refused config of 20 MiB, 5fd08069 starts that call at
 // the first of ten requests and at the eighth (cell P5, Linux VM).
 func repoConfigGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) string {
+	msg, _ := repoConfigGate(t, off, dir, heavy, probe)
+	return msg
+}
+
+// repoConfigGate is repoConfigGateRefusal with the read. accepted is the read
+// of a repository that got no refusal of any kind, or nil.
+func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) (msg string, accepted *repoVerdict) {
 	if off || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return ""
+		return "", nil
 	}
 	v := repoReadVerdict(t)
-	if v == nil || v.refusal == "" {
-		return ""
+	if v == nil {
+		return "", nil
+	}
+	refusal := v.refusal
+	if refusal == "" {
+		if d := entryConfigDetail(v.worktreeConfig, t.worktreeEntry, nil); d != "" {
+			refusal = repoConfigPrefix + d
+		}
+	}
+	if refusal == "" {
+		refusal = v.filesRefusal
+	}
+	if refusal == "" {
+		return "", v
 	}
 	if v.ownerAnswerKept() {
-		return v.refusal
+		return refusal, nil
 	}
 	asked := repoOwnerClock()
 	bound := repoOwnerCallLongBound
-	if strings.HasSuffix(v.refusal, notRegularTail) {
+	if strings.HasSuffix(refusal, notRegularTail) {
 		bound = repoOwnerCallBound
 	}
 	named, good := gitNamesOwnerProblem(dir, heavy, probe, bound)
 	if named {
-		return ""
+		return "", nil
 	}
 	if good {
 		v.keepOwnerAnswer(asked)
 	}
-	return v.refusal
+	return refusal, nil
 }
