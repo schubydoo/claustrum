@@ -507,12 +507,13 @@ func validSlugRepo(s string) bool {
 // 7c2f88d.
 //
 // The name is verified. A name that starts with "-" gives "" with no further call.
-// Else the heavy `rev-parse --verify --quiet refs/remotes/origin/<name>^{commit}` runs
-// in dir, with its listing. Exit 0 keeps the name, and any failure gives "".
-// f6010b97 and 89cb6289 do so on Linux and macOS VMs (rows I10a to I10c: a dangling
-// origin/HEAD, one that names a blob, and origin/-x). Not measured: other invalid
-// names, and a symbolic-ref answer that does not start with refs/remotes/origin/.
-// claustrum verifies that answer the same way.
+// Else `rev-parse --verify --quiet refs/remotes/origin/<name>^{commit}` runs in dir,
+// with its listing. Exit 0 keeps the name, and any failure gives "". f6010b97 and
+// 89cb6289 do so on Linux and macOS VMs (rows I10a to I10c: a dangling origin/HEAD,
+// one that names a blob, and origin/-x). The call has the heavy profile, as on
+// 5fd08069 (s3p2-linux cell B3d, Linux VM, with no "shadowDirOff" member). Not
+// measured: other invalid names, and a symbolic-ref answer that does not start with
+// refs/remotes/origin/. claustrum verifies that answer the same way.
 func gitDefaultBranch(dir string) string {
 	ref, ok := hardenedGit(dir, true, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if !ok {
@@ -1312,9 +1313,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			// read). The request fails with git's text, and the rollback removes the
 			// new directory and its registration. The branch step then deletes the
 			// branch this call created only when another ref reaches its tip. The
-			// frame matches 90fca6e6 byte for byte, apart from git's graft-file
-			// deprecation hint: lines. f6010b97 and claustrum both set GIT_GRAFT_FILE,
-			// so where git prints the hint, their text starts with it. In attach mode
+			// read-tree passes -c advice.graftFileDeprecated=false (gitHardenLight), so
+			// git's graft-file hint: lines do not start the text. On f6010b97 the text
+			// starts with the hint where git prints it. In attach mode
 			// createdBranch is "", so the attached branch is kept, as measured against
 			// f6010b97.
 			msg := "git worktree add failed (checkout): " + worktreeGitText(rtStderr, rtErr)

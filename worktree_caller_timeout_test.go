@@ -437,8 +437,8 @@ func TestWorktreeCreateCallerTimeout(t *testing.T) {
 		s := newTestServer(t)
 		runGit(t, f.top, "branch", "w1")
 		raw, _ := f.create(t, s, "w1", "main", 0)
-		// The wording of git's two refusals depends on the git version. Each output
-		// can start with git's graft-file hint, which holds escaped quotes.
+		// The wording of git's two refusals depends on the git version. The pattern
+		// accepts a text with escaped quotes before each refusal.
 		re := regexp.MustCompile(`"error":"git worktree add failed: (?:[^"\\]|\\.)*a branch named 'w1' already exists \(attaching to the existing branch main was refused first: (?:[^"\\]|\\.)*'main' is already (?:[^"\\]|\\.)*\)","errorCode":"worktree_add_failed"`)
 		if !re.MatchString(raw) {
 			t.Fatalf("reply = %s, want the two-output add failure", raw)
@@ -913,9 +913,9 @@ func TestWorktreeCreateMeasuredRules(t *testing.T) {
 				f.stubAction(t, tc.action)
 				slowGit(t, "worktree,add", tc.mode, 0, `fatal: synthetic add failure\n`, "")
 				raw, _ := f.create(t, s, "w1", tc.existing, 0)
-				// In postfail the real add runs first. Its graft-file hints can fill
-				// the 512-byte cap before the stub's own line. The other rows still
-				// carry the stub's line.
+				// In postfail the real add runs first, and its stderr comes before the
+				// stub's own line. That row does not test for the stub's line. The
+				// other rows carry it.
 				if !strings.Contains(raw, `"error":"git worktree add failed: `) || !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
 					t.Fatalf("reply = %s, want the add failure", raw)
 				}

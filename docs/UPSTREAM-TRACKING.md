@@ -317,9 +317,11 @@ traps that matter for telling drift from expected:
 - The failure frames of `git.worktree_create` differ between pins. In
   `f6010b97` the git text can start with git's graft-file deprecation `hint:` lines.
   In the add-failure frame the 512-byte cap can then cut the rest of the text.
-  `90fca6e6` prints no hint. claustrum sets `GIT_GRAFT_FILE` as `f6010b97`
-  does, so its frames carry the same hint. A hint-only difference from
-  `90fca6e6` is therefore not drift.
+  `90fca6e6` prints no hint. claustrum sets `GIT_GRAFT_FILE` too, and its calls
+  turn the hint off with `-c advice.graftFileDeprecated=false`. A hint in a frame
+  of `f6010b97` and none in the frame of claustrum is therefore not drift. The
+  text of a failed `worktree add` on `5fd08069` is not measured. See the
+  [record](record/git-worktree-create.md).
 - In a repo with no `.claude/`, a `timeoutMs` that expires during the copy step
   splits the pins. `f6010b97` runs no copy `ls-files` and answers success.
   `90fca6e6` and claustrum answer `timeout` "after the checkout finished" and roll
@@ -449,8 +451,9 @@ traps that matter for telling drift from expected:
   - With a `smudge` key that has no value, `5fd08069` answers the filter
     refusal. claustrum answers `worktree_add_failed` with git's own text
     (Linux VM).
-  - Where git itself fails in the checkout, claustrum's text has git's hint
-    about `info/grafts` in front (Linux VM).
+  - Where git itself fails in the checkout, claustrum's text had git's hint
+    about `info/grafts` in front (Linux VM). The call of claustrum now turns
+    that hint off. No VM ran that build in those cells (not measured).
   - `git.info` of claustrum has no `settingsControl` member (Linux VM).
   - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
     environment, `5fd08069` answers the filter refusal. claustrum answers

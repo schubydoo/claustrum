@@ -82,8 +82,8 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
 - This method ignores replace objects and grafts. The checkout holds the real blob
   and the real commit, and ancestry is the real ancestry, even when `refs/replace`
   or `info/grafts` name others. This is measured against `f6010b97`. claustrum
-  runs every git step of this method with `GIT_NO_REPLACE_OBJECTS=1` and
-  `GIT_GRAFT_FILE=<null>`. See
+  runs each hardened call of this method and each listing with
+  `GIT_NO_REPLACE_OBJECTS=1` and `GIT_GRAFT_FILE=<null>`. See
   [Hardened git calls](../PROTOCOL.md#hardened-git-calls).
 - By default, with no `worktreeRoot`, `7d193f89` confines the worktree to inside
   the repository. After the repo
@@ -237,10 +237,16 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
   comes before the check of the daemon's `GIT_CONFIG_COUNT` (round 1 row C1 P1 on the
   Windows VM).
 - Other failure → `{success:false,error:"git worktree add failed: <text>",errorCode:"worktree_add_failed"}`.
-  `<text>` is git's stderr, made by the text rule below. On `f6010b97` and on
-  claustrum the text can start with git's graft-file deprecation `hint:` lines.
-  Both set `GIT_GRAFT_FILE`, and git prints the hint when it reads that file.
-  `90fca6e6` prints no hint. One `90fca6e6` example is
+  `<text>` is git's stderr, made by the text rule below. On `f6010b97` the text can
+  start with git's graft-file deprecation `hint:` lines. That build sets
+  `GIT_GRAFT_FILE`, and git prints the hint when it reads that file. `90fca6e6`
+  prints no hint. claustrum sets the variable too. Its `worktree add` and
+  `read-tree` calls pass `-c advice.graftFileDeprecated=false`, so git prints no
+  such hint and the text does not start with it (from the code). The calls of
+  `5fd08069` have the same item (cell B1 of round `s3-linux`, Linux VM, with
+  `"shadowDirOff":true`). The text of a failed `worktree add` on `5fd08069` is not
+  measured. This rule holds for each git text in the failure frames of this method.
+  One `90fca6e6` example is
   `"git worktree add failed: Preparing
   worktree (new branch 'dup') fatal: a branch named 'dup' already exists"`. A
   failed add answers this frame even when the caller `timeoutMs` expired during the
@@ -290,9 +296,10 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
     cell P-f on Linux and macOS VMs for the record test).
   - The deadline kills the checkout, a `read-tree`. The parenthetical is then
     `deadline expired during the checkout): <text>`. The text rule above makes
-    `<text>` from the stderr of the killed git. With `f6010b97` and with
-    claustrum, git can print graft-file `hint:` lines on stderr before the kill,
-    and `<text>` then holds them. `90fca6e6` prints no hint.
+    `<text>` from the stderr of the killed git. With `f6010b97`, git can print
+    graft-file `hint:` lines on stderr before the kill, and `<text>` then holds
+    them. `90fca6e6` prints no hint. The call of claustrum turns the hint off (see
+    the add failure above).
   - The deadline does not kill the copy step that seeds the new worktree. The
     daemon lets the step finish and then tests the deadline. If it expired, the
     parenthetical is `deadline expired after the checkout finished`. The reply
@@ -364,9 +371,10 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
 - A failed checkout (`read-tree`) fails the request with
   `{success:false,error:"git worktree add failed (checkout): <text>",errorCode:"worktree_add_failed"}`.
   The text rule above makes `<text>`. Where git prints graft-file deprecation
-  `hint:` lines, the text starts with them on `f6010b97` and on claustrum.
-  `90fca6e6` prints no hint. Apart from the hint, the frame matches `90fca6e6`
-  byte for byte. The daemon empties the new directory and removes the worktree's
+  `hint:` lines, the text starts with them on `f6010b97`. `90fca6e6` prints no
+  hint. The call of claustrum turns the hint off (see the add failure above).
+  When the text of claustrum still had the hint, the rest of the frame matched
+  `90fca6e6` byte for byte. The daemon empties the new directory and removes the worktree's
   registration in the main repository's `.git/worktrees/`. Then it runs the branch
   step on the branch that the call created, and then it removes the empty
   directory. The rollback's git calls are those of the branch step. The `.git/worktrees/`
@@ -1382,7 +1390,7 @@ Where claustrum differs from `5fd08069`. Each of these stays:
 
 - Cell Q1 (Linux VM). `5fd08069` runs the outside `smudge` filter and answers ok. claustrum answers `git worktree add failed (checkout): the git filter "m" has values in this repository's git config that no option of git can replace for the checkout`, with `worktree_add_failed`. No filter runs and nothing is left. A `-c` pair cannot remove the `process` key of the repository, and an empty `process` value stops the outside `smudge` filter too.
 - Cell Q10 (Linux VM). `5fd08069` answers the filter refusal. claustrum passes no pair and answers `worktree_add_failed` with git's `missing value for 'filter.m.smudge'` text. Nothing is left on both.
-- Cells Q2, Q15 and V13 (Linux VM). git itself fails in the read-tree call. The text of claustrum has git's hint about `info/grafts` before the text of `5fd08069`. The markers and the disk are equal.
+- Cells Q2, Q15 and V13 (Linux VM). git itself fails in the read-tree call. The text of claustrum had git's hint about `info/grafts` before the text of `5fd08069`. The markers and the disk were equal. Since the list of 20 items the call of claustrum turns that hint off. No VM ran that build in these cells (not measured), so this difference is open.
 - Cell Q12 (Linux VM). A `git.info` of claustrum has no `settingsControl` member, as on `89cb6289`.
 - Cell R2 (Linux VM). `5fd08069` answers the filter refusal. claustrum answers `not_a_repo` after 2 git calls, as `89cb6289` does.
 - Cell R4c (Linux VM). A `~/.gitconfig` that is a directory gets another text on `5fd08069`. claustrum has the text of `89cb6289`. Cells R4a (Linux VM) and W2 (Windows VM) have a syntax error in the config of the repository. claustrum answers the text of `5fd08069` in that state (from the code). The code is `worktree_add_failed` on each build.
@@ -1391,7 +1399,7 @@ Where claustrum differs from `5fd08069`. Each of these stays:
 - Four of the cells S2 (Linux VM). The two builds make other listings, so a wait on a listing that only one of them makes gives "timeout" on that one alone. The table of cells S2 has each row.
 - Cells S3 (Linux VM) and X1 (Windows VM): a filter name that is not valid UTF-8. claustrum refuses with its own text and makes no read-tree call, on both systems. On Linux `5fd08069` answers the text of cell S3. On Windows `5fd08069` answers ok and makes the worktree, and no filter runs: its read-tree call gets the name with the code point U+FFFD in place of the byte.
 - Cells L1 to L4 (Windows VM): a program key of git-lfs in the config of the repository. `5fd08069` lets git-lfs run, the agent does not run, and the request fails with the text of git-lfs. claustrum answers T1 or T2 and starts no program. Each build leaves nothing on disk.
-- The call log. The listings before the read-tree call differ, as the table of cells S2 shows. In some cells the `filter.` pairs of the two differ. The stderr of a refused read-tree call of claustrum has git's hint before the `fatal:` line (Windows VM). No frame differs by that.
+- The call log. The listings before the read-tree call differ, as the table of cells S2 shows. In some cells the `filter.` pairs of the two differ. The stderr of a refused read-tree call of claustrum had git's hint before the `fatal:` line (Windows VM). No frame differed by that. Since the list of 20 items the call turns that hint off (from the code).
 
 Test runs on the Windows VM, with the tests of `gitfilter_test.go`:
 

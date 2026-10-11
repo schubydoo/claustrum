@@ -32,12 +32,19 @@ import (
 // branch step. It is the list of 20 items that 5fd08069 sends. s3-linux cells B0 and
 // B1 show it on a Linux VM. Cell 50 of s3p2b-edges shows it on macOS and Windows
 // VMs. The measured calls are `rev-parse --is-inside-work-tree`, `rev-parse
-// --abbrev-ref HEAD`, `worktree add`, `for-each-ref` and `update-ref`. Every other
-// call on this list has no row on 5fd08069 (not measured).
+// --abbrev-ref HEAD`, `worktree add`, `read-tree`, `for-each-ref --count=10001`,
+// `rev-list` and `update-ref`. `read-tree` and `rev-list` add their own items after
+// the list. The last three calls are in s3p2-linux2 cell L8 (Linux VM) and in cell
+// 50. The other calls on this list have no row on 5fd08069 (not measured).
+//
+// The advice.graftFileDeprecated item turns off git's graft-file hint: lines. So
+// the failure texts of git.worktree_create do not start with that hint (from the
+// code). The text of a failed `worktree add` on 5fd08069 is not measured.
 //
 // The core.excludesFile entry is a placeholder. profileArgsWithExcludes puts the
 // user's excludes file there (userExcludesFile). On the Windows VM 5fd08069 sends
-// the user's ignore file there, and /dev/null in the two items before it.
+// the user's ignore file there (cell 50). core.hooksPath stays /dev/null on that
+// VM (cell B1 of s3-windows).
 var gitHardenLight = []string{
 	"core.hooksPath=/dev/null",
 	"core.fsmonitor=false",
@@ -63,9 +70,13 @@ var gitHardenLight = []string{
 
 // gitHardenHeavy is the `-c` list of the calls of git.info, git.status and
 // git.list_branches, and of each `rev-parse --absolute-git-dir`. It is the list of
-// 28 items that 5fd08069 sends for every verb of those calls. s3-linux cells B0 and
-// B1 show it on a Linux VM, and cell 50 of s3p2b-edges on macOS and Windows VMs.
-// 89cb6289 sends 13 items for git.info and git.list_branches and 23 for git.status.
+// 28 items that 5fd08069 sends on the same calls. s3-linux cells B0 and B1 show it
+// on a Linux VM. Cell B1 of s3-macos and of s3-windows shows it for git.info and
+// git.list_branches on macOS and Windows VMs, with "shadowDirOff":true. On the
+// Windows VM 5fd08069 sends /dev/null in the two items before core.excludesFile
+// (cell B1 of s3-windows). 89cb6289 sends 13 items for git.info and
+// git.list_branches, and 23 for git.status apart from its `rev-parse
+// --show-toplevel` pair.
 var gitHardenHeavy = []string{
 	"core.fsmonitor=false",
 	"core.hooksPath=/dev/null",
@@ -102,24 +113,28 @@ var gitHardenHeavy = []string{
 // The heavy profile has six variables. It forbids every protocol, clears the
 // askpass helper, and turns off lazy fetch, replace objects and grafts. 5fd08069
 // sends them in this order on a Linux VM (s3-linux cell B1, with
-// "shadowDirOff":true). The macOS and Windows logs of cell 50 of s3p2b-edges show
-// the same six, sorted by name. 89cb6289 sends four: it has no
-// GIT_NO_REPLACE_OBJECTS and no GIT_GRAFT_FILE there. So git.status reads the real
-// objects now, also where refs/replace names others.
+// "shadowDirOff":true). The macOS and Windows logs of 5fd08069 are sorted by name.
+// They show the same six values and no order (cell 50 of s3p2b-edges, and cell B1
+// of s3-macos and of s3-windows with "shadowDirOff":true). 89cb6289 sends four: it
+// has no GIT_NO_REPLACE_OBJECTS and no GIT_GRAFT_FILE there. So git.status of
+// claustrum reads the real objects now, also where refs/replace names others. The
+// reply of 5fd08069 for a replaced commit is not measured.
 //
 // The light profile sets the protocol gate and terminal prompt suppression, and
-// turns off replace objects and grafts. git.worktree_create runs every git step
+// turns off replace objects and grafts. git.worktree_create runs its hardened calls
 // under the light profile, except the heavy rev-parse --absolute-git-dir, the heavy
 // pair of gitDirWorkTreeToplevel and the calls of the branch step (branchStepEnv).
 // Its checkout thus uses the real blob and the real commit, even when refs/replace
 // or info/grafts name others. That was measured side by side against f6010b97 on a
-// Linux VM. 5fd08069 sends the same four with "shadowDirOff":true (s3-linux cell
-// B1, Linux VM, and s3p2-windows cell G4-off-hook, Windows VM). Without that member
-// its calls of git.worktree_create carry the six values of the heavy profile
-// (s3-linux cell B0). claustrum sends the four in both cases.
+// Linux VM. 5fd08069 sends the same four with "shadowDirOff":true (cell B1 of
+// s3-linux, s3-macos and s3-windows, on Linux, macOS and Windows VMs). Without
+// that member its two rev-parse calls and its worktree add call carry the six
+// values. Its read-tree keeps the four (s3-linux cell B0, Linux VM). claustrum
+// sends the four in both cases.
 //
 // With the graft variable set, git prints its graft-file deprecation hint: lines
-// on stderr. The light list turns that hint off, and the heavy list does not.
+// on stderr. The light list turns that hint off, and the heavy list does not. No
+// row shows that hint in a reply of a heavy call (not measured).
 //
 // The null device is os.DevNull: /dev/null, and NUL on Windows. 5fd08069 sets
 // GIT_GRAFT_FILE=NUL on a Windows VM (cell 50 of s3p2b-edges), and /dev/null on
@@ -293,9 +308,14 @@ func hardenedGitFirst(dir string, heavy bool, l configListing, args ...string) (
 // runs this pair in git.info on Windows (row W01) and in git.worktree_create after a
 // mismatched admin record (row I07a, macOS VM).
 //
-// 5fd08069 sends the 28 items and the six heavy variables on both calls (s3-linux
-// cell B1, Linux VM, and cell 50 of s3p2b-edges, macOS and Windows VMs). 89cb6289
-// sends the light profile there.
+// 5fd08069 sends the six heavy variables on both calls and the 28 items on the
+// rev-parse call. With "shadowDirOff":true, cell B1 of s3-linux shows it in
+// git.status and in git.worktree_create (Linux VM). Cell G4-off-hook of s3p2-macos
+// shows it in the same two methods (macOS VM). Cell B1 of s3-windows shows it in
+// those two and in git.info (Windows VM). Cell 50 of s3p2b-edges has no such member
+// and shows it in create (macOS and Windows VMs). No row shows this pair in
+// git.worktree_remove on 5fd08069 (not measured). 89cb6289 sends the light profile
+// there.
 func gitDirWorkTreeToplevel(gitDir, workTree string, pin []string) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()

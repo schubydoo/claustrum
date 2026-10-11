@@ -143,13 +143,15 @@ func (c shapeCall) profileItems() []string {
 	return out
 }
 
-// lightVerb reports whether c is a call that 5fd08069 makes with the list of 20
-// items. Every other hardened call of the five methods has the list of 28.
+// lightVerb reports whether c is a call that claustrum makes with the list of 20
+// items. For the first seven verbs 5fd08069 does the same.
 //
-// Three more calls of claustrum have the list of 20: the `ls-files --others` of the
-// copy step, and the `rev-parse --show-toplevel` with no --git-dir and the `worktree
+// The three other calls of this function are the `ls-files --others` of the copy
+// step, and the `rev-parse --show-toplevel` with no --git-dir and the `worktree
 // list` of a removal with worktreeRoot. No row shows them on 5fd08069 (not
-// measured). They keep the light profile that 89cb6289 gives them.
+// measured). They keep the light profile that 89cb6289 gives them. The calls of
+// sourceBranch, show-ref and check-ignore are light too, and this test does not
+// make them.
 func (c shapeCall) lightVerb() bool {
 	if c.has("rev-parse", "--is-inside-work-tree") || c.has("rev-parse", "--abbrev-ref") ||
 		c.has("worktree", "add") || c.has("read-tree") || c.has("for-each-ref", "--count=10001") ||
