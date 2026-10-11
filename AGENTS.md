@@ -213,7 +213,12 @@ The JSON-RPC surface is identical on every OS. Full internals →
       `timeoutMs` of the caller expired during the add, the checkout or the copy
       step. It also runs after a post-checkout drain that exceeded that
       `timeoutMs`, and after a failed read-tree checkout. On Linux and macOS it
-      also runs after a failed placement of the index of the new worktree. It
+      also runs after a failed placement of the index of the new worktree. The
+      filter rule of the checkout (`gitfilter.go`) leads to it in two ways. The
+      first is a read-tree call that fails at a filter of the repository. The
+      second is a refusal before that call, for a filter that the rule cannot
+      handle or after a listing of the rule that failed. `5fd08069` rolls back
+      in cells F1 and Q3 (Linux VM) and D5 (Linux and Windows VMs). It
       deletes the entries
       of the leaf in the order that the directory read returns them, and it
       stops at the first failure. Then it deletes the registration, runs the

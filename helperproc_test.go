@@ -250,6 +250,35 @@ func runGitSlow(args []string) int {
 		wd, _ := os.Getwd()
 		appendLine(log, wd+"\x1e"+strings.Join(args, "\x1f")+"\x1e"+strings.Join(os.Environ(), "\x1f")+"\x1d")
 	}
+	// CLAUSTRUM_GITSTUB_FAIL_LISTING acts on the listings of the filter rule of
+	// git.worktree_create. It is a comma-separated list. "scoped" is the listing
+	// with --show-scope, "outside" is the one with GIT_DIR set to the null device,
+	// and "full" is the plain one with --git-dir. Each name fails its listing with
+	// exit code 128. "noscope" refuses --show-scope with exit code 129, as a git
+	// before 2.26 does. "hold-<name>" waits on that listing, so that a deadline of
+	// the caller expires during it.
+	if which := strings.Split(os.Getenv("CLAUSTRUM_GITSTUB_FAIL_LISTING"), ","); which[0] != "" && slices.Contains(args, "--list") {
+		kind := "other"
+		switch {
+		case slices.Contains(args, "--show-scope"):
+			kind = "scoped"
+		case os.Getenv("GIT_DIR") == os.DevNull:
+			kind = "outside"
+		case strings.HasPrefix(args[0], "--git-dir="):
+			kind = "full"
+		}
+		if slices.Contains(which, "hold-"+kind) {
+			time.Sleep(60 * time.Second)
+		}
+		if kind == "scoped" && slices.Contains(which, "noscope") {
+			fmt.Fprintln(os.Stderr, "error: unknown option `show-scope'")
+			return 129
+		}
+		if slices.Contains(which, kind) {
+			fmt.Fprintln(os.Stderr, "fatal: stub refuses the "+kind+" listing")
+			return 128
+		}
+	}
 	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH2"); m != "" && stubMatches(args, m) {
 		leaf := os.Getenv("CLAUSTRUM_GITSTUB_LEAF2")
 		var err error
@@ -667,6 +696,17 @@ func runHelper(mode string, args []string) int {
 		execOnSigterm(args[0])
 		fmt.Print("ready\n")
 		time.Sleep(60 * time.Second)
+	case "filter-mark":
+		// A stand-in git filter. It appends one line to the file args[0], to prove
+		// that it ran, and then copies stdin to stdout as cat does.
+		appendLine(args[0], "ran")
+		_, _ = io.Copy(os.Stdout, os.Stdin)
+	case "cat-mark":
+		// A stand-in `cat`, reached through a PATH entry named cat. It appends one
+		// line to the file that CLAUSTRUM_TEST_CAT_MARK names, and then copies stdin
+		// to stdout.
+		appendLine(os.Getenv("CLAUSTRUM_TEST_CAT_MARK"), "ran")
+		_, _ = io.Copy(os.Stdout, os.Stdin)
 	case "pwd": // /bin/pwd -P: the physical working directory
 		wd, err := os.Getwd()
 		if err != nil {

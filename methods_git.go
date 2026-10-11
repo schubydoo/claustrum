@@ -57,6 +57,12 @@ type gitParams struct {
 	// (like CT-1's wantPid), not an operator divergence. Bound namespace-wide like
 	// every gitParams field (D9); only git.worktree_create reads it.
 	TimeoutMs int `json:"timeoutMs,omitempty"`
+	// ShadowDirOff turns off the filter rule of the git.worktree_create checkout
+	// (gitfilter.go) for this request. With it, 5fd08069 passes no filter pairs, runs
+	// the repository's filter and succeeds (cell E1, Linux VM). Only
+	// git.worktree_create reads it. Any other effect of the member on 5fd08069 is
+	// not built here. Only the JSON value true sets it (jsonTrueSwitch).
+	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
 }
 
 // repoDir is the repo a worktree op runs against: baseRepo, or the daemon's cwd
@@ -1193,9 +1199,30 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// 90fca6e6 on a Windows VM. A checkout that fails also fails the request. See the
 	// last arm of the switch.
 	if indexDir != "" {
+		// The filter rule comes first (gitfilter.go). 5fd08069 refuses after the add and
+		// after its read-tree call, and rolls back as after a failed checkout (cell F1,
+		// Linux VM). The refusal of a name over the bound has the same end state (cell
+		// D5), and 5fd08069 makes no read-tree call for it (Windows VM). The refusal
+		// of a name with "=" (cell Q3, Linux VM), claustrum's own refusal of a filter
+		// that no pair can replace, and a listing of the rule that fails come at that
+		// place too.
+		var filters filterPlan
+		if !p.ShadowDirOff {
+			filters = listFilterPlan(callerCtx, p.WorktreePath, gitDir, commonDirPinEnv(repo))
+		}
+		if filters.refusal != "" {
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			return okResult(req.ID, worktreeResult{
+				Success:    false,
+				Error:      "git worktree add failed (checkout): " + filters.refusal + undo,
+				ErrorCode:  "worktree_add_failed",
+				BranchKept: kept,
+			})
+		}
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,
-			indexDir, tested, checkoutRev, commonDirPinEnv(repo))
+			indexDir, tested, checkoutRev, commonDirPinEnv(repo), filters)
+		refusedName, filterRefused := filters.refusedFilter(rtStderr)
 		switch {
 		case installErr != nil:
 			// git exited 0, and the index did not reach the registration. On Linux and
@@ -1231,6 +1258,29 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 				Success:    false,
 				Error:      msg + undo,
 				ErrorCode:  "timeout",
+				BranchKept: kept,
+			})
+		case rtErr != nil && filterRefused:
+			// git failed at a path that uses a filter with the three pairs. The text
+			// names that filter (cells A1 and N1 to N4, Linux VM, and cells A1, N1
+			// and N2, Windows VM). The deadline arm above comes first. A deadline that
+			// expires before git answers gives the timeout frame (cells Q13). The order
+			// of the two arms after a filter failure is not measured.
+			// One name has another answer: the filter lfs of the outside config, when
+			// the repository names a program for git-lfs (claustrum's own).
+			undo, kept := undoFailedCheckout(repo, p.WorktreePath, createdBranch, checkpoint, tested)
+			if refusedName == lfsFilterName && filters.lfsKey != "" {
+				return okResult(req.ID, worktreeResult{
+					Success:    false,
+					Error:      "git worktree add failed (checkout): " + lfsProgramText(filters.lfsKey) + undo,
+					ErrorCode:  "worktree_add_failed",
+					BranchKept: kept,
+				})
+			}
+			return okResult(req.ID, worktreeResult{
+				Success:    false,
+				Error:      repositoryOnlyFilterText(refusedName) + undo,
+				ErrorCode:  "repository_only_filter",
 				BranchKept: kept,
 			})
 		case rtErr != nil:

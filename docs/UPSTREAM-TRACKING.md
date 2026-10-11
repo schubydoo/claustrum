@@ -428,6 +428,59 @@ traps that matter for telling drift from expected:
   identity gets the home refusal. See [D2](DIVERGENCES.md#d2).
 
   See the record of [files.extract_tar](record/files-extract-tar.md).
+- The git filters of the `git.worktree_create` checkout split the builds too,
+  not drift. `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows
+  `5fd08069`. Against `89cb6289` these answers differ:
+  - A checkout that needs a filter which only the git config of the repository
+    defines answers `errorCode:"repository_only_filter"`, and nothing is left.
+    `89cb6289` runs the filter (Linux and Windows VMs).
+  - With a filter in the config of the repository and in a config outside it,
+    the outside filter runs. `89cb6289` runs the one of the repository
+    (Linux VM).
+  - A filter that only the repository defines, with a name of 300 bytes,
+    answers `worktree_add_failed` with the text about a name longer than 200
+    bytes (Linux and Windows VMs).
+
+  Against `5fd08069` these differences are not drift:
+  - With `smudge` from outside and a `process` key in the repository,
+    `5fd08069` runs the outside filter and succeeds. claustrum answers its own
+    `worktree_add_failed` text about values that no option of git can replace
+    (Linux VM).
+  - With a `smudge` key that has no value, `5fd08069` answers the filter
+    refusal. claustrum answers `worktree_add_failed` with git's own text
+    (Linux VM).
+  - Where git itself fails in the checkout, claustrum's text has git's hint
+    about `info/grafts` in front (Linux VM).
+  - `git.info` of claustrum has no `settingsControl` member (Linux VM).
+  - With a `GIT_DIR` and a `GIT_WORK_TREE` of another repository in the daemon
+    environment, `5fd08069` answers the filter refusal. claustrum answers
+    `not_a_repo`, as `89cb6289` does (Linux VM).
+  - A syntax error in `.git/config` (Linux and Windows VMs) and a
+    `~/.gitconfig` that is a directory (Linux VM) have another text on
+    `5fd08069`. claustrum has the text of `89cb6289`.
+  - With a temporary directory that cannot be used, `5fd08069` answers the
+    filter refusal. claustrum fails as `89cb6289` does (Linux and Windows
+    VMs).
+  - A filter name that is not valid UTF-8 gets claustrum's own refusal.
+    `5fd08069` answers a checkout failure on a Linux VM and success on a
+    Windows VM.
+  - With a git that refuses `--show-scope`, claustrum refuses the filter of a
+    conditional include of the user config. `5fd08069` runs it (Linux VM).
+  - With a program key of git-lfs in the config of the repository, the filter
+    `lfs` does not run on claustrum. A create with a file under it answers the
+    filter refusal for `lfs`, or claustrum's own `worktree_add_failed` text
+    that names the key. On `5fd08069` such a create fails inside git-lfs with
+    the text of git-lfs, and the agent does not run (cells L1 to L4, Windows
+    VM). The `lfs.extension.` keys of that rule ran on no VM.
+  - A wait on a listing before the checkout, with a `timeoutMs` that expires,
+    gives the timeout frame only on the build that makes that listing. The
+    two make other listings there (cells S2, Linux VM).
+  - In the call log, the `-c` pairs with a `filter.` key differ in some cells,
+    and the listings before the checkout differ.
+
+  macOS is not measured on any build.
+
+  See the record of [git.worktree_create](record/git-worktree-create.md#git-filters-of-the-checkout).
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,

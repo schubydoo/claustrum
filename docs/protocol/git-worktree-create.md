@@ -19,6 +19,7 @@ A failed request can leave files on disk. The section [After a failure](#after-a
 | `existingBranch` | no | A local branch to attach to. If it names no local branch, the daemon creates `branchName` instead. If the attach fails, the daemon does the same. For example, git refuses an attach to a branch that is checked out in `baseRepo`. The request can then still succeed. `branch` in the response says which branch the worktree is on: see [Response](#response). |
 | `worktreeRoot` | no | A location outside the repository. Linux and macOS only. |
 | `timeoutMs` | no | A deadline that starts at the add. It stops only the checkout. The daemon tests it again after the add and after the copy step. With no value or `0` there is no deadline. |
+| `shadowDirOff` | no | `true` turns off the filter rule of the checkout for this request. Any other value does nothing and is no error. See [Git filters](#git-filters). |
 
 Where the worktree can go:
 
@@ -57,9 +58,10 @@ Decide by `errorCode` first.
 | `nested_base_repo` | `baseRepo` is inside a directory of managed worktrees, or the daemon does not accept it as a trust root. |
 | `mkdir_failed` | The daemon cannot create a directory for the worktree. |
 | `worktree_add_failed` | `git worktree add` or the checkout failed. The text holds the message of git, or a refusal of the daemon that came before the add. |
+| `repository_only_filter` | The checkout needs a git filter that only the git config of the repository defines. See [Git filters](#git-filters). |
 | `timeout` | The deadline of `timeoutMs` expired. |
 
-These seven are all the codes of this method.
+These eight are all the codes of this method.
 
 A request with no `branchName` gets the JSON-RPC error `-32602`.
 
@@ -86,7 +88,7 @@ The table says what stays of the worktree itself: its directory, its registratio
 | The daemon cannot create a directory (`mkdir_failed`) | Nothing. |
 | `git worktree add` runs and fails (`worktree_add_failed`) | If the worktree directory is empty, the daemon removes it. Files that the failed add wrote stay. A registration and a branch that the add made stay too. |
 | A test of the new worktree fails after the add. On Linux and macOS a test of its registration gives `unsafe_path`. If something replaced the worktree directory during the request, the code is `worktree_add_failed`. | Everything. The daemon rolls nothing back. The worktree directory, the registration and the branch stay. |
-| The checkout fails, or the deadline expires (`worktree_add_failed`, `timeout`) | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
+| The checkout fails, the filter rule refuses, or the deadline expires (`worktree_add_failed`, `repository_only_filter`, `timeout`) | The daemon removes the worktree directory and its registration. If this request created the branch, the daemon removes the branch too. The cases below the table are exceptions. |
 
 `worktree_add_failed` and `unsafe_path` each have more than one row. The code alone does not say which row applies. The error text does, and so does the disk.
 
@@ -97,6 +99,22 @@ A rollback leaves something in these cases:
 - If the branch holds commits that no other ref reaches, the daemon keeps the branch. The response then has `"branchKept": true`.
 - If a delete fails, the error text ends with a clause that says what remains. On Windows a registration that stays adds no clause.
 - If something replaced the worktree directory, the rollback keeps the replacement and adds no clause. On Linux and macOS it also keeps a replaced registration directory ([D24](../DIVERGENCES.md#d24)).
+
+## Git filters
+
+A git filter is a program that git runs for a file of the checkout. If a file of the checkout uses a filter that only the git config of the repository defines, the request fails and the daemon rolls back:
+
+```json
+{"success": false, "error": "Claude doesn't run the \"<name>\" git filter, because only this repository's own git config defines it. If you trust that filter, copy the [filter \"<name>\"] section from that config (usually .git/config) into ~/.gitconfig on the remote machine, then try again.", "errorCode": "repository_only_filter"}
+```
+
+A filter counts as defined where a `smudge` or a `process` key has a value. A filter that the user config, the system config or the environment of the daemon defines runs. If the repository defines that filter too, the values from outside the repository apply. If the repository adds a `process` key to a filter that has none outside it, the request fails with `worktree_add_failed`. With a git before 2.26, the daemon refuses a filter that a conditional include (`includeIf`) of the user config defines.
+
+Three values of the repository pass: `smudge = cat` under each name, and `git-lfs smudge -- %f` and `git-lfs filter-process` under the name `lfs`. With `smudge = cat` the daemon starts no program. If the config of the repository itself names a program for git-lfs, the filter `lfs` does not run, wherever it is defined. A file under that filter then fails the request. A filter name with `=` in it, or one that is not valid UTF-8, fails the request with `worktree_add_failed`. So does a refused name of more than 200 bytes.
+
+`"shadowDirOff": true` turns the rule off for one request. The daemon then runs the filter of the repository.
+
+claustrum follows the reference build `5fd08069` here, with the differences that the record lists. The [measurement record](../record/git-worktree-create.md#git-filters-of-the-checkout) has the cells.
 
 ## The copy of ignored files
 
@@ -122,7 +140,7 @@ A copy that fails does not fail the request. If the deadline of `timeoutMs` expi
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. These entries of the divergence catalog apply to this method:
+claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` runs a git filter that only the repository defines. claustrum follows `5fd08069` and refuses it, with the differences that the record lists: see [Git filters](#git-filters). These entries of the divergence catalog apply to this method:
 
 - [D2](../DIVERGENCES.md#d2): a delete refuses a path that is the home directory or holds it.
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
