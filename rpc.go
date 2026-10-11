@@ -61,6 +61,9 @@ type request struct {
 	// shadow is the settings control of the daemon that serves the request
 	// (gitshadow.go). handleGit sets it. It is nil for a server with no run folder.
 	shadow *shadowHost
+	// repoRead is the accepted read of the repository's config, in the state
+	// shadow. settingsGateRefusal sets it.
+	repoRead *repoVerdict
 }
 
 type response struct {

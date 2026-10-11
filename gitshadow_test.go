@@ -296,8 +296,9 @@ func TestShadowFolderLife(t *testing.T) {
 	f := newShadowFixture(t)
 	f.info(t, f.repo, nil)
 	first := daemonFolder(t, f.run)
-	if got := entryNames(t, first); !slices.Equal(got, []string{shadowLockName}) {
-		t.Fatalf("folder of the daemon after the test holds %v, want only the lock file", got)
+	// The test folder is gone, and the folder of the repository is there.
+	if got, want := entryNames(t, first), []string{shadowRepoName(filepath.Join(f.repo, ".git")), shadowLockName}; !slices.Equal(got, want) {
+		t.Fatalf("folder of the daemon after the test holds %v, want %v", got, want)
 	}
 	if fi, err := os.Stat(filepath.Join(first, shadowLockName)); err != nil || fi.Size() != 0 {
 		t.Fatalf("lock file: %v, %v, want 0 bytes", fi, err)
@@ -322,8 +323,8 @@ func TestShadowFolderLife(t *testing.T) {
 	if second == first {
 		t.Errorf("the new folder has the old name %s", filepath.Base(first))
 	}
-	if got := entryNames(t, second); !slices.Equal(got, []string{shadowLockName}) {
-		t.Errorf("the new folder holds %v, want only the lock file", got)
+	if got, want := entryNames(t, second), []string{shadowRepoName(filepath.Join(f.repo, ".git")), shadowLockName}; !slices.Equal(got, want) {
+		t.Errorf("the new folder holds %v, want %v", got, want)
 	}
 
 	// A second daemon in the same run folder.

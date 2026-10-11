@@ -1,0 +1,346 @@
+package main
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
+
+// The folder of one repository in the folder of the daemon, as 5fd08069 keeps
+// it: <S>/<32 hex>. It holds the daemon's own copy of the settings of the
+// repository and of a few more files of its git directory. In this build no git
+// call reads the folder yet.
+//
+// Every write goes through an os.Root at the folder of the daemon or at the
+// folder of the repository, with a name that the daemon builds itself. Every
+// delete goes through shadowHost.removeEntry.
+
+// shadowHeadMaxBytes is the cut of the copy of HEAD. On 5fd08069 a HEAD of 8191
+// or 8192 bytes is copied whole, and one of 8193 bytes or of 1 MiB gives a copy
+// of 8192 bytes (cells 17a to 17k of s3p2b-edges-linux, Linux VM).
+const shadowHeadMaxBytes = 8192
+
+// shadowCopiedFiles are the files of the git directory that get a copy when
+// they exist, beside HEAD and the config. Each copy follows its file: it is
+// written again when the file has another text, and it goes when the file is
+// gone (cells 19a to 19e of s3p2b-edges-linux, Linux VM, and cell 15 of
+// s3p2b-edges2 on macOS and Windows VMs). `rebase-apply/head-name` ran on a
+// Linux VM only (cell 20a), and it is copied on every system here.
+//
+// 5fd08069 makes no entry for packed-refs, MERGE_HEAD, CHERRY_PICK_HEAD,
+// REVERT_HEAD, sequencer, ORIG_HEAD, FETCH_HEAD, info/grafts,
+// info/sparse-checkout and objects/info/alternates (cells B3 of s3p2-linux and
+// 20b to 20i of s3p2b-edges-linux).
+var shadowCopiedFiles = []string{
+	"info/exclude",
+	"info/attributes",
+	"shallow",
+	"rebase-merge/head-name",
+	"rebase-apply/head-name",
+	"BISECT_START",
+}
+
+// shadowRepo is what the daemon knows of one folder <S>/<32 hex> that it made.
+type shadowRepo struct {
+	// read is the read of the config whose text is in the copy.
+	read *repoVerdict
+	// copies has the sha256 of the content of each copy that is there.
+	copies map[string][sha256.Size]byte
+}
+
+// shadowRepoName is the name of the folder of the repository with the git
+// directory gitDir: the first 32 hex digits of the sha256 of that path, with no
+// trailing separator.
+//
+// On 5fd08069 the path is `<repo>/.git` for a plain repository (s3p2-linux cell
+// B1, Linux VM, and TestShadowRepoName for the digits of that cell). A bare repository gives the path of the
+// repository itself (cell B3c). A request on a linked worktree gives the folder
+// of its repository (cell B3b). A `.git` file gives the git directory that it
+// names, and a submodule its folder under `modules` (cells 20j and 23a of
+// s3p2b-edges-linux). On Linux and macOS a symbolic link in the path is
+// resolved, and the letter case is as sent (s3p2-macos cells B1 and B2). On a
+// Windows VM the path has backslashes, a junction is not resolved and another
+// letter case gives the same name (s3p2-windows cells B1, B2 and D6j).
+//
+// gitDir is the git directory that the trust check pinned. That check resolves
+// the links of the request path on Linux and macOS, and on Windows it resolves
+// no junction and gives each name the letter case of the disk (walkStart). No
+// Windows or macOS VM ran claustrum with this name yet.
+func shadowRepoName(gitDir string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(gitDir)))
+	return hex.EncodeToString(sum[:])[:32]
+}
+
+// readShadowSource reads the file at path for a copy. ok is false for a file
+// that is missing, that is not a regular file, or that the daemon cannot read.
+// A symbolic link gets no copy: what 5fd08069 copies for one is not measured.
+// The open does not wait and takes no terminal (openRepoFile). The file that
+// was opened must be the one that the first look saw.
+//
+// With cut, the content is the first max bytes. Without it, a file of more
+// than max bytes gets no copy. The config gate refused such a file of the
+// three that it tests before this code runs (gitDirFilesDetail). For the
+// others the bound is claustrum's own.
+func readShadowSource(path string, max int64, cut bool) (data []byte, ok bool) {
+	seen, err := os.Lstat(path)
+	if err != nil || !seen.Mode().IsRegular() {
+		return nil, false
+	}
+	f, err := openRepoFile(path)
+	if err != nil || f == nil {
+		return nil, false
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(seen, fi) {
+		return nil, false
+	}
+	limit := max
+	if !cut {
+		limit = max + 1
+	}
+	data, err = io.ReadAll(io.LimitReader(f, limit))
+	if err != nil || int64(len(data)) > max {
+		return nil, false
+	}
+	return data, true
+}
+
+// syncRepo makes the folder of the repository with the git directory gitDir
+// when it is not there, and brings its copies up to date. read is the accepted
+// read of the config of that repository.
+//
+// 5fd08069 makes the folder at the first request that accepts the repository.
+// git.info, git.status and git.worktree_create make it alike (s3-macos section
+// 1 and s3b-linux cell W1). git.list_branches and git.worktree_remove ran as
+// later requests only. They name the folder in their git calls, so they make
+// it here too (not measured as a first request). A refused config gives no
+// folder (s3p2-linux section 4).
+//
+// The entries, with the modes of Linux and macOS (s3-linux cell A3, s3p2-linux
+// cells B3, Linux VM. Cell 24 of s3p2b-edges on macOS and Windows VMs):
+//
+//   - HEAD (0600): the first shadowHeadMaxBytes bytes of the HEAD of gitDir.
+//   - config (0600): the text of the read (shadowConfigText).
+//   - info, objects and refs (0700). objects and refs stay empty.
+//   - worktrees: a symbolic link to <gitDir>/worktrees, also when that folder
+//     does not exist. Windows has no such entry (shadowLinksWorktrees).
+//   - the copies of shadowCopiedFiles (0600), in folders of 0700.
+//   - BISECT_LOG (0600): an empty file while the repository has that file.
+//   - reftable: a link to <gitDir>/reftable while that is a folder. A macOS VM
+//     with git 2.50.1 showed it (cell 25 of s3p2b-edges). Linux did not run it
+//     and gets the same link here. Windows gets none, as for worktrees (not
+//     measured).
+//
+// A second request with nothing changed writes nothing: inode, times and size
+// of every entry stay (s3p2-linux cell B4). A copy is written again as a new
+// file, through a temporary file and a rename, when its text differs from the
+// text of the last write. The config is written again after each new read of
+// the repository's config (repoReadVerdict has the rule of a new read). A
+// `touch` of the config with the same text makes a new read. Whether 5fd08069
+// writes a new file then is not measured: claustrum does.
+//
+// An error leaves the folder as far as it got. No git call reads it yet, so
+// the request goes on. A HEAD that cannot be read makes no folder (not
+// measured).
+func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) error {
+	h.repoMu.Lock()
+	defer h.repoMu.Unlock()
+	h.mu.Lock()
+	dir, closed := h.dir, h.closed
+	h.mu.Unlock()
+	if closed || dir == "" {
+		return nil
+	}
+	if h.repos == nil {
+		h.repos = map[string]*shadowRepo{}
+	}
+	head, ok := readShadowSource(filepath.Join(gitDir, "HEAD"), shadowHeadMaxBytes, true)
+	if !ok {
+		return errors.New("the HEAD of the repository cannot be read")
+	}
+	base, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = base.Close() }()
+
+	name := shadowRepoName(gitDir)
+	st := h.repos[name]
+	root, err := base.OpenRoot(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		// The first request, or a folder that went. The copies come from what the
+		// daemon read before: the config is not read again for it (cell 54 of
+		// s3p2b-edges3-linux2, Linux VM).
+		st = &shadowRepo{copies: map[string][sha256.Size]byte{}}
+		h.repos[name] = st
+		if err := base.Mkdir(name, 0o700); err != nil {
+			return err
+		}
+		root, err = base.OpenRoot(name)
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	if st == nil {
+		st = &shadowRepo{copies: map[string][sha256.Size]byte{}}
+		h.repos[name] = st
+	}
+	rel := filepath.Join(filepath.Base(dir), name)
+
+	for _, sub := range []string{"info", "objects", "refs"} {
+		if err := root.Mkdir(sub, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+	}
+	if shadowLinksWorktrees {
+		if err := shadowLink(root, filepath.Join(gitDir, worktreesSubdir), worktreesSubdir); err != nil {
+			return err
+		}
+		if fi, err := os.Lstat(filepath.Join(gitDir, "reftable")); err == nil && fi.IsDir() {
+			if err := shadowLink(root, filepath.Join(gitDir, "reftable"), "reftable"); err != nil {
+				return err
+			}
+		}
+	}
+	if err := h.writeCopy(st, root, rel, "HEAD", head); err != nil {
+		return err
+	}
+	if st.read != read {
+		delete(st.copies, "config")
+		if err := h.writeCopy(st, root, rel, "config", []byte(read.shadowText)); err != nil {
+			return err
+		}
+		st.read = read
+	}
+	for _, file := range shadowCopiedFiles {
+		data, ok := readShadowSource(filepath.Join(gitDir, filepath.FromSlash(file)), repoGitFileMaxBytes, false)
+		if ok {
+			if err := h.writeCopy(st, root, rel, file, data); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := h.dropCopy(st, rel, file); err != nil {
+			return err
+		}
+	}
+	// BISECT_LOG is an empty file where the repository's file has 340 or 348
+	// bytes (cells B3i of s3p2-linux, and cell 24 i of s3p2b-edges on macOS and
+	// Windows VMs).
+	if fi, err := os.Lstat(filepath.Join(gitDir, "BISECT_LOG")); err == nil && fi.Mode().IsRegular() {
+		return h.writeCopy(st, root, rel, "BISECT_LOG", nil)
+	}
+	return h.dropCopy(st, rel, "BISECT_LOG")
+}
+
+// shadowLink makes the symbolic link name in root with the target, when no
+// entry of that name is there. The link points out of the folder by design.
+// Nothing here follows it.
+func shadowLink(root *os.Root, target, name string) error {
+	if _, err := root.Lstat(name); err == nil {
+		return nil
+	}
+	return root.Symlink(target, name)
+}
+
+// writeCopy makes file in root, the folder rel of a repository, with the
+// content data, when the copy that is there has another content or there is
+// none. The copy is a new file each time: a
+// temporary file beside it, then a rename (cells 18a, 18k and 19c of
+// s3p2b-edges-linux show a new inode). The name of the temporary file is
+// claustrum's own: no cell saw one. A temporary file that is left after an
+// error goes through removeEntry.
+func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, data []byte) error {
+	sum := sha256.Sum256(data)
+	if have, ok := st.copies[file]; ok && have == sum {
+		return nil
+	}
+	path := filepath.FromSlash(file)
+	if dir := filepath.Dir(path); dir != "." {
+		if err := root.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+	}
+	var salt [8]byte
+	if _, err := rand.Read(salt[:]); err != nil {
+		return err
+	}
+	tmp := path + ".tmp-" + hex.EncodeToString(salt[:])
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = root.Rename(tmp, path)
+	}
+	if err != nil {
+		_ = h.removeEntry(filepath.Join(rel, tmp))
+		return err
+	}
+	st.copies[file] = sum
+	return nil
+}
+
+// dropCopy removes the copy file of the repository folder rel, a path below
+// the folder of all daemons, when the daemon made one. The copy of a file in a
+// rebase folder goes with its folder: after `rebase-merge/head-name` went on
+// 5fd08069, the folder and the file are gone. `info` stays, empty (cells 19c
+// and 19d of s3p2b-edges-linux, Linux VM).
+func (h *shadowHost) dropCopy(st *shadowRepo, rel, file string) error {
+	if _, ok := st.copies[file]; !ok {
+		return nil
+	}
+	target := filepath.FromSlash(file)
+	if dir := filepath.Dir(target); dir != "." && dir != "info" {
+		target = dir
+	}
+	if err := h.removeEntry(filepath.Join(rel, target)); err != nil {
+		return err
+	}
+	delete(st.copies, file)
+	return nil
+}
+
+// listEntryConfig is the read of the `config.worktree` file of a linked
+// worktree in a git.info request. On 5fd08069 a git.info on a linked worktree
+// lists that file with one git call in each request, when the repository has
+// the worktreeConfig switch and the file exists. Its settings are in no copy
+// (cell 1c of s3p2b-edges2-linux, Linux VM). git.status lists the file in its
+// own test of the entry (statusEntryConfig), and git.list_branches does not
+// list it (the same cell). claustrum makes the call and does not use the
+// answer.
+func (req *request) listEntryConfig(t gitDirTrust) {
+	if req.repoRead == nil || !req.repoRead.worktreeConfig || t.worktreeEntry == "" {
+		return
+	}
+	ctx, cancel := gitCtx()
+	defer cancel()
+	listConfigFile(ctx, filepath.Join(t.worktreeEntry, "config.worktree"))
+}
+
+// listWorktreeConfigAfterAdd is the read of the `config.worktree` file of the
+// repository in a create. On 5fd08069 a create lists that file with one git
+// call right after its `worktree add`, when the repository has the
+// worktreeConfig switch and the file exists. With no switch or no file it
+// makes no such call (cells 1a to 1m, 9a and 9k of s3p2b-edges2-linux, Linux
+// VM). The copy of the settings is the same file after the create. claustrum
+// makes the call and does not use the answer.
+func (req *request) listWorktreeConfigAfterAdd(gitDir string) {
+	if req.repoRead == nil || !req.repoRead.worktreeConfig {
+		return
+	}
+	ctx, cancel := gitCtx()
+	defer cancel()
+	listConfigFile(ctx, filepath.Join(gitDir, "config.worktree"))
+}

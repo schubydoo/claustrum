@@ -23,8 +23,10 @@ import (
 // the git of the host works on such a copy. The result is the state of the daemon,
 // and git.info reports it in the member settingsControl.
 //
-// This file holds the state, the folder of one daemon and the start test. The git
-// calls of the methods do not use the folder yet.
+// This file holds the state, the folder of one daemon and the start test.
+// gitshadowrepo.go holds the folder of one repository, and gitshadowconfig.go the
+// text of the copied settings. The git calls of the methods do not use the
+// folders yet.
 
 // The values of the member settingsControl of a git.info result. 5fd08069 sends
 // these three (s3-linux cells A1 and B1, s3p2-oldgit cell O1, Linux VM).
@@ -102,6 +104,13 @@ type shadowHost struct {
 	lock *os.File
 	// closed is true after the shutdown removed the folder.
 	closed bool
+
+	// repoMu guards the folders of the repositories below dir, one request at a
+	// time. repos has what the daemon knows of each folder that it made, by its
+	// name. A folder that is not there starts again with nothing known
+	// (syncRepo).
+	repoMu sync.Mutex
+	repos  map[string]*shadowRepo
 }
 
 // newShadowHost returns the settings control of a daemon whose socket is in
@@ -679,7 +688,12 @@ func makeShadowTestCopy(gitDir, shadowDir string) error {
 // VM). With worktreeRoot a remove reaches no gate: its shape is not measured.
 //
 // In the state fallback-git the read of the config does not run
-// (readsRepoConfig).
+// (readsRepoConfig), and the daemon keeps no folder of a repository: its own
+// folder holds the lock file only there (s3p2-oldgit section 5, Linux VM).
+//
+// Without the extra call of 5fd08069 that asks git about the repository, a
+// repository of another owner with an accepted config gets a folder here. On
+// 5fd08069 it gets none (cell 39 of s3p2b-edges-linux2, Linux VM).
 func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) string {
 	if t.verdict == gitDirTrusted {
 		if msg := req.shadow.gate(bool(off)); msg != "" {
@@ -689,5 +703,14 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 	if !req.shadow.readsRepoConfig() {
 		return ""
 	}
-	return repoConfigGateRefusal(t, off, dir, heavy, probe)
+	msg, read := repoConfigGate(t, off, dir, heavy, probe)
+	if msg != "" || read == nil || req.shadow.control(bool(off)) != controlShadow {
+		return msg
+	}
+	// The repository is accepted: the daemon makes its folder or brings it up to
+	// date (syncRepo). No git call reads the folder yet, so an error there does
+	// not end the request. Its text on 5fd08069 is not measured.
+	req.repoRead = read
+	_ = req.shadow.syncRepo(t.pinCommonDir, read)
+	return ""
 }

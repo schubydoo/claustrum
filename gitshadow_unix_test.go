@@ -147,8 +147,8 @@ func TestShadowStartTestCalls(t *testing.T) {
 	if n := len(testCalls(calls[11:])); n != 0 {
 		t.Errorf("%d calls after the test name its folder", n)
 	}
-	if got := entryNames(t, dir); !slices.Equal(got, []string{shadowLockName}) {
-		t.Errorf("folder of the daemon at the reply holds %v, want only the lock file", got)
+	if got, want := entryNames(t, dir), []string{shadowRepoName(filepath.Join(f.repo, ".git")), shadowLockName}; !slices.Equal(got, want) {
+		t.Errorf("folder of the daemon at the reply holds %v, want %v", got, want)
 	}
 }
 

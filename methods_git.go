@@ -323,6 +323,7 @@ func gitInfo(req *request) response {
 	if msg := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	}
+	req.listEntryConfig(t)
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603
 	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
@@ -1142,6 +1143,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "worktree_add_failed",
 		})
 	}
+	req.listWorktreeConfigAfterAdd(t.pinCommonDir)
 	// The add succeeded. The .git file of the new worktree must name a registration
 	// of this repository, and the commondir file and the gitdir record of that
 	// registration must be files that can be read (createdRegistrationRefusal, cells
