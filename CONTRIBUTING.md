@@ -34,7 +34,7 @@ in-progress commit, run `git commit --no-verify`.
 - Format, vet, and lint. `gofmt -l .` must print nothing. `go vet ./...` must be
   clean. `golangci-lint run ./...` must be clean. Its configuration is in
   `.golangci.yml`.
-- Tests. Run `go test -race ./...`. The in-repo suite (`*_test.go`) covers the
+- Tests. Run `make test` (`go test -race -timeout 20m ./...`). The in-repo suite (`*_test.go`) covers the
   wire surface two ways. The unit tests cover frame encoding, dispatch, auth and
   error routing, the replay buffer, env merging, and the `-install` pipeline. The
   socket-integration suite boots the daemon and asserts every method's frames
