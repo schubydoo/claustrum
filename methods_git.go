@@ -304,27 +304,27 @@ func gitInfo(req *request) response {
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
 		// cells P3-infoN and P3-infoX on a Windows VM).
-		if msg := noRepoListingRefusal(t, p.Path, false); msg != "" {
+		if msg := noRepoListingRefusal(t, p.Path, true); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, notRepoResult{})
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal). Its place after the count check is not measured.
-	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, false, "--git-dir"); msg != "" {
+	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// If the repo's config cannot be enumerated (e.g. an `include.path` with no value), the
 	// reference cannot pin its config-defined hooks off and refuses with -32603
 	// rather than running git. Measured against 7d193f89 on an ephemeral VM.
-	c := hostileConfigRefusal(p.Path, false)
+	c := hostileConfigRefusal(p.Path, true)
 	if c.refusal != "" {
 		return errResult(req.ID, codeInternal, c.refusal)
 	}
 	if c.noRepo {
 		return okResult(req.ID, notRepoResult{})
 	}
-	if _, ok := hardenedGitFirst(p.Path, false, c.listing, "rev-parse", "--git-dir"); !ok {
+	if _, ok := hardenedGitFirst(p.Path, true, c.listing, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, notRepoResult{})
 	}
 	// The root is the folder where the walk of the trust check found the repository
@@ -347,12 +347,12 @@ func gitInfo(req *request) response {
 	// never git's error text. Measured side by side against 90fca6e6 and f6010b97 on a
 	// Linux VM: a HEAD git fails to resolve ("ref: refs/heads/main" or 40 hex digits,
 	// each followed by junk, H15 H18 NH21 NH22) answers without `branch` on both.
-	branch, ok := hardenedGit(p.Path, false, "branch", "--show-current")
+	branch, ok := hardenedGit(p.Path, true, "branch", "--show-current")
 	switch {
 	case !ok:
 		branch = ""
 	case branch == "":
-		sha, _ := hardenedGit(p.Path, false, "rev-parse", "--short", "HEAD")
+		sha, _ := hardenedGit(p.Path, true, "rev-parse", "--short", "HEAD")
 		branch = "detached:" + sha
 	}
 	return okResult(req.ID, gitInfoResult{
@@ -391,7 +391,7 @@ func gitRepoSlug(dir string) string {
 	// github.com host, so reading it would drop the slug for every developer who
 	// uses an insteadOf rewrite. Without the gate the old call happened to give
 	// the right answer, which is why this looked like a no-op before.
-	url, ok := hardenedGit(dir, false, "remote", "get-url", "origin")
+	url, ok := hardenedGit(dir, true, "remote", "get-url", "origin")
 	if !ok || url == "" {
 		return ""
 	}
@@ -507,14 +507,14 @@ func validSlugRepo(s string) bool {
 // 7c2f88d.
 //
 // The name is verified. A name that starts with "-" gives "" with no further call.
-// Else the light `rev-parse --verify --quiet refs/remotes/origin/<name>^{commit}` runs
+// Else the heavy `rev-parse --verify --quiet refs/remotes/origin/<name>^{commit}` runs
 // in dir, with its listing. Exit 0 keeps the name, and any failure gives "".
 // f6010b97 and 89cb6289 do so on Linux and macOS VMs (rows I10a to I10c: a dangling
 // origin/HEAD, one that names a blob, and origin/-x). Not measured: other invalid
 // names, and a symbolic-ref answer that does not start with refs/remotes/origin/.
 // claustrum verifies that answer the same way.
 func gitDefaultBranch(dir string) string {
-	ref, ok := hardenedGit(dir, false, "symbolic-ref", "refs/remotes/origin/HEAD")
+	ref, ok := hardenedGit(dir, true, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if !ok {
 		return ""
 	}
@@ -522,7 +522,7 @@ func gitDefaultBranch(dir string) string {
 	if strings.HasPrefix(name, "-") {
 		return ""
 	}
-	if _, ok := hardenedGit(dir, false, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+name+"^{commit}"); !ok {
+	if _, ok := hardenedGit(dir, true, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+name+"^{commit}"); !ok {
 		return ""
 	}
 	return name
@@ -670,31 +670,31 @@ func gitListBranches(req *request) response {
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (row A-N2 on Linux and macOS VMs, cell
 		// P3-lbN on a Windows VM).
-		if msg := noRepoListingRefusal(t, p.Path, false); msg != "" {
+		if msg := noRepoListingRefusal(t, p.Path, true); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// The daemon's own read of the repository's config comes before the listing
 	// (repoConfigGateRefusal). The answer has the error object of git.info (cell X1).
-	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, false, "--git-dir"); msg != "" {
+	if msg := repoConfigGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// A repo whose config cannot be enumerated is refused with -32603 (7d193f89),
 	// measured on an ephemeral VM.
-	c := hostileConfigRefusal(p.Path, false)
+	c := hostileConfigRefusal(p.Path, true)
 	if c.refusal != "" {
 		return errResult(req.ID, codeInternal, c.refusal)
 	}
 	if c.noRepo {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
-	// 7d193f89 runs this under the light hardening profile with the config
-	// precursor; the repo gate is `rev-parse --git-dir` (true for a bare repo and
+	// 5fd08069 runs this under the heavy profile with the config precursor
+	// (s3-linux cells B0 and B1, Linux VM). The repo gate is `rev-parse --git-dir` (true for a bare repo and
 	// from inside a `.git` directory, unlike git.info's --is-inside-work-tree). The
 	// reference returns the full branches shape (branches:[]) on a non-repo, not
 	// git.info's bare notRepoResult. The refusal check above was its precursor.
-	if _, ok := hardenedGitFirst(p.Path, false, c.listing, "rev-parse", "--git-dir"); !ok {
+	if _, ok := hardenedGitFirst(p.Path, true, c.listing, "rev-parse", "--git-dir"); !ok {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// stdout only, AND propagate a failure — the same two rules git.status
@@ -712,7 +712,7 @@ func gitListBranches(req *request) response {
 	//
 	// The reference sorts refs in git itself (`--sort=refname` over `refs/heads/`),
 	// so the branch order matches without a Go sort.
-	out, err := hardenedGitStdout(p.Path, false, "for-each-ref",
+	out, err := hardenedGitStdout(p.Path, true, "for-each-ref",
 		"--format=%(refname:short)", "--sort=refname", "refs/heads/")
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())

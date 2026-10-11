@@ -887,7 +887,9 @@ func TestQuoteOperandInvalidUTF8(t *testing.T) {
 }
 
 // worktree_create runs git with replace objects and grafts off, so its
-// checkout carries the real blob. git.status still honours replace objects.
+// checkout carries the real blob. git.status runs with them off too, since its calls
+// carry GIT_NO_REPLACE_OBJECTS=1 as on 5fd08069 (s3-linux cell B1, Linux VM). The
+// status frame of 5fd08069 for a replaced commit is not measured.
 func TestGitDirTrustCreateIgnoresReplaceObjects(t *testing.T) {
 	r := newTrustRepo(t)
 	writeFile(t, filepath.Join(r.T, "v.txt"), "real\n", 0o644)
@@ -908,14 +910,15 @@ func TestGitDirTrustCreateIgnoresReplaceObjects(t *testing.T) {
 		t.Errorf("create checked out v.txt = %q (%v), want the real blob", b, err)
 	}
 
-	// Status honours the replacement: s0 is at the commit before v.txt existed, so
-	// move it to the new commit, which checks out the real content. Then replace that
-	// commit with one whose v.txt is fake: the staged blob now differs from HEAD's.
+	// Status does not read the replacement: s0 is at the commit before v.txt existed,
+	// so move it to the new commit, which checks out the real content. Then replace
+	// that commit with one whose v.txt is fake. With the replacement read, the staged
+	// blob differs from HEAD's and the answer is "M  v.txt".
 	runGit(t, r.T, "replace", "-d", real)
 	runGit(t, r.SW, "reset", "-q", "--hard", "main")
 	head := gitOut(t, r.SW, "rev-parse", "HEAD")
 	runGit(t, r.T, "replace", head, commitWithFile(t, r, head, "fake\n"))
-	wantResult(t, "status(SW,T)", status(t, r.SW, r.T), `{"isRepo":true,"clean":false,"changes":["M  v.txt"]}`)
+	wantResult(t, "status(SW,T)", status(t, r.SW, r.T), `{"isRepo":true,"clean":true}`)
 }
 
 // git.info omits `branch` when git cannot name it, instead of sending git's error text.
@@ -960,8 +963,8 @@ func TestGitInfoOmitsABranchGitCannotResolve(t *testing.T) {
 	})
 }
 
-// The light profile carries the replace and graft switches. The heavy one, used only
-// by git.status, does not.
+// Both profiles carry the replace and graft switches, as on 5fd08069 (s3-linux cell
+// B1, Linux VM). 89cb6289 has them on the light profile only.
 func TestHardenedEnvReplaceAndGraftSwitches(t *testing.T) {
 	light := hardenedGitEnv(false, nil, nil)
 	heavy := hardenedGitEnv(true, nil, nil)
@@ -969,8 +972,8 @@ func TestHardenedEnvReplaceAndGraftSwitches(t *testing.T) {
 		if !slices.Contains(light, kv) {
 			t.Errorf("light env lacks %s", kv)
 		}
-		if slices.Contains(heavy, kv) {
-			t.Errorf("heavy env carries %s; git.status must keep honouring replace objects", kv)
+		if !slices.Contains(heavy, kv) {
+			t.Errorf("heavy env lacks %s", kv)
 		}
 	}
 }

@@ -75,10 +75,13 @@ func removeCallLog(t *testing.T, root string) func(method string, params map[str
 			switch {
 			case slices.Contains(c.env, "GIT_ALLOW_PROTOCOL=https:ssh"):
 				env = "L"
+			// The heavy profile has GIT_NO_LAZY_FETCH before GIT_TERMINAL_PROMPT. The
+			// branch step has it after its hook pins.
+			case slices.Index(c.env, "GIT_NO_LAZY_FETCH=1") >= 0 &&
+				slices.Index(c.env, "GIT_NO_LAZY_FETCH=1") < slices.Index(c.env, "GIT_TERMINAL_PROMPT=0"):
+				env = "H"
 			case slices.Contains(c.env, "GIT_GRAFT_FILE="+os.DevNull):
 				env = "R"
-			case slices.Contains(c.env, "GIT_ALLOW_PROTOCOL=denied_by_claude_ssh"):
-				env = "H"
 			}
 			cwd := c.cwd
 			if slices.Contains(c.argv, "core.excludesFile") {
@@ -127,8 +130,8 @@ func callsCheck(cwd, pin string) []string {
 // callsPair is the pair of registrationProbe.
 func callsPair(gitDir, workTree, pin string) []string {
 	return []string{
-		gitDir + "|L|--git-dir=" + gitDir + " config -z --list" + pin,
-		gitDir + "|L|--git-dir=" + gitDir + " --work-tree=" + workTree + " rev-parse --show-toplevel" + pin,
+		gitDir + "|H|--git-dir=" + gitDir + " config -z --list" + pin,
+		gitDir + "|H|--git-dir=" + gitDir + " --work-tree=" + workTree + " rev-parse --show-toplevel" + pin,
 	}
 }
 

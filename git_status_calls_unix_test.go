@@ -144,8 +144,8 @@ func statusGateCalls(probeTree string) []string {
 		callRepoConfig,
 		"<fx>/T|A|config -z --list",
 		"<fx>/T|A|rev-parse --absolute-git-dir",
-		"<fx>/T/.git|B|--git-dir=<fx>/T/.git config -z --list",
-		"<fx>/T/.git|B|--git-dir=<fx>/T/.git --work-tree=" + probeTree + " rev-parse --show-toplevel",
+		"<fx>/T/.git|A|--git-dir=<fx>/T/.git config -z --list",
+		"<fx>/T/.git|A|--git-dir=<fx>/T/.git --work-tree=" + probeTree + " rev-parse --show-toplevel",
 	}
 }
 

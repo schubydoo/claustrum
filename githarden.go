@@ -28,12 +28,16 @@ import (
 // The exact profiles and environment were captured with a logging `git` wrapper on
 // an ephemeral VM (scratch/git-hardening-7d193f89.md is the ground truth).
 
-// gitHardenLight is the `-c` set for repo-local reads and mutations that never
-// reach a remote (git.info's tree walks, git.list_branches, git.worktree_create).
-// The core.excludesFile entry is a PLACEHOLDER: hardenedProfileArgs substitutes the user's
-// resolved global excludes (userExcludesFile) for it — 7d193f89 keeps the user's
-// ~/.config/git/ignore in force, and the literal /dev/null is only the fallback when
-// none exists.
+// gitHardenLight is the `-c` list of the calls of git.worktree_create and of the
+// branch step. It is the list of 20 items that 5fd08069 sends. s3-linux cells B0 and
+// B1 show it on a Linux VM. Cell 50 of s3p2b-edges shows it on macOS and Windows
+// VMs. The measured calls are `rev-parse --is-inside-work-tree`, `rev-parse
+// --abbrev-ref HEAD`, `worktree add`, `for-each-ref` and `update-ref`. Every other
+// call on this list has no row on 5fd08069 (not measured).
+//
+// The core.excludesFile entry is a placeholder. profileArgsWithExcludes puts the
+// user's excludes file there (userExcludesFile). On the Windows VM 5fd08069 sends
+// the user's ignore file there, and /dev/null in the two items before it.
 var gitHardenLight = []string{
 	"core.hooksPath=/dev/null",
 	"core.fsmonitor=false",
@@ -44,20 +48,29 @@ var gitHardenLight = []string{
 	"alias.remote-https=",
 	"alias.remote-http=",
 	"alias.remote-ssh=",
-	"core.excludesFile=/dev/null", // placeholder — see hardenedProfileArgs / userExcludesFile
+	"alias.remote-denied_by_claude_ssh.command=",
+	"help.autocorrect=0",
+	"core.excludesFile=/dev/null", // placeholder, see profileArgsWithExcludes
 	"submodule.recurse=false",
 	"fetch.recurseSubmodules=false",
 	"push.recurseSubmodules=false",
+	"gc.auto=0",
+	"maintenance.auto=false",
+	"advice.graftFileDeprecated=false",
+	"worktree.useRelativePaths=false",
+	"core.longpaths=true",
 }
 
-// gitHardenHeavy is the fuller `-c` set for the status/diff plumbing and anything
-// that could touch a remote: it additionally forbids every transport protocol and
-// clears the credential/askpass helpers.
+// gitHardenHeavy is the `-c` list of the calls of git.info, git.status and
+// git.list_branches, and of each `rev-parse --absolute-git-dir`. It is the list of
+// 28 items that 5fd08069 sends for every verb of those calls. s3-linux cells B0 and
+// B1 show it on a Linux VM, and cell 50 of s3p2b-edges on macOS and Windows VMs.
+// 89cb6289 sends 13 items for git.info and git.list_branches and 23 for git.status.
 var gitHardenHeavy = []string{
 	"core.fsmonitor=false",
 	"core.hooksPath=/dev/null",
 	"core.attributesFile=/dev/null",
-	"core.excludesFile=/dev/null", // placeholder — see hardenedProfileArgs / userExcludesFile
+	"core.excludesFile=/dev/null", // placeholder, see profileArgsWithExcludes
 	"core.longpaths=true",
 	"protocol.allow=never",
 	"protocol.ext.allow=never",
@@ -74,34 +87,49 @@ var gitHardenHeavy = []string{
 	"alias.remote-https=",
 	"alias.remote-http=",
 	"alias.remote-ssh=",
+	"alias.remote-denied_by_claude_ssh.command=",
+	"help.autocorrect=0",
 	"submodule.recurse=false",
 	"fetch.recurseSubmodules=false",
 	"push.recurseSubmodules=false",
+	"gc.auto=0",
+	"maintenance.auto=false",
+	"core.commitGraph=false",
 }
 
-// profileEnv is the part of the environment that the profile decides. The light
-// profile sets the protocol gate, terminal prompt suppression, and turns off
-// replace objects and grafts. The heavy profile turns off lazy fetch, forbids every
-// protocol, and clears the askpass helper.
+// profileEnv is the part of the environment that the profile decides.
 //
-// The light profile turns off replace objects and grafts
-// (GIT_NO_REPLACE_OBJECTS=1, GIT_GRAFT_FILE=<null device>). git.worktree_create runs
-// every git step under the light profile, except the heavy rev-parse
-// --absolute-git-dir and the calls of the branch step (branchStepEnv). Its checkout
-// thus uses the real blob and the real commit, even when refs/replace or info/grafts
-// name others. git.status runs
-// under the heavy profile and still honours replace objects. Both were measured side
-// by side against f6010b97 on a Linux VM. git.info and git.list_branches answer the
-// same either way. With the graft variable set, git prints its graft-file deprecation
-// hint: lines on stderr, as it does for f6010b97.
+// The heavy profile has six variables. It forbids every protocol, clears the
+// askpass helper, and turns off lazy fetch, replace objects and grafts. 5fd08069
+// sends them in this order on a Linux VM (s3-linux cell B1, with
+// "shadowDirOff":true). The macOS and Windows logs of cell 50 of s3p2b-edges show
+// the same six, sorted by name. 89cb6289 sends four: it has no
+// GIT_NO_REPLACE_OBJECTS and no GIT_GRAFT_FILE there. So git.status reads the real
+// objects now, also where refs/replace names others.
 //
-// The null device is os.DevNull: /dev/null, and NUL on Windows. f6010b97 sets
-// GIT_GRAFT_FILE=NUL on a Windows VM, and /dev/null on Linux and macOS VMs. The
-// variables and their order are those of f6010b97 on the same VMs.
+// The light profile sets the protocol gate and terminal prompt suppression, and
+// turns off replace objects and grafts. git.worktree_create runs every git step
+// under the light profile, except the heavy rev-parse --absolute-git-dir, the heavy
+// pair of gitDirWorkTreeToplevel and the calls of the branch step (branchStepEnv).
+// Its checkout thus uses the real blob and the real commit, even when refs/replace
+// or info/grafts name others. That was measured side by side against f6010b97 on a
+// Linux VM. 5fd08069 sends the same four with "shadowDirOff":true (s3-linux cell
+// B1, Linux VM, and s3p2-windows cell G4-off-hook, Windows VM). Without that member
+// its calls of git.worktree_create carry the six values of the heavy profile
+// (s3-linux cell B0). claustrum sends the four in both cases.
+//
+// With the graft variable set, git prints its graft-file deprecation hint: lines
+// on stderr. The light list turns that hint off, and the heavy list does not.
+//
+// The null device is os.DevNull: /dev/null, and NUL on Windows. 5fd08069 sets
+// GIT_GRAFT_FILE=NUL on a Windows VM (cell 50 of s3p2b-edges), and /dev/null on
+// Linux and macOS VMs.
 func profileEnv(heavy bool) []string {
 	if heavy {
 		return []string{
 			"GIT_NO_LAZY_FETCH=1",
+			"GIT_NO_REPLACE_OBJECTS=1",
+			"GIT_GRAFT_FILE=" + os.DevNull,
 			"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh",
 			"GIT_ASKPASS=",
 			"GIT_TERMINAL_PROMPT=0",
@@ -259,20 +287,24 @@ func hardenedGitFirst(dir string, heavy bool, l configListing, args ...string) (
 	return hardenedGitCombined(ctx, dir, heavy, &l, args...)
 }
 
-// gitDirWorkTreeToplevel runs `git --git-dir=<gitDir> config -z --list`, then the light
+// gitDirWorkTreeToplevel runs `git --git-dir=<gitDir> config -z --list`, then the heavy
 // `git -c … --git-dir=<gitDir> --work-tree=<workTree> rev-parse --show-toplevel`. Both
-// run in gitDir and carry pin. It returns the answer of the second call. 89cb6289 runs
-// this pair in git.info on Windows (row W01) and in git.worktree_create after a
+// run in gitDir and carry pin. It returns the answer of the second call. 89cb6289
+// runs this pair in git.info on Windows (row W01) and in git.worktree_create after a
 // mismatched admin record (row I07a, macOS VM).
+//
+// 5fd08069 sends the 28 items and the six heavy variables on both calls (s3-linux
+// cell B1, Linux VM, and cell 50 of s3p2b-edges, macOS and Windows VMs). 89cb6289
+// sends the light profile there.
 func gitDirWorkTreeToplevel(gitDir, workTree string, pin []string) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	userExcludesFile()
-	hooks := runListing(ctx, gitDir, gitDir, precursorEnv(false, pin)).hooks()
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false,
+	hooks := runListing(ctx, gitDir, gitDir, precursorEnv(true, pin)).hooks()
+	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true,
 		"--git-dir="+gitDir, "--work-tree="+workTree, "rev-parse", "--show-toplevel")...)
 	cmd.Dir = gitDir
-	cmd.Env = hardenedGitEnv(false, pin, hooks)
+	cmd.Env = hardenedGitEnv(true, pin, hooks)
 	out, err := cmd.Output()
 	return strings.TrimRight(string(out), "\r\n"), err
 }
