@@ -313,7 +313,7 @@ func runGitSlow(args []string) int {
 	}
 	slow := false
 	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH"); m != "" {
-		slow = stubMatches(args, m)
+		slow = stubMatches(args, m) && stubNarrowed(args)
 	}
 	mode := os.Getenv("CLAUSTRUM_GITSTUB_MODE")
 	pause := func() {
@@ -404,6 +404,23 @@ func runGitSlow(args []string) int {
 		}
 	}
 	return code
+}
+
+// stubNarrowed reports whether a call passes the two narrowing options of the first
+// rule. CLAUSTRUM_GITSTUB_ARGEND keeps only a call with an argument that ends with
+// that text. CLAUSTRUM_GITSTUB_ENVEND has the form NAME=text and keeps only a call
+// whose variable NAME ends with text. A call with no such variable does not pass.
+func stubNarrowed(args []string) bool {
+	if end := os.Getenv("CLAUSTRUM_GITSTUB_ARGEND"); end != "" &&
+		!slices.ContainsFunc(args, func(a string) bool { return strings.HasSuffix(a, end) }) {
+		return false
+	}
+	if name, end, ok := strings.Cut(os.Getenv("CLAUSTRUM_GITSTUB_ENVEND"), "="); ok {
+		if v, set := os.LookupEnv(name); !set || !strings.HasSuffix(v, end) {
+			return false
+		}
+	}
+	return true
 }
 
 // stubMatches reports whether every word of the comma-separated match is an exact
