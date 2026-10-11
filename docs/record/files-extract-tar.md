@@ -673,8 +673,35 @@ The text compare refuses a dot or a space after home because the path is
 resolved first. It answers true for `<home>.` and for `<home>` with a space,
 and false for `\\?\<home>` and for `\\?\<home>.`
 (`TestWipesHomeDirWindowsSpellings`, Windows VM). These rows are runs of the
-test binary with a temp home and a stubbed wipe. No daemon cell measured them,
-and no reference build is measured with these spellings of the home folder.
+test binary with a temp home and a stubbed wipe.
+
+A Windows VM also ran 17 cells on a running daemon, one run each: a claustrum
+build with this guard, `89cb6289` and `5fd08069`. The home folder of each
+daemon was a temp folder with three old files. claustrum answers the home
+refusal of the method in the 16 cells of this table. The temp home keeps its
+three files there and gets no new entry:
+
+| `destDir` | the archive on claustrum | `89cb6289` | `5fd08069` |
+|---|---|---|---|
+| a dot after home | stays | extracts into home, the old files stay | wipes home and extracts |
+| `<home>` with a space after it, `<home>..`, `<home>. .` | stays | `create ok.txt:` error, home stays | wipes home and extracts |
+| a dot after the folder above home | stays | wipes home and extracts | the same |
+| `\\?\` before home | gone | wipes home and extracts | the same |
+| `\\?\` before home, with a dot or a space after home | gone | makes a folder with that dot or space beside home and extracts there | wipes home and extracts |
+| `\\.\` before home, the `\\localhost\C$\` form of home, the short 8.3 name of home | gone | wipes home and extracts | the same |
+| home in upper case, home, `~`, `~/` | stays | wipes home and extracts | the same |
+| the folder above home | stays | wipes that folder, with home in it, and extracts | the same |
+
+Seven of these cells are also rows of
+`TestFilesExtractTarRefusesWindowsSpellingsOfHome`, and the archive state is
+the same on the daemon. That test has no row for `<home>..`, `<home>. .`,
+`\\.\` and the `\\localhost\C$\` form. For home, `~`, `~/`, upper case and the
+folder above home, no test shows the archive state. A folder two levels below
+home is the 17th cell: all three wipe that folder and extract there.
+
+No reference build answers the home refusal in a cell. `89cb6289` fails three
+cells with the `create ok.txt:` text. That is D2: `5fd08069` wipes the home
+folder in each of the 16 cells, and `89cb6289` in 10 of them.
 
 claustrum creates the directories and the files of the entries
 through a handle of `destDir`, and it creates each file exclusively. The texts
@@ -737,15 +764,16 @@ build equals the build before it in 25 Windows cells. No VM has run
   over the path limit.
 - `89cb6289` with a `destDir` that is a link and has a separator after its
   name, on macOS.
-- The home refusals of the test by identity, on a running daemon. No VM cell
-  has a home folder as the target. The tests of claustrum hold these refusals.
+- The home refusals of the test by identity, on a running daemon, on Linux and
+  macOS. The tests of claustrum hold these refusals there. The Windows cells
+  ran one time each.
 - The texts `open parent:` and `mkdir destDir: mkdirat` on Windows. For a
   permission error at the lstat of the last name, claustrum answers
   `clean destDir: RemoveAll <name>: <reason>` on Windows (from the code).
 - The code after the `open parent:` fix, on macOS and Windows. The rows of
   claustrum there are from builds before it.
 - A `destDir` that names the home folder by a spelling that the text compare
-  does not see, on a reference build.
+  does not see, on a reference build, on Linux and macOS.
 - A Windows access list that denies the delete of an old entry. The daemons ran
   with an administrator token, and the deny entry did not hold for it.
 - A folder above `destDir` that cannot be made by a permission, on Windows.
