@@ -83,7 +83,7 @@ To use the method, read [git.worktree_create](../protocol/git-worktree-create.md
   and the real commit, and ancestry is the real ancestry, even when `refs/replace`
   or `info/grafts` name others. This is measured against `f6010b97`. claustrum
   runs every git step of this method with `GIT_NO_REPLACE_OBJECTS=1` and
-  `GIT_GRAFT_FILE=<null>`, except `rev-parse --absolute-git-dir`. See
+  `GIT_GRAFT_FILE=<null>`. See
   [Hardened git calls](../PROTOCOL.md#hardened-git-calls).
 - By default, with no `worktreeRoot`, `7d193f89` confines the worktree to inside
   the repository. After the repo

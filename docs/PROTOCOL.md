@@ -2151,8 +2151,9 @@ later build of this change. A line with "from the code" ran on no VM.
 
 The git methods run most git steps as hardened calls. A hardened call carries a fixed
 set of `-c` options and a fixed set of environment variables. This shape is off the
-wire. The reply frames do not depend on it. A logging git wrapper measured each point
-below against `f6010b97`. Each point names the VMs that measured it.
+wire. A logging git wrapper measured each point below against `f6010b97`. The
+profiles, the option lists and the heavy calls are those of `5fd08069`. Each point
+names the VMs that measured it.
 
 - Working directory. Each hardened call runs with the repository directory as its
   working directory, and it passes no `-C`. The checkout of `git.worktree_create`
@@ -2163,18 +2164,58 @@ below against `f6010b97`. Each point names the VMs that measured it.
   `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_TERMINAL_PROMPT=0`, `GIT_NO_REPLACE_OBJECTS=1`
   and `GIT_GRAFT_FILE=<null>`. The daemon's own `GIT_ALLOW_PROTOCOL` changes the
   first value (see the next section). The heavy variables are, in this order,
-  `GIT_NO_LAZY_FETCH=1`, `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty
-  `GIT_ASKPASS` and `GIT_TERMINAL_PROMPT=0`. Then comes `GIT_COMMON_DIR` when the
+  `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=<null>`,
+  `GIT_ALLOW_PROTOCOL=denied_by_claude_ssh`, an empty `GIT_ASKPASS` and
+  `GIT_TERMINAL_PROMPT=0`. `5fd08069` sends these six in this order with
+  `"shadowDirOff":true` (cell B1 of round `s3-linux`, Linux VM). `89cb6289` sends
+  four: it has no `GIT_NO_REPLACE_OBJECTS` and no `GIT_GRAFT_FILE` there. Then comes
+  `GIT_COMMON_DIR` when the
   trust check pins it. Then come the hook pins, from `GIT_CONFIG_COUNT`: two base
   pins, and two for each hook name of the listing before the call (see below). The
   daemon's own `GIT_CONFIG_COUNT` moves them (see the next section).
   Linux, macOS and Windows VMs.
-- Heavy calls. `git status` and `rev-parse --absolute-git-dir` use the heavy
-  profile. Every other hardened call uses the light profile, except the calls of
-  [the branch step](#the-branch-step), which have their own variables. `git.status`
-  runs more heavy calls (see its section). Of the claustrum calls, only its `status`,
-  `ls-files` and `diff-index` calls add `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
-  Linux, macOS and Windows VMs.
+- Heavy calls. Every hardened call of `git.info`, `git.list_branches` and
+  `git.status` uses the heavy profile. So does each `rev-parse --absolute-git-dir`,
+  and the `--git-dir=<dir> --work-tree=<dir> rev-parse --show-toplevel` call with
+  its listing. `5fd08069` does so in cells B0 and B1 of round `s3-linux` (Linux VM)
+  and in cell 50 of round `s3p2b-edges` (macOS and Windows VMs). `89cb6289` runs
+  `git.info`, `git.list_branches` and that `rev-parse --show-toplevel` call with the
+  light profile. Every other hardened call uses the light profile, except the calls
+  of [the branch step](#the-branch-step), which have their own variables. Of the
+  claustrum calls, only the `status`, `ls-files` and `diff-index` calls of
+  `git.status` add `GIT_OPTIONAL_LOCKS=0`. The checkout adds `GIT_INDEX_FILE`.
+- Option lists. The heavy profile has 28 `-c` items and the light profile has 20,
+  as on `5fd08069` (the same cells). `89cb6289` sends 23 and 13. The heavy list is
+  `core.fsmonitor=false`, `core.hooksPath=/dev/null`,
+  `core.attributesFile=/dev/null`, `core.excludesFile=<file>`,
+  `core.longpaths=true`, `protocol.allow=never`, the same for `ext`, `fd`, `file`,
+  `git`, `ssh`, `http` and `https`, `credential.helper=`, `core.askPass=`,
+  `fetch.bundleURI=`, `core.alternateRefsCommand=`, `alias.remote-https=`,
+  `alias.remote-http=`, `alias.remote-ssh=`,
+  `alias.remote-denied_by_claude_ssh.command=`, `help.autocorrect=0`,
+  `submodule.recurse=false`, `fetch.recurseSubmodules=false`,
+  `push.recurseSubmodules=false`, `gc.auto=0`, `maintenance.auto=false` and
+  `core.commitGraph=false`. The light list is `core.hooksPath=/dev/null`,
+  `core.fsmonitor=false`, `branch.autoSetupMerge=false`, `fetch.bundleURI=`,
+  `http.saveCookies=false`, `core.alternateRefsCommand=`, the four `alias.remote-`
+  items, `help.autocorrect=0`, `core.excludesFile=<file>`, the three submodule
+  items, `gc.auto=0`, `maintenance.auto=false`, `advice.graftFileDeprecated=false`,
+  `worktree.useRelativePaths=false` and `core.longpaths=true`. The checkout adds
+  `core.splitIndex=false` and `core.commitGraph=false` after the light list. The
+  `rev-list` call of the branch step adds `core.commitGraph=false`.
+- Not equal to `5fd08069`. Without `"shadowDirOff":true`, the `rev-parse` and
+  `worktree add` calls of `git.worktree_create` carry the six heavy values on
+  `5fd08069` (cell B0 of round `s3-linux`, Linux VM, and cell 50 of round
+  `s3p2b-edges`, macOS and Windows VMs). The calls of the branch step carry them
+  too (cell 50, macOS and Windows VMs). claustrum sends the variables that
+  `5fd08069` sends with `"shadowDirOff":true`. Those are cell B1 for the create
+  and cell L8 of round `s3p2-linux2` for the branch step (Linux VM), and cell
+  G4-off-hook of round `s3p2-windows` for the create (Windows VM). In those cells
+  the checkout has no `lfs.storage` item, as on claustrum. Without the member the
+  checkout of `5fd08069` has that item first and one more listing before it. Not measured on `5fd08069`:
+  the profile of the calls of `sourceBranch`, of the copy steps, of `show-ref`, and
+  of the `worktree list` and the plain `rev-parse --show-toplevel` call with
+  `worktreeRoot`. claustrum keeps the light profile there.
 - Null device. `<null>` is `/dev/null` on Linux and macOS, and `NUL` on Windows.
   The same value goes into `-c core.excludesFile` when the user has no global
   excludes file. The `-c core.hooksPath` and `-c core.attributesFile` values stay
@@ -2228,10 +2269,10 @@ below against `f6010b97`. Each point names the VMs that measured it.
 - Hooks refusal check. The first listing of a method is the hooks refusal check. It
   is not an extra call. If it fails, the method answers by the class of the failure
   (see [Git-directory trust check](#git-directory-trust-check)). If it exceeds a
-  limit, the method answers the limit refusal (see Hook pins above). `git.info`,
-  `git.list_branches` and `git.worktree_create` run it with the light profile.
-  `git.status` and `git.worktree_remove` run it with the heavy profile. Linux, macOS
-  and Windows VMs. With `worktreeRoot`, `git.worktree_remove` runs a light check.
+  limit, the method answers the limit refusal (see Hook pins above).
+  `git.worktree_create` runs it with the light profile. `git.info`,
+  `git.list_branches`, `git.status` and `git.worktree_remove` run it with the heavy
+  profile. Linux, macOS and Windows VMs. With `worktreeRoot`, `git.worktree_remove` runs a light check.
   Later a heavy listing and `rev-parse --absolute-git-dir` follow. Linux VM.
 - Excludes read. Before its first listing, the daemon reads the user's
   `core.excludesFile` once, with `git config --includes --path core.excludesFile`.
@@ -2579,7 +2620,7 @@ check (Windows VM).
       `wiki` are accepted.
 - `defaultBranch` is what `refs/remotes/origin/HEAD` points to. It is empty when
   `refs/remotes/origin/HEAD` is unset. The daemon checks the name. A name that
-  starts with `-` gives `""` with no further call. Else a light `rev-parse --verify --quiet
+  starts with `-` gives `""` with no further call. Else a heavy `rev-parse --verify --quiet
   refs/remotes/origin/<name>^{commit}` runs, with its listing, and only exit 0 keeps
   the name. A dangling `origin/HEAD` and one that names a blob give `""` too.
   `f6010b97` and `89cb6289` do so on Linux and macOS VMs (rows I10a to I10c). Not
@@ -2613,8 +2654,10 @@ check (Windows VM).
   [Git-directory trust check](#git-directory-trust-check).
 - A config of `baseRepo` that the daemon does not accept answers `-32603` with a
   refusal text. See [Repository config refusals](#repository-config-refusals).
-- Status honours replace objects (`refs/replace`), as the reference does. A
-  replaced `HEAD` commit therefore shows in `changes`.
+- The status calls carry `GIT_NO_REPLACE_OBJECTS=1`, as on `5fd08069` (cell B1 of
+  round `s3-linux`, Linux VM). So status does not read replace objects
+  (`refs/replace`), and a replaced `HEAD` commit does not show in `changes`. That
+  frame is from the code. On `89cb6289` the calls have no such variable.
 
 **The gate.** The git call logs of `89cb6289` show no git call inside `path` before
 the gate decides. Its answers follow the worktree entries under the common directory
@@ -2686,7 +2729,7 @@ the read of the user's excludes.
      dot or space passes (rows D14dot and D14sp). Not measured: another
      component with such a name. claustrum refuses it too.
 5. Calls 4 and 5 run in the common directory: `--git-dir=<common> config -z --list`,
-   then the light `--git-dir=<common> --work-tree=<dir> rev-parse --show-toplevel`.
+   then the heavy `--git-dir=<common> --work-tree=<dir> rev-parse --show-toplevel`.
    - `<dir>` is `path` with its symlinks resolved (rows n06 and C12). When `path` lies
      inside `baseRepo` or is `baseRepo`, `<dir>` is `baseRepo` (rows A04, A05a, N05a,
      N05b, n07b, n08, n18b and K02b). An empty `path` gives `.` (rows n25d1 and
