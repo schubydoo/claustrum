@@ -1053,7 +1053,7 @@ func gitNamesOwnerProblem(dir string, heavy bool, probe string, bound time.Durat
 	defer cancelBase()
 	ctx, cancel := context.WithTimeout(base, bound)
 	defer cancel()
-	cmd := hardenedGitCmd(ctx, dir, heavy, &configListing{}, "rev-parse", probe)
+	cmd := hardenedGitCmd(ctx, gitUse{}, dir, heavy, &configListing{}, "rev-parse", probe)
 	cmd.Env = append(cmd.Env, "LC_ALL=C", "LANGUAGE=C")
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf

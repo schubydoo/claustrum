@@ -131,7 +131,10 @@ func TestShadowRepoSourceKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- f.h.syncRepo(trust.pinCommonDir, read) }()
+	go func() {
+		_, err := f.h.syncRepo(trust.pinCommonDir, read)
+		done <- err
+	}()
 	if err := syncInTime(done); err != nil {
 		t.Fatal(err)
 	}

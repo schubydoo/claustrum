@@ -64,6 +64,10 @@ type request struct {
 	// repoRead is the accepted read of the repository's config, in the state
 	// shadow. settingsGateRefusal sets it.
 	repoRead *repoVerdict
+	// use is how the git calls of the request name their repository (gitUse).
+	// It is the zero value until settingsGateRefusal accepted the repository in
+	// the state shadow.
+	use gitUse
 }
 
 type response struct {

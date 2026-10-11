@@ -322,7 +322,7 @@ func TestGitStatusPropagatesGitFailure(t *testing.T) {
 	}
 	// The fixture must make git itself fail, or the assertion below would be
 	// checking the wrong thing.
-	if _, err := hardenedGitStdout(wt, true, "status", "--porcelain"); err == nil {
+	if _, err := hardenedGitStdout(gitUse{}, wt, true, "status", "--porcelain"); err == nil {
 		t.Skip("this git build tolerates a corrupt worktree index")
 	}
 	s := newTestServer(t)

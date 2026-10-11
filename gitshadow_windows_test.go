@@ -9,14 +9,15 @@ import (
 )
 
 // TestShadowLockHasNoSharing pins the hold of the daemon on its lock file on
-// Windows. On a Windows VM every open of the lock file of a live 5fd08069
-// daemon with data access fails, with every share mode, and the file cannot be
+// Windows. A Windows VM measured the lock file of a live 5fd08069 daemon. Every
+// open with data access fails there, with every share mode. The file cannot be
 // removed. An open for attributes works (val-s3p2b2-1-windows row D2).
 //
-// A Windows run must show: os.OpenFile for a read and for a write both fail
-// while the daemon holds the file, os.Remove fails, os.Lstat works, and all
-// three work after the daemon closed the file. os.OpenFile shares read, write
-// and delete, so it is the open that the batch 1 build still let pass.
+// A Windows run must show four things while the daemon holds the file.
+// os.OpenFile fails for a read and for a write. os.Remove fails. os.Lstat
+// works. After the daemon closed the file, the open and the remove work.
+// os.OpenFile shares read, write and delete. So it is the open that passed
+// when the daemon held the file through os.OpenFile.
 func TestShadowLockHasNoSharing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), shadowLockName)
 	lock, err := openShadowLockFile(path)

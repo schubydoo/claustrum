@@ -105,15 +105,15 @@ func isClaudeRuntimeState(rel string) bool {
 // failure does not fail the request. A failed batch is skipped, and the other
 // batches still copy. The directory batches of the `.worktreeinclude` scan do
 // the same.
-func copyClaudeDir(repo, worktree string) {
-	copyClaudeDirCalls(repo, worktree, claudeDirPassCalls(repo, gitArgvBudget))
+func copyClaudeDir(u gitUse, repo, worktree string) {
+	copyClaudeDirCalls(u, repo, worktree, claudeDirPassCalls(repo, gitArgvBudget))
 }
 
 // copyClaudeDirCalls runs each argv of calls and copies the files it lists.
-func copyClaudeDirCalls(repo, worktree string, calls [][]string) {
+func copyClaudeDirCalls(u gitUse, repo, worktree string, calls [][]string) {
 	skipPrefix := claudeDirName + "/" + worktreesSubdir + "/"
 	for _, args := range calls {
-		out, err := hardenedGitStdout(repo, false, args...)
+		out, err := hardenedGitStdout(u, repo, false, args...)
 		if err != nil {
 			continue
 		}

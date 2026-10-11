@@ -34,24 +34,24 @@ var claudeConfigPathspecs = []string{":(top,icase).claude", ":(top,icase).mcp.js
 // A merge-base or diff that fails selects origin (measured). An ancestry check
 // that fails counts as "not an ancestor", and the merge-base step runs next. That
 // last case is inferred: the probe produced no ancestry-check error exit.
-func pickSourceCommit(repo, source string) string {
-	local := resolveCommit(repo, "refs/heads/"+source)
-	remote := resolveCommit(repo, "refs/remotes/origin/"+source)
+func pickSourceCommit(u gitUse, repo, source string) string {
+	local := resolveCommit(u, repo, "refs/heads/"+source)
+	remote := resolveCommit(u, repo, "refs/remotes/origin/"+source)
 	if local == "" || remote == "" {
 		return local + remote // the one that resolved, or "" when neither did (one is always "")
 	}
-	if _, ok := hardenedGit(repo, false, "-c", "core.commitGraph=false", "merge-base", "--is-ancestor", local, remote); ok {
+	if _, ok := hardenedGit(u, repo, false, "-c", "core.commitGraph=false", "merge-base", "--is-ancestor", local, remote); ok {
 		return remote
 	}
 	// stdout only: see resolveCommit.
-	base, err := hardenedGitStdout(repo, false, "-c", "core.commitGraph=false", "merge-base", remote, local)
+	base, err := hardenedGitStdout(u, repo, false, "-c", "core.commitGraph=false", "merge-base", remote, local)
 	if err != nil {
 		return remote
 	}
 	args := append([]string{"-c", "core.commitGraph=false", "-c", "diff.relative=false",
 		"diff", "--quiet", "--no-ext-diff", "--no-textconv", "--submodule=short",
 		strings.TrimSpace(base), local, "--"}, claudeConfigPathspecs...)
-	if _, ok := hardenedGit(repo, false, args...); !ok {
+	if _, ok := hardenedGit(u, repo, false, args...); !ok {
 		return remote
 	}
 	return local
@@ -66,8 +66,8 @@ func pickSourceCommit(repo, source string) string {
 // Each step of the start-commit choice passes -c core.commitGraph=false, and the
 // diff also passes -c diff.relative=false, after the hardened profile. That is the
 // argv measured against f6010b97.
-func resolveCommit(repo, ref string) string {
-	out, err := hardenedGitStdout(repo, false, "-c", "core.commitGraph=false", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+func resolveCommit(u gitUse, repo, ref string) string {
+	out, err := hardenedGitStdout(u, repo, false, "-c", "core.commitGraph=false", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
 	if err != nil {
 		return ""
 	}

@@ -180,7 +180,7 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 // skips the leaf and adds no leaf text. The leaf then stays, so a kept branch gets
 // its text without the "the worktree itself was removed, but " start. That is
 // claustrum's own guard (not measured): no honest input reaches it.
-func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint, tested testedRegistration) (text string, kept bool) {
+func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktreeCheckpoint, tested testedRegistration) (text string, kept bool) {
 	// Without tested, the admin dir is found through the leaf's .git file, which
 	// step A deletes.
 	var registration createdRegistration
@@ -210,7 +210,7 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 		regErr = removeCreatedRegistration(registration)
 	}
 	if regErr == nil {
-		res = runBranchStep(repo, branch)
+		res = runBranchStep(u, repo, branch)
 	}
 	var parts []string
 	leafGone := false

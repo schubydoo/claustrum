@@ -450,19 +450,23 @@ func baseRepoLockRefusal(repo, commonDir, gitDir, path, worktreePath string, sp 
 // zero value runs nothing.
 //
 // When the daemon's environment sets no GIT_COMMON_DIR, both calls carry
-// GIT_COMMON_DIR=<gitDir> (row D-subst).
+// GIT_COMMON_DIR=<gitDir> (row D-subst). In the state shadow (use) they carry
+// GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<git directory>/objects. They
+// have no GIT_DIR and no GIT_WORK_TREE. 5fd08069 sends them so without
+// "shadowDirOff" (val-s3p2b1-linux table A6, Linux VM).
 type registrationProbe struct {
+	use      gitUse
 	gitDir   string
 	workTree string
 }
 
 // newRegistrationProbe makes the probe for the answer answered, or the zero value
 // when the call gave no answer.
-func newRegistrationProbe(answered, workTree string) registrationProbe {
+func newRegistrationProbe(u gitUse, answered, workTree string) registrationProbe {
 	if answered == "" {
 		return registrationProbe{}
 	}
-	return registrationProbe{gitDir: filepath.FromSlash(answered), workTree: workTree}
+	return registrationProbe{use: u, gitDir: filepath.FromSlash(answered), workTree: workTree}
 }
 
 // run makes the two calls and returns the answer of the second, or "".
@@ -473,6 +477,9 @@ func (r registrationProbe) run() string {
 	var pin []string
 	if !daemonCommonDirSet() {
 		pin = []string{"GIT_COMMON_DIR=" + r.gitDir}
+		if r.use.shadow() {
+			pin = r.use.commonVars()
+		}
 	}
 	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin)
 	if err != nil {
@@ -509,9 +516,9 @@ func inRepoWorkTree(repo string) string {
 // repo once more. 89cb6289 makes these two calls when the `.git` file of the worktree
 // names a git dir that is not a verified entry (probe rows 1, 3, 4, 6, 12, 13 and 14).
 // claustrum does not use the answer.
-func repeatRepositoryCheck(repo string) {
-	if c := hostileConfigRefusal(repo, true); !c.refused() {
-		noRepositoryAt(repo, c.listing)
+func repeatRepositoryCheck(u gitUse, repo string) {
+	if c := hostileConfigRefusal(u, repo, true); !c.refused() {
+		noRepositoryAt(u, repo, c.listing)
 	}
 }
 

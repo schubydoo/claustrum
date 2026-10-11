@@ -235,9 +235,9 @@ func TestShadowCallBound(t *testing.T) {
 // add` that the bound ended: the second add runs, and the test failed with the
 // text of the ended call, also when the second add works. The state is not
 // fallback-git, no state line is logged, and a request after the kept time
-// tests again. On a Windows VM 5fd08069 answers so in 4 of 4 runs, with `exit
-// status 1` as the text of the ended call (val-s3p2b2-1-windows cell
-// Q-S4h-hold32-worktree-add). On a macOS VM the cause ends with `signal:
+// tests again. On a Windows VM 5fd08069 answers so in 4 of 4 runs
+// (val-s3p2b2-1-windows cell Q-S4h-hold32-worktree-add). The text of the ended
+// call is `exit status 1` there. On a macOS VM the cause ends with `signal:
 // killed` (val-s3p2b2-1-macos section S4), as here.
 func TestShadowEndedAddNeverGivesFallback(t *testing.T) {
 	f := newShadowFixture(t)

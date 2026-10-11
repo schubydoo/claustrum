@@ -258,7 +258,7 @@ func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
 	if !t.noRepoPinned() {
 		return ""
 	}
-	return hostileConfigRefusal(dir, heavy).refusal
+	return hostileConfigRefusal(gitUse{}, dir, heavy).refusal
 }
 
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
@@ -289,14 +289,14 @@ func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
 // The names match by exact letter case, also on Windows, where the names of the
 // environment have no case. So a lower-case git_config_count or git_config_global
 // of the daemon stays on the call there. Not measured.
-func gitVersionRun(heavy bool) listingRun {
+func gitVersionRun(u gitUse, heavy bool) listingRun {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "version")
 	cmd.Dir = gitVersionDir
 	env := withoutConfigCountSet(listingEnvBase())
 	env = slices.DeleteFunc(env, func(kv string) bool { return envName(kv) == "GIT_CONFIG_GLOBAL" })
-	cmd.Env = append(env, profileEnv(heavy)...)
+	cmd.Env = append(env, u.profileEnv(heavy)...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
@@ -318,8 +318,8 @@ func gitVersionRun(heavy bool) listingRun {
 // Every caller of this function gets that text. Three callers have no row with a
 // `git version` that fails: the two later listings of git.status (statusWorkTreeProbe
 // and statusRun.git) and unenterableBaseListing.
-func failedListingText(r listingRun, heavy bool) string {
-	if v := gitVersionRun(heavy); v.err != nil {
+func failedListingText(u gitUse, r listingRun, heavy bool) string {
+	if v := gitVersionRun(u, heavy); v.err != nil {
 		return gitCannotRunPrefix + v.detail()
 	}
 	return hooksRefusalPrefix + r.detail()

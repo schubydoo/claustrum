@@ -25,8 +25,8 @@ import (
 //
 // This file holds the state, the folder of one daemon and the start test.
 // gitshadowrepo.go holds the folder of one repository, and gitshadowconfig.go the
-// text of the copied settings. The git calls of the methods do not use the
-// folders yet.
+// text of the copied settings. gitshadowuse.go holds the variables that point a
+// git call at the folder of a repository.
 
 // The values of the member settingsControl of a git.info result. 5fd08069 sends
 // these three (s3-linux cells A1 and B1, s3p2-oldgit cell O1, Linux VM).
@@ -648,9 +648,10 @@ const (
 )
 
 // makeShadowTestCopy makes the folder `shadow` of the test for the repository
-// at gitDir, before call 6: HEAD and config with their first texts, the three
-// empty folders, the folder `worktrees` of the repository and, where the system
-// links (shadowLinksWorktrees), the link `worktrees` to it.
+// at gitDir, before call 6. It holds HEAD and config with their first texts
+// and the three empty folders. The call also makes the folder `worktrees` of
+// the repository. Where the system links (shadowLinksWorktrees), `shadow` gets
+// the link `worktrees` to it.
 //
 // A poll of 2 ms on a Linux VM saw all of these at one time, before call 6, on
 // 5fd08069: HEAD with 25 bytes, config with 61 bytes, `info`, `objects`, `refs`
@@ -745,9 +746,23 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 		return msg
 	}
 	// The repository is accepted: the daemon makes its folder or brings it up to
-	// date (syncRepo). No git call reads the folder yet, so an error there does
-	// not end the request. Its text on 5fd08069 is not measured.
+	// date (syncRepo), and the git calls of the request name it from here on
+	// (gitUse). If that step fails, the request is refused, so no call runs
+	// against a folder that is not complete. The text is claustrum's own: no row
+	// of 5fd08069 has a failure of this step.
 	req.repoRead = read
-	_ = req.shadow.syncRepo(t.pinCommonDir, read)
+	use, err := req.shadow.syncRepo(t.pinCommonDir, read)
+	if err != nil {
+		return shadowRepoFailureText(err)
+	}
+	req.use = use
 	return ""
+}
+
+// shadowRepoFailureText is the refusal of a request whose folder of the
+// repository cannot be made or brought up to date. The text is claustrum's own
+// (settingsGateRefusal).
+func shadowRepoFailureText(err error) string {
+	return "Claude could not prepare its own copy of this repository's git settings on the remote machine (" +
+		err.Error() + "). Check free disk space and quota there, then try again."
 }

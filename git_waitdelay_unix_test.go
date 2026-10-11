@@ -97,11 +97,11 @@ func TestWorktreeCreateLingeringDescendant(t *testing.T) {
 	// before the checkout finishes instead of inside the drain.
 	stubLingeringGit(t, true, "0")
 	warm := t.TempDir()
-	hardenedGit(warm, false, "rev-parse", "--is-inside-work-tree")
+	hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
 	var spawn2 time.Duration
 	for i := 0; i < 3; i++ {
 		t0 := time.Now()
-		hardenedGit(warm, false, "rev-parse", "--is-inside-work-tree")
+		hardenedGit(gitUse{}, warm, false, "rev-parse", "--is-inside-work-tree")
 		spawn2 = max(spawn2, time.Since(t0))
 	}
 

@@ -118,7 +118,7 @@ func TestWorktreeIncludeSkipsClaudeRuntimeState(t *testing.T) {
 	isolateGitConfig(t)
 	repo, wt := claudeRuntimeStateFixture(t)
 	runGit(t, repo, "worktree", "add", "-b", "b1", wt)
-	populateWorktree(repo, wt)
+	populateWorktree(gitUse{}, repo, wt)
 
 	// The controls that must keep passing. Without them a mutant that copies
 	// nothing at all under `.claude/` would look correct.

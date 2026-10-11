@@ -346,8 +346,9 @@ func TestShadowFolderLife(t *testing.T) {
 	if names := daemonFolders(t, f.run); names == nil || len(names) != 0 {
 		t.Errorf("git-shadow after the end holds %v, want an empty folder", names)
 	}
-	// A request after the end makes no folder again.
-	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":true`) {
+	// A request after the end makes no folder again. It is refused, because its
+	// git calls have no copy to name (TestShadowRepoFailureInTheShutdown).
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, "the daemon is in its shutdown") {
 		t.Errorf("git.info after the end = %s", raw)
 	}
 	if names := daemonFolders(t, f.run); len(names) != 0 {
@@ -618,8 +619,9 @@ func TestShadowDeleteRefusesHome(t *testing.T) {
 // folder `shadow` of the start test, and the step of each. 5fd08069 writes
 // `ref: refs/heads/.invalid` and a config of 61 bytes first. Later it writes the
 // HEAD of `real` and the text of the copied settings with the helper.check
-// block (val-s3p2b2-1-linux section 1.3, val-s3p2b2-1-macos rows D1 and D2,
-// val-s3p2b2-1-windows row D3). The first texts are there at call 6. claustrum
+// block. The rows are section 1.3 of val-s3p2b2-1-linux, D1 and D2 of
+// val-s3p2b2-1-macos and D3 of val-s3p2b2-1-windows. The first texts are there
+// at call 6. claustrum
 // has the second texts from call 8 on: the records fix only that they come
 // before the end of call 9. The folder `worktrees` of `real` is there before
 // call 10 on every system (the same rows).

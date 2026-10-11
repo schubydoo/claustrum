@@ -134,7 +134,7 @@ func statusNoRepoCalls(baseRepo string, noGit bool) string {
 	pin := []string{"GIT_DIR=" + os.DevNull}
 	r := runListing(ctx, baseRepo, "", precursorEnv(true, pin))
 	if r.err != nil && !noGit {
-		if c := failedListingCheck(r, baseRepo, true); c.refusal != "" {
+		if c := failedListingCheck(gitUse{}, r, baseRepo, true); c.refusal != "" {
 			return c.refusal
 		}
 	}
@@ -277,7 +277,7 @@ func statusWorkTreeProbe(common, workTree string, pin []string) (ok bool, err er
 	defer cancel()
 	l := runListing(ctx, common, common, precursorEnv(true, pin))
 	if l.err != nil {
-		return false, statusRefusal(failedListingText(l, true))
+		return false, statusRefusal(failedListingText(gitUse{}, l, true))
 	}
 	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true,
 		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel")...)
@@ -653,22 +653,19 @@ func statusCopyFile(root *os.Root, name, dst string, max int64) error {
 	return chtimesStatusFile(dst, fi.ModTime(), fi.ModTime())
 }
 
-// buildStatusGitDir makes the temporary git folder of one request and returns its
-// path. It holds copies of `HEAD` and `index` of the entry and a `commondir` file
+// buildStatusGitDir fills tmp, the temporary git folder of one request
+// (gitUse.requestDir). It holds copies of `HEAD` and `index` of the entry and a `commondir` file
 // that names the common directory (row K1). It also holds `config.worktree` when the
 // entry has one (rows n12 and o17), `info/sparse-checkout` (row o17) and each
 // `sharedindex.*` file (rows o16b1 and o16b2). For a reftable repository it holds the
 // files that statusReftable returned (rows o19a and r1, macOS VM). A file that the
 // entry does not hold is left out
-// (row o15d). Any other failure is returned. The caller removes the folder.
+// (row o15d). Any other failure is returned. The caller makes and removes the
+// folder.
 //
 // git needs the `commondir` file to resolve a branch HEAD against the refs of the
 // repository. GIT_COMMON_DIR alone is not enough for that.
-func buildStatusGitDir(e statusEntry, common string) (string, error) {
-	tmp, err := os.MkdirTemp("", statusGitDirTempPrefix)
-	if err != nil {
-		return "", err
-	}
+func buildStatusGitDir(e statusEntry, common, tmp string) error {
 	root := e.root
 	type item struct {
 		name string
@@ -690,16 +687,13 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 	for _, it := range items {
 		dst := filepath.Join(tmp, filepath.FromSlash(it.name))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-			return tmp, err
+			return err
 		}
 		if err := copyStatusFile(root, it.name, dst, it.max); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return tmp, err
+			return err
 		}
 	}
-	if err := writeStatusFile(filepath.Join(tmp, "commondir"), []byte(common+"\n"), 0o600); err != nil {
-		return tmp, err
-	}
-	return tmp, nil
+	return writeStatusFile(filepath.Join(tmp, "commondir"), []byte(common+"\n"), 0o600)
 }
 
 // statusRun runs the git commands of one answer.
@@ -720,9 +714,19 @@ type statusRun struct {
 // and get no pin. The calls in the temporary folder always get
 // GIT_COMMON_DIR=<common> (rows E07a and E07b, Linux and macOS VMs). No other git
 // variable was in the daemon's environment in those rows.
-func statusCommonPin(common string) []string {
+//
+// In the state shadow (u) those calls and the calls in the temporary folder
+// carry GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<git directory>/objects,
+// with no GIT_DIR and no GIT_WORK_TREE. 5fd08069 sends them so in all 19 calls
+// after the first two of a git.status (val-s3p2b1-linux cell A1, Linux VM). The
+// `commondir` file of the temporary folder still names the git directory of the
+// repository (cell 22 of s3p2b-edges, Windows VM).
+func statusCommonPin(u gitUse, common string) []string {
 	if daemonCommonDirSet() {
 		return nil
+	}
+	if u.shadow() {
+		return u.commonVars()
 	}
 	return []string{"GIT_COMMON_DIR=" + common}
 }
@@ -783,7 +787,7 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	switch {
 	case l.err == nil:
 	case errors.As(l.err, &exit):
-		return nil, statusRefusal(failedListingText(l, true))
+		return nil, statusRefusal(failedListingText(gitUse{}, l, true))
 	default:
 		// git did not start, for example because `path` as sent does not open. The
 		// answer is the hooks refusal with the start error, and no `git version`
@@ -818,19 +822,23 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 // The status runs in a temporary git folder, so it never writes the index of the
 // worktree. On Windows the three commands with GIT_OPTIONAL_LOCKS=0 get
 // statusExcludesFile as their core.excludesFile value. That is the divergence D16.
-func statusChanges(path, common string, e statusEntry) ([]string, error) {
+func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, error) {
 	attrSource := attrSourceArgs() != nil
-	tmp, err := buildStatusGitDir(e, common)
-	if tmp != "" {
-		defer func() { _ = os.RemoveAll(tmp) }()
-	}
+	tmp, removeTmp, err := u.requestDir(shadowStatusDirPrefix, statusGitDirTempPrefix)
 	if err != nil {
+		return nil, err
+	}
+	defer removeTmp()
+	if err := buildStatusGitDir(e, common, tmp); err != nil {
 		return nil, err
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
 	r := &statusRun{ctx: ctx, path: path, common: common, tmp: tmp,
-		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(common), attrSource: attrSource}
+		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource}
+	if u.shadow() && !daemonCommonDirSet() {
+		r.pin = r.commonPin
+	}
 	excludes := statusExcludesFile()
 
 	porcelain, err := r.git(true, excludes, "status", "--porcelain",

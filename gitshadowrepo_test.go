@@ -54,7 +54,7 @@ func (f repoFolderFixture) sync(t *testing.T, dir string) string {
 	if trust.verdict != gitDirTrusted || v == nil || v.refusal != "" || v.filesRefusal != "" {
 		t.Fatalf("the fixture in %s is not accepted: %+v", dir, v)
 	}
-	if err := f.h.syncRepo(trust.pinCommonDir, v); err != nil {
+	if _, err := f.h.syncRepo(trust.pinCommonDir, v); err != nil {
 		t.Fatal(err)
 	}
 	return filepath.Join(f.h.dir, shadowRepoName(trust.pinCommonDir))

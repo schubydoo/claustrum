@@ -13,10 +13,10 @@ import (
 const shadowLinksWorktrees = false
 
 // openShadowLockFile makes the lock file of the daemon (0 bytes) and opens it
-// with no sharing. The open handle is the hold. On a Windows VM every open of
-// the lock file of a live 5fd08069 daemon with data access fails, with every
-// share mode, and so does an open with delete access. An open for attributes
-// works (val-s3p2b2-1-windows row D2). The file cannot be removed
+// with no sharing. The open handle is the hold. A Windows VM measured the lock
+// file of a live 5fd08069 daemon. Every open with data access fails there, with
+// every share mode. An open with delete access fails too. An open for
+// attributes works (val-s3p2b2-1-windows row D2). The file cannot be removed
 // (s3-windows cell B6). A handle that os.OpenFile makes shares read and write,
 // so the open is made here.
 func openShadowLockFile(path string) (*os.File, error) {

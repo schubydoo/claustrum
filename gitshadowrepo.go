@@ -13,8 +13,8 @@ import (
 
 // The folder of one repository in the folder of the daemon, as 5fd08069 keeps
 // it: <S>/<32 hex>. It holds the daemon's own copy of the settings of the
-// repository and of a few more files of its git directory. In this build no git
-// call reads the folder yet.
+// repository and of a few more files of its git directory. The git calls of a
+// request name it in their variables (gitUse).
 //
 // Every write goes through an os.Root at the folder of the daemon or at the
 // folder of the repository, with a name that the daemon builds itself. Every
@@ -145,18 +145,36 @@ func readShadowSource(path string, max int64, cut bool) (data []byte, ok bool) {
 // `touch` of the config with the same text makes a new read. Whether 5fd08069
 // writes a new file then is not measured: claustrum does.
 //
-// An error leaves the folder as far as it got. No git call reads it yet, so
-// the request goes on. A HEAD that cannot be read makes no folder (not
-// measured).
-func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) error {
+// It returns how the git calls of the request name the repository: the folder
+// that it made or checked. An error leaves the folder as far as it got, and
+// the request must not go on to a git call (settingsGateRefusal). A HEAD that
+// cannot be read makes no folder. A daemon in its shutdown, and a folder of
+// the daemon that is gone and cannot be made again, give an error too. None of
+// the three is measured.
+func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) {
 	h.repoMu.Lock()
 	defer h.repoMu.Unlock()
 	h.mu.Lock()
-	dir, closed := h.dir, h.closed
-	h.mu.Unlock()
-	if closed || dir == "" {
-		return nil
+	if h.closed {
+		h.mu.Unlock()
+		return gitUse{}, errors.New("the daemon is in its shutdown")
 	}
+	if h.dir == "" {
+		if err := h.makeFolder(); err != nil {
+			h.mu.Unlock()
+			return gitUse{}, err
+		}
+	}
+	dir := h.dir
+	h.mu.Unlock()
+	name := shadowRepoName(gitDir)
+	use := gitUse{host: h, folder: dir, gitDir: gitDir, repoDir: filepath.Join(dir, name)}
+	return use, h.syncRepoFolder(dir, name, gitDir, read)
+}
+
+// syncRepoFolder is the work of syncRepo on the folder name in dir, the folder
+// of the daemon. The caller holds repoMu.
+func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict) error {
 	if h.repos == nil {
 		h.repos = map[string]*shadowRepo{}
 	}
@@ -170,7 +188,6 @@ func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) error {
 	}
 	defer func() { _ = base.Close() }()
 
-	name := shadowRepoName(gitDir)
 	st := h.repos[name]
 	root, err := base.OpenRoot(name)
 	if errors.Is(err, fs.ErrNotExist) {

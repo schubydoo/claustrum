@@ -196,6 +196,7 @@ component_management:
         - gitshadow.go
         - gitshadowconfig.go
         - gitshadowrepo.go
+        - gitshadowuse.go
         - gitshadow_unix.go
         - gitshadow_windows.go
         # the gate and the answer of git.status (89cb6289).
