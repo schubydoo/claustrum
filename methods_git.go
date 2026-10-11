@@ -169,7 +169,7 @@ func gitCtx() (context.Context, context.CancelFunc) {
 // below. It once carried the failure text of git.worktree_create, whose `git
 // worktree add` writes both its progress and its fatal to stderr while leaving
 // stdout empty. git.worktree_create now quotes stderr only, through
-// hardenedGitStderr and worktreeGitText (measured against f6010b97 and 90fca6e6:
+// worktreeAdd and worktreeGitText (measured against f6010b97 and 90fca6e6:
 // stdout never shows in those frames).
 //
 // This helper's remaining callers fall into two groups, and only the first
@@ -312,7 +312,7 @@ func gitInfo(req *request) response {
 	if t.verdict == gitDirNoRepo {
 		// A listing that fails here refuses (rows A-N1 and A-X2 on Linux and macOS VMs,
 		// cells P3-infoN and P3-infoX on a Windows VM).
-		if msg := noRepoListingRefusal(t, p.Path, true); msg != "" {
+		if msg := noRepoInfoCalls(t, p.Path); msg != "" {
 			return errResult(req.ID, codeInternal, msg)
 		}
 		return notRepo()
@@ -346,7 +346,11 @@ func gitInfo(req *request) response {
 	if walkRoot == "" {
 		return notRepo()
 	}
-	top := gitInfoRoot(walkRoot, walkGitDir, req.use.gitDirPin(p.Path))
+	copyOf := ""
+	if _, ok := req.use.names(p.Path); ok {
+		copyOf = req.use.gitDir
+	}
+	top := gitInfoRoot(walkRoot, walkGitDir, copyOf, req.use.gitDirPin(p.Path))
 	// slug and defaultBranch come before the branch, matching the reference order.
 	slug := gitRepoSlug(req.use, p.Path)
 	defBranch := gitDefaultBranch(req.use, p.Path)
@@ -362,8 +366,13 @@ func gitInfo(req *request) response {
 	case !ok:
 		branch = ""
 	case branch == "":
-		sha, _ := hardenedGit(req.use, p.Path, true, "rev-parse", "--short", "HEAD")
-		branch = "detached:" + sha
+		// A `rev-parse --short HEAD` that fails gives no `branch` member either.
+		// On a Windows VM that call exits 128 in a files repository with
+		// `extensions.refStorage = reftable` and format version 1, and the reply
+		// of 5fd08069 has no `branch` (cell V6-13d of val-s3p2b2-3-windows).
+		if sha, ok := hardenedGit(req.use, p.Path, true, "rev-parse", "--short", "HEAD"); ok {
+			branch = "detached:" + sha
+		}
 	}
 	return okResult(req.ID, gitInfoResult{
 		IsRepo:        true,
@@ -749,6 +758,7 @@ func gitWorktreeCreate(req *request) response {
 		return errResult(req.ID, codeInvalidParam, "branchName is required")
 	}
 	repo := p.repoDir()
+	defer req.runAtReply()
 	return withWorktreeRepoLock(repo, func() response {
 		return gitWorktreeCreateLocked(req, &p, repo)
 	})
@@ -1088,7 +1098,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The caller's deadline does not kill the add. The daemon waits for git to exit.
 	// Measured against f6010b97 and 90fca6e6 on a macOS VM. Each failure frame quotes
 	// git's stderr through worktreeGitText.
-	addStderr, addErr := hardenedGitStderr(d5Ctx, req.use.ownConfigCalls(), repo, false, addArgs...)
+	addStderr, addErr := worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
 	if addErr != nil && attachBranch != "" {
 		// A refused attach falls back to a new branch, unless the failed attach add
 		// deleted the leaf or put a new directory in its place. Then the request
@@ -1114,7 +1124,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		if startCommit != "" {
 			fallbackArgs = append(fallbackArgs, startCommit)
 		}
-		addStderr, addErr = hardenedGitStderr(d5Ctx, req.use.ownConfigCalls(), repo, false, fallbackArgs...)
+		addStderr, addErr = worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, fallbackArgs...)
 		if addErr != nil {
 			undoFailedAdd(p.WorktreePath, checkpoint)
 			return okResult(req.ID, worktreeResult{
@@ -1444,9 +1454,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 		// refuses gets the work-tree refusal even when the directory level is a symlink.
 		// Measured side by side against f6010b97 on a Linux VM (rows K10, K11, K14 and
 		// K16 with a symlinked directory level).
-		// In the state fallback-git the daemon's own read of the config does not run
-		// (shadowHost.readsRepoConfig).
-		msg, topLevel := externalWorkTreeRefusal(repo, p.ShadowDirOff || jsonTrueSwitch(!req.shadow.readsRepoConfig()))
+		msg, topLevel := externalWorkTreeRefusal(req, repo, p.ShadowDirOff)
 		if msg != "" {
 			return refuse(msg)
 		}

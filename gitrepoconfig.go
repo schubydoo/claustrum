@@ -781,6 +781,14 @@ func gitDirFilesDetail(gitDir string, log *repoReadLog) string {
 	return ""
 }
 
+// gitDirFilesRefusal is gitDirFilesDetail with the prefix of its refusal, or "".
+func gitDirFilesRefusal(gitDir string) string {
+	if d := gitDirFilesDetail(gitDir, nil); d != "" {
+		return repoFilePrefix + d
+	}
+	return ""
+}
+
 // infoFileDetail tests info/attributes or info/exclude at path. The daemon does
 // not open the file. A FIFO and a directory are refused as not regular (cells C5
 // and X10), and a regular file of more than repoGitFileMaxBytes too (cells E6 and
@@ -868,12 +876,11 @@ type repoVerdictKey struct {
 // of the last call in which git named no problem with the owner, or the zero
 // time (repoOwnerAnswerKeep).
 type repoVerdict struct {
-	// refusal is the refusal of the config, with its prefix, or "". filesRefusal
-	// is that of another file of the git directory. The test of the
-	// `config.worktree` file of a linked worktree comes between them, in each
-	// request (repoConfigGate).
-	refusal      string
-	filesRefusal string
+	// refusal is the refusal of the config, with its prefix, or "". The test of
+	// the `config.worktree` file of a linked worktree and the tests of the other
+	// files of the git directory come after it, in each request
+	// (repoConfigGate).
+	refusal string
 	// worktreeConfig is true when the config has the worktreeConfig switch.
 	worktreeConfig bool
 	// shadowText is the text of the copy of the settings (shadowConfigText).
@@ -996,9 +1003,6 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 	default:
 		v.worktreeConfig = r.worktreeConfig
 		v.shadowText = shadowConfigText(r.settings, r.worktree)
-		if d := gitDirFilesDetail(t.pinCommonDir, &log); d != "" {
-			v.filesRefusal = repoFilePrefix + d
-		}
 	}
 	v.states = log.states
 	if !log.failed {
@@ -1140,7 +1144,12 @@ func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, p
 		}
 	}
 	if refusal == "" {
-		refusal = v.filesRefusal
+		// The tests of shallow, info/attributes and info/exclude run in each
+		// request and are no part of the kept read. On 5fd08069 a change of one of
+		// these files leads to no new read of the config and to no new copy of it
+		// (cells 19a to 19c of val-s3p2b2-3-linux, 15-19a to 15-19c of
+		// val-s3p2b2-3-macos and E15b of val-s3p2b2-3-windows).
+		refusal = gitDirFilesRefusal(t.pinCommonDir)
 	}
 	if refusal == "" {
 		return "", v

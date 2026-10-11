@@ -152,6 +152,18 @@ func (h *shadowHost) readsRepoConfig() bool {
 	return h.control(false) != controlFallback
 }
 
+// folderUse is how a request in the state fallback-git names its short-lived
+// folders: in the folder of the daemon, with no copy of a repository. It is the
+// zero value for a daemon in its shutdown or with no folder.
+func (h *shadowHost) folderUse() gitUse {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed || h.dir == "" {
+		return gitUse{}
+	}
+	return gitUse{host: h, folder: h.dir}
+}
+
 // gate runs before the first git call of a method in a repository that the trust
 // check accepted. It returns the text of a failed start test, or "".
 //
@@ -664,10 +676,7 @@ func makeShadowTestCopy(gitDir, shadowDir string) error {
 	if err := os.Mkdir(shadowDir, 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(shadowDir, "HEAD"), []byte(shadowTestFirstHead), 0o600); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(shadowDir, "config"), []byte(shadowTestFirstConfig), 0o600); err != nil {
+	if err := writeShadowTestFiles(shadowDir, []byte(shadowTestFirstHead), []byte(shadowTestFirstConfig)); err != nil {
 		return err
 	}
 	for _, name := range []string{"info", "objects", "refs"} {
@@ -697,18 +706,33 @@ func makeShadowTestCopy(gitDir, shadowDir string) error {
 // the test ends at call 9, and the poll saw both texts there
 // (val-s3p2b2-1-linux cells s6-*). So the write comes before the end of call
 // 9. claustrum writes right after call 7, whose listing the text needs, and
-// before call 8. 5fd08069 writes through a file `.tmp-<digits>` in the folder
-// (macOS and Windows VMs). claustrum writes the two files in place.
+// before call 8. Each of the two files is a new file then, with a new inode
+// (writeShadowTestFiles).
 func fillShadowTestCopy(gitDir, shadowDir string, listing []byte) error {
 	head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(shadowDir, "HEAD"), head, 0o600); err != nil {
+	text := shadowConfigText(listedSettings(listing), nil) + shadowTestHelper
+	return writeShadowTestFiles(shadowDir, head, []byte(text))
+}
+
+// writeShadowTestFiles writes HEAD and config of the folder `shadow` of the
+// test as new files (writeNewFile). On 5fd08069 both files have a new inode
+// number in their second state, in 14 of 14 cells (val-s3p2b2-3-linux2 row D5,
+// Linux VM), and a poll saw `.check-<n>/shadow/.tmp-<digits>` (val-s3p2b2-3-macos
+// row D7, macOS VM).
+func writeShadowTestFiles(shadowDir string, head, config []byte) error {
+	root, err := os.OpenRoot(shadowDir)
+	if err != nil {
 		return err
 	}
-	text := shadowConfigText(listedSettings(listing), nil) + shadowTestHelper
-	return os.WriteFile(filepath.Join(shadowDir, "config"), []byte(text), 0o600)
+	defer func() { _ = root.Close() }()
+	if _, err := writeNewFile(root, "HEAD", head); err != nil {
+		return err
+	}
+	_, err = writeNewFile(root, "config", config)
+	return err
 }
 
 // settingsGateRefusal is the refusal text of a git method before its first git
@@ -739,6 +763,12 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 		}
 	}
 	if !req.shadow.readsRepoConfig() {
+		// The state fallback-git: the request has no copy, and its short-lived
+		// folders are in the folder of the daemon (gitUse.inFolder).
+		if !off && t.verdict == gitDirTrusted {
+			req.use = req.shadow.folderUse()
+			req.use.atReply = &req.atReply
+		}
 		return ""
 	}
 	msg, read := repoConfigGate(t, off, dir, heavy, probe)
@@ -748,21 +778,27 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 	// The repository is accepted: the daemon makes its folder or brings it up to
 	// date (syncRepo), and the git calls of the request name it from here on
 	// (gitUse). If that step fails, the request is refused, so no call runs
-	// against a folder that is not complete. The text is claustrum's own: no row
-	// of 5fd08069 has a failure of this step.
+	// against a folder that is not complete (shadowRepoFailureText).
 	req.repoRead = read
 	use, err := req.shadow.syncRepo(t.pinCommonDir, read)
 	if err != nil {
 		return shadowRepoFailureText(err)
 	}
 	req.use = use
+	req.use.atReply = &req.atReply
 	return ""
 }
 
 // shadowRepoFailureText is the refusal of a request whose folder of the
-// repository cannot be made or brought up to date. The text is claustrum's own
-// (settingsGateRefusal).
+// repository cannot be made or brought up to date. 5fd08069 answers this text
+// for a folder that cannot be made, with the error of the mkdir as the cause
+// (syncRepoFolder has the three measured causes). The cells are N4 of
+// val-s3p2b2-3-linux2, val-s3p2b2-3-macos and val-s3p2b2-3-windows. The same
+// request again gets the same line with no git call, and the next request
+// after the cause is gone is normal, with no new read of the config. Both
+// follow here from the kept read and the kept answer of git: nothing of the
+// failure is kept. Every other failure of the step gets the same frame with
+// its own error text (not measured).
 func shadowRepoFailureText(err error) string {
-	return "Claude could not prepare its own copy of this repository's git settings on the remote machine (" +
-		err.Error() + "). Check free disk space and quota there, then try again."
+	return "Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: " + err.Error()
 }

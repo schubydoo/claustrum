@@ -68,6 +68,20 @@ type request struct {
 	// It is the zero value until settingsGateRefusal accepted the repository in
 	// the state shadow.
 	use gitUse
+	// atReply are the removals that wait for the reply of the request
+	// (runAtReply).
+	atReply []func()
+}
+
+// runAtReply removes the short-lived folders that stay until the reply. On
+// 5fd08069 the folder `.index-<n>` of a create goes at the reply, also with an
+// include step and after a failed read-tree (cells V5 of val-s3p2b2-3-linux2
+// and val-s3p2b2-3-macos, cells V5i and E44 of val-s3p2b2-3-windows).
+func (req *request) runAtReply() {
+	for _, remove := range req.atReply {
+		remove()
+	}
+	req.atReply = nil
 }
 
 type response struct {

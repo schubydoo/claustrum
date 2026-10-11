@@ -75,16 +75,22 @@ func copyWorktreeIncludes(u gitUse, repo, worktree string) {
 	// request (requestDir). 5fd08069 names
 	// <S>/.worktreeinclude-<n>/patterns without "shadowDirOff" and
 	// <tmp>/claude-ssh-worktreeinclude-<n>/patterns with it, and the entry is
-	// gone at the reply (val-s3p2b1-linux rows N11 and D6, Linux VM). The mode
-	// of the file and the moment of the removal are not measured: the file has
-	// 0600 and goes at the end of this step.
+	// gone at the reply (val-s3p2b1-linux rows N11 and D6, Linux VM). In the
+	// folder of the daemon the file has mode 0644 on 5fd08069 (cells V5 of
+	// val-s3p2b2-3-linux2 and val-s3p2b2-3-macos, Linux and macOS VMs). In the
+	// temporary folder its mode is not measured: it keeps 0600 there. The folder
+	// goes at the end of this step.
 	dir, removeDir, err := u.requestDir(shadowIncludeDirPrefix, includeTempPrefix)
 	if err != nil {
 		return
 	}
 	defer removeDir()
 	patterns := filepath.Join(dir, includePatternsName)
-	if err := os.WriteFile(patterns, manifest, 0o600); err != nil {
+	mode := os.FileMode(0o600)
+	if u.inFolder() {
+		mode = 0o644
+	}
+	if err := os.WriteFile(patterns, manifest, mode); err != nil {
 		return
 	}
 

@@ -35,14 +35,16 @@ const shadowConfigTail = "[lfs]\n\trepositoryformatversion = 0\n"
 // name is one that a cell showed as carried: cells A1, A2 and A3 of s3p2-linux,
 // cells 04d to 04n, 05b and F6 of s3p2b-edges-linux, cell A5-promisor, and for
 // the two macOS names s3-macos cell A3. The four extension names ran with the
-// value `true` only (cells E9 and 13b to 13k).
+// value `true` only (cells E9 and 13b to 13k). `extensions.noop-v1 = true` is
+// carried as "true" with format version 0 and 1, in both letter cases of the
+// key (cells X8 of val-s3p2b2-3-linux2, Linux VM).
 var shadowBoolKeys = map[string]bool{
 	"core.filemode": true, "core.bare": true, "core.logallrefupdates": true,
 	"core.ignorecase": true, "core.symlinks": true, "core.precomposeunicode": true,
 	"core.quotepath": true, "core.untrackedcache": true, "core.splitindex": true,
 	"core.longpaths": true, "core.protectntfs": true, "core.sparsecheckout": true,
 	"feature.manyfiles": true,
-	"extensions.noop":   true, "extensions.preciousobjects": true,
+	"extensions.noop":   true, "extensions.noop-v1": true, "extensions.preciousobjects": true,
 	"extensions.relativeworktrees": true, "extensions.submodulepathconfig": true,
 }
 
@@ -50,11 +52,13 @@ var shadowBoolKeys = map[string]bool{
 // value here ran in a cell: A1 and A3 of s3p2-linux, 04k, 13c, 13e and F6 of
 // s3p2b-edges-linux, and E9 of s3p2-linux. Another value of these keys is not
 // measured and is left out, such as `core.eol = crlf` and `index.version = 2`.
+// `extensions.objectformat = sha1` is carried with format version 0 and 1 (cells
+// X8 of val-s3p2b2-3-linux2, Linux VM).
 var shadowWordKeys = map[string][]string{
 	"core.eol":                      {"lf"},
 	"core.sharedrepository":         {"group", "0660"},
 	"index.version":                 {"3", "4"},
-	"extensions.objectformat":       {"sha256"},
+	"extensions.objectformat":       {"sha256", "sha1"},
 	"extensions.compatobjectformat": {"sha256"},
 	"extensions.refstorage":         {"files", "reftable"},
 }

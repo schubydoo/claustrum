@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -72,6 +73,12 @@ func TestShadowConfigCells(t *testing.T) {
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, 8)
 	for _, c := range cells {
+		// On Windows claustrum refuses an include with an absolute path or with
+		// `~/` (the rule of the config refusals), so these two Linux cells have
+		// no text there (val-s3p2b2-3-windows part C).
+		if runtime.GOOS == "windows" && (c.Cell == "8a-absolute-path-outside-the-git-folder" || c.Cell == "8e-tilde-path") {
+			continue
+		}
 		wg.Add(1)
 		slots <- struct{}{}
 		go func() {

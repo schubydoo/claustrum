@@ -21,8 +21,12 @@ import (
 // are those of 5fd08069 without the member on a Linux VM (val-s3p2b1-linux
 // cells A1, A3-create-plain and A4-remove-branch). The rows with the member
 // are those of 5fd08069 with it (the same cells). The state fallback-git has the variables of the
-// member on the read methods (s3p2-oldgit section 5, Linux VM). The variables of
-// a create in that state are not measured: claustrum sends those of the member.
+// member on the read methods (s3p2-oldgit section 5, Linux VM). In that state
+// the light calls of a create and the listings of the branch step carry six
+// values, and the short-lived folders are in the folder of the daemon
+// (val-s3p2b2-1-macos cell S4-wt1-first-status, macOS VM, and val-s3p2b2-3-windows
+// cell Q-S4c, Windows VM). Those two call logs sort the variables, so the order
+// of the six values in that state is not measured.
 //
 // The order of the variables is measured on Linux and macOS VMs only, so this
 // file has the unix tag. On Windows Go sorts the environment block (D23).
@@ -205,7 +209,10 @@ func (f shapeFixture) line(t *testing.T, c envCall) string {
 		masks = append(masks, filepath.Join(dir, shadowRepoName(f.gitDir)), "<R>", dir, "<S>")
 	}
 	masks = append(masks, f.leaf, "<leaf>", f.wt, "<wt>", f.repo, "<repo>", cwd, "<cwd>",
-		resolveTestRoot(t, os.TempDir()), "<tmp>", os.TempDir(), "<tmp>")
+		// The temporary folder has no trailing separator in the mask. On macOS
+		// TMPDIR ends with a slash, and a mask with it took the separator of
+		// the row away (val-s3p2b2-3-macos part C).
+		filepath.Clean(resolveTestRoot(t, os.TempDir())), "<tmp>", filepath.Clean(os.TempDir()), "<tmp>")
 	text = strings.NewReplacer(masks...).Replace(text)
 	text = shapeNumber.ReplaceAllString(text, "-<n>")
 	text = shapeCommit.ReplaceAllString(text, "<id>")
@@ -312,9 +319,9 @@ func statusRows() []shapeRow {
 
 // statusRowsFor fills the temporary git folder of the state into statusRows.
 func statusRowsFor(state shapeState) []shapeRow {
-	dir := "<tmp>/claude-ssh-gitdir-<n>"
-	if state == stateShadow {
-		dir = "<S>/.gitdir-<n>"
+	dir := "<S>/.gitdir-<n>"
+	if state == stateOff {
+		dir = "<tmp>/claude-ssh-gitdir-<n>"
 	}
 	out := statusRows()
 	for i := range out {
@@ -329,24 +336,28 @@ func statusRowsFor(state shapeState) []shapeRow {
 // worktree. The rows of 5fd08069 are cell 50a of s3p2b-edges-linux and
 // val-s3p2b1-linux cell A3-create-plain.
 //
-// Three points differ from the 13 calls of 5fd08069 in the state shadow:
+// Two points differ from the 13 calls of 5fd08069 in the state shadow:
 //
 //   - 5fd08069 runs the --show-toplevel pair after `rev-parse
 //     --absolute-git-dir`, with and without the member. claustrum does not.
-//   - The `worktree add` call and its listing carry GIT_COMMON_DIR=<repo>/.git
-//     here, and <R> on 5fd08069 (gitUse.ownConfigCalls).
 //   - claustrum runs its own --show-scope listing before the two listings of
 //     the read-tree call. It reads the repository's own config, so it carries
 //     {G}. With the member the filter rule is off, and the listing does not run.
 func createRows() []shapeRow {
 	const leaf = "<leaf>"
-	own := "{G} GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W}"
 	index := map[bool]string{true: " GIT_INDEX_FILE=<S>/.index-<n>/index", false: " GIT_INDEX_FILE=<tmp>/claude-ssh-index-<n>/index"}
+	// light is a light pair outside the new worktree: six values in the states
+	// shadow and fallback-git, four with the member.
+	light := func(argv string) []shapeRow {
+		out := pair("P20", argv, "<repo>", "{A2} {D} {W}", "{C} {G}")
+		out[0].fallback, out[1].fallback = "{A2} {G} {L}", "{A2} {G} {H}"
+		return out
+	}
 	return rows(
-		pair("P20", "rev-parse --is-inside-work-tree", "<repo>", "{A2} {D} {W}", "{C} {G}"),
-		pair("P20", "rev-parse --abbrev-ref HEAD", "<repo>", "{A2} {D} {W}", "{C} {G}"),
+		light("rev-parse --is-inside-work-tree"),
+		light("rev-parse --abbrev-ref HEAD"),
 		pair("P28", "rev-parse --absolute-git-dir", "<repo>", "{A} {D} {W}", "{A} {G}"),
-		pair("P20", "worktree add --no-track --no-checkout -b w1 <leaf>", "<repo>", "{A2} "+own, "{C} {G}"),
+		light("worktree add --no-track --no-checkout -b w1 <leaf>"),
 		[]shapeRow{
 			{list: "none", argv: "--git-dir=<repo>/.git config -z --list --show-scope", cwd: leaf,
 				shadow: "{C} {G} {L}", fallback: "{C} {G} {L}"},
@@ -358,7 +369,7 @@ func createRows() []shapeRow {
 				shadow: "{C} {D} {H}" + index[true] + " LANGUAGE=C"},
 			{list: "P22", cwd: leaf,
 				argv: "--git-dir=<repo>/.git --work-tree=<leaf> read-tree -u --reset --no-recurse-submodules refs/heads/w1",
-				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[false]},
+				off:  "{C} {G} {H}" + index[false], fallback: "{C} {G} {H}" + index[true]},
 		},
 	)
 }
@@ -369,8 +380,10 @@ func createRows() []shapeRow {
 // values in the state shadow and the four with the member (row N2).
 func removeRows() []shapeRow {
 	step := func(list, argv string) []shapeRow {
+		listing := same("none", "config -z --list", "<repo>", "{A2} {D} {W} {L}", "{C} {G} {L}")
+		listing.fallback = "{A2} {G} {L}"
 		return []shapeRow{
-			same("none", "config -z --list", "<repo>", "{A2} {D} {W} {L}", "{C} {G} {L}"),
+			listing,
 			same(list, argv, "<repo>", fmt.Sprintf(shapeRM, "{D} {W}"), fmt.Sprintf(shapeRM, "{G}")),
 		}
 	}
@@ -534,12 +547,11 @@ func TestShadowTopLevelPairOfARemove(t *testing.T) {
 
 // TestShadowBothAddsKeepTheGitDirectory pins the variables of the two `worktree
 // add` calls of a create with existingBranch whose attach add fails. In the
-// state shadow both carry GIT_COMMON_DIR=<repo>/.git with the three other
-// folder variables (gitUse.ownConfigCalls), and the new worktree names its
-// registration in the repository. On 5fd08069 both adds carry
-// GIT_COMMON_DIR=<R> on a Linux VM (val-s3p2b1-linux cell
-// B2-create-existing-checked-out). That difference stays.
-func TestShadowBothAddsKeepTheGitDirectory(t *testing.T) {
+// state shadow both carry GIT_COMMON_DIR=<R> with the three other folder
+// variables, as on 5fd08069 on a Linux VM (val-s3p2b1-linux cell
+// B2-create-existing-checked-out), and the new worktree names its registration
+// in the repository.
+func TestShadowBothAddsNameTheCopy(t *testing.T) {
 	f := newShapeFixture(t, stateShadow)
 	if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {
 		t.Fatalf("git.info = %s", raw)
@@ -551,7 +563,7 @@ func TestShadowBothAddsKeepTheGitDirectory(t *testing.T) {
 	if !strings.Contains(raw, `"success":true`) || !strings.Contains(raw, `"branch":"w1"`) {
 		t.Fatalf("git.worktree_create = %s", raw)
 	}
-	const vars = "{A2} {G} GIT_OBJECT_DIRECTORY=<repo>/.git/objects {W} {H}"
+	const vars = "{A2} {D} {W} {H}"
 	want := []string{
 		"P20 | worktree add --no-checkout <leaf> wr | <repo> | " + vars,
 		"P20 | worktree add --no-track --no-checkout -b w1 <leaf> | <repo> | " + vars,
@@ -569,4 +581,30 @@ func TestShadowBothAddsKeepTheGitDirectory(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(f.leaf, ".git")); err != nil || strings.TrimSpace(string(b)) != "gitdir: "+reg {
 		t.Errorf("the .git file of the new worktree = %q, %v\nwant gitdir: %s", b, err, reg)
 	}
+}
+
+// TestShadowRemoveWithWorktreeRootNamesTheCopy pins the 8 calls of a
+// git.worktree_remove with worktreeRoot in the state shadow. They carry the
+// four folder variables, and the light calls carry the six values, as on
+// 5fd08069 (cell N3 of val-s3p2b2-3-linux2, Linux VM: the table of the remove).
+func TestShadowRemoveWithWorktreeRootNamesTheCopy(t *testing.T) {
+	f := newShapeFixture(t, stateShadow)
+	if raw, _ := f.request(t, "git.info", map[string]any{"path": f.repo}); !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	root := resolveTestRoot(t, t.TempDir())
+	requireTempOutsideCheckout(t, root)
+	ext := filepath.Join(root, "proj", "wx")
+	if raw, _ := f.request(t, "git.worktree_create", map[string]any{
+		"baseRepo": f.repo, "branchName": "wx", "worktreePath": ext, "worktreeRoot": root}); !strings.Contains(raw, `"success":true`) {
+		t.Fatalf("git.worktree_create = %s", raw)
+	}
+	raw, got := f.request(t, "git.worktree_remove", map[string]any{"baseRepo": f.repo, "worktreePath": ext, "worktreeRoot": root})
+	if raw != removeOK {
+		t.Fatalf("git.worktree_remove = %s", raw)
+	}
+	light := func(argv string) []shapeRow { return pair("P20", argv, "<repo>", "{A2} {D} {W}", "") }
+	heavy := pair("P28", "rev-parse --absolute-git-dir", "<repo>", "{A} {D} {W}", "")
+	f.check(t, "git.worktree_remove with worktreeRoot", got,
+		rows(light("rev-parse --show-toplevel"), heavy, light("worktree list --porcelain -z"), heavy))
 }

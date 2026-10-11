@@ -1190,7 +1190,9 @@ func TestRepoVerdictIsKept(t *testing.T) {
 		t.Helper()
 		got := ""
 		if v := repoReadVerdict(trust); v != nil {
-			got = v.refusal + v.filesRefusal
+			if got = v.refusal; got == "" {
+				got = gitDirFilesRefusal(trust.pinCommonDir)
+			}
 		}
 		if !strings.Contains(got, refusal) || (refusal == "" && got != "") {
 			t.Errorf("%s: verdict = %q, want %q", name, got, refusal)
@@ -1216,11 +1218,13 @@ func TestRepoVerdictIsKept(t *testing.T) {
 	step("a file where an include was missing", 3, `"%(prefix)/x", and Claude expands neither`)
 	step("a refusal, second request", 0, `"%(prefix)/x", and Claude expands neither`)
 
-	// A file of the git directory is part of the read.
+	// A file of the git directory is no part of the read: its test runs in each
+	// request, and a change of it leads to no new read of the config (cells 19a
+	// to 19c of val-s3p2b2-3-linux, Linux VM).
 	setRepoConfig(t, gitDir, version0)
 	step("config with no include", 1, "")
 	writeFile(t, filepath.Join(gitDir, "shallow"), "this line is not an object id\n", 0o644)
-	step("a shallow file that appears", 1, "holds something other than object ids")
+	step("a shallow file that appears", 0, "holds something other than object ids")
 	step("a refused shallow file, second request", 0, "holds something other than object ids")
 }
 
@@ -1539,7 +1543,10 @@ func TestRepoVerdictNotKeptAfterAnOpenError(t *testing.T) {
 		if v == nil {
 			t.Fatal("the read gave no verdict")
 		}
-		return v.refusal + v.filesRefusal
+		if v.refusal != "" {
+			return v.refusal
+		}
+		return gitDirFilesRefusal(trust.pinCommonDir)
 	}
 	config, shallow, large := filepath.Join(gitDir, "config"), filepath.Join(gitDir, "shallow"), filepath.Join(gitDir, "im.cfg")
 	writeFile(t, shallow, strings.Repeat("a", 40)+"\n", 0o644)

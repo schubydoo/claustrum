@@ -823,12 +823,16 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 // worktree. On Windows the three commands with GIT_OPTIONAL_LOCKS=0 get
 // statusExcludesFile as their core.excludesFile value. That is the divergence D16.
 func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, error) {
-	attrSource := attrSourceArgs() != nil
+	// The folder comes before the one-time `--attr-source=… version` call of
+	// attrSourceArgs. On 5fd08069 a poll saw `.gitdir-<n>` before that call
+	// started in 6 of 6 first git.status requests (cells V5 of
+	// val-s3p2b2-3-linux2, Linux VM).
 	tmp, removeTmp, err := u.requestDir(shadowStatusDirPrefix, statusGitDirTempPrefix)
 	if err != nil {
 		return nil, err
 	}
 	defer removeTmp()
+	attrSource := attrSourceArgs() != nil
 	if err := buildStatusGitDir(e, common, tmp); err != nil {
 		return nil, err
 	}

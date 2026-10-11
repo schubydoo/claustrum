@@ -347,18 +347,6 @@ func gitDirWorkTreeToplevel(gitDir, workTree string, pin []string) (string, erro
 	return strings.TrimRight(string(out), "\r\n"), err
 }
 
-// hardenedGitStderr is hardenedGitContext for a call whose failure text goes on the
-// wire: it returns stderr only, untrimmed, and the exec error. stdout is not kept,
-// because the failure frames of git.worktree_create quote stderr only (measured
-// against f6010b97 and 90fca6e6 on a macOS VM). See worktreeGitText.
-func hardenedGitStderr(ctx context.Context, u gitUse, dir string, heavy bool, args ...string) (string, error) {
-	cmd := hardenedGitCmd(ctx, u, dir, heavy, nil, args...)
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	err := cmd.Run()
-	return errBuf.String(), err
-}
-
 // hardenedGit is hardenedGitContext with the standard git timeout context.
 func hardenedGit(u gitUse, dir string, heavy bool, args ...string) (string, bool) {
 	ctx, cancel := gitCtx()
@@ -524,7 +512,14 @@ func runWorktreeCheckout(ctx context.Context, u gitUse, leaf, workTree, gitDir, 
 	if err != nil {
 		return "", false, err, nil
 	}
-	defer removeIdxDir()
+	// In the folder of the daemon the index folder stays until the reply of the
+	// create (request.runAtReply). In the temporary folder the moment is not
+	// measured: it goes at the end of this step, as before.
+	if u.inFolder() && u.atReply != nil {
+		*u.atReply = append(*u.atReply, removeIdxDir)
+	} else {
+		defer removeIdxDir()
+	}
 	idx := filepath.Join(idxDir, "index")
 	stderr, drained, err = hardenedGitCheckout(ctx, u, leaf, gitDir, idx, pin, filters,
 		"-c", "core.splitIndex=false", "-c", "core.commitGraph=false",

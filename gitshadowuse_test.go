@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -16,7 +17,7 @@ func (f repoFolderFixture) useOf(t *testing.T, dir string) gitUse {
 	t.Helper()
 	trust := gitDirTrustFor(dir)
 	v := repoReadVerdict(trust)
-	if trust.verdict != gitDirTrusted || v == nil || v.refusal != "" || v.filesRefusal != "" {
+	if trust.verdict != gitDirTrusted || v == nil || v.refusal != "" || gitDirFilesRefusal(trust.pinCommonDir) != "" {
 		t.Fatalf("the fixture in %s is not accepted: %+v", dir, v)
 	}
 	u, err := f.h.syncRepo(trust.pinCommonDir, v)
@@ -134,13 +135,17 @@ func TestGitUseProfile(t *testing.T) {
 	if err := os.Unsetenv("GIT_ALLOW_PROTOCOL"); err != nil {
 		t.Fatal(err)
 	}
-	shadow := gitUse{repoDir: "r", gitDir: "g"}
+	shadow := gitUse{folder: "s", repoDir: "r", gitDir: "g"}
 	six := []string{"GIT_ALLOW_PROTOCOL=denied_by_claude_ssh", "GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1",
 		"GIT_GRAFT_FILE=" + os.DevNull, "GIT_NO_LAZY_FETCH=1", "GIT_ASKPASS="}
 	if got := shadow.profileEnv(false); !slices.Equal(got, six) {
 		t.Errorf("light profile in the state shadow = %q\nwant %q", got, six)
 	}
 	four := []string{"GIT_ALLOW_PROTOCOL=https:ssh", "GIT_TERMINAL_PROMPT=0", "GIT_NO_REPLACE_OBJECTS=1", "GIT_GRAFT_FILE=" + os.DevNull}
+	// The state fallback-git has the folder of the daemon and no copy: six values.
+	if got := (gitUse{folder: "s"}).profileEnv(false); !slices.Equal(got, six) {
+		t.Errorf("light profile in the state fallback-git = %q\nwant %q", got, six)
+	}
 	if got := (gitUse{}).profileEnv(false); !slices.Equal(got, four) {
 		t.Errorf("light profile with no copy = %q\nwant %q", got, four)
 	}
@@ -263,8 +268,18 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 			}
 			m := f.fiveRequests(nil)[i]
 			raw, calls := f.call(t, m.method, m.params)
-			const start = "Claude could not prepare its own copy of this repository's git settings on the remote machine ("
-			const end = "). Check free disk space and quota there, then try again."
+			// The text of 5fd08069 for a plain file with the name of the folder
+			// (cells N4 of val-s3p2b2-3-linux2, val-s3p2b2-3-macos and
+			// val-s3p2b2-3-windows). The cause is `mkdir <path>: not a directory`
+			// on Linux and macOS, and `mkdir <path>: The system cannot find the
+			// path specified.` on Windows. That is syscall.ENOTDIR on each system.
+			cause := (&os.PathError{Op: "mkdir", Path: blocked, Err: syscall.ENOTDIR}).Error()
+			if runtime.GOOS != "windows" && cause != "mkdir "+blocked+": not a directory" {
+				t.Fatalf("the cause of the test = %q", cause)
+			}
+			text := "Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: " + cause
+			start := strings.Trim(jsonQuoted(t, text), `"`)
+			const end = ""
 			wantShape := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"` + start
 			switch method {
 			case "git.worktree_create":
@@ -273,8 +288,17 @@ func TestShadowRepoFailureRefusesTheRequest(t *testing.T) {
 				wantShape = `{"jsonrpc":"2.0","id":1,"result":{"success":false,"error":"failed to remove worktree: could not check whether ` +
 					strings.Trim(jsonQuoted(t, f.wt), `"`) + ` is locked: ` + start
 			}
-			if !strings.HasPrefix(raw, wantShape) || !strings.Contains(raw, end) {
+			if !strings.HasPrefix(raw, wantShape+`"`) || !strings.Contains(raw, end) {
 				t.Errorf("%s = %s\nwant it to start %s", method, raw, wantShape)
+			}
+			// The same request again gets the same line with no git call, and the
+			// file stays (the same cells).
+			again, calls2 := f.call(t, m.method, m.params)
+			if again != raw || len(calls2) != 0 {
+				t.Errorf("%s again = %s with %d calls\nwant the same line and no call", method, again, len(calls2))
+			}
+			if b, err := os.ReadFile(blocked); err != nil || string(b) != "x" {
+				t.Errorf("the planted file: %q, %v", b, err)
 			}
 			if method == "git.worktree_create" && !strings.HasSuffix(raw, `,"errorCode":"worktree_add_failed"}}`) {
 				t.Errorf("%s = %s, want the errorCode worktree_add_failed", method, raw)
@@ -305,7 +329,7 @@ func TestShadowRepoFailureInTheShutdown(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	f.s.gitShadow.close()
 	raw, calls := f.info(t, f.repo, nil)
-	if !strings.Contains(raw, "Claude could not prepare its own copy of this repository's git settings on the remote machine (the daemon is in its shutdown)") {
+	if !strings.Contains(raw, "Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: the daemon is in its shutdown") {
 		t.Errorf("git.info in the shutdown = %s", raw)
 	}
 	for _, c := range calls {

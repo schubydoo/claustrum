@@ -3,12 +3,15 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // The folder of one repository in the folder of the daemon, as 5fd08069 keeps
@@ -111,6 +114,32 @@ func readShadowSource(path string, max int64, cut bool) (data []byte, ok bool) {
 	return data, true
 }
 
+// shadowHeadLinkPrefix starts the target of a HEAD that is a symbolic link and
+// still gets a copy (readShadowHead).
+const shadowHeadLinkPrefix = "refs/heads/"
+
+// readShadowHead is the content of the copy of the HEAD of gitDir.
+//
+// A HEAD that is a regular file gives its first shadowHeadMaxBytes bytes. A
+// HEAD that is a symbolic link to `refs/heads/main` gives a regular file with
+// the text `ref: refs/heads/main` and a newline, 21 bytes: "ref: ", the target
+// of the link as it is written, and a newline. 5fd08069 writes that copy and
+// answers all five methods normally (cells N4-headlink of val-s3p2b2-3-linux2
+// and val-s3p2b2-3-macos, Linux and macOS VMs). That one target ran. A link
+// with another target, such as an absolute path or a name outside
+// `refs/heads/`, is not measured: it gets no copy, and the request is refused.
+func readShadowHead(gitDir string) ([]byte, bool) {
+	path := filepath.Join(gitDir, "HEAD")
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		if err != nil || !strings.HasPrefix(target, shadowHeadLinkPrefix) || len(target) > shadowHeadMaxBytes {
+			return nil, false
+		}
+		return []byte("ref: " + target + "\n"), true
+	}
+	return readShadowSource(path, shadowHeadMaxBytes, true)
+}
+
 // syncRepo makes the folder of the repository with the git directory gitDir
 // when it is not there, and brings its copies up to date. read is the accepted
 // read of the config of that repository.
@@ -178,7 +207,7 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	if h.repos == nil {
 		h.repos = map[string]*shadowRepo{}
 	}
-	head, ok := readShadowSource(filepath.Join(gitDir, "HEAD"), shadowHeadMaxBytes, true)
+	head, ok := readShadowHead(gitDir)
 	if !ok {
 		return errors.New("the HEAD of the repository cannot be read")
 	}
@@ -188,19 +217,28 @@ func (h *shadowHost) syncRepoFolder(dir, name, gitDir string, read *repoVerdict)
 	}
 	defer func() { _ = base.Close() }()
 
+	// A folder that is not there is the first request, or a folder that went.
+	// The copies then come from what the daemon read before: the config is not
+	// read again for it (cell 54 of s3p2b-edges3-linux2, Linux VM).
+	//
+	// The folder is made by its full path, so the error of a folder that cannot
+	// be made names that path, as on 5fd08069: `mkdir <S>/<32 hex>: permission
+	// denied` under a folder of mode 0500, and `mkdir <S>/<32 hex>: not a
+	// directory` for a plain file of that name (cells N4 of val-s3p2b2-3-linux2
+	// and val-s3p2b2-3-macos, Linux and macOS VMs). On a Windows VM the file
+	// gives `mkdir <path>: The system cannot find the path specified.` (cells N4
+	// of val-s3p2b2-3-windows). Those are the texts of os.MkdirAll. The path is
+	// the folder of the daemon and a name that the daemon computes, and every
+	// later step goes through a root at that folder.
 	st := h.repos[name]
-	root, err := base.OpenRoot(name)
-	if errors.Is(err, fs.ErrNotExist) {
-		// The first request, or a folder that went. The copies come from what the
-		// daemon read before: the config is not read again for it (cell 54 of
-		// s3p2b-edges3-linux2, Linux VM).
-		st = &shadowRepo{copies: map[string][sha256.Size]byte{}}
-		h.repos[name] = st
-		if err := base.Mkdir(name, 0o700); err != nil {
-			return err
-		}
-		root, err = base.OpenRoot(name)
+	path := filepath.Join(dir, name)
+	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+		st = nil
 	}
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	root, err := base.OpenRoot(name)
 	if err != nil {
 		return err
 	}
@@ -269,11 +307,8 @@ func shadowLink(root *os.Root, target, name string) error {
 
 // writeCopy makes file in root, the folder rel of a repository, with the
 // content data, when the copy that is there has another content or there is
-// none. The copy is a new file each time: a
-// temporary file beside it, then a rename (cells 18a, 18k and 19c of
-// s3p2b-edges-linux show a new inode). The name of the temporary file is
-// claustrum's own: no cell saw one. A temporary file that is left after an
-// error goes through removeEntry.
+// none. The copy is a new file each time (writeNewFile). A temporary file that
+// is left after an error goes through removeEntry.
 func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, data []byte) error {
 	sum := sha256.Sum256(data)
 	if have, ok := st.copies[file]; ok && have == sum {
@@ -285,14 +320,37 @@ func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, 
 			return err
 		}
 	}
-	var salt [8]byte
-	if _, err := rand.Read(salt[:]); err != nil {
+	if left, err := writeNewFile(root, path, data); err != nil {
+		if left != "" {
+			_ = h.removeEntry(filepath.Join(rel, left))
+		}
 		return err
 	}
-	tmp := path + ".tmp-" + hex.EncodeToString(salt[:])
+	st.copies[file] = sum
+	return nil
+}
+
+// writeNewFile makes the file path in root with the content data as a new
+// file: a temporary file `.tmp-<digits>` (mode 0600) in the folder of the file,
+// then a rename. 5fd08069 writes each copy so. A poll saw
+// `<S>/<32 hex>/.tmp-<digits>`, `<S>/<32 hex>/info/.tmp-<digits>`,
+// `<S>/.check-<n>/shadow/.tmp-<digits>` and `<S>/.probe/.tmp-<digits>` with
+// mode 0600 and 7 to 10 decimal digits (val-s3p2b2-3-macos row D7, macOS VM).
+// The copy has a new inode after each write (cells 18a, 18k and 19c of
+// s3p2b-edges-linux, and row D5 of val-s3p2b2-3-linux2 for the folder of the
+// start test, Linux VM).
+//
+// After an error, left is the name of a temporary file that is still there, or
+// "".
+func writeNewFile(root *os.Root, path string, data []byte) (left string, err error) {
+	var n [4]byte
+	if _, err := rand.Read(n[:]); err != nil {
+		return "", err
+	}
+	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+strconv.FormatUint(uint64(binary.LittleEndian.Uint32(n[:])), 10))
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return err
+		return "", err
 	}
 	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
@@ -302,11 +360,9 @@ func (h *shadowHost) writeCopy(st *shadowRepo, root *os.Root, rel, file string, 
 		err = root.Rename(tmp, path)
 	}
 	if err != nil {
-		_ = h.removeEntry(filepath.Join(rel, tmp))
-		return err
+		return tmp, err
 	}
-	st.copies[file] = sum
-	return nil
+	return "", nil
 }
 
 // dropCopy removes the copy file of the repository folder rel, a path below

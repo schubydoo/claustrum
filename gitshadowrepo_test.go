@@ -51,7 +51,7 @@ func (f repoFolderFixture) sync(t *testing.T, dir string) string {
 	t.Helper()
 	trust := gitDirTrustFor(dir)
 	v := repoReadVerdict(trust)
-	if trust.verdict != gitDirTrusted || v == nil || v.refusal != "" || v.filesRefusal != "" {
+	if trust.verdict != gitDirTrusted || v == nil || v.refusal != "" || gitDirFilesRefusal(trust.pinCommonDir) != "" {
 		t.Fatalf("the fixture in %s is not accepted: %+v", dir, v)
 	}
 	if _, err := f.h.syncRepo(trust.pinCommonDir, v); err != nil {
@@ -72,6 +72,10 @@ func entryTreeOf(t *testing.T, dir string) map[string]os.FileInfo {
 		if err != nil {
 			return err
 		}
+		// The identity is read now. On Windows os.SameFile reads it from the
+		// path at the first compare, and a compare after a replace then saw the
+		// new file two times (val-s3p2b2-3-windows part C).
+		os.SameFile(fi, fi)
 		rel, _ := filepath.Rel(dir, path)
 		tree[filepath.ToSlash(rel)] = fi
 		return nil

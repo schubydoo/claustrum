@@ -261,6 +261,27 @@ func noRepoListingRefusal(t gitDirTrust, dir string, heavy bool) string {
 	return hostileConfigRefusal(gitUse{}, dir, heavy).refusal
 }
 
+// noRepoInfoCalls is noRepoListingRefusal for git.info, with one more call. After a
+// listing that passed, 5fd08069 runs the heavy `rev-parse --git-dir` in the folder,
+// with GIT_DIR=<null device> and the hook pins of the listing. The call exits 128.
+// The reply is the "no repository" answer, as without the call. The rows are a
+// folder with no repository and a repository with a HEAD that is no ref, with and
+// without "shadowDirOff": cells S1-first-norepo and S1-first-badhead of
+// val-s3p2b2-3-macos (macOS VM), row D6 of val-s3p2b2-3-windows (Windows VM) and
+// cell E5-HEAD-garbage of val-s3p2b2-3-linux (Linux VM). The Linux and macOS call
+// logs of those cells do not keep the order of the variables. claustrum does not
+// read the answer. The other methods have no such row.
+func noRepoInfoCalls(t gitDirTrust, dir string) string {
+	if !t.noRepoPinned() {
+		return ""
+	}
+	c := hostileConfigRefusal(gitUse{}, dir, true)
+	if !c.refused() {
+		hardenedGitFirst(gitUse{}, dir, true, c.listing, "rev-parse", "--git-dir")
+	}
+	return c.refusal
+}
+
 // gitVersionRun runs the plain `git version` that 89cb6289 runs after a listing that
 // failed for any reason other than "no repository" (rows L10 to L12, L14c and L15). It
 // has no -c option. Its working directory is gitVersionDir. In claustrum its

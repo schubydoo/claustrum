@@ -26,9 +26,18 @@ import (
 // (os.SameFile). Rows W08 (a subst drive) and W09 (a junction) answer git's spelling
 // while the walk root is spelled another way. A string compare does not give those
 // frames. No row isolates the compare.
-func gitInfoRoot(walkRoot, walkGitDir string, pin []string) string {
+//
+// copyOf is the git directory whose copy the calls of the request name, or "".
+// With it, pin starts with the folder of the copy, and the pair names copyOf in
+// --git-dir= and runs there. 5fd08069 has `--git-dir=<gitdir>` and the working
+// directory `<gitdir>` on that pair in 330 git.info requests (val-s3p2b2-3-windows
+// row D5, Windows VM).
+func gitInfoRoot(walkRoot, walkGitDir, copyOf string, pin []string) string {
 	gitDir := walkGitDir
-	if len(pin) > 0 {
+	switch {
+	case copyOf != "":
+		gitDir = copyOf
+	case len(pin) > 0:
 		gitDir = strings.TrimPrefix(pin[0], "GIT_COMMON_DIR=")
 	}
 	out, err := gitDirWorkTreeToplevel(gitDir, walkRoot, pin)

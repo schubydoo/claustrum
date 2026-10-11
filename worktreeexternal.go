@@ -466,12 +466,15 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //
 // Its second answer is the git top level of baseRepo when the removal goes on, or ""
 // when git cannot give it. worktreeRootCheckoutRefusal uses it.
-func externalWorkTreeRefusal(repo string, off jsonTrueSwitch) (string, string) {
-	// A remove with worktreeRoot passes no settings gate (settingsGateRefusal),
-	// so its calls keep the form with GIT_COMMON_DIR=<git directory> in every
-	// state. On 5fd08069 they name the copy without "shadowDirOff"
-	// (val-s3p2b1-linux cell A4-remove-root, Linux VM). That difference stays
-	// until the gate of that request has a measured failure shape.
+//
+// That read is a part of the settings gate of the request (settingsGateRefusal).
+// After the gate the calls of the request name the copy of the repository in the
+// state shadow. On 5fd08069 the 8 calls of a remove with worktreeRoot carry the
+// four folder variables there, and 14 with branchName (cell N3 of
+// val-s3p2b2-3-linux2, Linux VM). The calls before the gate have no copy. A
+// failed start test in a remove with worktreeRoot is not measured: its text is
+// the reason, as for a refused config.
+func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (string, string) {
 	u := gitUse{}
 	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
 	// baseRepo behind a symlink chain that the kernel does not follow still resolves in
@@ -523,9 +526,10 @@ func externalWorkTreeRefusal(repo string, off jsonTrueSwitch) (string, string) {
 	// VMs). The
 	// call that it makes to git on a refusal is the light `rev-parse
 	// --show-toplevel` that follows the listing below.
-	if msg := repoConfigGateRefusal(t, off, repo, false, "--show-toplevel"); msg != "" {
+	if msg := req.settingsGateRefusal(t, off, repo, false, "--show-toplevel"); msg != "" {
 		return workTreeUnknownPrefix + msg, ""
 	}
+	u = req.use
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
 	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).
 	c := hostileConfigRefusal(u, repo, false)
