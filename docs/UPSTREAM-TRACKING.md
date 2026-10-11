@@ -511,7 +511,10 @@ traps that matter for telling drift from expected:
   repository" from 5 s on (cell P7, Linux VM). On a host where that owner call takes more
   than 1 second, a repository of another owner whose config is not a regular
   file gets the refusal on claustrum and "not a repository" on `5fd08069`
-  (from the code). On a FIFO config, two
+  (from the code). With another refusal the same holds for an owner call of
+  more than 5 seconds (from the code). A config whose listing by git passes
+  64 MiB can get no refusal on claustrum (from the code, not measured on
+  `5fd08069`). On a FIFO config, two
   `shadowDirOff` requests get no answer. `5fd08069` then gives no answer to two
   later requests, and claustrum answers them (Linux VM).
 

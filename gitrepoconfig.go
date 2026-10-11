@@ -127,6 +127,58 @@ func listConfigText(ctx context.Context, text []byte, dir string, env []string) 
 	return cmd.Output()
 }
 
+// repoListingMaxBytes bounds the listing that the read of the repository config
+// takes from git for one file. A listing names the whole key of each setting, so
+// a small file with a long subsection name and many keys lists as far more bytes
+// than it has. By arithmetic, the largest accepted files of cells X5 and X6 list
+// as no more than their own size. No cell measured a listing size. The bound is
+// claustrum's own, and 5fd08069 is not measured with a listing over it. A
+// variable, so that a test can lower it.
+var repoListingMaxBytes = 8 * repoConfigMaxBytes
+
+// errListingTooLarge ends a listing that passes repoListingMaxBytes.
+var errListingTooLarge = errors.New("the listing of a config file is over its bound")
+
+// boundedListing is the standard output of one listing of the read. It keeps the
+// first max bytes. A write that passes max fails, and os/exec then ends its copy
+// from git.
+type boundedListing struct {
+	buf  bytes.Buffer
+	max  int
+	over bool
+}
+
+func (b *boundedListing) Write(p []byte) (int, error) {
+	if room := b.max - b.buf.Len(); len(p) > room {
+		b.over = true
+		n, _ := b.buf.Write(p[:room])
+		return n, errListingTooLarge
+	}
+	return b.buf.Write(p)
+}
+
+// listRepoConfigText is listConfigText for the read of the repository config:
+// the listing is bound by repoListingMaxBytes before it is in memory, and the
+// error output of git is returned beside it. A listing over the bound returns
+// errListingTooLarge and the whole settings of its first repoListingMaxBytes
+// bytes.
+func listRepoConfigText(ctx context.Context, text []byte, dir string, env []string) (out, stderr []byte, err error) {
+	cmd := exec.CommandContext(ctx, "git", "config", "--no-includes", "--file", "-", "--list", "-z")
+	cmd.Stdin = bytes.NewReader(text)
+	cmd.Dir = dir
+	cmd.Env = env
+	listing := &boundedListing{max: repoListingMaxBytes}
+	errText := &cappedText{max: 1 << 16}
+	cmd.Stdout = listing
+	cmd.Stderr = errText
+	err = cmd.Run()
+	out = listing.buf.Bytes()
+	if listing.over {
+		return out[:bytes.LastIndexByte(out, 0)+1], nil, errListingTooLarge
+	}
+	return out, errText.buf, err
+}
+
 // repoConfigListEnv is the environment of the listing of one config file: that of
 // the daemon, then GIT_DIR=<null device>, LC_ALL=C and LANGUAGE=C. The call log of
 // 5fd08069 shows these three values on a Linux VM, and GIT_DIR=NUL on a Windows VM
@@ -305,9 +357,9 @@ type repoConfigRead struct {
 	worktreeConfig bool
 	// includedCost is the sum of the counted settings of the included files.
 	includedCost int
-	// unlisted is true when git did not list a file and the read has no text for
-	// that failure. The read then gives no verdict, and the listing of the method
-	// answers as before.
+	// unlisted is true when git did not list a file, or listed more than
+	// repoListingMaxBytes, and the read has no text for that. The read then gives
+	// no verdict, and the listing of the method answers as before.
 	unlisted bool
 }
 
@@ -381,11 +433,16 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		r.unlisted = detail == ""
 		return detail
 	}
-	out, err := listConfigText(r.ctx, text, gitVersionDir, repoConfigListEnv())
-	if err != nil {
+	out, errOut, err := listRepoConfigText(r.ctx, text, gitVersionDir, repoConfigListEnv())
+	// A listing over its bound still gets the name bound and the count of the
+	// settings that the read kept. Those two refusals are the first in the order
+	// of the listing, so they are the ones of the whole listing. With neither,
+	// the read has no verdict.
+	over := errors.Is(err, errListingTooLarge)
+	if err != nil && !over {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			if m := stdinSyntaxError.FindSubmatch(ee.Stderr); m != nil {
+			if m := stdinSyntaxError.FindSubmatch(errOut); m != nil {
 				return "fatal: bad config line " + string(m[1]) + " in " + quoteOperand(path)
 			}
 		}
@@ -420,6 +477,10 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		if name, ok := strings.CutPrefix(key, "extensions."); ok {
 			r.extensions = append(r.extensions, repoExtension{name: name, value: value, hasValue: hasValue})
 		}
+	}
+	if over {
+		r.unlisted = true
+		return ""
 	}
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
 		key, value, _ := strings.Cut(string(rec), "\n")
@@ -850,6 +911,16 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 // claustrum's own.
 const repoOwnerCallBound = time.Second
 
+// repoOwnerCallLongBound ends that call for every other refusal. git names another
+// owner before it reads the config, and with a config of 20 MiB the whole call
+// takes 0.6 to 1.1 s (cells P5 and N10, Linux, macOS and Windows VMs). But git can
+// meet a FIFO that the read did not reach. One case is a config over its size
+// bound that includes one: it is refused before the include is followed. If git
+// waits in that file, this bound ends the call (that git waits there is not
+// measured). The value is claustrum's own. A
+// variable, so that a test can lower it.
+var repoOwnerCallLongBound = 5 * time.Second
+
 // repoOwnerCallDrain is the longest wait for the stderr pipe of that call after
 // git ended or the bound ended it. The value is claustrum's own.
 const repoOwnerCallDrain = time.Second
@@ -865,8 +936,9 @@ const repoOwnerCallDrain = time.Second
 // daemon (cells P5, Linux, macOS and Windows VMs). What that call decides there
 // is not measured.
 //
-// With bounded, the call ends at repoOwnerCallBound: the process is ended by its
-// pid. Such a call names no problem, whatever it wrote before. After git ends,
+// The call ends at bound, and at the deadline of gitCtx if that is sooner: the
+// process is ended by its pid. Such a call names no problem, whatever it wrote
+// before. After git ends,
 // or after the bound, the daemon waits at most repoOwnerCallDrain for the stderr
 // pipe. So a `git` on PATH that leaves a process with that pipe open does not
 // hold the request.
@@ -874,14 +946,10 @@ const repoOwnerCallDrain = time.Second
 // good is true when git ran to its end and named no problem. It is false for a
 // call that named one, for a call that a bound ended, and for a git that did
 // not start.
-func gitNamesOwnerProblem(dir string, heavy bool, probe string, bounded bool) (named, good bool) {
-	newCtx := gitCtx
-	if bounded {
-		newCtx = func() (context.Context, context.CancelFunc) {
-			return context.WithTimeout(context.Background(), repoOwnerCallBound)
-		}
-	}
-	ctx, cancel := newCtx()
+func gitNamesOwnerProblem(dir string, heavy bool, probe string, bound time.Duration) (named, good bool) {
+	base, cancelBase := gitCtx()
+	defer cancelBase()
+	ctx, cancel := context.WithTimeout(base, bound)
 	defer cancel()
 	cmd := hardenedGitCmd(ctx, dir, heavy, &configListing{}, "rev-parse", probe)
 	cmd.Env = append(cmd.Env, "LC_ALL=C", "LANGUAGE=C")
@@ -932,9 +1000,10 @@ func gitNamesOwnerProblem(dir string, heavy bool, probe string, bounded bool) (n
 // before.
 //
 // For a file that is not a regular file the call has the bound of
-// repoOwnerCallBound, because git waits in its own open of a FIFO. If the bound
+// repoOwnerCallBound, because git waits in its own open of a FIFO. For every
+// other refusal it has the bound of repoOwnerCallLongBound. If a bound
 // ends the call, the refusal stays. 5fd08069 answers a FIFO in 0.15 to 0.36 s
-// (cells N2, N3 and N17, Linux and macOS VMs), and claustrum after that bound.
+// (cells N2, N3 and N17, Linux and macOS VMs), and claustrum after repoOwnerCallBound.
 //
 // An answer of git that names no problem is kept with the kept verdict for
 // repoOwnerAnswerKeep. In that time a request with that refusal starts no call.
@@ -959,7 +1028,11 @@ func repoConfigGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy 
 		return v.refusal
 	}
 	asked := repoOwnerClock()
-	named, good := gitNamesOwnerProblem(dir, heavy, probe, strings.HasSuffix(v.refusal, notRegularTail))
+	bound := repoOwnerCallLongBound
+	if strings.HasSuffix(v.refusal, notRegularTail) {
+		bound = repoOwnerCallBound
+	}
+	named, good := gitNamesOwnerProblem(dir, heavy, probe, bound)
 	if named {
 		return ""
 	}

@@ -1280,8 +1280,10 @@ func TestRepoVerdictsBound(t *testing.T) {
 //   - The stub prints the owner line and sleeps 60 s. The bound ends the call,
 //     and the refusal stays. The next request asks git again.
 //   - git names no owner: the refusal stays.
-//   - Another refusal has no bound: the stub answers after 3 s with the owner
-//     line, and there is no refusal.
+//   - Another refusal has the long bound: the stub answers after 3 s with the
+//     owner line, and there is no refusal. With the long bound lowered, a stub
+//     that sleeps 60 s is ended, and the refusal stays. That stands for a git
+//     that waits in a FIFO which a config refused before its includes names.
 func TestRepoConfigOwnerCallBound(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	config := filepath.Join(gitDir, "config")
@@ -1342,6 +1344,19 @@ func TestRepoConfigOwnerCallBound(t *testing.T) {
 	forgetRepoVerdicts()
 	if got, _ := ask(); got != "" {
 		t.Errorf("format version 2, git names the owner after %s: refusal = %q, want none", 3*repoOwnerCallBound, got)
+	}
+
+	oldLong := repoOwnerCallLongBound
+	t.Cleanup(func() { repoOwnerCallLongBound = oldLong })
+	repoOwnerCallLongBound = 500 * time.Millisecond
+	slowGit(t, "rev-parse", "fail", 60*time.Second, "", "")
+	forgetRepoVerdicts()
+	got, took = ask()
+	if !strings.Contains(got, "format version") {
+		t.Errorf("format version 2, git does not answer in the long bound: refusal = %q, want the format version refusal", got)
+	}
+	if took > 30*time.Second {
+		t.Errorf("the request took %s, want the long bound of %s to end the call", took, repoOwnerCallLongBound)
 	}
 }
 
@@ -1545,4 +1560,47 @@ func TestRepoVerdictNotKeptAfterAnOpenError(t *testing.T) {
 			t.Errorf("%s, the next request: verdict = %q, want %q", c.name, got, c.second)
 		}
 	}
+}
+
+// TestRepoConfigListingIsBound pins that the read takes no listing over
+// repoListingMaxBytes into memory. A config with a long subsection name and many
+// keys lists as far more bytes than the file has. With the bound the read has no
+// verdict, so the refused format version of the same file gives no refusal here.
+// Without the bound the read lists the whole file and answers that refusal. The
+// control has the same file with a short subsection name. The same file in the
+// section `remote` keeps its name bound refusal, because the kept part of the
+// listing shows it. Not measured on 5fd08069.
+func TestRepoConfigListingIsBound(t *testing.T) {
+	requireGit(t)
+	old := repoListingMaxBytes
+	t.Cleanup(func() { repoListingMaxBytes = old })
+	repoListingMaxBytes = 1 << 20
+	config := func(subsection string) string { return listingConfig("x", subsection) }
+	_, gitDir := configRepo(t)
+	setRepoConfig(t, gitDir, config(strings.Repeat("s", 8<<10)))
+	log := &repoReadLog{}
+	if d := repoConfigDetail(context.Background(), gitDir, "", log); d != "" || !log.noVerdict {
+		t.Errorf("a listing over the bound: detail %q, no verdict %v, want no detail and no verdict", d, log.noVerdict)
+	}
+	setRepoConfig(t, gitDir, config("s"))
+	log = &repoReadLog{}
+	if d := repoConfigDetail(context.Background(), gitDir, "", log); !strings.Contains(d, "format version") || log.noVerdict {
+		t.Errorf("the control: detail %q, no verdict %v, want the format version refusal", d, log.noVerdict)
+	}
+	setRepoConfig(t, gitDir, listingConfig("remote", strings.Repeat("s", 8<<10)))
+	log = &repoReadLog{}
+	if d := repoConfigDetail(context.Background(), gitDir, "", log); !strings.Contains(d, "whose name is longer than") || log.noVerdict {
+		t.Errorf("a listing over the bound in a section with a name bound: detail %q, no verdict %v, want the name refusal", d, log.noVerdict)
+	}
+}
+
+// listingConfig is a config of format version 2 with 400 keys in one subsection.
+func listingConfig(section, subsection string) string {
+	var b strings.Builder
+	b.WriteString(versionConfig("repositoryformatversion = 2"))
+	b.WriteString("[" + section + " \"" + subsection + "\"]\n")
+	for i := range 400 {
+		b.WriteString("\tk" + strconv.Itoa(i) + " = 1\n")
+	}
+	return b.String()
 }

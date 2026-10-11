@@ -665,7 +665,9 @@ Cells P6w and P6x ran on the Windows VM, with a config of 20 MiB, on `git.info` 
 - A read of the config that does not finish, and a config that changes its size during the read.
 - Which change of a file makes `5fd08069` read the config again, beyond the one changed config of cell B4. A rewrite of the same size with the file time set back.
 - What the 4 to 5 seconds of cell P7 count from on `5fd08069`: the change of the owner, or its last call to git. That cell on macOS and Windows.
-- A `rev-parse` call of more than 1 second in a repository of another owner whose config is not a regular file.
+- A `rev-parse` call of more than 1 second in a repository of another owner whose config is not a regular file, and one of more than 5 seconds with another refusal.
+- A config over its size bound that includes a FIFO, in a repository of the daemon's user. From the code of claustrum: if git waits in that FIFO, each request answers the size refusal after 5 seconds. That git waits there is not measured.
+- A config whose listing by git has more than 64 MiB. From the code: claustrum tests the name bound and the count of settings on the first 64 MiB. If neither refuses, its read has no verdict.
 - An error of the daemon itself in an open, such as a full file table.
 - A bare repository with a refused config on a host where git refuses bare repositories.
 - `HOME` unset with `include.path = ~/x`: no daemon starts with no home folder.

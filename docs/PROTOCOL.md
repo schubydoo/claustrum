@@ -2006,9 +2006,13 @@ has a refusal, claustrum asks git for the second state. It runs the
 `detected dubious ownership in repository`, the method gives
 no refusal and goes on as before. Plain git prints that text in cells V1,
 before it reads the config. git waits in its own open of a FIFO. So claustrum ends
-that call after 1 second for a file that is not a regular file. The refusal then
-stays. After git ends, claustrum waits at most 1 more second for the error output
-of that call. The two bounds are from the code and from the tests.
+that call after 1 second for a file that is not a regular file. git can also meet
+a FIFO that the read did not reach. One case is an include of a config that is
+refused for its size. So claustrum ends the call after 5 seconds for each other
+refusal.
+If a bound ends the call, the refusal stays. After git ends, claustrum waits at
+most 1 more second for the error output of that call. The three bounds are from
+the code and from the tests.
 
 claustrum keeps an answer of git that names no problem for 5 seconds, with the
 kept verdict. In that time a request with that refusal starts no such call. An
@@ -2069,6 +2073,8 @@ later build of this change. A line with "from the code" ran on no VM.
   Linux VM, and cells N2 and N13-b on a macOS VM. The first such request of
   `5fd08069` takes 0.15 to 0.36 s, and a later one under 2 ms. Those times are
   from cells N2, N3 and N17 (Linux and macOS VMs). The reply lines are equal.
+  With another refusal, a call that does not end takes 5 seconds on each request
+  (from the code, not measured).
 - The time of the change after a change of the owner is equal in two measured
   sequences. In cell P7 (Linux VM, 3 runs each) a repository with format version
   `2` gets another owner. `5fd08069` and claustrum answer the refusal 0, 1, 2, 3
@@ -2078,7 +2084,11 @@ later build of this change. A line with "from the code" ran on no VM.
 - A repository of another owner whose config is not a regular file, on a host
   where the `rev-parse` call takes more than 1 second. claustrum answers the
   refusal. `5fd08069` answers "not a repository" in cells V1 and N2 (from the
-  code, not measured).
+  code, not measured). The same holds for another refusal and a call of more
+  than 5 seconds.
+- A config whose listing by git has more than 64 MiB. If the first 64 MiB show
+  neither a name over its bound nor too many settings, claustrum gives no
+  refusal (from the code, not measured on `5fd08069`).
 - In cell X1c (Linux VM) the config is a FIFO. Requests 3 and 4 have
   `"shadowDirOff":true` and get no answer. After them, `5fd08069` gives no answer
   to request 5, a `git.list_branches`, and to request 7, a `git.worktree_create`.
@@ -2111,10 +2121,15 @@ later build of this change. A line with "from the code" ran on no VM.
 - On `git.worktree_remove` with `worktreeRoot`, the read comes after the trust
   check and before the configuration listing. Cells N14 and P4 have a repository
   that passes the checks before it.
-- The question to git about the owner: its one text, the bound of 1 second, and
-  the wait of 1 second for its error output. The bound is for a refusal of a file
-  that is not a regular file. With another refusal the call has the `git-timeout`
-  bound alone.
+- The question to git about the owner: its one text, the bound of 1 second for
+  a refusal of a file that is not a regular file, the bound of 5 seconds for
+  each other refusal, and the wait of 1 second for its error output. The
+  `git-timeout` ends the call too if it is shorter.
+- The listing that the read takes from git for one config file has a bound of
+  64 MiB. A file with a long subsection name and many keys lists as far more
+  bytes than it has. The read tests the name bound and the count of settings
+  on the first 64 MiB of such a listing. If neither refuses, the read has no
+  verdict, and the request gets no refusal.
 - The kept owner answer: the 5 seconds count from the start of the call. One kept
   answer serves the five methods on one git directory or linked worktree.
 - If the read gives no verdict, the method goes on as before. A read gives none
