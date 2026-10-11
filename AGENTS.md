@@ -20,7 +20,7 @@ daemon. The wire surface is the product.
 | Format | `make fmt` runs `gofmt -w`. `gofmt -l .` must be empty |
 | Vet | `make vet` (`go vet ./...`) |
 | Lint | `golangci-lint run ./...`. The configuration is `.golangci.yml` (v2) |
-| Tests | `go test -race ./...`. This runs the unit suites and the socket-integration suites |
+| Tests | `make test` (`go test -race -timeout 20m ./...`). This runs the unit suites and the socket-integration suites. The time limit is explicit, because a race run on one Linux host took more than 9 minutes, near the 10 minute default of `go test` |
 | Validation battery | `scratch/probe/validate.sh`. It diffs frames against the reference. The script is gitignored |
 
 - Use Go 1.25+ and `CGO_ENABLED=0`. The build toolchain is deliberately held
@@ -116,7 +116,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   line. Several sentences on it are fine. `scripts/lint_changesets.py` gates this in CI and pre-commit.
 - Before a PR, make all four of these true: `gofmt -l .` prints nothing,
   `go vet ./...` is clean, `golangci-lint run` is clean, and
-  `go test -race ./...` is green. For a wire-surface change, also re-run the
+  `make test` is green. For a wire-surface change, also re-run the
   `scratch/` validation battery to make sure that the frames stay
   byte-identical.
 - CI gates every PR on the branch ruleset's required checks: `ci required checks

@@ -88,10 +88,11 @@ jobs:
       # Windows runs the suite in three shards, because the top-level tests run
       # one at a time and are slowest there. On one Windows run the worktree
       # tests took 204 s and the rest 184 s. With the git.status tests the rest
-      # took 467 s, against the 600 s limit of go test. Two shards run a -run
+      # took 467 s, against the 600 s default limit of go test. Two shards run a -run
       # pattern and the third skips both, so together they run every test once.
       # macOS runs two shards. One macOS run took 461 s for the whole suite,
-      # against the same 600 s limit. The git shard runs the worktree and the
+      # against the same 600 s default. Each leg now runs with the 12 minute limit
+      # of the go test step. The git shard runs the worktree and the
       # git.status tests, and the rest shard skips both.
       matrix:
         include:
@@ -147,7 +148,7 @@ jobs:
         run: |
           go install gotest.tools/gotestsum@"${GOTESTSUM_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      # Same flags as before — `-race -count=1 ./...` — just run through gotestsum so
+      # The flags are `-race -count=1 -timeout 12m ./...`, run through gotestsum so
       # a junit.xml falls out. gotestsum exits NON-ZERO when a test fails (verified:
       # exit 1, with failures="1" in the XML), so this still gates the job exactly as
       # `go test` did.
@@ -180,7 +181,10 @@ jobs:
         # other legs. go build ignores a test flag in GOFLAGS.
         env:
           GOFLAGS: ${{ matrix.select }}
-        run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 ./...
+        # The time limit is explicit, and 3 minutes below the 15 minutes of the job.
+        # The default of go test is 10 minutes. Plain go test ends a run past it
+        # with a panic and marks no test as failed (seen on a Linux host, not in CI).
+        run: gotestsum --format standard-verbose --junitfile junit.xml -- -race -count=1 -timeout 12m ./...
       # Upload from EVERY leg, tagged with its OS as a Codecov flag, so Test Analytics
       # (flaky/slow tests) breaks out per platform — which is the axis claustrum
       # actually varies on. The shards of one OS upload under the one flag of that OS,
@@ -252,7 +256,7 @@ jobs:
     # Windows-only arms this Ubuntu job can't see.)
     name: coverage (>= 95%)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15 # above the 12 minutes of the go test time limit below
     env:
       COVERAGE_MIN: "95.0"
     steps:
@@ -266,7 +270,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          go test -race -count=1 \
+          go test -race -count=1 -timeout 12m \
             -coverprofile=coverage.out \
             -covermode=atomic \
             -coverpkg=./... \

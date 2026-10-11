@@ -31,8 +31,12 @@ vet:
 lint:
 	golangci-lint run ./...
 
+# The time limit is explicit. The default of go test is 10 minutes. On one
+# Linux host a race run took 552 s, and runs of a branch with more tests
+# reached the default. A run past the default ends with a panic and no failed
+# test.
 test:
-	go test -race ./...
+	go test -race -timeout 20m ./...
 
 # Install the repo's git hooks by pointing core.hooksPath at .githooks. One-time
 # per clone; the hook then mirrors CI's lint job on every commit (see

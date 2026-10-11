@@ -24,7 +24,7 @@ internal-only PRs apply the `no-changelog` label instead. See CONTRIBUTING.md.
 ## Checklist
 
 - [ ] `gofmt -l .` is empty and `go vet ./...` is clean
-- [ ] `go test -race ./...` passes
+- [ ] `make test` passes
 - [ ] `make all` cross-compiles all six targets
 - [ ] If the wire surface changed: re-ran the `scratch/` validation battery and
       frames stay byte-identical (or the divergence is documented above)
