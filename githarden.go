@@ -16,7 +16,9 @@ import (
 	"unicode"
 )
 
-// Git-invocation hardening, matching reference build 7d193f89. That build stopped
+// Git-invocation hardening. The call shape came from reference build 7d193f89, and
+// the two lists and the variables are now those of 5fd08069 (see gitHardenLight and
+// gitHardenHeavy). 7d193f89 stopped
 // shelling out to plain `git <cmd>` and instead runs every git operation under a
 // fixed set of `-c` config overrides plus a hardened environment, with any
 // config-defined hooks pinned off first. The observable output is unchanged for an
@@ -26,7 +28,7 @@ import (
 // project matches the reference as closely as possible even off the wire.
 //
 // The exact profiles and environment were captured with a logging `git` wrapper on
-// an ephemeral VM (scratch/git-hardening-7d193f89.md is the ground truth).
+// an ephemeral VM.
 
 // gitHardenLight is the `-c` list of the calls of git.worktree_create and of the
 // branch step. It is the list of 20 items that 5fd08069 sends. s3-linux cells B0 and

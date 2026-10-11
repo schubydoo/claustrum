@@ -268,7 +268,7 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 
 // TestHardenedGitCallShape pins the cwd, the argv and the env of the git calls that
 // the hardened helpers make, and their order, as f6010b97 makes them on Linux, macOS
-// and Windows VMs:
+// and Windows VMs, with the lists and variables of 5fd08069:
 //
 //   - Every hardened call and every config listing runs in the repository directory
 //     and passes no -C.
@@ -279,7 +279,8 @@ func checkHardenedEnv(t *testing.T, what string, calls []shapeCall) {
 //   - Both profiles set GIT_NO_REPLACE_OBJECTS and GIT_GRAFT_FILE=<null device>, as
 //     5fd08069 does (s3-linux cell B1, Linux VM). The heavy profile is on every call
 //     of git.info, git.list_branches and git.status, and on `rev-parse
-//     --absolute-git-dir`. GIT_OPTIONAL_LOCKS=0 is on the status call only.
+//     --absolute-git-dir`. GIT_OPTIONAL_LOCKS=0 is on the status, ls-files and
+//     diff-index calls of git.status only.
 //   - Each hardened call has the -c list of its kind: 28 items on the heavy profile
 //     and 20 on the light one (checkHardenedEnv).
 //   - The excludes read runs first, in the temporary directory, with GIT_DIR=<null

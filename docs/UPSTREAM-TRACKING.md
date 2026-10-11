@@ -317,8 +317,9 @@ traps that matter for telling drift from expected:
 - The failure frames of `git.worktree_create` differ between pins. In
   `f6010b97` the git text can start with git's graft-file deprecation `hint:` lines.
   In the add-failure frame the 512-byte cap can then cut the rest of the text.
-  `90fca6e6` prints no hint. claustrum sets `GIT_GRAFT_FILE` too, and its calls
-  turn the hint off with `-c advice.graftFileDeprecated=false`. A hint in a frame
+  `90fca6e6` prints no hint. claustrum sets `GIT_GRAFT_FILE` too, and its light
+  calls turn the hint off with `-c advice.graftFileDeprecated=false`. Its heavy
+  calls print the hint on stderr, and no reply holds it. A hint in a frame
   of `f6010b97` and none in the frame of claustrum is therefore not drift. The
   texts of `5fd08069` have no hint either, and those of `89cb6289` have it (cell
   B2 of round `val-s3p2b1`, Linux, macOS and Windows VMs). See the
@@ -524,8 +525,7 @@ traps that matter for telling drift from expected:
   [record](record/git-config-refusals.md).
 - The option lists of the git calls split the builds too, not drift.
   `scripts/UPSTREAM_SHA` names `89cb6289`, and claustrum follows `5fd08069`.
-  Round `val-s3p2b1` measured these against `89cb6289`, with and without
-  `"shadowDirOff":true`:
+  Round `val-s3p2b1` measured these against `89cb6289`:
   - `git.status` on a `HEAD` commit with a replacement answers against the real
     commit. `89cb6289` answers against the replacement. For a replace ref that
     names a missing object, `89cb6289` answers `exit status 128` (cell B1, Linux,

@@ -2160,14 +2160,15 @@ The git methods run most git steps as hardened calls. A hardened call carries a 
 set of `-c` options and a fixed set of environment variables. This shape reaches a
 reply or the disk in at least four places. One is the `git.status` answer for a
 replaced `HEAD` commit (see `git.status`). The three others are in
-`git.worktree_create`. Its failure texts have no graft-file hint. A tree path over
-260 characters creates on Windows. The records of a new worktree hold absolute
+`git.worktree_create`. Its failure texts have no graft-file hint. A tree path of
+270 characters creates on Windows. The records of a new worktree hold absolute
 paths. See
 [the option lists in replies and on disk](record/git-worktree-create.md#the-option-lists-in-replies-and-on-disk).
 A logging git wrapper measured
-each point below against `f6010b97`. The option lists are those of `5fd08069`. The
+the points below. The option lists are those of `5fd08069`. The
 variables are those that `5fd08069` sends with `"shadowDirOff":true`. See "Not equal
-to `5fd08069`" below for the rest. Each point names the VMs that measured it.
+to `5fd08069`" below for the rest. Each point names its build and the VMs that
+measured it.
 
 - Working directory. Each hardened call runs with the repository directory as its
   working directory, and it passes no `-C`. The checkout of `git.worktree_create`
@@ -2246,8 +2247,9 @@ to `5fd08069`" below for the rest. Each point names the VMs that measured it.
   each cell ran on each system. The Windows log is sorted by name, so the order of
   the variables has rows on Linux and macOS VMs only. The points below are the
   differences that the round found. One call has no row on `5fd08069` (not
-  measured): the call that tests git's ownership text for `git.info` and
-  `git.list_branches`. claustrum sends the heavy profile there.
+  measured): the call that tests git's ownership text. claustrum sends it with
+  the profile of the `rev-parse` call that follows. That is heavy for `git.info`,
+  `git.list_branches`, `git.status` and a remove, and light for a create.
     - With the member, a call that both builds make is equal in list, arguments,
       working directory and variables (Linux, macOS and Windows VMs). The order of
       the variables is equal too (Linux and macOS VMs). That holds for the calls of
@@ -2337,8 +2339,10 @@ to `5fd08069`" below for the rest. Each point names the VMs that measured it.
   `rev-parse --verify -q HEAD^{commit}`. `89cb6289` prints no hint there (cell B8
   of round `val-s3p2b1`, Linux and Windows VMs). With an `info/grafts` file of one line, the
   three calls print the hint on each of the three builds (cell B5, Linux and
-  Windows VMs). `git.status` puts no standard error text into a reply. So no reply
-  line of cells B5 and B8 holds a `hint:` line (Linux, macOS and Windows VMs).
+  Windows VMs). The `status`, `ls-files`, `rev-parse` and `diff-index` calls of
+  `git.status` give stdout only to the reply. A failure of one of them answers
+  the exec error. So no reply line of cells B5 and B8 holds a `hint:` line
+  (Linux, macOS and Windows VMs).
   These cells ran with and without `"shadowDirOff":true`.
 - Reply lines against `b027ede`, the build before the option lists. Among the
   requests of round `val-s3p2b1` that both builds ran, the replies differ in cells
