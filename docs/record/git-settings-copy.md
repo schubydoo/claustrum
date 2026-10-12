@@ -31,8 +31,9 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `val-s3p2b2-12` | Windows VM, 344 cell runs | `5fd08069` and the build of commit `43df7af`. Its cells are named with "Windows VM" below |
 | `val-s3p2b2-13` | the second Linux VM and the macOS VM (110 cell runs on macOS) | `5fd08069` and the build of commit `ce95a6d`. The cells of round `val-s3p2b2-11` ran on that build, against the stored records of `5fd08069` |
 | `val-s3p2b2-13`, Windows part | Windows VM, 353 cell runs | `5fd08069` and the build of commit `ce95a6d`. Its cells are named with "Windows VM" below |
+| `val-s3p2b2-14` | the second Linux VM and the macOS VM | `5fd08069` and the build of commit `bb9bad7`. The swap after the read-tree call (3 runs for each form of the other folder, on each system), the swap after `worktree add` (Linux, 2 runs), and the cells of round `val-s3p2b2-13` again |
 
-Round `val-s3p2b2-13` ran the build of commit `ce95a6d` on the Linux, macOS and Windows VMs. Two edits came after that build, and they ran on no VM. Both are for Linux and macOS: the test after the read-tree call of a create, and the order of the step for the `.git` file of the new worktree. Each has a test. "claustrum and `5fd08069`" below names what each round left open.
+Round `val-s3p2b2-13` ran the build of commit `ce95a6d` on the Linux, macOS and Windows VMs. Two edits for Linux and macOS came after that build: the test after the read-tree call of a create, and the order of the step for the `.git` file of the new worktree. Round `val-s3p2b2-14` ran them on the Linux and macOS VMs, and both cells are equal to `5fd08069` there. The Windows build has no edit after `ce95a6d`. "claustrum and `5fd08069`" below names what each round left open.
 
 ## The member and the states
 

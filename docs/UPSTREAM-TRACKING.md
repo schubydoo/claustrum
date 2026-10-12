@@ -561,8 +561,8 @@ traps that matter for telling drift from expected:
     `SIGKILL`. `5fd08069` removes it at the first request of the next daemon.
   - On Windows, two reply texts of a create whose `.git` becomes a file
     `gitdir: <X>` while the create runs (Windows VM).
-  - The top of the [record](record/git-settings-copy.md) says which edits of
-    the copy ran on no VM.
+  - The top of the [record](record/git-settings-copy.md) says which round
+    ran which build of the copy.
 - The reap of a child record with a `program` key splits the pins too, off the
   wire. claustrum follows `89cb6289`. On Linux, if the process runs `program` or
   holds it as one whole argument, `89cb6289` accepts the record. Linux rows PG02a, PG02b,
