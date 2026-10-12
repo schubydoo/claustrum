@@ -146,11 +146,11 @@ func TestShutdownBeforeTheRepoFolderLeavesNoFolder(t *testing.T) {
 //     the config of the test repository. Without the test of an ended call
 //     the cause is `git config failed under …: signal: killed`.
 //
-// One more row is not measured on 5fd08069: call 7 ends at once, and a child
-// holds its pipes past the bound and past the wait for the pipes. The call
-// was not ended by the bound, so the test goes on by its exit code and
-// passes. With an `ended` that reads the context at return time the cause is
-// the text of row N-c.
+// One more row is cell N-b of val-s3p2b2-9-linux2 with `sleep 35` (Linux VM, 1
+// run): call 7 exits 0 at once, and a child holds its pipes past the bound
+// and past the wait for the pipes. 5fd08069 answers the text of row N-c one
+// bound and 1 s after the call. With an `ended` that is true only for a
+// process that the bound ended, the test passes there.
 func TestStartTestCallsAndTheirPipes(t *testing.T) {
 	t.Run("N-a init", func(t *testing.T) {
 		f := newShadowFixture(t)
@@ -176,12 +176,22 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 			t.Errorf("the start test ended after %v, want it to wait for the pipes of call 7", d)
 		}
 	})
-	t.Run("call 7 in time with a child past the bound", func(t *testing.T) {
+	boundText := func(t *testing.T, f shadowFixture) *regexp.Regexp {
+		return regexp.MustCompile("^" + regexp.QuoteMeta("Claude could not test git on the remote machine (this repository's git config cannot be used: git did not finish reading \""+
+			filepath.Join(daemonFolder(t, f.run), ".check-")) + `[0-9]+` + regexp.QuoteMeta(filepath.FromSlash("/real/.git/config")+
+			"\" within 30 seconds; try again). Check free disk space and quota there, then try again.") + "$")
+	}
+	t.Run("N-b call 7 with a child past the bound", func(t *testing.T) {
 		f := newShadowFixture(t)
 		lowerShadowBound(t, time.Second, 200*time.Millisecond)
-		slowGit(t, "--no-includes", "hold", 3*time.Second, "", "")
-		if msg := f.s.gitShadow.gate(false); msg != "" {
-			t.Errorf("the start test = %q, want it to pass", msg)
+		slowGit(t, "--no-includes", "hold", 8*time.Second, "", "")
+		start := time.Now()
+		msg := f.s.gitShadow.gate(false)
+		if want := boundText(t, f); !want.MatchString(msg) {
+			t.Errorf("the start test = %q\nwant %s", msg, want)
+		}
+		if d := time.Since(start); d > 6*time.Second {
+			t.Errorf("the start test ended after %v, want it one bound and one pipe wait after call 7", d)
 		}
 	})
 	t.Run("N-c call 7 past the bound", func(t *testing.T) {
@@ -189,10 +199,7 @@ func TestStartTestCallsAndTheirPipes(t *testing.T) {
 		lowerShadowBound(t, time.Second, 200*time.Millisecond)
 		slowGit(t, "--no-includes", "pre", 20*time.Second, "", "")
 		msg := f.s.gitShadow.gate(false)
-		want := regexp.MustCompile("^" + regexp.QuoteMeta("Claude could not test git on the remote machine (this repository's git config cannot be used: git did not finish reading \""+
-			filepath.Join(daemonFolder(t, f.run), ".check-")) + `[0-9]+` + regexp.QuoteMeta(filepath.FromSlash("/real/.git/config")+
-			"\" within 30 seconds; try again). Check free disk space and quota there, then try again.") + "$")
-		if !want.MatchString(msg) {
+		if want := boundText(t, f); !want.MatchString(msg) {
 			t.Errorf("the start test = %q\nwant %s", msg, want)
 		}
 	})

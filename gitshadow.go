@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -506,9 +505,10 @@ func boundedGitInput(bound time.Duration, dir string, env []string, stdin []byte
 // boundedGitDrain is boundedGitInput with drain as the wait for the output
 // pipes.
 //
-// ended is true only when the bound ended the process itself. A call that
-// exits in time and whose child holds the output pipes past the bound is not
-// ended: it counts by its exit code. That state is not measured on 5fd08069.
+// ended is true when the call failed and the bound has passed at its return.
+// That holds for a process that the bound ended. It holds too for a call that
+// exits in time while a child keeps its output pipes past the bound. The row
+// of that second state is at call 7 in shadowTestCalls.
 func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin []byte, argv ...string) shadowRun {
 	base, cancelBase := gitCtx()
 	defer cancelBase()
@@ -523,19 +523,12 @@ func boundedGitDrain(bound, drain time.Duration, dir string, env []string, stdin
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = drain
-	// The exec package calls Cancel only while the process runs. The kill is
-	// the one that it makes with no Cancel set.
-	var killed atomic.Bool
-	cmd.Cancel = func() error {
-		killed.Store(true)
-		return cmd.Process.Kill()
-	}
 	err := cmd.Run()
 	return shadowRun{
 		out:    strings.TrimRight(out.String(), "\r\n"),
 		stderr: errOut.String(),
 		err:    err,
-		ended:  err != nil && killed.Load(),
+		ended:  err != nil && ctx.Err() != nil,
 	}
 }
 
@@ -653,10 +646,13 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	//   - The call itself runs 29 s: the test passes. It runs 40 s: 5fd08069
 	//     ends it at 30 s, and the cause is the text of callSevenEnded.
 	//
-	// A child that holds the pipes for more than 30 s is not measured. claustrum
-	// waits for the pipes one bound and one pipe wait after the call ended,
-	// and then goes on by the exit code of the call. A call 7 that fails on its
-	// own is not measured: its cause is the exec error alone.
+	//   - The call exits 0 at 0.2 s and a child holds the pipes for 35 s: 5fd08069
+	//     answers the text of callSevenEnded at 31.2 s (cell N-b of
+	//     val-s3p2b2-9-linux2, Linux VM, 1 run). The wait for the pipes is
+	//     therefore one bound and 1 s after the call ended.
+	//
+	// From the code: a call 7 that fails on its own gives the exec error alone
+	// (not measured).
 	listed := exitedInTime(boundedGitDrain(shadowCallBound, shadowCallBound+shadowCallDrain, gitVersionDir,
 		repoConfigListEnv(), text, "config", "--no-includes", "--file", "-", "--list", "-z"))
 	if listed.ended {
