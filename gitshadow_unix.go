@@ -18,6 +18,12 @@ const shadowLinksWorktrees = true
 // No macOS cell planted one.
 const shadowStagesAdd = false
 
+// gitDirMustBeReal is false on Linux and macOS. No row has a create there whose
+// git directory is replaced while it runs, and a `.git` entry that is a
+// symbolic link is resolved by the trust check (resolveGitDirLinks). The steps
+// of acceptedGitDir do not run. It is a variable so that a test can run them.
+var gitDirMustBeReal = false
+
 // statusFollowsPrintedGitDir is false on Linux and macOS. The trust check
 // resolves the links of the request path there, and a path through a link gets
 // one folder (s3p2-macos cells B1 and B2, macOS VM).

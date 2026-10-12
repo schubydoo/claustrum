@@ -52,6 +52,13 @@ const (
 	repoSettingsMaxCost = 8 << 20
 )
 
+// configLinkTail ends the detail of a config that the daemon reaches through a
+// link that it does not follow. 5fd08069 writes it on a Windows VM for a config
+// that is a file link (cell C4b, configLinkDetail) and for a git directory that
+// is a junction (cells X1c of val-s3p2b2-7-windows, gitDirLinkDetail).
+const configLinkTail = ": is, or is reached through, a link that Claude does not follow here; " +
+	"replace the link with what it points to"
+
 // repoNameBoundSections are the sections whose setting names have the bound of
 // repoConfigKeyMaxBytes. The exact pair is measured in core and remote (cells
 // X4), and in lfs, url, filter, extensions, include and includeif (cells V4).
@@ -722,6 +729,9 @@ func entryConfigDetail(worktreeConfig bool, entry string, log *repoReadLog) stri
 // after its `worktree add` (newWorktreeConfig).
 func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repoConfigRead, string) {
 	r := &repoConfigRead{ctx: ctx, gitDir: gitDir, log: log}
+	if d := gitDirLinkDetail(gitDir); d != "" {
+		return r, d
+	}
 	if d := r.file(filepath.Join(gitDir, "config"), 0); d != "" || r.unlisted {
 		if log != nil {
 			log.noVerdict = r.unlisted

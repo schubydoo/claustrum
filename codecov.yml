@@ -202,6 +202,8 @@ component_management:
         - gitshadow_windows.go
         # the folder of one `worktree add` and the staging step of a create on Windows (5fd08069).
         - worktreestaging.go
+        # the held git directory of a create on Windows (5fd08069).
+        - gitdiraccept.go
         # the `config.worktree` file: its settings on the git calls and the file of a new worktree (5fd08069).
         - gitworktreeconfig.go
         # the gate and the answer of git.status (89cb6289).

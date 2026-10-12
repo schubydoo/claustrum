@@ -184,7 +184,22 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	// Without tested, the admin dir is found through the leaf's .git file, which
 	// step A deletes.
 	var registration createdRegistration
-	if tested.path == "" {
+	// A create that holds its git directory deletes no registration when the
+	// path no longer names that folder (acceptedGitDir). After a good add the
+	// repository has the registration, and the rollback then answers that it
+	// remains, with the text of a git directory that is no real directory. On
+	// 5fd08069 the registration stays and the leaf goes (cells X1c-11 and X1p-11
+	// of val-s3p2b2-7-windows, Windows VM). After an add that the daemon did not
+	// complete there is no registration to delete, and the branch step runs
+	// (cells X1c-10 and X1p-10).
+	var heldErr error
+	held := u.accepted != nil && !u.accepted.stands()
+	if held {
+		tested = testedRegistration{}
+		if u.accepted.moved {
+			heldErr = errors.New(realDirText(u.accepted.path))
+		}
+	} else if tested.path == "" {
 		registration = createdWorktreeAdminDir(repo, worktreePath)
 	}
 	leafSafe := func() bool {
@@ -204,9 +219,12 @@ func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktree
 	// run: 89cb6289 runs no git call after it (row A14, Linux VM).
 	var res branchStepResult
 	var regErr error
-	if tested.path != "" {
+	switch {
+	case held:
+		regErr = heldErr
+	case tested.path != "":
 		regErr = removeTestedRegistration(tested)
-	} else {
+	default:
 		regErr = removeCreatedRegistration(registration)
 	}
 	if regErr == nil {

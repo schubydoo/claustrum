@@ -90,6 +90,15 @@ func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	if branchStepEntered != nil {
 		branchStepEntered(repo)
 	}
+	// A create whose git directory is no longer the held folder makes no call
+	// of the check when its gate refuses again. The refusal is the cause in
+	// the text of the branch: `… could not check whether another branch or
+	// remote-tracking ref reaches its commits (this repository's git config
+	// cannot be used: … a link …)` on 5fd08069 (cell X1c-10 of
+	// val-s3p2b2-7-windows, Windows VM).
+	if msg := u.swapRefusal("branch", repo); msg != "" {
+		return branchStepResult{kind: branchUnchecked, err: errors.New(msg)}
+	}
 	return checkAndDeleteBranch(u, repo, branch)
 }
 

@@ -17,13 +17,13 @@ import (
 const openNoTerminal = 0
 
 // configLinkDetail refuses a config file that is a symbolic link (cell C4b: a
-// file link made with mklink). A link in a folder above the file is not
-// measured, and claustrum does not test for it. An included file gets the same
-// test (not measured).
+// file link made with mklink). A git directory that is a link or a junction has
+// its own test (gitDirLinkDetail). Another link in a folder above the file is
+// not measured, and claustrum does not test for it. An included file gets the
+// same test (not measured).
 func configLinkDetail(path string) string {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		return quoteOperand(path) + ": is, or is reached through, a link that Claude does not follow here; " +
-			"replace the link with what it points to"
+		return quoteOperand(path) + configLinkTail
 	}
 	return ""
 }

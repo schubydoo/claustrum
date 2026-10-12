@@ -603,12 +603,15 @@ func indexInstallText(stderr string, installErr error) string {
 // worktreeBaseGitDir is the git directory of repo for git.worktree_create. answered
 // reports that `rev-parse --absolute-git-dir` gave it. If git gave no answer, the
 // directory is that of repoGitDir, which need not exist: a subfolder of a
-// repository has no .git entry.
-func worktreeBaseGitDir(u gitUse, repo string) (gitDir string, answered bool) {
-	if d, ok := hardenedGit(u, repo, true, "rev-parse", "--absolute-git-dir"); ok && d != "" {
-		return filepath.Clean(filepath.FromSlash(d)), true
+// repository has no .git entry. err is the exec error of a call that failed.
+func worktreeBaseGitDir(u gitUse, repo string) (gitDir string, answered bool, err error) {
+	ctx, cancel := gitCtx()
+	defer cancel()
+	out, err := hardenedGitCmd(ctx, u, repo, true, nil, "rev-parse", "--absolute-git-dir").CombinedOutput()
+	if d := strings.TrimRight(string(out), "\n"); err == nil && d != "" {
+		return filepath.Clean(filepath.FromSlash(d)), true, nil
 	}
-	return repoGitDir(repo), false
+	return repoGitDir(repo), false, err
 }
 
 // repoGitDir is the git dir of repo when `rev-parse --absolute-git-dir` gives no

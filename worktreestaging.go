@@ -38,8 +38,10 @@ import (
 // no step of this file runs there (shadowStagesAdd).
 //
 // The decisions are plain functions of their inputs, so that every system
-// tests them. Every step in the git directory goes through one os.Root that is
-// open from before the call to the end (addStage.git).
+// tests them. Every step in the git directory goes through one os.Root
+// (addStage.git). In a create that is the folder that the gate of the request
+// accepted and holds open (acceptedGitDir), so no step acts on another folder
+// that was put at the path of the git directory.
 
 const (
 	// addCopyPrefix starts the name of the folder of one `worktree add`:
@@ -201,10 +203,12 @@ func withAddCopy(env []string, repoDir, addDir string) []string {
 // addStage is the state of one staged `worktree add`.
 type addStage struct {
 	u gitUse
-	// git is the root at the git directory of the repository. It is opened
-	// before the call and stays open to the end, so every step acts on the
-	// folder that was the git directory then.
+	// git is the root at the git directory of the repository. In a create it
+	// is the folder that the request holds (gitUse.accepted). With no held
+	// folder it is opened before the call, and own is true: close then closes
+	// it.
 	git *os.Root
+	own bool
 	// dir is the folder `.s<n>`, and removeDir removes it.
 	dir       string
 	removeDir func()
@@ -218,20 +222,55 @@ type addStage struct {
 // at 592.9 ms, and the call started at 612.4 ms.
 //
 // The folder `worktrees` of the git directory is made when there is none, with
-// the fixed name, through the root. A step that fails is not measured: the
-// call does not run, and the create answers its failed add with claustrum's
-// own text and the error of that step.
+// the fixed name, through the root. A step that fails stops the create before
+// the call. The texts of 5fd08069 are on a Windows VM (val-s3p2b2-7-windows):
+//
+//   - The git directory is no longer the folder that the gate accepted: the
+//     refusal of its config, `this repository's git config cannot be used:
+//     "<git directory>\\config": is, or is reached through, a link …`. 5fd08069
+//     answers it for a junction at `.git` to a copy of the git directory and to
+//     a folder that is no git directory (cells X1c-09 and X1p-09). It makes
+//     nothing in the target of the junction. Another real directory at that
+//     path is not measured: it gets the same text.
+//   - `worktrees` is a file: `"<git directory>\\worktrees" is not a directory`
+//     (table W3, with 8 git calls on both builds). A link or a junction there
+//     is not measured: it gets the same text.
+//   - `.s<n>` cannot be made: `mkdir <S>\.s<n>: Access is denied.` (tables W3
+//     and F1, with a deny entry on the folder of the daemon and the two
+//     privileges of section 1.6 off). The error comes from gitUse.requestDir.
+//
+// Every other failed step is not measured: it has the error of that step.
 func openAddStage(u gitUse) (*addStage, error) {
-	git, err := os.OpenRoot(u.gitDir)
-	if err != nil {
-		return nil, err
+	st := &addStage{u: u}
+	switch {
+	case u.accepted != nil:
+		if u.swapped("prepare") {
+			return nil, errors.New(repoConfigPrefix + gitDirLinkText(u.gitDir))
+		}
+		if createStepHook != nil {
+			createStepHook("prepared")
+		}
+		st.git = u.accepted.root
+	case gitDirMustBeReal:
+		return nil, errors.New("the create holds no git directory")
+	default:
+		git, err := os.OpenRoot(u.gitDir)
+		if err != nil {
+			return nil, err
+		}
+		st.git, st.own = git, true
 	}
-	if err := git.Mkdir(worktreesSubdir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-		_ = git.Close()
-		return nil, err
+	err := st.git.Mkdir(worktreesSubdir, 0o755)
+	if errors.Is(err, fs.ErrExist) {
+		err = nil
+		if fi, statErr := st.git.Lstat(worktreesSubdir); statErr == nil && !goesAsTree(fi.Mode()) {
+			err = errors.New(quoteOperand(filepath.Join(u.gitDir, worktreesSubdir)) + " is not a directory")
+		}
 	}
-	st := &addStage{u: u, git: git}
-	regs, err := readRegistrations(git)
+	var regs []registrationCopy
+	if err == nil {
+		regs, err = readRegistrations(st.git)
+	}
 	if err == nil {
 		st.dir, st.removeDir, err = u.requestDir(addCopyPrefix, "")
 	}
@@ -245,14 +284,16 @@ func openAddStage(u gitUse) (*addStage, error) {
 	return st, nil
 }
 
-// close removes `.s<n>` and closes the root. 5fd08069 removes the folder after
-// a good call and after a failed one (cells 44a to 44e). The removal goes
-// through shadowHost.removeEntry (gitUse.requestDir).
+// close removes `.s<n>` and closes a root that the stage opened. 5fd08069
+// removes the folder after a good call and after a failed one (cells 44a to
+// 44e). The removal goes through shadowHost.removeEntry (gitUse.requestDir).
 func (st *addStage) close() {
 	if st.removeDir != nil {
 		st.removeDir()
 	}
-	_ = st.git.Close()
+	if st.own {
+		_ = st.git.Close()
+	}
 }
 
 // readRegistrations reads the registrations of the repository through git, the
@@ -375,15 +416,27 @@ func writeCopyEntries(root *os.Root, base string, entries []copyEntry, dirMode, 
 	return nil
 }
 
+// addIncomplete is the error of a `worktree add` call that git ended well and
+// whose steps after it did not run: the git directory is no longer the folder
+// that the create holds. The create answers it with completingAddPrefix and
+// rolls back.
+type addIncomplete struct{ text string }
+
+func (e *addIncomplete) Error() string { return e.text }
+
 // worktreeAddStaged runs one `worktree add` of git.worktree_create with the
 // folder `.s<n>`, and the steps after a good call. The listing before the call
 // carries GIT_COMMON_DIR=<copy of the repository>, and the call carries
 // GIT_COMMON_DIR=<S>\.s<n> (cell 49b, the call log of 5fd08069).
+//
+// A failed step before the call gives its error with prepareWorktreesPrefix,
+// and git does not run (openAddStage). The listing comes before those steps:
+// 5fd08069 makes it and then stops (table W3).
 func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
 	st, err := openAddStage(u)
 	if err != nil {
-		return "", fmt.Errorf("cannot make the folder for the worktree add call: %w", err)
+		return "", fmt.Errorf(prepareWorktreesPrefix+"%w", err)
 	}
 	defer st.close()
 	cmd.Env = withAddCopy(cmd.Env, u.repoDir, st.dir)
@@ -391,7 +444,7 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 	cmd.Stderr = &errBuf
 	err = cmd.Run()
 	if err == nil {
-		st.finish(leaf, cp)
+		err = st.finish(leaf, cp)
 	}
 	return errBuf.String(), err
 }
@@ -401,15 +454,28 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 // an old entry was seen for the last time at 1257 ms, and the daemon's own
 // staging folder was seen at 1260 ms (cell 48, control M1).
 //
+// Neither step runs when the git directory is no longer the folder that the
+// create holds. With a junction at `.git` after the call, 5fd08069 answers
+// `git worktree add failed (completing the new worktree's git files): ".git"
+// is a link or a file where Claude needs a real directory; …` and rolls back.
+// An old entry in the target of the junction stays, and the target gets no
+// registration (cells X1c-10 and X1p-10 of val-s3p2b2-7-windows, Windows VM).
+// Both steps act through the held folder, so a folder that is put at the path
+// after this test gets nothing either.
+//
 // A move that fails is not measured. The daemon logs one line and goes on. The
 // `.git` file of the new worktree then names no registration of the repository.
 // No test after the add refuses the create on Windows. The end state is not
 // measured.
-func (st *addStage) finish(leaf string, cp worktreeCheckpoint) {
+func (st *addStage) finish(leaf string, cp worktreeCheckpoint) error {
+	if st.u.swapped("added") {
+		return &addIncomplete{text: realDirText(st.u.gitDir)}
+	}
 	sweepOldStaging(st.git, st.u.gitDir, stagingClock())
 	if err := st.move(leaf, cp); err != nil {
 		logWarnf("[GitHandler] the registration of the new worktree did not move into the git folder: %v", err)
 	}
+	return nil
 }
 
 // stagingClock is the clock of the cleanup. A test replaces it.
@@ -426,7 +492,9 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 }
 
 // sweepOldStaging removes the old staging entries of the git directory gitDir.
-// git is the root at that directory, open from before the `worktree add` call.
+// git is the root at that directory. In a create it is the folder that the gate
+// of the request accepted and holds open, and finish tests before this step
+// that the path of the git directory still names it.
 // now is the time after that call ended.
 //
 // THIS DELETES ENTRIES THAT THE DAEMON DID NOT MAKE. On 5fd08069 a create
@@ -438,7 +506,10 @@ var removeStagingEntry = func(root *os.Root, name string, tree bool) error {
 // the request through the trust check, so every guard is here, in this order:
 //
 //  1. The entries are listed through the root, and every step below acts
-//     through the root. No path is built from a value of the request.
+//     through the root. No path is built from a value of the request, and no
+//     path is resolved again: a junction that is put at the path of the git
+//     directory while the create runs does not lead the cleanup to its target
+//     (cells X1c of val-s3p2b2-7-windows, Windows VM).
 //  2. The name must start with the fixed prefix (isStagingName). The names come
 //     from the listing, so each is one name of the folder itself.
 //  3. The entry itself is read with Lstat through the root. Nothing follows a

@@ -19,6 +19,14 @@ const shadowLinksWorktrees = false
 // s3p2b-edges2-windows and 47 to 49 of s3p2b-edges3-windows).
 const shadowStagesAdd = true
 
+// gitDirMustBeReal is true on Windows. A git directory that is a link or a
+// junction is refused there, and a create tests at each of its steps that the
+// git directory is still the folder that its gate accepted (acceptedGitDir).
+// 5fd08069 refuses so on a Windows VM (cells X1c and X1p of
+// val-s3p2b2-7-windows). It is a variable so that a test on another system can
+// run those steps.
+var gitDirMustBeReal = true
+
 // statusFollowsPrintedGitDir is true on Windows. The trust check resolves no
 // junction there, so git can print another spelling of the git directory of a
 // request. A git.status then goes on with the printed path (usePrintedGitDir,

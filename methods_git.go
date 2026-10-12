@@ -828,6 +828,11 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// comes after a trust refusal and before the "no repository" answer
 	// (docs/record/git-worktree-create.md).
 	t := requestGitDirTrust(repo, false)
+	// The git directory as it is before the gate (acceptedGitDir).
+	var gitDirBefore os.FileInfo
+	if gitDirMustBeReal && t.verdict == gitDirTrusted && t.pinCommonDir != "" {
+		gitDirBefore = gitDirIdentity(t.pinCommonDir)
+	}
 	if t.verdict == gitDirRefused {
 		msg := t.refusal
 		if daemonCommonDirSet() {
@@ -854,6 +859,19 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	} else if noRepo {
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
+	}
+	// The create holds the git directory that its gate accepted until it answers
+	// (acceptedGitDir). A git directory that changed during the gate is not
+	// measured: it gets the refusal of a config behind a link (cells X1c-01 and
+	// X1c-02 of val-s3p2b2-7-windows have that text for a change after the gate).
+	if gitDirMustBeReal && req.use.shadow() {
+		held := acceptGitDir(req.use.gitDir, gitDirBefore)
+		if held == nil {
+			return okResult(req.ID, worktreeResult{Success: false,
+				Error: repoConfigPrefix + gitDirLinkText(req.use.gitDir), ErrorCode: "worktree_add_failed"})
+		}
+		defer held.release()
+		req.use.accepted = held
 	}
 	// A repo whose config cannot be enumerated is refused before git runs — the
 	// reference surfaces the same "config-defined hooks could not be pinned off"
@@ -1017,7 +1035,12 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// staleKept holds each stale entry that is still there (Linux and macOS): it
 	// is locked, the remove failed, or it is one of two or more. It is empty on
 	// Windows.
-	staleKept := dropStaleWorktreeRegistration(repo, p.WorktreePath)
+	// The step does not run when the git directory is no longer the folder that
+	// the create holds (acceptedGitDir, not measured). A later step refuses.
+	var staleKept []string
+	if !req.use.swapped("stale") {
+		staleKept = dropStaleWorktreeRegistration(repo, p.WorktreePath)
+	}
 	// `git worktree add` does not create leading directories, so the reference
 	// makes the parent before adding — this is what lets a nested session path
 	// such as <repo>/.claude/worktrees/<id> succeed on a fresh repo. The parent comes
@@ -1066,6 +1089,21 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// checkpoint holds the leaf and its parent open until the create answers.
 	checkpoint := checkpointCreatedWorktree(p.WorktreePath)
 	defer checkpoint.release()
+	// The steps below test the held git directory (acceptedGitDir). The texts
+	// are those of 5fd08069 on a Windows VM, with a junction at `repo\.git` to a
+	// copy of the git directory (cells X1c of val-s3p2b2-7-windows). refuseAdd
+	// answers one of them and removes the empty leaf: the rows have no folder
+	// of the new worktree at the reply.
+	refuseAdd := func(text string) response {
+		undoFailedAdd(p.WorktreePath, checkpoint)
+		return okResult(req.ID, worktreeResult{Success: false, Error: text, ErrorCode: "worktree_add_failed"})
+	}
+	// A junction that was put there after the first or the second git call of
+	// the create: the refusal of the config, with no words before it (cells
+	// X1c-01 and X1c-02).
+	if msg := req.use.swapRefusal("leaf", repo); msg != "" {
+		return refuseAdd(msg)
+	}
 	// A non-empty sourceBranch picks the start commit from the local branch and its
 	// origin remote-tracking ref (pickSourceCommit, worktreesource.go). When a
 	// candidate resolves, the add and the checkout get that commit's full id, so the
@@ -1138,7 +1176,31 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// measured against f6010b97 and 90fca6e6 on a Windows VM. For a linked-worktree
 	// baseRepo that is its own admin dir. The references ask git for it with
 	// rev-parse --absolute-git-dir, on the heavy profile, before the add.
-	gitDir, gitAnswered := worktreeBaseGitDir(req.use, repo)
+	//
+	// A junction that was put at `.git` before that call: the refusal of the
+	// config, with the words of a git directory that cannot be located (cells
+	// X1c-03 and X1c-04).
+	if msg := req.use.swapRefusal("gitdir", repo); msg != "" {
+		return refuseAdd(gitDirAddWrap + msg)
+	}
+	gitDir, gitAnswered, gitDirErr := worktreeBaseGitDir(req.use, repo)
+	// Where gitDirMustBeReal is set, a failed call stops the create in the
+	// state shadow. 5fd08069 then makes no other git call and answers `git
+	// worktree add failed: cannot locate the repository's git directory: exit
+	// status 128`. The cells are W1c and X1p-02 to X1p-05 of
+	// val-s3p2b2-7-windows (Windows VM): the call exits 128 after `.git` became
+	// a junction to a folder that is no git directory. The text after the
+	// colon is the exec error. A call that a signal ended, the other states and
+	// the other systems are not measured: there the create goes on with the
+	// directory of repoGitDir.
+	if gitDirMustBeReal && req.use.shadow() && gitDirErr != nil {
+		return refuseAdd(gitDirAddWrap + gitDirErr.Error())
+	}
+	// The directory that git answered must be a real directory (cells X1c-06 and
+	// X1p-06: a junction that was put at `.git` after the call).
+	if gitAnswered && req.use.swapped("answered") && gitDirIdentity(gitDir) == nil {
+		return refuseAdd("git worktree add failed: " + listEntriesPrefix + realDirText(gitDir))
+	}
 	// A caller-supplied timeoutMs (4534d86) bounds the add, the checkout and the copy
 	// step. At timeoutMs 0 with D5 off, both contexts are the unbounded context that
 	// hardenedGit uses, so the default path is byte-identical.
@@ -1147,7 +1209,33 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// The caller's deadline does not kill the add. The daemon waits for git to exit.
 	// Measured against f6010b97 and 90fca6e6 on a macOS VM. Each failure frame quotes
 	// git's stderr through worktreeGitText.
+	//
+	// A junction that was put at `.git` before the listing of the add: the
+	// refusal of the config after `git worktree add failed: ` (cell X1c-05).
+	if msg := req.use.swapRefusal("add", repo); msg != "" {
+		return refuseAdd("git worktree add failed: " + msg)
+	}
+	// incompleteAdd answers an add that git ended well and that the daemon did
+	// not complete (addIncomplete), with the rollback of a failed checkout. On
+	// 5fd08069 the leaf is gone and the new branch stays, with the text of the
+	// branch step (cells X1c-10 and X1p-10).
+	incompleteAdd := func(err error, branch string) (response, bool) {
+		var incomplete *addIncomplete
+		if !errors.As(err, &incomplete) {
+			return response{}, false
+		}
+		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, branch, checkpoint, testedRegistration{})
+		return okResult(req.ID, worktreeResult{
+			Success:    false,
+			Error:      completingAddPrefix + incomplete.text + undo,
+			ErrorCode:  "worktree_add_failed",
+			BranchKept: kept,
+		}), true
+	}
 	addStderr, addErr := worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, addArgs...)
+	if resp, ok := incompleteAdd(addErr, createdBranch); ok {
+		return resp
+	}
 	if addErr != nil && attachBranch != "" {
 		// A refused attach falls back to a new branch, unless the failed attach add
 		// deleted the leaf or put a new directory in its place. Then the request
@@ -1174,6 +1262,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			fallbackArgs = append(fallbackArgs, startCommit)
 		}
 		addStderr, addErr = worktreeAdd(d5Ctx, req.use, repo, p.WorktreePath, checkpoint, fallbackArgs...)
+		if resp, ok := incompleteAdd(addErr, p.BranchName); ok {
+			return resp
+		}
 		if addErr != nil {
 			undoFailedAdd(p.WorktreePath, checkpoint)
 			return okResult(req.ID, worktreeResult{
@@ -1279,6 +1370,32 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "unsafe_path",
 		})
 	}
+	// From here on the repository has the registration. A git directory that is
+	// no longer the held folder fails the checkout with the refusal of its
+	// config, and the rollback keeps the registration and the branch. With a
+	// junction at `.git` after the first listing in the new worktree, 5fd08069
+	// answers `git worktree add failed (checkout): this repository's git config
+	// cannot be used: … a link …; and the undo could not finish for <leaf>: the
+	// worktree registration and the branch remain; remove them by hand before
+	// retrying (".git" is a link or a file …)`. The leaf is gone and the
+	// registration stays (cells X1c-11 and X1p-11 of val-s3p2b2-7-windows,
+	// Windows VM). claustrum tests at two steps: before the file of the
+	// registration and before the read-tree call. The first is not measured.
+	swappedCheckout := func(step string) (response, bool) {
+		if !req.use.swapped(step) {
+			return response{}, false
+		}
+		undo, kept := undoFailedCheckout(req.use, repo, p.WorktreePath, createdBranch, checkpoint, tested)
+		return okResult(req.ID, worktreeResult{
+			Success:    false,
+			Error:      "git worktree add failed (checkout): " + repoConfigPrefix + gitDirLinkText(req.use.gitDir) + undo,
+			ErrorCode:  "worktree_add_failed",
+			BranchKept: kept,
+		}), true
+	}
+	if resp, ok := swappedCheckout("registration"); ok {
+		return resp
+	}
 	if hasEntryConfig {
 		placeWorktreeConfig(req.use, indexDir, p.WorktreePath, tested, entryConfig)
 	}
@@ -1324,6 +1441,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 				ErrorCode:  "worktree_add_failed",
 				BranchKept: kept,
 			})
+		}
+		if resp, ok := swappedCheckout("checkout"); ok {
+			return resp
 		}
 		rtStderr, rtDrained, rtErr, installErr := runWorktreeCheckout(callerCtx, req.use, p.WorktreePath,
 			checkoutWorkTree(p.WorktreePath, checkpoint.resolved), gitDir,

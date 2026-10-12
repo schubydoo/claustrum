@@ -44,6 +44,9 @@ type gitUse struct {
 	// shared is the `core.sharedRepository` setting of the config of the
 	// repository (makeWorktreesFolder).
 	shared sharedRepository
+	// accepted is the held git directory of a create, where gitDirMustBeReal is
+	// set (acceptedGitDir). It is nil in every other request.
+	accepted *acceptedGitDir
 	// lightSix gives the light calls of a request with no folder the six values
 	// of profileEnv (noRepoCreateCalls).
 	lightSix bool
@@ -101,7 +104,11 @@ func (u gitUse) shadow() bool {
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
 	_, named := u.names(repo)
 	if named && shadowStagesAdd {
-		return worktreeAddStaged(ctx, u, repo, leaf, cp, args...)
+		stderr, err := worktreeAddStaged(ctx, u, repo, leaf, cp, args...)
+		if err == nil && u.accepted != nil {
+			u.accepted.moved = true
+		}
+		return stderr, err
 	}
 	named = named && shadowLinksWorktrees
 	cmd := hardenedGitCmd(ctx, u, repo, false, nil, args...)
@@ -113,6 +120,9 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	err := cmd.Run()
 	if named && err == nil {
 		repointWorktreeGitFile(u, leaf, cp)
+	}
+	if err == nil && u.accepted != nil {
+		u.accepted.moved = true
 	}
 	return errBuf.String(), err
 }
@@ -417,8 +427,10 @@ const (
 // its full path, with the operation `mkdir`. With a folder of the daemon of
 // mode 0500 a create of 5fd08069 answers `git worktree add failed (checkout):
 // mkdir <S>/.index-<n>: permission denied` (cell f1-0500 of
-// val-s3p2b2-7-linux2, Linux VM). A folder of the daemon that cannot be opened
-// is not measured: it gives the error of that open.
+// val-s3p2b2-7-linux2, Linux VM). On a Windows VM the folder `.s<n>` of a
+// create gives `mkdir C:\o\w\run\git-shadow\<S>\.s<n>: Access is denied.`
+// (tables W3 and F1 of val-s3p2b2-7-windows). A folder of the daemon that
+// cannot be opened is not measured: it gives the error of that open.
 func (u gitUse) requestDir(shadowPrefix, tempPrefix string) (dir string, remove func(), err error) {
 	if !u.inFolder() {
 		dir, err = os.MkdirTemp("", tempPrefix)
