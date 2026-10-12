@@ -118,7 +118,12 @@ func TestProbeFolder(t *testing.T) {
 	// The folder of the daemon goes. A request inside the kept time of the
 	// answer makes it again with no `.probe` and no call. The first request
 	// after that time makes the call, and the folder with it.
+	// The handle of the lock file is closed first, so that the remove works on
+	// Windows too.
 	now := setProbeClock(t)
+	f.s.gitShadow.mu.Lock()
+	f.s.gitShadow.dropLock()
+	f.s.gitShadow.mu.Unlock()
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -284,6 +289,12 @@ func TestProbeAnswers(t *testing.T) {
 		// 128, Linux VM).
 		version bool
 	}
+	// The other path is absolute on the system of the test. Git prints a path
+	// with forward slashes on Windows too.
+	elsewhere := "/elsewhere/.git"
+	if runtime.GOOS == "windows" {
+		elsewhere = "C:/elsewhere/.git"
+	}
 	for _, a := range []answer{
 		{name: "exit 1, no text", exit: 1, calls: 1, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
@@ -296,16 +307,14 @@ func TestProbeAnswers(t *testing.T) {
 			stderr: "fatal: not a git repository (or any of the parent directories): .git\n"},
 		{name: "exit 128, another owner", exit: 128, calls: 1,
 			stderr: "fatal: detected dubious ownership in repository at '/x/repo'\n"},
-		{name: "another path", stdout: "/elsewhere/.git\n", calls: 2,
-			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds \"/elsewhere/.git\", Claude finds %[2]q; try again"},
+		{name: "another path", stdout: elsewhere + "\n", calls: 2,
+			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds " +
+				strings.ReplaceAll(strconv.Quote(filepath.FromSlash(elsewhere)), "%", "%%") + ", Claude finds %[2]q; try again"},
 		{name: "no output", calls: 2,
 			text: "git and Claude disagree about which repository holds this folder: from %[1]q git finds %[1]q, Claude finds %[2]q; try again"},
 	} {
 		for i, method := range []string{"git.info", "git.status", "git.list_branches", "git.worktree_create", "git.worktree_remove"} {
 			t.Run(a.name+"/"+method, func(t *testing.T) {
-				if runtime.GOOS == "windows" && a.stdout != "" {
-					t.Skip("the path of the row is not absolute on Windows")
-				}
 				f := newSeededShadowFixture(t)
 				answerProbe(t, a.exit, a.stdout, a.stderr)
 				m := f.fiveRequests(nil)[i]
@@ -373,7 +382,8 @@ func TestProbeGoodAnswerWithTheFullPath(t *testing.T) {
 			t.Fatalf("git.info with a bad answer = %s with %d calls about the repository, want one each time", raw, len(probeCalls(calls)))
 		}
 	}
-	answerProbe(t, 0, f.gitDir+"\n", "")
+	// Git prints the path with forward slashes on Windows.
+	answerProbe(t, 0, filepath.ToSlash(f.gitDir)+"\n", "")
 	want := []int{1, 0, 0}
 	for i, m := range f.fiveRequests(nil)[:3] {
 		raw, calls := f.call(t, m.method, m.params)
