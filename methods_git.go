@@ -1475,8 +1475,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// Windows VM). claustrum tests at two steps before the listings of the
 	// checkout: before the file of the registration and before the first
 	// listing. Neither is a row of 5fd08069: that build makes no call between
-	// its `worktree add` and that listing. Two more tests are in the checkout,
-	// on Windows (errGitDirChanged).
+	// its `worktree add` and that listing. Two more tests are in the checkout:
+	// one on Windows, and one on every system (errGitDirChanged).
 	// goneCheckout answers a checkout that stops for such a git directory, with
 	// detail after the words of the checkout.
 	goneCheckout := func(detail string) response {

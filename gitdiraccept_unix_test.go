@@ -288,16 +288,17 @@ func TestCreateWithAnotherGitDirAtThePath(t *testing.T) {
 }
 
 // TestCreateStepsOfAHeldGitDir runs git.worktree_create through the server and
-// pins that two steps of the create go through the held folder. A link to a
+// pins that one step of the create goes through the held folder. A link to a
 // folder T is put at the path of the git directory right before the step.
 //
-//   - The step before the leaf asks the registrations folder of the held git
-//     directory for the delete of an old registration whose record names the
-//     leaf. T has an old registration with the same record. The removal is a
-//     recorder. With a step by the path the recorder gets the folder of T.
-//   - The index of the checkout goes into the registration of the held folder.
-//     The index of T keeps its bytes. With a placement by the path the held
-//     folder gets no index.
+// The step before the leaf asks the registrations folder of the held git
+// directory for the delete of an old registration whose record names the
+// leaf. T has an old registration with the same record. The removal is a
+// recorder. With a step by the path the recorder gets the folder of T.
+//
+// The index has no row here: a create with a link at the path after the
+// read-tree call places none (TestCreateWithASwapAfterTheReadTree). The
+// placement through the held folder is in TestHeldIndexPlacement.
 func TestCreateStepsOfAHeldGitDir(t *testing.T) {
 	t.Run("the old registration", func(t *testing.T) {
 		f := newSeededShadowFixture(t)
@@ -317,25 +318,73 @@ func TestCreateStepsOfAHeldGitDir(t *testing.T) {
 			t.Errorf("the create asked to remove %q, want the old registration of the held folder", got)
 		}
 	})
-	t.Run("the index", func(t *testing.T) {
-		f := newSeededShadowFixture(t)
-		leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
-		other := filepath.Join(resolveTestRoot(t, t.TempDir()), "T")
-		otherIndex := filepath.Join(other, "worktrees", "w1", "index")
-		mustWrite(t, otherIndex, "the index of the other folder\n")
-		mustWrite(t, filepath.Join(other, "worktrees", "w1", "gitdir"), filepath.Join(leaf, ".git")+"\n")
-		swapAt(t, "index", f.gitDir, other)
-		_, _ = f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
-		if got := mustRead(t, otherIndex); got != "the index of the other folder\n" {
-			t.Errorf("the index of the other folder = %q", got)
-		}
-		if ents, err := os.ReadDir(filepath.Dir(otherIndex)); err != nil || len(ents) != 2 {
-			t.Errorf("the registration of the other folder holds %d entries (%v), want 2", len(ents), err)
-		}
-		if fi, err := os.Lstat(filepath.Join(f.gitDir+"-real", "worktrees", "w1", "index")); err != nil || fi.Size() == 0 {
-			t.Errorf("the index of the held folder: %v, want the index of the checkout", err)
-		}
-	})
+}
+
+// TestCreateWithASwapAfterTheReadTree: a link takes the place of `.git` after
+// the read-tree call of a create ended. 5fd08069 refuses the create with the
+// text below, removes the folder of the new worktree, and leaves the
+// registration with no index and the branch in the real git directory. It
+// makes no git call after the read-tree call, and the folder behind the link
+// is unchanged (cells swp-copy and swp-marker of val-s3p2b2-13-linux2, Linux
+// VM, 6 of 6 runs. Cells p-copy and p-marker of val-s3p2b2-13-macos, macOS VM,
+// 11 of 11 runs). Without the test after the read-tree call the create answers
+// success and the registration gets the index.
+func TestCreateWithASwapAfterTheReadTree(t *testing.T) {
+	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+	for _, form := range []string{"a copy of the git directory", "a folder that is no git directory"} {
+		t.Run(form, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			other := filepath.Join(resolveTestRoot(t, t.TempDir()), "T")
+			if form == "a copy of the git directory" {
+				if err := os.CopyFS(other, os.DirFS(f.gitDir)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			mustWrite(t, filepath.Join(other, "marker-T.txt"), "a file of the other folder\n")
+			before, err := os.ReadDir(other)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+				t.Fatalf("git.info = %s", raw)
+			}
+			swapAt(t, "index", f.gitDir, other)
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+			want := "git worktree add failed (checkout): " + realDir + "; and the undo could not finish for " + leaf +
+				": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
+			if got := createError(t, raw); got != want {
+				t.Errorf("the error = %s\n    want %s", got, want)
+			}
+			if !strings.Contains(raw, `"errorCode":"worktree_add_failed"`) {
+				t.Errorf("the reply = %s, want the code worktree_add_failed", raw)
+			}
+			if last := calls[len(calls)-1]; !slices.Contains(last.argv, "read-tree") {
+				t.Errorf("the last call = %q, want the read-tree", last.argv)
+			}
+			if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+				t.Errorf("the leaf: %v, want it gone", err)
+			}
+			kept := f.gitDir + "-real"
+			for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("worktrees", "w1", "gitdir"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(kept, name)); err != nil {
+					t.Errorf("%s in the real git directory: %v, want it kept", name, err)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(kept, "worktrees", "w1", "index")); !os.IsNotExist(err) {
+				t.Errorf("the index of the registration: %v, want none", err)
+			}
+			after, err := os.ReadDir(other)
+			if err != nil || len(after) != len(before) {
+				t.Errorf("the other folder holds %d entries (%v), want %d", len(after), err, len(before))
+			}
+			for _, name := range []string{filepath.Join("worktrees", "w1"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(other, name)); !os.IsNotExist(err) {
+					t.Errorf("%s in the other folder: %v, want none", name, err)
+				}
+			}
+		})
+	}
 }
 
 // TestCreateGoesOnInTheGitDirThatGitAnswers: a symbolic link to another git
@@ -410,6 +459,12 @@ func TestCreateGoesOnInTheGitDirThatGitAnswers(t *testing.T) {
 // b-precfg of val-s3p2b2-10-macos, macOS VM). The real git directory keeps
 // the registration and the branch, and T gets nothing. Without the test after
 // the add the text is that of a `.git` file that names no registration.
+//
+// The `.git` file of the leaf keeps the text that names the copy of the
+// daemon, as on 5fd08069 (cell swb-wtadd of val-s3p2b2-13-linux2, Linux VM).
+// The test writes that text itself at the step, because git 2.50.1 writes the
+// path of the repository there. Without the test before the replacement the
+// file names the git directory.
 func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 	f := newSeededShadowFixture(t)
 	copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
@@ -419,9 +474,22 @@ func TestCreateWithAGitDirThatChangedAtTheAdd(t *testing.T) {
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
 		t.Fatalf("git.info = %s", raw)
 	}
-	swapAt(t, "added", f.gitDir, copied)
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	named := "gitdir: " + filepath.Join(daemonFolder(t, f.run), shadowRepoName(f.gitDir), "worktrees", "w1") + "\n"
+	atStep(t, "repoint", func() {
+		if err := os.WriteFile(filepath.Join(leaf, ".git"), []byte(named), 0o644); err != nil {
+			t.Errorf("the .git file of the leaf: %v", err)
+		}
+		if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+			t.Errorf("the rename of the git directory: %v", err)
+			return
+		}
+		linkAt(t, f.gitDir, copied)
+	})
 	raw, calls := f.call(t, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf})
+	if got := mustRead(t, filepath.Join(leaf, ".git")); got != named {
+		t.Errorf("the .git file of the leaf = %q, want %q", got, named)
+	}
 	if got, want := createError(t, raw), "refusing to create worktree: "+leaf+" was not populated by git worktree add"; got != want {
 		t.Errorf("the error = %s\n    want %s", got, want)
 	}

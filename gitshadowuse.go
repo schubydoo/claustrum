@@ -138,7 +138,12 @@ func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCh
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
-	if named && err == nil {
+	// The `.git` file of the leaf keeps its text when the path no longer names
+	// the held git directory. The create is then refused right after this
+	// call (the step `added`). On 5fd08069 the file still names the copy after
+	// that refusal: 128 or 129 bytes, where the text of the git directory has
+	// 55 (cell swb-wtadd of val-s3p2b2-13-linux2, Linux VM, 2 runs).
+	if named && err == nil && !u.swapped("repoint") {
 		repointWorktreeGitFile(u, leaf, cp)
 	}
 	if err == nil && u.accepted != nil {
