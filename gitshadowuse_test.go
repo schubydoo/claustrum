@@ -110,10 +110,12 @@ func TestGitUseFolderVariables(t *testing.T) {
 		}
 	})
 	t.Run("daemon GIT_DIR", func(t *testing.T) {
+		// The daemon's own GIT_DIR stays at its place in the environment: the
+		// call gets the two first variables only (cell o1-gd-v2 of
+		// val-s3p2b2-7-linux2, Linux VM).
 		t.Setenv("GIT_DIR", f.gitDir)
-		want := append(slices.Clone(common), "GIT_DIR="+f.gitDir)
-		if got := u.pin(f.repo); !slices.Equal(got, want) {
-			t.Errorf("pin = %q\nwant %q", got, want)
+		if got := u.pin(f.repo); !slices.Equal(got, common) {
+			t.Errorf("pin = %q\nwant %q", got, common)
 		}
 	})
 }
