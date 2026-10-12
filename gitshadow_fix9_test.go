@@ -141,3 +141,36 @@ func TestShadowInfoOnAFileInARepository(t *testing.T) {
 			raw, len(probeCalls(calls)), len(configReads(calls)))
 	}
 }
+
+// TestShadowInfoOnAFileOutsideARepository: a git.info on a regular file
+// outside any repository is the first git request of a daemon. It runs no
+// start test: the request makes the excludes read and one `version` call, the
+// reply has no settingsControl member, and no folder `git-shadow` is made. The
+// next git.info on a repository runs the start test. On 5fd08069 the two
+// requests have 2 and 20 calls (cell q1-file of val-s3p2b2-8-macos, macOS VM,
+// 2 of 2 runs). The reply of the first request is that of each system. Linux
+// and Windows are not measured.
+//
+// With the gate of a path that names no folder, the first request runs the
+// start test and has the member.
+func TestShadowInfoOnAFileOutsideARepository(t *testing.T) {
+	f := newShadowFixture(t)
+	file := filepath.Join(filepath.Dir(f.repo), "plainfile.txt")
+	mustWrite(t, file, "x\n")
+	raw, calls := f.info(t, file, nil)
+	if runtime.GOOS != "windows" {
+		if want := `{"jsonrpc":"2.0","id":1,"result":{"isRepo":false,"repoSlug":"","defaultBranch":""}}`; raw != want {
+			t.Errorf("git.info on the file = %s\nwant %s", raw, want)
+		}
+	}
+	if len(calls) != 2 || !calls[0].excludesRead() || !slices.Contains(calls[1].argv, "version") {
+		t.Errorf("git.info on the file made %d calls, want the excludes read and one version call", len(calls))
+	}
+	if got := daemonFolders(t, f.run); len(got) != 0 {
+		t.Errorf("git-shadow holds %v after the first request, want no folder", got)
+	}
+	raw, calls = f.info(t, f.repo, nil)
+	if !strings.Contains(raw, `"settingsControl":"shadow"`) || len(testCalls(calls)) < 9 {
+		t.Errorf("git.info on the repository = %s with %d test calls, want the start test", raw, len(testCalls(calls)))
+	}
+}

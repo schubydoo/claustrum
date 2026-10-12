@@ -21,6 +21,7 @@ The cells ran on three VMs. The Linux VM has git 2.43.0, the macOS VM has git 2.
 | `val-s3p2b2-1`, `val-s3p2b2-3`, `val-s3p2b2-5` | Linux, macOS and Windows VMs | `5fd08069` and a build of this change. Some cells also ran `89cb6289` |
 | `val-s3p2b2-6` | Linux, macOS and Windows VMs | `5fd08069` and a build with the edits after round `val-s3p2b2-5`. Some Linux cells also ran `89cb6289` |
 | `val-s3p2b2-7` | a second Linux VM | `5fd08069` and the build of round `val-s3p2b2-6` |
+| `val-s3p2b2-8`, macOS part | macOS VM | the same two builds. This page has its cell `q1-file` |
 | `val-s3p2b2-8` | the second Linux VM, 106 cell runs | `5fd08069` and a build with the edits after round `val-s3p2b2-7` |
 | `val-s3p2b2-7`, Windows part | Windows VM, 400 cell runs | `5fd08069` and a build of this change. Its cells are named with "Windows VM" below |
 
@@ -801,8 +802,9 @@ Round `val-s3p2b2-8` ran a build with those seven edits beside `5fd08069` on the
 | N-h | 1 run | `git-shadow` on a file system with no free inode: `git.status` answers `{"isRepo":false,"clean":false}` after 4 calls. A create answers `git worktree add failed (checkout): mkdir <S>/.index-<n>: no space left on device` after 16 calls |
 | Q1 | 1 run for each path | A `git.info` on a missing path, on a path with a missing parent and on a dangling link makes 1 call as the first git request, and 0 calls later. An empty path makes 3 calls, and 2 later. The first reply has no `settingsControl` member |
 | Q1, a file inside a repository | 1 run | A `git.info` on `<repo>/a.txt` as the first git request makes 14 calls. Calls 12 and 13 are the call about the repository and the config read, and call 14 is `version`. `<S>` then holds `.probe` and `<R>`. The next `git.info` on the repository makes 8 calls |
+| `q1-file` | macOS VM, 2 of 2 runs | A `git.info` on a regular file outside any repository, as the first git request, makes 2 calls: the excludes read and `version`. The reply is `{"isRepo":false,"repoSlug":"","defaultBranch":""}`, and no `git-shadow` folder is made. The next `git.info` on the repository runs the start test in 20 calls. The file path again gives the line with `"settingsControl":"shadow"` after 1 call |
 
-The edits for cells N-a to N-c, N-f, N-g and the file row of Q1 follow those rows and ran on no VM. Each has a test.
+The edits for cells N-a to N-c, N-f, N-g, the file row of Q1 and cell `q1-file` follow those rows and ran on no VM. Each has a test. One rule gives both file rows: a file gets the gate of the repository of its folder, and no gate outside a repository.
 
 The Windows part of round `val-s3p2b2-7` ran a build of this change beside `5fd08069` in cells P2, J1, W2, W3, W1, R1, F1 and C2. Cells J1 and W2 are equal: the junction with the member, and two creates at one time in 120 pairs. Tables C2 and R1 gave the Windows rows for the git version in the cause and for the relative socket path. The build of that round did not have those two edits. The edits for the other rows follow that round. Their tests ran on Linux and macOS forms only, and the Windows tests ran on no system:
 
@@ -833,7 +835,7 @@ On `5fd08069`:
 - A `config.worktree` key other than the eighteen of the cells. Twelve give an item, and six give none: `core.bare`, `core.worktree`, `core.hookspath`, `user.name`, `core.protectntfs` and `status.showUntrackedFiles`. Two of the nine new keys in one file. The five keys of the Windows extra rows on Linux and macOS VMs. `core.eol` on a macOS VM. A second value of a key other than `core.filemode`.
 - The second `config.worktree` read of `git.status` for a file with `index.sparse`, and with the member.
 - A `git.info` on a path that does not exist on a macOS VM. The place of that test among the refusals.
-- A `git.info` on a file inside a repository on macOS and Windows VMs. Another kind of file there, and a refused config of that repository.
+- A `git.info` on a file inside a repository on macOS and Windows VMs. Another kind of file there, and a refused config of that repository. A file outside any repository on Linux and Windows VMs.
 - `core.sharedRepository` as `false` or as another octal number, a `worktrees` folder that is there before the create, and macOS and Windows VMs.
 - A bare `baseRepo` with the member.
 - Two requests at the same time during a start test.

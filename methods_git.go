@@ -341,27 +341,40 @@ func gitInfo(req *request) response {
 	// before the listing (settingsGateRefusal). Their place after the count check is
 	// not measured.
 	//
-	// A path that is a regular file inside a repository gets the gate of the
-	// repository of its folder: the call about the repository, the read of
-	// its config and the folder of the repository. As the first git request of
-	// a daemon, such a git.info of 5fd08069 makes 14 calls. Calls 12 and 13 are
-	// `rev-parse --git-dir` in the root of the repository and the read of the
-	// config, and the daemon then has `.probe` and the copy. The next git.info
-	// on the repository makes 8 calls (row Q1 of val-s3p2b2-8-linux2, Linux VM).
+	// A path that is a regular file gets the gate of the repository of its
+	// folder, and no gate when that folder is in no repository.
+	//
+	//   - Inside a repository: the call about the repository, the read of its
+	//     config and the folder of the repository. As the first git request of
+	//     a daemon, such a git.info of 5fd08069 makes 14 calls. Calls 12 and 13
+	//     are `rev-parse --git-dir` in the root of the repository and the read
+	//     of the config, and the daemon then has `.probe` and the copy. The next
+	//     git.info on the repository makes 8 calls (row Q1 of
+	//     val-s3p2b2-8-linux2, Linux VM).
+	//   - Outside any repository: no start test. As the first git request,
+	//     5fd08069 makes 2 calls, the excludes read and `version`. The reply has
+	//     no settingsControl member, and no folder `git-shadow` is made. The
+	//     next git.info on a repository runs the start test (cell q1-file of
+	//     val-s3p2b2-8-macos, macOS VM, 2 of 2 runs).
+	//
 	// The calls after the gate keep their form: the request has no copy for
-	// them. A refusal of that gate, another kind of file, and macOS and Windows
-	// are not measured.
-	gateTrust, gateDir := t, p.Path
+	// them. Not measured: a refusal of that gate, a folder whose git directory
+	// the trust check refuses, another kind of file, a file inside a
+	// repository on macOS and Windows, and a file outside one on Linux and
+	// Windows.
+	gateTrust, gateDir, gate := t, p.Path, true
 	inFile := false
 	if fi, err := os.Stat(p.Path); err == nil && fi.Mode().IsRegular() && t.verdict == gitDirTrusted && t.pinCommonDir == "" {
-		if ft := requestGitDirTrust(filepath.Dir(p.Path), true); ft.verdict == gitDirTrusted && ft.pinCommonDir != "" {
-			gateTrust, gateDir, inFile = ft, filepath.Dir(p.Path), true
-		}
+		ft := requestGitDirTrust(filepath.Dir(p.Path), true)
+		inFile = ft.verdict == gitDirTrusted && ft.pinCommonDir != ""
+		gateTrust, gateDir, gate = ft, filepath.Dir(p.Path), inFile
 	}
-	if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, gateDir); msg != "" {
-		return errResult(req.ID, codeInternal, msg)
-	} else if noRepo {
-		return notRepo()
+	if gate {
+		if msg, noRepo := req.settingsGateRefusal(gateTrust, p.ShadowDirOff, gateDir); msg != "" {
+			return errResult(req.ID, codeInternal, msg)
+		} else if noRepo {
+			return notRepo()
+		}
 	}
 	if inFile {
 		req.use = gitUse{}
