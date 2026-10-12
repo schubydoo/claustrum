@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -27,6 +28,16 @@ import (
 func linkAt(t *testing.T, link, target string) {
 	t.Helper()
 	makeJunction(t, link, target)
+}
+
+// makeDirSymlink makes a directory symbolic link at link to target with
+// mklink /D, or skips the test when the process cannot make one. That call
+// needs the privilege to make symbolic links, or the developer mode.
+func makeDirSymlink(t *testing.T, link, target string) {
+	t.Helper()
+	if out, err := exec.Command("cmd", "/c", "mklink", "/D", link, target).CombinedOutput(); err != nil {
+		t.Skipf("this process cannot make a directory symbolic link: mklink /D %s %s: %v\n%s", link, target, err, out)
+	}
 }
 
 // copyGitDir copies the tree at from to the new folder to.
@@ -61,6 +72,11 @@ func copyGitDir(t *testing.T, from, to string) {
 // junction to T takes its place. 5fd08069 then refuses the create with the
 // text of the row, removes nothing in T and makes nothing in T.
 //
+// The last two rows are points 11 and 13 of 5fd08069 in the table of section 2
+// of val-s3p2b2-12-windows: the junction comes while the first listing of the
+// checkout runs, and after the read-tree call ended. The registration and the
+// branch stay in the real git directory, and the registration has no index.
+//
 // The test removes nothing in T with the guards or without them: the removal
 // of the cleanup is a recorder.
 func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
@@ -89,6 +105,14 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 		}},
 		{"X1c-11", "checkout", func(link, leaf string) string {
 			return "git worktree add failed (checkout): " + link + "; and the undo could not finish for " + leaf +
+				": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
+		}},
+		{"point 11", "listed", func(link, leaf string) string {
+			return "git worktree add failed (checkout): " + link + "; and the undo could not finish for " + leaf +
+				": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
+		}},
+		{"point 13", "index", func(_, leaf string) string {
+			return "git worktree add failed (checkout): " + realDir + "; and the undo could not finish for " + leaf +
 				": the worktree registration and the branch remain; remove them by hand before retrying (" + realDir + ")"
 		}},
 	} {
@@ -140,6 +164,112 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 			if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
 				t.Errorf("the leaf: %v, want it gone", err)
 			}
+			if row.step != "listed" && row.step != "index" {
+				return
+			}
+			kept := f.gitDir + "-real"
+			for _, name := range []string{filepath.Join("worktrees", "w1", "HEAD"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(kept, name)); err != nil {
+					t.Errorf("%s in the real git directory: %v, want it kept", name, err)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(kept, "worktrees", "w1", "index")); !os.IsNotExist(err) {
+				t.Errorf("the index of the registration: %v, want none", err)
+			}
+		})
+	}
+}
+
+// TestSymbolicLinkAtTheGitDirOnWindows must match cells D-symd-start and
+// DT-symd-late-to-T of val-s3p2b2-12-windows (Windows VM). `repo\.git` is a
+// directory symbolic link to T, a copy of the git directory with an old entry
+// `.claude-new-worktree-x`. The link is there before the first request, or it
+// takes the place of the git directory after one good git.info. 5fd08069
+// refuses each git method with the text of a junction there, and T stays as it
+// is.
+//
+// The test is safe without the rule of gitDirIsSymlink. The create then makes
+// its worktree in T, which is a folder of the test, and the removal of the
+// cleanup is a recorder.
+func TestSymbolicLinkAtTheGitDirOnWindows(t *testing.T) {
+	for _, row := range []struct {
+		cell string
+		late bool
+	}{
+		{"D-symd-start", false},
+		{"DT-symd-late-to-T", true},
+	} {
+		t.Run(row.cell, func(t *testing.T) {
+			f := newSeededShadowFixture(t)
+			removals := recordStagingRemovals(t)
+			target := filepath.Join(resolveTestRoot(t, t.TempDir()), "T")
+			copyGitDir(t, f.gitDir, target)
+			entry := filepath.Join(target, ".claude-new-worktree-x")
+			marker := filepath.Join(entry, "marker.txt")
+			mustWrite(t, marker, "marker of the old entry\n")
+			at := time.Now().Add(-2 * time.Hour)
+			if err := os.Chtimes(entry, at, at); err != nil {
+				t.Fatal(err)
+			}
+			if row.late {
+				if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
+					t.Fatalf("git.info before the link = %s", raw)
+				}
+			}
+			if err := os.Rename(f.gitDir, f.gitDir+"-real"); err != nil {
+				t.Fatal(err)
+			}
+			makeDirSymlink(t, f.gitDir, target)
+			link := "this repository's git config cannot be used: " + quoteOperand(filepath.Join(f.gitDir, "config")) +
+				": is, or is reached through, a link that Claude does not follow here; replace the link with what it points to"
+			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+			for _, req := range []struct {
+				method string
+				params map[string]any
+				// want is the text of the error member, or of the error of the result.
+				want     string
+				inResult bool
+			}{
+				{"git.info", map[string]any{"path": f.repo}, link, false},
+				{"git.status", map[string]any{"path": f.repo, "baseRepo": f.repo}, link, false},
+				{"git.list_branches", map[string]any{"path": f.repo}, link, false},
+				{"git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}, link, true},
+				{"git.worktree_remove", map[string]any{"baseRepo": f.repo, "worktreePath": leaf, "branchName": "w1"},
+					"failed to remove worktree: could not check whether " + leaf + " is locked: " + link, true},
+			} {
+				raw, _ := f.call(t, req.method, req.params)
+				var reply struct {
+					Error  struct{ Message string }
+					Result struct {
+						Success bool
+						Error   string
+					}
+				}
+				if err := json.Unmarshal([]byte(raw), &reply); err != nil {
+					t.Fatalf("%s: the reply %s: %v", req.method, raw, err)
+				}
+				got := reply.Error.Message
+				if req.inResult {
+					got = reply.Result.Error
+				}
+				if got != req.want || reply.Result.Success {
+					t.Errorf("%s = %s\nwant the error %s", req.method, raw, req.want)
+				}
+			}
+			if text := mustRead(t, marker); text != "marker of the old entry\n" {
+				t.Errorf("the marker in T = %q", text)
+			}
+			if len(*removals) != 0 {
+				t.Errorf("the cleanup asked to remove %q, want nothing", *removals)
+			}
+			for _, name := range []string{filepath.Join("worktrees", "w1"), filepath.Join("refs", "heads", "w1")} {
+				if _, err := os.Lstat(filepath.Join(target, name)); !os.IsNotExist(err) {
+					t.Errorf("%s in T: %v, want none", name, err)
+				}
+			}
+			if _, err := os.Lstat(leaf); !os.IsNotExist(err) {
+				t.Errorf("the leaf: %v, want none", err)
+			}
 		})
 	}
 }
@@ -147,12 +277,23 @@ func TestCreateWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 // TestCreateWithAnotherGitDirAtThePathOnWindows: at one step of the create,
 // `repo\.git` goes to `repo\.git-real`, and the path gets another entry that
 // leads to the git directory X of a second repository, or is a copy of the
-// git directory as a real directory. No row of 5fd08069 has these forms: the
-// texts are those of the junction rows of val-s3p2b2-7-windows (cells X1c-01,
-// X1c-03, X1c-05 and X1c-06). X gets no registration and no branch, and no
-// `worktree add` runs.
+// git directory as a real directory. X gets no registration and no branch, and
+// no `worktree add` runs.
+//
+// Five rows are of 5fd08069 in part C and cells CX of val-s3p2b2-12-windows
+// (Windows VM): the file after `rev-parse --absolute-git-dir`, the file
+// before the add and at the listing of the add, and the directory symbolic
+// link after the first call and after `rev-parse --absolute-git-dir`. The
+// three other rows have no row of 5fd08069: their texts are those of the
+// junction rows of val-s3p2b2-7-windows (cells X1c-01, X1c-03 and X1c-06).
 func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 	const realDir = `".git" is a link or a file where Claude needs a real directory; put the directory itself in its place`
+	notPrepared := func(string) string {
+		return "git worktree add failed: cannot prepare the repository's worktrees directory: " + realDir
+	}
+	noEntries := func(string) string {
+		return "git worktree add failed: cannot list the repository's worktree entries: " + realDir
+	}
 	for _, row := range []struct {
 		name, step, entry string
 		want              func(link string) string
@@ -161,14 +302,22 @@ func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 		{"a file that names X before the gitdir call", "gitdir", "file", func(link string) string {
 			return "git worktree add failed: cannot locate the repository's git directory: " + link
 		}},
-		{"a file that names X before the add", "add", "file", func(link string) string { return "git worktree add failed: " + link }},
-		{"another real directory", "gitdir", "copy", func(string) string {
-			return "git worktree add failed: cannot list the repository's worktree entries: " + realDir
-		}},
+		{"C-file-06 after the gitdir call", "answered", "file", notPrepared},
+		{"a file that names X before the add", "add", "file", notPrepared},
+		{"CX-file at the listing of the add", "prepare", "file", notPrepared},
+		{"C-symd-01 a symbolic link to X", "leaf", "symlink", func(link string) string { return link }},
+		{"C-symd-06 a symbolic link to X after the gitdir call", "answered", "symlink", noEntries},
+		{"another real directory", "gitdir", "copy", noEntries},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			_, other := configRepo(t)
+			if row.entry == "symlink" {
+				// The skip of a process that cannot make such a link comes here,
+				// in the goroutine of the test.
+				probe := resolveTestRoot(t, t.TempDir())
+				makeDirSymlink(t, filepath.Join(probe, "link"), probe)
+			}
 			copied := filepath.Join(resolveTestRoot(t, t.TempDir()), "copy")
 			copyGitDir(t, f.gitDir, copied)
 			if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"settingsControl":"shadow"`) {
@@ -179,10 +328,17 @@ func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 					t.Errorf("the rename of the git directory: %v", err)
 					return
 				}
-				if row.entry == "file" {
+				switch row.entry {
+				case "file":
 					mustWrite(t, f.gitDir, "gitdir: "+filepath.ToSlash(other)+"\n")
-				} else if err := os.Rename(copied, f.gitDir); err != nil {
-					t.Errorf("the rename of the copy: %v", err)
+				case "symlink":
+					if out, err := exec.Command("cmd", "/c", "mklink", "/D", f.gitDir, other).CombinedOutput(); err != nil {
+						t.Errorf("mklink /D %s %s: %v\n%s", f.gitDir, other, err, out)
+					}
+				default:
+					if err := os.Rename(copied, f.gitDir); err != nil {
+						t.Errorf("the rename of the copy: %v", err)
+					}
 				}
 			})
 			leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
@@ -214,6 +370,50 @@ func TestCreateWithAnotherGitDirAtThePathOnWindows(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAttachWithAFileAtWorktreesOnWindows must match table S9 of
+// val-s3p2b2-12-windows (Windows VM, 2 of 2 runs). A create with
+// `existingBranch` finds a file at `.git\worktrees`. 5fd08069 answers the
+// text of that step one time and makes no second add with a new branch.
+// Without the rule of addNotPrepared the text has a second part, `(attaching
+// to the existing branch eb was refused first: …)`.
+func TestAttachWithAFileAtWorktreesOnWindows(t *testing.T) {
+	f := newSeededShadowFixture(t)
+	runGit(t, f.repo, "branch", "eb")
+	worktrees := filepath.Join(f.gitDir, "worktrees")
+	if err := os.Rename(worktrees, worktrees+"-kept"); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	mustWrite(t, worktrees, "a file\n")
+	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
+	raw, calls := f.call(t, "git.worktree_create", map[string]any{
+		"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf, "existingBranch": "eb"})
+	var reply struct {
+		Result struct {
+			Success   bool
+			Error     string
+			ErrorCode string
+		}
+	}
+	if err := json.Unmarshal([]byte(raw), &reply); err != nil {
+		t.Fatalf("the reply %s: %v", raw, err)
+	}
+	want := "git worktree add failed: cannot prepare the repository's worktrees directory: " + quoteOperand(worktrees) + " is not a directory"
+	if reply.Result.Success || reply.Result.Error != want || reply.Result.ErrorCode != "worktree_add_failed" {
+		t.Errorf("git.worktree_create = %s\nwant the error %s", raw, want)
+	}
+	for _, c := range calls {
+		if slices.Contains(c.argv, "worktree") && slices.Contains(c.argv, "add") {
+			t.Error("a worktree add call ran")
+		}
+	}
+	if got := mustRead(t, worktrees); got != "a file\n" {
+		t.Errorf("the file at worktrees = %q", got)
+	}
+	if _, err := os.Lstat(filepath.Join(f.gitDir, "refs", "heads", "w1")); !os.IsNotExist(err) {
+		t.Errorf("the branch w1: %v, want none", err)
 	}
 }
 
@@ -263,8 +463,8 @@ func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
 		junction bool
 		fresh    bool
 	}{
-		{"part Q, a junction", true, true},
-		{"control Qk, a real directory", false, false},
+		{"part Q with a junction", true, true},
+		{"control Qk with a real directory", false, false},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			base := resolveTestRoot(t, t.TempDir())
