@@ -48,7 +48,7 @@ var (
 	// probeCallBound ends the call. shadowCallDrain is the wait for its output
 	// pipes after that. On 5fd08069 a call held for 29 s gave a normal reply at
 	// 29.30 s. A call held for 31 s or 40 s gave the error at 31.16 s and 31.15
-	// s, with a child of the wrapper that held the pipes (cell 37 of
+	// s. The sleep child of the wrapper lived on in that round (cell 37 of
 	// s3p2b-edges-linux2, Linux VM). A macOS VM gave the error at 30.21 s and a
 	// Windows VM 29.98 s after the start of the call (cell 40 of
 	// s3p2b-edges-macos and of s3p2b-edges-windows). The split into the two
@@ -323,11 +323,13 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 // working directory (gitVersionDir), no option and no added variable. The
 // daemon does not read its answer. 5fd08069 makes that call in two places:
 //
-//   - after a call about the repository that failed with no text, with exit 1
-//     or exit 128. The requests have 13, 2, 2, 2 and 4 calls there. The build
+//   - after a call about the repository that exits 1, or exits 128 with no
+//     text. The requests have 13, 2, 2, 2 and 4 calls there. The build
 //     before had 12, 1, 1, 1 and 2 (cell 39 of val-s3p2b2-5-linux2, Linux VM).
-//     Three answers have no such call: "no repository", an answer with another
-//     path, and an ended call (the same cell, and cells 37 and 38).
+//     An exit 1 with a text has 13 and 2 calls (cells p3 of
+//     val-s3p2b2-7-linux2, Linux VM). Three answers have no such call: "no
+//     repository", an answer with another path, and an ended call (cell 39,
+//     and cells 37 and 38).
 //   - after a read of the config that failed with a syntax error, in each
 //     request (cell x9-syntax-own of that round, the A5 cells of
 //     val-s3p2b2-5-linux and val-s3p2b2-5-macos, and PA5 of

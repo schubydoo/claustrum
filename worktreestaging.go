@@ -402,8 +402,9 @@ func worktreeAddStaged(ctx context.Context, u gitUse, repo, leaf string, cp work
 // staging folder was seen at 1260 ms (cell 48, control M1).
 //
 // A move that fails is not measured. The daemon logs one line and goes on. The
-// `.git` file of the new worktree then names no registration of the repository,
-// and the tests after the add refuse the create (createdRegistrationRefusal).
+// `.git` file of the new worktree then names no registration of the repository.
+// No test after the add refuses the create on Windows. The end state is not
+// measured.
 func (st *addStage) finish(leaf string, cp worktreeCheckpoint) {
 	sweepOldStaging(st.git, st.u.gitDir, stagingClock())
 	if err := st.move(leaf, cp); err != nil {

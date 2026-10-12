@@ -128,11 +128,13 @@ const shadowHeadLinkPrefix = "refs/"
 // answers all five methods normally (cells N4-headlink of val-s3p2b2-3-linux2
 // and val-s3p2b2-3-macos, Linux and macOS VMs).
 //
-// A link to a ref outside `refs/heads/` gets its copy the same way. 5fd08069
+// A link to `refs/remotes/origin/<name>` gets its copy the same way. 5fd08069
 // writes `ref: refs/remotes/origin/main` and a newline, 30 bytes, and goes on.
 // It does so for `refs/remotes/origin/nope` too, a ref that does not exist.
 // The methods then answer by what git says there (cell H1 of
-// val-s3p2b2-7-linux2, Linux VM). Those three targets ran. A target that does
+// val-s3p2b2-7-linux2, Linux VM, 1 run). Those three targets ran. Another
+// name under `refs/`, such as `refs/tags/v1`, gets its copy too (not
+// measured). A target that does
 // not start with `refs/`, such as an absolute path, is not measured. The trust
 // check finds no repository there, so such a HEAD does not come here. If it
 // does, it gets no copy and the request is refused.

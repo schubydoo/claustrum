@@ -67,10 +67,11 @@ var (
 	shadowRetestAfter = 10 * time.Minute
 	// shadowCallBound ends one call of the test. shadowCallDrain is the wait for
 	// its output pipes after that. On 5fd08069 a call that its wrapper held for
-	// 29 s passed. A call held for 32 s or 40 s got the error reply 31.0 s after
-	// its start. A child of the wrapper still held the pipes then
-	// (s3p2b-edges-linux2 cell 31, Linux VM). The split of those 31.0 s into
-	// the two times is fitted: no row has a held call without such a child.
+	// 29 s passed. For a call held for 32 s or 40 s the reply came 31.0 s after
+	// the start on a Linux VM, where the sleep child of the wrapper lived on
+	// (s3p2b-edges-linux2 cell 31). On a macOS VM the next call started at
+	// 30.04 s (section S4 of val-s3p2b2-1-macos). The 1 s wait is fitted from
+	// the Linux rows.
 	shadowCallBound = 30 * time.Second
 	shadowCallDrain = time.Second
 	// shadowClock is the clock of the two kept times.
@@ -606,10 +607,11 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 	if err != nil {
 		return "", err.Error()
 	}
-	// Call 7 has the bound and the wait for its pipes of the nine other calls
-	// (boundedGit). A child of git that keeps the output pipe open then does not
-	// hold the test. Its cause is the exec error alone, as before: a failed
-	// call 7 is not measured.
+	// Call 7 has claustrum's bound and pipe wait of the nine other calls
+	// (boundedGit). A child that keeps the output pipe open for more than the
+	// wait fails the start test. No row has a test call of 5fd08069 with such a
+	// child and a call that ended in time. No row has call 7 held or failed.
+	// Its cause is the exec error alone, as before.
 	listed := boundedGitInput(shadowCallBound, gitVersionDir, repoConfigListEnv(), text,
 		"config", "--no-includes", "--file", "-", "--list", "-z")
 	if listed.err != nil {
@@ -682,10 +684,11 @@ func shadowTestCalls(dir, check string) (state, cause string) {
 // variable. The second has the option list, the folder and the variables of a
 // test call. Which of the two gives the text is not measured.
 //
-// The other calls of the test get no such end. A failed or ended `rev-parse
-// --verify` and a failed or ended `worktree add` have none in their rows
-// (cells 26 and 31 of s3p2b-edges-linux2). No record has a failed `config`,
-// `mktree`, `commit-tree` or `update-ref` call: not measured.
+// The other calls of the test get no such end. Three rows have none: a failed
+// `worktree add` (cell 26 of s3p2b-edges-linux2), an ended `rev-parse
+// --verify` (cell 31 of that round) and an ended `worktree add` (cell W8a of
+// s3b-linux). No record has a failed `config`, `mktree`, `commit-tree` or
+// `update-ref` call: not measured.
 func shadowVersionNote(check string, env []string) string {
 	first := shadowGit(gitVersionDir, shadowDaemonEnv(), "version")
 	second := shadowGit(check, env, append(shadowTestPrefix(), "version")...)

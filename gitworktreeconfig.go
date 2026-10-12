@@ -181,9 +181,10 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // Linux VM). On a macOS VM the folder goes after the file of the new
 // registration is written and before `.index-<n>` comes, in 7 of 7 sightings
 // (row U3 of val-s3p2b2-6-macos). On a Windows VM it was last seen 0 to 9 ms
-// before the first sight of that file, in 22 create runs (section 0 item 6 of
-// the report of val-s3p2b2-6-windows). So the folder is made in each such
-// create.
+// before the first sight of that file, in 19 of 22 create runs. The poll did
+// not see the folder in the 3 others (section 0 item 6 of the report of
+// val-s3p2b2-6-windows). A trace of one cell with no `--unset-all` call (12f)
+// has the mkdir.
 // drop removes it, and it does nothing with no folder. The create calls it
 // after it wrote the file of the registration (placeWorktreeConfig). A create
 // that is refused before that step calls it at its reply (not measured).
@@ -193,7 +194,7 @@ var worktreeConfigDropKeys = []string{"core.bare", "core.worktree"}
 // the size bound and one that git cannot list (not measured). An `--unset-all`
 // call that fails gives none either (not measured). A request that names no
 // copy comes here for the listing only: the file of its new worktree is left
-// to git. macOS and Windows have no cell with such a create.
+// to git.
 func (req *request) newWorktreeConfig(repo, gitDir string) (text []byte, ok bool, drop func()) {
 	drop = func() {}
 	if req.repoRead == nil || !req.repoRead.worktreeConfig {

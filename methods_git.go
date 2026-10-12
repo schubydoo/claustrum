@@ -311,7 +311,10 @@ func gitInfo(req *request) response {
 		return errResult(req.ID, codeInternal, msg)
 	}
 	// A path that does not exist gets the "no repository" answer here, with no
-	// start test and no git call. On 5fd08069 such a git.info as the first git
+	// start test and no git call beyond the excludes read of a first request.
+	// The place of this test after the count refusal, an empty path and a
+	// dangling link are not measured. One path form ran.
+	// On 5fd08069 such a git.info as the first git
 	// request of a daemon makes 1 call, the excludes read, and its reply has no
 	// settingsControl member. The next request on a repository runs the start
 	// test. A later git.info on such a path makes 0 calls (cell F1 of

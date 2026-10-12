@@ -174,8 +174,9 @@ func makeWorktreesFolder(gitDir string, shared sharedRepository) {
 // (replaceWorktreeGitFile). The new file is made with mode 0666, and the umask
 // of the daemon takes its bits from that. On 5fd08069 the file is `f 0664`
 // with a daemon umask of 002, in 13 of 13 creates (cells p2u-12a, p2u-12d and
-// p2u-12f and the ten rows of group P5 with that umask, val-s3p2b2-6-linux,
-// Linux VM). With umask 022 it is `f 0644`.
+// p2u-12f and 10 creates of group P5 with that umask, val-s3p2b2-6-linux,
+// Linux VM). With umask 022 it is `f 0644`. The mode of its create is fitted:
+// no trace has the open of that file, and no cell has another umask.
 func repointWorktreeGitFile(u gitUse, leaf string, cp worktreeCheckpoint) {
 	replaceWorktreeGitFile(leaf, cp, func(old string) (string, bool) {
 		prefix := "gitdir: " + filepath.Join(u.repoDir, worktreesSubdir) + string(filepath.Separator)
