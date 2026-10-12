@@ -74,6 +74,10 @@ type request struct {
 	// gitRefused is true when the last settings gate of the request got a bad
 	// answer of git about the repository (shadowHost.askGit).
 	gitRefused bool
+	// configRefused is true when the last settings gate of the request refused
+	// the config of the repository or another file of its git directory
+	// (repoConfigGate).
+	configRefused bool
 }
 
 // runAtReply removes the short-lived folders that stay until the reply. On

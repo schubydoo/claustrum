@@ -152,15 +152,20 @@ func makeProbeFolder(dir string) error {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	for _, name := range []string{"info", "objects", "refs"} {
+	// The order is `refs`, `objects`, `info`, then `config`, then `HEAD`. On
+	// 5fd08069 the birth times of the entries have that order in 14 of 14
+	// folders (row E2 of val-s3p2b2-5-macos, macOS VM). The write times of a
+	// Windows VM fit it: `objects` and `refs`, then `config` and `info`, then
+	// `HEAD` (val-s3p2b2-5-windows section 2, one polled run).
+	for _, name := range []string{"refs", "objects", "info"} {
 		if err := root.Mkdir(name, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return err
 		}
 	}
-	if _, err := writeNewFile(root, "HEAD", []byte(shadowTestFirstHead)); err != nil {
+	if _, err := writeNewFile(root, "config", []byte(probeConfigText)); err != nil {
 		return err
 	}
-	_, err = writeNewFile(root, "config", []byte(probeConfigText))
+	_, err = writeNewFile(root, "HEAD", []byte(shadowTestFirstHead))
 	return err
 }
 
@@ -227,9 +232,10 @@ func probeArgs() []string {
 //     and `fatal: not a git repository (or any of the parent directories):
 //     .git` (cells D1 and D3 of s3p2-linux2, s3p2-macos and s3p2-windows).
 //   - Exit 1, or exit 128 with no text: the error `git could not check this
-//     repository on the remote machine: at "<root>": exit status <n>`. Another
-//     exit code, and exit 1 with a text, are not measured: they get that error
-//     with their exec error.
+//     repository on the remote machine: at "<root>": exit status <n>`, after
+//     one `git version` call (versionAfterFailure). Another exit code, and
+//     exit 1 with a text, are not measured: they get that error with their
+//     exec error, and the call.
 //   - Exit 0 and another path, or no output: the call runs one more time. The
 //     same answer then gives the error `git and Claude disagree about which
 //     repository holds this folder: …`. With no output the path of git is the
@@ -280,6 +286,7 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 			if errors.As(r.err, &exit) && exit.ExitCode() == 128 && strings.TrimSpace(r.stderr) != "" {
 				return repoAnswer{noRepo: true}
 			}
+			versionAfterFailure()
 			return repoAnswer{text: fmt.Sprintf("git could not check this repository on the remote machine: at %q: %s", root, r.err)}
 		}
 		found = filepath.FromSlash(r.out)
@@ -293,6 +300,27 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 		}
 	}
 	return repoAnswer{text: fmt.Sprintf("git and Claude disagree about which repository holds this folder: from %q git finds %q, Claude finds %q; try again", root, found, want)}
+}
+
+// versionAfterFailure runs one `git version` call, with the root folder as its
+// working directory (gitVersionDir), no option and no added variable. The
+// daemon does not read its answer. 5fd08069 makes that call in two places:
+//
+//   - after a call about the repository that failed with no text, with exit 1
+//     or exit 128. The requests have 13, 2, 2, 2 and 4 calls there. The build
+//     before had 12, 1, 1, 1 and 2 (cell 39 of val-s3p2b2-5-linux2, Linux VM).
+//     Three answers have no such call: "no repository", an answer with another
+//     path, and an ended call (the same cell, and cells 37 and 38).
+//   - after a read of the config that failed with a syntax error, in each
+//     request (cell x9-syntax-own of that round, the A5 cells of
+//     val-s3p2b2-5-linux and val-s3p2b2-5-macos, and PA5 of
+//     val-s3p2b2-5-windows).
+//
+// The call has the bound of a call of the start test. A daemon with git
+// variables of its own is not measured: the call gets the environment of the
+// first `git version` call of shadowVersionNote.
+func versionAfterFailure() {
+	boundedGit(shadowCallBound, gitVersionDir, shadowDaemonEnv(), "version")
 }
 
 // keepProbe keeps a good answer for root, whose call ended now. Answers that

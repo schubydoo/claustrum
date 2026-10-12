@@ -116,6 +116,12 @@ type shadowHost struct {
 	// the root of the work tree (askGit).
 	probeMu sync.Mutex
 	probes  map[string]keptProbe
+
+	// scanMu guards the kept answer of the `git version` call of the include
+	// step: scanNew is the answer, when scanKept (includeScan).
+	scanMu   sync.Mutex
+	scanKept bool
+	scanNew  bool
 }
 
 // newShadowHost returns the settings control of a daemon whose socket is in
@@ -780,7 +786,7 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
 // folder holds the lock file only there (s3p2-oldgit section 5, Linux VM).
 func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
-	req.gitRefused = false
+	req.gitRefused, req.configRefused = false, false
 	if t.verdict == gitDirTrusted {
 		if msg := req.shadow.gate(bool(off)); msg != "" {
 			return msg, false
@@ -803,6 +809,7 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 		}
 	}
 	msg, read = repoConfigGate(t, off)
+	req.configRefused = msg != ""
 	if msg != "" || read == nil || req.shadow.control(bool(off)) != controlShadow {
 		return msg, false
 	}

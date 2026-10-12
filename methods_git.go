@@ -1428,9 +1428,17 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 // remove makes that call two times for each bad answer, where the other
 // methods make it one time (cells 38 and 39 of s3p2b-edges-linux2, Linux VM).
 // With an ended call the reply comes after both calls, at 62.02 s (cell 38).
+//
+// A refused config runs the gate one more time too. On 5fd08069 a remove in a
+// repository with format version 3 makes two reads of the config, where each
+// other method makes one. With a syntax error it makes the read and its `git
+// version` call two times (cells x9-v3-own and x9-syntax-own of
+// val-s3p2b2-5-linux2, Linux VM, 3 of 3 runs. Rows E1 and E1b of
+// val-s3p2b2-5-macos, macOS VM). A refusal of another file of the git directory
+// takes the same way: it makes no git call (not measured).
 func (req *request) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (msg string, noRepo bool) {
 	msg, noRepo = req.settingsGateRefusal(t, off, repo)
-	if req.gitRefused {
+	if req.gitRefused || req.configRefused {
 		msg, noRepo = req.settingsGateRefusal(t, off, repo)
 	}
 	return msg, noRepo

@@ -92,13 +92,46 @@ var includeSkipDotDirs = map[string]bool{
 // later. The caller runs it only when the manifest is a regular file. A
 // non-zero exit selects the old scan, even when the output parses.
 func gitSelectsIncludeScan() bool {
+	selects, _ := includeScanAnswer()
+	return selects
+}
+
+// includeScanAnswer is the answer of gitSelectsIncludeScan. ran is false when
+// the call did not exit 0.
+func includeScanAnswer() (selects, ran bool) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	out, err := gitVersionCmd(ctx).Output()
 	if err != nil {
-		return false
+		return false, false
 	}
-	return versionSelectsIncludeScan(string(out))
+	return versionSelectsIncludeScan(string(out)), true
+}
+
+// selectsIncludeScan is gitSelectsIncludeScan for one request. A request that
+// names a copy of the repository uses the answer that the daemon keeps
+// (shadowHost.includeScan). Every other request makes the call, as before.
+func (u gitUse) selectsIncludeScan() bool {
+	if !u.shadow() || u.host == nil {
+		return gitSelectsIncludeScan()
+	}
+	return u.host.includeScan()
+}
+
+// includeScan is gitSelectsIncludeScan with the answer kept for the life of
+// the daemon. On 5fd08069 the first create with a `.worktreeinclude` file runs
+// `git version`. The second create of the same daemon runs none. The counts
+// are 1 and 0 in 4 of 4 runs (cell v5-create of val-s3p2b2-5-linux2, Linux VM,
+// no member). A call that did not exit 0 is not measured: its answer is not
+// kept. With the member and in the state fallback-git a second create is not
+// measured: each create makes the call there.
+func (h *shadowHost) includeScan() bool {
+	h.scanMu.Lock()
+	defer h.scanMu.Unlock()
+	if !h.scanKept {
+		h.scanNew, h.scanKept = includeScanAnswer()
+	}
+	return h.scanNew
 }
 
 // gitVersionCmd builds the `git version` call. Measured against f6010b97 on

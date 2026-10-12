@@ -19,6 +19,36 @@ func (c envCall) isProbe() bool {
 	return filepath.Base(v) == shadowProbeName
 }
 
+// plainVersion reports the `git version` call that follows a failure
+// (versionAfterFailure). It has no option, and the root folder is its working
+// directory. It has none of the variables that the daemon adds to its other
+// calls. On Windows the working directory is that of the daemon.
+func (c envCall) plainVersion(t *testing.T) bool {
+	t.Helper()
+	if !slices.Equal(c.argv, []string{"version"}) {
+		return false
+	}
+	dir := gitVersionDir
+	if dir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir = wd
+	}
+	if c.cwd != dir {
+		return false
+	}
+	for _, kv := range c.env {
+		switch envName(kv) {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_WORK_TREE", "GIT_ALLOW_PROTOCOL",
+			"GIT_TERMINAL_PROMPT", "GIT_NO_LAZY_FETCH", "GIT_CEILING_DIRECTORIES", "LC_ALL", "LANGUAGE":
+			return false
+		}
+	}
+	return true
+}
+
 func probeCalls(calls []envCall) []envCall {
 	var out []envCall
 	for _, c := range calls {
@@ -248,14 +278,19 @@ func TestProbeAnswers(t *testing.T) {
 		// directory %[2]s, or "" for the "no repository" answers.
 		text  string
 		calls int
+		// version is true when one plain `git version` call follows each call
+		// about the repository. On 5fd08069 the requests then have 13, 2, 2, 2
+		// and 4 calls (cell 39 of val-s3p2b2-5-linux2, rows exit 1 and exit
+		// 128, Linux VM).
+		version bool
 	}
 	for _, a := range []answer{
-		{name: "exit 1, no text", exit: 1, calls: 1,
+		{name: "exit 1, no text", exit: 1, calls: 1, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
-		{name: "exit 128, no text", exit: 128, calls: 1,
+		{name: "exit 128, no text", exit: 128, calls: 1, version: true,
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 128"},
 		// Exit 1 with a text has no row: claustrum answers the error.
-		{name: "exit 1 with a text (not measured)", exit: 1, calls: 1, stderr: "fatal: some text\n",
+		{name: "exit 1 with a text (not measured)", exit: 1, calls: 1, version: true, stderr: "fatal: some text\n",
 			text: "git could not check this repository on the remote machine: at %[1]q: exit status 1"},
 		{name: "exit 128, not a git repository", exit: 128, calls: 1,
 			stderr: "fatal: not a git repository (or any of the parent directories): .git\n"},
@@ -292,13 +327,21 @@ func TestProbeAnswers(t *testing.T) {
 					wantCalls *= 2
 				}
 				var others []string
-				for _, c := range calls {
-					if !c.isProbe() && !c.excludesRead() {
+				versions := 0
+				for i, c := range calls {
+					switch {
+					case c.isProbe() || c.excludesRead():
+					case a.version && c.plainVersion(t) && i > 0 && calls[i-1].isProbe():
+						versions++
+					default:
 						others = append(others, strings.Join(c.argv, " "))
 					}
 				}
 				if got := len(probeCalls(calls)); got != wantCalls || len(others) != 0 {
 					t.Errorf("%d calls about the repository, want %d. Other calls: %q, want none", got, wantCalls, others)
+				}
+				if a.version && versions != wantCalls {
+					t.Errorf("%d plain version calls, want one after each of the %d calls about the repository", versions, wantCalls)
 				}
 				if names := daemonFolders(t, f.run); len(names) == 1 {
 					if got := entryNames(t, daemonFolder(t, f.run)); slices.Contains(got, shadowRepoName(f.gitDir)) {

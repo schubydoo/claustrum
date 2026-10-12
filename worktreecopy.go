@@ -96,7 +96,7 @@ func copyWorktreeIncludes(u gitUse, repo, worktree string) {
 
 	var paths []string
 	fallback := true
-	if gitSelectsIncludeScan() {
+	if u.selectsIncludeScan() {
 		paths, fallback = scanWorktreeIncludes(u, repo, patterns, manifest)
 	}
 	if fallback {

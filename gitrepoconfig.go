@@ -451,6 +451,10 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			if m := stdinSyntaxError.FindSubmatch(errOut); m != nil {
+				// 5fd08069 runs one `git version` after this read
+				// (versionAfterFailure). An included file with a syntax error is
+				// not measured: it gets the call too.
+				versionAfterFailure()
 				return "fatal: bad config line " + string(m[1]) + " in " + quoteOperand(path)
 			}
 		}
@@ -870,7 +874,11 @@ type repoVerdict struct {
 	// worktreeItems are the `-c` items of the `config.worktree` file of the git
 	// directory (worktreeConfigItems), or nil.
 	worktreeItems []string
-	states        []repoFileState
+	// sharedGroup is true when the last `core.sharedRepository` setting of the
+	// config and its included files is the word `group` (makeWorktreesFolder).
+	// Every other value is not measured.
+	sharedGroup bool
+	states      []repoFileState
 }
 
 // repoVerdictsMax is the most git directories and linked worktrees whose verdict
@@ -958,6 +966,11 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 		v.worktreeConfig = r.worktreeConfig
 		v.shadowText = shadowConfigText(r.settings, r.worktree)
 		v.worktreeItems = worktreeConfigItems(r.worktree)
+		for _, s := range r.settings {
+			if s.key == "core.sharedrepository" {
+				v.sharedGroup = s.hasValue && s.value == "group"
+			}
+		}
 	}
 	v.states = log.states
 	if !log.failed {
@@ -994,8 +1007,8 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 // reads again: 1 call in 19 cells, 4 with a chain of four included files and
 // 17 with seventeen. It makes no `rev-parse` call of its own there (cells of
 // group E and cells 10a to 10e of val-s3p2b2-3-linux, Linux VM. Rows D3 of
-// val-s3p2b2-3-macos and D7 of val-s3p2b2-3-windows). The `version` call that
-// 5fd08069 makes after a read with a syntax error is not built here.
+// val-s3p2b2-3-macos and D7 of val-s3p2b2-3-windows). After a read with a
+// syntax error 5fd08069 makes one `git version` call (versionAfterFailure).
 //
 // A server with no run folder has no state and no call of askGit. It reads the
 // config and answers its refusals the same way. No real daemon is such a

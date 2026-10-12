@@ -198,7 +198,7 @@ func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) 
 	h.mu.Unlock()
 	name := shadowRepoName(gitDir)
 	use := gitUse{host: h, folder: dir, gitDir: gitDir, repoDir: filepath.Join(dir, name),
-		items: read.worktreeItems}
+		items: read.worktreeItems, sharedGroup: read.sharedGroup}
 	return use, h.syncRepoFolder(dir, name, gitDir, read)
 }
 
