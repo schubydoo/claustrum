@@ -879,7 +879,7 @@ below give the trigger and the result shape. Codes are `-32602` unless noted.
 | git.* | `a file in this repository's .git directory cannot be used: <detail>` | The same frames. See [Repository config refusals](#repository-config-refusals) |
 | git.* | `Claude could not test git on the remote machine (<cause>). Check free disk space and quota there, then try again.` | -32603 on `git.info`, `git.status` and `git.list_branches`, and in the frame of `git.worktree_create` and `git.worktree_remove`. Since `5fd08069`. See [The settings copy](#the-settings-copy) |
 | git.* | `Claude could not prepare its own files on the remote machine: cannot write its copy of the repository's git config: <cause>` | The same frames. The daemon cannot make the folder of the copy |
-| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository |
+| git.* | `git could not check this repository on the remote machine: at "<root>": exit status <n>` | The same frames, for a failed call about the repository. After an exit 1 with a text, the last error line of git stands in the place of `exit status <n>` |
 | git.* | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` | The same frames, for a call about the repository that the daemon ended |
 | git.* | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` | The same frames, for a call about the repository that names another path |
 | git.* | `config-defined hooks could not be pinned off; git not run: listing the configuration in force: a configuration key is longer than the listing reads` | in the frame of each method (see the table in "Git-directory trust check" for `git.worktree_remove`), for a configuration key over 1048576 bytes. `89cb6289` measured `git.info`. See "Hardened git calls" |
@@ -2200,7 +2200,7 @@ The shapes are cell 30 of round `s3p2b-edges` (Linux VM) and section S4 of round
 |---|---|
 | `git <verb> failed under "<folder of the daemon>": <last error line of git>` | A test call failed. The folder is in quotes as Go's `%q` quotes it |
 | `git <verb> failed under "<folder>": signal: killed` | The daemon ended a test call after 30 seconds (Linux and macOS VMs). On a Windows VM the end is `exit status 1` |
-| the same with ` (git version <v>)` at its end | The ended call was `init` |
+| the same with ` (git version <v>)` at its end | The failed or ended call was `init` (cell C2 of round `val-s3p2b2-7`, Linux VM, for an `init` that exits 1) |
 | `mkdir <path>: <reason>` or `open <path>: <reason>`, with no quotes | A folder or the lock file of the daemon cannot be made |
 
 - The daemon keeps a failure for 10 seconds from the end of the failed test. A
@@ -2297,6 +2297,7 @@ A change of the root folder or of its `.git` entry makes the daemon ask again.
 |---|---|
 | exit 128 with a text, such as git's "dubious ownership" text | The "no repository" answer of each method. No config is read, and no copy is made |
 | exit 1, or exit 128 with no text | `git could not check this repository on the remote machine: at "<root>": exit status <n>` |
+| exit 1 with a text | the same text with the last error line of git in the place of `exit status 1` (cells P3 of round `val-s3p2b2-7`, Linux VM) |
 | another path than the git directory, in two calls | `git and Claude disagree about which repository holds this folder: from "<root>" git finds "<path>", Claude finds "<git directory>"; try again` |
 | no answer in 30 seconds | `git could not check this repository on the remote machine: it did not finish within 30 seconds in "<root>"; try again` |
 

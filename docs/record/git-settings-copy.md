@@ -82,6 +82,9 @@ The state `fallback-git`, on `5fd08069`:
 | section 1 of round `s3p2`, A3 of round `s3` | Linux VM (93 cells), macOS VM, Windows VM | At `-stop` the daemon removes `<S>`. The empty `<run>/git-shadow` (0700) stays |
 | F3 of round `s3p2`, 48 of round `s3p2b-edges` | Linux VM (6 runs), macOS VM and Windows VM (3 runs each form) | At `server.shutdown` or `-stop` during a slow `git.status` the daemon empties `<run>/git-shadow`, also `<S>/.gitdir-<n>`. The slow git child gets no signal, and the slow request gets no reply line. The Linux runs have `server.shutdown` only |
 | B4 of round `s3` | Linux VM, macOS VM | A daemon that the driver ended with `SIGKILL` leaves `<S>` |
+| G1 of round `val-s3p2b2-7` | Linux VM, 2 of 2 runs for each build and form | At a stop both builds remove the folder of the daemon through a symbolic link at `git-shadow`. The link and the other entries of its target stay |
+| R1 of round `val-s3p2b2-7` | Linux VM | With `-socket s.sock` and with `-socket rel/rpc.sock` the folder `git-shadow` is under the working directory of the daemon. Each path of the settings copy has the absolute form: the argv, the working directory and the variables of the test calls, and the variables of the later calls. The five replies and the call lists equal those of the absolute socket path |
+| F1 of round `val-s3p2b2-7` | Linux VM | With `<S>` of mode 0500 after the first request, `git.status` answers `{"isRepo":false,"clean":false}` after 4 calls. A create answers `git worktree add failed (checkout): mkdir <S>/.index-<n>: permission denied` with `worktree_add_failed` |
 
 Two daemons with two sockets in one run folder have no result on a macOS VM. The start of the second daemon ends the first one there, on `5fd08069` and on `89cb6289` (cell 41 of round `s3p2b-edges2`).
 
@@ -149,6 +152,7 @@ The failure text. Each cause has one frame: `Claude could not test git on the re
 | 31 of round `s3p2b-edges` | Linux VM | an `init` held 32 s or 40 s | `git init failed under "<S>": signal: killed (git version 2.43.0)` |
 | 31 of round `s3p2b-edges` | Linux VM | a `rev-parse --verify` held 32 s or 40 s | `git rev-parse failed under "<S>": signal: killed` |
 | W8a of round `s3b` | Linux VM | two `worktree add` calls of 31 s each | `git worktree failed under "<S>": signal: killed`, reply at 62.5 s |
+| C2 of round `val-s3p2b2-7` | Linux VM, 2 of 2 runs | an `init` that exits 1 after 3 s | `git init failed under "<S>": fatal: forced failure by the test wrapper (git version 2.43.0)`. The request makes 4 calls: the excludes read, the `init`, `version` in the root folder and `version` in `.check-<n>`. Three requests that wait get that one text with one `init` call |
 | S4 of round `val-s3p2b2-1` | macOS VM | `init`, `rev-parse --verify` or `worktree add` held 32 s | the three Linux forms, with `(git version 2.50.1 (Apple Git-155))` after the `init` |
 | Q-S4h of round `val-s3p2b2-1` | Windows VM | the same three holds | `exit status 1` in place of `signal: killed`, and `(git version 2.55.0.windows.3)` after the `init` |
 | C1 of round `s3p2`, 30 of round `s3p2b-edges` | Linux VM, macOS VM | `<run>` with mode 0500 | `mkdir <run>/git-shadow: permission denied` |
@@ -225,6 +229,8 @@ The entries. The modes are those of the Linux and macOS VMs.
 
 - The 8192 bytes of `HEAD`: a file of 8191 or 8192 bytes is copied whole. A file of 8193 bytes or of 1 MiB gives a copy of 8192 bytes with no newline at its end. The `git.info` reply of the four size rows has no `branch` member.
 - A `HEAD` that is a symbolic link to `refs/heads/main` gives a plain file `HEAD` (0600, 21 bytes, `ref: refs/heads/main\n`). The five methods answer normally (cells N4 of round `val-s3p2b2-3`, Linux and macOS VMs).
+- A `HEAD` that is a symbolic link to `refs/remotes/origin/main` gives the copy `ref: refs/remotes/origin/main\n` (0600, 30 bytes). So does a link to `refs/remotes/origin/nope`, a ref that does not exist. `git.info` then has no `branch` member, and a create answers the text of git for its `worktree add` (cell H1 of round `val-s3p2b2-7`, Linux VM). From the code: a link whose target does not start with `refs/` gets the "no repository" answers of the trust check.
+- With a `HEAD` file of mode 000 the five methods give their "no repository" answers, and no folder of the repository is made. `git.list_branches` makes 2 calls: the listing and the heavy `rev-parse --git-dir`. A create makes 2 calls: the listing and the light `rev-parse --is-inside-work-tree`, both with six profile values. Each call has `GIT_DIR=/dev/null`, and the second one exits 128 (cell H1 of that round, Linux VM).
 - No entry is made for `packed-refs` and `MERGE_HEAD`. The cells are B3 of round `s3p2` (Linux VM) and 24 f and 24 h of round `s3p2b-edges` (macOS and Windows VMs).
 - Cells 20b to 20i of round `s3p2b-edges` show eight more names with no entry (Linux VM). Five are `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `sequencer/`, `ORIG_HEAD` and `FETCH_HEAD`. Three are `info/grafts`, `info/sparse-checkout` and `objects/info/alternates`.
 - `git.list_branches` answers `{"isRepo":true,"branches":["main","w0"]}` while `<R>/refs` is empty (cell B0 of round `s3`, Linux VM).
@@ -440,6 +446,7 @@ The answers (cell 39 of round `s3p2b-edges`, Linux VM, where the wrapper answers
 | exit 128 with `fatal: not a git repository (or any of the parent directories): .git` | the five "no repository" lines below | 1, 1, 1, 1, 2 | 12, 1, 1, 1, 2 |
 | exit 1 with no text | `git could not check this repository on the remote machine: at "<repo>": exit status 1` | 1, 1, 1, 1, 2 | 13, 2, 2, 2, 4 |
 | exit 128 with no text | the same with `exit status 128` | 1, 1, 1, 1, 2 | 13, 2, 2, 2, 4 |
+| exit 1 with the text `fatal: text of the wrapper for p3` | the same with that text in the place of `exit status 1` (cells P3 of round `val-s3p2b2-7`, Linux VM, `git.info` and `git.status`) | 1 and 1 | 13 and 2 |
 | exit 0, prints `/elsewhere/.git` | `git and Claude disagree about which repository holds this folder: from "<repo>" git finds "/elsewhere/.git", Claude finds "<repo>/.git"; try again` | 2, 2, 2, 2, 4 | 13, 2, 2, 2, 4 |
 | exit 0, prints nothing | the same text with `git finds "<repo>"` | 2, 2, 2, 2, 4 | 13, 2, 2, 2, 4 |
 
@@ -517,6 +524,16 @@ The next table is a plain create of `5fd08069` on a Linux VM. The repository has
 | 13 | `lfs.storage=<gitdir>/lfs`, then the read-tree list | `--git-dir=<gitdir> --work-tree=<the new worktree> read-tree -u --reset --no-recurse-submodules refs/heads/w1` | the new worktree | as call 12 |
 
 A bare `baseRepo`, on `5fd08069` (cell `x2-bare-create` of round `val-s3p2b2-5`, Linux VM, 3 of 3 runs): the create answers `{"result":{"success":false,"error":"not a git repository","errorCode":"not_a_repo"}}` after 15 calls. The last call is `rev-parse --is-inside-work-tree`, with exit 0 and the output `true`. Which test of `5fd08069` refuses is not measured.
+
+A daemon with `GIT_DIR` of another repository in its environment (cells O1 of round `val-s3p2b2-7`, Linux VM, 20 requests with equal replies on both builds):
+
+| Cell | Fact on `5fd08069` |
+|---|---|
+| `GIT_DIR` alone | Each of the 27 calls after the test has `GIT_DIR=<other>/.git`, then the profile values, then `GIT_COMMON_DIR=<R>` and `GIT_OBJECT_DIRECTORY=<other>/.git/objects`. No call has `GIT_WORK_TREE`. `<R>` is the copy of the other repository. The five requests make 20, 2, 4, 11 and 2 calls |
+| `GIT_DIR` and `GIT_COMMON_DIR` | The same 27 calls with the same variables, and the folder `<R>` is made. The start test calls and the config reads keep the `GIT_COMMON_DIR` of the daemon |
+| both cells | A create makes the branch `w1` in the other repository |
+
+From the code: the pair of calls of a remove that finds the registration keeps the `GIT_COMMON_DIR` of the daemon. No cell has that pair with both variables.
 
 ## The create on Linux and macOS
 
@@ -700,6 +717,16 @@ Measured differences that stay. The reply lines are equal in each of them, excep
 | `.git/lfs/logs/<stamp>.log` in L1 to L4 | one file | none | round `val-s3p2b2-5`, Linux VM |
 
 claustrum has no sweep of the folders of other daemons and no limit on the count of repositories. A daemon that ended with `SIGKILL` leaves its `<S>`. `5fd08069` removes it at the first request of the next daemon. The cells are B4 of round `s3` (Linux and macOS VMs) and Q-S2d of round `val-s3p2b2-1` (Windows VM).
+
+Round `val-s3p2b2-7` ran the same build beside `5fd08069` on a second Linux VM, in 74 cell runs. Cells P1, K1 and G1 are equal. Seven points differed. The edits for them follow the rows of that round and ran on no VM. Each has a test:
+
+- The absolute form of the run folder with a relative socket path (cell R1).
+- The copy of a `HEAD` link to a ref outside `refs/heads/` (cell H1).
+- One more call in `git.list_branches` and in a create where the trust check finds no repository (cell H1, mode 000).
+- The answers of `git.status` and of a create with a daemon folder that takes no new entry (cell F1).
+- The text of git in the reply after a call about the repository that exits 1 (cells P3).
+- The order of `GIT_DIR` and `GIT_COMMON_DIR` with a daemon `GIT_DIR`, and the copy with both variables in the daemon environment (cells O1).
+- The git version at the end of the cause of a failed `init` (cell C2).
 
 ## Not measured
 
