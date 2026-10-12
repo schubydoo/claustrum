@@ -97,9 +97,9 @@ func treeNames(tree map[string]os.FileInfo) []string {
 	return names
 }
 
-// sameEntry reports whether a and b show one file in one state: the identity,
+// entryUnchanged reports whether a and b show one file in one state: the identity,
 // the size, the modification time and the mode.
-func sameEntry(a, b os.FileInfo) bool {
+func entryUnchanged(a, b os.FileInfo) bool {
 	return a != nil && b != nil && os.SameFile(a, b) && a.Size() == b.Size() &&
 		a.ModTime().Equal(b.ModTime()) && a.Mode() == b.Mode()
 }
@@ -109,7 +109,7 @@ func sameEntry(a, b os.FileInfo) bool {
 func changedEntries(before, after map[string]os.FileInfo) []string {
 	changed := []string{}
 	for name, fi := range after {
-		if name != "." && !sameEntry(before[name], fi) {
+		if name != "." && !entryUnchanged(before[name], fi) {
 			changed = append(changed, name)
 		}
 	}

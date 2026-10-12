@@ -1108,7 +1108,7 @@
   "round": "s3p2b-edges-linux",
   "cell": "11b-gitdir-i",
   "files": {
-   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"gitdir/i:/HOME/SCHUBY/OBS/W/HOME/REPO/\"]\n\tpath = ii.cfg\n",
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"gitdir/i:/VM/W/HOME/REPO/\"]\n\tpath = ii.cfg\n",
    "ii.cfg": "[core]\n\tfilemode = false\n"
   },
   "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
