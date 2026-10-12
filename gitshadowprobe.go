@@ -78,6 +78,26 @@ func probeStat(path string) os.FileInfo {
 	return fi
 }
 
+// probeGitStat is probeStat for the `.git` entry at path. A junction there is
+// read as the entry itself, not as the folder behind it.
+//
+// The rule is fitted to part Q of val-s3p2b2-9-windows (Windows VM, 2 forms, 2
+// of 2 runs). `repo\.git` is a junction before the daemon starts. The first
+// request of 5fd08069 makes the call about the repository, and its seven later
+// requests make no git call. The driver runs a plain `git status` in the
+// repository between two requests. With a real `.git` directory and the same
+// driver, each request of 5fd08069 makes the call again (control cell Qk). The
+// time and the identity of the junction entry are the same at every view of
+// the cell. On Windows Lstat gives ModeIrregular for a junction. A symbolic
+// link keeps the Stat rule, on every system (not measured).
+func probeGitStat(path string) os.FileInfo {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeIrregular != 0 {
+		os.SameFile(fi, fi)
+		return fi
+	}
+	return probeStat(path)
+}
+
 // sameProbeFile reports whether a and b are one file with one modification
 // time. Two paths with no file are equal. The mode and the owner do not count
 // (keptProbe.fresh).
@@ -107,7 +127,7 @@ func sameProbeFile(a, b os.FileInfo) bool {
 // until the time is over (cell 31 of s3p2b-edges2-linux, Linux VM).
 func (k keptProbe) fresh(root string) bool {
 	return !k.end.IsZero() && probeClock().Sub(k.end) < probeKeep &&
-		sameProbeFile(k.root, probeStat(root)) && sameProbeFile(k.git, probeStat(filepath.Join(root, ".git")))
+		sameProbeFile(k.root, probeStat(root)) && sameProbeFile(k.git, probeGitStat(filepath.Join(root, ".git")))
 }
 
 // repoAnswer is what the daemon makes of the answer of git. The zero value is a
@@ -397,7 +417,7 @@ func (h *shadowHost) keepProbe(root string) {
 			delete(h.probes, name)
 		}
 	}
-	h.probes[root] = keptProbe{end: now, root: probeStat(root), git: probeStat(filepath.Join(root, ".git"))}
+	h.probes[root] = keptProbe{end: now, root: probeStat(root), git: probeGitStat(filepath.Join(root, ".git"))}
 }
 
 // sameProbeFolder reports whether a and b are one folder on disk.

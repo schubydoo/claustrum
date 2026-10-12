@@ -249,3 +249,48 @@ func TestHeldGitDirTakesARenameOnWindows(t *testing.T) {
 		t.Error("a junction at the last name is opened as the held folder")
 	}
 }
+
+// TestKeptProbeWithAJunctionAtTheGitDirOnWindows must match part Q of
+// val-s3p2b2-9-windows and its control cell Qk (Windows VM). With a junction
+// at `repo\.git`, a change of the folder behind it leaves the kept answer in
+// place: 5fd08069 makes no git call in the seven later requests. With a real
+// `.git` directory the same change ends the kept answer. The test sets the
+// time of the folder, where the driver of the cells ran a plain `git status`.
+// With probeStat for the `.git` entry the first row fails.
+func TestKeptProbeWithAJunctionAtTheGitDirOnWindows(t *testing.T) {
+	for _, row := range []struct {
+		name     string
+		junction bool
+		fresh    bool
+	}{
+		{"part Q, a junction", true, true},
+		{"control Qk, a real directory", false, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			base := resolveTestRoot(t, t.TempDir())
+			repo := filepath.Join(base, "repo")
+			gitDir := filepath.Join(repo, ".git")
+			if err := os.Mkdir(repo, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if row.junction {
+				gitDir = filepath.Join(base, "gdreal")
+				linkAt(t, filepath.Join(repo, ".git"), gitDir)
+			} else if err := os.Mkdir(gitDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			h := &shadowHost{}
+			h.keepProbe(repo)
+			if !h.probes[repo].fresh(repo) {
+				t.Fatal("the answer is not kept right after the call")
+			}
+			at := time.Now().Add(time.Hour)
+			if err := os.Chtimes(gitDir, at, at); err != nil {
+				t.Fatal(err)
+			}
+			if got := h.probes[repo].fresh(repo); got != row.fresh {
+				t.Errorf("the kept answer after a change of the git directory: fresh = %v, want %v", got, row.fresh)
+			}
+		})
+	}
+}
