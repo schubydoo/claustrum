@@ -349,10 +349,12 @@ func gitInfo(req *request) response {
 		return notRepo()
 	}
 	copyOf := ""
+	var front []string
 	if _, ok := req.use.names(p.Path); ok {
 		copyOf = req.use.gitDir
+		front = req.use.gitDirFront()
 	}
-	top := gitInfoRoot(walkRoot, walkGitDir, copyOf, req.use.gitDirPin(p.Path))
+	top := gitInfoRoot(walkRoot, walkGitDir, copyOf, req.use.gitDirPin(p.Path), front)
 	// slug and defaultBranch come before the branch, matching the reference order.
 	slug := gitRepoSlug(req.use, p.Path)
 	defBranch := gitDefaultBranch(req.use, p.Path)
@@ -639,7 +641,7 @@ func gitStatus(req *request) response {
 	if !ok {
 		return notRepo
 	}
-	top, ok, err := statusWorkTreeProbe(common, sp.probeTree, statusCommonPin(req.use, common))
+	top, ok, err := statusWorkTreeProbe(common, sp.probeTree, statusCommonPin(req.use, common), req.use.gitDirFront())
 	if err != nil {
 		return errResult(req.ID, codeInternal, err.Error())
 	} else if !ok {
@@ -650,7 +652,7 @@ func gitStatus(req *request) response {
 			sp.spellings = append(sp.spellings, s)
 		}
 	}
-	entry, ok := statusEntryOf(common, sp)
+	entry, ok := statusEntryOf(common, sp, req.use.shadow())
 	if !ok {
 		return notRepo
 	}
@@ -1177,7 +1179,10 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 			ErrorCode: "worktree_add_failed",
 		})
 	}
-	req.listWorktreeConfigAfterAdd(t.pinCommonDir)
+	// The read of the `config.worktree` file of the repository, and the text
+	// that the new worktree gets from it (newWorktreeConfig). The text goes into
+	// the registration below, after the tests of that registration.
+	entryConfig, hasEntryConfig := req.newWorktreeConfig(repo, t.pinCommonDir)
 	// The add succeeded. The .git file of the new worktree must name a registration
 	// of this repository, and the commondir file and the gitdir record of that
 	// registration must be files that can be read (createdRegistrationRefusal, cells
@@ -1243,12 +1248,15 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// the deadline test too: with a timeoutMs that expired during the add, 89cb6289
 	// answers this refusal and keeps the leaf and the branch (cell P-f, Linux and macOS VMs).
 	if adminRecordMismatch(indexDir, p.WorktreePath) {
-		_, _ = gitDirWorkTreeToplevel(gitDir, repo, req.use.gitDirPin(repo))
+		_, _ = gitDirWorkTreeToplevel(gitDir, repo, req.use.gitDirPin(repo), req.use.gitDirFront())
 		return okResult(req.ID, worktreeResult{
 			Success:   false,
 			Error:     adminRecordRefusal(p.WorktreePath),
 			ErrorCode: "unsafe_path",
 		})
+	}
+	if hasEntryConfig {
+		placeWorktreeConfig(req.use, indexDir, p.WorktreePath, tested, entryConfig)
 	}
 	// If the caller's deadline expired during the add, the request
 	// answers timeout "before the checkout started" and rolls back. errorCode

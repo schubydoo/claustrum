@@ -36,6 +36,11 @@ type gitUse struct {
 	// atReply takes the removal of a short-lived folder that stays until the
 	// reply of the request (request.runAtReply), or it is nil.
 	atReply *[]func()
+	// items are the `-c` items of the `config.worktree` file of the repository
+	// (worktreeConfigItems). entryItems are those of the file of the linked
+	// worktree of a git.info. Both are nil with no such file.
+	items      []string
+	entryItems []string
 }
 
 // inFolder reports whether the request keeps its short-lived folders in the

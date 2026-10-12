@@ -206,7 +206,7 @@ func withGitTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 // directory repo, and branchStepEnv with the hooks of the config listing that the
 // caller runs first.
 func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false, args...)...)
+	cmd := exec.CommandContext(ctx, "git", withFront(u.front(repo), hardenedProfileArgs(false, args...))...)
 	cmd.Dir = repo
 	cmd.Env = branchStepEnv(u.pin(repo), hooks)
 	return cmd

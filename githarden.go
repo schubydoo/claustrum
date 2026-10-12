@@ -295,7 +295,7 @@ func hardenedGitCmd(ctx context.Context, u gitUse, dir string, heavy bool, pre *
 	} else {
 		hooks = pre.hooks
 	}
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(heavy, args...)...)
+	cmd := exec.CommandContext(ctx, "git", withFront(u.front(dir), hardenedProfileArgs(heavy, args...))...)
 	cmd.Dir = dir
 	cmd.Env = u.hardenedGitEnv(heavy, u.pin(dir), hooks)
 	return cmd
@@ -335,13 +335,16 @@ func hardenedGitFirst(u gitUse, dir string, heavy bool, l configListing, args ..
 // and shows it in create (macOS and Windows VMs). val-s3p2b1 cell A6 shows it in
 // git.worktree_remove, with "shadowDirOff":true (Linux, macOS and Windows VMs).
 // 89cb6289 sends the light profile there.
-func gitDirWorkTreeToplevel(gitDir, workTree string, pin []string) (string, error) {
+//
+// front are the `-c` items that come before the 28 items of the second call
+// (gitUse.gitDirFront), or nil.
+func gitDirWorkTreeToplevel(gitDir, workTree string, pin, front []string) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	userExcludesFile()
 	hooks := runListing(ctx, gitDir, gitDir, precursorEnv(true, pin)).hooks()
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true,
-		"--git-dir="+gitDir, "--work-tree="+workTree, "rev-parse", "--show-toplevel")...)
+	cmd := exec.CommandContext(ctx, "git", withFront(front, hardenedProfileArgs(true,
+		"--git-dir="+gitDir, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = gitDir
 	cmd.Env = hardenedGitEnv(true, pin, hooks)
 	out, err := cmd.Output()
@@ -455,6 +458,9 @@ func hardenedGitCheckout(ctx context.Context, u gitUse, leaf, gitDir, indexFile 
 		env = append(env, "LANGUAGE=C")
 		runListing(ctx, leaf, gitDir, env)
 		list = append(list, "-c", "lfs.storage="+filepath.Join(u.gitDir, "lfs"))
+		// The items of the `config.worktree` file of the repository come after
+		// that item and before the list of the profile (gitUse.gitDirFront).
+		list = append(list, u.gitDirFront()...)
 	}
 	cmd := exec.CommandContext(ctx, "git", append(list, hardenedProfileArgs(false, args...)...)...)
 	cmd.Dir = leaf

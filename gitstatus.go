@@ -274,15 +274,18 @@ func linkBelow(base, p string) bool {
 // does not use it. On Windows it gives one more spelling of `path`
 // (statusPrintedRootSpelling). What 89cb6289 and 5fd08069 do with it is not
 // measured.
-func statusWorkTreeProbe(common, workTree string, pin []string) (top string, ok bool, err error) {
+//
+// front are the `-c` items that come before the 28 items of the `rev-parse`
+// call (gitUse.gitDirFront), or nil.
+func statusWorkTreeProbe(common, workTree string, pin, front []string) (top string, ok bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	l := runListing(ctx, common, common, precursorEnv(true, pin))
 	if l.err != nil {
 		return "", false, statusRefusal(failedListingText(gitUse{}, l, true))
 	}
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true,
-		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel")...)
+	cmd := exec.CommandContext(ctx, "git", withFront(front, hardenedProfileArgs(true,
+		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = common
 	cmd.Env = hardenedGitEnv(true, pin, l.hooks())
 	out, runErr := cmd.Output()
@@ -560,7 +563,14 @@ func statusDirNames(root *os.Root, dir string) ([]string, error) {
 // file is the stdin of that call, its working directory is that of the daemon, and it
 // gets the environment of the daemon as it is (rows n12, n12b, n13 and n14c). Every
 // key must be one of statusConfigKeys.
-func statusEntryConfig(root *os.Root) (present, ok bool) {
+//
+// copied is true for a request that names a copy of the repository. The call
+// then has the form of the read of a config file. Its working directory is the
+// root folder, and it carries GIT_DIR=<null device>, LC_ALL=C and LANGUAGE=C.
+// 5fd08069 runs it so (cell 1c of val-s3p2b2-5-linux, call 5 of the git.status,
+// Linux VM). With the member and in the state fallback-git the call of 5fd08069
+// is not measured: it keeps the form of 89cb6289.
+func statusEntryConfig(root *os.Root, copied bool) (present, ok bool) {
 	if _, err := root.Lstat("config.worktree"); errors.Is(err, fs.ErrNotExist) {
 		return false, true
 	}
@@ -570,7 +580,11 @@ func statusEntryConfig(root *os.Root) (present, ok bool) {
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	out, err := listConfigText(ctx, b, "", nil)
+	dir, env := "", []string(nil)
+	if copied {
+		dir, env = gitVersionDir, repoConfigListEnv()
+	}
+	out, err := listConfigText(ctx, b, dir, env)
 	if err != nil {
 		return true, false
 	}
@@ -600,7 +614,8 @@ type statusEntry struct {
 // of the tests after the match is not measured: each failing row broke one file only.
 //
 // The entry comes back with its root open when ok is true. The caller closes it.
-func statusEntryOf(common string, sp statusPath) (e statusEntry, ok bool) {
+// copied is the copied of statusEntryConfig.
+func statusEntryOf(common string, sp statusPath, copied bool) (e statusEntry, ok bool) {
 	dir, root, ok := statusMatchEntry(common, sp.spellings)
 	if !ok {
 		return statusEntry{}, false
@@ -622,7 +637,7 @@ func statusEntryOf(common string, sp statusPath) (e statusEntry, ok bool) {
 	if !ok {
 		return statusEntry{}, false
 	}
-	hasConfig, ok := statusEntryConfig(root)
+	hasConfig, ok := statusEntryConfig(root, copied)
 	if !ok {
 		return statusEntry{}, false
 	}
@@ -785,6 +800,9 @@ type statusRun struct {
 	// commonPin is the pin of the calls with --git-dir=<common> (statusCommonPin).
 	commonPin  []string
 	attrSource bool // git takes --attr-source (attrSourceArgs)
+	// front are the `-c` items before the list of the `hash-object` call
+	// (gitUse.gitDirFront). The calls in the temporary folder have none.
+	front []string
 }
 
 // statusCommonPin is the GIT_COMMON_DIR pin of the calls that carry
@@ -817,8 +835,8 @@ func statusCommonPin(u gitUse, common string) []string {
 // A listing that fails here is not measured. claustrum goes on with the two base pins.
 func (r *statusRun) emptyTree() string {
 	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.commonPin)).hooks()
-	cmd := exec.CommandContext(r.ctx, "git", hardenedProfileArgs(true,
-		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull)...)
+	cmd := exec.CommandContext(r.ctx, "git", withFront(r.front, hardenedProfileArgs(true,
+		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull))...)
 	cmd.Env = hardenedGitEnv(true, r.commonPin, hooks)
 	out, err := cmd.Output()
 	if id := strings.TrimSpace(string(out)); err == nil && isObjectID(id) {
@@ -918,7 +936,8 @@ func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, erro
 	ctx, cancel := gitCtx()
 	defer cancel()
 	r := &statusRun{ctx: ctx, path: path, common: common, tmp: tmp,
-		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource}
+		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource,
+		front: u.gitDirFront()}
 	if u.shadow() && !daemonCommonDirSet() {
 		r.pin = r.commonPin
 	}

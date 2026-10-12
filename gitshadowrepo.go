@@ -197,7 +197,8 @@ func (h *shadowHost) syncRepo(gitDir string, read *repoVerdict) (gitUse, error) 
 	dir := h.dir
 	h.mu.Unlock()
 	name := shadowRepoName(gitDir)
-	use := gitUse{host: h, folder: dir, gitDir: gitDir, repoDir: filepath.Join(dir, name)}
+	use := gitUse{host: h, folder: dir, gitDir: gitDir, repoDir: filepath.Join(dir, name),
+		items: read.worktreeItems}
 	return use, h.syncRepoFolder(dir, name, gitDir, read)
 }
 
@@ -391,29 +392,14 @@ func (h *shadowHost) dropCopy(st *shadowRepo, rel, file string) error {
 // the worktreeConfig switch and the file exists. Its settings are in no copy
 // (cell 1c of s3p2b-edges2-linux, Linux VM). git.status lists the file in its
 // own test of the entry (statusEntryConfig), and git.list_branches does not
-// list it (the same cell). claustrum makes the call and does not use the
-// answer.
+// list it (the same cell). The settings of the listing go to the calls of the
+// request on that worktree as `-c` items (gitUse.front).
 func (req *request) listEntryConfig(t gitDirTrust) {
 	if req.repoRead == nil || !req.repoRead.worktreeConfig || t.worktreeEntry == "" {
 		return
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	listConfigFile(ctx, filepath.Join(t.worktreeEntry, "config.worktree"))
-}
-
-// listWorktreeConfigAfterAdd is the read of the `config.worktree` file of the
-// repository in a create. On 5fd08069 a create lists that file with one git
-// call right after its `worktree add`, when the repository has the
-// worktreeConfig switch and the file exists. With no switch or no file it
-// makes no such call (cells 1a to 1m, 9a and 9k of s3p2b-edges2-linux, Linux
-// VM). The copy of the settings is the same file after the create. claustrum
-// makes the call and does not use the answer.
-func (req *request) listWorktreeConfigAfterAdd(gitDir string) {
-	if req.repoRead == nil || !req.repoRead.worktreeConfig {
-		return
-	}
-	ctx, cancel := gitCtx()
-	defer cancel()
-	listConfigFile(ctx, filepath.Join(gitDir, "config.worktree"))
+	settings, _ := listConfigFile(ctx, filepath.Join(t.worktreeEntry, worktreeConfigName))
+	req.use.entryItems = worktreeConfigItems(settings)
 }

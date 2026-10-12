@@ -530,23 +530,8 @@ func (r *repoConfigRead) file(path string, depth int) string {
 // is not a regular file or that is over repoConfigMaxBytes. It is false too
 // when git did not list the file. The open does not wait (openRepoFile).
 func listConfigFile(ctx context.Context, path string) (settings []repoSetting, ok bool) {
-	f, err := openRepoFile(path)
-	if err != nil || f == nil {
-		return nil, false
-	}
-	defer func() { _ = f.Close() }()
-	if repoFileKindDetail(f, path, repoConfigMaxBytes, configLarge) != "" {
-		return nil, false
-	}
-	text, _, ok := readRepoFile(f, path, repoConfigMaxBytes, configLarge)
-	if !ok {
-		return nil, false
-	}
-	out, _, err := listRepoConfigText(ctx, text, gitVersionDir, repoConfigListEnv())
-	if err != nil {
-		return nil, false
-	}
-	return listedSettings(out), true
+	_, settings, ok = listConfigFileText(ctx, path)
+	return settings, ok
 }
 
 // listedSettings are the settings of out, the output of one `config --list -z`
@@ -882,7 +867,10 @@ type repoVerdict struct {
 	worktreeConfig bool
 	// shadowText is the text of the copy of the settings (shadowConfigText).
 	shadowText string
-	states     []repoFileState
+	// worktreeItems are the `-c` items of the `config.worktree` file of the git
+	// directory (worktreeConfigItems), or nil.
+	worktreeItems []string
+	states        []repoFileState
 }
 
 // repoVerdictsMax is the most git directories and linked worktrees whose verdict
@@ -969,6 +957,7 @@ func repoReadVerdict(t gitDirTrust) *repoVerdict {
 	default:
 		v.worktreeConfig = r.worktreeConfig
 		v.shadowText = shadowConfigText(r.settings, r.worktree)
+		v.worktreeItems = worktreeConfigItems(r.worktree)
 	}
 	v.states = log.states
 	if !log.failed {

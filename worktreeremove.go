@@ -481,7 +481,7 @@ func (r registrationProbe) run() string {
 			pin = r.use.commonVars()
 		}
 	}
-	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin)
+	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin, r.use.gitDirFront())
 	if err != nil {
 		return ""
 	}
