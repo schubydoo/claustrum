@@ -81,7 +81,7 @@ func skippedBranchName(branch string) bool {
 // runBranchStep checks refs/heads/<branch> and deletes it when another ref reaches
 // its tip. The check and the delete run one at a time per common git dir (rows R21,
 // R21b and B2-12). Different repositories run at the same time (row B2-08).
-func runBranchStep(repo, branch string) branchStepResult {
+func runBranchStep(u gitUse, repo, branch string) branchStepResult {
 	if skippedBranchName(branch) {
 		return branchStepResult{kind: branchNotRun}
 	}
@@ -90,7 +90,16 @@ func runBranchStep(repo, branch string) branchStepResult {
 	if branchStepEntered != nil {
 		branchStepEntered(repo)
 	}
-	return checkAndDeleteBranch(repo, branch)
+	// A create whose git directory is no longer the held folder makes no call
+	// of the check when its gate refuses again. The refusal is the cause in
+	// the text of the branch: `… could not check whether another branch or
+	// remote-tracking ref reaches its commits (this repository's git config
+	// cannot be used: … a link …)` on 5fd08069 (cell X1c-10 of
+	// val-s3p2b2-7-windows, Windows VM).
+	if msg := u.swapRefusal("branch", repo); msg != "" {
+		return branchStepResult{kind: branchUnchecked, err: errors.New(msg)}
+	}
+	return checkAndDeleteBranch(u, repo, branch)
 }
 
 // branchStepEntered is a test seam. It runs inside the branch lock, before the
@@ -135,11 +144,11 @@ func parseBranchRecords(out string) ([]branchRecord, bool) {
 //     not a symref. A printed commit keeps the branch, and so does a failed or
 //     stopped rev-list.
 //  6. update-ref with the old value. A failure or a stop keeps the branch.
-func checkAndDeleteBranch(repo, branch string) branchStepResult {
+func checkAndDeleteBranch(u gitUse, repo, branch string) branchStepResult {
 	target := "refs/heads/" + branch
 	ctx, cancel := context.WithTimeout(context.Background(), branchCheckBound)
 	defer cancel()
-	out, _, err := branchCheckGit(ctx, repo, nil, "for-each-ref", "--count="+strconv.Itoa(branchListLimit),
+	out, _, err := branchCheckGit(ctx, u, repo, nil, "for-each-ref", "--count="+strconv.Itoa(branchListLimit),
 		"--format=%(objectname)%00%(refname)%00%(symref)", "refs/heads/")
 	if err != nil {
 		return branchStepResult{kind: branchUnchecked, err: err}
@@ -157,14 +166,14 @@ func checkAndDeleteBranch(repo, branch string) branchStepResult {
 		}
 	}
 	if !listed {
-		_, stopped, err := branchCheckGit(ctx, repo, nil, "rev-parse", "--verify", "--quiet", target+"^{commit}")
+		_, stopped, err := branchCheckGit(ctx, u, repo, nil, "rev-parse", "--verify", "--quiet", target+"^{commit}")
 		var ee *exec.ExitError
 		if errors.As(err, &ee) && ee.ExitCode() == 1 && !stopped {
 			return branchStepResult{kind: branchAbsent}
 		}
 		return branchStepResult{kind: branchUnchecked, err: err}
 	}
-	out, _, err = branchCheckGit(ctx, repo, strings.NewReader(branchStdin(recs, target)),
+	out, _, err = branchCheckGit(ctx, u, repo, strings.NewReader(branchStdin(recs, target)),
 		"-c", "core.commitGraph=false", "rev-list", "-n", "1", tip, "--not", "--remotes", "--not", "--stdin", "--")
 	if err != nil {
 		return branchStepResult{kind: branchUnchecked, err: err}
@@ -172,7 +181,7 @@ func checkAndDeleteBranch(repo, branch string) branchStepResult {
 	if strings.TrimSpace(out) != "" {
 		return branchStepResult{kind: branchUnique}
 	}
-	if err := deleteBranchRef(repo, target, tip); err != nil {
+	if err := deleteBranchRef(u, repo, target, tip); err != nil {
 		return branchStepResult{kind: branchUpdateRefFailed, err: err}
 	}
 	return branchStepResult{kind: branchDeleted}
@@ -205,10 +214,10 @@ func withGitTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 // branchStepCmd builds one call of the branch step: the light -c set, the working
 // directory repo, and branchStepEnv with the hooks of the config listing that the
 // caller runs first.
-func branchStepCmd(ctx context.Context, repo string, hooks []string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(false, args...)...)
+func branchStepCmd(ctx context.Context, u gitUse, repo string, hooks []string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", withFront(u.front(repo), hardenedProfileArgs(false, args...))...)
 	cmd.Dir = repo
-	cmd.Env = branchStepEnv(commonDirPinEnv(repo), hooks)
+	cmd.Env = branchStepEnv(u.pin(repo), hooks)
 	return cmd
 }
 
@@ -218,17 +227,17 @@ func branchStepCmd(ctx context.Context, repo string, hooks []string, args ...str
 // call returned. On Windows the kill gives exit code 1, so exit 1 alone does not
 // tell a stop from git's answer. Only rev-list gets a stdin. The other calls get the
 // null device. 89cb6289 gives them a character device (macOS VM).
-func branchCheckGit(ctx context.Context, repo string, stdin io.Reader, args ...string) (out string, stopped bool, err error) {
+func branchCheckGit(ctx context.Context, u gitUse, repo string, stdin io.Reader, args ...string) (out string, stopped bool, err error) {
 	ctx, cancel := withGitTimeout(ctx)
 	defer cancel()
 	// A listing that says "not a git repository" ends the step: the call does not run,
 	// and the listing's error stands for it. 89cb6289 runs no for-each-ref after such a
 	// listing (rows L14a, L14b, L14d, L14e and N01 to N04 on Linux and macOS VMs).
-	pre := hookPrecursor(ctx, repo, false)
+	pre := hookPrecursor(ctx, u, repo, false)
 	if pre.saysNoRepository() {
 		return "", ctx.Err() != nil, pre.err
 	}
-	cmd := branchStepCmd(ctx, repo, pre.hooks(), args...)
+	cmd := branchStepCmd(ctx, u, repo, pre.hooks(), args...)
 	cmd.Stdin = stdin
 	b, err := cmd.Output()
 	return string(b), ctx.Err() != nil, err
@@ -239,13 +248,13 @@ func branchCheckGit(ctx context.Context, repo string, stdin io.Reader, args ...s
 // check. The stop at updateRefStop counts from the start of update-ref. Then the
 // call gets stopUpdateRef. On Linux and macOS a call still running
 // updateRefKillAfter later is killed.
-func deleteBranchRef(repo, target, tip string) error {
+func deleteBranchRef(u gitUse, repo, target, tip string) error {
 	d5, cancelD5 := withGitTimeout(context.Background())
 	defer cancelD5()
-	hooks := hookPrecursor(d5, repo, false).hooks()
+	hooks := hookPrecursor(d5, u, repo, false).hooks()
 	ctx, cancel := context.WithTimeout(d5, updateRefStop)
 	defer cancel()
-	cmd := branchStepCmd(ctx, repo, hooks, "update-ref", "--no-deref", "-d", target, tip)
+	cmd := branchStepCmd(ctx, u, repo, hooks, "update-ref", "--no-deref", "-d", target, tip)
 	cmd.Cancel = func() error { return stopUpdateRef(cmd.Process) }
 	cmd.WaitDelay = updateRefKillAfter
 	return cmd.Run()

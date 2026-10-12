@@ -113,12 +113,15 @@ jobs:
           - os: windows-latest
             shard: worktree
             select: -run=^TestWorktree
+          # The Windows status shard is the short one, so it also takes the
+          # tests named TestShadow and TestProbe. Most of them are tests of the
+          # settings copy.
           - os: windows-latest
             shard: status
-            select: -run=^TestGitStatus
+            select: -run=^(TestGitStatus|TestShadow|TestProbe)
           - os: windows-latest
             shard: rest
-            select: -skip=^(TestWorktree|TestGitStatus)
+            select: -skip=^(TestWorktree|TestGitStatus|TestShadow|TestProbe)
     env:
       # Renovate bumps this via a customManagers entry in the shared
       # schubydoo/renovate-config:claustrum preset — the same shape as

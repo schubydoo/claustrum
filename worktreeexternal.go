@@ -125,8 +125,8 @@ func d5Kill(ctx context.Context, err error) error {
 // this call. git.worktree_remove uses worktreeListForRemove. The error is d5Kill of
 // the call. Any other failure, such as a git older
 // than 2.36 without `worktree list -z`, gives a nil error.
-func worktreeList(repo string) ([]listedWorktree, error) {
-	list, killed, err := worktreeListCall(repo, true)
+func worktreeList(u gitUse, repo string) ([]listedWorktree, error) {
+	list, killed, err := worktreeListCall(u, repo, true)
 	if err != nil && killed {
 		return nil, err
 	}
@@ -137,14 +137,14 @@ func worktreeList(repo string) ([]listedWorktree, error) {
 // listing. With nul it adds -z, and a NUL byte ends each line of the output. Without
 // nul a LF ends each line. It returns the entries, whether the D5 deadline stopped the
 // call, and its exec error.
-func worktreeListCall(repo string, nul bool) (list []listedWorktree, killed bool, err error) {
+func worktreeListCall(u gitUse, repo string, nul bool) (list []listedWorktree, killed bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	args, sep := []string{"worktree", "list", "--porcelain"}, "\n"
 	if nul {
 		args, sep = append(args, "-z"), "\x00"
 	}
-	b, err := hardenedGitCmd(ctx, repo, false, nil, args...).Output()
+	b, err := hardenedGitCmd(ctx, u, repo, false, nil, args...).Output()
 	if err != nil {
 		return nil, d5Kill(ctx, err) != nil, err
 	}
@@ -185,18 +185,18 @@ const worktreeListRefusalPrefix = "failed to remove worktree: cannot list the re
 // L13wa-g and L13wb-g (Linux VM) the excludes read is the only git call, on 89cb6289
 // and on claustrum. The later git calls of claustrum for that baseRepo do not start:
 // the working directory does not exist.
-func worktreeListForRemove(repo string) (listed []listedWorktree, refusal string) {
+func worktreeListForRemove(u gitUse, repo string) (listed []listedWorktree, refusal string) {
 	if _, err := os.Stat(repo); errors.Is(err, fs.ErrNotExist) {
 		return nil, ""
 	}
-	listed, killed, err := worktreeListCall(repo, true)
+	listed, killed, err := worktreeListCall(u, repo, true)
 	if err == nil {
 		return listed, ""
 	}
 	if killed {
 		return nil, workTreeUnknownPrefix + err.Error()
 	}
-	if listed, _, err = worktreeListCall(repo, false); err != nil {
+	if listed, _, err = worktreeListCall(u, repo, false); err != nil {
 		return nil, worktreeListRefusalPrefix + err.Error()
 	}
 	return listed, ""
@@ -340,10 +340,10 @@ func worktreeRootMissingRefusal(worktreeRoot string) string {
 // repoTopLevel is the answer of a light `rev-parse --show-toplevel` in repo, or ""
 // when the call fails. pre is nil when the call gets its own listing, else the
 // listing it pins (see hardenedGitCmd). The error is d5Kill of the call.
-func repoTopLevel(repo string, pre *configListing) (string, error) {
+func repoTopLevel(u gitUse, repo string, pre *configListing) (string, error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
-	b, err := hardenedGitCmd(ctx, repo, false, pre, "rev-parse", "--show-toplevel").Output()
+	b, err := hardenedGitCmd(ctx, u, repo, false, pre, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		return "", d5Kill(ctx, err)
 	}
@@ -454,7 +454,7 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // shapes of reason 3.
 //
 // After reason 3 and before the listing of reason 4 comes the daemon's own read of
-// the repository's config (repoConfigGateRefusal). Its refusal text is the reason.
+// the repository's config (repoConfigGate). Its refusal text is the reason.
 // 5fd08069 answers so with format version `2` and with a config of 20 MiB, and
 // removes nothing (cells N14, Linux and macOS VMs). Each state ran for a worktree
 // that exists and for a folder that is missing. An info/exclude of 20 MiB and a
@@ -466,7 +466,16 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 //
 // Its second answer is the git top level of baseRepo when the removal goes on, or ""
 // when git cannot give it. worktreeRootCheckoutRefusal uses it.
-func externalWorkTreeRefusal(repo string, off jsonTrueSwitch) (string, string) {
+//
+// That read is a part of the settings gate of the request (settingsGateRefusal).
+// After the gate the calls of the request name the copy of the repository in the
+// state shadow. On 5fd08069 the 8 calls of a remove with worktreeRoot carry the
+// four folder variables there, and 14 with branchName (cell N3 of
+// val-s3p2b2-3-linux2, Linux VM). The calls before the gate have no copy. A
+// failed start test in a remove with worktreeRoot is not measured: its text is
+// the reason, as for a refused config.
+func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (string, string) {
+	u := gitUse{}
 	// Only "does not exist" skips the reasons. Any other stat error keeps them. A
 	// baseRepo behind a symlink chain that the kernel does not follow still resolves in
 	// the trust check. If the reasons are skipped for it, the removal deletes its
@@ -503,12 +512,12 @@ func externalWorkTreeRefusal(repo string, off jsonTrueSwitch) (string, string) {
 			// macOS VMs, row A-N5 on a Linux VM). Windows refuses a worktreeRoot before this check. Without the
 			// entry of t.noRepoPinned the reason stays "exit status 128", as before. A
 			// daemon GIT_DIR that names a regular file is such a state. Not measured here.
-			c := hostileConfigRefusal(repo, false)
+			c := hostileConfigRefusal(u, repo, false)
 			if c.refusal != "" && t.noRepoPinned() {
 				return workTreeUnknownPrefix + c.refusal, ""
 			}
 			if !c.refused() {
-				_, _ = repoTopLevel(repo, &c.listing)
+				_, _ = repoTopLevel(u, repo, &c.listing)
 			}
 			return workTreeUnknownPrefix + "exit status 128", ""
 		}
@@ -517,12 +526,18 @@ func externalWorkTreeRefusal(repo string, off jsonTrueSwitch) (string, string) {
 	// VMs). The
 	// call that it makes to git on a refusal is the light `rev-parse
 	// --show-toplevel` that follows the listing below.
-	if msg := repoConfigGateRefusal(t, off, repo, false, "--show-toplevel"); msg != "" {
+	// A bad answer of git about the repository is not measured with worktreeRoot.
+	// Its text is the reason, and git's own refusal gets the reason of a folder
+	// with no repository.
+	if msg, noRepo := req.settingsGateRefusal(t, off, repo); msg != "" {
 		return workTreeUnknownPrefix + msg, ""
+	} else if noRepo {
+		return workTreeUnknownPrefix + "exit status 128", ""
 	}
+	u = req.use
 	// This listing is light, and the rev-parse below runs its own heavy one. That is
 	// the order of the listings of f6010b97 here (Linux VM, rows WR00 to WR15).
-	c := hostileConfigRefusal(repo, false)
+	c := hostileConfigRefusal(u, repo, false)
 	if c.refusal != "" {
 		return workTreeUnknownPrefix + c.refusal, ""
 	}
@@ -534,14 +549,14 @@ func externalWorkTreeRefusal(repo string, off jsonTrueSwitch) (string, string) {
 	// decide the reasons below. worktreeRootCheckoutRefusal compares the root with
 	// it. If the D5 deadline stops the call, the reason is the exec error. That is
 	// claustrum's choice (not measured).
-	topLevel, killed := repoTopLevel(repo, &c.listing)
+	topLevel, killed := repoTopLevel(u, repo, &c.listing)
 	if killed != nil {
 		return workTreeUnknownPrefix + killed.Error(), ""
 	}
 	if baseIsGitDir(repo) {
 		return workTreeUnknownPrefix + "exit status 128", ""
 	}
-	if err := repositoryCheckError(repo, nil); err != nil {
+	if err := repositoryCheckError(u, repo, nil); err != nil {
 		return workTreeUnknownPrefix + err.Error(), ""
 	}
 	return "", topLevel
@@ -604,7 +619,7 @@ func unenterableBaseListing(repo string) string {
 			userExcludesFile()
 			return hooksRefusalPrefix + r.detail()
 		}
-		return failedListingText(r, false)
+		return failedListingText(gitUse{}, r, false)
 	}
 	return ""
 }

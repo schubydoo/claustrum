@@ -407,28 +407,6 @@ func TestRepoConfigIncludePlaces(t *testing.T) {
 	}
 }
 
-// TestRepoConfigOwnerCallDrain pins the wait for the stderr pipe of the call to
-// git. The git of the test is the stub in its "hold" mode: the real rev-parse
-// fails in a repository with format version 2, and a process that the stub
-// leaves keeps the pipe open for 40 s. The request answers the refusal long
-// before that. No cell has such a git: the rule is claustrum's own.
-func TestRepoConfigOwnerCallDrain(t *testing.T) {
-	repo, gitDir := configRepo(t)
-	setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 2"))
-	stubGitWithLog(t)
-	const held = 40 * time.Second
-	slowGit(t, "rev-parse", "hold", held, "", "")
-	forgetRepoVerdicts()
-	start := time.Now()
-	got := repoConfigGateRefusal(gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitDir}, false, repo, false, "--git-dir")
-	if want := repoConfigPrefix + versionDetail("2"); got != want {
-		t.Errorf("refusal = %q, want %q", got, want)
-	}
-	if took := time.Since(start); took > held/2 {
-		t.Errorf("the request took %s, want it to end %s after git", took, repoOwnerCallDrain)
-	}
-}
-
 // TestRepoConfigRefusalWithWorktreeRoot pins git.worktree_remove with
 // worktreeRoot in a repository that the daemon refuses. 5fd08069 answers the
 // "cannot determine the repository's work tree" text with the refusal of the

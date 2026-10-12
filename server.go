@@ -106,6 +106,11 @@ type server struct {
 	// taken this boot. See daemon_runlock_unix.go.
 	releaseRunDir func()
 
+	// gitShadow is the settings control of the git methods: the state that git.info
+	// reports, the folder of this daemon beside the socket and the start test
+	// (gitshadow.go). It is nil for a server with no run folder.
+	gitShadow *shadowHost
+
 	// peerCheckAsked is true when the daemon started with CLAUDE_SSH_PEER_CHECK=1.
 	// It sets the peerCheck member of server.capabilities (see peercheck.go).
 	peerCheckAsked bool
@@ -569,6 +574,7 @@ func newServerOnSocket(socket, token, metricsAddr string, wlopt wireLogOptions, 
 		releaseRunDir: claim.release,
 		instanceID:    instanceID,
 		startedAt:     startedAt,
+		gitShadow:     newShadowHost(execChildRunDir(socket)),
 
 		peerCheckAsked: peerAsked,
 	}
@@ -1271,6 +1277,9 @@ func (s *server) closeAll(socket string) {
 	// same ownership guard: only if it is still the inode we published, so a successor's
 	// pipe survives. No-op if the pipe was never started this boot (pipeInfo nil).
 	removePipeNameFileIfOwned(socket, s.pipeInfo)
+	// The folder of this daemon below git-shadow goes too, and the empty git-shadow
+	// stays (shadowHost.close). Its place among these removes is not measured.
+	s.gitShadow.close()
 	// With -keep-children the kept children lose their records while this daemon
 	// still holds the lock. A successor takes the lock only after the release below,
 	// so its reap finds no record of a kept child (linux and darwin, a no-op

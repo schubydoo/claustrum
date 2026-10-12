@@ -222,6 +222,10 @@ func runGitLingering(args []string) int {
 // With CLAUSTRUM_GITSTUB_EXPAND=1 the stderr payload expands $NAME from the stub's own
 // environment first.
 //
+// When CLAUSTRUM_GITSTUB_COPYLOG names a file, every call that has a GIT_COMMON_DIR
+// appends one record that ends "\x1d\n": its argv, the text of the HEAD and of the
+// config in that folder, and whether its GIT_DIR holds a folder `worktrees`.
+//
 // A second rule, CLAUSTRUM_GITSTUB_MATCH2, picks another call, so that a test can
 // fail the checkout with the first rule and change a call of the rollback's branch
 // step with the second. A call that it matches first applies CLAUSTRUM_GITSTUB_ACTION2
@@ -249,6 +253,15 @@ func runGitSlow(args []string) int {
 	if log := os.Getenv("CLAUSTRUM_GITSTUB_ENVLOG"); log != "" {
 		wd, _ := os.Getwd()
 		appendLine(log, wd+"\x1e"+strings.Join(args, "\x1f")+"\x1e"+strings.Join(os.Environ(), "\x1f")+"\x1d")
+	}
+	if log := os.Getenv("CLAUSTRUM_GITSTUB_COPYLOG"); log != "" && os.Getenv("GIT_COMMON_DIR") != "" {
+		head, _ := os.ReadFile(filepath.Join(os.Getenv("GIT_COMMON_DIR"), "HEAD"))
+		config, _ := os.ReadFile(filepath.Join(os.Getenv("GIT_COMMON_DIR"), "config"))
+		worktrees := "no worktrees folder"
+		if fi, err := os.Lstat(filepath.Join(os.Getenv("GIT_DIR"), "worktrees")); err == nil && fi.IsDir() {
+			worktrees = "worktrees folder"
+		}
+		appendLine(log, strings.Join(args, "\x1f")+"\x1e"+string(head)+"\x1e"+string(config)+"\x1e"+worktrees+"\x1d")
 	}
 	// CLAUSTRUM_GITSTUB_FAIL_LISTING acts on the listings of the filter rule of
 	// git.worktree_create. It is a comma-separated list. "scoped" is the listing
@@ -313,7 +326,7 @@ func runGitSlow(args []string) int {
 	}
 	slow := false
 	if m := os.Getenv("CLAUSTRUM_GITSTUB_MATCH"); m != "" {
-		slow = stubMatches(args, m)
+		slow = stubMatches(args, m) && stubNarrowed(args)
 	}
 	mode := os.Getenv("CLAUSTRUM_GITSTUB_MODE")
 	pause := func() {
@@ -404,6 +417,23 @@ func runGitSlow(args []string) int {
 		}
 	}
 	return code
+}
+
+// stubNarrowed reports whether a call passes the two narrowing options of the first
+// rule. CLAUSTRUM_GITSTUB_ARGEND keeps only a call with an argument that ends with
+// that text. CLAUSTRUM_GITSTUB_ENVEND has the form NAME=text and keeps only a call
+// whose variable NAME ends with text. A call with no such variable does not pass.
+func stubNarrowed(args []string) bool {
+	if end := os.Getenv("CLAUSTRUM_GITSTUB_ARGEND"); end != "" &&
+		!slices.ContainsFunc(args, func(a string) bool { return strings.HasSuffix(a, end) }) {
+		return false
+	}
+	if name, end, ok := strings.Cut(os.Getenv("CLAUSTRUM_GITSTUB_ENVEND"), "="); ok {
+		if v, set := os.LookupEnv(name); !set || !strings.HasSuffix(v, end) {
+			return false
+		}
+	}
+	return true
 }
 
 // stubMatches reports whether every word of the comma-separated match is an exact

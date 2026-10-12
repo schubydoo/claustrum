@@ -50,6 +50,9 @@ func pathsBelow(t *testing.T, dir string) []string {
 //
 //   - Removed: A1 to A5c, A7 (a relative record), A8 (the entry has another name)
 //     and A12c (the request goes through a symlink, the record is real).
+//   - Removed on 5fd08069: i-ctl (the request and the record go through the same
+//     symlink) and its control h-ctl (both are real). Both are cells of
+//     val-s3p2b2-11-macos (macOS VM, 2 of 2 runs).
 //   - Kept, and not remembered: A6 and A6b (no .git part), A11 (a live worktree at
 //     another path) and A12b (the record goes through a symlink, the request is
 //     real).
@@ -95,6 +98,8 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 		{name: "A11", record: func(r, _ string) string { return r + "/live/w1/.git\n" }, want: all},
 		{name: "A12b", record: func(r, _ string) string { return r + "/Tlink/.claude/worktrees/w1/.git/" }, want: all},
 		{name: "A12c", record: func(_, l string) string { return l + "/.git/" }, viaLink: true},
+		{name: "i-ctl", record: func(r, _ string) string { return r + "/Tlink/.claude/worktrees/w1/.git\n" }, viaLink: true},
+		{name: "h-ctl", record: func(_, l string) string { return l + "/.git\n" }},
 		{name: "home in the entry (claustrum's guard, not measured)", record: func(_, l string) string { return l + "/.git/" },
 			home: true, want: append(slices.Clone(all), "home"), remembered: true},
 	} {
@@ -142,7 +147,7 @@ func TestDropStaleWorktreeRegistrationRecords(t *testing.T) {
 			}
 
 			var kept []string
-			doneWithin(t, "dropStaleWorktreeRegistration", func() { kept = dropStaleWorktreeRegistration(sentRepo, sentLeaf) })
+			doneWithin(t, "dropStaleWorktreeRegistration", func() { kept = dropStaleWorktreeRegistration(sentRepo, sentLeaf, nil) })
 			_ = os.Chmod(registry, 0o755)
 			_ = os.Chmod(entry, 0o755)
 
@@ -752,7 +757,7 @@ func TestDropStaleWorktreeRegistrationFolderGone(t *testing.T) {
 		return r, err
 	}
 	leaf := filepath.Join(repo, ".claude", "worktrees", "w1")
-	if kept := dropStaleWorktreeRegistration(repo, leaf); len(kept) != 0 {
+	if kept := dropStaleWorktreeRegistration(repo, leaf, nil); len(kept) != 0 {
 		t.Errorf("kept = %v, want none", kept)
 	}
 }
@@ -814,7 +819,7 @@ func TestDropStaleWorktreeRegistrationCount(t *testing.T) {
 					mkdirForTest(t, entry)
 				}
 			}
-			kept := dropStaleWorktreeRegistration(repo, leaf)
+			kept := dropStaleWorktreeRegistration(repo, leaf, nil)
 			ents, err := os.ReadDir(registry)
 			if err != nil {
 				t.Fatal(err)
@@ -1027,7 +1032,7 @@ func TestDropStaleWorktreeRegistrationRetargetedRegistry(t *testing.T) {
 				}
 				return r, err
 			}
-			kept := dropStaleWorktreeRegistration(repo, leaf)
+			kept := dropStaleWorktreeRegistration(repo, leaf, nil)
 			if opens != 1 {
 				t.Fatalf("the registrations folder was opened %d times, want 1: the test did not stage the change", opens)
 			}

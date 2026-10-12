@@ -29,9 +29,11 @@ const worktreesSubdir = "worktrees"
 // failed request.
 // The manifest copy runs first, then the `.claude/` copy. The order is observable
 // when both name the same path, because the second copy overwrites the first.
-func populateWorktree(repo, worktree string) {
-	copyWorktreeIncludes(repo, worktree)
-	copyClaudeDir(repo, worktree)
+//
+// host is the settings control of the daemon, or nil (selectsIncludeScan).
+func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
+	copyWorktreeIncludes(u, host, repo, worktree)
+	copyClaudeDir(u, repo, worktree)
 }
 
 // copyWorktreeIncludes copies the untracked files that the `.worktreeinclude`
@@ -66,28 +68,37 @@ func populateWorktree(repo, worktree string) {
 // ⚠️ An OPTED-IN gitTimeout (D5) kills any of these calls, and the failure is
 // silent. The copy loses what that call gives it, and gitWorktreeCreate still
 // answers {"success":true}. D5 is off by default.
-func copyWorktreeIncludes(repo, worktree string) {
+func copyWorktreeIncludes(u gitUse, host *shadowHost, repo, worktree string) {
 	manifest, ok := readWorktreeInclude(repo)
 	if !ok {
 		return
 	}
-	tmp, err := os.CreateTemp("", includeTempPrefix+"*")
+	// The copy of the manifest is the file `patterns` in a new folder of this
+	// request (requestDir). 5fd08069 names
+	// <S>/.worktreeinclude-<n>/patterns without "shadowDirOff" and
+	// <tmp>/claude-ssh-worktreeinclude-<n>/patterns with it, and the entry is
+	// gone at the reply (val-s3p2b1-linux rows N11 and D6, Linux VM). The file
+	// has mode 0644 on 5fd08069. In the folder of the daemon the cells are V5 of
+	// val-s3p2b2-3-linux2 and val-s3p2b2-3-macos (Linux and macOS VMs). In the
+	// temporary folder they are the 9 creates with the member of groups P3 of
+	// val-s3p2b2-6-linux (Linux VM). The folder goes at the end of this step.
+	dir, removeDir, err := u.requestDir(shadowIncludeDirPrefix, includeTempPrefix)
 	if err != nil {
 		return
 	}
-	defer os.Remove(tmp.Name())
-	_, werr := tmp.Write(manifest)
-	if cerr := tmp.Close(); werr != nil || cerr != nil {
+	defer removeDir()
+	patterns := filepath.Join(dir, includePatternsName)
+	if err := os.WriteFile(patterns, manifest, 0o644); err != nil {
 		return
 	}
 
 	var paths []string
 	fallback := true
-	if gitSelectsIncludeScan() {
-		paths, fallback = scanWorktreeIncludes(repo, tmp.Name(), manifest)
+	if selectsIncludeScan(host) {
+		paths, fallback = scanWorktreeIncludes(u, repo, patterns, manifest)
 	}
 	if fallback {
-		paths = oldWorktreeIncludeScan(repo, tmp.Name())
+		paths = oldWorktreeIncludeScan(u, repo, patterns)
 	}
 	for _, rel := range paths {
 		// A path with a trailing `/` is a nested repository. git lists it as one
@@ -126,8 +137,8 @@ func readWorktreeInclude(repo string) ([]byte, bool) {
 // ~/.config/git/ignore is copied when the manifest names it. If either call
 // fails, nothing is copied. A runtime-state path does not go to check-ignore
 // (checkIgnoreInput), as in f6010b97 (I15c and I15d, Linux and macOS VMs).
-func oldWorktreeIncludeScan(repo, excludeFile string) []string {
-	named, err := hardenedGitStdout(repo, false, "--no-literal-pathspecs", "ls-files", "--others",
+func oldWorktreeIncludeScan(u gitUse, repo, excludeFile string) []string {
+	named, err := hardenedGitStdout(u, repo, false, "--no-literal-pathspecs", "ls-files", "--others",
 		"--ignored", "--exclude-from="+excludeFile, "-z", "--", ":(exclude)"+claudeDirName+"/"+worktreesSubdir)
 	if err != nil {
 		return nil
@@ -136,7 +147,7 @@ func oldWorktreeIncludeScan(repo, excludeFile string) []string {
 	if len(check) == 0 {
 		return nil
 	}
-	paths, _ := checkIgnored(repo, check)
+	paths, _ := checkIgnored(u, repo, check)
 	return paths
 }
 

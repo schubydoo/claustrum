@@ -115,6 +115,11 @@ type gitInfoResult struct {
 	// DefaultBranch is what refs/remotes/origin/HEAD points to (empty when unset).
 	RepoSlug      string `json:"repoSlug"`
 	DefaultBranch string `json:"defaultBranch"`
+	// SettingsControl is the last member of the result. 5fd08069 sends it as
+	// "shadow", "fallback-git" or "off-switch" (s3-linux cell A1, s3p2-oldgit cell
+	// O1, Linux VM, and the macOS and Windows rounds). It is absent while the daemon
+	// has no state (shadowHost.control). No other method has it.
+	SettingsControl string `json:"settingsControl,omitempty"`
 }
 
 type gitStatusResult struct {
@@ -232,10 +237,16 @@ type killAndWaitResult struct {
 // notRepoResult is the git.info body for non-repository paths. Since 7c2f88d the
 // reference emits {"isRepo":false,"repoSlug":"","defaultBranch":""} — the two new
 // fields are always present (empty for a non-repo) just as in gitInfoResult.
+//
+// SettingsControl is the last member, as in gitInfoResult. 5fd08069 sends
+// {"isRepo":false,"repoSlug":"","defaultBranch":"","settingsControl":"shadow"}
+// after its start test (s3-linux cell A1 request 3, Linux VM, and the macOS and
+// Windows rounds), and no such member before it.
 type notRepoResult struct {
-	IsRepo        bool   `json:"isRepo"`
-	RepoSlug      string `json:"repoSlug"`
-	DefaultBranch string `json:"defaultBranch"`
+	IsRepo          bool   `json:"isRepo"`
+	RepoSlug        string `json:"repoSlug"`
+	DefaultBranch   string `json:"defaultBranch"`
+	SettingsControl string `json:"settingsControl,omitempty"`
 }
 
 // managedLauncherResult is the launcher.resolve reply (89cb6289). One struct makes

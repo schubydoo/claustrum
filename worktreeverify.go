@@ -180,11 +180,55 @@ func undoFailedAdd(worktreePath string, cp worktreeCheckpoint) {
 // skips the leaf and adds no leaf text. The leaf then stays, so a kept branch gets
 // its text without the "the worktree itself was removed, but " start. That is
 // claustrum's own guard (not measured): no honest input reaches it.
-func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint, tested testedRegistration) (text string, kept bool) {
+func undoFailedCheckout(u gitUse, repo, worktreePath, branch string, cp worktreeCheckpoint, tested testedRegistration) (text string, kept bool) {
 	// Without tested, the admin dir is found through the leaf's .git file, which
 	// step A deletes.
 	var registration createdRegistration
-	if tested.path == "" {
+	// A create that holds its git directory deletes no registration when the
+	// path no longer names that folder (acceptedGitDir). After a good add the
+	// repository has the registration, and the rollback then answers that it
+	// remains, with the text of a git directory that is no real directory. On
+	// 5fd08069 the registration stays and the leaf goes (cells X1c-11 and X1p-11
+	// of val-s3p2b2-7-windows, Windows VM). After an add that the daemon did not
+	// complete there is no registration to delete, and the branch step runs
+	// (cells X1c-10 and X1p-10).
+	//
+	// With the path still on the held folder, the registration goes through
+	// that folder. With tested set, removeTestedRegistration opens the
+	// registrations folder through it. With tested not set,
+	// acceptedGitDir.removeCreatedRegistration does. heldRegistration is the
+	// path that the `.git` file of the leaf names now. A path that changes
+	// after the tests leads the delete nowhere else.
+	//
+	// The path is tested two times: here, and again after step A. With a
+	// junction that is put at `repo\.git` while step A clears a leaf of 5000
+	// files, 5fd08069 keeps the registration and the branch and answers that
+	// they remain (table S2 of val-s3p2b2-12-windows, both forms of T, Windows
+	// VM, 2 of 2 runs), and so does claustrum (table S2 of
+	// val-s3p2b2-13-windows, 2 runs). With a symbolic link, 5fd08069 and claustrum do the
+	// same (cells k4 of val-s3p2b2-13-linux2, Linux VM, 7 of 7 runs, and of
+	// val-s3p2b2-13-macos, macOS VM, 21 of 21 runs).
+	var heldErr error
+	var heldRegistration string
+	held := false
+	testHeld := func(step string) {
+		if held || !u.swapped(step) {
+			return
+		}
+		held, tested = true, testedRegistration{}
+		if u.accepted.moved {
+			heldErr = errors.New(realDirText(u.accepted.path))
+		}
+	}
+	testHeld("undo")
+	switch {
+	case held:
+	case tested.path != "":
+	case u.accepted != nil:
+		if admin := worktreeAdminDir(worktreePath); admin != "" {
+			heldRegistration = absoluteAdminDir(worktreePath, admin)
+		}
+	default:
 		registration = createdWorktreeAdminDir(repo, worktreePath)
 	}
 	leafSafe := func() bool {
@@ -200,17 +244,23 @@ func undoFailedCheckout(repo, worktreePath, branch string, cp worktreeCheckpoint
 			return fmt.Sprintf("; and the undo could not finish for %s: %s; remove them by hand before retrying (%s)", worktreePath, remain, detail), false
 		}
 	}
+	testHeld("leaf cleared")
 	// A registration that cannot be deleted stays, and then the branch step does not
 	// run: 89cb6289 runs no git call after it (row A14, Linux VM).
 	var res branchStepResult
 	var regErr error
-	if tested.path != "" {
+	switch {
+	case held:
+		regErr = heldErr
+	case tested.path != "":
 		regErr = removeTestedRegistration(tested)
-	} else {
+	case u.accepted != nil:
+		u.accepted.removeCreatedRegistration(heldRegistration, worktreePath)
+	default:
 		regErr = removeCreatedRegistration(registration)
 	}
 	if regErr == nil {
-		res = runBranchStep(repo, branch)
+		res = runBranchStep(u, repo, branch)
 	}
 	var parts []string
 	leafGone := false
@@ -333,6 +383,10 @@ type testedRegistration struct {
 	info os.FileInfo
 	// held is an open handle on that folder, or nil. See acceptRegistration.
 	held *os.File
+	// git is the held git directory of the create, or nil. The rollback delete
+	// and the placement of the index open the registrations folder through it
+	// (acceptedGitDir.registrationsRoot).
+	git *acceptedGitDir
 }
 
 // acceptRegistration records the registration that createdRegistrationRefusal
@@ -425,7 +479,7 @@ func removeTestedRegistration(reg testedRegistration) error {
 	if wipesHomeDir(reg.path) {
 		return nil
 	}
-	root, err := openRegistrationsRoot(filepath.Dir(reg.path))
+	root, err := reg.git.registrationsRoot(filepath.Dir(reg.path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -437,7 +491,7 @@ func removeTestedRegistration(reg testedRegistration) error {
 	if reg.replacedIn(root, name) {
 		return nil
 	}
-	return root.RemoveAll(name)
+	return removeHeldEntry(root, name)
 }
 
 // staleRegistrationRefusal is the answer of git.worktree_create when the

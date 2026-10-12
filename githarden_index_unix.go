@@ -86,7 +86,7 @@ func installIndexInto(src, adminDir string, tested testedRegistration) error {
 			return err
 		}
 	}
-	root, err := openRegistrationsRoot(filepath.Dir(adminDir))
+	root, err := tested.git.registrationsRoot(filepath.Dir(adminDir))
 	if err != nil {
 		return err
 	}

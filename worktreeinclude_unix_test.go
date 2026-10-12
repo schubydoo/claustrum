@@ -352,7 +352,10 @@ func TestIncludeManifestShapeCallShape(t *testing.T) {
 			for _, line := range strings.Split(string(data), "\n") {
 				for _, arg := range strings.Fields(line) {
 					if tmp, ok := strings.CutPrefix(arg, "--exclude-from="); ok {
-						checkIncludeTempName(t, filepath.Base(tmp))
+						checkIncludeTempName(t, filepath.Base(filepath.Dir(tmp)))
+						if filepath.Base(tmp) != includePatternsName {
+							t.Errorf("pattern file %q, want the file %s in the temp folder", tmp, includePatternsName)
+						}
 					}
 				}
 				switch {
@@ -544,7 +547,7 @@ func TestClaudeDirPassBatchCalls(t *testing.T) {
 	}
 	wt := t.TempDir()
 	calls := logGitArgv(t)
-	copyClaudeDir(repo, wt)
+	copyClaudeDir(gitUse{}, repo, wt)
 	var shape []string
 	for _, c := range calls() {
 		switch {
@@ -584,7 +587,7 @@ func TestClaudeDirPassFailedBatch(t *testing.T) {
 	stubGit(t, gitStub{failWord: ".claude/bad", failRun: true, failRC: 128})
 	wt := t.TempDir()
 	fixed := claudeDirPassFixedArgs
-	copyClaudeDirCalls(repo, wt, [][]string{
+	copyClaudeDirCalls(gitUse{}, repo, wt, [][]string{
 		append(slices.Clone(fixed), ".claude/a", ".claude/bad"),
 		append(slices.Clone(fixed), ".claude/b"),
 	})

@@ -450,19 +450,32 @@ func baseRepoLockRefusal(repo, commonDir, gitDir, path, worktreePath string, sp 
 // zero value runs nothing.
 //
 // When the daemon's environment sets no GIT_COMMON_DIR, both calls carry
-// GIT_COMMON_DIR=<gitDir> (row D-subst).
+// GIT_COMMON_DIR=<gitDir> (row D-subst). In the state shadow (use) they carry
+// GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<git directory>/objects. They
+// have no GIT_DIR and no GIT_WORK_TREE. 5fd08069 sends them so without
+// "shadowDirOff" (val-s3p2b1-linux table A6, Linux VM).
+//
+// With GIT_DIR and GIT_COMMON_DIR in the daemon's environment the request has a
+// copy too (daemonCommonDirStays), and both calls carry the two variables of
+// the copy in the place of the daemon's GIT_COMMON_DIR. On 5fd08069 the calls 3
+// to 6 of a second remove have GIT_DIR=<the daemon's value>, the six profile
+// values, GIT_COMMON_DIR=<S>/<R> and GIT_OBJECT_DIRECTORY=<that git
+// directory>/objects, in this order (cell N-g of val-s3p2b2-8-linux2, Linux
+// VM). With a daemon GIT_COMMON_DIR and no GIT_DIR the calls keep the daemon's
+// value (not measured).
 type registrationProbe struct {
+	use      gitUse
 	gitDir   string
 	workTree string
 }
 
 // newRegistrationProbe makes the probe for the answer answered, or the zero value
 // when the call gave no answer.
-func newRegistrationProbe(answered, workTree string) registrationProbe {
+func newRegistrationProbe(u gitUse, answered, workTree string) registrationProbe {
 	if answered == "" {
 		return registrationProbe{}
 	}
-	return registrationProbe{gitDir: filepath.FromSlash(answered), workTree: workTree}
+	return registrationProbe{use: u, gitDir: filepath.FromSlash(answered), workTree: workTree}
 }
 
 // run makes the two calls and returns the answer of the second, or "".
@@ -471,10 +484,13 @@ func (r registrationProbe) run() string {
 		return ""
 	}
 	var pin []string
-	if !daemonCommonDirSet() {
+	switch {
+	case r.use.shadow() && !daemonCommonDirStays():
+		pin = r.use.commonVars()
+	case !daemonCommonDirSet():
 		pin = []string{"GIT_COMMON_DIR=" + r.gitDir}
 	}
-	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin)
+	out, err := gitDirWorkTreeToplevel(r.gitDir, r.workTree, pin, r.use.gitDirFront())
 	if err != nil {
 		return ""
 	}
@@ -509,9 +525,9 @@ func inRepoWorkTree(repo string) string {
 // repo once more. 89cb6289 makes these two calls when the `.git` file of the worktree
 // names a git dir that is not a verified entry (probe rows 1, 3, 4, 6, 12, 13 and 14).
 // claustrum does not use the answer.
-func repeatRepositoryCheck(repo string) {
-	if c := hostileConfigRefusal(repo, true); !c.refused() {
-		noRepositoryAt(repo, c.listing)
+func repeatRepositoryCheck(u gitUse, repo string) {
+	if c := hostileConfigRefusal(u, repo, true); !c.refused() {
+		noRepositoryAt(u, repo, c.listing)
 	}
 }
 

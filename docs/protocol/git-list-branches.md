@@ -11,7 +11,7 @@
 | Parameter | Required | Meaning |
 |---|---|---|
 | `path` | no | A directory of the repository. A bare repository is accepted. Without `path`, the daemon answers for its own working directory. [Path handling](../PROTOCOL.md#path-handling) has the rules for a leading `~`. |
-| `shadowDirOff` | no | `true` turns off the daemon's own read of the git config of the repository for this request. Any other value does nothing and is no error. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals). |
+| `shadowDirOff` | no | `true` turns off the daemon's own read of the git config of the repository for this request, and its settings copy. Any other value does nothing and is no error. See [Repository config refusals](../PROTOCOL.md#repository-config-refusals) and [The settings copy](../PROTOCOL.md#the-settings-copy). |
 
 ## Response
 
@@ -38,6 +38,7 @@ If the daemon finds no repository, the response is not an error:
 - `path` does not resolve. For example, it does not exist. That is not an error.
 - `path` is inside a directory of managed worktrees. That is a path under `.claude/worktrees`, or under a directory that holds the marker file `.claude-managed-worktrees`. So the worktree of a session gives `"isRepo": false`. Send the path of the base repository to list its branches. A `baseRepo` member inside such a directory gives the same response. With no `baseRepo`, the daemon makes that test on its own working directory too.
 - The daemon cannot find git on its `PATH`.
+- git itself does not accept the repository. For example, the repository belongs to another user and git has no `safe.directory` line for it.
 - Only with `-git-timeout`: the deadline stopped the git call that tests for a repository.
 
 ## Errors
@@ -49,6 +50,9 @@ This method has no `errorCode` member. A failure is a JSON-RPC error.
 | `-32602` | `Invalid params` | The request has no `params` member, or `params` or a member of it has the wrong type. See [the rules for `params`](../PROTOCOL.md#params-presence-and-typing). |
 | `-32603` | A refusal text | The daemon refuses to run git for `path`. Three examples follow. It does not trust the git directory or the git configuration. It refuses its own git environment. git is on the `PATH`, and `git version` fails. The texts are in [Git-directory trust check](../PROTOCOL.md#git-directory-trust-check), [Hardened git calls](../PROTOCOL.md#hardened-git-calls) and [The daemon's own git environment](../PROTOCOL.md#the-daemons-own-git-environment). |
 | `-32603` | `this repository's git config cannot be used: …` or `a file in this repository's .git directory cannot be used: …` | The daemon read the git configuration of the repository itself and does not accept it. For example, the format version of the repository is not `0` or `1`. The second text is for a file of the git directory. `"shadowDirOff": true` in the request turns that read off. The protocol reference has [the texts](../PROTOCOL.md#repository-config-refusals). |
+| `-32603` | `Claude could not test git on the remote machine (…). Check free disk space and quota there, then try again.` | The daemon tests once whether the git of the host works on its settings copy. That test failed. The daemon keeps the failure for 10 seconds. See [The settings copy](../PROTOCOL.md#the-settings-copy). |
+| `-32603` | `git could not check this repository on the remote machine: …`, or `git and Claude disagree about which repository holds this folder: …` | Before its other git calls the daemon asks git about the repository. That call failed, did not end in 30 seconds, or named another repository. |
+| `-32603` | `Claude could not prepare its own files on the remote machine: …` | The daemon cannot make the folder of its settings copy for this repository. |
 | `-32603` | The Go error of the git call, for example `exit status 128` | git cannot list the branches. For example, the file `packed-refs` is corrupt. |
 | `-32603` | `signal: killed` | Only with `-git-timeout`: the deadline stopped the git call that lists the branches. This is the text of Linux and macOS. If the deadline stops the first git call of the method, the text is a refusal text that ends in `signal: killed`. |
 
@@ -60,7 +64,7 @@ On Windows, a `path` with a junction before its last component does not resolve,
 
 ## Differences from the reference
 
-claustrum is built to answer as the reference daemon does. These entries of the divergence catalog apply to this method:
+claustrum is built to answer as the reference daemon does. The pinned build `89cb6289` has no settings copy, and it answers a request with a failed test normally. claustrum follows `5fd08069` there. These entries of the divergence catalog apply to this method:
 
 - [D5](../DIVERGENCES.md#d5): an optional deadline on the git calls. It is off by default.
 - [D9](../DIVERGENCES.md#d9): a member of another `git.*` method with the wrong type gets `-32602`, although this method does not use it.

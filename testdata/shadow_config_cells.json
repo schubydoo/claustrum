@@ -1,0 +1,1833 @@
+[
+ {
+  "round": "s3p2-linux",
+  "cell": "A1-key-order",
+  "files": {
+   "config": "[core]\n\tlogallrefupdates = true\n\tbare = false\n\tfilemode = true\n\trepositoryformatversion = 0\n\tignorecase = false\n\tsymlinks = true\n\tautocrlf = input\n\teol = lf\n[index]\n\tversion = 4\n[core]\n\tsharedrepository = group\n"
+  },
+  "want": "[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tfilemode = \"true\"\n[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tignorecase = \"false\"\n[core]\n\tsymlinks = \"true\"\n[core]\n\tautocrlf = \"input\"\n[core]\n\teol = \"lf\"\n[index]\n\tversion = \"4\"\n[core]\n\tsharedrepository = \"group\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A2-FileMode-capitals-false",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tFileMode = false\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A2-false-then-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A2-filemode-true-then-FileMode-false",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tFileMode = false\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A2-true-then-false",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tfilemode = false\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A3-autocrlf-sometimes",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tautocrlf = sometimes\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A3-bare-true-with-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"true\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A3-filemode-maybe",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = maybe\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A3-index-version-banana",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[index]\n\tversion = banana\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A3-objectformat-md5",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tobjectformat = md5\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A3-objectformat-sha256-on-sha1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tobjectformat = sha256\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tobjectformat = \"sha256\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A4-quote-insteadOf",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"sh\\\"or\\\\t\\tx#y:o/r.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[url \"https://example.invalid/b\\\"a\\\\s\te#x/\"]\n\tinsteadOf = \"sh\\\"or\\\\t\\tx#y:\"\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A4-quote-remote-url",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/q\\\"uo\\\\te\\ttab#hash.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-branch-main-merge",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tmerge = refs/heads/main\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-branch-main-remote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-partialclonefilter",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n\tpartialclonefilter = blob:none\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[remote \"origin\"]\n\tpartialclonefilter = \"blob:none\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-promisor",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n\tpromisor = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[remote \"origin\"]\n\tpromisor = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-pushurl",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n\tpushurl = https://push.example.invalid/o/p.git\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-url-file-scheme",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = file:///vm/w/home/bare.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-url-git-scheme",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = git://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"git://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-url-https-user",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://user@example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://user@example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-url-https-user-token",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://user:token@example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://user:token@example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-url-local-path",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = /vm/w/home/bare.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-url-scp-form",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = git@example.invalid:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"git@example.invalid:o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A5-url-ssh-scheme",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ssh://git@example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"ssh://git@example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "A6-other-sections",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[user]\n\tname = Cell User\n[alias]\n\tx = !/vm/w/home/markers/alias-x.sh\n[credential]\n\thelper = /vm/w/home/markers/credential-helper.sh\n[http]\n\tproxy = http://proxy.invalid:3128\n[diff \"d\"]\n\ttextconv = /vm/w/home/markers/textconv-d.sh\n[merge \"m\"]\n\tdriver = /vm/w/home/markers/merge-m.sh %O %A %B\n[lfs]\n\turl = https://lfs.example.invalid/o/r\n[lfs]\n\tfetchinclude = *.bin\n[remote]\n\tlfsdefault = origin\n[gc]\n\tauto = 0\n[receive]\n\tdenyCurrentBranch = ignore\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\turl = \"https://lfs.example.invalid/o/r\"\n[lfs]\n\tfetchinclude = \"*.bin\"\n[remote]\n\tlfsdefault = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3a-plain",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3b-request-on-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3c-bare",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3d-shallow-clone",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = file:///vm/w/home/src\n\tfetch = +refs/heads/main:refs/remotes/origin/main\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[branch \"main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3e-detached-HEAD",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3f-packed-refs-only",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3g-rebase",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3h-merge",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3i-bisect",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "B3j-info-attributes",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E10-chain-depth-2",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = d1.cfg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E10-chain-depth-3",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = d1.cfg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E10-includeIf-match",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"gitdir:/vm/w/home/repo/\"]\n\tpath = im.cfg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E10-includeIf-nomatch-missing",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"gitdir:/vm/w/home/no-such-repository/\"]\n\tpath = missing.cfg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E10-row-15",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = r01.cfg\n\tpath = r02.cfg\n\tpath = r03.cfg\n\tpath = r04.cfg\n\tpath = r05.cfg\n\tpath = r06.cfg\n\tpath = r07.cfg\n\tpath = r08.cfg\n\tpath = r09.cfg\n\tpath = r10.cfg\n\tpath = r11.cfg\n\tpath = r12.cfg\n\tpath = r13.cfg\n\tpath = r14.cfg\n\tpath = r15.cfg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E10-row-16",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = r01.cfg\n\tpath = r02.cfg\n\tpath = r03.cfg\n\tpath = r04.cfg\n\tpath = r05.cfg\n\tpath = r06.cfg\n\tpath = r07.cfg\n\tpath = r08.cfg\n\tpath = r09.cfg\n\tpath = r10.cfg\n\tpath = r11.cfg\n\tpath = r12.cfg\n\tpath = r13.cfg\n\tpath = r14.cfg\n\tpath = r15.cfg\n\tpath = r16.cfg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E2-core-key-300",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E2-remote-o-key-300",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"o\"]\n\tkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E5-HEAD-1mib",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E5-HEAD-dotdot",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E8-version-1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E8-version-twice-2-then-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 2\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E9-v1-noop-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tnoop = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tnoop = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E9-v1-partialClone-origin",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tpartialClone = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tpartialclone = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E9-v1-preciousObjects-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tpreciousObjects = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tpreciousobjects = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "E9-v1-refStorage-files",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\trefStorage = files\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\trefstorage = \"files\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "H2-planted-new-worktree-folders",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "H3-sharedRepository-group",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tsharedRepository = group\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tsharedrepository = \"group\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "H4-entry-name-taken",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "H5a-worktree-add-exit-1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2-linux",
+  "cell": "H5b-read-tree-exit-1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01a-url-space",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r s.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01b-url-equals",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r=s.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r=s.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01c-url-semicolon-quoted",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r;s.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r;s.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01d-url-non-ascii",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r\u00e4.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r\u00e4.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01e-branch-remote-semicolon-quoted",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = \"or;g\"\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01f-branch-remote-space",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = or g\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01g-branch-remote-equals",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = or=g\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01h-branch-remote-non-ascii",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = \u00f6rg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01i-url-quoted-outer-spaces",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \" https://example.invalid/o/r.git \"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01j-remote-named-semicolon",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"or;g\"]\n\turl = https://example.invalid/o/r.git\n[branch \"main\"]\n\tremote = \"or;g\"\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01k-url-semicolon-unquoted",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r;s.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "01l-remote-named-space",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"or g\"]\n\turl = https://example.invalid/o/r.git\n[branch \"main\"]\n\tremote = or g\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "02a-quote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/q\\\"x.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/q\\\"x.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "02b-backslash",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/b\\\\x.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/b\\\\x.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "02c-tab",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/t\\tx.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "02d-hash",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/h#x.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/h#x.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "02e-newline-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/n\\nx.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "02f-backspace-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/p\\bx.git\"\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "02k-control-plain-url",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03a-yes",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = yes\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03b-on",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = on\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03c-1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = 1\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03d-True",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = True\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03e-no",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = no\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03f-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = 0\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03g-no-value",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03h-empty-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode =\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03i-off-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = off\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03j-FALSE-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = FALSE\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03k-control-maybe",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = maybe\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "03m-2-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = 2\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04a-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tworktree = /vm/w/home/repo\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04b-attributesfile",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tattributesfile = /vm/w/home/attrs\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04c-excludesfile",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\texcludesfile = /vm/w/home/excl\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04d-quotepath",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tquotepath = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tquotepath = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04e-safecrlf",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tsafecrlf = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tsafecrlf = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04f-untrackedcache",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tuntrackedcache = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tuntrackedcache = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04g-splitindex",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tsplitindex = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tsplitindex = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04h-fscache",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tfscache = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04i-longpaths",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tlongpaths = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tlongpaths = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04j-protectntfs",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tprotectntfs = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tprotectntfs = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04k-control-eol",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\teol = lf\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\teol = \"lf\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04l-abbrev",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tabbrev = 12\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04m-compression",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tcompression = 3\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04n-sparsecheckout",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tsparsecheckout = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tsparsecheckout = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "04o-commitgraph",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[core]\n\tcommitgraph = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "05a-group1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[submodule \"s\"]\n\turl = https://example.invalid/s.git\n\tactive = true\n[status]\n\trelativePaths = true\n[diff]\n\trenames = true\n[merge]\n\tff = true\n[pull]\n\trebase = false\n[push]\n\tdefault = simple\n[fetch]\n\tprune = false\n[init]\n\tdefaultBranch = main\n[lfs]\n\turl = https://lfs.example.invalid/o/r\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\turl = \"https://lfs.example.invalid/o/r\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "05b-group2",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[advice]\n\tdetachedHead = false\n[feature]\n\tmanyFiles = false\n[pack]\n\tthreads = 1\n[protocol]\n\tversion = 2\n[safe]\n\tdirectory = *\n[filter \"m\"]\n\trequired = false\n[sparse]\n\texpectFilesOutsideOfPatterns = false\n[maintenance]\n\tauto = false\n[lfs]\n\turl = https://lfs.example.invalid/o/r\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[feature]\n\tmanyfiles = \"false\"\n[lfs]\n\turl = \"https://lfs.example.invalid/o/r\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "05c-group3",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[rerere]\n\tenabled = false\n[commit]\n\tverbose = false\n[tag]\n\tsort = refname\n[log]\n\tdate = iso\n[color]\n\tui = false\n[lfs]\n\turl = https://lfs.example.invalid/o/r\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\turl = \"https://lfs.example.invalid/o/r\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "06a-up-only",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"up\"]\n\turl = https://example.invalid/u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "06b-origin-then-up",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[remote \"up\"]\n\turl = https://example.invalid/u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "06c-up-then-origin",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"up\"]\n\turl = https://example.invalid/u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "06d-up-and-other-no-origin",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"up\"]\n\turl = https://example.invalid/u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n[remote \"zz\"]\n\turl = https://example.invalid/z/r.git\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[remote \"zz\"]\n\turl = \"https://example.invalid/z/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "06k-control-origin-only",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07a-http",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = http://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"http://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07b-ftp",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ftp://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07c-ssh-port",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ssh://git@example.invalid:2222/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"ssh://git@example.invalid:2222/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07d-scp-no-dot-git",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = git@example.invalid:o/r\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"git@example.invalid:o/r\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07e-relative",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ../x\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07f-empty",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = \n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07g-ext",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ext::sh -c x\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "07k-control-file",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = file:///vm/w/home/bare.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "08a-two-rules-longer-wins",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://short.invalid/\"]\n\tinsteadOf = gh:\n[url \"https://long.invalid/x/\"]\n\tinsteadOf = gh:o/\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://long.invalid/x/r.git\"\n[url \"https://long.invalid/x/r.git\"]\n\tinsteadOf = \"https://long.invalid/x/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "08b-rule-no-match",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = zz:\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"gh:o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "08c-pushInsteadOf",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tpushInsteadOf = gh:\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"gh:o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "08d-rule-in-home-gitconfig-only",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"gh:o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "08e-rule-after-the-remote-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[url \"https://example.invalid/o/r.git\"]\n\tinsteadOf = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "08k-control-C6",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[url \"https://example.invalid/o/r.git\"]\n\tinsteadOf = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "09a-branch-w0-remote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"w0\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"w0\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "09b-branch-nosuch-remote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"nosuch\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"nosuch\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "09c-branch-main-remote-without-url",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[branch \"main\"]\n\tremote = ghost\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[branch \"main\"]\n\tremote = \"ghost\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "09d-branch-main-rebase",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\trebase = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "09e-branch-main-pushremote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tpushremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "09f-remote-pushdefault",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[remote]\n\tpushdefault = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "09k-control-branch-main-remote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "10a-Core",
+  "files": {
+   "config": "[Core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "10b-Remote-Origin",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[Remote \"Origin\"]\n\turl = https://example.invalid/o/r.git\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"Origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "10c-branch-Main",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"Main\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"Main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "10d-REMOTE-origin-URL",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[REMOTE \"origin\"]\n\tURL = https://example.invalid/o/r.git\n[BRANCH \"main\"]\n\tRemote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "10k-control-FileMode",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tFileMode = false\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "11a-gitdir-match",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"gitdir:/vm/w/home/repo/\"]\n\tpath = ii.cfg\n",
+   "ii.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "11b-gitdir-i",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"gitdir/i:/VM/W/HOME/REPO/\"]\n\tpath = ii.cfg\n",
+   "ii.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "11c-onbranch-main",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"onbranch:main\"]\n\tpath = ii.cfg\n",
+   "ii.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "11d-hasconfig-remote-url",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[includeIf \"hasconfig:remote.*.url:https://example.invalid/**\"]\n\tpath = ii.cfg\n",
+   "ii.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "11e-gitdir-exact-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"gitdir:/vm/w/home/repo/.git\"]\n\tpath = ii.cfg\n",
+   "ii.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "11f-onbranch-no-match-EXTRA",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[includeIf \"onbranch:nosuch\"]\n\tpath = ii.cfg\n",
+   "ii.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "11k-control-plain-include",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = ii.cfg\n",
+   "ii.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "12a-three-keys-with-w0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tbare = false\n\tfilemode = false\n\tsparsecheckout = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "12b-three-keys-no-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tbare = false\n\tfilemode = false\n\tsparsecheckout = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "12c-filemode-only-with-w0-as-A7b",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "12d-bare-and-worktree-no-worktree-as-H6",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tbare = false\n\tworktree = /vm/w/home/repo\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "12e-bare-only-no-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tbare = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "12f-filemode-only-no-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "13a-worktreeConfig-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "13b-relativeWorktrees-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\trelativeWorktrees = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\trelativeworktrees = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "13c-compatObjectFormat-sha256",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tcompatObjectFormat = sha256\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tcompatobjectformat = \"sha256\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "13d-submodulePathConfig-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tsubmodulePathConfig = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tsubmodulepathconfig = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "13e-refStorage-reftable",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\trefStorage = reftable\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\trefstorage = \"reftable\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "13k-control-noop-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tnoop = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tnoop = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "14a-true-include-false-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n[core]\n\tfilemode = true\n",
+   "inc.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[core]\n\tfilemode = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "14b-include-eol-then-autocrlf",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n[core]\n\tautocrlf = input\n",
+   "inc.cfg": "[core]\n\teol = lf\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\teol = \"lf\"\n[core]\n\tautocrlf = \"input\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "14c-true-include-false-then-eol",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n[core]\n\teol = lf\n",
+   "inc.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[core]\n\teol = \"lf\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "14k-control-include-last",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "15a-three-times-2-1-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 2\n\trepositoryformatversion = 1\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "15b-three-times-0-1-1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\trepositoryformatversion = 1\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\trepositoryformatversion = \"1\"\n[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "15c-main-0-include-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\trepositoryformatversion = 0\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "15d-main-none-include-0",
+  "files": {
+   "config": "[core]\n\t\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\trepositoryformatversion = 0\n"
+  },
+  "want": "[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "15e-main-0-include-1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\trepositoryformatversion = 1\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "15k-control-2-then-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 2\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "17a-8191",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "17b-8192",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "17c-8193",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "17k-control-1mib",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "21a-included-file-changes",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "F1-url-characters-38-remotes",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"u00-plain\"]\n\turl = \"https://example.invalid/o/ab.git\"\n[remote \"u01-byte-01\"]\n\turl = \"https://example.invalid/o/a\u0001b.git\"\n[remote \"u02-byte-1f\"]\n\turl = \"https://example.invalid/o/a\u001fb.git\"\n[remote \"u03-byte-7f\"]\n\turl = \"https://example.invalid/o/a\u007fb.git\"\n[remote \"u04-byte-ff\"]\n\turl = \"https://example.invalid/o/a\ufffdb.git\"\n[remote \"u05-U+00A0\"]\n\turl = \"https://example.invalid/o/a\u00a0b.git\"\n[remote \"u06-U+0085\"]\n\turl = \"https://example.invalid/o/a\u0085b.git\"\n[remote \"u07-U+2028\"]\n\turl = \"https://example.invalid/o/a\u2028b.git\"\n[remote \"u08-apostrophe\"]\n\turl = \"https://example.invalid/o/a'b.git\"\n[remote \"u09-less\"]\n\turl = \"https://example.invalid/o/a<b.git\"\n[remote \"u10-greater\"]\n\turl = \"https://example.invalid/o/a>b.git\"\n[remote \"u11-pipe\"]\n\turl = \"https://example.invalid/o/a|b.git\"\n[remote \"u12-ampersand\"]\n\turl = \"https://example.invalid/o/a&b.git\"\n[remote \"u13-dollar\"]\n\turl = \"https://example.invalid/o/a$b.git\"\n[remote \"u14-backtick\"]\n\turl = \"https://example.invalid/o/a`b.git\"\n[remote \"u15-percent-20\"]\n\turl = \"https://example.invalid/o/a%20b.git\"\n[remote \"u16-star\"]\n\turl = \"https://example.invalid/o/a*b.git\"\n[remote \"u17-question\"]\n\turl = \"https://example.invalid/o/a?b.git\"\n[remote \"u18-bracket\"]\n\turl = \"https://example.invalid/o/a[b.git\"\n[remote \"u19-brace\"]\n\turl = \"https://example.invalid/o/a{b.git\"\n[remote \"u20-caret\"]\n\turl = \"https://example.invalid/o/a^b.git\"\n[remote \"u21-tilde\"]\n\turl = \"https://example.invalid/o/a~b.git\"\n[remote \"u22-bang\"]\n\turl = \"https://example.invalid/o/a!b.git\"\n[remote \"u23-paren\"]\n\turl = \"https://example.invalid/o/a(b.git\"\n[remote \"u24-comma\"]\n\turl = \"https://example.invalid/o/a,b.git\"\n[remote \"u25-plus\"]\n\turl = \"https://example.invalid/o/a+b.git\"\n[remote \"u26-at\"]\n\turl = \"https://example.invalid/o/a@b.git\"\n[remote \"u27-CR\"]\n\turl = \"https://example.invalid/o/a\rb.git\"\n[remote \"u28-space\"]\n\turl = \"https://example.invalid/o/a b.git\"\n[remote \"u29-tab\"]\n\turl = \"https://example.invalid/o/a\tb.git\"\n[remote \"u30-quote\"]\n\turl = \"https://example.invalid/o/a\\\"b.git\"\n[remote \"u31-backslash\"]\n\turl = \"https://example.invalid/o/a\\\\b.git\"\n[remote \"u32-hash\"]\n\turl = \"https://example.invalid/o/a#b.git\"\n[remote \"u33-semicolon\"]\n\turl = \"https://example.invalid/o/a;b.git\"\n[remote \"u34-equals\"]\n\turl = \"https://example.invalid/o/a=b.git\"\n[remote \"u35-a-umlaut\"]\n\turl = \"https://example.invalid/o/a\u00e4b.git\"\n[remote \"u36-colon\"]\n\turl = \"https://example.invalid/o/a:b.git\"\n[remote \"u37-byte-0c-formfeed\"]\n\turl = \"https://example.invalid/o/a\fb.git\"\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"u00-plain\"]\n\turl = \"https://example.invalid/o/ab.git\"\n[remote \"u04-byte-ff\"]\n\turl = \"https://example.invalid/o/a\ufffdb.git\"\n[remote \"u05-U+00A0\"]\n\turl = \"https://example.invalid/o/a\u00a0b.git\"\n[remote \"u06-U+0085\"]\n\turl = \"https://example.invalid/o/a\u0085b.git\"\n[remote \"u07-U+2028\"]\n\turl = \"https://example.invalid/o/a\u2028b.git\"\n[remote \"u08-apostrophe\"]\n\turl = \"https://example.invalid/o/a'b.git\"\n[remote \"u09-less\"]\n\turl = \"https://example.invalid/o/a<b.git\"\n[remote \"u10-greater\"]\n\turl = \"https://example.invalid/o/a>b.git\"\n[remote \"u11-pipe\"]\n\turl = \"https://example.invalid/o/a|b.git\"\n[remote \"u12-ampersand\"]\n\turl = \"https://example.invalid/o/a&b.git\"\n[remote \"u13-dollar\"]\n\turl = \"https://example.invalid/o/a$b.git\"\n[remote \"u14-backtick\"]\n\turl = \"https://example.invalid/o/a`b.git\"\n[remote \"u15-percent-20\"]\n\turl = \"https://example.invalid/o/a%20b.git\"\n[remote \"u16-star\"]\n\turl = \"https://example.invalid/o/a*b.git\"\n[remote \"u17-question\"]\n\turl = \"https://example.invalid/o/a?b.git\"\n[remote \"u18-bracket\"]\n\turl = \"https://example.invalid/o/a[b.git\"\n[remote \"u19-brace\"]\n\turl = \"https://example.invalid/o/a{b.git\"\n[remote \"u20-caret\"]\n\turl = \"https://example.invalid/o/a^b.git\"\n[remote \"u21-tilde\"]\n\turl = \"https://example.invalid/o/a~b.git\"\n[remote \"u22-bang\"]\n\turl = \"https://example.invalid/o/a!b.git\"\n[remote \"u23-paren\"]\n\turl = \"https://example.invalid/o/a(b.git\"\n[remote \"u24-comma\"]\n\turl = \"https://example.invalid/o/a,b.git\"\n[remote \"u25-plus\"]\n\turl = \"https://example.invalid/o/a+b.git\"\n[remote \"u26-at\"]\n\turl = \"https://example.invalid/o/a@b.git\"\n[remote \"u30-quote\"]\n\turl = \"https://example.invalid/o/a\\\"b.git\"\n[remote \"u31-backslash\"]\n\turl = \"https://example.invalid/o/a\\\\b.git\"\n[remote \"u32-hash\"]\n\turl = \"https://example.invalid/o/a#b.git\"\n[remote \"u33-semicolon\"]\n\turl = \"https://example.invalid/o/a;b.git\"\n[remote \"u34-equals\"]\n\turl = \"https://example.invalid/o/a=b.git\"\n[remote \"u35-a-umlaut\"]\n\turl = \"https://example.invalid/o/a\u00e4b.git\"\n[remote \"u36-colon\"]\n\turl = \"https://example.invalid/o/a:b.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "F2-branch-remote-values-39-branches",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[branch \"b00\"]\n\tremote = \"origin\"\n[branch \"b01\"]\n\tremote = \"or-g\"\n[branch \"b02\"]\n\tremote = \"or_g\"\n[branch \"b03\"]\n\tremote = \"or.g\"\n[branch \"b04\"]\n\tremote = \"or/g\"\n[branch \"b05\"]\n\tremote = \"or+g\"\n[branch \"b06\"]\n\tremote = \"or@g\"\n[branch \"b07\"]\n\tremote = \"or:g\"\n[branch \"b08\"]\n\tremote = \"or,g\"\n[branch \"b09\"]\n\tremote = \"Or9\"\n[branch \"b10\"]\n\tremote = \"-org\"\n[branch \"b11\"]\n\tremote = \".org\"\n[branch \"b12\"]\n\tremote = \"or~g\"\n[branch \"b13\"]\n\tremote = \"or%g\"\n[branch \"b14\"]\n\tremote = \"o\"\n[branch \"b15\"]\n\tremote = \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"\n[branch \"b16\"]\n\tremote = \"or;g\"\n[branch \"b17\"]\n\tremote = \"or g\"\n[branch \"b18\"]\n\tremote = \"or=g\"\n[branch \"b19\"]\n\tremote = \"\u00f6rg\"\n[branch \"b20\"]\n\tremote = \"or\\\"g\"\n[branch \"b21\"]\n\tremote = \"or\\\\g\"\n[branch \"b22\"]\n\tremote = \"or#g\"\n[branch \"b23\"]\n\tremote = \".\"\n[branch \"b24\"]\n\tremote = \"..\"\n[branch \"b25\"]\n\tremote = \"or*g\"\n[branch \"b26\"]\n\tremote = \"or?g\"\n[branch \"b27\"]\n\tremote = \"or[g\"\n[branch \"b28\"]\n\tremote = \"or^g\"\n[branch \"b29\"]\n\tremote = \"or!g\"\n[branch \"b30\"]\n\tremote = \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"\n[branch \"b31\"]\n\tremote = \"or'g\"\n[branch \"b32\"]\n\tremote = \"or$g\"\n[branch \"b33\"]\n\tremote = \"or&g\"\n[branch \"b34\"]\n\tremote = \"or|g\"\n[branch \"b35\"]\n\tremote = \"or<g\"\n[branch \"b36\"]\n\tremote = \"or{g\"\n[branch \"b37\"]\n\tremote = \"or(g\"\n[branch \"b38\"]\n\tremote = \"or`g\"\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[branch \"b00\"]\n\tremote = \"origin\"\n[branch \"b01\"]\n\tremote = \"or-g\"\n[branch \"b02\"]\n\tremote = \"or_g\"\n[branch \"b03\"]\n\tremote = \"or.g\"\n[branch \"b04\"]\n\tremote = \"or/g\"\n[branch \"b05\"]\n\tremote = \"or+g\"\n[branch \"b06\"]\n\tremote = \"or@g\"\n[branch \"b09\"]\n\tremote = \"Or9\"\n[branch \"b14\"]\n\tremote = \"o\"\n[branch \"b15\"]\n\tremote = \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"\n[branch \"b30\"]\n\tremote = \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "F3-remote-names-39-remotes",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/n/00.git\n[remote \"or-g\"]\n\turl = https://example.invalid/n/01.git\n[remote \"or_g\"]\n\turl = https://example.invalid/n/02.git\n[remote \"or.g\"]\n\turl = https://example.invalid/n/03.git\n[remote \"or/g\"]\n\turl = https://example.invalid/n/04.git\n[remote \"or+g\"]\n\turl = https://example.invalid/n/05.git\n[remote \"or@g\"]\n\turl = https://example.invalid/n/06.git\n[remote \"or:g\"]\n\turl = https://example.invalid/n/07.git\n[remote \"or,g\"]\n\turl = https://example.invalid/n/08.git\n[remote \"Or9\"]\n\turl = https://example.invalid/n/09.git\n[remote \"-org\"]\n\turl = https://example.invalid/n/10.git\n[remote \".org\"]\n\turl = https://example.invalid/n/11.git\n[remote \"or~g\"]\n\turl = https://example.invalid/n/12.git\n[remote \"or%g\"]\n\turl = https://example.invalid/n/13.git\n[remote \"o\"]\n\turl = https://example.invalid/n/14.git\n[remote \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\turl = https://example.invalid/n/15.git\n[remote \"or;g\"]\n\turl = https://example.invalid/n/16.git\n[remote \"or g\"]\n\turl = https://example.invalid/n/17.git\n[remote \"or=g\"]\n\turl = https://example.invalid/n/18.git\n[remote \"\u00f6rg\"]\n\turl = https://example.invalid/n/19.git\n[remote \"or\\\"g\"]\n\turl = https://example.invalid/n/20.git\n[remote \"or\\\\g\"]\n\turl = https://example.invalid/n/21.git\n[remote \"or#g\"]\n\turl = https://example.invalid/n/22.git\n[remote \".\"]\n\turl = https://example.invalid/n/23.git\n[remote \"..\"]\n\turl = https://example.invalid/n/24.git\n[remote \"or*g\"]\n\turl = https://example.invalid/n/25.git\n[remote \"or?g\"]\n\turl = https://example.invalid/n/26.git\n[remote \"or[g\"]\n\turl = https://example.invalid/n/27.git\n[remote \"or^g\"]\n\turl = https://example.invalid/n/28.git\n[remote \"or!g\"]\n\turl = https://example.invalid/n/29.git\n[remote \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\turl = https://example.invalid/n/30.git\n[remote \"or'g\"]\n\turl = https://example.invalid/n/31.git\n[remote \"or$g\"]\n\turl = https://example.invalid/n/32.git\n[remote \"or&g\"]\n\turl = https://example.invalid/n/33.git\n[remote \"or|g\"]\n\turl = https://example.invalid/n/34.git\n[remote \"or<g\"]\n\turl = https://example.invalid/n/35.git\n[remote \"or{g\"]\n\turl = https://example.invalid/n/36.git\n[remote \"or(g\"]\n\turl = https://example.invalid/n/37.git\n[remote \"or`g\"]\n\turl = https://example.invalid/n/38.git\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/n/00.git\"\n[remote \"or-g\"]\n\turl = \"https://example.invalid/n/01.git\"\n[remote \"or_g\"]\n\turl = \"https://example.invalid/n/02.git\"\n[remote \"or.g\"]\n\turl = \"https://example.invalid/n/03.git\"\n[remote \"or/g\"]\n\turl = \"https://example.invalid/n/04.git\"\n[remote \"or+g\"]\n\turl = \"https://example.invalid/n/05.git\"\n[remote \"or@g\"]\n\turl = \"https://example.invalid/n/06.git\"\n[remote \"Or9\"]\n\turl = \"https://example.invalid/n/09.git\"\n[remote \"o\"]\n\turl = \"https://example.invalid/n/14.git\"\n[remote \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\turl = \"https://example.invalid/n/15.git\"\n[remote \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\turl = \"https://example.invalid/n/30.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "F4-branch-names-39-branches",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n[branch \"origin\"]\n\tremote = origin\n[branch \"or-g\"]\n\tremote = origin\n[branch \"or_g\"]\n\tremote = origin\n[branch \"or.g\"]\n\tremote = origin\n[branch \"or/g\"]\n\tremote = origin\n[branch \"or+g\"]\n\tremote = origin\n[branch \"or@g\"]\n\tremote = origin\n[branch \"or:g\"]\n\tremote = origin\n[branch \"or,g\"]\n\tremote = origin\n[branch \"Or9\"]\n\tremote = origin\n[branch \"-org\"]\n\tremote = origin\n[branch \".org\"]\n\tremote = origin\n[branch \"or~g\"]\n\tremote = origin\n[branch \"or%g\"]\n\tremote = origin\n[branch \"o\"]\n\tremote = origin\n[branch \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\tremote = origin\n[branch \"or;g\"]\n\tremote = origin\n[branch \"or g\"]\n\tremote = origin\n[branch \"or=g\"]\n\tremote = origin\n[branch \"\u00f6rg\"]\n\tremote = origin\n[branch \"or\\\"g\"]\n\tremote = origin\n[branch \"or\\\\g\"]\n\tremote = origin\n[branch \"or#g\"]\n\tremote = origin\n[branch \".\"]\n\tremote = origin\n[branch \"..\"]\n\tremote = origin\n[branch \"or*g\"]\n\tremote = origin\n[branch \"or?g\"]\n\tremote = origin\n[branch \"or[g\"]\n\tremote = origin\n[branch \"or^g\"]\n\tremote = origin\n[branch \"or!g\"]\n\tremote = origin\n[branch \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\tremote = origin\n[branch \"or'g\"]\n\tremote = origin\n[branch \"or$g\"]\n\tremote = origin\n[branch \"or&g\"]\n\tremote = origin\n[branch \"or|g\"]\n\tremote = origin\n[branch \"or<g\"]\n\tremote = origin\n[branch \"or{g\"]\n\tremote = origin\n[branch \"or(g\"]\n\tremote = origin\n[branch \"or`g\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"origin\"]\n\tremote = \"origin\"\n[branch \"or-g\"]\n\tremote = \"origin\"\n[branch \"or_g\"]\n\tremote = \"origin\"\n[branch \"or.g\"]\n\tremote = \"origin\"\n[branch \"or/g\"]\n\tremote = \"origin\"\n[branch \"or+g\"]\n\tremote = \"origin\"\n[branch \"or@g\"]\n\tremote = \"origin\"\n[branch \"or:g\"]\n\tremote = \"origin\"\n[branch \"or,g\"]\n\tremote = \"origin\"\n[branch \"Or9\"]\n\tremote = \"origin\"\n[branch \".org\"]\n\tremote = \"origin\"\n[branch \"or~g\"]\n\tremote = \"origin\"\n[branch \"or%g\"]\n\tremote = \"origin\"\n[branch \"o\"]\n\tremote = \"origin\"\n[branch \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\tremote = \"origin\"\n[branch \"or;g\"]\n\tremote = \"origin\"\n[branch \"or g\"]\n\tremote = \"origin\"\n[branch \"or=g\"]\n\tremote = \"origin\"\n[branch \"\u00f6rg\"]\n\tremote = \"origin\"\n[branch \"or\\\"g\"]\n\tremote = \"origin\"\n[branch \"or\\\\g\"]\n\tremote = \"origin\"\n[branch \"or#g\"]\n\tremote = \"origin\"\n[branch \".\"]\n\tremote = \"origin\"\n[branch \"..\"]\n\tremote = \"origin\"\n[branch \"or*g\"]\n\tremote = \"origin\"\n[branch \"or?g\"]\n\tremote = \"origin\"\n[branch \"or[g\"]\n\tremote = \"origin\"\n[branch \"or^g\"]\n\tremote = \"origin\"\n[branch \"or!g\"]\n\tremote = \"origin\"\n[branch \"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\"]\n\tremote = \"origin\"\n[branch \"or'g\"]\n\tremote = \"origin\"\n[branch \"or$g\"]\n\tremote = \"origin\"\n[branch \"or&g\"]\n\tremote = \"origin\"\n[branch \"or|g\"]\n\tremote = \"origin\"\n[branch \"or<g\"]\n\tremote = \"origin\"\n[branch \"or{g\"]\n\tremote = \"origin\"\n[branch \"or(g\"]\n\tremote = \"origin\"\n[branch \"or`g\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges-linux",
+  "cell": "F6-other-values",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[lfs]\n\turl = \"https://lfs.example.invalid/a b\"\n[lfs]\n\tfetchinclude = \"a b\"\n[lfs]\n\tfetchexclude = \"c\\td\"\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tpartialclonefilter = \"blob:limit=1 k\"\n\tpromisor = \"tr ue\"\n[remote]\n\tlfsdefault = \"or g\"\n[core]\n\teol = \"l f\"\n[feature]\n\tmanyFiles = yes\n[core]\n\tquotepath = on\n[core]\n\tsafecrlf = warn\n[core]\n\tautocrlf = TRUE\n[core]\n\tsharedrepository = 0660\n[index]\n\tversion = 3\n[core]\n\tlongpaths = 1\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\tfetchinclude = \"a b\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[feature]\n\tmanyfiles = \"true\"\n[core]\n\tquotepath = \"true\"\n[core]\n\tsafecrlf = \"warn\"\n[core]\n\tautocrlf = \"true\"\n[core]\n\tsharedrepository = \"0660\"\n[index]\n\tversion = \"3\"\n[core]\n\tlongpaths = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "10f-1",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "10k-control-2-then-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 2\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "1a-12f-filemode-only-no-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "1b-12a-three-keys-with-w0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tbare = false\n\tfilemode = false\n\tsparsecheckout = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "1c-w0-with-its-own-config-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "1d-extension-on-no-config-worktree-file",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "1e-file-there-extension-off",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n",
+   "config.worktree": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "1k-control-plain-no-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "1m-control-plain-include",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "2a-include-has-remote-url-and-branch-remote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n[branch \"main\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "2b-include-has-filemode-remote-url-branch-remote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\tfilemode = false\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n[branch \"main\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "2c-include-has-remote-url-main-has-branch-remote",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n[branch \"main\"]\n\tremote = origin\n",
+   "inc.cfg": "[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[branch \"main\"]\n\tremote = \"origin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "2d-include-has-branch-remote-main-has-remote-url",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n",
+   "inc.cfg": "[branch \"main\"]\n\tremote = origin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[branch \"main\"]\n\tremote = \"origin\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "2k-control-14k-include-last-filemode",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "3a-rule-origin-and-up",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[remote \"up\"]\n\turl = gh:u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[url \"https://example.invalid/o/r.git\"]\n\tinsteadOf = \"https://example.invalid/o/r.git\"\n[url \"https://example.invalid/u/r.git\"]\n\tinsteadOf = \"https://example.invalid/u/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "3b-rule-up-only-no-origin",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[remote \"up\"]\n\turl = gh:u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[url \"https://example.invalid/u/r.git\"]\n\tinsteadOf = \"https://example.invalid/u/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "3c-rule-up-then-origin",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[remote \"up\"]\n\turl = gh:u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[url \"https://example.invalid/u/r.git\"]\n\tinsteadOf = \"https://example.invalid/u/r.git\"\n[url \"https://example.invalid/o/r.git\"]\n\tinsteadOf = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "3d-rule-origin-plain-up-changed",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[remote \"up\"]\n\turl = gh:u/r.git\n\tfetch = +refs/heads/*:refs/remotes/up/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[remote \"up\"]\n\turl = \"https://example.invalid/u/r.git\"\n[url \"https://example.invalid/u/r.git\"]\n\tinsteadOf = \"https://example.invalid/u/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "3e-rule-two-remotes-same-url",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[remote \"up\"]\n\turl = gh:o/r.git\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[remote \"up\"]\n\turl = \"https://example.invalid/o/r.git\"\n[url \"https://example.invalid/o/r.git\"]\n\tinsteadOf = \"https://example.invalid/o/r.git\"\n[url \"https://example.invalid/o/r.git\"]\n\tinsteadOf = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "3k-control-08k",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[url \"https://example.invalid/\"]\n\tinsteadOf = gh:\n[remote \"origin\"]\n\turl = gh:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[url \"https://example.invalid/o/r.git\"]\n\tinsteadOf = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "4a-ext-x",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ext::x\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "4g-ext-sh-c-x-as-07g",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ext::sh -c x\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "4k-control-ftp",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = ftp://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "6a-fetchexclude-plain",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[lfs]\n\tfetchexclude = *.tmp\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\tfetchexclude = \"*.tmp\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "6b-fetchexclude-then-fetchinclude",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[lfs]\n\tfetchexclude = *.tmp\n\tfetchinclude = *.bin\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\tfetchexclude = \"*.tmp\"\n[lfs]\n\tfetchinclude = \"*.bin\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "6k-control-fetchinclude",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[lfs]\n\tfetchinclude = *.tmp\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\tfetchinclude = \"*.tmp\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "8a-absolute-path-outside-the-git-folder",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = {OUT}/outside/out.cfg\n",
+   "{OUT}/outside/out.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "8b-relative-path-up-into-the-work-tree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = ../rel.cfg\n",
+   "../rel.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "8c-file-absent",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = nosuch.cfg\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "8d-include-inside-an-included-file",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = inc.cfg\n",
+   "inc.cfg": "[core]\n\teol = lf\n[include]\n\tpath = inc2.cfg\n",
+   "inc2.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\teol = \"lf\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "8e-tilde-path",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = ~/home.cfg\n",
+   "{HOME}/home.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "8f-relative-subfolder",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = sub/inc.cfg\n",
+   "sub/inc.cfg": "[core]\n\tfilemode = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tfilemode = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "8g-absent-then-a-key-in-main",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[include]\n\tpath = nosuch.cfg\n[core]\n\teol = lf\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\teol = \"lf\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "9a-bare-true-no-worktree",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tbare = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "9k-control-12e-bare-false",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n",
+   "config.worktree": "[core]\n\tbare = false\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[core]\n\tbare = \"false\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x02k-control-plain-url",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://example.invalid/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[remote \"origin\"]\n\turl = \"https://example.invalid/o/r.git\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x13a-worktreeConfig-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tworktreeConfig = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x13b-relativeWorktrees-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\trelativeWorktrees = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\trelativeworktrees = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x13c-compatObjectFormat-sha256",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tcompatObjectFormat = sha256\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tcompatobjectformat = \"sha256\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x13d-submodulePathConfig-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tsubmodulePathConfig = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tsubmodulepathconfig = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x13e-refStorage-reftable",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\trefStorage = reftable\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\trefstorage = \"reftable\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x13k-control-noop-true",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 1\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[extensions]\n\tnoop = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[extensions]\n\tnoop = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x15a-three-times-2-1-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 2\n\trepositoryformatversion = 1\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"1\"\n[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x15k-control-2-then-0",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 2\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x17a-8191",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x17b-8192",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x17c-8193",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ },
+ {
+  "round": "s3p2b-edges2-linux",
+  "cell": "x17k-control-1mib",
+  "files": {
+   "config": "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n"
+  },
+  "want": "[core]\n\trepositoryformatversion = \"0\"\n[core]\n\tfilemode = \"true\"\n[core]\n\tbare = \"false\"\n[core]\n\tlogallrefupdates = \"true\"\n[lfs]\n\trepositoryformatversion = 0\n"
+ }
+]

@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // The daemon's own read of a repository's config, and its tests of three files of
@@ -52,6 +51,13 @@ const (
 	repoSettingCost     = 96
 	repoSettingsMaxCost = 8 << 20
 )
+
+// configLinkTail ends the detail of a config that the daemon reaches through a
+// link that it does not follow. 5fd08069 writes it on a Windows VM for a config
+// that is a file link (cell C4b, configLinkDetail) and for a git directory that
+// is a junction (cells X1c of val-s3p2b2-7-windows, gitDirLinkDetail).
+const configLinkTail = ": is, or is reached through, a link that Claude does not follow here; " +
+	"replace the link with what it points to"
 
 // repoNameBoundSections are the sections whose setting names have the bound of
 // repoConfigKeyMaxBytes. The exact pair is measured in core and remote (cells
@@ -305,7 +311,7 @@ func (s repoFileState) unchanged() bool {
 	return sameFileState(s.link, now.link) && sameFileState(s.target, now.target)
 }
 
-// repoReadLog holds what one read of repoConfigGateRefusal used: the state of each file
+// repoReadLog holds what one read of repoConfigGate used: the state of each file
 // that a test named, taken before that test, and whether the read has a verdict.
 // failed is true when an open or a read of the daemon ended with an error. The
 // verdict of such a read answers its request and is not kept: the error can be
@@ -361,6 +367,12 @@ type repoConfigRead struct {
 	// repoListingMaxBytes, and the read has no text for that. The read then gives
 	// no verdict, and the listing of the method answers as before.
 	unlisted bool
+	// settings are the settings of the config and of its included files, each
+	// included file at the place of its include line. worktree are those of the
+	// `config.worktree` file of the git directory. The copy of the settings is
+	// written from both (shadowConfigText).
+	settings []repoSetting
+	worktree []repoSetting
 }
 
 // file reads the config file at path, depth levels below the config, and returns
@@ -404,8 +416,11 @@ type repoConfigRead struct {
 // and Windows VMs). The value tests of includeTarget run too: `~root/x` gets the
 // "expands neither" text in a matching section (cell V8) and in one that does
 // not match (cells N12, Linux VM). A missing file of such a section counts
-// toward the 16 (cells N7, Linux, macOS and Windows VMs). claustrum does not
-// read such a file: its content is not measured.
+// toward the 16 (cells N7, Linux, macOS and Windows VMs). 5fd08069 lists such a
+// file with one more git call, with or without a match, and carries no setting
+// of it (cells 11a to 11f of s3p2b-edges-linux, Linux VM, and cell 11 of that
+// round on a macOS VM). claustrum makes that call and does not use its answer:
+// a file there that git cannot list is not measured.
 func (r *repoConfigRead) file(path string, depth int) string {
 	r.log.note(path)
 	if d := configLinkDetail(path); d != "" {
@@ -443,6 +458,10 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
 			if m := stdinSyntaxError.FindSubmatch(errOut); m != nil {
+				// 5fd08069 runs one `git version` after this read
+				// (versionAfterFailure). An included file with a syntax error is
+				// not measured: it gets the call too.
+				versionAfterFailure()
 				return "fatal: bad config line " + string(m[1]) + " in " + quoteOperand(path)
 			}
 		}
@@ -483,7 +502,11 @@ func (r *repoConfigRead) file(path string, depth int) string {
 		return ""
 	}
 	for rec := range bytes.SplitSeq(out, []byte{0}) {
-		key, value, _ := strings.Cut(string(rec), "\n")
+		if len(rec) == 0 {
+			continue
+		}
+		key, value, hasValue := strings.Cut(string(rec), "\n")
+		r.settings = append(r.settings, repoSetting{key: key, value: value, hasValue: hasValue, included: depth > 0})
 		if value == "" {
 			continue
 		}
@@ -507,9 +530,32 @@ func (r *repoConfigRead) file(path string, depth int) string {
 			if d := configFileTests(target, r.log); d != "" {
 				return d
 			}
+			listConfigFile(r.ctx, target)
 		}
 	}
 	return ""
+}
+
+// listConfigFile lists the config file at path with one git call, as the read
+// lists the config. ok is false, with no call, for a file that is missing, that
+// is not a regular file or that is over repoConfigMaxBytes. It is false too
+// when git did not list the file. The open does not wait (openRepoFile).
+func listConfigFile(ctx context.Context, path string) (settings []repoSetting, ok bool) {
+	_, settings, ok = listConfigFileText(ctx, path)
+	return settings, ok
+}
+
+// listedSettings are the settings of out, the output of one `config --list -z`
+// call, in its order.
+func listedSettings(out []byte) (settings []repoSetting) {
+	for rec := range bytes.SplitSeq(out, []byte{0}) {
+		if len(rec) == 0 {
+			continue
+		}
+		key, value, hasValue := strings.Cut(string(rec), "\n")
+		settings = append(settings, repoSetting{key: key, value: value, hasValue: hasValue})
+	}
+	return settings
 }
 
 // countInclude counts one more included file, depth levels below the config. It
@@ -648,29 +694,74 @@ const (
 // 61 shows 60 (cells P1, Linux, macOS and Windows VMs). The cells have ASCII
 // text. claustrum counts characters, as for a path.
 func repoConfigDetail(ctx context.Context, gitDir, entry string, log *repoReadLog) string {
-	r := repoConfigRead{ctx: ctx, gitDir: gitDir, log: log}
+	r, d := readRepoConfig(ctx, gitDir, log)
+	if d != "" || r.unlisted {
+		return d
+	}
+	return entryConfigDetail(r.worktreeConfig, entry, log)
+}
+
+// entryConfigDetail tests the `config.worktree` file of entry, the git
+// directory of a linked worktree, when the repository has the worktreeConfig
+// switch. entry is "" for every other git directory.
+func entryConfigDetail(worktreeConfig bool, entry string, log *repoReadLog) string {
+	if worktreeConfig && entry != "" {
+		return configFileTests(filepath.Join(entry, "config.worktree"), log)
+	}
+	return ""
+}
+
+// readRepoConfig is the read of the config of gitDir with its included files.
+// It returns the read and the detail of a refusal, or "".
+//
+// With the worktreeConfig switch and a `config.worktree` file in gitDir,
+// 5fd08069 lists that file two times, right after the config and its included
+// files. It does not list it when the switch is off or the file is missing
+// (cells 1a to 1e, 9a and 9k of s3p2b-edges2-linux, Linux VM). claustrum lists
+// it two times and takes the settings of the first listing. A file there that
+// is not a regular file, that is over the size bound of a config or that git
+// cannot list is not measured: its settings are not used and nothing is
+// refused.
+//
+// A file of 0 bytes is not listed. On 5fd08069 the first git.info then makes 21
+// calls, with no read of that file (cell p2-K-none-empty-file of
+// val-s3p2b2-6-linux, Linux VM). The create of that cell still lists the file
+// after its `worktree add` (newWorktreeConfig).
+func readRepoConfig(ctx context.Context, gitDir string, log *repoReadLog) (*repoConfigRead, string) {
+	r := &repoConfigRead{ctx: ctx, gitDir: gitDir, log: log}
+	if d := gitDirLinkDetail(gitDir); d != "" {
+		return r, d
+	}
 	if d := r.file(filepath.Join(gitDir, "config"), 0); d != "" || r.unlisted {
 		if log != nil {
 			log.noVerdict = r.unlisted
 		}
-		return d
+		return r, d
 	}
 	if r.hasVersion && r.version != "0" && r.version != "1" {
-		return "the repository uses format version " + quoteCut(r.version, versionValueMaxRunes) +
+		return r, "the repository uses format version " + quoteCut(r.version, versionValueMaxRunes) +
 			", which this version of Claude does not support"
 	}
 	if r.version == "1" {
 		for _, e := range r.extensions {
 			if e.refused() {
-				return "the repository uses git extension " + quoteCut(e.name, extensionNameMaxRunes) +
+				return r, "the repository uses git extension " + quoteCut(e.name, extensionNameMaxRunes) +
 					", or a value of it, that this version of Claude does not support"
 			}
 		}
 	}
-	if r.worktreeConfig && entry != "" {
-		return configFileTests(filepath.Join(entry, "config.worktree"), log)
+	if r.worktreeConfig {
+		path := filepath.Join(gitDir, "config.worktree")
+		log.note(path)
+		if fi, err := os.Stat(path); err == nil && fi.Mode().IsRegular() && fi.Size() == 0 {
+			return r, ""
+		}
+		if settings, ok := listConfigFile(ctx, path); ok {
+			r.worktree = settings
+			listConfigFile(ctx, path)
+		}
 	}
-	return ""
+	return r, ""
 }
 
 // gitDirFilesDetail tests shallow, info/attributes and info/exclude of the git
@@ -692,6 +783,14 @@ func gitDirFilesDetail(gitDir string, log *repoReadLog) string {
 		if d := infoFileDetail(path); d != "" {
 			return d
 		}
+	}
+	return ""
+}
+
+// gitDirFilesRefusal is gitDirFilesDetail with the prefix of its refusal, or "".
+func gitDirFilesRefusal(gitDir string) string {
+	if d := gitDirFilesDetail(gitDir, nil); d != "" {
+		return repoFilePrefix + d
 	}
 	return ""
 }
@@ -770,51 +869,33 @@ func holdsObjectIDs(b []byte) bool {
 	return true
 }
 
-// repoVerdictKey names one read: the pinned git directory, the entry of a linked
-// worktree or "", and the home folder of the daemon, which a `~/` include uses.
+// repoVerdictKey names one read: the pinned git directory and the home folder of
+// the daemon, which a `~/` include uses. A request on a linked worktree uses the
+// read of its repository: on 5fd08069 such a request lists the config of the
+// repository no second time (cell 1c of s3p2b-edges2-linux, Linux VM).
 type repoVerdictKey struct {
-	gitDir, entry, home string
+	gitDir, home string
 }
 
 // repoVerdict is the outcome of one read, with the state of each file that the
-// read used. Those two are not changed after the read. ownerGoodAt is the time
-// of the last call in which git named no problem with the owner, or the zero
-// time (repoOwnerAnswerKeep).
+// read used. Those two are not changed after the read.
 type repoVerdict struct {
+	// refusal is the refusal of the config, with its prefix, or "". The test of
+	// the `config.worktree` file of a linked worktree and the tests of the other
+	// files of the git directory come after it, in each request
+	// (repoConfigGate).
 	refusal string
-	states  []repoFileState
-
-	ownerMu     sync.Mutex
-	ownerGoodAt time.Time
-}
-
-// repoOwnerAnswerKeep is the time for which a verdict keeps an answer of git
-// that names no problem with the owner. It is fitted to two cells of 5fd08069.
-// In cell P7 (Linux VM, 3 of 3 runs) that build keeps a refusal 0, 1, 2, 3 and
-// 4 s after a change of the owner, and answers "not a repository" 5, 6 and 8 s
-// after it. In cell P5 (Linux VM) its `rev-parse --git-dir` call comes at the
-// first of ten equal refused requests and again about 6 s later. So the value
-// is between 4 and 5 s there. The time counts from the start of the call (not
-// measured).
-const repoOwnerAnswerKeep = 5 * time.Second
-
-// repoOwnerClock is the clock of the kept owner answer. A test replaces it.
-var repoOwnerClock = time.Now
-
-// ownerAnswerKept reports whether git named no problem with the owner less than
-// repoOwnerAnswerKeep ago.
-func (v *repoVerdict) ownerAnswerKept() bool {
-	v.ownerMu.Lock()
-	defer v.ownerMu.Unlock()
-	return !v.ownerGoodAt.IsZero() && repoOwnerClock().Sub(v.ownerGoodAt) < repoOwnerAnswerKeep
-}
-
-// keepOwnerAnswer notes that a call that started at asked named no problem with
-// the owner.
-func (v *repoVerdict) keepOwnerAnswer(asked time.Time) {
-	v.ownerMu.Lock()
-	defer v.ownerMu.Unlock()
-	v.ownerGoodAt = asked
+	// worktreeConfig is true when the config has the worktreeConfig switch.
+	worktreeConfig bool
+	// shadowText is the text of the copy of the settings (shadowConfigText).
+	shadowText string
+	// worktreeItems are the `-c` items of the `config.worktree` file of the git
+	// directory (worktreeConfigItems), or nil.
+	worktreeItems []string
+	// shared is the last `core.sharedRepository` setting of the config and its
+	// included files (sharedRepositoryOf, makeWorktreesFolder).
+	shared sharedRepository
+	states []repoFileState
 }
 
 // repoVerdictsMax is the most git directories and linked worktrees whose verdict
@@ -871,7 +952,8 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // no git call for the read (cells B4 and V19). A request after a change of the
 // config starts one (cell B4). With a refused format version each later request
 // of that build makes the read again (cells N10 and P5, Linux, macOS and Windows
-// VMs). claustrum keeps the verdict of a read with the state of each file that
+// VMs). A kept read with a refusal is not used: claustrum reads again, too.
+// claustrum keeps the verdict of a read with the state of each file that
 // the read used. It reads again when one of them has another identity, size,
 // modification time or mode. It reads again when a file that was missing is
 // there. That rule is claustrum's own: cell
@@ -882,99 +964,50 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // `open <file>:` text is read again on each request. That rule is claustrum's
 // own.
 func repoReadVerdict(t gitDirTrust) *repoVerdict {
+	// The link test of the git directory comes before a kept read. The kept
+	// read tests the state of each file, and a link to the same folder keeps
+	// those states. The refusal is not kept. A link that is there before the
+	// first request gets the same refusal on 5fd08069 (part Q and cells
+	// D-symd-start of val-s3p2b2-12-windows, Windows VM).
+	if d := gitDirLinkDetail(t.pinCommonDir); d != "" {
+		return &repoVerdict{refusal: repoConfigPrefix + d}
+	}
 	home, _ := os.UserHomeDir()
-	k := repoVerdictKey{gitDir: t.pinCommonDir, entry: t.worktreeEntry, home: home}
-	if v, ok := keptRepoVerdict(k); ok {
+	k := repoVerdictKey{gitDir: t.pinCommonDir, home: home}
+	if v, ok := keptRepoVerdict(k); ok && v.refusal == "" {
 		return v
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
 	var log repoReadLog
-	refusal := ""
-	if d := repoConfigDetail(ctx, t.pinCommonDir, t.worktreeEntry, &log); d != "" {
-		refusal = repoConfigPrefix + d
-	} else if log.noVerdict {
+	v := &repoVerdict{}
+	r, d := readRepoConfig(ctx, t.pinCommonDir, &log)
+	switch {
+	case d != "":
+		v.refusal = repoConfigPrefix + d
+	case log.noVerdict:
 		return nil
-	} else if d := gitDirFilesDetail(t.pinCommonDir, &log); d != "" {
-		refusal = repoFilePrefix + d
+	default:
+		v.worktreeConfig = r.worktreeConfig
+		v.shadowText = shadowConfigText(r.settings, r.worktree)
+		v.worktreeItems = worktreeConfigItems(r.worktree)
+		for _, s := range r.settings {
+			if s.key == "core.sharedrepository" {
+				v.shared = sharedRepositoryOf(s)
+			}
+		}
 	}
-	v := &repoVerdict{refusal: refusal, states: log.states}
+	v.states = log.states
 	if !log.failed {
 		keepRepoVerdict(k, v)
 	}
 	return v
 }
 
-// repoOwnerCallBound ends the call of gitNamesOwnerProblem for a file that is not
-// a regular file. git waits in its own open of a FIFO as the config, and plain
-// git names another owner in 0.01 s there (cell V1, Linux VM). The value is
-// claustrum's own.
-const repoOwnerCallBound = time.Second
-
-// repoOwnerCallLongBound ends that call for every other refusal. git names another
-// owner before it reads the config, and with a config of 20 MiB the whole call
-// takes 0.6 to 1.1 s (cells P5 and N10, Linux, macOS and Windows VMs). But git can
-// meet a FIFO that the read did not reach. One case is a config over its size
-// bound that includes one: it is refused before the include is followed. If git
-// waits in that file, this bound ends the call (that git waits there is not
-// measured). The value is claustrum's own. A
-// variable, so that a test can lower it.
-var repoOwnerCallLongBound = 5 * time.Second
-
-// repoOwnerCallDrain is the longest wait for the stderr pipe of that call after
-// git ended or the bound ended it. The value is claustrum's own.
-const repoOwnerCallDrain = time.Second
-
-// gitNamesOwnerProblem runs the hardened `git rev-parse <probe>` of a method in
-// dir, with no listing before it and with LC_ALL=C and LANGUAGE=C. It reports
-// whether git failed and its stderr holds `detected dubious ownership in
-// repository`. That is the text of plain git for a repository of another owner.
-// Git 2.43.0 and git 2.50.1 print it in cells X3 and V1 (Linux and macOS VMs),
-// and git 2.55.0 in cell N17w (Windows VM). No cell ran another git with another
-// owner.
-// 5fd08069 has a `rev-parse --git-dir` call at the first refused request of a
-// daemon (cells P5, Linux, macOS and Windows VMs). What that call decides there
-// is not measured.
-//
-// The call ends at bound, and at the deadline of gitCtx if that is sooner: the
-// process is ended by its pid. Such a call names no problem, whatever it wrote
-// before. After git ends,
-// or after the bound, the daemon waits at most repoOwnerCallDrain for the stderr
-// pipe. So a `git` on PATH that leaves a process with that pipe open does not
-// hold the request.
-//
-// good is true when git ran to its end and named no problem. It is false for a
-// call that named one, for a call that a bound ended, and for a git that did
-// not start.
-func gitNamesOwnerProblem(dir string, heavy bool, probe string, bound time.Duration) (named, good bool) {
-	base, cancelBase := gitCtx()
-	defer cancelBase()
-	ctx, cancel := context.WithTimeout(base, bound)
-	defer cancel()
-	cmd := hardenedGitCmd(ctx, dir, heavy, &configListing{}, "rev-parse", probe)
-	cmd.Env = append(cmd.Env, "LC_ALL=C", "LANGUAGE=C")
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	cmd.WaitDelay = repoOwnerCallDrain
-	err := cmd.Run()
-	if ctx.Err() != nil {
-		return false, false
-	}
-	if err == nil {
-		return false, true
-	}
-	var ee *exec.ExitError
-	if !errors.As(err, &ee) {
-		return false, false
-	}
-	text := errBuf.String()
-	named = strings.Contains(text, "detected dubious ownership in repository")
-	return named, !named
-}
-
-// repoConfigGateRefusal is the refusal text of a git method for the repository of the
-// trust verdict t, or "". It runs before the first git call of claustrum in the
-// repository.
+// repoConfigGate is the refusal text of a git method for the repository of the
+// trust verdict t, or "". It runs before the first git call of the method in
+// the repository. accepted is the read of a repository that got no refusal of
+// any kind, or nil.
 //
 // off is the `shadowDirOff` member of the request. With the JSON value true,
 // 5fd08069 gives no such refusal for that request. Format version 2 gets the
@@ -989,55 +1022,53 @@ func gitNamesOwnerProblem(dir string, heavy bool, probe string, bound time.Durat
 // git.info and git.list_branches the trust check pins nothing, and nothing is
 // read (not measured).
 //
-// 5fd08069 keeps the "not a repository" answers for a HEAD that is no ref (cells
-// X3), and for a repository of another owner with no safe.directory. Cells V1
-// ran that owner on Linux, macOS and Windows VMs. The states were format version
-// 2, a config of 20 MiB and an info/exclude of 20 MiB, and a FIFO as the config
-// on Linux and macOS VMs. Which call of that build decides is not measured.
-// claustrum asks git when the read has a refusal. dir, heavy and probe are the
-// rev-parse call that the method runs next (gitNamesOwnerProblem). If git names
-// a problem with the owner, the method gets no refusal here and goes on as
-// before.
+// The gate makes no call to git about the owner of the repository. In the state
+// shadow the call of shadowHost.askGit comes before it. That call answers a
+// repository of another owner with the "no repository" answers, before any
+// read. A refused read is not kept.
 //
-// For a file that is not a regular file the call has the bound of
-// repoOwnerCallBound, because git waits in its own open of a FIFO. For every
-// other refusal it has the bound of repoOwnerCallLongBound. If a bound
-// ends the call, the refusal stays. 5fd08069 answers a FIFO in 0.15 to 0.36 s
-// (cells N2, N3 and N17, Linux and macOS VMs), and claustrum after repoOwnerCallBound.
+// On 5fd08069 a first request on a repository with a refused config makes the
+// call about the repository and the reads, and each later request makes the
+// reads again: 1 call in 19 cells, 4 with a chain of four included files and
+// 17 with seventeen. It makes no `rev-parse` call of its own there (cells of
+// group E and cells 10a to 10e of val-s3p2b2-3-linux, Linux VM. Rows D3 of
+// val-s3p2b2-3-macos and D7 of val-s3p2b2-3-windows). After a read with a
+// syntax error 5fd08069 makes one `git version` call (versionAfterFailure).
 //
-// An answer of git that names no problem is kept with the kept verdict for
-// repoOwnerAnswerKeep. In that time a request with that refusal starts no call.
-// An answer that names a problem is not kept, so a new `safe.directory` line
-// counts at the next request. After `safe.directory = *` appears, 5fd08069
-// answers the refusal at once (cell N15-a, Linux and macOS VMs). The result of
-// a call that a bound ended, or of a git that did not start, is not kept
-// either. So a request on a FIFO config asks git again. A verdict that is not
-// kept has no kept answer. After a change of the owner, 5fd08069 keeps the
-// refusal for 4 s and answers "not a repository" from 5 s on (cell P7, Linux
-// VM, 3 runs). With a refused config of 20 MiB, 5fd08069 starts that call at
-// the first of ten requests and at the eighth (cell P5, Linux VM).
-func repoConfigGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) string {
+// A server with no run folder has no state and no call of askGit. It reads the
+// config and answers its refusals the same way. No real daemon is such a
+// server, so that form is not measured.
+func repoConfigGate(t gitDirTrust, off jsonTrueSwitch) (msg string, accepted *repoVerdict) {
 	if off || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return ""
+		return "", nil
 	}
 	v := repoReadVerdict(t)
-	if v == nil || v.refusal == "" {
-		return ""
+	if v == nil {
+		return "", nil
 	}
-	if v.ownerAnswerKept() {
-		return v.refusal
+	if refusal := requestRefusal(t, v); refusal != "" {
+		return refusal, nil
 	}
-	asked := repoOwnerClock()
-	bound := repoOwnerCallLongBound
-	if strings.HasSuffix(v.refusal, notRegularTail) {
-		bound = repoOwnerCallBound
+	return "", v
+}
+
+// requestRefusal is the refusal of one request on the trust verdict t with the
+// read v, or "": the refusal of the config, then that of the `config.worktree`
+// file of a linked worktree, then that of another file of the git directory.
+func requestRefusal(t gitDirTrust, v *repoVerdict) string {
+	refusal := v.refusal
+	if refusal == "" {
+		if d := entryConfigDetail(v.worktreeConfig, t.worktreeEntry, nil); d != "" {
+			refusal = repoConfigPrefix + d
+		}
 	}
-	named, good := gitNamesOwnerProblem(dir, heavy, probe, bound)
-	if named {
-		return ""
+	if refusal == "" {
+		// The tests of shallow, info/attributes and info/exclude run in each
+		// request and are no part of the kept read. On 5fd08069 a change of one of
+		// these files leads to no new read of the config and to no new copy of it
+		// (cells 19a to 19c of val-s3p2b2-3-linux, 15-19a to 15-19c of
+		// val-s3p2b2-3-macos and E15b of val-s3p2b2-3-windows).
+		refusal = gitDirFilesRefusal(t.pinCommonDir)
 	}
-	if good {
-		v.keepOwnerAnswer(asked)
-	}
-	return v.refusal
+	return refusal
 }

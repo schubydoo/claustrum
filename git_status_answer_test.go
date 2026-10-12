@@ -238,11 +238,14 @@ func TestStatusGitDirContents(t *testing.T) {
 		writeFile(t, filepath.Join(entry, filepath.FromSlash(name)), body, 0o644)
 	}
 	list := func(e statusEntry) []string {
-		tmp, err := buildStatusGitDir(e, common)
+		tmp, remove, err := gitUse{}.requestDir(shadowStatusDirPrefix, statusGitDirTempPrefix)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() { _ = os.RemoveAll(tmp) }()
+		defer remove()
+		if err := buildStatusGitDir(e, common, tmp); err != nil {
+			t.Fatal(err)
+		}
 		if !strings.HasPrefix(filepath.Base(tmp), statusGitDirTempPrefix) {
 			t.Errorf("temporary folder %s, want the prefix %s", tmp, statusGitDirTempPrefix)
 		}

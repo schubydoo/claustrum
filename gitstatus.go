@@ -134,7 +134,7 @@ func statusNoRepoCalls(baseRepo string, noGit bool) string {
 	pin := []string{"GIT_DIR=" + os.DevNull}
 	r := runListing(ctx, baseRepo, "", precursorEnv(true, pin))
 	if r.err != nil && !noGit {
-		if c := failedListingCheck(r, baseRepo, true); c.refusal != "" {
+		if c := failedListingCheck(gitUse{}, r, baseRepo, true); c.refusal != "" {
 			return c.refusal
 		}
 	}
@@ -270,20 +270,102 @@ func linkBelow(base, p string) bool {
 //
 // A listing that fails is a refusal: its text is the hooks refusal, and `git version`
 // runs after it (row o22, Linux VM). A `rev-parse` that fails answers isRepo:false
-// (row n17). claustrum does not read the output of the `rev-parse`. What 89cb6289
-// does with it is not measured.
-func statusWorkTreeProbe(common, workTree string, pin []string) (ok bool, err error) {
+// (row n17). top is the output of the `rev-parse`. On Linux and macOS claustrum
+// does not use it. On Windows it gives one more spelling of `path`
+// (statusPrintedRootSpelling). What 89cb6289 and 5fd08069 do with it is not
+// measured.
+//
+// front are the `-c` items that come before the 28 items of the `rev-parse`
+// call (gitUse.gitDirFront), or nil.
+func statusWorkTreeProbe(common, workTree string, pin, front []string) (top string, ok bool, err error) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	l := runListing(ctx, common, common, precursorEnv(true, pin))
 	if l.err != nil {
-		return false, statusRefusal(failedListingText(l, true))
+		return "", false, statusRefusal(failedListingText(gitUse{}, l, true))
 	}
-	cmd := exec.CommandContext(ctx, "git", hardenedProfileArgs(true,
-		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel")...)
+	cmd := exec.CommandContext(ctx, "git", withFront(front, hardenedProfileArgs(true,
+		"--git-dir="+common, "--work-tree="+workTree, "rev-parse", "--show-toplevel"))...)
 	cmd.Dir = common
 	cmd.Env = hardenedGitEnv(true, pin, l.hooks())
-	return cmd.Run() == nil, nil
+	out, runErr := cmd.Output()
+	return strings.TrimRight(string(out), "\r\n"), runErr == nil, nil
+}
+
+// usePrintedGitDir makes the request go on with the git directory common that
+// `rev-parse --absolute-git-dir` printed, when that path is another spelling of
+// the git directory of the request and both are one folder on disk. It returns
+// a refusal text, or "".
+//
+// On a Windows VM a git.status with a `baseRepo` through a junction gets the
+// real path from git: `C:/o/w/repo/.git` for the request path `C:\o\w\jrepo`.
+// 5fd08069 then reads the config of that git directory with one more call,
+// makes a second folder whose name is the sha256 of the real path, and runs its
+// other calls with --git-dir=<real path>, GIT_COMMON_DIR=<that folder> and
+// GIT_OBJECT_DIRECTORY=<real path>\objects (cell D6j-junction of
+// val-s3p2b2-3-windows, request 2, 22 calls. s3p2-windows cell D6j has the two
+// folders). Another letter case of the same path gives no second folder (cell
+// D6c), so the compare of the two spellings ignores case there
+// (sameGitDirPath).
+//
+// The read is the read of the config gate, for the printed path. A refusal of
+// that read is not measured: the request answers it. A request with no copy
+// (the member, the state fallback-git) changes nothing here.
+func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
+	u := req.use
+	if !u.shadow() || sameGitDirPath(filepath.Clean(common), filepath.Clean(u.gitDir)) || !sameProbeFolder(common, u.gitDir) {
+		return ""
+	}
+	t.pinCommonDir = common
+	msg, read := repoConfigGate(t, false)
+	if msg != "" || read == nil {
+		return msg
+	}
+	use, err := req.shadow.syncRepo(common, read)
+	if err != nil {
+		return shadowRepoFailureText(err)
+	}
+	use.atReply = u.atReply
+	req.use, req.repoRead = use, read
+	return ""
+}
+
+// statusPrintedRootSpelling is one more spelling of a `path` inside baseRepo:
+// the root top that `rev-parse --show-toplevel` printed, joined with the part
+// of `path` below baseRepo. ok is false when top is no absolute path, when
+// `path` is not inside baseRepo, or when that spelling and `path` are not one
+// folder on disk.
+//
+// Only Windows uses it (statusFollowsPrintedGitDir). There the `gitdir` file of
+// a worktree names the real path, and a `path` through a junction at baseRepo
+// has the junction in both spellings of statusPathOf. 89cb6289 and 5fd08069
+// answer isRepo:true for that request (s3p2-windows cell D6j and
+// val-s3p2b2-3-windows cell D6j-junction, Windows VM). In the second cell git
+// prints `C:/o/w/repo` for the same call of the claustrum build. Which value
+// those builds compare with the `gitdir` file is not in the rows: this
+// spelling is fitted to the one cell.
+func statusPrintedRootSpelling(path, baseRepo, top string) (string, bool) {
+	root := filepath.Clean(filepath.FromSlash(top))
+	if top == "" || !filepath.IsAbs(root) {
+		return "", false
+	}
+	absPath, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	absBase, err := filepath.Abs(baseRepo)
+	if err != nil || !pathStrictlyUnder(absPath, absBase) {
+		return "", false
+	}
+	rel, err := filepath.Rel(absBase, absPath)
+	if err != nil {
+		return "", false
+	}
+	spelling := filepath.Join(root, rel)
+	if !sameProbeFolder(spelling, absPath) {
+		return "", false
+	}
+	return spelling, true
 }
 
 // errNotRegularFile is the error of an entry file that is not a regular file.
@@ -481,19 +563,32 @@ func statusDirNames(root *os.Root, dir string) ([]string, error) {
 // file is the stdin of that call, its working directory is that of the daemon, and it
 // gets the environment of the daemon as it is (rows n12, n12b, n13 and n14c). Every
 // key must be one of statusConfigKeys.
-func statusEntryConfig(root *os.Root) (present, ok bool) {
+//
+// copied is true for a request that names a copy of the repository. The call
+// then has the form of the read of a config file. Its working directory is the
+// root folder, and it carries GIT_DIR=<null device>, LC_ALL=C and LANGUAGE=C.
+// 5fd08069 runs it so (cell 1c of val-s3p2b2-5-linux, call 5 of the git.status,
+// Linux VM). With the member and in the state fallback-git the call of 5fd08069
+// is not measured: it keeps the form of 89cb6289.
+//
+// text is the text of the file as this test read it, for a file that passed.
+func statusEntryConfig(root *os.Root, copied bool) (text []byte, present, ok bool) {
 	if _, err := root.Lstat("config.worktree"); errors.Is(err, fs.ErrNotExist) {
-		return false, true
+		return nil, false, true
 	}
 	b, err := statusReadFile(root, "config.worktree", statusFileMaxBytes)
 	if err != nil {
-		return true, false
+		return nil, true, false
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	out, err := listConfigText(ctx, b, "", nil)
+	dir, env := "", []string(nil)
+	if copied {
+		dir, env = gitVersionDir, repoConfigListEnv()
+	}
+	out, err := listConfigText(ctx, b, dir, env)
 	if err != nil {
-		return true, false
+		return nil, true, false
 	}
 	for _, rec := range bytes.Split(out, []byte{0}) {
 		if len(rec) == 0 {
@@ -501,10 +596,10 @@ func statusEntryConfig(root *os.Root) (present, ok bool) {
 		}
 		key, _, _ := bytes.Cut(rec, []byte{'\n'})
 		if !slices.Contains(statusConfigKeys, string(key)) {
-			return true, false
+			return nil, true, false
 		}
 	}
-	return true, true
+	return b, true, true
 }
 
 // statusEntry is the matched worktree entry after the gate.
@@ -513,6 +608,7 @@ type statusEntry struct {
 	root      *os.Root // dir, opened once at the match: every read goes through it
 	shared    []string // the sharedindex.* names
 	hasConfig bool     // the entry holds a config.worktree
+	config    []byte   // the text of that file, as the gate read it
 	reftable  []string // the file names of the entry's reftable folder to copy
 }
 
@@ -521,7 +617,8 @@ type statusEntry struct {
 // of the tests after the match is not measured: each failing row broke one file only.
 //
 // The entry comes back with its root open when ok is true. The caller closes it.
-func statusEntryOf(common string, sp statusPath) (e statusEntry, ok bool) {
+// copied is the copied of statusEntryConfig.
+func statusEntryOf(common string, sp statusPath, copied bool) (e statusEntry, ok bool) {
 	dir, root, ok := statusMatchEntry(common, sp.spellings)
 	if !ok {
 		return statusEntry{}, false
@@ -543,7 +640,7 @@ func statusEntryOf(common string, sp statusPath) (e statusEntry, ok bool) {
 	if !ok {
 		return statusEntry{}, false
 	}
-	hasConfig, ok := statusEntryConfig(root)
+	config, hasConfig, ok := statusEntryConfig(root, copied)
 	if !ok {
 		return statusEntry{}, false
 	}
@@ -551,7 +648,7 @@ func statusEntryOf(common string, sp statusPath) (e statusEntry, ok bool) {
 	if !ok {
 		return statusEntry{}, false
 	}
-	return statusEntry{dir: dir, root: root, shared: shared, hasConfig: hasConfig, reftable: reftable}, true
+	return statusEntry{dir: dir, root: root, shared: shared, hasConfig: hasConfig, config: config, reftable: reftable}, true
 }
 
 // statusEntryMatched is a seam for the tests. It runs right after the match, with the
@@ -653,22 +750,19 @@ func statusCopyFile(root *os.Root, name, dst string, max int64) error {
 	return chtimesStatusFile(dst, fi.ModTime(), fi.ModTime())
 }
 
-// buildStatusGitDir makes the temporary git folder of one request and returns its
-// path. It holds copies of `HEAD` and `index` of the entry and a `commondir` file
+// buildStatusGitDir fills tmp, the temporary git folder of one request
+// (gitUse.requestDir). It holds copies of `HEAD` and `index` of the entry and a `commondir` file
 // that names the common directory (row K1). It also holds `config.worktree` when the
 // entry has one (rows n12 and o17), `info/sparse-checkout` (row o17) and each
 // `sharedindex.*` file (rows o16b1 and o16b2). For a reftable repository it holds the
 // files that statusReftable returned (rows o19a and r1, macOS VM). A file that the
 // entry does not hold is left out
-// (row o15d). Any other failure is returned. The caller removes the folder.
+// (row o15d). Any other failure is returned. The caller makes and removes the
+// folder.
 //
 // git needs the `commondir` file to resolve a branch HEAD against the refs of the
 // repository. GIT_COMMON_DIR alone is not enough for that.
-func buildStatusGitDir(e statusEntry, common string) (string, error) {
-	tmp, err := os.MkdirTemp("", statusGitDirTempPrefix)
-	if err != nil {
-		return "", err
-	}
+func buildStatusGitDir(e statusEntry, common, tmp string) error {
 	root := e.root
 	type item struct {
 		name string
@@ -690,16 +784,13 @@ func buildStatusGitDir(e statusEntry, common string) (string, error) {
 	for _, it := range items {
 		dst := filepath.Join(tmp, filepath.FromSlash(it.name))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-			return tmp, err
+			return err
 		}
 		if err := copyStatusFile(root, it.name, dst, it.max); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return tmp, err
+			return err
 		}
 	}
-	if err := writeStatusFile(filepath.Join(tmp, "commondir"), []byte(common+"\n"), 0o600); err != nil {
-		return tmp, err
-	}
-	return tmp, nil
+	return writeStatusFile(filepath.Join(tmp, "commondir"), []byte(common+"\n"), 0o600)
 }
 
 // statusRun runs the git commands of one answer.
@@ -712,6 +803,50 @@ type statusRun struct {
 	// commonPin is the pin of the calls with --git-dir=<common> (statusCommonPin).
 	commonPin  []string
 	attrSource bool // git takes --attr-source (attrSourceArgs)
+	// front are the `-c` items before the list of the `hash-object` call
+	// (gitUse.gitDirFront).
+	front []string
+	// entryConfig is the text of the `config.worktree` file of the entry, in the
+	// state shadow, or nil. tempFront are the `-c` items of that file, before the
+	// list of the calls in the temporary folder, once entryRead (entryItems).
+	entryConfig []byte
+	tempFront   []string
+	entryRead   bool
+}
+
+// entryItems lists the `config.worktree` file of the entry one more time and
+// keeps its `-c` items for the calls in the temporary folder
+// (worktreeConfigItems). It runs once in a request, after the first two calls
+// of emptyTree and before the first listing in the temporary folder.
+//
+// On 5fd08069 a git.status on a worktree whose file is `sparsecheckoutcone =
+// true` makes that read as call 9 of 23. It is between the first `hash-object`
+// call and the first `--git-dir=<S>/.gitdir-<n> config -z --list`. It has the
+// form of the first read: the root folder, GIT_DIR=<null device>, LC_ALL=C and
+// LANGUAGE=C, and the 34 bytes of the file on standard input. The four calls
+// in the temporary folder then start with `-c core.sparsecheckoutcone=true`,
+// before the --attr-source option (cell p2-K-sparsecheckoutcone-true of
+// val-s3p2b2-6-linux, Linux VM, and row U2 of val-s3p2b2-6-macos, macOS VM, 2
+// of 2 runs). A Windows VM has the same two reads, as calls 5 and 9 of 23, for
+// `sparsecheckoutcone` and for `sparsecheckout = true` (cells P2-K4 and P2-X2
+// of val-s3p2b2-6-windows, 2 runs and 1 run). With a file of 0 bytes 5fd08069
+// makes no second read: its git.status has 22 calls with one read (the call
+// record of cell p2-K-none-empty-file of the Linux round).
+//
+// The file of that cell is a copy of the file of the repository. So which file
+// 5fd08069 reads there is not measured: claustrum lists the text that the test
+// of the entry read. A file with `index.sparse` is not measured in the state
+// shadow: it gets the read and gives no item. A read that fails gives no item (not measured). With the member and in
+// the state fallback-git the read is not measured: none runs.
+func (r *statusRun) entryItems() []string {
+	if r.entryRead || len(r.entryConfig) == 0 {
+		return r.tempFront
+	}
+	r.entryRead = true
+	if out, err := listConfigText(r.ctx, r.entryConfig, gitVersionDir, repoConfigListEnv()); err == nil {
+		r.tempFront = worktreeConfigItems(listedSettings(out))
+	}
+	return r.tempFront
 }
 
 // statusCommonPin is the GIT_COMMON_DIR pin of the calls that carry
@@ -720,7 +855,17 @@ type statusRun struct {
 // and get no pin. The calls in the temporary folder always get
 // GIT_COMMON_DIR=<common> (rows E07a and E07b, Linux and macOS VMs). No other git
 // variable was in the daemon's environment in those rows.
-func statusCommonPin(common string) []string {
+//
+// In the state shadow (u) those calls and the calls in the temporary folder
+// carry GIT_COMMON_DIR=<copy> and GIT_OBJECT_DIRECTORY=<git directory>/objects,
+// with no GIT_DIR and no GIT_WORK_TREE. 5fd08069 sends them so in all 19 calls
+// after the first two of a git.status (val-s3p2b1-linux cell A1, Linux VM). The
+// `commondir` file of the temporary folder still names the git directory of the
+// repository (cell 22 of s3p2b-edges, Windows VM).
+func statusCommonPin(u gitUse, common string) []string {
+	if u.shadow() && !daemonCommonDirStays() {
+		return u.commonVars()
+	}
 	if daemonCommonDirSet() {
 		return nil
 	}
@@ -734,8 +879,8 @@ func statusCommonPin(common string) []string {
 // A listing that fails here is not measured. claustrum goes on with the two base pins.
 func (r *statusRun) emptyTree() string {
 	hooks := runListing(r.ctx, "", r.common, precursorEnv(true, r.commonPin)).hooks()
-	cmd := exec.CommandContext(r.ctx, "git", hardenedProfileArgs(true,
-		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull)...)
+	cmd := exec.CommandContext(r.ctx, "git", withFront(r.front, hardenedProfileArgs(true,
+		"--git-dir="+r.common, "hash-object", "-t", "tree", os.DevNull))...)
 	cmd.Env = hardenedGitEnv(true, r.commonPin, hooks)
 	out, err := cmd.Output()
 	if id := strings.TrimSpace(string(out)); err == nil && isObjectID(id) {
@@ -774,6 +919,7 @@ func isObjectID(s string) bool {
 func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, error) {
 	// Calls 7 and 8 run before every command, whatever attrSource says.
 	id := r.emptyTree()
+	front := r.entryItems()
 	var attr []string
 	if r.attrSource {
 		attr = []string{"--attr-source=" + id}
@@ -783,15 +929,15 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	switch {
 	case l.err == nil:
 	case errors.As(l.err, &exit):
-		return nil, statusRefusal(failedListingText(l, true))
+		return nil, statusRefusal(failedListingText(gitUse{}, l, true))
 	default:
 		// git did not start, for example because `path` as sent does not open. The
 		// answer is the hooks refusal with the start error, and no `git version`
 		// follows the refusal (row y1, Linux and macOS VMs).
 		return nil, statusRefusal(hooksRefusalPrefix + l.detail())
 	}
-	full := append(attr, profileArgsWithExcludes(true, excludes,
-		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...)
+	full := withFront(front, append(attr, profileArgsWithExcludes(true, excludes,
+		append([]string{"--git-dir=" + r.tmp, "--work-tree=" + r.path}, args...)...)...))
 	cmd := exec.CommandContext(r.ctx, "git", full...)
 	cmd.Dir = r.path
 	cmd.Env = hardenedGitEnv(true, r.pin, l.hooks())
@@ -800,6 +946,21 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 	}
 	return cmd.Output()
 }
+
+// errStatusNoFolder is the error of statusChanges for a request whose folder
+// `.gitdir-<n>` cannot be made in the folder of the daemon. git.status then
+// answers isRepo:false. With a folder of the daemon of mode 0500, 5fd08069
+// answers `{"isRepo":false,"clean":false}` after 4 git calls (cell f1-0500 of
+// val-s3p2b2-7-linux2, Linux VM). Only mode 0500 ran there, one time. On a
+// Windows VM a deny entry for new entries on that folder gives the same line
+// after 4 calls (table F1 of val-s3p2b2-7-windows, with the two privileges of
+// that table off). A file system with no free inode gives the same line
+// after 4 calls (cell N-h of val-s3p2b2-8-linux2, Linux VM, 1 run). Every
+// other cause gets the same answer (not measured). With the
+// member the folder is in the
+// temporary folder, and a failure there keeps its error text (not measured on
+// 5fd08069).
+var errStatusNoFolder = errors.New("the temporary git folder cannot be made in the folder of the daemon")
 
 // statusChanges builds `changes` for the worktree at path, whose entry passed the
 // gate. It runs four commands in this order, each with cwd `path` (K1 calls 10, 14,
@@ -818,19 +979,32 @@ func (r *statusRun) git(noLocks bool, excludes string, args ...string) ([]byte, 
 // The status runs in a temporary git folder, so it never writes the index of the
 // worktree. On Windows the three commands with GIT_OPTIONAL_LOCKS=0 get
 // statusExcludesFile as their core.excludesFile value. That is the divergence D16.
-func statusChanges(path, common string, e statusEntry) ([]string, error) {
-	attrSource := attrSourceArgs() != nil
-	tmp, err := buildStatusGitDir(e, common)
-	if tmp != "" {
-		defer func() { _ = os.RemoveAll(tmp) }()
-	}
+func statusChanges(u gitUse, path, common string, e statusEntry) ([]string, error) {
+	// The folder comes before the one-time `--attr-source=… version` call of
+	// attrSourceArgs. On 5fd08069 a poll saw `.gitdir-<n>` before that call
+	// started in 6 of 6 first git.status requests (cells V5 of
+	// val-s3p2b2-3-linux2, Linux VM).
+	tmp, removeTmp, err := u.requestDir(shadowStatusDirPrefix, statusGitDirTempPrefix)
 	if err != nil {
+		if u.inFolder() {
+			return nil, errStatusNoFolder
+		}
+		return nil, err
+	}
+	defer removeTmp()
+	attrSource := attrSourceArgs() != nil
+	if err := buildStatusGitDir(e, common, tmp); err != nil {
 		return nil, err
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
 	r := &statusRun{ctx: ctx, path: path, common: common, tmp: tmp,
-		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(common), attrSource: attrSource}
+		pin: []string{"GIT_COMMON_DIR=" + common}, commonPin: statusCommonPin(u, common), attrSource: attrSource,
+		front: u.gitDirFront()}
+	if u.shadow() && !daemonCommonDirStays() {
+		r.pin = r.commonPin
+		r.entryConfig = e.config
+	}
 	excludes := statusExcludesFile()
 
 	porcelain, err := r.git(true, excludes, "status", "--porcelain",

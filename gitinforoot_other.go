@@ -4,7 +4,7 @@ package main
 
 // gitInfoRoot is the root of git.info. On Linux and macOS it is the walk root itself,
 // and no git call runs for it (gitWalkRoot).
-func gitInfoRoot(walkRoot, _ string, _ []string) string {
+func gitInfoRoot(walkRoot, _, _ string, _, _ []string) string {
 	return walkRoot
 }
 

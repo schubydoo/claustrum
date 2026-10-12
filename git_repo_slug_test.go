@@ -210,7 +210,7 @@ func TestGitRepoSlugAppliesInsteadOfRewrite(t *testing.T) {
 	run("remote", "add", "origin", "gl-base/acme/gizmo.git")
 	run("config", `url.https://github.com/.insteadOf`, "gl-base/")
 
-	if got := gitRepoSlug(dir); got != "acme/gizmo" {
+	if got := gitRepoSlug(gitUse{}, dir); got != "acme/gizmo" {
 		t.Errorf("gitRepoSlug with an insteadOf rewrite = %q, want acme/gizmo "+
 			"(reading remote.origin.url raw would give %q)", got, "")
 	}

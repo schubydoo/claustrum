@@ -377,13 +377,23 @@ func splitScopedListing(out []byte) (full, outside []byte) {
 // with --git-dir (cell F1). How that build tells the two sides apart is not
 // measured.
 //
+// pin is the GIT_COMMON_DIR pin of baseRepo with the git directory itself as
+// its value (commonDirPinEnv), in every state. So the listings of the rule read
+// the repository's own config also in the state shadow, where the checkout
+// reads the daemon's copy. A filter that only the repository's config names is
+// in no copy, so the rule needs that config to give the filter its pairs. The
+// scoped listing is claustrum's own call: 5fd08069 makes none (val-s3p2b1-linux
+// row N4, Linux VM). In the state shadow the second plain listing of an old git
+// is not the precursor of the checkout. The checkout runs its own listings
+// against the copy.
+//
 // A listing that fails for another reason refuses the create with git's text,
 // as a failed checkout. No filter runs then. That is claustrum's choice (not
 // measured). One state is apart: ctx is done, by the timeoutMs of the caller or
 // by D5. The plan is then empty, and the read-tree call cannot start under that
 // ctx. So the caller answers as it did before the rule: the timeout arm, or the
 // failed checkout with the text of the context.
-func listFilterPlan(ctx context.Context, leaf, gitDir string, pin []string) filterPlan {
+func listFilterPlan(ctx context.Context, u gitUse, leaf, gitDir string, pin []string) filterPlan {
 	failed := func(r listingRun) filterPlan {
 		if ctx.Err() != nil {
 			return filterPlan{}
@@ -412,7 +422,9 @@ func listFilterPlan(ctx context.Context, leaf, gitDir string, pin []string) filt
 		}
 	}
 	f := planFromListings(full.out, outside.out)
-	f.listing = &full
+	if !u.shadow() {
+		f.listing = &full
+	}
 	return f
 }
 

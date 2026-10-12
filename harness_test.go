@@ -59,6 +59,8 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 	s.procs.runDir = execChildRunDir(sock)
 	s.procs.holdRunDir()
 	s.procs.instanceID = s.instanceID
+	// The settings control of the git methods has the same run dir, as in production.
+	s.gitShadow = newShadowHost(execChildRunDir(sock))
 	go func() {
 		for {
 			nc, err := ln.Accept()
@@ -97,6 +99,8 @@ func newRunningServerAt(t *testing.T, sock string) (*server, string) {
 		close(stop)
 		ln.Close()
 		s.procs.killAll()
+		// Closes the lock file and removes the folder of this daemon below git-shadow.
+		s.gitShadow.close()
 	})
 	return s, sock
 }

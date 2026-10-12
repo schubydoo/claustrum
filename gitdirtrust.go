@@ -186,6 +186,20 @@ func daemonCommonDirSet() bool {
 	return os.Getenv("GIT_COMMON_DIR") != ""
 }
 
+// daemonCommonDirStays reports whether the daemon's own GIT_COMMON_DIR goes to
+// the git calls of a request that has a copy, in the place of the copy. It does
+// when the daemon has that variable and no GIT_DIR (not measured on 5fd08069).
+//
+// With both variables in the daemon environment 5fd08069 makes the folder of
+// the repository and sends GIT_COMMON_DIR=<copy> on each call, as with GIT_DIR
+// alone. Its five requests have the same call counts in both cells: 20, 2, 4,
+// 11 and 2 (cells o1-gd-v2 and o1-gdcd-v2 of val-s3p2b2-7-linux2, Linux VM).
+// Both variables name one git directory there. Two values that differ are not
+// measured: they get the same rule.
+func daemonCommonDirStays() bool {
+	return daemonCommonDirSet() && os.Getenv("GIT_DIR") == ""
+}
+
 // requestGitDirTrust runs the check for one method. readMethod is true for git.info
 // and git.list_branches, which skip the check when the daemon's environment carries
 // GIT_COMMON_DIR. git.status, git.worktree_create and git.worktree_remove check anyway.

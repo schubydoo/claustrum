@@ -63,12 +63,13 @@ func TestResolveUserExcludesFile(t *testing.T) {
 	})
 }
 
-// buildStatusGitDir makes its folder with os.MkdirTemp before anything else, so an
-// unusable temp root fails the whole call. TMPDIR is what os.TempDir reads on unix.
+// The folder of one request comes from os.MkdirTemp when the request does not
+// name a copy, so an unusable temp root fails the call. TMPDIR is what
+// os.TempDir reads on unix.
 func TestStatusGitDirTempDirFails(t *testing.T) {
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "absent"))
-	if _, err := buildStatusGitDir(statusEntryAt(t, t.TempDir()), t.TempDir()); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("buildStatusGitDir with no temp root = %v, want %v", err, fs.ErrNotExist)
+	if _, _, err := (gitUse{}).requestDir(shadowStatusDirPrefix, statusGitDirTempPrefix); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("requestDir with no temp root = %v, want %v", err, fs.ErrNotExist)
 	}
 }
 
@@ -79,8 +80,7 @@ func TestStatusGitDirIndexOpenFails(t *testing.T) {
 	if err := os.Symlink("index", filepath.Join(entry, "index")); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
-	tmp, err := buildStatusGitDir(statusEntryAt(t, entry), t.TempDir())
-	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	err := buildStatusGitDir(statusEntryAt(t, entry), t.TempDir(), t.TempDir())
 	if !errors.Is(err, syscall.ELOOP) {
 		t.Fatalf("buildStatusGitDir with a looping index = %v, want %v", err, syscall.ELOOP)
 	}
@@ -92,8 +92,7 @@ func TestStatusGitDirIndexNotRegular(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(entry, "index"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tmp, err := buildStatusGitDir(statusEntryAt(t, entry), t.TempDir())
-	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	err := buildStatusGitDir(statusEntryAt(t, entry), t.TempDir(), t.TempDir())
 	if !errors.Is(err, errNotRegularFile) {
 		t.Fatalf("buildStatusGitDir with a folder named index = %v, want %v", err, errNotRegularFile)
 	}
@@ -110,8 +109,8 @@ func TestHostileConfigRefusalCannotChangeTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	if c := hostileConfigRefusal(dir, false); c.refused() {
-		t.Errorf("hostileConfigRefusal(unenterable dir) = %+v, want no refusal", c)
+	if c := hostileConfigRefusal(gitUse{}, dir, false); c.refused() {
+		t.Errorf("hostileConfigRefusal(gitUse{}, unenterable dir) = %+v, want no refusal", c)
 	}
 }
 
@@ -127,9 +126,9 @@ func TestHostileConfigRefusalGitCannotStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
-	c := hostileConfigRefusal(t.TempDir(), false)
+	c := hostileConfigRefusal(gitUse{}, t.TempDir(), false)
 	want := "git cannot run on this host; git not run: fork/exec " + filepath.Join(bin, "git") + ": "
 	if !strings.HasPrefix(c.refusal, want) {
-		t.Errorf("hostileConfigRefusal(git cannot start) = %+v, want a refusal starting %q", c, want)
+		t.Errorf("hostileConfigRefusal(gitUse{}, git cannot start) = %+v, want a refusal starting %q", c, want)
 	}
 }

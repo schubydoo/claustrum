@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -52,12 +53,16 @@ const (
 	// batch.
 	includePathOverhead = 3
 
-	// includeTempPrefix starts the name of the temp copy of the manifest. Its
-	// length is 27 bytes, the same as the prefix in the measured f6010b97 argv.
-	// The `--exclude-from` argument counts toward the batch budget. A
-	// prefix of another length moves the batch split point by that many bytes.
-	// os.CreateTemp adds a random decimal suffix, as f6010b97 does.
-	includeTempPrefix = "claustrum-worktree-include-"
+	// includeTempPrefix starts the name of the temp folder that holds the copy
+	// of the manifest, with a request that has "shadowDirOff":true. The copy is
+	// the file `patterns` in it. 5fd08069 passes
+	// `--exclude-from=<tmp>/claude-ssh-worktreeinclude-<n>/patterns` there
+	// (val-s3p2b1-linux row D6, Linux VM). The prefix has 27 bytes, as the
+	// prefix in the measured f6010b97 argv has. The `--exclude-from` argument
+	// counts toward the batch budget, so its length moves the batch split
+	// point. os.MkdirTemp adds a random decimal suffix. gitshadowuse.go has
+	// the name in the state shadow.
+	includeTempPrefix = "claude-ssh-worktreeinclude-"
 )
 
 // includeSkipDotDirs are the dot-directory names that the any-depth flag never
@@ -87,13 +92,52 @@ var includeSkipDotDirs = map[string]bool{
 // later. The caller runs it only when the manifest is a regular file. A
 // non-zero exit selects the old scan, even when the output parses.
 func gitSelectsIncludeScan() bool {
+	selects, _ := includeScanAnswer()
+	return selects
+}
+
+// includeScanAnswer is the answer of gitSelectsIncludeScan. ran is false when
+// the call did not exit 0.
+func includeScanAnswer() (selects, ran bool) {
 	ctx, cancel := gitCtx()
 	defer cancel()
 	out, err := gitVersionCmd(ctx).Output()
 	if err != nil {
-		return false
+		return false, false
 	}
-	return versionSelectsIncludeScan(string(out))
+	return versionSelectsIncludeScan(string(out)), true
+}
+
+// selectsIncludeScan is gitSelectsIncludeScan for a request of the daemon with
+// the settings control host. A daemon with a run folder uses the answer that
+// it keeps (shadowHost.includeScan). A server with no run folder makes the
+// call in each create, as before.
+func selectsIncludeScan(host *shadowHost) bool {
+	if !host.active() {
+		return gitSelectsIncludeScan()
+	}
+	return host.includeScan()
+}
+
+// includeScan is gitSelectsIncludeScan with the answer kept for the life of
+// the daemon. On 5fd08069 the first create with a `.worktreeinclude` file runs
+// `git version`. The second create of the same daemon runs none. The counts
+// are 1 and 0 in 4 of 4 runs (cell v5-create of val-s3p2b2-5-linux2, Linux VM,
+// no member). The answer is one for the daemon, with or without the member. In
+// five creates with the member on the first, the second and the fifth, the
+// counts are 1, 0, 0, 0 and 0. With the member on the third of four they are
+// 1, 0, 0 and 0 (cells p3m-member and p3-include of val-s3p2b2-6-linux, Linux
+// VM, 2 of 2 and 3 of 3 runs, and cells P3 and F2 of val-s3p2b2-6-windows,
+// Windows VM, 2 runs each). A call that did not exit 0 is not measured: its
+// answer is not kept. The state fallback-git is not measured: it keeps the
+// answer too.
+func (h *shadowHost) includeScan() bool {
+	h.scanMu.Lock()
+	defer h.scanMu.Unlock()
+	if !h.scanKept {
+		h.scanNew, h.scanKept = includeScanAnswer()
+	}
+	return h.scanNew
 }
 
 // gitVersionCmd builds the `git version` call. Measured against f6010b97 on
@@ -624,11 +668,11 @@ func planIncludeScan(manifest []byte, listing, excludeArg string, claudeChildren
 // runIncludeBatches runs one `git ls-files` call per batch and joins the
 // paths. A batch whose call fails is skipped, and the other batches still
 // count.
-func runIncludeBatches(repo, excludeArg string, batches [][]string) []string {
+func runIncludeBatches(u gitUse, repo, excludeArg string, batches [][]string) []string {
 	var paths []string
 	for _, batch := range batches {
 		args := append(includeBatchArgs(excludeArg), batch...)
-		if out, err := hardenedGitStdout(repo, false, args...); err == nil {
+		if out, err := hardenedGitStdout(u, repo, false, args...); err == nil {
 			paths = append(paths, splitNUL(out)...)
 		}
 	}
@@ -638,8 +682,8 @@ func runIncludeBatches(repo, excludeArg string, batches [][]string) []string {
 // checkIgnored keeps the paths that the standard ignore rules match, with
 // `git check-ignore --stdin -z`. Exit status 1 means that no path matched. Any
 // other failure reports false.
-func checkIgnored(repo string, paths []string) ([]string, bool) {
-	out, err := hardenedGitStdin(repo, strings.Join(paths, "\x00")+"\x00",
+func checkIgnored(u gitUse, repo string, paths []string) ([]string, bool) {
+	out, err := hardenedGitStdin(u, repo, strings.Join(paths, "\x00")+"\x00",
 		"check-ignore", "--stdin", "-z")
 	var exit *exec.ExitError
 	if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
@@ -682,25 +726,28 @@ func checkIgnoreInput(paths, skip []string) []string {
 // from the directory batches go to check-ignore, and a path that is also a file
 // candidate does not go (see checkIgnoreInput). If check-ignore fails, those
 // paths are dropped and the file candidates are still copied.
-func scanWorktreeIncludes(repo, excludeFile string, manifest []byte) (paths []string, fallback bool) {
+func scanWorktreeIncludes(u gitUse, repo, excludeFile string, manifest []byte) (paths []string, fallback bool) {
 	// The listing of ignored entries. An ignored directory is listed once, as
 	// `dir/`. Parent directories that hold only ignored entries are listed too.
-	listing, err := hardenedGitStdout(repo, false, "--no-literal-pathspecs", "ls-files", "-z",
+	listing, err := hardenedGitStdout(u, repo, false, "--no-literal-pathspecs", "ls-files", "-z",
 		"--others", "--ignored", "--exclude-standard", "--directory",
 		"--", ":(exclude)"+claudeDirName+"/"+worktreesSubdir)
 	if err != nil {
 		return nil, false
 	}
 	excludeArg := "--exclude-from=" + excludeFile
-	plan := planIncludeScan(manifest, listing, excludeArg, claudeDirChildren(repo))
+	// The batch budget counts the argument without its last name, `patterns`.
+	// The split points were fitted to f6010b97 with an argument of that length
+	// (planIncludeScan). Where 5fd08069 splits is not measured.
+	plan := planIncludeScan(manifest, listing, "--exclude-from="+filepath.Dir(excludeFile), claudeDirChildren(repo))
 	if plan.fallback {
 		return nil, true
 	}
-	paths = runIncludeBatches(repo, excludeArg, plan.fileBatches)
-	check := checkIgnoreInput(runIncludeBatches(repo, excludeArg, plan.dirBatches), paths)
+	paths = runIncludeBatches(u, repo, excludeArg, plan.fileBatches)
+	check := checkIgnoreInput(runIncludeBatches(u, repo, excludeArg, plan.dirBatches), paths)
 	if len(check) == 0 {
 		return paths, false
 	}
-	kept, _ := checkIgnored(repo, check)
+	kept, _ := checkIgnored(u, repo, check)
 	return append(paths, kept...), false
 }

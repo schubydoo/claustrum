@@ -25,7 +25,8 @@ import (
 //     A relative record counts from the entry folder. Then the path is cleaned by
 //     text only. Its symlinks are not resolved.
 //   - The leaf is worktreePath with the symlinks of its existing part resolved,
-//     plus "/.git".
+//     plus "/.git". A record that equals the cleaned worktreePath as sent, plus
+//     "/.git", names the leaf too.
 //
 // With one stale entry, 89cb6289 removes it for these records of the leaf <L>:
 // <L>/.git with or without a newline (cells A3 and A4), <L>/.git/ (cells A1 and
@@ -37,6 +38,15 @@ import (
 // spells the leaf through a symlink stays for a request with the real path (cell
 // A12b). A record with the real path goes for a request through a symlink (cell
 // A12c).
+//
+// A record that spells the leaf as the request does, through a symlink, goes on
+// 5fd08069, and the create succeeds: cell i-ctl of val-s3p2b2-11-macos (macOS VM,
+// 2 of 2 runs), where /tmp is a symlink to /private/tmp. Cell h-ctl there is the
+// control with the real path in the record and in the request. claustrum equals
+// 5fd08069 in both cells (val-s3p2b2-13-linux2, Linux VM, and
+// val-s3p2b2-13-macos, macOS VM). Not measured: that record on 89cb6289, and a
+// request and a record that go through two different symlinks (the entry stays
+// here).
 //
 // With two or three stale entries, 89cb6289 removes none of them: old9 and w1
 // (cell A13), old8, old9 and w1 (cell S1), old8 and old9 (cell S2), and two
@@ -68,9 +78,13 @@ import (
 // repository that is sent through a symlink (it counts from the resolved entry
 // folder here), and a `locked` entry whose stat fails with another error than "does
 // not exist" (the entry stays).
-func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
+//
+// held is the git directory that the create holds, or nil. When base is its
+// folder `worktrees`, the root is opened through the held folder
+// (acceptedGitDir.registrationsRoot).
+func dropStaleWorktreeRegistration(repo, worktreePath string, held *acceptedGitDir) (kept []string) {
 	base := filepath.Join(repo, ".git", worktreesSubdir)
-	root, err := openRegistrationsRoot(base)
+	root, err := held.registrationsRoot(base)
 	if err != nil {
 		return nil
 	}
@@ -87,6 +101,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 	// The order of os.ReadDir, which this step had before it used a root.
 	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	target := filepath.Join(canonicalPathOfGone(worktreePath), ".git")
+	sent := filepath.Join(worktreePath, ".git")
 	var stale []string
 	for _, e := range ents {
 		if !e.IsDir() {
@@ -103,7 +118,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 		if !filepath.IsAbs(record) {
 			record = filepath.Join(canonicalPath(entry), record)
 		}
-		if filepath.Clean(record) == target {
+		if named := filepath.Clean(record); named == target || named == sent {
 			stale = append(stale, e.Name())
 		}
 	}
@@ -128,7 +143,7 @@ func dropStaleWorktreeRegistration(repo, worktreePath string) (kept []string) {
 // home guard. It reports whether the entry is still there afterwards.
 func removeStaleRegistration(root *os.Root, name, entry string) (stays bool) {
 	if _, err := root.Lstat(name + "/locked"); errors.Is(err, fs.ErrNotExist) && !wipesHomeDir(entry) {
-		_ = root.RemoveAll(name)
+		_ = removeHeldEntry(root, name)
 	}
 	_, err := root.Lstat(name)
 	return !errors.Is(err, fs.ErrNotExist)

@@ -34,6 +34,11 @@ Noun. Containment is the rule that a path must be inside a given directory.
 For example, `worktreePath` must be inside `baseRepo` and not equal to it. See
 [`git.worktree_remove`](PROTOCOL.md#gitworktree_remove).
 
+## daemon folder
+
+Noun. The folder of one daemon below `git-shadow`. See
+[The settings copy](PROTOCOL.md#the-settings-copy).
+
 ## divergence
 
 Noun. A divergence is a difference from the reference that claustrum has by
@@ -142,6 +147,11 @@ Noun. This term has two uses:
 - A seed is an input from which a fuzz test starts. See
   [IMPROVEMENTS.md](IMPROVEMENTS.md).
 
+## settings copy
+
+Noun. The daemon's own copy of a repository's git settings. See
+[The settings copy](PROTOCOL.md#the-settings-copy).
+
 ## sleeper
 
 Noun. A sleeper is a test process that only waits. See
@@ -178,6 +188,11 @@ Noun. A stamp is a small piece of data that a program puts on an object to
 identify it. A build stamp identifies the build or the toolchain of a binary.
 A time stamp gives the time of a log line. See
 [Reference builds](REFERENCE-BUILDS.md).
+
+## state
+
+Noun. The value of `settingsControl`: `shadow`, `fallback-git` or `off-switch`.
+See [The settings copy](PROTOCOL.md#the-settings-copy).
 
 ## success
 

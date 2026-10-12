@@ -75,7 +75,7 @@ func TestGitVersionFailsWhereGitCannotStart(t *testing.T) {
 // Cells CfP0 and CfP3 (Linux and macOS VMs). The daemon's GIT_DIR names a regular file. git.info
 // answers the "no repository" frame on a plain folder and on a repository, with and
 // without an empty GIT_CONFIG_KEY_0, and no listing runs. Mutation: run the listing
-// in that state (noRepoListingRefusal).
+// in that state (noRepoCalls).
 func TestDaemonGitDirFileRunsNoListing(t *testing.T) {
 	for _, ph := range []struct {
 		name string

@@ -41,14 +41,10 @@ func statusEntryAt(t *testing.T, dir string) statusEntry {
 	return statusEntry{dir: dir, root: root}
 }
 
-// buildFails runs buildStatusGitDir, removes its folder and returns its error.
+// buildFails runs buildStatusGitDir on a new folder and returns its error.
 func buildFails(t *testing.T, e statusEntry, common string) error {
 	t.Helper()
-	tmp, err := buildStatusGitDir(e, common)
-	if tmp != "" {
-		_ = os.RemoveAll(tmp)
-	}
-	return err
+	return buildStatusGitDir(e, common, t.TempDir())
 }
 
 // Every assertion below is errors.Is against the test's own sentinel, not err != nil.

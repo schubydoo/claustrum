@@ -121,7 +121,7 @@ func runIncludeCase(t *testing.T, c includeCase) []string {
 	}
 	wt := filepath.Join(repo, ".claude", "worktrees", "w")
 	runGit(t, repo, "worktree", "add", "-q", "-b", "w", wt)
-	populateWorktree(repo, wt)
+	populateWorktree(gitUse{}, nil, repo, wt)
 	return worktreeEntries(t, wt)
 }
 

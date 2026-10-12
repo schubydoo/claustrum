@@ -70,7 +70,8 @@
       "branch": "main",
       "root": "<DIR>/repo",
       "repoSlug": "",
-      "defaultBranch": ""
+      "defaultBranch": "",
+      "settingsControl": "shadow"
     }
   },
   {

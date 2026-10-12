@@ -497,11 +497,10 @@ func TestStatusGitDirReftableContents(t *testing.T) {
 		t.Fatalf("statusReftable = %q %v, want %q", files, ok, want)
 	}
 	e.reftable = files
-	tmp, err := buildStatusGitDir(e, common)
-	if err != nil {
+	tmp := t.TempDir()
+	if err := buildStatusGitDir(e, common, tmp); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = os.RemoveAll(tmp) }()
 	for name, want := range map[string]bool{"reftable/tables.list": true, "reftable/a.ref": true,
 		"reftable/b.ref": true, "reftable/sub": false, "refs": false} {
 		if _, err := os.Stat(filepath.Join(tmp, filepath.FromSlash(name))); (err == nil) != want {
