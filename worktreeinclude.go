@@ -108,23 +108,28 @@ func includeScanAnswer() (selects, ran bool) {
 	return versionSelectsIncludeScan(string(out)), true
 }
 
-// selectsIncludeScan is gitSelectsIncludeScan for one request. A request that
-// names a copy of the repository uses the answer that the daemon keeps
-// (shadowHost.includeScan). Every other request makes the call, as before.
-func (u gitUse) selectsIncludeScan() bool {
-	if !u.shadow() || u.host == nil {
+// selectsIncludeScan is gitSelectsIncludeScan for a request of the daemon with
+// the settings control host. A daemon with a run folder uses the answer that
+// it keeps (shadowHost.includeScan). A server with no run folder makes the
+// call in each create, as before.
+func selectsIncludeScan(host *shadowHost) bool {
+	if !host.active() {
 		return gitSelectsIncludeScan()
 	}
-	return u.host.includeScan()
+	return host.includeScan()
 }
 
 // includeScan is gitSelectsIncludeScan with the answer kept for the life of
 // the daemon. On 5fd08069 the first create with a `.worktreeinclude` file runs
 // `git version`. The second create of the same daemon runs none. The counts
 // are 1 and 0 in 4 of 4 runs (cell v5-create of val-s3p2b2-5-linux2, Linux VM,
-// no member). A call that did not exit 0 is not measured: its answer is not
-// kept. With the member and in the state fallback-git a second create is not
-// measured: each create makes the call there.
+// no member). The answer is one for the daemon, with or without the member. In
+// five creates with the member on the first, the second and the fifth, the
+// counts are 1, 0, 0, 0 and 0. With the member on the third of four they are
+// 1, 0, 0 and 0 (cells p3m-member and p3-include of val-s3p2b2-6-linux, Linux
+// VM, 2 of 2 and 3 of 3 runs). A call that did not exit 0 is not measured: its
+// answer is not kept. The state fallback-git is not measured: it keeps the
+// answer too.
 func (h *shadowHost) includeScan() bool {
 	h.scanMu.Lock()
 	defer h.scanMu.Unlock()

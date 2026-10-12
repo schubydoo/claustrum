@@ -162,21 +162,21 @@ func TestPopulateWorktree(t *testing.T) {
 	t.Run("claude_present_but_not_ignored_is_not_copied", func(t *testing.T) {
 		repo, wt := fixture(t, true, true)
 		runGit(t, repo, "worktree", "add", "-b", "b1", wt)
-		populateWorktree(gitUse{}, repo, wt)
+		populateWorktree(gitUse{}, nil, repo, wt)
 		eqTree(t, treeOf(t, wt), withManifest, "claude-present")
 	})
 
 	t.Run("no_manifest_copies_nothing", func(t *testing.T) {
 		repo, wt := fixture(t, true, false)
 		runGit(t, repo, "worktree", "add", "-b", "b2", wt)
-		populateWorktree(gitUse{}, repo, wt)
+		populateWorktree(gitUse{}, nil, repo, wt)
 		eqTree(t, treeOf(t, wt), []string{".gitignore", "tracked.txt"}, "no-manifest")
 	})
 
 	t.Run("no_claude_dir", func(t *testing.T) {
 		repo, wt := fixture(t, false, true)
 		runGit(t, repo, "worktree", "add", "-b", "b3", wt)
-		populateWorktree(gitUse{}, repo, wt)
+		populateWorktree(gitUse{}, nil, repo, wt)
 		eqTree(t, treeOf(t, wt), withManifest, "no-claude")
 	})
 }
@@ -209,7 +209,7 @@ func TestPopulateWorktreeCopiesIgnoredClaudeDir(t *testing.T) {
 
 	wt := filepath.Join(root, "wt")
 	runGit(t, repo, "worktree", "add", "-b", "b", wt)
-	populateWorktree(gitUse{}, repo, wt)
+	populateWorktree(gitUse{}, nil, repo, wt)
 
 	eqTree(t, treeOf(t, wt), []string{
 		".claude", ".claude/agents", ".claude/agents/a.md",
@@ -320,7 +320,7 @@ func TestWorktreeCopyFailuresAreSilent(t *testing.T) {
 		if err := os.Mkdir(wt, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		copyWorktreeIncludes(gitUse{}, dir, wt) // dir is not a git repo
+		copyWorktreeIncludes(gitUse{}, nil, dir, wt) // dir is not a git repo
 		if got := treeOf(t, wt); len(got) != 0 {
 			t.Errorf("worktree got %v, want nothing copied when git fails", got)
 		}
@@ -411,7 +411,7 @@ func TestWorktreeIncludeCopiesQuotedNames(t *testing.T) {
 
 	wt := filepath.Join(root, "wt")
 	runGit(t, repo, "worktree", "add", "-b", "b", wt)
-	populateWorktree(gitUse{}, repo, wt)
+	populateWorktree(gitUse{}, nil, repo, wt)
 
 	eqTree(t, treeOf(t, wt),
 		[]string{

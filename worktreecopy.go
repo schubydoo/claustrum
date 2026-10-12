@@ -29,8 +29,10 @@ const worktreesSubdir = "worktrees"
 // failed request.
 // The manifest copy runs first, then the `.claude/` copy. The order is observable
 // when both name the same path, because the second copy overwrites the first.
-func populateWorktree(u gitUse, repo, worktree string) {
-	copyWorktreeIncludes(u, repo, worktree)
+//
+// host is the settings control of the daemon, or nil (selectsIncludeScan).
+func populateWorktree(u gitUse, host *shadowHost, repo, worktree string) {
+	copyWorktreeIncludes(u, host, repo, worktree)
 	copyClaudeDir(u, repo, worktree)
 }
 
@@ -66,7 +68,7 @@ func populateWorktree(u gitUse, repo, worktree string) {
 // ⚠️ An OPTED-IN gitTimeout (D5) kills any of these calls, and the failure is
 // silent. The copy loses what that call gives it, and gitWorktreeCreate still
 // answers {"success":true}. D5 is off by default.
-func copyWorktreeIncludes(u gitUse, repo, worktree string) {
+func copyWorktreeIncludes(u gitUse, host *shadowHost, repo, worktree string) {
 	manifest, ok := readWorktreeInclude(repo)
 	if !ok {
 		return
@@ -75,28 +77,24 @@ func copyWorktreeIncludes(u gitUse, repo, worktree string) {
 	// request (requestDir). 5fd08069 names
 	// <S>/.worktreeinclude-<n>/patterns without "shadowDirOff" and
 	// <tmp>/claude-ssh-worktreeinclude-<n>/patterns with it, and the entry is
-	// gone at the reply (val-s3p2b1-linux rows N11 and D6, Linux VM). In the
-	// folder of the daemon the file has mode 0644 on 5fd08069 (cells V5 of
-	// val-s3p2b2-3-linux2 and val-s3p2b2-3-macos, Linux and macOS VMs). In the
-	// temporary folder its mode is not measured: it keeps 0600 there. The folder
-	// goes at the end of this step.
+	// gone at the reply (val-s3p2b1-linux rows N11 and D6, Linux VM). The file
+	// has mode 0644 on 5fd08069. In the folder of the daemon the cells are V5 of
+	// val-s3p2b2-3-linux2 and val-s3p2b2-3-macos (Linux and macOS VMs). In the
+	// temporary folder they are the 9 creates with the member of groups P3 of
+	// val-s3p2b2-6-linux (Linux VM). The folder goes at the end of this step.
 	dir, removeDir, err := u.requestDir(shadowIncludeDirPrefix, includeTempPrefix)
 	if err != nil {
 		return
 	}
 	defer removeDir()
 	patterns := filepath.Join(dir, includePatternsName)
-	mode := os.FileMode(0o600)
-	if u.inFolder() {
-		mode = 0o644
-	}
-	if err := os.WriteFile(patterns, manifest, mode); err != nil {
+	if err := os.WriteFile(patterns, manifest, 0o644); err != nil {
 		return
 	}
 
 	var paths []string
 	fallback := true
-	if u.selectsIncludeScan() {
+	if selectsIncludeScan(host) {
 		paths, fallback = scanWorktreeIncludes(u, repo, patterns, manifest)
 	}
 	if fallback {

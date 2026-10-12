@@ -13,40 +13,47 @@ import (
 )
 
 // TestIncludeVersionCallOncePerDaemon: the `git version` call of the include
-// step runs in the first create of a daemon and not in the second. On 5fd08069
-// the counts per create are 1 and 0 in 4 of 4 runs (cell v5-create of
-// val-s3p2b2-5-linux2, Linux VM). With the member a second create is not
-// measured: each create makes the call, as before.
+// step runs in the first create of a daemon and in no later one, with or
+// without the member. On 5fd08069 the counts per create are 1 and 0 in 4 of 4
+// runs (cell v5-create of val-s3p2b2-5-linux2, Linux VM). With the member on
+// the first, the second and the fifth of five creates they are 1, 0, 0, 0 and
+// 0 (cell p3m-member of val-s3p2b2-6-linux, 2 of 2 runs). With the member on
+// the third of four they are 1, 0, 0 and 0 (cell p3-include of that round, 3
+// of 3 runs).
 func TestIncludeVersionCallOncePerDaemon(t *testing.T) {
 	for _, row := range []struct {
-		name  string
-		extra map[string]any
-		want  []int
+		name   string
+		member []bool
 	}{
-		{"no member", nil, []int{1, 0}},
-		{"with the member (not measured)", map[string]any{"shadowDirOff": true}, []int{1, 1}},
+		{"v5-create: no member", []bool{false, false}},
+		{"p3m-member: the member on creates 1, 2 and 5", []bool{true, true, false, false, true}},
+		{"p3-include: the member on create 3", []bool{false, false, true, false}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			f := newSeededShadowFixture(t)
 			includeFixture(t, f.repo)
 			wd := daemonWorkDir(t)
-			for i, branch := range []string{"w1", "w2"} {
+			for i, member := range row.member {
+				branch := "w" + strconv.Itoa(i+1)
 				params := map[string]any{"baseRepo": f.repo, "branchName": branch, "worktreePath": filepath.Join(f.repo, ".claude", "worktrees", branch)}
-				for k, v := range row.extra {
-					params[k] = v
+				if member {
+					params["shadowDirOff"] = true
 				}
 				raw, calls := f.call(t, "git.worktree_create", params)
 				if !strings.Contains(raw, `"success":true`) {
 					t.Fatalf("create %d = %s", i+1, raw)
 				}
-				got := 0
+				got, want := 0, 0
 				for _, c := range calls {
 					if c.version() && c.cwd == wd {
 						got++
 					}
 				}
-				if got != row.want[i] {
-					t.Errorf("create %d made %d version calls, want %d", i+1, got, row.want[i])
+				if i == 0 {
+					want = 1
+				}
+				if got != want {
+					t.Errorf("create %d made %d version calls, want %d", i+1, got, want)
 				}
 				if _, err := os.Stat(filepath.Join(f.repo, ".claude", "worktrees", branch, "secret.env")); err != nil {
 					t.Errorf("create %d: the included file: %v", i+1, err)

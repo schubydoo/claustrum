@@ -1405,7 +1405,7 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 	// which the pass lists nothing.
 	//
 	// Best-effort: the worktree exists, so a copy failure does not fail the request.
-	populateWorktree(req.use, repo, p.WorktreePath)
+	populateWorktree(req.use, req.shadow, repo, p.WorktreePath)
 	// The caller's deadline does not kill the copy step. The daemon lets the step
 	// finish and then tests the deadline. If the deadline expired, the request answers
 	// timeout "after the checkout finished" and rolls back. Measured against f6010b97
