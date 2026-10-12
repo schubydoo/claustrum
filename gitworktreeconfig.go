@@ -245,10 +245,12 @@ func writeRootFile(root *os.Root, name string, data []byte, perm os.FileMode) er
 }
 
 // placeWorktreeConfig writes text as the `config.worktree` file of
-// registration, the registration that this create made, with mode 0644. On
-// 5fd08069 the file there is `f 0644` in every cell. The `wtreg` records of
-// cells 12a to 12f, 1a, 1b, 9a and 9k of val-s3p2b2-3-linux show it (Linux VM,
-// umask 022).
+// registration, the registration that this create made. The file is made with
+// mode 0666, and the umask of the daemon takes its bits from that. On 5fd08069
+// the file is `f 0644` with umask 022. The `wtreg` records of cells 12a to 12f,
+// 1a, 1b, 9a and 9k of val-s3p2b2-3-linux show it (Linux VM). With umask 002
+// it is `f 0664`, and a trace has the open with 0666 (cells p2u-12a, p2u-12d
+// and p2u-12f of val-s3p2b2-6-linux, Linux VM).
 //
 // How the file of 5fd08069 gets there is not measured. No git call names the
 // registration, and no poll saw the short-lived folder. claustrum writes a new
@@ -304,7 +306,7 @@ func writeWorktreeConfig(u gitUse, registration, leaf string, tested testedRegis
 			return errors.New("the registration is not the folder that the tests after the add accepted")
 		}
 	}
-	return writeRootFile(entry, worktreeConfigName, text, 0o644)
+	return writeRootFile(entry, worktreeConfigName, text, 0o666)
 }
 
 // listConfigFileText is listConfigFile with the text of the file beside its

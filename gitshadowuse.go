@@ -161,8 +161,11 @@ func makeWorktreesFolder(gitDir string, group bool) {
 // The file is replaced only after the daemon read it and its text is that one
 // line: `gitdir: `, the folder of the copy, `/worktrees/`, one name with no
 // separator, and a newline. Every other text is left as it is
-// (replaceWorktreeGitFile). The mode of the new file is not measured: it is
-// 0644, the mode of the file of git.
+// (replaceWorktreeGitFile). The new file is made with mode 0666, and the umask
+// of the daemon takes its bits from that. On 5fd08069 the file is `f 0664`
+// with a daemon umask of 002, in 13 of 13 creates (cells p2u-12a, p2u-12d and
+// p2u-12f and the ten rows of group P5 with that umask, val-s3p2b2-6-linux,
+// Linux VM). With umask 022 it is `f 0644`.
 func repointWorktreeGitFile(u gitUse, leaf string, cp worktreeCheckpoint) {
 	replaceWorktreeGitFile(leaf, cp, func(old string) (string, bool) {
 		prefix := "gitdir: " + filepath.Join(u.repoDir, worktreesSubdir) + string(filepath.Separator)
@@ -211,7 +214,7 @@ func replaceWorktreeGitFile(leaf string, cp worktreeCheckpoint, next func(old st
 	if err := root.Remove(".git"); err != nil {
 		return false
 	}
-	f, err := root.OpenFile(".git", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := root.OpenFile(".git", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	if err != nil {
 		return false
 	}
