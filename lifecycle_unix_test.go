@@ -459,15 +459,20 @@ func TestMainServeDispatch(t *testing.T) {
 		t.Errorf("main -serve: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
 	}
 
-	// Without -socket, main resolves the reference's default socket path — safe
-	// to exercise here because the parent's daemonize half never touches the
-	// socket (and the re-exec'd child is the exit-0 helper).
+	// Without -socket, main resolves the default socket path below the home
+	// folder. The launcher never binds that socket, but it opens the daemon log
+	// beside it. So the home folder of this call is a temp folder: the real one
+	// can hold the run folder of a live daemon.
+	t.Setenv("HOME", dir)
 	if err := os.WriteFile(tf, []byte("main-serve\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, exited = runMain(t, "-serve", "-token-file", tf)
 	if !exited || code != 1 {
 		t.Errorf("main -serve without -socket: exited=%v code=%d, want exit 1 (the stub child never binds)", exited, code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude", "remote", daemonLogName)); err != nil {
+		t.Errorf("the launcher did not open its log below the temp home folder: %v", err)
 	}
 }
 
