@@ -336,10 +336,11 @@ func (req *request) usePrintedGitDir(t gitDirTrust, common string) string {
 // Only Windows uses it (statusFollowsPrintedGitDir). There the `gitdir` file of
 // a worktree names the real path, and a `path` through a junction at baseRepo
 // has the junction in both spellings of statusPathOf. 89cb6289 and 5fd08069
-// answer isRepo:true for that request, and git prints `C:/o/w/repo` in the call
-// before (s3p2-windows cell D6j and val-s3p2b2-3-windows cell D6j-junction,
-// Windows VM). Which value those builds compare with the `gitdir` file is not
-// in the rows: this spelling is fitted to the one cell.
+// answer isRepo:true for that request (s3p2-windows cell D6j and
+// val-s3p2b2-3-windows cell D6j-junction, Windows VM). In the second cell git
+// prints `C:/o/w/repo` for the same call of the claustrum build. Which value
+// those builds compare with the `gitdir` file is not in the rows: this
+// spelling is fitted to the one cell.
 func statusPrintedRootSpelling(path, baseRepo, top string) (string, bool) {
 	root := filepath.Clean(filepath.FromSlash(top))
 	if top == "" || !filepath.IsAbs(root) {

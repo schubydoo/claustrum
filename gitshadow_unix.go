@@ -12,9 +12,10 @@ import (
 // A3, s3-macos cell A3).
 const shadowLinksWorktrees = true
 
-// shadowStagesAdd is false on Linux and macOS. No daemon makes a `.s<n>` folder
-// or a `.claude-new-worktree-*` entry there, and none removes such an entry
-// (s3p2-linux cells H1 and H2, Linux VM. On a macOS VM no such entry was seen).
+// shadowStagesAdd is false on Linux and macOS. On a Linux VM no daemon makes a
+// `.s<n>` folder or a `.claude-new-worktree-*` entry, and none removes a planted
+// one (s3p2-linux cells H1 and H2). On a macOS VM no daemon made such an entry.
+// No macOS cell planted one.
 const shadowStagesAdd = false
 
 // statusFollowsPrintedGitDir is false on Linux and macOS. The trust check

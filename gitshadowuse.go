@@ -85,8 +85,8 @@ func (u gitUse) shadow() bool {
 // its own in the state shadow, and other steps follow it (worktreeAddStaged).
 // With the member and in the state fallback-git the call names no copy, on
 // every system: on a Windows VM the add of 5fd08069 carries
-// GIT_COMMON_DIR=<git directory> in the state fallback-git, and no `.s<n>`
-// folder is made (val-s3p2b2-3-windows cell Q-S4c).
+// GIT_COMMON_DIR=<git directory> in the state fallback-git, and it names no
+// `.s<n>` folder (val-s3p2b2-3-windows cell Q-S4c).
 func worktreeAdd(ctx context.Context, u gitUse, repo, leaf string, cp worktreeCheckpoint, args ...string) (string, error) {
 	_, named := u.names(repo)
 	if named && shadowStagesAdd {
