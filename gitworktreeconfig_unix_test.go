@@ -69,6 +69,7 @@ func unsetCalls(calls []envCall) []envCall {
 // `worktree add` call and the read of the file. A file with settings left
 // makes the git.status answer `isRepo:false`. An empty file answers clean.
 func TestCreateGivesTheNewWorktreeItsConfigFile(t *testing.T) {
+	useUmask(t, 0o022)
 	threeKeys := "[core]\n\tbare = false\n\tfilemode = false\n\tsparsecheckout = true\n"
 	twoLeft := "[core]\n\tfilemode = false\n\tsparsecheckout = true\n"
 	filemode := "[core]\n\tfilemode = false\n"
@@ -187,7 +188,7 @@ func TestConfigFolderGoesBeforeTheNextGitCall(t *testing.T) {
 	dir := daemonFolder(t, f.run)
 	log := filepath.Join(t.TempDir(), "argv.log")
 	t.Setenv("CLAUSTRUM_GITSTUB_LOG", log)
-	slowGit(t, "read-tree", "pre", 300*time.Millisecond, "", "")
+	slowGit(t, "read-tree", "pre", time.Second, "", "")
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	looks, there := 0, 0
 	raw := duringRequest(t, f, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf}, func() {
@@ -602,6 +603,7 @@ func TestStatusReadsTheEntryConfigASecondTime(t *testing.T) {
 // TestWriteWorktreeConfigGuards: the file goes into the registration of the
 // create only. Each other state writes nothing.
 func TestWriteWorktreeConfigGuards(t *testing.T) {
+	useUmask(t, 0o022)
 	const text = "[core]\n\tfilemode = false\n"
 	type fixture struct {
 		u         gitUse

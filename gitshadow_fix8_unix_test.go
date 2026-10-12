@@ -76,11 +76,12 @@ func TestNewWorktreeFilesTakeTheUmask(t *testing.T) {
 // each `ls-files` call, and the test looks at the temporary folder in that
 // time.
 func TestIncludePatternsModeWithTheMember(t *testing.T) {
+	useUmask(t, 0o022)
 	f := newSeededShadowFixture(t)
 	includeFixture(t, f.repo)
 	tmp := resolveTestRoot(t, t.TempDir())
 	t.Setenv("TMPDIR", tmp)
-	slowGit(t, "ls-files", "pre", 150*time.Millisecond, "", "")
+	slowGit(t, "ls-files", "pre", time.Second, "", "")
 	var modes []os.FileMode
 	leaf := filepath.Join(f.repo, ".claude", "worktrees", "w1")
 	raw := duringRequest(t, f, "git.worktree_create", map[string]any{"baseRepo": f.repo, "branchName": "w1", "worktreePath": leaf, "shadowDirOff": true}, func() {
@@ -136,7 +137,8 @@ func TestShutdownBeforeTheRepoFolderLeavesNoFolder(t *testing.T) {
 // of the test repository from standard input. A child of that call keeps its
 // output pipe open for 20 s here. The test then ends after the wait for the
 // pipes, as for the nine other calls, and not after the 20 s. The cause is the
-// exec error of the call. 5fd08069 is not measured with such a child on call 7.
+// exec error of the call. 5fd08069 is not measured with such a child on any
+// test call.
 func TestStartTestCallSevenHasTheBound(t *testing.T) {
 	f := newShadowFixture(t)
 	lowerShadowBound(t, 20*time.Second, 200*time.Millisecond)

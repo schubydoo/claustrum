@@ -118,8 +118,8 @@ func TestRemoveReadsARefusedConfigTwice(t *testing.T) {
 
 // TestWorktreesFolderOfASharedRepository: the folder `worktrees` that the
 // daemon makes before the `worktree add` call is made with mode 0777 before
-// the umask. With a `core.sharedRepository` value other than `umask` it then
-// gets one mode call. The registration that git makes in it takes the
+// the umask. With the value `group`, `true`, `all`, `world`, `everybody` or an
+// octal number that git accepts, it then gets one mode call. The registration that git makes in it takes the
 // set-group-ID bit from it. Each row is a row of group P5 of
 // val-s3p2b2-6-linux (Linux VM, 5fd08069): section 0.2 item 6 of its report
 // has the table. Cell H3 of val-s3p2b2-5-linux has the row `group` too.

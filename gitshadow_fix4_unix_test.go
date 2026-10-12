@@ -49,6 +49,7 @@ func entriesWith(dir, prefix string) []string {
 // val-s3p2b2-3-macos rows D1 and D2, macOS VM). The stub holds each `ls-files`
 // call, and the test looks at the folder of the daemon in that time.
 func TestShadowIncludeStepEntries(t *testing.T) {
+	useUmask(t, 0o022)
 	f := newSeededShadowFixture(t)
 	includeFixture(t, f.repo)
 	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":true`) {
@@ -162,7 +163,7 @@ func TestShadowHeadThatIsALink(t *testing.T) {
 		t.Errorf("git.list_branches = %s", raw)
 	}
 
-	// A link to a ref outside refs/heads/ gets its copy too, also when the ref
+	// A link to refs/remotes/origin/<name> gets its copy too, also when the ref
 	// does not exist (cell H1 of val-s3p2b2-7-linux2, Linux VM). git.info then
 	// has no `branch` member, and git.list_branches lists the branches.
 	if err := os.MkdirAll(filepath.Join(f.gitDir, "refs", "remotes", "origin"), 0o755); err != nil {
@@ -208,6 +209,7 @@ func TestShadowHeadThatIsALink(t *testing.T) {
 // macOS VM). The stub fails the add, so git never makes the folder here. With
 // the member no folder is made (89cb6289 and the build before make none).
 func TestShadowAddMakesTheWorktreesFolder(t *testing.T) {
+	useUmask(t, 0o022)
 	f := newSeededShadowFixture(t)
 	runGit(t, f.repo, "worktree", "remove", "--force", f.wt)
 	worktrees := filepath.Join(f.gitDir, "worktrees")

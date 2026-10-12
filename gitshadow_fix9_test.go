@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-// TestRelativeRunFolder: a daemon whose socket path is relative keeps the
+// TestShadowRelativeRunFolder: a daemon whose socket path is relative keeps the
 // absolute form of its run folder, and every git method works. The test calls
 // name absolute paths. On 5fd08069 the five methods answer as with the
 // absolute path, and its test calls have `init -q --template=
 // <cwd>/git-shadow/<S>/.check-<n>/real` (cell R1 of val-s3p2b2-7-linux2, Linux
 // VM, with `-socket s.sock` and `-socket rel/rpc.sock`).
-func TestRelativeRunFolder(t *testing.T) {
+func TestShadowRelativeRunFolder(t *testing.T) {
 	for _, sock := range []string{"s.sock", filepath.Join("rel", "rpc.sock")} {
 		t.Run(sock, func(t *testing.T) {
 			f := newShadowFixture(t)
@@ -49,14 +49,14 @@ func TestRelativeRunFolder(t *testing.T) {
 	}
 }
 
-// TestInfoOnAPathThatDoesNotExist: a git.info on a path that does not exist
+// TestShadowInfoOnAPathThatDoesNotExist: a git.info on a path that does not exist
 // runs no start test and no git call beyond the excludes read. As the first
 // git request of a daemon its reply has no settingsControl member. The next
 // request on a repository runs the start test. A later request on the path
 // makes no call. A path that is a file still gets its `git version` call. On
 // 5fd08069 the calls are 1, then 22, then 0 (cell F1 of val-s3p2b2-6-windows,
 // Windows VM, 2 of 2 runs). Linux and macOS are not measured.
-func TestInfoOnAPathThatDoesNotExist(t *testing.T) {
+func TestShadowInfoOnAPathThatDoesNotExist(t *testing.T) {
 	f := newShadowFixture(t)
 	gone := filepath.Join(filepath.Dir(f.repo), "no-such-folder")
 	raw, calls := f.info(t, gone, nil)
