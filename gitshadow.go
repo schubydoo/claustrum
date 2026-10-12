@@ -762,11 +762,10 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // its "no repository" answer, and for every other bad answer the text. Each
 // method gives that text the shape of a failed start test (cells 38 and 39).
 //
-// In the state shadow the daemon makes no call of its own about the owner for
-// a refused config, and it keeps no refused read: 5fd08069 reads the config
-// again in each request there (repoConfigGateAfterGit). The call about the
-// owner of the config gate stays for a server with no run folder, which has no
-// call of askGit.
+// The daemon makes no call of its own about the owner for a refused config,
+// and it uses no kept refused read: 5fd08069 reads the config again in each
+// request (repoConfigGate). A server with no run folder has no call of askGit,
+// and it reads the config the same way.
 //
 // The test runs for a trusted git directory only. A folder in which the daemon
 // finds no usable git folder starts no test and makes no folder (s3p2-linux
@@ -780,7 +779,7 @@ func writeShadowTestFiles(shadowDir string, head, config []byte) error {
 // In the state fallback-git the read of the config does not run
 // (readsRepoConfig), and the daemon keeps no folder of a repository: its own
 // folder holds the lock file only there (s3p2-oldgit section 5, Linux VM).
-func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) (msg string, noRepo bool) {
+func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string) (msg string, noRepo bool) {
 	req.gitRefused = false
 	if t.verdict == gitDirTrusted {
 		if msg := req.shadow.gate(bool(off)); msg != "" {
@@ -802,10 +801,8 @@ func (req *request) settingsGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir s
 			req.gitRefused = true
 			return a.text, a.noRepo
 		}
-		msg, read = repoConfigGateAfterGit(t)
-	} else {
-		msg, read = repoConfigGate(t, off, dir, heavy, probe)
 	}
+	msg, read = repoConfigGate(t, off)
 	if msg != "" || read == nil || req.shadow.control(bool(off)) != controlShadow {
 		return msg, false
 	}

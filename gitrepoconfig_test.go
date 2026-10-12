@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 	"unicode/utf8"
 )
 
@@ -1058,108 +1057,15 @@ func stubGitWithLog(t *testing.T) string {
 	return log
 }
 
-// TestRepoConfigOwnerProblemKeepsItsAnswers pins that a refused repository keeps
-// the "not a repository" answers of the five methods when git names a problem
-// with its owner. 5fd08069 answers so for a repository of another owner with
-// format version 2 (cell X3, Linux VM). The git of the test is the stub: its
-// rev-parse calls exit 128 with the line that plain git 2.43.0 prints in that
-// cell. In the control the calls exit 128 with another line, and the
-// refusal stays. A refused file of the git directory follows the same rule
-// (cells V1, an `info/exclude` of 20 MiB).
-//
-// An answer that names no problem is kept for repoOwnerAnswerKeep, so the clock
-// of the test moves by that time before each round that wants a call. After that
-// time the same kept refusal gives "not a repository" when git starts to name
-// the owner. An answer that names the owner is not kept: the refusal is back at
-// the next request when git stops. On 5fd08069 a new `safe.directory = *` line
-// gives the refusal at the next request (cell N15-a, Linux and macOS VMs). The
-// line of git must hold `detected dubious ownership in repository`: the two
-// words in a path of another error are no owner problem.
-func TestRepoConfigOwnerProblemKeepsItsAnswers(t *testing.T) {
-	f := newRefusalFixture(t)
-	log := stubGitWithLog(t)
-	advance := fakeOwnerClock(t)
-	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
-	slowGit(t, "rev-parse", "fail", 0, "", "")
-	s := newTestServer(t)
-	owner := "fatal: detected dubious ownership in repository at '" + filepath.ToSlash(f.repo) + "'\n"
-	states := []struct {
-		name, text string
-		set        func()
-	}{
-		{"format version 2", "the repository uses format version", func() {
-			setRepoConfig(t, f.gitDir, versionConfig("repositoryformatversion = 2"))
-		}},
-		{"a shallow file with a text line", "holds something other than object ids", func() {
-			setRepoConfig(t, f.gitDir, version0)
-			writeFile(t, filepath.Join(f.gitDir, "shallow"), "this line is not an object id\n", 0o644)
-		}},
-	}
-	for _, state := range states {
-		state.set()
-		forgetRepoVerdicts()
-		stubStderr(t, owner, false)
-		want := f.noRepositoryAnswers()
-		for i, m := range f.fiveRequests(nil) {
-			if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
-				t.Errorf("%s, %s, git names the owner: %s, want %s", state.name, m.method, raw, want[i])
-			}
-		}
-		// The control: the same exit code with a text that names no owner. The
-		// second round of the five requests has kept refusals. It comes after the
-		// keep time, and it asks git again.
-		forgetRepoVerdicts()
-		stubStderr(t, "fatal: not a git repository (or any of the parent directories): .git\n", false)
-		for round := range 2 {
-			advance(repoOwnerAnswerKeep)
-			before := len(gitCalls(t, log, "rev-parse"))
-			for _, m := range f.fiveRequests(nil) {
-				if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, state.text) {
-					t.Errorf("%s, %s, git names no owner: %s, want the refusal with %q", state.name, m.method, raw, state.text)
-				}
-			}
-			started := len(gitCalls(t, log, "rev-parse")) - before
-			if started == 0 {
-				t.Errorf("%s, round %d: no rev-parse call, want git asked in each round", state.name, round)
-			}
-		}
-		// No verdict is dropped from here on. After the keep time git starts to
-		// name the owner, and then stops again.
-		advance(repoOwnerAnswerKeep)
-		stubStderr(t, owner, false)
-		for i, m := range f.fiveRequests(nil) {
-			if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, want[i]) {
-				t.Errorf("%s, %s, git names the owner after a refusal: %s, want %s", state.name, m.method, raw, want[i])
-			}
-		}
-		stubStderr(t, "fatal: bad config line 3 in file /srv/dubious ownership/.git/config\n", false)
-		for _, m := range f.fiveRequests(nil) {
-			if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, state.text) {
-				t.Errorf("%s, %s, git names no owner again: %s, want the refusal with %q", state.name, m.method, raw, state.text)
-			}
-		}
-	}
-	// A rev-parse call that prints the line and then succeeds names no problem.
-	forgetRepoVerdicts()
-	slowGit(t, "rev-parse", "pre", 0, "", "")
-	stubStderr(t, owner, false)
-	last := states[len(states)-1]
-	for _, m := range f.fiveRequests(nil) {
-		if raw := dispatchRaw(t, s, rpcLine(t, m.method, m.params)); !strings.Contains(raw, last.text) {
-			t.Errorf("%s, %s, git prints the line and succeeds: %s, want the refusal with %q", last.name, m.method, raw, last.text)
-		}
-	}
-}
-
 // TestRepoVerdictIsKept pins that a second request on a repository starts no git
 // call for the read of the config, and that a changed file is read again. The
 // first two steps are git.info requests, and the others run the read alone.
 // With an accepted config, 5fd08069 makes no such call for a second git.info,
 // and one after a change of the config (cell B4, Linux VM). With a refused
 // format version it makes the read again at each request (cells N10 and P5,
-// Linux, macOS and Windows VMs), and claustrum does not. The rows for an included file are claustrum's
+// Linux, macOS and Windows VMs), and claustrum does too. The rows for an included file are claustrum's
 // own: a changed one is read again, and so is one that was missing and is there
-// now. A refusal is kept as well.
+// now.
 func TestRepoVerdictIsKept(t *testing.T) {
 	repo, gitDir := configRepo(t)
 	log := stubGitWithLog(t)
@@ -1216,7 +1122,7 @@ func TestRepoVerdictIsKept(t *testing.T) {
 
 	setIncludeFile(t, gitDir, "late.cfg", refusedInclude+"[include]\n\tpath = %(prefix)/x\n")
 	step("a file where an include was missing", 3, `"%(prefix)/x", and Claude expands neither`)
-	step("a refusal, second request", 0, `"%(prefix)/x", and Claude expands neither`)
+	step("a refusal, second request", 3, `"%(prefix)/x", and Claude expands neither`)
 
 	// A file of the git directory is no part of the read: its test runs in each
 	// request, and a change of it leads to no new read of the config (cells 19a
@@ -1272,207 +1178,6 @@ func TestRepoVerdictsBound(t *testing.T) {
 	if n != repoVerdictsMax || m != repoVerdictsMax {
 		t.Errorf("kept verdicts = %d, order = %d, want %d each", n, m, repoVerdictsMax)
 	}
-}
-
-// TestRepoConfigOwnerCallBound pins the call to git for a config that is not a
-// regular file. 5fd08069 keeps the "not a repository" answers for a repository
-// of another owner whose config is a FIFO (cell V1, Linux and macOS VMs). The
-// config of the test is a directory, which each system has. The git of the test
-// is the stub.
-//
-//   - git names the owner: no refusal.
-//   - The stub prints the owner line and sleeps 60 s. The bound ends the call,
-//     and the refusal stays. The next request asks git again.
-//   - git names no owner: the refusal stays.
-//   - Another refusal has the long bound: the stub answers after 3 s with the
-//     owner line, and there is no refusal. With the long bound lowered, a stub
-//     that sleeps 60 s is ended, and the refusal stays. That stands for a git
-//     that waits in a FIFO which a config refused before its includes names.
-func TestRepoConfigOwnerCallBound(t *testing.T) {
-	repo, gitDir := configRepo(t)
-	config := filepath.Join(gitDir, "config")
-	if err := os.Remove(config); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(config, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	log := stubGitWithLog(t)
-	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
-	trust := gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitDir}
-	owner := "fatal: detected dubious ownership in repository at '" + filepath.ToSlash(repo) + "'\n"
-	refusal := repoConfigPrefix + strconv.Quote(config) + " is not a regular file"
-	ask := func() (string, time.Duration) {
-		start := time.Now()
-		got := repoConfigGateRefusal(trust, false, repo, false, "--git-dir")
-		return got, time.Since(start)
-	}
-
-	stubStderr(t, owner, false)
-	slowGit(t, "rev-parse", "fail", 0, "", "")
-	forgetRepoVerdicts()
-	if got, _ := ask(); got != "" {
-		t.Errorf("git names the owner: refusal = %q, want none", got)
-	}
-
-	slowGit(t, "rev-parse", "fail", 60*time.Second, "", "")
-	forgetRepoVerdicts()
-	got, took := ask()
-	if got != refusal {
-		t.Errorf("git does not answer in the bound: refusal = %q, want %q", got, refusal)
-	}
-	if took > 30*time.Second {
-		t.Errorf("the request took %s, want the bound of %s to end the call", took, repoOwnerCallBound)
-	}
-	calls := len(gitCalls(t, log, "rev-parse"))
-	if got, _ := ask(); got != refusal {
-		t.Errorf("second request: refusal = %q, want %q", got, refusal)
-	}
-	if now := len(gitCalls(t, log, "rev-parse")); now != calls+1 {
-		t.Errorf("second request started %d rev-parse calls, want 1", now-calls)
-	}
-
-	stubStderr(t, "fatal: not a git repository (or any of the parent directories): .git\n", false)
-	slowGit(t, "rev-parse", "fail", 0, "", "")
-	forgetRepoVerdicts()
-	if got, _ := ask(); got != refusal {
-		t.Errorf("git names no owner: refusal = %q, want %q", got, refusal)
-	}
-
-	if err := os.Remove(config); err != nil {
-		t.Fatal(err)
-	}
-	setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 2"))
-	stubStderr(t, owner, false)
-	slowGit(t, "rev-parse", "fail", 3*repoOwnerCallBound, "", "")
-	forgetRepoVerdicts()
-	if got, _ := ask(); got != "" {
-		t.Errorf("format version 2, git names the owner after %s: refusal = %q, want none", 3*repoOwnerCallBound, got)
-	}
-
-	oldLong := repoOwnerCallLongBound
-	t.Cleanup(func() { repoOwnerCallLongBound = oldLong })
-	repoOwnerCallLongBound = 500 * time.Millisecond
-	slowGit(t, "rev-parse", "fail", 60*time.Second, "", "")
-	forgetRepoVerdicts()
-	got, took = ask()
-	if !strings.Contains(got, "format version") {
-		t.Errorf("format version 2, git does not answer in the long bound: refusal = %q, want the format version refusal", got)
-	}
-	if took > 30*time.Second {
-		t.Errorf("the request took %s, want the long bound of %s to end the call", took, repoOwnerCallLongBound)
-	}
-}
-
-// fakeOwnerClock replaces the clock of the kept owner answer with one that
-// stands still. The returned function moves it forward.
-func fakeOwnerClock(t *testing.T) func(time.Duration) {
-	t.Helper()
-	var mu sync.Mutex
-	now := time.Unix(1_700_000_000, 0)
-	repoOwnerClock = func() time.Time {
-		mu.Lock()
-		defer mu.Unlock()
-		return now
-	}
-	t.Cleanup(func() { repoOwnerClock = time.Now })
-	return func(d time.Duration) {
-		mu.Lock()
-		defer mu.Unlock()
-		now = now.Add(d)
-	}
-}
-
-// TestRepoOwnerAnswerIsKept pins the kept answer of the call that asks git about
-// the owner. The repository has format version 2, the git of the test is the
-// stub, and the clock is the one of the test.
-//
-//   - git names no owner. A second request inside repoOwnerAnswerKeep starts no
-//     rev-parse call, and one at that time starts it. 5fd08069 starts its call
-//     at the first of ten refused requests and about 6 s later (cell P5, Linux
-//     VM).
-//   - git starts to name the owner. The refusal stays inside the keep time, and
-//     the "not a repository" side comes at that time. 5fd08069 keeps the refusal
-//     4 s after a change of the owner and drops it at 5 s (cell P7, Linux VM, 3
-//     runs).
-//   - An answer that names the owner is not kept: each request asks, and the
-//     refusal is back at once when git stops. 5fd08069 refuses at once after a
-//     `safe.directory` line appears (cell N15-a, Linux and macOS VMs).
-//   - A git that does not start gives no kept answer (claustrum's own rule).
-//   - A verdict that is not kept, here one with an open error, keeps no answer:
-//     each request asks (claustrum's own rule).
-//
-// TestRepoConfigOwnerCallBound has the call that the bound ends.
-func TestRepoOwnerAnswerIsKept(t *testing.T) {
-	repo, gitDir := configRepo(t)
-	setRepoConfig(t, gitDir, versionConfig("repositoryformatversion = 2"))
-	log := stubGitWithLog(t)
-	t.Setenv("CLAUSTRUM_GITSTUB_EXIT", "128")
-	slowGit(t, "rev-parse", "fail", 0, "", "")
-	advance := fakeOwnerClock(t)
-	trust := gitDirTrust{verdict: gitDirTrusted, pinCommonDir: gitDir}
-	owner := "fatal: detected dubious ownership in repository at '" + filepath.ToSlash(repo) + "'\n"
-	const other = "fatal: not a git repository (or any of the parent directories): .git\n"
-	refusal := repoConfigPrefix + versionDetail("2")
-	calls := 0
-	// ask runs one request. It fails unless the refusal is want and the request
-	// started wantCalls rev-parse calls.
-	ask := func(name, want string, wantCalls int) {
-		t.Helper()
-		if got := repoConfigGateRefusal(trust, false, repo, false, "--git-dir"); got != want {
-			t.Errorf("%s: refusal = %q, want %q", name, got, want)
-		}
-		now := len(gitCalls(t, log, "rev-parse"))
-		if now-calls != wantCalls {
-			t.Errorf("%s: %d rev-parse calls, want %d", name, now-calls, wantCalls)
-		}
-		calls = now
-	}
-	forgetRepoVerdicts()
-
-	stubStderr(t, other, false)
-	ask("first request", refusal, 1)
-	ask("second request at once", refusal, 0)
-	advance(repoOwnerAnswerKeep - time.Millisecond)
-	ask("a request right before the keep time ends", refusal, 0)
-	advance(time.Millisecond)
-	ask("a request at the keep time", refusal, 1)
-
-	// The two times of cell P7, as plain numbers.
-	stubStderr(t, owner, false)
-	advance(4 * time.Second)
-	ask("git names the owner, 4 s after the last call", refusal, 0)
-	advance(time.Second)
-	ask("git names the owner, 5 s after the last call", "", 1)
-	ask("git names the owner, the next request", "", 1)
-	stubStderr(t, other, false)
-	ask("git stops to name the owner", refusal, 1)
-	ask("the request after it", refusal, 0)
-
-	// A git that does not start. The next request finds a git that names the
-	// owner, and it asks at once.
-	advance(repoOwnerAnswerKeep)
-	path := os.Getenv("PATH")
-	t.Setenv("PATH", t.TempDir())
-	ask("git does not start", refusal, 0)
-	t.Setenv("PATH", path)
-	stubStderr(t, owner, false)
-	ask("git starts again and names the owner", "", 1)
-
-	// A verdict with an open error is not kept, and no answer is kept with it.
-	stubStderr(t, other, false)
-	config := filepath.Join(gitDir, "config")
-	t.Cleanup(func() { repoFileOpen = os.OpenFile })
-	repoFileOpen = func(name string, flag int, perm os.FileMode) (*os.File, error) {
-		if name == config {
-			return nil, &fs.PathError{Op: "open", Path: name, Err: errors.New("too many open files")}
-		}
-		return os.OpenFile(name, flag, perm)
-	}
-	forgetRepoVerdicts()
-	openRefusal := repoConfigPrefix + "open " + config + ": too many open files"
-	ask("an open error", openRefusal, 1)
-	ask("an open error, the next request", openRefusal, 1)
 }
 
 // TestRepoConfigRefusalOnAGoneWorktree pins git.worktree_remove for a worktree

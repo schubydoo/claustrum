@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // The daemon's own read of a repository's config, and its tests of three files of
@@ -305,7 +304,7 @@ func (s repoFileState) unchanged() bool {
 	return sameFileState(s.link, now.link) && sameFileState(s.target, now.target)
 }
 
-// repoReadLog holds what one read of repoConfigGateRefusal used: the state of each file
+// repoReadLog holds what one read of repoConfigGate used: the state of each file
 // that a test named, taken before that test, and whether the read has a verdict.
 // failed is true when an open or a read of the daemon ended with an error. The
 // verdict of such a read answers its request and is not kept: the error can be
@@ -872,9 +871,7 @@ type repoVerdictKey struct {
 }
 
 // repoVerdict is the outcome of one read, with the state of each file that the
-// read used. Those two are not changed after the read. ownerGoodAt is the time
-// of the last call in which git named no problem with the owner, or the zero
-// time (repoOwnerAnswerKeep).
+// read used. Those two are not changed after the read.
 type repoVerdict struct {
 	// refusal is the refusal of the config, with its prefix, or "". The test of
 	// the `config.worktree` file of a linked worktree and the tests of the other
@@ -886,38 +883,6 @@ type repoVerdict struct {
 	// shadowText is the text of the copy of the settings (shadowConfigText).
 	shadowText string
 	states     []repoFileState
-
-	ownerMu     sync.Mutex
-	ownerGoodAt time.Time
-}
-
-// repoOwnerAnswerKeep is the time for which a verdict keeps an answer of git
-// that names no problem with the owner. It is fitted to two cells of 5fd08069.
-// In cell P7 (Linux VM, 3 of 3 runs) that build keeps a refusal 0, 1, 2, 3 and
-// 4 s after a change of the owner, and answers "not a repository" 5, 6 and 8 s
-// after it. In cell P5 (Linux VM) its `rev-parse --git-dir` call comes at the
-// first of ten equal refused requests and again about 6 s later. So the value
-// is between 4 and 5 s there. The time counts from the start of the call (not
-// measured).
-const repoOwnerAnswerKeep = 5 * time.Second
-
-// repoOwnerClock is the clock of the kept owner answer. A test replaces it.
-var repoOwnerClock = time.Now
-
-// ownerAnswerKept reports whether git named no problem with the owner less than
-// repoOwnerAnswerKeep ago.
-func (v *repoVerdict) ownerAnswerKept() bool {
-	v.ownerMu.Lock()
-	defer v.ownerMu.Unlock()
-	return !v.ownerGoodAt.IsZero() && repoOwnerClock().Sub(v.ownerGoodAt) < repoOwnerAnswerKeep
-}
-
-// keepOwnerAnswer notes that a call that started at asked named no problem with
-// the owner.
-func (v *repoVerdict) keepOwnerAnswer(asked time.Time) {
-	v.ownerMu.Lock()
-	defer v.ownerMu.Unlock()
-	v.ownerGoodAt = asked
 }
 
 // repoVerdictsMax is the most git directories and linked worktrees whose verdict
@@ -974,7 +939,8 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // no git call for the read (cells B4 and V19). A request after a change of the
 // config starts one (cell B4). With a refused format version each later request
 // of that build makes the read again (cells N10 and P5, Linux, macOS and Windows
-// VMs). claustrum keeps the verdict of a read with the state of each file that
+// VMs). A kept read with a refusal is not used: claustrum reads again, too.
+// claustrum keeps the verdict of a read with the state of each file that
 // the read used. It reads again when one of them has another identity, size,
 // modification time or mode. It reads again when a file that was missing is
 // there. That rule is claustrum's own: cell
@@ -985,17 +951,9 @@ func keepRepoVerdict(k repoVerdictKey, v *repoVerdict) {
 // `open <file>:` text is read again on each request. That rule is claustrum's
 // own.
 func repoReadVerdict(t gitDirTrust) *repoVerdict {
-	return readRepoVerdict(t, true)
-}
-
-// readRepoVerdict is repoReadVerdict with a choice for a refused config.
-// Without keepRefused a kept read with a refusal is not used: the request reads
-// again. That is the form of a request in the state shadow, where
-// 5fd08069 reads a refused config again in each request (repoConfigGateAfterGit).
-func readRepoVerdict(t gitDirTrust, keepRefused bool) *repoVerdict {
 	home, _ := os.UserHomeDir()
 	k := repoVerdictKey{gitDir: t.pinCommonDir, home: home}
-	if v, ok := keptRepoVerdict(k); ok && (keepRefused || v.refusal == "") {
+	if v, ok := keptRepoVerdict(k); ok && v.refusal == "" {
 		return v
 	}
 	ctx, cancel := gitCtx()
@@ -1019,76 +977,10 @@ func readRepoVerdict(t gitDirTrust, keepRefused bool) *repoVerdict {
 	return v
 }
 
-// repoOwnerCallBound ends the call of gitNamesOwnerProblem for a file that is not
-// a regular file. git waits in its own open of a FIFO as the config, and plain
-// git names another owner in 0.01 s there (cell V1, Linux VM). The value is
-// claustrum's own.
-const repoOwnerCallBound = time.Second
-
-// repoOwnerCallLongBound ends that call for every other refusal. git names another
-// owner before it reads the config, and with a config of 20 MiB the whole call
-// takes 0.6 to 1.1 s (cells P5 and N10, Linux, macOS and Windows VMs). But git can
-// meet a FIFO that the read did not reach. One case is a config over its size
-// bound that includes one: it is refused before the include is followed. If git
-// waits in that file, this bound ends the call (that git waits there is not
-// measured). The value is claustrum's own. A
-// variable, so that a test can lower it.
-var repoOwnerCallLongBound = 5 * time.Second
-
-// repoOwnerCallDrain is the longest wait for the stderr pipe of that call after
-// git ended or the bound ended it. The value is claustrum's own.
-const repoOwnerCallDrain = time.Second
-
-// gitNamesOwnerProblem runs the hardened `git rev-parse <probe>` of a method in
-// dir, with no listing before it and with LC_ALL=C and LANGUAGE=C. It reports
-// whether git failed and its stderr holds `detected dubious ownership in
-// repository`. That is the text of plain git for a repository of another owner.
-// Git 2.43.0 and git 2.50.1 print it in cells X3 and V1 (Linux and macOS VMs),
-// and git 2.55.0 in cell N17w (Windows VM). No cell ran another git with another
-// owner.
-// 5fd08069 has a `rev-parse --git-dir` call at the first refused request of a
-// daemon (cells P5, Linux, macOS and Windows VMs). What that call decides there
-// is not measured.
-//
-// The call ends at bound, and at the deadline of gitCtx if that is sooner: the
-// process is ended by its pid. Such a call names no problem, whatever it wrote
-// before. After git ends,
-// or after the bound, the daemon waits at most repoOwnerCallDrain for the stderr
-// pipe. So a `git` on PATH that leaves a process with that pipe open does not
-// hold the request.
-//
-// good is true when git ran to its end and named no problem. It is false for a
-// call that named one, for a call that a bound ended, and for a git that did
-// not start.
-func gitNamesOwnerProblem(dir string, heavy bool, probe string, bound time.Duration) (named, good bool) {
-	base, cancelBase := gitCtx()
-	defer cancelBase()
-	ctx, cancel := context.WithTimeout(base, bound)
-	defer cancel()
-	cmd := hardenedGitCmd(ctx, gitUse{}, dir, heavy, &configListing{}, "rev-parse", probe)
-	cmd.Env = append(cmd.Env, "LC_ALL=C", "LANGUAGE=C")
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	cmd.WaitDelay = repoOwnerCallDrain
-	err := cmd.Run()
-	if ctx.Err() != nil {
-		return false, false
-	}
-	if err == nil {
-		return false, true
-	}
-	var ee *exec.ExitError
-	if !errors.As(err, &ee) {
-		return false, false
-	}
-	text := errBuf.String()
-	named = strings.Contains(text, "detected dubious ownership in repository")
-	return named, !named
-}
-
-// repoConfigGateRefusal is the refusal text of a git method for the repository of the
-// trust verdict t, or "". It runs before the first git call of claustrum in the
-// repository.
+// repoConfigGate is the refusal text of a git method for the repository of the
+// trust verdict t, or "". It runs before the first git call of the method in
+// the repository. accepted is the read of a repository that got no refusal of
+// any kind, or nil.
 //
 // off is the `shadowDirOff` member of the request. With the JSON value true,
 // 5fd08069 gives no such refusal for that request. Format version 2 gets the
@@ -1103,75 +995,10 @@ func gitNamesOwnerProblem(dir string, heavy bool, probe string, bound time.Durat
 // git.info and git.list_branches the trust check pins nothing, and nothing is
 // read (not measured).
 //
-// 5fd08069 keeps the "not a repository" answers for a HEAD that is no ref (cells
-// X3), and for a repository of another owner with no safe.directory. Cells V1
-// ran that owner on Linux, macOS and Windows VMs. The states were format version
-// 2, a config of 20 MiB and an info/exclude of 20 MiB, and a FIFO as the config
-// on Linux and macOS VMs. Which call of that build decides is not measured.
-// claustrum asks git when the read has a refusal. dir, heavy and probe are the
-// rev-parse call that the method runs next (gitNamesOwnerProblem). If git names
-// a problem with the owner, the method gets no refusal here and goes on as
-// before.
-//
-// For a file that is not a regular file the call has the bound of
-// repoOwnerCallBound, because git waits in its own open of a FIFO. For every
-// other refusal it has the bound of repoOwnerCallLongBound. If a bound
-// ends the call, the refusal stays. 5fd08069 answers a FIFO in 0.15 to 0.36 s
-// (cells N2, N3 and N17, Linux and macOS VMs), and claustrum after repoOwnerCallBound.
-//
-// An answer of git that names no problem is kept with the kept verdict for
-// repoOwnerAnswerKeep. In that time a request with that refusal starts no call.
-// An answer that names a problem is not kept, so a new `safe.directory` line
-// counts at the next request. After `safe.directory = *` appears, 5fd08069
-// answers the refusal at once (cell N15-a, Linux and macOS VMs). The result of
-// a call that a bound ended, or of a git that did not start, is not kept
-// either. So a request on a FIFO config asks git again. A verdict that is not
-// kept has no kept answer. After a change of the owner, 5fd08069 keeps the
-// refusal for 4 s and answers "not a repository" from 5 s on (cell P7, Linux
-// VM, 3 runs). With a refused config of 20 MiB, 5fd08069 starts that call at
-// the first of ten requests and at the eighth (cell P5, Linux VM).
-func repoConfigGateRefusal(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) string {
-	msg, _ := repoConfigGate(t, off, dir, heavy, probe)
-	return msg
-}
-
-// repoConfigGate is repoConfigGateRefusal with the read. accepted is the read
-// of a repository that got no refusal of any kind, or nil.
-func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, probe string) (msg string, accepted *repoVerdict) {
-	if off || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
-		return "", nil
-	}
-	v := repoReadVerdict(t)
-	if v == nil {
-		return "", nil
-	}
-	refusal := requestRefusal(t, v)
-	if refusal == "" {
-		return "", v
-	}
-	if v.ownerAnswerKept() {
-		return refusal, nil
-	}
-	asked := repoOwnerClock()
-	bound := repoOwnerCallLongBound
-	if strings.HasSuffix(refusal, notRegularTail) {
-		bound = repoOwnerCallBound
-	}
-	named, good := gitNamesOwnerProblem(dir, heavy, probe, bound)
-	if named {
-		return "", nil
-	}
-	if good {
-		v.keepOwnerAnswer(asked)
-	}
-	return refusal, nil
-}
-
-// repoConfigGateAfterGit is repoConfigGate for a request without the member in
-// the state shadow, after git accepted the repository in the call of
-// shadowHost.askGit. It makes no call to git about the owner: that call already
-// answered a repository of another owner with the "no repository" answers,
-// before any read. A refused read is not kept.
+// The gate makes no call to git about the owner of the repository. In the state
+// shadow the call of shadowHost.askGit comes before it. That call answers a
+// repository of another owner with the "no repository" answers, before any
+// read. A refused read is not kept.
 //
 // On 5fd08069 a first request on a repository with a refused config makes the
 // call about the repository and the reads, and each later request makes the
@@ -1180,8 +1007,15 @@ func repoConfigGate(t gitDirTrust, off jsonTrueSwitch, dir string, heavy bool, p
 // group E and cells 10a to 10e of val-s3p2b2-3-linux, Linux VM. Rows D3 of
 // val-s3p2b2-3-macos and D7 of val-s3p2b2-3-windows). The `version` call that
 // 5fd08069 makes after a read with a syntax error is not built here.
-func repoConfigGateAfterGit(t gitDirTrust) (msg string, accepted *repoVerdict) {
-	v := readRepoVerdict(t, false)
+//
+// A server with no run folder has no state and no call of askGit. It reads the
+// config and answers its refusals the same way. No real daemon is such a
+// server, so that form is not measured.
+func repoConfigGate(t gitDirTrust, off jsonTrueSwitch) (msg string, accepted *repoVerdict) {
+	if off || t.verdict != gitDirTrusted || t.pinCommonDir == "" {
+		return "", nil
+	}
+	v := repoReadVerdict(t)
 	if v == nil {
 		return "", nil
 	}

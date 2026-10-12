@@ -62,7 +62,7 @@ type gitParams struct {
 	// (gitfilter.go) for this request. With it, 5fd08069 passes no filter pairs, runs
 	// the repository's filter and succeeds (cell E1, Linux VM). It also turns off
 	// the daemon's own read of the repository's config on the five git methods
-	// (repoConfigGateRefusal). Cells X1 measured that on git.info and git.status, and
+	// (repoConfigGate). Cells X1 measured that on git.info and git.status, and
 	// cells V2 on the three other methods. Any other effect of the member on
 	// 5fd08069 is not built here. Only the JSON value true sets it (jsonTrueSwitch).
 	ShadowDirOff jsonTrueSwitch `json:"shadowDirOff,omitempty"`
@@ -320,7 +320,7 @@ func gitInfo(req *request) response {
 	// The start test and the daemon's own read of the repository's config come
 	// before the listing (settingsGateRefusal). Their place after the count check is
 	// not measured.
-	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	} else if noRepo {
 		return notRepo()
@@ -602,8 +602,8 @@ func gitStatus(req *request) response {
 		return notRepo
 	}
 	// The daemon's own read of the repository's config comes before the listing
-	// (repoConfigGateRefusal).
-	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo, true, "--absolute-git-dir"); msg != "" {
+	// (repoConfigGate).
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.BaseRepo); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	} else if noRepo {
 		return notRepo
@@ -703,8 +703,8 @@ func gitListBranches(req *request) response {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
 	}
 	// The daemon's own read of the repository's config comes before the listing
-	// (repoConfigGateRefusal). The answer has the error object of git.info (cell X1).
-	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path, true, "--git-dir"); msg != "" {
+	// (repoConfigGate). The answer has the error object of git.info (cell X1).
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, p.Path); msg != "" {
 		return errResult(req.ID, codeInternal, msg)
 	} else if noRepo {
 		return okResult(req.ID, branchesResult{Branches: []string{}})
@@ -811,8 +811,8 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
 	}
 	// The daemon's own read of the repository's config comes before the listing
-	// (repoConfigGateRefusal). Nothing is created (cells W7 and E1, Linux VM).
-	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo, false, "--is-inside-work-tree"); msg != "" {
+	// (repoConfigGate). Nothing is created (cells W7 and E1, Linux VM).
+	if msg, noRepo := req.settingsGateRefusal(t, p.ShadowDirOff, repo); msg != "" {
 		return okResult(req.ID, worktreeResult{Success: false, Error: msg, ErrorCode: "worktree_add_failed"})
 	} else if noRepo {
 		return okResult(req.ID, worktreeResult{Success: false, Error: "not a git repository", ErrorCode: "not_a_repo"})
@@ -1405,9 +1405,9 @@ func gitWorktreeCreateLocked(req *request, p *gitParams, repo string) response {
 // methods make it one time (cells 38 and 39 of s3p2b-edges-linux2, Linux VM).
 // With an ended call the reply comes after both calls, at 62.02 s (cell 38).
 func (req *request) removeGate(t gitDirTrust, off jsonTrueSwitch, repo string) (msg string, noRepo bool) {
-	msg, noRepo = req.settingsGateRefusal(t, off, repo, true, "--absolute-git-dir")
+	msg, noRepo = req.settingsGateRefusal(t, off, repo)
 	if req.gitRefused {
-		msg, noRepo = req.settingsGateRefusal(t, off, repo, true, "--absolute-git-dir")
+		msg, noRepo = req.settingsGateRefusal(t, off, repo)
 	}
 	return msg, noRepo
 }
@@ -1650,7 +1650,7 @@ func gitWorktreeRemoveLocked(req *request, p *gitParams, repo string) response {
 			return refuse(lockCheckRefusal(p.WorktreePath))
 		}
 		// The daemon's own read of the repository's config comes before the listing
-		// (repoConfigGateRefusal). The worktree stays (cells W7 and X1, Linux VM). The
+		// (repoConfigGate). The worktree stays (cells W7 and X1, Linux VM). The
 		// path is worktreePath as sent, and it is not cut (cells X12). A worktree
 		// folder that is gone gets the same refusal (removeGoneWorktree). With
 		// worktreeRoot the read is in externalWorkTreeRefusal, with its own text.
@@ -1894,7 +1894,7 @@ func removeGoneWorktree(req *request, p *gitParams, repo, path string) response 
 			return lockCheck(msg)
 		}
 		// The daemon's own read of the repository's config refuses here too
-		// (repoConfigGateRefusal), with the text of a worktree folder that exists. No
+		// (repoConfigGate), with the text of a worktree folder that exists. No
 		// registration and no branch is deleted. 5fd08069 answers so on a Windows VM
 		// (cells F1a, F1b, F2a, F2b, G1a to G1c, W6, W6x and X12), where 89cb6289
 		// answers success. It deletes the branch with the files of 20 MiB and with

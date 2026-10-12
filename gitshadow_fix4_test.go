@@ -198,7 +198,7 @@ func TestShadowStateFilesNeedNoNewConfig(t *testing.T) {
 	}
 	// A refused file is still refused in the request that meets it.
 	mustWrite(t, filepath.Join(f.gitDir, "shallow"), "not an id\n")
-	if msg, _ := repoConfigGate(gitDirTrustFor(f.repo), false, f.repo, true, "--git-dir"); !strings.Contains(msg, "holds something other than object ids") {
+	if msg, _ := repoConfigGate(gitDirTrustFor(f.repo), false); !strings.Contains(msg, "holds something other than object ids") {
 		t.Errorf("the gate with a bad shallow file = %q", msg)
 	}
 }

@@ -454,7 +454,7 @@ const workTreeUnknownPrefix = "failed to remove worktree: cannot determine the r
 // shapes of reason 3.
 //
 // After reason 3 and before the listing of reason 4 comes the daemon's own read of
-// the repository's config (repoConfigGateRefusal). Its refusal text is the reason.
+// the repository's config (repoConfigGate). Its refusal text is the reason.
 // 5fd08069 answers so with format version `2` and with a config of 20 MiB, and
 // removes nothing (cells N14, Linux and macOS VMs). Each state ran for a worktree
 // that exists and for a folder that is missing. An info/exclude of 20 MiB and a
@@ -529,7 +529,7 @@ func externalWorkTreeRefusal(req *request, repo string, off jsonTrueSwitch) (str
 	// A bad answer of git about the repository is not measured with worktreeRoot.
 	// Its text is the reason, and git's own refusal gets the reason of a folder
 	// with no repository.
-	if msg, noRepo := req.settingsGateRefusal(t, off, repo, false, "--show-toplevel"); msg != "" {
+	if msg, noRepo := req.settingsGateRefusal(t, off, repo); msg != "" {
 		return workTreeUnknownPrefix + msg, ""
 	} else if noRepo {
 		return workTreeUnknownPrefix + "exit status 128", ""
