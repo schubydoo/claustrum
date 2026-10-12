@@ -169,6 +169,21 @@ func makeProbeFolder(dir string) error {
 	return err
 }
 
+// ensureProbeFolder makes the folder `.probe` in folder if its last file, HEAD,
+// is not there. It holds probeFolderMu from the look to the end of the make.
+// Without the lock a second request can find the folder between two steps of
+// the make and run its call on it. Git then answers "not a git repository",
+// and the request answers "no repository" for a good repository. The lock is
+// claustrum's own and leaves no trace on the disk. A failed make is not
+// reported: the call runs and gives its own answer (makeProbeFolder).
+func (h *shadowHost) ensureProbeFolder(folder string) {
+	h.probeFolderMu.Lock()
+	defer h.probeFolderMu.Unlock()
+	if _, err := os.Lstat(filepath.Join(folder, shadowProbeName, "HEAD")); err != nil {
+		_ = makeProbeFolder(folder)
+	}
+}
+
 // probeNames are the variables that the call sets. The daemon's own entries of
 // these names do not go to the call. 5fd08069 replaces the daemon's
 // GIT_CEILING_DIRECTORIES for this call (s3p2-linux2 cell D5, Linux VM). The
@@ -271,9 +286,7 @@ func (h *shadowHost) askGit(t gitDirTrust, dir string) repoAnswer {
 	if folder == "" {
 		return repoAnswer{}
 	}
-	if _, err := os.Lstat(filepath.Join(folder, shadowProbeName)); err != nil {
-		_ = makeProbeFolder(folder)
-	}
+	h.ensureProbeFolder(folder)
 	env := probeEnv(folder, root)
 	found := ""
 	for try := 0; try < 2; try++ {

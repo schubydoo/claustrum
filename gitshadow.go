@@ -117,6 +117,11 @@ type shadowHost struct {
 	probeMu sync.Mutex
 	probes  map[string]keptProbe
 
+	// probeFolderMu is held while the daemon looks for the folder `.probe` and
+	// makes it (ensureProbeFolder). A second request then never runs its call
+	// on a folder that the first one is still making.
+	probeFolderMu sync.Mutex
+
 	// scanMu guards the kept answer of the `git version` call of the include
 	// step: scanNew is the answer, when scanKept (includeScan).
 	scanMu   sync.Mutex

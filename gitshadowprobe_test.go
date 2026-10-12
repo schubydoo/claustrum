@@ -145,6 +145,54 @@ func TestProbeFolder(t *testing.T) {
 	}
 }
 
+// TestProbeFolderIsWholeBeforeTheCall: a request never runs its call about the
+// repository on a folder `.probe` that is still in the make. The test holds the
+// lock of the make with only the top folder on the disk, as a first request
+// does between its first two steps. A second request must wait. After the lock
+// goes it finds no HEAD, makes the rest, and answers for the repository.
+// Without the wait git answers "not a git repository" there and git.info says
+// isRepo false for a good repository.
+func TestProbeFolderIsWholeBeforeTheCall(t *testing.T) {
+	f := newShadowFixture(t)
+	if raw, _ := f.info(t, f.repo, nil); !strings.Contains(raw, `"isRepo":true`) {
+		t.Fatalf("git.info = %s", raw)
+	}
+	now := setProbeClock(t)
+	*now = now.Add(probeKeep)
+	probe := filepath.Join(daemonFolder(t, f.run), shadowProbeName)
+	if err := os.RemoveAll(probe); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(probe, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	h := f.s.gitShadow
+	h.probeFolderMu.Lock()
+	type reply struct {
+		raw   string
+		calls []envCall
+	}
+	done := make(chan reply, 1)
+	go func() {
+		raw, calls := f.info(t, f.repo, nil)
+		done <- reply{raw, calls}
+	}()
+	select {
+	case r := <-done:
+		h.probeFolderMu.Unlock()
+		t.Fatalf("git.info did not wait for the make of .probe: %s", r.raw)
+	case <-time.After(300 * time.Millisecond):
+	}
+	h.probeFolderMu.Unlock()
+	r := <-done
+	if !strings.Contains(r.raw, `"isRepo":true`) || len(probeCalls(r.calls)) != 1 {
+		t.Fatalf("git.info = %s with %d calls about the repository, want isRepo true and one call", r.raw, len(probeCalls(r.calls)))
+	}
+	if got, want := entryNames(t, probe), []string{"HEAD", "config", "info", "objects", "refs"}; !slices.Equal(got, want) {
+		t.Errorf(".probe holds %v, want %v", got, want)
+	}
+}
+
 // TestProbeCallShape pins the call and its place in a first request. The argv,
 // the eight variables and their order are those of the call log of 5fd08069
 // (s3p2-linux cell B3a and val-s3p2b1-linux cell A1, Linux VM). The call comes
