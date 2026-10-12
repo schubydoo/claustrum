@@ -59,6 +59,7 @@ There is one binary. A flag selects the mode (`main.go`): `-serve`, `-bridge`,
 | `logging.go` | leveled stderr logger (`CLAUSTRUM_LOG_LEVEL`, default emit-everything). The level tag goes before the `[Component]` prefixes, so existing greps keep matching |
 | `metrics.go` | opt-in Prometheus counters at `/metrics`. The `-metrics-addr` flag creates the listener. Without that flag there is no listener. Counting is always-on atomics |
 | `wirelog.go` | opt-in `-wire-log` JSON-RPC frame capture. It is a pure side channel over already-marshaled bytes, and it is off by default. It redacts credentials by key only, not by payload contents. It forces `0600` on every open |
+| `gitshadow*.go` · `worktreestaging.go` · `gitworktreeconfig.go` | the settings copy of the git methods, as on `5fd08069`. `gitshadow.go` has the state, the member `settingsControl` of `git.info`, the folder of one daemon under `<socket folder>/git-shadow` and the start test. The lock of that folder is in `gitshadow_unix.go` and `gitshadow_windows.go`. `gitshadowprobe.go` has the call that asks git about a repository. `gitshadowrepo.go` has the folder of one repository, and `gitshadowconfig.go` the text of the copied settings file. `gitshadowuse.go` has the folder variables of the git calls and the `worktree add` steps on Linux and macOS. `worktreestaging.go` has the Windows create: the folder `.s<n>`, the staging folder with its rename, and the cleanup of old staging entries. `gitworktreeconfig.go` has the `config.worktree` items and the file of a new worktree |
 | `install.go` | `-install`: CLI download / verify (SHA-256) / extract (zstd) / prune. A `-cli-url` download is verified unconditionally. If a `-cli-checksum` is supplied, claustrum also verifies the local `-cli-zst` blob, as the reference does. The compare is case-sensitive |
 | `*_unix.go` / `*_windows.go` · `pipetransport*.go` | OS specifics (daemonize, process groups on Unix, login-shell PATH) and the opt-in, default-off, Windows-only `-listen-pipe` named-pipe transport (CT-5). On Windows a kill ends the direct child only, and no child is in a job of the daemon. The daemon starts outside the job of its launcher. If that job refuses, the daemon starts inside it and the launcher logs one line. `-keep-children` works on Windows as claustrum's own flag: `89cb6289` exits 2 on it |
 
@@ -127,11 +128,15 @@ The JSON-RPC surface is identical on every OS. Full internals →
 - `process.spawn` runs arbitrary commands as the user of the daemon. This is by
   design. Treat socket + token as equivalent to shell access. The threat model
   is in [`SECURITY.md`](SECURITY.md).
-- Four code paths give a caller-supplied or operator-supplied path to a
+- Five code paths give a caller-supplied or operator-supplied path to a
   recursive delete (`os.RemoveAll` or `os.Root.RemoveAll`).
   `git.worktree_remove` uses `os.Root.RemoveAll`. The rollback of
-  `git.worktree_create` uses it too, and both on Windows. Three of the four paths are RPC paths. The daemon
-  `~`-expands those RPC
+  `git.worktree_create` uses it too, and both on Windows. Four of the five paths
+  are RPC paths. The fourth RPC path is Windows only: a create removes old
+  staging entries below the git directory of `baseRepo`. The deletes inside the
+  folder `git-shadow` are not among the five: their root comes from the socket,
+  as in `plugins.prune` (see below). The daemon
+  `~`-expands the RPC
   paths first, so `"~"` once meant `os.RemoveAll($HOME)`. That destroyed
   the maintainer's home directory on 2026-08-02:
     - `files.extract_tar` wipes `destDir`. `wipesHomeDir` (`homeguard.go`) guards it,
@@ -173,6 +178,11 @@ The JSON-RPC surface is identical on every OS. Full internals →
       A repository config, or one of three files of the git directory, that the
       daemon does not accept refuses the remove before any delete, as on
       `5fd08069`. `"shadowDirOff":true` in the request turns that refusal off.
+      A failed start test of the settings copy refuses the remove before any
+      delete too. So does a bad answer of git about the repository, and a copy
+      folder that cannot be made. `5fd08069` refuses so in cells 30, 38 and 39
+      of round `s3p2b-edges` (Linux VM) and in cells N4 of round
+      `val-s3p2b2-3`.
       On Windows a junction at any directory between `baseRepo` and the leaf is
       refused too. At `.claude` or `.claude\worktrees`, `f6010b97` and `89cb6289`
       answer success and delete the branch. For `89cb6289` that is measured for a
@@ -277,6 +287,34 @@ The JSON-RPC surface is identical on every OS. Full internals →
       The empty-leaf rmdir tests only two things: the path still resolves to
       the leaf, and the parent is still the held parent. An rmdir cannot
       delete content.
+    - On Windows `git.worktree_create` removes old staging entries of the git
+      directory of `baseRepo` (`sweepOldStaging`, `worktreestaging.go`). Those
+      are entries whose name starts with `.claude-new-worktree-`. The daemon
+      did not make them, and `baseRepo` comes from the request. `5fd08069` does
+      the same (cell 48 of round `s3p2b-edges3`, 248 cells, Windows VM). The
+      maintainer decided on 2026-10-11 to build that step as measured. It runs
+      in the state `shadow` only, after a good `git worktree add` and before
+      the daemon makes its own staging folder. The guards run in this order.
+      One `os.Root` at the git directory that the trust check pinned is open
+      from before the add, and each step acts through it. The entries are
+      listed through that root, so each name is a direct entry of the git
+      directory. The name must start with the fixed prefix, with the dash. The
+      entry is read with `Lstat` through the root, so no link and no junction
+      is followed. Its own write time must be 1 hour old or more. On
+      `5fd08069` an entry of 3596.42 s stays and one of 3601.28 s goes.
+      `wipesHomeDir` then refuses an entry that is home or holds it. Only a
+      real folder goes as a tree, with one `os.Root.RemoveAll` of that name. A
+      file, a link and a junction go with one plain `os.Root.Remove`, so the
+      target of a junction stays. Round `val-s3p2b2-5` ran 170 cells and two
+      controls on a claustrum build and on `5fd08069` (Windows VM). No row
+      differs. In each of the 42 junction rows the target folder and its
+      marker file stayed. An entry that cannot be removed logs one line, and
+      the create goes on (not measured). `git.info` and `git.status` remove no
+      entry (`5fd08069`, 120 cells). From the code: a create that fails, a
+      request with `"shadowDirOff":true` and the state `fallback-git` run no
+      cleanup. Those three are not measured on `5fd08069`. Linux and macOS run
+      no such step (`5fd08069`, cell H2 of round `s3p2`, Linux VM). Do not
+      widen the prefix, the kinds or the folder of this delete.
     - `-install` deletes the CLI path, which is operator input:
       `<cli-dir>/<cli-version>`, and `<cli-version>.exe` on Windows. The cli-dir
       is `-cli-dir`, or `<home>/.claude/remote/ccd-cli` without it. A folder at
@@ -369,6 +407,79 @@ The JSON-RPC surface is identical on every OS. Full internals →
   the socket layout of the daemon itself, not from an RPC or operator path. The
   leaf must match `^[0-9a-f]{16}$` (`pluginHashRE`). The path is never
   caller-supplied and never `~`-expanded, so it needs no `wipesHomeDir` guard.
+- The folder `git-shadow` of the settings copy is a further recursive delete
+  site, and it is socket-derived like `plugins.prune`. Each delete there goes
+  through `shadowHost.removeEntry` (`gitshadow.go`). That is `wipesHomeDir` on
+  the full path, as defense in depth, and then one `os.Root.RemoveAll` through a
+  root at `<socket folder>/git-shadow`. The name below that root is one that
+  this daemon made: its own folder `<host form>-<pid>-<16 hex>`, or an entry in
+  it. No part of the path comes from an RPC value or from an operator. The
+  deletes are these:
+    - The test folder `.check-<n>`, after each start test, also a failed one.
+    - The folder of the daemon, with each folder of a repository in it. It goes
+      at shutdown (`closeAll`), after the lock file is closed. It also goes
+      right after a lock step that failed. The empty `git-shadow` stays.
+      `5fd08069` removes the folder at `-stop` and at `server.shutdown` (round
+      `s3p2`, Linux, macOS and Windows VMs).
+    - A copy in the folder of a repository whose file in the repository is
+      gone, and a `rebase-merge` or `rebase-apply` folder with it. Only a copy
+      that this daemon wrote goes. Also a temp file `.tmp-<n>` that a failed
+      write left.
+    - The short-lived entries of one request: `.gitdir-<n>`, `.index-<n>`,
+      `.worktreeinclude-<n>`, `.config-<n>`, and `.s<n>` on Windows. Each goes
+      at the end of its step or at the reply.
+  On Linux and macOS the folder of a repository holds a link `worktrees` into
+  the git directory. The root removes that link and not its target
+  (`TestShadowFolderRemovalLeavesLinkTargets`). A new copy is a temp file plus
+  one `os.Root.Rename` inside the folder of the repository. claustrum does not
+  remove the folder of another daemon. With `"shadowDirOff":true` the
+  short-lived folders are `os.MkdirTemp` folders in the temporary directory, and
+  each goes with `os.RemoveAll`, as before. Do not build a name below
+  `git-shadow` from a request value.
+- In the state `shadow` `git.worktree_create` writes into the git directory of
+  `baseRepo` and into the new worktree. None of these steps is a tree delete.
+  Each goes through an `os.Root`, with a fixed name or a name that the daemon
+  read through that root:
+    - The folder `<git dir>/worktrees` (0755), made before the add through a
+      root at the pinned git directory. It stays after a failed add, as on
+      `5fd08069` (cells N2 of round `val-s3p2b2-3`, Linux and macOS VMs). With
+      `core.sharedRepository = group`, one `os.Root.Chmod` adds the write bit
+      of the group and the set-group-ID bit. That chmod acts only on the folder
+      that this call just made (`5fd08069`, cell H3 of round `val-s3p2b2-5`,
+      Linux VM). Every other value of that key is not measured.
+    - On Linux and macOS, the `.git` file of the new worktree
+      (`replaceWorktreeGitFile`). It is one `os.Root.Remove` of the fixed name
+      `.git` and one exclusive create with mode 0644, through a root at the
+      leaf. Three tests come first. The leaf must be the folder of the
+      checkpoint, by identity with the held handle. `.git` must be a regular
+      file of at most 8192 bytes. Its text must be `gitdir: `, the folder of
+      the copy, `/worktrees/`, one name with no separator, and a newline. Each
+      other text stays as it is. On `5fd08069` that file is a new file 4 to 25
+      ms after the add. That is cell N1 of round `val-s3p2b2-3` (Linux VM, 6
+      of 6 runs).
+    - The new file `<git dir>/worktrees/<name>/config.worktree` (0644), made
+      with an exclusive create (`writeWorktreeConfig`). It goes through a root
+      at the pinned git directory and then a root at the registration. The
+      registration must be a direct entry of `<git dir>/worktrees` and a real
+      folder. It must be the folder that the tests after the add accepted, by
+      identity. With no answer of git, its `gitdir` record must name the leaf.
+      A file at that name stays. `5fd08069` leaves such a file after a create
+      (round `val-s3p2b2-5`, Linux VM). How it gets there is not measured.
+      Before that step the daemon runs `git config --file <its own file>
+      --unset-all` on a file in `.config-<n>` of its own folder.
+    - On Windows, the staging folder `<git dir>\.claude-new-worktree-<16 hex>`
+      and one `os.Root.Rename` of it to `worktrees\<name>` (`addStage.move`).
+      The folder and its files are new, made with exclusive creates through
+      the held root. The target must not exist, so nothing is replaced. Then
+      the `.git` file of the leaf gets the three tests above. Its old text must
+      start with `gitdir: ` and end with `/.s<n>/worktrees/<name>` and a
+      newline. A staging folder that an error leaves is not removed there.
+      `5fd08069` renames that folder in 9 of 9 runs. No delete inside the git
+      directory was seen for the step (cell 47 of round `s3p2b-edges3`, Windows
+      VM).
+    - On Windows the index of the new worktree is copied into the
+      registration and not moved (`5fd08069`, cell V5i of round
+      `val-s3p2b2-5`, Windows VM).
 - The marker step of `files.extract_tar` is a further recursive delete, and it
   is safe by construction. After the entries it removes the fixed name `.synced`
   at the top of `destDir` as a tree (`writeSyncedMarker`). Then it creates the
@@ -386,7 +497,7 @@ The JSON-RPC surface is identical on every OS. Full internals →
   2026-10-10. Do not build that name from a parameter or from the archive.
   A second file entry with the name of an earlier one removes that one regular
   file through the same handle. That is a plain `os.Root.Remove`, not a tree.
-  The four paths above remain the only recursive deletes whose target a caller
+  The five paths above remain the only recursive deletes whose target a caller
   or an operator names. The marker remove acts inside the first of them.
 - Auth is in-band per request (`"auth":"<token>"`). The token of the daemon
   comes from `-token-file` or from `-token-fd`. With `-token-file` the daemon
@@ -468,7 +579,10 @@ daemon's own read of the repository config. After a kill of that call the remove
 goes on as it did before that read. `git.worktree_create` is the exception. Its
 rollback deletes after a failed or killed read-tree checkout, and it removes an
 empty leaf after a failed add. Never read a fired `git-timeout` as "git refused".
-Opting D5 in is wire-visible.
+Opting D5 in is wire-visible. From the code: the deadline also bounds the calls
+of the settings copy, which have a bound of 30 seconds of their own. A kill
+there refuses the request and starts no delete. The Windows cleanup of old
+staging entries runs after a good add only.
 
 D13 is a non-flag divergence: verify-before-decompress ordering, on `-cli-url` and on a `-cli-zst` blob with a checksum. D13 is
 always-on, but it is unresolved, not justified. D1, D4, D7, D11 and D14 are retired,

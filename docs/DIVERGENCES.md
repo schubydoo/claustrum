@@ -318,6 +318,12 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   own containment. `wipesHomeDir` (`homeguard.go`)
   refuses any target that is or contains the home directory. Descendants stay
   allowed, because extracting into `~/.claude/…` is the daemon's own install path.
+  On Windows a create also removes old `.claude-new-worktree-*` entries of the git
+  directory of `baseRepo`. `5fd08069` does so in cell 48 of round `s3p2b-edges3`
+  (Windows VM). `wipesHomeDir` runs on each such entry before its removal, and a
+  refused entry stays. That guard is claustrum's own there: no cell of `5fd08069`
+  has such an entry that holds the home folder. The deletes inside the folder
+  `git-shadow` of the daemon run the same guard on the full path.
 - **Containment is the test, and the predicate resolves relative paths**
   (`filepath.Abs`) before it compares them. This is why `wipesHomeDir` resolves
   the path. Without that resolution, `"worktreePath":".."` from a daemon whose cwd
@@ -427,6 +433,13 @@ operator-declinable. Only CT-2 and CT-5 carry a flag and a key.
   that call, the method refuses with `git cannot run on this host; git not run:
   signal: killed`. On `git.worktree_remove` either text is inside the lock-check
   frame, or inside the work-tree frame with `worktreeRoot`.
+  From the code: the deadline also bounds the calls of the settings copy. Those
+  are the calls of the start test, the call about the repository, the `git version`
+  calls after them and the `--unset-all` calls of a create. Each has a bound of 30
+  seconds of its own, so only a shorter deadline counts. A test call
+  that it ends fails the start test with `signal: killed`, and that failure is
+  kept 10 seconds. A call about the repository that it ends answers the `did not
+  finish within 30 seconds` text. None of these is measured.
 - **Default.** `0` = no deadline (byte-identical). **Activate:** `-git-timeout
   <dur>` or the key. The disabled state bypasses `context.WithTimeout`.
 - **Never read a timeout as "git refused."** On `git.worktree_remove` a kill
