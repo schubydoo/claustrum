@@ -289,6 +289,14 @@ func TestRepointWorktreeGitFile(t *testing.T) {
 			file := filepath.Join(leaf, ".git")
 			mustWrite(t, file, row.text)
 			before := pinnedInfo(t, file)
+			// The old file stays open, so the new file cannot get its inode
+			// number: a Linux CI runner gave a new file the number of the file
+			// that was removed right before it.
+			held, err := os.Open(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = held.Close() }()
 			repointWorktreeGitFile(u, leaf, cp)
 			want := row.want
 			if want == "" {

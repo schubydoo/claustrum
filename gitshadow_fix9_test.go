@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -35,7 +36,9 @@ func TestShadowRelativeRunFolder(t *testing.T) {
 					if _, value, ok := strings.Cut(word, "="); ok {
 						path = value
 					}
-					if strings.Contains(path, shadowRootName) && !filepath.IsAbs(path) {
+					// The folder name with a separator after it: a CI variable can
+					// hold a branch name that ends in the folder name.
+					if strings.Contains(path, shadowRootName+string(os.PathSeparator)) && !filepath.IsAbs(path) {
 						t.Errorf("a call names the relative path %q", path)
 					}
 					if strings.Contains(word, dir) {
